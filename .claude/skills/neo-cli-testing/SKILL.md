@@ -47,18 +47,23 @@ Integration and e2e assume the environment an end user has: `nix`, `git`, networ
 and (for e2e) a `nix build`ed `result/bin/neo`. There are **no** `if success {…}
 else accept-missing-nix {…}` escape hatches - that pattern was deleted on
 2026-06-10. If a test fails because the env lacks a prereq, **fix the environment,
-never soften the assertion**. Refuse `NEO_SKIP_NETWORK=1` for integration/e2e - they
-are real-network on purpose; logic that needs stubbing belongs in unit tests.
+never soften the assertion**. Refuse `NEO_SKIP_NETWORK=1` for integration/e2e as a
+stubbing shortcut on a real-network happy path - that logic belongs in unit tests.
+The one legitimate use is the **offline-generation contract**: a test whose subject
+IS that `neo new` scaffolds a full project offline from the embedded `neo/starter/`
+(no download). There, `NEO_SKIP_NETWORK=1` is the assertion, not an escape hatch - it
+proves the packaged binary generates without a network. Those tests assert starter
+surfaces by presence, never by file count.
 
 ## Generated-project / Neo-on-Neo verification (cross-component gate)
 
 The `build` / `run` / `test` happy-path scenarios (integration + e2e) require the
 generated NeoHaskell project to actually compile. The two recurring breakages:
 
-1. **Starter-to-upstream drift.** `neo new` tarballs `neo-starter@main`; `neo build`
-   locks the latest `neohaskell` `main`. When upstream renames/removes a module the
-   starter imports, the generated project fails GHC compile. **Fix `neo-starter`
-   upstream and push** - do not touch the neo test.
+1. **Starter-to-upstream drift.** `neo new` scaffolds from the embedded
+   `neo/starter/` template; `neo build` locks the latest `neohaskell` `main`. When
+   upstream renames/removes a module the starter imports, the generated project fails
+   GHC compile. **Fix `neo/starter/` in this monorepo** - do not touch the neo test.
 2. **A transitive Haskell dep refusing to build under plain cabal** (historically
    `jose` needing native crypto paths from `haskell.nix`) - fix the templated
    `flake.nix`.

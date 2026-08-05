@@ -21,6 +21,11 @@ Contract (governing rule: no doc without a gate):
      `neo/.claude/skills/` (they now live at repo-root as `neo-cli-*`).
   5. CROSS-REF INTEGRITY - every `neo-cli-<x>` token mentioned in any active
      guidance file resolves to a real skill directory (no typos / dangling refs).
+  6. INTERNALIZED STARTER - the starter is source-of-truth at `neo/starter/`
+     (embedded by src/network.rs). No active guidance may cite the standalone
+     starter repo as the generation source; the starter tree must carry its
+     import/parity manifest, leak no VCS/secret/build-artifact class, and keep
+     the load-bearing generated-project surfaces (by presence, not count).
 
 Run:  ./dev neo-skills-check              CI: via ./dev doctor (seconds, no nix)
       ./dev neo-skills-check --self-test  fixture coverage (doctor/CI)
@@ -53,6 +58,28 @@ CONSOLIDATED_NESTED = (
     "running-neo-tests",
     "error-messages-instruct-llms",
     "critique-ide-screen",
+)
+
+# The standalone starter repo was internalized to `neo/starter/` (embedded into
+# the binary by src/network.rs). No ACTIVE GUIDANCE file may still point at it as
+# the generation source - that would send a fresh agent to fix the wrong tree.
+# (The provenance manifest neo/starter/IMPORT.md legitimately names the source
+# repo, but it is not an active-guidance file, so it is not scanned here.)
+EXTERNAL_STARTER_REFS = ("NeoHaskell/neo-starter", "neo-starter@main", "neo-starter/archive")
+
+# The internalized starter template and its parity manifest.
+STARTER_DIR = ("neo", "starter")
+STARTER_MANIFEST = "IMPORT.md"
+
+# Load-bearing surfaces a generated project needs. Checked by PRESENCE only -
+# never by file count, which would rot on the next starter change.
+STARTER_REQUIRED_SURFACES = ("src/App.hs", "launcher/Launcher.hs", "cabal.project", "flake.nix", "tests")
+
+# Artifact / secret / VCS-metadata classes that must never be imported into the
+# starter (see neo/starter/IMPORT.md). Matched against every path component.
+STARTER_BANNED_NAMES = (
+    ".git", "dist-newstyle", "dist", "node_modules", ".direnv",
+    ".env", ".DS_Store", ".idea", "uploads",
 )
 
 SKILL_REF_RE = re.compile(r"neo-cli-[a-z0-9-]+")
@@ -142,6 +169,18 @@ def check(root):
                     f"remove it (STATE/NEXT_STEP/IMPLEMENTATION_PLAN/ralph.sh no longer exist)"
                 )
 
+    # --- 2b. No active guidance may cite the standalone starter repo as the
+    # generation source - it was internalized to neo/starter/ (embedded).
+    for path in guidance:
+        text = read(path)
+        for ref in EXTERNAL_STARTER_REFS:
+            if ref in text:
+                errors.append(
+                    f"{path.relative_to(root)} references the standalone starter "
+                    f"`{ref}` - `neo new` now scaffolds from the embedded neo/starter/; "
+                    "point the guidance at neo/starter/ instead"
+                )
+
     # --- 3. Routing drift.
     root_agents = root / "AGENTS.md"
     if root_agents.is_file():
@@ -193,6 +232,58 @@ def check(root):
     return errors
 
 
+def check_starter(root):
+    """Validate the internalized starter (`neo/starter/`): present + non-empty,
+    the import/parity manifest exists and documents provenance + exclusions, no
+    excluded artifact/secret/VCS class leaked in, and the load-bearing generated-
+    project surfaces exist (by presence, never by count)."""
+    errors = []
+    starter = root.joinpath(*STARTER_DIR)
+    if not starter.is_dir():
+        errors.append(
+            "neo/starter/ is missing - the internalized starter template (embedded "
+            "by neo/src/network.rs) must live here"
+        )
+        return errors
+
+    if not any(p.is_file() for p in starter.rglob("*")):
+        errors.append("neo/starter/ is empty - it must contain the starter template files")
+
+    manifest = starter / STARTER_MANIFEST
+    if not manifest.is_file():
+        errors.append(
+            f"neo/starter/{STARTER_MANIFEST} is missing - the import/parity manifest "
+            "(provenance + intentional-exclusion policy) must be committed"
+        )
+    else:
+        m = read(manifest)
+        if "neo-starter" not in m:
+            errors.append(f"neo/starter/{STARTER_MANIFEST} does not name the source repository (provenance)")
+        if "exclu" not in m.lower():
+            errors.append(f"neo/starter/{STARTER_MANIFEST} does not document the intentional-exclusion policy")
+
+    # No excluded class may appear anywhere under the starter.
+    for p in starter.rglob("*"):
+        for comp in p.relative_to(starter).parts:
+            if comp in STARTER_BANNED_NAMES or comp == "result" or comp.startswith("result-"):
+                errors.append(
+                    f"neo/starter/{p.relative_to(starter)} is an excluded "
+                    f"artifact/secret/VCS class (`{comp}`) - it must not be imported "
+                    "(see neo/starter/IMPORT.md)"
+                )
+                break
+
+    # Load-bearing generated-project surfaces exist (presence, not count).
+    for surface in STARTER_REQUIRED_SURFACES:
+        if not (starter / surface).exists():
+            errors.append(
+                f"neo/starter/{surface} is missing - a generated project needs it "
+                "(offline-generation surface invariant)"
+            )
+
+    return errors
+
+
 # --------------------------------------------------------------------------- #
 # Self-test: a good fixture tree passes; each mutation fails for its own reason.
 # Runs entirely in temp dirs - never reads or mutates the real repo.
@@ -226,6 +317,25 @@ def _build_good_tree(root):
         encoding="utf-8",
     )
     (root / "neo" / "CLAUDE.md").write_text("See AGENTS.md.\n", encoding="utf-8")
+
+
+def _build_good_starter(root):
+    starter = root / "neo" / "starter"
+    (starter / "src" / "Starter").mkdir(parents=True)
+    (starter / "launcher").mkdir(parents=True)
+    (starter / "tests").mkdir(parents=True)
+    (starter / "src" / "App.hs").write_text("module App where\n", encoding="utf-8")
+    (starter / "launcher" / "Launcher.hs").write_text("module Main where\n", encoding="utf-8")
+    (starter / "cabal.project").write_text("packages: .\n", encoding="utf-8")
+    (starter / "flake.nix").write_text("{ }\n", encoding="utf-8")
+    (starter / "tests" / "Spec.hs").write_text("-- spec\n", encoding="utf-8")
+    (starter / ".env.example").write_text("KEY=value\n", encoding="utf-8")
+    (starter / STARTER_MANIFEST).write_text(
+        "# Internalized starter\n\n## Provenance\n"
+        "Source: github.com/NeoHaskell/neo-starter @ origin/main\n\n"
+        "## Intentional exclusions\nExcluded: .git/, .env, dist-newstyle/, result.\n",
+        encoding="utf-8",
+    )
 
 
 def self_test():
@@ -304,11 +414,67 @@ def self_test():
         expect(any("neo-cli-nonexistent" in e for e in errors),
                f"dangling skill reference should fail, got {errors}")
 
+    # Case 6 - a reference to the standalone starter repo in guidance fails.
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        _build_good_tree(root)
+        (root / "neo" / "AGENTS.md").write_text(
+            "# neo\n\n`neo new` tarballs github.com/NeoHaskell/neo-starter@main.\n"
+            "Use neo-cli-localizer, neo-cli-implementer, neo-cli-testing, neo-cli-ide.\n",
+            encoding="utf-8",
+        )
+        errors = check(root)
+        expect(any("neo-starter" in e and "embedded" in e for e in errors),
+               f"external starter reference should fail, got {errors}")
+
+    # Case 7 - a clean internalized starter passes check_starter.
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        _build_good_starter(root)
+        errors = check_starter(root)
+        expect(not errors, f"clean starter should pass, got {errors}")
+
+    # Case 8 - a missing parity manifest fails.
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        _build_good_starter(root)
+        (root / "neo" / "starter" / STARTER_MANIFEST).unlink()
+        errors = check_starter(root)
+        expect(any(STARTER_MANIFEST in e and "missing" in e for e in errors),
+               f"missing manifest should fail, got {errors}")
+
+    # Case 9 - a leaked VCS/secret class under the starter fails.
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        _build_good_starter(root)
+        (root / "neo" / "starter" / ".env").write_text("SECRET=1\n", encoding="utf-8")
+        errors = check_starter(root)
+        expect(any(".env" in e and "excluded" in e for e in errors),
+               f"leaked .env should fail, got {errors}")
+
+    # Case 10 - a missing load-bearing surface fails.
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        _build_good_starter(root)
+        (root / "neo" / "starter" / "flake.nix").unlink()
+        errors = check_starter(root)
+        expect(any("flake.nix" in e and "missing" in e for e in errors),
+               f"missing surface should fail, got {errors}")
+
+    # Case 11 - a missing starter directory fails.
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        errors = check_starter(root)
+        expect(any("neo/starter/ is missing" in e for e in errors),
+               f"missing starter dir should fail, got {errors}")
+
     if fails:
         print("neo-skills-check self-test: FAIL", file=sys.stderr)
         return 1
     print("neo-skills-check self-test: OK - clean tree passes; missing-skill, "
-          "stale-ref, routing-drift, nested-dup, and dangling-ref mutations each rejected")
+          "stale-ref, routing-drift, nested-dup, dangling-ref, external-starter-ref, "
+          "and starter-parity (missing-manifest, leaked-secret, missing-surface, "
+          "missing-dir) mutations each rejected")
     return 0
 
 
@@ -317,7 +483,7 @@ def main(argv=None):
     if "--self-test" in argv:
         return self_test()
 
-    errors = check(REPO_ROOT)
+    errors = check(REPO_ROOT) + check_starter(REPO_ROOT)
     if errors:
         print("neo-skills-check: FAIL", file=sys.stderr)
         for e in errors:
@@ -326,7 +492,8 @@ def main(argv=None):
 
     n = len(REQUIRED_SKILLS)
     print(f"neo-skills-check: OK - {n} neo-cli-* skills present, routing intact, "
-          f"no stale state/plan refs, one source of truth")
+          f"no stale state/plan refs, one source of truth, internalized starter "
+          f"parity held")
     return 0
 
 

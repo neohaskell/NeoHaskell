@@ -315,6 +315,25 @@ async fn do_scaffold(config: ProjectConfig) -> miette::Result<()> {
     std::fs::create_dir_all(&project_path)
         .map_err(|e| crate::errors::NeoError::io_at("creating the new project directory at", &project_path, e))?;
 
+    // Nothing existed at this path before this command. If any later scaffold,
+    // reconciliation, or git step fails, remove the partial project instead of
+    // leaving a directory that looks usable but is incomplete.
+    struct RemovePartialProject {
+        path: PathBuf,
+        armed: bool,
+    }
+    impl Drop for RemovePartialProject {
+        fn drop(&mut self) {
+            if self.armed {
+                let _ = std::fs::remove_dir_all(&self.path);
+            }
+        }
+    }
+    let mut cleanup = RemovePartialProject {
+        path: project_path.clone(),
+        armed: true,
+    };
+
     // Write neo.json
     let neo_json_path = project_path.join("neo.json");
     let config_json = serde_json::to_string_pretty(&config)
@@ -326,8 +345,9 @@ async fn do_scaffold(config: ProjectConfig) -> miette::Result<()> {
     std::fs::write(&neo_json_path, config_json.as_bytes())
         .map_err(|e| crate::errors::NeoError::io_at("writing initial `neo.json` to", &neo_json_path, e))?;
 
-    // Fetch starter template
-    crate::network::fetch_starter_template(&project_path).await?;
+    // Scaffold from the embedded starter template (no network — the starter is
+    // baked into the binary, revision-coherent with this monorepo).
+    crate::network::write_starter_template(&project_path)?;
 
     // The starter template ships a `launcher/` directory. Library projects don't
     // need it — remove it after extract so the project tree matches `type: library`.
@@ -423,6 +443,7 @@ async fn do_scaffold(config: ProjectConfig) -> miette::Result<()> {
     crate::git::add_all(&project_path)?;
     crate::git::commit(&project_path, "Initial commit from NeoCLI")?;
 
+    cleanup.armed = false;
     Ok(())
 }
 

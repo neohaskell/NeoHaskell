@@ -310,6 +310,47 @@ fn new_ci_two_sibling_projects_are_independent() {
     assert_eq!(beta["name"], "beta");
 }
 
+/// Offline-generation contract against the PACKAGED binary. `result/bin/neo`
+/// (the nix-built release binary) must scaffold a full project from the embedded
+/// `neo/starter/` with the network disabled — proving the installed CLI carries
+/// the starter and never fetches one at runtime. `NEO_SKIP_NETWORK=1` here is the
+/// assertion (offline is the subject), not a stub shortcut on a happy path.
+#[test]
+#[ignore]
+fn new_offline_generates_full_starter_from_packaged_binary() {
+    let sb = Sandbox::new("new_offline_generates_full_starter_from_packaged_binary");
+    sb.neo(".")
+        .env("NEO_SKIP_NETWORK", "1")
+        .args(["new", "offline-app", "--ci"])
+        .timeout(Duration::from_secs(120))
+        .assert()
+        .success();
+
+    let project = sb.path("offline-app");
+    assert!(project.exists(), "project dir missing");
+    // Full starter surfaces (presence, not count): app + launcher + a real domain
+    // module + dev flake + cabal project + the starter's test tree.
+    assert!(project.join("src/App.hs").exists(), "src/App.hs missing");
+    assert!(project.join("launcher/Launcher.hs").exists(), "launcher/Launcher.hs missing");
+    assert!(
+        project.join("src/Starter/Counter/Event.hs").exists(),
+        "embedded starter domain module missing — packaged binary shipped a stub, not the full starter"
+    );
+    assert!(project.join("flake.nix").exists(), "flake.nix missing");
+    assert!(project.join("cabal.project").exists(), "cabal.project missing");
+    assert!(project.join("tests/Spec.hs").exists(), "tests/Spec.hs missing");
+    assert!(project.join("offline-app.cabal").exists(), ".cabal not generated");
+    // Provenance manifest must not leak into a generated project.
+    assert!(!project.join("IMPORT.md").exists(), "IMPORT.md must not be scaffolded into a project");
+
+    let log = sb.git("offline-app", &["log", "--oneline"]);
+    assert!(log.status.success(), "git log failed");
+    assert!(
+        String::from_utf8_lossy(&log.stdout).contains("Initial commit from NeoCLI"),
+        "initial commit missing after offline scaffold"
+    );
+}
+
 // =====================================================
 // Group C: `neo new` edge cases
 // =====================================================

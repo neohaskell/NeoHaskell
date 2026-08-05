@@ -18,7 +18,7 @@ The `clap` command enum lives in `src/cli.rs`; each variant dispatches through
 
 | Command | Entry module | What it does |
 |---|---|---|
-| `neo new [name] [--library]` | `commands/new.rs` | Interactive interview -> scaffold from the `neo-starter` tarball |
+| `neo new [name] [--library]` | `commands/new.rs` | Interactive interview -> scaffold from the embedded `neo/starter/` template (`src/network.rs`) |
 | `neo build [--watch] [--skip-lock-check]` | `commands/build.rs` | Reconcile config -> `nix`/`cabal` build; `--watch` = GHCi hot-reload |
 | `neo run [--watch]` | `commands/run.rs` | Build then execute the app |
 | `neo test [--watch]` | `commands/test.rs` | Cabal unit tests then Hurl integration tests |
@@ -51,17 +51,24 @@ Global flags (`src/cli.rs`): `--verbose`, `--ci` (both `global = true`).
   `methods/*.rs`, `heal/*`, `sync.rs`, `validate.rs`) and `assets/ide/**` (the
   Vite/React frontend). See `neo-cli-ide`.
 - **Prereqs / env** - `src/prereqs.rs` (nix/git presence guards), `src/network.rs`
-  (`NEO_SKIP_NETWORK`), `src/config.rs`, `src/git.rs`.
+  (`NEO_SKIP_NETWORK`, the embedded `neo/starter/` template + `write_starter_template`),
+  `src/config.rs`, `src/git.rs`.
+
+## Internalized starter
+
+`neo new` scaffolds from the embedded `neo/starter/` template (rust-embed in
+`src/network.rs::write_starter_template`), not a network download. It is the source
+of truth for generation and is offline by construction. Fix generation/starter bugs
+in `neo/starter/`; provenance + exclusion policy in `neo/starter/IMPORT.md`.
 
 ## Cross-component correctness (monorepo governance)
 
 Neo generates NeoHaskell projects. The happy-path `build`/`run`/`test` scenarios
-depend on the **starter to upstream contract**: `neo new` tarballs
-`github.com/NeoHaskell/neo-starter@main`, then `neo build` locks the latest
-`neohaskell` `main`. When upstream renames/removes a module the starter imports,
-generated projects fail to compile. That is a real signal - fix `neo-starter`
-upstream; never mask or `#[ignore]` the failing scenario. Details in
-`neo/AGENTS.md` and `neo-cli-testing`.
+depend on the **starter to upstream contract**: `neo new` scaffolds from the
+embedded `neo/starter/`, then `neo build` locks the latest `neohaskell` `main`. When
+upstream renames/removes a module the starter imports, generated projects fail to
+compile. That is a real signal - fix `neo/starter/` in this monorepo; never mask or
+`#[ignore]` the failing scenario. Details in `neo/AGENTS.md` and `neo-cli-testing`.
 
 ## Scope rule
 

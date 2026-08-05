@@ -1,7 +1,8 @@
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Component, Path, PathBuf};
 use miette::IntoDiagnostic;
 use miette::WrapErr;
+use rust_embed::RustEmbed;
 use serde::Deserialize;
 use semver::Version;
 use crate::errors::NeoError;
@@ -221,77 +222,74 @@ pub async fn check_for_updates() -> miette::Result<Option<String>> {
     }
 }
 
-pub async fn fetch_starter_template(dest: &Path) -> miette::Result<()> {
-    if std::env::var("NEO_SKIP_NETWORK").is_ok() {
-        // Create a dummy structure for tests
-        let src_dir = dest.join("src");
-        std::fs::create_dir_all(&src_dir)
-            .map_err(|e| NeoError::io_at("creating offline-stub `src/` directory at", &src_dir, e))?;
-        let stub_app = src_dir.join("App.hs");
-        std::fs::write(
-            &stub_app,
-            "module App where\n\nrun :: IO ()\nrun = putStrLn \"Hello from NeoHaskell!\"\n",
-        )
-        .map_err(|e| NeoError::io_at("writing offline-stub `src/App.hs` to", &stub_app, e))?;
+/// The internalized NeoHaskell starter template, embedded into the `neo` binary
+/// at compile time from `neo/starter/` (rust-embed). This is the single source
+/// of truth for `neo new` scaffolding: the CLI never downloads a starter at
+/// runtime, so project generation works offline and uses the starter content
+/// from the exact monorepo revision the binary was built from. The generated
+/// project's NeoHaskell dependency is reconciled separately: online generation
+/// resolves upstream, while offline generation preserves the starter's committed
+/// dependency pin. The provenance manifest
+/// (`starter/IMPORT.md`) documents the tree but is not part of a generated
+/// project, so it is excluded from the embed.
+///
+/// Because the folder path is resolved against `CARGO_MANIFEST_DIR` at compile
+/// time (release: bytes are embedded; debug: read from that absolute path at
+/// runtime), extraction never depends on the caller's current directory.
+#[derive(RustEmbed)]
+#[folder = "starter/"]
+#[exclude = "IMPORT.md"]
+struct StarterTemplate;
 
-        let launcher_dir = dest.join("launcher");
-        std::fs::create_dir_all(&launcher_dir)
-            .map_err(|e| NeoError::io_at("creating offline-stub `launcher/` directory at", &launcher_dir, e))?;
-        let stub_launcher = launcher_dir.join("Launcher.hs");
-        std::fs::write(
-            &stub_launcher,
-            "module Main where\n\nimport App\n\nmain :: IO ()\nmain = App.run\n",
-        )
-        .map_err(|e| NeoError::io_at("writing offline-stub `launcher/Launcher.hs` to", &stub_launcher, e))?;
-
-        return Ok(());
+/// Write the embedded starter template into `dest`, creating parent directories
+/// as needed. Path-traversal safe: every embedded entry is resolved through
+/// [`safe_join`], so a malformed embed can never write outside `dest`.
+pub fn write_starter_template(dest: &Path) -> miette::Result<()> {
+    let mut wrote_any = false;
+    for rel in StarterTemplate::iter() {
+        let file = StarterTemplate::get(rel.as_ref()).ok_or_else(|| miette::miette!(
+            help = "This is a build/packaging defect in `neo`, not a project error. Rebuild the binary from a clean checkout (`nix build .#neo`); if it persists, the embedded starter tree is corrupt.",
+            "The embedded starter template lists `{}` but its bytes could not be read.",
+            rel
+        ))?;
+        let dest_path = safe_join(dest, rel.as_ref())?;
+        if let Some(parent) = dest_path.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| NeoError::io_at("creating a starter template directory at", &parent.to_path_buf(), e))?;
+        }
+        std::fs::write(&dest_path, file.data.as_ref())
+            .map_err(|e| NeoError::io_at("writing an embedded starter template file to", &dest_path, e))?;
+        wrote_any = true;
     }
 
-    let url = "https://github.com/NeoHaskell/neo-starter/archive/refs/heads/main.tar.gz";
-
-    let client = reqwest::Client::builder()
-        .user_agent("NeoCLI")
-        .build()
-        .map_err(|e| NeoError::NetworkError { url: url.to_string(), source: e })?;
-
-    let response = client.get(url).send().await
-        .map_err(|e| NeoError::NetworkError { url: url.to_string(), source: e })?;
-    let bytes = response.bytes().await
-        .map_err(|e| NeoError::NetworkError { url: url.to_string(), source: e })?;
-
-    let tar_gz = flate2::read::GzDecoder::new(&bytes[..]);
-    let mut archive = tar::Archive::new(tar_gz);
-
-    // The tarball has a top-level directory like "neo-starter-main/"
-    // We want to extract its contents into dest
-    let temp_dir = tempfile::tempdir()
-        .map_err(|e| NeoError::io_at("creating a temp dir to unpack the starter tarball into", &std::path::PathBuf::from(std::env::temp_dir()), e))?;
-    archive.unpack(temp_dir.path())
-        .map_err(|e| NeoError::io_at("unpacking the starter tarball into", &temp_dir.path().to_path_buf(), e))?;
-
-    let entries = std::fs::read_dir(temp_dir.path())
-        .map_err(|e| NeoError::io_at("listing the unpacked starter tarball at", &temp_dir.path().to_path_buf(), e))?;
-    let first_entry = entries.into_iter().next().ok_or_else(|| miette::miette!(
-        help = format!("Re-run with network connectivity (try `curl -I {}`), or set `NEO_SKIP_NETWORK=1` to use the offline stub starter (fine for tests, not for real builds).", url),
-        "Downloaded starter template tarball from `{}` was empty after unpack into `{}` — no top-level directory found.",
-        url,
-        temp_dir.path().display()
-    ))?
-    .map_err(|e| NeoError::io_at("reading the first entry of the unpacked starter tarball at", &temp_dir.path().to_path_buf(), e))?;
-    let root_path = first_entry.path();
-
-    let inner_entries = std::fs::read_dir(&root_path)
-        .map_err(|e| NeoError::io_at("listing files inside the unpacked starter at", &root_path, e))?;
-    for entry in inner_entries {
-        let entry = entry
-            .map_err(|e| NeoError::io_at("reading a file entry inside the unpacked starter at", &root_path, e))?;
-        let file_name = entry.file_name();
-        let dest_path = dest.join(file_name);
-        std::fs::rename(entry.path(), &dest_path)
-            .map_err(|e| NeoError::io_at("moving an unpacked starter file into the project dir at", &dest_path, e))?;
+    if !wrote_any {
+        return Err(miette::miette!(
+            help = "This is a build/packaging defect: the `neo` binary was compiled without the `neo/starter/` contents. Rebuild from a clean monorepo checkout (`nix build .#neo`).",
+            "The embedded starter template is empty — no files to scaffold `{}` from.",
+            dest.display()
+        ).into());
     }
 
     Ok(())
+}
+
+/// Join a starter-relative path onto `dest`, rejecting any entry that is
+/// absolute or contains a parent (`..`) / root component. rust-embed already
+/// yields normalized, forward-slash relative paths, but this guard makes the
+/// path-traversal safety explicit and independent of the embedder's guarantees.
+fn safe_join(dest: &Path, rel: &str) -> miette::Result<PathBuf> {
+    let mut out = dest.to_path_buf();
+    for comp in Path::new(rel).components() {
+        match comp {
+            Component::Normal(c) => out.push(c),
+            _ => return Err(miette::miette!(
+                help = "This is a build/packaging defect (a corrupt embedded starter), not a project error. Rebuild the binary from a clean checkout.",
+                "Refusing to extract starter entry `{}`: it contains a non-relative or parent-escaping path component.",
+                rel
+            ).into()),
+        }
+    }
+    Ok(out)
 }
 
 /// The commit SHA that `<url>`'s default branch (HEAD) currently points at, or
@@ -473,13 +471,42 @@ mod tests {
         let _ = check_for_updates().await;
     }
 
-    #[tokio::test]
-    async fn test_fetch_starter_template() {
-        unsafe { std::env::set_var("NEO_SKIP_NETWORK", "1"); }
+    #[test]
+    fn test_write_starter_template_extracts_embedded_tree_offline() {
+        // No network, no NEO_SKIP_NETWORK: the starter is embedded in the
+        // binary, so extraction is fully offline and works from any directory.
+        // This runs in the sealed `nix build .#neo` check (the release binary
+        // embeds the bytes), proving the packaged binary can generate projects
+        // without a network. Assertions are by presence of load-bearing
+        // surfaces, never by file count (which rots on the next starter change).
         let dir = tempdir().unwrap();
-        fetch_starter_template(dir.path()).await.unwrap();
-        assert!(dir.path().join("src/App.hs").exists());
-        assert!(dir.path().join("launcher/Launcher.hs").exists());
+        write_starter_template(dir.path()).unwrap();
+
+        // Application entry point + executable launcher.
+        assert!(dir.path().join("src/App.hs").exists(), "src/App.hs missing");
+        assert!(dir.path().join("launcher/Launcher.hs").exists(), "launcher/Launcher.hs missing");
+        // A real domain module from the starter (not a stub) — proves the full
+        // functional starter is embedded, not a placeholder.
+        assert!(dir.path().join("src/Starter/Counter/Event.hs").exists(), "starter domain module missing");
+        // Dev flake + cabal project so the generated project is buildable.
+        assert!(dir.path().join("flake.nix").exists(), "flake.nix missing");
+        assert!(dir.path().join("cabal.project").exists(), "cabal.project missing");
+        // The starter's own test tree.
+        assert!(dir.path().join("tests/Spec.hs").exists(), "tests/Spec.hs missing");
+
+        // The monorepo-only provenance manifest must NOT leak into a generated
+        // project (it is excluded from the embed).
+        assert!(!dir.path().join("IMPORT.md").exists(), "IMPORT.md must not be scaffolded into a project");
+    }
+
+    #[test]
+    fn test_safe_join_rejects_traversal() {
+        let base = Path::new("/tmp/project");
+        assert!(safe_join(base, "src/App.hs").is_ok());
+        assert!(safe_join(base, "../escape.hs").is_err(), "parent-escaping entry must be rejected");
+        assert!(safe_join(base, "/etc/passwd").is_err(), "absolute entry must be rejected");
+        let ok = safe_join(base, "a/b/c.hs").unwrap();
+        assert!(ok.starts_with(base), "resolved path must stay within dest");
     }
 
     #[test]

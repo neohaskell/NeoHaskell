@@ -22,6 +22,15 @@
 #   `./dev neo-dist-check` (run in `neo-ci.yml` and locally) and the frontend is
 #   rebuilt + diffed on every IDE-touching PR. The Nix build stays offline; the
 #   freshness proof lives in the CI/`./dev` contract, not in an unverified blob.
+#
+# Embedded starter (rust-embed) contract:
+#   `src/network.rs` embeds `neo/starter/` at compile time so `neo new` scaffolds
+#   projects offline, with no runtime download. Because `src` below includes the
+#   whole `neo/` tree, any edit under `neo/starter/` changes the derivation hash
+#   and rebuilds the binary — the installed `neo` is always revision-coherent
+#   with the internalized starter. The sealed `doCheck` unit tests exercise
+#   `write_starter_template` into a temp dir, so the package build itself proves
+#   the release binary can generate a project with the network disabled.
 { lib
 , rustPlatform
 , git

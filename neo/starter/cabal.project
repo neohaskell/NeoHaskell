@@ -1,0 +1,26 @@
+packages:
+  *.cabal
+
+-- NeoHaskell core library.
+-- The git source is managed by flake.nix inputMap (nix flake update to update).
+-- IMPORTANT: Use a specific commit SHA, not a branch name, for reproducible builds.
+-- To update:
+--   1) nix flake lock --update-input neohaskell
+--   2) Update the tag below to match: nix eval .#neohaskell.rev --raw
+source-repository-package
+  type: git
+  location: https://github.com/neohaskell/neohaskell.git
+  tag: 3fd3d1327c3f64c0e6ded278b803b1a2b96ab875
+  subdir: core
+
+
+-- NeoHaskell integrations (HTTP, OpenRouter, File upload, etc.)
+source-repository-package
+  type: git
+  location: https://github.com/neohaskell/neohaskell.git
+  tag: 3fd3d1327c3f64c0e6ded278b803b1a2b96ab875
+  subdir: integrations
+
+constraints:
+  hasql < 1.10,
+  opt-env-conf < 0.11

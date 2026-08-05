@@ -54,7 +54,7 @@ pub enum NeoError {
     #[diagnostic(
         code(neo::network),
         url(docsrs),
-        help("Check your internet connection (try `curl -I {url}`). If you intentionally want to skip network I/O (tests, offline dev), set `NEO_SKIP_NETWORK=1` — `neo` will use a local stub instead of downloading the starter template.")
+        help("Check your internet connection (try `curl -I {url}`). If you intentionally want to skip network I/O (tests, offline dev), set `NEO_SKIP_NETWORK=1` — `neo` will skip remote lookups (the project starter is embedded in the binary, so `neo new` still scaffolds a full project offline).")
     )]
     NetworkError {
         url: String,

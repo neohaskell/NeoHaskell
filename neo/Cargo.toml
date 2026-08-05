@@ -27,7 +27,7 @@ axum = { version = "0.7", default-features = false, features = ["http1", "tokio"
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
 
 # Static asset embedding (for `neo ide`)
-rust-embed = { version = "8", features = ["mime-guess"] }
+rust-embed = { version = "8", features = ["mime-guess", "include-exclude"] }
 mime_guess = "2"
 
 # Serialization
@@ -59,9 +59,7 @@ regex = "1"
 # Templates
 minijinja = "2"
 
-# Archive
-flate2 = "1"
-tar = "0.4"
+# Temp dirs (test scaffolding, atomic clone/extract staging)
 tempfile = "3"
 
 # Git

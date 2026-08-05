@@ -105,17 +105,28 @@ integration/e2e. The strict-assertion contract holds: if a test fails because
 `nix`/`git`/network is missing, fix the environment, never weaken the assertion (no
 missing-prereq escape hatches).
 
+## Internalized starter (source of truth: `neo/starter/`)
+
+`neo new` scaffolds from the **internalized starter** at `neo/starter/`, embedded
+into the binary at compile time (rust-embed, `src/network.rs`). There is no runtime
+download: generation is offline and pinned to the exact monorepo revision the binary
+was built from. Fix generation/starter bugs in `neo/starter/`, never in an external
+repository. Provenance and the intentional-exclusion policy live in
+`neo/starter/IMPORT.md`; `./dev neo-skills-check` enforces both (no leaked VCS
+metadata/secrets/build artifacts, manifest present, load-bearing surfaces exist).
+
 ## Cross-component correctness gate
 
 Neo generates NeoHaskell projects. The `build`/`run`/`test` happy paths require the
 generated project to actually compile, which depends on the **starter to upstream
-contract**: `neo new` tarballs `github.com/NeoHaskell/neo-starter@main`, then `neo
-build` locks the latest `neohaskell` `main`. When upstream renames/removes a module
-the starter imports, generated projects fail GHC compile. That red bar is the
-intended signal: fix `neo-starter` upstream; never mask or `#[ignore]` it. A change
-that must move the CLI and its NeoHaskell counterpart together is an atomic
-cross-component change: use `neo-cli-localizer` for the Rust side and the NeoHaskell
-localizer for the matching lower/adjacent stack layer.
+contract**: `neo new` scaffolds from the embedded `neo/starter/`, then `neo build`
+locks the latest `neohaskell` `main`. When upstream renames/removes a module the
+starter imports, generated projects fail GHC compile. That red bar is the intended
+signal: fix `neo/starter/` in this monorepo; never mask or `#[ignore]` it. Because
+the starter is now in-repo, moving the starter and its NeoHaskell counterpart
+together is a single-repo atomic change across stack layers: use `neo-cli-localizer`
+for the Rust side and the NeoHaskell localizer for the matching lower/adjacent
+stack layer.
 
 ## Errors are LLM-actionable repair instructions (HARD invariant)
 

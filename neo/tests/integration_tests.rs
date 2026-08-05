@@ -99,6 +99,56 @@ fn test_neo_new_ci() {
 }
 
 #[test]
+fn test_neo_new_offline_scaffolds_full_starter() {
+    // Offline-generation contract: with NEO_SKIP_NETWORK=1 (no network at all),
+    // `neo new` must still scaffold a COMPLETE project from the embedded
+    // `neo/starter/` template — proving the starter is baked into the binary and
+    // generation does not depend on downloading anything. Run from a fresh temp
+    // dir so this also proves cwd-independence of the embedded lookup.
+    let temp = tempfile::tempdir().unwrap();
+    let project_name = "offline-app";
+
+    let mut cmd = neo_cmd();
+    cmd.current_dir(temp.path())
+        .env("NEO_SKIP_NETWORK", "1")
+        .arg("new")
+        .arg(project_name)
+        .arg("--ci")
+        .assert()
+        .success();
+
+    let project = temp.path().join(project_name);
+    // Load-bearing surfaces from the real starter (asserted by presence, never by
+    // count): app entry point, executable launcher, a real domain module (not a
+    // stub), dev flake, cabal project, and the starter's own test tree.
+    assert!(project.join("src/App.hs").exists(), "offline scaffold missing src/App.hs");
+    assert!(project.join("launcher/Launcher.hs").exists(), "offline scaffold missing launcher/Launcher.hs");
+    assert!(
+        project.join("src/Starter/Counter/Event.hs").exists(),
+        "offline scaffold missing the embedded starter domain module — a stub, not the full starter, was written"
+    );
+    assert!(project.join("flake.nix").exists(), "offline scaffold missing flake.nix");
+    assert!(project.join("cabal.project").exists(), "offline scaffold missing cabal.project");
+    assert!(project.join("tests/Spec.hs").exists(), "offline scaffold missing tests/Spec.hs");
+
+    // The monorepo-only provenance manifest must never leak into a generated project.
+    assert!(!project.join("IMPORT.md").exists(), "IMPORT.md must not be scaffolded into a project");
+
+    // The full pipeline (reconcile + git) still completes offline.
+    assert!(project.join(format!("{}.cabal", project_name)).exists(), ".cabal not generated offline");
+    assert!(project.join(".git").exists(), "git not initialized offline");
+    let git_log = std::process::Command::new("git")
+        .args(["log", "--oneline"])
+        .current_dir(&project)
+        .output()
+        .unwrap();
+    assert!(
+        String::from_utf8_lossy(&git_log.stdout).contains("Initial commit from NeoCLI"),
+        "initial commit missing after offline scaffold"
+    );
+}
+
+#[test]
 fn test_neo_new_library_ci() {
     // `--library` should produce a project with no launcher/Launcher.hs file
     // and a generated .cabal without the `executable <name>` stanza.
@@ -299,9 +349,10 @@ fn test_neo_test_ci() {
 
     // Full `neo test`: reconcile → compile+run the built-in Hspec suite → wait for
     // the app to become ready (readiness poll, not a fixed sleep) → run the starter's
-    // Hurl scenarios. All must pass. (Requires the neo-starter fixes on `main`: the
-    // `counter-flow.hurl` `$.items[...]` jsonpath; before that this signals the
-    // starter↔upstream contract is broken — fix in neo-starter, per CLAUDE.md.)
+    // Hurl scenarios. All must pass. (Depends on the embedded `neo/starter/` staying
+    // coherent with upstream `neohaskell`: e.g. the `counter-flow.hurl`
+    // `$.items[...]` jsonpath; a failure here signals the starter↔upstream contract
+    // is broken — fix `neo/starter/` in this monorepo, per neo/AGENTS.md.)
     let mut cmd = neo_cmd();
     cmd.current_dir(&project_path)
         .arg("test")
