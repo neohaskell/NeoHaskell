@@ -611,7 +611,7 @@ isEmpty app =
     && Array.isEmpty app.queryDefinitions
     && Registry.isEmpty app.queryRegistry
     && Array.isEmpty app.serviceRunners
-    && Map.length app.transports == 0
+    && Map.isEmpty app.transports
 
 
 -- | Check if a QueryRegistry has been configured.
