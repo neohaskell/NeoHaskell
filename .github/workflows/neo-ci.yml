@@ -1,0 +1,218 @@
+name: "Neo CLI"
+
+# Component-scoped CI for the Rust Neo CLI (neo/) and the root Nix wiring that
+# exposes it (nix/neo-package.nix, the flake `neo` output). It is INDEPENDENT of
+# the Haskell "Test" gate: neo has its own crate, toolchain and release train.
+#
+# Base-branch policy (deliberate): there is NO `branches:` allowlist on the
+# pull_request trigger. Neo ships through official stacked PRs whose base is
+# whatever lower stack layer they sit on (not only `main` or the migration
+# integration branch). A base allowlist here would silently stop gating neo the
+# moment it stacks on a new branch. Diff-scoping is done PER-PR by the `changes`
+# job, not by the base name. `scripts/workflow-check` freezes both invariants
+# (runs on arbitrary bases + routes neo/**) so they cannot regress.
+on:
+  pull_request:
+    # ready_for_review so promoting a draft re-triggers the jobs the draft guard
+    # skipped (same reasoning as the Haskell Test gate).
+    types: [opened, synchronize, reopened, ready_for_review]
+  push:
+    branches: [main]
+    paths:
+      - "neo/**"
+      - "nix/neo-package.nix"
+      - "flake.nix"
+      - "flake.lock"
+      - ".github/workflows/neo-ci.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: neo-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Per-PR diff scoping (see base-branch policy above). On push the path filter
+  # already guaranteed relevance, so touched=true. On a PR we diff against the
+  # actual base ref, whatever it is named, so stacked layers work unchanged.
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      touched: ${{ steps.detect.outputs.touched }}
+    steps:
+      - uses: actions/checkout@v7.0.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - id: detect
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" = "push" ]; then
+            echo "touched=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # neo/** plus the root files the neo package derivation reads. Keep in
+          # lockstep with the `paths:` list above and with COMPONENT_SURFACES in
+          # scripts/workflow-check.
+          PATTERN='^(neo/|nix/neo-package\.nix|flake\.nix|flake\.lock|\.github/workflows/neo-ci\.yml)'
+          if git diff --name-only "origin/${BASE_REF}...HEAD" | grep -qE "$PATTERN"; then
+            echo "touched=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "touched=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  # Rust crate: the canonical in-crate unit tests (--bins, never --lib) are the
+  # blocking gate. This job runs the COMPLETE binary suite in the dev shell.
+  # `cargo fmt --check` and `cargo clippy` run REPORT-ONLY:
+  # the imported snapshot carries a known formatting/lint baseline that this
+  # packaging PR does not touch (see the PR body). Everything runs in the pinned
+  # neo dev shell; host toolchains are unsupported for this crate.
+  rust:
+    needs: changes
+    if: >-
+      (github.event_name == 'push' || github.event.pull_request.draft == false)
+      && needs.changes.outputs.touched == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7.0.0
+      - uses: DeterminateSystems/determinate-nix-action@v3.21.7
+        with:
+          extra-conf: |
+            accept-flake-config = true
+      - uses: DeterminateSystems/magic-nix-cache-action@v14
+      - name: Unit tests (all in-crate binary tests, --bins)
+        run: nix develop ./neo -c cargo test --manifest-path neo/Cargo.toml --locked --bins
+      - name: rustfmt (report-only baseline)
+        continue-on-error: true
+        run: |
+          nix develop ./neo -c cargo fmt --manifest-path neo/Cargo.toml --check \
+            | tee "$GITHUB_STEP_SUMMARY" || true
+      - name: clippy (report-only baseline)
+        continue-on-error: true
+        run: |
+          nix develop ./neo -c cargo clippy --manifest-path neo/Cargo.toml 2>&1 \
+            | tee clippy.log || true
+          count=$(grep -cE '^warning:' clippy.log || true)
+          echo "clippy baseline: ${count} warning(s) in neo product code (not fixed in this packaging PR)" \
+            >> "$GITHUB_STEP_SUMMARY"
+
+  # IDE frontend: lockfile fidelity (`npm ci` fails on a stale lock), unit tests
+  # (vitest; Playwright e2e needs a browser and is out of scope here), and the
+  # production build are the blocking gates. `npm run lint` (eslint) is
+  # REPORT-ONLY: the imported snapshot carries a known lint baseline this
+  # packaging PR does not touch (see the PR body), same treatment as the Rust
+  # rustfmt/clippy baseline. `neo-dist-check` then proves the committed embedded
+  # bundle is a faithful rebuild, so the Nix package never ships a stale blob.
+  ide:
+    needs: changes
+    if: >-
+      (github.event_name == 'push' || github.event.pull_request.draft == false)
+      && needs.changes.outputs.touched == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7.0.0
+      - uses: DeterminateSystems/determinate-nix-action@v3.21.7
+        with:
+          extra-conf: |
+            accept-flake-config = true
+      - uses: DeterminateSystems/magic-nix-cache-action@v14
+      - name: Install (lockfile fidelity), test, build
+        run: |
+          nix develop ./neo -c bash -c '
+            set -euo pipefail
+            cd neo/assets/ide
+            npm ci
+            npx vitest run
+            npm run build
+          '
+      - name: eslint (report-only baseline)
+        continue-on-error: true
+        run: |
+          nix develop ./neo -c bash -c 'cd neo/assets/ide && npm run lint' 2>&1 \
+            | tee "$GITHUB_STEP_SUMMARY" || true
+      - name: Committed embedded bundle matches source rebuild
+        run: ./dev neo-dist-check
+
+  # The flake output itself, on Linux and macOS (both are supported systems).
+  # `nix build .#neo` runs the hermetic in-crate unit tests as its checkPhase
+  # (the one subprocess-spawning module is scoped out in nix/neo-package.nix and
+  # covered by the `rust` job above), so this is ALSO sealed-package test
+  # evidence. Then smoke the binary and the app.
+  nix-package:
+    needs: changes
+    if: >-
+      (github.event_name == 'push' || github.event.pull_request.draft == false)
+      && needs.changes.outputs.touched == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            os: linux
+          - runner: macos-latest
+            os: macos
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7.0.0
+      - uses: DeterminateSystems/determinate-nix-action@v3.21.7
+        with:
+          extra-conf: |
+            accept-flake-config = true
+      - uses: DeterminateSystems/magic-nix-cache-action@v14
+      - name: Build the flake package (runs the in-crate unit tests as checkPhase)
+        run: nix build .#neo --print-build-logs
+      - name: Smoke the built binary
+        run: |
+          ./result/bin/neo --version
+          ./result/bin/neo --help
+      - name: Smoke the flake app
+        run: nix run .#neo -- --version
+
+  # THE REQUIRED CHECK for the neo component. `if: always()` + no workflow-level
+  # paths filter => it always reports a conclusion on every PR, so it is safe to
+  # require in branch protection (unlike the path-skipped jobs). Skips are
+  # accepted only when there is genuinely nothing to test: a draft PR, or a PR
+  # that changed no neo surface.
+  neo-ci-gate:
+    if: always()
+    needs: [changes, rust, ide, nix-package]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check all neo jobs passed (or correctly skipped)
+        env:
+          IS_DRAFT: ${{ github.event_name == 'pull_request' && github.event.pull_request.draft }}
+          TOUCHED: ${{ needs.changes.outputs.touched }}
+          CHANGES_RESULT: ${{ needs.changes.result }}
+        run: |
+          if [[ "$CHANGES_RESULT" != "success" ]]; then
+            echo "::error::changes-detection job did not succeed ($CHANGES_RESULT)"
+            exit 1
+          fi
+          allow_skip=false
+          if [[ "$IS_DRAFT" == "true" || "$TOUCHED" != "true" ]]; then
+            allow_skip=true
+          fi
+          results=(
+            "rust=${{ needs.rust.result }}"
+            "ide=${{ needs.ide.result }}"
+            "nix-package=${{ needs.nix-package.result }}"
+          )
+          for entry in "${results[@]}"; do
+            job="${entry%%=*}"; r="${entry#*=}"
+            if [[ "$r" == "skipped" && "$allow_skip" == "true" ]]; then
+              continue
+            fi
+            if [[ "$r" != "success" ]]; then
+              echo "::error::$job did not pass (result: $r)"
+              exit 1
+            fi
+          done
+          echo "neo-ci-gate: all neo jobs passed (or correctly skipped - nothing to test)"

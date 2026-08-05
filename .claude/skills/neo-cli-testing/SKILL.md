@@ -22,6 +22,15 @@ Notes:
 - E2E requires a fresh `neo/result/bin/neo`; run `nix build ./neo -o neo/result` first (the helper panics
   with a clear hint if it's missing).
 - `NEO_E2E_KEEP=1` preserves e2e sandbox dirs (default: kept only on failure).
+- The canonical monorepo package `nix build .#neo` (root flake, defined in
+  `nix/neo-package.nix`) runs the in-crate binary unit tests as its sealed
+  `checkPhase`, with `git` and `nix` supplied to the sandbox so the prereq/locking
+  tests pass offline. It scopes out the one subprocess-spawning module
+  (`ide::methods::heal_event_model`, whose stub shebang needs `/usr/bin/env`,
+  absent in the hermetic Linux sandbox) and the integration/e2e suites (real nix +
+  network). The complete binary suite, including that module, is run by the
+  `neo-ci.yml` `rust` job (dev-shell `cargo test --bins`); use that same command
+  for fast local iteration.
 
 ## Which layer to add a test to
 

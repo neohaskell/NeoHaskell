@@ -65,6 +65,30 @@ is to enter it (`cd neo` or `nix develop ./neo -c`), never to install iconv.
 `nix build ./neo` and `nix flake check ./neo` are nix-CLI and run outside the dev
 shell.
 
+## Canonical monorepo package output
+
+The Neo CLI is a first-class monorepo output. From the repo root:
+
+```sh
+nix build .#neo        # build bin/neo; its checkPhase runs the in-crate unit tests
+nix run   .#neo -- --version
+```
+
+The derivation is defined once in `nix/neo-package.nix` (called by the root
+`flake.nix`). It stays an independent crate: it reads its version from
+`neo/Cargo.toml`, vendors deps from the pinned `neo/Cargo.lock`, and does NOT
+join a root Cargo workspace, so the Neo CLI release train is not coupled to the
+NeoHaskell library version. `nix build ./neo` (the crate-local flake) still works
+for a quick dev build without the packaged test check.
+
+The binary embeds `assets/ide/dist/` (rust-embed). That built bundle is committed
+and the package consumes it, so `./dev neo-dist-check` proves the committed bundle
+is a faithful from-lockfile rebuild (also run in the `neo-ci.yml` component gate).
+The Neo CLI is gated by `.github/workflows/neo-ci.yml` (Rust fmt/clippy baseline,
+the full binary unit-test suite, IDE install/test/build, and the Nix package build
+plus app smoke on Linux and macOS), which runs on arbitrary stacked-PR bases, not
+by the Haskell Test gate.
+
 ## Test layers (detail in `neo-cli-testing`)
 
 | Layer | Command (from the monorepo root) | Binary under test |

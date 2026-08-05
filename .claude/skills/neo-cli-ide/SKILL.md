@@ -40,6 +40,12 @@ Iteration shortcuts:
 - **Release:** always rebuild the frontend first - a release binary embeds `dist/`
   at compile time; a stale `dist/` ships a stale UI. `neo/scripts/build.sh --release`
   does both in order and is the safe default.
+- **Committed-bundle contract:** `dist/` is committed (see `assets/ide/.gitignore`)
+  because the Nix package (`nix build .#neo`) consumes the committed tree. After any
+  IDE source change, rebuild `dist/` and commit the diff, then run `./dev
+  neo-dist-check` from the repo root: it reinstalls from the lockfile, rebuilds, and
+  fails if the committed bundle is stale. The `neo-ci.yml` component gate runs the
+  same check, so a stale `dist/` cannot merge.
 
 Adding an IDE JSON-RPC method should be a **one-file change** under
 `src/ide/methods/`; if you find yourself editing `src/ide/rpc.rs` or
