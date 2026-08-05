@@ -69,6 +69,9 @@ usage: ./dev <verb> [args]
   neo-skills-check      validate the Rust `neo/**` agent-guidance layer:
                           neo-cli-* skills, neo/** routing, no stale state/plan
                           refs, one source of truth (via ./dev doctor + CI)
+  neo-dist-check        prove the committed Neo IDE bundle (assets/ide/dist,
+                          embedded into the binary) is a faithful from-lockfile
+                          rebuild, so nix build .#neo never ships a stale dist
   doctor                harness self-check: every script has a verb or a
                           reasoned exemption; no dangling verbs (CI-enforced)
   exec <cmd> [args]     run any command with the pinned toolchain
@@ -109,6 +112,7 @@ case "${VERB}" in
   telemetry) exec scripts/telemetry.py "$@" ;;
   workflow-check) exec scripts/workflow-check "$@" ;;
   neo-skills-check) exec scripts/neo-skills-check "$@" ;;
+  neo-dist-check) exec scripts/neo-dist-check "$@" ;;
   doctor)   exec scripts/doctor "$@" ;;
   exec)     exec scripts/with-toolchain "$@" ;;
   ""|help|-h|--help) usage ;;

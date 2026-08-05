@@ -15,13 +15,23 @@ Two contracts, both learned from real breakage:
      is schedule- AND dispatch-triggered, and must NOT push/commit, invoke the
      LLM miner, or write recommendations.
 
-  3. Neo CLI monorepo migration bootstrap (test.yml required gate): scoped PRs
-     stage on `integration/neo-monorepo` before the final merge to `main`, so
-     the required Test gate must (a) trigger on PRs whose base is that branch,
-     and (b) classify a neo/** change as compiled — otherwise a neo-only PR
-     reads compiled=false and ci-gate accepts every skip, a green no-op gate
-     that falsely claims neo was tested. This check freezes both invariants so
-     they cannot silently regress before neo is imported.
+  3. Haskell required gate (test.yml): scoped PRs stage on
+     `integration/neo-monorepo` before the final merge to `main`, so the required
+     Test gate must trigger on PRs whose base is EITHER of those branches, and
+     its changed-path classifier must keep counting the Haskell compiled surfaces
+     (core/, testbed/, integrations/) so a real code change can never read
+     compiled=false and let ci-gate accept a green no-op skip.
+
+  4. Neo CLI component gate (neo-ci.yml): now that neo has its own crate CI, the
+     Neo CLI is gated by neo-ci.yml, NOT by the Haskell Test gate (test.yml no
+     longer classifies neo/** as compiled; see contract 3). Two invariants keep
+     that gate honest: (a) it must run on ARBITRARY PR bases (no base-branch
+     allowlist) because neo ships through official stacked PRs whose base is
+     whatever lower stack layer they sit on, so an allowlist would silently stop
+     gating neo the moment it stacks on a new branch; and (b) its changed-path
+     classifier must route neo/** to the component jobs. This freezes both so a
+     regression to a main/integration-only filter, or a dropped neo/** route,
+     fails loudly.
 
 Run:  ./dev workflow-check          CI: .github/workflows/checks.yml
       ./dev workflow-check --self-test   (doctor/CI)
@@ -36,11 +46,16 @@ WORKFLOWS = REPO_ROOT / ".github" / "workflows"
 
 UPLOAD_RE = re.compile(r"uses:\s*actions/upload-artifact")
 
-# The required merge gate + the base branches it must cover, and the surfaces
-# its changed-path classifier must treat as compiled. See contract 3 above.
+# The Haskell required merge gate + the base branches it must cover, and the
+# surfaces its changed-path classifier must treat as compiled. See contract 3.
 REQUIRED_GATE = "test.yml"
 GATE_BASE_BRANCHES = ("main", "integration/neo-monorepo")
-COMPILED_SURFACES = ("neo/",)
+COMPILED_SURFACES = ("core/", "testbed/", "integrations/")
+
+# The Neo CLI component gate + the surface its classifier must route. See
+# contract 4. It intentionally has NO base-branch allowlist (stacked PRs).
+COMPONENT_GATE = "neo-ci.yml"
+COMPONENT_SURFACES = ("neo/",)
 
 
 def _indent(line):
@@ -386,6 +401,31 @@ def check_required_gate(name, text):
     return errs
 
 
+def check_component_gate(name, text):
+    """neo-ci.yml is the Neo CLI component gate (contract 4). It must run on
+    ARBITRARY PR bases (no base-branch allowlist, so stacked layers on any branch
+    stay gated) and its changed-path classifier must route every
+    COMPONENT_SURFACES entry to the component jobs."""
+    errs = []
+    prb = pull_request_branches(text)
+    if prb is not None:
+        errs.append(
+            f"{name}: pull_request has a `branches:` allowlist ({', '.join(prb)}) "
+            "the component gate must run on EVERY stacked-PR base, not only "
+            "named branches. Drop the filter and diff-scope in the `changes` job.")
+    pat = classifier_pattern(text)
+    if pat is None:
+        errs.append(f"{name}: no changed-path classifier (PATTERN='...') found: "
+                    "cannot confirm neo/** routes to the component jobs")
+    else:
+        for surface in COMPONENT_SURFACES:
+            if surface not in pat:
+                errs.append(
+                    f"{name}: changed-path classifier lacks '{surface}': a "
+                    f"'{surface}' change would not trigger the component jobs")
+    return errs
+
+
 def run(root=WORKFLOWS):
     errs = []
     for wf in sorted(root.glob("*.yml")):
@@ -397,6 +437,8 @@ def run(root=WORKFLOWS):
             errs += check_codemap_regen(wf.name, text)
         if wf.name == REQUIRED_GATE:
             errs += check_required_gate(wf.name, text)
+        if wf.name == COMPONENT_GATE:
+            errs += check_component_gate(wf.name, text)
     retro = root / "retrospect.yml"
     if not retro.exists():
         errs.append("retrospect.yml is missing (deterministic learning-loop digest)")
@@ -405,6 +447,9 @@ def run(root=WORKFLOWS):
     gate = root / REQUIRED_GATE
     if not gate.exists():
         errs.append(f"{REQUIRED_GATE} is missing (the required Test merge gate)")
+    component = root / COMPONENT_GATE
+    if not component.exists():
+        errs.append(f"{COMPONENT_GATE} is missing (the Neo CLI component gate)")
     return errs
 
 
@@ -599,7 +644,7 @@ def self_test():
         "      - main\n      - integration/neo-monorepo\n"
         "    types: [opened]\n  push:\n    branches:\n      - main\n"
         "jobs:\n  changes:\n    steps:\n      - run: |\n"
-        "          PATTERN='^(core/|testbed/|integrations/|neo/|nix/)'\n"
+        "          PATTERN='^(core/|testbed/|integrations/|nix/)'\n"
     )
     check("well-wired required gate passes", not check_required_gate("test.yml", good_gate))
     check("pull_request branches extracted (block form)",
@@ -609,13 +654,13 @@ def self_test():
                               good_gate.replace("      - integration/neo-monorepo\n", "")))
     check("missing main base is flagged",
           check_required_gate("test.yml", good_gate.replace("      - main\n", "")))
-    check("neo/ absent from classifier is flagged",
-          check_required_gate("test.yml", good_gate.replace("neo/|", "")))
+    check("Haskell compiled surface absent from classifier is flagged",
+          check_required_gate("test.yml", good_gate.replace("core/|", "")))
     check("no pull_request branches filter is flagged",
           check_required_gate("test.yml",
                               "on:\n  pull_request:\n    types: [opened]\n"
                               "jobs:\n  changes:\n    steps:\n"
-                              "      - run: PATTERN='^(neo/)'\n"))
+                              "      - run: PATTERN='^(core/)'\n"))
     inline_gate = (
         "on:\n  pull_request:\n    branches: [main, integration/neo-monorepo]\n"
         "    paths:\n      - 'x/**'\n"
@@ -624,6 +669,27 @@ def self_test():
           pull_request_branches(inline_gate) == ["main", "integration/neo-monorepo"])
     check("push branches are not mistaken for pull_request branches",
           pull_request_branches("on:\n  push:\n    branches:\n      - main\n") is None)
+
+    # Component gate (neo-ci.yml): must run on arbitrary bases + route neo/**.
+    good_component = (
+        "on:\n  pull_request:\n    types: [opened, synchronize]\n"
+        "  push:\n    branches: [main]\n    paths:\n      - 'neo/**'\n"
+        "jobs:\n  changes:\n    steps:\n      - run: |\n"
+        "          PATTERN='^(neo/|nix/neo-package\\.nix|flake\\.nix)'\n"
+    )
+    check("well-wired component gate passes",
+          not check_component_gate("neo-ci.yml", good_component))
+    check("component gate runs on arbitrary bases (no branches allowlist)",
+          pull_request_branches(good_component) is None)
+    check("component gate with a base allowlist is flagged (breaks stacked layers)",
+          check_component_gate(
+              "neo-ci.yml",
+              good_component.replace(
+                  "  pull_request:\n    types: [opened, synchronize]\n",
+                  "  pull_request:\n    branches: [main, integration/neo-monorepo]\n"
+                  "    types: [opened, synchronize]\n")))
+    check("component gate missing neo/** routing is flagged",
+          check_component_gate("neo-ci.yml", good_component.replace("neo/|", "")))
 
     print("workflow-check: self-test", "OK" if ok else "FAILED")
     return 0 if ok else 1
