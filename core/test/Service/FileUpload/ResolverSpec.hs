@@ -344,7 +344,7 @@ spec = do
             |> Task.asResult
 
           case result of
-            Ok resolvedMap -> Map.isEmpty resolvedMap |> shouldBe True
+            Ok resolvedMap -> Map.length resolvedMap |> shouldBe 0
             Err err -> fail [fmt|Expected empty map, got: #{show err}|]
 
       it "fails if any file fails to resolve" \_ -> do

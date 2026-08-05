@@ -144,8 +144,8 @@ spec = do
 
         (endpointsByTransport, schemasByTransport, dispatchMap) <- runner.getEndpointsByTransport eventStore Map.empty
 
-        Map.isEmpty endpointsByTransport |> shouldBe True
-        Map.isEmpty schemasByTransport |> shouldBe True
+        Map.length endpointsByTransport |> shouldBe 0
+        Map.length schemasByTransport |> shouldBe 0
         dispatchMap |> Map.contains "CreateInternalRecord" |> shouldBe True
 
       it "internal command does not appear in public endpoint maps" \_ -> do
