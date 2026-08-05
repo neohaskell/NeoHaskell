@@ -210,7 +210,7 @@ executeAgent ::
   Request command ->
   Task Integration.IntegrationError (Maybe Integration.CommandPayload)
 executeAgent ctx agentRequest = do
-  case Array.length agentRequest.tools == 0 of
+  case Array.isEmpty agentRequest.tools of
     True -> do
       let errorCmd = agentRequest.onError "Agent.agent: tools list is empty"
       let payload = Integration.makeCommandPayload errorCmd
