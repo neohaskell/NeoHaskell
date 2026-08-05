@@ -1,6 +1,7 @@
 pub mod detect;
 pub mod error;
 pub mod install;
+pub mod release;
 pub mod ui;
 pub mod verify;
 

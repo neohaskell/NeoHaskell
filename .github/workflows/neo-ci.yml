@@ -196,15 +196,28 @@ jobs:
       - name: Smoke the flake app
         run: nix run .#neo -- --version
 
-  # The generated-project consumer contract (Linux). One blocking end-to-end
-  # proof that the Nix-packaged `neo` generates a project from the embedded
-  # starter offline and that the generated project builds, tests, runs, and
-  # answers GET /health against THIS monorepo checkout (neohaskell overridden to
-  # path:<checkout>), rather than mutable upstream `main`. It orchestrates the
-  # installed binary + a real generated project; it does not duplicate the Rust
-  # unit tests. It runs on the broader `contract` surface (also core/,
-  # integrations/) because a change there can break the starter->upstream
-  # contract. Blocking (never continue-on-error): a failure here is the signal.
+  # The generated-project consumer contract (Linux) — ALSO the release rehearsal.
+  # One blocking end-to-end proof that the RELEASE-PACKAGED, checksum-VERIFIED,
+  # PORTABLE native `neo` binary (the exact artifact a user downloads) generates a
+  # project from the embedded starter offline and that the generated project
+  # builds, tests, runs, and answers GET /health against THIS monorepo checkout
+  # (neohaskell overridden to path:<checkout>), rather than mutable upstream
+  # `main`. It builds the binary the SAME portable way the release does (pinned
+  # cargo, NOT nix build — a nix binary hard-codes /nix/store libs), runs the
+  # portability gate, then packages + checksum-verifies + atomically installs via
+  # the shared scripts/neo-release contract and feeds that installed binary to the
+  # contract via NEO_BIN. So the release path and the consumer path are proven
+  # together. Runs on the broader `contract` surface (also core/, integrations/)
+  # because a change there can break the starter->upstream contract. At minimum
+  # Linux x86_64 is the blocking consumer rehearsal (clean-machine/SLO proof is a
+  # separate concern, not claimed here; per-target native install+smoke lives in
+  # neo-release.yml). Blocking (never continue-on-error): a failure here is the
+  # signal.
+  #
+  # This job holds NO secret and is reachable by PR-controlled code, so it must
+  # never touch Cachix write. READ acceleration is automatic via the flake's
+  # nixConfig substituter; WRITE happens only in the isolated, main-only
+  # `cache-populate` job below.
   consumer-contract:
     needs: changes
     if: >-
@@ -212,12 +225,22 @@ jobs:
       && needs.changes.outputs.contract == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 150
+    env:
+      REHEARSAL_TARGET: x86_64-unknown-linux-gnu
     steps:
       # The contract creates a local Git input at the exact checkout revision.
       # Nix rejects git+file inputs cloned from shallow repositories.
       - uses: actions/checkout@v7.0.0
         with:
           fetch-depth: 0
+      # Pinned, reproducible toolchain (matches the neo dev shell) — a cargo build
+      # links system C libs, so the artifact is portable, exactly like the release.
+      - uses: dtolnay/rust-toolchain@1.94.0
+        with:
+          targets: x86_64-unknown-linux-gnu
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: neo
       - uses: DeterminateSystems/determinate-nix-action@v3.21.7
         with:
           extra-conf: |
@@ -225,7 +248,19 @@ jobs:
       - uses: DeterminateSystems/magic-nix-cache-action@v14
       - name: Self-test the contract orchestration logic (timeout, cleanup, quoting, readiness)
         run: ./dev neo-consumer-contract --self-test
-      - name: Run the generated-project consumer contract
+      # Build the PORTABLE binary the same way the release does, gate portability,
+      # then package + checksum-verify + atomically install it — so the rehearsal
+      # exercises the real download-and-verify install contract on the real artifact.
+      - name: Build portable binary, gate portability, verify + install
+        run: |
+          set -euo pipefail
+          cargo build --release --locked --manifest-path neo/Cargo.toml --target "$REHEARSAL_TARGET"
+          ./scripts/neo-release inspect "neo/target/${REHEARSAL_TARGET}/release/neo" "$REHEARSAL_TARGET"
+          ./scripts/neo-release package "$REHEARSAL_TARGET" "neo/target/${REHEARSAL_TARGET}/release/neo" "$RUNNER_TEMP/neo-artifacts"
+          ./scripts/neo-release checksums "$RUNNER_TEMP/neo-artifacts"
+          ./scripts/neo-release install "$RUNNER_TEMP/neo-artifacts" "$REHEARSAL_TARGET" "$RUNNER_TEMP/neo-bin/neo"
+          echo "NEO_BIN=$RUNNER_TEMP/neo-bin/neo" >> "$GITHUB_ENV"
+      - name: Run the generated-project consumer contract against the installed artifact
         env:
           # Keep each heavy phase inside the job wall-clock so the contract's own
           # bounded timeout + clean teardown fire before GitHub kills the job.
@@ -233,6 +268,73 @@ jobs:
           CONTRACT_TEST_TIMEOUT: "2400"
           CONTRACT_READY_DEADLINE: "300"
         run: ./dev neo-consumer-contract
+
+  # Trusted cache population — ISOLATED from any PR-controlled code. Runs ONLY on
+  # a push to main of THIS repository, so the CACHIX_AUTH_TOKEN it holds is never
+  # exposed to a job that checks out or executes a pull request's code. It runs
+  # the EXACT consumer path (the same ./dev neo-consumer-contract) so the cache is
+  # populated from real contract execution, then Cachix pushes what that built.
+  # A missing token skips honestly (job succeeds, nothing pushed, no pretense).
+  # NOT part of the required gate: it is a best-effort warmer, never a merge
+  # blocker, and the cache only ACCELERATES — it never replaces execution.
+  cache-populate:
+    needs: changes
+    if: >-
+      github.event_name == 'push'
+      && github.ref == 'refs/heads/main'
+      && github.repository == 'neohaskell/NeoHaskell'
+      && needs.changes.outputs.contract == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    env:
+      CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
+      REHEARSAL_TARGET: x86_64-unknown-linux-gnu
+    steps:
+      - name: Honest skip when no token is configured
+        if: ${{ env.CACHIX_AUTH_TOKEN == '' }}
+        run: echo "No CACHIX_AUTH_TOKEN configured — skipping cache population (not a failure)."
+      - uses: actions/checkout@v7.0.0
+        if: ${{ env.CACHIX_AUTH_TOKEN != '' }}
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@1.94.0
+        if: ${{ env.CACHIX_AUTH_TOKEN != '' }}
+        with:
+          targets: x86_64-unknown-linux-gnu
+      - uses: Swatinem/rust-cache@v2
+        if: ${{ env.CACHIX_AUTH_TOKEN != '' }}
+        with:
+          workspaces: neo
+      - uses: DeterminateSystems/determinate-nix-action@v3.21.7
+        if: ${{ env.CACHIX_AUTH_TOKEN != '' }}
+        with:
+          extra-conf: |
+            accept-flake-config = true
+      - uses: DeterminateSystems/magic-nix-cache-action@v14
+        if: ${{ env.CACHIX_AUTH_TOKEN != '' }}
+      # Cachix push is set up only now — after the trust guard (main-only + token
+      # present) — so the token is never present alongside PR-controlled code. Its
+      # post-job hook pushes the store paths the consumer path builds below.
+      - name: Configure Cachix push
+        if: ${{ env.CACHIX_AUTH_TOKEN != '' }}
+        uses: cachix/cachix-action@v17
+        with:
+          name: neohaskell
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+      - name: Populate the cache from the EXACT consumer path
+        if: ${{ env.CACHIX_AUTH_TOKEN != '' }}
+        env:
+          CONTRACT_BUILD_TIMEOUT: "5400"
+          CONTRACT_TEST_TIMEOUT: "2400"
+          CONTRACT_READY_DEADLINE: "300"
+        run: |
+          set -euo pipefail
+          cargo build --release --locked --manifest-path neo/Cargo.toml --target "$REHEARSAL_TARGET"
+          ./scripts/neo-release inspect "neo/target/${REHEARSAL_TARGET}/release/neo" "$REHEARSAL_TARGET"
+          ./scripts/neo-release package "$REHEARSAL_TARGET" "neo/target/${REHEARSAL_TARGET}/release/neo" "$RUNNER_TEMP/neo-artifacts"
+          ./scripts/neo-release checksums "$RUNNER_TEMP/neo-artifacts"
+          ./scripts/neo-release install "$RUNNER_TEMP/neo-artifacts" "$REHEARSAL_TARGET" "$RUNNER_TEMP/neo-bin/neo"
+          NEO_BIN="$RUNNER_TEMP/neo-bin/neo" ./dev neo-consumer-contract
 
   # THE REQUIRED CHECK for the neo component. `if: always()` + no workflow-level
   # paths filter => it always reports a conclusion on every PR, so it is safe to

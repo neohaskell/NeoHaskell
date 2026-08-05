@@ -1,41 +1,89 @@
-# Installer CI — adapted for monorepo. Release tags use 'installer-v*' prefix
-# (e.g., installer-v0.1.0) to avoid conflicts with core library tags.
+# Installer CI — the Rust `installer/` crate (`neo-install`) in the monorepo.
 #
-# NOTE: GitHub Actions path filters do NOT apply to tag-based triggers, so the
-# 'installer-v*' tag prefix is the sole disambiguation for installer releases.
+# Release tags use the 'installer-v*' prefix (e.g. installer-v0.1.0), independent
+# of the Haskell library tags and the neo CLI's 'neo-v*' tags. GitHub Actions
+# path filters do NOT apply to tag triggers, so that prefix is the sole
+# disambiguation for an installer release.
 #
-# Scope: lint, unit tests, and cross-target release builds only. This repository
-# does not maintain a fresh-install workflow: installing Nix mutates the runner
-# and takes roughly 30 minutes. Release-specific fresh-install validation remains
-# an explicit maintainer decision outside automated CI.
+# Base-branch policy (deliberate, mirrors neo-ci.yml): there is NO `branches:`
+# allowlist on the pull_request trigger. The installer ships through official
+# stacked PRs whose base is whatever lower stack layer they sit on, so an
+# allowlist would silently stop gating the installer the moment it stacks on a
+# new branch. Diff-scoping is done PER-PR by the `changes` job. The required
+# check is the always()-running `installer-ci-gate` aggregate, so a skipped
+# component job never leaves a required check pending in branch protection.
+#
+# Scope: lint, unit/consistency tests, and cross-target release builds. There is
+# no fresh-install workflow (installing Nix mutates the runner and takes ~30m);
+# release-specific fresh-install validation is a maintainer decision outside CI.
 name: Installer CI
 
 on:
   push:
     branches: [main]
-    tags: ['installer-v*']
-    paths:
-      - 'installer/**'
+    tags: ["installer-v*"]
   pull_request:
-    # Neo CLI monorepo migration (bootstrap): installer PRs targeting the
-    # staging integration branch get the same required installer CI as PRs to
-    # main. main behavior is unchanged — this only ADDS the integration base.
-    branches: [main, integration/neo-monorepo]
-    paths:
-      - 'installer/**'
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: installer-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  # Per-PR diff scoping. On push/tag the trigger already implies relevance
+  # (touched=true). On a PR we diff against the actual base ref, whatever it is
+  # named, so stacked layers work unchanged.
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      touched: ${{ steps.detect.outputs.touched }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - id: detect
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" != "pull_request" ]; then
+            echo "touched=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          CHANGED="$(git diff --name-only "origin/${BASE_REF}...HEAD")"
+          # The installer crate PLUS its release workflow (a workflow change can
+          # break the release/asset contract the bootstrap + install path rely on).
+          PATTERN='^(installer/|\.github/workflows/installer-ci\.yml)'
+          if echo "$CHANGED" | grep -qE "$PATTERN"; then
+            echo "touched=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "touched=false" >> "$GITHUB_OUTPUT"
+          fi
+
   lint:
+    needs: changes
+    if: >-
+      (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
+      && needs.changes.outputs.touched == 'true'
     name: Lint
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: installer
     steps:
       - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
@@ -43,16 +91,23 @@ jobs:
         with:
           workspaces: installer
       - run: cargo fmt --check
-      - run: cargo clippy -- -D warnings
+      - run: cargo clippy --all-targets --all-features -- -D warnings
 
   test:
+    needs: changes
+    if: >-
+      (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
+      && needs.changes.outputs.touched == 'true'
     name: Test
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: installer
     steps:
       - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
@@ -60,12 +115,18 @@ jobs:
       - run: cargo test --locked --all-features
 
   build:
+    needs: changes
+    if: >-
+      (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
+      && needs.changes.outputs.touched == 'true'
     name: Build (${{ matrix.target }})
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
     defaults:
       run:
         working-directory: installer
     strategy:
+      fail-fast: false
       matrix:
         include:
           - target: x86_64-unknown-linux-gnu
@@ -82,6 +143,8 @@ jobs:
             cross: false
     steps:
       - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
@@ -96,39 +159,93 @@ jobs:
           tool: cross
       - name: Build (cross)
         if: matrix.cross
-        run: cross build --release --target ${{ matrix.target }}
+        run: cross build --release --locked --target ${{ matrix.target }}
       - name: Build (native)
         if: '!matrix.cross'
-        run: cargo build --release --target ${{ matrix.target }}
-      - name: Package
+        run: cargo build --release --locked --target ${{ matrix.target }}
+      - name: Package the native asset
+        env:
+          TARGET: ${{ matrix.target }}
         run: |
+          set -euo pipefail
           mkdir -p artifacts
-          cp target/${{ matrix.target }}/release/neo-install artifacts/installer-neo-install-${{ matrix.target }}
+          cp "target/${TARGET}/release/neo-install" "artifacts/installer-neo-install-${TARGET}"
       - uses: actions/upload-artifact@v7
         with:
           name: installer-neo-install-${{ matrix.target }}
-          path: installer/artifacts/installer-neo-install-${{ matrix.target }}
+          path: |
+            installer/artifacts/installer-neo-install-${{ matrix.target }}
+          if-no-files-found: error
 
+  # Publish ONLY from an 'installer-v*' tag, and ONLY after lint+test+build pass.
   release:
-    name: Release
     needs: [lint, test, build]
     if: startsWith(github.ref, 'refs/tags/installer-v')
+    name: Release
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/download-artifact@v8
         with:
           path: artifacts
           merge-multiple: true
-      - name: Generate checksums
+      # ONE checksum-manifest convention across both release trains: the bare name
+      # SHA256SUMS (no `.txt`), matching the neo train (scripts/neo-release) and
+      # the installer's own native-download path (installer/src/release.rs).
+      - name: Generate aggregate checksums
         run: |
           cd artifacts
-          sha256sum installer-neo-install-* > SHA256SUMS.txt
+          sha256sum installer-neo-install-* > SHA256SUMS
       - uses: softprops/action-gh-release@v3
         with:
           files: |
             artifacts/installer-neo-install-*
-            artifacts/SHA256SUMS.txt
+            artifacts/SHA256SUMS
           generate_release_notes: true
+
+  # THE REQUIRED CHECK for the installer component. `if: always()` + no
+  # workflow-level paths filter => it always reports a conclusion, so it is safe
+  # to require in branch protection (unlike the diff-scoped component jobs).
+  # Skips are accepted only when there is genuinely nothing to test: a draft PR,
+  # or a PR that changed no installer surface.
+  installer-ci-gate:
+    if: always()
+    needs: [changes, lint, test, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check all installer jobs passed (or correctly skipped)
+        env:
+          IS_DRAFT: ${{ github.event_name == 'pull_request' && github.event.pull_request.draft }}
+          TOUCHED: ${{ needs.changes.outputs.touched }}
+          CHANGES_RESULT: ${{ needs.changes.result }}
+        run: |
+          if [[ "$CHANGES_RESULT" != "success" ]]; then
+            echo "::error::changes-detection job did not succeed ($CHANGES_RESULT)"
+            exit 1
+          fi
+          allow_skip=false
+          if [[ "$IS_DRAFT" == "true" || "$TOUCHED" != "true" ]]; then
+            allow_skip=true
+          fi
+          results=(
+            "lint=${{ needs.lint.result }}"
+            "test=${{ needs.test.result }}"
+            "build=${{ needs.build.result }}"
+          )
+          for entry in "${results[@]}"; do
+            job="${entry%%=*}"; r="${entry#*=}"
+            if [[ "$r" == "skipped" && "$allow_skip" == "true" ]]; then
+              continue
+            fi
+            if [[ "$r" != "success" ]]; then
+              echo "::error::$job did not pass (result: $r)"
+              exit 1
+            fi
+          done
+          echo "installer-ci-gate: all installer jobs passed (or correctly skipped)"

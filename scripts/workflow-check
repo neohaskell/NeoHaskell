@@ -529,6 +529,249 @@ def check_consumer_contract(name, text):
     return errs
 
 
+# ── neo-release.yml: Neo CLI native-release publication contract ──────────────
+# (PR 6) The release workflow builds native `neo` binaries for every installer
+# target and publishes them ONLY from a `neo-v*` tag, after the build/test gates.
+# These invariants are load-bearing and unreviewable-by-eye, so freeze them:
+#   (a) trigger is tag-only for publication — a `neo-v*` push tag, and NO
+#       auto-publishing trigger (no pull_request / pull_request_target, no
+#       push-to-branch). A maintainer workflow_dispatch may REHEARSE only.
+#   (b) publication is fail-closed: the publish job is gated on the `neo-v*` tag
+#       ref, so any non-tag run builds/rehearses but never publishes.
+#   (c) least privilege: only the publish job holds `contents: write`; the build
+#       matrix stays read-only.
+#   (d) the build matrix covers EVERY installer target, so no platform is silently
+#       dropped from a release.
+#   (e) asset naming + checksums go through the shared `scripts/neo-release`
+#       contract, so published names can't drift from what the installer downloads.
+NEO_RELEASE_GATE = "neo-release.yml"
+NEO_RELEASE_TARGETS = (
+    "x86_64-unknown-linux-gnu",
+    "aarch64-unknown-linux-gnu",
+    "x86_64-apple-darwin",
+    "aarch64-apple-darwin",
+)
+NEO_RELEASE_TAG_PREFIX = "neo-v"
+NEO_RELEASE_SCRIPT = "scripts/neo-release"
+
+
+def check_neo_release(name, text):
+    errs = []
+    E = errs.append
+    code = strip_comments(text)
+    on = _on_block(code)
+    triggers = _on_trigger_keys(on)
+    jobs = job_blocks(code)
+
+    # (a) tag-only publication trigger.
+    if "push" not in triggers:
+        E(f"{name}: no `push:` trigger — a Neo release must fire on a "
+          f"'{NEO_RELEASE_TAG_PREFIX}*' tag push")
+    else:
+        # the push trigger must be tag-scoped to neo-v* (not a branch push).
+        if "tags:" not in on or NEO_RELEASE_TAG_PREFIX not in on:
+            E(f"{name}: push trigger is not scoped to '{NEO_RELEASE_TAG_PREFIX}*' tags")
+        if re.search(r"push:\s*\n(?:\s+[^\n]*\n)*?\s+branches:", on):
+            E(f"{name}: push trigger includes `branches:` — a release must publish "
+              "off a tag, never a branch push")
+    for banned in ("pull_request", "pull_request_target"):
+        if banned in triggers:
+            E(f"{name}: `on:` has a '{banned}' trigger — the release workflow must "
+              "never build-to-publish from a PR (PR rehearsal lives in neo-ci.yml)")
+
+    # (b) fail-closed publish gate on the neo-v* tag ref.
+    publish = jobs.get("publish", "")
+    if not publish:
+        E(f"{name}: missing the `publish` job")
+    else:
+        if not re.search(
+            r"if:\s*startsWith\(github\.ref,\s*'refs/tags/" + re.escape(NEO_RELEASE_TAG_PREFIX),
+            publish,
+        ):
+            E(f"{name}: publish job is not gated on a '{NEO_RELEASE_TAG_PREFIX}*' tag ref "
+              "(`if: startsWith(github.ref, 'refs/tags/neo-v')`) — publication must be "
+              "fail-closed to tags")
+        if "contents: write" not in publish:
+            E(f"{name}: publish job lacks `contents: write` (cannot upload the release)")
+
+    # (c) least privilege: build matrix must not elevate to contents: write.
+    build = jobs.get("build", "")
+    if build and "contents: write" in build:
+        E(f"{name}: build job holds `contents: write` — only the tag-gated publish "
+          "job may write (least privilege)")
+
+    # (d) every installer target is built.
+    for target in NEO_RELEASE_TARGETS:
+        if target not in code:
+            E(f"{name}: build matrix is missing target '{target}' — the release would "
+              "drop a platform the installer supports")
+
+    # (e) naming/checksums via the shared contract.
+    if NEO_RELEASE_SCRIPT not in code:
+        E(f"{name}: does not package/checksum via `{NEO_RELEASE_SCRIPT}` — asset names "
+          "would drift from what the installer downloads")
+
+    # (f) PORTABLE, tested artifacts. The release binary must be a portable cargo
+    #     build (a `nix build .#neo` output hard-codes /nix/store libs and is not
+    #     runnable off Nix), it must pass the portability gate, and each target
+    #     must be natively install+smoked before publication.
+    if "cargo build" not in build:
+        E(f"{name}: build job does not produce a portable binary via `cargo build` "
+          "(a nix-built binary references /nix/store and is not portable)")
+    if "nix build" in build:
+        E(f"{name}: build job produces the release artifact via `nix build` — that "
+          "binary hard-codes /nix/store paths and is NOT portable; use a pinned cargo build")
+    if f"{NEO_RELEASE_SCRIPT} inspect" not in build:
+        E(f"{name}: build job does not run the portability gate "
+          f"(`{NEO_RELEASE_SCRIPT} inspect`) before packaging")
+    if f"{NEO_RELEASE_SCRIPT} install" not in build:
+        E(f"{name}: build job does not natively install the packaged asset "
+          f"(`{NEO_RELEASE_SCRIPT} install`) before publication")
+    if "--version" not in build:
+        E(f"{name}: build job does not natively smoke the installed asset "
+          "(`neo --version`) before publication")
+    return errs
+
+
+# ── neo-ci.yml: release-rehearsal, secret isolation + Cachix trust boundary ───
+# (PR 6 / adversarial-review hardening) Two jobs, one invariant set:
+#   consumer-contract — the PR-reachable release rehearsal. Builds the PORTABLE
+#     binary (pinned cargo, not nix), runs the portability gate, checksum-verifies
+#     + installs it, and drives the exact consumer path via NEO_BIN. Because it
+#     checks out and runs PR-controlled code it must hold NO Cachix secret at all.
+#   cache-populate — an ISOLATED, main-only job that alone holds CACHIX_AUTH_TOKEN,
+#     runs the exact consumer path, pushes to Cachix, and skips honestly when no
+#     token is configured (never fails, never pretends to push).
+CACHE_POPULATE_JOB = "cache-populate"
+
+
+def _steps_of(job_text):
+    """Each step block in a job (split on `      - ` step markers)."""
+    steps, cur = [], None
+    for ln in job_text.splitlines():
+        if re.match(r"^      - ", ln):
+            if cur is not None:
+                steps.append("\n".join(cur))
+            cur = [ln]
+        elif cur is not None:
+            cur.append(ln)
+    if cur is not None:
+        steps.append("\n".join(cur))
+    return steps
+
+
+def check_release_rehearsal(name, text):
+    errs = []
+    E = errs.append
+    # Executable content only.
+    jobs = job_blocks(strip_comments(text))
+    job = jobs.get(CONSUMER_CONTRACT_JOB, "")
+    if not job:
+        # check_consumer_contract already reports the missing job.
+        return errs
+
+    # Release rehearsal wiring: build portable (gated), install, feed via NEO_BIN.
+    if NEO_RELEASE_SCRIPT not in job:
+        E(f"{name}: `{CONSUMER_CONTRACT_JOB}` no longer packages the release artifact "
+          f"via `{NEO_RELEASE_SCRIPT}` — the release path is not rehearsed")
+    if "NEO_BIN=" not in job:
+        E(f"{name}: `{CONSUMER_CONTRACT_JOB}` does not drive the contract through the "
+          "installed release artifact (NEO_BIN=...) — it must rehearse the real binary")
+    if f"{NEO_RELEASE_SCRIPT} install" not in job:
+        E(f"{name}: `{CONSUMER_CONTRACT_JOB}` does not checksum-verify + install the "
+          f"artifact (`{NEO_RELEASE_SCRIPT} install`) before running the contract")
+    if f"{NEO_RELEASE_SCRIPT} inspect" not in job:
+        E(f"{name}: `{CONSUMER_CONTRACT_JOB}` does not run the portability gate "
+          f"(`{NEO_RELEASE_SCRIPT} inspect`) — it could rehearse a non-portable binary")
+
+    # SECRET ISOLATION: the PR-reachable rehearsal must hold NO Cachix secret.
+    if "CACHIX_AUTH_TOKEN" in job or "cachix" in job.lower():
+        E(f"{name}: `{CONSUMER_CONTRACT_JOB}` references Cachix/CACHIX_AUTH_TOKEN — this "
+          "job checks out and runs PR-controlled code and must hold NO cache secret. "
+          f"Move cache population to the isolated `{CACHE_POPULATE_JOB}` job.")
+    return errs
+
+
+def check_cache_populate(name, text):
+    """The isolated, main-only cache-population job (adversarial-review fix): it
+    alone holds the token, is unreachable by PR code, runs the exact consumer
+    path, and skips honestly when no token is set."""
+    errs = []
+    E = errs.append
+    jobs = job_blocks(strip_comments(text))
+    job = jobs.get(CACHE_POPULATE_JOB, "")
+    if not job:
+        E(f"{name}: missing the isolated `{CACHE_POPULATE_JOB}` job — trusted cache "
+          "population must not live in a PR-reachable job")
+        return errs
+
+    # main-only trust guard (push to refs/heads/main), never a pull_request.
+    guard = re.search(r"if:\s*>-?\s*\n((?:\s+[^\n]*\n)+)", job)
+    guard_text = guard.group(1) if guard else job
+    if "refs/heads/main" not in guard_text:
+        E(f"{name}: `{CACHE_POPULATE_JOB}` is not gated to `github.ref == 'refs/heads/main'` "
+          "— the token must only ever run on trusted main pushes")
+    if "pull_request" in guard_text:
+        E(f"{name}: `{CACHE_POPULATE_JOB}` gate references pull_request — it must be "
+          "main-push-only, never reachable from a PR")
+    # It holds the token and runs the exact consumer path.
+    if "CACHIX_AUTH_TOKEN" not in job:
+        E(f"{name}: `{CACHE_POPULATE_JOB}` does not use CACHIX_AUTH_TOKEN (it is the one "
+          "job that should)")
+    if "cachix/cachix-action" not in job:
+        E(f"{name}: `{CACHE_POPULATE_JOB}` has no cachix-action push step")
+    if CONTRACT_VERB not in job:
+        E(f"{name}: `{CACHE_POPULATE_JOB}` does not run the exact consumer path "
+          f"(`./dev {CONTRACT_VERB}`) — the cache must be populated from real execution")
+    # Honest skip: a step gated on an EMPTY token (skip, don't fail/pretend).
+    if "CACHIX_AUTH_TOKEN == ''" not in job:
+        E(f"{name}: `{CACHE_POPULATE_JOB}` has no honest-skip path for a missing token "
+          "(`env.CACHIX_AUTH_TOKEN == ''`) — a missing token must skip, not fail")
+    # Every Cachix/token-bearing work step must be guarded on token presence.
+    for step in _steps_of(job):
+        if "cachix/cachix-action" in step or CONTRACT_VERB in step:
+            cond = (re.search(r"if:\s*(.+)", step) or [None, ""])[1]
+            if "CACHIX_AUTH_TOKEN != ''" not in cond:
+                E(f"{name}: a `{CACHE_POPULATE_JOB}` work step is not gated on token "
+                  "presence (`env.CACHIX_AUTH_TOKEN != ''`) — it would run/push with no token")
+    return errs
+
+
+# ── installer-ci.yml: installer component gate on stacked PRs ──────────────────
+# (PR 6) Like the neo component gate, the installer gate must run on ARBITRARY PR
+# bases (no base-branch allowlist, so a stacked layer on any branch stays gated),
+# and its required check must be an always()-running aggregate that evaluates the
+# component jobs — so a diff-skipped component job never leaves a required check
+# pending in branch protection.
+INSTALLER_GATE = "installer-ci.yml"
+INSTALLER_GATE_JOB = "installer-ci-gate"
+
+
+def check_installer_ci(name, text):
+    errs = []
+    E = errs.append
+    prb = pull_request_branches(text)
+    if prb is not None:
+        E(f"{name}: pull_request has a `branches:` allowlist ({', '.join(prb)}) — the "
+          "installer gate must run on EVERY stacked-PR base, not only named branches. "
+          "Drop the filter and diff-scope in the `changes` job.")
+    gate = job_blocks(text).get(INSTALLER_GATE_JOB, "")
+    if not gate:
+        E(f"{name}: missing the `{INSTALLER_GATE_JOB}` aggregate gate (the branch-"
+          "protection-safe required check)")
+        return errs
+    if not re.search(r"if:\s*always\(\)", gate):
+        E(f"{name}: `{INSTALLER_GATE_JOB}` is not `if: always()` — a diff-skipped "
+          "component job would leave the required check pending forever")
+    if not re.search(r"^    needs:.*\bbuild\b", gate, re.M):
+        E(f"{name}: `{INSTALLER_GATE_JOB}` does not `needs:` the component jobs "
+          "(build/lint/test) — it would not aggregate their results")
+    if ".result }}" not in gate and ".result" not in gate:
+        E(f"{name}: `{INSTALLER_GATE_JOB}` never evaluates a component job `.result` — "
+          "a failure/skip would pass unnoticed")
+    return errs
+
+
 def run(root=WORKFLOWS):
     errs = []
     for wf in sorted(root.glob("*.yml")):
@@ -543,6 +786,12 @@ def run(root=WORKFLOWS):
         if wf.name == COMPONENT_GATE:
             errs += check_component_gate(wf.name, text)
             errs += check_consumer_contract(wf.name, text)
+            errs += check_release_rehearsal(wf.name, text)
+            errs += check_cache_populate(wf.name, text)
+        if wf.name == NEO_RELEASE_GATE:
+            errs += check_neo_release(wf.name, text)
+        if wf.name == INSTALLER_GATE:
+            errs += check_installer_ci(wf.name, text)
     retro = root / "retrospect.yml"
     if not retro.exists():
         errs.append("retrospect.yml is missing (deterministic learning-loop digest)")
@@ -554,6 +803,10 @@ def run(root=WORKFLOWS):
     component = root / COMPONENT_GATE
     if not component.exists():
         errs.append(f"{COMPONENT_GATE} is missing (the Neo CLI component gate)")
+    if not (root / NEO_RELEASE_GATE).exists():
+        errs.append(f"{NEO_RELEASE_GATE} is missing (the Neo CLI native-release publication workflow)")
+    if not (root / INSTALLER_GATE).exists():
+        errs.append(f"{INSTALLER_GATE} is missing (the installer component gate)")
     return errs
 
 
@@ -858,6 +1111,190 @@ def self_test():
            good_contract.replace(
                "          CONTRACT='^(neo/|core/|integrations/|nix/neo-package\\.nix|scripts/neo-consumer-contract)'\n",
                ""))
+
+    # ── neo-release.yml native-release publication contract (PR 6) ────────────
+    good_release = (
+        "name: Neo Release\n"
+        "on:\n"
+        "  push:\n"
+        "    tags: [\"neo-v*\"]\n"
+        "  workflow_dispatch: {}\n"
+        "permissions:\n"
+        "  contents: read\n"
+        "jobs:\n"
+        "  build:\n"
+        "    strategy:\n      matrix:\n        include:\n"
+        "          - target: x86_64-unknown-linux-gnu\n"
+        "          - target: aarch64-unknown-linux-gnu\n"
+        "          - target: x86_64-apple-darwin\n"
+        "          - target: aarch64-apple-darwin\n"
+        "    steps:\n"
+        "      - run: cargo build --release --locked --manifest-path neo/Cargo.toml --target \"$TARGET\"\n"
+        "      - run: ./scripts/neo-release inspect \"neo/target/$TARGET/release/neo\" \"$TARGET\"\n"
+        "      - run: ./scripts/neo-release package \"$TARGET\" \"neo/target/$TARGET/release/neo\" artifacts\n"
+        "      - run: ./scripts/neo-release install artifacts \"$TARGET\" \"$RUNNER_TEMP/neo-smoke/neo\"\n"
+        "      - run: \"$RUNNER_TEMP/neo-smoke/neo\" --version\n"
+        "  publish:\n"
+        "    needs: [build]\n"
+        "    if: startsWith(github.ref, 'refs/tags/neo-v')\n"
+        "    permissions:\n      contents: write\n"
+        "    steps:\n"
+        "      - run: ./scripts/neo-release checksums artifacts\n"
+    )
+
+    def nr_bad(name_, mutated):
+        check(name_, bool(check_neo_release("neo-release.yml", mutated)))
+
+    check("well-formed neo-release passes",
+          not check_neo_release("neo-release.yml", good_release))
+    nr_bad("a pull_request trigger is flagged (no build-to-publish on PRs)",
+           good_release.replace("  workflow_dispatch: {}\n",
+                                "  workflow_dispatch: {}\n  pull_request:\n    types: [opened]\n"))
+    nr_bad("a branch push trigger is flagged",
+           good_release.replace("    tags: [\"neo-v*\"]\n",
+                                "    branches: [main]\n    tags: [\"neo-v*\"]\n"))
+    nr_bad("publish not gated on the neo-v tag ref is flagged",
+           good_release.replace("    if: startsWith(github.ref, 'refs/tags/neo-v')\n", ""))
+    nr_bad("build job holding contents: write is flagged (least privilege)",
+           good_release.replace("  build:\n    strategy:\n",
+                                "  build:\n    permissions:\n      contents: write\n    strategy:\n"))
+    nr_bad("publish lacking contents: write is flagged",
+           good_release.replace("    permissions:\n      contents: write\n", ""))
+    nr_bad("a dropped release target is flagged",
+           good_release.replace("          - target: aarch64-unknown-linux-gnu\n", ""))
+    nr_bad("packaging without scripts/neo-release is flagged (asset-name drift)",
+           good_release.replace("scripts/neo-release", "cp-inline-naming"))
+    nr_bad("building the release artifact via nix build is flagged (non-portable)",
+           good_release.replace(
+               "      - run: cargo build --release --locked --manifest-path neo/Cargo.toml --target \"$TARGET\"\n",
+               "      - run: nix build .#neo\n"))
+    nr_bad("missing the portability gate is flagged",
+           good_release.replace(
+               "      - run: ./scripts/neo-release inspect \"neo/target/$TARGET/release/neo\" \"$TARGET\"\n", ""))
+    nr_bad("missing native install+smoke is flagged",
+           good_release.replace(
+               "      - run: ./scripts/neo-release install artifacts \"$TARGET\" \"$RUNNER_TEMP/neo-smoke/neo\"\n"
+               "      - run: \"$RUNNER_TEMP/neo-smoke/neo\" --version\n", ""))
+
+    # ── neo-ci.yml: release rehearsal + SECRET ISOLATION + cache-populate (PR 6) ─
+    good_rehearsal = (
+        "jobs:\n"
+        "  consumer-contract:\n"
+        "    steps:\n"
+        "      - uses: actions/checkout@v7.0.0\n"
+        "      - name: build+install\n"
+        "        run: |\n"
+        "          cargo build --release --locked --manifest-path neo/Cargo.toml --target x\n"
+        "          ./scripts/neo-release inspect neo/target/x/release/neo x\n"
+        "          ./scripts/neo-release package x neo/target/x/release/neo o\n"
+        "          ./scripts/neo-release install o x $RUNNER_TEMP/neo-bin/neo\n"
+        "          echo NEO_BIN=$RUNNER_TEMP/neo-bin/neo >> $GITHUB_ENV\n"
+        "      - run: ./dev neo-consumer-contract\n"
+    )
+
+    def rh_bad(name_, mutated):
+        check(name_, bool(check_release_rehearsal("neo-ci.yml", mutated)))
+
+    check("well-wired release rehearsal (no secret) passes",
+          not check_release_rehearsal("neo-ci.yml", good_rehearsal))
+    rh_bad("a Cachix secret in the PR-reachable rehearsal is flagged (isolation)",
+           good_rehearsal.replace(
+               "  consumer-contract:\n    steps:\n",
+               "  consumer-contract:\n    env:\n      CACHIX_AUTH_TOKEN: x\n    steps:\n"))
+    rh_bad("a cachix-action in the PR-reachable rehearsal is flagged (isolation)",
+           good_rehearsal.replace(
+               "      - uses: actions/checkout@v7.0.0\n",
+               "      - uses: actions/checkout@v7.0.0\n      - uses: cachix/cachix-action@v17\n"))
+    rh_bad("missing the portability gate in the rehearsal is flagged",
+           good_rehearsal.replace(
+               "          ./scripts/neo-release inspect neo/target/x/release/neo x\n", ""))
+    rh_bad("not driving the contract via the installed artifact (NEO_BIN) is flagged",
+           good_rehearsal.replace("          echo NEO_BIN=$RUNNER_TEMP/neo-bin/neo >> $GITHUB_ENV\n", ""))
+    rh_bad("not verify-installing the artifact is flagged",
+           good_rehearsal.replace(
+               "          ./scripts/neo-release install o x $RUNNER_TEMP/neo-bin/neo\n", ""))
+
+    # cache-populate: isolated, main-only, token-holding, honest-skip.
+    good_cache = (
+        "jobs:\n"
+        "  cache-populate:\n"
+        "    if: >-\n"
+        "      github.event_name == 'push'\n"
+        "      && github.ref == 'refs/heads/main'\n"
+        "      && github.repository == 'neohaskell/NeoHaskell'\n"
+        "    env:\n      CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}\n"
+        "    steps:\n"
+        "      - name: skip\n        if: ${{ env.CACHIX_AUTH_TOKEN == '' }}\n        run: echo skip\n"
+        "      - uses: cachix/cachix-action@v17\n        if: ${{ env.CACHIX_AUTH_TOKEN != '' }}\n"
+        "      - name: populate\n        if: ${{ env.CACHIX_AUTH_TOKEN != '' }}\n"
+        "        run: NEO_BIN=x ./dev neo-consumer-contract\n"
+    )
+
+    def cp_bad(name_, mutated):
+        check(name_, bool(check_cache_populate("neo-ci.yml", mutated)))
+
+    check("well-wired cache-populate passes",
+          not check_cache_populate("neo-ci.yml", good_cache))
+    cp_bad("missing cache-populate job is flagged",
+           good_cache.replace("  cache-populate:\n", "  other:\n"))
+    cp_bad("cache-populate not gated to main is flagged",
+           good_cache.replace("      && github.ref == 'refs/heads/main'\n", ""))
+    cp_bad("cache-populate reachable from a PR is flagged",
+           good_cache.replace("      github.event_name == 'push'\n",
+                              "      github.event_name == 'pull_request'\n"))
+    cp_bad("cache-populate without an honest-skip path is flagged",
+           good_cache.replace(
+               "      - name: skip\n        if: ${{ env.CACHIX_AUTH_TOKEN == '' }}\n        run: echo skip\n", ""))
+    cp_bad("cache-populate not running the consumer path is flagged",
+           good_cache.replace("        run: NEO_BIN=x ./dev neo-consumer-contract\n",
+                              "        run: echo nothing\n"))
+    cp_bad("an unguarded cachix push step is flagged",
+           good_cache.replace(
+               "      - uses: cachix/cachix-action@v17\n        if: ${{ env.CACHIX_AUTH_TOKEN != '' }}\n",
+               "      - uses: cachix/cachix-action@v17\n"))
+
+    # ── installer-ci.yml arbitrary-base + aggregate gate (PR 6) ───────────────
+    good_installer = (
+        "on:\n  push:\n    branches: [main]\n    tags: [\"installer-v*\"]\n"
+        "  pull_request:\n    types: [opened, synchronize]\n"
+        "jobs:\n"
+        "  changes:\n    steps:\n      - run: echo hi\n"
+        "  lint:\n    steps:\n      - run: echo hi\n"
+        "  test:\n    steps:\n      - run: echo hi\n"
+        "  build:\n    steps:\n      - run: echo hi\n"
+        "  installer-ci-gate:\n"
+        "    if: always()\n"
+        "    needs: [changes, lint, test, build]\n"
+        "    steps:\n"
+        "      - run: echo ${{ needs.build.result }}\n"
+    )
+
+    def ic_bad(name_, mutated):
+        check(name_, bool(check_installer_ci("installer-ci.yml", mutated)))
+
+    check("well-wired installer gate passes",
+          not check_installer_ci("installer-ci.yml", good_installer))
+    check("installer gate runs on arbitrary bases (no branches allowlist)",
+          pull_request_branches(good_installer) is None)
+    ic_bad("installer gate with a base allowlist is flagged (breaks stacked layers)",
+           good_installer.replace(
+               "  pull_request:\n    types: [opened, synchronize]\n",
+               "  pull_request:\n    branches: [main]\n    types: [opened, synchronize]\n"))
+    ic_bad("missing installer-ci-gate is flagged",
+           good_installer.replace(
+               "  installer-ci-gate:\n"
+               "    if: always()\n"
+               "    needs: [changes, lint, test, build]\n"
+               "    steps:\n"
+               "      - run: echo ${{ needs.build.result }}\n", ""))
+    ic_bad("installer gate not always() is flagged",
+           good_installer.replace("    if: always()\n", ""))
+    ic_bad("installer gate not needing build is flagged",
+           good_installer.replace("    needs: [changes, lint, test, build]\n",
+                                  "    needs: [changes]\n"))
+    ic_bad("installer gate not evaluating a component result is flagged",
+           good_installer.replace("      - run: echo ${{ needs.build.result }}\n",
+                                  "      - run: echo done\n"))
 
     print("workflow-check: self-test", "OK" if ok else "FAILED")
     return 0 if ok else 1

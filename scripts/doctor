@@ -91,6 +91,7 @@ scripts/changelog --self-test || fail=1
 scripts/revert --self-test || fail=1
 scripts/retrospect --self-test || fail=1
 scripts/workflow-check --self-test || fail=1
+scripts/neo-release --self-test >/dev/null || fail=1
 # Quiet on success, but surface the captured output on failure.
 if ! crg_out=$(scripts/codemap-regen-guard.py --self-test 2>&1); then
   printf '%s\n' "${crg_out}"

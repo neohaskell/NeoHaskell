@@ -1,0 +1,132 @@
+# Neo CLI release — publishes native `neo` binaries for the installer to download.
+#
+# Trigger is TAG-ONLY for publication: a `neo-v*` tag (independent of the Haskell
+# library tags and the `installer-v*` tags — neo has its own release train). A
+# maintainer `workflow_dispatch` can REHEARSE the build matrix, but it can never
+# publish: the `publish` job is gated on `refs/tags/neo-v*`, so any non-tag run
+# builds and checksums artifacts and then stops (fail closed).
+#
+# GitHub Actions path filters do NOT apply to tag triggers, so the `neo-v*` tag
+# prefix is the sole disambiguation for a Neo release.
+#
+# Each target is built NATIVELY on a matching runner with a PINNED cargo/rustup
+# toolchain (NOT `nix build .#neo`, whose output hard-codes /nix/store library
+# paths and is therefore NOT runnable on a user's machine). A rustup cargo build
+# links the system C libraries, producing a genuinely portable native binary; a
+# blocking portability gate (`scripts/neo-release inspect`) refuses any binary
+# that still references the Nix store. Each asset is then installed + smoked on
+# its own native runner before publication. The sealed in-crate unit tests are
+# preserved SEPARATELY off the release path (neo-ci.yml `nix-package` job runs
+# `nix build .#neo`, whose checkPhase runs them). The asset-naming + checksum
+# contract is owned by `scripts/neo-release` (the same script the neo-ci rehearsal
+# uses), so published names can never drift from what the installer downloads
+# (installer/src/release.rs).
+name: Neo Release
+
+on:
+  push:
+    tags: ["neo-v*"]
+  workflow_dispatch: {} # maintainer build rehearsal only — publish stays tag-gated
+
+# Read-only by default. Only the tag-gated publish job elevates to contents:write.
+permissions:
+  contents: read
+
+concurrency:
+  group: neo-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            runner: ubuntu-latest
+          - target: aarch64-unknown-linux-gnu
+            runner: ubuntu-24.04-arm
+          - target: x86_64-apple-darwin
+            runner: macos-15-intel
+          - target: aarch64-apple-darwin
+            runner: macos-latest
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      # Pinned, reproducible toolchain (matches the neo dev shell's Rust). A
+      # rustup cargo build links the SYSTEM C libraries → portable native binary.
+      - uses: dtolnay/rust-toolchain@1.94.0
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: neo
+          key: ${{ matrix.target }}
+      # The committed IDE bundle (assets/ide/dist) is embedded via rust-embed, so
+      # no frontend build is needed here; neo-dist-check (neo-ci.yml) proves it a
+      # faithful rebuild. The sealed unit tests run separately (nix-package job).
+      - name: Build the portable native binary
+        env:
+          TARGET: ${{ matrix.target }}
+        run: cargo build --release --locked --manifest-path neo/Cargo.toml --target "$TARGET"
+      # Blocking portability gate: refuse a binary that references the Nix store.
+      - name: Portability gate (no /nix/store references)
+        env:
+          TARGET: ${{ matrix.target }}
+        run: ./scripts/neo-release inspect "neo/target/${TARGET}/release/neo" "$TARGET"
+      # Package + checksum through the shared naming contract (scripts/neo-release).
+      - name: Package + checksum the native asset
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          ./scripts/neo-release package "$TARGET" "neo/target/${TARGET}/release/neo" artifacts
+          ./scripts/neo-release checksums artifacts
+      # Native install + smoke on THIS target's native runner: prove the exact
+      # published, checksum-verified asset installs and runs before publication.
+      - name: Native install + smoke
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          ./scripts/neo-release install artifacts "$TARGET" "$RUNNER_TEMP/neo-smoke/neo"
+          "$RUNNER_TEMP/neo-smoke/neo" --version
+      - uses: actions/upload-artifact@v7
+        with:
+          name: neo-${{ matrix.target }}
+          path: |
+            artifacts/neo-${{ matrix.target }}
+          if-no-files-found: error
+
+  # Publish ONLY from a `neo-v*` tag, and ONLY after every build/test gate passed.
+  # A workflow_dispatch rehearsal reaches this job but the ref guard skips it, so
+  # nothing is ever published off a non-tag run.
+  publish:
+    name: Publish release
+    needs: [build]
+    if: startsWith(github.ref, 'refs/tags/neo-v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v8
+        with:
+          path: artifacts
+          merge-multiple: true
+      # Regenerate the aggregate SHA256SUMS over ALL published assets via the
+      # same contract the installer verifies against.
+      - name: Aggregate checksums
+        run: ./scripts/neo-release checksums artifacts
+      - name: Publish assets + checksums to the tag release
+        uses: softprops/action-gh-release@v3
+        with:
+          files: |
+            artifacts/neo-*
+            artifacts/SHA256SUMS
+          generate_release_notes: true

@@ -2,11 +2,9 @@ use std::process::{Command, Stdio};
 
 use anyhow::Result;
 
-use crate::{detect, error::InstallerError, ui};
+use crate::{detect, error::InstallerError, release, ui};
 
 pub const INSTALL_CMD: &str = "curl --proto '=https' --tlsv1.2 -sSf -L https://install.determinate.systems/nix | sh -s -- install --no-confirm";
-
-pub const NEO_FLAKE_REF: &str = "github:neohaskell/neo#neo-cli";
 
 pub fn install_nix(verbose: bool, dry_run: bool) -> Result<()> {
     if dry_run {
@@ -40,42 +38,23 @@ pub fn install_nix(verbose: bool, dry_run: bool) -> Result<()> {
     }
 }
 
+/// Install the Neo CLI as a prebuilt native binary. Delegates to the
+/// [`crate::release`] module, which downloads a `neo-v*` release asset, verifies
+/// it against SHA256SUMS, and installs it atomically to a user-writable bin dir.
+/// Crucially this does NOT evaluate/compile/install neo from
+/// `github:neohaskell/neo#neo-cli` — Nix is installed (generated projects need
+/// it) but the CLI itself ships as a native binary.
 pub fn install_neo(verbose: bool, dry_run: bool) -> Result<()> {
-    if dry_run {
-        ui::print_step(&format!("Would install Neo CLI from {NEO_FLAKE_REF}"), true);
-        return Ok(());
-    }
-
-    let pb = ui::create_spinner(ui::MSG_NEO_CLI);
-
-    let mut cmd = Command::new(detect::NIX_BIN);
-    cmd.args(["profile", "install", NEO_FLAKE_REF]);
-
-    if verbose {
-        cmd.stdout(Stdio::inherit()).stderr(Stdio::inherit());
-    } else {
-        cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
-    }
-
-    let output = cmd.output().map_err(InstallerError::CommandFailed)?;
-
-    if output.status.success() {
-        ui::finish_success(&pb, "Neo CLI installed");
-        Ok(())
-    } else {
-        ui::finish_error(&pb, "Neo CLI installation failed");
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        Err(InstallerError::NeoInstallFailed {
-            details: stderr.to_string(),
-        }
-        .into())
-    }
+    release::install_neo(verbose, dry_run)
 }
 
 pub fn setup_shell(dry_run: bool) -> Result<()> {
     let shell = detect::get_shell();
     let profile_path = shell_profile_path(&shell)?;
-    let path_line = nix_path_export(&shell);
+    // The native `neo` bin dir + the Nix profile dirs, correctly quoted for the
+    // shell (a $NEO_BIN_DIR override is validated + single-quoted, never
+    // interpolated raw — see release::shell_path_line).
+    let path_line = release::shell_path_line(&shell)?;
 
     if profile_already_configured(&profile_path, &path_line)? {
         return Ok(());
@@ -110,16 +89,6 @@ fn shell_profile_path(shell: &detect::Shell) -> Result<std::path::PathBuf> {
         detect::Shell::Unknown(_) => format!("{home}/.profile"),
     };
     Ok(std::path::PathBuf::from(path))
-}
-
-fn nix_path_export(shell: &detect::Shell) -> String {
-    match shell {
-        detect::Shell::Fish => {
-            "fish_add_path /nix/var/nix/profiles/default/bin $HOME/.nix-profile/bin".to_string()
-        }
-        _ => r#"export PATH="/nix/var/nix/profiles/default/bin:$HOME/.nix-profile/bin:$PATH""#
-            .to_string(),
-    }
 }
 
 fn profile_already_configured(path: &std::path::Path, line: &str) -> Result<bool> {
@@ -171,11 +140,6 @@ mod tests {
     }
 
     #[test]
-    fn neo_flake_ref_is_correct() {
-        assert_eq!(NEO_FLAKE_REF, "github:neohaskell/neo#neo-cli");
-    }
-
-    #[test]
     fn shell_profile_path_zsh() {
         let path = shell_profile_path(&detect::Shell::Zsh).unwrap();
         assert!(path.to_string_lossy().ends_with(".zshrc"));
@@ -188,31 +152,19 @@ mod tests {
     }
 
     #[test]
-    fn nix_path_export_bash_contains_export() {
-        let line = nix_path_export(&detect::Shell::Bash);
-        assert!(line.starts_with("export PATH="));
-    }
-
-    #[test]
-    fn nix_path_export_fish_uses_fish_add_path() {
-        let line = nix_path_export(&detect::Shell::Fish);
-        assert!(line.starts_with("fish_add_path"));
-    }
-
-    #[test]
     fn profile_already_configured_returns_false_for_missing_file() {
         let result = profile_already_configured(
             std::path::Path::new("/tmp/nonexistent_neo_test_file"),
             "test line",
         );
-        assert_eq!(result.unwrap(), false);
+        assert!(!result.unwrap());
     }
 
     #[test]
     fn setup_shell_idempotent() {
         let dir = tempfile::tempdir().unwrap();
         let profile = dir.path().join(".zshrc");
-        let line = nix_path_export(&detect::Shell::Zsh);
+        let line = release::shell_path_line(&detect::Shell::Zsh).unwrap();
         std::fs::write(&profile, &line).unwrap();
         assert!(profile_already_configured(&profile, &line).unwrap());
     }

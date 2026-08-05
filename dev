@@ -76,6 +76,10 @@ usage: ./dev <verb> [args]
                           from the embedded starter offline, then build/test/run it
                           against THIS checkout (neohaskell -> path:<checkout>) and
                           poll /health (--self-test for the orchestration logic)
+  neo-release <cmd>     native `neo` release-asset contract (single source of
+                          truth for naming/checksums shared by the release
+                          workflow + rehearsal): targets, asset-name, package,
+                          checksums, verify, install, --self-test
   doctor                harness self-check: every script has a verb or a
                           reasoned exemption; no dangling verbs (CI-enforced)
   exec <cmd> [args]     run any command with the pinned toolchain
@@ -118,6 +122,7 @@ case "${VERB}" in
   neo-skills-check) exec scripts/neo-skills-check "$@" ;;
   neo-dist-check) exec scripts/neo-dist-check "$@" ;;
   neo-consumer-contract) exec scripts/neo-consumer-contract "$@" ;;
+  neo-release) exec scripts/neo-release "$@" ;;
   doctor)   exec scripts/doctor "$@" ;;
   exec)     exec scripts/with-toolchain "$@" ;;
   ""|help|-h|--help) usage ;;
