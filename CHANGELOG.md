@@ -13,7 +13,7 @@ has been cut yet — everything accrues under Unreleased until the first tag.)
 
 ## [Unreleased]
 
-### 004-crypto-hmac-sign-verify — Change 003: Add Crypto module with HMAC-SHA256 signWith/verifyWith
+### 004-crypto-hmac-sign-verify — Change 004: Add Crypto module with HMAC-SHA256 signWith/verifyWith
 
 None breaking. New public module `Crypto` and new `Bytes.getRandom`
 primitive (secure random bytes, mirroring `Int.getRandom`); no existing

@@ -1,4 +1,4 @@
-# Change 003: Add Crypto module with HMAC-SHA256 signWith/verifyWith
+# Change 004: Add Crypto module with HMAC-SHA256 signWith/verifyWith
 
 Applications that deliver signed webhooks (sender signs the raw request
 body, receiver recomputes the HMAC and compares) currently have no public
