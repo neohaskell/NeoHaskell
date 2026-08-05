@@ -56,9 +56,9 @@ jobs:
           /opt/homebrew/opt/postgresql@16/bin/psql postgres -c "CREATE USER neohaskell WITH PASSWORD 'neohaskell' SUPERUSER CREATEDB CREATEROLE LOGIN;"
           /opt/homebrew/opt/postgresql@16/bin/psql postgres -c "CREATE DATABASE neohaskell OWNER neohaskell;"
 
-      - uses: actions/checkout@v7.0.0
+      - uses: actions/checkout@v7.0.1
 
-      - uses: DeterminateSystems/determinate-nix-action@v3.21.7
+      - uses: DeterminateSystems/determinate-nix-action@v3.21.9
         with:
           extra-conf: |
             accept-flake-config = true
@@ -66,7 +66,7 @@ jobs:
             extra-trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= neohaskell.cachix.org-1:mo2cLaGbwqbrxs9xhqKK8jeNsn3osi7t6XoAmxSZssc=
 
       - uses: DeterminateSystems/magic-nix-cache-action@v14
-      - uses: actions/cache@v6
+      - uses: actions/cache@v6.1.0
         with:
           path: dist-newstyle
           key: ${{ runner.os }}-cabal-${{ hashFiles('**/*.cabal', 'cabal.project') }}

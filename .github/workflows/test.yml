@@ -44,7 +44,7 @@ jobs:
     outputs:
       compiled: ${{ steps.detect.outputs.compiled }}
     steps:
-      - uses: actions/checkout@v7.0.0
+      - uses: actions/checkout@v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -73,15 +73,15 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v7.0.0
-      - uses: DeterminateSystems/determinate-nix-action@v3.21.7
+      - uses: actions/checkout@v7.0.1
+      - uses: DeterminateSystems/determinate-nix-action@v3.21.9
         with:
           extra-conf: |
             accept-flake-config = true
             extra-substituters = https://cache.iog.io https://neohaskell.cachix.org
             extra-trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= neohaskell.cachix.org-1:mo2cLaGbwqbrxs9xhqKK8jeNsn3osi7t6XoAmxSZssc=
       - uses: DeterminateSystems/magic-nix-cache-action@v14
-      - uses: actions/cache@v6
+      - uses: actions/cache@v6.1.0
         with:
           path: dist-newstyle
           key: ${{ runner.os }}-cabal-${{ hashFiles('**/*.cabal', 'cabal.project') }}
@@ -106,10 +106,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
-      - uses: DeterminateSystems/determinate-nix-action@v3.21.7
+      - uses: DeterminateSystems/determinate-nix-action@v3.21.9
         with:
           extra-conf: |
             accept-flake-config = true
@@ -122,7 +122,7 @@ jobs:
           path: dist-newstyle
       # Hackage hoogle txts for the ./dev api vanilla DB (dep-closure mined;
       # see ADR-0066) — cached so the fetch is a no-op on warm runs.
-      - uses: actions/cache@v6
+      - uses: actions/cache@v6.1.0
         with:
           path: .hoogle-vanilla-src
           key: ${{ runner.os }}-hoogle-vanilla-${{ hashFiles('flake.lock', '**/*.cabal') }}
@@ -150,8 +150,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v7.0.0
-      - uses: DeterminateSystems/determinate-nix-action@v3.21.7
+      - uses: actions/checkout@v7.0.1
+      - uses: DeterminateSystems/determinate-nix-action@v3.21.9
         with:
           extra-conf: |
             accept-flake-config = true
@@ -166,8 +166,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v7.0.0
-      - uses: DeterminateSystems/determinate-nix-action@v3.21.7
+      - uses: actions/checkout@v7.0.1
+      - uses: DeterminateSystems/determinate-nix-action@v3.21.9
         with:
           extra-conf: |
             accept-flake-config = true
@@ -186,8 +186,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v7.0.0
-      - uses: DeterminateSystems/determinate-nix-action@v3.21.7
+      - uses: actions/checkout@v7.0.1
+      - uses: DeterminateSystems/determinate-nix-action@v3.21.9
         with:
           extra-conf: |
             accept-flake-config = true
@@ -206,8 +206,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v7.0.0
-      - uses: DeterminateSystems/determinate-nix-action@v3.21.7
+      - uses: actions/checkout@v7.0.1
+      - uses: DeterminateSystems/determinate-nix-action@v3.21.9
         with:
           extra-conf: |
             accept-flake-config = true
@@ -226,8 +226,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v7.0.0
-      - uses: DeterminateSystems/determinate-nix-action@v3.21.7
+      - uses: actions/checkout@v7.0.1
+      - uses: DeterminateSystems/determinate-nix-action@v3.21.9
         with:
           extra-conf: |
             accept-flake-config = true
@@ -270,8 +270,8 @@ jobs:
     # runs finish in ~10m total.
     timeout-minutes: 40
     steps:
-      - uses: actions/checkout@v7.0.0
-      - uses: DeterminateSystems/determinate-nix-action@v3.21.7
+      - uses: actions/checkout@v7.0.1
+      - uses: DeterminateSystems/determinate-nix-action@v3.21.9
         with:
           extra-conf: |
             accept-flake-config = true
