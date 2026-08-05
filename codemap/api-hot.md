@@ -32,9 +32,9 @@ codemap/signatures/ · type-directed search: ./dev api "<type>"
   - `>>> push 3 (fromLinkedList [1,2] :: Array Int)` → `Array [1,2,3]`
 - `takeIf :: (a -> Bool) -> Array a -> Array a`  <!-- 32 call sites -->
   - `>>> takeIf Basics.isEven (fromLinkedList [1,2,3,4,5,6] :: Array Int)` → `Array [2,4,6]`
-- `isEmpty :: Array a -> Bool`  <!-- 30 call sites -->
+- `isEmpty :: Array a -> Bool`  <!-- 31 call sites -->
   - `>>> isEmpty empty` → `True` …
-- `length :: Array a -> Int`  <!-- 29 call sites -->
+- `length :: Array a -> Int`  <!-- 28 call sites -->
   - `>>> length ([1,2,3] :: Array Int)` → `3` …
 - `append :: Array a -> Array a -> Array a`  <!-- 24 call sites -->
   - `>>> (repeat 2 42) |> append (repeat 3 81) :: Array Int` → `Array [42,42,81,81,81]`
