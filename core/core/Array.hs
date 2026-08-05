@@ -602,12 +602,13 @@ dropLast arr =
 -- >>> dropRight 5 (fromLinkedList [1,2,3] :: Array Int)
 -- Array []
 dropRight :: Int -> Array element -> Array element
-dropRight n arr = do
-  let len = length arr
-      keep = max 0 (len - n)
-  if keep == len
+dropRight n arr =
+  if n <= 0
     then arr
-    else take keep arr
+    else do
+      let len = length arr
+          keep = max 0 (len - n)
+      take keep arr
 
 
 -- | Zip two arrays into a new array of tuples.

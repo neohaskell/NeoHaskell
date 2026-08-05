@@ -19,8 +19,10 @@ spec = do
       it "drops the last n elements" \_ -> do
         Array.fromLinkedList [1, 2, 3, 4] |> Array.dropRight 2 |> shouldBe (Array.fromLinkedList [1, 2])
 
-      it "returns the original array when n is zero" \_ -> do
+      it "returns the original array when n is non-positive" \_ -> do
         Array.fromLinkedList [1, 2, 3] |> Array.dropRight 0 |> shouldBe (Array.fromLinkedList [1, 2, 3])
+        Array.fromLinkedList [1, 2, 3] |> Array.dropRight (-1) |> shouldBe (Array.fromLinkedList [1, 2, 3])
+        Array.fromLinkedList [1, 2, 3] |> Array.dropRight (minBound :: Int) |> shouldBe (Array.fromLinkedList [1, 2, 3])
 
       it "returns an empty array when n is at least the length" \_ -> do
         Array.fromLinkedList [1, 2, 3] |> Array.dropRight 3 |> shouldBe (Array.empty :: Array.Array Int)
