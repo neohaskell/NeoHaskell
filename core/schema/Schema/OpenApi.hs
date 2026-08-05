@@ -154,9 +154,9 @@ toOpenApiSpec apiInfo commandSchemas querySchemas oauth2Schemas fileSchemas = do
            ) Set.empty
 
   -- Build list of all tag names
-  let hasQueries = Map.length querySchemas > 0
-  let hasOAuth2 = Map.length oauth2Schemas > 0
-  let hasFiles = Map.length fileSchemas > 0
+  let hasQueries = not (Map.isEmpty querySchemas)
+  let hasOAuth2 = not (Map.isEmpty oauth2Schemas)
+  let hasFiles = not (Map.isEmpty fileSchemas)
 
   let allTagNames = commandEntityNames
         |> Set.toArray

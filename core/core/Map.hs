@@ -12,6 +12,7 @@ module Map (
   contains,
   remove,
   getOrElse,
+  isEmpty,
   length,
   values,
   keys,
@@ -125,6 +126,10 @@ contains key map = HaskellMap.member key map
 remove :: (Ord key) => key -> Map key value -> Map key value
 remove key self = HaskellMap.delete key self
 
+
+-- | Checks if the map is empty
+isEmpty :: Map key value -> Bool
+isEmpty self = HaskellMap.null self
 
 -- | Returns the length of the map
 length :: Map key value -> Int
