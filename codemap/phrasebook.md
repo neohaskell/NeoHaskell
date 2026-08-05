@@ -55,7 +55,7 @@ Array []
 >>> wrap (0 :: Int)
 Array [0]
 ```
-*… 37 more doctest sessions in the source module*
+*… 39 more doctest sessions in the source module*
 ### Bytes
 ```haskell
 >>> [1, 2, 3] |> Bytes.pack |> Bytes.length

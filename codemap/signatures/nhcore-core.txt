@@ -42,6 +42,8 @@ contains :: Eq value => value -> Array value -> Bool
 data Array a
 drop :: Int -> Array a -> Array a
 dropIf :: (a -> Bool) -> Array a -> Array a
+dropLast :: Array element -> Array element
+dropRight :: Int -> Array element -> Array element
 dropWhile :: (value -> Bool) -> Array value -> Array value
 empty :: Array a
 find :: (value -> Bool) -> Array value -> Maybe value
