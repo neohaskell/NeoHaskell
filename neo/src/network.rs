@@ -185,12 +185,29 @@ fn parse_ls_remote_tags(stdout: &str) -> Vec<PackageTag> {
         .collect()
 }
 
+/// The newest `neo-v*` release version from a GitHub releases list, or None if
+/// no entry carries a parseable `neo-v*` tag. Pure (offline unit-tested). The
+/// `neo-v` prefix is the release train's disambiguator: `neo` ships from the
+/// NeoHaskell monorepo on its own `neo-v*` tags, independent of the library and
+/// `installer-v*` trains, so the repo-wide `releases/latest` must never be used
+/// here (it could surface some OTHER train's newest release). Mirrors the
+/// newest-tag resolution in installer/src/release.rs.
+fn newest_neo_release(releases: &[GitHubRelease]) -> Option<Version> {
+    releases
+        .iter()
+        .filter_map(|r| r.tag_name.strip_prefix("neo-v"))
+        .filter_map(|v| Version::parse(v).ok())
+        .max()
+}
+
 pub async fn check_for_updates() -> miette::Result<Option<String>> {
     if std::env::var("NEO_SKIP_NETWORK").is_ok() {
         return Ok(None);
     }
 
-    let url = "https://api.github.com/repos/NeoHaskell/neocli/releases/latest";
+    // List the monorepo's releases and pick the newest `neo-v*` explicitly —
+    // NEVER the repo-wide `releases/latest` (see newest_neo_release).
+    let url = "https://api.github.com/repos/neohaskell/NeoHaskell/releases?per_page=100";
 
     let client = reqwest::Client::builder()
         .user_agent("NeoCLI")
@@ -203,13 +220,13 @@ pub async fn check_for_updates() -> miette::Result<Option<String>> {
         return Ok(None);
     }
 
-    let release: GitHubRelease = response.json().await
+    let releases: Vec<GitHubRelease> = response.json().await
         .into_diagnostic()
         .wrap_err_with(|| format!("parsing the GitHub Releases JSON response from `{}` while checking for `neo` updates", url))?;
-    let latest_version_str = release.tag_name.trim_start_matches('v');
-    let latest_version = Version::parse(latest_version_str)
-        .into_diagnostic()
-        .wrap_err_with(|| format!("parsing the latest `neo` release tag `{}` from GitHub as semver", release.tag_name))?;
+    let latest_version = match newest_neo_release(&releases) {
+        Some(v) => v,
+        None => return Ok(None),
+    };
 
     let current_version = Version::parse(env!("CARGO_PKG_VERSION"))
         .into_diagnostic()
@@ -469,6 +486,29 @@ mod tests {
     async fn test_check_for_updates() {
         unsafe { std::env::set_var("NEO_SKIP_NETWORK", "1"); }
         let _ = check_for_updates().await;
+    }
+
+    #[test]
+    fn newest_neo_release_picks_highest_neo_v_ignoring_other_trains() {
+        let rel = |t: &str| GitHubRelease { tag_name: t.to_string() };
+        // A realistic mixed list: the monorepo carries installer-v*, library and
+        // neo-v* tags together. Only neo-v* count, and the HIGHEST semver wins
+        // (not merely the first entry), never a repo-wide "latest".
+        let releases = vec![
+            rel("installer-v9.9.9"),
+            rel("v2.0.0"),
+            rel("neo-v0.1.0"),
+            rel("neo-v0.3.2"),
+            rel("neo-v0.2.5"),
+            rel("not-a-release"),
+        ];
+        assert_eq!(
+            newest_neo_release(&releases),
+            Some(Version::parse("0.3.2").unwrap())
+        );
+        // No neo-v* tag => no update signal (rather than misreading another train).
+        assert_eq!(newest_neo_release(&[rel("installer-v1.0.0"), rel("v1.0.0")]), None);
+        assert_eq!(newest_neo_release(&[]), None);
     }
 
     #[test]

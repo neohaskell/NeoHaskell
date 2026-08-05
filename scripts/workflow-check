@@ -772,6 +772,119 @@ def check_installer_ci(name, text):
     return errs
 
 
+# ── neo-onboarding-slo.yml: clean-machine onboarding SLO gate (PR 7 cutover) ──
+# (ADR 0071) The gate measures install->new->test->run->/health on a clean,
+# supported machine under a 600s deadline, from IMMUTABLE checksum-verified
+# release artifacts. Two modes must stay separated and honest, and several
+# invariants are load-bearing + unreviewable-by-eye, so freeze them:
+#   (a) real SLO evidence is dispatch-ONLY: the `slo` job is gated on
+#       workflow_dispatch, so a PR event can never produce (or masquerade as) an
+#       SLO number. The dispatch inputs are the immutable version tags.
+#   (b) least privilege + NO secret + NO publication: contents:read only, never
+#       contents:write, no secret reference, no release/cache write anywhere.
+#   (c) the PR-safe `self-test` job runs the offline orchestration self-test AND
+#       the workflow-wiring freeze, and never the real measured `run`.
+#   (d) the `slo` job measures a REAL release artifact (never a source cargo /
+#       nix build), threads the immutable dispatch inputs, enforces the 600s
+#       deadline, covers BOTH supported runners+targets, and uploads evidence.
+ONBOARDING_SLO_GATE = "neo-onboarding-slo.yml"
+ONBOARDING_DRIVER = "onboarding-slo"
+ONBOARDING_RUNNERS = ("ubuntu-latest", "macos-latest")
+ONBOARDING_TARGETS = ("x86_64-unknown-linux-gnu", "aarch64-apple-darwin")
+
+
+def check_onboarding_slo(name, text):
+    errs = []
+    E = errs.append
+    code = strip_comments(text)
+    on = _on_block(code)
+    triggers = _on_trigger_keys(on)
+    jobs = job_blocks(code)
+    st = jobs.get("self-test", "")
+    slo = jobs.get("slo", "")
+
+    # (a) real evidence is dispatch-only + the immutable version inputs exist.
+    if "workflow_dispatch" not in triggers:
+        E(f"{name}: no workflow_dispatch trigger — real SLO evidence must come from "
+          "an explicit, tag-pinned dispatch (never an automatic/PR run)")
+    if "pull_request_target" in triggers:
+        E(f"{name}: has a pull_request_target trigger — forbidden (it must never run "
+          "with elevated PR-base permissions)")
+    for inp in ("installer_version", "neo_version", "expected_source_sha"):
+        if inp not in on:
+            E(f"{name}: workflow_dispatch is missing the `{inp}` immutable version input")
+
+    # (b) least privilege, no secret, no publication.
+    if "permissions:" not in code or "contents: read" not in code:
+        E(f"{name}: must declare least-privilege `permissions: contents: read`")
+    if "contents: write" in code:
+        E(f"{name}: declares `contents: write` — the SLO gate publishes nothing")
+    if _SECRETS_REF.search(code):
+        E(f"{name}: references a secret (secrets.X) — the gate is PR-reachable and "
+          "must hold none (Cachix READ is public/tokenless; there is no cache WRITE)")
+    for banned in ("action-gh-release", "gh release create", "gh release upload",
+                   "cachix push", "CACHIX_AUTH_TOKEN", "cachix/cachix-action"):
+        if banned in code:
+            E(f"{name}: contains '{banned}' — the SLO gate must be evidence-only "
+              "(no release publication, no cache write)")
+
+    # (c) the PR-safe self-test job.
+    if not st:
+        E(f"{name}: missing the `self-test` job (the PR-safe offline rehearsal)")
+    else:
+        if f"{ONBOARDING_DRIVER} --self-test" not in st:
+            E(f"{name}: `self-test` job never runs `./dev {ONBOARDING_DRIVER} --self-test` "
+              "(the offline orchestration freeze)")
+        if "workflow-check" not in st:
+            E(f"{name}: `self-test` job never runs `./dev workflow-check` (the wiring freeze)")
+        if re.search(rf"{re.escape(ONBOARDING_DRIVER)}\s+run\b", st):
+            E(f"{name}: `self-test` job runs the real measured path — a PR must not "
+              "attempt real evidence (that needs published immutable artifacts)")
+
+    # (d) the real-evidence slo job.
+    if not slo:
+        E(f"{name}: missing the `slo` job (the only real-evidence producer)")
+    else:
+        if "github.event_name == 'workflow_dispatch'" not in slo:
+            E(f"{name}: `slo` job is not gated to workflow_dispatch — a PR event could "
+              "produce an SLO number (no hidden PR proof allowed)")
+        if not re.search(rf"{re.escape(ONBOARDING_DRIVER)}\s+run\b", slo):
+            E(f"{name}: `slo` job never runs the real measured path "
+              f"(`./dev {ONBOARDING_DRIVER} run`)")
+        if "cargo build" in slo:
+            E(f"{name}: `slo` job builds neo from source (`cargo build`) — the SLO must "
+              "measure a checksum-verified RELEASE artifact, not a source binary")
+        if "nix build" in slo:
+            E(f"{name}: `slo` job builds neo via `nix build` — the SLO must measure a "
+              "portable release artifact (a nix build references /nix/store)")
+        for k in ("SLO_INSTALLER_VERSION", "SLO_NEO_VERSION",
+                  "SLO_EXPECTED_SOURCE_SHA", "SLO_DISPATCHED_SOURCE_SHA",
+                  "SLO_WORKFLOW_RUN_ID", "SLO_WORKFLOW_REF"):
+            if k not in slo:
+                E(f"{name}: `slo` job does not pass `{k}` (the immutable version input)")
+        if "inputs.installer_version" not in slo or "inputs.neo_version" not in slo:
+            E(f"{name}: `slo` job must consume the immutable dispatch version inputs "
+              "(inputs.installer_version / inputs.neo_version), never a mutable channel")
+        for mutable in ("SLO_INSTALLER_VERSION: latest", "SLO_NEO_VERSION: latest",
+                        "SLO_INSTALLER_VERSION: main", "SLO_NEO_VERSION: main"):
+            if mutable in slo:
+                E(f"{name}: `slo` job pins a MUTABLE input ('{mutable}') — SLO evidence "
+                  "must pin an immutable release tag")
+        if '"600"' not in slo and "SLO_DEADLINE: 600" not in slo:
+            E(f"{name}: `slo` job does not enforce the 600s deadline (SLO_DEADLINE: \"600\")")
+        for r in ONBOARDING_RUNNERS:
+            if r not in slo:
+                E(f"{name}: `slo` matrix is missing the supported runner '{r}'")
+        for t in ONBOARDING_TARGETS:
+            if t not in slo:
+                E(f"{name}: `slo` matrix is missing the supported target '{t}'")
+        if "upload-artifact" not in slo:
+            E(f"{name}: `slo` job does not upload the immutable evidence artifact")
+        if ".json.sha256" not in slo or "if-no-files-found: error" not in slo:
+            E(f"{name}: `slo` job must upload the evidence SHA256 sidecar and fail when evidence is missing")
+    return errs
+
+
 def run(root=WORKFLOWS):
     errs = []
     for wf in sorted(root.glob("*.yml")):
@@ -792,6 +905,8 @@ def run(root=WORKFLOWS):
             errs += check_neo_release(wf.name, text)
         if wf.name == INSTALLER_GATE:
             errs += check_installer_ci(wf.name, text)
+        if wf.name == ONBOARDING_SLO_GATE:
+            errs += check_onboarding_slo(wf.name, text)
     retro = root / "retrospect.yml"
     if not retro.exists():
         errs.append("retrospect.yml is missing (deterministic learning-loop digest)")
@@ -807,6 +922,8 @@ def run(root=WORKFLOWS):
         errs.append(f"{NEO_RELEASE_GATE} is missing (the Neo CLI native-release publication workflow)")
     if not (root / INSTALLER_GATE).exists():
         errs.append(f"{INSTALLER_GATE} is missing (the installer component gate)")
+    if not (root / ONBOARDING_SLO_GATE).exists():
+        errs.append(f"{ONBOARDING_SLO_GATE} is missing (the clean-machine onboarding SLO gate)")
     return errs
 
 
@@ -1295,6 +1412,95 @@ def self_test():
     ic_bad("installer gate not evaluating a component result is flagged",
            good_installer.replace("      - run: echo ${{ needs.build.result }}\n",
                                   "      - run: echo done\n"))
+
+    # ── neo-onboarding-slo.yml clean-machine SLO gate (PR 7 cutover) ──────────
+    good_slo = (
+        "name: Neo Onboarding SLO\n"
+        "on:\n"
+        "  pull_request:\n    types: [opened]\n"
+        "  workflow_dispatch:\n"
+        "    inputs:\n"
+        "      installer_version:\n        type: string\n        required: true\n"
+        "      neo_version:\n        type: string\n        required: true\n"
+        "      expected_source_sha:\n        type: string\n        required: true\n"
+        "permissions:\n"
+        "  contents: read\n"
+        "jobs:\n"
+        "  self-test:\n"
+        "    runs-on: ubuntu-latest\n"
+        "    steps:\n"
+        "      - run: ./dev workflow-check\n"
+        "      - run: ./dev onboarding-slo --self-test\n"
+        "  slo:\n"
+        "    if: github.event_name == 'workflow_dispatch'\n"
+        "    strategy:\n      matrix:\n        include:\n"
+        "          - runner: ubuntu-latest\n            target: x86_64-unknown-linux-gnu\n"
+        "          - runner: macos-latest\n            target: aarch64-apple-darwin\n"
+        "    runs-on: ${{ matrix.runner }}\n"
+        "    steps:\n"
+        "      - uses: actions/checkout@v7.0.1\n"
+        "      - name: measure\n"
+        "        env:\n"
+        "          SLO_INSTALLER_VERSION: ${{ inputs.installer_version }}\n"
+        "          SLO_NEO_VERSION: ${{ inputs.neo_version }}\n"
+        "          SLO_EXPECTED_SOURCE_SHA: ${{ inputs.expected_source_sha }}\n"
+        "          SLO_DISPATCHED_SOURCE_SHA: ${{ github.sha }}\n"
+        "          SLO_WORKFLOW_RUN_ID: ${{ github.run_id }}\n"
+        "          SLO_WORKFLOW_REF: ${{ github.ref }}\n"
+        "          SLO_DEADLINE: \"600\"\n"
+        "        run: ./dev onboarding-slo run\n"
+        "      - uses: actions/upload-artifact@v7\n"
+        "        with:\n          name: ev\n          path: |\n            x.json\n            x.json.sha256\n          if-no-files-found: error\n"
+    )
+
+    def slo_bad(name_, mutated):
+        check(name_, bool(check_onboarding_slo("neo-onboarding-slo.yml", mutated)))
+
+    check("well-wired onboarding SLO gate passes",
+          not check_onboarding_slo("neo-onboarding-slo.yml", good_slo))
+    slo_bad("missing workflow_dispatch is flagged",
+            good_slo.replace("  workflow_dispatch:\n", ""))
+    slo_bad("a pull_request_target trigger is flagged",
+            good_slo.replace("  pull_request:\n", "  pull_request_target:\n  pull_request:\n"))
+    slo_bad("a missing dispatch version input is flagged",
+            good_slo.replace("      neo_version:\n        type: string\n        required: true\n", ""))
+    slo_bad("contents: write is flagged (no publication)",
+            good_slo.replace("  contents: read\n", "  contents: write\n"))
+    slo_bad("a secret reference is flagged (holds none)",
+            good_slo.replace("        run: ./dev onboarding-slo run\n",
+                             "        run: echo ${{ secrets.GITHUB_TOKEN }} && ./dev onboarding-slo run\n"))
+    slo_bad("a release-publication step is flagged",
+            good_slo.replace("      - uses: actions/upload-artifact@v7\n",
+                             "      - uses: softprops/action-gh-release@v3\n"))
+    slo_bad("self-test job missing the offline self-test is flagged",
+            good_slo.replace("      - run: ./dev onboarding-slo --self-test\n", ""))
+    slo_bad("self-test job missing the workflow-check freeze is flagged",
+            good_slo.replace("      - run: ./dev workflow-check\n", ""))
+    slo_bad("self-test job running the real measured path is flagged",
+            good_slo.replace("      - run: ./dev onboarding-slo --self-test\n",
+                             "      - run: ./dev onboarding-slo run\n"))
+    slo_bad("slo job not gated to workflow_dispatch is flagged (no hidden PR proof)",
+            good_slo.replace("    if: github.event_name == 'workflow_dispatch'\n", ""))
+    slo_bad("slo job building neo from source (cargo build) is flagged",
+            good_slo.replace("        run: ./dev onboarding-slo run\n",
+                             "        run: cargo build --release && ./dev onboarding-slo run\n"))
+    slo_bad("slo job building neo via nix build is flagged",
+            good_slo.replace("        run: ./dev onboarding-slo run\n",
+                             "        run: nix build .#neo && ./dev onboarding-slo run\n"))
+    slo_bad("slo job with a mutable 'latest' input is flagged",
+            good_slo.replace("          SLO_NEO_VERSION: ${{ inputs.neo_version }}\n",
+                             "          SLO_NEO_VERSION: latest\n"))
+    slo_bad("slo job missing the 600s deadline is flagged",
+            good_slo.replace("          SLO_DEADLINE: \"600\"\n", ""))
+    slo_bad("slo matrix missing a supported runner is flagged",
+            good_slo.replace("          - runner: macos-latest\n            target: aarch64-apple-darwin\n",
+                             "          - runner: macos-13\n            target: aarch64-apple-darwin\n"))
+    slo_bad("slo matrix missing a supported target is flagged",
+            good_slo.replace("          - runner: ubuntu-latest\n            target: x86_64-unknown-linux-gnu\n",
+                             "          - runner: ubuntu-latest\n            target: x86_64-unknown-linux-musl\n"))
+    slo_bad("slo job not uploading evidence is flagged",
+            good_slo.replace("      - uses: actions/upload-artifact@v7\n"
+                             "        with:\n          name: ev\n          path: |\n            x.json\n            x.json.sha256\n          if-no-files-found: error\n", ""))
 
     print("workflow-check: self-test", "OK" if ok else "FAILED")
     return 0 if ok else 1

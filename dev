@@ -80,6 +80,11 @@ usage: ./dev <verb> [args]
                           truth for naming/checksums shared by the release
                           workflow + rehearsal): targets, asset-name, package,
                           checksums, verify, install, --self-test
+  onboarding-slo <cmd>  clean-machine onboarding gate: run the real
+                          install->new->test->run->/health path from IMMUTABLE
+                          released, checksum-verified artifacts under a 600s
+                          deadline and record evidence JSON (run); --self-test
+                          exercises the orchestration offline (no download/secret)
   doctor                harness self-check: every script has a verb or a
                           reasoned exemption; no dangling verbs (CI-enforced)
   exec <cmd> [args]     run any command with the pinned toolchain
@@ -123,6 +128,7 @@ case "${VERB}" in
   neo-dist-check) exec scripts/neo-dist-check "$@" ;;
   neo-consumer-contract) exec scripts/neo-consumer-contract "$@" ;;
   neo-release) exec scripts/neo-release "$@" ;;
+  onboarding-slo) exec scripts/onboarding-slo "$@" ;;
   doctor)   exec scripts/doctor "$@" ;;
   exec)     exec scripts/with-toolchain "$@" ;;
   ""|help|-h|--help) usage ;;

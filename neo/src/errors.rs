@@ -91,7 +91,7 @@ pub enum NeoError {
     #[diagnostic(
         code(neo::template_error),
         url(docsrs),
-        help("This is an internal templating error in `neo`. Re-run with `RUST_BACKTRACE=1`. If it reproduces on a fresh `neo new` checkout, file a bug at https://github.com/NeoHaskell/neocli/issues with the full backtrace — the bundled `{template}` template should not fail to render with valid input.")
+        help("This is an internal templating error in `neo`. Re-run with `RUST_BACKTRACE=1`. If it reproduces on a fresh `neo new` checkout, file a bug at https://github.com/neohaskell/NeoHaskell/issues with the full backtrace — the bundled `{template}` template should not fail to render with valid input.")
     )]
     TemplateError { template: String, reason: String },
 
@@ -111,7 +111,7 @@ pub enum NeoError {
     #[diagnostic(
         code(neo::subprocess_raw),
         url(docsrs),
-        help("We didn't recognise this failure mode.\n\nThe full failure has been appended to your local log:\n  {log_path}\n\nThis file is the central backlog of every unrecognized error `neo` has hit on this machine — each line is one JSON record (operation, tail, full output, timestamp, cwd). When you have a moment, open an issue so we can add a fix recipe:\n  https://github.com/neohaskell/neo/issues/new?template=uninterpreted-subprocess-error.md\nYou can paste one record per issue, or attach the file and let us batch them.")
+        help("We didn't recognise this failure mode.\n\nThe full failure has been appended to your local log:\n  {log_path}\n\nThis file is the central backlog of every unrecognized error `neo` has hit on this machine — each line is one JSON record (operation, tail, full output, timestamp, cwd). When you have a moment, open an issue so we can add a fix recipe:\n  https://github.com/neohaskell/NeoHaskell/issues/new?template=uninterpreted-subprocess-error.md\nYou can paste one record per issue, or attach the file and let us batch them.")
     )]
     SubprocessRaw {
         operation: String,
@@ -171,7 +171,7 @@ pub enum NeoError {
         url(docsrs),
         help("The embedded axum server returned an unexpected I/O error mid-flight. This is a bug in `neo`. \
               Re-run with `--verbose` to capture details, then file an issue at \
-              https://github.com/NeoHaskell/neo/issues with the full output.")
+              https://github.com/neohaskell/NeoHaskell/issues with the full output.")
     )]
     IdeServe {
         #[source]
@@ -578,7 +578,7 @@ mod tests {
         let err = stub_subprocess_raw();
         let help = err.help().map(|h| h.to_string()).unwrap_or_default();
         assert!(
-            help.contains("github.com/neohaskell/neo/issues/new"),
+            help.contains("github.com/neohaskell/NeoHaskell/issues/new"),
             "help missing GH issue URL: {}",
             help
         );
@@ -1059,7 +1059,7 @@ mod tests {
         assert!(display.contains("unexpected EOF"), "missing source cause: {}", display);
 
         let help = err.help().map(|h| h.to_string()).unwrap_or_default();
-        assert!(help.contains("github.com/NeoHaskell/neo/issues"), "help missing issue link: {}", help);
+        assert!(help.contains("github.com/neohaskell/NeoHaskell/issues"), "help missing issue link: {}", help);
     }
 
     #[test]

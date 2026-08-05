@@ -1,0 +1,389 @@
+#!/usr/bin/env python3
+"""Fail-closed clean-machine Neo onboarding SLO gate."""
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+import re
+import signal
+import shutil
+import subprocess
+import sys
+import tempfile
+import time
+from pathlib import Path
+
+DEADLINE_DEFAULT = 600.0
+REPO_DEFAULT = "neohaskell/NeoHaskell"
+CACHIX_DEFAULT = "https://neohaskell.cachix.org"
+TARGETS = {"x86_64-unknown-linux-gnu", "aarch64-apple-darwin"}
+SHA_RE = re.compile(r"^[0-9a-fA-F]{40}$")
+
+
+class GateError(Exception):
+    pass
+
+
+class DeadlineExceeded(GateError):
+    pass
+
+
+def mono() -> float:
+    return time.monotonic()
+
+
+def strict_sha(value: str | None, name: str) -> str:
+    if not SHA_RE.fullmatch(value or ""):
+        raise GateError(f"{name} must be a strict 40-hex commit SHA")
+    return value.lower()
+
+
+def immutable_tag(value: str | None, prefix: str) -> str:
+    if not value or value in {"latest", "main", "HEAD"}:
+        raise GateError(f"missing or mutable {prefix} tag")
+    if not re.fullmatch(re.escape(prefix) + r"[A-Za-z0-9._-]+", value):
+        raise GateError(f"invalid immutable {prefix} tag")
+    return value
+
+
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def terminate_group(pid: int, deadline: float | None = None) -> None:
+    for sig, default_grace in ((signal.SIGTERM, 2.0), (signal.SIGKILL, 1.0)):
+        try:
+            os.killpg(pid, sig)
+        except (ProcessLookupError, PermissionError):
+            return
+        remaining = default_grace if deadline is None else max(0.0, deadline - mono())
+        until = mono() + min(default_grace, remaining)
+        while mono() < until:
+            try:
+                os.killpg(pid, 0)
+            except (ProcessLookupError, PermissionError):
+                return
+            time.sleep(0.05)
+
+
+def bounded(deadline: float, argv: list[str], *, cwd: Path | None = None,
+            env: dict[str, str] | None = None, log: Path | None = None) -> bytes:
+    remaining = deadline - mono()
+    if remaining <= 0:
+        raise DeadlineExceeded("global 600-second deadline exceeded")
+    output = log.open("wb") if log else subprocess.PIPE
+    process = subprocess.Popen(
+        argv, cwd=cwd, env=env, stdout=output, stderr=subprocess.STDOUT,
+        start_new_session=True,
+    )
+    try:
+        stdout, _ = process.communicate(timeout=remaining)
+    except subprocess.TimeoutExpired:
+        terminate_group(process.pid, deadline)
+        try:
+            process.wait(timeout=max(0.0, min(0.1, deadline - mono())))
+        except subprocess.TimeoutExpired:
+            process.kill()
+            try:
+                process.wait(timeout=0.1)
+            except subprocess.TimeoutExpired:
+                pass
+        raise DeadlineExceeded(f"global deadline exceeded while running: {' '.join(argv)}")
+    finally:
+        if log:
+            output.close()
+    # A command may exit while leaving descendants behind. Clean its session too.
+    terminate_group(process.pid, deadline)
+    if process.returncode != 0:
+        if log and log.exists():
+            detail = log.read_bytes().decode(errors="replace")[-4000:]
+        else:
+            detail = (stdout or b"").decode(errors="replace")[-4000:]
+        raise GateError(f"command failed ({process.returncode}): {' '.join(argv)}\n{detail}")
+    return stdout or b""
+
+
+def fetch(deadline: float, url: str, destination: Path | None = None) -> bytes:
+    data = bounded(deadline, [
+        "curl", "--fail", "--silent", "--show-error", "--location", url,
+    ])
+    if destination:
+        destination.write_bytes(data)
+    return data
+
+
+def resolve_tag(deadline: float, repo: str, tag: str) -> str:
+    ref = json.loads(fetch(deadline, f"https://api.github.com/repos/{repo}/git/ref/tags/{tag}"))
+    obj = ref.get("object", {})
+    # Peel annotated tags, including nested annotated tags, to the commit.
+    for _ in range(8):
+        sha = strict_sha(obj.get("sha"), f"resolved tag {tag}")
+        if obj.get("type") == "commit":
+            return sha
+        if obj.get("type") != "tag":
+            raise GateError(f"tag {tag} does not resolve to a commit")
+        tag_obj = json.loads(fetch(deadline, f"https://api.github.com/repos/{repo}/git/tags/{sha}"))
+        obj = tag_obj.get("object", {})
+    raise GateError(f"tag {tag} has excessive indirection")
+
+
+def manifest_hash(path: Path, asset: str) -> str:
+    for line in path.read_text().splitlines():
+        fields = line.split()
+        if len(fields) >= 2 and fields[1].lstrip("*") == asset:
+            value = fields[0].lower()
+            if re.fullmatch(r"[0-9a-f]{64}", value):
+                return value
+            raise GateError(f"invalid checksum for {asset}")
+    raise GateError(f"missing checksum manifest entry for {asset}")
+
+
+def require_matching_hash(actual: str, expected: str, label: str) -> None:
+    if actual != expected:
+        raise GateError(f"{label} checksum mismatch: expected {expected}, got {actual}")
+
+
+def write_evidence(path: Path, record: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    raw = json.dumps(record, sort_keys=True, indent=2) + "\n"
+    # A hosted evidence record is append-only by run identity: never replace a
+    # previous pass/failure or its diagnostic details.
+    with path.open("x") as handle:
+        handle.write(raw)
+    digest = hashlib.sha256(raw.encode()).hexdigest()
+    with Path(str(path) + ".sha256").open("x") as handle:
+        handle.write(f"{digest}  {path.name}\n")
+
+
+def run_gate() -> None:
+    started = mono()  # Includes validation, cache probe, downloads, and installation.
+    deadline_seconds = float(os.getenv("SLO_DEADLINE", str(DEADLINE_DEFAULT)))
+    deadline = started + deadline_seconds
+    evidence_value = os.getenv("SLO_EVIDENCE")
+    if not evidence_value:
+        raise GateError("SLO_EVIDENCE is required")
+    evidence = Path(evidence_value)
+    phase = "validate"
+    work: Path | None = None
+    server: subprocess.Popen | None = None
+    server_log = None
+    source = os.getenv("SLO_SOURCE_SHA", "")
+    base = {
+        "schema": "neo-onboarding-slo/v3",
+        "workflow_run_id": os.getenv("SLO_WORKFLOW_RUN_ID", "local"),
+        "workflow_ref": os.getenv("SLO_WORKFLOW_REF", ""),
+        "source_sha": source,
+    }
+    try:
+        repo = os.getenv("SLO_REPO", REPO_DEFAULT)
+        installer_tag = immutable_tag(os.getenv("SLO_INSTALLER_VERSION"), "installer-v")
+        neo_tag = immutable_tag(os.getenv("SLO_NEO_VERSION"), "neo-v")
+        source = strict_sha(source, "SLO_SOURCE_SHA")
+        expected = strict_sha(os.getenv("SLO_EXPECTED_SOURCE_SHA"), "SLO_EXPECTED_SOURCE_SHA")
+        dispatched = strict_sha(os.getenv("SLO_DISPATCHED_SOURCE_SHA"), "SLO_DISPATCHED_SOURCE_SHA")
+        if not source == expected == dispatched:
+            raise GateError("reviewed, expected, and dispatched source SHAs do not agree")
+        target = os.getenv("SLO_TARGET") or (
+            "aarch64-apple-darwin" if sys.platform == "darwin" else "x86_64-unknown-linux-gnu"
+        )
+        if target not in TARGETS:
+            raise GateError(f"unsupported clean-machine target: {target}")
+        base.update(source_sha=source, installer_version=installer_tag,
+                    neo_version=neo_tag, target=target,
+                    deadline_seconds=deadline_seconds)
+
+        phase = "resolve-tags"
+        installer_tag_sha = resolve_tag(deadline, repo, installer_tag)
+        neo_tag_sha = resolve_tag(deadline, repo, neo_tag)
+        if not installer_tag_sha == neo_tag_sha == source:
+            raise GateError("release tag SHAs do not equal the reviewed source SHA")
+        base["release_tag_shas"] = {"installer": installer_tag_sha, "neo": neo_tag_sha}
+
+        phase = "cache-probe"
+        cachix = os.getenv("SLO_CACHIX_HOST", CACHIX_DEFAULT)
+        fetch(deadline, cachix + "/nix-cache-info")
+        cache = {"substituter": cachix, "reachable": True, "observed_use": False}
+        base["cachix"] = cache
+
+        phase = "download"
+        work = Path(tempfile.mkdtemp(prefix="neo-slo-"))
+        bindir = work / "bin"
+        bindir.mkdir()
+        installer_asset = f"installer-neo-install-{target}"
+        neo_asset = f"neo-{target}"
+        installer_base = f"https://github.com/{repo}/releases/download/{installer_tag}"
+        neo_base = f"https://github.com/{repo}/releases/download/{neo_tag}"
+        fetch(deadline, f"{installer_base}/{installer_asset}", work / installer_asset)
+        fetch(deadline, f"{installer_base}/SHA256SUMS", work / "installer.SHA256SUMS")
+        fetch(deadline, f"{neo_base}/SHA256SUMS", work / "neo.SHA256SUMS")
+        installer_sha = manifest_hash(work / "installer.SHA256SUMS", installer_asset)
+        require_matching_hash(sha256_file(work / installer_asset), installer_sha, "installer")
+        neo_sha = manifest_hash(work / "neo.SHA256SUMS", neo_asset)
+        os.chmod(work / installer_asset, 0o755)
+
+        phase = "install"
+        env = os.environ.copy()
+        env.update(NEO_VERSION=neo_tag, NEO_BIN_DIR=str(bindir))
+        bounded(deadline, [str(work / installer_asset), "--force"],
+                env=env, log=work / "installer.log")
+        neo = bindir / "neo"
+        if not neo.is_file():
+            raise GateError("installer did not install neo")
+        installed_sha = sha256_file(neo)
+        require_matching_hash(installed_sha, neo_sha, "installed neo")
+        base["checksums"] = {
+            "installer_sha256": installer_sha,
+            "neo_manifest_sha256": neo_sha,
+            "installed_neo_sha256": installed_sha,
+        }
+
+        phase = "new"
+        bounded(deadline, [str(neo), "--ci", "new", "proj"],
+                cwd=work, log=work / "neo-new.log")
+        phase = "test"
+        bounded(deadline, [str(neo), "--ci", "test"],
+                cwd=work / "proj", log=work / "neo-test.log")
+        cache_pattern = re.compile(
+            r"(?:copying (?:path|\d+ paths?)|substituting path).*from.*https://neohaskell\.cachix\.org",
+            re.IGNORECASE,
+        )
+        observed = any(
+            cache_pattern.search(path.read_text(errors="ignore"))
+            for path in (work / "installer.log", work / "neo-new.log", work / "neo-test.log")
+        )
+        cache["observed_use"] = observed
+        if not observed:
+            raise GateError("no actual substitution from neohaskell.cachix.org was observed")
+
+        phase = "run-health"
+        server_log = (work / "neo-run.log").open("wb")
+        server = subprocess.Popen(
+            [str(neo), "--ci", "run"], cwd=work / "proj",
+            stdout=server_log, stderr=subprocess.STDOUT, start_new_session=True,
+        )
+        health_url = f"http://127.0.0.1:{os.getenv('SLO_APP_PORT', '8080')}/health"
+        while True:
+            if mono() >= deadline:
+                raise DeadlineExceeded("global deadline exceeded waiting for /health")
+            try:
+                body = fetch(deadline, health_url).decode(errors="replace")
+                if '"status":"ok"' in body:
+                    break
+            except GateError:
+                if server.poll() is not None:
+                    raise GateError("neo run exited before /health became ready")
+                time.sleep(min(1.0, max(0.0, deadline - mono())))
+
+        elapsed = mono() - started
+        if elapsed > deadline_seconds:
+            raise DeadlineExceeded("global 600-second deadline exceeded")
+        base.update(result="pass", phase="complete", elapsed_seconds=round(elapsed, 3))
+        write_evidence(evidence, base)
+    except Exception as error:
+        base.update(result="fail", phase=phase, reason=str(error),
+                    elapsed_seconds=round(mono() - started, 3),
+                    deadline_seconds=deadline_seconds)
+        write_evidence(evidence, base)
+        raise
+    finally:
+        if server is not None:
+            terminate_group(server.pid, deadline)
+            try:
+                server.wait(timeout=max(0.0, min(0.1, deadline - mono())))
+            except subprocess.TimeoutExpired:
+                pass
+        if server_log is not None:
+            server_log.close()
+        if work is not None:
+            shutil.rmtree(work, ignore_errors=True)
+
+
+def self_test() -> None:
+    assert strict_sha("a" * 40, "sha") == "a" * 40
+    assert immutable_tag("neo-v1.2.3", "neo-v") == "neo-v1.2.3"
+    for bad in (None, "latest", "main", "neo-v../x", "v1"):
+        try:
+            immutable_tag(bad, "neo-v")
+            raise AssertionError(f"accepted unsafe tag: {bad}")
+        except GateError:
+            pass
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        evidence = root / "evidence.json"
+        write_evidence(evidence, {"result": "pass"})
+        assert json.loads(evidence.read_text())["result"] == "pass"
+        assert re.fullmatch(r"[0-9a-f]{64}  evidence.json\n", Path(str(evidence) + ".sha256").read_text())
+        try:
+            write_evidence(evidence, {"result": "fail"})
+            raise AssertionError("existing evidence was overwritten")
+        except FileExistsError:
+            assert json.loads(evidence.read_text())["result"] == "pass"
+        failure = root / "failure.json"
+        write_evidence(failure, {"result": "fail", "phase": "test", "reason": "intentional"})
+        assert json.loads(failure.read_text())["result"] == "fail"
+        try:
+            require_matching_hash("a" * 64, "b" * 64, "installed neo")
+            raise AssertionError("hash mismatch was accepted")
+        except GateError:
+            pass
+        command_log = root / "failed-command.log"
+        try:
+            bounded(mono() + 5, [sys.executable, "-c", "print('diagnostic-marker'); raise SystemExit(7)"], log=command_log)
+            raise AssertionError("nonzero command was accepted")
+        except GateError as error:
+            assert "diagnostic-marker" in str(error)
+        cache_pattern = re.compile(
+            r"(?:copying (?:path|\d+ paths?)|substituting path).*from.*https://neohaskell\.cachix\.org",
+            re.IGNORECASE,
+        )
+        assert cache_pattern.search("copying path '/nix/store/x' from 'https://neohaskell.cachix.org'")
+        assert not cache_pattern.search("configured substituter https://neohaskell.cachix.org")
+        started = mono()
+        try:
+            bounded(mono() + 0.15, [sys.executable, "-c", "import time; time.sleep(30)"])
+            raise AssertionError("hung command was not timed out")
+        except DeadlineExceeded:
+            assert mono() - started < 5
+        marker = root / "descendant"
+        survivor = root / "survivor"
+        code = (
+            "import os,time; p=os.fork(); "
+            f"open({str(marker)!r},'w').write(str(p)); "
+            f"(time.sleep(1),open({str(survivor)!r},'w').write('alive'),os._exit(0)) if p==0 else time.sleep(30)"
+        )
+        try:
+            bounded(mono() + 0.15, [sys.executable, "-c", code])
+            raise AssertionError("descendant command was not timed out")
+        except DeadlineExceeded:
+            assert marker.read_text().isdigit()
+            time.sleep(1.1)
+            assert not survivor.exists(), "descendant survived process-group cleanup"
+    source = Path(__file__).read_text()
+    banned = ("gh release " + "create", "cachix " + "push", "git " + "push")
+    assert not any(token in source for token in banned)
+    print("onboarding-slo self-test: OK - strict refs, pass/failure evidence, checksum rejection, monotonic deadline, descendant cleanup, non-publication")
+
+
+if __name__ == "__main__":
+    try:
+        if "--self-test" in sys.argv:
+            self_test()
+        elif len(sys.argv) >= 2 and sys.argv[1] == "run":
+            run_gate()
+        else:
+            raise GateError("usage: onboarding-slo run | --self-test")
+    except Exception as error:
+        evidence_value = os.getenv("SLO_EVIDENCE")
+        if evidence_value and not Path(evidence_value).exists():
+            write_evidence(Path(evidence_value), {
+                "schema": "neo-onboarding-slo/v3", "result": "fail",
+                "phase": "startup", "reason": str(error),
+                "workflow_run_id": os.getenv("SLO_WORKFLOW_RUN_ID", "local"),
+            })
+        print(f"onboarding-slo: {error}", file=sys.stderr)
+        sys.exit(1)

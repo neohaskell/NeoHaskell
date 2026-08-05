@@ -26,7 +26,7 @@ impl GhciSession {
             NeoError::SubprocessFailed {
                 operation: "starting `cabal repl`".to_string(),
                 cause: "failed to attach to child stdin (piped stdin was not available)".to_string(),
-                fix: "This is an internal `neo` bug — `Stdio::piped()` should always provide a stdin handle. Re-run with `RUST_BACKTRACE=1` and file an issue at https://github.com/NeoHaskell/neocli/issues.".to_string(),
+                fix: "This is an internal `neo` bug — `Stdio::piped()` should always provide a stdin handle. Re-run with `RUST_BACKTRACE=1` and file an issue at https://github.com/neohaskell/NeoHaskell/issues.".to_string(),
             }
         })?;
 
