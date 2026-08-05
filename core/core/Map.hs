@@ -13,6 +13,7 @@ module Map (
   remove,
   getOrElse,
   length,
+  isEmpty,
   values,
   keys,
   mapValues,
@@ -129,6 +130,11 @@ remove key self = HaskellMap.delete key self
 -- | Returns the length of the map
 length :: Map key value -> Int
 length self = HaskellMap.size self
+
+-- | Returns True if the map is empty, False otherwise
+isEmpty :: Map key value -> Bool
+isEmpty self = HaskellMap.null self
+{-# INLINE isEmpty #-}
 
 
 -- | Maps a function over the values in a map

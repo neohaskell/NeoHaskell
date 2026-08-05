@@ -27,8 +27,8 @@ spec = do
         globalSubs <- store.globalSubscriptions |> ConcurrentVar.peek
         streamSubs <- store.streamSubscriptions |> ConcurrentVar.peek
 
-        globalSubs |> Map.length |> shouldBe 0
-        streamSubs |> Map.length |> shouldBe 0
+        globalSubs |> Map.isEmpty |> shouldBe True
+        streamSubs |> Map.isEmpty |> shouldBe True
 
       it "adds a global subscription" \_ -> do
         store <- SubscriptionStore.new |> Task.mapError toText
@@ -109,7 +109,7 @@ spec = do
         streamId <- StreamId.new
 
         subscriptions <- store |> SubscriptionStore.getStreamSubscriptions streamId |> Task.mapError toText
-        subscriptions |> Map.length |> shouldBe 0
+        subscriptions |> Map.isEmpty |> shouldBe True
 
     describe "Concurrent Modifications" do
       it "handles concurrent additions to different streams" \_ -> do
@@ -454,7 +454,7 @@ spec = do
         runs <- ConcurrentVar.get cleanupRuns
         runs |> shouldBe 1
         subscriptions <- store |> SubscriptionStore.getStreamSubscriptions streamId |> Task.mapError toText
-        subscriptions |> Map.length |> shouldBe 0
+        subscriptions |> Map.isEmpty |> shouldBe True
 
       it "stays total when onRemove throws (unsubscribe never fails)" \_ -> do
         store <- SubscriptionStore.new |> Task.mapError toText
@@ -475,7 +475,7 @@ spec = do
           Ok _ -> Task.yield unit
 
         subscriptions <- store |> SubscriptionStore.getStreamSubscriptions streamId |> Task.mapError toText
-        subscriptions |> Map.length |> shouldBe 0
+        subscriptions |> Map.isEmpty |> shouldBe True
 
       it "is a no-op for a never-registered id (runs no cleanup)" \_ -> do
         store <- SubscriptionStore.new |> Task.mapError toText
@@ -565,8 +565,8 @@ spec = do
 
         globalSubs <- store.globalSubscriptions |> ConcurrentVar.peek
         entitySubs <- store.entitySubscriptions |> ConcurrentVar.peek
-        globalSubs |> Map.length |> shouldBe 0
-        entitySubs |> Map.getOrElse entityName Map.empty |> Map.length |> shouldBe 0
+        globalSubs |> Map.isEmpty |> shouldBe True
+        entitySubs |> Map.getOrElse entityName Map.empty |> Map.isEmpty |> shouldBe True
         -- The stream subscription and its cleanup are untouched by the removals.
         runs <- ConcurrentVar.get cleanupRuns
         runs |> shouldBe 0

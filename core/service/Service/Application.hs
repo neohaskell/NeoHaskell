@@ -611,7 +611,7 @@ isEmpty app =
     && Array.isEmpty app.queryDefinitions
     && Registry.isEmpty app.queryRegistry
     && Array.isEmpty app.serviceRunners
-    && Map.length app.transports == 0
+    && Map.isEmpty app.transports
 
 
 -- | Check if a QueryRegistry has been configured.
@@ -650,7 +650,7 @@ withTransport transport app = do
 
 -- | Check if any transports have been configured.
 hasTransports :: Application -> Bool
-hasTransports app = Map.length app.transports > 0
+hasTransports app = not (Map.isEmpty app.transports)
 
 
 -- | Get the number of transports configured.
@@ -682,7 +682,7 @@ withQueryEndpoint queryName handler app = do
 
 -- | Check if any query endpoints have been configured.
 hasQueryEndpoints :: Application -> Bool
-hasQueryEndpoints app = Map.length app.queryEndpoints > 0
+hasQueryEndpoints app = not (Map.isEmpty app.queryEndpoints)
 
 
 -- | Get the number of query endpoints configured.

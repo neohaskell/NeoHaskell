@@ -42,7 +42,7 @@ empty = QueryRegistry Map.empty
 
 -- | Check if the QueryRegistry has no registered updaters.
 isEmpty :: QueryRegistry -> Bool
-isEmpty (QueryRegistry registry) = Map.length registry == 0
+isEmpty (QueryRegistry registry) = Map.isEmpty registry
 
 
 -- | Register a QueryUpdater for an entity type.
