@@ -2,6 +2,7 @@ use minijinja::{context, Environment};
 use std::fs;
 use crate::reconcile::resolve::{ResolvedConfig, DependencySource};
 use crate::errors::NeoError;
+use crate::reconcile::flake::local_source_override;
 
 use std::path::Path;
 
@@ -28,10 +29,13 @@ pub fn generate<P: AsRef<Path>>(
         }
     }
 
+    let local_source = local_source_override()?;
     let rendered = template.render(context! {
         git_dependencies => git_dependencies,
         file_dependencies => file_dependencies,
         neo_sha => config.neo_sha,
+        neohaskell_git_url => local_source.as_ref().map(|s| s.git_url.as_str()).unwrap_or("https://github.com/neohaskell/neohaskell.git"),
+        neohaskell_commit => local_source.as_ref().map(|s| s.rev.as_str()).unwrap_or(config.neo_sha.as_str()),
         name => config.name,
     }).map_err(|e| NeoError::TemplateError { template: "cabal.project".to_string(), reason: e.to_string() })?;
 

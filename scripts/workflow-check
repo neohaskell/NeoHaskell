@@ -22,6 +22,17 @@ Two contracts, both learned from real breakage:
      (core/, testbed/, integrations/) so a real code change can never read
      compiled=false and let ci-gate accept a green no-op skip.
 
+  5. Generated-project consumer contract (neo-ci.yml): the neo component gate
+     also carries ONE blocking end-to-end job (`consumer-contract`) that proves
+     the Nix-packaged `neo` generates a project from the embedded starter and
+     that the generated project builds/tests/runs/answers /health against the
+     monorepo checkout under test. It is unreviewable-by-eye that this job stays
+     (a) present, (b) blocking (never continue-on-error / report-only), (c) on
+     Linux, (d) required through neo-ci-gate, and (e) triggered for every
+     relevant surface (neo/, core/, integrations/). This freezes all five so a
+     regression that silently removes, weakens, or de-scopes the contract fails
+     loudly.
+
   4. Neo CLI component gate (neo-ci.yml): now that neo has its own crate CI, the
      Neo CLI is gated by neo-ci.yml, NOT by the Haskell Test gate (test.yml no
      longer classifies neo/** as compiled; see contract 3). Two invariants keep
@@ -56,6 +67,15 @@ COMPILED_SURFACES = ("core/", "testbed/", "integrations/")
 # contract 4. It intentionally has NO base-branch allowlist (stacked PRs).
 COMPONENT_GATE = "neo-ci.yml"
 COMPONENT_SURFACES = ("neo/",)
+
+# The generated-project consumer-contract job (contract 5) + the surfaces its
+# broader classifier must route. It covers the component surfaces PLUS the
+# monorepo Haskell sources the generated project compiles against, because a
+# change there can break the starter->upstream contract.
+CONSUMER_CONTRACT_JOB = "consumer-contract"
+CONTRACT_GATE_JOB = "neo-ci-gate"
+CONTRACT_SURFACES = ("neo/", "core/", "integrations/")
+CONTRACT_VERB = "neo-consumer-contract"
 
 
 def _indent(line):
@@ -371,6 +391,13 @@ def classifier_pattern(text):
     return m.group(1) if m else None
 
 
+def contract_classifier_pattern(text):
+    """The broader consumer-contract classifier regex (CONTRACT='…') in the
+    `changes` job — routes the surfaces that trigger the end-to-end contract."""
+    m = re.search(r"CONTRACT='([^']*)'", text)
+    return m.group(1) if m else None
+
+
 def check_required_gate(name, text):
     """test.yml is the required merge gate. Two bootstrap invariants (contract 3):
     it must trigger on PRs to every GATE_BASE_BRANCHES base, and its classifier
@@ -426,6 +453,82 @@ def check_component_gate(name, text):
     return errs
 
 
+def check_consumer_contract(name, text):
+    """The generated-project consumer contract (contract 5) is one blocking
+    end-to-end job in the neo component gate. Freeze five invariants so it cannot
+    be silently removed, weakened to report-only, moved off Linux, decoupled from
+    the required gate, or de-scoped for a relevant surface."""
+    errs = []
+    E = errs.append
+    jobs = job_blocks(text)
+    job = jobs.get(CONSUMER_CONTRACT_JOB, "")
+    gate = jobs.get(CONTRACT_GATE_JOB, "")
+
+    # (a) present.
+    if not job:
+        E(f"{name}: missing the `{CONSUMER_CONTRACT_JOB}` job (the end-to-end "
+          "generated-project contract) — it must run in the neo component gate")
+        return errs  # nothing else is checkable without the job
+
+    # (b) blocking — never report-only.
+    if re.search(r"continue-on-error:\s*true", job):
+        E(f"{name}: `{CONSUMER_CONTRACT_JOB}` sets continue-on-error: true — the "
+          "contract is a blocking gate, not report-only")
+
+    # (c) on Linux.
+    if not re.search(r"runs-on:\s*ubuntu", job):
+        E(f"{name}: `{CONSUMER_CONTRACT_JOB}` does not run on Linux (runs-on: ubuntu-*)")
+
+    # The contract clones the checkout into a git+file Nix input. Nix rejects a
+    # local input inherited from actions/checkout's default shallow clone.
+    if not re.search(r"uses:\s*actions/checkout[^\n]*\n\s+with:\s*\n\s+fetch-depth:\s*0", job):
+        E(f"{name}: `{CONSUMER_CONTRACT_JOB}` checkout must set `fetch-depth: 0` "
+          "— its local git+file Nix input cannot be shallow")
+
+    # It actually runs the contract: both the orchestration self-test and the
+    # full contract (a bare `./dev neo-consumer-contract`, not only --self-test).
+    if f"{CONTRACT_VERB} --self-test" not in job:
+        E(f"{name}: `{CONSUMER_CONTRACT_JOB}` never runs `./dev {CONTRACT_VERB} "
+          "--self-test` (the orchestration-logic self-test)")
+    if not re.search(rf"\./dev {re.escape(CONTRACT_VERB)}\s*$", job, re.M):
+        E(f"{name}: `{CONSUMER_CONTRACT_JOB}` never runs the FULL contract "
+          f"(`./dev {CONTRACT_VERB}` with no flags) — a self-test-only job would "
+          "not prove a generated project builds/tests/runs")
+
+    # It is triggered by real change detection, not always-on/decoupled: the job
+    # must gate on the `contract` surface signal.
+    if "contract == 'true'" not in job:
+        E(f"{name}: `{CONSUMER_CONTRACT_JOB}` is not gated on "
+          "`needs.changes.outputs.contract == 'true'` — it must run exactly when a "
+          "relevant surface changed (not always, not never)")
+
+    # (d) required through neo-ci-gate: the gate must both `needs` it and evaluate
+    #     its result, so a skip/failure is enforced rather than ignored.
+    if not gate:
+        E(f"{name}: missing the `{CONTRACT_GATE_JOB}` required gate")
+    else:
+        if not re.search(rf"^    needs:.*\b{re.escape(CONSUMER_CONTRACT_JOB)}\b", gate, re.M):
+            E(f"{name}: `{CONTRACT_GATE_JOB}` does not `needs: {CONSUMER_CONTRACT_JOB}` "
+              "— the contract would not block the required gate")
+        if f"needs.{CONSUMER_CONTRACT_JOB}.result" not in gate:
+            E(f"{name}: `{CONTRACT_GATE_JOB}` never evaluates "
+              f"`needs.{CONSUMER_CONTRACT_JOB}.result` — a contract failure/skip "
+              "would pass unnoticed")
+
+    # (e) routed for every relevant surface via the broader CONTRACT classifier.
+    pat = contract_classifier_pattern(text)
+    if pat is None:
+        E(f"{name}: no consumer-contract classifier (CONTRACT='...') found — cannot "
+          "confirm the contract runs for the relevant surfaces")
+    else:
+        for surface in CONTRACT_SURFACES:
+            if surface not in pat:
+                E(f"{name}: consumer-contract classifier lacks '{surface}' — a "
+                  f"'{surface}' change would not trigger the end-to-end contract "
+                  "(the starter->upstream break it exists to catch)")
+    return errs
+
+
 def run(root=WORKFLOWS):
     errs = []
     for wf in sorted(root.glob("*.yml")):
@@ -439,6 +542,7 @@ def run(root=WORKFLOWS):
             errs += check_required_gate(wf.name, text)
         if wf.name == COMPONENT_GATE:
             errs += check_component_gate(wf.name, text)
+            errs += check_consumer_contract(wf.name, text)
     retro = root / "retrospect.yml"
     if not retro.exists():
         errs.append("retrospect.yml is missing (deterministic learning-loop digest)")
@@ -690,6 +794,70 @@ def self_test():
                   "    types: [opened, synchronize]\n")))
     check("component gate missing neo/** routing is flagged",
           check_component_gate("neo-ci.yml", good_component.replace("neo/|", "")))
+
+    # ── consumer-contract job (contract 5) ───────────────────────────────────
+    cc_block = (
+        "  consumer-contract:\n"
+        "    needs: changes\n"
+        "    if: needs.changes.outputs.contract == 'true'\n"
+        "    runs-on: ubuntu-latest\n"
+        "    steps:\n"
+        "      - uses: actions/checkout@v7.0.0\n"
+        "        with:\n"
+        "          fetch-depth: 0\n"
+        "      - run: ./dev neo-consumer-contract --self-test\n"
+        "      - run: ./dev neo-consumer-contract\n"
+    )
+    good_contract = (
+        "on:\n  pull_request:\n    types: [opened]\n"
+        "jobs:\n"
+        "  changes:\n"
+        "    steps:\n      - run: |\n"
+        "          PATTERN='^(neo/|nix/neo-package\\.nix)'\n"
+        "          CONTRACT='^(neo/|core/|integrations/|nix/neo-package\\.nix|scripts/neo-consumer-contract)'\n"
+        + cc_block +
+        "  neo-ci-gate:\n"
+        "    if: always()\n"
+        "    needs: [changes, rust, ide, nix-package, consumer-contract]\n"
+        "    steps:\n"
+        "      - run: echo ${{ needs.consumer-contract.result }}\n"
+    )
+
+    def cc_bad(name_, mutated):
+        check(name_, bool(check_consumer_contract("neo-ci.yml", mutated)))
+
+    check("well-wired consumer contract passes",
+          not check_consumer_contract("neo-ci.yml", good_contract))
+    cc_bad("removing the consumer-contract job is flagged",
+           good_contract.replace(cc_block, ""))
+    cc_bad("making the contract report-only (continue-on-error) is flagged",
+           good_contract.replace(
+               "    runs-on: ubuntu-latest\n",
+               "    runs-on: ubuntu-latest\n    continue-on-error: true\n"))
+    cc_bad("moving the contract off Linux is flagged",
+           good_contract.replace("runs-on: ubuntu-latest", "runs-on: macos-latest"))
+    cc_bad("a shallow checkout is flagged",
+           good_contract.replace("          fetch-depth: 0\n", ""))
+    cc_bad("a self-test-only contract (no full run) is flagged",
+           good_contract.replace("      - run: ./dev neo-consumer-contract\n", ""))
+    cc_bad("dropping the --self-test step is flagged",
+           good_contract.replace("      - run: ./dev neo-consumer-contract --self-test\n", ""))
+    cc_bad("decoupling the contract from change detection is flagged",
+           good_contract.replace("    if: needs.changes.outputs.contract == 'true'\n",
+                                 "    if: always()\n"))
+    cc_bad("gate not needing the contract is flagged",
+           good_contract.replace(
+               "    needs: [changes, rust, ide, nix-package, consumer-contract]\n",
+               "    needs: [changes, rust, ide, nix-package]\n"))
+    cc_bad("gate not evaluating the contract result is flagged",
+           good_contract.replace("      - run: echo ${{ needs.consumer-contract.result }}\n",
+                                 "      - run: echo done\n"))
+    cc_bad("consumer-contract classifier lacking core/ is flagged",
+           good_contract.replace("core/|", ""))
+    cc_bad("missing consumer-contract classifier is flagged",
+           good_contract.replace(
+               "          CONTRACT='^(neo/|core/|integrations/|nix/neo-package\\.nix|scripts/neo-consumer-contract)'\n",
+               ""))
 
     print("workflow-check: self-test", "OK" if ok else "FAILED")
     return 0 if ok else 1

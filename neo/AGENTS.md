@@ -97,6 +97,14 @@ by the Haskell Test gate.
 | Integration | `cd neo && nix develop --command cargo test --test integration_tests -- --test-threads=1` | `cargo`-built debug `neo` (real nix + network) |
 | E2E | `cd neo && nix build && nix develop --command cargo test --test e2e -- --ignored --test-threads=1` | nix-built `result/bin/neo` (real nix + network) |
 | Neo-on-Neo smoke | `neo new` a project, then `neo build` + `neo test` inside it | the built binary on a generated project |
+| Consumer contract | `./dev neo-consumer-contract` (from the repo root) | the Nix-packaged `.#neo` on a generated project, against THIS checkout |
+
+The generated-project consumer contract is run with `./dev neo-consumer-contract`.
+It proves the packaged CLI and generated project against the checkout under test.
+Treat `scripts/neo-consumer-contract` and `.github/workflows/neo-ci.yml` as the
+executable sources of truth for its phases, routing, platform, and gate wiring; use
+`--self-test` when changing its orchestration helpers. Do not weaken the contract
+to report-only.
 
 Timing is cold-vs-warm: test *execution* is seconds, but the *first* compile of the
 Rust crate (and the Haskell that integration/e2e build inside) can take minutes on a

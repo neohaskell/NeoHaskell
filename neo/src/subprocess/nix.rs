@@ -39,16 +39,24 @@ pub async fn spawn_app() -> miette::Result<tokio::process::Child> {
 pub async fn kill_app(mut child: tokio::process::Child) {
     #[cfg(unix)]
     if let Some(pid) = child.id() {
-        let group = format!("-{pid}");
-        let _ = std::process::Command::new("kill")
-            .args(["-TERM", &group])
+        let group = pid.to_string();
+        let _ = std::process::Command::new("pkill")
+            .args(["-TERM", "-g", &group])
             .status();
         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-        let _ = std::process::Command::new("kill")
-            .args(["-KILL", &group])
+        let _ = std::process::Command::new("pkill")
+            .args(["-KILL", "-g", &group])
             .status();
     }
-    let _ = child.wait().await;
+    // Group signalling is best-effort and depends on the platform's `pkill`.
+    // Always terminate the direct child too, and never let test teardown hang
+    // indefinitely after every assertion has already completed.
+    let _ = child.start_kill();
+    let _ = tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        child.wait(),
+    )
+    .await;
 }
 
 pub async fn test(output_mode: &mut OutputMode) -> miette::Result<()> {
@@ -379,5 +387,20 @@ mod tests {
         if let Ok(mut child) = result {
             child.kill().await.ok();
         }
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn kill_app_is_bounded_even_when_child_ignores_term() {
+        let mut cmd = Command::new("bash");
+        cmd.args(["-c", "trap '' TERM; sleep 300"])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        cmd.process_group(0);
+        let child = cmd.spawn().unwrap();
+
+        tokio::time::timeout(std::time::Duration::from_secs(8), kill_app(child))
+            .await
+            .expect("kill_app must never hang during test teardown");
     }
 }

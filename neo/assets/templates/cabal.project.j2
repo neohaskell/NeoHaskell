@@ -8,16 +8,16 @@ packages:
 --            2) Update the tag below to match: nix eval .#neohaskell.rev --raw
 source-repository-package
   type: git
-  location: https://github.com/neohaskell/neohaskell.git
-  tag: {{ neo_sha }}
+  location: {{ neohaskell_git_url }}
+  tag: {{ neohaskell_commit }}
   subdir: core
 
 
 -- NeoHaskell integrations (OpenRouter, HTTP, etc.)
 source-repository-package
   type: git
-  location: https://github.com/neohaskell/neohaskell.git
-  tag: {{ neo_sha }}
+  location: {{ neohaskell_git_url }}
+  tag: {{ neohaskell_commit }}
   subdir: integrations
 
 {% for dep in git_dependencies %}

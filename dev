@@ -72,6 +72,10 @@ usage: ./dev <verb> [args]
   neo-dist-check        prove the committed Neo IDE bundle (assets/ide/dist,
                           embedded into the binary) is a faithful from-lockfile
                           rebuild, so nix build .#neo never ships a stale dist
+  neo-consumer-contract  end-to-end contract: nix build .#neo, generate a project
+                          from the embedded starter offline, then build/test/run it
+                          against THIS checkout (neohaskell -> path:<checkout>) and
+                          poll /health (--self-test for the orchestration logic)
   doctor                harness self-check: every script has a verb or a
                           reasoned exemption; no dangling verbs (CI-enforced)
   exec <cmd> [args]     run any command with the pinned toolchain
@@ -113,6 +117,7 @@ case "${VERB}" in
   workflow-check) exec scripts/workflow-check "$@" ;;
   neo-skills-check) exec scripts/neo-skills-check "$@" ;;
   neo-dist-check) exec scripts/neo-dist-check "$@" ;;
+  neo-consumer-contract) exec scripts/neo-consumer-contract "$@" ;;
   doctor)   exec scripts/doctor "$@" ;;
   exec)     exec scripts/with-toolchain "$@" ;;
   ""|help|-h|--help) usage ;;

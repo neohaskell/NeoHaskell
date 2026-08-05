@@ -1,0 +1,502 @@
+#!/usr/bin/env bash
+#
+# neo-consumer-contract — the executable consumer contract for `neo new` output.
+#
+# One blocking end-to-end proof that the Nix-packaged `neo` can generate a project
+# from the *internal* starter and that the generated project can build, test, run,
+# and answer a health request against the EXACT NeoHaskell monorepo checkout under
+# test — not the mutable upstream `main`. It orchestrates the actually-installed
+# binary and the actually-generated project; it does not re-test neo's Rust units
+# or the starter tree in isolation (neo-ci.yml already does that).
+#
+# Phases (each prints concise evidence; any failed invariant exits nonzero):
+#   0. preflight        require nix + git; resolve the checkout; make a temp world
+#   1. package          nix build .#neo  (the installed binary under test)
+#   2. generate         neo new, OFFLINE, from the embedded starter (outside the
+#                       checkout); assert generated surfaces + absence of the
+#                       internal-only provenance file
+#   3. build            neo build, with the neohaskell source overridden to
+#                       path:<checkout>; assert the override actually landed
+#   4. test             neo test --ci  (the generated project's blocking Haskell
+#                       unit/property/integration specs + its Hurl scenarios)
+#   5. run + health     neo run in the background; poll GET /health for 200 with a
+#                       bounded deadline (never a fixed sleep); exercise the starter
+#                       smoke command; terminate the whole process tree cleanly
+#
+# The override is deterministic and leaves normal user generation untouched: it is
+# carried by NEO_NEOHASKELL_SOURCE, which the neo reconciler honors only when set
+# (see neo/src/reconcile/flake.rs). Generation runs OFFLINE (NEO_SKIP_NETWORK=1),
+# so it exercises the embedded starter with no network round-trip.
+#
+# Run:  ./dev neo-consumer-contract            full contract (heavy: builds Haskell)
+#       ./dev neo-consumer-contract --self-test orchestration-logic self-tests (fast)
+#
+# Tunables (env): CONTRACT_APP_PORT (8080), CONTRACT_READY_DEADLINE (240),
+#   CONTRACT_BUILD_TIMEOUT (5400), CONTRACT_TEST_TIMEOUT (3600),
+#   CONTRACT_KEEP_LOGS_ON_FAIL (1). NEO_BIN=<path> reuses an already-built binary
+#   and skips phase 1.
+
+set -euo pipefail
+
+# --------------------------------------------------------------------------- #
+# Small, side-effect-free orchestration helpers (unit-tested by --self-test).  #
+# --------------------------------------------------------------------------- #
+
+log()   { printf '%s\n' "$*"; }
+phase() { printf '\n=== [neo-consumer-contract] %s ===\n' "$*"; }
+info()  { printf '  - %s\n' "$*"; }
+die()   { printf 'neo-consumer-contract: FAIL — %s\n' "$*" >&2; exit 1; }
+
+# Start a command in its own process session. SESSION_PID is both the direct PID
+# and PGID, so cleanup remains valid if descendants are reparented. Python's
+# os.setsid is portable across the Linux CI runner and local macOS validation.
+SESSION_PID=""
+start_session() {
+  local ready i
+  ready="$(mktemp "${TMPDIR:-/tmp}/neo-contract-session.XXXXXX")"
+  rm -f "$ready"
+  python3 -c 'import os, sys
+ready = sys.argv[1]
+os.setsid()
+with open(ready, "w", encoding="utf-8"):
+    pass
+os.execvp(sys.argv[2], sys.argv[2:])' "$ready" "$@" &
+  SESSION_PID=$!
+
+  # The child acknowledges os.setsid() before exec, eliminating the Linux race
+  # between launching a phase and the timeout watcher probing its process group.
+  for i in $(seq 1 100); do
+    if [ -f "$ready" ]; then
+      rm -f "$ready"
+      return 0
+    fi
+    if ! kill -0 "$SESSION_PID" 2>/dev/null; then
+      rm -f "$ready"
+      wait "$SESSION_PID" 2>/dev/null || true
+      return 1
+    fi
+    sleep 0.01
+  done
+  rm -f "$ready"
+  return 1
+}
+
+session_alive() {
+  python3 -c 'import os, sys
+try:
+    os.killpg(int(sys.argv[1]), 0)
+except ProcessLookupError:
+    raise SystemExit(1)
+except PermissionError:
+    pass' "$1"
+}
+
+# Terminate every process in a dedicated session, poll briefly, then force any
+# survivors down. A detached child would need to create a new session explicitly
+# to escape this boundary; the nix/cabal/app chain does not do that.
+kill_session() {
+  local pgid="$1" i
+  python3 -c 'import os, signal, sys
+try: os.killpg(int(sys.argv[1]), signal.SIGTERM)
+except ProcessLookupError: pass' "$pgid"
+  for i in 1 2 3 4 5; do
+    session_alive "$pgid" || return 0
+    sleep 0.1
+  done
+  python3 -c 'import os, signal, sys
+try: os.killpg(int(sys.argv[1]), signal.SIGKILL)
+except ProcessLookupError: pass' "$pgid"
+}
+
+# Run a command with a bounded wall-clock in a dedicated process session.
+# Python owns the child synchronously, so no shell watcher can race startup or
+# inherit the caller's EXIT trap. Exit 124 means and only means timeout.
+run_with_timeout() {
+  local secs="$1"; shift
+  python3 -c 'import os, signal, subprocess, sys
+limit = float(sys.argv[1])
+child = subprocess.Popen(sys.argv[2:], start_new_session=True)
+try:
+    rc = child.wait(timeout=limit)
+except subprocess.TimeoutExpired:
+    try:
+        os.killpg(child.pid, signal.SIGTERM)
+    except ProcessLookupError:
+        pass
+    try:
+        child.wait(timeout=0.5)
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(child.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        child.wait()
+    raise SystemExit(124)
+raise SystemExit(128 - rc if rc < 0 else rc)' "$secs" "$@"
+}
+
+# Poll an HTTP endpoint until it answers 200, or the bounded deadline elapses.
+# Never a fixed readiness sleep: it returns as soon as the server is actually
+# serving. Any non-200 / connection error is "not ready yet — retry". Returns 0
+# when ready, 1 on deadline. All args are quoted so a URL/path with odd chars is
+# safe.
+poll_http_200() {
+  local url="$1" deadline="$2" interval="${3:-1}"
+  local waited=0 code
+  while [ "$waited" -lt "$deadline" ]; do
+    code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "$url" 2>/dev/null || true)"
+    if [ "$code" = "200" ]; then
+      return 0
+    fi
+    sleep "$interval"
+    waited=$((waited + interval))
+  done
+  return 1
+}
+
+# Assertion helpers — every path is quoted, so a workdir containing spaces is safe.
+assert_file()    { [ -f "$1" ] || die "expected file is missing: $1 ($2)"; }
+assert_absent()  { [ ! -e "$1" ] || die "file must NOT be present: $1 ($2)"; }
+assert_contains() {
+  local file="$1" needle="$2" desc="$3"
+  [ -f "$file" ] || die "cannot check '$needle' — $file is missing ($desc)"
+  grep -qF -- "$needle" "$file" || die "expected '$needle' in $file ($desc)"
+}
+
+# --------------------------------------------------------------------------- #
+# Full contract.                                                              #
+# --------------------------------------------------------------------------- #
+
+APP_PORT="${CONTRACT_APP_PORT:-8080}"
+READY_DEADLINE="${CONTRACT_READY_DEADLINE:-240}"
+BUILD_TIMEOUT="${CONTRACT_BUILD_TIMEOUT:-5400}"
+TEST_TIMEOUT="${CONTRACT_TEST_TIMEOUT:-3600}"
+APP_NAME="neo-consumer-probe"
+
+WORK=""          # scratch world (project + build); always removed
+LOGDIR=""        # phase logs; kept on failure for triage
+declare -a BG_PIDS=()
+OWNER_PID="$BASHPID"
+
+cleanup() {
+  local rc=$?
+  # Bash subshells inherit EXIT traps. Only the top-level contract invocation
+  # owns scratch data and process-session teardown.
+  [ "$BASHPID" = "$OWNER_PID" ] || return "$rc"
+  # Terminate every dedicated process session we started.
+  local pid
+  for pid in "${BG_PIDS[@]:-}"; do
+    [ -n "$pid" ] || continue
+    kill_session "$pid"
+  done
+  if [ -n "$WORK" ] && [ -d "$WORK" ]; then
+    if [ "$rc" -ne 0 ] && [ "${CONTRACT_KEEP_LOGS_ON_FAIL:-1}" = "1" ]; then
+      printf 'neo-consumer-contract: scratch world preserved in %s\n' "$WORK" >&2
+    else
+      rm -rf "$WORK" 2>/dev/null || true
+    fi
+  fi
+  if [ -n "$LOGDIR" ] && [ -d "$LOGDIR" ]; then
+    if [ "$rc" -ne 0 ] && [ "${CONTRACT_KEEP_LOGS_ON_FAIL:-1}" = "1" ]; then
+      printf 'neo-consumer-contract: logs preserved for triage in %s\n' "$LOGDIR" >&2
+    else
+      rm -rf "$LOGDIR" 2>/dev/null || true
+    fi
+  fi
+}
+
+run_contract() {
+  trap cleanup EXIT INT TERM
+
+  # -- Phase 0: preflight ---------------------------------------------------- #
+  phase "0. preflight"
+  command -v nix  >/dev/null 2>&1 || die "nix is required (this contract builds .#neo and a Haskell project)"
+  command -v git  >/dev/null 2>&1 || die "git is required (neo new git-inits the generated project)"
+  command -v curl >/dev/null 2>&1 || die "curl is required (health poll + smoke request)"
+  command -v python3 >/dev/null 2>&1 || die "python3 is required (portable process-session isolation)"
+
+  local repo_root
+  repo_root="$(cd "$(dirname "$0")/.." && pwd -P)"
+  [ -f "$repo_root/flake.nix" ] || die "not at the monorepo root (no flake.nix at $repo_root)"
+  info "checkout under test: $repo_root"
+
+  WORK="$(mktemp -d "${TMPDIR:-/tmp}/neo-consumer-contract.XXXXXX")"
+  LOGDIR="$(mktemp -d "${TMPDIR:-/tmp}/neo-consumer-contract-logs.XXXXXX")"
+  info "scratch world (outside the checkout): $WORK"
+  case "$WORK" in
+    "$repo_root"|"$repo_root"/*) die "scratch world must live OUTSIDE the checkout" ;;
+  esac
+
+  # Use an isolated local clone at exactly HEAD. Nix consumes it through a
+  # `git+file:` URL (clean store export), while Cabal consumes the matching
+  # `file:` Git URL and revision. This avoids both mutable upstream and a
+  # worktree `.git` pointer escaping into a sandbox.
+  if ! git -C "$repo_root" diff --quiet HEAD -- core integrations; then
+    die "core/ or integrations/ has uncommitted changes; commit them before running the consumer contract"
+  fi
+  local source_snapshot="$WORK/neohaskell-source"
+  git clone --quiet --no-local "$repo_root" "$source_snapshot"
+  local source_rev
+  source_rev="$(git -C "$repo_root" rev-parse HEAD)"
+  git -C "$source_snapshot" checkout --quiet --detach "$source_rev"
+  info "NeoHaskell source snapshot: $source_rev"
+
+  # -- Phase 1: build the installed package ---------------------------------- #
+  local neo_bin
+  if [ -n "${NEO_BIN:-}" ]; then
+    phase "1. package (reuse NEO_BIN)"
+    neo_bin="$NEO_BIN"
+    assert_file "$neo_bin" "provided NEO_BIN must exist"
+  else
+    phase "1. package — nix build .#neo"
+    nix build "$repo_root#neo" --print-build-logs --out-link "$WORK/neo-result" \
+      2>&1 | tee "$LOGDIR/1-package.log"
+    neo_bin="$WORK/neo-result/bin/neo"
+    assert_file "$neo_bin" "nix build .#neo must produce bin/neo"
+  fi
+  info "neo binary: $neo_bin"
+  info "version: $("$neo_bin" --version 2>&1 | head -1)"
+
+  # -- Phase 2: generate offline from the embedded starter ------------------- #
+  phase "2. generate — neo new (offline, embedded starter)"
+  local proj="$WORK/$APP_NAME"
+  (
+    cd "$WORK"
+    NEO_SKIP_NETWORK=1 "$neo_bin" --ci new "$APP_NAME"
+  ) 2>&1 | tee "$LOGDIR/2-generate.log"
+  assert_file "$proj/neo.json"               "neo.json is the project manifest"
+  assert_file "$proj/flake.nix"              "generated dev flake"
+  assert_file "$proj/cabal.project"          "generated cabal.project"
+  assert_file "$proj/src/App.hs"             "application entry module"
+  assert_file "$proj/launcher/Launcher.hs"   "executable launcher"
+  # A real starter domain module (not a stub) — proves the embedded functional
+  # starter was scaffolded, not a placeholder.
+  assert_file "$proj/src/Starter/Counter/Event.hs" "starter counter domain"
+  assert_file "$proj/tests/integration/smoke.hurl" "starter smoke scenario"
+  # Internal-only provenance must never leak into a user's project.
+  assert_absent "$proj/IMPORT.md" "starter provenance file is internal-only"
+  info "generated surfaces present; internal provenance absent"
+
+  # -- Phase 3: build against the checkout under test ------------------------ #
+  phase "3. build — neo build (neohaskell → committed checkout snapshot)"
+  info "readiness/build bind host stays product-default (0.0.0.0); tested via loopback"
+  local ovr_env=(NEO_SKIP_NETWORK=1 "NEO_NEOHASKELL_SOURCE=$source_snapshot")
+  local build_rc=0
+  (
+    cd "$proj"
+    run_with_timeout "$BUILD_TIMEOUT" env "${ovr_env[@]}" \
+      "$neo_bin" --ci build --skip-lock-check
+  ) 2>&1 | tee "$LOGDIR/3-build.log" || build_rc="${PIPESTATUS[0]}"
+  [ "$build_rc" -eq 0 ] || die "neo build failed (see $LOGDIR/3-build.log)"
+  # Prove the override actually landed in the regenerated flake (reconcile runs
+  # on every neo build, so this confirms the redirect survives regeneration).
+  assert_contains "$proj/flake.nix" "git+file://" \
+    "neo build must regenerate flake.nix with the local-checkout override"
+  assert_contains "$proj/cabal.project" "file://" \
+    "neo build must regenerate cabal.project with the matching local Git source"
+  assert_contains "$proj/flake.nix" "?rev=$source_rev" \
+    "Nix input revision must equal the isolated checkout HEAD"
+  assert_contains "$proj/flake.nix" "neohaskellCommit = \"$source_rev\"" \
+    "inputMap revision must equal the isolated checkout HEAD"
+  assert_contains "$proj/cabal.project" "tag: $source_rev" \
+    "Cabal revision must equal the isolated checkout HEAD"
+  info "override confirmed in regenerated flake.nix"
+
+  # -- Phase 4: the generated project's own blocking test suite -------------- #
+  phase "4. test — neo test --ci (Haskell specs + Hurl scenarios)"
+  local test_rc=0
+  (
+    cd "$proj"
+    run_with_timeout "$TEST_TIMEOUT" env "${ovr_env[@]}" "$neo_bin" --ci test
+  ) 2>&1 | tee "$LOGDIR/4-test.log" || test_rc="${PIPESTATUS[0]}"
+  [ "$test_rc" -eq 0 ] || die "neo test failed (see $LOGDIR/4-test.log)"
+  info "generated project's unit/property/integration + Hurl suites passed"
+
+  # -- Phase 5: run, health poll, smoke, clean teardown ---------------------- #
+  phase "5. run + health — neo run, poll /health, smoke, terminate"
+  local run_log="$LOGDIR/5-run.log"
+  start_session bash -c 'cd "$1"; shift; exec "$@"' _ "$proj" \
+    env "${ovr_env[@]}" "$neo_bin" --ci run >"$run_log" 2>&1
+  local run_pid="$SESSION_PID"
+  BG_PIDS+=("$run_pid")
+
+  local health_url="http://127.0.0.1:${APP_PORT}/health"
+  info "polling $health_url (deadline ${READY_DEADLINE}s, no fixed sleeps)"
+  if ! poll_http_200 "$health_url" "$READY_DEADLINE"; then
+    log "----- neo run log (tail) -----"; tail -n 40 "$run_log" >&2 || true
+    die "the app did not answer 200 on /health within ${READY_DEADLINE}s"
+  fi
+  local health_body
+  health_body="$(curl -s --max-time 5 "$health_url" || true)"
+  case "$health_body" in
+    *'"status":"ok"'*) info "health: 200 $health_body" ;;
+    *) die "/health answered 200 but with an unexpected body: $health_body" ;;
+  esac
+
+  # Starter smoke scenario against the RUNNING app: create a counter, expect a
+  # 200 and a UUID entity id.
+  info "smoke: POST /commands/create-counter"
+  local smoke_resp
+  smoke_resp="$(curl -s --max-time 10 -X POST \
+    -H 'Content-Type: application/json' \
+    -d '{"label":"neo-consumer-contract"}' \
+    "http://127.0.0.1:${APP_PORT}/commands/create-counter" || true)"
+  case "$smoke_resp" in
+    *'"entityId"'*) info "smoke ok: $smoke_resp" ;;
+    *) log "----- neo run log (tail) -----"; tail -n 40 "$run_log" >&2 || true
+       die "smoke command did not return an entityId: $smoke_resp" ;;
+  esac
+
+  # Clean teardown of the whole app tree (also enforced by the trap).
+  kill_session "$run_pid"
+  BG_PIDS=()
+  info "app terminated cleanly"
+
+  phase "PASS — generated project built, tested, ran, and answered /health against $repo_root"
+}
+
+# --------------------------------------------------------------------------- #
+# Self-test: exercise the orchestration helpers fast, without building a world. #
+# Covers timeout, process-session cleanup, path quoting, failure propagation,  #
+# the readiness poll (both success and bounded-deadline failure).               #
+# --------------------------------------------------------------------------- #
+
+self_test() {
+  local fails=0
+  ok()   { printf '  ok   %s\n' "$1"; }
+  bad()  { printf '  FAIL %s\n' "$1" >&2; fails=$((fails + 1)); }
+  check(){ if eval "$2"; then ok "$1"; else bad "$1"; fi; }
+
+  # 1. run_with_timeout kills an over-running command and reports 124.
+  local start end
+  start="$(date +%s)"
+  if run_with_timeout 1 sleep 30; then
+    bad "timeout: an over-running command must not report success"
+  else
+    local rc=$?
+    [ "$rc" -eq 124 ] && ok "timeout: over-run reported as 124" \
+      || bad "timeout: expected 124, got $rc"
+  fi
+  end="$(date +%s)"
+  check "timeout: fired promptly (< 8s wall clock)" "[ $((end - start)) -lt 8 ]"
+
+  # 2. run_with_timeout lets a fast command through with its real status.
+  if run_with_timeout 10 true; then ok "timeout: fast success passes through"
+  else bad "timeout: fast success wrongly failed"; fi
+  if run_with_timeout 10 false; then bad "timeout: failure wrongly reported success"
+  else ok "timeout: real failure propagates"; fi
+  if run_with_timeout 10 bash -c 'kill -TERM $$'; then
+    bad "timeout: independently SIGTERM-ed command wrongly reported success"
+  else
+    rc=$?
+    [ "$rc" -eq 143 ] && ok "timeout: independent SIGTERM remains 143" \
+      || bad "timeout: independent SIGTERM was misclassified as $rc"
+  fi
+
+  # 3. A dedicated session remains killable after the direct parent exits and
+  #    its child is reparented.
+  local child_file="$LOGDIR_ST/reparented.pid"
+  start_session bash -c 'sleep 300 & echo $! > "$1"' _ "$child_file"
+  local parent="$SESSION_PID"
+  local i
+  for i in $(seq 1 50); do
+    [ -s "$child_file" ] && break
+    sleep 0.02
+  done
+  local grandchild
+  grandchild="$(cat "$child_file" 2>/dev/null || true)"
+  if [ -z "$grandchild" ]; then
+    bad "cleanup: reparented descendant PID was not captured"
+  fi
+  kill_session "$parent"
+  if [ -n "$grandchild" ] && kill -0 "$grandchild" 2>/dev/null; then
+    kill -KILL "$grandchild" 2>/dev/null || true
+    bad "cleanup: reparented descendant survived its process session"
+  else
+    ok "cleanup: reparented descendant terminated with its session"
+  fi
+
+  # 4. Path quoting: assertions operate correctly inside a dir with a space.
+  local spaced="$LOGDIR_ST/dir with space"
+  mkdir -p "$spaced"
+  printf 'neohaskell = true\n' > "$spaced/flake.nix"
+  ( assert_file "$spaced/flake.nix" "spaced path" ) >/dev/null 2>&1 \
+    && ok "quoting: assert_file handles spaces" \
+    || bad "quoting: assert_file broke on a spaced path"
+  ( assert_contains "$spaced/flake.nix" "neohaskell = true" "spaced grep" ) >/dev/null 2>&1 \
+    && ok "quoting: assert_contains handles spaces" \
+    || bad "quoting: assert_contains broke on a spaced path"
+  ( assert_absent "$spaced/nope" "spaced absent" ) >/dev/null 2>&1 \
+    && ok "quoting: assert_absent handles spaces" \
+    || bad "quoting: assert_absent broke on a spaced path"
+
+  # 5. Failure propagation: a failing assertion exits nonzero (subshell).
+  if ( assert_file "$LOGDIR_ST/definitely-missing" "should fail" ) >/dev/null 2>&1; then
+    bad "failure: a missing-file assertion wrongly succeeded"
+  else
+    ok "failure: assertion failure propagates a nonzero exit"
+  fi
+
+  # 6a. Readiness poll SUCCESS against a live server. Requires binding a loopback
+  #     port; in a restricted sandbox that forbids bind() this degrades to a
+  #     reported skip (CI, where the contract actually runs, is not restricted).
+  if command -v python3 >/dev/null 2>&1; then
+    local srvroot="$LOGDIR_ST/srv"
+    mkdir -p "$srvroot"; printf 'ok\n' > "$srvroot/index.html"
+    start_session bash -c 'cd "$1" && exec env PYTHONUNBUFFERED=1 python3 -m http.server 0' _ "$srvroot" >"$LOGDIR_ST/srv.log" 2>&1
+    local srv_pid="$SESSION_PID"
+    # Discover the ephemeral port the server actually bound.
+    local port="" tries=0
+    while [ -z "$port" ] && [ "$tries" -lt 25 ]; do
+      port="$(grep -oiE 'port [0-9]+' "$LOGDIR_ST/srv.log" 2>/dev/null | grep -oE '[0-9]+' | head -1 || true)"
+      sleep 0.2; tries=$((tries + 1))
+    done
+    if [ -n "$port" ]; then
+      if poll_http_200 "http://127.0.0.1:${port}/" 10; then ok "readiness: live server reported ready"
+      else bad "readiness: failed to detect a live server"; fi
+    else
+      ok "readiness: (skipped live-server success check — could not bind a loopback port here)"
+    fi
+    kill_session "$srv_pid"
+    wait "$srv_pid" 2>/dev/null || true
+  else
+    ok "readiness: (skipped live-server check — python3 absent)"
+  fi
+  # Bounded failure: a closed port must return non-ready within the deadline.
+  start="$(date +%s)"
+  if poll_http_200 "http://127.0.0.1:1/" 2; then
+    bad "readiness: a dead endpoint was wrongly reported ready"
+  else
+    ok "readiness: dead endpoint fails within the deadline"
+  fi
+  end="$(date +%s)"
+  check "readiness: bounded (dead-endpoint poll < 6s)" "[ $((end - start)) -lt 6 ]"
+
+  if [ "$fails" -ne 0 ]; then
+    printf 'neo-consumer-contract self-test: FAILED (%s)\n' "$fails" >&2
+    return 1
+  fi
+  printf 'neo-consumer-contract self-test: OK — timeout, cleanup, quoting, failure-propagation, readiness\n'
+  return 0
+}
+
+main() {
+  case "${1:-}" in
+    --self-test)
+      LOGDIR_ST="$(mktemp -d "${TMPDIR:-/tmp}/neo-consumer-contract-selftest.XXXXXX")"
+      trap '[ "$BASHPID" != "$OWNER_PID" ] || rm -rf "$LOGDIR_ST" 2>/dev/null || true' EXIT
+      self_test
+      ;;
+    ""|--run)
+      run_contract
+      ;;
+    -h|--help)
+      sed -n '2,40p' "$0" | sed 's/^# \{0,1\}//'
+      ;;
+    *)
+      die "unknown argument '${1}' (use --self-test, --run, or --help)"
+      ;;
+  esac
+}
+
+main "$@"

@@ -41,6 +41,7 @@ jobs:
     timeout-minutes: 5
     outputs:
       touched: ${{ steps.detect.outputs.touched }}
+      contract: ${{ steps.detect.outputs.contract }}
     steps:
       - uses: actions/checkout@v7.0.0
         with:
@@ -54,16 +55,29 @@ jobs:
           set -euo pipefail
           if [ "$EVENT" = "push" ]; then
             echo "touched=true" >> "$GITHUB_OUTPUT"
+            echo "contract=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          # neo/** plus the root files the neo package derivation reads. Keep in
-          # lockstep with the `paths:` list above and with COMPONENT_SURFACES in
-          # scripts/workflow-check.
+          CHANGED="$(git diff --name-only "origin/${BASE_REF}...HEAD")"
+          # Component jobs (rust/ide/nix-package): neo/** plus the root files the
+          # neo package derivation reads. Keep in lockstep with the `paths:` list
+          # above and with COMPONENT_SURFACES in scripts/workflow-check.
           PATTERN='^(neo/|nix/neo-package\.nix|flake\.nix|flake\.lock|\.github/workflows/neo-ci\.yml)'
-          if git diff --name-only "origin/${BASE_REF}...HEAD" | grep -qE "$PATTERN"; then
+          # Consumer contract: the component surfaces PLUS the monorepo Haskell
+          # sources the generated project compiles against (core/, integrations/)
+          # — a change there can break the starter->upstream contract — plus the
+          # contract script itself. Keep in lockstep with CONTRACT_SURFACES in
+          # scripts/workflow-check.
+          CONTRACT='^(neo/|core/|integrations/|nix/neo-package\.nix|flake\.nix|flake\.lock|\.github/workflows/neo-ci\.yml|scripts/neo-consumer-contract)'
+          if echo "$CHANGED" | grep -qE "$PATTERN"; then
             echo "touched=true" >> "$GITHUB_OUTPUT"
           else
             echo "touched=false" >> "$GITHUB_OUTPUT"
+          fi
+          if echo "$CHANGED" | grep -qE "$CONTRACT"; then
+            echo "contract=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "contract=false" >> "$GITHUB_OUTPUT"
           fi
 
   # Rust crate: the canonical in-crate unit tests (--bins, never --lib) are the
@@ -182,38 +196,87 @@ jobs:
       - name: Smoke the flake app
         run: nix run .#neo -- --version
 
+  # The generated-project consumer contract (Linux). One blocking end-to-end
+  # proof that the Nix-packaged `neo` generates a project from the embedded
+  # starter offline and that the generated project builds, tests, runs, and
+  # answers GET /health against THIS monorepo checkout (neohaskell overridden to
+  # path:<checkout>), rather than mutable upstream `main`. It orchestrates the
+  # installed binary + a real generated project; it does not duplicate the Rust
+  # unit tests. It runs on the broader `contract` surface (also core/,
+  # integrations/) because a change there can break the starter->upstream
+  # contract. Blocking (never continue-on-error): a failure here is the signal.
+  consumer-contract:
+    needs: changes
+    if: >-
+      (github.event_name == 'push' || github.event.pull_request.draft == false)
+      && needs.changes.outputs.contract == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    steps:
+      # The contract creates a local Git input at the exact checkout revision.
+      # Nix rejects git+file inputs cloned from shallow repositories.
+      - uses: actions/checkout@v7.0.0
+        with:
+          fetch-depth: 0
+      - uses: DeterminateSystems/determinate-nix-action@v3.21.7
+        with:
+          extra-conf: |
+            accept-flake-config = true
+      - uses: DeterminateSystems/magic-nix-cache-action@v14
+      - name: Self-test the contract orchestration logic (timeout, cleanup, quoting, readiness)
+        run: ./dev neo-consumer-contract --self-test
+      - name: Run the generated-project consumer contract
+        env:
+          # Keep each heavy phase inside the job wall-clock so the contract's own
+          # bounded timeout + clean teardown fire before GitHub kills the job.
+          CONTRACT_BUILD_TIMEOUT: "5400"
+          CONTRACT_TEST_TIMEOUT: "2400"
+          CONTRACT_READY_DEADLINE: "300"
+        run: ./dev neo-consumer-contract
+
   # THE REQUIRED CHECK for the neo component. `if: always()` + no workflow-level
   # paths filter => it always reports a conclusion on every PR, so it is safe to
   # require in branch protection (unlike the path-skipped jobs). Skips are
   # accepted only when there is genuinely nothing to test: a draft PR, or a PR
-  # that changed no neo surface.
+  # that changed no relevant surface (per-job: component surface for
+  # rust/ide/nix-package, the broader contract surface for consumer-contract).
   neo-ci-gate:
     if: always()
-    needs: [changes, rust, ide, nix-package]
+    needs: [changes, rust, ide, nix-package, consumer-contract]
     runs-on: ubuntu-latest
     steps:
       - name: Check all neo jobs passed (or correctly skipped)
         env:
           IS_DRAFT: ${{ github.event_name == 'pull_request' && github.event.pull_request.draft }}
           TOUCHED: ${{ needs.changes.outputs.touched }}
+          CONTRACT: ${{ needs.changes.outputs.contract }}
           CHANGES_RESULT: ${{ needs.changes.result }}
         run: |
           if [[ "$CHANGES_RESULT" != "success" ]]; then
             echo "::error::changes-detection job did not succeed ($CHANGES_RESULT)"
             exit 1
           fi
-          allow_skip=false
+          # Component jobs may skip on a draft or when no neo surface changed.
+          allow_skip_component=false
           if [[ "$IS_DRAFT" == "true" || "$TOUCHED" != "true" ]]; then
-            allow_skip=true
+            allow_skip_component=true
+          fi
+          # The consumer contract may skip on a draft or when no contract surface
+          # changed (it covers a broader set than the component jobs).
+          allow_skip_contract=false
+          if [[ "$IS_DRAFT" == "true" || "$CONTRACT" != "true" ]]; then
+            allow_skip_contract=true
           fi
           results=(
-            "rust=${{ needs.rust.result }}"
-            "ide=${{ needs.ide.result }}"
-            "nix-package=${{ needs.nix-package.result }}"
+            "rust=${{ needs.rust.result }}=$allow_skip_component"
+            "ide=${{ needs.ide.result }}=$allow_skip_component"
+            "nix-package=${{ needs.nix-package.result }}=$allow_skip_component"
+            "consumer-contract=${{ needs.consumer-contract.result }}=$allow_skip_contract"
           )
           for entry in "${results[@]}"; do
-            job="${entry%%=*}"; r="${entry#*=}"
-            if [[ "$r" == "skipped" && "$allow_skip" == "true" ]]; then
+            job="${entry%%=*}"; rest="${entry#*=}"
+            r="${rest%%=*}"; may_skip="${rest#*=}"
+            if [[ "$r" == "skipped" && "$may_skip" == "true" ]]; then
               continue
             fi
             if [[ "$r" != "success" ]]; then
