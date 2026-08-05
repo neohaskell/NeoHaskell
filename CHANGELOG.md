@@ -13,6 +13,29 @@ has been cut yet — everything accrues under Unreleased until the first tag.)
 
 ## [Unreleased]
 
+### 004-crypto-hmac-sign-verify — Change 004: Add Crypto module with HMAC-SHA256 signWith/verifyWith
+
+None breaking. New public module `Crypto` and new `Bytes.getRandom`
+primitive (secure random bytes, mirroring `Int.getRandom`); no existing
+signatures change. The `Bytes` newtype now lives in the hidden internal
+module `Bytes.Internal` purely to break an import cycle; it is not
+importable by applications. The public `Bytes` API is unchanged (`Bytes
+(..)` is re-exported as before). `Auth.OAuth2.StateToken` keeps its private
+`HmacKey` for now — migrating it onto `Crypto.HmacKey` is a possible
+follow-up refactor, deliberately out of scope here. Signature wire format
+is lowercase hex (the common webhook header convention, e.g. GitHub/Stripe
+style); `verifyWith` is case-insensitive on input.
+
+API delta:
+
+- `+ Crypto: data HmacKey`
+- `+ Crypto: hmacKeyFromText :: Text -> Result Text HmacKey`
+- `+ Crypto: hmacKeyFromBytes :: Bytes -> Result Text HmacKey`
+- `+ Crypto: generateHmacKey :: Task err HmacKey`
+- `+ Crypto: signWith :: HmacKey -> Bytes -> Text`
+- `+ Crypto: verifyWith :: HmacKey -> Text -> Bytes -> Bool`
+- `+ Bytes: getRandom :: Int -> Task w Bytes`
+
 ### 003-maintainer-codemap-regeneration — Change 003: Maintainer-triggered codemap regeneration onto a contributor PR
 
 Not breaking. No public signature or wire-format change. New capability for

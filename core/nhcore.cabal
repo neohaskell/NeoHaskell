@@ -172,6 +172,7 @@ library
     ConcurrentVar
     Console
     Core
+    Crypto
     DateTime
     Decimal
     Decider
@@ -371,6 +372,7 @@ library
     Version
 
   other-modules:
+    Bytes.Internal
     Parser.Internal
     Parser.Internal.Error
     Parser.Internal.Types
@@ -424,7 +426,9 @@ test-suite nhcore-test
     Auth.UrlValidationSpec
     Http.ClientSpec
     Http.ClientRawSpec
+    BytesSpec
     ConcurrentMapSpec
+    CryptoSpec
     Command.FromSchemaSpec
     Integration.CommandSpec
     Integration.ContextSpec
@@ -683,6 +687,8 @@ test-suite nhcore-test-core
     Config.RuntimeSafetySpec
     Config.SecretSpec
     Config.THSpec
+    BytesSpec
+    CryptoSpec
     DecimalSpec
     EventVariantOfSpec
     Http.ClientRawSpec
