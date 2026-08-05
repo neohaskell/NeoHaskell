@@ -43,7 +43,7 @@
        message: "Use Core `Maybe`. New exceptions need a justification + belongs-in note here."}
     # Result
     - {name: [Data.Either],
-       within: [AsyncTask, Auth.OAuth2.StateToken, Auth.UrlValidation, Command, Config, Config.THSpec, Directory, Environment, Http.Client, Http.Client.Internal, Json, NeoQL.Parser, Parser, Parser.Internal, RedactedSpec, Service.Integration.Dispatcher, Task, TaskSpec],
+       within: [AsyncTask, Auth.OAuth2.StateToken, Auth.UrlValidation, Command, Config, Config.THSpec, Directory, Environment, Http.Client, Http.Client.Internal, Json, NeoQL.Parser, Parser, Parser.Internal, RedactedSpec, ResultSpec, Service.Integration.Dispatcher, Task, TaskSpec],
        message: "Use `Result err val`, never Either. New exceptions need a justification + belongs-in note here."}
     # Core Set
     - {name: [Data.Set],
