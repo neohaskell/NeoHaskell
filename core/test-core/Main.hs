@@ -28,6 +28,7 @@ import NeoQL.ExecuteSpec qualified
 import NeoQL.ParserSpec qualified
 import OutboundIntegrationSpec qualified
 import RedactedSpec qualified
+import ResultSpec qualified
 import Schema.OpenApiSpec qualified
 import SchemaSpec qualified
 import Schema.JsonSchemaSpec qualified
@@ -74,6 +75,7 @@ main = Hspec.hspec do
   Hspec.describe "NeoQL.Execute" NeoQL.ExecuteSpec.spec
   Hspec.describe "OutboundIntegration" OutboundIntegrationSpec.spec
   Hspec.describe "Redacted" RedactedSpec.spec
+  Hspec.describe "Result" ResultSpec.spec
   Hspec.describe "Schema" SchemaSpec.spec
   Hspec.describe "Schema.OpenApi" Schema.OpenApiSpec.spec
   Hspec.describe "Schema.JsonSchema" Schema.JsonSchemaSpec.spec
