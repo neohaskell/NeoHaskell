@@ -347,7 +347,7 @@ jobs:
           CONTRACT_READY_DEADLINE: "300"
           PRIME_BUILD_TIMEOUT: "5400"
           PRIME_TEST_TIMEOUT: "2400"
-          PRIME_RUN_TIMEOUT: "300"
+          PRIME_RUN_TIMEOUT: "30"
         run: |
           set -euo pipefail
           cargo build --release --locked --manifest-path neo/Cargo.toml --target "$REHEARSAL_TARGET"

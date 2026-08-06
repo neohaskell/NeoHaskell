@@ -28,7 +28,8 @@
 #   cache-prime --self-test  freeze the orchestration seam (no network/build)
 #
 # Env: NEO_BIN (required), PRIME_BUILD_TIMEOUT (default 5400),
-#      PRIME_TEST_TIMEOUT (default 2400), PRIME_RUN_TIMEOUT (default 300),
+#      PRIME_TEST_TIMEOUT (default 2400), PRIME_RUN_TIMEOUT (default 30 — a brief
+#      liveness bound; the app must stay alive that long, then is torn down),
 #      NEO_APP_PORT (default 8080).
 set -euo pipefail
 
@@ -38,9 +39,17 @@ die() { printf 'cache-prime: FAIL — %s\n' "$*" >&2; exit 1; }
 
 BUILD_TIMEOUT="${PRIME_BUILD_TIMEOUT:-5400}"
 TEST_TIMEOUT="${PRIME_TEST_TIMEOUT:-2400}"
-RUN_TIMEOUT="${PRIME_RUN_TIMEOUT:-300}"
+RUN_TIMEOUT="${PRIME_RUN_TIMEOUT:-30}"
 APP_PORT="${NEO_APP_PORT:-8080}"
 APP_NAME="prime-app"
+CACHE_PRIME_WORK=""
+
+cleanup() {
+  if [ -n "${CACHE_PRIME_WORK:-}" ]; then
+    rm -rf -- "$CACHE_PRIME_WORK" 2>/dev/null || true
+    CACHE_PRIME_WORK=""
+  fi
+}
 
 # Run a command in its own process session under a hard timeout; TERM→KILL the
 # whole group on expiry so a hung nix/cabal build cannot outlive the warmer.
@@ -69,6 +78,28 @@ except subprocess.TimeoutExpired:
 PY
 }
 
+# Start a long-running app under a BRIEF liveness bound and prove it STAYS alive.
+# A server that realizes its run closure must keep running, so the ONLY success
+# is the bound firing (`bounded` exit 124 = still alive at the deadline, then the
+# process group is TERM→KILLed). ANY earlier exit is a failure: a nonzero code is
+# a crash; a zero code is an unexpected premature clean exit (a server must not
+# self-terminate). On failure, emit BOUNDED, SANITIZED diagnostics (last lines,
+# control/ANSI stripped, byte-capped) so a broken run is never silently accepted.
+# Args: <seconds> <logfile> <cmd...>. Returns 0 iff the app stayed alive.
+run_liveness() {
+  local secs="$1" logf="$2"; shift 2
+  local rc=0
+  bounded "$secs" "$@" > "$logf" 2>&1 || rc=$?
+  if [ "$rc" -eq 124 ]; then
+    return 0
+  fi
+  printf 'cache-prime: the app exited early (rc=%s) — a running app must stay alive for the %ss liveness bound to realize its run closure. Last output:\n' \
+    "$rc" "$secs" >&2
+  tail -n 40 "$logf" 2>/dev/null | LC_ALL=C tr -cd '[:print:]\n\t' | tail -c 4000 >&2
+  printf '\n' >&2
+  return 1
+}
+
 prime() {
   command -v nix >/dev/null 2>&1 || die "nix is required on PATH (the caller installs it)"
   command -v python3 >/dev/null 2>&1 || die "python3 is required (bounded timeout wrapper)"
@@ -77,8 +108,9 @@ prime() {
   [ -x "$neo_bin" ] || die "NEO_BIN is not executable: $neo_bin"
 
   # A scratch world OUTSIDE any repo checkout, cleaned up unconditionally.
-  local work; work="$(mktemp -d "${TMPDIR:-/tmp}/neo-cache-prime.XXXXXX")"
-  trap 'rm -rf "$work" 2>/dev/null || true' EXIT
+  CACHE_PRIME_WORK="$(mktemp -d "${TMPDIR:-/tmp}/neo-cache-prime.XXXXXX")"
+  trap cleanup EXIT
+  local work="$CACHE_PRIME_WORK"
   local proj="$work/$APP_NAME"
 
   phase "generate — neo new (DEFAULT: released path, no override)"
@@ -99,9 +131,15 @@ prime() {
   ( cd "$proj" && bounded "$TEST_TIMEOUT" "$neo_bin" --ci test ) \
     || die "neo test failed while priming the test closure"
 
-  phase "run — realize the run-dependency closure (brief)"
-  # Start the app so its run closure is realized, then tear the session down.
-  ( cd "$proj" && bounded "$RUN_TIMEOUT" "$neo_bin" --ci run ) >/dev/null 2>&1 || true
+  phase "run — start the app; a ${RUN_TIMEOUT}s liveness bound realizes the run closure"
+  # The app must START and STAY alive for the brief bound (proving the run
+  # closure is realized and the exe does not immediately crash); an early exit
+  # fails with sanitized diagnostics. Process-group cleanup is guaranteed by
+  # `bounded`. This no longer waits the full timeout on success — the bound is
+  # intentionally brief.
+  ( cd "$proj" && run_liveness "$RUN_TIMEOUT" "$work/neo-run.log" "$neo_bin" --ci run ) \
+    || die "neo run did not stay alive for the ${RUN_TIMEOUT}s liveness bound (premature exit) — see diagnostics above"
+  info "app stayed alive for the ${RUN_TIMEOUT}s liveness bound — run closure realized"
 
   phase "done — default closure realized (caller's Cachix hook pushes it)"
   info "prime complete for $APP_NAME (port ${APP_PORT})"
@@ -142,6 +180,29 @@ self_test() {
       bad "cache-prime missing neo $verb"
     fi
   done
+
+  # 5. run-liveness: a long-lived app (bound fires = still alive) is the ONLY
+  #    success; an early crash (nonzero) AND an early clean exit (zero) both fail.
+  #    Fast (1–2s each) — no cold rebuild needed.
+  local rl_log; rl_log="$(mktemp "${TMPDIR:-/tmp}/neo-cache-prime-rl.XXXXXX")"
+  if run_liveness 1 "$rl_log" sleep 30 >/dev/null 2>&1; then
+    ok "run-liveness: a long-lived app (liveness bound fires) passes"
+  else bad "run-liveness rejected a long-lived app"; fi
+  if run_liveness 5 "$rl_log" sh -c 'exit 3' >/dev/null 2>&1; then
+    bad "run-liveness accepted an early CRASH (nonzero exit)"
+  else ok "run-liveness: an early crash (nonzero) fails"; fi
+  if run_liveness 5 "$rl_log" true >/dev/null 2>&1; then
+    bad "run-liveness accepted a premature CLEAN exit (zero)"
+  else ok "run-liveness: a premature clean exit (zero) fails"; fi
+  rm -f "$rl_log"
+
+  # 6. The run phase must NOT swallow every exit with `|| true` (that would hide a
+  #    broken run) — it goes through run_liveness + die instead.
+  if grep -qE 'ci run.*\|\| *true' "$0"; then
+    bad "cache-prime run phase swallows exits with a trailing || true (a broken run would pass)"
+  else
+    ok "cache-prime run phase does not swallow exits with a trailing || true"
+  fi
 
   if [ "$fails" -ne 0 ]; then
     printf 'cache-prime self-test: FAILED (%d)\n' "$fails" >&2
