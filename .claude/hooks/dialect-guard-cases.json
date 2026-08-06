@@ -182,6 +182,28 @@
   ]
  },
  {
+  "name": "canonical open import Core passes",
+  "tool": "Write",
+  "tool_input": {
+   "file_path": "core/test-service/x.hs",
+   "content": "import Core"
+  },
+  "pass_rules": [
+   "no-open-import"
+  ]
+ },
+ {
+  "name": "canonical open import Test passes",
+  "tool": "Write",
+  "tool_input": {
+   "file_path": "core/test-service/x.hs",
+   "content": "import Test"
+  },
+  "pass_rules": [
+   "no-open-import"
+  ]
+ },
+ {
   "name": "pure usage blocked",
   "tool": "Edit",
   "tool_input": {
