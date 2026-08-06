@@ -15,9 +15,9 @@ ADR-0059 gave `query_object_store` the composite primary key
 `(query_name, instance_uuid)` precisely so that many queries can share one
 Postgres table while each query's per-instance state stays isolated. The trait
 that reads and writes that table — `Service.QueryObjectStore.Core.QueryObjectStore`,
-with `get` / `atomicUpdate` / `getAll` — predates the checkpoint work and its
-method signatures take only an instance `Uuid`. There is no `query_name`
-parameter anywhere on the trait.
+with `get` / `atomicUpdate` / `getAll` — predates the checkpoint work. The `get`
+and `atomicUpdate` methods take an instance `Uuid`; `getAll` takes no instance
+key. None of these methods accepts a `query_name` parameter.
 
 The Postgres implementation bridged that gap with a sentinel: every trait row is
 written and read under a fixed `query_name = "__trait__"` (`traitNamespace`). The

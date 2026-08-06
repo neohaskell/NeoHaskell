@@ -68,6 +68,13 @@ spec = do
         |> Task.asResult
         |> discard
       capturedName <- captured |> ConcurrentVar.peek
-      let expectedName = definition.queryName
+      -- Pin to the query's own NameOf as an INDEPENDENT literal, not
+      -- 'definition.queryName' (which the same wiring computes) — else a
+      -- regression that corrupts the name identically in both places would slip
+      -- past. The exposed field is asserted separately.
+      let expectedName = "StoreWiringQuery"
+      let exposedName = definition.queryName
+      Task.unless (exposedName == expectedName) do
+        fail [fmt|definition exposed queryName "#{exposedName}"; expected "#{expectedName}"|]
       Task.unless (capturedName == expectedName && capturedName != "__trait__" && capturedName != "") do
         fail [fmt|store factory received "#{capturedName}"; expected the query's own name "#{expectedName}" (not the "__trait__" sentinel)|]
