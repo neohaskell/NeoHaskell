@@ -46,7 +46,9 @@ by this PR.
       (`.github/workflows/neo-release.yml`, tag-gated). Produces `neo-<target>` +
       `SHA256SUMS`, each portability-gated and native-smoked before publish.
 - [ ] Confirm the public Cachix cache (`https://neohaskell.cachix.org`) is
-      populated for the consumer path (main-only `cache-populate` job). Without
+      populated for the consumer path (trusted-push `cache-populate` job — it
+      warms the cache from a push to an exact trusted ref: `main` or the
+      migration `integration/neo-monorepo` branch, never from a PR). Without
       it the first project build cannot meet the 600 s deadline and the SLO run
       fails closed rather than fabricating a pass.
 

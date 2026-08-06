@@ -17,7 +17,12 @@ on:
     # skipped (same reasoning as the Haskell Test gate).
     types: [opened, synchronize, reopened, ready_for_review]
   push:
-    branches: [main]
+    # main plus the migration integration branch: the trusted-push cache
+    # populate job (below) must warm the public Cachix from the integration
+    # branch too, so the clean-machine onboarding SLO has a populated cache
+    # before the final merge to main. Both are exact, same-repo refs; PRs still
+    # never receive the token (see the `cache-populate` trust guard).
+    branches: [main, integration/neo-monorepo]
     paths:
       - "neo/**"
       - "nix/neo-package.nix"
@@ -216,7 +221,7 @@ jobs:
   #
   # This job holds NO secret and is reachable by PR-controlled code, so it must
   # never touch Cachix write. READ acceleration is automatic via the flake's
-  # nixConfig substituter; WRITE happens only in the isolated, main-only
+  # nixConfig substituter; WRITE happens only in the isolated, trusted-push-only
   # `cache-populate` job below.
   consumer-contract:
     needs: changes
@@ -270,18 +275,22 @@ jobs:
         run: ./dev neo-consumer-contract
 
   # Trusted cache population — ISOLATED from any PR-controlled code. Runs ONLY on
-  # a push to main of THIS repository, so the CACHIX_AUTH_TOKEN it holds is never
-  # exposed to a job that checks out or executes a pull request's code. It runs
-  # the EXACT consumer path (the same ./dev neo-consumer-contract) so the cache is
-  # populated from real contract execution, then Cachix pushes what that built.
-  # A missing token skips honestly (job succeeds, nothing pushed, no pretense).
-  # NOT part of the required gate: it is a best-effort warmer, never a merge
-  # blocker, and the cache only ACCELERATES — it never replaces execution.
+  # a push to an EXACT trusted ref (main OR the migration integration branch) of
+  # THIS repository, so the CACHIX_AUTH_TOKEN it holds is never exposed to a job
+  # that checks out or executes a pull request's code. A pull_request event never
+  # matches this guard, so a PR — even from a fork — can neither receive nor write
+  # the token. It runs the EXACT consumer path (the same ./dev
+  # neo-consumer-contract) so the cache is populated from real contract execution,
+  # then Cachix pushes what that built. A missing token skips honestly (job
+  # succeeds, nothing pushed, no pretense). NOT part of the required gate: it is a
+  # best-effort warmer, never a merge blocker, and the cache only ACCELERATES — it
+  # never replaces execution. `scripts/workflow-check` (check_cache_populate)
+  # freezes this exact-ref, same-repo, never-PR trust guard.
   cache-populate:
     needs: changes
     if: >-
       github.event_name == 'push'
-      && github.ref == 'refs/heads/main'
+      && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/integration/neo-monorepo')
       && github.repository == 'neohaskell/NeoHaskell'
       && needs.changes.outputs.contract == 'true'
     runs-on: ubuntu-latest
@@ -312,8 +321,8 @@ jobs:
             accept-flake-config = true
       - uses: DeterminateSystems/magic-nix-cache-action@v14
         if: ${{ env.CACHIX_AUTH_TOKEN != '' }}
-      # Cachix push is set up only now — after the trust guard (main-only + token
-      # present) — so the token is never present alongside PR-controlled code. Its
+      # Cachix push is set up only now — after the trust guard (trusted push ref +
+      # token present) — so the token is never present alongside PR-controlled code. Its
       # post-job hook pushes the store paths the consumer path builds below.
       - name: Configure Cachix push
         if: ${{ env.CACHIX_AUTH_TOKEN != '' }}

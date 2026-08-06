@@ -639,10 +639,18 @@ def check_neo_release(name, text):
 #     binary (pinned cargo, not nix), runs the portability gate, checksum-verifies
 #     + installs it, and drives the exact consumer path via NEO_BIN. Because it
 #     checks out and runs PR-controlled code it must hold NO Cachix secret at all.
-#   cache-populate — an ISOLATED, main-only job that alone holds CACHIX_AUTH_TOKEN,
-#     runs the exact consumer path, pushes to Cachix, and skips honestly when no
-#     token is configured (never fails, never pretends to push).
+#   cache-populate — an ISOLATED, trusted-push-only job that alone holds
+#     CACHIX_AUTH_TOKEN, runs the exact consumer path, pushes to Cachix, and skips
+#     honestly when no token is configured (never fails, never pretends to push).
+#     "Trusted push" = a push to an exact trusted ref (main OR the migration
+#     integration branch) in THIS repository, never a pull_request. A PR — even a
+#     fork PR — can never receive or write the token.
 CACHE_POPULATE_JOB = "cache-populate"
+
+# The token-bearing cache-populate job may run ONLY on trusted PUSHES to these
+# exact refs (never a pull_request, always the same repo). Kept in lockstep with
+# GATE_BASE_BRANCHES and the `if:` guard in neo-ci.yml.
+CACHE_POPULATE_TRUSTED_REFS = tuple(f"refs/heads/{b}" for b in GATE_BASE_BRANCHES)
 
 
 def _steps_of(job_text):
@@ -693,9 +701,11 @@ def check_release_rehearsal(name, text):
 
 
 def check_cache_populate(name, text):
-    """The isolated, main-only cache-population job (adversarial-review fix): it
-    alone holds the token, is unreachable by PR code, runs the exact consumer
-    path, and skips honestly when no token is set."""
+    """The isolated, trusted-push-only cache-population job (adversarial-review
+    fix): it alone holds the token, is unreachable by PR code, runs the exact
+    consumer path, and skips honestly when no token is set. The trust guard is
+    EXACT-ref (main or the integration branch), SAME-repository, and NEVER a
+    pull_request — a PR (even from a fork) can never receive or write the token."""
     errs = []
     E = errs.append
     jobs = job_blocks(strip_comments(text))
@@ -705,15 +715,28 @@ def check_cache_populate(name, text):
           "population must not live in a PR-reachable job")
         return errs
 
-    # main-only trust guard (push to refs/heads/main), never a pull_request.
+    # Trust guard: push-only, exact-ref (each trusted ref matched by EQUALITY on
+    # github.ref, never a prefix/glob), same-repository, never a pull_request.
     guard = re.search(r"if:\s*>-?\s*\n((?:\s+[^\n]*\n)+)", job)
     guard_text = guard.group(1) if guard else job
-    if "refs/heads/main" not in guard_text:
-        E(f"{name}: `{CACHE_POPULATE_JOB}` is not gated to `github.ref == 'refs/heads/main'` "
-          "— the token must only ever run on trusted main pushes")
+    if "github.event_name == 'push'" not in guard_text:
+        E(f"{name}: `{CACHE_POPULATE_JOB}` is not gated to push events "
+          "(`github.event_name == 'push'`) — the token must only run on trusted pushes")
+    for ref in CACHE_POPULATE_TRUSTED_REFS:
+        if f"github.ref == '{ref}'" not in guard_text:
+            E(f"{name}: `{CACHE_POPULATE_JOB}` is not gated to the exact trusted ref "
+              f"`github.ref == '{ref}'` — the token must only ever run on trusted pushes "
+              "to an exact allowed ref (main or integration/neo-monorepo)")
+    if re.search(r"(startsWith|endsWith|contains)\(\s*github\.ref\b", guard_text):
+        E(f"{name}: `{CACHE_POPULATE_JOB}` uses a non-exact ref match "
+          "(startsWith/endsWith/contains on github.ref) — the trust guard must be "
+          "exact-ref so it can never be broadened to an untrusted ref")
+    if "github.repository ==" not in guard_text:
+        E(f"{name}: `{CACHE_POPULATE_JOB}` is not gated to the same repository "
+          "(`github.repository == '...'`) — a fork must never reach the token")
     if "pull_request" in guard_text:
         E(f"{name}: `{CACHE_POPULATE_JOB}` gate references pull_request — it must be "
-          "main-push-only, never reachable from a PR")
+          "trusted-push-only, never reachable from a PR")
     # It holds the token and runs the exact consumer path.
     if "CACHIX_AUTH_TOKEN" not in job:
         E(f"{name}: `{CACHE_POPULATE_JOB}` does not use CACHIX_AUTH_TOKEN (it is the one "
@@ -1331,13 +1354,14 @@ def self_test():
            good_rehearsal.replace(
                "          ./scripts/neo-release install o x $RUNNER_TEMP/neo-bin/neo\n", ""))
 
-    # cache-populate: isolated, main-only, token-holding, honest-skip.
+    # cache-populate: isolated, trusted-push-only (exact-ref: main OR the
+    # integration branch), same-repo, token-holding, honest-skip.
     good_cache = (
         "jobs:\n"
         "  cache-populate:\n"
         "    if: >-\n"
         "      github.event_name == 'push'\n"
-        "      && github.ref == 'refs/heads/main'\n"
+        "      && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/integration/neo-monorepo')\n"
         "      && github.repository == 'neohaskell/NeoHaskell'\n"
         "    env:\n      CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}\n"
         "    steps:\n"
@@ -1354,8 +1378,18 @@ def self_test():
           not check_cache_populate("neo-ci.yml", good_cache))
     cp_bad("missing cache-populate job is flagged",
            good_cache.replace("  cache-populate:\n", "  other:\n"))
-    cp_bad("cache-populate not gated to main is flagged",
-           good_cache.replace("      && github.ref == 'refs/heads/main'\n", ""))
+    cp_bad("cache-populate not gated to the main ref is flagged",
+           good_cache.replace("github.ref == 'refs/heads/main' || ", ""))
+    cp_bad("cache-populate not gated to the integration ref is flagged",
+           good_cache.replace(" || github.ref == 'refs/heads/integration/neo-monorepo'", ""))
+    cp_bad("cache-populate not gated to the same repository is flagged",
+           good_cache.replace("      && github.repository == 'neohaskell/NeoHaskell'\n", ""))
+    cp_bad("cache-populate with a non-exact (broadening) ref match is flagged",
+           good_cache.replace(
+               "(github.ref == 'refs/heads/main' || github.ref == 'refs/heads/integration/neo-monorepo')",
+               "startsWith(github.ref, 'refs/heads/')"))
+    cp_bad("cache-populate not gated to push events is flagged",
+           good_cache.replace("      github.event_name == 'push'\n", ""))
     cp_bad("cache-populate reachable from a PR is flagged",
            good_cache.replace("      github.event_name == 'push'\n",
                               "      github.event_name == 'pull_request'\n"))
