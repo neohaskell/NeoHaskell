@@ -231,12 +231,20 @@ getImpl pool queryName uuid = do
         Ok val -> Task.yield (Just val)
 
 
--- | Atomically update a query instance.
+-- | Atomically update a query instance, keyed by the store's own query name
+-- (@NameOf query@) so distinct queries over one entity never collide (#734).
 --
--- Uses INSERT ... ON CONFLICT (query_name, instance_uuid) DO UPDATE, keyed by
--- the store's own query name (@NameOf query@). Concurrent updates to distinct
--- queries over the same entity therefore never overwrite each other — the
--- lost-write / cross-query collision the @"__trait__"@ sentinel caused (#734).
+-- The read and the write are one logical read-modify-write. A pooled connection
+-- cannot be held across the pure @updateFn@, so atomicity is enforced
+-- OPTIMISTICALLY — the same concurrency doctrine as the checkpoint writer's
+-- CAS-on-position (ADR-0059 hazard H2). Each attempt reads the current row,
+-- applies @updateFn@, then commits the write ONLY IF the row still holds the
+-- exact @state_json@ it read (compare-and-set). A concurrent writer that slipped
+-- in between makes the guarded write affect zero rows, so this re-reads and
+-- retries rather than clobbering it — closing the lost-update race that the
+-- previous separate read + write pool sessions exposed (#739). Retries are
+-- bounded; contention that never converges surfaces as a StorageError rather
+-- than a silent lost write.
 atomicUpdateImpl
   :: forall query.
      (Json.FromJSON query, Json.ToJSON query)
@@ -245,24 +253,64 @@ atomicUpdateImpl
   -> Uuid
   -> (Maybe query -> Maybe query)
   -> Task Error Unit
-atomicUpdateImpl pool queryName uuid updateFn = do
-  let rawUuid = Uuid.toLegacy uuid
-  maybeJson <- runPool pool (selectJsonSession queryName rawUuid)
-    |> Task.mapError (\e -> StorageError (toText (show e)))
-  maybeExisting <- case maybeJson of
-    Nothing -> Task.yield Nothing
-    Just jsonVal ->
-      case Json.decode jsonVal of
-        Err err -> Task.throw (SerializationError err)
-        Ok val -> Task.yield (Just val)
-  case updateFn maybeExisting of
-    Nothing ->
-      runPool pool (deleteSession queryName rawUuid)
+atomicUpdateImpl pool queryName uuid updateFn =
+  atomicUpdateAttempt pool queryName (Uuid.toLegacy uuid) updateFn atomicUpdateMaxRetries
+
+
+-- | Retry budget for 'atomicUpdateImpl' optimistic CAS. Every retry means
+-- another writer committed, so N concurrent writers on one key need at most ~N
+-- retries; this cap sits comfortably above realistic fan-out and only trips on
+-- pathological live-lock.
+atomicUpdateMaxRetries :: Int
+atomicUpdateMaxRetries = 100
+
+
+-- | One optimistic read-modify-write attempt; recurses with a smaller budget
+-- when the compare-and-set write loses a race to a concurrent writer.
+atomicUpdateAttempt
+  :: forall query.
+     (Json.FromJSON query, Json.ToJSON query)
+  => Pool
+  -> Text
+  -> UUID.UUID
+  -> (Maybe query -> Maybe query)
+  -> Int
+  -> Task Error Unit
+atomicUpdateAttempt pool queryName rawUuid updateFn retriesLeft =
+  if retriesLeft <= 0
+    then Task.throw (StorageError "atomicUpdate exceeded its retry budget under sustained contention")
+    else do
+      maybeJson <- runPool pool (selectJsonSession queryName rawUuid)
         |> Task.mapError (\e -> StorageError (toText (show e)))
-    Just newVal -> do
-      let encoded = Json.encode newVal
-      runPool pool (upsertSession queryName rawUuid encoded)
-        |> Task.mapError (\e -> StorageError (toText (show e)))
+      maybeExisting <- case maybeJson of
+        Nothing -> Task.yield Nothing
+        Just jsonVal ->
+          case Json.decode jsonVal of
+            Err err -> Task.throw (SerializationError err)
+            Ok val -> Task.yield (Just val)
+      let retry = atomicUpdateAttempt pool queryName rawUuid updateFn (retriesLeft - 1)
+      -- Nothing back = the guarded write matched no row (a concurrent writer won)
+      -- → re-read and retry; Just _ = our compare-and-set landed.
+      let afterWrite outcome =
+            case outcome of
+              Nothing -> retry
+              Just _ -> Task.yield ()
+      case (updateFn maybeExisting, maybeJson) of
+        (Nothing, Nothing) ->
+          -- absent stays absent — nothing to write
+          Task.yield ()
+        (Nothing, Just oldJson) ->
+          runPool pool (casDeleteSession queryName rawUuid oldJson)
+            |> Task.mapError (\e -> StorageError (toText (show e)))
+            |> Task.andThen afterWrite
+        (Just newVal, Nothing) ->
+          runPool pool (insertIfAbsentSession queryName rawUuid (Json.encode newVal))
+            |> Task.mapError (\e -> StorageError (toText (show e)))
+            |> Task.andThen afterWrite
+        (Just newVal, Just oldJson) ->
+          runPool pool (casUpdateSession queryName rawUuid oldJson (Json.encode newVal))
+            |> Task.mapError (\e -> StorageError (toText (show e)))
+            |> Task.andThen afterWrite
 
 
 -- | Get all instances stored under the store's own query name (@NameOf query@).
@@ -306,44 +354,72 @@ selectJsonSession queryName rawUuid = do
   Session.statement (queryName, rawUuid) stmt
 
 
--- | DELETE FROM query_object_store WHERE query_name = ? AND instance_uuid = ?
-deleteSession :: Text -> UUID.UUID -> Session.Session ()
-deleteSession queryName rawUuid = do
-  let sql = "DELETE FROM query_object_store WHERE query_name = $1 AND instance_uuid = $2"
-  let encoder =
-        (fst >$< Encoders.param (Encoders.nonNullable Encoders.text))
-          <> (snd >$< Encoders.param (Encoders.nonNullable Encoders.uuid))
-  let decoder = Decoders.noResult
-  let stmt = Statement (sql |> Text.toBytes |> Bytes.unwrap) encoder decoder True
-  Session.statement (queryName, rawUuid) stmt
-
-
--- | UPSERT into query_object_store for the trait's @atomicUpdate@.
---
--- Note: the trait API carries no position, so this write does NOT apply
--- CAS-on-position. (Doing so with a hardcoded position = 0 would make
--- every conflict branch a silent no-op — the bug fixed in this revision.)
--- Hazard H2 (lost-write CAS) is enforced on the checkpoint pathway via
--- 'CheckpointStore' helpers, which carry a real advancing position.
--- query_hash is stored alongside state to keep the row shape consistent
--- with checkpoint rows, but is empty for these per-instance rows — only the
--- checkpoint marker (nil UUID) carries a real hash.
-upsertSession :: Text -> UUID.UUID -> Json.Value -> Session.Session ()
-upsertSession queryName rawUuid jsonVal = do
+-- | Compare-and-set DELETE: remove the row only if its @state_json@ still equals
+-- the value the caller read. Returns @Just _@ when a row was deleted and
+-- @Nothing@ when the guard matched nothing (a concurrent writer changed the row
+-- first, so 'atomicUpdateImpl' re-reads and retries).
+casDeleteSession :: Text -> UUID.UUID -> Json.Value -> Session.Session (Maybe Int64)
+casDeleteSession queryName rawUuid expectedJson = do
   let sql =
-        "INSERT INTO query_object_store \
-        \  (query_name, instance_uuid, query_hash, position, state_json, updated_at) \
-        \VALUES ($1, $2, '', 0, $3, now()) \
-        \ON CONFLICT (query_name, instance_uuid) DO UPDATE \
-        \SET state_json  = EXCLUDED.state_json, \
-        \    updated_at  = now()"
+        "DELETE FROM query_object_store \
+        \WHERE query_name = $1 AND instance_uuid = $2 AND state_json = $3 \
+        \RETURNING 1::int8"
   let encoder =
         ((\(a, _, _) -> a) >$< Encoders.param (Encoders.nonNullable Encoders.text))
           <> ((\(_, b, _) -> b) >$< Encoders.param (Encoders.nonNullable Encoders.uuid))
           <> ((\(_, _, c) -> c) >$< Encoders.param (Encoders.nonNullable Encoders.jsonb))
-  let decoder = Decoders.noResult
+  let decoder = Decoders.rowMaybe (Decoders.column (Decoders.nonNullable Decoders.int8))
+  let stmt = Statement (sql |> Text.toBytes |> Bytes.unwrap) encoder decoder True
+  Session.statement (queryName, rawUuid, expectedJson) stmt
+
+
+-- | INSERT the per-instance row only if @(query_name, instance_uuid)@ is still
+-- absent. Returns @Just _@ on insert and @Nothing@ when a concurrent writer
+-- inserted first (@ON CONFLICT DO NOTHING@), so 'atomicUpdateImpl' re-reads and
+-- applies @updateFn@ against the now-present state.
+--
+-- query_hash is stored empty and position 0 to keep the row shape consistent
+-- with checkpoint rows; only the checkpoint marker (nil UUID) carries a real
+-- hash/position (see 'writeCheckpointSession'). The trait API carries no
+-- position, so per-instance writes never do CAS-on-position — lost-write safety
+-- for these rows comes from the @state_json@ compare-and-set in 'casUpdateSession'.
+insertIfAbsentSession :: Text -> UUID.UUID -> Json.Value -> Session.Session (Maybe Int64)
+insertIfAbsentSession queryName rawUuid jsonVal = do
+  let sql =
+        "INSERT INTO query_object_store \
+        \  (query_name, instance_uuid, query_hash, position, state_json, updated_at) \
+        \VALUES ($1, $2, '', 0, $3, now()) \
+        \ON CONFLICT (query_name, instance_uuid) DO NOTHING \
+        \RETURNING 1::int8"
+  let encoder =
+        ((\(a, _, _) -> a) >$< Encoders.param (Encoders.nonNullable Encoders.text))
+          <> ((\(_, b, _) -> b) >$< Encoders.param (Encoders.nonNullable Encoders.uuid))
+          <> ((\(_, _, c) -> c) >$< Encoders.param (Encoders.nonNullable Encoders.jsonb))
+  let decoder = Decoders.rowMaybe (Decoders.column (Decoders.nonNullable Decoders.int8))
   let stmt = Statement (sql |> Text.toBytes |> Bytes.unwrap) encoder decoder True
   Session.statement (queryName, rawUuid, jsonVal) stmt
+
+
+-- | Compare-and-set UPDATE: overwrite @state_json@ only if it still equals the
+-- value the caller read. Returns @Just _@ when the row was updated and @Nothing@
+-- when the guard matched nothing (lost the race to a concurrent writer → the
+-- caller re-reads and retries). This is the trait rows' lost-write guard, the
+-- state-based analogue of the checkpoint writer's CAS-on-position (hazard H2).
+casUpdateSession :: Text -> UUID.UUID -> Json.Value -> Json.Value -> Session.Session (Maybe Int64)
+casUpdateSession queryName rawUuid expectedJson newJson = do
+  let sql =
+        "UPDATE query_object_store \
+        \SET state_json = $4, updated_at = now() \
+        \WHERE query_name = $1 AND instance_uuid = $2 AND state_json = $3 \
+        \RETURNING 1::int8"
+  let encoder =
+        ((\(a, _, _, _) -> a) >$< Encoders.param (Encoders.nonNullable Encoders.text))
+          <> ((\(_, b, _, _) -> b) >$< Encoders.param (Encoders.nonNullable Encoders.uuid))
+          <> ((\(_, _, c, _) -> c) >$< Encoders.param (Encoders.nonNullable Encoders.jsonb))
+          <> ((\(_, _, _, d) -> d) >$< Encoders.param (Encoders.nonNullable Encoders.jsonb))
+  let decoder = Decoders.rowMaybe (Decoders.column (Decoders.nonNullable Decoders.int8))
+  let stmt = Statement (sql |> Text.toBytes |> Bytes.unwrap) encoder decoder True
+  Session.statement (queryName, rawUuid, expectedJson, newJson) stmt
 
 
 -- | SELECT all per-instance state_json values for a query name.

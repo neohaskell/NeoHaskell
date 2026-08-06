@@ -2,6 +2,7 @@ module Service.QueryObjectStore.PostgresSpec where
 
 import Core
 import Array qualified
+import AsyncTask qualified
 import Environment qualified
 import Json qualified
 import Service.QueryObjectStore.Core (QueryObjectStore)
@@ -29,6 +30,12 @@ testConfig =
     }
 
 
+-- | Config with a wider pool so the concurrent lost-update regression (#739)
+-- exercises real parallel connections, not a serialized single-connection queue.
+concurrentConfig :: PostgresQueryObjectStoreConfig
+concurrentConfig = testConfig { poolSize = 8 }
+
+
 -- | Concrete-typed helper so all tests have an unambiguous query type. Supplies
 -- a fixed default query name; the single-store tests below don't care which.
 mkStore :: PostgresQueryObjectStoreConfig -> Task QueryObjectStoreError (QueryObjectStore Json.Value)
@@ -48,6 +55,30 @@ mkStoreNamed = PostgresQOS.newFromConfig
 -- | A simple JSON value suitable for use as test query state.
 simpleState :: Text -> Json.Value
 simpleState label = Json.object [("label", Json.encode label)]
+
+
+-- | Counter state as a bare JSON number — the fixture for the concurrent
+-- lost-update regression (#739).
+counterState :: Int -> Json.Value
+counterState n = Json.encode n
+
+
+-- | Read the counter's current value, treating a missing/undecodable row as 0.
+counterValue :: Json.Value -> Int
+counterValue value =
+  case Json.decode value of
+    Ok n -> n
+    Err _ -> 0
+
+
+-- | Read-modify-write step: increment the stored counter by one. Two concurrent
+-- applications that both read the same value must NOT both write value+1 — that
+-- is the lost update a genuinely atomic 'atomicUpdate' prevents.
+bumpCounter :: Maybe Json.Value -> Maybe Json.Value
+bumpCounter maybeValue =
+  case maybeValue of
+    Nothing -> Just (counterState 1)
+    Just value -> Just (counterState (counterValue value + 1))
 
 
 -- | Convert a QOSCore.Error (from store method calls) to Text.
@@ -431,3 +462,36 @@ postgresTests = do
           Task.unless (rows |> Array.contains realRow) do
             fail [fmt|getAll dropped the real instance row: #{toText (show rows)}|]
         Err err -> fail [fmt|getAll failed: #{err}|]
+
+  describe "concurrent atomicUpdate is lost-update safe (#739)" do
+    it "N concurrent read-modify-write increments on one key all apply (#739)" \_ -> do
+      -- Regression for the CodeRabbit finding on PR #739: atomicUpdate performed
+      -- its read and its write as two SEPARATE pool sessions, so concurrent
+      -- updates to the same (query_name, instance_uuid) both derived from stale
+      -- state and silently lost writes. This drives N concurrent increments of a
+      -- single counter row; a genuinely atomic read-modify-write lands all N
+      -- (final == N). The pre-fix racy implementation ends below N.
+      store <- mkStoreNamed concurrentConfig "concurrent-update-query-739" |> Task.mapError mkErrorToText
+      instanceId <- Uuid.generate
+      let n = 40
+      -- seed the counter at 0
+      store.atomicUpdate instanceId (\_ -> Just (counterState 0))
+        |> Task.mapError storeErrorToText
+        |> discard
+      -- spawn N concurrent increments (each a read-modify-write on the SAME row)
+      handles <-
+        Array.range 1 n
+          |> Task.mapArray \_ ->
+            AsyncTask.run
+              ( store.atomicUpdate instanceId bumpCounter
+                  |> Task.mapError storeErrorToText
+              )
+      handles |> Task.forEach AsyncTask.waitFor
+      final <-
+        store.get instanceId
+          |> Task.mapError storeErrorToText
+      case final of
+        Just value ->
+          Task.unless (counterValue value == n) do
+            fail [fmt|lost concurrent updates: expected counter #{toText (show n)}, got #{toText (show (counterValue value))}|]
+        Nothing -> fail "counter row vanished after concurrent updates"
