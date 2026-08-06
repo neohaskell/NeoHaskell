@@ -3,10 +3,11 @@
   inputs.nixpkgs.follows = "haskellNix/nixpkgs-unstable";
   inputs.flake-utils.url = "github:numtide/flake-utils";
 
-  # Tracks `main`; the actual rev is pinned by the committed flake.lock
-  # (currently 3fd3d1327c). To bump: `nix flake lock --update-input neohaskell`
-  # then sync the `tag:` in cabal.project and `neohaskellCommit` below.
-  inputs.neohaskell.url = "git+https://github.com/neohaskell/neohaskell.git?ref=main";
+  # Pinned to an exact, immutable NeoHaskell monorepo revision whose framework
+  # tree (core/ + integrations/) is compatible with THIS starter's source. To
+  # bump: set the rev below, `nix flake lock --update-input neohaskell`, then sync
+  # the `tag:` in cabal.project and `neohaskellCommit` below to the same rev.
+  inputs.neohaskell.url = "git+https://github.com/neohaskell/neohaskell.git?rev=4459b861649d12e883a38544e09f9b09374038c8";
   inputs.neohaskell.flake = false;
 
   outputs = { self, nixpkgs, flake-utils, haskellNix, neohaskell }:
@@ -15,7 +16,7 @@
         [ "x86_64-linux" "x86_64-darwin" "aarch64-linux" "aarch64-darwin" ];
 
       # Must match the `tag:` in cabal.project for both subdirs AND the rev in the neohaskell input above.
-      neohaskellCommit = "3fd3d1327c3f64c0e6ded278b803b1a2b96ab875";
+      neohaskellCommit = "4459b861649d12e883a38544e09f9b09374038c8";
 
     in flake-utils.lib.eachSystem supportedSystems (system:
       let
