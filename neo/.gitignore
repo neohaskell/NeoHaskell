@@ -1,0 +1,11 @@
+/target
+.cargo_check.log
+.cargo_test.log
+test-project/
+my-test-project/
+test-project-smoke/
+dummy/
+result
+.agent_output.log
+.test_failures.log
+.smoke_test_fail.log

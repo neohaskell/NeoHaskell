@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+#
+# Prove the committed Neo IDE bundle is a faithful build of its source.
+#
+# `neo/src/commands/ide.rs` embeds `neo/assets/ide/dist/` into the binary at
+# compile time (rust-embed), and that built tree is committed to git. The Nix
+# package (nix/neo-package.nix) therefore ships whatever `dist/` is committed.
+# This check keeps that from silently going stale: it reinstalls from the
+# lockfile (fidelity) and rebuilds with the pinned toolchain, then fails if the
+# committed `dist/` differs from the fresh build. Run locally and in
+# .github/workflows/neo-ci.yml (the `ide` job).
+#
+# Uses the neo dev shell (the only authoritative toolchain for this crate), not
+# the Haskell root toolchain, hence the explicit `cd neo && nix develop`.
+#
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+if ! command -v nix >/dev/null 2>&1; then
+  echo "[error] nix is required (the neo IDE build uses the pinned dev shell)" >&2
+  echo "[info]  install Nix (https://nixos.org/download) then re-run" >&2
+  exit 1
+fi
+
+echo "[info] rebuilding neo/assets/ide/dist from the committed lockfile..."
+( cd neo && nix develop --command bash -c '
+    set -euo pipefail
+    cd assets/ide
+    npm ci
+    npm run build
+  ' )
+
+if git diff --quiet -- neo/assets/ide/dist; then
+  echo "[ok] neo IDE dist matches a from-lockfile rebuild (committed bundle is fresh)"
+  exit 0
+fi
+
+echo "[fail] committed neo/assets/ide/dist is STALE: it does not match a fresh" >&2
+echo "       build from neo/assets/ide/package-lock.json. Rebuild and commit:" >&2
+echo "         cd neo/assets/ide && npm ci && npm run build" >&2
+echo "       then commit the dist/ diff (the embedded bundle is part of the PR)." >&2
+git --no-pager diff --stat -- neo/assets/ide/dist >&2
+exit 1

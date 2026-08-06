@@ -85,6 +85,7 @@ ADRs document significant architectural decisions made during the development of
 | [0069](0069-security-reviews-are-local.md) | Security design-review records are local-only, never pushed | Accepted |
 | [0070](0070-maintainer-codemap-regeneration.md) | Maintainer-triggered codemap regeneration onto a contributor PR | Accepted |
 | [0071](0071-thread-query-name-through-query-object-store.md) | Thread the query name through the QueryObjectStore factory | Accepted |
+| [0072](0072-neo-cutover-and-onboarding-slo.md) | Neo CLI cutover — archive-as-human-gate and the clean-machine onboarding SLO | Accepted |
 
 <!-- adr-index: this table is validated by scripts/adr-index-check (./dev adr-check,
      CI job `adr-index` in checks.yml) — every NNNN-*.md file must appear exactly

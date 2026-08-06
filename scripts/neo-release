@@ -1,0 +1,429 @@
+#!/usr/bin/env bash
+#
+# neo-release — the single source of truth for how a native `neo` release asset
+# is NAMED, PACKAGED, CHECKSUMMED, VERIFIED, and INSTALLED for a rehearsal.
+#
+# Both the release workflow (.github/workflows/neo-release.yml) and the CI
+# release rehearsal call THIS script, so the asset-naming contract and the
+# checksum manifest can never drift between "how the release is published" and
+# "how the rehearsal consumes it". The installer's own native-download path
+# (installer/src/release.rs) shares the same contract; the installer consistency
+# tests and workflow-check freeze all three together.
+#
+# Naming contract (shared with installer/src/release.rs::neo_asset_name):
+#   asset  = neo-<target>
+#   digest = SHA256SUMS  (sha256sum format: "<hex>␠␠neo-<target>")
+#
+# Supported targets (shared with release_target / NEO_TARGETS):
+#   x86_64-unknown-linux-gnu  aarch64-unknown-linux-gnu
+#   x86_64-apple-darwin       aarch64-apple-darwin
+#
+# Subcommands:
+#   targets                         print the supported target triples (one/line)
+#   asset-name <target>             print the release-asset name for <target>
+#   package <target> <bin> <out>    copy a built binary to <out>/neo-<target>
+#   checksums <dir>                 write <dir>/SHA256SUMS over the neo-* assets
+#   verify <dir> <target>           verify neo-<target> against <dir>/SHA256SUMS
+#   install <dir> <target> <dest>   copy-once, verify that copy, atomically place
+#   inspect <binary> <target>       portability gate: fail on /nix/store refs
+#   compat [<outdir>]               emit the neo<->NeoHaskell compatibility
+#                                   contract (JSON) from the embedded starter's
+#                                   pinned NeoHaskell revision; fail closed on
+#                                   drift. Writes <outdir>/neo-compatibility.json
+#                                   when <outdir> is given, else prints to stdout.
+#   --self-test                     exercise naming + checksum round-trip (no net)
+#
+# Publication is NEVER performed here — that is the workflow's tag-gated job.
+set -euo pipefail
+
+SHA256SUMS="SHA256SUMS"
+TARGETS=(
+  "x86_64-unknown-linux-gnu"
+  "aarch64-unknown-linux-gnu"
+  "x86_64-apple-darwin"
+  "aarch64-apple-darwin"
+)
+
+die() { printf 'neo-release: %s\n' "$*" >&2; exit 1; }
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+asset_name() { printf 'neo-%s\n' "$1"; }
+
+is_supported_target() {
+  local t
+  for t in "${TARGETS[@]}"; do [ "$t" = "$1" ] && return 0; done
+  return 1
+}
+
+# sha256 of a file as lowercase hex, portably (Linux sha256sum / macOS shasum).
+sha256_of() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1" | awk '{print $1}'
+  else
+    shasum -a 256 "$1" | awk '{print $1}'
+  fi
+}
+
+# Write "<hex>␠␠<name>" for one file, matching coreutils sha256sum output so the
+# installer's SHA256SUMS parser (installer/src/release.rs) reads it identically.
+sha256_line() {
+  local file="$1" name="$2"
+  printf '%s  %s\n' "$(sha256_of "$file")" "$name"
+}
+
+cmd_targets() { printf '%s\n' "${TARGETS[@]}"; }
+
+cmd_asset_name() {
+  [ $# -eq 1 ] || die "usage: neo-release asset-name <target>"
+  is_supported_target "$1" || die "unsupported target: $1"
+  asset_name "$1"
+}
+
+cmd_package() {
+  [ $# -eq 3 ] || die "usage: neo-release package <target> <binary> <outdir>"
+  local target="$1" bin="$2" out="$3"
+  is_supported_target "$target" || die "unsupported target: $target"
+  [ -f "$bin" ] || die "built binary not found: $bin"
+  mkdir -p "$out"
+  local dest="$out/$(asset_name "$target")"
+  cp "$bin" "$dest"
+  chmod +x "$dest"
+  printf 'packaged %s\n' "$dest"
+}
+
+cmd_checksums() {
+  [ $# -eq 1 ] || die "usage: neo-release checksums <dir>"
+  local dir="$1"
+  [ -d "$dir" ] || die "not a directory: $dir"
+  # Enumerate the neo-* assets without a subshell cd (keeps paths explicit).
+  local found=0 out="$dir/$SHA256SUMS"
+  : > "$out"
+  local f name
+  for f in "$dir"/neo-*; do
+    [ -e "$f" ] || continue
+    name="$(basename "$f")"
+    [ "$name" = "$SHA256SUMS" ] && continue
+    sha256_line "$f" "$name" >> "$out"
+    found=$((found + 1))
+  done
+  [ "$found" -gt 0 ] || die "no neo-* assets found in $dir to checksum"
+  printf 'wrote %s (%d asset(s))\n' "$out" "$found"
+}
+
+# Verify one asset against the manifest WITHOUT trusting the shell to expand the
+# expected hash into a command: read the expected hex, recompute, compare.
+cmd_verify() {
+  [ $# -eq 2 ] || die "usage: neo-release verify <dir> <target>"
+  local dir="$1" target="$2"
+  is_supported_target "$target" || die "unsupported target: $target"
+  local name; name="$(asset_name "$target")"
+  local asset="$dir/$name" manifest="$dir/$SHA256SUMS"
+  [ -f "$asset" ] || die "asset not found: $asset"
+  [ -f "$manifest" ] || die "manifest not found: $manifest"
+  local expected
+  expected="$(awk -v n="$name" '($2 == n) || ($2 == "*" n) {print $1; exit}' "$manifest")"
+  [ -n "$expected" ] || die "no $SHA256SUMS entry for $name (cannot verify integrity)"
+  local actual; actual="$(sha256_of "$asset")"
+  if [ "$expected" != "$actual" ]; then
+    die "checksum mismatch for $name: expected $expected got $actual (asset NOT trusted)"
+  fi
+  printf 'verified %s (%s)\n' "$name" "$actual"
+}
+
+# The expected hex for <name> from <manifest>, or empty. `awk` compares fields
+# as data (never expands the hash into a command).
+manifest_expected() {
+  local manifest="$1" name="$2"
+  awk -v n="$name" '($2 == n) || ($2 == "*" n) {print $1; exit}' "$manifest"
+}
+
+# Atomically install a verified asset to <dest> with NO TOCTOU window: copy the
+# published asset ONCE into a private temp file in the destination directory,
+# hash THAT EXACT temp file, compare to the manifest, and only then rename the
+# very same file into place. Nothing re-reads the source between verify and
+# install, so a source swapped after verification can never be the thing that
+# lands (mirrors installer/src/release.rs, which verifies the exact bytes it
+# installs).
+cmd_install() {
+  [ $# -eq 3 ] || die "usage: neo-release install <dir> <target> <dest>"
+  local dir="$1" target="$2" dest="$3"
+  is_supported_target "$target" || die "unsupported target: $target"
+  local name; name="$(asset_name "$target")"
+  local asset="$dir/$name" manifest="$dir/$SHA256SUMS"
+  [ -f "$asset" ] || die "asset not found: $asset"
+  [ -f "$manifest" ] || die "manifest not found: $manifest"
+  local expected; expected="$(manifest_expected "$manifest" "$name")"
+  [ -n "$expected" ] || die "no $SHA256SUMS entry for $name (cannot verify integrity)"
+
+  local destdir; destdir="$(dirname "$dest")"
+  mkdir -p "$destdir"
+  local tmp; tmp="$(mktemp "$destdir/.neo-install.XXXXXX")"
+  cp "$asset" "$tmp"
+  local actual; actual="$(sha256_of "$tmp")"
+  if [ "$expected" != "$actual" ]; then
+    # A rejected download must never linger half-installed.
+    rm -f "$tmp"
+    die "checksum mismatch for $name: expected $expected got $actual (asset NOT installed)"
+  fi
+  chmod +x "$tmp"
+  mv -f "$tmp" "$dest"
+  printf 'installed %s -> %s (%s)\n' "$name" "$dest" "$actual"
+}
+
+# Portability gate: fail if a built native binary references the Nix store for
+# its dynamic loader, RUNPATH/RPATH, or shared libraries. A nix-built binary
+# hard-codes /nix/store paths that do not exist on a user's machine, so it is NOT
+# a portable release artifact. Run on each target's NATIVE runner (the tools are
+# platform-specific), as a blocking release gate before packaging.
+# stdin -> the offending lines that reference the Nix store (empty if portable).
+# Factored out as the pure decision seam so --self-test can exercise it without a
+# real binary or platform toolchain.
+filter_nix_store() { grep -F "/nix/store" || true; }
+
+nix_store_refs() {
+  # Print any offending lines that mention /nix/store from the platform's binary
+  # inspector; empty output means portable.
+  local binary="$1" target="$2"
+  case "$target" in
+    *linux*)
+      # ELF interpreter + dynamic RUNPATH/RPATH + needed libs.
+      { readelf -l "$binary" 2>/dev/null | grep -i "interpreter"
+        readelf -d "$binary" 2>/dev/null | grep -iE "RUNPATH|RPATH"
+        # ldd may not resolve for a cross artifact; tolerate its absence.
+        command -v ldd >/dev/null 2>&1 && ldd "$binary" 2>/dev/null || true
+      } | filter_nix_store
+      ;;
+    *darwin*)
+      otool -L "$binary" 2>/dev/null | filter_nix_store
+      ;;
+    *)
+      die "inspect: unsupported target: $target"
+      ;;
+  esac
+}
+
+cmd_inspect() {
+  [ $# -eq 2 ] || die "usage: neo-release inspect <binary> <target>"
+  local binary="$1" target="$2"
+  is_supported_target "$target" || die "unsupported target: $target"
+  [ -f "$binary" ] || die "binary not found: $binary"
+  local offenders; offenders="$(nix_store_refs "$binary" "$target")"
+  if [ -n "$offenders" ]; then
+    printf 'neo-release: NON-PORTABLE binary — references the Nix store:\n%s\n' "$offenders" >&2
+    die "refusing to release a binary with /nix/store references (not runnable off this machine)"
+  fi
+  printf 'portable: %s (%s) has no /nix/store references\n' "$binary" "$target"
+}
+
+# ── neo<->NeoHaskell compatibility contract (executable single source of truth) ─
+# NeoHaskell and neo keep INDEPENDENT SemVer, so every neo release must publish an
+# explicit mapping from this neo CLI version to the compatible NeoHaskell source
+# revision. That revision is authoritatively pinned by the EMBEDDED starter
+# (neo/starter): flake.nix `neohaskellCommit`, flake.lock's neohaskell `rev`, and
+# every cabal.project `tag:`. This verb READS those pins (never a hand-maintained
+# table that could drift), FAILS CLOSED on any disagreement among them, and emits
+# the contract as JSON. neo-release.yml publishes it as neo-compatibility.json and
+# the consumer contract gates that a generated project pins the declared revision.
+compat_starter_dir() { printf '%s\n' "${NEO_COMPAT_STARTER:-$REPO_ROOT/neo/starter}"; }
+compat_cargo_toml()  { printf '%s\n' "${NEO_COMPAT_CARGO:-$REPO_ROOT/neo/Cargo.toml}"; }
+is_sha40() { printf '%s' "$1" | grep -qE '^[0-9a-fA-F]{40}$'; }
+
+read_neo_version() {
+  local cargo="$1"; [ -f "$cargo" ] || die "compat: neo Cargo.toml not found: $cargo"
+  local v; v="$(grep -m1 -E '^version = "' "$cargo" | sed -E 's/^version = "([^"]+)".*/\1/')"
+  [ -n "$v" ] || die "compat: could not read neo version from $cargo"
+  printf '%s\n' "$v"
+}
+
+read_flake_commit() {
+  local flake="$1"; [ -f "$flake" ] || die "compat: starter flake.nix not found: $flake"
+  grep -m1 -E 'neohaskellCommit = "' "$flake" | sed -E 's/.*neohaskellCommit = "([0-9a-fA-F]*)".*/\1/'
+}
+
+# Print "rev\tref\turl" for the neohaskell node from a flake.lock.
+read_lock_node() {
+  local lock="$1"; [ -f "$lock" ] || die "compat: starter flake.lock not found: $lock"
+  python3 - "$lock" <<'PY'
+import json, sys
+locked = json.load(open(sys.argv[1])).get("nodes", {}).get("neohaskell", {}).get("locked", {})
+print("%s\t%s\t%s" % (locked.get("rev", ""), locked.get("ref", ""), locked.get("url", "")))
+PY
+}
+
+read_cabal_tags() {
+  local cabal="$1"; [ -f "$cabal" ] || die "compat: starter cabal.project not found: $cabal"
+  grep -E '^[[:space:]]*tag:[[:space:]]*[0-9a-fA-F]+' "$cabal" \
+    | sed -E 's/.*tag:[[:space:]]*([0-9a-fA-F]+).*/\1/'
+}
+
+cmd_compat() {
+  [ $# -le 1 ] || die "usage: neo-release compat [<outdir>]"
+  local out="${1:-}"
+  local starter cargo flake lock cabal
+  starter="$(compat_starter_dir)"; cargo="$(compat_cargo_toml)"
+  flake="$starter/flake.nix"; lock="$starter/flake.lock"; cabal="$starter/cabal.project"
+
+  local neo_version flake_commit lock_line lock_rev lock_ref lock_url
+  neo_version="$(read_neo_version "$cargo")"
+  flake_commit="$(read_flake_commit "$flake")"
+  lock_line="$(read_lock_node "$lock")"
+  lock_rev="${lock_line%%$'\t'*}"
+  lock_ref="$(printf '%s' "$lock_line" | cut -f2)"
+  lock_url="$(printf '%s' "$lock_line" | cut -f3)"
+
+  is_sha40 "$flake_commit" || die "compat: neohaskellCommit in $flake is not a 40-hex commit: '$flake_commit'"
+  is_sha40 "$lock_rev"     || die "compat: neohaskell rev in $lock is not a 40-hex commit: '$lock_rev'"
+  [ "$flake_commit" = "$lock_rev" ] \
+    || die "compat: DRIFT — flake.nix neohaskellCommit ($flake_commit) != flake.lock neohaskell rev ($lock_rev)"
+
+  local tag n=0
+  while IFS= read -r tag; do
+    [ -n "$tag" ] || continue
+    n=$((n + 1))
+    [ "$tag" = "$flake_commit" ] \
+      || die "compat: DRIFT — cabal.project tag ($tag) != pinned revision ($flake_commit)"
+  done < <(read_cabal_tags "$cabal")
+  [ "$n" -ge 1 ] || die "compat: no 'tag:' pin found in $cabal"
+
+  local repo="${lock_url:-https://github.com/neohaskell/neohaskell.git}"
+  local ref="${lock_ref:-main}"
+  local json
+  json="$(printf '{\n  "schema": "neo-compat/v1",\n  "neo_version": "%s",\n  "neohaskell": {\n    "repo": "%s",\n    "ref": "%s",\n    "source_revision": "%s"\n  }\n}\n' \
+    "$neo_version" "$repo" "$ref" "$flake_commit")"
+  if [ -n "$out" ]; then
+    mkdir -p "$out"
+    printf '%s' "$json" > "$out/neo-compatibility.json"
+    printf 'wrote %s/neo-compatibility.json (neo %s <-> neohaskell %s)\n' "$out" "$neo_version" "$flake_commit"
+  else
+    printf '%s' "$json"
+  fi
+}
+
+self_test() {
+  local fails=0 tmp installed_hash manifest_hash
+  ok()  { printf '  ok   %s\n' "$1"; }
+  bad() { printf '  FAIL %s\n' "$1" >&2; fails=$((fails + 1)); }
+
+  # 1. asset naming contract.
+  [ "$(asset_name x86_64-unknown-linux-gnu)" = "neo-x86_64-unknown-linux-gnu" ] \
+    && ok "asset-name is neo-<target>" || bad "asset-name wrong"
+
+  # 2. the four supported targets, exactly.
+  [ "$(cmd_targets | sort | tr '\n' ' ')" = \
+    "aarch64-apple-darwin aarch64-unknown-linux-gnu x86_64-apple-darwin x86_64-unknown-linux-gnu " ] \
+    && ok "targets are the four supported triples" || bad "targets drifted"
+
+  # 3. unsupported target rejected.
+  ( cmd_asset_name totally-made-up ) >/dev/null 2>&1 && bad "unsupported target accepted" \
+    || ok "unsupported target rejected"
+
+  # 4. package -> checksums -> verify round-trip, and a tamper is rejected.
+  tmp="$(mktemp -d)"
+  local t="x86_64-unknown-linux-gnu"
+  printf 'fake neo binary\n' > "$tmp/built"
+  cmd_package "$t" "$tmp/built" "$tmp/out" >/dev/null
+  [ -f "$tmp/out/$(asset_name "$t")" ] && ok "package copies to neo-<target>" \
+    || bad "package did not produce the asset"
+  cmd_checksums "$tmp/out" >/dev/null
+  grep -q "  neo-$t\$" "$tmp/out/$SHA256SUMS" && ok "checksums lists the asset" \
+    || bad "checksums missing the asset line"
+  # Failure-expecting calls run in a subshell: `die` exits, and a subshell keeps
+  # that exit from tearing down the whole self-test.
+  if ( cmd_verify "$tmp/out" "$t" ) >/dev/null 2>&1; then ok "verify accepts a good asset"
+  else bad "verify rejected a good asset"; fi
+  printf 'TAMPERED\n' > "$tmp/out/$(asset_name "$t")"
+  if ( cmd_verify "$tmp/out" "$t" ) >/dev/null 2>&1; then bad "verify accepted a tampered asset"
+  else ok "verify rejects a tampered asset"; fi
+
+  # 5. install verifies then places atomically (restore a good asset first).
+  printf 'fake neo binary\n' > "$tmp/out/$(asset_name "$t")"
+  cmd_install "$tmp/out" "$t" "$tmp/dest/neo" >/dev/null
+  [ -x "$tmp/dest/neo" ] && ok "install places an executable atomically" \
+    || bad "install did not produce an executable"
+
+  # 6. install refuses a tampered asset (never writes dest).
+  printf 'TAMPERED\n' > "$tmp/out/$(asset_name "$t")"
+  rm -f "$tmp/dest2/neo" 2>/dev/null || true
+  if ( cmd_install "$tmp/out" "$t" "$tmp/dest2/neo" ) >/dev/null 2>&1; then
+    bad "install placed a tampered asset"
+  else
+    [ ! -e "$tmp/dest2/neo" ] && ok "install refuses a tampered asset (dest untouched)" \
+      || bad "install left a tampered asset behind"
+  fi
+
+  # 7. TOCTOU regression: install must verify the EXACT bytes it places, so the
+  #    installed file's hash equals the manifest entry (no re-read of the source
+  #    between verify and install). Restore a good asset + refresh the manifest.
+  printf 'the real neo\n' > "$tmp/out/$(asset_name "$t")"
+  cmd_checksums "$tmp/out" >/dev/null
+  cmd_install "$tmp/out" "$t" "$tmp/dest3/neo" >/dev/null
+  installed_hash="$(sha256_of "$tmp/dest3/neo")"
+  manifest_hash="$(manifest_expected "$tmp/out/$SHA256SUMS" "$(asset_name "$t")")"
+  [ -n "$installed_hash" ] && [ "$installed_hash" = "$manifest_hash" ] \
+    && ok "install verifies the exact bytes it places (TOCTOU-closed)" \
+    || bad "installed file hash != manifest (TOCTOU window / wrong bytes installed)"
+
+  # 8. portability gate decision seam: a /nix/store reference is flagged; clean
+  #    inspector output is not.
+  [ -n "$(printf '/nix/store/abc/lib.so\n/usr/lib/x\n' | filter_nix_store)" ] \
+    && ok "portability: /nix/store reference is flagged" \
+    || bad "portability: /nix/store reference was not flagged"
+  [ -z "$(printf '/usr/lib/libSystem.B.dylib\n/lib64/ld.so\n' | filter_nix_store)" ] \
+    && ok "portability: clean binary passes" \
+    || bad "portability: clean binary wrongly flagged"
+
+  # 9. compatibility contract: agreeing pins emit the contract; ANY drift among
+  #    flake.nix neohaskellCommit / flake.lock rev / cabal.project tags fails
+  #    closed (RED/GREEN — a manually-duplicated table can silently drift).
+  local cdir="$tmp/compat" rev="0123456789abcdef0123456789abcdef01234567"
+  local bad_rev="ffffffffffffffffffffffffffffffffffffffff"
+  mkdir -p "$cdir/starter"
+  printf '[package]\nname = "neo"\nversion = "9.9.9"\n' > "$cdir/Cargo.toml"
+  make_starter() { # $1 = lock rev, $2 = second cabal tag
+    printf '{\n  neohaskellCommit = "%s";\n}\n' "$rev" > "$cdir/starter/flake.nix"
+    printf 'packages:\n  location: a\n  tag: %s\n  location: b\n  tag: %s\n' "$rev" "$2" > "$cdir/starter/cabal.project"
+    printf '{"nodes":{"neohaskell":{"locked":{"rev":"%s","ref":"main","url":"https://github.com/neohaskell/neohaskell.git"}}}}\n' "$1" > "$cdir/starter/flake.lock"
+  }
+  run_compat() { ( NEO_COMPAT_STARTER="$cdir/starter" NEO_COMPAT_CARGO="$cdir/Cargo.toml" cmd_compat "$@" ); }
+  make_starter "$rev" "$rev"
+  if run_compat > "$cdir/out.json" 2>/dev/null \
+     && grep -q "\"source_revision\": \"$rev\"" "$cdir/out.json" \
+     && grep -q '"neo_version": "9.9.9"' "$cdir/out.json" \
+     && python3 -m json.tool "$cdir/out.json" >/dev/null 2>&1; then
+    ok "compat emits valid JSON from agreeing pins"
+  else bad "compat rejected agreeing pins or emitted bad JSON"; fi
+  make_starter "$bad_rev" "$rev"   # flake.lock rev drifts
+  if run_compat >/dev/null 2>&1; then bad "compat accepted a drifted flake.lock rev"
+  else ok "compat rejects a drifted flake.lock rev"; fi
+  make_starter "$rev" "$bad_rev"   # one cabal.project tag drifts
+  if run_compat >/dev/null 2>&1; then bad "compat accepted a drifted cabal.project tag"
+  else ok "compat rejects a drifted cabal.project tag"; fi
+
+  rm -rf "$tmp"
+  if [ "$fails" -ne 0 ]; then
+    printf 'neo-release self-test: FAILED (%d)\n' "$fails" >&2
+    return 1
+  fi
+  printf 'neo-release self-test: OK — naming, checksums, verify, atomic install, TOCTOU, portability, compatibility contract\n'
+}
+
+main() {
+  local sub="${1:-}"
+  [ $# -gt 0 ] && shift || true
+  case "$sub" in
+    targets)     cmd_targets "$@" ;;
+    asset-name)  cmd_asset_name "$@" ;;
+    package)     cmd_package "$@" ;;
+    checksums)   cmd_checksums "$@" ;;
+    verify)      cmd_verify "$@" ;;
+    install)     cmd_install "$@" ;;
+    inspect)     cmd_inspect "$@" ;;
+    compat)      cmd_compat "$@" ;;
+    --self-test) self_test ;;
+    -h|--help|"") sed -n '2,40p' "$0" | sed 's/^# \{0,1\}//' ;;
+    *) die "unknown subcommand '$sub' (see --help)" ;;
+  esac
+}
+
+main "$@"

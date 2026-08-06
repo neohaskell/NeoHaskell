@@ -4,7 +4,7 @@ license = "MIT"
 repository = "https://github.com/neohaskell/NeoHaskell"
 
 name = "neo-install"
-version = "0.1.0"
+version = "0.1.4"
 edition = "2021"
 
 [dependencies]
@@ -17,6 +17,7 @@ which = "7"
 tempfile = "3"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+sha2 = "0.10"
 
 [dev-dependencies]
 assert_cmd = "2"

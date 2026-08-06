@@ -1,0 +1,18 @@
+/* Inline rename field — inherits color/size from the node it sits in so it
+   works on any colored card. Self-contained per the styling hard rule. */
+.input {
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: center;
+  width: 100%;
+  border: none;
+  border-bottom: 1px solid currentColor;
+  outline: none;
+  padding: 0;
+}
+
+.label {
+  cursor: text;
+  user-select: none;
+}

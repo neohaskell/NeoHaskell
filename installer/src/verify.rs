@@ -1,7 +1,23 @@
 use anyhow::Result;
 use std::process::Command;
 
-use crate::{detect, error::InstallerError, ui};
+use crate::{detect, error::InstallerError, release, ui};
+
+/// The command used to invoke the just-installed `neo`. Prefer the exact path we
+/// installed it to (it is not yet on the current process's PATH — the user's
+/// next shell picks it up via the profile edit), falling back to `neo` on PATH.
+fn neo_invocation() -> String {
+    match release::default_bin_dir() {
+        Ok(dir) => {
+            let bin = dir.join("neo");
+            if bin.exists() {
+                return bin.to_string_lossy().into_owned();
+            }
+            "neo".to_string()
+        }
+        Err(_) => "neo".to_string(),
+    }
+}
 
 pub fn verify_nix(dry_run: bool) -> Result<()> {
     if dry_run {
@@ -32,7 +48,7 @@ pub fn verify_neo(dry_run: bool) -> Result<()> {
         return Ok(());
     }
 
-    let output = Command::new("neo")
+    let output = Command::new(neo_invocation())
         .arg("--version")
         .output()
         .map_err(InstallerError::CommandFailed)?;

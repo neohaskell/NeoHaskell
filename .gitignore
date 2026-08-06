@@ -9,6 +9,8 @@ devenv.local.nix
 .pre-commit-config.yaml
 dist
 dist-*
+# Neo CLI embeds its committed IDE frontend bundle at compile time.
+!neo/assets/ide/dist/
 cabal-dev
 *.o
 *.hi

@@ -1,0 +1,411 @@
+name: "Neo CLI"
+
+# Component-scoped CI for the Rust Neo CLI (neo/) and the root Nix wiring that
+# exposes it (nix/neo-package.nix, the flake `neo` output). It is INDEPENDENT of
+# the Haskell "Test" gate: neo has its own crate, toolchain and release train.
+#
+# Base-branch policy (deliberate): there is NO `branches:` allowlist on the
+# pull_request trigger. Neo ships through official stacked PRs whose base is
+# whatever lower stack layer they sit on (not only `main` or the migration
+# integration branch). A base allowlist here would silently stop gating neo the
+# moment it stacks on a new branch. Diff-scoping is done PER-PR by the `changes`
+# job, not by the base name. `scripts/workflow-check` freezes both invariants
+# (runs on arbitrary bases + routes neo/**) so they cannot regress.
+on:
+  pull_request:
+    # ready_for_review so promoting a draft re-triggers the jobs the draft guard
+    # skipped (same reasoning as the Haskell Test gate).
+    types: [opened, synchronize, reopened, ready_for_review]
+  push:
+    # main plus the migration integration branch: the trusted-push cache
+    # populate job (below) must warm the public Cachix from the integration
+    # branch too, so the clean-machine onboarding SLO has a populated cache
+    # before the final merge to main. Both are exact, same-repo refs; PRs still
+    # never receive the token (see the `cache-populate` trust guard).
+    branches: [main, integration/neo-monorepo]
+    paths:
+      - "neo/**"
+      - "nix/neo-package.nix"
+      - "flake.nix"
+      - "flake.lock"
+      - ".github/workflows/neo-ci.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: neo-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Per-PR diff scoping (see base-branch policy above). On push the path filter
+  # already guaranteed relevance, so touched=true. On a PR we diff against the
+  # actual base ref, whatever it is named, so stacked layers work unchanged.
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      touched: ${{ steps.detect.outputs.touched }}
+      contract: ${{ steps.detect.outputs.contract }}
+    steps:
+      - uses: actions/checkout@v7.0.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - id: detect
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" = "push" ]; then
+            echo "touched=true" >> "$GITHUB_OUTPUT"
+            echo "contract=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          CHANGED="$(git diff --name-only "origin/${BASE_REF}...HEAD")"
+          # Component jobs (rust/ide/nix-package): neo/** plus the root files the
+          # neo package derivation reads. Keep in lockstep with the `paths:` list
+          # above and with COMPONENT_SURFACES in scripts/workflow-check.
+          PATTERN='^(neo/|nix/neo-package\.nix|flake\.nix|flake\.lock|\.github/workflows/neo-ci\.yml)'
+          # Consumer contract: the component surfaces PLUS the monorepo Haskell
+          # sources the generated project compiles against (core/, integrations/)
+          # — a change there can break the starter->upstream contract — plus the
+          # contract script itself. Keep in lockstep with CONTRACT_SURFACES in
+          # scripts/workflow-check.
+          CONTRACT='^(neo/|core/|integrations/|nix/neo-package\.nix|flake\.nix|flake\.lock|\.github/workflows/neo-ci\.yml|scripts/neo-consumer-contract)'
+          if echo "$CHANGED" | grep -qE "$PATTERN"; then
+            echo "touched=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "touched=false" >> "$GITHUB_OUTPUT"
+          fi
+          if echo "$CHANGED" | grep -qE "$CONTRACT"; then
+            echo "contract=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "contract=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  # Rust crate: the canonical in-crate unit tests (--bins, never --lib) are the
+  # blocking gate. This job runs the COMPLETE binary suite in the dev shell.
+  # `cargo fmt --check` and `cargo clippy` run REPORT-ONLY:
+  # the imported snapshot carries a known formatting/lint baseline that this
+  # packaging PR does not touch (see the PR body). Everything runs in the pinned
+  # neo dev shell; host toolchains are unsupported for this crate.
+  rust:
+    needs: changes
+    if: >-
+      (github.event_name == 'push' || github.event.pull_request.draft == false)
+      && needs.changes.outputs.touched == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7.0.0
+      - uses: DeterminateSystems/determinate-nix-action@v3.21.7
+        with:
+          extra-conf: |
+            accept-flake-config = true
+      - uses: DeterminateSystems/magic-nix-cache-action@v14
+      - name: Unit tests (all in-crate binary tests, --bins)
+        run: nix develop ./neo -c cargo test --manifest-path neo/Cargo.toml --locked --bins
+      - name: rustfmt (report-only baseline)
+        continue-on-error: true
+        run: |
+          nix develop ./neo -c cargo fmt --manifest-path neo/Cargo.toml --check \
+            | tee "$GITHUB_STEP_SUMMARY" || true
+      - name: clippy (report-only baseline)
+        continue-on-error: true
+        run: |
+          nix develop ./neo -c cargo clippy --manifest-path neo/Cargo.toml 2>&1 \
+            | tee clippy.log || true
+          count=$(grep -cE '^warning:' clippy.log || true)
+          echo "clippy baseline: ${count} warning(s) in neo product code (not fixed in this packaging PR)" \
+            >> "$GITHUB_STEP_SUMMARY"
+
+  # IDE frontend: lockfile fidelity (`npm ci` fails on a stale lock), the
+  # production build, and bundle fidelity are the blocking gates. Vitest and
+  # eslint are REPORT-ONLY imported baselines: the heal-flow tests currently
+  # depend on host/runtime conditions outside this packaging change, while the
+  # lint baseline predates the monorepo import. Both remain visible without
+  # weakening the reproducible build contract. `neo-dist-check` proves the
+  # committed embedded bundle is a faithful rebuild, so the Nix package never
+  # ships a stale blob.
+  ide:
+    needs: changes
+    if: >-
+      (github.event_name == 'push' || github.event.pull_request.draft == false)
+      && needs.changes.outputs.touched == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7.0.0
+      - uses: DeterminateSystems/determinate-nix-action@v3.21.7
+        with:
+          extra-conf: |
+            accept-flake-config = true
+      - uses: DeterminateSystems/magic-nix-cache-action@v14
+      - name: Install from lockfile
+        run: |
+          nix develop ./neo -c bash -c '
+            set -euo pipefail
+            cd neo/assets/ide
+            npm ci
+          '
+      - name: Frontend tests (report-only imported baseline)
+        continue-on-error: true
+        run: |
+          nix develop ./neo -c bash -c 'cd neo/assets/ide && npx vitest run' 2>&1 \
+            | tee "$GITHUB_STEP_SUMMARY"
+      - name: Production build
+        run: nix develop ./neo -c bash -c 'cd neo/assets/ide && npm run build'
+      - name: eslint (report-only baseline)
+        continue-on-error: true
+        run: |
+          nix develop ./neo -c bash -c 'cd neo/assets/ide && npm run lint' 2>&1 \
+            | tee "$GITHUB_STEP_SUMMARY" || true
+      - name: Committed embedded bundle matches source rebuild
+        run: ./dev neo-dist-check
+
+  # The flake output itself, on Linux and macOS (both are supported systems).
+  # `nix build .#neo` runs the hermetic in-crate unit tests as its checkPhase
+  # (the one subprocess-spawning module is scoped out in nix/neo-package.nix and
+  # covered by the `rust` job above), so this is ALSO sealed-package test
+  # evidence. Then smoke the binary and the app.
+  nix-package:
+    needs: changes
+    if: >-
+      (github.event_name == 'push' || github.event.pull_request.draft == false)
+      && needs.changes.outputs.touched == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            os: linux
+          - runner: macos-latest
+            os: macos
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7.0.0
+      - uses: DeterminateSystems/determinate-nix-action@v3.21.7
+        with:
+          extra-conf: |
+            accept-flake-config = true
+      - uses: DeterminateSystems/magic-nix-cache-action@v14
+      - name: Build the flake package (runs the in-crate unit tests as checkPhase)
+        run: nix build .#neo --print-build-logs
+      - name: Smoke the built binary
+        run: |
+          ./result/bin/neo --version
+          ./result/bin/neo --help
+      - name: Smoke the flake app
+        run: nix run .#neo -- --version
+
+  # The generated-project consumer contract (Linux) — ALSO the release rehearsal.
+  # One blocking end-to-end proof that the RELEASE-PACKAGED, checksum-VERIFIED,
+  # PORTABLE native `neo` binary (the exact artifact a user downloads) generates a
+  # project from the embedded starter offline and that the generated project
+  # builds, tests, runs, and answers GET /health against THIS monorepo checkout
+  # (neohaskell overridden to path:<checkout>), rather than mutable upstream
+  # `main`. It builds the binary the SAME portable way the release does (pinned
+  # cargo, NOT nix build — a nix binary hard-codes /nix/store libs), runs the
+  # portability gate, then packages + checksum-verifies + atomically installs via
+  # the shared scripts/neo-release contract and feeds that installed binary to the
+  # contract via NEO_BIN. So the release path and the consumer path are proven
+  # together. Runs on the broader `contract` surface (also core/, integrations/)
+  # because a change there can break the starter->upstream contract. At minimum
+  # Linux x86_64 is the blocking consumer rehearsal (clean-machine/SLO proof is a
+  # separate concern, not claimed here; per-target native install+smoke lives in
+  # neo-release.yml). Blocking (never continue-on-error): a failure here is the
+  # signal.
+  #
+  # This job holds NO secret and is reachable by PR-controlled code, so it must
+  # never touch Cachix write. READ acceleration is automatic via the flake's
+  # nixConfig substituter; WRITE happens only in the isolated, trusted-push-only
+  # `cache-populate` job below.
+  consumer-contract:
+    needs: changes
+    if: >-
+      (github.event_name == 'push' || github.event.pull_request.draft == false)
+      && needs.changes.outputs.contract == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    env:
+      REHEARSAL_TARGET: x86_64-unknown-linux-gnu
+    steps:
+      # The contract creates a local Git input at the exact checkout revision.
+      # Nix rejects git+file inputs cloned from shallow repositories.
+      - uses: actions/checkout@v7.0.0
+        with:
+          fetch-depth: 0
+      # Pinned, reproducible toolchain (matches the neo dev shell) — a cargo build
+      # links system C libs, so the artifact is portable, exactly like the release.
+      - uses: dtolnay/rust-toolchain@1.94.0
+        with:
+          targets: x86_64-unknown-linux-gnu
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: neo
+      - uses: DeterminateSystems/determinate-nix-action@v3.21.7
+        with:
+          extra-conf: |
+            accept-flake-config = true
+      - uses: DeterminateSystems/magic-nix-cache-action@v14
+      - name: Self-test the contract orchestration logic (timeout, cleanup, quoting, readiness)
+        run: ./dev neo-consumer-contract --self-test
+      # Build the PORTABLE binary the same way the release does, gate portability,
+      # then package + checksum-verify + atomically install it — so the rehearsal
+      # exercises the real download-and-verify install contract on the real artifact.
+      - name: Build portable binary, gate portability, verify + install
+        run: |
+          set -euo pipefail
+          cargo build --release --locked --manifest-path neo/Cargo.toml --target "$REHEARSAL_TARGET"
+          ./scripts/neo-release inspect "neo/target/${REHEARSAL_TARGET}/release/neo" "$REHEARSAL_TARGET"
+          ./scripts/neo-release package "$REHEARSAL_TARGET" "neo/target/${REHEARSAL_TARGET}/release/neo" "$RUNNER_TEMP/neo-artifacts"
+          ./scripts/neo-release checksums "$RUNNER_TEMP/neo-artifacts"
+          ./scripts/neo-release install "$RUNNER_TEMP/neo-artifacts" "$REHEARSAL_TARGET" "$RUNNER_TEMP/neo-bin/neo"
+          echo "NEO_BIN=$RUNNER_TEMP/neo-bin/neo" >> "$GITHUB_ENV"
+      - name: Run the generated-project consumer contract against the installed artifact
+        env:
+          # Keep each heavy phase inside the job wall-clock so the contract's own
+          # bounded timeout + clean teardown fire before GitHub kills the job.
+          CONTRACT_BUILD_TIMEOUT: "5400"
+          CONTRACT_TEST_TIMEOUT: "2400"
+          CONTRACT_READY_DEADLINE: "300"
+        run: ./dev neo-consumer-contract
+
+  # Trusted cache population — ISOLATED from any PR-controlled code. Runs ONLY on
+  # a push to an EXACT trusted ref (main OR the migration integration branch) of
+  # THIS repository, so the CACHIX_AUTH_TOKEN it holds is never exposed to a job
+  # that checks out or executes a pull request's code. A pull_request event never
+  # matches this guard, so a PR — even from a fork — can neither receive nor write
+  # the token. It runs the EXACT consumer path (the same ./dev
+  # neo-consumer-contract) so the cache is populated from real contract execution,
+  # then Cachix pushes what that built. A missing token skips honestly (job
+  # succeeds, nothing pushed, no pretense). NOT part of the required gate: it is a
+  # best-effort warmer, never a merge blocker, and the cache only ACCELERATES — it
+  # never replaces execution. `scripts/workflow-check` (check_cache_populate)
+  # freezes this exact-ref, same-repo, never-PR trust guard.
+  cache-populate:
+    needs: changes
+    if: >-
+      github.event_name == 'push'
+      && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/integration/neo-monorepo')
+      && github.repository == 'neohaskell/NeoHaskell'
+      && needs.changes.outputs.contract == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    env:
+      CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
+      REHEARSAL_TARGET: x86_64-unknown-linux-gnu
+    steps:
+      - name: Honest skip when no token is configured
+        if: ${{ env.CACHIX_AUTH_TOKEN == '' }}
+        run: echo "No CACHIX_AUTH_TOKEN configured — skipping cache population (not a failure)."
+      - uses: actions/checkout@v7.0.0
+        if: ${{ env.CACHIX_AUTH_TOKEN != '' }}
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@1.94.0
+        if: ${{ env.CACHIX_AUTH_TOKEN != '' }}
+        with:
+          targets: x86_64-unknown-linux-gnu
+      - uses: Swatinem/rust-cache@v2
+        if: ${{ env.CACHIX_AUTH_TOKEN != '' }}
+        with:
+          workspaces: neo
+      - uses: DeterminateSystems/determinate-nix-action@v3.21.7
+        if: ${{ env.CACHIX_AUTH_TOKEN != '' }}
+        with:
+          extra-conf: |
+            accept-flake-config = true
+      - uses: DeterminateSystems/magic-nix-cache-action@v14
+        if: ${{ env.CACHIX_AUTH_TOKEN != '' }}
+      # Cachix push is set up only now — after the trust guard (trusted push ref +
+      # token present) — so the token is never present alongside PR-controlled code. Its
+      # post-job hook pushes the store paths the consumer path builds below.
+      - name: Configure Cachix push
+        if: ${{ env.CACHIX_AUTH_TOKEN != '' }}
+        uses: cachix/cachix-action@v17
+        with:
+          name: neohaskell
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+      # Populate the cache from BOTH real paths, using the same verified,
+      # release-installed binary:
+      #  1. neo-consumer-contract — the EXACT-CHECKOUT closure (neohaskell ->
+      #     path:<checkout>), retained coverage.
+      #  2. cache-prime — the DEFAULT released generated-project closure (no
+      #     override; pinned to the compatibility revision), which is the closure
+      #     the clean-machine onboarding SLO actually substitutes. Without this the
+      #     SLO builds an unprimed closure from source and misses its 600 s
+      #     deadline. The Cachix post-hook pushes everything both build.
+      - name: Populate the cache from the EXACT consumer path + the default released closure
+        if: ${{ env.CACHIX_AUTH_TOKEN != '' }}
+        env:
+          CONTRACT_BUILD_TIMEOUT: "5400"
+          CONTRACT_TEST_TIMEOUT: "2400"
+          CONTRACT_READY_DEADLINE: "300"
+          PRIME_BUILD_TIMEOUT: "5400"
+          PRIME_TEST_TIMEOUT: "2400"
+          PRIME_RUN_TIMEOUT: "30"
+        run: |
+          set -euo pipefail
+          cargo build --release --locked --manifest-path neo/Cargo.toml --target "$REHEARSAL_TARGET"
+          ./scripts/neo-release inspect "neo/target/${REHEARSAL_TARGET}/release/neo" "$REHEARSAL_TARGET"
+          ./scripts/neo-release package "$REHEARSAL_TARGET" "neo/target/${REHEARSAL_TARGET}/release/neo" "$RUNNER_TEMP/neo-artifacts"
+          ./scripts/neo-release checksums "$RUNNER_TEMP/neo-artifacts"
+          ./scripts/neo-release install "$RUNNER_TEMP/neo-artifacts" "$REHEARSAL_TARGET" "$RUNNER_TEMP/neo-bin/neo"
+          NEO_BIN="$RUNNER_TEMP/neo-bin/neo" ./dev neo-consumer-contract
+          NEO_BIN="$RUNNER_TEMP/neo-bin/neo" ./dev cache-prime
+
+  # THE REQUIRED CHECK for the neo component. `if: always()` + no workflow-level
+  # paths filter => it always reports a conclusion on every PR, so it is safe to
+  # require in branch protection (unlike the path-skipped jobs). Skips are
+  # accepted only when there is genuinely nothing to test: a draft PR, or a PR
+  # that changed no relevant surface (per-job: component surface for
+  # rust/ide/nix-package, the broader contract surface for consumer-contract).
+  neo-ci-gate:
+    if: always()
+    needs: [changes, rust, ide, nix-package, consumer-contract]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check all neo jobs passed (or correctly skipped)
+        env:
+          IS_DRAFT: ${{ github.event_name == 'pull_request' && github.event.pull_request.draft }}
+          TOUCHED: ${{ needs.changes.outputs.touched }}
+          CONTRACT: ${{ needs.changes.outputs.contract }}
+          CHANGES_RESULT: ${{ needs.changes.result }}
+        run: |
+          if [[ "$CHANGES_RESULT" != "success" ]]; then
+            echo "::error::changes-detection job did not succeed ($CHANGES_RESULT)"
+            exit 1
+          fi
+          # Component jobs may skip on a draft or when no neo surface changed.
+          allow_skip_component=false
+          if [[ "$IS_DRAFT" == "true" || "$TOUCHED" != "true" ]]; then
+            allow_skip_component=true
+          fi
+          # The consumer contract may skip on a draft or when no contract surface
+          # changed (it covers a broader set than the component jobs).
+          allow_skip_contract=false
+          if [[ "$IS_DRAFT" == "true" || "$CONTRACT" != "true" ]]; then
+            allow_skip_contract=true
+          fi
+          results=(
+            "rust=${{ needs.rust.result }}=$allow_skip_component"
+            "ide=${{ needs.ide.result }}=$allow_skip_component"
+            "nix-package=${{ needs.nix-package.result }}=$allow_skip_component"
+            "consumer-contract=${{ needs.consumer-contract.result }}=$allow_skip_contract"
+          )
+          for entry in "${results[@]}"; do
+            job="${entry%%=*}"; rest="${entry#*=}"
+            r="${rest%%=*}"; may_skip="${rest#*=}"
+            if [[ "$r" == "skipped" && "$may_skip" == "true" ]]; then
+              continue
+            fi
+            if [[ "$r" != "success" ]]; then
+              echo "::error::$job did not pass (result: $r)"
+              exit 1
+            fi
+          done
+          echo "neo-ci-gate: all neo jobs passed (or correctly skipped - nothing to test)"

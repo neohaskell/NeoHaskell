@@ -1,0 +1,5 @@
+/* Footer status bar chrome. Visuals live here, not inline. */
+.bar {
+  border-top: 1px solid var(--mantine-color-default-border);
+  user-select: none;
+}

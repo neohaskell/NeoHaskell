@@ -6,7 +6,15 @@
 //! A mismatch means a real bootstrap 404s against real releases, which no
 //! amount of unit testing of the binary would catch. These tests read the two
 //! sources of truth off disk and assert they agree.
+//!
+//! A second group ties the NATIVE `neo` release contract together: the
+//! installer's own download logic (`neo_install::release`), the release workflow
+//! (`.github/workflows/neo-release.yml`), and the shared naming/checksum script
+//! (`scripts/neo-release`) must agree on the asset names, the supported targets,
+//! the publishing repository, and the `neo-v*` tag prefix — and the installer
+//! must NOT install `neo` by evaluating/compiling the `neo#neo-cli` flake.
 
+use neo_install::release;
 use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
@@ -319,4 +327,160 @@ fn bootstrap_latest_propagates_release_api_failure() {
         !out.status.success(),
         "release API/network failure must propagate as non-zero, not masquerade as an empty release stream"
     );
+}
+
+// ── Native `neo` release contract: installer ↔ neo-release.yml ↔ neo-release ──
+
+/// The repo root (`installer/`'s parent).
+fn repo_root() -> PathBuf {
+    crate_dir()
+        .parent()
+        .expect("installer/ has a parent")
+        .to_path_buf()
+}
+
+fn read_repo(rel: &str) -> String {
+    let p = repo_root().join(rel);
+    fs::read_to_string(&p).unwrap_or_else(|e| panic!("failed to read {}: {e}", p.display()))
+}
+
+/// Run `scripts/neo-release <args...>` and return trimmed stdout (the shared
+/// naming contract, executable). Panics on non-zero exit.
+fn neo_release(args: &[&str]) -> String {
+    let script = repo_root().join("scripts/neo-release");
+    let out = Command::new(&script)
+        .args(args)
+        .output()
+        .unwrap_or_else(|e| panic!("spawn {}: {e}", script.display()));
+    assert!(
+        out.status.success(),
+        "scripts/neo-release {args:?} failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    String::from_utf8_lossy(&out.stdout).trim().to_string()
+}
+
+#[test]
+fn installer_asset_names_match_the_shared_release_script() {
+    // The installer downloads `neo_asset_name(target)`; the workflow packages via
+    // `scripts/neo-release asset-name`. They must be byte-identical per target.
+    for target in release::NEO_TARGETS {
+        assert_eq!(
+            release::neo_asset_name(target),
+            neo_release(&["asset-name", target]),
+            "installer asset name and scripts/neo-release disagree for {target}"
+        );
+    }
+}
+
+#[test]
+fn installer_targets_match_the_shared_release_script() {
+    let mut script_targets: Vec<String> = neo_release(&["targets"])
+        .lines()
+        .map(str::to_string)
+        .collect();
+    script_targets.sort();
+    let mut installer_targets: Vec<String> =
+        release::NEO_TARGETS.iter().map(|s| s.to_string()).collect();
+    installer_targets.sort();
+    assert_eq!(
+        script_targets, installer_targets,
+        "the installer's supported targets and scripts/neo-release have drifted"
+    );
+}
+
+#[test]
+fn neo_release_workflow_builds_every_installer_target() {
+    let wf = read_repo(".github/workflows/neo-release.yml");
+    for target in release::NEO_TARGETS {
+        assert!(
+            wf.contains(target),
+            "neo-release.yml no longer builds '{target}' — a platform the installer \
+             downloads would have no published asset"
+        );
+    }
+}
+
+#[test]
+fn neo_release_workflow_uses_the_neo_v_tag_prefix() {
+    let wf = read_repo(".github/workflows/neo-release.yml");
+    assert!(
+        wf.contains(release::NEO_TAG_PREFIX),
+        "neo-release.yml must key releases off the '{}' tag prefix the installer resolves",
+        release::NEO_TAG_PREFIX
+    );
+}
+
+#[test]
+fn neo_release_workflow_routes_naming_through_the_shared_script() {
+    let wf = read_repo(".github/workflows/neo-release.yml");
+    assert!(
+        wf.contains("scripts/neo-release"),
+        "neo-release.yml must package/checksum via scripts/neo-release so its asset \
+         names cannot drift from what the installer downloads"
+    );
+}
+
+#[test]
+fn checksum_manifest_name_is_one_convention_across_both_trains() {
+    // ONE checksum-manifest filename everywhere: the installer's native-download
+    // path (release::SHA256SUMS), the shared script, and BOTH release workflows
+    // must publish/read `SHA256SUMS` — never a divergent `SHA256SUMS.txt`.
+    assert_eq!(release::SHA256SUMS, "SHA256SUMS");
+    let txt = format!("{}.txt", release::SHA256SUMS);
+    for wf in [
+        ".github/workflows/neo-release.yml",
+        ".github/workflows/installer-ci.yml",
+    ] {
+        let text = read_repo(wf);
+        assert!(
+            text.contains(release::SHA256SUMS),
+            "{wf} must publish the '{}' manifest",
+            release::SHA256SUMS
+        );
+        assert!(
+            !text.contains(&txt),
+            "{wf} still uses the divergent '{txt}' name — unify on '{}'",
+            release::SHA256SUMS
+        );
+    }
+}
+
+#[test]
+fn installer_publishes_to_the_declared_monorepo() {
+    // The installer downloads `neo` releases from NEO_REPO; that must be the same
+    // monorepo the crate declares (and therefore where the workflow publishes).
+    assert_eq!(
+        release::NEO_REPO,
+        monorepo_slug(),
+        "release::NEO_REPO must point at the monorepo the crate is published from"
+    );
+}
+
+#[test]
+fn installer_does_not_install_neo_via_the_neo_cli_flake() {
+    // The native-download installer must NEVER evaluate/compile/install neo from
+    // github:neohaskell/neo#neo-cli. The prose here names the forbidden ref, so
+    // the guard scans EXECUTABLE Rust only: the `nix profile install` arg tuple
+    // is the artifact that reappears if someone reintroduces that path.
+    for src in ["src/install.rs", "src/release.rs", "src/lib.rs"] {
+        let body = read(src);
+        let executable: String = body
+            .lines()
+            .filter(|l| {
+                let t = l.trim_start();
+                !(t.starts_with("//") || t.starts_with('*'))
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            !executable.contains("\"profile\", \"install\""),
+            "{src} constructs a `nix profile install` command — the installer must \
+             download a native neo release, not install the neo#neo-cli flake"
+        );
+        assert!(
+            !executable.contains("neo#neo-cli"),
+            "{src} references the neo#neo-cli flake in executable code — forbidden"
+        );
+    }
 }

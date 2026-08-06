@@ -1,0 +1,19 @@
+/* Problems drawer chrome. Visuals here, not inline. */
+.panel {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--mantine-color-default-border);
+  background: var(--mantine-color-body);
+}
+
+.header {
+  border-bottom: 1px solid var(--mantine-color-default-border);
+}
+
+.row {
+  border-radius: var(--mantine-radius-sm);
+}
+.row:hover {
+  background: var(--mantine-color-default-hover);
+}

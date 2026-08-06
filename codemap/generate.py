@@ -173,8 +173,13 @@ def _tracked_hs():
             # artifacts that downstream checks then bless
             sys.exit(f"codemap: git ls-files failed (rc={proc.returncode}) "
                      "— refusing to generate from an empty file list")
+        # Exclude archived sources and the embedded generated-project template.
+        # The starter is consumer fixture content, not NeoHaskell implementation or
+        # repository usage evidence; counting it would skew API-hot rankings every
+        # time the template changes.
+        excluded_prefixes = ("docs/archive/", "neo/starter/")
         _TRACKED_CACHE = [f for f in proc.stdout.splitlines()
-                          if not f.startswith("docs/archive/")]
+                          if not f.startswith(excluded_prefixes)]
     return _TRACKED_CACHE
 
 

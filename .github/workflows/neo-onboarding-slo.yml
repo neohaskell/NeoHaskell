@@ -1,0 +1,129 @@
+# Clean-machine onboarding SLO gate (PR 7 cutover) — see ADR 0072.
+#
+# Proves the one user-facing invariant of the neo→monorepo migration: on a clean,
+# supported, GitHub-hosted machine a user reaches a generated, tested, running
+# project in AT MOST 600 seconds via the REAL path
+#
+#     install -> neo new -> neo test -> neo run -> GET /health
+#
+# where `neo` is a checksum-verified RELEASE artifact obtained through the
+# installer's own semantics — never a source `cargo build`, never `nix build
+# .#neo`. The orchestration lives in `scripts/onboarding-slo` (its `--self-test`
+# freezes the logic); this workflow only wires the two modes and is itself frozen
+# by `scripts/workflow-check` (check_onboarding_slo).
+#
+# TWO MODES, deliberately separated so a PR can never masquerade as SLO proof:
+#   * self-test (every PR + dispatch): structurally exercises the orchestration
+#     OFFLINE — no download of a mutable `latest`, no secret, no publication. It
+#     proves the gate is wired, NOT an SLO number.
+#   * slo (workflow_dispatch ONLY): consumes IMMUTABLE `installer-v*` + `neo-v*`
+#     release inputs, measures the path on the two supported runners, and uploads
+#     an immutable evidence artifact (source SHA, tags, target, elapsed seconds,
+#     verified checksums, result). This is the ONLY producer of real SLO evidence.
+#
+# SECURITY: contents:read only; no `contents: write`; NO secret anywhere (Cachix
+# READ is public and tokenless; there is no cache WRITE and no publication here).
+# PR-controlled code therefore never sees a release/cache credential.
+name: Neo Onboarding SLO
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
+    inputs:
+      installer_version:
+        description: "IMMUTABLE installer release tag to measure (installer-vX.Y.Z — never 'latest')"
+        type: string
+        required: true
+      neo_version:
+        description: "IMMUTABLE neo CLI release tag to measure (neo-vX.Y.Z — never 'latest')"
+        type: string
+        required: true
+      expected_source_sha:
+        description: "Required reviewed commit SHA; must equal dispatched github.sha and both peeled release-tag SHAs"
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: neo-onboarding-slo-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # SAFE rehearsal — runs on every PR and on dispatch. Downloads nothing mutable,
+  # holds no secret, publishes nothing. Freezes the orchestration + workflow
+  # wiring so a regression to the gate itself fails loudly on a normal PR.
+  self-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - name: Freeze workflow wiring (includes this workflow)
+        run: ./dev workflow-check
+      - name: Onboarding orchestration self-test (offline — no download, no secret, no publish)
+        run: ./dev onboarding-slo --self-test
+
+  # REAL SLO evidence — ONLY on manual dispatch with IMMUTABLE version inputs.
+  # A PR event never reaches this job, so real SLO evidence can only come from an
+  # explicit, tag-pinned dispatch consuming published artifacts. Fail-closed and
+  # non-publishing behavior lives in the driver; this job just supplies inputs.
+  slo:
+    if: github.event_name == 'workflow_dispatch'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - runner: macos-latest
+            target: aarch64-apple-darwin
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    steps:
+      # Start the ONE global 600 s deadline as the very FIRST runner operation —
+      # before checkout and before the Nix/Cachix prerequisite install — so all of
+      # that prerequisite/cache/download/install work is inside the budget. The
+      # same-host monotonic clock is process-independent, so this value is
+      # threaded into the driver (SLO_MONOTONIC_START) and used as its start.
+      # Capturing before checkout is conservative: it can only enlarge elapsed,
+      # never fake a smaller one.
+      - name: Start the global onboarding deadline (pre-prerequisite, same-host monotonic)
+        run: |
+          python3 -c "import time,os; open(os.environ['GITHUB_ENV'],'a').write('SLO_MONOTONIC_START=%r\n' % time.monotonic())"
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      # NOTE: do NOT install Nix here. The measured release installer provisions
+      # Nix itself (Determinate), and a second Determinate install in a workflow
+      # step collides with it (`/nix/receipt.json` planner mismatch), failing the
+      # install phase. The clean runner therefore stays Nix-free; the installer's
+      # Nix install is part of the measured path (inside the 600 s deadline). The
+      # driver (scripts/onboarding-slo) reproduces the post-install Nix login env
+      # and configures the public caches tokenlessly for the measured commands.
+      - name: Measure clean-machine onboarding (immutable inputs, checksum-verified, fail-closed)
+        env:
+          SLO_INSTALLER_VERSION: ${{ inputs.installer_version }}
+          SLO_NEO_VERSION: ${{ inputs.neo_version }}
+          SLO_TARGET: ${{ matrix.target }}
+          SLO_SOURCE_SHA: ${{ github.sha }}
+          SLO_EXPECTED_SOURCE_SHA: ${{ inputs.expected_source_sha }}
+          SLO_DISPATCHED_SOURCE_SHA: ${{ github.sha }}
+          SLO_WORKFLOW_RUN_ID: ${{ github.run_id }}
+          SLO_WORKFLOW_REF: ${{ github.ref }}
+          SLO_DEADLINE: "600"
+          SLO_MONOTONIC_START: ${{ env.SLO_MONOTONIC_START }}
+          SLO_EVIDENCE: ${{ runner.temp }}/onboarding-slo-${{ matrix.target }}.json
+        run: ./dev onboarding-slo run
+      - name: Upload immutable SLO evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: onboarding-slo-evidence-${{ matrix.target }}-${{ github.run_id }}-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/onboarding-slo-${{ matrix.target }}.json
+            ${{ runner.temp }}/onboarding-slo-${{ matrix.target }}.json.sha256
+          if-no-files-found: error

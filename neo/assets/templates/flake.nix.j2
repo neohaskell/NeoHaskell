@@ -1,0 +1,70 @@
+{
+  description = "{{ description | default(name) }}";
+
+  inputs.haskellNix.url = "github:input-output-hk/haskell.nix";
+  inputs.nixpkgs.follows = "haskellNix/nixpkgs-unstable";
+  inputs.flake-utils.url = "github:numtide/flake-utils";
+  # Pinned to the SHA in cabal.project; update both together with:
+  #   nix flake lock --update-input neohaskell
+  #   (then sync the tag: lines in cabal.project to match)
+{% if neohaskell_source %}  # NEO_NEOHASKELL_SOURCE override (consumer contract): build this generated
+  # project against a local NeoHaskell checkout instead of the upstream revision,
+  # so the generated project is proven against the exact monorepo checkout under
+  # test. Inert in normal `neo` use (the env var is unset). The cabal.project tag
+  # and the inputMap key below still key on {{ neo_sha }}; only the fetched source
+  # is redirected. See scripts/neo-consumer-contract.
+  inputs.neohaskell.url = "{{ neohaskell_source }}";
+{% else %}  inputs.neohaskell.url = "git+https://github.com/neohaskell/neohaskell.git?rev={{ neo_sha }}";
+{% endif %}  inputs.neohaskell.flake = false;
+
+  outputs = { self, nixpkgs, flake-utils, haskellNix, neohaskell }:
+    let
+      supportedSystems =
+        [ "x86_64-linux" "x86_64-darwin" "aarch64-linux" "aarch64-darwin" ];
+
+      neohaskellCommit = "{{ neohaskell_commit }}";
+
+    in flake-utils.lib.eachSystem supportedSystems (system:
+      let
+        overlays = [
+          haskellNix.overlay
+          (final: _prev: {
+            hixProject = final.haskell-nix.hix.project {
+              src = ./.;
+              # Wire the cabal.project source-repository-package to the already-fetched
+              # neohaskell flake input, so haskell.nix does not need a separate fetch.
+              inputMap = {
+                "{{ neohaskell_git_url }}/${neohaskellCommit}" = neohaskell;
+              };
+              shell.buildInputs = with final; [
+                hurl
+                postgresql
+                libpq
+                zlib
+                pkg-config
+              ];
+            };
+          })
+        ];
+        pkgs = import nixpkgs {
+          inherit system overlays;
+          inherit (haskellNix) config;
+        };
+        flake = pkgs.hixProject.flake { };
+      in flake // { legacyPackages = pkgs; });
+
+  # Binary caches for faster builds:
+  # - cache.iog.io: IOHK's cache (GHC, haskell.nix infrastructure)
+  # - neohaskell.cachix.org: NeoHaskell's cache (project deps, shell tools)
+  nixConfig = {
+    extra-substituters = [
+      "https://cache.iog.io"
+      "https://neohaskell.cachix.org"
+    ];
+    extra-trusted-public-keys = [
+      "hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ="
+      "neohaskell.cachix.org-1:mo2cLaGbwqbrxs9xhqKK8jeNsn3osi7t6XoAmxSZssc="
+    ];
+    allow-import-from-derivation = "true";
+  };
+}

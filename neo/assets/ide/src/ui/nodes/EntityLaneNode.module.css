@@ -1,0 +1,39 @@
+/* Entity swim-lane background. Click-through body (canvas.css makes
+   entityLane nodes pointer-events:none); only the label strip (.em-pointer-auto)
+   captures clicks. Colors via theme tokens. */
+.lane {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  border: 1px solid var(--mantine-color-default-border);
+  background: color-mix(in srgb, var(--mantine-color-default) 40%, transparent);
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+.laneHighlighted {
+  border-color: var(--em-event);
+  background: color-mix(in srgb, var(--em-event) 12%, transparent);
+}
+
+.labelCol {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100px;
+  height: 100%;
+  z-index: 10;
+  display: flex;
+  align-items: flex-start;
+  padding: 8px;
+  cursor: pointer;
+}
+
+.label {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--mantine-color-dimmed);
+}
+.labelHighlighted {
+  color: var(--em-event);
+}

@@ -1,0 +1,75 @@
+/* Chapter range arrow drawn across the top of a feature's slices. Colors via
+   theme tokens (command-blue arrow, feature-indigo submodel select). */
+.root {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  overflow: visible;
+}
+
+.selection {
+  position: absolute;
+  inset: -4px;
+  border-radius: var(--mantine-radius-sm);
+  border: 2px solid var(--em-selection);
+  background: color-mix(in srgb, var(--em-selection) 18%, transparent);
+  pointer-events: none;
+  overflow: visible;
+}
+
+.arrow {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  display: flex;
+  align-items: center;
+}
+
+.line {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  right: 14px;
+  height: 3px;
+  background: var(--em-command);
+  transform: translateY(-50%);
+}
+
+.head {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 10;
+  width: 0;
+  height: 0;
+  border-top: 10px solid transparent;
+  border-bottom: 10px solid transparent;
+  border-left: 16px solid var(--em-command);
+}
+.headDraggable {
+  cursor: ew-resize;
+}
+
+.labelWrap {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.label {
+  background: var(--mantine-color-body);
+  padding: 1px 12px;
+  color: var(--em-command);
+  font-weight: 600;
+  font-size: 14px;
+  white-space: nowrap;
+  border-radius: var(--mantine-radius-sm);
+}

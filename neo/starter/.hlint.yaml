@@ -1,0 +1,18 @@
+# HLint configuration file
+# https://github.com/ndmitchell/hlint
+
+- arguments: [--color, --cpp-simple, -XQuasiQuotes]
+
+# Ignore hints that conflict with NeoHaskell style
+- ignore: { name: Eta reduce }
+- ignore: { name: Redundant bracket }
+- ignore: { name: Use newtype instead of data }
+- ignore: { name: Use const }
+- ignore: { name: Avoid lambda using `infix` }
+- ignore: { name: Avoid lambda }
+- ignore: { name: Use /= }
+- ignore: { name: Use <$> }
+- ignore: { name: Replace case with maybe }
+- ignore: { name: Use when }
+- ignore: { name: Use lambda case }
+- ignore: { name: Use bimap }

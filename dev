@@ -66,6 +66,28 @@ usage: ./dev <verb> [args]
                           doctrine (see telemetry/SCHEMA.md); never for ad-hoc runs
   workflow-check        static wiring checks for .github/workflows (hidden
                           artifacts, retrospect loop; CI-enforced)
+  neo-skills-check      validate the Rust `neo/**` agent-guidance layer:
+                          neo-cli-* skills, neo/** routing, no stale state/plan
+                          refs, one source of truth (via ./dev doctor + CI)
+  neo-dist-check        prove the committed Neo IDE bundle (assets/ide/dist,
+                          embedded into the binary) is a faithful from-lockfile
+                          rebuild, so nix build .#neo never ships a stale dist
+  neo-consumer-contract  end-to-end contract: nix build .#neo, generate a project
+                          from the embedded starter offline, then build/test/run it
+                          against THIS checkout (neohaskell -> path:<checkout>) and
+                          poll /health (--self-test for the orchestration logic)
+  cache-prime           trusted-only warmer: build the DEFAULT released
+                          generated-project closure (no checkout override) so the
+                          clean-machine SLO substitutes it (--self-test)
+  neo-release <cmd>     native `neo` release-asset contract (single source of
+                          truth for naming/checksums shared by the release
+                          workflow + rehearsal): targets, asset-name, package,
+                          checksums, verify, install, --self-test
+  onboarding-slo <cmd>  clean-machine onboarding gate: run the real
+                          install->new->test->run->/health path from IMMUTABLE
+                          released, checksum-verified artifacts under a 600s
+                          deadline and record evidence JSON (run); --self-test
+                          exercises the orchestration offline (no download/secret)
   doctor                harness self-check: every script has a verb or a
                           reasoned exemption; no dangling verbs (CI-enforced)
   exec <cmd> [args]     run any command with the pinned toolchain
@@ -105,6 +127,12 @@ case "${VERB}" in
   retrospect) exec scripts/retrospect "$@" ;;
   telemetry) exec scripts/telemetry.py "$@" ;;
   workflow-check) exec scripts/workflow-check "$@" ;;
+  neo-skills-check) exec scripts/neo-skills-check "$@" ;;
+  neo-dist-check) exec scripts/neo-dist-check "$@" ;;
+  neo-consumer-contract) exec scripts/neo-consumer-contract "$@" ;;
+  cache-prime) exec scripts/cache-prime "$@" ;;
+  neo-release) exec scripts/neo-release "$@" ;;
+  onboarding-slo) exec scripts/onboarding-slo "$@" ;;
   doctor)   exec scripts/doctor "$@" ;;
   exec)     exec scripts/with-toolchain "$@" ;;
   ""|help|-h|--help) usage ;;

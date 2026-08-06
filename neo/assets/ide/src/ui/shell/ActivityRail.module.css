@@ -1,0 +1,32 @@
+/* Thin icon rail — the only persistent chrome. */
+.rail {
+  width: 54px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding-top: 8px;
+  border-left: 1px solid var(--mantine-color-default-border);
+  background: var(--mantine-color-default);
+}
+
+.item {
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--mantine-radius-md);
+  color: var(--mantine-color-dimmed);
+  cursor: pointer;
+}
+.item:hover {
+  background: var(--mantine-color-default-hover);
+  color: var(--mantine-color-text);
+}
+.itemActive,
+.itemActive:hover {
+  background: color-mix(in srgb, var(--em-feature) 18%, transparent);
+  color: var(--em-feature);
+}
