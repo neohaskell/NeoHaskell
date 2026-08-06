@@ -1,0 +1,157 @@
+#!/usr/bin/env bash
+#
+# cache-prime — trusted-only warmer for the DEFAULT released generated-project
+# closure.
+#
+# The clean-machine onboarding SLO measures a REAL released `neo`, which generates
+# a project pinned to the compatibility revision (the NeoHaskell rev the embedded
+# starter is locked to) and then `neo build`/`neo test`/`neo run` it. That build
+# closure — INCLUDING test/run dependencies — must already be in the public Cachix
+# for the SLO to meet its 600 s deadline. This script realizes exactly that
+# closure by running the SAME default path (NO `NEO_NEOHASKELL_SOURCE` override),
+# so the caller's Cachix post-hook pushes the store paths a real user would fetch.
+#
+# This is DELIBERATELY SEPARATE from `neo-consumer-contract`, which builds the
+# EXACT-CHECKOUT closure via the `NEO_NEOHASKELL_SOURCE` override (that coverage
+# is retained, unchanged). cache-prime builds the DEFAULT (released) closure; the
+# two closures differ by the pinned NeoHaskell revision, and the SLO needs THIS
+# one.
+#
+# Trust: this script holds NO secret. The caller (neo-ci.yml `cache-populate`)
+# owns the CACHIX_AUTH_TOKEN + push and invokes cache-prime ONLY on a trusted push
+# (exact-ref main/integration, same repo, never a pull_request). cache-prime must
+# never set NEO_NEOHASKELL_SOURCE (that would prime the wrong closure) — the
+# --self-test freezes that.
+#
+#   cache-prime            build+realize the default generated-project closure
+#                          (NEO_BIN=<path> required; reuses the already-built neo)
+#   cache-prime --self-test  freeze the orchestration seam (no network/build)
+#
+# Env: NEO_BIN (required), PRIME_BUILD_TIMEOUT (default 5400),
+#      PRIME_TEST_TIMEOUT (default 2400), PRIME_RUN_TIMEOUT (default 300),
+#      NEO_APP_PORT (default 8080).
+set -euo pipefail
+
+info() { printf '  - %s\n' "$*"; }
+phase() { printf '\n=== [cache-prime] %s ===\n' "$*"; }
+die() { printf 'cache-prime: FAIL — %s\n' "$*" >&2; exit 1; }
+
+BUILD_TIMEOUT="${PRIME_BUILD_TIMEOUT:-5400}"
+TEST_TIMEOUT="${PRIME_TEST_TIMEOUT:-2400}"
+RUN_TIMEOUT="${PRIME_RUN_TIMEOUT:-300}"
+APP_PORT="${NEO_APP_PORT:-8080}"
+APP_NAME="prime-app"
+
+# Run a command in its own process session under a hard timeout; TERM→KILL the
+# whole group on expiry so a hung nix/cabal build cannot outlive the warmer.
+# Python-based for macOS+Linux portability (no GNU `timeout`/`setsid` needed).
+# Exit 124 on timeout, else the command's real status.
+bounded() {
+  local secs="$1"; shift
+  python3 - "$secs" "$@" <<'PY'
+import os, signal, subprocess, sys
+secs = float(sys.argv[1]); argv = sys.argv[2:]
+p = subprocess.Popen(argv, start_new_session=True)
+try:
+    sys.exit(p.wait(timeout=secs))
+except subprocess.TimeoutExpired:
+    for sig in (signal.SIGTERM, signal.SIGKILL):
+        try:
+            os.killpg(p.pid, sig)
+        except ProcessLookupError:
+            break
+        try:
+            p.wait(timeout=10)
+            break
+        except subprocess.TimeoutExpired:
+            continue
+    sys.exit(124)
+PY
+}
+
+prime() {
+  command -v nix >/dev/null 2>&1 || die "nix is required on PATH (the caller installs it)"
+  command -v python3 >/dev/null 2>&1 || die "python3 is required (bounded timeout wrapper)"
+  local neo_bin="${NEO_BIN:-}"
+  [ -n "$neo_bin" ] || die "NEO_BIN must point at the neo binary to prime with"
+  [ -x "$neo_bin" ] || die "NEO_BIN is not executable: $neo_bin"
+
+  # A scratch world OUTSIDE any repo checkout, cleaned up unconditionally.
+  local work; work="$(mktemp -d "${TMPDIR:-/tmp}/neo-cache-prime.XXXXXX")"
+  trap 'rm -rf "$work" 2>/dev/null || true' EXIT
+  local proj="$work/$APP_NAME"
+
+  phase "generate — neo new (DEFAULT: released path, no override)"
+  # NEVER set NEO_NEOHASKELL_SOURCE here: that override would prime the
+  # exact-checkout closure (that is the consumer-contract's job), not the default
+  # released closure the SLO needs.
+  ( cd "$work" && "$neo_bin" --ci new "$APP_NAME" )
+  [ -f "$proj/flake.nix" ] || die "neo new did not scaffold $proj/flake.nix"
+  local pinned
+  pinned="$(sed -nE 's/.*neohaskellCommit = "([0-9a-fA-F]+)".*/\1/p' "$proj/flake.nix" | head -1)"
+  info "generated project pins NeoHaskell revision: ${pinned:-<none>}"
+
+  phase "build — realize the default build closure"
+  ( cd "$proj" && bounded "$BUILD_TIMEOUT" "$neo_bin" --ci build ) \
+    || die "neo build failed while priming the default closure"
+
+  phase "test — realize the test-dependency closure"
+  ( cd "$proj" && bounded "$TEST_TIMEOUT" "$neo_bin" --ci test ) \
+    || die "neo test failed while priming the test closure"
+
+  phase "run — realize the run-dependency closure (brief)"
+  # Start the app so its run closure is realized, then tear the session down.
+  ( cd "$proj" && bounded "$RUN_TIMEOUT" "$neo_bin" --ci run ) >/dev/null 2>&1 || true
+
+  phase "done — default closure realized (caller's Cachix hook pushes it)"
+  info "prime complete for $APP_NAME (port ${APP_PORT})"
+}
+
+self_test() {
+  local fails=0
+  ok() { printf '  ok   %s\n' "$1"; }
+  bad() { printf '  FAIL %s\n' "$1" >&2; fails=$((fails + 1)); }
+
+  # 1. A hung command is bounded and killed within its budget.
+  local start end
+  start="$(date +%s)"
+  if bounded 1 sleep 30; then bad "bounded: an over-running command wrongly succeeded"
+  else ok "bounded: over-running command is killed"; fi
+  end="$(date +%s)"
+  [ $((end - start)) -lt 8 ] && ok "bounded: fired promptly (<8s)" || bad "bounded: too slow"
+
+  # 2. A fast command passes through with its real status.
+  bounded 10 true && ok "bounded: fast success passes" || bad "bounded: fast success failed"
+  if bounded 10 false; then bad "bounded: failure wrongly reported success"; else ok "bounded: real failure propagates"; fi
+
+  # 3. The warmer builds the DEFAULT closure — it must NEVER assign the
+  #    exact-checkout override (that would prime the wrong closure). The needle is
+  #    split so this very guard line does not self-match.
+  local ovr="NEO_NEOHASKELL""_SOURCE="
+  if grep -F "$ovr" "$0" | grep -vqE '^\s*#'; then
+    bad "cache-prime assigns the exact-checkout override — it must build the DEFAULT closure"
+  else
+    ok "cache-prime never sets the exact-checkout override (default closure only)"
+  fi
+
+  # 4. It realizes the full closure: new + build + test + run phases present.
+  for verb in new build test run; do
+    if grep -qE -- "--ci $verb" "$0"; then
+      ok "cache-prime runs neo $verb"
+    else
+      bad "cache-prime missing neo $verb"
+    fi
+  done
+
+  if [ "$fails" -ne 0 ]; then
+    printf 'cache-prime self-test: FAILED (%d)\n' "$fails" >&2
+    return 1
+  fi
+  printf 'cache-prime self-test: OK — bounded timeout, default-closure (no override), new/build/test/run\n'
+}
+
+case "${1:-}" in
+  --self-test) self_test ;;
+  "") prime ;;
+  *) die "usage: cache-prime [--self-test]" ;;
+esac

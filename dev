@@ -76,6 +76,9 @@ usage: ./dev <verb> [args]
                           from the embedded starter offline, then build/test/run it
                           against THIS checkout (neohaskell -> path:<checkout>) and
                           poll /health (--self-test for the orchestration logic)
+  cache-prime           trusted-only warmer: build the DEFAULT released
+                          generated-project closure (no checkout override) so the
+                          clean-machine SLO substitutes it (--self-test)
   neo-release <cmd>     native `neo` release-asset contract (single source of
                           truth for naming/checksums shared by the release
                           workflow + rehearsal): targets, asset-name, package,
@@ -127,6 +130,7 @@ case "${VERB}" in
   neo-skills-check) exec scripts/neo-skills-check "$@" ;;
   neo-dist-check) exec scripts/neo-dist-check "$@" ;;
   neo-consumer-contract) exec scripts/neo-consumer-contract "$@" ;;
+  cache-prime) exec scripts/cache-prime "$@" ;;
   neo-release) exec scripts/neo-release "$@" ;;
   onboarding-slo) exec scripts/onboarding-slo "$@" ;;
   doctor)   exec scripts/doctor "$@" ;;

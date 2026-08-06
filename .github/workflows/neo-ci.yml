@@ -330,12 +330,24 @@ jobs:
         with:
           name: neohaskell
           authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
-      - name: Populate the cache from the EXACT consumer path
+      # Populate the cache from BOTH real paths, using the same verified,
+      # release-installed binary:
+      #  1. neo-consumer-contract — the EXACT-CHECKOUT closure (neohaskell ->
+      #     path:<checkout>), retained coverage.
+      #  2. cache-prime — the DEFAULT released generated-project closure (no
+      #     override; pinned to the compatibility revision), which is the closure
+      #     the clean-machine onboarding SLO actually substitutes. Without this the
+      #     SLO builds an unprimed closure from source and misses its 600 s
+      #     deadline. The Cachix post-hook pushes everything both build.
+      - name: Populate the cache from the EXACT consumer path + the default released closure
         if: ${{ env.CACHIX_AUTH_TOKEN != '' }}
         env:
           CONTRACT_BUILD_TIMEOUT: "5400"
           CONTRACT_TEST_TIMEOUT: "2400"
           CONTRACT_READY_DEADLINE: "300"
+          PRIME_BUILD_TIMEOUT: "5400"
+          PRIME_TEST_TIMEOUT: "2400"
+          PRIME_RUN_TIMEOUT: "300"
         run: |
           set -euo pipefail
           cargo build --release --locked --manifest-path neo/Cargo.toml --target "$REHEARSAL_TARGET"
@@ -344,6 +356,7 @@ jobs:
           ./scripts/neo-release checksums "$RUNNER_TEMP/neo-artifacts"
           ./scripts/neo-release install "$RUNNER_TEMP/neo-artifacts" "$REHEARSAL_TARGET" "$RUNNER_TEMP/neo-bin/neo"
           NEO_BIN="$RUNNER_TEMP/neo-bin/neo" ./dev neo-consumer-contract
+          NEO_BIN="$RUNNER_TEMP/neo-bin/neo" ./dev cache-prime
 
   # THE REQUIRED CHECK for the neo component. `if: always()` + no workflow-level
   # paths filter => it always reports a conclusion on every PR, so it is safe to

@@ -209,7 +209,16 @@ fn new_ci_creates_full_project() {
 
     let neo_json = read_neo_json(&project);
     assert_eq!(neo_json["name"], "my-app");
-    assert_eq!(neo_json["neo-version"], "main");
+    // `neo new` pins the generated project to the EXACT NeoHaskell revision the
+    // embedded starter is locked to (an immutable 40-hex SHA, matching the
+    // compatibility contract), never the moving `main` ref.
+    let neo_version = neo_json["neo-version"].as_str().unwrap_or_default();
+    assert_ne!(neo_version, "main", "generated neo-version must be a pinned SHA, not `main`");
+    assert_eq!(neo_version.len(), 40, "generated neo-version must be a 40-hex commit SHA");
+    assert!(
+        neo_version.bytes().all(|b| b.is_ascii_hexdigit()),
+        "generated neo-version must be hex: {neo_version}"
+    );
     for field in ["version", "description", "author", "license"] {
         assert!(
             neo_json.get(field).is_some(),

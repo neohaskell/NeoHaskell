@@ -116,6 +116,16 @@ version is compatible with.
   same revision. (`neo new` offline renders a deterministic placeholder rev; the
   real fetched revision is proven against the checkout in phase 3.) The gate
   never hardcodes a revision, so nothing drifts.
+- **Generated projects PIN this revision** (not the moving `main` ref). `neo new`
+  writes `neo.json` `neo-version` = the revision the embedded starter is locked to
+  (`starter_neohaskell_rev()`), and `fetch_neo_sha` returns a 40-hex version
+  as-is. So a fresh project builds the exact, immutable closure the contract
+  declares — reproducible and cacheable.
+- **Cache priming:** the trusted `cache-populate` job (neo-ci.yml) also runs
+  `./dev cache-prime`, which builds the DEFAULT released generated-project closure
+  (no checkout override) and pushes it to the public Cachix, so the clean-machine
+  onboarding SLO substitutes it within 600 s. This is separate from the
+  exact-checkout `neo-consumer-contract` closure (both are primed).
 - **To bump the compatible NeoHaskell revision:** update all three starter pins
   together (see the comment in `neo/starter/flake.nix`); the drift self-test
   (`scripts/neo-release --self-test`, run by `./dev doctor` + CI) refuses a

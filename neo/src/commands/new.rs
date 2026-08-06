@@ -306,7 +306,19 @@ pub async fn run(
     Ok(())
 }
 
-async fn do_scaffold(config: ProjectConfig) -> miette::Result<()> {
+async fn do_scaffold(mut config: ProjectConfig) -> miette::Result<()> {
+    // Pin the generated project to the EXACT NeoHaskell revision the embedded
+    // starter is locked to (which the published compatibility contract records),
+    // rather than the moving `main` ref. This makes a generated project build a
+    // stable, cache-primable closure that matches the compat contract. Only the
+    // untouched default `"main"` is replaced, so an explicitly requested version
+    // is preserved. A `None` (corrupt embed) leaves `"main"` — that packaging
+    // defect surfaces via `write_starter_template` below.
+    if config.neo_version == "main" {
+        if let Some(rev) = crate::network::starter_neohaskell_rev() {
+            config.neo_version = rev;
+        }
+    }
     let project_path = PathBuf::from(&config.name);
     if project_path.exists() {
         return Err(crate::errors::NeoError::DirectoryExists { name: config.name }.into());

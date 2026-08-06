@@ -15,7 +15,21 @@ struct GitHubRelease {
 
 
 
+/// True when `version` is a full 40-hex commit SHA (already a resolved revision).
+pub fn is_commit_sha(version: &str) -> bool {
+    version.len() == 40 && version.bytes().all(|b| b.is_ascii_hexdigit())
+}
+
 pub async fn fetch_neo_sha(version: &str) -> miette::Result<String> {
+    // A full 40-hex commit SHA is already a resolved revision. `git ls-remote`
+    // matches refs (branches/tags), not bare commits, so it cannot resolve one —
+    // return it directly. This is what lets a generated project pin the exact,
+    // immutable NeoHaskell revision the starter is locked to (see `neo new`)
+    // instead of the moving `main` ref, so its build closure is stable + cacheable.
+    if is_commit_sha(version) {
+        return Ok(version.to_string());
+    }
+
     if std::env::var("NEO_SKIP_NETWORK").is_ok() {
         return Ok("deadbeef".to_string());
     }
@@ -257,6 +271,29 @@ pub async fn check_for_updates() -> miette::Result<Option<String>> {
 #[folder = "starter/"]
 #[exclude = "IMPORT.md"]
 struct StarterTemplate;
+
+/// The NeoHaskell source revision the EMBEDDED starter is locked to
+/// (`neo/starter/flake.lock`, node `neohaskell` → `locked.rev`). This is the
+/// single source of truth for the revision a freshly generated project pins —
+/// the same value the released compatibility contract (`neo-release compat`)
+/// publishes — so a generated project consumes the exact, immutable revision the
+/// starter was tested against rather than a moving `main`. Returns `None` only if
+/// the embedded lock is missing/corrupt (a packaging defect surfaced elsewhere).
+pub fn starter_neohaskell_rev() -> Option<String> {
+    let lock = StarterTemplate::get("flake.lock")?;
+    let json: serde_json::Value = serde_json::from_slice(lock.data.as_ref()).ok()?;
+    let rev = json
+        .get("nodes")?
+        .get("neohaskell")?
+        .get("locked")?
+        .get("rev")?
+        .as_str()?;
+    if is_commit_sha(rev) {
+        Some(rev.to_string())
+    } else {
+        None
+    }
+}
 
 /// Write the embedded starter template into `dest`, creating parent directories
 /// as needed. Path-traversal safe: every embedded entry is resolved through

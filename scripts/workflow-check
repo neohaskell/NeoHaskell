@@ -76,6 +76,7 @@ CONSUMER_CONTRACT_JOB = "consumer-contract"
 CONTRACT_GATE_JOB = "neo-ci-gate"
 CONTRACT_SURFACES = ("neo/", "core/", "integrations/")
 CONTRACT_VERB = "neo-consumer-contract"
+CACHE_PRIME_VERB = "cache-prime"
 
 
 def _indent(line):
@@ -757,6 +758,14 @@ def check_cache_populate(name, text):
     if CONTRACT_VERB not in job:
         E(f"{name}: `{CACHE_POPULATE_JOB}` does not run the exact consumer path "
           f"(`./dev {CONTRACT_VERB}`) — the cache must be populated from real execution")
+    # It must ALSO prime the DEFAULT released generated-project closure — the one
+    # the clean-machine onboarding SLO actually substitutes (pinned to the
+    # compatibility revision, not the exact-checkout override). Without this the
+    # SLO builds an unprimed closure from source and misses its 600 s deadline.
+    if CACHE_PRIME_VERB not in job:
+        E(f"{name}: `{CACHE_POPULATE_JOB}` does not prime the DEFAULT released closure "
+          f"(`./dev {CACHE_PRIME_VERB}`) — the SLO substitutes that closure, not only "
+          "the exact-checkout consumer path; retain both")
     # Honest skip: a step gated on an EMPTY token (skip, don't fail/pretend).
     if "CACHIX_AUTH_TOKEN == ''" not in job:
         E(f"{name}: `{CACHE_POPULATE_JOB}` has no honest-skip path for a missing token "
@@ -1409,7 +1418,7 @@ def self_test():
         "      - name: skip\n        if: ${{ env.CACHIX_AUTH_TOKEN == '' }}\n        run: echo skip\n"
         "      - uses: cachix/cachix-action@v17\n        if: ${{ env.CACHIX_AUTH_TOKEN != '' }}\n"
         "      - name: populate\n        if: ${{ env.CACHIX_AUTH_TOKEN != '' }}\n"
-        "        run: NEO_BIN=x ./dev neo-consumer-contract\n"
+        "        run: |\n          NEO_BIN=x ./dev neo-consumer-contract\n          NEO_BIN=x ./dev cache-prime\n"
     )
 
     def cp_bad(name_, mutated):
@@ -1417,6 +1426,8 @@ def self_test():
 
     check("well-wired cache-populate passes",
           not check_cache_populate("neo-ci.yml", good_cache))
+    cp_bad("cache-populate not priming the default released closure is flagged",
+           good_cache.replace("          NEO_BIN=x ./dev cache-prime\n", ""))
     cp_bad("missing cache-populate job is flagged",
            good_cache.replace("  cache-populate:\n", "  other:\n"))
     cp_bad("cache-populate not gated to the main ref is flagged",
@@ -1438,8 +1449,7 @@ def self_test():
            good_cache.replace(
                "      - name: skip\n        if: ${{ env.CACHIX_AUTH_TOKEN == '' }}\n        run: echo skip\n", ""))
     cp_bad("cache-populate not running the consumer path is flagged",
-           good_cache.replace("        run: NEO_BIN=x ./dev neo-consumer-contract\n",
-                              "        run: echo nothing\n"))
+           good_cache.replace("          NEO_BIN=x ./dev neo-consumer-contract\n", ""))
     cp_bad("an unguarded cachix push step is flagged",
            good_cache.replace(
                "      - uses: cachix/cachix-action@v17\n        if: ${{ env.CACHIX_AUTH_TOKEN != '' }}\n",

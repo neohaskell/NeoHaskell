@@ -83,10 +83,19 @@ fn test_neo_new_ci() {
         cabal_project
     );
 
-    // Verify neo.json content
+    // Verify neo.json content. `neo new` pins the generated project to the exact
+    // immutable NeoHaskell revision the embedded starter is locked to (a 40-hex
+    // SHA matching the compatibility contract), never the moving `main` ref.
     let config_content = std::fs::read_to_string(project_path.join("neo.json")).unwrap();
     assert!(config_content.contains(project_name));
-    assert!(config_content.contains("\"neo-version\": \"main\""));
+    assert!(
+        !config_content.contains("\"neo-version\": \"main\""),
+        "generated neo-version must be a pinned SHA, not `main`: {config_content}"
+    );
+    let neo_json: serde_json::Value = serde_json::from_str(&config_content).unwrap();
+    let neo_version = neo_json["neo-version"].as_str().unwrap();
+    assert_eq!(neo_version.len(), 40, "generated neo-version must be a 40-hex SHA");
+    assert!(neo_version.bytes().all(|b| b.is_ascii_hexdigit()));
 
     // Verify git commit exists
     let git_log = std::process::Command::new("git")
