@@ -905,6 +905,44 @@ def check_onboarding_slo(name, text):
             E(f"{name}: `slo` job does not upload the immutable evidence artifact")
         if ".json.sha256" not in slo or "if-no-files-found: error" not in slo:
             E(f"{name}: `slo` job must upload the evidence SHA256 sidecar and fail when evidence is missing")
+        # (e) the ONE global deadline starts BEFORE the prerequisite install: the
+        # workflow captures a same-host monotonic start and threads it into the
+        # driver, so Nix/Cachix install + checkout time is inside the 600 s budget
+        # (not silently excluded by starting the clock inside the driver).
+        threaded = "SLO_MONOTONIC_START: ${{ env.SLO_MONOTONIC_START }}" in slo
+        captured = "GITHUB_ENV" in slo and "monotonic" in slo
+        if not (threaded and captured):
+            E(f"{name}: `slo` job does not start the deadline before the prerequisite "
+              "install — it must capture `time.monotonic()` into GITHUB_ENV (before the "
+              "Nix install) AND thread it as `SLO_MONOTONIC_START: ${{ env.SLO_MONOTONIC_START }}` "
+              "so prerequisite/cache/download/install time is counted")
+        # The capture must PRECEDE the Nix install: capturing after it would omit
+        # the install from the budget (a fabrication direction — it under-counts).
+        if captured:
+            nix_positions = [p for p in (slo.find("determinate-nix-action"),
+                                         slo.find("install-nix-action")) if p != -1]
+            if nix_positions and slo.find("monotonic") > min(nix_positions):
+                E(f"{name}: `slo` job captures the monotonic deadline start AFTER installing "
+                  "Nix — the start must precede the prerequisite install, else install time "
+                  "is silently excluded from the 600 s budget")
+        # (f) the clean machine installs Nix: the measured `neo test`/`neo run`
+        # build the generated project via nix, so a runner without Nix fails
+        # closed with nix_missing (the observed prior failure).
+        if not re.search(r"(determinate-nix-action|install-nix-action)", slo):
+            E(f"{name}: `slo` job does not install Nix "
+              "(DeterminateSystems/determinate-nix-action or nixos/install-nix-action) "
+              "— the measured build needs it (else `neo test` fails: nix_missing)")
+        # (g) the public Cachix substituter is configured TOKENLESSLY via nix
+        # read-config (never a write-capable cachix action — that is already
+        # banned above), so the 600 s path is cache-accelerated and the driver's
+        # observed_use can be genuinely true.
+        if "neohaskell.cachix.org" not in slo:
+            E(f"{name}: `slo` job does not configure the public neohaskell.cachix.org "
+              "substituter — the measured build cannot meet 600 s and real "
+              "substitution (observed_use) cannot be proven")
+        if "extra-substituters" not in slo and "accept-flake-config" not in slo:
+            E(f"{name}: `slo` job does not configure the substituter via read-only nix "
+              "config (extra-substituters / accept-flake-config) — it must be tokenless")
     return errs
 
 
@@ -1472,7 +1510,11 @@ def self_test():
         "          - runner: macos-latest\n            target: aarch64-apple-darwin\n"
         "    runs-on: ${{ matrix.runner }}\n"
         "    steps:\n"
+        "      - name: start deadline\n        run: python3 -c \"import time,os; open(os.environ['GITHUB_ENV'],'a').write('SLO_MONOTONIC_START=%r' % time.monotonic())\"\n"
         "      - uses: actions/checkout@v7.0.1\n"
+        "      - uses: DeterminateSystems/determinate-nix-action@v3.21.7\n"
+        "        with:\n          extra-conf: |\n            accept-flake-config = true\n"
+        "            extra-substituters = https://neohaskell.cachix.org https://cache.iog.io\n"
         "      - name: measure\n"
         "        env:\n"
         "          SLO_INSTALLER_VERSION: ${{ inputs.installer_version }}\n"
@@ -1482,6 +1524,7 @@ def self_test():
         "          SLO_WORKFLOW_RUN_ID: ${{ github.run_id }}\n"
         "          SLO_WORKFLOW_REF: ${{ github.ref }}\n"
         "          SLO_DEADLINE: \"600\"\n"
+        "          SLO_MONOTONIC_START: ${{ env.SLO_MONOTONIC_START }}\n"
         "        run: ./dev onboarding-slo run\n"
         "      - uses: actions/upload-artifact@v7\n"
         "        with:\n          name: ev\n          path: |\n            x.json\n            x.json.sha256\n          if-no-files-found: error\n"
@@ -1535,6 +1578,19 @@ def self_test():
     slo_bad("slo job not uploading evidence is flagged",
             good_slo.replace("      - uses: actions/upload-artifact@v7\n"
                              "        with:\n          name: ev\n          path: |\n            x.json\n            x.json.sha256\n          if-no-files-found: error\n", ""))
+    slo_bad("slo job not threading SLO_MONOTONIC_START is flagged (deadline must include prereqs)",
+            good_slo.replace("          SLO_MONOTONIC_START: ${{ env.SLO_MONOTONIC_START }}\n", ""))
+    slo_bad("slo job not capturing the pre-prerequisite monotonic start is flagged",
+            good_slo.replace("      - name: start deadline\n        run: python3 -c \"import time,os; open(os.environ['GITHUB_ENV'],'a').write('SLO_MONOTONIC_START=%r' % time.monotonic())\"\n", ""))
+    _cap_step = "      - name: start deadline\n        run: python3 -c \"import time,os; open(os.environ['GITHUB_ENV'],'a').write('SLO_MONOTONIC_START=%r' % time.monotonic())\"\n"
+    slo_bad("slo job capturing the monotonic start AFTER the Nix install is flagged (under-counts)",
+            good_slo.replace(_cap_step, "").replace(
+                "        run: ./dev onboarding-slo run\n",
+                "        run: ./dev onboarding-slo run\n" + _cap_step))
+    slo_bad("slo job not installing Nix is flagged (else neo test → nix_missing)",
+            good_slo.replace("      - uses: DeterminateSystems/determinate-nix-action@v3.21.7\n", ""))
+    slo_bad("slo job not configuring the public neohaskell.cachix.org substituter is flagged",
+            good_slo.replace("            extra-substituters = https://neohaskell.cachix.org https://cache.iog.io\n", ""))
 
     print("workflow-check: self-test", "OK" if ok else "FAILED")
     return 0 if ok else 1

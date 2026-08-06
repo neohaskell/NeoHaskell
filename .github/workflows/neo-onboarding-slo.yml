@@ -84,9 +84,32 @@ jobs:
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     steps:
+      # Start the ONE global 600 s deadline as the very FIRST runner operation —
+      # before checkout and before the Nix/Cachix prerequisite install — so all of
+      # that prerequisite/cache/download/install work is inside the budget. The
+      # same-host monotonic clock is process-independent, so this value is
+      # threaded into the driver (SLO_MONOTONIC_START) and used as its start.
+      # Capturing before checkout is conservative: it can only enlarge elapsed,
+      # never fake a smaller one.
+      - name: Start the global onboarding deadline (pre-prerequisite, same-host monotonic)
+        run: |
+          python3 -c "import time,os; open(os.environ['GITHUB_ENV'],'a').write('SLO_MONOTONIC_START=%r\n' % time.monotonic())"
       - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
+      # Clean-machine prerequisite: install Nix and configure the PUBLIC Cachix +
+      # IOG substituters TOKENLESSLY (read-only, secretless — no authToken, no
+      # cache WRITE, no cachix-action). This models the real user prerequisite and
+      # its time is counted against the deadline. No magic-nix-cache, so actual
+      # substitution from neohaskell.cachix.org stays observable (the driver
+      # requires observed_use=true) rather than being masked by the GitHub cache.
+      - name: Install Nix + configure public substituters (tokenless, read-only)
+        uses: DeterminateSystems/determinate-nix-action@v3.21.7
+        with:
+          extra-conf: |
+            accept-flake-config = true
+            extra-substituters = https://neohaskell.cachix.org https://cache.iog.io
+            extra-trusted-public-keys = neohaskell.cachix.org-1:mo2cLaGbwqbrxs9xhqKK8jeNsn3osi7t6XoAmxSZssc= hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ=
       - name: Measure clean-machine onboarding (immutable inputs, checksum-verified, fail-closed)
         env:
           SLO_INSTALLER_VERSION: ${{ inputs.installer_version }}
@@ -98,6 +121,7 @@ jobs:
           SLO_WORKFLOW_RUN_ID: ${{ github.run_id }}
           SLO_WORKFLOW_REF: ${{ github.ref }}
           SLO_DEADLINE: "600"
+          SLO_MONOTONIC_START: ${{ env.SLO_MONOTONIC_START }}
           SLO_EVIDENCE: ${{ runner.temp }}/onboarding-slo-${{ matrix.target }}.json
         run: ./dev onboarding-slo run
       - name: Upload immutable SLO evidence

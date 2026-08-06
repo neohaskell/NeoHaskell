@@ -33,6 +33,30 @@ def mono() -> float:
     return time.monotonic()
 
 
+def start_clock() -> float:
+    """The one global monotonic deadline start. When the workflow captures the
+    same-host `time.monotonic()` BEFORE the prerequisite Nix/Cachix install and
+    passes it as SLO_MONOTONIC_START, honor it so that prerequisite/cache/
+    download/install work is INSIDE the 600 s budget. Python's monotonic clock is
+    process-independent on a single host (CLOCK_MONOTONIC / mach_absolute_time),
+    so a value captured by an earlier step is directly comparable here.
+
+    Anti-fabrication: the supplied start must be in the past (<= now). A future
+    start would shrink the measured elapsed and could fake a pass; reject it.
+    An absurdly old start only makes elapsed larger and fails closed, which is
+    safe. Absent the override, start the clock now."""
+    override = os.getenv("SLO_MONOTONIC_START")
+    if not override:
+        return mono()
+    try:
+        value = float(override)
+    except ValueError:
+        raise GateError("SLO_MONOTONIC_START must be a float from the same-host time.monotonic()")
+    if value > mono():
+        raise GateError("SLO_MONOTONIC_START is in the future — not a valid same-host monotonic start")
+    return value
+
+
 def strict_sha(value: str | None, name: str) -> str:
     if not SHA_RE.fullmatch(value or ""):
         raise GateError(f"{name} must be a strict 40-hex commit SHA")
@@ -118,18 +142,34 @@ def fetch(deadline: float, url: str, destination: Path | None = None) -> bytes:
 
 
 def resolve_tag(deadline: float, repo: str, tag: str) -> str:
-    ref = json.loads(fetch(deadline, f"https://api.github.com/repos/{repo}/git/ref/tags/{tag}"))
-    obj = ref.get("object", {})
-    # Peel annotated tags, including nested annotated tags, to the commit.
-    for _ in range(8):
-        sha = strict_sha(obj.get("sha"), f"resolved tag {tag}")
-        if obj.get("type") == "commit":
-            return sha
-        if obj.get("type") != "tag":
-            raise GateError(f"tag {tag} does not resolve to a commit")
-        tag_obj = json.loads(fetch(deadline, f"https://api.github.com/repos/{repo}/git/tags/{sha}"))
-        obj = tag_obj.get("object", {})
-    raise GateError(f"tag {tag} has excessive indirection")
+    """Resolve a release tag to the exact commit it points to, IMMUTABLY and
+    TOKENLESSLY via the anonymous git protocol (`git ls-remote`). This replaces
+    an unauthenticated GitHub REST git-ref lookup, which shares the
+    60-requests/hour anonymous REST bucket and returned HTTP 403 on hosted
+    runners. `git ls-remote` uses git-upload-pack (not the REST bucket) and needs
+    no credential, so no token is leaked. Passing both `refs/tags/<t>`
+    and its `^{}` peel makes an annotated tag report its peeled commit; a
+    lightweight tag reports the commit directly."""
+    url = f"https://github.com/{repo}.git"
+    out = bounded(deadline, [
+        "git", "ls-remote", url, f"refs/tags/{tag}", f"refs/tags/{tag}^{{}}",
+    ]).decode(errors="replace")
+    direct = peeled = None
+    for line in out.splitlines():
+        parts = line.split()
+        if len(parts) != 2:
+            continue
+        sha, ref = parts
+        if ref == f"refs/tags/{tag}^{{}}":
+            peeled = sha
+        elif ref == f"refs/tags/{tag}":
+            direct = sha
+    # An annotated tag reports both; the peeled `^{}` line is the commit. A
+    # lightweight tag reports only the direct line, which already IS the commit.
+    resolved = peeled or direct
+    if resolved is None:
+        raise GateError(f"tag {tag} not found via git ls-remote (no refs/tags/{tag})")
+    return strict_sha(resolved, f"resolved tag {tag}")
 
 
 def manifest_hash(path: Path, asset: str) -> str:
@@ -161,7 +201,7 @@ def write_evidence(path: Path, record: dict) -> None:
 
 
 def run_gate() -> None:
-    started = mono()  # Includes validation, cache probe, downloads, and installation.
+    started = start_clock()  # One global deadline; includes prerequisite Nix/Cachix install when the workflow supplies SLO_MONOTONIC_START, plus validation, cache probe, downloads, and installation.
     deadline_seconds = float(os.getenv("SLO_DEADLINE", str(DEADLINE_DEFAULT)))
     deadline = started + deadline_seconds
     evidence_value = os.getenv("SLO_EVIDENCE")
@@ -363,10 +403,40 @@ def self_test() -> None:
             assert marker.read_text().isdigit()
             time.sleep(1.1)
             assert not survivor.exists(), "descendant survived process-group cleanup"
+    # Same-host monotonic start: honor a past value (prerequisite install is
+    # counted), reject a future value (which would fake a smaller elapsed), and
+    # default to now when unset.
+    saved = os.environ.pop("SLO_MONOTONIC_START", None)
+    try:
+        assert abs(start_clock() - mono()) < 1.0  # unset → ~now
+        past = mono() - 42.0
+        os.environ["SLO_MONOTONIC_START"] = repr(past)
+        assert abs(start_clock() - past) < 0.01  # honored as-is
+        os.environ["SLO_MONOTONIC_START"] = repr(mono() + 3600.0)
+        try:
+            start_clock()
+            raise AssertionError("a future monotonic start was accepted")
+        except GateError:
+            pass
+        os.environ["SLO_MONOTONIC_START"] = "not-a-float"
+        try:
+            start_clock()
+            raise AssertionError("a non-float monotonic start was accepted")
+        except GateError:
+            pass
+    finally:
+        os.environ.pop("SLO_MONOTONIC_START", None)
+        if saved is not None:
+            os.environ["SLO_MONOTONIC_START"] = saved
+
     source = Path(__file__).read_text()
     banned = ("gh release " + "create", "cachix " + "push", "git " + "push")
     assert not any(token in source for token in banned)
-    print("onboarding-slo self-test: OK - strict refs, pass/failure evidence, checksum rejection, monotonic deadline, descendant cleanup, non-publication")
+    # Tag resolution must be tokenless/immutable via git, never the rate-limited
+    # unauthenticated GitHub REST API (which returned HTTP 403 on hosted runners).
+    assert ("api.github" + ".com") not in source, "tag resolution must not use the GitHub REST API"
+    assert "ls-remote" in source, "tag resolution must use immutable `git ls-remote`"
+    print("onboarding-slo self-test: OK - strict refs, pass/failure evidence, checksum rejection, monotonic deadline (same-host start), tokenless git tag resolution, descendant cleanup, non-publication")
 
 
 if __name__ == "__main__":
