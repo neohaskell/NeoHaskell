@@ -47,6 +47,14 @@ phase() { printf '\n=== [neo-consumer-contract] %s ===\n' "$*"; }
 info()  { printf '  - %s\n' "$*"; }
 die()   { printf 'neo-consumer-contract: FAIL — %s\n' "$*" >&2; exit 1; }
 
+# Extract the NeoHaskell revision a generated flake.nix pins in its inputMap
+# (`neohaskellCommit = "<rev>"`), or empty if absent. Pure/side-effect-free and
+# unit-tested by --self-test. Must capture the QUOTED value (a bare hex-class
+# scan would wrongly match letters inside the identifier `neohaskellCommit`).
+flake_neohaskell_commit() {
+  sed -nE 's/.*neohaskellCommit = "([0-9a-fA-F]+)".*/\1/p' "$1" | head -1
+}
+
 # Start a command in its own process session. SESSION_PID is both the direct PID
 # and PGID, so cleanup remains valid if descendants are reparented. Python's
 # os.setsid is portable across the Linux CI runner and local macOS validation.
@@ -277,26 +285,44 @@ run_contract() {
   assert_absent "$proj/IMPORT.md" "starter provenance file is internal-only"
   info "generated surfaces present; internal provenance absent"
 
-  # -- Phase 2b: the compatibility contract gates the declared combination --- #
-  # `scripts/neo-release compat` is the single source of truth mapping this neo
-  # version to the compatible NeoHaskell source revision (NeoHaskell + neo keep
-  # independent SemVer). Prove it is (a) internally consistent — the verb fails
-  # closed on any drift among the starter pins (flake.nix / flake.lock /
-  # cabal.project) — and (b) FAITHFUL: the revision the just-generated project
-  # actually pins equals the declared revision, so a published contract can never
-  # lie about what `neo new` produces.
-  phase "2b. compatibility contract (declared neo<->NeoHaskell revision)"
-  local compat_json declared_rev
+  # -- Phase 2b: compatibility contract + coherence of the emitted pins ------ #
+  # NeoHaskell and neo keep independent SemVer, so a neo release publishes a
+  # compatibility contract (scripts/neo-release compat) mapping this neo version
+  # to the compatible NeoHaskell SOURCE REVISION — the one the embedded starter is
+  # locked to. Two independent, drift-proof gates:
+  #  (A) The contract GENERATES and is FAITHFUL to the committed starter lock.
+  #      `neo-release compat` reads the starter's authoritative pins
+  #      (neo/starter/ flake.nix `neohaskellCommit`, flake.lock `rev`, every
+  #      cabal.project `tag:`) and FAILS CLOSED on any disagreement among them
+  #      (that IS the starter's flake/Cabal coherence). We re-read the committed
+  #      flake.lock rev here, independently, and require the contract to declare
+  #      exactly it — so a parsing bug can't publish a wrong revision.
+  #  (B) The pins neo EMITS into a generated project are internally coherent: the
+  #      flake input `?rev=`, the flake inputMap `neohaskellCommit`, and every
+  #      cabal.project `tag:` must be the SAME revision. Offline `neo new` renders
+  #      a deterministic placeholder rev (the real fetched revision is proven in
+  #      phase 3 against the checkout); coherence — not the literal value — is what
+  #      this gate asserts, so it never hardcodes a revision that could drift.
+  phase "2b. compatibility contract + emitted-pin coherence"
+  local compat_json declared_rev starter_lock_rev
   compat_json="$("$repo_root/scripts/neo-release" compat)" \
-    || die "neo-release compat failed — starter revision pins drifted"
+    || die "neo-release compat failed — starter NeoHaskell pins drifted (flake.nix/flake.lock/cabal.project)"
   declared_rev="$(printf '%s\n' "$compat_json" \
-    | grep -oE '"source_revision": "[0-9a-fA-F]+"' | grep -oE '[0-9a-fA-F]{40}' | head -1)"
-  [ -n "$declared_rev" ] || die "compatibility contract has no source_revision"
-  info "declared NeoHaskell compatibility revision: $declared_rev"
-  assert_contains "$proj/flake.nix" "neohaskellCommit = \"$declared_rev\"" \
-    "generated flake.nix must pin the declared NeoHaskell revision (contract is faithful to neo new)"
-  assert_contains "$proj/cabal.project" "tag: $declared_rev" \
-    "generated cabal.project must pin the declared NeoHaskell revision (contract is faithful to neo new)"
+    | grep -oE '"source_revision": "[0-9a-fA-F]{40}"' | grep -oE '[0-9a-fA-F]{40}' | head -1)"
+  [ -n "$declared_rev" ] || die "compatibility contract has no 40-hex source_revision"
+  starter_lock_rev="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["nodes"]["neohaskell"]["locked"]["rev"])' \
+    "$repo_root/neo/starter/flake.lock")"
+  [ "$declared_rev" = "$starter_lock_rev" ] \
+    || die "compat contract source_revision ($declared_rev) != committed starter flake.lock rev ($starter_lock_rev)"
+  info "compatibility contract: neo <-> NeoHaskell $declared_rev (faithful to the committed starter lock)"
+  local gen_commit
+  gen_commit="$(flake_neohaskell_commit "$proj/flake.nix")"
+  [ -n "$gen_commit" ] || die "generated flake.nix has no neohaskellCommit pin"
+  assert_contains "$proj/flake.nix" "?rev=$gen_commit" \
+    "generated flake input rev must equal its inputMap neohaskellCommit (coherent NeoHaskell pin)"
+  assert_contains "$proj/cabal.project" "tag: $gen_commit" \
+    "generated cabal.project must pin the same NeoHaskell revision as flake.nix (flake/Cabal coherence)"
+  info "generated project emits a coherent flake/Cabal NeoHaskell pin: $gen_commit"
 
   # -- Phase 3: build against the checkout under test ------------------------ #
   phase "3. build — neo build (neohaskell → committed checkout snapshot)"
@@ -456,6 +482,24 @@ self_test() {
     bad "failure: a missing-file assertion wrongly succeeded"
   else
     ok "failure: assertion failure propagates a nonzero exit"
+  fi
+
+  # 5b. Compatibility phase 2b: the emitted-pin extraction + flake/Cabal
+  #     coherence check (GREEN coherent, RED incoherent). The extraction must
+  #     capture the quoted commit, not a hex letter inside `neohaskellCommit`.
+  local cdir="$LOGDIR_ST/compat"
+  mkdir -p "$cdir"
+  printf '  inputs.neohaskell.url = "git+https://x/neohaskell.git?rev=deadbeef";\n  neohaskellCommit = "deadbeef";\n' > "$cdir/flake.nix"
+  printf 'source-repository-package\n  tag: deadbeef\n' > "$cdir/cabal.project"
+  local pin; pin="$(flake_neohaskell_commit "$cdir/flake.nix")"
+  check "compat: extracts the quoted flake neohaskellCommit pin" "[ \"$pin\" = deadbeef ]"
+  check "compat: coherent flake input ?rev matches the pin" "grep -q '?rev=$pin' '$cdir/flake.nix'"
+  check "compat: coherent cabal tag matches the pin" "grep -q 'tag: $pin' '$cdir/cabal.project'"
+  printf 'source-repository-package\n  tag: cafef00d\n' > "$cdir/cabal.project"
+  if grep -q "tag: $pin" "$cdir/cabal.project"; then
+    bad "compat: an INCOHERENT cabal tag was not detected"
+  else
+    ok "compat: an incoherent cabal tag is detected (RED)"
   fi
 
   # 6a. Readiness poll SUCCESS against a live server. Requires binding a loopback

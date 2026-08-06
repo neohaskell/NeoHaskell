@@ -127,9 +127,10 @@ compat` (`scripts/neo-release`, the release single-source-of-truth), which reads
 the embedded starter's pins (`neo/starter/` `flake.nix` `neohaskellCommit`,
 `flake.lock` `rev`, `cabal.project` `tag:`) and **fails closed on drift**.
 `neo-release.yml` ships it as a checksummed asset; the consumer contract (phase
-2b) gates that a generated project pins the declared revision. If you touch the
-starter's NeoHaskell pin, update all three pins together and keep `neo-release
---self-test` green. Full contract: `neo/AGENTS.md`.
+2b) gates that the contract is faithful to the committed starter lock and that
+the pins neo emits into a generated project are flake/Cabal coherent. If you
+touch the starter's NeoHaskell pin, update all three pins together and keep
+`neo-release --self-test` green. Full contract: `neo/AGENTS.md`.
 
 ## Ship-with-tests
 

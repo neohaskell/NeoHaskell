@@ -108,9 +108,14 @@ version is compatible with.
   `neo-compatibility.json`, includes it in `SHA256SUMS`, and ships it with the
   binaries. `scripts/workflow-check` (`check_neo_release`) freezes that.
 - **Gated, not just documented.** The generated-project consumer contract
-  (`./dev neo-consumer-contract`, phase 2b) asserts the revision a freshly
-  generated project actually pins equals the declared `source_revision`, so a
-  published contract can never lie about what `neo new` produces.
+  (`./dev neo-consumer-contract`, phase 2b) enforces two things: (A) the contract
+  GENERATES and is FAITHFUL — its `source_revision` equals the committed starter
+  `flake.lock` rev (re-read independently); and (B) the pins neo actually EMITS
+  into a generated project are internally COHERENT — the flake input `?rev=`, the
+  flake `neohaskellCommit`, and every generated `cabal.project` `tag:` are the
+  same revision. (`neo new` offline renders a deterministic placeholder rev; the
+  real fetched revision is proven against the checkout in phase 3.) The gate
+  never hardcodes a revision, so nothing drifts.
 - **To bump the compatible NeoHaskell revision:** update all three starter pins
   together (see the comment in `neo/starter/flake.nix`); the drift self-test
   (`scripts/neo-release --self-test`, run by `./dev doctor` + CI) refuses a
