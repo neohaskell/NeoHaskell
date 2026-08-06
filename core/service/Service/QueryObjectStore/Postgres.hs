@@ -95,7 +95,7 @@ instance Core.QueryObjectStoreConfig PostgresQueryObjectStoreConfig where
 --
 -- The @queryName@ (@NameOf query@) is threaded into every row this store
 -- reads/writes, so multiple queries over the same entity persist independently
--- under the @(query_name, instance_uuid)@ primary key (#734 / ADR-0070).
+-- under the @(query_name, instance_uuid)@ primary key (#734 / ADR-0071).
 --
 -- Use qualified at call sites: @PostgresQueryObjectStore.newFromConfig cfg name@.
 newFromConfig
@@ -208,7 +208,7 @@ createTableSession =
 --
 -- Looks up state under the store's own query name (@NameOf query@), so distinct
 -- queries over the same entity never read each other's rows — the collision the
--- @"__trait__"@ sentinel used to cause (#734 / ADR-0070). The name matches the
+-- @"__trait__"@ sentinel used to cause (#734 / ADR-0071). The name matches the
 -- one @Subscriber.rebuildFrom@ writes on the checkpoint pathway, so trait state
 -- and checkpoints now share one namespace per query, as the
 -- @(query_name, instance_uuid)@ PK intends.
@@ -350,7 +350,7 @@ upsertSession queryName rawUuid jsonVal = do
 --
 -- Excludes the reserved nil-UUID checkpoint marker row (see
 -- 'writeCheckpointSession'): trait rows and the checkpoint marker now share one
--- query_name (#734 / ADR-0070), so the marker's placeholder @'{}'@ state must
+-- query_name (#734 / ADR-0071), so the marker's placeholder @'{}'@ state must
 -- not leak into getAll — it is not a query instance.
 selectAllSession :: Text -> Session.Session (Array Json.Value)
 selectAllSession queryName = do

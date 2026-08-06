@@ -76,6 +76,6 @@ class QueryObjectStoreConfig config where
     config ->
     -- | The query name (@NameOf query@) — threaded so shared-storage backends
     -- (Postgres) key each query's rows separately; per-store-isolated backends
-    -- (in-memory) ignore it. See ADR-0070 / #734.
+    -- (in-memory) ignore it. See ADR-0071 / #734.
     Text ->
     Task Text (QueryObjectStore query)

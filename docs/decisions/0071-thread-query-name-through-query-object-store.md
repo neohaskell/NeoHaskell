@@ -1,4 +1,4 @@
-# ADR-0070: Thread the query name through the QueryObjectStore factory
+# ADR-0071: Thread the query name through the QueryObjectStore factory
 
 > Fixes #734 — a QueryObjectStore.Postgres data-integrity bug. Builds on
 > [ADR-0059](0059-async-query-rebuild-with-persistent-checkpoints.md) (the

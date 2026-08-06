@@ -1,4 +1,4 @@
-# Change 003: Thread the real query name through the QueryObjectStore so multiple queries per entity stop colliding
+# Change 005: Thread the real query name through the QueryObjectStore so multiple queries per entity stop colliding
 
 `Service.QueryObjectStore.Postgres` persists **every** query's state under one
 hardcoded `query_name` (`traitNamespace = "__trait__"`), keyed only by
@@ -121,7 +121,7 @@ C5.
 ## ADR
 
 Design decision recorded in
-[ADR-0070](../decisions/0070-thread-query-name-through-query-object-store.md):
+[ADR-0071](../decisions/0071-thread-query-name-through-query-object-store.md):
 why the query name is threaded as an explicit factory input (making an unnamed
 store unrepresentable) rather than derived via a `KnownSymbol (NameOf query)`
 constraint on the store config typeclass — the latter would couple the generic

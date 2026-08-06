@@ -37,7 +37,7 @@ mkStore config = PostgresQOS.newFromConfig config "test-query"
 
 -- | Build a QueryObjectStore scoped to @queryName@.
 --
--- Threads the query name through 'newFromConfig' (#734 / ADR-0070), so two
+-- Threads the query name through 'newFromConfig' (#734 / ADR-0071), so two
 -- stores built with distinct names key their rows separately under the
 -- @(query_name, instance_uuid)@ primary key. The cross-query isolation tests
 -- (C1/C2) rely on this; the test bodies never changed — only this helper did.

@@ -99,7 +99,7 @@ createDefinition =
 -- The store factory receives the query name (@NameOf query@) and returns a Task
 -- that creates a QueryObjectStore for the query type. Threading the name lets
 -- shared-storage backends (PostgreSQL) key each query's rows separately (#734 /
--- ADR-0070); backends that ignore it (in-memory) simply drop the argument.
+-- ADR-0071); backends that ignore it (in-memory) simply drop the argument.
 --
 -- Example:
 --

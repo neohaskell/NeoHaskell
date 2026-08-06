@@ -41,7 +41,7 @@ deriveQuery ''StoreWiringQuery []
 -- | Wire the fixture query through 'createDefinitionWithStore' with a spy store
 -- factory that captures the name it is handed.
 --
--- Since #734 / ADR-0070 'createDefinitionWithStore' hands the store factory the
+-- Since #734 / ADR-0071 'createDefinitionWithStore' hands the store factory the
 -- query's real name (@NameOf query@), so the spy records @"StoreWiringQuery"@,
 -- not the old @"__trait__"@ sentinel. The wiring test (C4) asserts exactly that;
 -- only this helper flipped red->green — the test body did not.
