@@ -918,42 +918,27 @@ def check_onboarding_slo(name, text):
             E(f"{name}: `slo` job must upload the evidence SHA256 sidecar and fail when evidence is missing")
         # (e) the ONE global deadline starts BEFORE the prerequisite install: the
         # workflow captures a same-host monotonic start and threads it into the
-        # driver, so Nix/Cachix install + checkout time is inside the 600 s budget
-        # (not silently excluded by starting the clock inside the driver).
+        # driver, so the (installer-provisioned) Nix install + checkout time is
+        # inside the 600 s budget (not silently excluded by starting the clock in
+        # the driver). Capture is the first step, so it precedes everything.
         threaded = "SLO_MONOTONIC_START: ${{ env.SLO_MONOTONIC_START }}" in slo
         captured = "GITHUB_ENV" in slo and "monotonic" in slo
         if not (threaded and captured):
             E(f"{name}: `slo` job does not start the deadline before the prerequisite "
-              "install — it must capture `time.monotonic()` into GITHUB_ENV (before the "
-              "Nix install) AND thread it as `SLO_MONOTONIC_START: ${{ env.SLO_MONOTONIC_START }}` "
-              "so prerequisite/cache/download/install time is counted")
-        # The capture must PRECEDE the Nix install: capturing after it would omit
-        # the install from the budget (a fabrication direction — it under-counts).
-        if captured:
-            nix_positions = [p for p in (slo.find("determinate-nix-action"),
-                                         slo.find("install-nix-action")) if p != -1]
-            if nix_positions and slo.find("monotonic") > min(nix_positions):
-                E(f"{name}: `slo` job captures the monotonic deadline start AFTER installing "
-                  "Nix — the start must precede the prerequisite install, else install time "
-                  "is silently excluded from the 600 s budget")
-        # (f) the clean machine installs Nix: the measured `neo test`/`neo run`
-        # build the generated project via nix, so a runner without Nix fails
-        # closed with nix_missing (the observed prior failure).
-        if not re.search(r"(determinate-nix-action|install-nix-action)", slo):
-            E(f"{name}: `slo` job does not install Nix "
-              "(DeterminateSystems/determinate-nix-action or nixos/install-nix-action) "
-              "— the measured build needs it (else `neo test` fails: nix_missing)")
-        # (g) the public Cachix substituter is configured TOKENLESSLY via nix
-        # read-config (never a write-capable cachix action — that is already
-        # banned above), so the 600 s path is cache-accelerated and the driver's
-        # observed_use can be genuinely true.
-        if "neohaskell.cachix.org" not in slo:
-            E(f"{name}: `slo` job does not configure the public neohaskell.cachix.org "
-              "substituter — the measured build cannot meet 600 s and real "
-              "substitution (observed_use) cannot be proven")
-        if "extra-substituters" not in slo and "accept-flake-config" not in slo:
-            E(f"{name}: `slo` job does not configure the substituter via read-only nix "
-              "config (extra-substituters / accept-flake-config) — it must be tokenless")
+              "install — it must capture `time.monotonic()` into GITHUB_ENV (first step) "
+              "AND thread it as `SLO_MONOTONIC_START: ${{ env.SLO_MONOTONIC_START }}` "
+              "so prerequisite/download/install time is counted")
+        # (f) the slo job must NOT pre-install Nix. The measured RELEASE installer
+        # provisions Nix itself (Determinate); a second Determinate install in a
+        # workflow step collides with it (`/nix/receipt.json` planner mismatch) and
+        # fails the install phase. The driver puts the installer-provisioned Nix on
+        # PATH and configures the public caches tokenlessly for the measured
+        # commands (frozen by `onboarding-slo --self-test`).
+        if re.search(r"(determinate-nix-action|install-nix-action)", slo):
+            E(f"{name}: `slo` job pre-installs Nix "
+              "(DeterminateSystems/determinate-nix-action or nixos/install-nix-action) — "
+              "the release installer provisions Nix itself and a second install collides "
+              "(`/nix/receipt.json`); let the installer do it and put Nix on PATH in the driver")
     return errs
 
 
@@ -1530,9 +1515,6 @@ def self_test():
         "    steps:\n"
         "      - name: start deadline\n        run: python3 -c \"import time,os; open(os.environ['GITHUB_ENV'],'a').write('SLO_MONOTONIC_START=%r' % time.monotonic())\"\n"
         "      - uses: actions/checkout@v7.0.1\n"
-        "      - uses: DeterminateSystems/determinate-nix-action@v3.21.7\n"
-        "        with:\n          extra-conf: |\n            accept-flake-config = true\n"
-        "            extra-substituters = https://neohaskell.cachix.org https://cache.iog.io\n"
         "      - name: measure\n"
         "        env:\n"
         "          SLO_INSTALLER_VERSION: ${{ inputs.installer_version }}\n"
@@ -1600,15 +1582,9 @@ def self_test():
             good_slo.replace("          SLO_MONOTONIC_START: ${{ env.SLO_MONOTONIC_START }}\n", ""))
     slo_bad("slo job not capturing the pre-prerequisite monotonic start is flagged",
             good_slo.replace("      - name: start deadline\n        run: python3 -c \"import time,os; open(os.environ['GITHUB_ENV'],'a').write('SLO_MONOTONIC_START=%r' % time.monotonic())\"\n", ""))
-    _cap_step = "      - name: start deadline\n        run: python3 -c \"import time,os; open(os.environ['GITHUB_ENV'],'a').write('SLO_MONOTONIC_START=%r' % time.monotonic())\"\n"
-    slo_bad("slo job capturing the monotonic start AFTER the Nix install is flagged (under-counts)",
-            good_slo.replace(_cap_step, "").replace(
-                "        run: ./dev onboarding-slo run\n",
-                "        run: ./dev onboarding-slo run\n" + _cap_step))
-    slo_bad("slo job not installing Nix is flagged (else neo test → nix_missing)",
-            good_slo.replace("      - uses: DeterminateSystems/determinate-nix-action@v3.21.7\n", ""))
-    slo_bad("slo job not configuring the public neohaskell.cachix.org substituter is flagged",
-            good_slo.replace("            extra-substituters = https://neohaskell.cachix.org https://cache.iog.io\n", ""))
+    slo_bad("slo job pre-installing Nix is flagged (collides with the release installer)",
+            good_slo.replace("      - uses: actions/checkout@v7.0.1\n",
+                             "      - uses: actions/checkout@v7.0.1\n      - uses: DeterminateSystems/determinate-nix-action@v3.21.7\n"))
 
     print("workflow-check: self-test", "OK" if ok else "FAILED")
     return 0 if ok else 1

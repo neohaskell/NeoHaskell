@@ -97,19 +97,13 @@ jobs:
       - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
-      # Clean-machine prerequisite: install Nix and configure the PUBLIC Cachix +
-      # IOG substituters TOKENLESSLY (read-only, secretless — no authToken, no
-      # cache WRITE, no cachix-action). This models the real user prerequisite and
-      # its time is counted against the deadline. No magic-nix-cache, so actual
-      # substitution from neohaskell.cachix.org stays observable (the driver
-      # requires observed_use=true) rather than being masked by the GitHub cache.
-      - name: Install Nix + configure public substituters (tokenless, read-only)
-        uses: DeterminateSystems/determinate-nix-action@v3.21.7
-        with:
-          extra-conf: |
-            accept-flake-config = true
-            extra-substituters = https://neohaskell.cachix.org https://cache.iog.io
-            extra-trusted-public-keys = neohaskell.cachix.org-1:mo2cLaGbwqbrxs9xhqKK8jeNsn3osi7t6XoAmxSZssc= hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ=
+      # NOTE: do NOT install Nix here. The measured release installer provisions
+      # Nix itself (Determinate), and a second Determinate install in a workflow
+      # step collides with it (`/nix/receipt.json` planner mismatch), failing the
+      # install phase. The clean runner therefore stays Nix-free; the installer's
+      # Nix install is part of the measured path (inside the 600 s deadline). The
+      # driver (scripts/onboarding-slo) reproduces the post-install Nix login env
+      # and configures the public caches tokenlessly for the measured commands.
       - name: Measure clean-machine onboarding (immutable inputs, checksum-verified, fail-closed)
         env:
           SLO_INSTALLER_VERSION: ${{ inputs.installer_version }}

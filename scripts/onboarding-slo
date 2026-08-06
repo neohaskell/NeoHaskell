@@ -141,6 +141,57 @@ def fetch(deadline: float, url: str, destination: Path | None = None) -> bytes:
     return data
 
 
+NEOHASKELL_CACHE = "https://neohaskell.cachix.org"
+NEOHASKELL_CACHE_KEY = "neohaskell.cachix.org-1:mo2cLaGbwqbrxs9xhqKK8jeNsn3osi7t6XoAmxSZssc="
+IOG_CACHE = "https://cache.iog.io"
+IOG_CACHE_KEY = "hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ="
+
+
+def nix_login_env(base_env: dict) -> dict:
+    """Reproduce the post-install 'next login shell' environment for the measured
+    `neo` subprocesses, and configure the public caches tokenlessly.
+
+    The release installer provisions Nix itself (Determinate), but only wires it
+    into a FUTURE login shell via profile edits — this process (and the `neo test`
+    subprocess it spawns) never sees it, which is why a bare run fails
+    `nix_missing`. So DO NOT pre-install Nix in the workflow: a second Determinate
+    install collides with the installer's (`/nix/receipt.json` planner mismatch).
+    Instead, source the Nix daemon profile the installer created to pick up PATH +
+    NIX_* exactly as the user's next shell would, always ensure the default
+    profile bin is on PATH, and set the public NeoHaskell + IOG substituters via
+    NIX_CONFIG (accept-flake-config) so the generated-project build is
+    cache-accelerated within the deadline. All read-only/public — no secret."""
+    env = dict(base_env)
+    profiles = [
+        "/nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh",
+        "/etc/profile.d/nix.sh",
+    ]
+    profile = next((p for p in profiles if os.path.exists(p)), None)
+    if profile:
+        probe = subprocess.run(
+            ["bash", "-c",
+             f'. "{profile}" >/dev/null 2>&1 && '
+             'python3 -c "import os, json; print(json.dumps(dict(os.environ)))"'],
+            capture_output=True, text=True, timeout=60,
+        )
+        if probe.returncode == 0 and probe.stdout.strip():
+            try:
+                for key, value in json.loads(probe.stdout).items():
+                    if key == "PATH" or key.startswith("NIX_"):
+                        env[key] = value
+            except ValueError:
+                pass
+    nix_bin = "/nix/var/nix/profiles/default/bin"
+    if nix_bin not in env.get("PATH", "").split(os.pathsep):
+        env["PATH"] = nix_bin + os.pathsep + env.get("PATH", "")
+    env["NIX_CONFIG"] = (
+        "accept-flake-config = true\n"
+        f"extra-substituters = {NEOHASKELL_CACHE} {IOG_CACHE}\n"
+        f"extra-trusted-public-keys = {NEOHASKELL_CACHE_KEY} {IOG_CACHE_KEY}\n"
+    )
+    return env
+
+
 def resolve_tag(deadline: float, repo: str, tag: str) -> str:
     """Resolve a release tag to the exact commit it points to, IMMUTABLY and
     TOKENLESSLY via the anonymous git protocol (`git ls-remote`). This replaces
@@ -282,12 +333,16 @@ def run_gate() -> None:
             "installed_neo_sha256": installed_sha,
         }
 
+        # The installer just provisioned Nix but only for a future login shell;
+        # reproduce that env (+ public caches) for the measured `neo` commands.
+        run_env = nix_login_env(env)
+
         phase = "new"
         bounded(deadline, [str(neo), "--ci", "new", "proj"],
-                cwd=work, log=work / "neo-new.log")
+                cwd=work, env=run_env, log=work / "neo-new.log")
         phase = "test"
         bounded(deadline, [str(neo), "--ci", "test"],
-                cwd=work / "proj", log=work / "neo-test.log")
+                cwd=work / "proj", env=run_env, log=work / "neo-test.log")
         cache_pattern = re.compile(
             r"(?:copying (?:path|\d+ paths?)|substituting path).*from.*https://neohaskell\.cachix\.org",
             re.IGNORECASE,
@@ -303,7 +358,7 @@ def run_gate() -> None:
         phase = "run-health"
         server_log = (work / "neo-run.log").open("wb")
         server = subprocess.Popen(
-            [str(neo), "--ci", "run"], cwd=work / "proj",
+            [str(neo), "--ci", "run"], cwd=work / "proj", env=run_env,
             stdout=server_log, stderr=subprocess.STDOUT, start_new_session=True,
         )
         health_url = f"http://127.0.0.1:{os.getenv('SLO_APP_PORT', '8080')}/health"
@@ -429,6 +484,15 @@ def self_test() -> None:
         if saved is not None:
             os.environ["SLO_MONOTONIC_START"] = saved
 
+    # nix_login_env always yields a usable Nix env for the measured commands: the
+    # default profile bin on PATH and the tokenless public substituters, even on a
+    # host with no Nix profile yet (the pre-install state on a clean runner).
+    augmented = nix_login_env({"PATH": "/usr/bin"})
+    assert "/nix/var/nix/profiles/default/bin" in augmented["PATH"].split(os.pathsep)
+    assert "neohaskell.cachix.org" in augmented["NIX_CONFIG"]
+    assert "accept-flake-config" in augmented["NIX_CONFIG"]
+    assert "CACHIX_AUTH_TOKEN" not in augmented.get("NIX_CONFIG", "")  # tokenless
+
     source = Path(__file__).read_text()
     banned = ("gh release " + "create", "cachix " + "push", "git " + "push")
     assert not any(token in source for token in banned)
@@ -436,6 +500,14 @@ def self_test() -> None:
     # unauthenticated GitHub REST API (which returned HTTP 403 on hosted runners).
     assert ("api.github" + ".com") not in source, "tag resolution must not use the GitHub REST API"
     assert "ls-remote" in source, "tag resolution must use immutable `git ls-remote`"
+    # The driver (not a workflow step) provisions the measured commands' Nix env:
+    # it puts the installer-provisioned Nix on PATH and configures the public
+    # caches TOKENLESSLY. Pre-installing Nix in the workflow collides with the
+    # installer, so that responsibility lives here.
+    assert "/nix/var/nix/profiles/default" in source, \
+        "the driver must put the installer-provisioned Nix on PATH for measured commands"
+    assert "NIX_CONFIG" in source and "neohaskell.cachix.org" in source and "accept-flake-config" in source, \
+        "the driver must configure the public Cachix substituter tokenlessly (accept-flake-config)"
     print("onboarding-slo self-test: OK - strict refs, pass/failure evidence, checksum rejection, monotonic deadline (same-host start), tokenless git tag resolution, descendant cleanup, non-publication")
 
 
