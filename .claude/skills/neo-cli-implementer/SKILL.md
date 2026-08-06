@@ -118,6 +118,19 @@ in the same change (`neo-cli-testing` covers the layers). Never modify an existi
 test expectation to make a red bar green without confirming the behavior change was
 intended - that is the monorepo's non-negotiable rule.
 
+## Release compatibility contract (neo <-> NeoHaskell)
+
+neo and NeoHaskell keep independent SemVer, so every neo release publishes
+`neo-compatibility.json` mapping the neo version to the compatible NeoHaskell
+source revision. It is generated — never hand-written — by `./dev neo-release
+compat` (`scripts/neo-release`, the release single-source-of-truth), which reads
+the embedded starter's pins (`neo/starter/` `flake.nix` `neohaskellCommit`,
+`flake.lock` `rev`, `cabal.project` `tag:`) and **fails closed on drift**.
+`neo-release.yml` ships it as a checksummed asset; the consumer contract (phase
+2b) gates that a generated project pins the declared revision. If you touch the
+starter's NeoHaskell pin, update all three pins together and keep `neo-release
+--self-test` green. Full contract: `neo/AGENTS.md`.
+
 ## Ship-with-tests
 
 Every change ships with tests (happy path + error + boundary); bug fixes include a

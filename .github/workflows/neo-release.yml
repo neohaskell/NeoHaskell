@@ -119,8 +119,17 @@ jobs:
         with:
           path: artifacts
           merge-multiple: true
-      # Regenerate the aggregate SHA256SUMS over ALL published assets via the
-      # same contract the installer verifies against.
+      # Emit the neo<->NeoHaskell compatibility contract from the executable
+      # single source of truth (the embedded starter's pinned NeoHaskell
+      # revision). Fails closed on any drift among the starter pins. Written into
+      # artifacts/ BEFORE checksums so it is covered by SHA256SUMS like the
+      # binaries. NeoHaskell + neo keep independent SemVer; this mapping is how a
+      # given neo release declares the compatible NeoHaskell source revision.
+      - name: Generate the compatibility contract
+        run: ./scripts/neo-release compat artifacts
+      # Regenerate the aggregate SHA256SUMS over ALL published assets (the native
+      # binaries AND neo-compatibility.json) via the same contract the installer
+      # verifies against.
       - name: Aggregate checksums
         run: ./scripts/neo-release checksums artifacts
       - name: Publish assets + checksums to the tag release
@@ -128,5 +137,6 @@ jobs:
         with:
           files: |
             artifacts/neo-*
+            artifacts/neo-compatibility.json
             artifacts/SHA256SUMS
           generate_release_notes: true

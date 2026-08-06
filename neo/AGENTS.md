@@ -89,6 +89,33 @@ the full binary unit-test suite, IDE install/test/build, and the Nix package bui
 plus app smoke on Linux and macOS), which runs on arbitrary stacked-PR bases, not
 by the Haskell Test gate.
 
+## Release compatibility contract (neo <-> NeoHaskell)
+
+NeoHaskell (the framework) and neo (the CLI) keep **independent SemVer** and
+release trains (`neo-v*` / `installer-v*` are decoupled from the library tags).
+Because of that independence, **every neo release must publish an explicit
+compatibility contract** stating which NeoHaskell source revision that neo
+version is compatible with.
+
+- **Single, executable source of truth — never a hand-maintained table.**
+  `./dev neo-release compat` (subcommand of `scripts/neo-release`) DERIVES the
+  contract from the embedded starter's authoritative pins in `neo/starter/`:
+  `flake.nix` `neohaskellCommit`, `flake.lock`'s neohaskell `rev`, and every
+  `cabal.project` `tag:`. It **fails closed on any drift** among those pins and
+  emits `neo-compatibility.json` (`schema: neo-compat/v1`, `neo_version`,
+  `neohaskell.{repo,ref,source_revision}`).
+- **Released artifact.** `neo-release.yml`'s publish job generates
+  `neo-compatibility.json`, includes it in `SHA256SUMS`, and ships it with the
+  binaries. `scripts/workflow-check` (`check_neo_release`) freezes that.
+- **Gated, not just documented.** The generated-project consumer contract
+  (`./dev neo-consumer-contract`, phase 2b) asserts the revision a freshly
+  generated project actually pins equals the declared `source_revision`, so a
+  published contract can never lie about what `neo new` produces.
+- **To bump the compatible NeoHaskell revision:** update all three starter pins
+  together (see the comment in `neo/starter/flake.nix`); the drift self-test
+  (`scripts/neo-release --self-test`, run by `./dev doctor` + CI) refuses a
+  partial bump. If a source byte changes, it must land BEFORE cutting the tag.
+
 ## Test layers (detail in `neo-cli-testing`)
 
 | Layer | Command (from the monorepo root) | Binary under test |

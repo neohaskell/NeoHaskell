@@ -26,6 +26,11 @@
 #   verify <dir> <target>           verify neo-<target> against <dir>/SHA256SUMS
 #   install <dir> <target> <dest>   copy-once, verify that copy, atomically place
 #   inspect <binary> <target>       portability gate: fail on /nix/store refs
+#   compat [<outdir>]               emit the neo<->NeoHaskell compatibility
+#                                   contract (JSON) from the embedded starter's
+#                                   pinned NeoHaskell revision; fail closed on
+#                                   drift. Writes <outdir>/neo-compatibility.json
+#                                   when <outdir> is given, else prints to stdout.
 #   --self-test                     exercise naming + checksum round-trip (no net)
 #
 # Publication is NEVER performed here — that is the workflow's tag-gated job.
@@ -40,6 +45,8 @@ TARGETS=(
 )
 
 die() { printf 'neo-release: %s\n' "$*" >&2; exit 1; }
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 asset_name() { printf 'neo-%s\n' "$1"; }
 
@@ -209,6 +216,90 @@ cmd_inspect() {
   printf 'portable: %s (%s) has no /nix/store references\n' "$binary" "$target"
 }
 
+# ── neo<->NeoHaskell compatibility contract (executable single source of truth) ─
+# NeoHaskell and neo keep INDEPENDENT SemVer, so every neo release must publish an
+# explicit mapping from this neo CLI version to the compatible NeoHaskell source
+# revision. That revision is authoritatively pinned by the EMBEDDED starter
+# (neo/starter): flake.nix `neohaskellCommit`, flake.lock's neohaskell `rev`, and
+# every cabal.project `tag:`. This verb READS those pins (never a hand-maintained
+# table that could drift), FAILS CLOSED on any disagreement among them, and emits
+# the contract as JSON. neo-release.yml publishes it as neo-compatibility.json and
+# the consumer contract gates that a generated project pins the declared revision.
+compat_starter_dir() { printf '%s\n' "${NEO_COMPAT_STARTER:-$REPO_ROOT/neo/starter}"; }
+compat_cargo_toml()  { printf '%s\n' "${NEO_COMPAT_CARGO:-$REPO_ROOT/neo/Cargo.toml}"; }
+is_sha40() { printf '%s' "$1" | grep -qE '^[0-9a-fA-F]{40}$'; }
+
+read_neo_version() {
+  local cargo="$1"; [ -f "$cargo" ] || die "compat: neo Cargo.toml not found: $cargo"
+  local v; v="$(grep -m1 -E '^version = "' "$cargo" | sed -E 's/^version = "([^"]+)".*/\1/')"
+  [ -n "$v" ] || die "compat: could not read neo version from $cargo"
+  printf '%s\n' "$v"
+}
+
+read_flake_commit() {
+  local flake="$1"; [ -f "$flake" ] || die "compat: starter flake.nix not found: $flake"
+  grep -m1 -E 'neohaskellCommit = "' "$flake" | sed -E 's/.*neohaskellCommit = "([0-9a-fA-F]*)".*/\1/'
+}
+
+# Print "rev\tref\turl" for the neohaskell node from a flake.lock.
+read_lock_node() {
+  local lock="$1"; [ -f "$lock" ] || die "compat: starter flake.lock not found: $lock"
+  python3 - "$lock" <<'PY'
+import json, sys
+locked = json.load(open(sys.argv[1])).get("nodes", {}).get("neohaskell", {}).get("locked", {})
+print("%s\t%s\t%s" % (locked.get("rev", ""), locked.get("ref", ""), locked.get("url", "")))
+PY
+}
+
+read_cabal_tags() {
+  local cabal="$1"; [ -f "$cabal" ] || die "compat: starter cabal.project not found: $cabal"
+  grep -E '^[[:space:]]*tag:[[:space:]]*[0-9a-fA-F]+' "$cabal" \
+    | sed -E 's/.*tag:[[:space:]]*([0-9a-fA-F]+).*/\1/'
+}
+
+cmd_compat() {
+  [ $# -le 1 ] || die "usage: neo-release compat [<outdir>]"
+  local out="${1:-}"
+  local starter cargo flake lock cabal
+  starter="$(compat_starter_dir)"; cargo="$(compat_cargo_toml)"
+  flake="$starter/flake.nix"; lock="$starter/flake.lock"; cabal="$starter/cabal.project"
+
+  local neo_version flake_commit lock_line lock_rev lock_ref lock_url
+  neo_version="$(read_neo_version "$cargo")"
+  flake_commit="$(read_flake_commit "$flake")"
+  lock_line="$(read_lock_node "$lock")"
+  lock_rev="${lock_line%%$'\t'*}"
+  lock_ref="$(printf '%s' "$lock_line" | cut -f2)"
+  lock_url="$(printf '%s' "$lock_line" | cut -f3)"
+
+  is_sha40 "$flake_commit" || die "compat: neohaskellCommit in $flake is not a 40-hex commit: '$flake_commit'"
+  is_sha40 "$lock_rev"     || die "compat: neohaskell rev in $lock is not a 40-hex commit: '$lock_rev'"
+  [ "$flake_commit" = "$lock_rev" ] \
+    || die "compat: DRIFT — flake.nix neohaskellCommit ($flake_commit) != flake.lock neohaskell rev ($lock_rev)"
+
+  local tag n=0
+  while IFS= read -r tag; do
+    [ -n "$tag" ] || continue
+    n=$((n + 1))
+    [ "$tag" = "$flake_commit" ] \
+      || die "compat: DRIFT — cabal.project tag ($tag) != pinned revision ($flake_commit)"
+  done < <(read_cabal_tags "$cabal")
+  [ "$n" -ge 1 ] || die "compat: no 'tag:' pin found in $cabal"
+
+  local repo="${lock_url:-https://github.com/neohaskell/neohaskell.git}"
+  local ref="${lock_ref:-main}"
+  local json
+  json="$(printf '{\n  "schema": "neo-compat/v1",\n  "neo_version": "%s",\n  "neohaskell": {\n    "repo": "%s",\n    "ref": "%s",\n    "source_revision": "%s"\n  }\n}\n' \
+    "$neo_version" "$repo" "$ref" "$flake_commit")"
+  if [ -n "$out" ]; then
+    mkdir -p "$out"
+    printf '%s' "$json" > "$out/neo-compatibility.json"
+    printf 'wrote %s/neo-compatibility.json (neo %s <-> neohaskell %s)\n' "$out" "$neo_version" "$flake_commit"
+  else
+    printf '%s' "$json"
+  fi
+}
+
 self_test() {
   local fails=0 tmp installed_hash manifest_hash
   ok()  { printf '  ok   %s\n' "$1"; }
@@ -282,12 +373,39 @@ self_test() {
     && ok "portability: clean binary passes" \
     || bad "portability: clean binary wrongly flagged"
 
+  # 9. compatibility contract: agreeing pins emit the contract; ANY drift among
+  #    flake.nix neohaskellCommit / flake.lock rev / cabal.project tags fails
+  #    closed (RED/GREEN — a manually-duplicated table can silently drift).
+  local cdir="$tmp/compat" rev="0123456789abcdef0123456789abcdef01234567"
+  local bad_rev="ffffffffffffffffffffffffffffffffffffffff"
+  mkdir -p "$cdir/starter"
+  printf '[package]\nname = "neo"\nversion = "9.9.9"\n' > "$cdir/Cargo.toml"
+  make_starter() { # $1 = lock rev, $2 = second cabal tag
+    printf '{\n  neohaskellCommit = "%s";\n}\n' "$rev" > "$cdir/starter/flake.nix"
+    printf 'packages:\n  location: a\n  tag: %s\n  location: b\n  tag: %s\n' "$rev" "$2" > "$cdir/starter/cabal.project"
+    printf '{"nodes":{"neohaskell":{"locked":{"rev":"%s","ref":"main","url":"https://github.com/neohaskell/neohaskell.git"}}}}\n' "$1" > "$cdir/starter/flake.lock"
+  }
+  run_compat() { ( NEO_COMPAT_STARTER="$cdir/starter" NEO_COMPAT_CARGO="$cdir/Cargo.toml" cmd_compat "$@" ); }
+  make_starter "$rev" "$rev"
+  if run_compat > "$cdir/out.json" 2>/dev/null \
+     && grep -q "\"source_revision\": \"$rev\"" "$cdir/out.json" \
+     && grep -q '"neo_version": "9.9.9"' "$cdir/out.json" \
+     && python3 -m json.tool "$cdir/out.json" >/dev/null 2>&1; then
+    ok "compat emits valid JSON from agreeing pins"
+  else bad "compat rejected agreeing pins or emitted bad JSON"; fi
+  make_starter "$bad_rev" "$rev"   # flake.lock rev drifts
+  if run_compat >/dev/null 2>&1; then bad "compat accepted a drifted flake.lock rev"
+  else ok "compat rejects a drifted flake.lock rev"; fi
+  make_starter "$rev" "$bad_rev"   # one cabal.project tag drifts
+  if run_compat >/dev/null 2>&1; then bad "compat accepted a drifted cabal.project tag"
+  else ok "compat rejects a drifted cabal.project tag"; fi
+
   rm -rf "$tmp"
   if [ "$fails" -ne 0 ]; then
     printf 'neo-release self-test: FAILED (%d)\n' "$fails" >&2
     return 1
   fi
-  printf 'neo-release self-test: OK — naming, checksums, verify, atomic install, TOCTOU, portability\n'
+  printf 'neo-release self-test: OK — naming, checksums, verify, atomic install, TOCTOU, portability, compatibility contract\n'
 }
 
 main() {
@@ -301,6 +419,7 @@ main() {
     verify)      cmd_verify "$@" ;;
     install)     cmd_install "$@" ;;
     inspect)     cmd_inspect "$@" ;;
+    compat)      cmd_compat "$@" ;;
     --self-test) self_test ;;
     -h|--help|"") sed -n '2,40p' "$0" | sed 's/^# \{0,1\}//' ;;
     *) die "unknown subcommand '$sub' (see --help)" ;;
