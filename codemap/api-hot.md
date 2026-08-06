@@ -9,10 +9,10 @@ separately below). Consult BEFORE writing code; full surface:
 codemap/signatures/ · type-directed search: ./dev api "<type>"
 
 ## Task
-- `yield :: value -> Task w value`  <!-- 530 call sites -->
+- `yield :: value -> Task w value`  <!-- 532 call sites -->
 - `ignoreError :: Task err Unit -> Task w Unit`  <!-- 233 call sites -->
-- `mapError :: (err1 -> err2) -> Task err1 value -> Task err2 value`  <!-- 213 call sites -->
-- `throw :: err -> Task err w`  <!-- 203 call sites -->
+- `mapError :: (err1 -> err2) -> Task err1 value -> Task err2 value`  <!-- 214 call sites -->
+- `throw :: err -> Task err w`  <!-- 204 call sites -->
 - `fromIO :: IO value -> Task w value`  <!-- 132 call sites -->
 - `asResult :: Task err value -> Task err2 (Result err value)`  <!-- 80 call sites -->
 - `when :: Bool -> Task err Unit -> Task err Unit`  <!-- 29 call sites -->
@@ -44,7 +44,7 @@ codemap/signatures/ · type-directed search: ./dev api "<type>"
 ## Text
 - `fromLinkedList :: LinkedList Char -> Text`  <!-- 90 call sites -->
 - `toLinkedList :: Text -> LinkedList Char`  <!-- 78 call sites -->
-- `toBytes :: Text -> Bytes`  <!-- 64 call sites -->
+- `toBytes :: Text -> Bytes`  <!-- 65 call sites -->
 - `replace :: Text -> Text -> Text -> Text`  <!-- 33 call sites -->
 - `fromBytes :: Bytes -> Text`  <!-- 27 call sites -->
 - `trim :: Text -> Text`  <!-- 27 call sites -->
@@ -58,7 +58,7 @@ codemap/signatures/ · type-directed search: ./dev api "<type>"
 - `toJSON :: ToJSON a => a -> Value`  <!-- 92 call sites -->
 - `yield :: value -> Parser value`  <!-- 44 call sites -->
 - `withObject :: Text -> (Object -> Parser value) -> Value -> Parser value`  <!-- 35 call sites -->
-- `encode :: ToJSON value => value -> Value`  <!-- 28 call sites -->
+- `encode :: ToJSON value => value -> Value`  <!-- 29 call sites -->
 - `encodeText :: ToJSON value => value -> Text`  <!-- 25 call sites -->
 - `decode :: FromJSON value => Value -> Result Text value`  <!-- 19 call sites -->
 - `decodeBytes :: FromJSON value => Bytes -> Result Text value`  <!-- 6 call sites -->
@@ -107,7 +107,7 @@ codemap/signatures/ · type-directed search: ./dev api "<type>"
 - `new :: forall value w. Task w (ConcurrentVar value)`  <!-- 2 call sites -->
 
 ## Bytes
-- `unwrap :: Bytes -> ByteString`  <!-- 46 call sites -->
+- `unwrap :: Bytes -> ByteString`  <!-- 47 call sites -->
 - `fromLegacy :: ByteString -> Bytes`  <!-- 30 call sites -->
 - `toLazyLegacy :: Bytes -> LazyByteString`  <!-- 16 call sites -->
 - `length :: Bytes -> Int`  <!-- 4 call sites -->
@@ -270,10 +270,10 @@ Ranked from call sites in spec/test files only. Reach for these
 when WRITING TESTS; they are not feature-code frequency signal.
 
 ## Task
-- `mapError :: (err1 -> err2) -> Task err1 value -> Task err2 value`  <!-- 758 test call sites -->
+- `mapError :: (err1 -> err2) -> Task err1 value -> Task err2 value`  <!-- 762 test call sites -->
 - `yield :: value -> Task w value`  <!-- 407 test call sites -->
 - `asResult :: Task err value -> Task err2 (Result err value)`  <!-- 273 test call sites -->
-- `mapArray :: (element -> Task err output) -> Array element -> Task err (Array output)`  <!-- 118 test call sites -->
+- `mapArray :: (element -> Task err output) -> Array element -> Task err (Array output)`  <!-- 119 test call sites -->
 - `throw :: err -> Task err w`  <!-- 98 test call sites -->
 - `fromIO :: IO value -> Task w value`  <!-- 90 test call sites -->
 - `andThen :: (input -> Task err output) -> Task err input -> Task err output`  <!-- 89 test call sites -->
@@ -325,8 +325,8 @@ when WRITING TESTS; they are not feature-code frequency signal.
 - `encodeText :: ToJSON value => value -> Text`  <!-- 117 test call sites -->
 - `object :: [(Text, Value)] -> Value`  <!-- 105 test call sites -->
 - `null :: Value`  <!-- 54 test call sites -->
-- `encode :: ToJSON value => value -> Value`  <!-- 44 test call sites -->
-- `decode :: FromJSON value => Value -> Result Text value`  <!-- 24 test call sites -->
+- `encode :: ToJSON value => value -> Value`  <!-- 45 test call sites -->
+- `decode :: FromJSON value => Value -> Result Text value`  <!-- 25 test call sites -->
 - `withObject :: Text -> (Object -> Parser value) -> Value -> Parser value`  <!-- 3 test call sites -->
 
 ## ConcurrentVar
@@ -339,8 +339,8 @@ when WRITING TESTS; they are not feature-code frequency signal.
 - `swap :: value -> ConcurrentVar value -> Task w value`  <!-- 3 test call sites -->
 
 ## Uuid
-- `generate :: Task w Uuid`  <!-- 174 test call sites -->
+- `generate :: Task w Uuid`  <!-- 175 test call sites -->
 - `nil :: Uuid`  <!-- 93 test call sites -->
 - `toText :: Uuid -> Text`  <!-- 29 test call sites -->
 
-*cut: 135 more modules (Map (257), Service.Application (250), Set (233), Stream (190), AsyncTask (171), …) — full surface: codemap/signatures/*
+*cut: 135 more modules (Map (257), Service.Application (250), Set (233), Stream (190), AsyncTask (173), …) — full surface: codemap/signatures/*

@@ -55,7 +55,10 @@ factory rather than a constant — with an in-process spy factory that crosses n
 external boundary, so it is `unit`. C5 is a downstream-safety criterion the fix
 necessitates: unifying the trait's per-instance rows and the checkpoint marker
 under one `query_name` (the intent of #734) means `getAll` must skip the
-reserved nil-UUID marker row.
+reserved nil-UUID marker row. C6 is a concurrency-safety criterion added in
+review (PR #739): `atomicUpdate` must be genuinely atomic, not a racy read then
+write across separate pool sessions, so concurrent read-modify-writes on one key
+lose no updates. It is `integration` (real Postgres, committed red).
 
 | ID | Behavior | Proving test | Level |
 |----|----------|--------------|-------|
@@ -64,6 +67,7 @@ reserved nil-UUID marker row.
 | C3 | Single-query behavior preserved — `get` / `atomicUpdate` (insert, overwrite, delete) / `getAll` still round-trip correctly once state is keyed by the threaded query name | `Service.QueryObjectStore.PostgresSpec` "state round-trips under the threaded query name" | integration |
 | C4 | The **automatic wiring** passes the query's own name to the store factory — `createDefinitionWithStore` supplies `NameOf query` (not `"__trait__"` or empty) to the supplied factory, so the correct name reaches a Postgres store in production wiring, not only in manually-constructed stores. A spy factory captures the name it is handed | `Service.Query.DefinitionSpec` "passes NameOf query to the supplied store factory (#734)" | unit |
 | C5 | `getAll` excludes the reserved **nil-UUID checkpoint marker** row. Because the fix makes the trait's per-instance state and the checkpoint marker (`Subscriber.rebuildFrom` via `CheckpointStore`) share one `query_name`, `getAll` must return only real instances — never the marker's placeholder state, which would otherwise surface a bogus row at `GET /queries/{name}` for any checkpointed query | `Service.QueryObjectStore.PostgresSpec` "getAll excludes the reserved nil-uuid checkpoint marker row (#734)" | integration |
+| C6 | **Concurrent** read-modify-write `atomicUpdate` on the **same** `(query_name, instance_uuid)` loses no updates: N interleaved increments of one counter row all apply (final == N). Proves `atomicUpdate` is genuinely atomic (optimistic compare-and-set with bounded retry) rather than a racy read-then-write across separate pool sessions — the lost-update defect CodeRabbit flagged on PR #739 | `Service.QueryObjectStore.PostgresSpec` "N concurrent read-modify-write increments on one key all apply (#739)" | integration |
 
 ## User impact
 
