@@ -98,14 +98,13 @@ command ''AddItem   -- MARKER LAST
 3. **Missing companion / type-family.** `deriveQuery` without `canAccess`/
    `canView`, or `command` without `getEntityId`/`decide`/`EntityOf`, fails at
    compile with a message naming exactly what to add — add it, don't fight it.
-4. **Marker not last.** Everything the marker *references* — the companions it
-   wires (`canAccess`/`canView`; `getEntityId`/`decide`) and the required
-   `type instance` wiring (a command's `EntityOf`/`TransportsOf`) — must appear
-   *before* the marker call; TH resolves those via
-   `lookupValueName`/`reifyInstances` at splice time. `deriveQuery` does **not**
-   reify `QueryOf` (only `canAccess`/`canView`), and instance order is otherwise
-   free, so `QueryOf`/`Entity`/`Event` may sit before or after — put them before
-   for one consistent order.
+4. **Marker not last.** Put the companions, the `type instance` wiring, and the
+   business-logic instances (`QueryOf`/`Entity`/`Event`) all *before* the marker
+   call — the marker is the LAST declaration for the type. The marker *requires*
+   the declarations it wires to precede it: `deriveQuery` resolves
+   `canAccess`/`canView` via `lookupValueName` at splice time (it does **not**
+   reify `QueryOf`), and `command` needs `getEntityId`/`decide`/`EntityOf`.
+   Keeping everything above the marker is the one rule that always holds.
 5. **Copying a pre-marker module.** Some older modules (e.g.
    `Testbed.Cart.Core`) hand-write everything and predate the markers — do not
    copy that style for a new concept.
