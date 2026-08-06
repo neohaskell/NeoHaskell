@@ -1,4 +1,4 @@
-# Clean-machine onboarding SLO gate (PR 7 cutover) — see ADR 0071.
+# Clean-machine onboarding SLO gate (PR 7 cutover) — see ADR 0072.
 #
 # Proves the one user-facing invariant of the neo→monorepo migration: on a clean,
 # supported, GitHub-hosted machine a user reaches a generated, tested, running

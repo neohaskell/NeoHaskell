@@ -816,7 +816,7 @@ def check_installer_ci(name, text):
 
 
 # ── neo-onboarding-slo.yml: clean-machine onboarding SLO gate (PR 7 cutover) ──
-# (ADR 0071) The gate measures install->new->test->run->/health on a clean,
+# (ADR 0072) The gate measures install->new->test->run->/health on a clean,
 # supported machine under a 600s deadline, from IMMUTABLE checksum-verified
 # release artifacts. Two modes must stay separated and honest, and several
 # invariants are load-bearing + unreviewable-by-eye, so freeze them:

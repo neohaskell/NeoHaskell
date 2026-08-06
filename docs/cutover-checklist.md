@@ -2,7 +2,7 @@
 
 The operator runbook for retiring the standalone `neohaskell/neo` and
 `neohaskell/neo-starter` repositories in favour of the NeoHaskell monorepo.
-Governed by [ADR-0071](decisions/0071-neo-cutover-and-onboarding-slo.md).
+Governed by [ADR-0072](decisions/0072-neo-cutover-and-onboarding-slo.md).
 
 **Hard rules for this checklist**
 

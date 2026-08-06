@@ -1,4 +1,4 @@
-# ADR-0071: Neo CLI cutover — archive-as-human-gate and the clean-machine onboarding SLO
+# ADR-0072: Neo CLI cutover — archive-as-human-gate and the clean-machine onboarding SLO
 
 > Closes the neo → NeoHaskell-monorepo migration (PR 7 in the project plan). The
 > earlier PRs internalized the CLI, its starter, packaging, the consumer
