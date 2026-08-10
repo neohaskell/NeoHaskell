@@ -59,7 +59,7 @@ jobs:
           persist-credentials: false
       # Pinned, reproducible toolchain (matches the neo dev shell's Rust). A
       # rustup cargo build links the SYSTEM C libraries → portable native binary.
-      - uses: dtolnay/rust-toolchain@1.94.0
+      - uses: dtolnay/rust-toolchain@1.100.0
         with:
           targets: ${{ matrix.target }}
       - uses: Swatinem/rust-cache@v2

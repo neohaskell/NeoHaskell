@@ -240,7 +240,7 @@ jobs:
           fetch-depth: 0
       # Pinned, reproducible toolchain (matches the neo dev shell) — a cargo build
       # links system C libs, so the artifact is portable, exactly like the release.
-      - uses: dtolnay/rust-toolchain@1.94.0
+      - uses: dtolnay/rust-toolchain@1.100.0
         with:
           targets: x86_64-unknown-linux-gnu
       - uses: Swatinem/rust-cache@v2
@@ -306,7 +306,7 @@ jobs:
         if: ${{ env.CACHIX_AUTH_TOKEN != '' }}
         with:
           fetch-depth: 0
-      - uses: dtolnay/rust-toolchain@1.94.0
+      - uses: dtolnay/rust-toolchain@1.100.0
         if: ${{ env.CACHIX_AUTH_TOKEN != '' }}
         with:
           targets: x86_64-unknown-linux-gnu
