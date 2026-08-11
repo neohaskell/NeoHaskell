@@ -79,3 +79,7 @@ Three layers, in feedback order:
 - Never modify existing test expectations without maintainer approval.
 - Branch off `main`; never edit `main` directly (hook-enforced).
 - ADRs live in `docs/decisions/NNNN-slug.md`.
+
+## Project brain
+
+Boot from `docs/`: `docs/charter.md` (mission, horizon, no-goals), `docs/decisions/` (ADRs). The charter governs priority disputes.
