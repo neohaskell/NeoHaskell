@@ -8,7 +8,9 @@ import BytesSpec qualified
 import Command.FromSchemaSpec qualified
 import ConcurrentMapSpec qualified
 import CryptoSpec qualified
+import DeciderSpec qualified
 import DecimalSpec qualified
+import UuidSpec qualified
 import EventVariantOfSpec qualified
 import Config.ApplicationSpec qualified
 import Config.ConfigDependentSpec qualified
@@ -55,7 +57,9 @@ main = Hspec.hspec do
   Hspec.describe "Command.FromSchema" Command.FromSchemaSpec.spec
   Hspec.describe "ConcurrentMap" ConcurrentMapSpec.spec
   Hspec.describe "Crypto" CryptoSpec.spec
+  Hspec.describe "Decider" DeciderSpec.spec
   Hspec.describe "Decimal" DecimalSpec.spec
+  Hspec.describe "Uuid" UuidSpec.spec
   Hspec.describe "EventVariantOf" EventVariantOfSpec.spec
   Hspec.describe "Config.Application" Config.ApplicationSpec.spec
   Hspec.describe "Config.ConfigDependent" Config.ConfigDependentSpec.spec

@@ -2,6 +2,7 @@ module BytesSpec where
 
 import Bytes qualified
 import Core
+import LinkedList qualified
 import Test
 
 
@@ -25,3 +26,14 @@ spec = parallel do
         firstBytes <- Bytes.getRandom 32
         secondBytes <- Bytes.getRandom 32
         firstBytes |> shouldNotBe secondBytes
+
+    describe "unpack" do
+      it "unpack round-trips with pack" \_ -> do
+        let bytes = [0, 1, 127, 128, 255]
+        bytes |> Bytes.pack |> Bytes.unpack |> shouldBe bytes
+
+        -- Agrees with the length the packed form reports.
+        Bytes.pack bytes |> Bytes.unpack |> LinkedList.length |> shouldBe (Bytes.length (Bytes.pack bytes))
+
+        -- The empty case is total, not an error.
+        Bytes.empty |> Bytes.unpack |> shouldBe []
