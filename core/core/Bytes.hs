@@ -8,6 +8,7 @@ module Bytes (
   empty,
   replicate,
   pack,
+  unpack,
   -- * Random Generation
   getRandom,
   -- * Searching
@@ -90,6 +91,21 @@ pack :: [Word8] -> Bytes
 pack ws =
   ByteString.pack ws
     |> INTERNAL_CORE_BYTES_CONSTRUCTOR
+
+
+-- | Expand bytes into their individual byte values.
+--
+-- The inverse of 'pack'. Useful for the handful of libraries that take a
+-- byte list rather than a byte sequence.
+--
+-- >>> [1, 2, 3] |> Bytes.pack |> Bytes.unpack
+-- [1,2,3]
+--
+-- >>> Bytes.empty |> Bytes.unpack
+-- []
+unpack :: Bytes -> [Word8]
+unpack (INTERNAL_CORE_BYTES_CONSTRUCTOR bs) =
+  ByteString.unpack bs
 
 
 -- | Generate cryptographically secure random bytes.

@@ -443,6 +443,8 @@ test-suite nhcore-test
     EventVariantOfSpec
     LogSpec
     DecimalSpec
+    DeciderSpec
+    UuidSpec
     Service.ApplicationSpec
     Service.AuthSpec
     TextSpec
@@ -691,7 +693,9 @@ test-suite nhcore-test-core
     Config.THSpec
     BytesSpec
     CryptoSpec
+    DeciderSpec
     DecimalSpec
+    UuidSpec
     EventVariantOfSpec
     Http.ClientRawSpec
     Http.ClientSpec

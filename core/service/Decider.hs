@@ -9,6 +9,7 @@ module Decider (
 
   -- * Smart Constructors
   generateUuid,
+  generateDeterministicUuid,
   acceptAny,
   acceptNew,
   acceptExisting,
@@ -31,6 +32,7 @@ import Text (Text)
 import Thenable
 import ToText (toText)
 import Uuid (Uuid)
+import Uuid qualified
 
 
 -- | The result of running a Decision.
@@ -120,6 +122,35 @@ runDecision ctx = go
 -- @
 generateUuid :: Decision Uuid
 generateUuid = GenUuid
+
+
+-- | Derive a deterministic UUID (version 5, RFC 4122) within a Decision.
+--
+-- The same namespace and name always produce the same UUID, so it is the
+-- counterpart to 'generateUuid': /random for fresh identity, deterministic for
+-- derived identity/. It draws nothing from the decision context — the value is
+-- a pure function of its inputs.
+--
+-- Example — deriving a stable id from a natural key:
+--
+-- @
+-- decide cmd entity = do
+--   case entity of
+--     Just _ ->
+--       Decider.reject "Already registered!"
+--     Nothing -> do
+--       ownerId <- Decider.generateDeterministicUuid ownerNamespace cmd.externalUserId
+--       Decider.acceptNew [ProjectRegistered {ownerId = ownerId}]
+-- @
+--
+-- To derive the /entity's own/ id from a natural key, use 'Uuid.generateV5'
+-- directly in the command's @getEntityId@ — that is what makes the same key
+-- resolve to the same stream, so a repeat submission can be rejected here.
+--
+-- SECURITY: the result is __not a secret__ — see 'Uuid.generateV5'.
+generateDeterministicUuid :: Uuid -> Text -> Decision Uuid
+generateDeterministicUuid namespace name =
+  Uuid.generateV5 namespace name |> Return
 
 
 -- | Accept a command regardless of stream state, emitting the given events.

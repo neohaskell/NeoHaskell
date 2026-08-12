@@ -65,6 +65,14 @@ Array [0]
 >>> Bytes.empty |> Bytes.length
 0
 ```
+```haskell
+>>> [1, 2, 3] |> Bytes.pack |> Bytes.unpack
+[1,2,3]
+```
+```haskell
+>>> Bytes.empty |> Bytes.unpack
+[]
+```
 ### Float
 ```haskell
 >>> Float.toInt 3.7
@@ -136,6 +144,11 @@ Set (fromList [1,2,3,4])
 Set (fromList [1,2,3])
 ```
 *… 13 more doctest sessions in the source module*
+### Uuid
+```haskell
+>>> Uuid.fromText "6ba7b810-9dad-11d1-80b4-00c04fd430c8" |> Maybe.getOrDie |> (\ns -> Uuid.generateV5 ns "python.org") |> Uuid.toText
+"886313e1-3b8a-5372-9b90-0c9aee199e5d"
+```
 
 ## postgres-infra
 ### Service.Infra.Postgres.SslMode
@@ -157,5 +170,12 @@ Ok SslModeUnset
 -- … (+2 more lines in the source doctest)
 ```
 
+## testbed
+### Testbed.Cart.Commands.RegisterCartByKey
+```haskell
+>>> Uuid.generateV5 keyNamespace "acme/widgets" |> Uuid.toText
+"8b743db0-26d8-5500-9136-1f28e2940a25"
+```
+
 ---
-*26 example sessions · modules with ZERO doctests: 316 (the documentation backlog — see codemap/.doc-ratchet)*
+*30 example sessions · modules with ZERO doctests: 315 (the documentation backlog — see codemap/.doc-ratchet)*

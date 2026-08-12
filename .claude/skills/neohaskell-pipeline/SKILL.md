@@ -80,11 +80,28 @@ intake ─ localize ─ spec ─▶ DRAFT PR ══ GATE 1 (maintainer) ══�
    d. full suite (`./dev test-all`) only here, once, at PR-ready
 10. **pr** — flip the draft to ready-for-review (this re-triggers the full CI
     matrix; drafts run only the cheap checks). PR body: spec link, criteria →
-    test mapping, review records. GATE 2 is the maintainer's normal review.
-11. **ci** — watch checks; bot comments triaged (fix real findings; push
-    back with evidence on wrong ones). Merge is the maintainer's.
+    test mapping, review records. **Flip the ADR's `## Status` to
+    `Implemented`** here (and the matching row in `docs/decisions/README.md`,
+    then `./dev adr-website` to resync the landing page) — an ADR whose code has
+    shipped must not still read `Proposed`/`Accepted`; `./dev adr-check` gates
+    file↔index consistency, and `Implemented` is an accepted alias of
+    `Accepted`. GATE 2 is the maintainer's normal review.
+11. **ci** — **not a single pass: loop until the checks and the review bot both
+    settle green.** Each round: watch checks → read every new bot comment →
+    triage → push the fix → wait for re-review. Repeat until CodeRabbit reports
+    no outstanding actionable comments (its review state leaves
+    `CHANGES_REQUESTED`) *and* the check matrix is green. A round that changes
+    generated artifacts (`codemap/**`, `CHANGELOG.md`) must re-run its
+    generator, never hand-edit — hand-editing is what breaks `codemap-sync`.
+    Triage rule: fix real findings; **decline with a stated reason** (as a reply
+    on the comment, so the record is on the PR) when the finding is wrong or
+    targets a generated file whose formatting the generator owns. Merge is the
+    maintainer's.
 
-Close-out (at **PR-ready**, before the merge — NOT after): `./dev telemetry
+Close-out (at **PR-ready**, before the merge — NOT after): **stop the open stage
+first** (`./dev telemetry stage --name pr --event stop`) — `finish` snapshots
+whatever is recorded, so a stage left open is written to `runs.jsonl` with a null
+`stop` and stays wrong forever. Then `./dev telemetry
 finish` (outcome `ok`) appends the run's line to `telemetry/runs.jsonl`, and
 `./dev telemetry golden` writes `telemetry/golden/<run_id>/` (request.md,
 spec.md, final.diff, verdict.md, transcript.md). `runs.jsonl` is **tracked**

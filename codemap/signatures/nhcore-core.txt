@@ -290,6 +290,7 @@ take :: Int -> Bytes -> Bytes
 takeEnd :: Int -> Bytes -> Bytes
 toBase64 :: Bytes -> Bytes
 toLazyLegacy :: Bytes -> LazyByteString
+unpack :: Bytes -> [Word8]
 unwrap :: Bytes -> ByteString
 
 module Channel
@@ -606,6 +607,7 @@ acceptNew :: EventVariantOf event variant => Array variant -> Decision event
 data CommandResult event
 data Decision a
 data DecisionContext
+generateDeterministicUuid :: Uuid -> Text -> Decision Uuid
 generateUuid :: Decision Uuid
 instance GHC.Base.Applicative Decider.Decision
 instance GHC.Base.Functor Decider.Decision
@@ -1660,6 +1662,7 @@ data Uuid
 fromLegacy :: UUID -> Uuid
 fromText :: Text -> Maybe Uuid
 generate :: Task w Uuid
+generateV5 :: Uuid -> Text -> Uuid
 instance Data.Aeson.Types.FromJSON.FromJSON Uuid.Uuid
 instance Data.Aeson.Types.ToJSON.ToJSON Uuid.Uuid
 instance Data.Default.Internal.Default Uuid.Uuid
