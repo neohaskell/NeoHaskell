@@ -13,6 +13,68 @@ has been cut yet — everything accrues under Unreleased until the first tag.)
 
 ## [Unreleased]
 
+### 006-deterministic-uuid-v5 — Change 006: Add deterministic UUID v5 generation to `Uuid` and the `Decision` monad
+
+**Not breaking.** Three added signatures, no removals, no behavior change to any
+existing function. `Decision`'s constructor set is unchanged, so `runDecision`
+and the command executor are untouched — existing commands cannot regress.
+
+**New capability for users.** Natural-key entity identity becomes expressible in
+the framework:
+
+```haskell
+getEntityId :: RegisterProject -> Maybe Uuid
+getEntityId command =
+  Uuid.generateV5 projectNamespace command.repoPath |> Just
+```
+
+so the same normalized path always routes to the same stream, and `decide` sees
+`Just entity` on a repeat and can `Decider.reject "already registered"`. Inside
+`decide`, other derived ids come from
+`Decider.generateDeterministicUuid namespace key`, which reads alongside
+`Decider.generateUuid` without a `pure`/`Task.yield` lift (which the dialect
+hook bans at the call site anyway).
+
+**Security constraint, carried in the haddock of both functions.** A v5 UUID is
+**not** a secret — anyone who knows the namespace and the name reproduces it
+exactly, and names drawn from a small space can be brute-forced from a known
+namespace. It must never be used for capability tokens, session ids,
+password-reset components, or anything else that is unguessable by design;
+`Uuid.generate` (random v4) stays the correct choice there. The division of
+labour is now explicit: *random for secrets and fresh identity, deterministic for
+derived identity.*
+
+**No default namespace.** The issue floated a `uuidFromText :: Text -> Decision Uuid`
+convenience with a built-in namespace; it is deliberately not shipped. A
+framework-wide default namespace is a global collision domain, and since the
+whole premise of the primitive is that the same input *is* the same stream, such
+a collision is a data-integrity bug across unrelated aggregates. Callers build a
+namespace with `Uuid.fromText`. RFC 4122's predefined namespaces (DNS/URL/OID/X500)
+are likewise not re-exported yet — rule of three, and no consumer has asked.
+
+**Testbed effect.** A new demo command `Testbed.Cart.Commands.RegisterCartByKey`
+(registered in `Testbed.Cart.Service`) exercises the feature end-to-end, per the
+`new-command-machinery` extension point's rule that framework write-side features
+get a demo command plus hurl coverage. It is additive: no existing testbed
+command, query, or hurl file changes, and no existing expectation is touched.
+
+**Relationship to the abandoned `feat/uuid-v5-decision` branch.** The issue asks
+that the pre-existing branch be merged. It is not merged as-is: alongside the
+~130 relevant lines it carries ~5000 lines of unrelated tooling
+(`.atomicorch/**`, `docs/designs/**`), duplicate ADR trees (`docs/adr/` and
+`docs/decisions/`), and an ADR numbered **0055**, which `main` has since assigned
+to *declarative integrations with fakes*. Its `Uuid.generateV5` also reaches for
+`Data.Text.Encoding` and `Data.ByteString` directly rather than the dialect's
+`Text.toBytes`. This change re-lands the wanted API on a clean branch through the
+spec gate, with the ADR renumbered to 0073 and the criteria above; the old branch
+should be closed rather than merged.
+
+API delta:
+
+- `+ Uuid: generateV5 :: Uuid -> Text -> Uuid`
+- `+ Bytes: unpack :: Bytes -> [Word8]`
+- `+ Decider: generateDeterministicUuid :: Uuid -> Text -> Decision Uuid`
+
 ### 005-thread-query-name-through-query-object-store — Change 005: Thread the real query name through the QueryObjectStore so multiple queries per entity stop colliding  **[BREAKING]**
 
 **Breaking (source-level, in-repo callers updated in this PR).** Three exported

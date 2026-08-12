@@ -7,6 +7,7 @@ import Service qualified
 import Testbed.Cart.Commands.AddItem (AddItem)
 import Testbed.Cart.Commands.CreateCart (CreateCart)
 import Testbed.Cart.Commands.CreateCartInternal (CreateCartInternal)
+import Testbed.Cart.Commands.RegisterCartByKey (RegisterCartByKey)
 import Testbed.Cart.Core ()
 
 
@@ -16,3 +17,4 @@ service =
     |> Service.command @AddItem
     |> Service.command @CreateCart
     |> Service.command @CreateCartInternal
+    |> Service.command @RegisterCartByKey
