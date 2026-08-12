@@ -5,7 +5,9 @@
 
 ## Status
 
-Accepted
+Implemented (PR #792 — `Uuid.generateV5`, `Bytes.unpack` and
+`Decider.generateDeterministicUuid` are on `main`, with the natural-key demo in
+`Testbed.Cart.Commands.RegisterCartByKey`)
 
 ## Context
 

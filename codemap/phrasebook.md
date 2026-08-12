@@ -170,5 +170,12 @@ Ok SslModeUnset
 -- … (+2 more lines in the source doctest)
 ```
 
+## testbed
+### Testbed.Cart.Commands.RegisterCartByKey
+```haskell
+>>> Uuid.generateV5 keyNamespace "acme/widgets" |> Uuid.toText
+"8b743db0-26d8-5500-9136-1f28e2940a25"
+```
+
 ---
-*29 example sessions · modules with ZERO doctests: 315 (the documentation backlog — see codemap/.doc-ratchet)*
+*30 example sessions · modules with ZERO doctests: 315 (the documentation backlog — see codemap/.doc-ratchet)*

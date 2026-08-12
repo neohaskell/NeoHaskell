@@ -12,7 +12,6 @@ module Uuid (
 import Basics
 import Bytes qualified
 import Data.Default (Default (..))
-import Data.Text (Text)
 import Data.UUID qualified as UUID
 import Data.UUID.V4 qualified as V4
 import Data.UUID.V5 qualified as V5 -- HOOK-ALLOW: this module IS the Core wrapper for UUID; V5 is the sibling of the already-wrapped V4
@@ -20,6 +19,7 @@ import Json (FromJSON, ToJSON)
 import Maybe (Maybe (..))
 import Task (Task)
 import Task qualified
+import Text (Text)
 import Text qualified
 
 

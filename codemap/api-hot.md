@@ -122,7 +122,7 @@ codemap/signatures/ · type-directed search: ./dev api "<type>"
 ## Maybe
 - `withDefault :: a -> Maybe a -> a`  <!-- 56 call sites -->
 - `map :: (a -> b) -> Maybe a -> Maybe b`  <!-- 11 call sites -->
-- `getOrDie :: HasCallStack => Maybe a -> a`  <!-- 7 call sites -->
+- `getOrDie :: HasCallStack => Maybe a -> a`  <!-- 9 call sites -->
 - `andThen :: (a -> Maybe b) -> Maybe a -> Maybe b`  <!-- 3 call sites -->
 
 ## Integration
@@ -166,6 +166,16 @@ codemap/signatures/ · type-directed search: ./dev api "<type>"
 - `all :: (a -> Bool) -> LinkedList a -> Bool`  <!-- 1 call sites -->
 - `concat :: LinkedList (LinkedList a) -> LinkedList a`  <!-- 1 call sites -->
 
+## Uuid
+- `generate :: Task w Uuid`  <!-- 21 call sites -->
+- `toText :: Uuid -> Text`  <!-- 9 call sites -->
+- `nil :: Uuid`  <!-- 6 call sites -->
+- `toLegacy :: Uuid -> UUID`  <!-- 5 call sites -->
+- `fromText :: Text -> Maybe Uuid`  <!-- 3 call sites -->
+- `generateV5 :: Uuid -> Text -> Uuid`  <!-- 3 call sites -->
+  - `>>> Uuid.fromText "6ba7b810-9dad-11d1-80b4-00c04fd430c8" |> Maybe.getOrDie |> (\ns -> Uuid.generateV5 ns "python.org") |> Uuid.toText` → `"886313e1-3b8a-5372-9b90-0c9aee199e5d"`
+- `fromLegacy :: UUID -> Uuid`  <!-- 2 call sites -->
+
 ## AsyncTask
 - `sleep :: Int -> Task w Unit`  <!-- 16 call sites -->
 - `run :: Show err => Task err result -> Task err (AsyncTask err result)`  <!-- 11 call sites -->
@@ -174,16 +184,6 @@ codemap/signatures/ · type-directed search: ./dev api "<type>"
 - `runAllIgnoringErrors :: Show err => Array (Task err a) -> Task w Unit`  <!-- 2 call sites -->
 - `waitCatch :: Show err => AsyncTask err result -> Task err2 (Result Text result)`  <!-- 2 call sites -->
 - `race :: Show err => Task err a -> Task err b -> Task err (RaceWinner a b)`  <!-- 1 call sites -->
-
-## Uuid
-- `generate :: Task w Uuid`  <!-- 21 call sites -->
-- `toText :: Uuid -> Text`  <!-- 8 call sites -->
-- `nil :: Uuid`  <!-- 6 call sites -->
-- `toLegacy :: Uuid -> UUID`  <!-- 5 call sites -->
-- `fromLegacy :: UUID -> Uuid`  <!-- 2 call sites -->
-- `fromText :: Text -> Maybe Uuid`  <!-- 1 call sites -->
-- `generateV5 :: Uuid -> Text -> Uuid`  <!-- 1 call sites -->
-  - `>>> Uuid.fromText "6ba7b810-9dad-11d1-80b4-00c04fd430c8" |> Maybe.getOrDie |> (\ns -> Uuid.generateV5 ns "python.org") |> Uuid.toText` → `"886313e1-3b8a-5372-9b90-0c9aee199e5d"`
 
 ## Path
 - `toLinkedList :: Path -> LinkedList Char`  <!-- 18 call sites -->
@@ -262,7 +262,7 @@ codemap/signatures/ · type-directed search: ./dev api "<type>"
 - `modifyWithResult :: AtomicVar value -> (value -> (value, result)) -> Task w result`  <!-- 2 call sites -->
 - `peekSTM :: AtomicVar value -> STM value`  <!-- 1 call sites -->
 
-*cut: 100 more modules (DateTime (26), Integration.Http (26), Result (21), Layout (19), Channel (18), …) — full surface: codemap/signatures/*
+*cut: 100 more modules (DateTime (26), Integration.Http (26), Decider (21), Result (21), Layout (19), …) — full surface: codemap/signatures/*
 
 ---
 

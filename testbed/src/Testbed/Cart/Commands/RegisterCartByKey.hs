@@ -1,3 +1,13 @@
+-- | Registering a cart under a natural key, the demo for deterministic
+-- UUID v5 identity (issue #596).
+--
+-- The stream id is derived from the key rather than minted at random, so the
+-- same key always addresses the same cart and a repeat registration can be
+-- rejected as a duplicate. The derivation is pure, which is what lets
+-- 'getEntityId' — which cannot run effects — perform it:
+--
+-- >>> Uuid.generateV5 keyNamespace "acme/widgets" |> Uuid.toText
+-- "8b743db0-26d8-5500-9136-1f28e2940a25"
 module Testbed.Cart.Commands.RegisterCartByKey (
   RegisterCartByKey (..),
   keyNamespace,

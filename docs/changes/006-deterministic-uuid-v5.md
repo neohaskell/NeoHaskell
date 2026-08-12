@@ -43,8 +43,12 @@ rather than a raw `Data.Text.Encoding`/`Data.ByteString` pair inside `Uuid`.
 ## Criteria
 
 C1–C4 pin the pure primitive: determinism is the entire point, so both halves of
-it are proven (same inputs ⇒ same output; *different* inputs ⇒ different output,
-in the name **and** in the namespace), plus conformance to RFC 4122's version and
+it are proven (same inputs ⇒ same output; and the *proving inputs chosen here* —
+differing in the name, and differing in the namespace — produce distinct
+outputs). v5 is a 128-bit SHA-1 digest with the version and variant bits
+overwritten, so distinctness is a property of the tested inputs, never a
+mathematical guarantee: an explicit namespace buys **collision-domain
+separation**, not uniqueness. Also proven: conformance to RFC 4122's version and
 variant bits and a published v5 test vector — a hand-rolled implementation that
 forgot the bit-fiddling would still pass a determinism-only test. C5 covers the
 `Bytes` gap-fill. C6–C7 pin the `Decision` combinator: it agrees with the pure
@@ -61,7 +65,7 @@ therefore rejected as a duplicate.
 | ID | Behavior | Proving test | Level |
 |----|----------|--------------|-------|
 | C1 | `Uuid.generateV5` is deterministic — the same namespace and name always produce the same `Uuid`, and it matches a published RFC 4122 v5 test vector (namespace DNS, name `python.org`) | `UuidSpec` "generateV5 is deterministic and matches the RFC 4122 v5 test vector" | unit |
-| C2 | `Uuid.generateV5` separates inputs — different names under one namespace differ, and the **same** name under different namespaces differs (no global collision domain) | `UuidSpec` "generateV5 distinguishes names and namespaces" | unit |
+| C2 | `Uuid.generateV5` separates the proving inputs — the tested names under one namespace produce distinct outputs, and the **same** name under different namespaces does too (collision-domain separation, not a uniqueness guarantee) | `UuidSpec` "generateV5 distinguishes names and namespaces" | unit |
 | C3 | `Uuid.generateV5` output is a well-formed v5 UUID — version nibble is `5` and the RFC 4122 variant bits are set | `UuidSpec` "generateV5 sets the RFC 4122 version and variant bits" | unit |
 | C4 | `Uuid.generateV5` encodes the name as UTF-8, so non-ASCII names are handled and a multi-byte name is not truncated or mangled; the empty name is total and still deterministic | `UuidSpec` "generateV5 handles unicode and empty names" | unit |
 | C5 | `Bytes.unpack` is the inverse of `Bytes.pack` — round-trips a byte list, and agrees with `Bytes.length` on the resulting list length; the empty `Bytes` unpacks to the empty list | `BytesSpec` "unpack round-trips with pack" | unit |
