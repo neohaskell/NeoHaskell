@@ -16,14 +16,18 @@ run_suite() {
 	local name="$1"
 	local cmd="$2"
 	echo -e "${BLUE}━━━ $name ━━━${NC}"
+	# NOTE: `((VAR++))` returns the PRE-increment value as its exit status, so
+	# the first increment (0 -> 1) exits 1 and `set -e` killed the whole run
+	# right after the first passing suite. Arithmetic assignment always
+	# succeeds, so the runner now reaches every suite.
 	if eval "$cmd"; then
 		echo -e "${GREEN}✓ $name passed${NC}"
 		echo ""
-		((PASSED++))
+		PASSED=$((PASSED + 1))
 	else
 		echo -e "${RED}✗ $name failed${NC}"
 		echo ""
-		((FAILED++))
+		FAILED=$((FAILED + 1))
 	fi
 }
 
