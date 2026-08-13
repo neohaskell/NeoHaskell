@@ -48,7 +48,7 @@ jobs:
       touched: ${{ steps.detect.outputs.touched }}
       contract: ${{ steps.detect.outputs.contract }}
     steps:
-      - uses: actions/checkout@v7.0.0
+      - uses: actions/checkout@v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -99,7 +99,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
-      - uses: actions/checkout@v7.0.0
+      - uses: actions/checkout@v7.0.1
       - uses: DeterminateSystems/determinate-nix-action@v3.21.7
         with:
           extra-conf: |
@@ -137,7 +137,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v7.0.0
+      - uses: actions/checkout@v7.0.1
       - uses: DeterminateSystems/determinate-nix-action@v3.21.7
         with:
           extra-conf: |
@@ -186,7 +186,7 @@ jobs:
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v7.0.0
+      - uses: actions/checkout@v7.0.1
       - uses: DeterminateSystems/determinate-nix-action@v3.21.7
         with:
           extra-conf: |
@@ -235,7 +235,7 @@ jobs:
     steps:
       # The contract creates a local Git input at the exact checkout revision.
       # Nix rejects git+file inputs cloned from shallow repositories.
-      - uses: actions/checkout@v7.0.0
+      - uses: actions/checkout@v7.0.1
         with:
           fetch-depth: 0
       # Pinned, reproducible toolchain (matches the neo dev shell) — a cargo build
@@ -302,7 +302,7 @@ jobs:
       - name: Honest skip when no token is configured
         if: ${{ env.CACHIX_AUTH_TOKEN == '' }}
         run: echo "No CACHIX_AUTH_TOKEN configured — skipping cache population (not a failure)."
-      - uses: actions/checkout@v7.0.0
+      - uses: actions/checkout@v7.0.1
         if: ${{ env.CACHIX_AUTH_TOKEN != '' }}
         with:
           fetch-depth: 0
