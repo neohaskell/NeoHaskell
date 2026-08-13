@@ -168,7 +168,7 @@ jobs:
           ref: ${{ needs.resolve.outputs.head_sha }}
           persist-credentials: false
           fetch-depth: 1
-      - uses: DeterminateSystems/determinate-nix-action@2a0be2498974c2b6327e19780488744384637d88 # v3.21.7
+      - uses: DeterminateSystems/determinate-nix-action@61cbfe2efc2d4e7a8a6d56967c3c1058e846c858 # v3.21.9
         with:
           extra-conf: |
             accept-flake-config = true
