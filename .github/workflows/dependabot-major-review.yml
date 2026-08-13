@@ -22,9 +22,17 @@ on:
     workflows: ["Dependabot auto-merge"]
     types: [completed]
 
-permissions:
-  contents: read
-  pull-requests: write
+# Declared per job, not here: this workflow hands a real credential to a
+# third-party action, so a job added later must ask for access rather than
+# inherit it. (zizmor: excessive-permissions.)
+permissions: {}
+
+# One review at a time per head SHA. The marker-comment check below is a
+# read-then-write, so two runs for the same SHA (a re-run, or a rapid
+# re-trigger) could both read "no marker" and both comment.
+concurrency:
+  group: dependabot-major-review-${{ github.event.workflow_run.head_sha }}
+  cancel-in-progress: false
 
 jobs:
   review:
@@ -33,6 +41,9 @@ jobs:
       github.event.workflow_run.event == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    permissions:
+      contents: read # checkout the base branch to grep for real usages
+      pull-requests: write # post the analysis
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       GH_REPO: ${{ github.repository }}
@@ -77,20 +88,34 @@ jobs:
             echo "go=true"
             echo "number=${NUM}"
             echo "marker=${MARKER}"
+            echo "sha=${HEAD_SHA}"
           } >> "$GITHUB_OUTPUT"
 
       - name: Checkout the base branch
         if: steps.pr.outputs.go == 'true'
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
       - name: Capture PR context for the analysis
+        id: capture
         if: steps.pr.outputs.go == 'true'
         env:
           PR_NUMBER: ${{ steps.pr.outputs.number }}
+          HEAD_SHA: ${{ steps.pr.outputs.sha }}
         run: |
           set -euo pipefail
+          # Dependabot force-pushes to rebase. If one landed since this run
+          # started, the diff below is already history — stand down and let the
+          # run triggered by the new head do the review. Not an error: the guard
+          # firing is the system working.
+          CURRENT=$(gh pr view "$PR_NUMBER" --json headRefOid -q '.headRefOid')
+          if [ "$CURRENT" != "$HEAD_SHA" ]; then
+            echo "::notice::PR head moved ${HEAD_SHA} -> ${CURRENT}; abandoning this review"
+            echo "fresh=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "fresh=true" >> "$GITHUB_OUTPUT"
           gh pr view "$PR_NUMBER" --json title,body,files > pr-context.json
           gh pr diff "$PR_NUMBER" > pr.diff
 
@@ -99,8 +124,11 @@ jobs:
       # below is plain bash running under this job's own permissions.
       - name: Claude — explain the risk and the migration
         id: claude
-        if: steps.pr.outputs.go == 'true' && env.CLAUDE_TOKEN != ''
-        uses: anthropics/claude-code-action@v1
+        if: steps.capture.outputs.fresh == 'true' && env.CLAUDE_TOKEN != ''
+        # SHA-pinned: this is the one step that receives a real credential and
+        # runs in a job with pull-requests: write. A moving tag would let an
+        # upstream force-push change what runs here.
+        uses: anthropics/claude-code-action@239e3a730883eeb5c53db12b0fc9573b3024b126 # v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           allowed_bots: "dependabot[bot]"
@@ -151,12 +179,21 @@ jobs:
       - name: Post the analysis
         # Runs even when the Claude step failed — a major bump must never end
         # with a silent label and no explanation of why it stopped.
-        if: ${{ steps.pr.outputs.go == 'true' && !cancelled() }}
+        if: ${{ steps.capture.outputs.fresh == 'true' && !cancelled() }}
         env:
           PR_NUMBER: ${{ steps.pr.outputs.number }}
           MARKER: ${{ steps.pr.outputs.marker }}
+          HEAD_SHA: ${{ steps.pr.outputs.sha }}
         run: |
           set -euo pipefail
+          # Re-checked here, not just before the analysis: a force-push during
+          # the Claude run would make this comment describe a diff that no
+          # longer exists, which is worse than no comment.
+          CURRENT=$(gh pr view "$PR_NUMBER" --json headRefOid -q '.headRefOid')
+          if [ "$CURRENT" != "$HEAD_SHA" ]; then
+            echo "::notice::PR head moved ${HEAD_SHA} -> ${CURRENT}; not posting a stale review"
+            exit 0
+          fi
           HEADER='🚨 **Major dependency bump — not auto-merged.** Patch and minor Dependabot PRs merge themselves once every required check is green; majors stop here for a human, because a green suite does not prove a breaking change was absorbed.'
           if [ -s dependabot-major-review.md ]; then
             { printf '%s\n%s\n\n---\n\n' "$MARKER" "$HEADER"; cat dependabot-major-review.md; } > comment.md

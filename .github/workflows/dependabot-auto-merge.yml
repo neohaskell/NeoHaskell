@@ -23,9 +23,10 @@ name: Dependabot auto-merge
 
 on: pull_request
 
-permissions:
-  contents: write # `gh pr merge --auto` writes the auto-merge intent
-  pull-requests: write # enable auto-merge, label, comment
+# Nothing by default: write scopes are declared on the one job that needs them,
+# so a job added later starts from zero instead of inheriting the ability to
+# merge. (zizmor: excessive-permissions.)
+permissions: {}
 
 concurrency:
   group: dependabot-auto-merge-${{ github.event.pull_request.number }}
@@ -41,6 +42,9 @@ jobs:
       github.repository == 'neohaskell/NeoHaskell'
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions:
+      contents: write # `gh pr merge --auto` writes the auto-merge intent
+      pull-requests: write # enable auto-merge, label
     steps:
       - name: Dependabot metadata
         id: meta
