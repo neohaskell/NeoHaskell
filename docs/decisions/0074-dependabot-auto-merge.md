@@ -55,6 +55,16 @@ Two things make blanket auto-merge wrong, though:
   `Read/Grep/Glob/Write` available. Upstream release notes are third-party text
   and are treated as data; the comment is posted by a plain bash step under the
   job's own permissions.
+- **The Claude half runs in a second workflow**
+  (`dependabot-major-review.yml`), triggered by `workflow_run` on the first.
+  This is not decomposition for its own sake: a Dependabot-triggered run
+  resolves `secrets.*` against the **Dependabot** secret store, where an
+  Actions secret like `CLAUDE_CODE_OAUTH_TOKEN` does not exist. A `workflow_run`
+  executes in base-repo context and sees the normal Actions secrets, so the
+  credential stays in exactly one store instead of being mirrored into a second
+  one that has to be rotated in lockstep. The price is `workflow_run`'s own
+  rule: GitHub always runs the copy of that file on the default branch, so it
+  cannot be exercised from a PR — the first proof is the next real major.
 - The set of required checks is widened to cover every component gate, so that
   "everything passed" means what it says.
 
@@ -72,10 +82,12 @@ tail was built first.
   signal to look at, and they are visible in the PR list.
 - Every future CI gate must be added to branch protection to be load-bearing.
   A workflow that runs but is not required is now, explicitly, decoration.
-- The Claude analysis needs `CLAUDE_CODE_OAUTH_TOKEN` mirrored into the
-  **Dependabot** secret store (Dependabot-triggered runs cannot read Actions
-  secrets). Until it is, the job degrades to a plain "not auto-merged, review by
-  hand" comment rather than failing.
+- No new secret and no duplicated one: the analysis reads the existing Actions
+  secret from base-repo context. If it is ever missing or the Claude step fails,
+  the review workflow still posts a "not auto-merged, review by hand" comment
+  rather than failing silently.
+- Editing `dependabot-major-review.yml` has no feedback loop in CI. It is
+  reviewed by reading, and validated in production on the next major.
 
 ## Alternatives considered
 
@@ -88,6 +100,15 @@ tail was built first.
 - **Requiring an approving review from a bot account.** Rejected: it adds an
   identity and a token to manage for a signal branch protection already gives
   for free.
+- **Mirroring `CLAUDE_CODE_OAUTH_TOKEN` into the Dependabot secret store** so
+  one workflow could do everything. Rejected: two copies of one credential,
+  rotated by hand, in stores that no check compares. The `workflow_run` hop
+  costs one file and keeps the credential singular.
+- **OIDC workload-identity federation** (`anthropic_federation_rule_id`), which
+  would remove the stored credential entirely. Deferred, not rejected: it is the
+  better end state, but it needs a federation rule configured outside this
+  repository, and it can replace the secret later without touching the split
+  above.
 - **Patch-only.** Rejected as too conservative for this repository's dependency
   mix, where minors are dominated by GitHub Actions and Haskell tooling that the
   required suite genuinely exercises.
