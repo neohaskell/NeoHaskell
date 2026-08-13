@@ -110,7 +110,7 @@ spec.md, final.diff, verdict.md, transcript.md). `runs.jsonl` is **tracked**
 `main` is push-protected). The golden archive is **gitignored** — a local
 reference artifact, never pushed (like the security review). Do this once CI is
 green and the maintainer has approved; if a post-merge regression flips it,
-`dod.yml` marks it a revert-candidate.
+`post-merge-guard.yml` marks it a revert-candidate.
 
 ## Failure policy (time-boxes → retry → escalate → park)
 

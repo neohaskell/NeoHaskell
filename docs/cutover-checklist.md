@@ -83,8 +83,9 @@ Record the exact tags: `installer-vX.Y.Z`, `neo-vA.B.C`.
       approval comment / recorded sign-off), per the plan's two-touchpoint model.
 - [ ] Squash-merge the integration PR to `main` (one merge; `main` receives only
       the reviewed result).
-- [ ] Post-merge, confirm `main` is green (`Test`/`Test macOS`); `dod.yml` flags a
-      failure as a revert-candidate (notify-only).
+- [ ] Post-merge, confirm `main` is green (`Test`/`Test macOS`);
+      `post-merge-guard.yml` flags a failure as a revert-candidate
+      (notify-only).
 
 ## 4. Archive the standalone repos (human gate — Nick approval #2)
 
