@@ -1,0 +1,84 @@
+# Dependabot triage — auto-merge the safe updates, explain the dangerous ones.
+#
+# Policy (ADR-0074):
+#   patch / minor  → enable GitHub's native auto-merge (squash). GitHub then
+#                    holds the PR until EVERY required status check on `main` is
+#                    green; a single failure leaves it sitting there forever.
+#                    This workflow never decides "CI passed" itself — branch
+#                    protection is the only judge, so the guarantee cannot rot
+#                    when a new gate is added.
+#   major          → never auto-merged. Labelled `dependency-major`; the
+#                    breaking-change analysis is written by Claude in
+#                    `dependabot-major-review.yml`, which this run triggers.
+#
+# `on: pull_request` (not pull_request_target) is the pattern GitHub documents
+# for Dependabot auto-merge: the run is attributed to dependabot[bot], so it
+# gets the Dependabot secret store and a token whose write scopes come from the
+# `permissions:` block below. Consequence, and the reason the Claude half lives
+# in its own workflow: `secrets.*` here resolves against **Dependabot** secrets,
+# never Actions secrets. Everything this file needs is `secrets.GITHUB_TOKEN`,
+# which is always present; anything needing a real credential runs downstream in
+# a `workflow_run`, in base-repo context.
+name: Dependabot auto-merge
+
+on: pull_request
+
+# Nothing by default: write scopes are declared on the one job that needs them,
+# so a job added later starts from zero instead of inheriting the ability to
+# merge. (zizmor: excessive-permissions.)
+permissions: {}
+
+concurrency:
+  group: dependabot-auto-merge-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  triage:
+    # Both guards matter: the login check (not `github.actor`, which is the
+    # actor of the *event* — a human re-open would spoof it) and the repo check,
+    # so a fork running this workflow cannot merge anything.
+    if: >-
+      github.event.pull_request.user.login == 'dependabot[bot]' &&
+      github.repository == 'neohaskell/NeoHaskell'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write # `gh pr merge --auto` writes the auto-merge intent
+      pull-requests: write # enable auto-merge, label
+    steps:
+      - name: Dependabot metadata
+        id: meta
+        # SHA-pinned: this action's output is what decides whether a PR merges
+        # without a human, so a moving tag is not good enough here.
+        uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3.1.0
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      # For a GROUPED update, `update-type` is the HIGHEST bump in the group —
+      # so a group containing one major is treated as major and never
+      # auto-merges. That is deliberate: the npm_and_yarn group bump that had to
+      # be reverted (8c5ab0b) is exactly this shape.
+      - name: Enable auto-merge (patch + minor only)
+        if: >-
+          steps.meta.outputs.update-type == 'version-update:semver-patch' ||
+          steps.meta.outputs.update-type == 'version-update:semver-minor'
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # --squash: the `Main` ruleset allows squash and nothing else, so any
+        # other method is rejected at merge time.
+        run: gh pr merge --auto --squash "$PR_URL"
+
+      - name: Label major updates for a human
+        if: steps.meta.outputs.update-type == 'version-update:semver-major'
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          gh label create dependency-major \
+            --color D93F0B \
+            --description "Major dependency bump — never auto-merged, needs a human" \
+            2>/dev/null || true
+          gh pr edit "$PR_NUMBER" --add-label dependency-major

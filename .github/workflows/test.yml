@@ -314,10 +314,24 @@ jobs:
           fi
         env:
           PGPASSWORD: neohaskell
-      - name: Install hurl
+      - name: Install hurl (pinned binary + checksum)
         run: |
-          curl -LO https://github.com/Orange-OpenSource/hurl/releases/download/6.0.0/hurl_6.0.0_amd64.deb
-          sudo dpkg -i hurl_6.0.0_amd64.deb
+          # A bare `curl -LO` here is what turned the acceptance job — and with
+          # it `main` — red on 2026-08-12 (run 31644435957: "curl: (56)
+          # Connection died, tried 5 times"). The release CDN drops connections
+          # often enough that an unretried, unverified fetch is a coin flip on
+          # every run of the required gate. Retry the transfer, then verify the
+          # bytes: same pinned-binary discipline as hlint in checks.yml.
+          # --connect-timeout bounds only the handshake; --max-time bounds each
+          # attempt and --retry-max-time the whole retry window, so a stalled
+          # response cannot quietly eat this job's 40-minute budget (a 2 MB file
+          # has no business taking two minutes).
+          curl -fsSL --retry 5 --retry-delay 5 --retry-all-errors \
+            --connect-timeout 20 --max-time 120 --retry-max-time 300 \
+            -o hurl.deb \
+            https://github.com/Orange-OpenSource/hurl/releases/download/6.0.0/hurl_6.0.0_amd64.deb
+          echo "2686f605adfdceca18579a941b317262a4185915e6fda1f8deaab201da22e9cf  hurl.deb" | sha256sum -c -
+          sudo dpkg -i hurl.deb
       - name: Install poppler-utils (for PDF extraction tests)
         run: sudo apt-get update && sudo apt-get install -y poppler-utils
       - name: Run integration tests

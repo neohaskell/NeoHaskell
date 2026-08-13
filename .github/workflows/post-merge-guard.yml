@@ -1,4 +1,9 @@
-# Definition-of-done gate (pipeline Phase 6, task 1) — POST-MERGE, NOTIFY-ONLY.
+# Post-merge guard — the definition-of-done gate (pipeline Phase 6, task 1),
+# POST-MERGE and NOTIFY-ONLY.
+#
+# (Named `dod` until 2026-08-13; renamed because "dod" told a reader nothing
+# about when it runs or what it does. Behaviour is unchanged and it is not a
+# required check, so the rename is free.)
 #
 # Watches the post-merge suites on `main`: both "Test" (Linux: doctest + all
 # nhcore suites incl. the acceptance test-hurl job) and "Test macOS" (Darwin
@@ -9,7 +14,7 @@
 # for it — there is no compiled surface to regress.
 # It NEVER auto-reverts (ADR-0068); the kill switch (`/revert`, revert.yml) is a
 # separate, deliberate maintainer action.
-name: dod
+name: post-merge guard
 
 on:
   workflow_run:
@@ -34,6 +39,13 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
+          # This job deliberately does NOT check out the repo (it only needs the
+          # API), so `gh pr`/`gh issue`/`gh label` have no git remote to infer
+          # the repo from and die with "not a git repository". That is exactly
+          # how this guard failed the one time it fired for real (run
+          # 31645508568): it resolved PR #792, then could neither label nor
+          # comment. GH_REPO is what gh reads instead of the remote.
+          GH_REPO: ${{ github.repository }}
           SHA: ${{ github.event.workflow_run.head_sha }}
           WORKFLOW: ${{ github.event.workflow_run.name }}
           RUN_URL: ${{ github.event.workflow_run.html_url }}
