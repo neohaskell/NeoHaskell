@@ -60,7 +60,7 @@
       {
         "hooks": [
           {
-            "command": "bd prime --hook-json",
+            "command": "command -v bd >/dev/null 2>&1 && bd prime --hook-json || true",
             "type": "command"
           }
         ],
