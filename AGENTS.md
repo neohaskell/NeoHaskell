@@ -43,7 +43,19 @@ The only exception to this rule is if you COMPLETELY EXHAUST all the resources h
 - Localization + API discovery + codemap regeneration: **`codemap/README.md`** (use the `neohaskell-localizer` skill at plan time). Never explore the tree to find where things live. Training-data APIs don't exist here; GHC "not in scope" in `./dev check` = an invented API — resolve via `./dev api`.
 - Implementing any `.hs` change? Use the `neohaskell-implementer` skill (copy-adapt discipline + repair protocol).
 
-## Change flow (Phase 5) — spec-gated, two human touchpoints
+## Work intake
+
+New work enters through the **bd issue queue**, not by an agent self-triggering
+a skill. Run `bd ready` to see what's claimable, `bd show <id>` for details.
+`bd prime` has the full workflow. The dispatcher pours the matching
+`change-*`/`release-*` formula from `.beads/formulas/` for whatever is
+claimed; see `docs/processes/neohaskell-change.md` and
+`docs/processes/neohaskell-agents.md` for the process and role roster this
+implements. The `neohaskell-pipeline` skill below is **deprecated** —
+rollback-only, kept only until three changes have merged end-to-end through
+the new system.
+
+## Change flow (Phase 5) — spec-gated, two human touchpoints [DEPRECATED, rollback-only — see "Work intake" above]
 
 Any request that should end in a PR runs the `neohaskell-pipeline` skill (ADR-0067).
 (The pipeline-bootstrap PRs — which *build* this gate — are the one exemption; the spec gate applies to every subsequent change request.)

@@ -1,6 +1,6 @@
 ---
 name: neohaskell-pipeline
-description: Orchestrate a NeoHaskell change end-to-end through the spec-gated pipeline - intake to merged PR with exactly two human gates. Use when implementing a feature, fixing a bug, or running any request that should produce a PR.
+description: DEPRECATED — new work enters via the issue queue (bd ready); this pipeline remains only for rollback. Orchestrate a NeoHaskell change end-to-end through the spec-gated pipeline - intake to merged PR with exactly two human gates. Use when implementing a feature, fixing a bug, or running any request that should produce a PR.
 ---
 
 # The change pipeline (Phase 5)

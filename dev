@@ -119,7 +119,10 @@ case "${VERB}" in
   api)      exec scripts/api "$@" ;;
   spec-check) exec scripts/spec-check "$@" ;;
   spec-drift) exec scripts/spec-drift "$@" ;;
-  pipeline) exec scripts/pipeline-state "$@" ;;
+  pipeline)
+    echo "WARNING: ./dev pipeline is deprecated; work enters via the bd queue" >&2
+    exec scripts/pipeline-state "$@"
+    ;;
   bench)    exec scripts/bench "$@" ;;
   testbed)  exec scripts/testbed "$@" ;;
   changelog) exec scripts/changelog "$@" ;;
