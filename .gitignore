@@ -110,3 +110,9 @@ __pycache__/
 # the developer's machine via `./dev spec-check --reviews-local`. Perf reviews
 # are not sensitive → committed + CI-gated via `--reviews-pr`.
 docs/changes/*.security-review.md
+
+# Beads / Dolt files (added by bd init)
+.dolt/
+*.db
+.beads-credential-key
+.beads/proxieddb/
