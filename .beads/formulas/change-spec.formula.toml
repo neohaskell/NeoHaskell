@@ -1,0 +1,58 @@
+formula = "change-spec"
+description = "Formula A (change-spec): intake through spec approval. Input: a request (issue number, capture, or conversation). Output: an approved spec (+ADR when triggered) as a draft PR. See docs/processes/neohaskell-change.md, Formula A, and docs/processes/neohaskell-agents.md for the roles named below."
+
+[vars.issue]
+description = "The request this spec is for: issue#NNN or adhoc:<slug>."
+required = true
+
+[[steps]]
+id = "intake"
+title = "Intake"
+description = "Restate the request in contract terms: what changes for the caller, what must not change. If an ambiguity would change the contract, ask exactly one clarifying question now and block on it (bd gate human); cosmetic ambiguity is resolved silently and recorded in the bead notes. Done when the restated request is written to the bead and no contract-level ambiguity remains open. Run by spec-writer (persona: neohaskell, high tier)."
+depends_on = []
+
+[[steps]]
+id = "localize"
+title = "Localize"
+description = "Produce capability IDs and the binding touches:/files:/uses: lists using the neohaskell-localizer skill, logging every consulted aid via ./dev telemetry consult. This output is BINDING for the whole change: downstream nodes never re-derive it, and reality contradicting it later parks the run as wrong-localization and re-enters at intake, visibly. Done when the lists are written to the spec bead metadata and every listed file is verified to exist. Run by spec-writer (persona: neohaskell, high tier)."
+depends_on = ["intake"]
+
+[[steps]]
+id = "spec"
+title = "Spec"
+description = "Copy docs/changes/TEMPLATE.md to NNN-slug.md, write the contract delta in signatures vocabulary, and fill the criteria table C1..Cn (each naming its proving test and level: unit/integration/acceptance). For kind: bug, C1 is the failing repro test committed RED in this branch. Open the draft PR whose diff is the spec (+ADR when triggered, +red repro for bugs). Done when the draft PR exists and ./dev spec-check passes on the spec. Run by spec-writer (persona: neohaskell, high tier); must fill the spec's Primitives section (lock 1) and may not write implementation code."
+depends_on = ["localize"]
+
+[[steps]]
+id = "security-review"
+title = "Security review"
+description = "Runs only if ./dev spec-check --plan lists security in design_reviews; otherwise auto-closes as skipped (risk-tiering working, ~0 duration). Record NNN-slug.security-review.md, local-only and gitignored, never pushed (ADR-0069), enforced by ./dev spec-check --reviews-local. Done when the record exists locally and its findings are either folded into the spec or explicitly accepted. Run by security-reviewer (persona: neohaskell, high tier, read-only), wrapping the neohaskell-security-design-review skill."
+depends_on = ["spec"]
+
+[[steps]]
+id = "perf-review"
+title = "Perf review"
+description = "Runs only if ./dev spec-check --plan lists perf in design_reviews; otherwise auto-closes as skipped. Record NNN-slug.perf-review.md, committed to the PR branch, and decide whether verify needs a bench-check (bench: yes/no with reason in the spec). Done when the record is committed and the spec is updated if findings changed the contract. Run by perf-reviewer (persona: neohaskell, high tier, read-only), wrapping the neohaskell-performance-design-review skill."
+depends_on = ["spec"]
+
+[[steps]]
+id = "primitives-review"
+title = "Primitives review"
+description = "Triggered when spec-check flags a new module, new dependency, or direct hackage import; otherwise auto-closes as skipped. This is the primitives-first review lens (lock 2): answers in a committed record whether this should extend an existing primitive instead, whether the new behavior should BE a primitive (the PR #802 pattern), and whether every hackage package is reached only through a core/ wrapper. Done when the record is committed; an unresolved 'no' blocks back to the spec step. Run by primitives-reviewer (persona: neohaskell, high tier, read-only)."
+depends_on = ["spec"]
+
+[[steps]]
+id = "spec-checker"
+title = "Spec checker"
+description = "Mechanical checker node, never a repair step: verifies the criteria table is well-formed (every criterion has a test and level), ADR present iff triggered, red repro committed for bugs, review records present or legitimately skipped, and ./dev spec-check green. A failed check loops back to the spec step (max 2 rounds, then park). Done when all checks are green. No agent persona: mechanical evaluation only, per checker discipline (flagged output loops back to its producer, never silently merged forward)."
+depends_on = ["security-review", "perf-review", "primitives-review"]
+
+[[steps]]
+id = "spec-approval"
+title = "Spec approval"
+description = "The maintainer gate: Nick approves the spec (+ADR) before implementation, docs, and release-fragment work can start. Waiting here is waiting_on_human, not a failure; never park on this gate. Approval arrives out-of-band (RAMSYS/Discord/local) and recording it via bd gate resolve closes the gate and IS the authorization record; a GitHub PR comment is communication only, never the resume mechanism. Closing this gate closes formula A and unblocks change-implement, change-docs and release-fragment simultaneously."
+depends_on = ["spec-checker"]
+
+[steps.gate]
+type = "human"
+reason = "Nick approves the spec (+ADR) before implementation starts (GATE spec-approval, formula A)."

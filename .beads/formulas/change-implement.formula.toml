@@ -1,0 +1,30 @@
+formula = "change-implement"
+description = "Formula B (change-implement): plan and test-writing in parallel, then implement, then verify. Input: an approved spec (formula A closed). Output: a verified implementation on the PR branch. See docs/processes/neohaskell-change.md, Formula B."
+
+[vars.issue]
+description = "The request this implementation is for: issue#NNN or adhoc:<slug>."
+required = true
+
+[[steps]]
+id = "plan"
+title = "Plan"
+description = "Order the work: which files in what sequence, which neighbor module each one copy-adapts from, per the neohaskell-implementer discipline. Runs in parallel with test-writing: it depends on the approved spec only, not on the tests. Done when the ordered file plan is written to the bead. Run by implementer (persona: neohaskell, layer matching the touched area: core-primitives/service/testbed; standard tier)."
+depends_on = []
+
+[[steps]]
+id = "test-writing"
+title = "Test writing"
+description = "Write tests FIRST, red before any implementation, at the levels declared in the spec's criteria table; depends only on the criteria table, not on the plan. Never weaken an existing expectation (expectation-guard hook; the maintainer marker .pipeline/allow-expectation-edits is the only override). New spec modules are registered in the suite's Main.hs AND cabal other-modules (only nhcore-test is hspec-discovered). Done when every criterion has its named test, committed, and red for the right reason. Run by test-writer (persona: neohaskell, standard tier); has no write access to production code."
+depends_on = []
+
+[[steps]]
+id = "implement"
+title = "Implement"
+description = "Make the criteria tests pass via the repair loop (./dev check, never cabal build in the loop; max 2 repair rounds per error, then failure policy), logging consulted aids (hot-card:, phrasebook:). Depends on both plan and test-writing being done. Done when ./dev check is green and the criteria tests pass locally. Run by implementer (persona: neohaskell, layer matching the touched area; standard tier); subject to lock 3 (primitives lint) in verify, where a lint failure is its bug to fix, never to waive."
+depends_on = ["plan", "test-writing"]
+
+[[steps]]
+id = "verify"
+title = "Verify"
+description = "Mechanical, ordered, no skipping: criteria tests green at their declared levels; targeted regression from spec-check --plan's test_impact_globs; ./dev lint + ./dev spec-drift + primitives/dialect lint (lock 3, no direct hackage imports outside core/ wrappers); full suite (./dev test-all) once, here only; bench-check when the spec says bench: yes (bench-runner, cheap tier, budget exceeded loops back to implement or an explicit waiver); coverage-check for delta coverage on touched files vs threshold (coverage-auditor, cheap tier, below-threshold needs more tests or a waiver that auto-creates a test-debt bead). Any failure loops back to implement and counts against its repair budget. Done when all of the above are green."
+depends_on = ["implement"]
