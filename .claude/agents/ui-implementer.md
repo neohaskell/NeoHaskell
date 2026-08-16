@@ -42,6 +42,12 @@ core Haskell trees.
 - `neo-cli-ide` skill, for the embedded Neo IDE Vite frontend and its
   `dist/` sync discipline when the design targets the IDE.
 
+## Git authority
+
+Pushes only to the issue's own branch it is working on; never pushes
+`main`. No PR creation (spec-writer's job) and no PR comments (ci-medic's
+job, replies only). No merge authority.
+
 ## Permissions / never-do
 
 - May edit: `website/` source, and the IDE frontend under `neo/**`'s Vite

@@ -36,6 +36,12 @@ checked against the actual release rather than assumed to still be true.
   standard is the empirical-run verifier itself — a skill isn't done until
   it has been run, successfully, against the current release.
 
+## Git authority
+
+Pushes only to the issue's own branch it is working on; never pushes
+`main`. No PR creation (spec-writer's job) and no PR comments (ci-medic's
+job, replies only). No merge authority.
+
 ## Permissions / never-do
 
 - May edit: NeoHaskell's user-facing skills (the ones the project ships to

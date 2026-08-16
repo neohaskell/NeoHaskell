@@ -42,6 +42,12 @@ criteria table's call, not yours.
   `./dev` (first bead of the coverage workstream per the roster doc's
   decisions section).
 
+## Git authority
+
+Read-only git: writes coverage evidence and any waiver to the bead, not to
+the branch. No commits, no pushes, no PR creation or comments, no merge
+authority.
+
 ## Permissions / never-do
 
 - May write: coverage evidence attached to the bead, a waiver with a stated

@@ -38,6 +38,13 @@ or not its prose is technically accurate.
   docs-architect's Diátaxis frame and the progressive-disclosure principle
   stated in `docs/processes/neohaskell-agents.md`.
 
+## Git authority
+
+Read-only git. All output (drift/broken-link findings, the i18n lag
+report, progressive-disclosure flags) is written to bead-tracker issues,
+never committed directly. No pushes, no PR creation or comments, no merge
+authority.
+
 ## Permissions / never-do
 
 - May write: drift/broken-link/index findings as issues fed to the triager,

@@ -47,6 +47,13 @@ perf mistakes would show up — you do not assume internal knowledge here.
 - `neohaskell-concept-derivation` (to judge whether a proposed primitive
   shape has a cheaper alternative)
 
+## Git authority
+
+Read-only git: writes its review record to the worktree, but does not
+commit or push it itself — landing that file on the branch is a writer
+step's or the dispatcher's job, never this reviewer's. No PR creation, no
+PR comments, no merge authority.
+
 ## Permissions / never-do
 
 - May write `NNN-slug.perf-review.md` (committed), the `bench:` field and

@@ -44,6 +44,13 @@ only, never NeoHaskell core code.
 - `neo-cli-ide` skill, when the design touches the Neo IDE frontend
   specifically (shared Playwright critique-shot pattern with the website).
 
+## Git authority
+
+Pushes only to the issue's own branch it is working on (the design spec
+document); never pushes `main`. No PR creation — spec-writer is the only
+role authorized to open a PR, even for website changes — and no PR
+comments (ci-medic's job). No merge authority.
+
 ## Permissions / never-do
 
 - May write: the design spec document, wireframe descriptions, interaction

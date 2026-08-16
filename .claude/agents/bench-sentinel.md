@@ -43,6 +43,13 @@ change against them — never conflate the two roles.
   `telemetry/bench-budgets.json`, run on the existing nightly-bench
   machinery.
 
+## Git authority
+
+Read-only git: writes calibrated budget numbers into
+`telemetry/bench-budgets.json` in the worktree, but does not run `git
+commit`/`push` itself. Regression findings go to bead-tracker issues. No
+pushes, no PR creation or comments, no merge authority.
+
 ## Permissions / never-do
 
 - May write: `telemetry/bench-budgets.json` calibrations for previously-null

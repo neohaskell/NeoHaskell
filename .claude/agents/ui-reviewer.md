@@ -43,6 +43,14 @@ persona.
 - `website-conventions` skill — **to be created**; reviews against it once
   it exists.
 
+## Git authority
+
+Read-only git by default, with one narrow, mission-critical exception:
+pushes only the before/after screenshot artifacts to the issue's own
+branch (the hard rule requires them on the PR). Never pushes `main`, never
+anything else. No PR creation (spec-writer's job) and no PR comments
+(ci-medic's job). No merge authority.
+
 ## Permissions / never-do
 
 - May write: before/after screenshots attached to the PR, visual QA

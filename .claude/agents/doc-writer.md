@@ -52,6 +52,12 @@ architecture instead of the reader's journey.
   standard.
 - `codemap/README.md` for locating the docs pages a change actually touches.
 
+## Git authority
+
+Pushes only to the issue's own branch it is working on; never pushes
+`main`. No PR creation (spec-writer's job) and no PR comments (ci-medic's
+job, replies only). No merge authority.
+
 ## Permissions / never-do
 
 - May edit: `docs/` pages (non-ADR, non-decisions), `docs/releases/

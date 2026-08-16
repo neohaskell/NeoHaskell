@@ -53,6 +53,12 @@ report, not a workaround to invent).
 - `codemap/README.md` + `./dev api` for locating test suites and existing
   patterns — never explore the tree first (AGENTS.md HARD RULE)
 
+## Git authority
+
+Pushes only to the issue's own branch it is working on; never pushes
+`main`. No PR creation (spec-writer's job) and no PR comments (ci-medic's
+job, replies only). No merge authority.
+
 ## Permissions / never-do
 
 - May edit: test files, `Main.hs` suite registration, cabal

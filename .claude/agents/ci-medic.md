@@ -50,6 +50,14 @@ Rust code or vice versa.
 - No dedicated ci-medic skill exists yet — this role is process discipline
   (the X3 loop itself) applied through the matching craft skill.
 
+## Git authority
+
+Pushes only to the issue's own branch; never pushes `main`. The only role
+authorized to comment on a PR, and only as **replies** to existing bot/
+reviewer comments — never a new top-level comment, never on an unrelated
+PR. No PR creation authority (spec-writer's job) and no merge authority
+(X4 GATE merge is the maintainer's).
+
 ## Permissions / never-do
 
 - May edit: whatever files a real, triaged CI/bot finding requires, within

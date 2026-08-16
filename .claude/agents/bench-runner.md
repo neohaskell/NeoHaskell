@@ -41,6 +41,12 @@ declared affected.
   bench` and `telemetry/bench-budgets.json`; the discipline lives in the
   process doc, not a craft skill.
 
+## Git authority
+
+Read-only git: writes bench evidence and any waiver to the bead, not to
+the branch. No commits, no pushes, no PR creation or comments, no merge
+authority.
+
 ## Permissions / never-do
 
 - May write: bench run output/evidence attached to the bead, an explicit

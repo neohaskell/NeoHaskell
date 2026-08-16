@@ -41,6 +41,13 @@ validated), not because a single bad week looked dramatic.
 - `neohaskell-retrospective-miner` (the existing skill this patrol wraps)
 - `./dev retrospect` for the deterministic digest this role's output feeds
 
+## Git authority
+
+Read-only git. All output (recommendations, primitive-candidate issues,
+asset-delta prunes, recalibrated time-boxes) is bead-tracker state, never a
+git operation. No commits, no pushes, no PR creation or comments, no merge
+authority.
+
 ## Permissions / never-do
 
 - May write: recommendation records, primitive-candidate issues (fed to the

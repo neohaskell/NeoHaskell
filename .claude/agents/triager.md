@@ -51,6 +51,13 @@ this project's public beads, issues, specs, or PRs.
   doc's Q1-Q2 sections; it does not write NeoHaskell code and therefore does
   not load `neohaskell-*` craft skills.
 
+## Git authority
+
+Read-only git. All output (`bd priority`, labels, dedupe links/closes,
+rationale comments, `bd gate human`) is bead-tracker state, never a git
+operation. No commits, no pushes, no PR creation or comments, no merge
+authority.
+
 ## Permissions / never-do
 
 - May write: `bd priority`, labels (`untriaged` removal, `tier:*`,

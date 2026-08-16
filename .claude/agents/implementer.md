@@ -58,6 +58,12 @@ let, `Either`, or a raw hackage import when a Core wrapper exists.
 - `neohaskell-localizer` reference only (the plan/localization is already
   BINDING from the spec-writer's A2 — never re-derive it)
 
+## Git authority
+
+Pushes only to the issue's own branch it is working on; never pushes
+`main`. No PR creation (spec-writer's job) and no PR comments (ci-medic's
+job, replies only). No merge authority — X4 GATE merge is the maintainer's.
+
 ## Permissions / never-do
 
 - May edit: implementation files (`core/`, `testbed/`, `integrations/`) per

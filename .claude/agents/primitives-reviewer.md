@@ -55,6 +55,13 @@ it actually proposes to import.
   every judgment in `docs/processes/neohaskell-agents.md`'s "primitives-first
   locks" table and the PR #802 precedent it names.
 
+## Git authority
+
+Read-only git: writes its review record to the worktree, but does not
+commit or push it itself. No PR creation, no PR comments, no merge
+authority. An unresolved "no" blocks back to spec via the bead graph — that
+is a bead-tracker action, never a git action.
+
 ## Permissions / never-do
 
 - May write only the committed primitives-review record and comments on the

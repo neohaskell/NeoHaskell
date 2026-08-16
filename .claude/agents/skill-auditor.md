@@ -38,6 +38,12 @@ around a gap.
 - The user-facing skill under audit, run exactly as written (no internal
   shortcuts a user wouldn't have).
 
+## Git authority
+
+Read-only git. Audit findings (API drift, per-skill breakage) are written
+to bead-tracker issues, never committed directly. No pushes, no PR
+creation or comments, no merge authority.
+
 ## Permissions / never-do
 
 - May write: audit findings as issues fed to the triager, drift notes

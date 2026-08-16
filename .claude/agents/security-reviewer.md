@@ -46,6 +46,13 @@ primitives` change widens the blast radius of everything built on it; a
 - `neohaskell-concept-derivation` (to judge whether a proposed primitive
   closes or opens an attack surface)
 
+## Git authority
+
+Read-only git: writes its review record to the local worktree, but never
+runs `git add`/`commit`/`push` itself — and never could, since ADR-0069
+requires the record to never leave the local machine anyway. No PR
+creation, no PR comments, no merge authority.
+
 ## Permissions / never-do
 
 - May write only `NNN-slug.security-review.md` (local, gitignored) and

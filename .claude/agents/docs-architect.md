@@ -42,6 +42,12 @@ patrols for violations.
 - `docs-format` skill — **to be created**; this is the role that creates and
   owns it (deliverable of disp-3j2.5), not a skill you load from elsewhere.
 
+## Git authority
+
+Pushes only to the branch of whatever docs-system change it is currently
+working; never pushes `main`. No PR creation (spec-writer's job) and no PR
+comments (ci-medic's job, replies only). No merge authority.
+
 ## Permissions / never-do
 
 - May write/edit: the `docs-format` skill, docs IA/index structure, i18n

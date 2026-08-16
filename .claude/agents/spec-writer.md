@@ -66,6 +66,15 @@ and the implementer inherits a wrong plan.
 - `codemap/README.md` + `./dev api` for API discovery — never explore the
   tree to find where things live (AGENTS.md HARD RULE)
 
+## Git authority
+
+Pushes only to the issue's own branch; never pushes `main` (branch
+protection is active, but this is stated explicitly regardless). The
+**only** role authorized to open a PR — always **draft**, never flipped to
+ready-for-review (that flip is the mechanical X2 pr-flip step, not this
+role). No merge authority, no force-push, no pushing to any branch but the
+issue's own.
+
 ## Permissions / never-do
 
 - May edit: `docs/changes/NNN-slug.md`, `docs/decisions/NNNN-slug.md` (ADRs),
