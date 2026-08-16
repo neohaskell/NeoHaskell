@@ -47,9 +47,12 @@ The only exception to this rule is if you COMPLETELY EXHAUST all the resources h
 
 New work enters through the **bd issue queue**, not by an agent self-triggering
 a skill. Run `bd ready` to see what's claimable, `bd show <id>` for details.
-`bd prime` has the full workflow. The dispatcher pours the matching
-`change-*`/`release-*` formula from `.beads/formulas/` for whatever is
-claimed; see `docs/processes/neohaskell-change.md` and
+`bd prime` has the full workflow. The dispatcher pours the compound
+**`change`** formula (`.beads/formulas/change.formula.toml`, one molecule,
+intake through merge, human/gh:run/gh:pr gates in-formula) for whatever is
+claimed; `release-publish` is the one other formula, kept separate since it
+aggregates across changes on demand rather than running per change. See
+`docs/processes/neohaskell-change.md` and
 `docs/processes/neohaskell-agents.md` for the process and role roster this
 implements. The old `neohaskell-pipeline` skill has moved to
 `docs/legacy/neohaskell-pipeline/SKILL.md` — out of `.claude/skills` so no
