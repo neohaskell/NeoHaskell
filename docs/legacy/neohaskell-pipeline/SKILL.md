@@ -1,7 +1,14 @@
 ---
 name: neohaskell-pipeline
-description: DEPRECATED — new work enters via the issue queue (bd ready); this pipeline remains only for rollback. Orchestrate a NeoHaskell change end-to-end through the spec-gated pipeline - intake to merged PR with exactly two human gates. Use when implementing a feature, fixing a bug, or running any request that should produce a PR.
+description: Orchestrate a NeoHaskell change end-to-end through the spec-gated pipeline - intake to merged PR with exactly two human gates. Use when implementing a feature, fixing a bug, or running any request that should produce a PR.
 ---
+
+> **Moved out of `.claude/skills` so agents cannot auto-trigger it.**
+> New work enters via the issue queue (`bd ready`) — see `AGENTS.md`'s
+> "Work intake" section and `.beads/formulas/`. This skill is kept only as
+> the rollback plan for the dispatcher cutover (`docs/dispatcher-plan.md`).
+> **Rollback = move this directory back** to
+> `.claude/skills/neohaskell-pipeline/`.
 
 # The change pipeline (Phase 5)
 
