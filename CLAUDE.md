@@ -1,1 +1,7 @@
 @AGENTS.md
+
+<!-- The Beads managed block (BEGIN/END BEADS INTEGRATION) lives in AGENTS.md
+     only and arrives here via the @-import above — kept out of this file so
+     there is exactly one copy (AI-first context economy). `bd setup claude
+     --check` may report this file as stale/missing the block; that is
+     expected and acceptable. -->

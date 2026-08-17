@@ -22,6 +22,7 @@ EXEMPT_NAMES=(
   "build-hoogle-dbs:internal plumbing — invoked by ./dev api and ./dev codemap, not a user verb"
   "toolchain-fp:internal plumbing — fingerprint for with-toolchain fast path + flake shellHook"
   "speclib.py:shared parsing module imported by spec-check and spec-drift — never executed"
+  "pr-comment-allowlist.txt:data file consumed by scripts/pr-comments-allowlisted (./dev pr-comments) — never itself executed"
 )
 
 fail=0

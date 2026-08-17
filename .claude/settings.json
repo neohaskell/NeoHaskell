@@ -4,58 +4,67 @@
     "BASH_MAX_OUTPUT_LENGTH": "150000"
   },
   "hooks": {
-    "SessionStart": [
+    "PostToolUse": [
       {
         "hooks": [
           {
-            "type": "command",
-            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/session-start.sh"
+            "command": "if FILE=$(printf '%s' \"$CLAUDE_TOOL_INPUT\" | python3 -c 'import json,sys; d=json.load(sys.stdin); fp=d.get(\"file_path\",\"\"); print(fp if fp.endswith(\".hs\") else \"\")' 2>/dev/null) && [ -n \"$FILE\" ]; then \"$CLAUDE_PROJECT_DIR/scripts/with-toolchain\" fourmolu --mode inplace \"$FILE\" 2>/dev/null; fi",
+            "timeout": 30,
+            "type": "command"
           }
-        ]
+        ],
+        "matcher": "Edit|Write|MultiEdit"
+      },
+      {
+        "hooks": [
+          {
+            "command": "if echo \"$CLAUDE_TOOL_INPUT\" | grep -qE 'Spec\\.hs\"'; then echo '{\"feedback\": \"Test file modified - remember to run: ./dev test\"}'; fi",
+            "timeout": 5,
+            "type": "command"
+          }
+        ],
+        "matcher": "Edit|Write|MultiEdit"
       }
     ],
     "PreToolUse": [
       {
-        "matcher": "Edit|Write|MultiEdit",
         "hooks": [
           {
-            "type": "command",
-            "command": "[ \"$(git branch --show-current)\" != \"main\" ] || { echo '{\"block\": true, \"message\": \"Cannot edit on main branch. Create a feature branch first.\"}' >&2; exit 2; }",
-            "timeout": 5
+            "command": "[ \"$(git branch --show-current)\" != \"main\" ] || { echo '{\"block\": true, \"message\": \"Cannot edit on main branch. Create a feature branch first.\"}' \u003e\u00262; exit 2; }",
+            "timeout": 5,
+            "type": "command"
           },
           {
-            "type": "command",
             "command": "python3 $CLAUDE_PROJECT_DIR/.claude/hooks/dialect-guard.py",
-            "timeout": 10
+            "timeout": 10,
+            "type": "command"
           },
           {
-            "type": "command",
             "command": "python3 $CLAUDE_PROJECT_DIR/.claude/hooks/expectation-guard.py",
-            "timeout": 10
+            "timeout": 10,
+            "type": "command"
           }
-        ]
+        ],
+        "matcher": "Edit|Write|MultiEdit"
       }
     ],
-    "PostToolUse": [
+    "SessionStart": [
       {
-        "matcher": "Edit|Write|MultiEdit",
         "hooks": [
           {
-            "type": "command",
-            "command": "if echo \"$CLAUDE_TOOL_INPUT\" | grep -q '\\.hs\"'; then fourmolu --mode inplace $(echo \"$CLAUDE_TOOL_INPUT\" | grep -o '\"[^\"]*\\.hs\"' | tr -d '\"') 2>/dev/null; fi",
-            "timeout": 30
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/session-start.sh",
+            "type": "command"
           }
         ]
       },
       {
-        "matcher": "Edit|Write|MultiEdit",
         "hooks": [
           {
-            "type": "command",
-            "command": "if echo \"$CLAUDE_TOOL_INPUT\" | grep -qE 'Spec\\.hs\"'; then echo '{\"feedback\": \"Test file modified - remember to run: cabal test\"}'; fi",
-            "timeout": 5
+            "command": "command -v bd >/dev/null 2>&1 && bd prime --hook-json || true",
+            "type": "command"
           }
-        ]
+        ],
+        "matcher": ""
       }
     ]
   },
@@ -65,9 +74,7 @@
       "Edit",
       "Write",
       "MultiEdit",
-      "Bash(cabal:*)",
-      "Bash(hlint:*)",
-      "Bash(fourmolu:*)",
+      "Bash(./dev:*)",
       "Bash(git status)",
       "Bash(git diff:*)",
       "Bash(git add:*)",
@@ -80,6 +87,8 @@
       "Bash(find:*)"
     ],
     "deny": [
+      "Edit(.claude/allow-expectation-edits)",
+      "Write(.claude/allow-expectation-edits)",
       "Bash(rm -rf:*)",
       "Bash(git push --force:*)",
       "Bash(git push -f:*)",

@@ -3,7 +3,22 @@
   inputs.haskellNix.url = "github:input-output-hk/haskell.nix";
   inputs.nixpkgs.follows = "haskellNix/nixpkgs-unstable";
   inputs.flake-utils.url = "github:numtide/flake-utils";
-  outputs = { self, nixpkgs, flake-utils, haskellNix }:
+  # bd (beads) issue tracker — dispatcher setup (S3.1). nixpkgs' own `beads`
+  # package is pinned too low (1.0.3; the .beads/formulas/ TOML schema
+  # requires bd >= 1.1.0), so this pulls the upstream flake directly and
+  # lets flake.lock pin the exact version. Deliberately NOT wired in via
+  # `beads.overlays.default` / `nixpkgs.follows`: that overlay calls
+  # `final.buildGo126Module`, which only exists on very recent nixpkgs —
+  # our own pin (`haskellNix/nixpkgs-unstable`) is older and lacks it, and
+  # mixing the overlay into OUR pkgs fails regardless of what beads' own
+  # nixpkgs input is set to (an overlay always evaluates against the pkgs
+  # it's applied to, not the pkgs it was authored against). Instead this
+  # consumes beads' self-contained `packages.${system}.bd` output directly,
+  # built entirely against beads' own independently-pinned nixpkgs
+  # (nixos-25.11, which does have buildGo126Module) — see the devShells
+  # override below.
+  inputs.beads.url = "github:gastownhall/beads";
+  outputs = { self, nixpkgs, flake-utils, haskellNix, beads }:
     let
       supportedSystems =
         [ "x86_64-linux" "x86_64-darwin" "aarch64-linux" "aarch64-darwin" ];
@@ -39,6 +54,19 @@
           neo = {
             type = "app";
             program = "${neo}/bin/neo";
+          };
+        };
+        # `default` is the shell contributors/agents actually use
+        # (scripts/with-toolchain enters it via `nix develop --command`).
+        # Extend the hix-generated shell with bd (beads), rather than
+        # touching nix/hix.nix's shell.buildInputs: bd comes from a
+        # separately-pinned nixpkgs (see the `beads` input comment above),
+        # so it is composed in via `mkShell { inputsFrom; }` instead of
+        # being folded into the hix project's own pkgs/overlay chain.
+        devShells = (flake.devShells or { }) // {
+          default = pkgs.mkShell {
+            inputsFrom = [ flake.devShells.default ];
+            packages = [ beads.packages.${system}.bd ];
           };
         };
       });

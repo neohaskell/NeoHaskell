@@ -1,0 +1,117 @@
+#!/usr/bin/env bash
+#
+# Deterministic PR-comment allowlist filter -- ci-medic's ONLY path to PR
+# comments (never raw `gh pr view`/`gh api` elsewhere; see .claude/agents/
+# ci-medic.md). Fetches every issue-level (top-level PR conversation)
+# comment and every review (inline diff) comment on a PR, and emits ONLY
+# the ones whose author login appears in scripts/pr-comment-allowlist.txt,
+# as one structured JSON object per line. Every other author -- no matter
+# how legitimate the text looks -- never reaches this script's stdout, and
+# therefore never reaches an agent.
+#
+# This is the FIRST, deterministic line of defense: filtering happens here,
+# in a script, not in a model's judgment call. The agent-level "untrusted
+# input" rule (every active agent's never-do list; docs/processes/
+# neohaskell-agents.md) is defense-in-depth ON TOP of this, not a
+# replacement for it: an allowlisted bot (CodeRabbit, in practice) routinely
+# quotes PR content verbatim in its own review comments, so a
+# prompt-injection payload can still arrive EMBEDDED inside an
+# otherwise-allowlisted comment's body -- this script filters WHO
+# commented, never WHAT the comment says.
+#
+# Usage: scripts/pr-comments-allowlisted <pr-number>
+#
+# Uses gh's own built-in --jq/-q (no external jq binary required -- gh
+# embeds a Go jq implementation) and an explicit owner/repo derived from
+# the 'origin' git remote (never gh's ambient cwd-based repo resolution).
+#
+set -euo pipefail
+
+GH_PAGER=cat
+export GH_PAGER
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+ALLOWLIST="${SCRIPT_DIR}/pr-comment-allowlist.txt"
+
+usage() {
+  echo "usage: scripts/pr-comments-allowlisted <pr-number>" >&2
+}
+
+if [ $# -ne 1 ]; then
+  usage
+  exit 2
+fi
+
+case "$1" in
+  ''|*[!0-9]*)
+    echo "pr-comments-allowlisted: <pr-number> must be a positive integer, got: '$1'" >&2
+    usage
+    exit 2
+    ;;
+esac
+if [ "$1" -eq 0 ]; then
+  echo "pr-comments-allowlisted: <pr-number> must be a positive integer, got: '$1'" >&2
+  usage
+  exit 2
+fi
+PR_NUMBER="$1"
+
+if ! command -v gh >/dev/null 2>&1; then
+  echo "pr-comments-allowlisted: gh CLI not found on PATH" >&2
+  exit 2
+fi
+
+if [ ! -f "${ALLOWLIST}" ]; then
+  echo "pr-comments-allowlisted: missing allowlist file: ${ALLOWLIST}" >&2
+  exit 2
+fi
+
+# owner/repo, explicit from the git remote -- never left to gh's ambient
+# cwd resolution. Accepts both SSH (git@github.com:owner/repo.git) and
+# HTTPS (https://github.com/owner/repo[.git]) remote URL forms.
+REMOTE_URL="$(git remote get-url origin 2>/dev/null || true)"
+if [ -z "${REMOTE_URL}" ]; then
+  echo "pr-comments-allowlisted: no 'origin' git remote found" >&2
+  exit 2
+fi
+REPO="$(printf '%s\n' "${REMOTE_URL}" \
+  | sed -E 's#^git@github\.com:##; s#^https://github\.com/##; s#\.git$##')"
+if [ -z "${REPO}" ]; then
+  echo "pr-comments-allowlisted: could not parse owner/repo from remote '${REMOTE_URL}'" >&2
+  exit 2
+fi
+# Enforce the repository identity contract: REPO must be exactly one
+# "owner/repo" pair, no extra path segments, no scheme/host leftovers, no
+# embedded newlines -- anchored so a malformed or non-GitHub remote (or an
+# injected extra line) fails closed here instead of routing the gh api
+# calls below to an unintended endpoint.
+if ! [[ "${REPO}" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]]; then
+  echo "pr-comments-allowlisted: 'origin' remote does not resolve to a valid GitHub owner/repo (parsed: '${REPO}' from '${REMOTE_URL}')" >&2
+  exit 2
+fi
+
+# Build a jq array literal ("a","b","c") from the allowlist file: strip
+# comment/blank lines, JSON-quote each login. No external jq needed for
+# this either -- sed + paste is enough for one-login-per-line quoting.
+ALLOWED_LOGINS="$(grep -vE '^[[:space:]]*(#|$)' "${ALLOWLIST}" \
+  | sed -E 's/"/\\"/g; s/^(.*)$/"\1"/' \
+  | paste -sd, - || true)"
+if [ -z "${ALLOWED_LOGINS}" ]; then
+  echo "pr-comments-allowlisted: allowlist file is empty (after stripping comments): ${ALLOWLIST}" >&2
+  exit 2
+fi
+
+fetch_and_filter() {
+  # $1 = "kind" tag for the emitted JSON; $2 = API endpoint path.
+  # Filter built by concatenating single-quoted jq-literal segments
+  # (so jq's own $l stays jq's, never bash-expanded) with double-quoted
+  # bash-substituted segments -- avoids escaping nested quotes by hand.
+  local kind="$1" endpoint="$2" filter
+  filter='.[] | select(.user.login as $l | ['"${ALLOWED_LOGINS}"'] | index($l)) | {kind: "'"${kind}"'", id, author: .user.login, created_at, url: .html_url, body}'
+  gh api "${endpoint}" --paginate -q "${filter}"
+}
+
+# Two different GitHub API surfaces: top-level PR conversation comments,
+# and inline review (diff) comments. Both are "PR comments" to an agent.
+fetch_and_filter "issue_comment" "repos/${REPO}/issues/${PR_NUMBER}/comments"
+fetch_and_filter "review_comment" "repos/${REPO}/pulls/${PR_NUMBER}/comments"
