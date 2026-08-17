@@ -88,6 +88,7 @@ ADRs document significant architectural decisions made during the development of
 | [0072](0072-neo-cutover-and-onboarding-slo.md) | Neo CLI cutover — archive-as-human-gate and the clean-machine onboarding SLO | Accepted |
 | [0073](0073-deterministic-uuid-v5.md) | Deterministic UUID v5 as a Core primitive and a Decision combinator | Implemented |
 | [0074](0074-dependabot-auto-merge.md) | Dependabot patch/minor auto-merges; majors stop for a human | Accepted |
+| [0075](0075-darwin-cache-population-and-pr-gating.md) | Darwin cache population and a requireable Darwin PR gate | Accepted |
 
 <!-- adr-index: this table is validated by scripts/adr-index-check (./dev adr-check,
      CI job `adr-index` in checks.yml) — every NNNN-*.md file must appear exactly
