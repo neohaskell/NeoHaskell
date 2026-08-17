@@ -48,11 +48,19 @@ checklist to tick but as the actual shape of the exposure:
 - **NIS2**: incident-reporting and resilience obligations for
   essential/important entities — relevant to availability and
   incident-response shape, not just data handling.
-- **Sector packs** (e.g. HIPAA): load as a skill per project when the
-  project's domain requires it — `compliance-context` skills, **to be
-  created**; NeoHaskell's own default context above is the creative-economy
-  platform, not a hospital, so a healthcare-sector project loads its own
+- **Sector packs** (e.g. HIPAA): load per the project's **declared** data
+  domains — `compliance-context` skills, **to be created**; NeoHaskell's own
+  default context above is the creative-economy platform, not a hospital,
+  so a healthcare-sector project declares that domain and loads its own
   pack rather than this file growing sector-specific branches.
+
+**Pack-loading lock — a hard rule, not a fallback:** if the spec touches a
+sensitive data domain (health, payments, minors, biometrics, government ID,
+or similar) and the matching compliance pack is NOT loaded, **BLOCK the
+review as missing-context** — the same blocking flow as a real hole (below).
+Never review such a spec "blind" with only the base lenses. The base lenses
+(OWASP, GDPR, NIS2) are the floor for every review, not a substitute for a
+domain pack the spec's own subject matter requires.
 
 ## Owned process steps
 
@@ -62,15 +70,18 @@ checklist to tick but as the actual shape of the exposure:
   exists **local-only, gitignored, never pushed** (ADR-0069) and its
   findings are either folded into the spec or explicitly accepted.
   `./dev spec-check --reviews-local` is what enforces the local-only
-  presence at PR-ready. **Blocking path**: if the Jess Test fails or a real
+  presence at PR-ready. **Blocking path**: if the Jess Test fails, a real
   security hole is found — in this change, or discovered in existing code
-  while reviewing — the workflow STOPS (see "Blocking flow" below); done
-  when Nick has decided and any created gate is resolved.
+  while reviewing — or the spec touches a sensitive data domain whose
+  matching compliance pack is not loaded (missing-context), the workflow
+  STOPS (see "Blocking flow" below); done when Nick has decided and any
+  created gate is resolved.
 
 ## Blocking flow — a real hole is never silently folded in
 
-A real security hole is not "findings folded into the spec" — it is a stop
-condition:
+A real security hole — or missing compliance context for a sensitive data
+domain the spec touches (the pack-loading lock above) — is not "findings
+folded into the spec": it is a stop condition. Same flow for both triggers:
 
 1. **Edit the draft PR description** — fetch the current body, **prepend**
    the warning block below, write the combined text back. Never replace the
@@ -123,8 +134,10 @@ primitives` change widens the blast radius of everything built on it; a
 - `neohaskell-concept-derivation` (to judge whether a proposed primitive
   closes or opens an attack surface)
 - `compliance-context` sector packs — **to be created**; load the pack
-  matching the current project's domain (NeoHaskell's own default is the
-  creative-economy platform context above)
+  matching the project's **declared** data domains (NeoHaskell's own
+  default is the creative-economy platform context above). A spec touching
+  a sensitive domain with no matching pack loaded is not a gap to review
+  around — it's the pack-loading lock, block (see "Blocking flow")
 
 ## Git authority
 
@@ -150,6 +163,10 @@ creation, no PR comments, no merge authority, no other file writes.
 - **Never continues silently past a real hole** — a finding that fails the
   Jess Test or names a real exposure always triggers the blocking flow,
   never gets "folded into the spec" as if it were routine.
+- **Never reviews a sensitive-domain spec "blind"** — health, payments,
+  minors, biometrics, government ID, or similar with no matching
+  compliance pack loaded is a missing-context block, not a review to
+  complete on base lenses alone.
 - **Never discloses specifics in the public PR** — the blocking warning
   names no vulnerability, file, or attack; the real finding lives only in
   the local, gitignored record. Never replaces the PR description either —

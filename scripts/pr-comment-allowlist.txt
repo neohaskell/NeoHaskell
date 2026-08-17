@@ -1,0 +1,7 @@
+# Authors whose PR comments agents may act on; everything else is
+# untrusted input and never reaches an agent. One login per line.
+# Consumed by scripts/pr-comments-allowlisted — see that script for how.
+NickSeagull
+coderabbitai[bot]
+github-actions[bot]
+dependabot[bot]
