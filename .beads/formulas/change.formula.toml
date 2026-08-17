@@ -20,13 +20,13 @@ depends_on = ["intake"]
 [[steps]]
 id = "spec"
 title = "Spec"
-description = "Copy docs/changes/TEMPLATE.md to NNN-slug.md, write the contract delta in signatures vocabulary, and fill the criteria table C1..Cn (each naming its proving test and level: unit/integration/acceptance). For kind: bug, C1 is the failing repro test committed RED in this branch. Open the draft PR whose diff is the spec (+ADR when triggered, +red repro for bugs). Done when the draft PR exists and ./dev spec-check passes on the spec. Run by spec-writer (persona: neohaskell, high tier); must fill the spec's Primitives section (lock 1) and may not write implementation code."
+description = "Copy docs/changes/TEMPLATE.md to NNN-slug.md, write the contract delta in signatures vocabulary, and fill the criteria table C1..Cn (each naming its proving test and level: unit/integration/acceptance, with property-based available as a level qualifier where the contract is algebraic). The spec MUST enumerate edge cases and failure modes explicitly, including concurrency-sensitive behavior where relevant, and declare property-based criteria where applicable -- this design work lives here, at the opus tier, not with the sonnet-tier test-writer, who only implements what the spec names. For kind: bug, C1 is the failing repro test committed RED in this branch. Open the draft PR whose diff is the spec (+ADR when triggered, +red repro for bugs). Done when the draft PR exists, every edge case/failure mode is named in the spec, and ./dev spec-check passes on the spec. Run by spec-writer (persona: neohaskell, high tier); must fill the spec's Primitives section (lock 1) and may not write implementation code."
 depends_on = ["localize"]
 
 [[steps]]
 id = "security-review"
 title = "Security review"
-description = "Runs only if ./dev spec-check --plan lists security in design_reviews; otherwise auto-closes as skipped (risk-tiering working, ~0 duration). Record NNN-slug.security-review.md, local-only and gitignored, never pushed (ADR-0069), enforced by ./dev spec-check --reviews-local. Done when the record exists locally and its findings are either folded into the spec or explicitly accepted. Run by security-reviewer (persona: neohaskell, high tier, read-only), wrapping the neohaskell-security-design-review skill."
+description = "Runs only if ./dev spec-check --plan lists security in design_reviews; otherwise auto-closes as skipped (risk-tiering working, ~0 duration). Record NNN-slug.security-review.md, local-only and gitignored, never pushed (ADR-0069), enforced by ./dev spec-check --reviews-local. BLOCKING SEMANTICS: if a real security hole is found -- in this change, or discovered in existing code while reviewing -- the workflow STOPS: the agent edits the draft PR description, prepending a prominent security-warning block; parks the molecule (bd defer + label security-block); and creates a human gate (bd gate create --type=human) for Nick, who decides fix-now / accept / defer. Never silently continues past a real hole into implementation. Done (non-blocking path) when the record exists locally and its findings are either folded into the spec or explicitly accepted; done (blocking path) when Nick has decided and the created gate is resolved. Run by security-reviewer (persona: neohaskell, high tier, read-only except for this one narrow PR-description-edit exception), wrapping the neohaskell-security-design-review skill."
 depends_on = ["spec"]
 
 [[steps]]
@@ -44,7 +44,7 @@ depends_on = ["spec"]
 [[steps]]
 id = "spec-checker"
 title = "Spec checker"
-description = "Mechanical checker node, never a repair step: verifies the criteria table is well-formed (every criterion has a test and level), ADR present iff triggered, red repro committed for bugs, review records present or legitimately skipped, and ./dev spec-check green. A failed check loops back to the spec step (max 2 rounds, then park). Done when all checks are green. No agent persona: mechanical evaluation only, per checker discipline (flagged output loops back to its producer, never silently merged forward)."
+description = "Mechanical checker node, never a repair step: verifies the criteria table is well-formed (every criterion has a test and level, including any property-based criteria), ADR present iff triggered, red repro committed for bugs, review records present or legitimately skipped, and ./dev spec-check green. A failed check loops back to the spec step (max 2 rounds, then park). Done when all checks are green. No agent persona: mechanical evaluation only, per checker discipline (flagged output loops back to its producer, never silently merged forward)."
 depends_on = ["security-review", "perf-review", "primitives-review"]
 
 [[steps]]
@@ -66,32 +66,44 @@ depends_on = ["spec-approval"]
 [[steps]]
 id = "test-writing"
 title = "Test writing"
-description = "Write tests FIRST, red before any implementation, at the levels declared in the spec's criteria table; depends only on the criteria table, not on the plan. Never weaken an existing expectation (expectation-guard hook; the maintainer marker .pipeline/allow-expectation-edits is the only override). New spec modules are registered in the suite's Main.hs AND cabal other-modules (only nhcore-test is hspec-discovered). Done when every criterion has its named test, committed, and red for the right reason. Run by test-writer (persona: neohaskell, standard tier); has no write access to production code."
+description = "Write tests FIRST, red before any implementation, at the levels declared in the spec's criteria table (including any property-based criteria the spec-writer named); depends only on the criteria table, not on the plan. Never weaken an existing expectation (expectation-guard hook; the maintainer marker .claude/allow-expectation-edits is the only override). New spec modules are registered in the suite's Main.hs AND cabal other-modules (only nhcore-test is hspec-discovered). Done when every criterion has its named test, committed, and red for the right reason. Run by test-writer (persona: neohaskell, standard tier), loading the neohaskell-testing skill (to be created); has no write access to production code."
 depends_on = ["spec-approval"]
 
 [[steps]]
 id = "implement"
 title = "Implement"
-description = "Make the criteria tests pass via the repair loop (./dev check, never cabal build in the loop; max 2 repair rounds per error, then failure policy), logging consulted aids (hot-card:, phrasebook:). Depends on both plan and test-writing being done. Done when ./dev check is green and the criteria tests pass locally. Run by implementer (persona: neohaskell, layer matching the touched area; standard tier); subject to lock 3 (primitives lint) in verify, where a lint failure is its bug to fix, never to waive."
+description = "Make the criteria tests pass via the repair loop (./dev check, never cabal build in the loop; max 2 repair rounds per error, then failure policy), logging consulted aids (hot-card:, phrasebook:). Depends on both plan and test-writing being done. Done when ./dev check is green and the criteria tests pass locally. Run by implementer (persona: neohaskell, layer matching the touched area; standard tier); the primitives/dialect lint (rule: no direct hackage imports outside core/ wrappers) is a PLANNED mechanical check, tracked in the queue -- until it ships, the primitives-reviewer's record from spec time is the enforcement, and this role must honor its findings, never waive them."
 depends_on = ["plan", "test-writing"]
 
 [[steps]]
 id = "verify"
 title = "Verify"
-description = "Mechanical, ordered, no skipping: criteria tests green at their declared levels; targeted regression from spec-check --plan's test_impact_globs; ./dev lint + ./dev spec-drift + primitives/dialect lint (lock 3, no direct hackage imports outside core/ wrappers); full suite (./dev test-all) once, here only; bench-check when the spec says bench: yes (bench-runner, cheap tier, budget exceeded loops back to implement or an explicit waiver); coverage-check for delta coverage on touched files vs threshold (coverage-auditor, cheap tier, below-threshold needs more tests or a waiver that auto-creates a test-debt bead). Any failure loops back to implement and counts against its repair budget. Done when all of the above are green."
+description = "Mechanical, ordered, no skipping: criteria tests green at their declared levels (including property-based criteria); targeted regression from spec-check --plan's test_impact_globs; ./dev lint + ./dev spec-drift, plus the primitives/dialect lint (rule: no direct hackage imports outside core/ wrappers) once it ships -- PLANNED, tracked in the queue; until then the primitives-reviewer's committed record from spec time is the enforcement, not a mechanical check here; full suite (./dev test-all) once, here only; bench-check when the spec says bench: yes (bench-runner, cheap tier, budget exceeded loops back to implement or an explicit waiver); coverage-check for delta coverage on touched files vs threshold (coverage-auditor, cheap tier, below-threshold needs more tests or a waiver that auto-creates a test-debt bead). Any failure loops back to implement and counts against its repair budget. Done when all of the above are green."
 depends_on = ["implement"]
 
 [[steps]]
 id = "docs-draft"
 title = "Docs draft"
-description = "Starts in parallel with plan and test-writing (both gated on spec-approval, same as this step). From the spec alone, work out what the user-visible surface is and which existing docs pages are affected, then draft the new/changed pages. If the change has no user-visible surface, close as n/a with one stated reason: the explicit skip is required, silence is not. Done when draft pages are committed to the branch, marked draft. Run by doc-writer (persona: docs, standard tier); writes English only (translations are a release-time concern) and applies progressive disclosure, opening accessible before descending into technicalities."
+description = "Starts in parallel with plan and test-writing (both gated on spec-approval, same as this step). From the spec alone, work out what the user-visible surface is and which existing docs pages are affected, then draft the new/changed pages. Target: progressive disclosure AND visual-first explanation -- diagrams and widgets for concepts that need them, not walls of text -- written for a non-technical, LLM-era reader. If the change has no user-visible surface, close as n/a with one stated reason: the explicit skip is required, silence is not. Done when draft pages are committed to the branch, marked draft. Run by doc-writer (persona: docs, standard tier); writes English only (translations are a release-time concern)."
 depends_on = ["spec-approval"]
+
+[[steps]]
+id = "docs-visual-design"
+title = "Docs visual design"
+description = "Depends on docs-draft. Reads the drafted pages and decides which concepts actually need visual or interactive explanation -- diagrams, widgets, interactive elements -- versus which are fine as prose; produces a visual spec (what to build, where it goes, what it must show) for ui-implementer to build from. May close as 'n/a: <reason>' when the drafted pages need no visuals -- the explicit skip is required, silence is not. Done when the visual spec is committed, or the n/a reason is recorded. Run by docs-visualizer (persona: hybrid docs + frontend-ux, opus tier)."
+depends_on = ["docs-draft"]
+
+[[steps]]
+id = "docs-widgets"
+title = "Docs widgets"
+description = "Depends on docs-visual-design. Implements the widgets/diagrams the visual spec calls for, in the website stack (Astro/Starlight + Mantine), exactly per that spec -- this role builds the design, it does not redesign while implementing. Closes n/a automatically when docs-visual-design closed n/a (nothing to build). Attaches before/after screenshots to the PR as verification evidence (same hard rule as website changes generally). Done when the widgets/diagrams are built, wired into the draft pages, and screenshots are attached. Run by ui-implementer (persona: frontend-ux, standard tier)."
+depends_on = ["docs-visual-design"]
 
 [[steps]]
 id = "docs-reconcile"
 title = "Docs reconcile"
-description = "Depends on docs-draft AND verify -- both now direct in-formula dependencies. Diff-check the draft against the final implementation: signatures, names, behavior, and examples actually compile/run. Done when the docs match the final diff and the draft marker is removed. Run by doc-writer (persona: docs, standard tier); checked for progressive-disclosure violations by the docs-auditor patrol."
-depends_on = ["docs-draft", "verify"]
+description = "Depends on docs-draft, verify, AND docs-widgets -- all direct in-formula dependencies. Diff-check the draft against the final implementation: signatures, names, behavior, and examples actually compile/run. doc-writer also inserts the built widgets/diagrams into the final pages at this step, with ui-reviewer's screenshot verification evidence attached as proof they render correctly in place. Done when the docs match the final diff, widgets are inserted and verified, and the draft marker is removed. Run by doc-writer (persona: docs, standard tier); checked for progressive-disclosure violations by the docs-auditor patrol."
+depends_on = ["docs-draft", "verify", "docs-widgets"]
 
 [[steps]]
 id = "notes-fragment"
@@ -108,7 +120,7 @@ depends_on = ["verify"]
 [[steps]]
 id = "pr-ready-checker"
 title = "PR-ready checker"
-description = "Mechanical checker node, never a repair step: depends on verify, docs-reconcile, notes-fragment, and migration-fragment (the last always exists, even if closed n/a). Verifies verify's evidence is green (including lint/bench/coverage evidence or their recorded waivers), docs are reconciled or n/a-with-reason, both fragments are present or legitimately n/a, the security review's local-only presence is confirmed (./dev spec-check --reviews-local), and telemetry close-out is done (stop the open stage, finish, golden, runs.jsonl committed INTO the PR -- no post-merge job exists). Also flips ADR status to Implemented (+ a docs/decisions/README.md row + ./dev adr-website) and checks ./dev adr-check green. Done when all of the above pass -- this is the only door to flipping the PR. No agent persona: mechanical evaluation only, per checker discipline."
+description = "Mechanical checker node, never a repair step: depends on verify, docs-reconcile, notes-fragment, and migration-fragment (the last always exists, even if closed n/a); docs-widgets and docs-visual-design are covered transitively (docs-reconcile cannot close without them). Verifies verify's evidence is green (including lint/bench/coverage evidence or their recorded waivers), docs are reconciled or n/a-with-reason, both fragments are present or legitimately n/a, the security review's local-only presence is confirmed (./dev spec-check --reviews-local), and telemetry close-out is done (stop the open stage, finish, golden, runs.jsonl committed INTO the PR -- no post-merge job exists). Also flips ADR status to Implemented (+ a docs/decisions/README.md row + ./dev adr-website) and checks ./dev adr-check green. Done when all of the above pass -- this is the only door to flipping the PR. No agent persona: mechanical evaluation only, per checker discipline."
 depends_on = ["verify", "docs-reconcile", "notes-fragment", "migration-fragment"]
 
 [[steps]]
@@ -120,12 +132,12 @@ depends_on = ["pr-ready-checker"]
 [[steps]]
 id = "ci-settle"
 title = "CI settle"
-description = "The ci-settle loop: not a single pass -- loops until the check matrix is green AND CodeRabbit has no outstanding actionable comments. Each round: watch checks, read every new bot comment, triage (fix real findings; decline with a stated reason as a reply on the comment when wrong or targeting generator-owned files -- codemap/**, CHANGELOG.md are re-generated, never hand-edited), push the fix, wait for re-review. Done when checks are green and the bot has settled. Run by ci-medic (persona: none fixed, inherits the layer/dialect rules of whatever code CI flags; standard tier). The gh:run gate below has no await_id at pour time (the real CI run does not exist yet); the dispatcher attaches it at runtime once pr-flip re-triggers CI (bd gate create --type=gh:run --await-id=<run-id>, or bd gate discover)."
+description = "The ci-settle loop: not a single pass -- loops until the check matrix is green AND the linting/review bots have no outstanding actionable comments (bot-agnostic: CodeRabbit today, but the process does not assume any one vendor). Each round: watch checks, read every new bot comment, triage (fix real findings; decline with a stated reason as a reply on the comment when wrong or targeting generator-owned files -- codemap/**, CHANGELOG.md are re-generated, never hand-edited), push the fix, wait for re-review. Done when checks are green and the bots have settled. Run by ci-medic (persona: none fixed, inherits the layer/dialect rules of whatever code CI flags; standard tier). The gh:run gate below has no await_id at pour time (the real CI run does not exist yet); the dispatcher attaches it at runtime once pr-flip re-triggers CI (bd gate create --type=gh:run --await-id=<run-id>, or bd gate discover)."
 depends_on = ["pr-flip"]
 
 [steps.gate]
 type = "gh:run"
-reason = "Wait for the full CI check matrix to go green and CodeRabbit to settle (GATE ci-settle)."
+reason = "Wait for the full CI check matrix to go green and the linting/review bots to settle (GATE ci-settle)."
 
 [[steps]]
 id = "merge"
