@@ -54,10 +54,7 @@ claimed; `release-publish` is the one other formula, kept separate since it
 aggregates across changes on demand rather than running per change. See
 `docs/processes/neohaskell-change.md` and
 `docs/processes/neohaskell-agents.md` for the process and role roster this
-implements. The old `neohaskell-pipeline` skill has moved to
-`docs/legacy/neohaskell-pipeline/SKILL.md` — out of `.claude/skills` so no
-agent can auto-trigger it — and is kept only as the rollback plan until
-three changes have merged end-to-end through the new system.
+implements.
 
 Dolt remote sync is NOT enabled for this repo: never run `bd dolt push` or
 push `refs/dolt/data`; issue data syncs only via the dispatcher host.
@@ -73,7 +70,7 @@ Any request that should end in a PR runs the `neohaskell-pipeline` skill (ADR-00
 - **Risk-tiered design reviews** (post-approval, pre-implementation): `./dev spec-check --plan <spec>` routes to `neohaskell-security-design-review` / `neohaskell-performance-design-review` when `touches:` hits risk-tagged capabilities. **Perf** records (`NNN-slug.perf-review.md`) are committed next to the spec and gated at PR-ready by `./dev spec-check --reviews-pr`. **Security** records (`NNN-slug.security-review.md`) are **local-only — gitignored, never pushed** (a security review maps attack surface; [ADR-0069](docs/decisions/0069-security-reviews-are-local.md)); the pipeline enforces their local presence via `./dev spec-check --reviews-local` before flipping the PR to ready.
 - **Verification order**: criteria tests red → implement → green at declared levels → test-impact suites (from `--plan`) → `./dev lint` + `./dev spec-drift <spec>` → full suite once at PR-ready.
 - **Failure policy**: per-stage time-boxes (skill has the table) → retry once → escalate tier → `./dev pipeline park --label <taxonomy>` + structured report. A parked report beats a wrong PR. Closing a failed/parked run records a class-fix — `./dev telemetry finish … --asset-delta <type>:<dest>` (enforced; `none:<reason>` if none), per [ADR-0068](docs/decisions/0068-failure-asset-delta-and-learning-loop.md).
-- **Expectation guard** (`.claude/hooks/expectation-guard.py`): removing/rewording an existing test expectation is blocked twice — locally by the hook (maintainer marker `.pipeline/allow-expectation-edits`) and in CI by the `expectations` census job (maintainer `expectations-approved` PR label, which the agent can't self-apply). Adding tests never needs either.
+- **Expectation guard** (`.claude/hooks/expectation-guard.py`): removing/rewording an existing test expectation is blocked twice — locally by the hook (maintainer marker `.claude/allow-expectation-edits`) and in CI by the `expectations` census job (maintainer `expectations-approved` PR label, which the agent can't self-apply). Adding tests never needs either.
 - **Benchmarks**: nightly only (`./dev bench` vs `telemetry/bench-budgets.json`, nightly-bench.yml) — never PR-blocking.
 
 ## Release tail + learning loop (Phase 6) — [ADR-0068](docs/decisions/0068-failure-asset-delta-and-learning-loop.md)

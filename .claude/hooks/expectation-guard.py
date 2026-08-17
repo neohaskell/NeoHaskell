@@ -16,7 +16,7 @@ What counts:
 
 Two layers, because a local hook alone is not a gate:
 - This hook is the fast LOCAL teacher. Approval marker
-  `.pipeline/allow-expectation-edits` — a per-checkout, gitignored file the
+  `.claude/allow-expectation-edits` — a per-checkout, gitignored file the
   MAINTAINER creates (or tells the agent to). No inline escape hatch. It fails
   LOUD-open on unparseable stdin (a harness schema change must be visible, not
   a silently-disabled guard).
@@ -40,7 +40,7 @@ import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-APPROVAL_FILE = REPO_ROOT / ".pipeline" / "allow-expectation-edits"
+APPROVAL_FILE = REPO_ROOT / ".claude" / "allow-expectation-edits"
 CASES_FILE = Path(__file__).parent / "expectation-guard-cases.json"
 
 TEST_FILE = re.compile(r"(Spec\.hs$|\.hurl$|(^|/)(core/test[^/]*|testbed/test|tests)/)")
@@ -261,7 +261,7 @@ def main() -> int:
             "requires MAINTAINER approval (AGENTS.md, Non-negotiable). If the "
             "maintainer has approved this in writing, record it:\n"
             "  echo 'approved by <name>: <reason / spec ref>' > "
-            ".pipeline/allow-expectation-edits\n"
+            ".claude/allow-expectation-edits\n"
             "then retry, and delete the marker when the change lands. "
             "Adding NEW tests never needs this.",
             file=sys.stderr)

@@ -8,7 +8,7 @@
       {
         "hooks": [
           {
-            "command": "if echo \"$CLAUDE_TOOL_INPUT\" | grep -q '\\.hs\"'; then fourmolu --mode inplace $(echo \"$CLAUDE_TOOL_INPUT\" | grep -o '\"[^\"]*\\.hs\"' | tr -d '\"') 2\u003e/dev/null; fi",
+            "command": "if echo \"$CLAUDE_TOOL_INPUT\" | grep -q '\\.hs\"'; then \"$CLAUDE_PROJECT_DIR/scripts/with-toolchain\" fourmolu --mode inplace $(echo \"$CLAUDE_TOOL_INPUT\" | grep -o '\"[^\"]*\\.hs\"' | tr -d '\"') 2\u003e/dev/null; fi",
             "timeout": 30,
             "type": "command"
           }
@@ -18,7 +18,7 @@
       {
         "hooks": [
           {
-            "command": "if echo \"$CLAUDE_TOOL_INPUT\" | grep -qE 'Spec\\.hs\"'; then echo '{\"feedback\": \"Test file modified - remember to run: cabal test\"}'; fi",
+            "command": "if echo \"$CLAUDE_TOOL_INPUT\" | grep -qE 'Spec\\.hs\"'; then echo '{\"feedback\": \"Test file modified - remember to run: ./dev test\"}'; fi",
             "timeout": 5,
             "type": "command"
           }

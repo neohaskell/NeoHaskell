@@ -57,6 +57,10 @@ feature-progress.md
 .sisyphus/
 .pipeline/
 .integration-pipeline/
+# Expectation-guard override marker (moved from .pipeline/ -- .claude/ is
+# otherwise a tracked directory, so this needs its own entry): per-checkout,
+# maintainer-created only, never committed. See .claude/hooks/expectation-guard.py.
+.claude/allow-expectation-edits
 docs/architecture/
 # AI-authored plan/design drafts stay local (sources archived out-of-repo); the
 # audited, shipped record is docs/decisions/ (ADRs) + docs/changes/ (specs).
