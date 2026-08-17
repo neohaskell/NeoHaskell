@@ -48,11 +48,13 @@ checklist to tick but as the actual shape of the exposure:
 - **NIS2**: incident-reporting and resilience obligations for
   essential/important entities — relevant to availability and
   incident-response shape, not just data handling.
-- **Sector packs** (e.g. HIPAA): load per the project's **declared** data
-  domains — `compliance-context` skills, **to be created**; NeoHaskell's own
-  default context above is the creative-economy platform, not a hospital,
-  so a healthcare-sector project declares that domain and loads its own
-  pack rather than this file growing sector-specific branches.
+- **Sector packs**: load per the project's **declared** data domains (e.g.
+  health, payments) — `compliance-context` skills, **to be created**;
+  NeoHaskell's own default context above is the creative-economy platform,
+  so a project in a different sector declares that domain and loads its own
+  pack rather than this file growing sector-specific branches. Which named
+  regimes a given sector pack covers is that pack's concern, not this
+  framework-default file's.
 
 **Pack-loading lock — a hard rule, not a fallback:** if the spec touches a
 sensitive data domain (health, payments, minors, biometrics, government ID,
