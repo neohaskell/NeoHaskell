@@ -59,6 +59,10 @@ usage: ./dev <verb> [args]
                           (breaking = a removed signature line; --check gates CI)
   revert <commit>       kill switch: open a revert PR for a merged change
                           (--dry-run to stage it locally without pushing)
+  pr-comments <pr#>      deterministic allowlist filter for PR comments
+                          (issue + review comments, JSON lines) — ci-medic's
+                          only path to PR comment text; see
+                          scripts/pr-comment-allowlist.txt
   retrospect [--since D] weekly telemetry digest + recommendation recorder
                           (--record '<json>'; --set/--prune-golden lifecycle)
   telemetry <cmd>       pipeline run telemetry (runs.jsonl): start, stage, wait,
@@ -127,6 +131,7 @@ case "${VERB}" in
   testbed)  exec scripts/testbed "$@" ;;
   changelog) exec scripts/changelog "$@" ;;
   revert)   exec scripts/revert "$@" ;;
+  pr-comments) exec scripts/pr-comments-allowlisted "$@" ;;
   retrospect) exec scripts/retrospect "$@" ;;
   telemetry) exec scripts/telemetry.py "$@" ;;
   workflow-check) exec scripts/workflow-check "$@" ;;
