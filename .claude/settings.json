@@ -8,7 +8,7 @@
       {
         "hooks": [
           {
-            "command": "if echo \"$CLAUDE_TOOL_INPUT\" | grep -q '\\.hs\"'; then \"$CLAUDE_PROJECT_DIR/scripts/with-toolchain\" fourmolu --mode inplace $(echo \"$CLAUDE_TOOL_INPUT\" | grep -o '\"[^\"]*\\.hs\"' | tr -d '\"') 2\u003e/dev/null; fi",
+            "command": "if FILE=$(printf '%s' \"$CLAUDE_TOOL_INPUT\" | python3 -c 'import json,sys; d=json.load(sys.stdin); fp=d.get(\"file_path\",\"\"); print(fp if fp.endswith(\".hs\") else \"\")' 2>/dev/null) && [ -n \"$FILE\" ]; then \"$CLAUDE_PROJECT_DIR/scripts/with-toolchain\" fourmolu --mode inplace \"$FILE\" 2>/dev/null; fi",
             "timeout": 30,
             "type": "command"
           }
@@ -75,7 +75,6 @@
       "Write",
       "MultiEdit",
       "Bash(./dev:*)",
-      "Bash(scripts/with-toolchain:*)",
       "Bash(git status)",
       "Bash(git diff:*)",
       "Bash(git add:*)",
@@ -88,6 +87,8 @@
       "Bash(find:*)"
     ],
     "deny": [
+      "Edit(.claude/allow-expectation-edits)",
+      "Write(.claude/allow-expectation-edits)",
       "Bash(rm -rf:*)",
       "Bash(git push --force:*)",
       "Bash(git push -f:*)",

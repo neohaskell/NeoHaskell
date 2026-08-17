@@ -59,8 +59,8 @@ commits.
 
 ## Permissions / never-do
 
-- May write `NNN-slug.perf-review.md` (committed), the `bench:` field and
-  reason in the spec, and comments on the spec/PR.
+- May write `NNN-slug.perf-review.md` (committed) and the `bench:` field +
+  reason in the spec. Matches Git authority exactly: no PR comments.
 - Never demands benchmarks in a PR — nightly bench is a separate mechanism;
   this step is reasoning, not measurement.
 - **Read-only against implementation code** — there is no implementation

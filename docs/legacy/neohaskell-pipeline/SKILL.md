@@ -3,14 +3,14 @@ name: neohaskell-pipeline
 description: Orchestrate a NeoHaskell change end-to-end through the spec-gated pipeline - intake to merged PR with exactly two human gates. Use when implementing a feature, fixing a bug, or running any request that should produce a PR.
 ---
 
+# The change pipeline (Phase 5) — MOVED, rollback-only
+
 > **Moved out of `.claude/skills` so agents cannot auto-trigger it.**
 > New work enters via the issue queue (`bd ready`) — see `AGENTS.md`'s
 > "Work intake" section and `.beads/formulas/`. This skill is kept only as
 > the rollback plan for the dispatcher cutover (`docs/dispatcher-plan.md`).
 > **Rollback = move this directory back** to
 > `.claude/skills/neohaskell-pipeline/`.
-
-# The change pipeline (Phase 5)
 
 Exactly **two human gates**: spec approval (draft PR) and final PR review.
 Everything between them is mechanical or agent-run, resumable from

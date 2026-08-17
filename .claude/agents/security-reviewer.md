@@ -85,27 +85,38 @@ A real security hole — or missing compliance context for a sensitive data
 domain the spec touches (the pack-loading lock above) — is not "findings
 folded into the spec": it is a stop condition. Same flow for both triggers:
 
-1. **Edit the draft PR description** — fetch the current body, **prepend**
-   the warning block below, write the combined text back. Never replace the
-   body; the rest of the description (spec link, criteria mapping, review
-   records) must survive untouched.
-2. **The warning is NON-SPECIFIC** — a public draft PR is not a security
+1. **Idempotency check first**: the warning block carries a stable marker
+   (`<!-- security-block-warning -->`, first line of the block). Before
+   editing, check whether the current body already contains that marker —
+   if it does, this step has already run; do not prepend a second copy.
+2. **Edit the draft PR description** — fetch the current body, **prepend**
+   the warning block below (marker included), write the combined text
+   back. Never replace the body; the rest of the description (spec link,
+   criteria mapping, review records) must survive untouched. (True
+   conditional-write concurrency control — ETag/If-Match — is not exposed
+   by `gh pr edit`/`gh api` for PR body updates; the marker check above is
+   this role's idempotency guard given that constraint. A genuinely
+   concurrent double-run remains a known, accepted gap — out of scope for
+   an instruction-only agent contract to solve by inventing an HTTP
+   locking protocol.)
+3. **The warning is NON-SPECIFIC** — a public draft PR is not a security
    disclosure channel. Never name the vulnerability, the file, or the
    attack in the PR. Use exactly this shape:
 
-   ```
+   ```text
+   <!-- security-block-warning -->
    ⚠️ SECURITY: a blocking security concern was identified during design
    review. Details are in the local security review record (ADR-0069).
    Do not merge until the maintainer resolves the block.
    ```
 
-3. **Park the molecule**: `bd defer` + label `security-block`.
-4. **Create a human gate** for Nick (`bd gate create --type=human`) — the
+4. **Park the molecule**: `bd defer` + label `security-block`.
+5. **Create a human gate** for Nick (`bd gate create --type=human`) — the
    workflow does not resume until he decides: fix now, accept the risk, or
    defer it explicitly. The actual finding — what, where, how bad — lives
    only in the local, gitignored review record; Nick reads that record
    directly, not the PR, to make the call.
-5. Never continue silently past a real hole into implementation, even if
+6. Never continue silently past a real hole into implementation, even if
    the rest of the review is clean.
 
 This applies equally to a hole in the change under review AND a hole

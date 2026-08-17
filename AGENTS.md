@@ -61,6 +61,8 @@ push `refs/dolt/data`; issue data syncs only via the dispatcher host.
 
 ## Change flow (Phase 5) — spec-gated, two human touchpoints [DEPRECATED — moved to docs/legacy/neohaskell-pipeline/, rollback-only — see "Work intake" above]
 
+**Historical/rollback documentation only — do not invoke `neohaskell-pipeline` for new requests.** All new work goes through the `change` formula via `bd ready` (see "Work intake" above). The section below describes the retired pipeline as it was, preserved for the rollback path only.
+
 Any request that should end in a PR runs the `neohaskell-pipeline` skill (ADR-0067) — **now at `docs/legacy/neohaskell-pipeline/SKILL.md`**.
 (The pipeline-bootstrap PRs — which *build* this gate — are the one exemption; the spec gate applies to every subsequent change request.)
 

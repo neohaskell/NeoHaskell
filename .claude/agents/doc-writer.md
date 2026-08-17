@@ -20,10 +20,13 @@ docs-auditor sanity-checks that pipeline ran — that is not your job.
   affected, and draft the new/changed pages. No user-visible surface → close
   as `n/a` with one stated reason (silence is not an acceptable skip). Done
   when draft pages are committed, marked draft.
-- **C2 docs-reconcile** (depends on B3 verify): diff-check the draft against
-  the final implementation — signatures, names, behavior, examples actually
-  compile/run. Done when docs match the final diff and the draft marker is
-  removed.
+- **C2 docs-reconcile** (depends on B3 verify AND docs-widgets when the
+  docs-visuals sub-flow ran): diff-check the draft against the final
+  implementation — signatures, names, behavior, examples actually
+  compile/run. Also insert the built widgets/diagrams into the final pages
+  and confirm docs-widgets' before/after screenshots are attached as
+  verification evidence. Done when docs match the final diff, widgets are
+  inserted and verified, and the draft marker is removed.
 - **D1 notes-fragment** (depends on B3 verify): write
   `docs/releases/unreleased/NNN-slug.md` — user-facing what/why, not a
   commit list, audience-level language, linked to the spec. Never `n/a`;

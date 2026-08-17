@@ -35,25 +35,25 @@ bd list --status=open
 bd list --status=in_progress
 ```
 
-2. Inspect before editing:
+1. Inspect before editing:
 
 ```bash
 bd show <id>
 ```
 
-3. Claim work atomically:
+1. Claim work atomically:
 
 ```bash
 bd update <id> --claim
 ```
 
-4. Create durable follow-up work when implementation reveals new tasks:
+1. Create durable follow-up work when implementation reveals new tasks:
 
 ```bash
 bd create "Short title" --description="Why this exists and what needs to be done" --type=task --priority=2
 ```
 
-5. Close completed work:
+1. Close completed work:
 
 ```bash
 bd close <id> --reason="Completed"

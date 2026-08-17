@@ -49,6 +49,11 @@ case "$1" in
     exit 2
     ;;
 esac
+if [ "$1" -eq 0 ]; then
+  echo "pr-comments-allowlisted: <pr-number> must be a positive integer, got: '$1'" >&2
+  usage
+  exit 2
+fi
 PR_NUMBER="$1"
 
 if ! command -v gh >/dev/null 2>&1; then
@@ -75,13 +80,22 @@ if [ -z "${REPO}" ]; then
   echo "pr-comments-allowlisted: could not parse owner/repo from remote '${REMOTE_URL}'" >&2
   exit 2
 fi
+# Enforce the repository identity contract: REPO must be exactly one
+# "owner/repo" pair, no extra path segments, no scheme/host leftovers, no
+# embedded newlines -- anchored so a malformed or non-GitHub remote (or an
+# injected extra line) fails closed here instead of routing the gh api
+# calls below to an unintended endpoint.
+if ! [[ "${REPO}" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]]; then
+  echo "pr-comments-allowlisted: 'origin' remote does not resolve to a valid GitHub owner/repo (parsed: '${REPO}' from '${REMOTE_URL}')" >&2
+  exit 2
+fi
 
 # Build a jq array literal ("a","b","c") from the allowlist file: strip
 # comment/blank lines, JSON-quote each login. No external jq needed for
 # this either -- sed + paste is enough for one-login-per-line quoting.
 ALLOWED_LOGINS="$(grep -vE '^[[:space:]]*(#|$)' "${ALLOWLIST}" \
   | sed -E 's/"/\\"/g; s/^(.*)$/"\1"/' \
-  | paste -sd, -)"
+  | paste -sd, - || true)"
 if [ -z "${ALLOWED_LOGINS}" ]; then
   echo "pr-comments-allowlisted: allowlist file is empty (after stripping comments): ${ALLOWLIST}" >&2
   exit 2
