@@ -37,6 +37,8 @@ jobs:
       # Static workflow wiring: hidden-artifact upload opt-in + retrospect
       # loop stays deterministic/report-only (pure stdlib, no toolchain).
       - run: ./dev workflow-check
+      # Change 007 static proving tests (C1-C3, C8) — no nix needed.
+      - run: ./dev devshell-check --self-test
 
   codemap:
     name: codemap check (localization ontology)

@@ -101,6 +101,8 @@ jobs:
             ${{ runner.os }}-cabal-
       - name: Build the project with cabal
         run: nix develop --command cabal build all --disable-documentation
+      - name: devShell proving tests (change 007 — C4-C6)
+        run: nix develop --command ./dev devshell-check
       - uses: actions/upload-artifact@v7
         with:
           name: dist-newstyle

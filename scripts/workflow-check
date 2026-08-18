@@ -951,6 +951,50 @@ def check_onboarding_slo(name, text):
     return errs
 
 
+# ── change 007: devshell-check wiring (C7) ─────────────────────────────────
+# (docs/changes/007-bd-via-hix-shell-extension-point.md) The two jobs that
+# already enter the shell must invoke `./dev devshell-check` in-shell
+# (C4-C6), and the nix-free `checks.yml` `doctor` job must invoke
+# `./dev devshell-check --self-test` (C1-C3, C8). A regression that drops
+# either therefore fails a required check rather than rotting silently.
+DEVSHELL_VERB = "devshell-check"
+DEVSHELL_IN_SHELL_JOBS = {
+    "test.yml": "build",
+    "test-macos.yml": "tests-macos",
+}
+
+
+def check_devshell_check_in_shell(name, text, job_key):
+    errs = []
+    job = job_blocks(strip_comments(text)).get(job_key, "")
+    if not job:
+        errs.append(f"{name}: missing the `{job_key}` job (cannot verify "
+                     f"{DEVSHELL_VERB} wiring)")
+        return errs
+    if not re.search(
+        rf"nix develop --command\s+\./dev {re.escape(DEVSHELL_VERB)}\b", job
+    ):
+        errs.append(
+            f"{name}: `{job_key}` job never runs `./dev {DEVSHELL_VERB}` "
+            "in-shell (`nix develop --command ...`) — C4-C6 would never run "
+            "in CI")
+    return errs
+
+
+def check_devshell_check_selftest(name, text):
+    errs = []
+    doctor = job_blocks(strip_comments(text)).get("doctor", "")
+    if not doctor:
+        errs.append(f"{name}: missing the `doctor` job (cannot verify "
+                     f"{DEVSHELL_VERB} --self-test wiring)")
+        return errs
+    if f"./dev {DEVSHELL_VERB} --self-test" not in doctor:
+        errs.append(
+            f"{name}: `doctor` job never runs `./dev {DEVSHELL_VERB} "
+            "--self-test` — C1/C2/C3/C8 would never run in CI")
+    return errs
+
+
 def run(root=WORKFLOWS):
     errs = []
     for wf in sorted(root.glob("*.yml")):
@@ -973,6 +1017,11 @@ def run(root=WORKFLOWS):
             errs += check_installer_ci(wf.name, text)
         if wf.name == ONBOARDING_SLO_GATE:
             errs += check_onboarding_slo(wf.name, text)
+        if wf.name in DEVSHELL_IN_SHELL_JOBS:
+            errs += check_devshell_check_in_shell(
+                wf.name, text, DEVSHELL_IN_SHELL_JOBS[wf.name])
+        if wf.name == "checks.yml":
+            errs += check_devshell_check_selftest(wf.name, text)
     retro = root / "retrospect.yml"
     if not retro.exists():
         errs.append("retrospect.yml is missing (deterministic learning-loop digest)")
@@ -1595,6 +1644,59 @@ def self_test():
     slo_bad("slo job pre-installing Nix is flagged (collides with the release installer)",
             good_slo.replace("      - uses: actions/checkout@v7.0.1\n",
                              "      - uses: actions/checkout@v7.0.1\n      - uses: DeterminateSystems/determinate-nix-action@v3.21.7\n"))
+
+    # ── change 007: devshell-check wiring (C7) ────────────────────────────────
+    good_build_job = (
+        "jobs:\n  build:\n    steps:\n"
+        "      - name: Build the project with cabal\n"
+        "        run: nix develop --command cabal build all --disable-documentation\n"
+        "      - name: devShell proving tests (change 007 — C4-C6)\n"
+        "        run: nix develop --command ./dev devshell-check\n"
+    )
+    check("test.yml build job running devshell-check in-shell passes",
+          not check_devshell_check_in_shell("test.yml", good_build_job, "build"))
+    check("test.yml build job missing devshell-check is flagged",
+          check_devshell_check_in_shell(
+              "test.yml",
+              good_build_job.replace(
+                  "      - name: devShell proving tests (change 007 — C4-C6)\n"
+                  "        run: nix develop --command ./dev devshell-check\n", ""),
+              "build"))
+    check("test.yml build job running devshell-check OUTSIDE the shell is flagged",
+          check_devshell_check_in_shell(
+              "test.yml",
+              good_build_job.replace(
+                  "        run: nix develop --command ./dev devshell-check\n",
+                  "        run: ./dev devshell-check\n"),
+              "build"))
+    check("test.yml missing the build job entirely is flagged",
+          check_devshell_check_in_shell("test.yml", "jobs:\n  other:\n    steps: []\n", "build"))
+
+    good_macos_job = good_build_job.replace("  build:", "  tests-macos:")
+    check("test-macos.yml tests-macos job running devshell-check in-shell passes",
+          not check_devshell_check_in_shell("test-macos.yml", good_macos_job, "tests-macos"))
+    check("test-macos.yml tests-macos job missing devshell-check is flagged",
+          check_devshell_check_in_shell(
+              "test-macos.yml",
+              good_macos_job.replace(
+                  "      - name: devShell proving tests (change 007 — C4-C6)\n"
+                  "        run: nix develop --command ./dev devshell-check\n", ""),
+              "tests-macos"))
+
+    good_doctor_job = (
+        "jobs:\n  doctor:\n    steps:\n"
+        "      - run: ./dev doctor\n"
+        "      - run: ./dev workflow-check\n"
+        "      - run: ./dev devshell-check --self-test\n"
+    )
+    check("checks.yml doctor job running devshell-check --self-test passes",
+          not check_devshell_check_selftest("checks.yml", good_doctor_job))
+    check("checks.yml doctor job missing devshell-check --self-test is flagged",
+          check_devshell_check_selftest(
+              "checks.yml",
+              good_doctor_job.replace("      - run: ./dev devshell-check --self-test\n", "")))
+    check("checks.yml missing the doctor job entirely is flagged",
+          check_devshell_check_selftest("checks.yml", "jobs:\n  other:\n    steps: []\n"))
 
     print("workflow-check: self-test", "OK" if ok else "FAILED")
     return 0 if ok else 1

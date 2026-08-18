@@ -76,5 +76,8 @@ jobs:
       - name: Build the project with cabal
         run: nix develop --command cabal build all --disable-documentation
 
+      - name: devShell proving tests (change 007 — C4-C6)
+        run: nix develop --command ./dev devshell-check
+
       - name: Run ${{ matrix.test-suite }}
         run: nix develop --command cabal test ${{ matrix.test-suite }}

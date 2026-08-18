@@ -1,0 +1,509 @@
+#!/usr/bin/env python3
+"""Proving tests for change 007 (bd enters the devShell through hix's own
+extension point — docs/changes/007-bd-via-hix-shell-extension-point.md).
+
+Two modes, matching the spec's two shapes:
+
+  --self-test   Pure static assertions against the real, checked-out
+                flake.nix / nix/hix.nix / README.md — no nix, seconds. Proves
+                C1 (flake.nix composes no shell), C2 (the overlay injects
+                exactly one namespaced `neohaskellTools` attribute, no bare
+                `bd` shadowing, no beads.overlays.default/nixpkgs.follows),
+                C3 (nix/hix.nix reaches bd via shell.buildInputs and not
+                shell.tools, with every pre-existing shell declaration still
+                present), and C8 (README's AC3 recipe names the actual code
+                attribute, so a rename breaks the doc check). Runs in the
+                nix-free checks.yml `doctor` job.
+
+  (default)     In-shell integration checks — must run inside `nix develop`
+                (nix develop --command ./dev devshell-check). Proves C4 (bd
+                resolves to the exact beads.packages.<system>.bd store path,
+                version >= 1.1.0), C5 (every declared shell tool still
+                resolves to a /nix/store path, and hoogle is specifically the
+                nixpkgs build), and C6 (scripts/toolchain-fp is deterministic
+                and the NEOHASKELL_SHELL_FP / NEOHASKELL_SHELL_PATH witnesses
+                match). Runs from test.yml `build` and test-macos.yml
+                `tests-macos` (C7 freezes both — see scripts/workflow-check).
+
+Run:  ./dev devshell-check              (in-shell)   CI: test.yml, test-macos.yml
+      ./dev devshell-check --self-test  (static)     CI: checks.yml (doctor job)
+"""
+
+import os
+import re
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+FLAKE_NIX = REPO_ROOT / "flake.nix"
+HIX_NIX = REPO_ROOT / "nix" / "hix.nix"
+README = REPO_ROOT / "README.md"
+
+# The pre-existing shell.tools entries (C3) — must stay unweakened.
+REQUIRED_SHELL_TOOLS = (
+    "cabal", "hlint", "fourmolu", "hspec-discover", "haskell-language-server",
+    "cabal-gild", "ghcid", "hiedb", "doctest",
+)
+# The pre-existing shell.buildInputs entries (C3) — must stay unweakened.
+REQUIRED_BUILD_INPUTS = (
+    "git", "nixfmt-classic", "postgresql", "hurl", "poppler_utils",
+    "python3.withPackages", "haskellPackages.hoogle",
+)
+# Commands checked purely by "resolves under /nix/store" (C5). bd (identity +
+# version floor) and hoogle (nixpkgs-build identity) get their own checks.
+PATH_ONLY_TOOLS = (
+    "cabal", "hlint", "fourmolu", "hspec-discover", "haskell-language-server",
+    "cabal-gild", "ghcid", "hiedb", "doctest",
+    "git", "nixfmt", "psql", "hurl", "pdftotext", "python3",
+)
+BD_VERSION_FLOOR = (1, 1, 0)
+
+
+# ── comment stripping + tiny attrset parser (shared by C1-C3, C8) ─────────────
+
+def strip_comments(text):
+    """Drop `#` comments (full-line and trailing) so a rule can't be spoofed
+    by prose in a comment. Nix's `${...}` interpolation is self-balancing
+    around any `{`/`}` it contains, so the brace scanner below is unaffected
+    by leaving it in place."""
+    out = []
+    for line in text.splitlines():
+        if line.lstrip().startswith("#"):
+            continue
+        if " #" in line:
+            line = line[: line.index(" #")]
+        out.append(line)
+    return "\n".join(out)
+
+
+def find_matching(text, open_idx, open_ch, close_ch):
+    """Index of the `close_ch` matching the `open_ch` at `open_idx`, counting
+    ONLY that bracket pair (nested `${...}` interpolation self-balances, so
+    this stays correct without special-casing it)."""
+    depth = 0
+    i = open_idx
+    while i < len(text):
+        c = text[i]
+        if c == open_ch:
+            depth += 1
+        elif c == close_ch:
+            depth -= 1
+            if depth == 0:
+                return i
+        i += 1
+    return -1
+
+
+def top_level_entries(body):
+    """`name = value;` pairs at depth 0 inside an attrset body (the text
+    between its `{` and `}`, exclusive). Good enough for the controlled,
+    simple attrsets this change introduces — not a general Nix parser."""
+    entries = []
+    depth = 0
+    i, n = 0, len(body)
+    while i < n:
+        c = body[i]
+        if depth == 0:
+            m = re.match(r"\s*([A-Za-z_][A-Za-z0-9_.\-]*)\s*=\s*(?!=)", body[i:])
+            if m:
+                val_start = i + m.end()
+                j, vdepth = val_start, 0
+                while j < n:
+                    cj = body[j]
+                    if cj in "{[(":
+                        vdepth += 1
+                    elif cj in "}])":
+                        if vdepth == 0:
+                            break
+                        vdepth -= 1
+                    elif cj == ";" and vdepth == 0:
+                        break
+                    j += 1
+                entries.append((m.group(1), body[val_start:j].strip()))
+                i = j + 1
+                continue
+        if c in "{[(":
+            depth += 1
+        elif c in "}])":
+            depth -= 1
+        i += 1
+    return entries
+
+
+def overlay_bodies(code):
+    """Body text (between `{` and `}`, exclusive) of every
+    `(final: _prev: { ... })`-shaped overlay lambda in `code`."""
+    bodies = []
+    for m in re.finditer(r"final\s*:\s*_?prev\s*:\s*\{", code):
+        open_idx = m.end() - 1
+        close_idx = find_matching(code, open_idx, "{", "}")
+        if close_idx != -1:
+            bodies.append(code[open_idx + 1 : close_idx])
+    return bodies
+
+
+# ── C1: flake.nix composes no shell ────────────────────────────────────────
+
+def check_flake_wiring(flake_text):
+    errs = []
+    code = strip_comments(flake_text)
+    for banned in ("mkShell", "inputsFrom", "devShells"):
+        if banned in code:
+            errs.append(
+                f"flake.nix still contains '{banned}' — devShells.default "
+                "must be hix's own shell, unwrapped (C1)")
+    return errs
+
+
+# ── C2: the overlay shape ──────────────────────────────────────────────────
+
+def check_overlay_shape(flake_text):
+    """Returns (errs, attr_name) — attr_name is the actual injected attribute
+    name (for C8 to cross-check README against), or None if not found."""
+    errs = []
+    code = strip_comments(flake_text)
+    bodies = overlay_bodies(code)
+    if not bodies:
+        errs.append(
+            "flake.nix: no `(final: _prev: { ... })`-shaped overlay found — "
+            "cannot verify the neohaskellTools injection (C2)")
+        return errs, None
+
+    all_names, neohaskell_value = [], None
+    for body in bodies:
+        for name, value in top_level_entries(body):
+            all_names.append(name)
+            if name == "neohaskellTools":
+                neohaskell_value = value
+
+    if "bd" in all_names:
+        errs.append(
+            "flake.nix: an overlay injects a bare top-level `bd` attribute — "
+            "this silently shadows any same-named nixpkgs attribute; "
+            "namespace it under `neohaskellTools` instead (C2/F2)")
+    if all_names.count("neohaskellTools") == 0:
+        errs.append(
+            "flake.nix: no overlay injects a top-level `neohaskellTools` "
+            "attribute (C2)")
+    elif all_names.count("neohaskellTools") > 1:
+        errs.append(
+            "flake.nix: `neohaskellTools` is injected by more than one "
+            "overlay (C2)")
+
+    attr_name = "neohaskellTools" if "neohaskellTools" in all_names else None
+
+    if neohaskell_value is not None:
+        inner = neohaskell_value.strip()
+        if inner.startswith("{") and inner.endswith("}"):
+            inner_names_values = top_level_entries(inner[1:-1])
+        else:
+            inner_names_values = []
+            errs.append(
+                f"flake.nix: neohaskellTools is not an attribute-set literal "
+                f"({inner!r}) (C2)")
+        inner_names = [n for n, _ in inner_names_values]
+        if inner_names != ["bd"]:
+            errs.append(
+                "flake.nix: neohaskellTools must inject exactly one "
+                f"attribute, `bd` (found {inner_names or 'none'}) (C2)")
+        else:
+            got = re.sub(r"\s+", "", inner_names_values[0][1])
+            expected = re.sub(r"\s+", "", "beads.packages.${system}.bd")
+            if got != expected:
+                errs.append(
+                    f"flake.nix: neohaskellTools.bd = "
+                    f"{inner_names_values[0][1]!r}, expected "
+                    "beads.packages.${system}.bd (C2/F3)")
+
+    if "beads.overlays.default" in code:
+        errs.append(
+            "flake.nix: references beads.overlays.default — out of "
+            "contract, it calls final.buildGo126Module which our pin lacks "
+            "(C2/F4)")
+    if re.search(r"inputs\.beads\.inputs\.nixpkgs\.follows", code):
+        errs.append(
+            "flake.nix: sets inputs.beads.inputs.nixpkgs.follows — out of "
+            "contract (C2/F4)")
+    return errs, attr_name
+
+
+# ── C3: nix/hix.nix wiring, nothing weakened ───────────────────────────────
+
+def check_hix_wiring(hix_text):
+    errs = []
+    code = strip_comments(hix_text)
+
+    tools_match = re.search(r"shell\.tools\s*=\s*\{", code)
+    if not tools_match:
+        errs.append("nix/hix.nix: no `shell.tools = { ... }` block found (C3)")
+    else:
+        close_idx = find_matching(code, tools_match.end() - 1, "{", "}")
+        body = code[tools_match.end() : close_idx]
+        names = [n for n, _ in top_level_entries(body)]
+        missing = [t for t in REQUIRED_SHELL_TOOLS if t not in names]
+        if missing:
+            errs.append(
+                f"nix/hix.nix: shell.tools is missing {missing} — a "
+                "pre-existing entry was weakened (C3)")
+        if "bd" in names or "neohaskellTools" in body:
+            errs.append(
+                "nix/hix.nix: bd/neohaskellTools reached from shell.tools — "
+                "bd is a Go binary and must resolve via shell.buildInputs, "
+                "not shell.tools (C3/F11)")
+
+    build_match = re.search(
+        r"shell\.buildInputs\s*=\s*(?:with\s+pkgs\s*;\s*)?\[", code)
+    if not build_match:
+        errs.append(
+            "nix/hix.nix: no `shell.buildInputs = [ ... ]` block found (C3)")
+    else:
+        close_idx = find_matching(code, build_match.end() - 1, "[", "]")
+        body = code[build_match.end() : close_idx]
+        missing = [b for b in REQUIRED_BUILD_INPUTS if b not in body]
+        if missing:
+            errs.append(
+                f"nix/hix.nix: shell.buildInputs is missing pre-existing "
+                f"entries {missing} (C3)")
+        if "pkgs.neohaskellTools.bd" not in body:
+            errs.append(
+                "nix/hix.nix: shell.buildInputs does not reach bd as "
+                "pkgs.neohaskellTools.bd (C3)")
+
+    if re.sub(r"\s+", "", "shell.withHoogle = false") not in re.sub(r"\s+", "", code):
+        errs.append("nix/hix.nix: shell.withHoogle = false is missing (C3)")
+
+    hook_match = re.search(r"shell\.shellHook\s*=\s*''(.*?)''", code, re.S)
+    if not hook_match:
+        errs.append("nix/hix.nix: no shell.shellHook block found (C3)")
+    else:
+        hook = hook_match.group(1)
+        for var in ("NEOHASKELL_SHELL_FP", "NEOHASKELL_SHELL_PATH"):
+            if var not in hook:
+                errs.append(
+                    f"nix/hix.nix: shell.shellHook no longer exports {var} "
+                    "(C3)")
+    return errs
+
+
+# ── C8: README's AC3 recipe tracks the real attribute name ────────────────
+
+def check_doc_coherence(readme_text, attr_name):
+    errs = []
+    if attr_name is None:
+        errs.append(
+            "README.md: cannot verify the AC3 recipe — flake.nix has no "
+            "neohaskellTools-shaped overlay yet (C2 must land first) (C8)")
+        return errs
+    if attr_name not in readme_text:
+        errs.append(
+            f"README.md: does not mention `{attr_name}` — the AC3 recipe "
+            "must name the actual code attribute, not a stale one (C8/F10)")
+    if f"pkgs.{attr_name}." not in readme_text:
+        errs.append(
+            f"README.md: does not show `pkgs.{attr_name}.<key>` being "
+            "listed in nix/hix.nix shell.buildInputs (C8)")
+    if "shell.buildInputs" not in readme_text:
+        errs.append(
+            "README.md: AC3 recipe does not name `shell.buildInputs` as "
+            "where the tool is listed (C8)")
+    if "shell.tools" not in readme_text:
+        errs.append(
+            "README.md: AC3 recipe does not document the Haskell-tool "
+            "exception (shell.tools) (C8/F11)")
+    return errs
+
+
+# ── in-shell (C4-C6): real `nix develop` state ─────────────────────────────
+
+def _run(cmd):
+    return subprocess.run(cmd, capture_output=True, text=True)
+
+
+def current_system():
+    r = _run(["nix", "eval", "--impure", "--raw", "--expr", "builtins.currentSystem"])
+    if r.returncode != 0:
+        raise RuntimeError(f"nix eval builtins.currentSystem failed: {r.stderr.strip()}")
+    return r.stdout.strip()
+
+
+def flake_out_path(attr_path):
+    """The store path of legacyPackages.<system>.<attr_path>, via `.outPath`
+    — reads the derivation's output path without building anything new.
+
+    Evaluated through the `<repo>#<ref>` flake-ref form (an ABSOLUTE repo
+    path, not `.#...` + a cwd change, and not `builtins.getFlake`): the
+    latter two both re-derive the flake's `src` from a fresh git-ls-files
+    fetch, which on this repo pulls in a foreign-system IFD derivation
+    (`git-ls-files.drv` pinned to x86_64-linux) and fails on other hosts —
+    see the `avoiding-ifd-cross-platform` skill. The plain flake-ref form
+    reuses the already-resolved flake the surrounding `nix develop` entered."""
+    system = current_system()
+    ref = f'{REPO_ROOT}#legacyPackages."{system}".{attr_path}.outPath'
+    r = _run(["nix", "eval", "--impure", "--raw", ref])
+    if r.returncode != 0:
+        raise RuntimeError(
+            f"nix eval legacyPackages.{system}.{attr_path}.outPath failed: "
+            f"{r.stderr.strip()}")
+    return r.stdout.strip()
+
+
+def resolved_bin(name):
+    which = shutil.which(name)
+    if which is None:
+        raise RuntimeError(f"'{name}' not found on PATH")
+    return os.path.realpath(which)
+
+
+def _under(resolved, store_path):
+    store_path = store_path.rstrip("/")
+    return resolved == store_path or resolved.startswith(store_path + "/")
+
+
+def check_bd_identity(errs):
+    expected = flake_out_path("neohaskellTools.bd")
+    resolved = resolved_bin("bd")
+    if not _under(resolved, expected):
+        errs.append(
+            f"bd resolves to {resolved}, expected under {expected} "
+            "(beads.packages.<system>.bd) — not the pinned build (C4/F6)")
+    version_out = _run(["bd", "--version"]).stdout.strip()
+    m = re.search(r"(\d+)\.(\d+)\.(\d+)", version_out)
+    if not m:
+        errs.append(f"bd --version produced no parseable version: {version_out!r} (C4)")
+    elif tuple(int(g) for g in m.groups()) < BD_VERSION_FLOOR:
+        errs.append(
+            f"bd --version = {version_out!r} is below the "
+            f">= {'.'.join(map(str, BD_VERSION_FLOOR))} schema floor (C4/F3)")
+
+
+def check_tool_inventory(errs):
+    for name in PATH_ONLY_TOOLS:
+        try:
+            resolved = resolved_bin(name)
+        except RuntimeError as e:
+            errs.append(f"{e} (C5)")
+            continue
+        if not resolved.startswith("/nix/store/"):
+            errs.append(f"{name} resolves to {resolved}, not a /nix/store path (C5)")
+
+    r = _run(["python3", "-c", "import yaml"])
+    if r.returncode != 0:
+        errs.append(f"python3 -c 'import yaml' failed: {r.stderr.strip()} (C5)")
+
+    try:
+        expected = flake_out_path("haskellPackages.hoogle")
+        resolved = resolved_bin("hoogle")
+        if not _under(resolved, expected):
+            errs.append(
+                f"hoogle resolves to {resolved}, expected under {expected} "
+                "(haskellPackages.hoogle, the nixpkgs build) — got "
+                "haskell.nix's hoogle-with-packages wrapper instead? "
+                "(./dev api --local would silently re-break) (C5)")
+    except RuntimeError as e:
+        errs.append(f"{e} (C5)")
+
+
+def check_fingerprint_witness(errs):
+    fp_script = str(REPO_ROOT / "scripts" / "toolchain-fp")
+    r1, r2 = _run([fp_script]), _run([fp_script])
+    if r1.returncode != 0 or not r1.stdout.strip():
+        errs.append(
+            f"scripts/toolchain-fp produced no output ({r1.stderr.strip()}) "
+            "(C6)")
+        return
+    fp1, fp2 = r1.stdout.strip(), r2.stdout.strip()
+    if fp1 != fp2:
+        errs.append(
+            "scripts/toolchain-fp is non-deterministic across two "
+            f"consecutive runs ({fp1} != {fp2}) (C6/F7)")
+
+    env_fp = os.environ.get("NEOHASKELL_SHELL_FP", "")
+    if env_fp != fp1:
+        errs.append(
+            f"NEOHASKELL_SHELL_FP={env_fp!r} does not match "
+            f"scripts/toolchain-fp={fp1!r} — are you inside `nix develop`? "
+            "(C6)")
+
+    env_path = os.environ.get("NEOHASKELL_SHELL_PATH", "")
+    if not env_path:
+        errs.append(
+            "NEOHASKELL_SHELL_PATH is empty — the PATH witness "
+            "with-toolchain restores on its fast path (C6)")
+        return
+    try:
+        bd_bin_dir = os.path.dirname(resolved_bin("bd"))
+        if bd_bin_dir not in env_path.split(os.pathsep):
+            errs.append(
+                "NEOHASKELL_SHELL_PATH does not contain bd's bin dir "
+                f"({bd_bin_dir}) — with-toolchain's fast path could hand "
+                "back a host binary (C6/F6)")
+    except RuntimeError as e:
+        errs.append(f"{e} (C6)")
+
+
+# ── dispatch ────────────────────────────────────────────────────────────────
+
+def self_test():
+    ok = True
+
+    def check(name, errs):
+        nonlocal ok
+        print(f"  {'ok  ' if not errs else 'FAIL'} {name}")
+        for e in errs:
+            print(f"        - {e}")
+        ok = ok and not errs
+
+    flake_text = FLAKE_NIX.read_text(encoding="utf-8")
+    hix_text = HIX_NIX.read_text(encoding="utf-8")
+    readme_text = README.read_text(encoding="utf-8")
+
+    check("flake-wiring: flake.nix composes no shell (C1)",
+          check_flake_wiring(flake_text))
+    overlay_errs, attr_name = check_overlay_shape(flake_text)
+    check("overlay-shape: one namespaced attribute, no shadowing (C2)",
+          overlay_errs)
+    check("hix-wiring: bd via shell.buildInputs, nothing weakened (C3)",
+          check_hix_wiring(hix_text))
+    check("doc-coherence: README recipe tracks the code attribute (C8)",
+          check_doc_coherence(readme_text, attr_name))
+
+    print("devshell-check: self-test", "OK" if ok else "FAILED")
+    return 0 if ok else 1
+
+
+def run_in_shell():
+    ok = True
+
+    def check(name, fn):
+        nonlocal ok
+        errs = []
+        try:
+            fn(errs)
+        except Exception as e:  # nix/PATH failures are check failures, not crashes
+            errs.append(str(e))
+        print(f"  {'ok  ' if not errs else 'FAIL'} {name}")
+        for e in errs:
+            print(f"        - {e}")
+        ok = ok and not errs
+
+    check("bd store-path identity + version floor (C4)", check_bd_identity)
+    check("tool inventory (C5)", check_tool_inventory)
+    check("fingerprint witness (C6)", check_fingerprint_witness)
+
+    print("devshell-check: in-shell", "OK" if ok else "FAILED")
+    return 0 if ok else 1
+
+
+def main(argv):
+    if argv and argv[0] == "--self-test":
+        return self_test()
+    if argv:
+        print(f"usage: devshell-check [--self-test]  (got {argv!r})", file=sys.stderr)
+        return 2
+    return run_in_shell()
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
