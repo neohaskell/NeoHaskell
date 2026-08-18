@@ -234,7 +234,7 @@ type instance EntitiesOf FulfilmentStatus =
 
 The runtime must subscribe the projection to every declared entity/event source. Source inspection and the IDE must display every source. Validation must compare the Slice declaration against `EntitiesOf query`, not invent a singular `EntityOf query` relationship.
 
-Every `fedBy @Event` declaration must resolve the event's owning entity through `EventOf`/`EventVariantOf` and prove that the owner is present in the complete `EntitiesOf query` list. Source and typed validation must reject feeds with unresolved, undeclared, or mismatched owners before deriving subscriptions. Valid feeds must remain complete and visible to runtime wiring, source inspection, and IDE rendering.
+Every `fedBy @Event` declaration must resolve the event's owning entity through `EventOf`/`EventVariantOf` and prove that the owner is present in the complete `EntitiesOf query` list. Source validation rejects invalid Slice syntax and unresolved closed-vocabulary references without claiming typed ownership. Typed validation resolves `EventOf`/`EventVariantOf` owners and proves `EntitiesOf` membership. Runtime subscription derivation is allowed only for `typed-valid` slices; `typed-validation-blocked` slices remain inspectable but cannot run. Valid feeds must remain complete and visible to runtime wiring, source inspection, and IDE rendering.
 
 ### Translation slice
 
@@ -348,8 +348,9 @@ Before JSON is declared export-only in a released workflow:
 1. move healing and write operations to exact Slice source spans through semantic-engine code actions;
 2. make diagram JSON generation one-way and read-only;
 3. reject direct JSON writes with an actionable migration diagnostic;
-4. add parity tests proving that the source edit produces the same intended model change and regenerated export;
-5. remove the legacy JSON mutation routes only after supported clients use the source-edit flow.
+4. include the source revision or relevant file hashes in every source-span code-action request, revalidate them under the project write lock, and reject stale actions with an actionable conflict diagnostic;
+5. add parity tests proving that the source edit produces the same intended model change and regenerated export, including an intervening-edit conflict case;
+6. remove the legacy JSON mutation routes only after supported clients use the source-edit flow.
 
 ## `neo` architecture
 
