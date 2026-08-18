@@ -11,7 +11,7 @@ Tracking epic: [#824](https://github.com/neohaskell/NeoHaskell/issues/824)
 Implement this architecture as a sequence of vertical, independently reviewable changes. Do not begin with a horizontal rewrite of either the framework or `neo`.
 
 1. **Reconcile the existing Event Model and tooling backlog with this document.**
-   - Treat [#573](https://github.com/neohaskell/NeoHaskell/issues/573) and [#578-#585](https://github.com/neohaskell/NeoHaskell/issues/578) as prior design material, not an implementation-ready plan.
+   - Treat [#573](https://github.com/neohaskell/NeoHaskell/issues/573), [#578](https://github.com/neohaskell/NeoHaskell/issues/578), [#579](https://github.com/neohaskell/NeoHaskell/issues/579), [#580](https://github.com/neohaskell/NeoHaskell/issues/580), [#581](https://github.com/neohaskell/NeoHaskell/issues/581), [#582](https://github.com/neohaskell/NeoHaskell/issues/582), [#583](https://github.com/neohaskell/NeoHaskell/issues/583), [#584](https://github.com/neohaskell/NeoHaskell/issues/584), and [#585](https://github.com/neohaskell/NeoHaskell/issues/585) as prior design material, not an implementation-ready plan.
    - Preserve their useful work on structural declarations, type relationships, integrations, rules, wiring, test generation, visual export, and reference-application migration.
    - Remove assumptions that require a central `EventModel.hs`, an editable `event-model.json`, public `Service` registration, type-only behavioral rules, or one generated technical shape at a time.
    - Close [#819](https://github.com/neohaskell/NeoHaskell/issues/819) through deletion of the shelved full-port plan. The new Haskell semantic-engine issue [#827](https://github.com/neohaskell/NeoHaskell/issues/827) is deliberately narrower than that shelved rewrite: the production native launcher and operational CLI remain while semantic capabilities move behind a proven protocol.
@@ -234,6 +234,8 @@ type instance EntitiesOf FulfilmentStatus =
 
 The runtime must subscribe the projection to every declared entity/event source. Source inspection and the IDE must display every source. Validation must compare the Slice declaration against `EntitiesOf query`, not invent a singular `EntityOf query` relationship.
 
+Every `fedBy @Event` declaration must resolve the event's owning entity through `EventOf`/`EventVariantOf` and prove that the owner is present in the complete `EntitiesOf query` list. Source and typed validation must reject feeds with unresolved, undeclared, or mismatched owners before deriving subscriptions. Valid feeds must remain complete and visible to runtime wiring, source inspection, and IDE rendering.
+
 ### Translation slice
 
 Cross-boundary behavior should preserve the distinction between an observed external fact and an application command:
@@ -337,6 +339,18 @@ The export should carry stable semantic IDs and source references. It should sta
 
 IDE layout is presentation state. It may store positions, collapsed groups, colors, or viewport information keyed by stable IDs. It cannot create commands, events, edges, or rules.
 
+### Migrating current JSON mutation paths
+
+The existing `workspace/healEventModel` and direct-write IDE paths mutate `event-model.json`. They cannot coexist indefinitely with the export-only contract. During migration they must be treated as legacy compatibility behavior and must not become an input to Slice runtime composition.
+
+Before JSON is declared export-only in a released workflow:
+
+1. move healing and write operations to exact Slice source spans through semantic-engine code actions;
+2. make diagram JSON generation one-way and read-only;
+3. reject direct JSON writes with an actionable migration diagnostic;
+4. add parity tests proving that the source edit produces the same intended model change and regenerated export;
+5. remove the legacy JSON mutation routes only after supported clients use the source-edit flow.
+
 ## `neo` architecture
 
 ### Why the semantic engine should be Haskell
@@ -360,6 +374,8 @@ The first executable must work before a project compiles. It must reliably:
 - find the project root;
 - read the compatibility revision;
 - select or install the matching engine;
+- verify the engine executable against a signed manifest or approved cryptographic digest from a configured trusted source before first execution;
+- reject missing, untrusted, or mismatched engine artifacts and roll a failed installation back to the previous known-good engine;
 - start or reconnect to a persistent engine;
 - supervise process groups and signals;
 - forward args, stdin, stdout, stderr, and exit codes;
@@ -516,7 +532,7 @@ data SynthesisProblem input output = SynthesisProblem
   }
 ```
 
-The only allowed result is an expression or ranked candidate set:
+Successful synthesis returns either one expression or a ranked candidate set. Failure is explicit and carries a diagnostic:
 
 ```haskell
 data SynthesisResult
@@ -768,13 +784,29 @@ Every generation operation must be staged:
 
 ```text
 real workspace
+  -> capture base revision and relevant file hashes
   -> isolated temporary workspace
   -> deterministic edits
   -> atomic hole completions
-  -> parse/type/test/property/mutation/lint gates
+  -> sandboxed parse/type/test/property/mutation/lint gates
   -> semantic diff
-  -> approved atomic write
+  -> acquire project commit lock
+  -> revalidate base revision and file hashes
+  -> approved atomic write, or abort/rebase on mismatch
 ```
+
+Generation must never overwrite edits made after it began. The final commit phase holds a project-scoped lock, compares the current revision or relevant file hashes with the captured base, and aborts with a reproducible conflict diagnostic when they differ. Automatic rebasing is allowed only when a deterministic three-way merge and all validation gates succeed again.
+
+The temporary workspace is not an execution sandbox. Generated code, compiler plugins, build hooks, tests, properties, and mutation runners must execute with:
+
+- network access denied by default;
+- filesystem access restricted to the isolated workspace and explicit read-only toolchain paths;
+- a scrubbed environment containing no ambient credentials or unrelated configuration;
+- validated real paths and rejected symlink escapes before execution and commit;
+- CPU, memory, process-count, output-size, and wall-clock limits;
+- process-group supervision and descendant cleanup on success, failure, cancellation, and timeout.
+
+Unrestricted execution is an explicit trusted mode with a visible warning and must never be selected automatically by model output or project content.
 
 On failure:
 
