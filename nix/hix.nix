@@ -63,5 +63,10 @@
     # 5.0.18.4 silently ignores --local=DIR txt dirs (verified 2026-07-08);
     # the nixpkgs build of the same version indexes them correctly.
     haskellPackages.hoogle
+    # bd (beads) — NOT shell.tools: that resolves against the project's own
+    # GHC (haskell.nix), but bd is a Go binary from a separately-pinned
+    # nixpkgs (see flake.nix's `neohaskellTools` overlay); the mirror-image
+    # case of the doctest note above.
+    pkgs.neohaskellTools.bd
   ];
 }

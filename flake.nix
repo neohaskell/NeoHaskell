@@ -15,8 +15,8 @@
   # it's applied to, not the pkgs it was authored against). Instead this
   # consumes beads' self-contained `packages.${system}.bd` output directly,
   # built entirely against beads' own independently-pinned nixpkgs
-  # (nixos-25.11, which does have buildGo126Module) — see the devShells
-  # override below.
+  # (nixos-25.11, which does have buildGo126Module) — see the
+  # `neohaskellTools` overlay below.
   inputs.beads.url = "github:gastownhall/beads";
   outputs = { self, nixpkgs, flake-utils, haskellNix, beads }:
     let
@@ -33,6 +33,14 @@
               #evalSystem = "x86_64-linux";
             };
           })
+          # The single, named extension point for a non-Haskell, non-hix-
+          # managed CLI tool to enter the dev shell (README.md: "Adding a
+          # non-Haskell CLI tool to the dev shell"). Namespaced rather than a
+          # bare `bd` attribute so it can never silently shadow a same-named
+          # nixpkgs package (today's pin has none, but that's latent, not
+          # guaranteed) — nix/hix.nix's shell.buildInputs consumes it as
+          # pkgs.neohaskellTools.bd.
+          (final: _prev: { neohaskellTools = { bd = beads.packages.${system}.bd; }; })
         ];
         pkgs = import nixpkgs {
           inherit system overlays;
@@ -54,19 +62,6 @@
           neo = {
             type = "app";
             program = "${neo}/bin/neo";
-          };
-        };
-        # `default` is the shell contributors/agents actually use
-        # (scripts/with-toolchain enters it via `nix develop --command`).
-        # Extend the hix-generated shell with bd (beads), rather than
-        # touching nix/hix.nix's shell.buildInputs: bd comes from a
-        # separately-pinned nixpkgs (see the `beads` input comment above),
-        # so it is composed in via `mkShell { inputsFrom; }` instead of
-        # being folded into the hix project's own pkgs/overlay chain.
-        devShells = (flake.devShells or { }) // {
-          default = pkgs.mkShell {
-            inputsFrom = [ flake.devShells.default ];
-            packages = [ beads.packages.${system}.bd ];
           };
         };
       });

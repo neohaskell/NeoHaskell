@@ -70,6 +70,22 @@ cachix use neohaskell
 
 This dramatically speeds up the first `nix develop` (from ~30 min to ~2 min).
 
+### Adding a non-Haskell CLI tool to the dev shell
+
+`bd` (beads) is a Go binary that enters the dev shell this way, and it's the
+template for the next tool like it:
+
+1. Add a key under `neohaskellTools` in the overlay in `flake.nix` (e.g.
+   `neohaskellTools = { bd = beads.packages.${system}.bd; }`).
+2. List `pkgs.neohaskellTools.<key>` in `nix/hix.nix`'s `shell.buildInputs`.
+
+**Exception — a Haskell tool goes in `shell.tools`, not `neohaskellTools`.**
+`shell.tools` entries are resolved against the project's own GHC
+(haskell.nix); `neohaskellTools` entries are plain nixpkgs derivations. Mixing
+them up is why `doctest` (`nix/hix.nix`) is pinned as a `shell.tools` entry
+instead — it links the GHC lib API and only works built against the
+project's own GHC.
+
 The recommended IDE for any NeoHaskell project is [Visual Studio Code](https://code.visualstudio.com/).
 
 ## Get the code
