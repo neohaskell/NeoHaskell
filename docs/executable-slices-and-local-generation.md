@@ -352,6 +352,22 @@ Before JSON is declared export-only in a released workflow:
 5. add parity tests proving that the source edit produces the same intended model change and regenerated export, including an intervening-edit conflict case;
 6. remove the legacy JSON mutation routes only after supported clients use the source-edit flow.
 
+### Project write coordination
+
+Every writer, including IDE actions, CLI generation, `workspace/healEventModel` compatibility behavior, and semantic-engine code actions, must coordinate through one OS-visible advisory lock rooted at the project, such as `.neo/locks/project-write.lock`. In-process mutexes are insufficient because writers may run in separate processes.
+
+The lock contract must define:
+
+- exclusive ownership for the complete revalidate-and-commit critical section;
+- owner metadata containing process identity, operation ID, start time, and engine/CLI version for diagnostics only;
+- a bounded acquisition timeout with cancellation and an actionable report of the current owner;
+- automatic kernel release when the owning process exits;
+- stale metadata cleanup only after successfully acquiring the OS lock, never by deleting a lock held by another process;
+- one implementation or protocol shared by all writer surfaces rather than independent lock files;
+- revalidation of requested revision or file hashes after lock acquisition and before any write.
+
+Concurrency tests must start two real processes, force an intervening edit while one waits, and prove that only one writer commits while the stale action is rejected without overwriting either change.
+
 ## `neo` architecture
 
 ### Why the semantic engine should be Haskell
