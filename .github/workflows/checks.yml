@@ -38,6 +38,26 @@ jobs:
       # loop stays deterministic/report-only (pure stdlib, no toolchain).
       - run: ./dev workflow-check
 
+  secrets:
+    name: secret scan (gitleaks, deterministic)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # Pinned binary, not gitleaks-action (the action needs an org license).
+      # Scans the working tree, not git history: deterministic on the state
+      # being merged, no permanent red from historical noise. --redact keeps
+      # any finding out of public CI logs. ADR-0075: deterministic checks
+      # live here; agents (verify V9) only check what needs judgment.
+      - name: Install gitleaks (pinned + checksum)
+        run: |
+          curl -sSfL -o gitleaks.tar.gz https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz
+          echo "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  gitleaks.tar.gz" | sha256sum -c -
+          tar -xzf gitleaks.tar.gz gitleaks
+      - run: ./gitleaks dir . --redact --no-banner --exit-code 1
+
   codemap:
     name: codemap check (localization ontology)
     runs-on: ubuntu-latest

@@ -123,3 +123,4 @@ docs/changes/*.security-review.md
 
 # Beads / Dolt files (added by bd init)
 *.db
+.beads.gate.lock

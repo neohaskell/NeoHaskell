@@ -46,18 +46,20 @@ The only exception to this rule is if you COMPLETELY EXHAUST all the resources h
 ## Work intake
 
 New work enters through the **bd issue queue**, not by an agent self-triggering
-a skill. Run `bd ready` to see what's claimable, `bd show <id>` for details.
-`bd prime` has the full workflow. The dispatcher pours the compound
-**`change`** formula (`.beads/formulas/change.formula.toml`, one molecule,
-intake through merge, human/gh:run/gh:pr gates in-formula) for whatever is
-claimed; `release-publish` is the one other formula, kept separate since it
-aggregates across changes on demand rather than running per change. See
-`docs/processes/neohaskell-change.md` and
-`docs/processes/neohaskell-agents.md` for the process and role roster this
-implements.
+a skill. Nick introduces requests one at a time; each request pours the
+**`change`** formula v2 (`.beads/formulas/change.formula.toml`, ADR-0075):
+one molecule, **five coarse steps** — spec → spec-approval (the only
+unconditional human gate, Nick+Fable) → build → verify (opus V1–V9 verdict)
+→ pr (auto-merge on green when non-breaking; GATE 2 otherwise). The stage
+playbook is the `neohaskell-change` skill. Run `bd ready` to see what's
+claimable, `bd show <id>` for details, `bd prime` for the full workflow.
+Never split the 5 steps into finer beads — over-atomization is the failure
+mode ADR-0075 exists to prevent.
 
-Dolt remote sync is NOT enabled for this repo: never run `bd dolt push` or
-push `refs/dolt/data`; issue data syncs only via the dispatcher host.
+Beads sync goes to the **private mirror** `NickSeagull/neohaskell-beads`
+(`refs/dolt/data`), pushed automatically by the SessionEnd hook — never
+wire the Dolt remote to the public origin (beads carry candid agent notes;
+that channel publishes without human review, ADR-0075).
 
 ## Change flow (Phase 5) — spec-gated, two human touchpoints [DEPRECATED — moved to docs/legacy/neohaskell-pipeline/, rollback-only — see "Work intake" above]
 
