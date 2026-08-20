@@ -24,13 +24,23 @@
           }
         ],
         "matcher": "Edit|Write|MultiEdit"
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/bd-token-tracking.py",
+            "timeout": 30
+          }
+        ]
       }
     ],
     "PreToolUse": [
       {
         "hooks": [
           {
-            "command": "[ \"$(git branch --show-current)\" != \"main\" ] || { echo '{\"block\": true, \"message\": \"Cannot edit on main branch. Create a feature branch first.\"}' \u003e\u00262; exit 2; }",
+            "command": "[ \"$(git branch --show-current)\" != \"main\" ] || { echo '{\"block\": true, \"message\": \"Cannot edit on main branch. Create a feature branch first.\"}' >&2; exit 2; }",
             "timeout": 5,
             "type": "command"
           },
@@ -65,6 +75,18 @@
           }
         ],
         "matcher": ""
+      }
+    ],
+    "SessionEnd": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/bd-dolt-sync.sh",
+            "timeout": 60
+          }
+        ]
       }
     ]
   },

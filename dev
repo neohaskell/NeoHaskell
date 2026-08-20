@@ -70,6 +70,8 @@ usage: ./dev <verb> [args]
                           doctrine (see telemetry/SCHEMA.md); never for ad-hoc runs
   workflow-check        static wiring checks for .github/workflows (hidden
                           artifacts, retrospect loop; CI-enforced)
+  process-check         ADR-0075 change-process docs consistency (formula/
+                          skill/ADR agree on steps + V1-V9; CI-enforced)
   neo-skills-check      validate the Rust `neo/**` agent-guidance layer:
                           neo-cli-* skills, neo/** routing, no stale state/plan
                           refs, one source of truth (via ./dev doctor + CI)
@@ -135,6 +137,7 @@ case "${VERB}" in
   retrospect) exec scripts/retrospect "$@" ;;
   telemetry) exec scripts/telemetry.py "$@" ;;
   workflow-check) exec scripts/workflow-check "$@" ;;
+  process-check) exec scripts/process-check.sh "$@" ;;
   neo-skills-check) exec scripts/neo-skills-check "$@" ;;
   neo-dist-check) exec scripts/neo-dist-check "$@" ;;
   neo-consumer-contract) exec scripts/neo-consumer-contract "$@" ;;
