@@ -7,7 +7,7 @@ description: Stage playbook for executing steps of the `change` formula v2 (ADR-
 
 One molecule per request, five coarse beads:
 
-```
+```text
 spec ══ GATE 1 (Nick+Fable) ══▶ build ─ verify ─▶ pr ─ (auto-merge | GATE 2)
 ```
 
