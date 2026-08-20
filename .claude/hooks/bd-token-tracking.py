@@ -31,6 +31,9 @@ import sys
 
 ID_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_.]*-[A-Za-z0-9]+$")
 SHELL_OPS = {"&&", "||", ";", "|", "&"}
+# shlex does not split separators glued to an argument ("nh-1;bd") — this
+# finds the runs so they can become segment boundaries anyway
+SEP_RUN = re.compile(r"([;&|]+)")
 # bd global flags (before the subcommand) that consume a value
 GLOBAL_VALUE_FLAGS = {"-C", "--directory", "--db", "--actor", "--dolt-auto-commit"}
 
@@ -100,8 +103,21 @@ def parse_bd_invocations(command):
             words = shlex.split(line)
         except ValueError:
             words = line.split()
-        segments, seg = [], []
+        # re-split separators shlex left glued to arguments; a quoted value
+        # containing ";" gets split too, which is harmless here — ids are
+        # only collected before the first flag of a bd segment
+        expanded = []
         for w in words:
+            if w in SHELL_OPS:
+                expanded.append(w)
+                continue
+            parts = [p for p in SEP_RUN.split(w) if p]
+            if len(parts) == 1:
+                expanded.append(w)
+            else:
+                expanded.extend(";" if SEP_RUN.fullmatch(p) else p for p in parts)
+        segments, seg = [], []
+        for w in expanded:
             if w in SHELL_OPS:
                 segments.append(seg)
                 seg = []

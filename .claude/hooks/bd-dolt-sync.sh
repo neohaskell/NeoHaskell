@@ -26,7 +26,13 @@ if [ "$actual" != "$pin" ]; then
     exit 0
 fi
 
-bd dolt commit -m "session sync" >/dev/null 2>&1
+# a failed commit means the working set never made it into what push
+# ships — pushing anyway would report success while losing the changes
+if ! commit_out=$(bd dolt commit -m "session sync" 2>&1); then
+    { date; printf 'commit: %s\n' "$commit_out"; } > "$marker"
+    echo '{"systemMessage": "beads dolt sync FAILED at commit — see .beads/last-sync-error.log and run bd dolt status"}'
+    exit 0
+fi
 if push_out=$(bd dolt push 2>&1); then
     rm -f "$marker"
     exit 0

@@ -39,7 +39,7 @@ jobs:
       - run: ./dev workflow-check
       # ADR-0075 process docs are triplicated by design (formula/skill/ADR
       # each self-contained); this catches them drifting apart.
-      - run: bash scripts/process-check.sh
+      - run: ./dev process-check
 
   secrets:
     name: secret scan (gitleaks, deterministic)
