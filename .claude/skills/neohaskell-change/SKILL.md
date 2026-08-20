@@ -23,7 +23,7 @@ operational detail shared across steps.
 | spec-approval | — | human gate; Fable converses with Nick, edits spec, records approval; Fable never executes pipeline work |
 | build | sonnet | escalate to opus after 2 failed repair rounds on the same error |
 | verify | opus | FRESH agent — never the build agent; spawns a sonnet subagent for V9 |
-| pr | haiku + sonnet | haiku watches CI/mechanics; sonnet triages bot findings |
+| pr | haiku + sonnet | haiku watches CI/mechanics; sonnet triages bot findings — BOT-AGNOSTIC: every reviewing bot must settle (fix or decline-with-reason on each actionable comment) before merge, no vendor assumed |
 
 ## Failure policy (every step except gates)
 
