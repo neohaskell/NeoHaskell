@@ -120,3 +120,6 @@ docs/changes/*.security-review.md
 .beads/*.db
 .beads-credential-key
 .beads/proxieddb/
+
+# Beads / Dolt files (added by bd init)
+*.db

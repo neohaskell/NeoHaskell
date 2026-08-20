@@ -8,7 +8,7 @@
       {
         "hooks": [
           {
-            "command": "if FILE=$(printf '%s' \"$CLAUDE_TOOL_INPUT\" | python3 -c 'import json,sys; d=json.load(sys.stdin); fp=d.get(\"file_path\",\"\"); print(fp if fp.endswith(\".hs\") else \"\")' 2>/dev/null) && [ -n \"$FILE\" ]; then \"$CLAUDE_PROJECT_DIR/scripts/with-toolchain\" fourmolu --mode inplace \"$FILE\" 2>/dev/null; fi",
+            "command": "if FILE=$(printf '%s' \"$CLAUDE_TOOL_INPUT\" | python3 -c 'import json,sys; d=json.load(sys.stdin); fp=d.get(\"file_path\",\"\"); print(fp if fp.endswith(\".hs\") else \"\")' 2\u003e/dev/null) \u0026\u0026 [ -n \"$FILE\" ]; then \"$CLAUDE_PROJECT_DIR/scripts/with-toolchain\" fourmolu --mode inplace \"$FILE\" 2\u003e/dev/null; fi",
             "timeout": 30,
             "type": "command"
           }
@@ -60,7 +60,16 @@
       {
         "hooks": [
           {
-            "command": "command -v bd >/dev/null 2>&1 && bd prime --hook-json || true",
+            "command": "command -v bd \u003e/dev/null 2\u003e\u00261 \u0026\u0026 bd prime --hook-json || true",
+            "type": "command"
+          }
+        ],
+        "matcher": ""
+      },
+      {
+        "hooks": [
+          {
+            "command": "bd prime --hook-json",
             "type": "command"
           }
         ],
