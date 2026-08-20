@@ -18,7 +18,7 @@ dispatcher runs one task per session).
 
 Never blocks: any failure exits 0 silently so bd workflows are unaffected.
 Canonical copy lives in the dispatcher repo; install elsewhere with
-scripts/install-bd-token-tracking.sh.
+scripts/setup-bd-project.sh.
 """
 
 import glob
