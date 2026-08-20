@@ -59,7 +59,11 @@ mode ADR-0075 exists to prevent.
 Beads sync goes to the **private mirror** `NickSeagull/neohaskell-beads`
 (`refs/dolt/data`), pushed automatically by the SessionEnd hook — never
 wire the Dolt remote to the public origin (beads carry candid agent notes;
-that channel publishes without human review, ADR-0075).
+that channel publishes without human review, ADR-0075). The pinned URL
+lives in `.beads/dolt-remote`; the hook refuses to push when the actual
+remote differs from the pin. This auto-sync is standing authorization for
+this repo and overrides the managed Beads block's conservative "no Dolt
+remote sync unless explicitly asked" default further down this file.
 
 ## Change flow (Phase 5) — spec-gated, two human touchpoints [DEPRECATED — moved to docs/legacy/neohaskell-pipeline/, rollback-only — see "Work intake" above]
 
@@ -83,7 +87,7 @@ Any request that should end in a PR runs the `neohaskell-pipeline` skill (ADR-00
 - **Kill switch**: a maintainer comments `/revert` on a merged PR → `revert.yml` (OWNER/MEMBER-gated) runs `./dev revert <sha>` to open a revert PR. Never merges it.
 - **Dependency PRs** ([ADR-0074](docs/decisions/0074-dependabot-auto-merge.md)): `dependabot-auto-merge.yml` enables GitHub's native auto-merge on Dependabot **patch/minor** PRs — GitHub holds them until every *required* check is green, so the workflow never judges CI itself. **Majors** (and any group containing one) are labelled `dependency-major` and never auto-merge; `dependabot-major-review.yml` (a `workflow_run` on the above — base-repo context is the only place Actions secrets exist for a Dependabot PR) posts Claude's breaking-change/migration analysis. That file always runs from the **default branch**, so it cannot be tested from a PR. Corollary: a CI gate that is not a required check is decoration — add it to branch protection.
 - **Changelog**: generated from specs — `./dev changelog` (breaking = a removed signature line ⇒ mandatory migration note); `--check` gates it at PR-ready. Never hand-write `CHANGELOG.md`.
-- **Learning loop**: closing a failed/parked run records a class-fix (`./dev telemetry finish --asset-delta`, enforced); an `ok` run that ships a class-fix records it via `--improvement <type>:<dest>` (optional). The deterministic weekly `./dev retrospect` digest (automated by `retrospect.yml`, schedule + dispatch) plus the `neohaskell-retrospective-miner` skill turn recurring friction into ≤5 contract-validated recommendations. **Activation** waits on real runs accumulating.
+- **Learning loop** (updated by [ADR-0075](docs/decisions/0075-change-process-v2.md)): the `./dev telemetry` emitters (`finish --asset-delta`, consult logs, runs.jsonl, golden) are **retired** — beads status transitions plus the dispatcher token hook are the telemetry now. Class-fix discipline is delta-si-repite: closing a parked/failed bead whose failure label already occurred before (`bd list --label <label>`, plus `--status=closed`) requires shipping a class fix with the retry; a first occurrence needs only the structured park report. The deterministic weekly `./dev retrospect` digest (`retrospect.yml`) stays.
 
 ## Dialect enforcement (Phase 2, live since 2026-07-07)
 

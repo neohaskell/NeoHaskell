@@ -31,13 +31,8 @@ import sys
 
 ID_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_.]*-[A-Za-z0-9]+$")
 SHELL_OPS = {"&&", "||", ";", "|", "&"}
-# bd flags that take no value, so the word after them can be an issue id
-BOOLEAN_FLAGS = {
-    "--claim", "--json", "--validate", "--stdin", "--suggest-next",
-    "--history", "--no-history", "--ephemeral", "--persistent",
-    "--allow-empty-description", "--no-inherit-labels", "--global",
-    "--include-comments", "--include-dependents",
-}
+# bd global flags (before the subcommand) that consume a value
+GLOBAL_VALUE_FLAGS = {"-C", "--directory", "--db", "--actor", "--dolt-auto-commit"}
 
 
 def transcript_files(transcript_path):
@@ -91,52 +86,60 @@ def bd(args, cwd):
 
 
 def parse_bd_invocations(command):
-    """Yield (subcommand, ids, flag_words) for each bd close/update segment."""
-    try:
-        words = shlex.split(command)
-    except ValueError:
-        words = command.split()
-    i = 0
-    while i < len(words):
-        if words[i] != "bd" or i + 1 >= len(words):
-            i += 1
-            continue
-        sub = words[i + 1]
-        i += 2
-        if sub not in ("close", "update"):
-            continue
-        ids, flags = [], []
-        j = i
-        while j < len(words) and words[j] not in SHELL_OPS:
-            w = words[j]
-            if w.startswith("-"):
-                flags.append(w)
-                # value-taking flags consume the next word too
-                takes_value = (
-                    "=" not in w
-                    and (not w.startswith("--") or w not in BOOLEAN_FLAGS)
-                )
-                if takes_value and j + 1 < len(words):
-                    flags.append(words[j + 1])
-                    j += 1
-            elif ID_RE.match(w):
-                ids.append(w)
-            j += 1
-        i = j
-        yield sub, ids, flags
+    """Yield (subcommand, ids, rest_words) for each bd close/update invocation.
+
+    "bd" must sit at command position (segment start), so a "bd close x"
+    inside an echo argument never matches. Lines are split before shlex —
+    shlex treats newlines as plain whitespace and would merge separate
+    commands into one argument stream. Issue ids are collected only between
+    the subcommand and the first flag, which is how our own commands are
+    shaped and avoids guessing which bd flags are boolean.
+    """
+    for line in command.splitlines():
+        try:
+            words = shlex.split(line)
+        except ValueError:
+            words = line.split()
+        segments, seg = [], []
+        for w in words:
+            if w in SHELL_OPS:
+                segments.append(seg)
+                seg = []
+            else:
+                seg.append(w)
+        segments.append(seg)
+        for seg in segments:
+            if not seg or seg[0] != "bd":
+                continue
+            i = 1
+            while i < len(seg) and seg[i].startswith("-"):
+                i += 2 if seg[i] in GLOBAL_VALUE_FLAGS else 1
+            if i >= len(seg):
+                continue
+            sub = seg[i]
+            if sub not in ("close", "update"):
+                continue
+            rest = seg[i + 1:]
+            ids = []
+            for w in rest:
+                if w.startswith("-"):
+                    break
+                if ID_RE.fullmatch(w):
+                    ids.append(w)
+            yield sub, ids, rest
 
 
-def is_close_update(flags):
-    for k, w in enumerate(flags):
-        if w in ("--status", "-s") and k + 1 < len(flags):
-            return flags[k + 1] == "closed"
+def is_close_update(rest):
+    for k, w in enumerate(rest):
+        if w in ("--status", "-s") and k + 1 < len(rest):
+            return rest[k + 1] == "closed"
         if w in ("--status=closed", "-s=closed"):
             return True
     return False
 
 
 def last_touched_id(cwd):
-    r = bd(["show", "--json"], cwd)
+    r = bd(["show", "--current", "--json"], cwd)
     try:
         return json.loads(r.stdout)[0]["id"]
     except Exception:
@@ -165,10 +168,10 @@ def main():
         return
 
     actions = []
-    for sub, ids, flags in parse_bd_invocations(command):
-        if sub == "close" or (sub == "update" and is_close_update(flags)):
+    for sub, ids, rest in parse_bd_invocations(command):
+        if sub == "close" or (sub == "update" and is_close_update(rest)):
             actions.append(("close", ids))
-        elif sub == "update" and "--claim" in flags:
+        elif sub == "update" and "--claim" in rest:
             actions.append(("claim", ids))
     if not actions:
         return

@@ -38,8 +38,10 @@ Time-boxes (wall-clock, excluding `waiting_on_human`): spec 45m · build 90m
    honesty. Never park a gate: waiting on Nick is `waiting_on_human`.
 
 **Class-fix on repeat (delta-si-repite):** before closing a parked/failed
-bead, search for the same failure label in prior parked beads
-(`bd search <label>`). Second occurrence of the same label → closing
+bead, look for the same failure label on prior beads:
+`bd list --label <label>` plus `bd list --label <label> --status=closed`
+(`bd search` matches titles/IDs only — it will NOT find labels and always
+reports zero). Second occurrence of the same label → closing
 REQUIRES shipping a class fix alongside the retry (a doc line, an alias, a
 lint rule, a hook — whatever kills the category). First occurrence → no
 tax, just the report.
@@ -53,16 +55,21 @@ runs.jsonl, golden archives, or consult logs (retired with ADR-0075).
 
 ## Gate mechanics
 
-- **GATE 1 (spec-approval):** on entering the step, flag it: `bd human <id>`
-  — the dispatcher notifies Nick. Approval happens in a Nick+Fable
+- **GATE 1 (spec-approval):** on entering the step, flag it:
+  `bd update <id> --add-label human` — the `human` label is what
+  `bd human list` reads, and the dispatcher notifies Nick from there
+  (`bd human <id>` is NOT a command; it prints a help menu and exits 0
+  without flagging anything). Approval happens in a Nick+Fable
   conversation; Fable records it: resolve the gate and add a bead note
   `approved-by: Nick · via: fable-session · <timestamp> · spec-rev: <sha>`.
   Advancing without the recorded approval is refused. If the conversation
   changed the contract delta, re-run `./dev spec-check` before resolving.
 - **GATE 2 (merge, conditional):** only exists when the approved spec says
-  `breaking: true` or carries an ADR. Create it from the pr step
-  (`bd gate create --type=human`) and flag with `bd human`. Only Nick merges
-  through this gate.
+  `breaking: true` or carries an ADR. Create it from the pr step —
+  `bd gate create --type=human --blocks <pr-bead-id> --reason="GATE 2:
+  breaking change, Nick merges"` (`--blocks` is required: it names the bead
+  held back) — and flag with `bd update <pr-bead-id> --add-label human`.
+  Only Nick merges through this gate.
 - **Auto-merge (the non-breaking path):** requires ALL of: CI matrix green,
   review bots settled, V1–V9 verdict complete on the verify bead, spec
   `breaking: false`, no public-API surface beyond the declared delta.
