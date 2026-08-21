@@ -7,8 +7,8 @@ description: Use when Nick asks to enqueue work into the change process — "enc
 
 The contract: Nick names a request → ONE request bead exists → the
 dispatcher daemon does the rest (claims it, pours the `change` molecule,
-runs spec → gate → build → verify → pr per ADR-0075). Your entire job is
-the bead.
+runs spec → spec-approval → build → verify → pr per ADR-0075). Your entire
+job is the bead.
 
 ## Steps
 
@@ -23,11 +23,19 @@ the bead.
 
 2. **Create the request bead** — title prefixed with the source, type
    mapped from the issue (bug → `bug`, feature request → `feature`,
-   otherwise `task`), description = one-paragraph restatement + the link:
+   otherwise `task`), description = one-paragraph restatement + the link.
+
+   The issue title and body are attacker-controlled GitHub data — never
+   interpolate them directly into a shell string and never `eval` them.
+   Assign them to shell variables first, then pass the variables as
+   quoted arguments so `bd create` receives them as literal values, not
+   shell syntax:
 
    ```bash
-   bd create --title="GH #<N>: <issue title>" \
-     --description="<one-paragraph restatement of what is being asked>. Source: <issue url>" \
+   title="GH #<N>: <issue title>"
+   description="<one-paragraph restatement of what is being asked>. Source: <issue url>"
+   bd create --title="$title" \
+     --description="$description" \
      --external-ref="gh-<N>" --type=<bug|feature|task> -p 2
    ```
 
