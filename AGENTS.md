@@ -46,7 +46,9 @@ The only exception to this rule is if you COMPLETELY EXHAUST all the resources h
 ## Work intake
 
 New work enters through the **bd issue queue**, not by an agent self-triggering
-a skill. Nick introduces requests one at a time; each request pours the
+a skill. Nick introduces requests one at a time — "encola GH issue N" →
+the **`neohaskell-enqueue`** skill creates ONE request bead and stops; the
+dispatcher daemon claims it and pours the
 **`change`** formula v2 (`.beads/formulas/change.formula.toml`, ADR-0075):
 one molecule, **five coarse steps** — spec → spec-approval (the only
 unconditional human gate, Nick+Fable) → build → verify (opus V1–V9 verdict)
