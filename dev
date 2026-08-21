@@ -72,6 +72,9 @@ usage: ./dev <verb> [args]
                           artifacts, retrospect loop; CI-enforced)
   process-check         ADR-0075 change-process docs consistency (formula/
                           skill/ADR agree on steps + V1-V9; CI-enforced)
+  formula-check         validate .beads/formulas/*.formula.toml: every
+                          `required = true` var is actually interpolated as
+                          {{var}} (--pour-check: round-trip against real bd)
   neo-skills-check      validate the Rust `neo/**` agent-guidance layer:
                           neo-cli-* skills, neo/** routing, no stale state/plan
                           refs, one source of truth (via ./dev doctor + CI)
@@ -138,6 +141,7 @@ case "${VERB}" in
   telemetry) exec scripts/telemetry.py "$@" ;;
   workflow-check) exec scripts/workflow-check "$@" ;;
   process-check) exec scripts/process-check.sh "$@" ;;
+  formula-check) exec scripts/formula-check "$@" ;;
   neo-skills-check) exec scripts/neo-skills-check "$@" ;;
   neo-dist-check) exec scripts/neo-dist-check "$@" ;;
   neo-consumer-contract) exec scripts/neo-consumer-contract "$@" ;;

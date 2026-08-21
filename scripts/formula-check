@@ -1,0 +1,251 @@
+#!/usr/bin/env python3
+"""Beads formula validator — the required-var interpolation gate.
+
+A `bd` formula declares variables and pours them into step beads by textual
+`{{var}}` substitution. Two silent failure modes follow from that design:
+
+  1. a var declared `required = true` that NO `{{var}}` references is
+     substituted into nothing — the value is accepted at pour time and
+     discarded. Worse, bd only enforces `required` for vars it can see
+     referenced, so an unreferenced required var also disables the pour-time
+     "missing required variables" error. The molecule reaches the agents with
+     the request nowhere in the ledger. (nh-knk, observed on nh-mol-p01.)
+  2. a `{{var}}` with no matching `[vars.var]` declaration renders literally
+     into the bead — the reader sees the placeholder, not a value.
+
+Both are invisible at pour time and only surface as a confused agent, so they
+are checked mechanically here.
+
+Checks (over every `.beads/formulas/*.formula.toml`):
+  1. every var with `required = true` is referenced by at least one `{{var}}`
+     outside its own `[vars.*]` declaration block
+  2. every `{{var}}` placeholder has a matching `[vars.var]` declaration
+
+Modes:
+  formula-check              validate every formula (default)
+  formula-check --self-test  embedded fixture + mutation coverage (doctor/CI)
+  formula-check --pour-check round-trip against the real `bd` binary: pouring
+                             without the required var must fail, with it must
+                             succeed, and an adversarial value must survive
+                             verbatim. SKIPs (exit 0) when `bd` is absent —
+                             CI has no bd, the dev machine does.
+
+Run: ./dev formula-check    CI: .github/workflows/checks.yml `doctor` job
+(python3 stdlib only — tomllib for declarations, regex for placeholders)
+"""
+
+import re
+import subprocess
+import sys
+import tomllib
+from pathlib import Path
+
+sys.dont_write_bytecode = True  # no scripts/__pycache__/ (doctor scans scripts/)
+
+ROOT = Path(__file__).resolve().parent.parent
+FORMULAS = ROOT / ".beads" / "formulas"
+
+PLACEHOLDER = re.compile(r"\{\{\s*([A-Za-z_][A-Za-z0-9_-]*)\s*\}\}")
+VARS_SECTION = re.compile(r"^\s*\[\s*vars\.([A-Za-z_][A-Za-z0-9_-]*)\s*\]\s*$")
+
+
+def declared_vars(text):
+    """{name: required?} from the parsed TOML. Returns ({}, err) on bad TOML."""
+    try:
+        data = tomllib.loads(text)
+    except tomllib.TOMLDecodeError as e:
+        return None, f"is not valid TOML ({e})"
+    out = {}
+    for name, spec in (data.get("vars") or {}).items():
+        out[name] = bool(isinstance(spec, dict) and spec.get("required"))
+    return out, None
+
+
+def referenced_vars(text):
+    """{name: {line numbers}} for every `{{name}}` OUTSIDE a `[vars.*]` block.
+
+    A placeholder inside a var's own declaration block (e.g. quoted in its
+    `description`) documents the var — it does not interpolate it anywhere a
+    reader will see, so counting it would let the bug pass."""
+    refs, in_vars = {}, False
+    for lineno, line in enumerate(text.splitlines(), 1):
+        stripped = line.lstrip()
+        if stripped.startswith("["):
+            in_vars = bool(VARS_SECTION.match(line))
+        if in_vars:
+            continue
+        for name in PLACEHOLDER.findall(line):
+            refs.setdefault(name, set()).add(lineno)
+    return refs
+
+
+def check_formula(name, text):
+    """Pure core: [errors] for one formula's text. Testable without a tree."""
+    declared, err = declared_vars(text)
+    if err:
+        return [f"{name}: {err}"]
+    refs = referenced_vars(text)
+    errs = []
+    for var, required in sorted(declared.items()):
+        if required and var not in refs:
+            errs.append(
+                f"{name}: var `{var}` is `required = true` but no step or "
+                f"description references `{{{{{var}}}}}` — bd substitutes the "
+                "value into nothing and drops it (and stops enforcing "
+                "`required`, since it only validates vars it sees referenced)"
+            )
+    for var in sorted(refs):
+        if var not in declared:
+            errs.append(
+                f"{name}: `{{{{{var}}}}}` is referenced (line "
+                f"{min(refs[var])}) but no `[vars.{var}]` declares it — it "
+                "renders literally into the bead"
+            )
+    return errs
+
+
+def validate(paths):
+    if not paths:
+        print(f"formula-check: no formulas found under {FORMULAS.relative_to(ROOT)}/")
+        return 0
+    errs = []
+    for p in paths:
+        errs += check_formula(p.name, p.read_text())
+    for e in errs:
+        print(f"formula-check: FAIL — {e}", file=sys.stderr)
+    if errs:
+        return 1
+    print(f"formula-check: OK — {len(paths)} formula(s), every required var interpolates")
+    return 0
+
+
+# ── --pour-check ───────────────────────────────────────────────────────────
+# The mechanical checks above prove the FILE is well-formed. This proves the
+# behavior end-to-end against the real bd binary: enforcement on, value lands,
+# adversarial value inert. Local-only — CI has no bd on PATH.
+
+ADVERSARIAL = '{{request}} "quoted" $(id) `whoami`'
+
+
+def _bd():
+    from shutil import which
+    return which("bd")
+
+
+def pour_check():
+    bd = _bd()
+    if not bd:
+        print("formula-check: SKIP --pour-check — no `bd` on PATH (expected in CI)")
+        return 0
+    fails = []
+    no_var = subprocess.run([bd, "mol", "pour", "change", "--dry-run"],
+                            capture_output=True, text=True, cwd=ROOT)
+    if no_var.returncode == 0:
+        fails.append("`bd mol pour change --dry-run` SUCCEEDED with no `--var request` — "
+                     "the required var is not referenced, so bd is not enforcing it")
+    with_var = subprocess.run([bd, "mol", "pour", "change", "--dry-run",
+                               "--var", "request=adhoc:pour-check"],
+                              capture_output=True, text=True, cwd=ROOT)
+    if with_var.returncode != 0:
+        fails.append(f"`bd mol pour change --dry-run --var request=…` FAILED: "
+                     f"{with_var.stderr.strip()[:200]}")
+    adv = subprocess.run([bd, "mol", "pour", "change", "--dry-run",
+                          "--var", f"request={ADVERSARIAL}"],
+                         capture_output=True, text=True, cwd=ROOT)
+    if adv.returncode != 0:
+        fails.append(f"adversarial request value broke the pour: {adv.stderr.strip()[:200]}")
+    for f in fails:
+        print(f"formula-check: FAIL — {f}", file=sys.stderr)
+    if fails:
+        return 1
+    print("formula-check: OK — pour enforces the required var and carries its value")
+    return 0
+
+
+# ── --self-test ────────────────────────────────────────────────────────────
+
+BASE = '''formula = "probe"
+description = "A probe formula."
+
+[vars.request]
+description = "The request. Referenced as {{request}} in this very description."
+required = true
+
+[[steps]]
+id = "spec"
+title = "Spec"
+description = "REQUEST: {{request}}\\n\\nDo the work."
+'''
+
+
+def self_test():
+    fails = 0
+
+    def expect(label, text, want_fail, needle=""):
+        nonlocal fails
+        errs = check_formula("probe.formula.toml", text)
+        if bool(errs) != want_fail:
+            print(f"self-test FAIL {label}: got {errs}, want_fail={want_fail}")
+            fails += 1
+        elif needle and not any(needle in e for e in errs):
+            print(f"self-test FAIL {label}: no error mentions `{needle}` — got {errs}")
+            fails += 1
+
+    # referenced in a step description → OK (the fix shape for nh-knk)
+    expect("referenced-in-step", BASE, False)
+    # referenced only in the formula's root description → also OK
+    expect("referenced-in-root",
+           BASE.replace('description = "A probe formula."',
+                        'description = "REQUEST: {{request}} | A probe formula."')
+               .replace('description = "REQUEST: {{request}}\\n\\nDo the work."',
+                        'description = "Do the work."'),
+           False)
+    # THE BUG: required, declared, never referenced outside [vars.*] → FAIL
+    expect("required-unreferenced",
+           BASE.replace('description = "REQUEST: {{request}}\\n\\nDo the work."',
+                        'description = "Do the work."'),
+           True, "required = true")
+    # a placeholder inside the var's own block must NOT count as a reference
+    expect("declaration-block-does-not-count",
+           BASE.replace('description = "REQUEST: {{request}}\\n\\nDo the work."',
+                        'description = "Do the work."'),
+           True, "request")
+    # not required + unreferenced → OK (optional vars may go unused)
+    expect("optional-unreferenced",
+           BASE.replace("required = true", "required = false")
+               .replace('description = "REQUEST: {{request}}\\n\\nDo the work."',
+                        'description = "Do the work."'),
+           False)
+    # inverse rot: placeholder with no declaration → FAIL
+    expect("undeclared-placeholder",
+           BASE.replace("Do the work.", "Do the work for {{owner}}."),
+           True, "vars.owner")
+    # malformed TOML is a failure, not a crash
+    expect("bad-toml", "formula = \"probe\"\n[[steps]\nid = \"x\"\n", True, "not valid TOML")
+
+    # unit: the reference scanner ignores [vars.*] blocks but resumes after them
+    refs = referenced_vars('[vars.a]\nd = "{{a}}"\n\n[[steps]]\nd = "{{b}}"\n')
+    if set(refs) != {"b"}:
+        print(f"self-test FAIL scanner-scope: {sorted(refs)}, want ['b']")
+        fails += 1
+
+    if fails:
+        print(f"formula-check self-test: {fails} FAILED")
+        return 1
+    print("formula-check self-test: OK")
+    return 0
+
+
+def main(argv):
+    if "--self-test" in argv:
+        return self_test()
+    if "--pour-check" in argv:
+        return pour_check()
+    paths = [Path(a) for a in argv if not a.startswith("-")]
+    if not paths:
+        paths = sorted(FORMULAS.glob("*.formula.toml")) if FORMULAS.exists() else []
+    return validate(paths)
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
