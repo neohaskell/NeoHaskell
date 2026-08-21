@@ -51,7 +51,7 @@ reference the formula never made.
 |----|----------|--------------|-------|
 | C1 | **The repro, committed RED**: `./dev formula-check` exits 1 on today's `change.formula.toml`, naming `request` as required-but-never-referenced. After the formula fix it exits 0. | `scripts/formula-check` over `.beads/formulas/` | unit |
 | C2 | The validator distinguishes the real cases: referenced in a step → pass; referenced only in the root description → pass; referenced nowhere → fail; referenced *only inside its own* `[vars.*]` block → still fail; not required and unreferenced → pass; `{{var}}` with no `[vars.var]` → fail; malformed TOML → reported, not crashed. | `scripts/formula-check --self-test` (embedded fixtures + mutation coverage, mirroring `spec-check --self-test`) | unit |
-| C3 | The request text actually reaches the ledger end-to-end: `bd mol pour change --dry-run` **fails** with `missing required variables: request` when `--var request=…` is omitted, **succeeds** when it is supplied, and the resolved spec-step and molecule-root descriptions contain the request text verbatim. | `scripts/formula-check --pour-check` (shells out to the real `bd`; SKIP-with-notice when `bd` is absent) | integration |
+| C3 | The request text actually reaches the ledger end-to-end: pouring **the formula under review** (`--dry-run`) **fails** with `missing required variables: request` when `--var request=…` is omitted, and **succeeds** when it is supplied. | `scripts/formula-check --pour-check` (shells out to the real `bd`; SKIP-with-notice when `bd` is absent) | integration |
 | C4 | An adversarial request value is inert data, not a second interpolation pass or a shell: pouring with `request={{request}} "quoted" $(id) \`whoami\`` yields a bead whose description contains that text literally — no re-substitution, no command execution, no TOML corruption. | `scripts/formula-check --pour-check`, adversarial case | integration |
 | C5 | The gate is wired so a future formula cannot regress: `scripts/doctor` runs both `scripts/formula-check --self-test` and the real `scripts/formula-check`, and `./dev doctor` is green — which also means CI covers it through the existing `doctor` job, with no new workflow. | `./dev doctor` | unit |
 
@@ -81,6 +81,17 @@ draft PR's `doctor` CI job stays green while the repro stays red.
   traceback (C2).
 - **F5 — no formulas present.** `formula-check` reports and exits 0; a repo
   without formulas is not a failure.
+- **F6 — the worktree trap (verified, and designed around).** `bd` resolves
+  formulas from the *resolved beads dir*, which is the **main checkout**
+  (`/Users/nick/repos/NeoHaskell/.beads/formulas/`) even when invoked from a
+  git worktree. A naive `bd mol pour change --dry-run` therefore tests
+  `main`'s formula, not the one under review — it would have passed C3 before
+  the fix ever landed. `--pour-check` sidesteps this by copying the
+  repo-local formula to the user search path (`~/.beads/formulas/`) under a
+  throwaway name, pouring *that*, and removing it in a `finally` (refusing to
+  run if the name is already taken, so it can never clobber a real formula).
+  Confirmed both directions from this worktree: red before the fix, green
+  after — the anti-tautology lock V2 will demand.
 - **Concurrency: not applicable.** The contract involves no shared mutable
   state and no parallelism — `formula-check` is a pure read of files on disk,
   and `--pour-check` runs `bd … --dry-run`, which writes nothing. No

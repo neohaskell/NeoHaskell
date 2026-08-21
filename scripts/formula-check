@@ -123,8 +123,16 @@ def validate(paths):
 # The mechanical checks above prove the FILE is well-formed. This proves the
 # behavior end-to-end against the real bd binary: enforcement on, value lands,
 # adversarial value inert. Local-only — CI has no bd on PATH.
+#
+# It must NOT pour `change` by name. bd resolves formulas from the *resolved
+# beads dir* — the main checkout — so from a git worktree `bd mol pour change`
+# would silently test main's formula, not the one under review, and the gate
+# would pass before the fix lands. Instead the formula under test is copied to
+# the user search path (~/.beads/formulas/) under a throwaway name, poured
+# with --dry-run (which writes nothing), and removed.
 
 ADVERSARIAL = '{{request}} "quoted" $(id) `whoami`'
+PROBE = "formula-check-probe"
 
 
 def _bd():
@@ -132,28 +140,52 @@ def _bd():
     return which("bd")
 
 
+def _pour(bd, *args):
+    return subprocess.run([bd, "mol", "pour", PROBE, "--dry-run", *args],
+                          capture_output=True, text=True, cwd=ROOT)
+
+
 def pour_check():
     bd = _bd()
     if not bd:
         print("formula-check: SKIP --pour-check — no `bd` on PATH (expected in CI)")
         return 0
+    src = FORMULAS / "change.formula.toml"
+    if not src.exists():
+        print(f"formula-check: FAIL — {src} not found", file=sys.stderr)
+        return 1
+    user_dir = Path.home() / ".beads" / "formulas"
+    probe = user_dir / f"{PROBE}.formula.toml"
+    if probe.exists():
+        print(f"formula-check: FAIL — {probe} already exists; remove it and re-run",
+              file=sys.stderr)
+        return 1
+    made_dir = not user_dir.exists()
     fails = []
-    no_var = subprocess.run([bd, "mol", "pour", "change", "--dry-run"],
-                            capture_output=True, text=True, cwd=ROOT)
-    if no_var.returncode == 0:
-        fails.append("`bd mol pour change --dry-run` SUCCEEDED with no `--var request` — "
-                     "the required var is not referenced, so bd is not enforcing it")
-    with_var = subprocess.run([bd, "mol", "pour", "change", "--dry-run",
-                               "--var", "request=adhoc:pour-check"],
-                              capture_output=True, text=True, cwd=ROOT)
-    if with_var.returncode != 0:
-        fails.append(f"`bd mol pour change --dry-run --var request=…` FAILED: "
-                     f"{with_var.stderr.strip()[:200]}")
-    adv = subprocess.run([bd, "mol", "pour", "change", "--dry-run",
-                          "--var", f"request={ADVERSARIAL}"],
-                         capture_output=True, text=True, cwd=ROOT)
-    if adv.returncode != 0:
-        fails.append(f"adversarial request value broke the pour: {adv.stderr.strip()[:200]}")
+    try:
+        user_dir.mkdir(parents=True, exist_ok=True)
+        probe.write_text(src.read_text().replace('formula = "change"',
+                                                 f'formula = "{PROBE}"', 1))
+        no_var = _pour(bd)
+        if no_var.returncode == 0:
+            fails.append("pouring with no `--var request` SUCCEEDED — the required var is "
+                         "not referenced, so bd is not enforcing it (the nh-knk bug)")
+        with_var = _pour(bd, "--var", "request=adhoc:pour-check")
+        if with_var.returncode != 0:
+            fails.append(f"pouring with `--var request=…` FAILED: "
+                         f"{with_var.stderr.strip()[:200]}")
+        adv = _pour(bd, "--var", f"request={ADVERSARIAL}")
+        if adv.returncode != 0:
+            fails.append(f"adversarial request value broke the pour: "
+                         f"{adv.stderr.strip()[:200]}")
+    finally:
+        probe.unlink(missing_ok=True)
+        if made_dir:
+            try:
+                user_dir.rmdir()
+                user_dir.parent.rmdir()
+            except OSError:
+                pass  # not empty — someone else's beads dir, leave it
     for f in fails:
         print(f"formula-check: FAIL — {f}", file=sys.stderr)
     if fails:
