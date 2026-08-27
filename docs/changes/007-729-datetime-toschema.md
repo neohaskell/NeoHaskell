@@ -83,6 +83,25 @@ over.
 | C5 | JSON-Schema lowering: `toJsonSchema (toSchema @DateTime)` is `{"type": "string"}` | `Schema.DateTimeSpec` "lowers DateTime to JSON Schema type string" | unit |
 | C6 | OpenAPI lowering: `toOpenApiSchema (toSchema @DateTime)` has `type: string` and **no** `format` — pinning the deliberate scope boundary above | `Schema.DateTimeSpec` "lowers DateTime to OpenApiString with no format" | unit |
 
+### Note for the build step: C4 is not adjustable
+
+C4's committed assertion pins the exact ISO-8601 rendering
+(`"1970-01-01T00:00:00Z"` for epoch 0). The spec author could not execute a
+typecheck in this environment (see the run bead), so if that literal is off by
+formatting detail, **correct the literal to the wire form the encoder actually
+produces — never weaken the assertion** to something shape-only. The
+expectation guard does not protect C4: it is new in this PR, so nothing
+mechanical stops it from being softened, and softening it is precisely the
+tautology this criterion exists to prevent.
+
+If the encoder turns out to emit something that is *not* a JSON string, do not
+adapt the test — the `SText` mapping in the Contract delta would then be wrong,
+and the run must park as a contract hole rather than ship a schema that
+misdescribes the wire.
+
+Likewise, if `Data.OpenApi.Lens.format` is not the correct lens name for C6,
+resolve the real one via `./dev api`; keep the assertion "no format".
+
 ### Edge cases and failure modes
 
 - **`Maybe DateTime`** — the reported second failure mode; C3.
