@@ -711,6 +711,7 @@ test-suite nhcore-test-core
     ParserSpec
     LogSpec
     RedactedSpec
+    Schema.DateTimeSpec
     Schema.OpenApiSpec
     SchemaSpec
     Schema.JsonSchemaSpec

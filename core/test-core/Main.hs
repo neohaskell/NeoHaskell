@@ -31,6 +31,7 @@ import NeoQL.ExecuteSpec qualified
 import NeoQL.ParserSpec qualified
 import OutboundIntegrationSpec qualified
 import RedactedSpec qualified
+import Schema.DateTimeSpec qualified
 import Schema.OpenApiSpec qualified
 import SchemaSpec qualified
 import Schema.JsonSchemaSpec qualified
@@ -81,6 +82,7 @@ main = Hspec.hspec do
   Hspec.describe "OutboundIntegration" OutboundIntegrationSpec.spec
   Hspec.describe "Redacted" RedactedSpec.spec
   Hspec.describe "Schema" SchemaSpec.spec
+  Hspec.describe "Schema.DateTime" Schema.DateTimeSpec.spec
   Hspec.describe "Schema.OpenApi" Schema.OpenApiSpec.spec
   Hspec.describe "Schema.JsonSchema" Schema.JsonSchemaSpec.spec
   Hspec.describe "Service.Transport.Web.SwaggerUI" Service.Transport.Web.SwaggerUISpec.spec
