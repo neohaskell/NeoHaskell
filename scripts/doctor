@@ -62,7 +62,8 @@ for f in scripts/*; do
 done
 
 # 4. Agent-visible docs (governing rule: no doc without a gate) — every
-#    `./dev <verb>` referenced in a SKILL.md, AGENTS.md, or CLAUDE.md must
+#    `./dev <verb>` referenced in a SKILL.md, an agent definition, AGENTS.md
+#    (root or neo/), or CLAUDE.md must
 #    actually be registered, so a verb rename can't make the most-read docs
 #    lie silently (AGENTS.md is loaded into every session).
 while IFS= read -r ref; do
@@ -70,7 +71,33 @@ while IFS= read -r ref; do
   if ! grep -qE "^\s*${verb}\)" dev; then
     err "an agent-visible doc references './dev ${verb}' but that verb is not registered in ./dev"
   fi
-done < <(grep -rhoE '\./dev [a-z-]+' .claude/skills/*/SKILL.md AGENTS.md CLAUDE.md 2>/dev/null | sort -u)
+done < <(grep -rhoE '\./dev [a-z-]+' .claude/skills/*/SKILL.md .claude/agents/*.md \
+           AGENTS.md CLAUDE.md neo/AGENTS.md 2>/dev/null | sort -u)
+
+# 4b. Toolchain discipline (AGENTS.md "Toolchain"): executable wiring must
+#     reach project tools through the pinned flake shell, never the host PATH.
+#     A host binary of the same name is a DIFFERENT build, and it fails
+#     looking like the tool is broken instead of like the wrong one was
+#     picked — the bd skew class (nh-fuj, nh-4s9) was exactly this, twice.
+#
+#     Strategy: DELETE the sanctioned forms from each line, then flag whatever
+#     `bd` is left. Matching "bad" shapes directly was bypassable — the first
+#     version required a lowercase letter after `bd`, so `bd "$@"`, `bd $cmd`
+#     and bare `bd` all walked past it, including the wrapper shape this very
+#     change introduced. Deleting the good forms inverts that: a new way to
+#     write a bare bd is caught by default instead of by having been predicted.
+while IFS= read -r hit; do
+  err "bare 'bd' invocation at ${hit} — route it through ./dev bd (pinned flake shell)"
+done < <(
+  for f in .claude/hooks/* .claude/settings.json; do
+    [ -f "${f}" ] || continue
+    sed -E 's#(\./)?dev +bd([[:space:]]|$)#\2#g; s#with-toolchain +bd([[:space:]]|$)#\1#g' "${f}" \
+      | grep -nvE '^[[:space:]]*#' \
+      | grep -E '(^|[^-A-Za-z0-9_/.])bd([[:space:]]|$)' \
+      | cut -d: -f1 \
+      | sed "s#^#${f}:#"
+  done | sort -u
+)
 
 # 5. Hook self-tests: every hook rule/scenario must have blocking AND passing
 #    cases in its committed cases file (a rule without cases fails here).
@@ -84,6 +111,7 @@ fi
 # 5b. Phase 5 validator self-tests (spec gate + resume contract): fixture
 #     mutations must keep failing for the right reasons — a validator that
 #     stops rejecting is a gate that silently opened.
+scripts/with-toolchain --self-test || fail=1
 scripts/spec-check --self-test || fail=1
 scripts/spec-drift --self-test || fail=1
 scripts/pipeline-state --self-test || fail=1

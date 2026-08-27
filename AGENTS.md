@@ -20,6 +20,24 @@ Under no circumstance you will begin exploring the codebase. Exploring the codeb
 
 The only exception to this rule is if you COMPLETELY EXHAUST all the resources here and still haven't found what you were looking for. In that case, you will have to take a note to mention it in step 6 of the pipeline.
 
+## Toolchain (mandatory)
+
+**Every tooling command runs inside the pinned flake shell.** Never invoke a
+project tool off the host PATH. The host may carry a different build of the
+same name, and the mismatch surfaces as the *tool* looking broken rather than
+the *wrong binary* being picked — that misdiagnosis is what produced the
+`bd` schema-skew reports `nh-fuj` and `nh-4s9` (host `bd` 1.1.0 vs the
+flake's 1.2.2 against a v65 Dolt DB; the flake one works clean).
+
+- `./dev <verb>` — every verb already enters the shell on demand.
+- `./dev bd <args>` — beads, pinned by `flake.nix` (`inputs.beads`). Never a
+  bare `bd`.
+- `./dev exec <cmd>` — anything else with the pinned toolchain.
+
+Long form is `nix develop --command <cmd>`; `./dev exec` is the short form and
+adds a fingerprint-verified fast path when the shell is already entered.
+`./dev doctor` fails on a bare `bd` in the executable wiring (hooks, settings).
+
 ## Style (mandatory)
 
 | Use | Never |
@@ -43,29 +61,39 @@ The only exception to this rule is if you COMPLETELY EXHAUST all the resources h
 - Localization + API discovery + codemap regeneration: **`codemap/README.md`** (use the `neohaskell-localizer` skill at plan time). Never explore the tree to find where things live. Training-data APIs don't exist here; GHC "not in scope" in `./dev check` = an invented API — resolve via `./dev api`.
 - Implementing any `.hs` change? Use the `neohaskell-implementer` skill (copy-adapt discipline + repair protocol).
 
-## Work intake
+## Work intake — `/change`, driven from a session
 
-New work enters through the **bd issue queue**, not by an agent self-triggering
-a skill. Nick introduces requests one at a time — "encola GH issue N" →
-the **`neohaskell-enqueue`** skill creates ONE request bead and stops; the
-dispatcher daemon claims it and pours the
-**`change`** formula v2 (`.beads/formulas/change.formula.toml`, ADR-0075):
-one molecule, **five coarse steps** — spec → spec-approval (the only
-unconditional human gate, Nick+Fable) → build → verify (opus V1–V9 verdict)
-→ pr (auto-merge on green when non-breaking; GATE 2 otherwise). The stage
-playbook is the `neohaskell-change` skill. Run `bd ready` to see what's
-claimable, `bd show <id>` for details, `bd prime` for the full workflow.
-Never split the 5 steps into finer beads — over-atomization is the failure
-mode ADR-0075 exists to prevent.
+Every request that should end in a PR runs through the **`change` skill**:
+Nick types `/change 842`, `/change <ask>`, `/change adr: <topic>`, or bare
+`/change` to resume. One orchestrator, six steps, each dispatched to a
+model-pinned agent except the two that talk to Nick:
 
-Beads sync goes to the **private mirror** `NickSeagull/neohaskell-beads`
-(`refs/dolt/data`), pushed automatically by the SessionEnd hook — never
-wire the Dolt remote to the public origin (beads carry candid agent notes;
-that channel publishes without human review, ADR-0075). The pinned URL
-lives in `.beads/dolt-remote`; the hook refuses to push when the actual
-remote differs from the pin. This auto-sync is standing authorization for
-this repo and overrides the managed Beads block's conservative "no Dolt
-remote sync unless explicitly asked" default further down this file.
+```text
+grill ─▶ spec ══ GATE 1 (Nick) ══▶ build ─ verify ─▶ pr ─ (auto-merge | GATE 2)
+ you      opus        you          sonnet   opus     sonnet
+```
+
+Grill is mandatory and runs **in the session** — a subagent has no channel to
+Nick, so a dispatched grill answers its own questions. Run state is **one bead
+per run** (`-l change-run`, claimed to `in_progress`, closed on merge); there
+is no queue, no `bd mol pour`, no formula and no dispatcher daemon — all
+retired by [ADR-0076](docs/decisions/0076-session-launched-change-process.md),
+which amends [ADR-0075](docs/decisions/0075-change-process-v2.md). The five
+step contracts live in `.claude/agents/change-*.md`; `./dev process-check`
+keeps their tiers and the V1–V9 verdict from drifting.
+
+Never split the steps into finer beads — over-atomization is the failure mode
+ADR-0075 exists to prevent — and never re-create the formula or the enqueue
+skill without reconciling ADR-0076 first (`process-check` fails if they return).
+
+Beads still holds the **backlog** (`bd ready`, `bd show`), and beads data syncs
+to the private mirror `NickSeagull/neohaskell-beads` (`refs/dolt/data`) via the
+SessionEnd hook — never wire the Dolt remote to the public origin (beads carry
+candid agent notes, ADR-0075). The pin lives in `.beads/dolt-remote`; the hook
+refuses to push when the actual remote differs. This auto-sync is standing
+authorization for this repo and overrides the managed Beads block's
+conservative default below.
+
 
 ## Change flow (Phase 5) — spec-gated, two human touchpoints [DEPRECATED — moved to docs/legacy/neohaskell-pipeline/, rollback-only — see "Work intake" above]
 

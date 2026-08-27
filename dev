@@ -96,6 +96,9 @@ usage: ./dev <verb> [args]
                           exercises the orchestration offline (no download/secret)
   doctor                harness self-check: every script has a verb or a
                           reasoned exemption; no dangling verbs (CI-enforced)
+  bd <args>             beads issue tracker, pinned by flake.nix — ALWAYS use
+                          this, never the host `bd` (different build, its Dolt
+                          schema drifts behind the project DB)
   exec <cmd> [args]     run any command with the pinned toolchain
                           (e.g. ./dev exec ghc --version)
 
@@ -145,6 +148,7 @@ case "${VERB}" in
   neo-release) exec scripts/neo-release "$@" ;;
   onboarding-slo) exec scripts/onboarding-slo "$@" ;;
   doctor)   exec scripts/doctor "$@" ;;
+  bd)       exec scripts/with-toolchain bd "$@" ;;
   exec)     exec scripts/with-toolchain "$@" ;;
   ""|help|-h|--help) usage ;;
   *)

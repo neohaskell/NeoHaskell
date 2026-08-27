@@ -70,7 +70,7 @@
       {
         "hooks": [
           {
-            "command": "command -v bd >/dev/null 2>&1 && bd prime --hook-json || true",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/dev bd prime --hook-json 2>/dev/null || true",
             "type": "command"
           }
         ],

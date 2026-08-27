@@ -10,6 +10,15 @@
 > beads cutover → this rebuild. The retired pipeline skill remains at
 > `docs/legacy/neohaskell-pipeline/SKILL.md` as historical reference.
 
+> **Amended by
+> [ADR-0076](0076-session-launched-change-process.md)** (2026-08-27): the
+> steps, tiers, V1–V9 verdict and merge rule below all stand, but the
+> execution substrate changed — runs are launched from a session via
+> `/change`, not poured by a dispatcher daemon. The formula, the queue and the
+> enqueue skill described here are retired. Note also that this process was
+> never actually exercised: a missing `{{request}}` placeholder meant no
+> molecule ever reached its spec agent with a request.
+
 ## Status
 
 Accepted

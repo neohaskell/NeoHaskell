@@ -7,45 +7,324 @@
 # same script works from a bare host shell, an agent session, or CI.
 #
 #   scripts/with-toolchain cabal build all
-#   scripts/with-toolchain ghcid --version
+#   scripts/with-toolchain bd list
 #
-# Resolution:
-#   1. FINGERPRINT-VERIFIED fast path (added 2026-07-08, hardened same day):
-#      the flake shellHook exports NEOHASKELL_SHELL_FP = hash of the
-#      shell-defining files (scripts/toolchain-fp, the single source) AND
-#      NEOHASKELL_SHELL_PATH = the shell's PATH at entry. If the env's
-#      fingerprint matches the CURRENT hash, the command is run with the
-#      WITNESS PATH restored — so a session whose PATH was later re-prepended
-#      with host paths (tmux panes, rc files, direnv copies) still resolves
-#      the pinned binaries, not the host's. A config change, a stale/foreign
-#      shell, or a missing witness -> re-enter nix develop.
+# Resolution, cheapest first:
+#   1. ENV WITNESS (added 2026-07-08, hardened same day): the flake shellHook
+#      exports NEOHASKELL_SHELL_FP = hash of the shell-defining files
+#      (scripts/toolchain-fp, the single source) AND NEOHASKELL_SHELL_PATH =
+#      the shell's PATH at entry. If the env's fingerprint matches the CURRENT
+#      hash, the command runs with the WITNESS PATH restored — so a session
+#      whose PATH was later re-prepended with host paths (tmux panes, rc files,
+#      direnv copies) still resolves the pinned binaries, not the host's.
 #      (History: the trust-based "IN_NIX_SHELL is set" fast path caused three
 #      real failures and was removed; the first fingerprint version verified
 #      the config files but still trusted the session's PATH — the
 #      python3-with-pyyaml failure class. This one restores the recorded
 #      PATH instead of trusting the current one.)
-#   2. nix available -> `nix develop --command` (~0.4s warm eval).
-#   3. no nix -> host tools + loud warning.
+#   2. DISK WITNESS (added 2026-08-27): the same fingerprint, but persisted.
+#      Every Bash tool call in an agent session is a FRESH shell, so layer 1
+#      never fires for agents and every call paid a full flake evaluation.
+#      Measured on a DIRTY working tree, which is the normal state during the
+#      edit->verify loop this exists to speed up: `nix develop -c` costs
+#      ~24s per call, and the disk witness costs ~0.9s end-to-end
+#      (toolchain-fp ~0.14s + two sources at ~0.25s). Cold rebuild of the
+#      cache is ~24s, paid once per shell-definition change.
+#      (An earlier version of this comment claimed ~1.5s on an "unchanged"
+#      tree, implying only edits are expensive. That did not reproduce under
+#      audit — on a dirty tree it is ~24s either way — so the narrower,
+#      verified claim is the one stated above.)
+#      toolchain-fp hashes only the files that DEFINE the shell, so editing a
+#      .hs file (or this script) does not invalidate the cache. `nix
+#      print-dev-env` reproduces the shell environment byte-identically —
+#      audited variable by variable: PATH, NIX_LDFLAGS, NIX_CFLAGS_COMPILE,
+#      PKG_CONFIG_PATH, NIX_CC, SOURCE_DATE_EPOCH all match `nix develop -c`
+#      exactly, and the shellHook DOES run (print-dev-env emits
+#      `eval "${shellHook:-}"`), so NEOHASKELL_SHELL_FP is set as usual.
+#      --profile makes the cache a GC ROOT so the store paths it names cannot
+#      be collected out from under it.
+#   3. nix available -> `nix develop --command` (the pre-cache path, kept as
+#      the fallback when print-dev-env fails for any reason).
+#   4. no nix -> host tools + loud warning.
+#
+# Every layer FAILS OPEN TOWARD CORRECTNESS: a stale fingerprint, an edited,
+# empty or corrupt cache, or a cached PATH whose store paths are gone all fall
+# through to the next layer rather than running a host binary that merely
+# shares a name. That guarantee is load-bearing and was NOT free — the first
+# version of this file failed it in three separate ways, all found by audit
+# and all now covered by `--self-test` (run by ./dev doctor), whose reject
+# cases deliberately probe a name that EXISTS ON THE HOST. Probing a name
+# present nowhere is the trap: every reject case passes for the wrong reason.
+#
+# Known cost of that strictness: a tool the flake does NOT provide (a purely
+# host-side binary) will not satisfy the witness, so `./dev exec <it>` takes
+# the slow nix route every time. Correct, and slow, beats fast and wrong.
 #
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "${SCRIPT_DIR}/.."
+
+# Overridable so --self-test can drive real fixtures instead of mocking.
+CACHE_DIR="${NEOHASKELL_TOOLCHAIN_CACHE:-.cache/toolchain}"
+ENV_FILE="${CACHE_DIR}/env.sh"
+FP_FILE="${CACHE_DIR}/fp"
+
+# EXPLAIN mode: decide the route, print it, exit — never exec, never call nix.
+# This is what makes the resolution order testable offline (./dev doctor is
+# "seconds, no nix"); without it a self-test of the reject cases would shell
+# out to a real flake evaluation.
+#
+# It is an ARGUMENT, never an environment variable. As an env var it was
+# inheritable, and one exported value turned every ./dev verb into a silent
+# no-op that printed a route name and exited 0 — `./dev check` would "pass"
+# without compiling anything.
+EXPLAIN=""
+if [ "${1:-}" = "--explain-route" ]; then
+  EXPLAIN=1
+  shift
+fi
+
+route() {
+  if [ -n "${EXPLAIN}" ]; then
+    echo "$1"
+    exit 0
+  fi
+}
+
+# Is the cached environment trustworthy for this command? Four things must
+# hold, and the reasons are all failures that were actually reproduced:
+#
+#   a. the fingerprint matches                (shell definition unchanged)
+#   b. env.sh is byte-identical to what we wrote (an edited or truncated cache
+#      can drop a store path from PATH, and `nix print-dev-env` APPENDS the
+#      caller's host PATH — so a missing pinned dir does not fail, it silently
+#      resolves the HOST binary of the same name. That is precisely the
+#      nh-fuj/nh-4s9 skew class this file exists to prevent.)
+#   c. every /nix/store directory the cached PATH names still exists
+#      (garbage collection, which the --profile GC root makes unlikely but
+#      not impossible)
+#   d. sourcing it SUCCEEDS and the command resolves
+#
+# All of it happens in a subshell, so a corrupt cache cannot crash or poison
+# this process — the earlier version let a syntax error kill the real source
+# after the probe had already passed.
+disk_witness_usable() {
+  local want="$1" fp="$2" recorded
+  [ -n "${fp}" ] || return 1
+  [ -s "${ENV_FILE}" ] || return 1
+  [ -f "${FP_FILE}" ] || return 1
+  recorded="$(cat "${FP_FILE}" 2>/dev/null || true)"
+  [ "${recorded}" = "${fp} $(env_digest)" ] || return 1
+  (
+    set +u
+    local _wt_path_before="${PATH}"
+    . "${ENV_FILE}" >/dev/null 2>&1 || exit 1
+    # `nix print-dev-env` allocates a scratch dir on every source; without
+    # this the probe leaks one per invocation, forever.
+    [ -n "${NIX_BUILD_TOP:-}" ] && rm -rf "${NIX_BUILD_TOP}" 2>/dev/null
+    # A cache must POSITIVELY CONTRIBUTE a nix dev-env: measure the PATH
+    # entries the cache ADDED, not the ones that were already there. An empty
+    # or degenerate cache sources cleanly and leaves the ambient PATH intact
+    # — which on a nix machine already contains store paths, so an
+    # "is there a store path?" test passes and `command -v` is then satisfied
+    # by the HOST binary. That is the nh-fuj/nh-4s9 skew class arriving
+    # through the cache instead of through PATH; the self-test caught it.
+    local d store=0
+    IFS=:
+    for d in ${PATH}; do
+      case ":${_wt_path_before}:" in
+        *":${d}:"*) ;;                      # was already there, prove nothing
+        *) case "${d}" in
+             /nix/store/*) [ -d "${d}" ] || exit 1; store=$((store + 1)) ;;
+           esac ;;
+      esac
+    done
+    unset IFS
+    [ "${store}" -gt 0 ] || exit 1
+    command -v "${want}" >/dev/null 2>&1 || exit 1
+    exit 0
+  ) || return 1
+  return 0
+}
+
+# Content digest of the cache, stored next to the fingerprint. This is what
+# makes (b) above enforceable: the fingerprint says "the shell definition is
+# unchanged", the digest says "and nothing has edited the cache since".
+env_digest() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum < "${ENV_FILE}" | cut -d' ' -f1
+  else
+    shasum -a 256 < "${ENV_FILE}" | cut -d' ' -f1
+  fi
+}
+
+self_test() {
+  local tmp fp fails=0
+  tmp="$(mktemp -d)"
+  # shellcheck disable=SC2064 # expand tmp now, at trap-setting time
+  trap "rm -rf '${tmp}'" EXIT
+  fp="$("${SCRIPT_DIR}/toolchain-fp")"
+
+  # PROBE WITH A COMMAND THAT EXISTS ON THE HOST TOO.
+  # The first version probed for a name present nowhere, which made every
+  # reject case pass for the wrong reason: `command -v` failed because the
+  # name did not exist at all, not because the cache was rejected. Swap in a
+  # host-present name and two of those cases invert. `bd` is the sharpest
+  # probe available — the host has 1.1.0, the flake has 1.2.2, and picking
+  # the host one silently is the exact bug this file exists to prevent.
+  local probe=bd
+  command -v "${probe}" >/dev/null 2>&1 || probe=ls   # never both-missing
+
+  fixture() { # fixture <dir> <env.sh contents>
+    mkdir -p "$1"
+    printf '%s\n' "$2" > "$1/env.sh"
+    NEOHASKELL_TOOLCHAIN_CACHE="$1" ENV_FILE="$1/env.sh" \
+      bash -c 'ENV_FILE="$1/env.sh"; if command -v sha256sum >/dev/null 2>&1; then
+                 d=$(sha256sum < "$ENV_FILE" | cut -d" " -f1)
+               else d=$(shasum -a 256 < "$ENV_FILE" | cut -d" " -f1); fi
+               printf "%s %s\n" "$2" "$d" > "$1/fp"' _ "$1" "$3"
+  }
+
+  check() { # check <case> <expected-route> <cache-dir>
+    local got
+    got="$(NEOHASKELL_SHELL_FP= NEOHASKELL_SHELL_PATH= \
+           NEOHASKELL_TOOLCHAIN_CACHE="$3" \
+           "${SCRIPT_DIR}/with-toolchain" --explain-route "${probe}" 2>/dev/null || echo ERROR)"
+    if [ "${got}" = "$2" ]; then
+      echo "  ok   $1"
+    else
+      echo "  FAIL $1 — expected route '$2', got '${got}'" >&2
+      fails=$((fails + 1))
+    fi
+  }
+
+  # 1. nothing cached yet -> evaluate the flake
+  check "cold cache falls through to nix" nix "${tmp}/none"
+
+  # 2. fingerprint + digest match, sources cleanly, probe resolves -> used
+  mkdir -p "${tmp}/bin"; printf '#!/bin/sh\nexit 0\n' > "${tmp}/bin/${probe}"
+  chmod +x "${tmp}/bin/${probe}"
+  # a real, existing store dir — the accept case must satisfy the same
+  # "looks like a nix dev-env" rule the reject cases are tested against
+  local store_dir
+  store_dir="$(find /nix/store -maxdepth 2 -type d -name bin 2>/dev/null | head -1 || true)"
+  if [ -n "${store_dir}" ]; then
+    fixture "${tmp}/good" "export PATH=\"${store_dir}:${tmp}/bin:\$PATH\"" "${fp}"
+    check "valid cache is used" disk "${tmp}/good"
+  else
+    echo "  skip valid-cache case — no /nix/store on this host" >&2
+  fi
+
+  # 3. the shell definition changed under us -> reject
+  fixture "${tmp}/stale" "export PATH=\"${tmp}/bin:\$PATH\"" "not-the-current-fingerprint"
+  check "stale fingerprint is rejected" nix "${tmp}/stale"
+
+  # 4. THE HOST-BINARY TRAP: the cache no longer names the pinned store dir,
+  #    but print-dev-env appends the caller's PATH, so `command -v` is still
+  #    satisfied — by the HOST copy. Must be rejected, not silently used.
+  fixture "${tmp}/gc" "export PATH=\"/nix/store/0000000000000000000000000000000000-gone/bin:\$PATH\"" "${fp}"
+  check "cache naming a collected store path is rejected" nix "${tmp}/gc"
+
+  # 5. empty write (truncation) + a host-present probe -> reject.
+  #    Mutation testing showed the old suite stayed GREEN when the `-s` guard
+  #    was deleted, because the probe name existed nowhere. It does not now.
+  fixture "${tmp}/empty" "" "${fp}"
+  check "empty cache file is rejected" nix "${tmp}/empty"
+
+  # 6. cache edited after we wrote it -> digest mismatch -> reject
+  fixture "${tmp}/tampered" "export PATH=\"${tmp}/bin:\$PATH\"" "${fp}"
+  printf 'export PATH="/usr/bin:$PATH"\n' > "${tmp}/tampered/env.sh"
+  check "edited cache is rejected (content digest)" nix "${tmp}/tampered"
+
+  # 7. no fingerprint file at all -> unverifiable -> reject
+  mkdir -p "${tmp}/nofp"
+  printf 'export PATH="%s/bin:$PATH"\n' "${tmp}" > "${tmp}/nofp/env.sh"
+  check "cache with no fingerprint is rejected" nix "${tmp}/nofp"
+
+  # 8. corrupt shell syntax -> reject, and do NOT crash. The earlier version
+  #    routed `disk` here and died on the real source, after the probe passed.
+  fixture "${tmp}/corrupt" 'export PATH="unterminated' "${fp}"
+  check "corrupt cache is rejected without crashing" nix "${tmp}/corrupt"
+
+  # 9. layer 1 must still win when the env witness is present
+  local got
+  got="$(NEOHASKELL_TOOLCHAIN_CACHE="${tmp}/none" \
+         NEOHASKELL_SHELL_FP="${fp}" NEOHASKELL_SHELL_PATH="${tmp}/bin:${PATH}" \
+         "${SCRIPT_DIR}/with-toolchain" --explain-route "${probe}" 2>/dev/null || echo ERROR)"
+  if [ "${got}" = "env" ]; then
+    echo "  ok   env witness takes precedence over the disk cache"
+  else
+    echo "  FAIL env witness precedence — expected 'env', got '${got}'" >&2
+    fails=$((fails + 1))
+  fi
+
+  if [ "${fails}" -eq 0 ]; then
+    echo "with-toolchain: self-test OK — 9 cases; every reject probes a HOST-PRESENT name"
+    return 0
+  fi
+  echo "with-toolchain: self-test FAILED (${fails})" >&2
+  return 1
+}
+
+if [ "${1:-}" = "--self-test" ]; then
+  self_test
+  exit $?
+fi
 
 if [ $# -eq 0 ]; then
   echo "usage: scripts/with-toolchain <command> [args…]" >&2
   exit 2
 fi
 
+# --- 1. env witness ---------------------------------------------------------
+FP="$("${SCRIPT_DIR}/toolchain-fp" 2>/dev/null || true)"
 if [ -n "${NEOHASKELL_SHELL_FP:-}" ] \
-   && [ "${NEOHASKELL_SHELL_FP}" = "$("${SCRIPT_DIR}/toolchain-fp")" ] \
+   && [ -n "${FP}" ] \
+   && [ "${NEOHASKELL_SHELL_FP}" = "${FP}" ] \
    && [ -n "${NEOHASKELL_SHELL_PATH:-}" ] \
    && PATH="${NEOHASKELL_SHELL_PATH}" command -v "$1" >/dev/null 2>&1; then
+  route env
   PATH="${NEOHASKELL_SHELL_PATH}" exec "$@"
 fi
 
-if command -v nix >/dev/null 2>&1; then
-  exec nix develop --command "$@"
-else
-  echo "with-toolchain: nix not found — falling back to host tools (version-drift risk)" >&2
+# --- 2. disk witness --------------------------------------------------------
+if disk_witness_usable "$1" "${FP}"; then
+  route disk
+  set +u
+  # shellcheck disable=SC1090 # generated by `nix print-dev-env`, verified above
+  . "${ENV_FILE}"
+  [ -n "${NIX_BUILD_TOP:-}" ] && rm -rf "${NIX_BUILD_TOP}" 2>/dev/null
+  set -u
   exec "$@"
 fi
+
+# --- 3/4. evaluate the flake, and record the result for next time -----------
+route nix
+
+if command -v nix >/dev/null 2>&1; then
+  # Refresh the cache, then use it. --profile plants a GC root so the store
+  # paths this cache names survive `nix-collect-garbage`. Written to a temp
+  # file and renamed so a concurrent reader never sees a half-written cache.
+  if [ -n "${FP}" ]; then
+    mkdir -p "${CACHE_DIR}"
+    if nix print-dev-env --profile "${CACHE_DIR}/profile" \
+         > "${ENV_FILE}.$$.tmp" 2>/dev/null; then
+      mv -f "${ENV_FILE}.$$.tmp" "${ENV_FILE}"
+      printf '%s %s\n' "${FP}" "$(env_digest)" > "${FP_FILE}"
+      if disk_witness_usable "$1" "${FP}"; then
+        set +u
+        # shellcheck disable=SC1090
+        . "${ENV_FILE}"
+        set -u
+        exec "$@"
+      fi
+    else
+      rm -f "${ENV_FILE}.$$.tmp"
+    fi
+  fi
+  # print-dev-env unavailable or unusable — the pre-cache path still works.
+  exec nix develop --command "$@"
+fi
+
+echo "with-toolchain: nix not found — falling back to host tools (version-drift risk)" >&2
+exec "$@"
