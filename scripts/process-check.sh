@@ -8,7 +8,7 @@ cd "$(dirname "$0")/.."
 fail=0
 err() { echo "process-check: $1" >&2; fail=1; }
 
-active_skill=.claude/skills/neohaskell-pipeline/SKILL.md
+active_skill=.pi/skills/neohaskell-pipeline/SKILL.md
 adr_0067=docs/decisions/0067-contract-delta-spec-gate.md
 adr_0075=docs/decisions/0075-change-process-v2.md
 adr_0076=docs/decisions/0076-restore-resumable-change-pipeline.md

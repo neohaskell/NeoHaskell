@@ -60,7 +60,7 @@ artifacts, and destination table below; those semantic checks require review.
 · `phrasebook` → `codemap/phrasebook.md` · `hot-card` → `codemap/api-hot.md`
 · `hlint-rule` → `.hlint.yaml` (skill: `neohaskell-dialect-rules`) · `hook` →
 `.claude/hooks/*` · `cli-utility` → `scripts/*` (+ a `./dev` verb) · `skill-edit`
-→ `.claude/skills/*/SKILL.md` · `telemetry-label` → `telemetry/SCHEMA.md` (a
+→ `.pi/skills/*/SKILL.md` · `telemetry-label` → `telemetry/SCHEMA.md` (a
 schema bump) · `PRUNE` → delete the unused asset · `none` → the `destination`
 field carries the justification.
 

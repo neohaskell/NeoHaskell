@@ -59,7 +59,7 @@ extension-points:
 
   - kind: new-pipeline-asset
     triggers: [new dev tool, new gate, new check, new script, new skill, new hook rule]
-    create: ["scripts/<verb-implementation> or .claude/hooks/ or .claude/skills/<name>/SKILL.md"]
+    create: ["scripts/<verb-implementation> or .claude/hooks/ or .pi/skills/<name>/SKILL.md"]
     register: ["dev (verb — MANDATORY, doctor-enforced)", ".github/workflows/checks.yml if a CI gate"]
     tests: ["scripts/doctor self-checks", ".claude/hooks/dialect-guard-cases.json for hook rules"]
     notes: governing rules apply — every tool is a human tool; every rule names its gate; hook rules need blocking+passing cases.

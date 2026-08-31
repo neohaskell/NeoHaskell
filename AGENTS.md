@@ -10,6 +10,9 @@ This file is the **agent-specific contract**: the hard rule, dialect style, and 
 - **`README.md`** — environment setup, the full build/test commands, Postgres, human contributor workflow.
 - **`codemap/README.md`** — localization routing, API discovery (`codemap/api-hot.md`, `./dev api`, `phrasebook.md`), and codemap regeneration.
 
+Pi is the primary agent harness. Canonical project skills live in `.pi/skills/`;
+`.claude/skills` is only a compatibility symlink to that single source.
+
 ## Rust `neo/**` — separate contract (do not apply Haskell rules here)
 
 `neo/**` is the imported Rust Neo CLI, not NeoHaskell dialect code. Everything below in this file — the HARD RULE, the mandatory dialect style table, the spec-gated pipeline, dialect enforcement, and codemap localization — governs the Haskell trees (`core/`, `testbed/`, `integrations/`) and **does not apply under `neo/**`**. Route all `neo/**` work through **`neo/AGENTS.md`** and its skills: **`neo-cli-localizer`** (locate command/subsystem), **`neo-cli-implementer`** (Rust conventions + error/output contract + interactive-vs-CI), **`neo-cli-testing`** (unit/integration/e2e/smoke layers), **`neo-cli-ide`** (Vite frontend + embedded `dist/` sync + screen critique). Monorepo governance still binds `neo/**`: create each branch from its owning lower GitHub stack layer with `gh stack`, never edit `main` directly, keep ADRs and one-source-of-truth docs, ship with tests, and preserve the starter↔upstream cross-component gate. `./dev neo-skills-check` (run by `./dev doctor` + CI) keeps this routing honest.
@@ -55,6 +58,7 @@ subsequent change request.
 - **Resume contract**: `.pipeline/state.json` via `./dev pipeline` (init/status/advance/set/approve/park/resume/complete/validate). Resume never re-plans; plan wrong → park (`wrong-localization`) + fix the asset. `complete --outcome ok|parked|failed` archives terminal state and releases the next run (`ok` requires `ci`; `parked` requires a parked run).
 - **Risk-tiered design reviews** (post-approval, pre-implementation): `./dev spec-check --plan <spec>` routes to `neohaskell-security-design-review` / `neohaskell-performance-design-review` when `touches:` hits risk-tagged capabilities. **Perf** records (`NNN-slug.perf-review.md`) are committed next to the spec and gated at PR-ready by `./dev spec-check --reviews-pr`. **Security** records (`NNN-slug.security-review.md`) are **local-only — gitignored, never pushed** (a security review maps attack surface; [ADR-0069](docs/decisions/0069-security-reviews-are-local.md)); the pipeline enforces their local presence via `./dev spec-check --reviews-local` before flipping the PR to ready.
 - **Verification order**: criteria tests red → implement → green at declared levels → test-impact suites (from `--plan`) → `./dev lint` + `./dev spec-drift <spec>` → full suite once at PR-ready with `./dev test-all --require-all` (missing PostgreSQL/Hurl is red, never skipped green).
+- **Gate 2 = final substantive review**: record it with `./dev pipeline approve ci --by <who> --via github-review --head "$(git rev-parse HEAD)"` before `telemetry finish --outcome ok`. Completion accepts that approved HEAD or one direct child changing only generated `telemetry/runs.jsonl`; every other delta needs Gate 2 again.
 - **Failure policy**: per-stage time-boxes (skill has the table) → retry once → escalate tier → `./dev pipeline park --label <taxonomy>` + structured report. A parked report beats a wrong PR. Closing a failed/parked run records a class-fix — `./dev telemetry finish … --asset-delta <type>:<dest>` (enforced; `none:<reason>` if none), per [ADR-0068](docs/decisions/0068-failure-asset-delta-and-learning-loop.md).
 - **Expectation guard** (`.claude/hooks/expectation-guard.py`): removing/rewording an existing test expectation is blocked by the configured Claude hook (maintainer marker `.claude/allow-expectation-edits`) and by the CI `expectations` census (maintainer `expectations-approved` PR label, which the agent can't self-apply). Pi does not install Claude hooks: run `python3 .claude/hooks/expectation-guard.py --pr-diff <base-ref>` before continuing. Adding tests never needs an override.
 - **Benchmarks**: nightly only (`./dev bench` vs `telemetry/bench-budgets.json`, nightly-bench.yml) — never PR-blocking.
@@ -69,10 +73,11 @@ subsequent change request.
 
 ## Dialect enforcement (Phase 2, live since 2026-07-07)
 
-Portable enforcement has two gates; the configured Claude harness adds earlier feedback:
-1. **Optional Claude edit hook** (`.claude/hooks/dialect-guard.py`, ~50ms): rejects `$`, `where`-as-let-substitute (declaration `where` — module/class/instance/data/GADT/type-family — is fine), `Either`, `pure`/`return`, vanilla/unqualified imports, `case`-of-Bool — on added lines, quoting the rule. Pi does not install it. False positive? `-- HOOK-ALLOW: <reason>` on the line. Adding/changing rules → `neohaskell-dialect-rules` skill.
-2. **`./dev lint`** (seconds; portable + CI gate in `checks.yml`): dialect-first `.hlint.yaml` — vanilla modules restricted to Core wrappers + grandfathered boundaries.
-3. **GHC** (`./dev check`): `NoImplicitPrelude`.
+Portable enforcement has two gates:
+1. **`./dev lint`** (seconds; portable + CI gate in `checks.yml`): dialect-first `.hlint.yaml` — vanilla modules restricted to Core wrappers + grandfathered boundaries.
+2. **GHC** (`./dev check`): `NoImplicitPrelude`.
+
+Claude compatibility adds optional earlier feedback through `.claude/hooks/dialect-guard.py` (~50ms). Pi does not depend on that hook. It rejects `$`, `where`-as-let-substitute (declaration `where` — module/class/instance/data/GADT/type-family — is fine), `Either`, `pure`/`return`, vanilla/unqualified imports, and `case`-of-Bool on added lines. False positive? Add `-- HOOK-ALLOW: <reason>` on that line. Adding/changing rules routes to `neohaskell-dialect-rules`.
 
 **Escape hatch:** no Core wrapper for what you need? Add your module to the `.hlint.yaml` `within:` list with a justification + `belongs-in:` note. Rule of three: third exception for a symbol = promote a Core primitive. Never reimplement a banned thing with allowed vocabulary.
 

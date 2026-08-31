@@ -18,8 +18,8 @@ skill share one vocabulary.
 
 ```
 intake ─ localize ─ spec ─▶ DRAFT PR ══ GATE 1 (maintainer) ══▶ design-review
-        ─ plan ─ test-writing ─ implement ─ verify ─ pr ─┬─ GATE 2 (maintainer) ─┐
-                                                         └─ ci/review loop ─────┴─ finalization ─ merged
+        ─ plan ─ test-writing ─ implement ─ verify ─ pr ─ ci/review loop
+        ══ GATE 2 (maintainer) ══▶ telemetry-only finalization ─ final checks ─ merged
 ```
 
 **Telemetry transition invariant:** `./dev pipeline` owns resume state; telemetry
@@ -105,39 +105,49 @@ advance without that stop/start pair. Human waits use `./dev telemetry wait
     the ADR's `## Status` to `Implemented`** here (and the matching row in
     `docs/decisions/README.md`, then `./dev adr-website` to resync the landing
     page); run `./dev adr-check`. GATE 2 is the maintainer's normal review.
-11. **ci + GATE 2 converge** — maintainer review and CI/review-bot stabilization
-    are concurrent conditions on the same substantive HEAD, not serial stages.
-    Each CI round: watch checks → read every new bot comment → triage → push the
+11. **ci → GATE 2 → telemetry-only finalization** — each CI round: watch
+    checks → read every new bot comment → triage → push the
     fix → wait for re-review. Repeat until CodeRabbit has no outstanding
-    actionable comments (its review state leaves `CHANGES_REQUESTED`), the
-    required check matrix is green, and the maintainer has approved that HEAD.
-    Generated artifacts (`codemap/**`, `CHANGELOG.md`) are regenerated, never
-    hand-edited. Fix real findings; decline incorrect/generated-file findings
-    with a reason on the PR.
+    actionable comments (its review state leaves `CHANGES_REQUESTED`) and the
+    required check matrix is green on the substantive change. Generated
+    artifacts (`codemap/**`, `CHANGELOG.md`) are regenerated, never hand-edited.
+    Fix real findings; decline incorrect/generated-file findings with a reason
+    on the PR.
 
-    **Finalization tail (before merge):** once both conditions hold, make no
-    further product/doc changes. Stop the actual open stage with `./dev telemetry
-    stage --name ci --event stop`. Capture the final diff, then archive it before
-    `finish` removes the current-run state:
+    Once substantive CI and CodeRabbit are green, the maintainer performs Gate 2
+    on that HEAD. Record the reviewed SHA before claiming success:
 
     ```sh
+    ./dev pipeline approve ci --by <who> --via github-review \
+      --head "$(git rev-parse HEAD)"
+    ```
+
+    **Finalization tail:** make no further product/doc changes. Stop the open
+    stage, archive the now-truthful verdict, and finish telemetry:
+
+    ```sh
+    ./dev telemetry stage --name ci --event stop
     git diff origin/main...HEAD > /tmp/<run-id>.final.diff
     ./dev telemetry golden --run-id <run-id> --request-file <request.md> \
       --spec-file <spec.md> --diff-file /tmp/<run-id>.final.diff \
       --verdict "CI and Gate 2 satisfied" [--transcript-file <transcript.md>]
     ./dev telemetry finish --outcome ok
-    ./dev pipeline complete --outcome ok
     ```
 
-    `complete --outcome ok` archives the final local state under
-    `.pipeline/completed/` and removes `state.json`, so the next run can
-    initialize without `--force`.
-    Commit only the tracked `telemetry/runs.jsonl` finalization delta and push
-    it. That metadata-only push starts a final check tail: wait for required
-    checks and re-obtain GATE 2 only if branch protection invalidated it. Do not
-    change the finished telemetry line or product code in this tail. A
-    substantive failure starts a new correction run rather than rewriting the
-    append-only ledger. The golden archive is gitignored and remains local.
+    Commit and push **only** `telemetry/runs.jsonl`, then wait for required
+    checks and CodeRabbit. If GitHub invalidates the existing review, the same
+    Gate 2 touchpoint re-approves this metadata-only HEAD and updates `approve
+    ci --head`. Finally run `./dev pipeline complete --outcome ok`.
+
+    `complete` verifies finished telemetry and accepts either the approved HEAD
+    itself or its single direct child whose only changed path is
+    `telemetry/runs.jsonl`; any other delta requires Gate 2 again. It archives
+    state under `.pipeline/completed/` and removes `state.json`. If the
+    metadata-tail checks fail before `complete`, run `./dev telemetry reopen
+    --run-id <run-id>`; this sanctioned command removes only the unmerged `ok`
+    line, restores `.current-run.json`, and returns the same run to CI/Gate 2.
+    Historical lines already on `origin/main` cannot reopen. Do not hand-edit the
+    ledger. The golden archive is gitignored and local.
     Merge remains the maintainer's action. Post-merge `post-merge-guard.yml`
     marks a regression as a revert-candidate.
 

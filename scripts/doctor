@@ -70,7 +70,7 @@ done
 #    actually be registered, so a verb rename can't make the most-read docs
 #    lie silently (AGENTS.md is loaded into every session).
 AGENT_GUIDANCE=(
-  .claude/skills/*/SKILL.md
+  .pi/skills/*/SKILL.md
   AGENTS.md
   CLAUDE.md
   neo/AGENTS.md
@@ -145,7 +145,7 @@ rm -f "${FIXTURE}" "${FIXTURE_ERR}"
 
 if [ "${fail}" -eq 0 ]; then
   count=$(echo "${registered}" | wc -l | tr -d ' ')
-  skills=$(ls -d .claude/skills/*/ 2>/dev/null | wc -l | tr -d ' ')
+  skills=$(ls -d .pi/skills/*/ 2>/dev/null | wc -l | tr -d ' ')
   echo "doctor: OK — ${count} verbs registered, $(ls scripts/ | wc -l | tr -d ' ') scripts accounted for, ${#EXEMPT_NAMES[@]} exemptions (all reasoned), ${skills} canonical skills Pi-discoverable/frontmatter/reference checked"
 fi
 exit "${fail}"

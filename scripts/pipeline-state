@@ -21,7 +21,8 @@ Commands:
                                                 falling back to string. Lifecycle
                                                 state only moves via the gate
                                                 commands below.
-  approve STAGE --by WHO [--via HOW]            record a human approval
+  approve STAGE --by WHO [--via HOW] [--head SHA] record a human approval;
+                                                ci requires current reviewed SHA
   park --label LABEL [--note NOTE]              park with a taxonomy label
   resume                                        clear parked (plan is kept — the contract)
   complete --outcome ok|parked|failed           archive terminal state and release
@@ -36,6 +37,7 @@ Run: ./dev pipeline <command>
 import argparse
 import json
 import re
+import subprocess
 import sys
 import tempfile
 from datetime import datetime, timezone
@@ -43,6 +45,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 STATE_DIR = ROOT / ".pipeline"
+TELEMETRY_CURRENT = ROOT / "telemetry" / ".current-run.json"
+TELEMETRY_RUNS = ROOT / "telemetry" / "runs.jsonl"
+RUN_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 
 # telemetry/SCHEMA.md stage enum, in pipeline order. Changing it there means
 # changing it here in the same PR (both quote schema v4).
@@ -62,6 +67,70 @@ PLAN_FIELDS = ("touches", "files", "uses")
 
 def now():
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def git_output(*args):
+    result = subprocess.run(
+        ["git", *args], cwd=ROOT, text=True,
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
+    )
+    return result.stdout.strip() if result.returncode == 0 else None
+
+
+def git_bytes(*args):
+    result = subprocess.run(
+        ["git", *args], cwd=ROOT,
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
+    )
+    return result.stdout if result.returncode == 0 else None
+
+
+def current_head():
+    return git_output("rev-parse", "HEAD")
+
+
+def tracked_worktree_clean(status):
+    return status is not None and not status.strip()
+
+
+def telemetry_append_is_valid(before_text, after_text, run_id, outcome):
+    before = before_text.encode() if isinstance(before_text, str) else before_text
+    after = after_text.encode() if isinstance(after_text, str) else after_text
+    if not after.startswith(before):
+        return False
+    if before and not before.endswith(b"\n"):
+        return False
+    appended = after[len(before):]
+    if not appended.endswith(b"\n") or appended.count(b"\n") != 1 or b"\r" in appended:
+        return False
+    try:
+        added = json.loads(appended[:-1].decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return False
+    return added.get("run_id") == run_id and added.get("outcome") == outcome
+
+
+def approval_covers_head(approved_head, actual_head, parent_head, changed_paths):
+    if approved_head == actual_head:
+        return True
+    return parent_head == approved_head and changed_paths == ["telemetry/runs.jsonl"]
+
+
+def final_approval_matches(approved_head, run_id, outcome):
+    actual_head = current_head()
+    if actual_head is None:
+        return False
+    if approved_head == actual_head:
+        return True
+    parent_head = git_output("rev-parse", "HEAD^")
+    changed = git_output("diff", "--name-only", f"{approved_head}..{actual_head}")
+    changed_paths = changed.splitlines() if changed is not None else []
+    if not approval_covers_head(approved_head, actual_head, parent_head, changed_paths):
+        return False
+    before = git_bytes("show", f"{approved_head}:telemetry/runs.jsonl")
+    after = git_bytes("show", f"{actual_head}:telemetry/runs.jsonl")
+    return (before is not None and after is not None
+            and telemetry_append_is_valid(before, after, run_id, outcome))
 
 
 def state_file(state_dir):
@@ -136,6 +205,14 @@ def save(state_dir, state):
 
 
 def cmd_init(args, state_dir):
+    if not RUN_ID_RE.fullmatch(args.run_id):
+        print(f"pipeline-state: invalid run-id `{args.run_id}`", file=sys.stderr)
+        return 2
+    archive = state_dir / "completed" / f"{args.run_id}.json"
+    if archive.exists():
+        print(f"pipeline-state: run-id `{args.run_id}` is already completed: {archive}",
+              file=sys.stderr)
+        return 2
     f = state_file(state_dir)
     if f.exists() and not args.force:
         print(f"pipeline-state: {f} exists — complete the current run first "
@@ -253,9 +330,22 @@ def cmd_approve(args, state_dir):
               f"`{s['stage']}` — approvals are recorded at the gate, not pre-seeded",
               file=sys.stderr)
         return 1
-    s["approvals"][args.stage] = {"by": args.by, "via": args.via, "at": now()}
+    approval = {"by": args.by, "via": args.via, "at": now()}
+    head = getattr(args, "head", None)
+    if args.stage == "ci":
+        actual_head = current_head()
+        if not head:
+            print("pipeline-state: final approval requires --head <approved-sha>", file=sys.stderr)
+            return 2
+        if actual_head is None or head != actual_head:
+            print(f"pipeline-state: final approval head `{head}` does not match current HEAD "
+                  f"`{actual_head or 'unavailable'}`", file=sys.stderr)
+            return 2
+        approval["head"] = head
+    s["approvals"][args.stage] = approval
     save(state_dir, s)
-    print(f"pipeline-state: `{args.stage}` approved by {args.by} via {args.via}")
+    suffix = f" at {head}" if head else ""
+    print(f"pipeline-state: `{args.stage}` approved by {args.by} via {args.via}{suffix}")
     return 0
 
 
@@ -283,12 +373,39 @@ def cmd_resume(state_dir):
     return 0
 
 
-def cmd_complete(args, state_dir):
+def telemetry_completion_error(run_id, outcome, current_path, runs_path):
+    if current_path.exists():
+        return f"telemetry run is still open at {current_path}; finish telemetry first"
+    if not runs_path.is_file():
+        return f"telemetry ledger is missing: {runs_path}"
+    for line in runs_path.read_text().splitlines():
+        try:
+            recorded = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if recorded.get("run_id") == run_id and recorded.get("outcome") == outcome:
+            return None
+    return f"telemetry ledger has no `{outcome}` record for run `{run_id}`"
+
+
+def cmd_complete(args, state_dir, telemetry_current=TELEMETRY_CURRENT,
+                 telemetry_runs=TELEMETRY_RUNS):
     s = load(state_dir)
     if args.outcome == "ok" and (s["parked"] or s["stage"] != "ci"):
         print("pipeline-state: outcome `ok` requires a non-parked run at final stage `ci`",
               file=sys.stderr)
         return 1
+    if args.outcome == "ok":
+        approval = s["approvals"].get("ci")
+        if not approval or not approval.get("head"):
+            print("pipeline-state: outcome `ok` requires recorded final approval for `ci`",
+                  file=sys.stderr)
+            return 1
+        if not final_approval_matches(approval["head"], s["run_id"], args.outcome):
+            print("pipeline-state: final approval covers neither current HEAD nor its sole "
+                  "telemetry/runs.jsonl finalization child — obtain Gate 2 approval again",
+                  file=sys.stderr)
+            return 1
     if args.outcome == "parked" and not s["parked"]:
         print("pipeline-state: outcome `parked` requires `pipeline park` first", file=sys.stderr)
         return 1
@@ -296,12 +413,38 @@ def cmd_complete(args, state_dir):
         print("pipeline-state: a parked run closes with outcome `parked`, not `failed`",
               file=sys.stderr)
         return 1
+    telemetry_error = telemetry_completion_error(
+        s["run_id"], args.outcome, telemetry_current, telemetry_runs
+    )
+    if telemetry_error:
+        print(f"pipeline-state: {telemetry_error}", file=sys.stderr)
+        return 1
+    if telemetry_runs.resolve() == TELEMETRY_RUNS.resolve():
+        tracked_status = git_output("status", "--porcelain", "--untracked-files=no")
+        if not tracked_worktree_clean(tracked_status):
+            print("pipeline-state: all tracked changes, including telemetry/runs.jsonl, "
+                  "must be committed before completion", file=sys.stderr)
+            return 1
     completed_dir = state_dir / "completed"
     completed_dir.mkdir(parents=True, exist_ok=True)
     safe_run_id = re.sub(r"[^A-Za-z0-9._-]", "_", s["run_id"])
     archive = completed_dir / f"{safe_run_id}.json"
     if archive.exists():
-        print(f"pipeline-state: completion archive already exists: {archive}", file=sys.stderr)
+        try:
+            existing = json.loads(archive.read_text())
+        except json.JSONDecodeError:
+            print(f"pipeline-state: completion archive is corrupt: {archive}", file=sys.stderr)
+            return 2
+        existing_head = (existing.get("approvals") or {}).get("ci", {}).get("head")
+        live_head = (s.get("approvals") or {}).get("ci", {}).get("head")
+        if (existing.get("run_id") == s["run_id"]
+                and existing.get("terminal_outcome") == args.outcome
+                and existing_head == live_head):
+            state_file(state_dir).unlink(missing_ok=True)
+            print(f"pipeline-state: recovered completed run {s['run_id']} -> {archive}")
+            return 0
+        print(f"pipeline-state: completion archive conflicts with live state: {archive}",
+              file=sys.stderr)
         return 2
     s["terminal_outcome"] = args.outcome
     s["completed_at"] = now()
@@ -324,6 +467,60 @@ def self_test():
             if got != want:
                 print(f"self-test FAIL {label}: exit {got}, want {want}")
                 fails += 1
+
+        def telemetry_paths(run_dir):
+            return run_dir / "telemetry-current.json", run_dir / "runs.jsonl"
+
+        def open_telemetry(run_dir, run_id):
+            current, _ = telemetry_paths(run_dir)
+            current.parent.mkdir(parents=True, exist_ok=True)
+            current.write_text(json.dumps({"run_id": run_id}) + "\n")
+
+        def finish_telemetry(run_dir, outcome):
+            current, runs = telemetry_paths(run_dir)
+            current.unlink(missing_ok=True)
+            run_id = load(run_dir)["run_id"]
+            with runs.open("a") as handle:
+                handle.write(json.dumps({"run_id": run_id, "outcome": outcome}) + "\n")
+
+        def complete(run_dir, outcome):
+            current, runs = telemetry_paths(run_dir)
+            return cmd_complete(
+                argparse.Namespace(outcome=outcome), run_dir,
+                telemetry_current=current, telemetry_runs=runs,
+            )
+
+        if not approval_covers_head("a", "a", "parent", ["other"]):
+            print("self-test FAIL approval coverage: exact HEAD should pass")
+            fails += 1
+        if not approval_covers_head("a", "b", "a", ["telemetry/runs.jsonl"]):
+            print("self-test FAIL approval coverage: telemetry-only child should pass")
+            fails += 1
+        if approval_covers_head("a", "b", "a", ["telemetry/runs.jsonl", "AGENTS.md"]):
+            print("self-test FAIL approval coverage: mixed finalization should fail")
+            fails += 1
+        if approval_covers_head("a", "b", "other", ["telemetry/runs.jsonl"]):
+            print("self-test FAIL approval coverage: non-child finalization should fail")
+            fails += 1
+        if not tracked_worktree_clean("") or tracked_worktree_clean(" M AGENTS.md\n"):
+            print("self-test FAIL tracked worktree guard")
+            fails += 1
+        before_ledger = '{"run_id":"old","outcome":"ok"}\n'
+        valid_ledger = before_ledger + '{"run_id":"t-001","outcome":"ok"}\n'
+        if not telemetry_append_is_valid(before_ledger, valid_ledger, "t-001", "ok"):
+            print("self-test FAIL telemetry append: valid generated line should pass")
+            fails += 1
+        tampered_ledger = '{"run_id":"old","outcome":"failed"}\n' + valid_ledger.splitlines()[-1] + "\n"
+        if telemetry_append_is_valid(before_ledger, tampered_ledger, "t-001", "ok"):
+            print("self-test FAIL telemetry append: historical mutation should fail")
+            fails += 1
+        crlf_ledger = before_ledger.replace("\n", "\r\n") + valid_ledger.splitlines()[-1] + "\r\n"
+        if telemetry_append_is_valid(before_ledger, crlf_ledger, "t-001", "ok"):
+            print("self-test FAIL telemetry append: byte-level CRLF rewrite should fail")
+            fails += 1
+        if telemetry_append_is_valid(before_ledger, valid_ledger, "other", "ok"):
+            print("self-test FAIL telemetry append: wrong run-id should fail")
+            fails += 1
 
         ns = argparse.Namespace(run_id="t-001", request="issue#0", branch="b", force=False)
         run("init", lambda: cmd_init(ns, d), 0)
@@ -372,16 +569,26 @@ def self_test():
         run("advance-to-test-writing", lambda: cmd_advance(d), 0)
         run("replan-at-plan-denied", lambda: cmd_set(
             argparse.Namespace(key="plan.touches", value='["json"]'), d), 2)
-        run("complete-before-ci-denied", lambda: cmd_complete(
-            argparse.Namespace(outcome="ok"), d), 1)
+        run("complete-before-ci-denied", lambda: complete(d, "ok"), 1)
         run("advance-to-implement", lambda: cmd_advance(d), 0)
         run("advance-to-verify", lambda: cmd_advance(d), 0)
         run("advance-to-pr", lambda: cmd_advance(d), 0)
         run("advance-to-ci", lambda: cmd_advance(d), 0)
-        run("complete-ci", lambda: cmd_complete(argparse.Namespace(outcome="ok"), d), 0)
+        run("complete-without-gate2-denied", lambda: complete(d, "ok"), 1)
+        run("approve-ci-without-head-denied", lambda: cmd_approve(
+            argparse.Namespace(stage="ci", by="nick", via="github-review", head=None), d), 2)
+        head = current_head()
+        run("approve-ci", lambda: cmd_approve(
+            argparse.Namespace(stage="ci", by="nick", via="github-review", head=head), d), 0)
+        run("complete-without-telemetry-denied", lambda: complete(d, "ok"), 1)
+        open_telemetry(d, "t-001")
+        run("complete-with-open-telemetry-denied", lambda: complete(d, "ok"), 1)
+        finish_telemetry(d, "ok")
+        run("complete-ci", lambda: complete(d, "ok"), 0)
         if state_file(d).exists() or not (d / "completed" / "t-001.json").is_file():
             print("self-test FAIL complete: live state remained or archive is missing")
             fails += 1
+        run("reuse-completed-runid-denied", lambda: cmd_init(ns, d), 2)
         next_ns = argparse.Namespace(run_id="t-002", request="issue#1", branch="b2", force=False)
         run("init-after-complete", lambda: cmd_init(next_ns, d), 0)
 
@@ -402,26 +609,70 @@ def self_test():
         run("parked-init", lambda: cmd_init(parked_ns, parked_dir), 0)
         run("parked-park", lambda: cmd_park(
             argparse.Namespace(label="timeout", note="budget"), parked_dir), 0)
-        run("parked-as-ok-denied", lambda: cmd_complete(
-            argparse.Namespace(outcome="ok"), parked_dir), 1)
-        run("parked-complete", lambda: cmd_complete(
-            argparse.Namespace(outcome="parked"), parked_dir), 0)
+        run("parked-as-ok-denied", lambda: complete(parked_dir, "ok"), 1)
+        finish_telemetry(parked_dir, "parked")
+        run("parked-complete", lambda: complete(parked_dir, "parked"), 0)
         run("init-after-parked", lambda: cmd_init(
             argparse.Namespace(run_id="t-after-park", request="issue#3", branch="p2", force=False),
             parked_dir), 0)
 
+        retry_dir = d / "retry-case"
+        retry_ns = argparse.Namespace(run_id="t-retry", request="issue#retry", branch="r", force=False)
+        run("retry-init", lambda: cmd_init(retry_ns, retry_dir), 0)
+        retry_state = load(retry_dir)
+        retry_state["stage"] = "ci"
+        retry_state["approvals"]["ci"] = {
+            "by": "nick", "via": "github-review", "at": now(), "head": current_head(),
+        }
+        save(retry_dir, retry_state)
+        retry_archive_dir = retry_dir / "completed"
+        retry_archive_dir.mkdir()
+        archived = dict(retry_state)
+        archived["terminal_outcome"] = "ok"
+        archived["completed_at"] = now()
+        (retry_archive_dir / "t-retry.json").write_text(json.dumps(archived) + "\n")
+        finish_telemetry(retry_dir, "ok")
+        run("complete-retry-after-archive", lambda: complete(retry_dir, "ok"), 0)
+        if state_file(retry_dir).exists():
+            print("self-test FAIL complete-retry: live state was not released")
+            fails += 1
+
+        conflict_dir = d / "conflict-case"
+        conflict_ns = argparse.Namespace(
+            run_id="t-conflict", request="issue#conflict", branch="c", force=False
+        )
+        run("conflict-init", lambda: cmd_init(conflict_ns, conflict_dir), 0)
+        conflict_state = load(conflict_dir)
+        conflict_state["stage"] = "ci"
+        conflict_state["approvals"]["ci"] = {
+            "by": "nick", "via": "github-review", "at": now(), "head": current_head(),
+        }
+        save(conflict_dir, conflict_state)
+        conflict_archive_dir = conflict_dir / "completed"
+        conflict_archive_dir.mkdir()
+        conflicting = json.loads(json.dumps(conflict_state))
+        conflicting["terminal_outcome"] = "ok"
+        conflicting["approvals"]["ci"]["head"] = "stale-approved-head"
+        (conflict_archive_dir / "t-conflict.json").write_text(json.dumps(conflicting) + "\n")
+        finish_telemetry(conflict_dir, "ok")
+        run("complete-conflicting-archive-denied", lambda: complete(conflict_dir, "ok"), 2)
+        if not state_file(conflict_dir).exists():
+            print("self-test FAIL complete-conflict: live state was removed")
+            fails += 1
+
         failed_dir = d / "failed-case"
         failed_ns = argparse.Namespace(run_id="t-failed", request="issue#4", branch="f", force=False)
         run("failed-init", lambda: cmd_init(failed_ns, failed_dir), 0)
-        run("failed-complete", lambda: cmd_complete(
-            argparse.Namespace(outcome="failed"), failed_dir), 0)
+        finish_telemetry(failed_dir, "failed")
+        run("failed-complete", lambda: complete(failed_dir, "failed"), 0)
         run("init-after-failed", lambda: cmd_init(
             argparse.Namespace(run_id="t-after-fail", request="issue#5", branch="f2", force=False),
             failed_dir), 0)
 
         if fails == 0:
-            print("pipeline-state self-test: OK — lifecycle, gate, park taxonomy, "
-                  "immutable plan, completion/archive, and corrupt-file recovery covered")
+            print("pipeline-state self-test: OK — lifecycle, both approval gates, immutable "
+                  "plan, telemetry-backed retry-safe completion, run-id reuse/conflict guards, "
+                  "parked/failed close, and corrupt-file recovery covered")
         return 1 if fails else 0
 
 
@@ -445,6 +696,7 @@ def main():
     pa.add_argument("stage")
     pa.add_argument("--by", required=True)
     pa.add_argument("--via", default="pr-comment")
+    pa.add_argument("--head")
     pp = sub.add_parser("park")
     pp.add_argument("--label", required=True)
     pp.add_argument("--note", default="")

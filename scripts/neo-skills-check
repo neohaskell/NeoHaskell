@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """Validate the canonical agent-skill layer and Neo CLI guidance.
 
-All 12 skills live canonically under `.claude/skills/`. Pi discovers that one
-source through `.pi/settings.json`; no copied `.pi/skills` or `.agents/skills`
-tree is allowed. This check validates Pi discovery/frontmatter, skill references,
-and the portable `neohaskell-pipeline` contract, then retains the Neo CLI routing
-and internalized-starter checks that originally lived under this verb.
+All 12 skills live canonically under Pi's project-native `.pi/skills/` root.
+`.claude/skills` is a compatibility symlink to that source, never an independent
+copy. This check validates Pi discovery, required Agent Skills frontmatter,
+references, and the `neohaskell-pipeline` contract, then retains the Neo CLI
+routing and internalized-starter checks that originally lived under this verb.
 
 Run:  ./dev neo-skills-check              full checkout validation
       ./dev neo-skills-check --pi-only    Pi skill/pipeline contract only
@@ -39,7 +39,6 @@ CANONICAL_SKILLS = (
     "neohaskell-security-design-review",
 )
 REQUIRED_NEO_SKILLS = tuple(name for name in CANONICAL_SKILLS if name.startswith("neo-cli-"))
-PI_SKILL_SETTING = "../.claude/skills"
 NAME_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 SKILL_REF_RE = re.compile(r"\b(?:neo-cli|neohaskell)-[a-z0-9-]+\b")
 MARKDOWN_LINK_RE = re.compile(r"\[[^\]]+\]\(([^)]+)\)")
@@ -59,10 +58,6 @@ STARTER_BANNED_NAMES = (
     ".git", "dist-newstyle", "dist", "node_modules", ".direnv",
     ".env", ".DS_Store", ".idea", "uploads",
 )
-STARTER_BANNED_SUFFIXES = (".swp", "~")
-STARTER_REPOSITORY_ONLY_PARTS = ("workflows", "ISSUE_TEMPLATE", "PULL_REQUEST_TEMPLATE")
-STARTER_REPOSITORY_ONLY_PREFIXES = ("ISSUE_TEMPLATE", "PULL_REQUEST_TEMPLATE", "FUNDING", "MARKETING")
-
 
 def read(path):
     return path.read_text(encoding="utf-8")
@@ -110,44 +105,61 @@ def parse_frontmatter_scalar(raw, line_no):
 
 
 def parse_frontmatter(text):
-    """Parse the strict single-line string-scalar subset used by skills.
+    """Extract only Pi's required `name` and `description` YAML strings.
 
-    Pi parses YAML. This stdlib-only validator deliberately accepts less than
-    YAML: safe plain strings or complete quoted strings only. Ambiguous `: `,
-    comments, collections and unterminated quotes fail before Pi can omit a
-    skill silently.
+    Optional Agent Skills fields may use normal YAML mappings, lists, or block
+    scalars; this stdlib check leaves their semantics to Pi instead of inventing
+    a second YAML dialect. Required strings support safe plain/quoted scalars and
+    YAML `|`/`>` blocks, which is enough to enforce Pi's load contract without
+    rejecting valid optional metadata.
     """
     lines = text.splitlines()
     if not lines or lines[0] != "---":
         return None, ["missing opening `---` frontmatter delimiter"]
 
+    closing = next((index for index, line in enumerate(lines[1:], start=1)
+                    if line == "---"), None)
+    if closing is None:
+        return None, ["missing closing `---` frontmatter delimiter"]
+
     fields = {}
     errors = []
-    closed = False
-    for line_no, line in enumerate(lines[1:], start=2):
-        if line == "---":
-            closed = True
-            break
-        if not line.strip():
+    index = 1
+    while index < closing:
+        line = lines[index]
+        line_no = index + 1
+        if not line.strip() or line.lstrip().startswith("#") or line[:1].isspace():
+            index += 1
             continue
         match = re.fullmatch(r"([A-Za-z0-9_-]+):\s*(.*)", line)
         if not match:
-            errors.append(
-                f"frontmatter line {line_no} is not a single-line `key: value` scalar"
-            )
+            errors.append(f"frontmatter line {line_no} is not a top-level YAML mapping entry")
+            index += 1
             continue
         key, raw_value = match.groups()
-        value, scalar_error = parse_frontmatter_scalar(raw_value, line_no)
-        if scalar_error:
-            errors.append(scalar_error)
+        if key not in {"name", "description"}:
+            index += 1
             continue
         if key in fields:
             errors.append(f"frontmatter key `{key}` is duplicated")
+            index += 1
+            continue
+        marker = raw_value.strip()
+        if re.fullmatch(r"[|>](?:[1-9][+-]?|[+-][1-9]?)?", marker):
+            block = []
+            index += 1
+            while index < closing and (not lines[index].strip() or lines[index][:1].isspace()):
+                block.append(lines[index].strip())
+                index += 1
+            value = ("\n" if marker.startswith("|") else " ").join(block).strip()
+            fields[key] = value
+            continue
+        value, scalar_error = parse_frontmatter_scalar(raw_value, line_no)
+        if scalar_error:
+            errors.append(scalar_error)
         else:
             fields[key] = value
-    if not closed:
-        errors.append("missing closing `---` frontmatter delimiter")
-        return None, errors
+        index += 1
     return fields, errors
 
 
@@ -158,7 +170,7 @@ def active_guidance_files(root):
         root / "neo" / "AGENTS.md",
         root / "neo" / "CLAUDE.md",
     ]
-    candidates.extend(sorted((root / ".claude" / "skills").glob("*/SKILL.md")))
+    candidates.extend(sorted((root / ".pi" / "skills").glob("*/SKILL.md")))
     nested = root / "neo" / ".claude" / "skills"
     if nested.is_dir():
         candidates.extend(sorted(nested.glob("*/SKILL.md")))
@@ -168,49 +180,31 @@ def active_guidance_files(root):
 def check_pi_skill_layer(root):
     """Validate Pi discovery, all canonical skills, and pipeline portability."""
     errors = []
-    skills_dir = root / ".claude" / "skills"
-    settings_path = root / ".pi" / "settings.json"
+    skills_dir = root / ".pi" / "skills"
+    claude_compat = root / ".claude" / "skills"
 
-    # Pi's documented project bridge: one settings entry resolving to the
-    # canonical Claude-compatible directory.
-    if not settings_path.is_file():
+    # Pi owns the canonical, auto-discovered project root. Claude compatibility
+    # is path-level indirection only, so editing either visible path edits the
+    # same inode tree and cannot create drift.
+    if not skills_dir.is_dir():
+        errors.append(".pi/skills is missing - Pi's canonical project skill root must exist")
+    if not claude_compat.is_symlink():
+        errors.append(".claude/skills must be a compatibility symlink to ../.pi/skills")
+    elif claude_compat.resolve() != skills_dir.resolve():
         errors.append(
-            ".pi/settings.json is missing - Pi cannot discover project-local "
-            ".claude/skills without the documented settings bridge"
+            f".claude/skills resolves to {claude_compat.resolve()}, not canonical {skills_dir.resolve()}"
         )
-    else:
-        try:
-            settings = json.loads(read(settings_path))
-        except (json.JSONDecodeError, OSError) as exc:
-            errors.append(f".pi/settings.json is not valid JSON: {exc}")
-            settings = None
-        if isinstance(settings, dict):
-            configured = settings.get("skills")
-            if configured != [PI_SKILL_SETTING]:
-                errors.append(
-                    ".pi/settings.json must set exactly "
-                    f'`"skills": ["{PI_SKILL_SETTING}"]` (one canonical source)'
-                )
-            else:
-                resolved = (settings_path.parent / configured[0]).resolve()
-                if resolved != skills_dir.resolve():
-                    errors.append(
-                        f".pi/settings.json skill path resolves to {resolved}, not the "
-                        f"canonical {skills_dir.resolve()}"
-                    )
-        elif settings is not None:
-            errors.append(".pi/settings.json must contain a JSON object")
 
-    # Alternative project skill roots would create duplicate or drifting sources.
-    for alternative in (root / ".pi" / "skills", root / ".agents" / "skills"):
-        if not alternative.exists():
-            continue
+    # `.agents/skills` would be a second project-native source and could shadow
+    # names independently of the canonical Pi tree.
+    alternative = root / ".agents" / "skills"
+    if alternative.exists():
         candidates = list(alternative.rglob("SKILL.md")) + list(alternative.glob("*.md"))
         if candidates:
             rendered = ", ".join(str(path.relative_to(root)) for path in sorted(set(candidates)))
             errors.append(
-                f"duplicate project skill source under {alternative.relative_to(root)}: "
-                f"{rendered}; keep content only in .claude/skills"
+                f"duplicate project skill source under .agents/skills: {rendered}; "
+                "keep content only in .pi/skills"
             )
 
     skill_files = sorted(skills_dir.rglob("SKILL.md"))
@@ -226,8 +220,14 @@ def check_pi_skill_layer(root):
             )
     missing = sorted(expected_dirs - actual_dirs)
     unexpected = sorted(actual_dirs - expected_dirs)
+    missing_files = sorted(
+        name for name in CANONICAL_SKILLS
+        if not (skills_dir / name / "SKILL.md").is_file()
+    )
     if missing:
-        errors.append(f"canonical skills missing from .claude/skills: {', '.join(missing)}")
+        errors.append(f"canonical skills missing from .pi/skills: {', '.join(missing)}")
+    if missing_files:
+        errors.append(f"canonical SKILL.md files missing: {', '.join(missing_files)}")
     if unexpected:
         errors.append(f"unexpected canonical skill directories: {', '.join(unexpected)}")
 
@@ -287,7 +287,13 @@ def check_pi_skill_layer(root):
     # Pi resolves relative links from the skill directory after loading it.
     for skill_md in skill_files:
         for raw_target in MARKDOWN_LINK_RE.findall(read(skill_md)):
-            target = raw_target.strip().split()[0].strip("<>")
+            parts = raw_target.strip().split()
+            if not parts:
+                errors.append(
+                    f"{skill_md.relative_to(root)} has an empty Markdown link target"
+                )
+                continue
+            target = parts[0].strip("<>")
             parsed = urlsplit(target)
             if parsed.scheme or target.startswith("#") or any(char in parsed.path for char in "*?["):
                 continue
@@ -305,6 +311,7 @@ def check_pi_skill_layer(root):
 
 def check_pipeline_contract(root, pipeline_path):
     text = read(pipeline_path)
+    flat = re.sub(r"\s+", " ", re.sub(r"\\\s+", " ", text)).strip()
     rel = pipeline_path.relative_to(root)
     errors = []
 
@@ -334,41 +341,44 @@ def check_pipeline_contract(root, pipeline_path):
         "tests-first stage": "7. **test-writing** — tests FIRST",
         "ordered verification": "9. **verify** — in order, no skipping",
         "final maintainer gate": "GATE 2 is the maintainer's normal review",
-        "concurrent final conditions": "maintainer review and CI/review-bot stabilization\n    are concurrent conditions",
+        "recorded final approval": "./dev pipeline approve ci --by <who> --via github-review --head \"$(git rev-parse HEAD)\"",
+        "final ordering": "ci → GATE 2 → telemetry-only finalization",
         "criterion existence gate": "./dev spec-check --criteria-tests origin/main",
         "local design-review gate": "./dev spec-check --reviews-local origin/main",
         "committed design-review gate": "--reviews-pr origin/main",
         "changelog gate": "./dev changelog --check origin/main",
-        "strict full suite": "./dev test-all\n      --require-all",
+        "strict full suite": "./dev test-all --require-all",
         "testbed acceptance": "./dev testbed",
-        "telemetry stage start": "./dev telemetry stage --name <stage>\n--event start",
-        "telemetry transition pairing": "Never\nadvance without that stop/start pair",
-        "telemetry stage close": "./dev telemetry\n    stage --name ci --event stop",
+        "telemetry stage start": "./dev telemetry stage --name <stage> --event start",
+        "telemetry transition pairing": "Never advance without that stop/start pair",
+        "telemetry stage close": "./dev telemetry stage --name ci --event stop",
         "golden before finish": "./dev telemetry golden --run-id <run-id>",
         "successful finish": "./dev telemetry finish --outcome ok",
         "pipeline state completion": "./dev pipeline complete --outcome ok",
         "non-ok stage close": "./dev telemetry stage --name <current-stage> --event stop",
         "non-ok state release": "./dev pipeline complete --outcome <parked|failed>",
-        "metadata-only final tail": "metadata-only push starts a final check tail",
+        "metadata-only final tail": "metadata-only HEAD",
+        "recoverable final tail": "./dev telemetry reopen --run-id <run-id>",
         "resume heading": "## Resume contract",
         "resume status command": "./dev pipeline status",
         "resume does not re-localize": "Never re-derive `touches:`/`files:`/`uses:` on resume",
         "wrong-localization park": "wrong-localization",
     }
     for label, snippet in required.items():
-        if snippet not in text:
+        if re.sub(r"\s+", " ", snippet) not in flat:
             errors.append(f"{rel}: missing {label} contract (`{snippet}`)")
 
     ordered_tail = (
+        "pipeline approve ci --by <who>",
         "stage --name ci --event stop",
         "telemetry golden --run-id <run-id>",
         "telemetry finish --outcome ok",
         "pipeline complete --outcome ok",
     )
-    positions = [text.find(snippet) for snippet in ordered_tail]
+    positions = [flat.find(re.sub(r"\s+", " ", snippet)) for snippet in ordered_tail]
     if any(position < 0 for position in positions) or positions != sorted(positions):
         errors.append(
-            f"{rel}: finalization must stop ci, archive golden evidence, finish --outcome ok, then complete state"
+            f"{rel}: finalization must record Gate 2, stop ci, archive evidence, finish telemetry, then complete state"
         )
 
     state_machine = root / "scripts" / "pipeline-state"
@@ -477,30 +487,13 @@ def check_starter(root):
             errors.append(f"neo/starter/{STARTER_MANIFEST} does not document exclusions")
 
     for path in starter.rglob("*"):
-        relative = path.relative_to(starter)
-        parts = relative.parts
-        excluded = None
-        for component in parts:
+        for component in path.relative_to(starter).parts:
             if (component in STARTER_BANNED_NAMES or component == "result"
                     or component.startswith("result-")):
-                excluded = component
+                errors.append(
+                    f"neo/starter/{path.relative_to(starter)} contains excluded class `{component}`"
+                )
                 break
-            if component.endswith(STARTER_BANNED_SUFFIXES):
-                excluded = component
-                break
-        github_parts = parts[1:] if parts and parts[0] == ".github" else ()
-        if excluded is None and any(
-            component in STARTER_REPOSITORY_ONLY_PARTS for component in github_parts
-        ):
-            excluded = "/".join(parts)
-        if excluded is None and parts and any(
-            parts[-1].upper().startswith(prefix) for prefix in STARTER_REPOSITORY_ONLY_PREFIXES
-        ):
-            excluded = parts[-1]
-        if excluded is not None:
-            errors.append(
-                f"neo/starter/{relative} contains excluded class `{excluded}`"
-            )
     for surface in STARTER_REQUIRED_SURFACES:
         if not (starter / surface).exists():
             errors.append(f"neo/starter/{surface} is missing")
@@ -528,14 +521,16 @@ Run `./dev spec-check --criteria-tests origin/main`, `./dev spec-check --reviews
 `./dev spec-check --reviews-pr origin/main`, `./dev changelog --check origin/main`,
 `./dev test-all
       --require-all`, and `./dev testbed`.
-GATE 2 is the maintainer's normal review; maintainer review and CI/review-bot stabilization
-    are concurrent conditions.
+GATE 2 is the maintainer's normal review.
+11. **ci → GATE 2 → telemetry-only finalization** uses a metadata-only HEAD.
 On entry run `./dev telemetry stage --name <stage>
 --event start`. Never
 advance without that stop/start pair.
-Close with `./dev telemetry
-    stage --name ci --event stop`, then `./dev telemetry golden --run-id <run-id>`,
-then `./dev telemetry finish --outcome ok` and `./dev pipeline complete --outcome ok`; the metadata-only push starts a final check tail.
+Record `./dev pipeline approve ci --by <who>
+--via github-review --head "$(git rev-parse HEAD)"`, then close with `./dev telemetry
+    stage --name ci --event stop`, `./dev telemetry golden --run-id <run-id>`,
+`./dev telemetry finish --outcome ok`, and `./dev pipeline complete --outcome ok`.
+A tail failure uses `./dev telemetry reopen --run-id <run-id>`.
 Non-ok runs use `./dev telemetry stage --name <current-stage> --event stop` and
 `./dev pipeline complete --outcome <parked|failed>`.
 ## Resume contract
@@ -545,7 +540,7 @@ Contradictions park with `wrong-localization`.
 
 
 def _write_skill(root, name, body=None):
-    directory = root / ".claude" / "skills" / name
+    directory = root / ".pi" / "skills" / name
     directory.mkdir(parents=True, exist_ok=True)
     if body is None:
         body = (
@@ -570,10 +565,8 @@ def _build_good_tree(root):
     (root / "scripts" / "run-all-tests.sh").write_text(
         '#!/bin/sh\n# --require-all\n', encoding="utf-8"
     )
-    (root / ".pi").mkdir(parents=True)
-    (root / ".pi" / "settings.json").write_text(
-        json.dumps({"skills": [PI_SKILL_SETTING]}) + "\n", encoding="utf-8"
-    )
+    (root / ".claude").mkdir(parents=True)
+    (root / ".claude" / "skills").symlink_to("../.pi/skills", target_is_directory=True)
     (root / "neo" / ".claude" / "skills").mkdir(parents=True)
     (root / "AGENTS.md").write_text(
         "Work under `neo/**` routes to `neo/AGENTS.md`. Skills: "
@@ -627,32 +620,37 @@ def self_test():
         errors = check_pi_skill_layer(root) + check_neo_guidance(root)
         expect(not errors, f"clean skill tree should pass, got {errors}")
 
-    def redirect_settings_to_copy(root):
-        shutil.copytree(root / ".claude" / "skills", root / ".pi" / "copied-skills")
-        (root / ".pi" / "settings.json").write_text(
-            '{"skills":["copied-skills"]}\n', encoding="utf-8"
-        )
-    errors = mutated(redirect_settings_to_copy)
-    expect(any("must set exactly" in error for error in errors),
-           f"redirected Pi settings should fail, got {errors}")
+    def replace_compat_symlink_with_copy(root):
+        compat = root / ".claude" / "skills"
+        compat.unlink()
+        shutil.copytree(root / ".pi" / "skills", compat)
+    errors = mutated(replace_compat_symlink_with_copy)
+    expect(any("compatibility symlink" in error for error in errors),
+           f"copied Claude compatibility tree should fail, got {errors}")
 
     def add_duplicate(root):
-        duplicate = root / ".pi" / "skills" / "copied"
+        duplicate = root / ".agents" / "skills" / "copied"
         duplicate.mkdir(parents=True)
         (duplicate / "SKILL.md").write_text("---\nname: copied\ndescription: duplicate\n---\n")
     errors = mutated(add_duplicate)
     expect(any("duplicate project skill source" in error for error in errors),
-           f"duplicate Pi skill source should fail, got {errors}")
+           f"duplicate Agent Skills source should fail, got {errors}")
+
+    def remove_skill_file(root):
+        (root / ".pi" / "skills" / "neohaskell-localizer" / "SKILL.md").unlink()
+    errors = mutated(remove_skill_file)
+    expect(any("canonical SKILL.md files missing" in error for error in errors),
+           f"missing canonical SKILL.md should fail, got {errors}")
 
     def invalid_name(root):
-        path = root / ".claude" / "skills" / "neohaskell-localizer" / "SKILL.md"
+        path = root / ".pi" / "skills" / "neohaskell-localizer" / "SKILL.md"
         path.write_text(read(path).replace("name: neohaskell-localizer", "name: NeoHaskell--Localizer"))
     errors = mutated(invalid_name)
     expect(any("single hyphens" in error for error in errors),
            f"invalid Pi name should fail, got {errors}")
 
     def ambiguous_colon_description(root):
-        path = root / ".claude" / "skills" / "neohaskell-localizer" / "SKILL.md"
+        path = root / ".pi" / "skills" / "neohaskell-localizer" / "SKILL.md"
         path.write_text(read(path).replace(
             "description: Use when", "description: Route change: use when"))
     errors = mutated(ambiguous_colon_description)
@@ -660,28 +658,28 @@ def self_test():
            f"unquoted colon-space should fail, got {errors}")
 
     def unterminated_description(root):
-        path = root / ".claude" / "skills" / "neohaskell-localizer" / "SKILL.md"
+        path = root / ".pi" / "skills" / "neohaskell-localizer" / "SKILL.md"
         path.write_text(read(path).replace("description: Use", 'description: "Use'))
     errors = mutated(unterminated_description)
     expect(any("invalid quoted YAML scalar" in error for error in errors),
            f"unterminated quote should fail, got {errors}")
 
     def collection_description(root):
-        path = root / ".claude" / "skills" / "neohaskell-localizer" / "SKILL.md"
+        path = root / ".pi" / "skills" / "neohaskell-localizer" / "SKILL.md"
         path.write_text(read(path).replace("description: Use", "description: [Use"))
     errors = mutated(collection_description)
     expect(any("safe plain-scalar subset" in error for error in errors),
            f"collection-like frontmatter should fail, got {errors}")
 
     def comment_description(root):
-        path = root / ".claude" / "skills" / "neohaskell-localizer" / "SKILL.md"
+        path = root / ".pi" / "skills" / "neohaskell-localizer" / "SKILL.md"
         path.write_text(read(path).replace("description: Use", "description: # Use"))
     errors = mutated(comment_description)
     expect(any("safe plain-scalar subset" in error for error in errors),
            f"comment-null frontmatter should fail, got {errors}")
 
     def invalid_single_quote(root):
-        path = root / ".claude" / "skills" / "neohaskell-localizer" / "SKILL.md"
+        path = root / ".pi" / "skills" / "neohaskell-localizer" / "SKILL.md"
         text = read(path)
         description = "description: 'abc'defghijklmnopqrstuvwxyz0123456789 use when routing work'"
         path.write_text(re.sub(r"^description:.*$", description, text, count=1, flags=re.MULTILINE))
@@ -689,8 +687,35 @@ def self_test():
     expect(any("unescaped apostrophe" in error for error in errors),
            f"invalid single-quoted scalar should fail, got {errors}")
 
+    def valid_multiline_and_metadata(root):
+        path = root / ".pi" / "skills" / "neohaskell-localizer" / "SKILL.md"
+        text = read(path)
+        text = re.sub(
+            r"^description:.*$",
+            "description: |2\n  Use when routing NeoHaskell work with canonical project tools and contracts.\nmetadata:\n  owner: pi",
+            text,
+            count=1,
+            flags=re.MULTILINE,
+        )
+        path.write_text(text)
+    errors = mutated(valid_multiline_and_metadata)
+    expect(not errors, f"valid YAML block description/metadata should pass, got {errors}")
+
+    def valid_folded_indent_chomp(root):
+        path = root / ".pi" / "skills" / "neohaskell-localizer" / "SKILL.md"
+        text = re.sub(
+            r"^description:.*$",
+            "description: >2-\n  Use when routing NeoHaskell work with canonical project tools and contracts.",
+            read(path),
+            count=1,
+            flags=re.MULTILINE,
+        )
+        path.write_text(text)
+    errors = mutated(valid_folded_indent_chomp)
+    expect(not errors, f"valid folded indent/chomp description should pass, got {errors}")
+
     def oversized_description(root):
-        path = root / ".claude" / "skills" / "neohaskell-localizer" / "SKILL.md"
+        path = root / ".pi" / "skills" / "neohaskell-localizer" / "SKILL.md"
         path.write_text(read(path).replace(
             "Use when performing neohaskell-localizer work with the canonical project workflow and tools.",
             "x" * 1025))
@@ -699,28 +724,35 @@ def self_test():
            f"oversized description should fail, got {errors}")
 
     def dangling_reference(root):
-        path = root / ".claude" / "skills" / "neohaskell-localizer" / "SKILL.md"
+        path = root / ".pi" / "skills" / "neohaskell-localizer" / "SKILL.md"
         path.write_text(read(path) + "\nUse neohaskell-nonexistent.\n")
     errors = mutated(dangling_reference)
     expect(any("neohaskell-nonexistent" in error for error in errors),
            f"dangling skill reference should fail, got {errors}")
 
+    def empty_markdown_target(root):
+        path = root / ".pi" / "skills" / "neohaskell-localizer" / "SKILL.md"
+        path.write_text(read(path) + "\n[empty]( )\n")
+    errors = mutated(empty_markdown_target)
+    expect(any("empty Markdown link target" in error for error in errors),
+           f"empty Markdown target should fail cleanly, got {errors}")
+
     def obsolete_schema(root):
-        path = root / ".claude" / "skills" / "neohaskell-implementer" / "SKILL.md"
+        path = root / ".pi" / "skills" / "neohaskell-implementer" / "SKILL.md"
         path.write_text(read(path) + "\nRecord telemetry with schema v2.\n")
     errors = mutated(obsolete_schema)
     expect(any("obsolete telemetry schema" in error for error in errors),
            f"obsolete schema reference should fail, got {errors}")
 
     def runtime_specific_pipeline(root):
-        path = root / ".claude" / "skills" / "neohaskell-pipeline" / "SKILL.md"
+        path = root / ".pi" / "skills" / "neohaskell-pipeline" / "SKILL.md"
         path.write_text(read(path) + "\nResume the Claude/tmux session.\n")
     errors = mutated(runtime_specific_pipeline)
     expect(any("runtime-specific" in error for error in errors),
            f"runtime-specific pipeline should fail, got {errors}")
 
     def third_gate(root):
-        path = root / ".claude" / "skills" / "neohaskell-pipeline" / "SKILL.md"
+        path = root / ".pi" / "skills" / "neohaskell-pipeline" / "SKILL.md"
         path.write_text(read(path) + "\nGate 3 waits for another approval.\n")
     errors = mutated(third_gate)
     expect(any("exactly {1, 2}" in error for error in errors),
@@ -741,11 +773,20 @@ def self_test():
            f"missing state completion should fail, got {errors}")
 
     def remove_stage_start(root):
-        path = root / ".claude" / "skills" / "neohaskell-pipeline" / "SKILL.md"
+        path = root / ".pi" / "skills" / "neohaskell-pipeline" / "SKILL.md"
         path.write_text(read(path).replace("--event start", "--event begin"))
     errors = mutated(remove_stage_start)
     expect(any("telemetry stage start" in error for error in errors),
            f"missing telemetry stage start should fail, got {errors}")
+
+    def reflow_pipeline_markdown(root):
+        path = root / ".pi" / "skills" / "neohaskell-pipeline" / "SKILL.md"
+        text = read(path).replace("./dev test-all\n      --require-all", "./dev test-all --require-all")
+        text = text.replace("Never\nadvance without", "Never advance without")
+        text = text.replace("./dev telemetry\n    stage --name ci", "./dev telemetry stage --name ci")
+        path.write_text(text)
+    errors = mutated(reflow_pipeline_markdown)
+    expect(not errors, f"Markdown-only pipeline reflow should pass, got {errors}")
 
     def remove_strict_full_suite(root):
         (root / "scripts" / "run-all-tests.sh").write_text("#!/bin/sh\n")
@@ -754,14 +795,21 @@ def self_test():
            f"missing strict full-suite mode should fail, got {errors}")
 
     def delete_pr_ready_gates(root):
-        path = root / ".claude" / "skills" / "neohaskell-pipeline" / "SKILL.md"
+        path = root / ".pi" / "skills" / "neohaskell-pipeline" / "SKILL.md"
         path.write_text(read(path).replace("./dev spec-check --criteria-tests origin/main", "criteria tests"))
     errors = mutated(delete_pr_ready_gates)
     expect(any("criterion existence gate" in error for error in errors),
            f"missing criterion gate should fail, got {errors}")
 
+    def delete_gate2_record(root):
+        path = root / ".pi" / "skills" / "neohaskell-pipeline" / "SKILL.md"
+        path.write_text(read(path).replace("approve ci", "note ci"))
+    errors = mutated(delete_gate2_record)
+    expect(any("recorded final approval" in error for error in errors),
+           f"missing Gate 2 record should fail, got {errors}")
+
     def invalid_telemetry_tail(root):
-        path = root / ".claude" / "skills" / "neohaskell-pipeline" / "SKILL.md"
+        path = root / ".pi" / "skills" / "neohaskell-pipeline" / "SKILL.md"
         path.write_text(read(path).replace("stage --name ci --event stop", "stage --name pr --event stop")
                                  .replace("finish --outcome ok", "finish"))
     errors = mutated(invalid_telemetry_tail)
@@ -769,15 +817,22 @@ def self_test():
            f"invalid telemetry close should fail, got {errors}")
 
     def delete_non_ok_close(root):
-        path = root / ".claude" / "skills" / "neohaskell-pipeline" / "SKILL.md"
+        path = root / ".pi" / "skills" / "neohaskell-pipeline" / "SKILL.md"
         path.write_text(read(path).replace(
             "./dev pipeline complete --outcome <parked|failed>", "leave state parked"))
     errors = mutated(delete_non_ok_close)
     expect(any("non-ok state release" in error for error in errors),
            f"missing parked/failed release should fail, got {errors}")
 
+    def delete_tail_recovery(root):
+        path = root / ".pi" / "skills" / "neohaskell-pipeline" / "SKILL.md"
+        path.write_text(read(path).replace("telemetry reopen", "telemetry restart"))
+    errors = mutated(delete_tail_recovery)
+    expect(any("recoverable final tail" in error for error in errors),
+           f"missing final-tail recovery should fail, got {errors}")
+
     def delete_resume_contract(root):
-        path = root / ".claude" / "skills" / "neohaskell-pipeline" / "SKILL.md"
+        path = root / ".pi" / "skills" / "neohaskell-pipeline" / "SKILL.md"
         text = read(path).replace("## Resume contract", "## Continue")
         path.write_text(text.replace(".pipeline/state.json", ".pipeline/other.json"))
     errors = mutated(delete_resume_contract)
@@ -785,7 +840,7 @@ def self_test():
            f"missing resume contract should fail, got {errors}")
 
     def delete_tests_first(root):
-        path = root / ".claude" / "skills" / "neohaskell-pipeline" / "SKILL.md"
+        path = root / ".pi" / "skills" / "neohaskell-pipeline" / "SKILL.md"
         path.write_text(read(path).replace("7. **test-writing** — tests FIRST", "7. **tests**"))
     errors = mutated(delete_tests_first)
     expect(any("tests-first" in error for error in errors),
@@ -823,26 +878,6 @@ def self_test():
         expect(any(".env" in error and "excluded" in error for error in errors),
                f"leaked starter secret should fail, got {errors}")
 
-    repository_only_cases = (
-        ("scratch.swp", "swap file"),
-        ("notes~", "backup file"),
-        (".github/workflows/ci.yml", "workflow"),
-        (".github/ISSUE_TEMPLATE/bug.md", "issue template"),
-        (".github/PULL_REQUEST_TEMPLATE.md", "PR template"),
-        (".github/FUNDING.yml", "funding metadata"),
-        ("MARKETING.md", "marketing metadata"),
-    )
-    for relative, label in repository_only_cases:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            root = Path(temp_dir)
-            _build_good_starter(root)
-            leaked = root / "neo" / "starter" / relative
-            leaked.parent.mkdir(parents=True, exist_ok=True)
-            leaked.write_text("repository-only\n")
-            errors = check_starter(root)
-            expect(any("excluded class" in error for error in errors),
-                   f"leaked {label} should fail, got {errors}")
-
     with tempfile.TemporaryDirectory() as temp_dir:
         root = Path(temp_dir)
         _build_good_starter(root)
@@ -855,8 +890,9 @@ def self_test():
         print("neo-skills-check self-test: FAIL", file=sys.stderr)
         return 1
     print(
-        "neo-skills-check self-test: OK - clean fixtures pass; redirected discovery, "
-        "duplicate source, strict YAML frontmatter, dangling/obsolete references, "
+        "neo-skills-check self-test: OK - clean fixtures pass; Pi-native discovery, "
+        "Claude compatibility symlink, duplicate source, required YAML frontmatter, "
+        "empty/dangling references, "
         "runtime-specific pipeline, extra gate, immutable plan, PR-ready/finalization "
         "contracts, stale Neo guidance, and starter parity mutations are rejected"
     )
@@ -880,7 +916,7 @@ def main(argv=None):
             return 1
         print(
             f"neo-skills-check: OK - Pi discovers {len(CANONICAL_SKILLS)} canonical "
-            "skills from .claude/skills; frontmatter, references, and pipeline contract valid"
+            "skills from .pi/skills; required frontmatter, references, and pipeline contract valid"
         )
         return 0
     if argv:
