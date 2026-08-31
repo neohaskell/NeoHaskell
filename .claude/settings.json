@@ -24,16 +24,6 @@
           }
         ],
         "matcher": "Edit|Write|MultiEdit"
-      },
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/bd-token-tracking.py",
-            "timeout": 30
-          }
-        ]
       }
     ],
     "PreToolUse": [
@@ -64,27 +54,6 @@
           {
             "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/session-start.sh",
             "type": "command"
-          }
-        ]
-      },
-      {
-        "hooks": [
-          {
-            "command": "command -v bd >/dev/null 2>&1 && bd prime --hook-json || true",
-            "type": "command"
-          }
-        ],
-        "matcher": ""
-      }
-    ],
-    "SessionEnd": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/bd-dolt-sync.sh",
-            "timeout": 60
           }
         ]
       }

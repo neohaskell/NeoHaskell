@@ -1,6 +1,11 @@
 # ADR-0067: Contract-delta spec gate and resumable draft-PR flow
 
 > Part of #715 — pipeline plan Phase 5 (spec gate + verification architecture).
+>
+> Restored as the active process by [ADR-0076](0076-restore-resumable-change-pipeline.md).
+> ADR-0076 amends the approval transport: a trusted maintainer signal authorizes
+> continuation, and the local `./dev pipeline approve` record is the
+> machine-enforced gate.
 
 ## Status
 
@@ -64,16 +69,20 @@ both validators skip them.
 The pipeline opens a draft PR containing only the spec (+ ADR, + red repro
 test for bugs). Draft PRs run only the seconds-cheap checks (doctor, codemap,
 lint, spec-check); the heavy build/test matrix is skipped until the PR
-leaves draft (`ready_for_review` re-triggers it). The continue signal is a
-maintainer `@claude` comment — `claude.yml` enforces an author-association
-allowlist (OWNER/MEMBER), which also closes the standing anyone-can-invoke
-hole.
+leaves draft (`ready_for_review` re-triggers it). A maintainer's explicit
+signal in a trusted channel authorizes continuation. The orchestrator records
+that signal with `./dev pipeline approve spec --by <who> --via <channel>`;
+the resulting local state is the canonical, machine-enforced continuation
+gate. A GitHub comment is optional communication only and cannot mutate the
+persistent local pipeline state. The local operator environment is the trust
+boundary: the approval record is an audit record, not authentication against a
+process that already has write access to the checkout and gate implementation.
 
 ### 3. Resume state is a validated local contract
 
 `.pipeline/state.json` (gitignored), manipulated only via `./dev pipeline`
 (init/status/advance/set/approve/park/resume; schema-validated on every
-save). Stage names are the telemetry schema v2 canon. Advancing past `spec`
+save). Stage names are the telemetry schema v4 canon. Advancing past `spec`
 without a recorded approval is mechanically refused. Parking requires a
 label from the closed failure taxonomy.
 
@@ -105,7 +114,7 @@ through a human, so it is guarded twice. **Locally**, a PreToolUse hook
 (`expectation-guard.py`, same self-test contract as the dialect guard) is the
 fast teacher: it blocks edits that remove or reword existing expectation lines
 unless the maintainer-authored, never-committed marker
-`.pipeline/allow-expectation-edits` exists (no inline escape hatch), and it
+`.claude/allow-expectation-edits` exists (no inline escape hatch), and it
 fails loud-open on unparseable input rather than silently disabling itself.
 **In CI** — the enforced backstop — the `expectations` job census-diffs the
 committed test files against the merge base and blocks a net-removed/reworded
@@ -133,14 +142,17 @@ Bash-mutation cases the local hook's path+payload matcher cannot, and the label
 
 ### Risks
 
-- `author_association` values can surprise (org privacy settings can report
-  MEMBER as NONE) — the gate would then ignore a legitimate maintainer.
+- A process with local write access can forge the approval record or modify the
+  gate itself. This pipeline does not defend against a compromised operator
+  environment.
 - Stage time-boxes are guesses until telemetry accumulates.
 
 ### Mitigations
 
-- The association check is observable in the workflow run log; if Nick's
-  comments are ignored, widen the allowlist deliberately (one-line diff).
+- Only the trusted local orchestrator records approval after an explicit
+  maintainer signal, including `--by` and `--via` audit fields. If hostile local
+  processes enter the threat model, move authorization to an externally signed
+  service under a new ADR; another local marker would not add security.
 - Time-boxes live in the pipeline skill and are recalibrated at the weekly
   telemetry review (Phase 6).
 

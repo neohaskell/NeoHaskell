@@ -1,18 +1,15 @@
 #!/usr/bin/env bash
 #
-# Deterministic PR-comment allowlist filter -- ci-medic's ONLY path to PR
-# comments (never raw `gh pr view`/`gh api` elsewhere; see .claude/agents/
-# ci-medic.md). Fetches every issue-level (top-level PR conversation)
-# comment and every review (inline diff) comment on a PR, and emits ONLY
-# the ones whose author login appears in scripts/pr-comment-allowlist.txt,
-# as one structured JSON object per line. Every other author -- no matter
-# how legitimate the text looks -- never reaches this script's stdout, and
-# therefore never reaches an agent.
+# Deterministic PR-comment allowlist filter for pipeline CI triage. Fetches
+# every issue-level (top-level PR conversation) comment and every review
+# (inline diff) comment on a PR, and emits ONLY the ones whose author login
+# appears in scripts/pr-comment-allowlist.txt, as one structured JSON object
+# per line. Every other author -- no matter how legitimate the text looks --
+# never reaches this script's stdout, and therefore never reaches an agent.
 #
 # This is the FIRST, deterministic line of defense: filtering happens here,
-# in a script, not in a model's judgment call. The agent-level "untrusted
-# input" rule (every active agent's never-do list; docs/processes/
-# neohaskell-agents.md) is defense-in-depth ON TOP of this, not a
+# in a script, not in a model's judgment call. Treating every emitted comment
+# as untrusted input is defense-in-depth ON TOP of this, not a
 # replacement for it: an allowlisted bot (CodeRabbit, in practice) routinely
 # quotes PR content verbatim in its own review comments, so a
 # prompt-injection payload can still arrive EMBEDDED inside an

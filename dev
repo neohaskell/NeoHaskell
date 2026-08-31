@@ -59,9 +59,8 @@ usage: ./dev <verb> [args]
                           (breaking = a removed signature line; --check gates CI)
   revert <commit>       kill switch: open a revert PR for a merged change
                           (--dry-run to stage it locally without pushing)
-  pr-comments <pr#>      deterministic allowlist filter for PR comments
-                          (issue + review comments, JSON lines) — ci-medic's
-                          only path to PR comment text; see
+  pr-comments <pr#>      deterministic allowlist filter for pipeline CI triage
+                          (issue + review comments, JSON lines); see
                           scripts/pr-comment-allowlist.txt
   retrospect [--since D] weekly telemetry digest + recommendation recorder
                           (--record '<json>'; --set/--prune-golden lifecycle)
@@ -70,8 +69,8 @@ usage: ./dev <verb> [args]
                           doctrine (see telemetry/SCHEMA.md); never for ad-hoc runs
   workflow-check        static wiring checks for .github/workflows (hidden
                           artifacts, retrospect loop; CI-enforced)
-  process-check         ADR-0075 change-process docs consistency (formula/
-                          skill/ADR agree on steps + V1-V9; CI-enforced)
+  process-check         active-pipeline coherence gate: `.pipeline` is the
+                          sole discoverable change process (CI-enforced)
   neo-skills-check      validate the Rust `neo/**` agent-guidance layer:
                           neo-cli-* skills, neo/** routing, no stale state/plan
                           refs, one source of truth (via ./dev doctor + CI)
@@ -125,10 +124,7 @@ case "${VERB}" in
   api)      exec scripts/api "$@" ;;
   spec-check) exec scripts/spec-check "$@" ;;
   spec-drift) exec scripts/spec-drift "$@" ;;
-  pipeline)
-    echo "WARNING: ./dev pipeline is deprecated; work enters via the bd queue" >&2
-    exec scripts/pipeline-state "$@"
-    ;;
+  pipeline) exec scripts/pipeline-state "$@" ;;
   bench)    exec scripts/bench "$@" ;;
   testbed)  exec scripts/testbed "$@" ;;
   changelog) exec scripts/changelog "$@" ;;
