@@ -74,7 +74,9 @@ signal in a trusted channel authorizes continuation. The orchestrator records
 that signal with `./dev pipeline approve spec --by <who> --via <channel>`;
 the resulting local state is the canonical, machine-enforced continuation
 gate. A GitHub comment is optional communication only and cannot mutate the
-persistent local pipeline state.
+persistent local pipeline state. The local operator environment is the trust
+boundary: the approval record is an audit record, not authentication against a
+process that already has write access to the checkout and gate implementation.
 
 ### 3. Resume state is a validated local contract
 
@@ -140,14 +142,17 @@ Bash-mutation cases the local hook's path+payload matcher cannot, and the label
 
 ### Risks
 
-- `author_association` values can surprise (org privacy settings can report
-  MEMBER as NONE) — the gate would then ignore a legitimate maintainer.
+- A process with local write access can forge the approval record or modify the
+  gate itself. This pipeline does not defend against a compromised operator
+  environment.
 - Stage time-boxes are guesses until telemetry accumulates.
 
 ### Mitigations
 
-- The association check is observable in the workflow run log; if Nick's
-  comments are ignored, widen the allowlist deliberately (one-line diff).
+- Only the trusted local orchestrator records approval after an explicit
+  maintainer signal, including `--by` and `--via` audit fields. If hostile local
+  processes enter the threat model, move authorization to an externally signed
+  service under a new ADR; another local marker would not add security.
 - Time-boxes live in the pipeline skill and are recalibrated at the weekly
   telemetry review (Phase 6).
 

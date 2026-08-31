@@ -88,10 +88,10 @@ status_of() {
   awk '/^## Status$/ { getline; getline; print; exit }' "$1"
 }
 [ "$(status_of "$adr_0075")" = "Superseded" ] || err "ADR-0075 is not Superseded"
-[ "$(status_of "$adr_0076")" = "Accepted" ] || err "ADR-0076 is not Accepted"
+[ "$(status_of "$adr_0076")" = "Implemented" ] || err "ADR-0076 is not Implemented at PR-ready"
 
 grep -qF '| [0075](0075-change-process-v2.md) | Change process v2: five coarse steps, one human gate, verified auto-merge | Superseded |' docs/decisions/README.md || err "ADR index does not mark ADR-0075 Superseded"
-grep -qF '| [0076](0076-restore-resumable-change-pipeline.md) | Restore the resumable contract-delta change pipeline | Accepted |' docs/decisions/README.md || err "ADR index omits accepted ADR-0076"
+grep -qF '| [0076](0076-restore-resumable-change-pipeline.md) | Restore the resumable contract-delta change pipeline | Implemented |' docs/decisions/README.md || err "ADR index omits implemented ADR-0076"
 
 if [ "$fail" -eq 0 ]; then
   echo "process-check: OK — .pipeline is authoritative; superseded queue artifacts are absent"
