@@ -69,16 +69,18 @@ both validators skip them.
 The pipeline opens a draft PR containing only the spec (+ ADR, + red repro
 test for bugs). Draft PRs run only the seconds-cheap checks (doctor, codemap,
 lint, spec-check); the heavy build/test matrix is skipped until the PR
-leaves draft (`ready_for_review` re-triggers it). The continue signal is a
-maintainer `@claude` comment — `claude.yml` enforces an author-association
-allowlist (OWNER/MEMBER), which also closes the standing anyone-can-invoke
-hole.
+leaves draft (`ready_for_review` re-triggers it). A maintainer's explicit
+signal in a trusted channel authorizes continuation. The orchestrator records
+that signal with `./dev pipeline approve spec --by <who> --via <channel>`;
+the resulting local state is the canonical, machine-enforced continuation
+gate. A GitHub comment is optional communication only and cannot mutate the
+persistent local pipeline state.
 
 ### 3. Resume state is a validated local contract
 
 `.pipeline/state.json` (gitignored), manipulated only via `./dev pipeline`
 (init/status/advance/set/approve/park/resume; schema-validated on every
-save). Stage names are the telemetry schema v2 canon. Advancing past `spec`
+save). Stage names are the telemetry schema v4 canon. Advancing past `spec`
 without a recorded approval is mechanically refused. Parking requires a
 label from the closed failure taxonomy.
 
@@ -110,7 +112,7 @@ through a human, so it is guarded twice. **Locally**, a PreToolUse hook
 (`expectation-guard.py`, same self-test contract as the dialect guard) is the
 fast teacher: it blocks edits that remove or reword existing expectation lines
 unless the maintainer-authored, never-committed marker
-`.pipeline/allow-expectation-edits` exists (no inline escape hatch), and it
+`.claude/allow-expectation-edits` exists (no inline escape hatch), and it
 fails loud-open on unparseable input rather than silently disabling itself.
 **In CI** — the enforced backstop — the `expectations` job census-diffs the
 committed test files against the merge base and blocks a net-removed/reworded
