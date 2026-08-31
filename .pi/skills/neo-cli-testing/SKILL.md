@@ -61,9 +61,11 @@ The `build` / `run` / `test` happy-path scenarios (integration + e2e) require th
 generated NeoHaskell project to actually compile. The two recurring breakages:
 
 1. **Starter-to-upstream drift.** `neo new` scaffolds from the embedded
-   `neo/starter/` template; `neo build` locks the latest `neohaskell` `main`. When
-   upstream renames/removes a module the starter imports, the generated project fails
-   GHC compile. **Fix `neo/starter/` in this monorepo** - do not touch the neo test.
+   `neo/starter/` template and pins its compatible immutable NeoHaskell revision.
+   The `./dev neo-consumer-contract` checkout override then proves that generated
+   project against THIS checkout. When an upstream API move breaks that phase, the
+   generated project fails GHC compile. **Fix `neo/starter/` in this monorepo** -
+   do not weaken the Neo test or compatibility gate.
 2. **A transitive Haskell dep refusing to build under plain cabal** (historically
    `jose` needing native crypto paths from `haskell.nix`) - fix the templated
    `flake.nix`.

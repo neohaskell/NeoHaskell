@@ -135,7 +135,7 @@ def main() -> int:
                        and not any(f.startswith(prefix) for f in tracked):
                         err(f"extension-point '{e['kind']}' {field} path '{prefix}' does not exist")
         skill = e.get("skill")
-        if skill and not (ROOT / f".claude/skills/{skill}/SKILL.md").exists():
+        if skill and not (ROOT / f".pi/skills/{skill}/SKILL.md").exists():
             err(f"extension-point '{e['kind']}' references missing skill '{skill}'")
 
     # 5. doc-ratchet: counters may only decrease

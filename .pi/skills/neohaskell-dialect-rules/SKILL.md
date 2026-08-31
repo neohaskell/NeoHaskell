@@ -5,14 +5,19 @@ description: Add, modify, or debug NeoHaskell dialect enforcement rules (hlint l
 
 # Extending the dialect enforcement
 
-Two engines enforce the dialect; know which one you're touching:
+Two engines cover the dialect; know which one you're touching. The law is
+portable. The teacher is optional edit-time feedback installed only by the
+harness configured in `.claude/settings.json`; Pi does not run it automatically.
 
 | | `.hlint.yaml` (**the law**) | `.claude/hooks/dialect-guard.py` (**the teacher**) |
 |---|---|---|
-| Runs | `./dev lint` + CI gate | PreToolUse, ~50ms per edit |
+| Runs | `./dev lint` + CI gate (all harnesses) | configured-harness PreToolUse, ~50ms per edit |
 | Precision | exact (parses real Haskell) | heuristic (regex on edit fragments) |
 | Scope | modules, functions, expression rewrites | + syntax (`where`), types (`Either`), usage-vs-definition |
 | Wins on disagreement | **always** | never — gets corrected |
+
+In Pi, run `./dev lint` after edits and `./dev check` for the GHC backstop. Keep
+the teacher's self-test green even when its host integration is inactive.
 
 ## Decision tree for a new rule
 
@@ -51,7 +56,7 @@ Two engines enforce the dialect; know which one you're touching:
 
 ## Debugging a misfire
 
-1. Reproduce: `echo '{"tool_name":"Edit","tool_input":{...}}' | python3 .claude/hooks/dialect-guard.py`
+1. Reproduce the configured-harness payload directly with valid JSON: `echo '{"tool_name":"Edit","tool_input":{"file_path":"<path>","old_string":"<old>","new_string":"<new>"}}' | python3 .claude/hooks/dialect-guard.py`
 2. If it's a false positive: add the payload as a **passing case** first
    (red), then fix the rule/exemption (green). The case stays forever.
 3. If the rule is fundamentally unsound for fragments: delete it and note the

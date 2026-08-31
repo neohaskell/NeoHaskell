@@ -26,7 +26,7 @@ the whole tree to an old commit would discard those independent controls.
 
 Restore the contract-delta pipeline as the sole active change process:
 
-1. `.claude/skills/neohaskell-pipeline/SKILL.md` is again the discoverable
+1. `.pi/skills/neohaskell-pipeline/SKILL.md` is the canonical discoverable
    end-to-end playbook.
 2. `.pipeline/state.json` is the authoritative, local, gitignored resume state,
    manipulated only through `./dev pipeline`.
@@ -35,6 +35,10 @@ Restore the contract-delta pipeline as the sole active change process:
    channel supplies authorization; `./dev pipeline approve ... --by ... --via
    ...` records that authorization and is the machine-enforced gate. A GitHub
    comment can be evidence, but no remote service mutates local pipeline state.
+   Gate 2 is recorded as `approve ci --head <reviewed-sha>` before telemetry
+   records success. Completion requires that HEAD to be the parent of a single
+   direct child appending only generated `telemetry/runs.jsonl`; exact-HEAD
+   completion and any other delta are rejected.
 4. Manual pipeline telemetry, failure labels, class fixes, and the weekly
    retrospective operate as defined by ADR-0068 and `telemetry/SCHEMA.md`.
 5. Risk-tiered design reviews remain governed by ADR-0069: performance records

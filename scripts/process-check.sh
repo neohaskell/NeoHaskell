@@ -8,7 +8,7 @@ cd "$(dirname "$0")/.."
 fail=0
 err() { echo "process-check: $1" >&2; fail=1; }
 
-active_skill=.claude/skills/neohaskell-pipeline/SKILL.md
+active_skill=.pi/skills/neohaskell-pipeline/SKILL.md
 adr_0067=docs/decisions/0067-contract-delta-spec-gate.md
 adr_0075=docs/decisions/0075-change-process-v2.md
 adr_0076=docs/decisions/0076-restore-resumable-change-pipeline.md
@@ -37,6 +37,14 @@ if grep -qE 'telemetry schema v2|\.pipeline/allow-expectation-edits|maintainer `
 fi
 grep -qF 'Any request that should end in a PR runs the `neohaskell-pipeline` skill' AGENTS.md || err "AGENTS.md does not route PR work to the restored pipeline"
 grep -qF '.pipeline/state.json' AGENTS.md || err "AGENTS.md does not name the resume contract"
+
+# The authoritative process must be available to Pi, not merely present under a
+# harness-specific directory. Delegate the discovery/frontmatter/pipeline
+# contract to its single validator; keep Neo starter/routing checks out of this
+# process-specific gate.
+if ! scripts/neo-skills-check --pi-only >/dev/null; then
+  err "canonical pipeline is not discoverable or valid in Pi"
+fi
 
 if grep -qF 'WARNING: ./dev pipeline is deprecated' dev; then
   err "./dev pipeline still emits the retired queue warning"

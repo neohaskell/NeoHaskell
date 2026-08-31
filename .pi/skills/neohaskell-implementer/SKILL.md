@@ -40,17 +40,18 @@ the `Show`/`Generic`/JSON/`ToSchema`/`NameOf`/`EntitiesOf`/`Query`/`KnownHash`
 instances the marker emits. Do not copy the boilerplate of a pre-marker module.
 (Entities are the exception — no marker; hand-write their `Entity` instance.)
 
-## Dialect (gates: edit hook → hlint → GHC)
+## Dialect (portable gates: hlint → GHC; optional edit feedback)
 
-The style table lives in `AGENTS.md` — read it. Enforcement layers you will
-hit, in order:
+The style table lives in `AGENTS.md` — read it. The harness configured by
+`.claude/settings.json` adds an **edit hook** (~50ms) that rejects `$`, `where`
+clauses, `Either`, `pure`/`return` usage, vanilla imports, unqualified open
+imports, and `case-of-Bool` on ADDED lines. Pi does not install that hook, so do
+not assume an edit was blocked. In every harness, run the portable gates in
+order:
 
-1. **Edit hook** (~50ms): rejects `$`, `where` clauses, `Either`,
-   `pure`/`return` usage, vanilla imports, unqualified open imports,
-   `case-of-Bool` — on ADDED lines only, with the rule quoted.
-2. **`./dev lint`** (seconds): dialect-first hlint — vanilla modules are
+1. **`./dev lint`** (seconds): dialect-first hlint — vanilla modules are
    restricted to their Core wrappers + grandfathered boundaries.
-3. **GHC** via `./dev check`: `NoImplicitPrelude` — vanilla vocabulary mostly
+2. **GHC** via `./dev check`: `NoImplicitPrelude` — vanilla vocabulary mostly
    isn't in scope anyway.
 
 **Escape hatch (deliberate two-step, use it rather than working around a ban):**
@@ -91,7 +92,7 @@ never is.**
 
 If `./dev check` reports `invented-api-events=N` ("not in scope"), that is a
 hallucinated symbol: resolve via `./dev api`, and the pipeline records the
-count (per-stage `invented_api_events`, schema v2; `invented-api` failure
+count (per-stage `invented_api_events`, schema v4; `invented-api` failure
 label when it kills the run) — do not guess twice.
 
 ## Repair loop (protocol, not suggestion)

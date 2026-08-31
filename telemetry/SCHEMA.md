@@ -14,7 +14,11 @@ schema-validation dummy. **Readers tolerate older versions** (missing fields rea
 as their defaults); the emitter always writes v4.
 
 Every pipeline run emits **exactly one JSON line** appended to `telemetry/runs.jsonl`
-(committed). Lines are emitted by `./dev telemetry` — never hand-written.
+(committed). Lines are emitted by `./dev telemetry` — never hand-written. Before
+merge only, `./dev telemetry reopen --run-id <id>` may remove that run's unmerged
+`ok` line and restore `.current-run.json` after a final-tail failure; it refuses
+any run already present on `origin/main`. The next `finish` emits the one terminal
+line again, so committed history remains append-only.
 
 ## Run record
 
@@ -105,7 +109,7 @@ in sync with that list). Each maps to a real destination file:
 `alias` → `codemap/capabilities.yaml` · `extension-point` → `codemap/extension-points.yaml`
 · `phrasebook` → `codemap/phrasebook.md` · `hot-card` → `codemap/api-hot.md`
 · `hlint-rule` → `.hlint.yaml` · `hook` → `.claude/hooks/*` · `cli-utility` →
-`scripts/*` (+ `./dev` verb) · `skill-edit` → `.claude/skills/*/SKILL.md`
+`scripts/*` (+ `./dev` verb) · `skill-edit` → `.pi/skills/*/SKILL.md`
 · `telemetry-label` → this file (schema bump) · `PRUNE` → remove an unused asset
 · `none` → justified no-asset (the `destination` carries the reason).
 

@@ -76,5 +76,6 @@ everywhere) are a net negative: compile time, code size, lost fusion.
 
 Write `docs/changes/NNN-slug.perf-review.md` on the PR branch (same shape as
 the security record: checklist-ID table, grounding column, verdict, blocker
-count + resolution). Blockers amend the plan or park the run; zero-finding
-reviews still commit the record.
+count + resolution). A blocker parks the run and returns through intake/spec
+approval; the approved `plan.*` is never mutated in place. Zero-finding reviews
+still commit the record.

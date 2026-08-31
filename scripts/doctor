@@ -28,8 +28,12 @@ EXEMPT_NAMES=(
 fail=0
 err() { echo "doctor: FAIL — $*" >&2; fail=1; }
 
-# Registered scripts = targets of `exec scripts/…` lines in ./dev.
-registered=$(grep -oE 'exec scripts/[A-Za-z0-9._-]+' dev | sed 's|exec scripts/||' | sort -u)
+# Registered scripts = targets of real case-dispatch arms in ./dev. Anchoring
+# the complete `<verb>) exec scripts/<target>` shape prevents comments or usage
+# prose from laundering an unwired script into this set.
+registered=$(sed -nE \
+  's|^[[:space:]]*[A-Za-z0-9._-]+\)[[:space:]]+exec scripts/([A-Za-z0-9._-]+).*$|\1|p' \
+  dev | sort -u)
 
 # 1. Dangling verbs / missing executable bit.
 for s in ${registered}; do
@@ -65,12 +69,20 @@ done
 #    `./dev <verb>` referenced in a SKILL.md, AGENTS.md, or CLAUDE.md must
 #    actually be registered, so a verb rename can't make the most-read docs
 #    lie silently (AGENTS.md is loaded into every session).
+AGENT_GUIDANCE=(
+  .pi/skills/*/SKILL.md
+  AGENTS.md
+  CLAUDE.md
+  neo/AGENTS.md
+  neo/CLAUDE.md
+  neo/starter/IMPORT.md
+)
 while IFS= read -r ref; do
   verb=$(echo "${ref}" | sed 's|.*\./dev ||' | awk '{print $1}')
-  if ! grep -qE "^\s*${verb}\)" dev; then
+  if ! grep -qE "^[[:space:]]*${verb}\)[[:space:]]+exec " dev; then
     err "an agent-visible doc references './dev ${verb}' but that verb is not registered in ./dev"
   fi
-done < <(grep -rhoE '\./dev [a-z-]+' .claude/skills/*/SKILL.md AGENTS.md CLAUDE.md 2>/dev/null | sort -u)
+done < <(grep -rhoE '\./dev [a-z-]+' "${AGENT_GUIDANCE[@]}" 2>/dev/null | sort -u)
 
 # 5. Hook self-tests: every hook rule/scenario must have blocking AND passing
 #    cases in its committed cases file (a rule without cases fails here).
@@ -99,6 +111,9 @@ if ! crg_out=$(scripts/codemap-regen-guard.py --self-test 2>&1); then
   printf '%s\n' "${crg_out}"
   fail=1
 fi
+# Validate the real checkout first (including Pi discovery), then prove the
+# validator rejects mutated fixtures. Self-test alone would only test temp data.
+scripts/neo-skills-check || fail=1
 scripts/neo-skills-check --self-test || fail=1
 scripts/adr-website --self-test || fail=1
 scripts/adr-index-check --self-test || fail=1
@@ -130,7 +145,7 @@ rm -f "${FIXTURE}" "${FIXTURE_ERR}"
 
 if [ "${fail}" -eq 0 ]; then
   count=$(echo "${registered}" | wc -l | tr -d ' ')
-  skills=$(ls -d .claude/skills/*/ 2>/dev/null | wc -l | tr -d ' ')
-  echo "doctor: OK — ${count} verbs registered, $(ls scripts/ | wc -l | tr -d ' ') scripts accounted for, ${#EXEMPT_NAMES[@]} exemptions (all reasoned), ${skills} skills verb-checked"
+  skills=$(ls -d .pi/skills/*/ 2>/dev/null | wc -l | tr -d ' ')
+  echo "doctor: OK — ${count} verbs registered, $(ls scripts/ | wc -l | tr -d ' ') scripts accounted for, ${#EXEMPT_NAMES[@]} exemptions (all reasoned), ${skills} canonical skills Pi-discoverable/frontmatter/reference checked"
 fi
 exit "${fail}"

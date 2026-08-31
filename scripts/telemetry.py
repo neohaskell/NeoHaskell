@@ -14,6 +14,7 @@ Usage (via the `./dev telemetry` verb — this file has no PATH entry):
   ./dev telemetry finish  --outcome ok
   ./dev telemetry finish  --outcome ok --improvement cli-utility:scripts/changelog  # class-fix shipped on success (v4)
   ./dev telemetry finish  --outcome parked --failure-label timeout --asset-delta alias:codemap/capabilities.yaml
+  ./dev telemetry reopen  --run-id ID             # sanctioned pre-merge final-tail recovery
   ./dev telemetry golden  --request-file R --spec-file S --diff-file D --verdict "..." [--transcript-file T]
   ./dev telemetry --self-test                      # doctor/CI
 
@@ -28,6 +29,7 @@ import datetime
 import json
 import re
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -35,6 +37,7 @@ ROOT = Path(__file__).resolve().parent.parent
 CURRENT = ROOT / "telemetry" / ".current-run.json"
 RUNS = ROOT / "telemetry" / "runs.jsonl"
 GOLDEN = ROOT / "telemetry" / "golden"
+PIPELINE_STATE = ROOT / ".pipeline" / "state.json"
 
 STAGES = [
     "intake", "localize", "spec", "design-review", "plan",
@@ -85,7 +88,9 @@ def load() -> dict:
 
 def save(run: dict) -> None:
     CURRENT.parent.mkdir(parents=True, exist_ok=True)
-    CURRENT.write_text(json.dumps(run, indent=2))
+    tmp = CURRENT.with_name(CURRENT.name + ".tmp")
+    tmp.write_text(json.dumps(run, indent=2) + "\n")
+    tmp.replace(CURRENT)
 
 
 def run_id_recorded(run_id: str) -> bool:
@@ -245,6 +250,118 @@ def cmd_finish(args) -> None:
     print(f"telemetry: run {run['run_id']} recorded -> {where}")
 
 
+def recorded_on_fresh_main(run_id: str, fetch_main=None, read_main=None) -> bool:
+    if (fetch_main is None and read_main is None
+            and RUNS.resolve() != (ROOT / "telemetry" / "runs.jsonl").resolve()):
+        return False
+    ref = "refs/neohaskell/reopen-origin-main"
+    if fetch_main is None:
+        def fetch_main():
+            result = subprocess.run(
+                ["git", "fetch", "--quiet", "--no-tags", "origin", f"+main:{ref}"],
+                cwd=ROOT, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                check=False,
+            )
+            return result.returncode == 0
+    if read_main is None:
+        def read_main():
+            result = subprocess.run(
+                ["git", "show", f"{ref}:telemetry/runs.jsonl"], cwd=ROOT,
+                text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
+            )
+            return result.stdout if result.returncode == 0 else None
+    if not fetch_main():
+        sys.exit("telemetry: cannot fetch fresh origin/main before reopen; refusing")
+    ledger = read_main()
+    if ledger is None:
+        sys.exit("telemetry: cannot verify fresh main ledger before reopen")
+    for line in ledger.splitlines():
+        try:
+            if json.loads(line).get("run_id") == run_id:
+                return True
+        except json.JSONDecodeError:
+            continue
+    return False
+
+
+def require_live_pipeline(run_id: str) -> None:
+    if not PIPELINE_STATE.is_file():
+        sys.exit("telemetry: reopen requires a live .pipeline/state.json")
+    try:
+        state = json.loads(PIPELINE_STATE.read_text())
+    except json.JSONDecodeError:
+        sys.exit("telemetry: pipeline state is corrupt; refusing reopen")
+    if state.get("run_id") != run_id or state.get("stage") != "ci" or state.get("parked"):
+        sys.exit("telemetry: reopen requires the same non-parked pipeline run at `ci`")
+    archive = PIPELINE_STATE.parent / "completed" / f"{run_id}.json"
+    if archive.exists():
+        sys.exit(f"telemetry: pipeline run {run_id!r} is already completed")
+
+
+def cmd_reopen(args) -> None:
+    """Recover a terminal line that is still only on the PR branch.
+
+    This is the sanctioned escape from a post-finalization CI failure: remove
+    the unmerged ledger line, restore it as CURRENT, and let the same run repeat
+    CI/Gate 2. Historical lines already on origin/main are immutable.
+    """
+    run_id = validate_run_id(args.run_id)
+    require_live_pipeline(run_id)
+    if not RUNS.is_file():
+        sys.exit(f"telemetry: ledger is missing: {RUNS}")
+    if recorded_on_fresh_main(run_id):
+        sys.exit(f"telemetry: run {run_id!r} is already on fresh origin/main and cannot reopen")
+
+    lines = RUNS.read_text().splitlines()
+    matches = []
+    parsed_lines = []
+    for index, line in enumerate(lines):
+        try:
+            parsed = json.loads(line)
+        except json.JSONDecodeError:
+            parsed = None
+        parsed_lines.append(parsed)
+        if isinstance(parsed, dict) and parsed.get("run_id") == run_id:
+            matches.append(index)
+    current = None
+    if CURRENT.exists():
+        try:
+            current = json.loads(CURRENT.read_text())
+        except json.JSONDecodeError:
+            sys.exit("telemetry: current run is corrupt; refusing reopen")
+        if current.get("run_id") != run_id or current.get("outcome") is not None:
+            sys.exit(f"telemetry: another run is active at {CURRENT}")
+        if not matches:
+            print(f"telemetry: run {run_id} is already reopened")
+            return
+    if len(matches) != 1:
+        sys.exit(f"telemetry: reopen needs exactly one ledger line for {run_id!r}; "
+                 f"found {len(matches)}")
+    index = matches[0]
+    terminal = parsed_lines[index]
+    if terminal.get("outcome") != "ok":
+        sys.exit("telemetry: reopen is only for an unmerged `ok` finalization tail")
+
+    # Two-phase, retry-safe transition: restore CURRENT atomically first. A
+    # crash then leaves both copies and the next invocation completes phase 2.
+    if current is None:
+        current = dict(terminal)
+        current["outcome"] = None
+        current["failure_label"] = None
+        current["asset_delta"] = None
+        current["improvements"] = []
+        current.pop("failure_note", None)
+        if "ci" in current.get("stages", {}):
+            current["stages"]["ci"]["stop"] = None
+        save(current)
+
+    kept = lines[:index] + lines[index + 1:]
+    tmp = RUNS.with_name(RUNS.name + ".tmp")
+    tmp.write_text(("\n".join(kept) + "\n") if kept else "")
+    tmp.replace(RUNS)
+    print(f"telemetry: reopened unmerged run {run_id}; repeat CI and Gate 2")
+
+
 def cmd_golden(args) -> None:
     run_id = args.run_id
     if run_id is None:
@@ -266,7 +383,7 @@ def cmd_golden(args) -> None:
 def self_test() -> int:
     """Exercises schema-v3 fields, usage accounting, and the asset-delta
     enforcement in a temp dir (doctor/CI). Same contract as the other guards."""
-    global CURRENT, RUNS, GOLDEN
+    global CURRENT, RUNS, GOLDEN, PIPELINE_STATE
     import tempfile
     fails = 0
 
@@ -287,6 +404,24 @@ def self_test() -> int:
     with tempfile.TemporaryDirectory() as tmp:
         t = Path(tmp)
         CURRENT, RUNS, GOLDEN = t / ".current-run.json", t / "runs.jsonl", t / "golden"
+        PIPELINE_STATE = t / "pipeline-state.json"
+
+        check("fresh-main-fetch-failure", lambda: recorded_on_fresh_main(
+            "t-main", fetch_main=lambda: False, read_main=lambda: ""), True)
+        check("fresh-main-read-failure", lambda: recorded_on_fresh_main(
+            "t-main", fetch_main=lambda: True, read_main=lambda: None), True)
+        if not recorded_on_fresh_main(
+            "t-main", fetch_main=lambda: True,
+            read_main=lambda: '{"run_id":"t-main","outcome":"ok"}\n'
+        ):
+            print("telemetry self-test FAIL fresh-main merged-run detection")
+            fails += 1
+        if recorded_on_fresh_main(
+            "missing", fetch_main=lambda: True,
+            read_main=lambda: '{"run_id":"t-main","outcome":"ok"}\n'
+        ):
+            print("telemetry self-test FAIL fresh-main missing-run detection")
+            fails += 1
 
         check("start", lambda: cmd_start(ns(run_id="t-001", request="issue#0")), False)
         cur = json.loads(CURRENT.read_text())
@@ -325,11 +460,34 @@ def self_test() -> int:
         check("start2", lambda: cmd_start(ns(run_id="t-002", request="issue#0")), False)
         check("finish-ok", lambda: cmd_finish(
             ns(outcome="ok", failure_label=None, failure_note=None, asset_delta=None)), False)
+        PIPELINE_STATE.write_text(json.dumps({
+            "run_id": "other", "stage": "ci", "parked": False,
+        }) + "\n")
+        check("reopen-mismatched-pipeline", lambda: cmd_reopen(ns(run_id="t-002")), True)
+        PIPELINE_STATE.write_text(json.dumps({
+            "run_id": "t-002", "stage": "ci", "parked": False,
+        }) + "\n")
+        completed = PIPELINE_STATE.parent / "completed"
+        completed.mkdir()
+        (completed / "t-002.json").write_text("{}\n")
+        check("reopen-completed-pipeline", lambda: cmd_reopen(ns(run_id="t-002")), True)
+        (completed / "t-002.json").unlink()
+        check("reopen-unmerged-ok", lambda: cmd_reopen(ns(run_id="t-002")), False)
+        check("reopen-idempotent-current", lambda: cmd_reopen(ns(run_id="t-002")), False)
+        reopened = json.loads(CURRENT.read_text())
+        if reopened.get("outcome") is not None or run_id_recorded("t-002"):
+            print(f"telemetry self-test FAIL reopen-shape: {reopened}")
+            fails += 1
+        check("finish-reopened-ok", lambda: cmd_finish(
+            ns(outcome="ok", failure_label=None, failure_note=None, asset_delta=None)), False)
+        CURRENT.write_text(json.dumps({"run_id": "other", "outcome": None}) + "\n")
+        check("reopen-other-current", lambda: cmd_reopen(ns(run_id="t-002")), True)
+        CURRENT.unlink()
         # v4: an ok run may record `improvements` (class-fixes shipped on success)
         check("start3", lambda: cmd_start(ns(run_id="t-003", request="issue#0")), False)
         check("finish-ok-improvement", lambda: cmd_finish(
             ns(outcome="ok", failure_label=None, failure_note=None, asset_delta=None,
-               improvement=["cli-utility:scripts/changelog", "skill-edit:.claude/skills/x/SKILL.md"])), False)
+               improvement=["cli-utility:scripts/changelog", "skill-edit:.pi/skills/x/SKILL.md"])), False)
         imp_line = json.loads(RUNS.read_text().splitlines()[-1])
         if [i["type"] for i in imp_line.get("improvements", [])] != ["cli-utility", "skill-edit"]:
             print(f"telemetry self-test FAIL improvements: {imp_line}")
@@ -356,7 +514,7 @@ def self_test() -> int:
     # loaded every session). Every `schema v<N>`/`frozen v<N>` claim must equal it.
     # (Version *history* in SCHEMA.md is written bare — `v1 → v2` — so it is not a
     # claim and not matched here.)
-    SKILLS = ROOT / ".claude" / "skills"
+    SKILLS = ROOT / ".pi" / "skills"
     version_docs = [
         ROOT / "telemetry" / "SCHEMA.md",
         ROOT / "AGENTS.md",
@@ -396,8 +554,8 @@ def self_test() -> int:
 
     if fails == 0:
         print("telemetry self-test: OK — schema-v4 fields, usage accounting, asset-delta "
-              "enforcement, run-id collision guard, none-colon justification, and "
-              "label/schema-version/delta-type parity covered")
+              "enforcement, unmerged-tail reopen, run-id collision guard, none-colon "
+              "justification, and label/schema-version/delta-type parity covered")
     return 1 if fails else 0
 
 
@@ -440,6 +598,10 @@ def main() -> None:
     s.add_argument("--improvement", action="append",
                    help="class-fix shipped by this (successful) run: <type>:<dest>; repeatable")
     s.set_defaults(fn=cmd_finish)
+
+    s = sub.add_parser("reopen")
+    s.add_argument("--run-id", required=True)
+    s.set_defaults(fn=cmd_reopen)
 
     s = sub.add_parser("golden")
     s.add_argument("--run-id")

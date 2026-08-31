@@ -51,7 +51,10 @@ Adding an IDE JSON-RPC method should be a **one-file change** under
 `src/ide/methods/`; if you find yourself editing `src/ide/rpc.rs` or
 `registry.rs`, the change is wrong-shaped - reconsider before proceeding.
 
-## Frontend styling - one source of truth (HARD rule from `assets/ide/CLAUDE.md`)
+## Frontend styling - one source of truth
+
+`assets/ide/CLAUDE.md` is the shared frontend contract despite its legacy
+harness-specific filename; every agent must read and follow it.
 
 All visual styling flows from the central Mantine theme in
 `assets/ide/src/theme.ts`. **Never** style in place: no Tailwind (removed on

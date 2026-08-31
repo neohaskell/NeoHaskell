@@ -168,15 +168,14 @@ metadata/secrets/build artifacts, manifest present, load-bearing surfaces exist)
 ## Cross-component correctness gate
 
 Neo generates NeoHaskell projects. The `build`/`run`/`test` happy paths require the
-generated project to actually compile, which depends on the **starter to upstream
-contract**: `neo new` scaffolds from the embedded `neo/starter/`, then `neo build`
-locks the latest `neohaskell` `main`. When upstream renames/removes a module the
-starter imports, generated projects fail GHC compile. That red bar is the intended
-signal: fix `neo/starter/` in this monorepo; never mask or `#[ignore]` it. Because
-the starter is now in-repo, moving the starter and its NeoHaskell counterpart
-together is a single-repo atomic change across stack layers: use `neo-cli-localizer`
-for the Rust side and the NeoHaskell localizer for the matching lower/adjacent
-stack layer.
+generated project to compile at the immutable NeoHaskell revision pinned by the
+embedded `neo/starter/`. The separate `./dev neo-consumer-contract` checkout
+override proves that same generated surface against THIS checkout, so an upstream
+API move still produces the intended red bar before merge. Fix `neo/starter/` in
+this monorepo; never mask or `#[ignore]` either gate. Because the starter is now
+in-repo, moving the starter and its NeoHaskell counterpart together is a
+single-repo atomic change across stack layers: use `neo-cli-localizer` for the Rust
+side and the NeoHaskell localizer for the matching lower/adjacent stack layer.
 
 ## Errors are LLM-actionable repair instructions (HARD invariant)
 
