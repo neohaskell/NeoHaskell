@@ -135,13 +135,14 @@ advance without that stop/start pair. Human waits use `./dev telemetry wait
     ```
 
     Commit and push **only** `telemetry/runs.jsonl`, then wait for required
-    checks and CodeRabbit. If GitHub invalidates the existing review, the same
-    Gate 2 touchpoint re-approves this metadata-only HEAD and updates `approve
-    ci --head`. Finally run `./dev pipeline complete --outcome ok`.
+    checks and CodeRabbit. If GitHub invalidates the review, the maintainer may
+    re-approve the metadata-only HEAD in GitHub, but the local `approve ci --head`
+    record remains anchored to its substantive parent. Finally run `./dev
+    pipeline complete --outcome ok`.
 
-    `complete` verifies finished telemetry and accepts either the approved HEAD
-    itself or its single direct child whose only changed path is
-    `telemetry/runs.jsonl`; any other delta requires Gate 2 again. It archives
+    `complete` requires the approved HEAD to be the direct parent of exactly one
+    generated `telemetry/runs.jsonl` append; exact-HEAD equality cannot bypass
+    this ordering. Any other delta requires reopening and Gate 2 again. It archives
     state under `.pipeline/completed/` and removes `state.json`. If the
     metadata-tail checks fail before `complete`, run `./dev telemetry reopen
     --run-id <run-id>`; this sanctioned command removes only the unmerged `ok`

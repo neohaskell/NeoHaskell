@@ -111,17 +111,15 @@ def telemetry_append_is_valid(before_text, after_text, run_id, outcome):
 
 
 def approval_covers_head(approved_head, actual_head, parent_head, changed_paths):
-    if approved_head == actual_head:
-        return True
-    return parent_head == approved_head and changed_paths == ["telemetry/runs.jsonl"]
+    return (actual_head != approved_head
+            and parent_head == approved_head
+            and changed_paths == ["telemetry/runs.jsonl"])
 
 
 def final_approval_matches(approved_head, run_id, outcome):
     actual_head = current_head()
     if actual_head is None:
         return False
-    if approved_head == actual_head:
-        return True
     parent_head = git_output("rev-parse", "HEAD^")
     changed = git_output("diff", "--name-only", f"{approved_head}..{actual_head}")
     changed_paths = changed.splitlines() if changed is not None else []
@@ -389,7 +387,8 @@ def telemetry_completion_error(run_id, outcome, current_path, runs_path):
 
 
 def cmd_complete(args, state_dir, telemetry_current=TELEMETRY_CURRENT,
-                 telemetry_runs=TELEMETRY_RUNS):
+                 telemetry_runs=TELEMETRY_RUNS,
+                 approval_matcher=final_approval_matches):
     s = load(state_dir)
     if args.outcome == "ok" and (s["parked"] or s["stage"] != "ci"):
         print("pipeline-state: outcome `ok` requires a non-parked run at final stage `ci`",
@@ -401,9 +400,9 @@ def cmd_complete(args, state_dir, telemetry_current=TELEMETRY_CURRENT,
             print("pipeline-state: outcome `ok` requires recorded final approval for `ci`",
                   file=sys.stderr)
             return 1
-        if not final_approval_matches(approval["head"], s["run_id"], args.outcome):
-            print("pipeline-state: final approval covers neither current HEAD nor its sole "
-                  "telemetry/runs.jsonl finalization child — obtain Gate 2 approval again",
+        if not approval_matcher(approval["head"], s["run_id"], args.outcome):
+            print("pipeline-state: final approval must be the parent of one sole "
+                  "telemetry/runs.jsonl finalization child — repeat Gate 2/finalization",
                   file=sys.stderr)
             return 1
     if args.outcome == "parked" and not s["parked"]:
@@ -488,10 +487,11 @@ def self_test():
             return cmd_complete(
                 argparse.Namespace(outcome=outcome), run_dir,
                 telemetry_current=current, telemetry_runs=runs,
+                approval_matcher=lambda _head, _run_id, _outcome: True,
             )
 
-        if not approval_covers_head("a", "a", "parent", ["other"]):
-            print("self-test FAIL approval coverage: exact HEAD should pass")
+        if approval_covers_head("a", "a", "parent", ["other"]):
+            print("self-test FAIL approval coverage: exact HEAD must not bypass telemetry ordering")
             fails += 1
         if not approval_covers_head("a", "b", "a", ["telemetry/runs.jsonl"]):
             print("self-test FAIL approval coverage: telemetry-only child should pass")

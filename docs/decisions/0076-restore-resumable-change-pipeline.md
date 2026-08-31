@@ -36,9 +36,9 @@ Restore the contract-delta pipeline as the sole active change process:
    ...` records that authorization and is the machine-enforced gate. A GitHub
    comment can be evidence, but no remote service mutates local pipeline state.
    Gate 2 is recorded as `approve ci --head <reviewed-sha>` before telemetry
-   records success. Completion accepts that HEAD or its single direct child
-   changing only generated `telemetry/runs.jsonl`; any other delta requires
-   renewed approval.
+   records success. Completion requires that HEAD to be the parent of a single
+   direct child appending only generated `telemetry/runs.jsonl`; exact-HEAD
+   completion and any other delta are rejected.
 4. Manual pipeline telemetry, failure labels, class fixes, and the weekly
    retrospective operate as defined by ADR-0068 and `telemetry/SCHEMA.md`.
 5. Risk-tiered design reviews remain governed by ADR-0069: performance records

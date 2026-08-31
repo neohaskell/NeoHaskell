@@ -56,7 +56,7 @@ the teacher's self-test green even when its host integration is inactive.
 
 ## Debugging a misfire
 
-1. Reproduce the configured-harness payload directly: `echo '{"tool_name":"Edit","tool_input":{...}}' | python3 .claude/hooks/dialect-guard.py`
+1. Reproduce the configured-harness payload directly with valid JSON: `echo '{"tool_name":"Edit","tool_input":{"file_path":"<path>","old_string":"<old>","new_string":"<new>"}}' | python3 .claude/hooks/dialect-guard.py`
 2. If it's a false positive: add the payload as a **passing case** first
    (red), then fix the rule/exemption (green). The case stays forever.
 3. If the rule is fundamentally unsound for fragments: delete it and note the
