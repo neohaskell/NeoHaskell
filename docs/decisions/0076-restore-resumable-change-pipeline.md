@@ -48,8 +48,8 @@ hook, managed Git hook wrappers, and Codex hook configuration are archived under
 `docs/legacy/neohaskell-beads/`, outside active discovery and runtime
 configuration. The private `.beads` store and its pinned remote remain only for
 historical inspection. They do not launch, schedule, authorize, or meter new
-changes. The Beads package is removed from the default Nix shell because the
-active pipeline no longer depends on it.
+changes. The Beads package remains in the default Nix shell only so maintainers
+can inspect the historical store; no active pipeline automation depends on it.
 
 `scripts/process-check.sh` remains a deterministic CI gate, retargeted to prove
 that exactly one pipeline is active: the `.pipeline` skill is discoverable,
