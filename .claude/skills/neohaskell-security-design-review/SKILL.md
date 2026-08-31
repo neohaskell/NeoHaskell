@@ -94,11 +94,12 @@ Spec: docs/changes/NNN-slug.md | Capabilities: <security-sensitive ones> | Date:
 |---|-----------|---------|-----------|---------|
 | 1 | S3 | <what> | kept / demoted (failed Q1: <why>) | blocker / advisory / informational |
 
-**Blockers:** N — <resolution: plan amended / escalated to maintainer>
+**Blockers:** N — <resolution: parked for corrected intake/spec approval>
 ```
 
-Blockers either amend the plan (`./dev pipeline set plan.files …` + note in
-the record) or park the run for the maintainer (`./dev pipeline park --label
-human-rejected-spec --note …`). Zero-finding reviews still write the local record
-— "reviewed, nothing found" is audit data — it just stays local like every other
+A blocker means the approved, binding plan is unsafe. Park the run
+(`./dev pipeline park --label human-rejected-spec --note …`) and return through
+intake/spec approval with the corrected localization asset; design review never
+mutates `plan.*` in place. Zero-finding reviews still write the local record —
+"reviewed, nothing found" is audit data — it just stays local like every other
 security review.

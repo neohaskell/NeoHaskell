@@ -8,8 +8,8 @@ description: Weekly retrospective mining of pipeline telemetry into ≤5 validat
 The judgement half of Phase 6's learning loop (ADR-0068). The deterministic half —
 gathering runs, computing the digest, and enforcing the recommendation contract —
 is `./dev retrospect`; this skill decides *what to recommend*. **Activation
-gate:** run this only once `telemetry/runs.jsonl` holds real runs (it has one
-dummy line today); with no data there is nothing to mine.
+gate:** use the digest's own "No real runs" result; with no real data there is
+nothing to mine. Never infer activation from a hard-coded line count.
 
 ## Procedure
 
@@ -28,7 +28,12 @@ dummy line today); with no data there is nothing to mine.
    `telemetry/recommendations.jsonl`, or rejects with the failed rule. Do not
    hand-edit that file.
 
-## The contract (the harness enforces all of this — internalize it, don't fight it)
+## The contract (closed; shape is gated, evidence is reviewer-verified)
+
+`./dev retrospect --record` gates required fields, week/taxonomy shape, distinct
+run IDs, recommendation cap, and the saving's sign. Before recording, the miner
+must cross-check each cited run/stage and destination against the digest, golden
+artifacts, and destination table below; those semantic checks require review.
 
 - **Cited friction + measured cost (rule a):** `friction` is a real observation;
   `estimated_saving_s` is a positive, measured number. No counterfactual "this

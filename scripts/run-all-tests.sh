@@ -11,6 +11,13 @@ NC='\033[0m' # No Color
 
 FAILED=0
 PASSED=0
+REQUIRE_ALL=0
+
+case "${1:-}" in
+	"") ;;
+	--require-all) REQUIRE_ALL=1 ;;
+	*) echo "usage: ./dev test-all [--require-all]" >&2; exit 2 ;;
+esac
 
 run_suite() {
 	local name="$1"
@@ -55,7 +62,12 @@ echo ""
 if pg_isready -h 127.0.0.1 -U neohaskell -q 2>/dev/null; then
 	run_suite "nhcore-test-service" "LOG_LEVEL=Warn cabal test nhcore-test-service"
 else
-	echo -e "${YELLOW}⚠ Postgres not available — skipping nhcore-test-service${NC}"
+	if [ "$REQUIRE_ALL" -eq 1 ]; then
+		echo -e "${RED}✗ Postgres not available — required by --require-all${NC}"
+		FAILED=$((FAILED + 1))
+	else
+		echo -e "${YELLOW}⚠ Postgres not available — skipping nhcore-test-service${NC}"
+	fi
 	echo -e "  Start it with:"
 	echo -e "  docker run -d --name neohaskell-postgres \\"
 	echo -e "    -e POSTGRES_USER=neohaskell -e POSTGRES_PASSWORD=neohaskell \\"
@@ -70,10 +82,16 @@ if command -v hurl &>/dev/null && pg_isready -h 127.0.0.1 -U neohaskell -q 2>/de
 	run_suite "Hurl integration tests" "./testbed/scripts/run-tests.sh"
 else
 	if ! command -v hurl &>/dev/null; then
-		echo -e "${YELLOW}⚠ hurl not installed — skipping integration tests${NC}"
+		missing="hurl is not installed"
 		echo -e "  Install: https://hurl.dev/docs/installation.html"
 	else
-		echo -e "${YELLOW}⚠ Postgres not available — skipping integration tests${NC}"
+		missing="Postgres is not available"
+	fi
+	if [ "$REQUIRE_ALL" -eq 1 ]; then
+		echo -e "${RED}✗ ${missing} — required by --require-all${NC}"
+		FAILED=$((FAILED + 1))
+	else
+		echo -e "${YELLOW}⚠ ${missing} — skipping integration tests${NC}"
 	fi
 	echo ""
 fi

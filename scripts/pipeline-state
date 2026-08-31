@@ -16,14 +16,17 @@ Commands:
   status                                        human-readable summary
   advance                                       move to the next stage
   set KEY VALUE                                 data keys only (spec_path,
-                                                pr_number, branch, plan.* while
-                                                planning); VALUE parsed as JSON,
+                                                pr_number, branch, plan.* during
+                                                intake/localize); VALUE parsed as JSON,
                                                 falling back to string. Lifecycle
                                                 state only moves via the gate
                                                 commands below.
   approve STAGE --by WHO [--via HOW]            record a human approval
   park --label LABEL [--note NOTE]              park with a taxonomy label
   resume                                        clear parked (plan is kept — the contract)
+  complete --outcome ok|parked|failed           archive terminal state and release
+                                                state.json for the next run; ok
+                                                requires `ci`, parked requires park
   validate                                      schema check (also runs on save)
   --self-test                                   full lifecycle in a temp dir (doctor/CI)
 
@@ -32,6 +35,7 @@ Run: ./dev pipeline <command>
 
 import argparse
 import json
+import re
 import sys
 import tempfile
 from datetime import datetime, timezone
@@ -41,7 +45,7 @@ ROOT = Path(__file__).resolve().parent.parent
 STATE_DIR = ROOT / ".pipeline"
 
 # telemetry/SCHEMA.md stage enum, in pipeline order. Changing it there means
-# changing it here in the same PR (both quote schema v2).
+# changing it here in the same PR (both quote schema v4).
 STAGES = ["intake", "localize", "spec", "design-review", "plan",
           "test-writing", "implement", "verify", "pr", "ci"]
 
@@ -134,7 +138,7 @@ def save(state_dir, state):
 def cmd_init(args, state_dir):
     f = state_file(state_dir)
     if f.exists() and not args.force:
-        print(f"pipeline-state: {f} exists — finish or park the current run first "
+        print(f"pipeline-state: {f} exists — complete the current run first "
               "(or --force to discard it)", file=sys.stderr)
         return 2
     state = {
@@ -194,9 +198,10 @@ def cmd_advance(state_dir):
 # gate-checking commands (advance/approve/park/resume) — allowing `set stage`
 # would let a run fast-forward past the spec gate silently.
 SETTABLE = {"spec_path", "pr_number", "branch"}
-# The plan is written during planning and BINDING afterwards (resume never
-# re-plans): plan.* writes are refused once the run passes `plan`.
-PLAN_WRITABLE_STAGES = {"intake", "localize", "spec", "design-review", "plan"}
+# Localization writes the plan once. It is BINDING as soon as `localize`
+# advances: spec approval, design review, planning and resume may consume it,
+# never mutate it. A wrong plan parks and re-enters through intake.
+PLAN_WRITABLE_STAGES = {"intake", "localize"}
 
 
 def cmd_set(args, state_dir):
@@ -215,7 +220,7 @@ def cmd_set(args, state_dir):
             return 2
         if s["stage"] not in PLAN_WRITABLE_STAGES:
             print(f"pipeline-state: refusing `set {args.key}` at stage `{s['stage']}` "
-                  "— the plan is binding after planning; if it is wrong, `park "
+                  "— the plan is binding after localization; if it is wrong, `park "
                   "--label wrong-localization` and re-enter", file=sys.stderr)
             return 2
     elif node in SETTABLE:
@@ -278,6 +283,36 @@ def cmd_resume(state_dir):
     return 0
 
 
+def cmd_complete(args, state_dir):
+    s = load(state_dir)
+    if args.outcome == "ok" and (s["parked"] or s["stage"] != "ci"):
+        print("pipeline-state: outcome `ok` requires a non-parked run at final stage `ci`",
+              file=sys.stderr)
+        return 1
+    if args.outcome == "parked" and not s["parked"]:
+        print("pipeline-state: outcome `parked` requires `pipeline park` first", file=sys.stderr)
+        return 1
+    if args.outcome == "failed" and s["parked"]:
+        print("pipeline-state: a parked run closes with outcome `parked`, not `failed`",
+              file=sys.stderr)
+        return 1
+    completed_dir = state_dir / "completed"
+    completed_dir.mkdir(parents=True, exist_ok=True)
+    safe_run_id = re.sub(r"[^A-Za-z0-9._-]", "_", s["run_id"])
+    archive = completed_dir / f"{safe_run_id}.json"
+    if archive.exists():
+        print(f"pipeline-state: completion archive already exists: {archive}", file=sys.stderr)
+        return 2
+    s["terminal_outcome"] = args.outcome
+    s["completed_at"] = now()
+    tmp = archive.with_name(archive.name + ".tmp")
+    tmp.write_text(json.dumps(s, indent=2) + "\n")
+    tmp.replace(archive)
+    state_file(state_dir).unlink()
+    print(f"pipeline-state: run {s['run_id']} closed as {args.outcome} and archived -> {archive}")
+    return 0
+
+
 def self_test():
     with tempfile.TemporaryDirectory() as tmp:
         d = Path(tmp)
@@ -294,7 +329,11 @@ def self_test():
         run("init", lambda: cmd_init(ns, d), 0)
         run("init-refuses-clobber", lambda: cmd_init(ns, d), 2)
         run("advance-to-localize", lambda: cmd_advance(d), 0)
+        run("set-plan-during-localize", lambda: cmd_set(argparse.Namespace(
+            key="plan.touches", value='["auth"]'), d), 0)
         run("advance-to-spec", lambda: cmd_advance(d), 0)
+        run("replan-at-spec-denied", lambda: cmd_set(argparse.Namespace(
+            key="plan.touches", value='["json"]'), d), 2)
         run("gate-blocks-unapproved", lambda: cmd_advance(d), 1)
         run("approve-spec", lambda: cmd_approve(
             argparse.Namespace(stage="spec", by="nick", via="pr-comment"), d), 0)
@@ -305,15 +344,15 @@ def self_test():
             argparse.Namespace(label="timeout", note="stage budget"), d), 0)
         run("advance-while-parked", lambda: cmd_advance(d), 1)
         run("resume", lambda: cmd_resume(d), 0)
+        run("replan-after-resume-denied", lambda: cmd_set(argparse.Namespace(
+            key="plan.touches", value='["json"]'), d), 2)
         run("set-pr", lambda: cmd_set(argparse.Namespace(key="pr_number", value="721"), d), 0)
-        run("set-plan", lambda: cmd_set(argparse.Namespace(
-            key="plan.touches", value='["auth"]'), d), 0)
         state = json.loads(state_file(d).read_text())
         if state["pr_number"] != 721 or state["plan"]["touches"] != ["auth"]:
             print(f"self-test FAIL set: {state['pr_number']}, {state['plan']['touches']}")
             fails += 1
         # lifecycle is sealed: `set` must not move stages, pre-seed approvals,
-        # or re-plan after planning
+        # or re-plan after localization
         run("set-stage-denied", lambda: cmd_set(
             argparse.Namespace(key="stage", value="ci"), d), 2)
         run("set-bare-plan-denied", lambda: cmd_set(
@@ -331,8 +370,20 @@ def self_test():
             argparse.Namespace(stage="spec", by="nick", via="pr-comment"), d), 1)
         run("advance-to-plan", lambda: cmd_advance(d), 0)
         run("advance-to-test-writing", lambda: cmd_advance(d), 0)
-        run("replan-after-plan-denied", lambda: cmd_set(
+        run("replan-at-plan-denied", lambda: cmd_set(
             argparse.Namespace(key="plan.touches", value='["json"]'), d), 2)
+        run("complete-before-ci-denied", lambda: cmd_complete(
+            argparse.Namespace(outcome="ok"), d), 1)
+        run("advance-to-implement", lambda: cmd_advance(d), 0)
+        run("advance-to-verify", lambda: cmd_advance(d), 0)
+        run("advance-to-pr", lambda: cmd_advance(d), 0)
+        run("advance-to-ci", lambda: cmd_advance(d), 0)
+        run("complete-ci", lambda: cmd_complete(argparse.Namespace(outcome="ok"), d), 0)
+        if state_file(d).exists() or not (d / "completed" / "t-001.json").is_file():
+            print("self-test FAIL complete: live state remained or archive is missing")
+            fails += 1
+        next_ns = argparse.Namespace(run_id="t-002", request="issue#1", branch="b2", force=False)
+        run("init-after-complete", lambda: cmd_init(next_ns, d), 0)
 
         # Fix 6: a truncated state file exits cleanly (exit 1), never tracebacks.
         # Runs last — it clobbers the valid state file on purpose.
@@ -346,9 +397,31 @@ def self_test():
             print(f"self-test FAIL corrupt-state: load() exit {code}, want 1")
             fails += 1
 
+        parked_dir = d / "parked-case"
+        parked_ns = argparse.Namespace(run_id="t-parked", request="issue#2", branch="p", force=False)
+        run("parked-init", lambda: cmd_init(parked_ns, parked_dir), 0)
+        run("parked-park", lambda: cmd_park(
+            argparse.Namespace(label="timeout", note="budget"), parked_dir), 0)
+        run("parked-as-ok-denied", lambda: cmd_complete(
+            argparse.Namespace(outcome="ok"), parked_dir), 1)
+        run("parked-complete", lambda: cmd_complete(
+            argparse.Namespace(outcome="parked"), parked_dir), 0)
+        run("init-after-parked", lambda: cmd_init(
+            argparse.Namespace(run_id="t-after-park", request="issue#3", branch="p2", force=False),
+            parked_dir), 0)
+
+        failed_dir = d / "failed-case"
+        failed_ns = argparse.Namespace(run_id="t-failed", request="issue#4", branch="f", force=False)
+        run("failed-init", lambda: cmd_init(failed_ns, failed_dir), 0)
+        run("failed-complete", lambda: cmd_complete(
+            argparse.Namespace(outcome="failed"), failed_dir), 0)
+        run("init-after-failed", lambda: cmd_init(
+            argparse.Namespace(run_id="t-after-fail", request="issue#5", branch="f2", force=False),
+            failed_dir), 0)
+
         if fails == 0:
             print("pipeline-state self-test: OK — lifecycle, gate, park taxonomy, "
-                  "plan-field guard, corrupt-file recovery covered")
+                  "immutable plan, completion/archive, and corrupt-file recovery covered")
         return 1 if fails else 0
 
 
@@ -376,6 +449,8 @@ def main():
     pp.add_argument("--label", required=True)
     pp.add_argument("--note", default="")
     sub.add_parser("resume")
+    pc = sub.add_parser("complete")
+    pc.add_argument("--outcome", required=True, choices=["ok", "parked", "failed"])
     sub.add_parser("validate")
     args = p.parse_args()
 
@@ -393,6 +468,8 @@ def main():
         return cmd_park(args, STATE_DIR)
     if args.cmd == "resume":
         return cmd_resume(STATE_DIR)
+    if args.cmd == "complete":
+        return cmd_complete(args, STATE_DIR)
     if args.cmd == "validate":
         load(STATE_DIR)
         print("pipeline-state: valid")

@@ -1,6 +1,6 @@
 ---
 name: neo-cli-localizer
-description: Route a request about the Rust Neo CLI under `neo/**` to the exact command, subsystem and module before editing. Use at PLAN time for any `neo/**` change: locate by command surface (new/build/run/test/lock/ide/inspect/validate/skills), by subsystem (reconcile, subprocess, interpret, ide, tui), or by error/output contract. This is a Rust crate, not NeoHaskell dialect code; do not apply the Haskell HARD RULE, dialect table, or spec-gated pipeline here.
+description: "Route a request about the Rust Neo CLI under `neo/**` to the exact command, subsystem and module before editing. Use at PLAN time for any `neo/**` change: locate by command surface (new/build/run/test/lock/ide/inspect/validate/skills), by subsystem (reconcile, subprocess, interpret, ide, tui), or by error/output contract. This is a Rust crate, not NeoHaskell dialect code; do not apply the Haskell HARD RULE, dialect table, or spec-gated pipeline here."
 ---
 
 # Neo CLI localizer
@@ -64,11 +64,13 @@ in `neo/starter/`; provenance + exclusion policy in `neo/starter/IMPORT.md`.
 ## Cross-component correctness (monorepo governance)
 
 Neo generates NeoHaskell projects. The happy-path `build`/`run`/`test` scenarios
-depend on the **starter to upstream contract**: `neo new` scaffolds from the
-embedded `neo/starter/`, then `neo build` locks the latest `neohaskell` `main`. When
-upstream renames/removes a module the starter imports, generated projects fail to
-compile. That is a real signal - fix `neo/starter/` in this monorepo; never mask or
-`#[ignore]` the failing scenario. Details in `neo/AGENTS.md` and `neo-cli-testing`.
+depend on the **starter compatibility contract**: `neo new` scaffolds from the
+embedded `neo/starter/` and pins the immutable NeoHaskell revision recorded by
+that starter. `./dev neo-consumer-contract` separately builds the generated
+project against THIS checkout to detect starter-to-upstream drift. If either gate
+fails after an API move, fix `neo/starter/` in this monorepo; never mask or
+`#[ignore]` the failing scenario. Details in `neo/AGENTS.md` and
+`neo-cli-testing`.
 
 ## Scope rule
 

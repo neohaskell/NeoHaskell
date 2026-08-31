@@ -23,7 +23,8 @@ usage: ./dev <verb> [args]
   refresh [target]      re-warm the -O0 build after pull/branch switch;
                           prints modules-rebuilt (cache health)
   doctest               run the doctest suite
-  test-all              run every test suite (colored human runner)
+  test-all [--require-all]  run every test suite; --require-all makes missing
+                          Postgres/Hurl prerequisites fail instead of skip
   lint [paths]          dialect gate: hlint with the dialect-first config
                           (same as CI; escape hatch documented in .hlint.yaml)
   codemap               regenerate codemap artifacts (signatures, MAP.md, ratchet)
@@ -50,7 +51,7 @@ usage: ./dev <verb> [args]
                           promised contract delta (PR-ready gate)
   pipeline <cmd>        pipeline run state (.pipeline/state.json): init,
                           status, advance, set, approve, park, resume,
-                          validate — the resume-never-replans contract
+                          complete --outcome ok|parked|failed, validate
   bench                 run the perf suites against telemetry/bench-budgets.json
                           (nightly in CI; needs POSTGRES_AVAILABLE=true for
                           the Postgres entries)
@@ -71,9 +72,9 @@ usage: ./dev <verb> [args]
                           artifacts, retrospect loop; CI-enforced)
   process-check         active-pipeline coherence gate: `.pipeline` is the
                           sole discoverable change process (CI-enforced)
-  neo-skills-check      validate the Rust `neo/**` agent-guidance layer:
-                          neo-cli-* skills, neo/** routing, no stale state/plan
-                          refs, one source of truth (via ./dev doctor + CI)
+  neo-skills-check      validate all 12 canonical skills for Pi discovery,
+                          frontmatter/references and the portable pipeline,
+                          plus neo/** routing/starter integrity (doctor + CI)
   neo-dist-check        prove the committed Neo IDE bundle (assets/ide/dist,
                           embedded into the binary) is a faithful from-lockfile
                           rebuild, so nix build .#neo never ships a stale dist

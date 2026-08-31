@@ -22,6 +22,7 @@ Run: ./dev retrospect
 """
 
 import json
+import math
 import re
 import shutil
 import sys
@@ -231,7 +232,9 @@ def validate_recommendation(rec):
     is_prune = rec.get("delta_type") == "PRUNE"
     try:
         saving = float(rec["estimated_saving_s"])
-        if saving < 0 or (saving == 0 and not is_prune):
+        if not math.isfinite(saving):
+            errs.append("estimated_saving_s must be finite (NaN/Infinity are not measured costs)")
+        elif saving < 0 or (saving == 0 and not is_prune):
             errs.append("estimated_saving_s must be a measured, positive cost (rule a); "
                         "only a PRUNE delta (surface reduction) may be 0")
     except (TypeError, ValueError):
@@ -353,6 +356,10 @@ def self_test():
               validate_recommendation({**good, "evidence": ["2026-07-09-001:x", "2026-07-09-001:y"]})))
     check("rec-no-saving",
           any("estimated_saving_s" in e for e in validate_recommendation({**good, "estimated_saving_s": 0})))
+    check("rec-nan-rejected",
+          any("finite" in e for e in validate_recommendation({**good, "estimated_saving_s": "NaN"})))
+    check("rec-infinity-rejected",
+          any("finite" in e for e in validate_recommendation({**good, "estimated_saving_s": "Infinity"})))
     check("rec-missing-field",
           any("missing required" in e for e in validate_recommendation({"week": "x"})))
     check("rec-bad-week",

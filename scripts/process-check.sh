@@ -38,6 +38,14 @@ fi
 grep -qF 'Any request that should end in a PR runs the `neohaskell-pipeline` skill' AGENTS.md || err "AGENTS.md does not route PR work to the restored pipeline"
 grep -qF '.pipeline/state.json' AGENTS.md || err "AGENTS.md does not name the resume contract"
 
+# The authoritative process must be available to Pi, not merely present under a
+# harness-specific directory. Delegate the discovery/frontmatter/pipeline
+# contract to its single validator; keep Neo starter/routing checks out of this
+# process-specific gate.
+if ! scripts/neo-skills-check --pi-only >/dev/null; then
+  err "canonical pipeline is not discoverable or valid in Pi"
+fi
+
 if grep -qF 'WARNING: ./dev pipeline is deprecated' dev; then
   err "./dev pipeline still emits the retired queue warning"
 fi

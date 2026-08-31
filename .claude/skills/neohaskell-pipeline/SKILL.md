@@ -18,11 +18,20 @@ skill share one vocabulary.
 
 ```
 intake ─ localize ─ spec ─▶ DRAFT PR ══ GATE 1 (maintainer) ══▶ design-review
-        ─ plan ─ test-writing ─ implement ─ verify ─ pr ══ GATE 2 ══▶ ci ─ merged
+        ─ plan ─ test-writing ─ implement ─ verify ─ pr ─┬─ GATE 2 (maintainer) ─┐
+                                                         └─ ci/review loop ─────┴─ finalization ─ merged
 ```
 
+**Telemetry transition invariant:** `./dev pipeline` owns resume state; telemetry
+is explicit. On entry to every stage run `./dev telemetry stage --name <stage>
+--event start`. Before every transition run `./dev telemetry stage --name
+<stage> --event stop`, then `./dev pipeline advance`, then start `<next>`. Never
+advance without that stop/start pair. Human waits use `./dev telemetry wait
+--seconds <n>` and do not count against the stage time-box.
+
 1. **intake** — `./dev pipeline init --run-id YYYY-MM-DD-NNN --request issue#N
-   --branch <branch>`; `./dev telemetry start`. Restate the request;
+   --branch <branch>`; `./dev telemetry start --run-id YYYY-MM-DD-NNN --request
+   issue#N`; `./dev telemetry stage --name intake --event start`. Restate the request;
    ambiguity that changes the contract → one clarifying question NOW (cheap
    here, a wrong PR later).
 2. **localize** — `neohaskell-localizer` skill. Output: capability IDs +
@@ -42,17 +51,17 @@ intake ─ localize ─ spec ─▶ DRAFT PR ══ GATE 1 (maintainer) ══�
    — it's part of what the maintainer approves.
 4. **GATE 1** — open a **draft PR** whose diff is the spec (+ADR, +red repro).
    Park: `./dev pipeline park` is NOT used here — waiting on the gate is
-   `waiting_on_human_s`, not a failure. **How approval arrives (server-local
-   canonical flow):** the orchestrator runs in a persistent local Claude/tmux
-   session on the server, so GitHub Actions is never responsible for resuming
-   it. Approval is delivered out-of-band — through RAMSYS/Discord or direct
-   local interaction — and the orchestrator records it and resumes the *same*
-   tmux session in place. Recording IS the authorization: `./dev pipeline
-   approve <gate> --by <who> --via <channel>` (e.g. `approve spec --by Nick
-   --via discord`, or `--via local`) writes it into `.pipeline/state.json`,
-   which is the authorization record; advancing past a gate is mechanically
-   blocked without it, then `./dev pipeline advance`. A GitHub PR comment is
-   optional *communication* only — never the mechanism that resumes local work.
+   `waiting_on_human_s`, not a failure. **How approval arrives (local-agent
+   canonical flow):** the orchestrator remains in a persistent local agent
+   session; hosted CI is never responsible for resuming it. Approval is
+   delivered out-of-band — through RAMSYS/Discord or direct local interaction
+   — and the orchestrator records it before resuming the local run. Recording
+   IS the authorization: `./dev pipeline approve <gate> --by <who> --via
+   <channel>` (e.g. `approve spec --by Nick --via discord`, or `--via local`)
+   writes it into `.pipeline/state.json`, which is the authorization record;
+   advancing past a gate is mechanically blocked without it, then `./dev
+   pipeline advance`. A GitHub PR comment is optional *communication* only —
+   never the mechanism that resumes local work.
 5. **design-review** — `./dev spec-check --plan <spec>` → `design_reviews`.
    `security` → `neohaskell-security-design-review` skill; `perf` →
    `neohaskell-performance-design-review`. **Perf** records are committed to
@@ -65,9 +74,12 @@ intake ─ localize ─ spec ─▶ DRAFT PR ══ GATE 1 (maintainer) ══�
 6. **plan** — order the work: which files in what sequence, which neighbor
    module each copy-adapts from (`neohaskell-implementer` discipline).
 7. **test-writing** — tests FIRST, from the criteria table, red before any
-   implementation. Never weaken an existing expectation: the
-   expectation-guard hook blocks it without the maintainer marker
-   (`.claude/allow-expectation-edits`). New spec modules: register in the
+   implementation. Never weaken an existing expectation. Under the harness
+   configured by `.claude/settings.json`, the expectation-guard hook blocks it
+   without the maintainer marker (`.claude/allow-expectation-edits`). Pi does
+   not install those hooks: before continuing in Pi, run `python3
+   .claude/hooks/expectation-guard.py --pr-diff
+   <base-ref>`; CI runs the same census. New spec modules: register in the
    suite's `Main.hs` AND cabal `other-modules` (only `nhcore-test` is
    hspec-discovered).
 8. **implement** — `neohaskell-implementer` skill; repair loop via
@@ -80,40 +92,54 @@ intake ─ localize ─ spec ─▶ DRAFT PR ══ GATE 1 (maintainer) ══�
    b. targeted regression: `./dev spec-check --plan <spec>` →
       `test_impact_globs` → run those suites
    c. `./dev lint` + `./dev spec-drift <spec>` (the promise check)
-   d. full suite (`./dev test-all`) only here, once, at PR-ready
-10. **pr** — flip the draft to ready-for-review (this re-triggers the full CI
-    matrix; drafts run only the cheap checks). PR body: spec link, criteria →
-    test mapping, review records. **Flip the ADR's `## Status` to
-    `Implemented`** here (and the matching row in `docs/decisions/README.md`,
-    then `./dev adr-website` to resync the landing page) — an ADR whose code has
-    shipped must not still read `Proposed`/`Accepted`; `./dev adr-check` gates
-    file↔index consistency, and `Implemented` is an accepted alias of
-    `Accepted`. GATE 2 is the maintainer's normal review.
-11. **ci** — **not a single pass: loop until the checks and the review bot both
-    settle green.** Each round: watch checks → read every new bot comment →
-    triage → push the fix → wait for re-review. Repeat until CodeRabbit reports
-    no outstanding actionable comments (its review state leaves
-    `CHANGES_REQUESTED`) *and* the check matrix is green. A round that changes
-    generated artifacts (`codemap/**`, `CHANGELOG.md`) must re-run its
-    generator, never hand-edit — hand-editing is what breaks `codemap-sync`.
-    Triage rule: fix real findings; **decline with a stated reason** (as a reply
-    on the comment, so the record is on the PR) when the finding is wrong or
-    targets a generated file whose formatting the generator owns. Merge is the
-    maintainer's.
+   d. PR-ready contract gates: `./dev spec-check --criteria-tests origin/main`,
+      `./dev spec-check --reviews-local origin/main`, `./dev spec-check
+      --reviews-pr origin/main`, and `./dev changelog --check origin/main`
+   e. full suite once with mandatory dependencies: `./dev test-all
+      --require-all`. A missing PostgreSQL or Hurl prerequisite is red, never a
+      skipped-green result.
+   f. acceptance as the user runs it: `./dev testbed`
+10. **pr** — prepare the final substantive commit, then flip the draft to
+    ready-for-review (this triggers the full CI matrix; drafts run only cheap
+    checks). PR body: spec link, criteria → test mapping, review records. **Flip
+    the ADR's `## Status` to `Implemented`** here (and the matching row in
+    `docs/decisions/README.md`, then `./dev adr-website` to resync the landing
+    page); run `./dev adr-check`. GATE 2 is the maintainer's normal review.
+11. **ci + GATE 2 converge** — maintainer review and CI/review-bot stabilization
+    are concurrent conditions on the same substantive HEAD, not serial stages.
+    Each CI round: watch checks → read every new bot comment → triage → push the
+    fix → wait for re-review. Repeat until CodeRabbit has no outstanding
+    actionable comments (its review state leaves `CHANGES_REQUESTED`), the
+    required check matrix is green, and the maintainer has approved that HEAD.
+    Generated artifacts (`codemap/**`, `CHANGELOG.md`) are regenerated, never
+    hand-edited. Fix real findings; decline incorrect/generated-file findings
+    with a reason on the PR.
 
-Close-out (at **PR-ready**, before the merge — NOT after): **stop the open stage
-first** (`./dev telemetry stage --name pr --event stop`) — `finish` snapshots
-whatever is recorded, so a stage left open is written to `runs.jsonl` with a null
-`stop` and stays wrong forever. Then `./dev telemetry
-finish` (outcome `ok`) appends the run's line to `telemetry/runs.jsonl`, and
-`./dev telemetry golden` writes `telemetry/golden/<run_id>/` (request.md,
-spec.md, final.diff, verdict.md, transcript.md). `runs.jsonl` is **tracked**
-(`.gitattributes merge=union`), so commit it **into the PR** — it lands on
-`main` via the squash-merge; there is no post-merge job to commit it (and
-`main` is push-protected). The golden archive is **gitignored** — a local
-reference artifact, never pushed (like the security review). Do this once CI is
-green and the maintainer has approved; if a post-merge regression flips it,
-`post-merge-guard.yml` marks it a revert-candidate.
+    **Finalization tail (before merge):** once both conditions hold, make no
+    further product/doc changes. Stop the actual open stage with `./dev telemetry
+    stage --name ci --event stop`. Capture the final diff, then archive it before
+    `finish` removes the current-run state:
+
+    ```sh
+    git diff origin/main...HEAD > /tmp/<run-id>.final.diff
+    ./dev telemetry golden --run-id <run-id> --request-file <request.md> \
+      --spec-file <spec.md> --diff-file /tmp/<run-id>.final.diff \
+      --verdict "CI and Gate 2 satisfied" [--transcript-file <transcript.md>]
+    ./dev telemetry finish --outcome ok
+    ./dev pipeline complete --outcome ok
+    ```
+
+    `complete --outcome ok` archives the final local state under
+    `.pipeline/completed/` and removes `state.json`, so the next run can
+    initialize without `--force`.
+    Commit only the tracked `telemetry/runs.jsonl` finalization delta and push
+    it. That metadata-only push starts a final check tail: wait for required
+    checks and re-obtain GATE 2 only if branch protection invalidated it. Do not
+    change the finished telemetry line or product code in this tail. A
+    substantive failure starts a new correction run rather than rewriting the
+    append-only ledger. The golden archive is gitignored and remains local.
+    Merge remains the maintainer's action. Post-merge `post-merge-guard.yml`
+    marks a regression as a revert-candidate.
 
 ## Failure policy (time-boxes → retry → escalate → park)
 
@@ -124,8 +150,9 @@ the weekly telemetry review recalibrates from measured stage times):
 |---|---|---|---|---|---|---|---|---|---|
 | 10m | 10m | 30m | 20m | 15m | 30m | 45m | 30m | 10m | 45m |
 
-On breach: **retry once** (fresh attempt, same plan) → **escalate model
-tier** (haiku→sonnet→opus; record `model` per stage in telemetry) → **park**:
+On breach: **retry once** (fresh attempt, same plan) → **escalate to the
+next available model tier** (record the actual `model` per stage in telemetry)
+→ **park**:
 `./dev pipeline park --label <taxonomy> --note <one-liner>` + a structured
 report comment on the PR/issue: stage, elapsed, label, last error verbatim,
 what was tried. **A parked report beats a wrong PR** — parking is the
@@ -133,12 +160,20 @@ pipeline succeeding at honesty, not failing at work. Labels are the closed
 taxonomy (SCHEMA.md); `other` requires `failure_note` and a weekly-review
 reclassification.
 
-**Closing a non-`ok` run carries the class-fix (Phase 6, enforced).**
-`./dev telemetry finish --outcome {parked,failed} --failure-label <l>
---asset-delta <type>:<destination>` — the delta is the fix for the *class*
-(a new alias, phrasebook entry, hlint rule, hook, hot-card line…) that ships
-alongside the retry. `none:<reason>` is the honest escape when no asset applies;
-the emitter refuses to close a failed/parked run without one.
+**Closing a non-`ok` run carries the class-fix (Phase 6, enforced).** Stop the
+open stage first; then close telemetry and resume state with the same outcome:
+
+```sh
+./dev telemetry stage --name <current-stage> --event stop
+./dev telemetry finish --outcome <parked|failed> --failure-label <label> \
+  --asset-delta <type>:<destination>
+./dev pipeline complete --outcome <parked|failed>
+```
+
+The delta fixes the *class* (alias, phrasebook entry, hlint rule, hook, hot-card
+line…) alongside the retry. `none:<reason>` is the honest escape when no asset
+applies. The emitter refuses a missing delta; `complete` archives and releases
+`state.json`, so parked/failed runs cannot block the next correction run.
 
 ## Resume contract
 
