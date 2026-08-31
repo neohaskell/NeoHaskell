@@ -60,7 +60,25 @@ rustPlatform.buildRustPackage {
   version = cargoToml.package.version;
   inherit src;
 
-  cargoLock.lockFile = ../neo/Cargo.lock;
+  cargoLock = {
+    lockFile = ../neo/Cargo.lock;
+
+    # nixpkgs' pinned importCargoLock still defaults to crates.io's API download
+    # endpoint, which can reject unauthenticated fixed-output fetches with 403.
+    # Override that registry's download base with crates.io's canonical static
+    # host; importCargoLock keeps verifying every tarball against Cargo.lock.
+    extraRegistries."https://github.com/rust-lang/crates.io-index" =
+      "https://static.crates.io/crates";
+  };
+
+  # importCargoLock emits an extra Cargo source stanza for every override. Since
+  # this override replaces crates-io itself, that stanza aliases the built-in
+  # source and Cargo rejects it as a duplicate. The vendored-sources stanza is
+  # already authoritative, so remove only the redundant alias after setup.
+  preConfigure = ''
+    sed -i '/^\[source\."https:\/\/github\.com\/rust-lang\/crates\.io-index"\]$/,+2d' \
+      "$NIX_BUILD_TOP/.cargo/config.toml"
+  '';
 
   # Package check = the in-crate unit tests. `neo` is a binary crate, so unit
   # tests are `--bins` (never `--lib`). The integration/e2e suites talk to real
