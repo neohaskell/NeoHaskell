@@ -5,8 +5,8 @@ description: Orchestrate a NeoHaskell change end-to-end through the spec-gated p
 
 # The change pipeline (Phase 5)
 
-> Restored as the authoritative change process by ADR-0076. The Beads-era
-> process is historical and lives under `docs/legacy/neohaskell-beads/`.
+> Restored as the authoritative change process by ADR-0076. The superseded
+> queue-backed process was deleted; Git history is its recovery source.
 
 Exactly **two human gates**: spec approval (draft PR) and final PR review.
 Everything between them is mechanical or agent-run, resumable from

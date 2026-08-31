@@ -38,7 +38,7 @@ jobs:
       # loop stays deterministic/report-only (pure stdlib, no toolchain).
       - run: ./dev workflow-check
       # ADR-0076: prove `.pipeline` is the sole discoverable change process
-      # and the archived Beads execution assets cannot reactivate silently.
+      # and superseded queue-backed execution assets remain absent.
       - run: ./dev process-check
 
   secrets:

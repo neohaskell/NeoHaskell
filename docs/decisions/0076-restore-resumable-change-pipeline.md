@@ -43,18 +43,16 @@ Restore the contract-delta pipeline as the sole active change process:
    `.claude/allow-expectation-edits`; restoring the pipeline does not roll back
    that later hardening.
 
-The Beads change formula, queue entry point, agent skill, token hook, Dolt sync
-hook, managed Git hook wrappers, and Codex hook configuration are archived under
-`docs/legacy/neohaskell-beads/`, outside active discovery and runtime
-configuration. The private `.beads` store and its pinned remote remain only for
-historical inspection. They do not launch, schedule, authorize, or meter new
-changes. The Beads package remains in the default Nix shell only so maintainers
-can inspect the historical store; no active pipeline automation depends on it.
+All repository artifacts specific to the Beads process are deleted rather than
+archived: the `.beads` store, formulas, skills, role agents, hooks, Codex
+configuration, ignore rules, merge driver, and Nix input. Git history is the
+single recovery source. The external NeoHaskell dispatcher project was paused
+on 2026-08-31; that host-level state is outside this repository.
 
 `scripts/process-check.sh` remains a deterministic CI gate, retargeted to prove
 that exactly one pipeline is active: the `.pipeline` skill is discoverable,
-Beads-era entry points are inert, and the governing documents and ADR statuses
-agree.
+superseded queue-backed execution artifacts are absent, and the governing
+documents and ADR statuses agree.
 
 ## Preserved controls
 
@@ -79,7 +77,8 @@ This restoration does not weaken or rename the current repository gates:
 - Agents encounter one authoritative pipeline entry point.
 - The draft contract gate and full risk-tiered review flow return without
   losing post-cutover hardening.
-- Historical Beads records remain available without governing new work.
+- No superseded queue or store artifacts remain in the current tree; Git
+  history can recover them if ever needed.
 
 ### Negative
 
@@ -87,8 +86,8 @@ This restoration does not weaken or rename the current repository gates:
   `.pipeline/state.json`.
 - Maintainer authorization must be recorded honestly in local state; the state
   file proves the gate was recorded, not that the human signal was genuine.
-- Any external dispatcher configured outside this repository must be stopped or
-  reconfigured separately before this change merges.
+- The repository cannot enforce the external dispatcher's paused state; host
+  operators must keep it paused unless a future ADR deliberately restores it.
 
 ## References
 
@@ -97,4 +96,3 @@ This restoration does not weaken or rename the current repository gates:
 - [ADR-0069: Security design-review records are local-only](0069-security-reviews-are-local.md)
 - [ADR-0074: Dependabot auto-merge](0074-dependabot-auto-merge.md)
 - [ADR-0075: Change process v2](0075-change-process-v2.md)
-- [Archived Beads process](../legacy/neohaskell-beads/README.md)

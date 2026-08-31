@@ -1,18 +1,8 @@
 # ADR-0075: Change process v2 — five coarse steps, one human gate, verified auto-merge
 
 > **Superseded by [ADR-0076](0076-restore-resumable-change-pipeline.md) on
-> 2026-08-31.** The formula, skills, and hooks are preserved under
-> `docs/legacy/neohaskell-beads/` for historical diagnosis only.
->
-> Superseded the 20-step `change` formula (retired 2026-08-20). The full
-> pre-reset beads state is preserved as a release asset on the private
-> mirror: `NickSeagull/neohaskell-beads`, tag `beads-backup-2026-08-20`
-> (sha256 `e02cdb3d1f5837cf4d5ab8481cfe6e8c0a5be7e8c8645196451dcd76c60b3d33`;
-> restore by extracting over `.beads/` in a checkout and running
-> `bd doctor`). Completes the arc of
-> [ADR-0067](0067-contract-delta-spec-gate.md) →
-> beads cutover → this rebuild. At adoption, the original pipeline skill was
-> kept under `docs/legacy/`; ADR-0076 later restored it to active discovery.
+> 2026-08-31.** All implementation artifacts from this process were deleted
+> from the current tree. Git history is the recovery source.
 
 ## Status
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Deterministic coherence check for the active change process (ADR-0076).
 # Exactly one process may be discoverable: neohaskell-pipeline backed by
-# .pipeline/state.json. Beads-era execution assets remain historical only.
+# .pipeline/state.json. Superseded queue-backed execution assets stay deleted.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -9,7 +9,6 @@ fail=0
 err() { echo "process-check: $1" >&2; fail=1; }
 
 active_skill=.claude/skills/neohaskell-pipeline/SKILL.md
-legacy_root=docs/legacy/neohaskell-beads
 adr_0067=docs/decisions/0067-contract-delta-spec-gate.md
 adr_0075=docs/decisions/0075-change-process-v2.md
 adr_0076=docs/decisions/0076-restore-resumable-change-pipeline.md
@@ -17,26 +16,12 @@ adr_0076=docs/decisions/0076-restore-resumable-change-pipeline.md
 required=(
   "$active_skill"
   scripts/pipeline-state
-  "$legacy_root/README.md"
-  "$legacy_root/skills/neohaskell-change/SKILL.md"
-  "$legacy_root/skills/neohaskell-enqueue/SKILL.md"
-  "$legacy_root/skills/beads/SKILL.md"
-  "$legacy_root/formulas/change.formula.toml"
-  "$legacy_root/hooks/bd-token-tracking.py"
-  "$legacy_root/hooks/bd-dolt-sync.sh"
-  "$legacy_root/git-hooks/post-checkout"
-  "$legacy_root/git-hooks/post-merge"
-  "$legacy_root/git-hooks/pre-commit"
-  "$legacy_root/git-hooks/pre-push"
-  "$legacy_root/git-hooks/prepare-commit-msg"
-  "$legacy_root/codex/hooks.json"
-  "$legacy_root/codex/config.toml"
   "$adr_0067"
   "$adr_0075"
   "$adr_0076"
 )
 for path in "${required[@]}"; do
-  [ -e "$path" ] || err "missing required active/archive asset: $path"
+  [ -e "$path" ] || err "missing active-process asset: $path"
 done
 
 # The restored process must be discoverable and internally coherent.
@@ -54,39 +39,50 @@ grep -qF 'Any request that should end in a PR runs the `neohaskell-pipeline` ski
 grep -qF '.pipeline/state.json' AGENTS.md || err "AGENTS.md does not name the resume contract"
 
 if grep -qF 'WARNING: ./dev pipeline is deprecated' dev; then
-  err "./dev pipeline still emits the Beads-era deprecation warning"
+  err "./dev pipeline still emits the retired queue warning"
 fi
 if ! grep -qE '^  pipeline\) exec scripts/pipeline-state ' dev; then
   err "./dev pipeline is not directly registered to scripts/pipeline-state"
 fi
 
-# Beads-era entry points and automatic hooks must stay outside discovery and
-# runtime configuration. The historical .beads store itself is intentionally
-# retained for inspection.
-for path in \
-  .claude/skills/neohaskell-change \
-  .claude/skills/neohaskell-enqueue \
-  .claude/skills/beads \
-  .agents/skills/beads \
-  .beads/formulas/change.formula.toml \
-  .beads/hooks \
-  .claude/hooks/bd-token-tracking.py \
-  .claude/hooks/bd-dolt-sync.sh \
-  .codex/hooks.json \
-  .codex/config.toml; do
-  [ ! -e "$path" ] || err "deprecated Beads execution asset is still active: $path"
+# The superseded process is recoverable from Git history, not from artifacts in
+# the current tree. Keep this list explicit so any attempted reintroduction is a
+# reviewable process-check change.
+retired_paths=(
+  .beads
+  .agents/skills/beads
+  .claude/agents
+  .claude/skills/beads
+  .claude/skills/neohaskell-change
+  .claude/skills/neohaskell-enqueue
+  .claude/hooks/bd-token-tracking.py
+  .claude/hooks/bd-dolt-sync.sh
+  .codex/config.toml
+  .codex/hooks.json
+  docs/legacy/neohaskell-beads
+)
+for path in "${retired_paths[@]}"; do
+  [ ! -e "$path" ] || err "superseded process artifact still exists: $path"
 done
 
+if git ls-files | grep -qE '(^|/)(\.beads|neohaskell-beads|beads)(/|$)|bd-(token-tracking|dolt-sync)'; then
+  err "tracked Beads artifact remains in the current tree"
+fi
 if grep -qE 'bd-token-tracking|bd prime|bd-dolt-sync' .claude/settings.json; then
-  err ".claude/settings.json still activates Beads automation"
+  err ".claude/settings.json still activates retired automation"
 fi
 if grep -qE 'bd ready|neohaskell-enqueue|BEGIN BEADS INTEGRATION|Beads Issue Tracker' AGENTS.md; then
-  err "AGENTS.md still advertises Beads work intake"
+  err "AGENTS.md still advertises retired work intake"
 fi
-grep -qF 'deprecated for change execution' .beads/README.md || err ".beads/README.md does not mark the store as historical"
-grep -qF 'Historical only' "$legacy_root/skills/neohaskell-change/SKILL.md" || err "archived change skill lacks its historical-only guard"
-grep -qF 'Historical only' "$legacy_root/skills/neohaskell-enqueue/SKILL.md" || err "archived enqueue skill lacks its historical-only guard"
-grep -qF 'DEPRECATED by ADR-0076' "$legacy_root/formulas/change.formula.toml" || err "archived formula lacks its deprecation guard"
+if grep -qiE 'beads|inputs\.beads|packages.*bd' flake.nix flake.lock; then
+  err "Nix configuration still contains the retired Beads dependency"
+fi
+if grep -qE '\.beads|beads-credential|\.dolt/' .gitignore .gitattributes; then
+  err "Git ignore/merge configuration still contains retired store rules"
+fi
+grep -qF 'implementation artifacts from this process were deleted' "$adr_0075" || err "ADR-0075 does not record artifact deletion"
+grep -qF 'Git history is the' "$adr_0076" || err "ADR-0076 does not name Git history"
+grep -qF 'single recovery source' "$adr_0076" || err "ADR-0076 does not make Git history the recovery source"
 
 status_of() {
   awk '/^## Status$/ { getline; getline; print; exit }' "$1"
@@ -98,6 +94,6 @@ grep -qF '| [0075](0075-change-process-v2.md) | Change process v2: five coarse s
 grep -qF '| [0076](0076-restore-resumable-change-pipeline.md) | Restore the resumable contract-delta change pipeline | Accepted |' docs/decisions/README.md || err "ADR index omits accepted ADR-0076"
 
 if [ "$fail" -eq 0 ]; then
-  echo "process-check: OK — .pipeline is authoritative; Beads execution assets are historical"
+  echo "process-check: OK — .pipeline is authoritative; superseded queue artifacts are absent"
 fi
 exit "$fail"

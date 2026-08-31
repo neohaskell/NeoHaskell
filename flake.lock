@@ -16,24 +16,6 @@
         "type": "github"
       }
     },
-    "beads": {
-      "inputs": {
-        "nixpkgs": "nixpkgs"
-      },
-      "locked": {
-        "lastModified": 1786769102,
-        "narHash": "sha256-h5zxEH4QKXibIv3sRf8oqrf3himm9JMKLmP/JfTbqFc=",
-        "owner": "gastownhall",
-        "repo": "beads",
-        "rev": "7505e173f2659ba6e1f955b86d81a4f9e21810ca",
-        "type": "github"
-      },
-      "original": {
-        "owner": "gastownhall",
-        "repo": "beads",
-        "type": "github"
-      }
-    },
     "cabal-32": {
       "flake": false,
       "locked": {
@@ -491,22 +473,6 @@
         "type": "github"
       }
     },
-    "nixpkgs": {
-      "locked": {
-        "lastModified": 1782847189,
-        "narHash": "sha256-twXPFqFsrrY5r28Zh7Homgcp2gUMBgQ6WDS98Q/3xFI=",
-        "owner": "NixOS",
-        "repo": "nixpkgs",
-        "rev": "b6018f87da91d19d0ab4cf979885689b469cdd41",
-        "type": "github"
-      },
-      "original": {
-        "owner": "NixOS",
-        "ref": "nixos-25.11",
-        "repo": "nixpkgs",
-        "type": "github"
-      }
-    },
     "nixpkgs-2305": {
       "locked": {
         "lastModified": 1705033721,
@@ -622,7 +588,6 @@
     },
     "root": {
       "inputs": {
-        "beads": "beads",
         "flake-utils": "flake-utils",
         "haskellNix": "haskellNix",
         "nixpkgs": [
