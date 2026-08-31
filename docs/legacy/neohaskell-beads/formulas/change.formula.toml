@@ -1,3 +1,4 @@
+# DEPRECATED by ADR-0076. Historical only; do not pour this formula.
 formula = "change"
 description = "Change process v2 (ADR-0075): one molecule, request to merged PR, 5 coarse steps. Speed-first rebuild of the retired 20-step formula: spec approval is the only unconditional human gate; verify is an independent opus verdict (V1-V9) that, together with green CI, authorizes auto-merge for non-breaking changes. Security/perf review downscoped from heavyweight design-review stages to the cheap concrete V9 sanity pass (ADR-0075, reversible). Input: a request. Output: a merged PR. Stage playbook: .claude/skills/neohaskell-change/SKILL.md."
 

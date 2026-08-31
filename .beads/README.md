@@ -1,6 +1,13 @@
-# Beads - AI-Native Issue Tracking
+# Beads historical store — deprecated for change execution
 
-Welcome to Beads! This repository uses **Beads** for issue tracking - a modern, AI-native tool designed to live directly in your codebase alongside your code.
+> **Not an active work-intake or pipeline surface.** ADR-0076 restored the
+> resumable `.pipeline/state.json` workflow. This directory remains only so
+> private historical Beads records and their remote pin stay inspectable. The
+> archived formula, skills, and automation live in
+> `docs/legacy/neohaskell-beads/`.
+
+The remaining text is the original Beads CLI reference retained for historical
+store maintenance.
 
 ## What is Beads?
 

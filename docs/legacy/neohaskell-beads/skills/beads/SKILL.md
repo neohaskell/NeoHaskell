@@ -1,9 +1,12 @@
 ---
 name: beads
-description: Use when working in a repository that uses bd or Beads for durable project task tracking, issue dependencies, blocker management, multi-session handoff, or shared work memory. Trigger when the user asks to find ready work, claim or close tasks, create follow-up work, inspect blockers, recover project context, or choose between local planning and persistent project tracking.
+description: Historical copy of the Beads agent skill from NeoHaskell's superseded queue-backed change process. Do not invoke in this repository.
 ---
 
-# Beads
+# Beads — archived
+
+> Historical only. NeoHaskell no longer discovers this skill or uses Beads to
+> launch and govern changes; see ADR-0076.
 
 Use Beads as the shared project task system. Local plans, scratch files, and personal memories are useful, but they are not the durable source of truth for project work.
 

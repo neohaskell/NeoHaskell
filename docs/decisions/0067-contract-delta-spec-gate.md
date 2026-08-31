@@ -1,6 +1,11 @@
 # ADR-0067: Contract-delta spec gate and resumable draft-PR flow
 
 > Part of #715 — pipeline plan Phase 5 (spec gate + verification architecture).
+>
+> Restored as the active process by [ADR-0076](0076-restore-resumable-change-pipeline.md).
+> ADR-0076 amends the approval transport: a trusted maintainer signal authorizes
+> continuation, and the local `./dev pipeline approve` record is the
+> machine-enforced gate.
 
 ## Status
 

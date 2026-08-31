@@ -43,39 +43,15 @@ The only exception to this rule is if you COMPLETELY EXHAUST all the resources h
 - Localization + API discovery + codemap regeneration: **`codemap/README.md`** (use the `neohaskell-localizer` skill at plan time). Never explore the tree to find where things live. Training-data APIs don't exist here; GHC "not in scope" in `./dev check` = an invented API — resolve via `./dev api`.
 - Implementing any `.hs` change? Use the `neohaskell-implementer` skill (copy-adapt discipline + repair protocol).
 
-## Work intake
+## Change flow (Phase 5) — spec-gated, two human touchpoints
 
-New work enters through the **bd issue queue**, not by an agent self-triggering
-a skill. Nick introduces requests one at a time — "encola GH issue N" →
-the **`neohaskell-enqueue`** skill creates ONE request bead and stops; the
-dispatcher daemon claims it and pours the
-**`change`** formula v2 (`.beads/formulas/change.formula.toml`, ADR-0075):
-one molecule, **five coarse steps** — spec → spec-approval (the only
-unconditional human gate, Nick+Fable) → build → verify (opus V1–V9 verdict)
-→ pr (auto-merge on green when non-breaking; GATE 2 otherwise). The stage
-playbook is the `neohaskell-change` skill. Run `bd ready` to see what's
-claimable, `bd show <id>` for details, `bd prime` for the full workflow.
-Never split the 5 steps into finer beads — over-atomization is the failure
-mode ADR-0075 exists to prevent.
-
-Beads sync goes to the **private mirror** `NickSeagull/neohaskell-beads`
-(`refs/dolt/data`), pushed automatically by the SessionEnd hook — never
-wire the Dolt remote to the public origin (beads carry candid agent notes;
-that channel publishes without human review, ADR-0075). The pinned URL
-lives in `.beads/dolt-remote`; the hook refuses to push when the actual
-remote differs from the pin. This auto-sync is standing authorization for
-this repo and overrides the managed Beads block's conservative "no Dolt
-remote sync unless explicitly asked" default further down this file.
-
-## Change flow (Phase 5) — spec-gated, two human touchpoints [DEPRECATED — moved to docs/legacy/neohaskell-pipeline/, rollback-only — see "Work intake" above]
-
-**Historical/rollback documentation only — do not invoke `neohaskell-pipeline` for new requests.** All new work goes through the `change` formula via `bd ready` (see "Work intake" above). The section below describes the retired pipeline as it was, preserved for the rollback path only.
-
-Any request that should end in a PR runs the `neohaskell-pipeline` skill (ADR-0067) — **now at `docs/legacy/neohaskell-pipeline/SKILL.md`**.
-(The pipeline-bootstrap PRs — which *build* this gate — are the one exemption; the spec gate applies to every subsequent change request.)
+Any request that should end in a PR runs the `neohaskell-pipeline` skill
+(ADR-0067, restored by ADR-0076). The pipeline-bootstrap PRs that build or
+restore this gate are the one exemption; the spec gate applies to every
+subsequent change request.
 
 - **Spec first**: `docs/changes/NNN-slug.md` from `TEMPLATE.md` — promised API diff (signatures vocabulary), `touches:` capability IDs, criteria C1..Cn each naming its proving test + level (`unit|integration|acceptance`). Bugs: C1 = the failing repro, committed red. Validate: `./dev spec-check` (CI: checks.yml `spec` job).
-- **Gate 1 = draft PR** (spec only; heavy CI skipped on drafts). Continue signal = maintainer `@claude` comment (claude.yml ignores non-maintainers). Record it: `./dev pipeline approve spec --by <who>` — advancing without it is refused.
+- **Gate 1 = draft PR** (spec only; heavy CI skipped on drafts). A maintainer's explicit signal in a trusted channel authorizes continuation; record it with `./dev pipeline approve spec --by <who> --via <channel>`. The local record in `.pipeline/state.json` is the machine-enforced gate, and advancing without it is refused.
 - **Resume contract**: `.pipeline/state.json` via `./dev pipeline` (init/status/advance/set/approve/park/resume/validate). Resume never re-plans; plan wrong → park (`wrong-localization`) + fix the asset.
 - **Risk-tiered design reviews** (post-approval, pre-implementation): `./dev spec-check --plan <spec>` routes to `neohaskell-security-design-review` / `neohaskell-performance-design-review` when `touches:` hits risk-tagged capabilities. **Perf** records (`NNN-slug.perf-review.md`) are committed next to the spec and gated at PR-ready by `./dev spec-check --reviews-pr`. **Security** records (`NNN-slug.security-review.md`) are **local-only — gitignored, never pushed** (a security review maps attack surface; [ADR-0069](docs/decisions/0069-security-reviews-are-local.md)); the pipeline enforces their local presence via `./dev spec-check --reviews-local` before flipping the PR to ready.
 - **Verification order**: criteria tests red → implement → green at declared levels → test-impact suites (from `--plan`) → `./dev lint` + `./dev spec-drift <spec>` → full suite once at PR-ready.
@@ -89,7 +65,7 @@ Any request that should end in a PR runs the `neohaskell-pipeline` skill (ADR-00
 - **Kill switch**: a maintainer comments `/revert` on a merged PR → `revert.yml` (OWNER/MEMBER-gated) runs `./dev revert <sha>` to open a revert PR. Never merges it.
 - **Dependency PRs** ([ADR-0074](docs/decisions/0074-dependabot-auto-merge.md)): `dependabot-auto-merge.yml` enables GitHub's native auto-merge on Dependabot **patch/minor** PRs — GitHub holds them until every *required* check is green, so the workflow never judges CI itself. **Majors** (and any group containing one) are labelled `dependency-major` and never auto-merge; `dependabot-major-review.yml` (a `workflow_run` on the above — base-repo context is the only place Actions secrets exist for a Dependabot PR) posts Claude's breaking-change/migration analysis. That file always runs from the **default branch**, so it cannot be tested from a PR. Corollary: a CI gate that is not a required check is decoration — add it to branch protection.
 - **Changelog**: generated from specs — `./dev changelog` (breaking = a removed signature line ⇒ mandatory migration note); `--check` gates it at PR-ready. Never hand-write `CHANGELOG.md`.
-- **Learning loop** (updated by [ADR-0075](docs/decisions/0075-change-process-v2.md)): the `./dev telemetry` emitters (`finish --asset-delta`, consult logs, runs.jsonl, golden) are **retired** — beads status transitions plus the dispatcher token hook are the telemetry now. Class-fix discipline is delta-si-repite: closing a parked/failed bead whose failure label already occurred before (`bd list --label <label>`, plus `--status=closed`) requires shipping a class fix with the retry; a first occurrence needs only the structured park report. The deterministic weekly `./dev retrospect` digest (`retrospect.yml`) stays.
+- **Learning loop**: closing a failed/parked run records a class-fix (`./dev telemetry finish --asset-delta`, enforced); an `ok` run that ships a class-fix records it via `--improvement <type>:<dest>` (optional). The deterministic weekly `./dev retrospect` digest (automated by `retrospect.yml`, schedule + dispatch) plus the `neohaskell-retrospective-miner` skill turn recurring friction into ≤5 contract-validated recommendations. **Activation** waits on real runs accumulating.
 
 ## Dialect enforcement (Phase 2, live since 2026-07-07)
 
@@ -110,63 +86,3 @@ Three layers, in feedback order:
 ## Project brain
 
 Boot from `docs/`: `docs/charter.md` (mission, horizon, no-goals), `docs/decisions/` (ADRs). The charter governs priority disputes.
-
-<!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:970c3bf2 -->
-## Beads Issue Tracker
-
-This project uses **bd (beads)** for issue tracking. Run `bd prime` to see full workflow context and commands.
-
-### Quick Reference
-
-```bash
-bd ready              # Find available work
-bd show <id>          # View issue details
-bd update <id> --claim  # Claim work
-bd close <id>         # Complete work
-```
-
-### Rules
-
-- Use `bd` for ALL task tracking — do NOT use TodoWrite, TaskCreate, or markdown TODO lists
-- Run `bd prime` for detailed command reference and session close protocol
-- Use `bd remember` for persistent knowledge — do NOT use MEMORY.md files
-
-**Architecture in one line:** issues live in a local Dolt DB; sync uses `refs/dolt/data` on your git remote; `.beads/issues.jsonl` is a passive export. See https://github.com/gastownhall/beads/blob/main/docs/SYNC_CONCEPTS.md for details and anti-patterns.
-
-## Agent Context Profiles
-
-The managed Beads block is task-tracking guidance, not permission to override repository, user, or orchestrator instructions.
-
-- **Conservative (default)**: Use `bd` for task tracking. Do not run git commits, git pushes, or Dolt remote sync unless explicitly asked. At handoff, report changed files, validation, and suggested next commands.
-- **Minimal**: Keep tool instruction files as pointers to `bd prime`; use the same conservative git policy unless active instructions say otherwise.
-- **Team-maintainer**: Only when the repository explicitly opts in, agents may close beads, run quality gates, commit, and push as part of session close. A current "do not commit" or "do not push" instruction still wins.
-
-## Session Completion
-
-This protocol applies when ending a Beads implementation workflow. It is subordinate to explicit user, repository, and orchestrator instructions.
-
-1. **File issues for remaining work** - Create beads for anything that needs follow-up
-2. **Run quality gates** (if code changed) - Tests, linters, builds
-3. **Update issue status** - Close finished work, update in-progress items
-4. **Handle git/sync by active profile**:
-   ```bash
-   # Conservative/minimal/default: report status and proposed commands; wait for approval.
-   git status
-
-   # Team-maintainer opt-in only, unless current instructions forbid it:
-   git pull --rebase
-   bd dolt push
-   git push
-   git status
-   ```
-5. **Hand off** - Summarize changes, validation, issue status, and any blocked sync/commit/push step
-
-**Critical rules:**
-- Explicit user or orchestrator instructions override this Beads block.
-- Do not commit or push without clear authority from the active profile or the current user request.
-- If a required sync or push is blocked, stop and report the exact command and error.
-<!-- END BEADS INTEGRATION -->
-
-<!-- The BEADS CODEX SETUP block was removed on purpose: it duplicated the
-     canonical Beads Issue Tracker block above (MD024) and Codex reads this
-     same file. Do not let `bd setup codex` re-inject it. -->

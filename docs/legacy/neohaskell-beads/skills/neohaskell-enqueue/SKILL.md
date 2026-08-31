@@ -1,9 +1,12 @@
 ---
 name: neohaskell-enqueue
-description: Use when Nick asks to enqueue work into the change process — "encola GH issue 123", "enqueue issue #123", "mete esta tarea en la cola", "queue this feature/bug". Creates the REQUEST bead that the dispatcher daemon claims and pours as a change-formula-v2 molecule (ADR-0075). This skill only enqueues — it never starts executing the work, never pours the formula by hand, and never claims the bead; the dispatcher owns everything after bd create.
+description: Historical record of the superseded Beads queue entry point. Do not invoke; active changes use the neohaskell-pipeline skill (ADR-0076).
 ---
 
-# Enqueue a request into the change process
+# Enqueue a request into the change process — deprecated
+
+> Historical only. The dispatcher queue is no longer NeoHaskell's work-intake
+> path; the active process is `.claude/skills/neohaskell-pipeline/SKILL.md`.
 
 The contract: Nick names a request → ONE request bead exists → the
 dispatcher daemon does the rest (claims it, pours the `change` molecule,

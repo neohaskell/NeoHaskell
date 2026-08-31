@@ -1,9 +1,12 @@
 ---
 name: neohaskell-change
-description: Stage playbook for executing steps of the `change` formula v2 (ADR-0075) — the 5-step molecule that takes a request from spec to merged PR. Use when claiming or executing any bead poured from the change formula (spec, spec-approval, build, verify, pr), when parking a stuck step, or when recording a spec approval. Covers the failure policy (time-box, retry, model escalation, park), the V1-V9 verify verdict, and the auto-merge rule. Do not use the retired neohaskell-pipeline skill (docs/legacy/) or re-create per-step micro-beads.
+description: Historical record of the superseded Beads change formula. Do not invoke; active changes use the neohaskell-pipeline skill and .pipeline/state.json (ADR-0076).
 ---
 
-# The change process v2 (ADR-0075)
+# The change process v2 (ADR-0075) — deprecated
+
+> Historical only. This playbook is outside agent discovery and must not run.
+> The active process is `.claude/skills/neohaskell-pipeline/SKILL.md`.
 
 One molecule per request, five coarse beads:
 

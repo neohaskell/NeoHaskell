@@ -37,8 +37,8 @@ jobs:
       # Static workflow wiring: hidden-artifact upload opt-in + retrospect
       # loop stays deterministic/report-only (pure stdlib, no toolchain).
       - run: ./dev workflow-check
-      # ADR-0075 process docs are triplicated by design (formula/skill/ADR
-      # each self-contained); this catches them drifting apart.
+      # ADR-0076: prove `.pipeline` is the sole discoverable change process
+      # and the archived Beads execution assets cannot reactivate silently.
       - run: ./dev process-check
 
   secrets:
@@ -52,8 +52,8 @@ jobs:
       # Pinned binary, not gitleaks-action (the action needs an org license).
       # Scans the working tree, not git history: deterministic on the state
       # being merged, no permanent red from historical noise. --redact keeps
-      # any finding out of public CI logs. ADR-0075: deterministic checks
-      # live here; agents (verify V9) only check what needs judgment.
+      # any finding out of public CI logs. Deterministic security checks stay
+      # in CI; design-review agents handle only what needs judgment.
       - name: Install gitleaks (pinned + checksum)
         run: |
           curl -sSfL -o gitleaks.tar.gz https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz

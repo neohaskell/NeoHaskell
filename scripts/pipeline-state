@@ -8,7 +8,7 @@ re-plans** — a run continued after the maintainer's signal picks up the
 recorded plan verbatim; if the plan is wrong, the run is parked and re-entered
 from the top, visibly.
 
-Stage names are the telemetry schema v2 canonical list (telemetry/SCHEMA.md)
+Stage names are the telemetry schema v4 canonical list (telemetry/SCHEMA.md)
 — one vocabulary across state, telemetry lines, and the pipeline skill.
 
 Commands:
