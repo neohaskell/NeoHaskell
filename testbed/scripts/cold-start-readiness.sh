@@ -8,6 +8,7 @@ readonly ready_budget_ms=120000
 readonly bootstrap_budget_ms=1200000
 readonly port=8080
 readonly base_url="http://[::1]:${port}"
+cabal build exe:nhtestbed >/dev/null
 readonly app_binary="$(cabal list-bin exe:nhtestbed)"
 readonly sizes=(1000 10000 100000)
 readonly log_dir="${TMPDIR:-/tmp}/neohaskell-cold-start"
@@ -27,6 +28,24 @@ mkdir -p "$log_dir"
 
 now_ms() {
   python3 -c 'import time; print(int(time.monotonic() * 1000))'
+}
+
+wait_for_log() {
+  local pattern="$1"
+  local log_file="$2"
+  local budget_ms="$3"
+  local started
+  started="$(now_ms)"
+  while true; do
+    if grep -q "$pattern" "$log_file"; then
+      return 0
+    fi
+    if (( $(now_ms) - started >= budget_ms )); then
+      echo "Timed out waiting for log field ${pattern} in ${log_file}" >&2
+      return 1
+    fi
+    sleep 0.05
+  done
 }
 
 wait_for_status() {
@@ -120,7 +139,7 @@ SQL
   fi
 
   hurl --test --ipv6 testbed/tests/scenarios/cold-start-readiness.hurl
-  ready_status="$(curl --noproxy '*' -g -sS -o /dev/null -w '%{http_code}' "${base_url}/ready")"
+  ready_status="$(curl --noproxy '*' -g -sS -o /dev/null -w '%{http_code}' "${base_url}/ready" 2>/dev/null || true)"
   if [[ "$ready_status" != "503" ]]; then
     echo "/ready was ${ready_status} when /health first bound for ${size} events; expected 503" >&2
     exit 1
@@ -129,9 +148,9 @@ SQL
   if [[ "$size" == "1000" ]]; then
     wait_for_status /ready 200 "$ready_budget_ms"
     curl --noproxy '*' -g -fsS "${base_url}/queries/cart-summary" | python3 -c 'import json,sys; body=json.load(sys.stdin); assert body["total"] >= 1'
-    grep -q 'events_replayed' "$log_file"
-    grep -q 'lag_from_head' "$log_file"
-    grep -q 'duration_seconds' "$log_file"
+    wait_for_log 'events_replayed' "$log_file" 5000
+    wait_for_log 'lag_from_head' "$log_file" 5000
+    wait_for_log 'duration_seconds' "$log_file" 5000
     if grep -Eq 'postgres(ql)?://|password[=:]' "$log_file"; then
       echo "Cold-start log exposed a connection string or password" >&2
       exit 1
