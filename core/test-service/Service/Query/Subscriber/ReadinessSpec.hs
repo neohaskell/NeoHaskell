@@ -180,6 +180,34 @@ spec = do
       observed <- ConcurrentVar.peek seen
       observed |> shouldBe (Array.fromLinkedList [StreamPosition 0, StreamPosition 1])
 
+    it "treats an empty captured head as an empty historical range" \_ -> do
+      baseStore <- InMemory.new |> Task.mapError toText
+      eventMeta <- EventMetadata.new
+      let entityName = EntityName "empty-replay-head-entity"
+      let laterEvent =
+            Event
+              { entityName
+              , streamId = StreamId "empty-replay-head-stream"
+              , event = Json.null
+              , metadata = eventMeta { globalPosition = Just (StreamPosition 0) }
+              }
+      let racingStore = baseStore
+            { readAllEventsBackwardFromFiltered = \_ _ _ -> Stream.fromArray Array.empty
+            , readAllEventsForwardFromFiltered = \_ _ _ ->
+                Stream.fromArray (Array.wrap (AllEvent laterEvent))
+            }
+      replayed <- ConcurrentVar.containing (0 :: Int)
+      let updater = QueryUpdater
+            { queryName = "empty-replay-head-query"
+            , updateQuery = \_ -> replayed |> ConcurrentVar.modify (\count -> count + 1)
+            }
+      let registry = Registry.register entityName updater Registry.empty
+      subscriber <- Subscriber.new racingStore registry
+      Subscriber.rebuildAllAsync subscriber rebuildOptionsDefault
+        |> Task.mapError (show .> toText)
+      replayedCount <- ConcurrentVar.peek replayed
+      replayedCount |> shouldBe 0
+
     it "multi-query rebuild performs one entity-filtered pass" \_ -> do
       baseStore <- InMemory.new |> Task.mapError toText
       filteredReads <- ConcurrentVar.containing (0 :: Int)

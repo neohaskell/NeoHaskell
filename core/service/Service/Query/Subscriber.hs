@@ -767,9 +767,11 @@ runReplayPages subscriber maybeCoordinator options startPosition stats replayedC
             ( \(lastPosition, count) message ->
                 case message of
                   AllEvent rawEvent -> do
-                    let withinReplayHead = case (replayHead, rawEvent.metadata.globalPosition) of
-                          (Just headPosition, Just eventPosition) -> eventPosition <= headPosition
-                          _ -> True
+                    let withinReplayHead = case replayHead of
+                          Nothing -> False
+                          Just headPosition -> case rawEvent.metadata.globalPosition of
+                            Just eventPosition -> eventPosition <= headPosition
+                            Nothing -> True
                     case withinReplayHead of
                       True -> do
                         processReplayEvent subscriber maybeCoordinator rawEvent
