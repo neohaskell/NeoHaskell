@@ -21,12 +21,15 @@ new-extension-point: false
 
 ## Contract delta
 
-No exported Haskell signature changes. This change fulfills the existing
-ADR-0059 HTTP contract: `/health` becomes reachable independently of replay
-size, while `/ready` remains unavailable until the read side is genuinely at
-head.
+The replay module needs the registry's entity names before reading so it can
+make one filtered pass instead of discovering entities by scanning the whole
+log. Add a read-only accessor; existing construction and lookup interfaces are
+unchanged. The HTTP contract fulfills ADR-0059: `/health` becomes reachable
+independently of replay size, while `/ready` remains unavailable until the read
+side is genuinely at head.
 
 ```diff signatures
++ Service.Query.Registry: registeredEntityNames :: QueryRegistry -> Array EntityName
 ```
 
 ## Criteria
@@ -37,18 +40,27 @@ blocked. The remaining criteria pin the load-bearing ordering: paging first,
 then register-first overlap with exactly-once ordered delivery, then truthful
 readiness.
 
+The positional inbox has a framework-owned capacity of 1,000 events. It is not
+a user-facing tuning knob: overflow records the monotonic high-water position
+and switches to paged event-store catch-up. Retry policy is also framework-owned:
+transient event-store/checkpoint failures retry three times with 100ms, 500ms,
+and 2s delays; deterministic updater failures become `Failed` immediately. A
+later explicit rebuild invocation always resets `Failed` to `Rebuilding` and
+may recover.
+
 | ID | Behavior | Proving test | Level |
 |----|----------|--------------|-------|
-| C1 | Starting the query subscriber returns within a fixed startup budget even while historical catch-up remains blocked, so transport binding is not proportional to event count | `Service.Query.Subscriber.ReadinessSpec` "returns from start before historical catch-up completes" | unit |
+| C1 | Starting the query subscriber returns within 250ms even while historical catch-up remains blocked, so transport binding is not proportional to event count | `Service.Query.Subscriber.ReadinessSpec` "returns from start before historical catch-up completes" | unit |
 | C2 | A rebuild processes every matching event beyond the configured 1,000-event page, advances pages without a boundary skip or duplicate, and routes each event only to updaters registered for its entity | `Service.Query.Subscriber.ReadinessSpec` "replays more than chunkSize exactly once and routes by entity" | integration |
-| C3 | Subscription registers before replay; events appended while replay is active are delivered exactly once in increasing `globalPosition`, and inbox overflow falls back to positional catch-up rather than dropping an event | `Test.Service.EventStore.Subscriptions.Spec` "register-first replay overlap is ordered and gap-free" | integration |
-| C4 | Simple and Postgres use the same inclusive position contract, so replay/resume neither skips nor reapplies the boundary event | `Test.Service.EventStore.Subscriptions.Spec` "position resume is consistent across backends" | integration |
-| C5 | `/ready` is 503 before any rebuild work starts, remains 503 while any registered query is rebuilding or retrying, becomes 200 only after all queries reach head, and a checkpoint-write/rebuild failure cannot pin an unobservable `Rebuilding` state forever | `Service.Query.Subscriber.ReadinessSpec` "aggregate readiness covers every query from start through retry" | integration |
-| C6 | Catch-up reads the global log once rather than once per query, uses entity-filtered reads, and entity reconstruction reuses the configured snapshot cache rather than re-fetching complete stream history for every updater/event pair | `Service.Query.Subscriber.ReadinessSpec` "multi-query rebuild performs one entity-routed pass" | integration |
-| C7 | The Postgres event store constructs one long-lived pool at store creation, checks connections out and returns them with bracketed cleanup for each operation, and does not construct/destroy a pool per replayed event | `Service.EventStore.PostgresSpec` "replay operations reuse the store pool and release checked-out connections" | integration |
-| C8 | Rebuild progress emits `events_replayed`, `lag_from_head`, and `duration_seconds` at page boundaries and completion, including structured failure context | `Service.Query.Subscriber.ReadinessSpec` "emits bounded replay progress and failure telemetry" | unit |
-| C9 | With real Postgres, `/health` answers within the startup budget while `/ready` is 503 during replay; health-to-bind latency remains flat across seeded logs of 1k, 10k, and 100k events, and `/ready` becomes 200 only after the final event is queryable | `testbed/tests/scenarios/cold-start-readiness.hurl` | acceptance |
-| C10 | Postgres-gated query/event-store suites execute in CI instead of collapsing to pending because `POSTGRES_AVAILABLE` is absent | `Service.QueryObjectStore.PostgresSpec` "state round-trips under the threaded query name" | integration |
+| C3 | Subscription registers before replay; events appended while replay is active are delivered exactly once in increasing `globalPosition`. A 1,001-event overlap exceeds the 1,000-event inbox and recovers positionally rather than dropping an event | `Test.Service.EventStore.Subscriptions.Spec` "register-first replay overlap is ordered and gap-free after inbox overflow" | integration |
+| C4 | Simple and Postgres use the same inclusive start-position contract. Resume callers pass `checkpoint + 1`, so neither backend skips nor reapplies the checkpoint boundary | `Test.Service.EventStore.Subscriptions.Spec` "inclusive start position is consistent across backends" | integration |
+| C5 | Every registered query is `Rebuilding` before background work starts; `/ready` is 503 while any query is rebuilding/retrying and 200 only after all reach head. Transient read/checkpoint failures use the fixed three-delay retry policy, updater failures become visible `Failed`, and a later explicit rebuild resets failure state | `Service.Query.Subscriber.ReadinessSpec` "aggregate readiness covers every query from start through bounded retry" and `Service.Transport.WebSpec` "ready stays unavailable until all queries reach head" | integration |
+| C6 | Catch-up reads the filtered global log once rather than once per query and resolves entity routing before invoking updaters | `Service.Query.Subscriber.ReadinessSpec` "multi-query rebuild performs one entity-filtered pass" | integration |
+| C7 | Automatic query wiring uses `EntityFetcher.newWithCache`; repeated updates for one entity reuse the snapshot rather than re-reading complete stream history for every updater/event pair | `Service.Query.DefinitionSpec` "automatic query wiring reuses entity snapshots during replay" | integration |
+| C8 | The Postgres event store constructs one long-lived pool at store creation, uses `HasqlPool.use` for operation checkout/return, and releases the pool exactly once on close rather than constructing/destroying one per operation | `Service.EventStore.PostgresSpec` "operations reuse the store-owned pool until close" | integration |
+| C9 | Page and completion logs expose `events_replayed`, `lag_from_head`, and `duration_seconds`; failure logs include query name and position but no event payload, SQL, connection string, or credential | `testbed/tests/scenarios/cold-start-readiness.hurl` via `testbed/scripts/cold-start-readiness.sh` log assertions | acceptance |
+| C10 | With real Postgres, `/health` answers within 5s while `/ready` is 503 during replay. Across separately seeded 1k, 10k, and 100k logs, maximum minus minimum health-to-bind time is at most 2s. The 1k run also proves `/ready` becomes 200 and its final projection includes the last event | `testbed/tests/scenarios/cold-start-readiness.hurl` via `testbed/scripts/cold-start-readiness.sh` | acceptance |
+| C11 | Postgres-gated query/event-store suites execute in CI instead of collapsing to pending because `POSTGRES_AVAILABLE` is absent | `Service.QueryObjectStore.PostgresSpec` "state round-trips under the threaded query name" | integration |
 
 ## User impact
 
@@ -59,9 +71,14 @@ complete when live events overlap startup; fixing the bind delay must not trade
 a loud crash-loop for silent projection loss.
 
 **Performance:** rebuild changes from one full-log pass per query plus
-per-operation pool construction to one paged, entity-routed pass over a reused
-Postgres pool. Progress is visible through the ADR-0059 field names rather than
-a silent multi-minute gap.
+per-operation pool construction to one paged, entity-filtered pass over a
+reused Postgres pool. Entity snapshots prevent repeated full-stream fetches.
+Progress is visible through the ADR-0059 field names rather than a silent
+multi-minute gap.
+
+**Public Haskell surface:** additive only. `Service.Query.Registry` exposes
+`registeredEntityNames :: QueryRegistry -> Array EntityName`; existing callers
+need no migration.
 
 **CI:** `.github/workflows/test.yml` exports `POSTGRES_AVAILABLE=true` for the
 Postgres-backed suites so the concurrency and pool regressions execute on every
@@ -73,16 +90,16 @@ substantive PR.
 `/health` and `/ready`.
 
 **Deliberately deferred:** production checkpoint-store wiring and query-state
-migration remain a separate data-migration-shaped change. They must ship with
-the stale-hash deletion and field-shape hash fixes. SIGTERM cancellation remains
-blocked by #662; outbound-integration recovery and the missing
-`X-Query-Status` client contract remain separate changes. None is required to
-make port binding constant-time and replay gap-free.
+migration remain tracked by #854/#855/#666. SIGTERM cancellation remains #662;
+outbound-integration recovery is #856; the missing `X-Query-Status` contract is
+#664; Neon scale-to-zero support is #857. None is required to make port binding
+constant-time and in-process replay/live overlap gap-free.
 
 ## ADR
 
 No new ADR trigger. The implementation repairs the already-decided behavior in
 [ADR-0059](../decisions/0059-async-query-rebuild-with-persistent-checkpoints.md)
 and restores the connection model promised by
-[ADR-0060](../decisions/0060-postgres-pool-budget.md); it does not add or remove
-public signatures, dependencies, capabilities, or extension points.
+[ADR-0060](../decisions/0060-postgres-pool-budget.md); it adds one read-only
+registry accessor but introduces no breaking signature, dependency, capability,
+or extension point.
