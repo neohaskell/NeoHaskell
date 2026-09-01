@@ -539,8 +539,11 @@ subscribeToAllEventsFromPositionImpl store fromPosition handler = do
         replayResult <- runSimpleReplay store fromPosition handler coordinator |> Task.asResult
         case replayResult of
           Ok _ -> Task.yield unit
-          Err _ ->
-            Log.warn [fmt|Positional subscription replay failed for #{toText subscriptionId}|]
+          Err _ -> do
+            store.subscriptions
+              |> ConcurrentVar.modify (Map.remove subscriptionId)
+              |> Lock.with store.globalLock
+            Log.warn [fmt|Positional subscription replay failed; removed #{toText subscriptionId}|]
               |> Task.ignoreError
   _replayTask <-
     AsyncTask.run replayTask

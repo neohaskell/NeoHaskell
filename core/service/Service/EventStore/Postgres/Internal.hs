@@ -919,9 +919,15 @@ subscribeToAllEventsFromPositionImpl ops cfg store startPosition callback = do
         replayResult <- runPostgresReplay ops cfg startPosition callback coordinator |> Task.asResult
         case replayResult of
           Ok _ -> Task.yield unit
-          Err _ ->
-            Log.warn [fmt|Positional subscription replay failed for #{toText subscriptionId}|]
-              |> Task.ignoreError
+          Err _ -> do
+            removalResult <- SubscriptionStore.removeSubscription subscriptionId store |> Task.asResult
+            case removalResult of
+              Ok _ ->
+                Log.warn [fmt|Positional subscription replay failed; removed #{toText subscriptionId}|]
+                  |> Task.ignoreError
+              Err _ ->
+                Log.warn [fmt|Positional subscription replay failed and removal failed for #{toText subscriptionId}|]
+                  |> Task.ignoreError
   _replayTask <- AsyncTask.run replayTask
   Log.debug [fmt|Subscription created: #{toText subscriptionId}|] |> Task.ignoreError
   Task.yield subscriptionId

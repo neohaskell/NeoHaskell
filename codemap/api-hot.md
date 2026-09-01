@@ -10,11 +10,11 @@ codemap/signatures/ · type-directed search: ./dev api "<type>"
 
 ## Task
 - `yield :: value -> Task w value`  <!-- 595 call sites -->
-- `ignoreError :: Task err Unit -> Task w Unit`  <!-- 240 call sites -->
+- `ignoreError :: Task err Unit -> Task w Unit`  <!-- 241 call sites -->
 - `mapError :: (err1 -> err2) -> Task err1 value -> Task err2 value`  <!-- 223 call sites -->
 - `throw :: err -> Task err w`  <!-- 212 call sites -->
 - `fromIO :: IO value -> Task w value`  <!-- 132 call sites -->
-- `asResult :: Task err value -> Task err2 (Result err value)`  <!-- 87 call sites -->
+- `asResult :: Task err value -> Task err2 (Result err value)`  <!-- 88 call sites -->
 - `when :: Bool -> Task err Unit -> Task err Unit`  <!-- 31 call sites -->
 - `forEach :: (element -> Task err Unit) -> Array element -> Task err Unit`  <!-- 30 call sites -->
 - `fromFailableIO :: Exception exception => IO result -> Task exception result`  <!-- 24 call sites -->
@@ -67,7 +67,7 @@ codemap/signatures/ · type-directed search: ./dev api "<type>"
 
 ## Log
 - `debug :: HasCallStack => Text -> Task w Unit`  <!-- 114 call sites -->
-- `warn :: HasCallStack => Text -> Task w Unit`  <!-- 72 call sites -->
+- `warn :: HasCallStack => Text -> Task w Unit`  <!-- 73 call sites -->
 - `withScope :: Array (Text, Text) -> Task err value -> Task err value`  <!-- 58 call sites -->
 - `info :: HasCallStack => Text -> Task w Unit`  <!-- 35 call sites -->
 - `critical :: HasCallStack => Text -> Task w Unit`  <!-- 11 call sites -->
@@ -79,8 +79,8 @@ codemap/signatures/ · type-directed search: ./dev api "<type>"
 - `entries :: Map key value -> Array (key, value)`  <!-- 24 call sites -->
 - `length :: Map key value -> Int`  <!-- 15 call sites -->
 - `values :: Map key value -> Array value`  <!-- 9 call sites -->
+- `remove :: Ord key => key -> Map key value -> Map key value`  <!-- 8 call sites -->
 - `getOrElse :: (Eq key, Ord key) => key -> value -> Map key value -> value`  <!-- 7 call sites -->
-- `remove :: Ord key => key -> Map key value -> Map key value`  <!-- 7 call sites -->
 - `fromArray :: (Eq key, Ord key) => Array (key, value) -> Map key value`  <!-- 4 call sites -->
 - `mapValues :: (valueA -> valueB) -> Map key valueA -> Map key valueB`  <!-- 2 call sites -->
 
@@ -97,7 +97,7 @@ codemap/signatures/ · type-directed search: ./dev api "<type>"
 - `whitespace :: Parser Unit`  <!-- 7 call sites -->
 
 ## ConcurrentVar
-- `modify :: (value -> value) -> ConcurrentVar value -> Task w Unit`  <!-- 43 call sites -->
+- `modify :: (value -> value) -> ConcurrentVar value -> Task w Unit`  <!-- 44 call sites -->
 - `containing :: value -> Task w (ConcurrentVar value)`  <!-- 34 call sites -->
 - `peek :: ConcurrentVar value -> Task w value`  <!-- 34 call sites -->
 - `modifyReturning :: (value -> Task Never (value, a)) -> ConcurrentVar value -> Task w a`  <!-- 16 call sites -->
@@ -259,7 +259,7 @@ codemap/signatures/ · type-directed search: ./dev api "<type>"
 - `fmap :: Functor f => (a -> b) -> f a -> f b`  <!-- 17 call sites -->
 - `map :: Mappable mappable => (typeA -> typeB) -> mappable typeA -> mappable typeB`  <!-- 16 call sites -->
 
-*cut: 101 more modules (AtomicVar (26), Integration.Http (26), Decider (21), Result (21), Layout (19), …) — full surface: codemap/signatures/*
+*cut: 101 more modules (AtomicVar (26), Integration.Http (26), Decider (21), Result (21), Lock (20), …) — full surface: codemap/signatures/*
 
 ---
 
