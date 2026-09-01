@@ -142,6 +142,44 @@ spec = do
       positionsA |> Array.length |> shouldBe 1000
       positionsB |> shouldBe (Array.wrap (StreamPosition 1000))
 
+    it "stops historical paging at the captured replay head" \_ -> do
+      baseStore <- InMemory.new |> Task.mapError toText
+      eventMeta <- EventMetadata.new
+      let entityName = EntityName "fixed-replay-head-entity"
+      let mkEvent position =
+            Event
+              { entityName
+              , streamId = StreamId "fixed-replay-head-stream"
+              , event = Json.null
+              , metadata = eventMeta { globalPosition = Just (StreamPosition position) }
+              }
+      let headEvent = mkEvent 1
+      let allEvents = Array.initialize 3 (fromIntegral .> mkEvent)
+      let boundedStore = baseStore
+            { readAllEventsBackwardFromFiltered = \_ _ _ ->
+                Stream.fromArray (Array.wrap (AllEvent headEvent))
+            , readAllEventsForwardFromFiltered = \startPosition (Limit rawLimit) _ ->
+                allEvents
+                  |> Array.takeIf (\event -> event.metadata.globalPosition >= Just startPosition)
+                  |> Array.take (fromIntegral rawLimit)
+                  |> Array.map AllEvent
+                  |> Stream.fromArray
+            }
+      seen <- ConcurrentVar.containing (Array.empty :: Array StreamPosition)
+      let updater = QueryUpdater
+            { queryName = "fixed-replay-head-query"
+            , updateQuery = \event ->
+                case event.metadata.globalPosition of
+                  Just position -> seen |> ConcurrentVar.modify (Array.push position)
+                  Nothing -> Task.throw "fixed-head fixture event had no position"
+            }
+      let registry = Registry.register entityName updater Registry.empty
+      subscriber <- Subscriber.new boundedStore registry
+      Subscriber.rebuildAllAsync subscriber rebuildOptionsDefault
+        |> Task.mapError (show .> toText)
+      observed <- ConcurrentVar.peek seen
+      observed |> shouldBe (Array.fromLinkedList [StreamPosition 0, StreamPosition 1])
+
     it "multi-query rebuild performs one entity-filtered pass" \_ -> do
       baseStore <- InMemory.new |> Task.mapError toText
       filteredReads <- ConcurrentVar.containing (0 :: Int)

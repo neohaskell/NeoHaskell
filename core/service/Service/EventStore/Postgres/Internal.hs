@@ -802,10 +802,11 @@ readPostgresReplayPages
   :: Ops
   -> PostgresEventStore
   -> StreamPosition
+  -> Maybe StreamPosition
   -> (Event Json.Value -> Task Text Unit)
   -> PostgresReplayCoordinator
   -> Task Error Unit
-readPostgresReplayPages ops cfg startPosition callback coordinator = do
+readPostgresReplayPages ops cfg startPosition replayEnd callback coordinator = do
   eventStream <- readAllEventsForwardFromImpl ops cfg startPosition (Limit 1000)
   pageResult <-
     eventStream
@@ -813,8 +814,15 @@ readPostgresReplayPages ops cfg startPosition callback coordinator = do
         ( \(lastPosition, count) message ->
             case message of
               AllEvent event -> do
-                processPostgresReplayEvent callback coordinator event
-                Task.yield (event.metadata.globalPosition, count + 1)
+                let withinReplayEnd = case (replayEnd, event.metadata.globalPosition) of
+                      (Just endPosition, Just eventPosition) -> eventPosition <= endPosition
+                      (Nothing, _) -> False
+                      _ -> True
+                case withinReplayEnd of
+                  True -> do
+                    processPostgresReplayEvent callback coordinator event
+                    Task.yield (event.metadata.globalPosition, count + 1)
+                  False -> Task.yield (lastPosition, count)
               _ -> Task.yield (lastPosition, count)
         )
         (Nothing, 0)
@@ -825,7 +833,7 @@ readPostgresReplayPages ops cfg startPosition callback coordinator = do
     False -> case lastPosition of
       Nothing -> Task.yield unit
       Just (StreamPosition position) ->
-        readPostgresReplayPages ops cfg (StreamPosition (position + 1)) callback coordinator
+        readPostgresReplayPages ops cfg (StreamPosition (position + 1)) replayEnd callback coordinator
 
 
 -- | Atomically begin one Postgres overflow-recovery read.
@@ -852,7 +860,12 @@ stabilizePostgresReplay ops cfg callback coordinator = do
       let catchUpPosition = case highWater of
             Just (StreamPosition position) -> StreamPosition (position + 1)
             Nothing -> StreamPosition 0
-      readPostgresReplayPages ops cfg catchUpPosition callback coordinator
+      catchUpEnd <-
+        ops |> withConnectionAndError cfg \conn -> do
+          Sessions.selectMaxGlobalPosition
+            |> Sessions.run conn
+            |> Task.mapError (toText .> StorageFailure)
+      readPostgresReplayPages ops cfg catchUpPosition catchUpEnd callback coordinator
       stabilizePostgresReplay ops cfg callback coordinator
     False -> do
       entries <- coordinator.replayState
@@ -885,11 +898,12 @@ runPostgresReplay
   :: Ops
   -> PostgresEventStore
   -> StreamPosition
+  -> Maybe StreamPosition
   -> (Event Json.Value -> Task Text Unit)
   -> PostgresReplayCoordinator
   -> Task Error Unit
-runPostgresReplay ops cfg startPosition callback coordinator = do
-  readPostgresReplayPages ops cfg startPosition callback coordinator
+runPostgresReplay ops cfg startPosition replayEnd callback coordinator = do
+  readPostgresReplayPages ops cfg startPosition replayEnd callback coordinator
   stabilizePostgresReplay ops cfg callback coordinator
 
 
@@ -916,7 +930,7 @@ subscribeToAllEventsFromPositionImpl ops cfg store startPosition callback = do
       |> SubscriptionStore.addGlobalSubscriptionFromPosition liveStart orderedCallback
       |> Task.mapError (\err -> SubscriptionError (SubscriptionId "fromPosition") (err |> toText))
   let replayTask = do
-        replayResult <- runPostgresReplay ops cfg startPosition callback coordinator |> Task.asResult
+        replayResult <- runPostgresReplay ops cfg startPosition currentMaxPosition callback coordinator |> Task.asResult
         case replayResult of
           Ok _ -> Task.yield unit
           Err _ -> do

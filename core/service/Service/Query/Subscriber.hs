@@ -767,9 +767,15 @@ runReplayPages subscriber maybeCoordinator options startPosition stats replayedC
             ( \(lastPosition, count) message ->
                 case message of
                   AllEvent rawEvent -> do
-                    processReplayEvent subscriber maybeCoordinator rawEvent
-                    replayedCountRef |> ConcurrentVar.modify (\replayedCount -> replayedCount + 1)
-                    Task.yield (rawEvent.metadata.globalPosition, count + 1)
+                    let withinReplayHead = case (replayHead, rawEvent.metadata.globalPosition) of
+                          (Just headPosition, Just eventPosition) -> eventPosition <= headPosition
+                          _ -> True
+                    case withinReplayHead of
+                      True -> do
+                        processReplayEvent subscriber maybeCoordinator rawEvent
+                        replayedCountRef |> ConcurrentVar.modify (\replayedCount -> replayedCount + 1)
+                        Task.yield (rawEvent.metadata.globalPosition, count + 1)
+                      False -> Task.yield (lastPosition, count)
                   _ -> Task.yield (lastPosition, count)
             )
             (stats.replayedThrough, 0)
@@ -781,9 +787,9 @@ runReplayPages subscriber maybeCoordinator options startPosition stats replayedC
       let lagFromHead = case (replayHead, lastPosition) of
             (Just (StreamPosition headPosition), Just (StreamPosition processedPosition)) ->
               max 0 (headPosition - processedPosition)
-            (Just (StreamPosition headPosition), Nothing) ->
+            (Just (StreamPosition headPosition), Nothing) -> do
               let (StreamPosition requestedPosition) = startPosition
-              in max 0 (headPosition - requestedPosition + 1)
+              max 0 (headPosition - requestedPosition + 1)
             _ -> 0
       Task.when options.logProgress do
         Log.info

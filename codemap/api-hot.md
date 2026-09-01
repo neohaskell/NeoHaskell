@@ -9,9 +9,9 @@ separately below). Consult BEFORE writing code; full surface:
 codemap/signatures/ · type-directed search: ./dev api "<type>"
 
 ## Task
-- `yield :: value -> Task w value`  <!-- 595 call sites -->
+- `yield :: value -> Task w value`  <!-- 597 call sites -->
 - `ignoreError :: Task err Unit -> Task w Unit`  <!-- 241 call sites -->
-- `mapError :: (err1 -> err2) -> Task err1 value -> Task err2 value`  <!-- 223 call sites -->
+- `mapError :: (err1 -> err2) -> Task err1 value -> Task err2 value`  <!-- 224 call sites -->
 - `throw :: err -> Task err w`  <!-- 212 call sites -->
 - `fromIO :: IO value -> Task w value`  <!-- 132 call sites -->
 - `asResult :: Task err value -> Task err2 (Result err value)`  <!-- 88 call sites -->
@@ -207,9 +207,9 @@ codemap/signatures/ · type-directed search: ./dev api "<type>"
 - `getOrInsertIfM :: (Hashable key, Eq key) => key -> value -> (value -> STM Bool) -> ConcurrentMap key value -> Task w (value, Maybe value)`  <!-- 1 call sites -->
 
 ## Service.EventStore.Postgres.Sessions
-- `run :: Default result => Connection -> Session result -> Task UsageError result`  <!-- 12 call sites -->
+- `run :: Default result => Connection -> Session result -> Task UsageError result`  <!-- 13 call sites -->
+- `selectMaxGlobalPosition :: Session (Maybe StreamPosition)`  <!-- 6 call sites -->
 - `runConnection :: Default result => Connection -> Session result -> Task SessionError result`  <!-- 5 call sites -->
-- `selectMaxGlobalPosition :: Session (Maybe StreamPosition)`  <!-- 5 call sites -->
 - `postgresRecordToEvent :: PostgresEventRecord -> Result Text (Event Value)`  <!-- 2 call sites -->
 - `createEventNotificationTriggerFunctionSession :: Session Unit`  <!-- 1 call sites -->
 - `createEventNotificationTriggerSession :: Session Unit`  <!-- 1 call sites -->
@@ -269,23 +269,23 @@ Ranked from call sites in spec/test files only. Reach for these
 when WRITING TESTS; they are not feature-code frequency signal.
 
 ## Task
-- `mapError :: (err1 -> err2) -> Task err1 value -> Task err2 value`  <!-- 809 test call sites -->
+- `mapError :: (err1 -> err2) -> Task err1 value -> Task err2 value`  <!-- 811 test call sites -->
 - `yield :: value -> Task w value`  <!-- 447 test call sites -->
 - `asResult :: Task err value -> Task err2 (Result err value)`  <!-- 276 test call sites -->
 - `mapArray :: (element -> Task err output) -> Array element -> Task err (Array output)`  <!-- 126 test call sites -->
-- `throw :: err -> Task err w`  <!-- 113 test call sites -->
+- `throw :: err -> Task err w`  <!-- 114 test call sites -->
 - `andThen :: (input -> Task err output) -> Task err input -> Task err output`  <!-- 90 test call sites -->
 - `fromIO :: IO value -> Task w value`  <!-- 90 test call sites -->
 - `map :: (input -> output) -> Task err input -> Task err output`  <!-- 81 test call sites -->
 
 ## Array
 - `length :: Array a -> Int`  <!-- 261 test call sites -->
-- `fromLinkedList :: LinkedList a -> Array a`  <!-- 219 test call sites -->
-- `empty :: Array a`  <!-- 215 test call sites -->
-- `map :: (a -> b) -> Array a -> Array b`  <!-- 117 test call sites -->
+- `fromLinkedList :: LinkedList a -> Array a`  <!-- 220 test call sites -->
+- `empty :: Array a`  <!-- 216 test call sites -->
+- `map :: (a -> b) -> Array a -> Array b`  <!-- 118 test call sites -->
 - `get :: Int -> Array a -> Maybe a`  <!-- 78 test call sites -->
-- `wrap :: a -> Array a`  <!-- 48 test call sites -->
-- `initialize :: Int -> (Int -> a) -> Array a`  <!-- 46 test call sites -->
+- `wrap :: a -> Array a`  <!-- 49 test call sites -->
+- `initialize :: Int -> (Int -> a) -> Array a`  <!-- 47 test call sites -->
 - `contains :: Eq value => value -> Array value -> Bool`  <!-- 41 test call sites -->
 
 ## Text
@@ -323,15 +323,15 @@ when WRITING TESTS; they are not feature-code frequency signal.
 - `decodeText :: FromJSON value => Text -> Result Text value`  <!-- 137 test call sites -->
 - `encodeText :: ToJSON value => value -> Text`  <!-- 117 test call sites -->
 - `object :: [(Text, Value)] -> Value`  <!-- 105 test call sites -->
-- `null :: Value`  <!-- 56 test call sites -->
+- `null :: Value`  <!-- 57 test call sites -->
 - `encode :: ToJSON value => value -> Value`  <!-- 46 test call sites -->
 - `decode :: FromJSON value => Value -> Result Text value`  <!-- 25 test call sites -->
 - `withObject :: Text -> (Object -> Parser value) -> Value -> Parser value`  <!-- 3 test call sites -->
 
 ## ConcurrentVar
-- `modify :: (value -> value) -> ConcurrentVar value -> Task w Unit`  <!-- 115 test call sites -->
-- `containing :: value -> Task w (ConcurrentVar value)`  <!-- 113 test call sites -->
-- `peek :: ConcurrentVar value -> Task w value`  <!-- 97 test call sites -->
+- `modify :: (value -> value) -> ConcurrentVar value -> Task w Unit`  <!-- 116 test call sites -->
+- `containing :: value -> Task w (ConcurrentVar value)`  <!-- 114 test call sites -->
+- `peek :: ConcurrentVar value -> Task w value`  <!-- 98 test call sites -->
 - `get :: ConcurrentVar value -> Task w value`  <!-- 39 test call sites -->
 - `set :: value -> ConcurrentVar value -> Task w ()`  <!-- 15 test call sites -->
 - `new :: forall value w. Task w (ConcurrentVar value)`  <!-- 14 test call sites -->
@@ -345,4 +345,4 @@ when WRITING TESTS; they are not feature-code frequency signal.
 - `generateV5 :: Uuid -> Text -> Uuid`  <!-- 17 test call sites -->
 - `fromText :: Text -> Maybe Uuid`  <!-- 3 test call sites -->
 
-*cut: 135 more modules (Map (257), Service.Application (250), Set (233), Stream (202), AsyncTask (200), …) — full surface: codemap/signatures/*
+*cut: 135 more modules (Map (257), Service.Application (250), Set (233), Stream (204), AsyncTask (200), …) — full surface: codemap/signatures/*
