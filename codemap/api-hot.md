@@ -9,12 +9,12 @@ separately below). Consult BEFORE writing code; full surface:
 codemap/signatures/ · type-directed search: ./dev api "<type>"
 
 ## Task
-- `yield :: value -> Task w value`  <!-- 588 call sites -->
+- `yield :: value -> Task w value`  <!-- 594 call sites -->
 - `ignoreError :: Task err Unit -> Task w Unit`  <!-- 237 call sites -->
-- `mapError :: (err1 -> err2) -> Task err1 value -> Task err2 value`  <!-- 220 call sites -->
-- `throw :: err -> Task err w`  <!-- 212 call sites -->
+- `mapError :: (err1 -> err2) -> Task err1 value -> Task err2 value`  <!-- 222 call sites -->
+- `throw :: err -> Task err w`  <!-- 214 call sites -->
 - `fromIO :: IO value -> Task w value`  <!-- 132 call sites -->
-- `asResult :: Task err value -> Task err2 (Result err value)`  <!-- 84 call sites -->
+- `asResult :: Task err value -> Task err2 (Result err value)`  <!-- 86 call sites -->
 - `when :: Bool -> Task err Unit -> Task err Unit`  <!-- 31 call sites -->
 - `forEach :: (element -> Task err Unit) -> Array element -> Task err Unit`  <!-- 27 call sites -->
 - `fromFailableIO :: Exception exception => IO result -> Task exception result`  <!-- 24 call sites -->
@@ -68,7 +68,7 @@ codemap/signatures/ · type-directed search: ./dev api "<type>"
 ## Log
 - `debug :: HasCallStack => Text -> Task w Unit`  <!-- 114 call sites -->
 - `warn :: HasCallStack => Text -> Task w Unit`  <!-- 69 call sites -->
-- `withScope :: Array (Text, Text) -> Task err value -> Task err value`  <!-- 55 call sites -->
+- `withScope :: Array (Text, Text) -> Task err value -> Task err value`  <!-- 58 call sites -->
 - `info :: HasCallStack => Text -> Task w Unit`  <!-- 35 call sites -->
 - `critical :: HasCallStack => Text -> Task w Unit`  <!-- 11 call sites -->
 
@@ -99,7 +99,7 @@ codemap/signatures/ · type-directed search: ./dev api "<type>"
 ## ConcurrentVar
 - `modify :: (value -> value) -> ConcurrentVar value -> Task w Unit`  <!-- 42 call sites -->
 - `containing :: value -> Task w (ConcurrentVar value)`  <!-- 32 call sites -->
-- `peek :: ConcurrentVar value -> Task w value`  <!-- 30 call sites -->
+- `peek :: ConcurrentVar value -> Task w value`  <!-- 32 call sites -->
 - `modifyReturning :: (value -> Task Never (value, a)) -> ConcurrentVar value -> Task w a`  <!-- 16 call sites -->
 - `swap :: value -> ConcurrentVar value -> Task w value`  <!-- 5 call sites -->
 - `get :: ConcurrentVar value -> Task w value`  <!-- 4 call sites -->
@@ -223,9 +223,15 @@ codemap/signatures/ · type-directed search: ./dev api "<type>"
 - `mapStream :: (valueA -> valueB) -> Stream valueA -> Task error (Stream valueB)`  <!-- 7 call sites -->
 - `new :: forall value error. Task error (Stream value)`  <!-- 7 call sites -->
 - `writeItem :: value -> Stream value -> Task error Unit`  <!-- 6 call sites -->
-- `consume :: (accumulator -> value -> Task Text accumulator) -> accumulator -> Stream value -> Task Text accumulator`  <!-- 4 call sites -->
+- `consume :: (accumulator -> value -> Task Text accumulator) -> accumulator -> Stream value -> Task Text accumulator`  <!-- 5 call sites -->
 - `consumeMaybe :: (accumulator -> value -> Task Text accumulator) -> accumulator -> Stream value -> Task Text (Maybe accumulator)`  <!-- 2 call sites -->
 - `end :: Stream value -> Task error Unit`  <!-- 2 call sites -->
+
+## DateTime
+- `now :: Task w DateTime`  <!-- 18 call sites -->
+- `toEpochSeconds :: DateTime -> Int64`  <!-- 10 call sites -->
+- `fromEpochSeconds :: Int64 -> DateTime`  <!-- 6 call sites -->
+- `addSeconds :: Int64 -> DateTime -> DateTime`  <!-- 1 call sites -->
 
 ## Http.Client
 - `request :: Request`  <!-- 6 call sites -->
@@ -253,12 +259,6 @@ codemap/signatures/ · type-directed search: ./dev api "<type>"
 - `fmap :: Functor f => (a -> b) -> f a -> f b`  <!-- 17 call sites -->
 - `map :: Mappable mappable => (typeA -> typeB) -> mappable typeA -> mappable typeB`  <!-- 16 call sites -->
 
-## DateTime
-- `now :: Task w DateTime`  <!-- 16 call sites -->
-- `toEpochSeconds :: DateTime -> Int64`  <!-- 8 call sites -->
-- `fromEpochSeconds :: Int64 -> DateTime`  <!-- 6 call sites -->
-- `addSeconds :: Int64 -> DateTime -> DateTime`  <!-- 1 call sites -->
-
 *cut: 101 more modules (AtomicVar (26), Integration.Http (26), Decider (21), Result (21), Layout (19), …) — full surface: codemap/signatures/*
 
 ---
@@ -269,27 +269,27 @@ Ranked from call sites in spec/test files only. Reach for these
 when WRITING TESTS; they are not feature-code frequency signal.
 
 ## Task
-- `mapError :: (err1 -> err2) -> Task err1 value -> Task err2 value`  <!-- 791 test call sites -->
-- `yield :: value -> Task w value`  <!-- 424 test call sites -->
-- `asResult :: Task err value -> Task err2 (Result err value)`  <!-- 275 test call sites -->
-- `mapArray :: (element -> Task err output) -> Array element -> Task err (Array output)`  <!-- 123 test call sites -->
-- `throw :: err -> Task err w`  <!-- 106 test call sites -->
+- `mapError :: (err1 -> err2) -> Task err1 value -> Task err2 value`  <!-- 799 test call sites -->
+- `yield :: value -> Task w value`  <!-- 433 test call sites -->
+- `asResult :: Task err value -> Task err2 (Result err value)`  <!-- 276 test call sites -->
+- `mapArray :: (element -> Task err output) -> Array element -> Task err (Array output)`  <!-- 126 test call sites -->
+- `throw :: err -> Task err w`  <!-- 110 test call sites -->
+- `andThen :: (input -> Task err output) -> Task err input -> Task err output`  <!-- 90 test call sites -->
 - `fromIO :: IO value -> Task w value`  <!-- 90 test call sites -->
-- `andThen :: (input -> Task err output) -> Task err input -> Task err output`  <!-- 89 test call sites -->
-- `map :: (input -> output) -> Task err input -> Task err output`  <!-- 80 test call sites -->
+- `map :: (input -> output) -> Task err input -> Task err output`  <!-- 81 test call sites -->
 
 ## Array
-- `length :: Array a -> Int`  <!-- 258 test call sites -->
-- `fromLinkedList :: LinkedList a -> Array a`  <!-- 217 test call sites -->
-- `empty :: Array a`  <!-- 211 test call sites -->
+- `length :: Array a -> Int`  <!-- 261 test call sites -->
+- `fromLinkedList :: LinkedList a -> Array a`  <!-- 219 test call sites -->
+- `empty :: Array a`  <!-- 214 test call sites -->
 - `map :: (a -> b) -> Array a -> Array b`  <!-- 117 test call sites -->
-- `get :: Int -> Array a -> Maybe a`  <!-- 74 test call sites -->
-- `wrap :: a -> Array a`  <!-- 47 test call sites -->
-- `initialize :: Int -> (Int -> a) -> Array a`  <!-- 44 test call sites -->
+- `get :: Int -> Array a -> Maybe a`  <!-- 75 test call sites -->
+- `wrap :: a -> Array a`  <!-- 48 test call sites -->
+- `initialize :: Int -> (Int -> a) -> Array a`  <!-- 46 test call sites -->
 - `contains :: Eq value => value -> Array value -> Bool`  <!-- 41 test call sites -->
 
 ## Text
-- `contains :: Text -> Text -> Bool`  <!-- 435 test call sites -->
+- `contains :: Text -> Text -> Bool`  <!-- 436 test call sites -->
 - `toBytes :: Text -> Bytes`  <!-- 89 test call sites -->
 - `fromLinkedList :: LinkedList Char -> Text`  <!-- 56 test call sites -->
 - `length :: Text -> Int`  <!-- 41 test call sites -->
@@ -329,20 +329,20 @@ when WRITING TESTS; they are not feature-code frequency signal.
 - `withObject :: Text -> (Object -> Parser value) -> Value -> Parser value`  <!-- 3 test call sites -->
 
 ## ConcurrentVar
-- `modify :: (value -> value) -> ConcurrentVar value -> Task w Unit`  <!-- 107 test call sites -->
-- `containing :: value -> Task w (ConcurrentVar value)`  <!-- 104 test call sites -->
-- `peek :: ConcurrentVar value -> Task w value`  <!-- 89 test call sites -->
+- `modify :: (value -> value) -> ConcurrentVar value -> Task w Unit`  <!-- 109 test call sites -->
+- `containing :: value -> Task w (ConcurrentVar value)`  <!-- 107 test call sites -->
+- `peek :: ConcurrentVar value -> Task w value`  <!-- 92 test call sites -->
 - `get :: ConcurrentVar value -> Task w value`  <!-- 39 test call sites -->
 - `set :: value -> ConcurrentVar value -> Task w ()`  <!-- 15 test call sites -->
 - `new :: forall value w. Task w (ConcurrentVar value)`  <!-- 14 test call sites -->
 - `swap :: value -> ConcurrentVar value -> Task w value`  <!-- 3 test call sites -->
-- `modifyReturning :: (value -> Task Never (value, a)) -> ConcurrentVar value -> Task w a`  <!-- 1 test call sites -->
+- `modifyReturning :: (value -> Task Never (value, a)) -> ConcurrentVar value -> Task w a`  <!-- 2 test call sites -->
 
 ## Uuid
-- `generate :: Task w Uuid`  <!-- 179 test call sites -->
+- `generate :: Task w Uuid`  <!-- 180 test call sites -->
 - `nil :: Uuid`  <!-- 95 test call sites -->
 - `toText :: Uuid -> Text`  <!-- 39 test call sites -->
 - `generateV5 :: Uuid -> Text -> Uuid`  <!-- 17 test call sites -->
 - `fromText :: Text -> Maybe Uuid`  <!-- 3 test call sites -->
 
-*cut: 135 more modules (Map (257), Service.Application (250), Set (233), Stream (199), AsyncTask (190), …) — full surface: codemap/signatures/*
+*cut: 135 more modules (Map (257), Service.Application (250), Set (233), Stream (201), AsyncTask (195), …) — full surface: codemap/signatures/*

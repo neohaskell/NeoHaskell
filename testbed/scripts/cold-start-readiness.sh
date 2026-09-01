@@ -100,14 +100,24 @@ readonly psql_args=(-h "${POSTGRES_HOST:-127.0.0.1}" -U "${POSTGRES_USER:-neohas
 start_app "$log_dir/bootstrap.log"
 wait_for_status /health 200 "$bootstrap_budget_ms"
 psql "${psql_args[@]}" -c 'TRUNCATE TABLE events RESTART IDENTITY'
-curl --noproxy '*' -g -fsS -X POST -H 'Content-Type: application/json' -d '[]' "${base_url}/commands/create-cart" >/dev/null
+curl --noproxy '*' -g -fsS -X POST -H 'Content-Type: application/json' \
+  -d '{"productId":"73100000-0000-4000-8000-000000000731","available":100}' \
+  "${base_url}/commands/initialize-stock" >/dev/null
 stop_app
 
 psql "${psql_args[@]}" <<'SQL'
 DROP TABLE IF EXISTS cold_start_event_template;
 CREATE TABLE cold_start_event_template AS
-SELECT eventData, metadata, inlinedStreamId, entity
+SELECT jsonb_set(
+         eventData,
+         '{entityId}',
+         to_jsonb('73100000-0000-4000-8000-000000000731'::text)
+       ) AS eventData,
+       metadata,
+       '73100000-0000-4000-8000-000000000731'::text AS inlinedStreamId,
+       entity
 FROM events
+WHERE entity = 'StockEntity'
 ORDER BY globalPosition
 LIMIT 1;
 SQL
@@ -117,7 +127,10 @@ for size in "${sizes[@]}"; do
   psql "${psql_args[@]}" -v event_count="$size" <<'SQL'
 TRUNCATE TABLE events RESTART IDENTITY;
 INSERT INTO events (eventId, localPosition, inlinedStreamId, entity, eventData, metadata)
-SELECT md5('cold-start-' || i::text)::uuid,
+SELECT CASE
+         WHEN i = 0 THEN (template.metadata->>'eventId')::uuid
+         ELSE md5('cold-start-' || i::text)::uuid
+       END,
        i,
        template.inlinedStreamId,
        template.entity,
@@ -125,6 +138,9 @@ SELECT md5('cold-start-' || i::text)::uuid,
        template.metadata
 FROM cold_start_event_template AS template
 CROSS JOIN generate_series(0, :event_count - 1) AS i;
+UPDATE events
+SET eventData = jsonb_set(eventData, '{available}', '731'::jsonb)
+WHERE globalPosition = (SELECT MAX(globalPosition) FROM events);
 SQL
 
   log_file="$log_dir/${size}.log"
@@ -147,10 +163,28 @@ SQL
 
   if [[ "$size" == "1000" ]]; then
     wait_for_status /ready 200 "$ready_budget_ms"
-    curl --noproxy '*' -g -fsS "${base_url}/queries/cart-summary" | python3 -c 'import json,sys; body=json.load(sys.stdin); assert body["total"] >= 1'
+    curl --noproxy '*' -g -fsS "${base_url}/queries/stock-level" \
+      | python3 -c 'import json,sys; body=json.load(sys.stdin); assert any(item.get("stockLevelId") == "73100000-0000-4000-8000-000000000731" and item.get("available") == 731 for item in body["items"])'
     wait_for_log 'events_replayed' "$log_file" 5000
     wait_for_log 'lag_from_head' "$log_file" 5000
     wait_for_log 'duration_seconds' "$log_file" 5000
+    python3 - "$log_file" <<'PY'
+import json
+import re
+import sys
+
+messages = []
+for line in open(sys.argv[1], encoding="utf-8"):
+    try:
+        messages.append(json.loads(line).get("message", ""))
+    except json.JSONDecodeError:
+        pass
+progress = [message for message in messages if "Query replay progress" in message]
+assert progress, "missing structured query replay progress"
+match = re.search(r"events_replayed=(\d+) lag_from_head=(\d+) duration_seconds=(\d+)", progress[-1])
+assert match, progress[-1]
+assert int(match.group(1)) >= 1000, match.group(1)
+PY
     if grep -Eq 'postgres(ql)?://|password[=:]' "$log_file"; then
       echo "Cold-start log exposed a connection string or password" >&2
       exit 1
@@ -159,6 +193,40 @@ SQL
 
   stop_app
 done
+
+failure_log="$log_dir/failure.log"
+start_app "$failure_log"
+wait_for_status /health 200 "$health_budget_ms"
+wait_for_status /ready 503 "$health_budget_ms"
+psql "${psql_args[@]}" -c 'DROP TABLE events'
+wait_for_log 'Query replay failed' "$failure_log" 20000
+python3 - "$failure_log" <<'PY'
+import json
+import sys
+
+records = []
+for line in open(sys.argv[1], encoding="utf-8"):
+    try:
+        records.append(json.loads(line))
+    except json.JSONDecodeError:
+        pass
+failures = [
+    record for record in records
+    if record.get("level") == "Warn"
+    and record.get("queryName")
+    and record.get("position") not in (None, "unknown")
+    and record.get("message", "").startswith("Query replay failed")
+]
+assert failures, "query failure log omitted queryName or position"
+serialized = json.dumps(failures[-1]).lower()
+for forbidden in ("eventdata", "payload", "select ", "postgresql://", "password", "connection string"):
+    assert forbidden not in serialized, f"query failure log exposed {forbidden}"
+PY
+stop_app
+restore_log="$log_dir/restore.log"
+start_app "$restore_log"
+wait_for_status /health 200 "$bootstrap_budget_ms"
+stop_app
 
 min_latency="${latencies[0]}"
 max_latency="${latencies[0]}"

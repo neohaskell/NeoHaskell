@@ -93,6 +93,9 @@ canView :: Maybe UserClaims -> StoreWiringQuery -> Maybe AccessError
 canView = AccessControl.publicView
 
 
+-- QueryOf has Query as a superclass, and Query is emitted by this splice.
+-- GHC therefore requires the marker's declaration group before the business
+-- instance; placing the marker last fails with "No instance for Query".
 deriveQuery ''StoreWiringQuery [''CacheEntity]
 
 

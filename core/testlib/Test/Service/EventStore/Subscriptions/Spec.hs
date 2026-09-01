@@ -687,6 +687,54 @@ spec newStore = do
             |> Array.length
             |> shouldBe 1002
 
+      it "serializes concurrent live inserts by increasing global position" \context -> do
+        entityNameText <- Uuid.generate |> Task.map toText
+        let entityName = Event.EntityName entityNameText
+        receivedPositions <- ConcurrentVar.containing (Array.empty :: Array Event.StreamPosition)
+        let subscriber event =
+              case (event.entityName == entityName, event.metadata.globalPosition) of
+                (True, Just position) -> receivedPositions |> ConcurrentVar.modify (Array.push position)
+                (True, Nothing) -> Task.throw "concurrent fixture event had no global position"
+                _ -> Task.yield unit
+        subscriptionId <- context.store.subscribeToAllEvents subscriber |> Task.mapError toText
+        Task.finally
+          (context.store.unsubscribe subscriptionId |> Task.mapError toText)
+          do
+            payloads <-
+              Array.initialize 50 (\index -> index)
+                |> Task.mapArray
+                  ( \index -> do
+                      streamId <- StreamId.new
+                      events <- createTestEventsForEntity streamId entityName 1 index
+                      case events |> Array.get 0 of
+                        Just payload -> Task.yield payload
+                        Nothing -> Task.throw "concurrent fixture created no payload"
+                  )
+            payloads
+              |> Task.mapArray (\payload -> AsyncTask.run (context.store.insert payload |> Task.mapError toText))
+              |> Task.andThen (\tasks -> tasks |> Task.mapArray AsyncTask.waitFor)
+              |> discard
+            let waitForDeliveries attempts = do
+                  positions <- ConcurrentVar.peek receivedPositions
+                  if Array.length positions >= (50 :: Int) || attempts <= (0 :: Int)
+                    then Task.yield positions
+                    else do
+                      AsyncTask.sleep 10 |> Task.mapError (\_ -> "concurrent delivery sleep failed")
+                      waitForDeliveries (attempts - 1)
+            delivered <- waitForDeliveries 500
+            delivered |> Array.length |> shouldBe 50
+            delivered
+              |> Array.toLinkedList
+              |> GhcList.sort
+              |> Array.fromLinkedList
+              |> shouldBe delivered
+            delivered
+              |> Array.toLinkedList
+              |> GhcList.nub
+              |> Array.fromLinkedList
+              |> Array.length
+              |> shouldBe 50
+
       it "subscriber handlers can read from the same store without deadlocking insert" \context -> do
         -- Regression for #625: insertImpl in SimpleEventStore used to invoke
         -- notifySubscribers while still holding store.globalLock. Any subscriber

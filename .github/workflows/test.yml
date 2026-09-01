@@ -338,6 +338,8 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y poppler-utils
       - name: Run integration tests
         run: nix develop --command ./testbed/scripts/run-tests.sh
+      - name: Prove cold-start health stays flat through 100k events
+        run: nix develop --command ./testbed/scripts/cold-start-readiness.sh
 
   # THE REQUIRED CHECK. `if: always()` + no workflow paths filter ⇒ this always
   # runs and reports a real conclusion on every PR, so it is safe to require in

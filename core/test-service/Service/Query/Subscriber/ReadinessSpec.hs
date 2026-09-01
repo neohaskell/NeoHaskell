@@ -363,6 +363,40 @@ spec = do
       attempts |> shouldBe 4
       transientReadiness |> shouldBe Ready
 
+      checkpointAttempts <- ConcurrentVar.containing (0 :: Int)
+      checkpointPositions <- ConcurrentVar.containing (Array.empty :: Array Int64)
+      let retryingCheckpointStore = CheckpointStore
+            { resumeFromCheckpoint = \_ _ -> Task.yield Nothing
+            , deleteStaleHash = \_ _ -> Task.yield unit
+            , writeCheckpoint = \_ _ position -> do
+                checkpointPositions |> ConcurrentVar.modify (Array.push position)
+                attempt <- checkpointAttempts |> ConcurrentVar.modifyReturning \count ->
+                  Task.yield (count + 1, count + 1)
+                if attempt < (5 :: Int)
+                  then Task.throw (StatementFailed "transient checkpoint fixture failure")
+                  else Task.yield unit
+            }
+      let checkpointUpdater = QueryUpdater
+            { queryName = "checkpoint-retry-query"
+            , updateQuery = \_ -> Task.yield unit
+            }
+      let checkpointRegistry = Registry.register entityName checkpointUpdater Registry.empty
+      let checkpointReplayStore = baseStore
+            { readAllEventsForwardFromFiltered = \startPosition _ _ ->
+                case startPosition <= StreamPosition 0 of
+                  True -> Stream.fromArray (Array.wrap (AllEvent event))
+                  False -> Stream.fromArray Array.empty
+            }
+      checkpointSubscriber <- newWithCheckpointStore checkpointReplayStore checkpointRegistry retryingCheckpointStore
+      Subscriber.rebuildAllAsync checkpointSubscriber rebuildOptionsDefault
+        |> Task.mapError (show .> toText)
+      writes <- ConcurrentVar.peek checkpointAttempts
+      persistedPositions <- ConcurrentVar.peek checkpointPositions
+      checkpointReadiness <- Subscriber.readinessOf checkpointSubscriber
+      writes |> shouldBe 5
+      persistedPositions |> shouldBe (Array.initialize 5 (\_ -> (0 :: Int64)))
+      checkpointReadiness |> shouldBe Ready
+
       updaterShouldFail <- ConcurrentVar.containing True
       let recoveryStore = baseStore
             { readAllEventsForwardFromFiltered = \_ _ _ -> Stream.fromArray (Array.wrap (AllEvent event))
@@ -380,7 +414,7 @@ spec = do
       Subscriber.rebuildAllAsync recoverySubscriber rebuildOptionsDefault
         |> Task.mapError (show .> toText)
       failedReadiness <- Subscriber.readinessOf recoverySubscriber
-      failedReadiness |> shouldBe (Failed "deterministic updater failure")
+      failedReadiness |> shouldBe (Failed "Query updater failed")
       updaterShouldFail |> ConcurrentVar.modify (\_ -> False)
       Subscriber.rebuildAllAsync recoverySubscriber rebuildOptionsDefault
         |> Task.mapError (show .> toText)

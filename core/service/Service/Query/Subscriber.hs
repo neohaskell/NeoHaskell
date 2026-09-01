@@ -35,6 +35,7 @@ import Map qualified
 import Maybe (Maybe (..))
 import Result (Result (..))
 import Service.Event (Event (..))
+import Service.Event.EntityName (EntityName)
 import Service.Event.EventMetadata (EventMetadata (..))
 import Service.Event.StreamPosition (StreamPosition (..))
 import Service.EventStore (EventStore (..))
@@ -597,8 +598,12 @@ applyEvent updaters rawEvent =
         case result of
           Ok _ -> pass
           Err err -> do
-            Log.warn [fmt|Query updater #{updaterName} failed: #{err}|]
-              |> Task.ignoreError
+            let position = case rawEvent.metadata.globalPosition of
+                  Just globalPosition -> toText globalPosition
+                  Nothing -> "unknown"
+            Log.withScope [("queryName", updaterName), ("position", position)] do
+              Log.warn "Query updater failed"
+                |> Task.ignoreError
             Task.throw err
 
 
@@ -708,15 +713,40 @@ nextReplayPosition subscriber = do
     Nothing -> Task.yield (StreamPosition 0)
 
 
+-- | Read the last matching global position with one bounded reverse lookup.
+readReplayHead
+  :: QuerySubscriber
+  -> Array EntityName
+  -> Task QueryRebuildError (Maybe StreamPosition)
+readReplayHead subscriber entityNames = do
+  messageStream <-
+    subscriber.eventStore.readAllEventsBackwardFromFiltered
+      (StreamPosition 9223372036854775807)
+      (Limit 1)
+      entityNames
+      |> Task.mapError (toText .> EventStoreFailed)
+  messageStream
+    |> Stream.consume
+      ( \current message ->
+          case (current, message) of
+            (Just position, _) -> Task.yield (Just position)
+            (Nothing, AllEvent rawEvent) -> Task.yield rawEvent.metadata.globalPosition
+            _ -> Task.yield Nothing
+      )
+      Nothing
+    |> Task.mapError (toText .> EventStoreFailed)
+
+
 runReplayPages
   :: QuerySubscriber
   -> Maybe ReplayCoordinator
   -> RebuildOptions
   -> StreamPosition
   -> ReplayStats
+  -> Maybe StreamPosition
   -> DateTime.DateTime
   -> Task QueryRebuildError ReplayStats
-runReplayPages subscriber maybeCoordinator options startPosition stats startedAt = do
+runReplayPages subscriber maybeCoordinator options startPosition stats replayHead startedAt = do
   let entityNames = Registry.registeredEntityNames subscriber.registry
   case Array.isEmpty entityNames of
     True -> Task.yield stats
@@ -743,7 +773,13 @@ runReplayPages subscriber maybeCoordinator options startPosition stats startedAt
       let totalCount = stats.replayedCount + pageCount
       finishedAt <- DateTime.now
       let durationSeconds = DateTime.toEpochSeconds finishedAt - DateTime.toEpochSeconds startedAt
-      let lagFromHead = if pageCount < options.chunkSize then (0 :: Int) else options.chunkSize
+      let lagFromHead = case (replayHead, lastPosition) of
+            (Just (StreamPosition headPosition), Just (StreamPosition processedPosition)) ->
+              max 0 (headPosition - processedPosition)
+            (Just (StreamPosition headPosition), Nothing) ->
+              let (StreamPosition requestedPosition) = startPosition
+              in max 0 (headPosition - requestedPosition + 1)
+            _ -> 0
       Task.when options.logProgress do
         Log.info
           [fmt|Query replay progress events_replayed=#{totalCount} lag_from_head=#{lagFromHead} duration_seconds=#{durationSeconds}|]
@@ -760,13 +796,18 @@ runReplayPages subscriber maybeCoordinator options startPosition stats startedAt
               options
               (StreamPosition (position + 1))
               nextStats
+              replayHead
               startedAt
 
 
 -- | Persist the final replay position for each query when configured.
 writeFinalCheckpoints :: QuerySubscriber -> ReplayStats -> Task QueryRebuildError Unit
-writeFinalCheckpoints subscriber stats =
-  case (subscriber.checkpointStore, stats.replayedThrough) of
+writeFinalCheckpoints subscriber stats = do
+  lastProcessed <- ConcurrentVar.peek subscriber.lastProcessedPosition
+  let checkpointPosition = case stats.replayedThrough of
+        Just position -> Just position
+        Nothing -> lastProcessed
+  case (subscriber.checkpointStore, checkpointPosition) of
     (Just checkpointStore, Just (StreamPosition position)) -> do
       getAllQueryNames subscriber.registry
         |> Task.forEach
@@ -802,18 +843,24 @@ runReplayWithRetries
   -> Maybe ReplayCoordinator
   -> RebuildOptions
   -> Int
+  -> DateTime.DateTime
   -> Task QueryRebuildError ReplayStats
-runReplayWithRetries subscriber maybeCoordinator options retryIndex = do
+runReplayWithRetries subscriber maybeCoordinator options retryIndex startedAt = do
   startPosition <- nextReplayPosition subscriber
-  startedAt <- DateTime.now
+  let entityNames = Registry.registeredEntityNames subscriber.registry
   result <-
-    runReplayPages
-      subscriber
-      maybeCoordinator
-      options
-      startPosition
-      ReplayStats {replayedCount = 0, replayedThrough = Nothing}
-      startedAt
+    readReplayHead subscriber entityNames
+      |> Task.andThen
+        ( \replayHead ->
+            runReplayPages
+              subscriber
+              maybeCoordinator
+              options
+              startPosition
+              ReplayStats {replayedCount = 0, replayedThrough = Nothing}
+              replayHead
+              startedAt
+        )
       |> Task.andThen (\stats -> writeFinalCheckpoints subscriber stats |> Task.map (\_ -> stats))
       |> Task.asResult
   case result of
@@ -825,7 +872,7 @@ runReplayWithRetries subscriber maybeCoordinator options retryIndex = do
             |> Task.ignoreError
           AsyncTask.sleep delayMs
             |> Task.mapError (\_ -> replayError)
-          runReplayWithRetries subscriber maybeCoordinator options (retryIndex + 1)
+          runReplayWithRetries subscriber maybeCoordinator options (retryIndex + 1) startedAt
         _ -> Task.throw replayError
 
 
@@ -853,6 +900,8 @@ finishReplayCoordinator subscriber coordinator options = do
             Just (StreamPosition position) -> StreamPosition (position + 1)
             Nothing -> StreamPosition 0
       startedAt <- DateTime.now
+      let entityNames = Registry.registeredEntityNames subscriber.registry
+      replayHead <- readReplayHead subscriber entityNames
       _ <-
         runReplayPages
           subscriber
@@ -860,6 +909,7 @@ finishReplayCoordinator subscriber coordinator options = do
           options
           catchUpStart
           ReplayStats {replayedCount = 0, replayedThrough = highWater}
+          replayHead
           startedAt
       finishReplayCoordinator subscriber coordinator options
     False -> do
@@ -895,11 +945,24 @@ finishReplayCoordinator subscriber coordinator options = do
         Err err -> Task.throw (UpdaterException err)
 
 
+-- | Choose bounded structured context for aggregate replay failure logs.
+replayFailureContext :: QuerySubscriber -> Task w (Text, Text)
+replayFailureContext subscriber = do
+  lastPosition <- ConcurrentVar.peek subscriber.lastProcessedPosition
+  let queryName = case getAllQueryNames subscriber.registry |> Array.first of
+        Just firstQueryName -> firstQueryName
+        Nothing -> "none"
+  let position = case lastPosition of
+        Just processedPosition -> toText processedPosition
+        Nothing -> "0"
+  Task.yield (queryName, position)
+
+
 -- | Operator/client-safe readiness reason with database internals removed.
 sanitizedFailure :: QueryRebuildError -> Text
 sanitizedFailure replayError =
   case replayError of
-    UpdaterException err -> err
+    UpdaterException _ -> "Query updater failed"
     RebuildTimeout _ -> "Query replay timed out"
     HashMismatchReplay _ -> "Query replay failed after schema change"
     CheckpointFetchFailed _ -> "Query checkpoint read failed"
@@ -913,12 +976,15 @@ runCoordinatedRebuild
   -> RebuildOptions
   -> Task QueryRebuildError Unit
 runCoordinatedRebuild subscriber coordinator options = do
-  result <- runReplayWithRetries subscriber (Just coordinator) options 0 |> Task.asResult
+  startedAt <- DateTime.now
+  result <- runReplayWithRetries subscriber (Just coordinator) options 0 startedAt |> Task.asResult
   case result of
     Err replayError -> do
       let failure = sanitizedFailure replayError
       setAllReadiness subscriber (Failed failure)
-      Log.warn [fmt|Query replay failed: #{failure}|] |> Task.ignoreError
+      (queryName, position) <- replayFailureContext subscriber
+      Log.withScope [("queryName", queryName), ("position", position)] do
+        Log.warn [fmt|Query replay failed: #{failure}|] |> Task.ignoreError
       Task.throw replayError
     Ok stats -> do
       finishResult <- finishReplayCoordinator subscriber coordinator options |> Task.asResult
@@ -926,13 +992,17 @@ runCoordinatedRebuild subscriber coordinator options = do
         Err replayError -> do
           let failure = sanitizedFailure replayError
           setAllReadiness subscriber (Failed failure)
-          Log.warn [fmt|Query replay overlap drain failed: #{failure}|] |> Task.ignoreError
+          (queryName, position) <- replayFailureContext subscriber
+          Log.withScope [("queryName", queryName), ("position", position)] do
+            Log.warn [fmt|Query replay overlap drain failed: #{failure}|] |> Task.ignoreError
           Task.throw replayError
         Ok _ -> do
           setAllReadiness subscriber Ready
           let completedCount = stats.replayedCount
+          finishedAt <- DateTime.now
+          let durationSeconds = DateTime.toEpochSeconds finishedAt - DateTime.toEpochSeconds startedAt
           Log.info
-            [fmt|Query replay complete events_replayed=#{completedCount} lag_from_head=0 duration_seconds=0|]
+            [fmt|Query replay complete events_replayed=#{completedCount} lag_from_head=0 duration_seconds=#{durationSeconds}|]
             |> Task.ignoreError
 
 
@@ -945,7 +1015,8 @@ rebuildAllAsync
   -> Task QueryRebuildError Unit
 rebuildAllAsync subscriber options = do
   setAllReadiness subscriber Rebuilding
-  result <- runReplayWithRetries subscriber Nothing options 0 |> Task.asResult
+  startedAt <- DateTime.now
+  result <- runReplayWithRetries subscriber Nothing options 0 startedAt |> Task.asResult
   case result of
     Ok _ -> setAllReadiness subscriber Ready
     Err replayError -> do
@@ -1031,10 +1102,13 @@ processEvent subscriber rawEvent = do
       result <- updater.updateQuery rawEvent |> Task.asResult
       case result of
         Ok _ -> Task.yield unit
-        Err errText -> do
+        Err _ -> do
           let updaterName = updater.queryName
-          Log.withScope [("component", "QuerySubscriber"), ("queryName", updaterName)] do
-            Log.warn [fmt|Query updater failed: #{errText}|]
+          let position = case rawEvent.metadata.globalPosition of
+                Just globalPosition -> toText globalPosition
+                Nothing -> "unknown"
+          Log.withScope [("component", "QuerySubscriber"), ("queryName", updaterName), ("position", position)] do
+            Log.warn "Query updater failed"
               |> Task.ignoreError
 
 

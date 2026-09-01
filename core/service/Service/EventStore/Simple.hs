@@ -43,12 +43,18 @@ instance EventStoreConfig SimpleEventStore where
 new :: SimpleEventStore -> Task Text (EventStore Json.Value)
 new config = do
   store <- newEmptyStreamStore
+  insertionLock <- Lock.new
   Task.when config.persistent do
     loadEventsFromDisk config.basePath store
       |> Task.mapError toText
+  let insertSerially payload = do
+        result <- insertImpl config store payload |> Task.asResult |> Lock.with insertionLock
+        case result of
+          Ok success -> Task.yield success
+          Err err -> Task.throw err
   let eventStore =
         EventStore
-          { insert = insertImpl config store,
+          { insert = insertSerially,
             readStreamForwardFrom = readStreamForwardFromImpl store,
             readStreamBackwardFrom = readStreamBackwardFromImpl store,
             readAllStreamEvents = readAllStreamEventsImpl store,

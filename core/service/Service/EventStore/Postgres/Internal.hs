@@ -23,6 +23,7 @@ import Hasql.Pool qualified as HasqlPool
 import Json qualified
 import Log qualified
 import LinkedList (LinkedList)
+import Lock qualified
 import Map (Map)
 import Map qualified
 import Maybe (Maybe (..))
@@ -234,11 +235,17 @@ new ops cfg = do
           }
   result <- Task.asResult do
     ops.initializeTable pool |> Task.mapError (TableInitializationError .> toText)
+    insertionLock <- Lock.new
     subscriptionStore <- SubscriptionStore.new |> Task.mapError (toText .> SubscriptionInitializationError .> toText)
     cleanup <- ops.initializeSubscriptions pool subscriptionStore cfg |> Task.mapError (SubscriptionInitializationError .> toText)
+    let insertSerially payload = do
+          insertResult <- insertImpl sharedOps cfg 0 payload |> Task.asResult |> Lock.with insertionLock
+          case insertResult of
+            Ok success -> Task.yield success
+            Err err -> Task.throw err
     let eventStore =
           EventStore
-            { insert = insertImpl sharedOps cfg 0,
+            { insert = insertSerially,
               readStreamForwardFrom = readStreamForwardFromImpl sharedOps cfg,
               readStreamBackwardFrom = readStreamBackwardFromImpl sharedOps cfg,
               readAllStreamEvents = readAllStreamEventsImpl sharedOps cfg,
