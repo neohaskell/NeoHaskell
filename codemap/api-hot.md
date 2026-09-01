@@ -99,7 +99,7 @@ codemap/signatures/ · type-directed search: ./dev api "<type>"
 ## ConcurrentVar
 - `modify :: (value -> value) -> ConcurrentVar value -> Task w Unit`  <!-- 43 call sites -->
 - `containing :: value -> Task w (ConcurrentVar value)`  <!-- 34 call sites -->
-- `peek :: ConcurrentVar value -> Task w value`  <!-- 33 call sites -->
+- `peek :: ConcurrentVar value -> Task w value`  <!-- 34 call sites -->
 - `modifyReturning :: (value -> Task Never (value, a)) -> ConcurrentVar value -> Task w a`  <!-- 16 call sites -->
 - `swap :: value -> ConcurrentVar value -> Task w value`  <!-- 5 call sites -->
 - `get :: ConcurrentVar value -> Task w value`  <!-- 4 call sites -->

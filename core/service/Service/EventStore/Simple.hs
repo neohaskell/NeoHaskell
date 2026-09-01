@@ -540,7 +540,7 @@ subscribeToAllEventsFromPositionImpl store fromPosition handler = do
         case replayResult of
           Ok _ -> Task.yield unit
           Err _ ->
-            Log.warn "Positional subscription replay failed"
+            Log.warn [fmt|Positional subscription replay failed for #{toText subscriptionId}|]
               |> Task.ignoreError
   _replayTask <-
     AsyncTask.run replayTask

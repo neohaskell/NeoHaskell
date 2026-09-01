@@ -276,12 +276,12 @@ jobs:
   test-hurl:
     needs: [build]
     runs-on: ubuntu-latest
-    # 40m: the dev-shell entry pulls HLS / fourmolu / hlint / ormolu /
+    # 60m: the dev-shell entry pulls HLS / fourmolu / hlint / ormolu /
     # stylish-haskell / floskell on cold magic-nix-cache, and the post-job
     # cache upload step pushes those same paths back to GHA cache (~12m).
     # Tests themselves run in ~8.5m, dev-shell pull ~5m, post-cache upload
-    # ~12m worst case. 40m absorbs the cold-cache one-time cost; warm-cache
-    # runs finish in ~10m total.
+    # ~12m worst case, and the bounded cold-start acceptance runs separately.
+    # 60m absorbs the cold-cache one-time cost; warm-cache runs are much faster.
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7.0.1
@@ -326,7 +326,7 @@ jobs:
           # bytes: same pinned-binary discipline as hlint in checks.yml.
           # --connect-timeout bounds only the handshake; --max-time bounds each
           # attempt and --retry-max-time the whole retry window, so a stalled
-          # response cannot quietly eat this job's 40-minute budget (a 2 MB file
+          # response cannot quietly eat this job's 60-minute budget (a 2 MB file
           # has no business taking two minutes).
           curl -fsSL --retry 5 --retry-delay 5 --retry-all-errors \
             --connect-timeout 20 --max-time 120 --retry-max-time 300 \

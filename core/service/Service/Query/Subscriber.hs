@@ -994,7 +994,7 @@ runCoordinatedRebuild subscriber coordinator options = do
       Log.withScope [("queryName", queryName), ("position", position)] do
         Log.warn [fmt|Query replay failed: #{failure}|] |> Task.ignoreError
       Task.throw replayError
-    Ok stats -> do
+    Ok _ -> do
       finishResult <- finishReplayCoordinator subscriber coordinator options replayedCountRef |> Task.asResult
       case finishResult of
         Err replayError -> do
@@ -1006,7 +1006,7 @@ runCoordinatedRebuild subscriber coordinator options = do
           Task.throw replayError
         Ok _ -> do
           setAllReadiness subscriber Ready
-          let completedCount = stats.replayedCount
+          completedCount <- ConcurrentVar.peek replayedCountRef
           finishedAt <- DateTime.now
           let durationSeconds = DateTime.toEpochSeconds finishedAt - DateTime.toEpochSeconds startedAt
           Log.info
