@@ -687,19 +687,54 @@ spec newStore = do
             |> Array.length
             |> shouldBe 1002
 
-      it "serializes concurrent live inserts by increasing global position" \context -> do
+      it "orders concurrent inserts that overlap positional replay" \context -> do
         entityNameText <- Uuid.generate |> Task.map toText
         let entityName = Event.EntityName entityNameText
+        historicalStream <- StreamId.new
+        historicalPayloads <- createTestEventsForEntity historicalStream entityName 1 0
+        historicalPosition <- case historicalPayloads |> Array.get 0 of
+          Nothing -> Task.throw "concurrent overlap fixture created no historical payload"
+          Just payload -> do
+            success <- context.store.insert payload |> Task.mapError toText
+            Task.yield success.globalPosition
+        replayEntered <- ConcurrentVar.containing False
+        releaseReplay <- ConcurrentVar.containing False
         receivedPositions <- ConcurrentVar.containing (Array.empty :: Array Event.StreamPosition)
-        let subscriber event =
+        let subscriber event = do
               case (event.entityName == entityName, event.metadata.globalPosition) of
-                (True, Just position) -> receivedPositions |> ConcurrentVar.modify (Array.push position)
-                (True, Nothing) -> Task.throw "concurrent fixture event had no global position"
+                (True, Just position) -> do
+                  receivedPositions |> ConcurrentVar.modify (Array.push position)
+                  case position == historicalPosition of
+                    True -> do
+                      replayEntered |> ConcurrentVar.modify (\_ -> True)
+                      let waitForRelease attempts = do
+                            released <- ConcurrentVar.peek releaseReplay
+                            case released || attempts <= (0 :: Int) of
+                              True -> Task.yield unit
+                              False -> do
+                                AsyncTask.sleep 10 |> Task.mapError (\_ -> "concurrent overlap barrier failed")
+                                waitForRelease (attempts - 1)
+                      waitForRelease 500
+                    False -> Task.yield unit
+                (True, Nothing) -> Task.throw "concurrent overlap event had no global position"
                 _ -> Task.yield unit
-        subscriptionId <- context.store.subscribeToAllEvents subscriber |> Task.mapError toText
+        subscriptionId <-
+          context.store.subscribeToAllEventsFromPosition historicalPosition subscriber
+            |> Task.mapError toText
         Task.finally
-          (context.store.unsubscribe subscriptionId |> Task.mapError toText)
+          (do
+            releaseReplay |> ConcurrentVar.modify (\_ -> True)
+            context.store.unsubscribe subscriptionId |> Task.mapError toText)
           do
+            let waitForReplay attempts = do
+                  entered <- ConcurrentVar.peek replayEntered
+                  case entered || attempts <= (0 :: Int) of
+                    True -> Task.yield entered
+                    False -> do
+                      AsyncTask.sleep 10 |> Task.mapError (\_ -> "concurrent overlap start failed")
+                      waitForReplay (attempts - 1)
+            entered <- waitForReplay 500
+            entered |> shouldBe True
             payloads <-
               Array.initialize 50 (\index -> index)
                 |> Task.mapArray
@@ -708,21 +743,22 @@ spec newStore = do
                       events <- createTestEventsForEntity streamId entityName 1 index
                       case events |> Array.get 0 of
                         Just payload -> Task.yield payload
-                        Nothing -> Task.throw "concurrent fixture created no payload"
+                        Nothing -> Task.throw "concurrent overlap fixture created no payload"
                   )
             payloads
               |> Task.mapArray (\payload -> AsyncTask.run (context.store.insert payload |> Task.mapError toText))
               |> Task.andThen (\tasks -> tasks |> Task.mapArray AsyncTask.waitFor)
               |> discard
+            releaseReplay |> ConcurrentVar.modify (\_ -> True)
             let waitForDeliveries attempts = do
                   positions <- ConcurrentVar.peek receivedPositions
-                  if Array.length positions >= (50 :: Int) || attempts <= (0 :: Int)
-                    then Task.yield positions
-                    else do
-                      AsyncTask.sleep 10 |> Task.mapError (\_ -> "concurrent delivery sleep failed")
+                  case Array.length positions >= (51 :: Int) || attempts <= (0 :: Int) of
+                    True -> Task.yield positions
+                    False -> do
+                      AsyncTask.sleep 10 |> Task.mapError (\_ -> "concurrent overlap delivery failed")
                       waitForDeliveries (attempts - 1)
             delivered <- waitForDeliveries 500
-            delivered |> Array.length |> shouldBe 50
+            delivered |> Array.length |> shouldBe 51
             delivered
               |> Array.toLinkedList
               |> GhcList.sort
@@ -733,7 +769,7 @@ spec newStore = do
               |> GhcList.nub
               |> Array.fromLinkedList
               |> Array.length
-              |> shouldBe 50
+              |> shouldBe 51
 
       it "subscriber handlers can read from the same store without deadlocking insert" \context -> do
         -- Regression for #625: insertImpl in SimpleEventStore used to invoke
@@ -797,6 +833,49 @@ spec newStore = do
                 done |> shouldBe True
                 handlerRan |> shouldBe True
               Nothing -> Task.throw "No test event"
+
+      it "allows a subscriber handler to insert recursively without deadlocking" \context -> do
+        nestedStreamId <- StreamId.new
+        nestedPayloads <- createTestEventsForEntity nestedStreamId context.entityName 1 0
+        nestedPayload <- case nestedPayloads |> Array.get 0 of
+          Just payload -> Task.yield payload
+          Nothing -> Task.throw "recursive fixture created no nested payload"
+        nestedStarted <- ConcurrentVar.containing False
+        receivedCount <- ConcurrentVar.containing (0 :: Int)
+        let recursiveHandler event = do
+              case event.entityName == context.entityName of
+                False -> Task.yield unit
+                True -> do
+                  receivedCount |> ConcurrentVar.modify (\count -> count + 1)
+                  shouldInsert <- nestedStarted |> ConcurrentVar.modifyReturning \started ->
+                    Task.yield (True, not started)
+                  case shouldInsert of
+                    True -> context.store.insert nestedPayload |> Task.mapError toText |> discard
+                    False -> Task.yield unit
+        subscriptionId <- context.store.subscribeToAllEvents recursiveHandler |> Task.mapError toText
+        Task.finally
+          (context.store.unsubscribe subscriptionId |> Task.mapError toText)
+          do
+            case context.testEvents |> Array.get 0 of
+              Nothing -> Task.throw "recursive fixture had no outer payload"
+              Just outerPayload -> do
+                completed <- ConcurrentVar.containing False
+                insertTask <- AsyncTask.run do
+                  context.store.insert outerPayload |> Task.mapError toText |> discard
+                  completed |> ConcurrentVar.modify (\_ -> True)
+                let waitForCompletion attempts = do
+                      isComplete <- ConcurrentVar.peek completed
+                      callbacks <- ConcurrentVar.peek receivedCount
+                      case isComplete && callbacks >= (2 :: Int) of
+                        True -> Task.yield True
+                        False -> case attempts <= (0 :: Int) of
+                          True -> Task.yield False
+                          False -> do
+                            AsyncTask.sleep 25 |> Task.mapError (\_ -> "recursive insert sleep failed")
+                            waitForCompletion (attempts - 1)
+                finished <- waitForCompletion 200
+                AsyncTask.cancel insertTask |> Task.asResultSafe |> discard
+                finished |> shouldBe True
 
       it "subscribes from start - receives ALL events including historical ones" \context -> do
         entity1IdText <- Uuid.generate |> Task.map toText

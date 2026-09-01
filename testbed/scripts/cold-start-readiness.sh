@@ -5,11 +5,12 @@ set -euo pipefail
 readonly health_budget_ms=5000
 readonly flatness_budget_ms=2000
 readonly ready_budget_ms=120000
-readonly bootstrap_budget_ms=1200000
+readonly bootstrap_budget_ms=120000
 readonly port=8080
-readonly base_url="http://[::1]:${port}"
+readonly base_url="${COLD_START_BASE_URL:-http://127.0.0.1:${port}}"
 cabal build exe:nhtestbed >/dev/null
-readonly app_binary="$(cabal list-bin exe:nhtestbed)"
+app_binary="$(cabal list-bin exe:nhtestbed)"
+readonly app_binary
 readonly sizes=(1000 10000 100000)
 readonly log_dir="${TMPDIR:-/tmp}/neohaskell-cold-start"
 
@@ -154,12 +155,15 @@ SQL
     exit 1
   fi
 
-  hurl --test --ipv6 testbed/tests/scenarios/cold-start-readiness.hurl
   ready_status="$(curl --noproxy '*' -g -sS -o /dev/null -w '%{http_code}' "${base_url}/ready" 2>/dev/null || true)"
   if [[ "$ready_status" != "503" ]]; then
     echo "/ready was ${ready_status} when /health first bound for ${size} events; expected 503" >&2
     exit 1
   fi
+  case "$base_url" in
+    *"[::1]"*) hurl --test --ipv6 testbed/tests/scenarios/cold-start-readiness.hurl ;;
+    *) hurl --test testbed/tests/scenarios/cold-start-readiness.hurl ;;
+  esac
 
   if [[ "$size" == "1000" ]]; then
     wait_for_status /ready 200 "$ready_budget_ms"
@@ -231,8 +235,12 @@ stop_app
 min_latency="${latencies[0]}"
 max_latency="${latencies[0]}"
 for latency in "${latencies[@]}"; do
-  (( latency < min_latency )) && min_latency="$latency"
-  (( latency > max_latency )) && max_latency="$latency"
+  if (( latency < min_latency )); then
+    min_latency="$latency"
+  fi
+  if (( latency > max_latency )); then
+    max_latency="$latency"
+  fi
 done
 spread=$((max_latency - min_latency))
 if (( spread > flatness_budget_ms )); then

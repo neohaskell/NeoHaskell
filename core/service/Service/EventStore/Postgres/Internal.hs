@@ -745,29 +745,30 @@ handlePostgresLiveEvent
   -> Event Json.Value
   -> Task Text Unit
 handlePostgresLiveEvent callback coordinator event = do
-  _ <- coordinator.replayState
+  delivery <- coordinator.replayState
     |> ConcurrentVar.modifyReturning \state -> do
         case event.metadata.globalPosition of
-          Nothing -> Task.yield (state, unit)
+          Nothing -> Task.yield (state, Nothing)
           Just position -> do
             let duplicate = case state.replayHighWater of
                   Just highWater -> position <= highWater
                   Nothing -> False
             case duplicate of
-              True -> Task.yield (state, unit)
+              True -> Task.yield (state, Nothing)
               False -> case state.replayPhase of
                 PostgresReplaying ->
                   case state.replayOverflow || Map.length state.replayInbox >= postgresReplayInboxCapacity of
-                    True -> Task.yield (state {replayOverflow = True}, unit)
+                    True -> Task.yield (state {replayOverflow = True}, Nothing)
                     False ->
                       Task.yield
                         ( state {replayInbox = state.replayInbox |> Map.set position event}
-                        , unit
+                        , Nothing
                         )
-                PostgresLive -> do
-                  notifyPostgresSubscriberSafely callback event
-                  Task.yield (state {replayHighWater = Just position}, unit)
-  Task.yield unit
+                PostgresLive ->
+                  Task.yield (state {replayHighWater = Just position}, Just event)
+  case delivery of
+    Just eventToDeliver -> notifyPostgresSubscriberSafely callback eventToDeliver
+    Nothing -> Task.yield unit
 
 
 processPostgresReplayEvent
@@ -854,31 +855,30 @@ stabilizePostgresReplay ops cfg callback coordinator = do
       readPostgresReplayPages ops cfg catchUpPosition callback coordinator
       stabilizePostgresReplay ops cfg callback coordinator
     False -> do
-      _ <- coordinator.replayState
+      entries <- coordinator.replayState
         |> ConcurrentVar.modifyReturning \state -> do
-            let entries = state.replayInbox |> Map.entries
-            let drain index currentState =
-                  case entries |> Array.get index of
-                    Nothing ->
-                      Task.yield
-                        ( currentState
-                            { replayPhase = PostgresLive
-                            , replayInbox = Map.empty
-                            , replayOverflow = False
-                            }
-                        , unit
-                        )
-                    Just (position, event) -> do
-                      let duplicate = case currentState.replayHighWater of
-                            Just highWaterPosition -> position <= highWaterPosition
-                            Nothing -> False
-                      case duplicate of
-                        True -> drain (index + 1) currentState
-                        False -> do
-                          notifyPostgresSubscriberSafely callback event
-                          drain (index + 1) (currentState {replayHighWater = Just position})
-            drain 0 state
-      Task.yield unit
+            let pendingEntries = state.replayInbox |> Map.entries
+            case Array.isEmpty pendingEntries of
+              True ->
+                Task.yield
+                  ( state
+                      { replayPhase = PostgresLive
+                      , replayInbox = Map.empty
+                      , replayOverflow = False
+                      }
+                  , pendingEntries
+                  )
+              False ->
+                Task.yield
+                  ( state {replayInbox = Map.empty}
+                  , pendingEntries
+                  )
+      case Array.isEmpty entries of
+        True -> Task.yield unit
+        False -> do
+          entries
+            |> Task.forEach (\(_, pendingEvent) -> processPostgresReplayEvent callback coordinator pendingEvent)
+          stabilizePostgresReplay ops cfg callback coordinator
 
 
 runPostgresReplay
@@ -915,7 +915,14 @@ subscribeToAllEventsFromPositionImpl ops cfg store startPosition callback = do
     store
       |> SubscriptionStore.addGlobalSubscriptionFromPosition liveStart orderedCallback
       |> Task.mapError (\err -> SubscriptionError (SubscriptionId "fromPosition") (err |> toText))
-  _replayTask <- AsyncTask.run (runPostgresReplay ops cfg startPosition callback coordinator)
+  let replayTask = do
+        replayResult <- runPostgresReplay ops cfg startPosition callback coordinator |> Task.asResult
+        case replayResult of
+          Ok _ -> Task.yield unit
+          Err _ ->
+            Log.warn "Positional subscription replay failed"
+              |> Task.ignoreError
+  _replayTask <- AsyncTask.run replayTask
   Log.debug [fmt|Subscription created: #{toText subscriptionId}|] |> Task.ignoreError
   Task.yield subscriptionId
 

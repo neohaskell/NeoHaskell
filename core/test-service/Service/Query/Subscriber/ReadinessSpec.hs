@@ -277,6 +277,31 @@ spec = do
     it "resumes from checkpoint when startPosition > 0" \_ -> do
       pending "needs a registered QueryUpdater and enough events to observe resume-vs-replay-from-zero divergence; current empty-registry setup produces identical (empty) results at any startPosition"
 
+    it "starts the inclusive replay after the persisted checkpoint boundary" \_ -> do
+      baseStore <- InMemory.new |> Task.mapError toText
+      firstReadPosition <- ConcurrentVar.containing Nothing
+      let boundaryStore = baseStore
+            { readAllEventsForwardFrom = \position _ -> do
+                firstReadPosition |> ConcurrentVar.modify (\_ -> Just position)
+                Stream.fromArray Array.empty
+            }
+      let entityName = EntityName "resume-boundary-entity"
+      let updater = QueryUpdater
+            { queryName = "resume-boundary-query"
+            , updateQuery = \_ -> Task.yield unit
+            }
+      let registry = Registry.register entityName updater Registry.empty
+      let checkpointStore = CheckpointStore
+            { resumeFromCheckpoint = \_ _ -> Task.yield (Just 41)
+            , deleteStaleHash = \_ _ -> Task.yield unit
+            , writeCheckpoint = \_ _ _ -> Task.yield unit
+            }
+      subscriber <- newWithCheckpointStore boundaryStore registry checkpointStore
+      Subscriber.rebuildFrom subscriber "resume-boundary-query" (StreamPosition 0) rebuildOptionsDefault
+        |> Task.mapError (show .> toText)
+      observed <- ConcurrentVar.peek firstReadPosition
+      observed |> shouldBe (Just (StreamPosition 42))
+
     it "fails with EventStoreFailed if EventStore.readFrom returns Err" \_ -> do
       -- Fixture: an EventStore whose readAllEventsForwardFrom always throws.
       -- record update on the InMemory base store overrides just the one method.
@@ -372,7 +397,7 @@ spec = do
                 checkpointPositions |> ConcurrentVar.modify (Array.push position)
                 attempt <- checkpointAttempts |> ConcurrentVar.modifyReturning \count ->
                   Task.yield (count + 1, count + 1)
-                if attempt < (5 :: Int)
+                if attempt < (4 :: Int)
                   then Task.throw (StatementFailed "transient checkpoint fixture failure")
                   else Task.yield unit
             }
@@ -393,8 +418,8 @@ spec = do
       writes <- ConcurrentVar.peek checkpointAttempts
       persistedPositions <- ConcurrentVar.peek checkpointPositions
       checkpointReadiness <- Subscriber.readinessOf checkpointSubscriber
-      writes |> shouldBe 5
-      persistedPositions |> shouldBe (Array.initialize 5 (\_ -> (0 :: Int64)))
+      writes |> shouldBe 4
+      persistedPositions |> shouldBe (Array.initialize 4 (\_ -> (0 :: Int64)))
       checkpointReadiness |> shouldBe Ready
 
       updaterShouldFail <- ConcurrentVar.containing True

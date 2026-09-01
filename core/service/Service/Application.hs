@@ -1331,7 +1331,9 @@ runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup maybeWebAuthSe
         case readiness of
           Subscriber.Rebuilding ->
             case attemptsLeft <= (0 :: Int) of
-              True -> Task.yield unit
+              True ->
+                Log.warn "Transportless run stopped waiting after 30 seconds; query replay is still Rebuilding"
+                  |> Task.ignoreError
               False -> do
                 AsyncTask.sleep 10 |> Task.ignoreError
                 waitForTransportlessReplay (attemptsLeft - 1)

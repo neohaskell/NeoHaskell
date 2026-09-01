@@ -271,6 +271,7 @@ processEventHandler :: QuerySubscriber -> Event Json.Value -> Task Text Unit
 processEventHandler subscriber rawEvent = do
   processEvent subscriber rawEvent
   recordProcessedEvent subscriber rawEvent
+  writeLiveCheckpoints subscriber rawEvent
 
 
 -- | Rebuild handler that propagates updater failures into readiness.
@@ -280,12 +281,17 @@ processEventHandlerStrict subscriber rawEvent = do
   recordProcessedEvent subscriber rawEvent
 
 
--- | Advance the in-process cursor and best-effort live checkpoints.
+-- | Advance the in-process cursor without multiplying replay checkpoint writes.
 recordProcessedEvent :: QuerySubscriber -> Event Json.Value -> Task Text Unit
 recordProcessedEvent subscriber rawEvent = do
   case rawEvent.metadata.globalPosition of
     Just pos -> subscriber.lastProcessedPosition |> ConcurrentVar.modify (\_ -> Just pos)
     Nothing -> pass
+
+
+-- | Preserve the existing live-subscription checkpoint contract.
+writeLiveCheckpoints :: QuerySubscriber -> Event Json.Value -> Task Text Unit
+writeLiveCheckpoints subscriber rawEvent =
   case (subscriber.checkpointStore, rawEvent.metadata.globalPosition) of
     (Just cpStore, Just (StreamPosition position)) -> do
       getAllQueryNames subscriber.registry
@@ -639,31 +645,28 @@ handleLiveEvent subscriber coordinator rawEvent = do
                     Just highWater -> position <= highWater
                     Nothing -> False
               case alreadyProcessed of
-                True -> Task.yield (state, Ok unit)
+                True -> Task.yield (state, Ok Nothing)
                 False -> case state.phase of
                   ReplayInProgress -> do
                     case state.needsCatchUp || Map.length state.pendingEvents >= replayInboxCapacity of
                       True ->
                         Task.yield
                           ( state {needsCatchUp = True}
-                          , Ok unit
+                          , Ok Nothing
                           )
                       False ->
                         Task.yield
                           ( state {pendingEvents = state.pendingEvents |> Map.set position rawEvent}
-                          , Ok unit
+                          , Ok Nothing
                           )
-                  ReplayLive -> do
-                    processed <- processEventHandler subscriber rawEvent |> Task.asResultSafe
-                    case processed of
-                      Ok _ ->
-                        Task.yield
-                          ( state {highWaterPosition = Just position}
-                          , Ok unit
-                          )
-                      Err err -> Task.yield (state, Err err)
+                  ReplayLive ->
+                    Task.yield
+                      ( state {highWaterPosition = Just position}
+                      , Ok (Just rawEvent)
+                      )
   case outcome of
-    Ok _ -> Task.yield unit
+    Ok (Just eventToProcess) -> processEventHandler subscriber eventToProcess
+    Ok Nothing -> Task.yield unit
     Err err -> Task.throw err
 
 
@@ -743,10 +746,11 @@ runReplayPages
   -> RebuildOptions
   -> StreamPosition
   -> ReplayStats
+  -> ConcurrentVar Int
   -> Maybe StreamPosition
   -> DateTime.DateTime
   -> Task QueryRebuildError ReplayStats
-runReplayPages subscriber maybeCoordinator options startPosition stats replayHead startedAt = do
+runReplayPages subscriber maybeCoordinator options startPosition stats replayedCountRef replayHead startedAt = do
   let entityNames = Registry.registeredEntityNames subscriber.registry
   case Array.isEmpty entityNames of
     True -> Task.yield stats
@@ -764,13 +768,14 @@ runReplayPages subscriber maybeCoordinator options startPosition stats replayHea
                 case message of
                   AllEvent rawEvent -> do
                     processReplayEvent subscriber maybeCoordinator rawEvent
+                    replayedCountRef |> ConcurrentVar.modify (\replayedCount -> replayedCount + 1)
                     Task.yield (rawEvent.metadata.globalPosition, count + 1)
                   _ -> Task.yield (lastPosition, count)
             )
             (stats.replayedThrough, 0)
           |> Task.mapError UpdaterException
       let (lastPosition, pageCount) = pageResult
-      let totalCount = stats.replayedCount + pageCount
+      totalCount <- ConcurrentVar.peek replayedCountRef
       finishedAt <- DateTime.now
       let durationSeconds = DateTime.toEpochSeconds finishedAt - DateTime.toEpochSeconds startedAt
       let lagFromHead = case (replayHead, lastPosition) of
@@ -796,6 +801,7 @@ runReplayPages subscriber maybeCoordinator options startPosition stats replayHea
               options
               (StreamPosition (position + 1))
               nextStats
+              replayedCountRef
               replayHead
               startedAt
 
@@ -843,9 +849,10 @@ runReplayWithRetries
   -> Maybe ReplayCoordinator
   -> RebuildOptions
   -> Int
+  -> ConcurrentVar Int
   -> DateTime.DateTime
   -> Task QueryRebuildError ReplayStats
-runReplayWithRetries subscriber maybeCoordinator options retryIndex startedAt = do
+runReplayWithRetries subscriber maybeCoordinator options retryIndex replayedCountRef startedAt = do
   startPosition <- nextReplayPosition subscriber
   let entityNames = Registry.registeredEntityNames subscriber.registry
   result <-
@@ -858,6 +865,7 @@ runReplayWithRetries subscriber maybeCoordinator options retryIndex startedAt = 
               options
               startPosition
               ReplayStats {replayedCount = 0, replayedThrough = Nothing}
+              replayedCountRef
               replayHead
               startedAt
         )
@@ -872,7 +880,7 @@ runReplayWithRetries subscriber maybeCoordinator options retryIndex startedAt = 
             |> Task.ignoreError
           AsyncTask.sleep delayMs
             |> Task.mapError (\_ -> replayError)
-          runReplayWithRetries subscriber maybeCoordinator options (retryIndex + 1) startedAt
+          runReplayWithRetries subscriber maybeCoordinator options (retryIndex + 1) replayedCountRef startedAt
         _ -> Task.throw replayError
 
 
@@ -891,8 +899,9 @@ finishReplayCoordinator
   :: QuerySubscriber
   -> ReplayCoordinator
   -> RebuildOptions
+  -> ConcurrentVar Int
   -> Task QueryRebuildError Unit
-finishReplayCoordinator subscriber coordinator options = do
+finishReplayCoordinator subscriber coordinator options replayedCountRef = do
   (catchUpRequired, highWater) <- clearCatchUpFlag coordinator
   case catchUpRequired of
     True -> do
@@ -909,49 +918,47 @@ finishReplayCoordinator subscriber coordinator options = do
           options
           catchUpStart
           ReplayStats {replayedCount = 0, replayedThrough = highWater}
+          replayedCountRef
           replayHead
           startedAt
-      finishReplayCoordinator subscriber coordinator options
+      finishReplayCoordinator subscriber coordinator options replayedCountRef
     False -> do
-      outcome <-
+      entries <-
         coordinator.replayState
           |> ConcurrentVar.modifyReturning \state -> do
-              let entries = state.pendingEvents |> Map.entries
-              let drain index currentState =
-                    case entries |> Array.get index of
-                      Nothing ->
-                        Task.yield
-                          ( currentState
-                              { phase = ReplayLive
-                              , pendingEvents = Map.empty
-                              , needsCatchUp = False
-                              }
-                          , Ok unit
-                          )
-                      Just (position, event) -> do
-                        let duplicate = case currentState.highWaterPosition of
-                              Just highWaterPosition -> position <= highWaterPosition
-                              Nothing -> False
-                        case duplicate of
-                          True -> drain (index + 1) currentState
-                          False -> do
-                            processed <- processEventHandlerStrict subscriber event |> Task.asResultSafe
-                            case processed of
-                              Ok _ -> drain (index + 1) (currentState {highWaterPosition = Just position})
-                              Err err -> Task.yield (currentState, Err err)
-              drain 0 state
-      case outcome of
-        Ok _ -> Task.yield unit
-        Err err -> Task.throw (UpdaterException err)
+              let pendingEntries = state.pendingEvents |> Map.entries
+              case Array.isEmpty pendingEntries of
+                True ->
+                  Task.yield
+                    ( state
+                        { phase = ReplayLive
+                        , pendingEvents = Map.empty
+                        , needsCatchUp = False
+                        }
+                    , pendingEntries
+                    )
+                False ->
+                  Task.yield
+                    ( state {pendingEvents = Map.empty}
+                    , pendingEntries
+                    )
+      case Array.isEmpty entries of
+        True -> Task.yield unit
+        False -> do
+          entries
+            |> Task.forEach
+              ( \(_, pendingEvent) ->
+                  processReplayEvent subscriber (Just coordinator) pendingEvent
+                    |> Task.mapError UpdaterException
+              )
+          finishReplayCoordinator subscriber coordinator options replayedCountRef
 
 
 -- | Choose bounded structured context for aggregate replay failure logs.
 replayFailureContext :: QuerySubscriber -> Task w (Text, Text)
 replayFailureContext subscriber = do
   lastPosition <- ConcurrentVar.peek subscriber.lastProcessedPosition
-  let queryName = case getAllQueryNames subscriber.registry |> Array.first of
-        Just firstQueryName -> firstQueryName
-        Nothing -> "none"
+  let queryName = "all"
   let position = case lastPosition of
         Just processedPosition -> toText processedPosition
         Nothing -> "0"
@@ -977,7 +984,8 @@ runCoordinatedRebuild
   -> Task QueryRebuildError Unit
 runCoordinatedRebuild subscriber coordinator options = do
   startedAt <- DateTime.now
-  result <- runReplayWithRetries subscriber (Just coordinator) options 0 startedAt |> Task.asResult
+  replayedCountRef <- ConcurrentVar.containing (0 :: Int)
+  result <- runReplayWithRetries subscriber (Just coordinator) options 0 replayedCountRef startedAt |> Task.asResult
   case result of
     Err replayError -> do
       let failure = sanitizedFailure replayError
@@ -987,7 +995,7 @@ runCoordinatedRebuild subscriber coordinator options = do
         Log.warn [fmt|Query replay failed: #{failure}|] |> Task.ignoreError
       Task.throw replayError
     Ok stats -> do
-      finishResult <- finishReplayCoordinator subscriber coordinator options |> Task.asResult
+      finishResult <- finishReplayCoordinator subscriber coordinator options replayedCountRef |> Task.asResult
       case finishResult of
         Err replayError -> do
           let failure = sanitizedFailure replayError
@@ -1016,7 +1024,8 @@ rebuildAllAsync
 rebuildAllAsync subscriber options = do
   setAllReadiness subscriber Rebuilding
   startedAt <- DateTime.now
-  result <- runReplayWithRetries subscriber Nothing options 0 startedAt |> Task.asResult
+  replayedCountRef <- ConcurrentVar.containing (0 :: Int)
+  result <- runReplayWithRetries subscriber Nothing options 0 replayedCountRef startedAt |> Task.asResult
   case result of
     Ok _ -> setAllReadiness subscriber Ready
     Err replayError -> do

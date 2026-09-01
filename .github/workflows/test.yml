@@ -282,7 +282,7 @@ jobs:
     # Tests themselves run in ~8.5m, dev-shell pull ~5m, post-cache upload
     # ~12m worst case. 40m absorbs the cold-cache one-time cost; warm-cache
     # runs finish in ~10m total.
-    timeout-minutes: 40
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: DeterminateSystems/determinate-nix-action@v3.22.2
