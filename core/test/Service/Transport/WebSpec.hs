@@ -8,6 +8,7 @@ import Data.Text.Encoding qualified as GhcTextEncoding
 import Json qualified
 import Map qualified
 import Network.HTTP.Types.Header qualified as HTTP
+import Network.HTTP.Types.Status qualified as HTTPStatus
 import Network.Wai qualified as Wai
 import Network.Wai.Internal qualified as WaiInternal
 import Service.AccessControl (AccessError (..))
@@ -15,8 +16,10 @@ import Service.AccessControl qualified as Auth
 import Service.Query.Core qualified
 import Service.Query.Endpoint qualified as Endpoint
 import Service.Query.Pagination (QueryPageRequest (..), absoluteMaxLimit)
+import Service.Query.Subscriber qualified as Subscriber
 import Service.QueryObjectStore.Core (Error (..), QueryObjectStore (..))
 import Service.QueryObjectStore.InMemory qualified as InMemoryStore
+import Service.Transport.Web qualified as Web
 import Task qualified
 import Test
 import ToText qualified
@@ -80,6 +83,15 @@ instance Service.Query.Core.Query AdminQuery where
 
 spec :: Spec Unit
 spec = do
+  describe "readiness endpoint" do
+    it "ready stays unavailable until all queries reach head" \_ -> do
+      let (rebuildingStatus, _) = Web.renderReadiness Subscriber.Rebuilding
+      let (failedStatus, _) = Web.renderReadiness (Subscriber.Failed "fixture failure")
+      let (readyStatus, _) = Web.renderReadiness Subscriber.Ready
+      rebuildingStatus |> shouldBe HTTPStatus.status503
+      failedStatus |> shouldBe HTTPStatus.status503
+      readyStatus |> shouldBe HTTPStatus.status200
+
   describe "HTTP Transport Authorization" do
     describe "401 Unauthorized responses" do
       it "returns 401 for unauthenticated access to protected query" \_ -> do

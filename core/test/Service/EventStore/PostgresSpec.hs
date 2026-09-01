@@ -17,6 +17,7 @@ import Test.Service.EventStore.Core (CartEvent)
 import Var qualified
 import Service.Event (EntityName (..), Event)
 import Service.Event.StreamId qualified as StreamId
+import Service.Event.StreamPosition (StreamPosition (..))
 import Service.EventStore.Postgres.Internal (toConnectionSettings)
 import Service.Infra.Postgres.ConnectionConfig qualified as ConnectionConfig
 import Result qualified
@@ -68,6 +69,18 @@ spec = do
           |> discard
         observe.initializeSubscriptionsCalls
           |> varContents shouldBe 1
+
+      it "operations reuse the store-owned pool until close" \_ -> do
+        (ops, observe) <- mockNewOps
+        store <- Internal.new ops config |> Task.mapError toText
+        store.readAllEventsForwardFrom (StreamPosition 0) (EventStore.Limit 1)
+          |> Task.mapError toText
+          |> discard
+        observe.acquireCalls |> varContents shouldBe 1
+        observe.releaseCalls |> varContents shouldBe 0
+        store.close |> Task.mapError toText
+        observe.acquireCalls |> varContents shouldBe 1
+        observe.releaseCalls |> varContents shouldBe 1
 
     let newStore = do
           let ops = Internal.defaultOps
@@ -160,7 +173,8 @@ spec = do
 data NewObserve = NewObserve
   { acquireCalls :: Var Int,
     initializeTableCalls :: Var Int,
-    initializeSubscriptionsCalls :: Var Int
+    initializeSubscriptionsCalls :: Var Int,
+    releaseCalls :: Var Int
   }
 
 
@@ -209,7 +223,7 @@ mockNewOps = do
         Var.increment releaseCalls
         Task.yield unit
 
-  let newObserver = NewObserve {acquireCalls, initializeTableCalls, initializeSubscriptionsCalls}
+  let newObserver = NewObserve {acquireCalls, initializeTableCalls, initializeSubscriptionsCalls, releaseCalls}
 
   let ops = Internal.Ops {acquire, initializeTable, initializeSubscriptions, release}
   Task.yield (ops, newObserver)

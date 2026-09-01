@@ -480,6 +480,34 @@ spec newStore = do
             entity1Events |> Array.length |> shouldBe eventCount
             entity2Events |> Array.length |> shouldBe eventCount
 
+      it "inclusive start position is consistent across backends" \context -> do
+        entityNameText <- Uuid.generate |> Task.map toText
+        let entityName = Event.EntityName entityNameText
+        streamId <- StreamId.new
+        historicalEvents <- createTestEventsForEntity streamId entityName 2 0
+        inserted <- historicalEvents |> Task.mapArray (\event -> context.store.insert event |> Task.mapError toText)
+        startPosition <- case inserted |> Array.get 0 of
+          Just success -> Task.yield success.globalPosition
+          Nothing -> Task.throw "inclusive-position fixture inserted no events"
+        received <- ConcurrentVar.containing (Array.empty :: Array (Event CartEvent))
+        let subscriber event = do
+              if event.entityName == entityName
+                then received |> ConcurrentVar.modify (Array.push event)
+                else Task.yield unit
+        subscriptionId <-
+          context.store.subscribeToAllEventsFromPosition startPosition subscriber
+            |> Task.mapError toText
+        Task.finally
+          (context.store.unsubscribe subscriptionId |> Task.mapError toText)
+          do
+            AsyncTask.sleep 100 |> Task.mapError (\_ -> "inclusive-position sleep failed")
+            delivered <- ConcurrentVar.peek received
+            delivered |> Array.length |> shouldBe 2
+            delivered |> Array.get 0 |> shouldSatisfy \maybeEvent ->
+              case maybeEvent of
+                Just event -> event.metadata.globalPosition == Just startPosition
+                Nothing -> False
+
       it "subscribes from specific position - receives events after specified global position" \context -> do
         entity1IdText <- Uuid.generate |> Task.map toText
         let entity1Id = Event.EntityName entity1IdText
@@ -559,6 +587,102 @@ spec newStore = do
 
             entity1Events |> Array.length |> shouldBe eventCount
             entity2Events |> Array.length |> shouldBe eventCount
+
+      it "register-first replay overlap is ordered and gap-free after inbox overflow" \context -> do
+        entityNameText <- Uuid.generate |> Task.map toText
+        let entityName = Event.EntityName entityNameText
+        streamId <- StreamId.new
+        historical <- createTestEventsForEntity streamId entityName 1 0
+        insertedHistorical <- historical |> Task.mapArray (\event -> context.store.insert event |> Task.mapError toText)
+        startPosition <- case insertedHistorical |> Array.get 0 of
+          Just success -> Task.yield success.globalPosition
+          Nothing -> Task.throw "overflow fixture inserted no historical event"
+
+        replayEntered <- ConcurrentVar.containing False
+        releaseReplay <- ConcurrentVar.containing False
+        subscriptionReturned <- ConcurrentVar.containing False
+        insertionCompleted <- ConcurrentVar.containing False
+        subscriptionIdVar <- ConcurrentVar.containing Nothing
+        receivedPositions <- ConcurrentVar.containing (Array.empty :: Array Event.StreamPosition)
+
+        let waitFor flag attempts = do
+              value <- ConcurrentVar.peek flag
+              if value || attempts <= (0 :: Int)
+                then Task.yield value
+                else do
+                  AsyncTask.sleep 10 |> Task.mapError (\_ -> "overflow poll sleep failed")
+                  waitFor flag (attempts - 1)
+        let waitForCount expected attempts = do
+              positions <- ConcurrentVar.peek receivedPositions
+              if Array.length positions >= expected || attempts <= (0 :: Int)
+                then Task.yield positions
+                else do
+                  AsyncTask.sleep 10 |> Task.mapError (\_ -> "overflow count sleep failed")
+                  waitForCount expected (attempts - 1)
+        let subscriber event = do
+              if event.entityName != entityName
+                then Task.yield unit
+                else do
+                  case event.metadata.globalPosition of
+                    Just position -> receivedPositions |> ConcurrentVar.modify (Array.push position)
+                    Nothing -> Task.throw "overflow fixture event had no global position"
+                  case event.metadata.globalPosition == Just startPosition of
+                    False -> Task.yield unit
+                    True -> do
+                      replayEntered |> ConcurrentVar.modify (\_ -> True)
+                      let waitUntilReleased attempts = do
+                            released <- ConcurrentVar.peek releaseReplay
+                            if released || attempts <= (0 :: Int)
+                              then Task.yield unit
+                              else do
+                                AsyncTask.sleep 10 |> Task.mapError (\_ -> "replay barrier sleep failed")
+                                waitUntilReleased (attempts - 1)
+                      waitUntilReleased 1000
+
+        subscriptionTask <- AsyncTask.run do
+          subscriptionId <-
+            context.store.subscribeToAllEventsFromPosition startPosition subscriber
+              |> Task.mapError toText
+          subscriptionIdVar |> ConcurrentVar.modify (\_ -> Just subscriptionId)
+          subscriptionReturned |> ConcurrentVar.modify (\_ -> True)
+
+        let cleanup = do
+              releaseReplay |> ConcurrentVar.modify (\_ -> True)
+              maybeSubscriptionId <- ConcurrentVar.peek subscriptionIdVar
+              case maybeSubscriptionId of
+                Just subscriptionId -> context.store.unsubscribe subscriptionId |> Task.mapError toText |> Task.ignoreError
+                Nothing -> pass
+              AsyncTask.cancel subscriptionTask |> Task.asResultSafe |> discard
+
+        Task.finally cleanup do
+          entered <- waitFor replayEntered 500
+          entered |> shouldBe True
+          returnedBeforeReplay <- waitFor subscriptionReturned 25
+          returnedBeforeReplay |> shouldBe True
+
+          overlapPayloads <- createBatchedTestEventsForEntity streamId entityName 1001 1 100
+          insertionTask <- AsyncTask.run do
+            overlapPayloads
+              |> Task.forEach (\payload -> context.store.insert payload |> Task.mapError toText |> discard)
+            insertionCompleted |> ConcurrentVar.modify (\_ -> True)
+          insertedWhileBlocked <- waitFor insertionCompleted 1000
+          insertedWhileBlocked |> shouldBe True
+          releaseReplay |> ConcurrentVar.modify (\_ -> True)
+          AsyncTask.waitCatch insertionTask |> discard
+
+          delivered <- waitForCount 1002 1000
+          delivered |> Array.length |> shouldBe 1002
+          delivered
+            |> Array.toLinkedList
+            |> GhcList.sort
+            |> Array.fromLinkedList
+            |> shouldBe delivered
+          delivered
+            |> Array.toLinkedList
+            |> GhcList.nub
+            |> Array.fromLinkedList
+            |> Array.length
+            |> shouldBe 1002
 
       it "subscriber handlers can read from the same store without deadlocking insert" \context -> do
         -- Regression for #625: insertImpl in SimpleEventStore used to invoke
@@ -703,6 +827,23 @@ createTestEventsForEntity streamId entityName count startPosition = do
 
   [startPosition .. (startPosition + count - 1)]
     |> Task.mapArray createEvent
+
+
+createBatchedTestEventsForEntity ::
+  Event.StreamId -> Event.EntityName -> Int -> Int -> Int -> Task _ (Array (Event.InsertionPayload CartEvent))
+createBatchedTestEventsForEntity streamId entityName count startPosition batchSize = do
+  let batchStarts = [startPosition, startPosition + batchSize .. startPosition + count - 1]
+  batchStarts
+    |> Task.mapArray \batchStart -> do
+        let batchEnd = min (startPosition + count - 1) (batchStart + batchSize - 1)
+        insertions <- [batchStart .. batchEnd] |> Task.mapArray newInsertion
+        Task.yield
+          Event.InsertionPayload
+            { streamId
+            , entityName
+            , insertionType = Event.AnyStreamState
+            , insertions
+            }
 
 
 createRapidTestEventsFromPosition ::

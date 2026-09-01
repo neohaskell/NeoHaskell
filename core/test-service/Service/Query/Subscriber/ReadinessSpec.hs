@@ -58,13 +58,19 @@ spec = do
       baseStore <- InMemory.new |> Task.mapError toText
       catchUpStarted <- ConcurrentVar.containing False
       startReturned <- ConcurrentVar.containing False
+      let entityName = EntityName "startup-liveness-entity"
+      let updater = QueryUpdater
+            { queryName = "startup-liveness-query"
+            , updateQuery = \_ -> Task.yield unit
+            }
+      let registry = Registry.register entityName updater Registry.empty
       let blockedCatchUpStore = baseStore
-            { subscribeToAllEventsFromPosition = \position handler -> do
+            { readAllEventsForwardFromFiltered = \_ _ _ -> do
                 catchUpStarted |> ConcurrentVar.modify (\_ -> True)
                 AsyncTask.sleep 5000
-                baseStore.subscribeToAllEventsFromPosition position handler
+                Stream.fromArray Array.empty
             }
-      subscriber <- Subscriber.new blockedCatchUpStore Registry.empty
+      subscriber <- Subscriber.new blockedCatchUpStore registry
       startTask <- AsyncTask.run do
         Subscriber.start subscriber
         startReturned |> ConcurrentVar.modify (\_ -> True)
@@ -76,6 +82,86 @@ spec = do
           didStartReturn <- ConcurrentVar.peek startReturned
           catchUpWasStarted |> shouldBe True
           didStartReturn |> shouldBe True
+
+  describe "single-pass paged rebuild" do
+    it "replays more than chunkSize exactly once and routes by entity" \_ -> do
+      baseStore <- InMemory.new |> Task.mapError toText
+      eventMeta <- EventMetadata.new
+      let entityA = EntityName "paged-entity-a"
+      let entityB = EntityName "paged-entity-b"
+      let mkEvent position =
+            Event
+              { entityName = if position == (1000 :: Int) then entityB else entityA
+              , streamId = StreamId "paged-stream"
+              , event = Json.null
+              , metadata = eventMeta { globalPosition = Just (StreamPosition (fromIntegral position)) }
+              }
+      let events = Array.initialize 1001 mkEvent
+      filteredReads <- ConcurrentVar.containing (Array.empty :: Array (StreamPosition, Limit, Array EntityName))
+      unfilteredReads <- ConcurrentVar.containing (0 :: Int)
+      let pagedStore = baseStore
+            { readAllEventsForwardFrom = \_ _ -> do
+                unfilteredReads |> ConcurrentVar.modify (\count -> count + 1)
+                Stream.fromArray Array.empty
+            , readAllEventsForwardFromFiltered = \start limit@(Limit rawLimit) entityNames -> do
+                filteredReads |> ConcurrentVar.modify (Array.push (start, limit, entityNames))
+                let page =
+                      events
+                        |> Array.takeIf (\event -> event.metadata.globalPosition >= Just start)
+                        |> Array.take (fromIntegral rawLimit)
+                        |> Array.map AllEvent
+                Stream.fromArray page
+            }
+      seenA <- ConcurrentVar.containing (Array.empty :: Array StreamPosition)
+      seenB <- ConcurrentVar.containing (Array.empty :: Array StreamPosition)
+      let recordPosition target event =
+            case event.metadata.globalPosition of
+              Just position -> target |> ConcurrentVar.modify (Array.push position)
+              Nothing -> Task.throw "fixture event had no global position"
+      let updaterA = QueryUpdater
+            { queryName = "paged-query-a"
+            , updateQuery = recordPosition seenA
+            }
+      let updaterB = QueryUpdater
+            { queryName = "paged-query-b"
+            , updateQuery = recordPosition seenB
+            }
+      let registry =
+            Registry.empty
+              |> Registry.register entityA updaterA
+              |> Registry.register entityB updaterB
+      subscriber <- Subscriber.new pagedStore registry
+      Subscriber.rebuildAllAsync subscriber rebuildOptionsDefault
+        |> Task.mapError (show .> toText)
+      reads <- ConcurrentVar.peek filteredReads
+      forbiddenReads <- ConcurrentVar.peek unfilteredReads
+      positionsA <- ConcurrentVar.peek seenA
+      positionsB <- ConcurrentVar.peek seenB
+      forbiddenReads |> shouldBe 0
+      reads |> Array.length |> shouldBe 2
+      positionsA |> Array.length |> shouldBe 1000
+      positionsB |> shouldBe (Array.wrap (StreamPosition 1000))
+
+    it "multi-query rebuild performs one entity-filtered pass" \_ -> do
+      baseStore <- InMemory.new |> Task.mapError toText
+      filteredReads <- ConcurrentVar.containing (0 :: Int)
+      let entityName = EntityName "single-pass-entity"
+      let countingStore = baseStore
+            { readAllEventsForwardFromFiltered = \_ _ _ -> do
+                filteredReads |> ConcurrentVar.modify (\count -> count + 1)
+                Stream.fromArray Array.empty
+            }
+      let updaterA = QueryUpdater { queryName = "single-pass-a", updateQuery = \_ -> Task.yield unit }
+      let updaterB = QueryUpdater { queryName = "single-pass-b", updateQuery = \_ -> Task.yield unit }
+      let registry =
+            Registry.empty
+              |> Registry.register entityName updaterA
+              |> Registry.register entityName updaterB
+      subscriber <- Subscriber.new countingStore registry
+      Subscriber.rebuildAllAsync subscriber rebuildOptionsDefault
+        |> Task.mapError (show .> toText)
+      readCount <- ConcurrentVar.peek filteredReads
+      readCount |> shouldBe 1
 
   describe "rebuildFrom" do
     it "replays all events from startPosition to EventStore head and writes to store" \_ -> do
@@ -209,6 +295,98 @@ spec = do
         Ok _ -> fail "Expected EventStoreFailed but rebuild succeeded"
 
   describe "rebuildAllAsync" do
+    it "aggregate readiness covers every query from start through bounded retry" \_ -> do
+      baseStore <- InMemory.new |> Task.mapError toText
+      gate <- ConcurrentVar.containing False
+      let waitForGate attempts = do
+            opened <- ConcurrentVar.peek gate
+            if opened || attempts <= (0 :: Int)
+              then Task.yield unit
+              else do
+                AsyncTask.sleep 10 |> Task.mapError (\_ -> "gate sleep failed")
+                waitForGate (attempts - 1)
+      eventMeta <- EventMetadata.new
+      let entityName = EntityName "readiness-all-entity"
+      let event =
+            Event
+              { entityName
+              , streamId = StreamId "readiness-all-stream"
+              , event = Json.null
+              , metadata = eventMeta { globalPosition = Just (StreamPosition 0) }
+              }
+      let blockedStore = baseStore
+            { readAllEventsForwardFromFiltered = \_ _ _ -> Stream.fromArray (Array.wrap (AllEvent event))
+            }
+      let blockedUpdater name = QueryUpdater
+            { queryName = name
+            , updateQuery = \_ -> waitForGate 500
+            }
+      let registry =
+            Registry.empty
+              |> Registry.register entityName (blockedUpdater "readiness-a")
+              |> Registry.register entityName (blockedUpdater "readiness-b")
+      subscriber <- Subscriber.new blockedStore registry
+      rebuildTask <- AsyncTask.run do
+        Subscriber.rebuildAllAsync subscriber rebuildOptionsDefault
+          |> Task.mapError (show .> toText)
+      Task.finally
+        (AsyncTask.cancel rebuildTask |> Task.asResultSafe |> discard)
+        do
+          AsyncTask.sleep 50 |> Task.mapError (\_ -> "readiness observation sleep failed")
+          readinessA <- Subscriber.readinessOfQuery subscriber "readiness-a"
+          readinessB <- Subscriber.readinessOfQuery subscriber "readiness-b"
+          overallDuring <- Subscriber.readinessOf subscriber
+          readinessA |> shouldBe (Just Rebuilding)
+          readinessB |> shouldBe (Just Rebuilding)
+          overallDuring |> shouldBe Rebuilding
+          gate |> ConcurrentVar.modify (\_ -> True)
+          AsyncTask.waitCatch rebuildTask |> discard
+          overallAfter <- Subscriber.readinessOf subscriber
+          overallAfter |> shouldBe Ready
+
+      transientAttempts <- ConcurrentVar.containing (0 :: Int)
+      let transientStore = baseStore
+            { readAllEventsForwardFromFiltered = \_ _ _ -> do
+                attempt <- transientAttempts |> ConcurrentVar.modifyReturning \count ->
+                  Task.yield (count + 1, count + 1)
+                if attempt < (3 :: Int)
+                  then Task.throw (EventStoreCore.StorageFailure "transient fixture failure")
+                  else Stream.fromArray Array.empty
+            }
+      let transientUpdater = QueryUpdater { queryName = "transient-query", updateQuery = \_ -> Task.yield unit }
+      let transientRegistry = Registry.register entityName transientUpdater Registry.empty
+      transientSubscriber <- Subscriber.new transientStore transientRegistry
+      Subscriber.rebuildAllAsync transientSubscriber rebuildOptionsDefault
+        |> Task.mapError (show .> toText)
+      attempts <- ConcurrentVar.peek transientAttempts
+      transientReadiness <- Subscriber.readinessOf transientSubscriber
+      attempts |> shouldBe 3
+      transientReadiness |> shouldBe Ready
+
+      updaterShouldFail <- ConcurrentVar.containing True
+      let recoveryStore = baseStore
+            { readAllEventsForwardFromFiltered = \_ _ _ -> Stream.fromArray (Array.wrap (AllEvent event))
+            }
+      let recoveryUpdater = QueryUpdater
+            { queryName = "recovery-query"
+            , updateQuery = \_ -> do
+                shouldFail <- ConcurrentVar.peek updaterShouldFail
+                if shouldFail
+                  then Task.throw "deterministic updater failure"
+                  else Task.yield unit
+            }
+      let recoveryRegistry = Registry.register entityName recoveryUpdater Registry.empty
+      recoverySubscriber <- Subscriber.new recoveryStore recoveryRegistry
+      Subscriber.rebuildAllAsync recoverySubscriber rebuildOptionsDefault
+        |> Task.mapError (show .> toText)
+      failedReadiness <- Subscriber.readinessOf recoverySubscriber
+      failedReadiness |> shouldBe (Failed "deterministic updater failure")
+      updaterShouldFail |> ConcurrentVar.modify (\_ -> False)
+      Subscriber.rebuildAllAsync recoverySubscriber rebuildOptionsDefault
+        |> Task.mapError (show .> toText)
+      recoveredReadiness <- Subscriber.readinessOf recoverySubscriber
+      recoveredReadiness |> shouldBe Ready
+
     it "spawns async tasks for all registered queries and returns when all complete successfully" \_ -> do
       pending "needs at least one registered QueryUpdater to observe that async tasks are spawned; current empty-registry setup completes immediately with no tasks"
 
