@@ -540,9 +540,12 @@ spec newStore = do
                 else Task.yield unit
               Task.yield unit :: Task Text Unit
 
-        -- Subscribe from the specific position (should receive events AFTER this position)
+        -- The backend contract is inclusive. To request events AFTER the
+        -- checkpoint, callers resume at checkpoint + 1.
+        let (Event.StreamPosition checkpointPosition) = positionAfterFirstBatch
+        let resumePosition = Event.StreamPosition (checkpointPosition + 1)
         subscriptionId <-
-          context.store.subscribeToAllEventsFromPosition positionAfterFirstBatch subscriber |> Task.mapError toText
+          context.store.subscribeToAllEventsFromPosition resumePosition subscriber |> Task.mapError toText
 
         -- Wrap the test logic with guaranteed cleanup
         Task.finally

@@ -26,6 +26,7 @@ import Service.Query.Registry qualified as Registry
 import Service.Query.Updater qualified as Updater
 import Service.QueryObjectStore.Core (QueryObjectStore)
 import Service.QueryObjectStore.InMemory qualified as InMemory
+import Service.SnapshotCache.InMemory qualified as SnapshotCache
 import Service.Transport (QueryEndpointHandler, EndpointSchema (..))
 import Maybe (Maybe (..))
 import Task (Task)
@@ -194,10 +195,14 @@ instance
     -- Create typed EventStore for this entity's event type
     let typedEventStore = rawEventStore |> EventStore.castEventStore @(EventOf entity)
 
-    -- Create EntityFetcher for this entity type
+    -- Create one snapshot cache for this entity/query wiring. Replay invokes
+    -- the updater once per event; retaining the reconstructed entity prevents
+    -- every invocation from re-reading the complete stream history.
+    snapshotCache <- SnapshotCache.new @entity |> Task.mapError toText
     entityFetcher <-
-      EntityFetcher.new
+      EntityFetcher.newWithCache
         typedEventStore
+        snapshotCache
         (initialStateImpl @entity)
         (updateImpl @entity)
         |> Task.mapError toText

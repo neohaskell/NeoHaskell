@@ -5,6 +5,10 @@ set -euo pipefail
 readonly health_budget_ms=5000
 readonly flatness_budget_ms=2000
 readonly ready_budget_ms=120000
+readonly bootstrap_budget_ms=1200000
+readonly port=8080
+readonly base_url="http://[::1]:${port}"
+readonly app_binary="$(cabal list-bin exe:nhtestbed)"
 readonly sizes=(1000 10000 100000)
 readonly log_dir="${TMPDIR:-/tmp}/neohaskell-cold-start"
 
@@ -33,7 +37,7 @@ wait_for_status() {
   started="$(now_ms)"
   while true; do
     local status
-    status="$(curl -sS -o /dev/null -w '%{http_code}' "http://localhost:8080${path}" 2>/dev/null || true)"
+    status="$(curl --noproxy '*' -g -sS -o /dev/null -w '%{http_code}' "${base_url}${path}" 2>/dev/null || true)"
     if [[ "$status" == "$expected" ]]; then
       return 0
     fi
@@ -47,21 +51,26 @@ wait_for_status() {
 
 start_app() {
   local log_file="$1"
-  cabal run nhtestbed >"$log_file" 2>&1 &
+  "$app_binary" >"$log_file" 2>&1 &
   app_pid=$!
 }
 
 stop_app() {
   cleanup
   for _ in $(seq 1 100); do
-    if ! curl -sS http://localhost:8080/health >/dev/null 2>&1; then
+    if ! curl --noproxy '*' -g -sS "${base_url}/health" >/dev/null 2>&1; then
       return 0
     fi
     sleep 0.05
   done
-  echo "Testbed did not release port 8080" >&2
+  echo "Testbed did not release port ${port}" >&2
   return 1
 }
+
+if curl --noproxy '*' -g -sS "${base_url}/health" >/dev/null 2>&1; then
+  echo "Cold-start test port ${port} is already in use" >&2
+  exit 1
+fi
 
 export PGPASSWORD="${PGPASSWORD:-neohaskell}"
 readonly psql_args=(-h "${POSTGRES_HOST:-127.0.0.1}" -U "${POSTGRES_USER:-neohaskell}" -d "${POSTGRES_DB:-neohaskell}" -v ON_ERROR_STOP=1)
@@ -70,9 +79,9 @@ readonly psql_args=(-h "${POSTGRES_HOST:-127.0.0.1}" -U "${POSTGRES_USER:-neohas
 # fixture sizes duplicate its validated eventData/metadata while assigning
 # independent database IDs and monotonically increasing stream positions.
 start_app "$log_dir/bootstrap.log"
-wait_for_status /health 200 30000
+wait_for_status /health 200 "$bootstrap_budget_ms"
 psql "${psql_args[@]}" -c 'TRUNCATE TABLE events RESTART IDENTITY'
-curl -fsS -X POST -H 'Content-Type: application/json' -d '[]' http://localhost:8080/commands/create-cart >/dev/null
+curl --noproxy '*' -g -fsS -X POST -H 'Content-Type: application/json' -d '[]' "${base_url}/commands/create-cart" >/dev/null
 stop_app
 
 psql "${psql_args[@]}" <<'SQL'
@@ -110,8 +119,8 @@ SQL
     exit 1
   fi
 
-  hurl --test testbed/tests/scenarios/cold-start-readiness.hurl
-  ready_status="$(curl -sS -o /dev/null -w '%{http_code}' http://localhost:8080/ready)"
+  hurl --test --ipv6 testbed/tests/scenarios/cold-start-readiness.hurl
+  ready_status="$(curl --noproxy '*' -g -sS -o /dev/null -w '%{http_code}' "${base_url}/ready")"
   if [[ "$ready_status" != "503" ]]; then
     echo "/ready was ${ready_status} when /health first bound for ${size} events; expected 503" >&2
     exit 1
@@ -119,7 +128,7 @@ SQL
 
   if [[ "$size" == "1000" ]]; then
     wait_for_status /ready 200 "$ready_budget_ms"
-    curl -fsS http://localhost:8080/queries/cart-summary | python3 -c 'import json,sys; body=json.load(sys.stdin); assert body["total"] >= 1'
+    curl --noproxy '*' -g -fsS "${base_url}/queries/cart-summary" | python3 -c 'import json,sys; body=json.load(sys.stdin); assert body["total"] >= 1'
     grep -q 'events_replayed' "$log_file"
     grep -q 'lag_from_head' "$log_file"
     grep -q 'duration_seconds' "$log_file"

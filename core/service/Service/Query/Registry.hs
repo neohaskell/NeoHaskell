@@ -6,6 +6,7 @@ module Service.Query.Registry (
   register,
   getUpdatersForEntity,
   getAllUpdaters,
+  registeredEntityNames,
   mergeInto,
 ) where
 
@@ -67,6 +68,15 @@ getAllUpdaters (QueryRegistry registry) =
   registry
     |> Map.values
     |> Array.flatten
+
+
+-- | Entity names with registered query updaters.
+-- Used to filter the global event-log replay before any entity fetch occurs.
+registeredEntityNames :: QueryRegistry -> Array EntityName
+registeredEntityNames (QueryRegistry registry) =
+  registry
+    |> Map.entries
+    |> Array.map (\(entityName, _) -> entityName)
 
 
 -- | Merge all updaters from source registry into target registry.

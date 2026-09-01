@@ -1161,16 +1161,9 @@ runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup maybeWebAuthSe
   -- 6. Create query subscriber with combined registry
   subscriber <- Subscriber.new eventStore combinedRegistry
 
-  -- 7. Spawn async rebuild for all queries so transports bind immediately.
-  -- /ready returns 503 (Rebuilding) until each query catches up.
-  -- The task handle is stored to be awaited after transports exit (ensuring
-  -- orderly shutdown and making test assertions about rebuild completion work).
-  -- Per ADR-0059 blocker fix: async spawn prevents HTTP readiness blocking.
-  rebuildTask <-
-    AsyncTask.run (Subscriber.rebuildAllAsync subscriber Subscriber.rebuildOptionsDefault)
-      |> Task.mapError toText
-
-  -- 8. Start live subscription
+  -- 7. Register live delivery first and launch the coordinated replay.
+  -- Subscriber.start returns after registration; replay, overlap draining, and
+  -- readiness transitions continue in its background task.
   Subscriber.start subscriber
 
   -- 9. Initialize auth if configured (using pre-resolved WebAuthSetup)
@@ -1330,19 +1323,23 @@ runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup maybeWebAuthSe
       |> Task.finally cleanupAll
       |> Task.asResult
 
-  -- 17. Wait for the async rebuild task to complete (if still running).
-  -- In production the transport runs indefinitely, so the rebuild finishes
-  -- long before transports exit. In tests (no transports), transports exit
-  -- immediately and we wait here to preserve the "rebuild before return"
-  -- ordering that test assertions depend on.
-  rebuildResult <- AsyncTask.waitCatch rebuildTask
-  case rebuildResult of
-    Err rebuildErr ->
-      Log.warn [fmt|Async query rebuild finished with error: #{rebuildErr}|]
-        |> Task.ignoreError
-    Ok _ -> pass
+  -- A transportless run is the in-process test/programmatic seam: preserve its
+  -- historical contract of returning after query work settles. Real services
+  -- have a transport that remains running, so this branch never delays bind.
+  let waitForTransportlessReplay attemptsLeft = do
+        readiness <- Subscriber.readinessOf subscriber
+        case readiness of
+          Subscriber.Rebuilding ->
+            case attemptsLeft <= (0 :: Int) of
+              True -> Task.yield unit
+              False -> do
+                AsyncTask.sleep 10 |> Task.ignoreError
+                waitForTransportlessReplay (attemptsLeft - 1)
+          _ -> Task.yield unit
+  Task.when (Map.length app.transports == 0) do
+    waitForTransportlessReplay 3000
 
-  -- 18. Cancel all inbound workers on shutdown
+  -- 17. Cancel all inbound workers on shutdown
   Log.debug "Shutting down inbound workers..."
     |> Task.ignoreError
   inboundWorkers

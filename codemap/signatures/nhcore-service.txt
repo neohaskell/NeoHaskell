@@ -730,7 +730,9 @@ data SubscriptionStore
 defaultOps :: Ops
 instance Data.Default.Internal.Default Service.EventStore.Postgres.Internal.PostgresEventStore
 instance GHC.Classes.Eq Service.EventStore.Postgres.Internal.PostgresEventStore
+instance GHC.Classes.Eq Service.EventStore.Postgres.Internal.PostgresReplayPhase
 instance GHC.Classes.Ord Service.EventStore.Postgres.Internal.PostgresEventStore
+instance GHC.Show.Show Service.EventStore.Postgres.Internal.PostgresReplayPhase
 instance Service.EventStore.Core.EventStoreConfig Service.EventStore.Postgres.Internal.PostgresEventStore
 new :: Ops -> PostgresEventStore -> Task Text (EventStore Value)
 toConnectionSettings :: PostgresEventStore -> Result Text (LinkedList Setting)
@@ -842,9 +844,11 @@ SimpleEventStore :: Path -> Bool -> SimpleEventStore
 [persistent] :: SimpleEventStore -> Bool
 data SimpleEventStore
 instance GHC.Classes.Eq Service.EventStore.Simple.SimpleEventStore
+instance GHC.Classes.Eq Service.EventStore.Simple.SimpleReplayPhase
 instance GHC.Classes.Eq Service.EventStore.Simple.SubscriptionType
 instance GHC.Generics.Generic Service.EventStore.Simple.SimpleEventStore
 instance GHC.Show.Show Service.EventStore.Simple.SimpleEventStore
+instance GHC.Show.Show Service.EventStore.Simple.SimpleReplayPhase
 instance GHC.Show.Show Service.EventStore.Simple.SubscriptionType
 instance Service.EventStore.Core.EventStoreConfig Service.EventStore.Simple.SimpleEventStore
 new :: SimpleEventStore -> Task Text (EventStore Value)
@@ -1440,6 +1444,7 @@ getUpdatersForEntity :: EntityName -> QueryRegistry -> Array QueryUpdater
 isEmpty :: QueryRegistry -> Bool
 mergeInto :: QueryRegistry -> QueryRegistry -> QueryRegistry
 register :: EntityName -> QueryUpdater -> QueryRegistry -> QueryRegistry
+registeredEntityNames :: QueryRegistry -> Array EntityName
 
 module Service.Query.Subscriber
 CheckpointFetchFailed :: Text -> QueryRebuildError
@@ -1471,11 +1476,13 @@ data RebuildOptions
 instance GHC.Classes.Eq Service.Query.Subscriber.QueryRebuildError
 instance GHC.Classes.Eq Service.Query.Subscriber.Readiness
 instance GHC.Classes.Eq Service.Query.Subscriber.RebuildOptions
+instance GHC.Classes.Eq Service.Query.Subscriber.ReplayPhase
 instance GHC.Generics.Generic Service.Query.Subscriber.QueryRebuildError
 instance GHC.Generics.Generic Service.Query.Subscriber.Readiness
 instance GHC.Show.Show Service.Query.Subscriber.QueryRebuildError
 instance GHC.Show.Show Service.Query.Subscriber.Readiness
 instance GHC.Show.Show Service.Query.Subscriber.RebuildOptions
+instance GHC.Show.Show Service.Query.Subscriber.ReplayPhase
 new :: EventStore Value -> QueryRegistry -> Task Text QuerySubscriber
 newWithCheckpointStore :: EventStore Value -> QueryRegistry -> CheckpointStore -> Task Text QuerySubscriber
 newWithStore :: EventStore Value -> QueryRegistry -> QueryObjectStore Value -> Task Text QuerySubscriber

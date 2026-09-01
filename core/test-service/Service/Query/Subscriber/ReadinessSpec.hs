@@ -349,7 +349,7 @@ spec = do
             { readAllEventsForwardFromFiltered = \_ _ _ -> do
                 attempt <- transientAttempts |> ConcurrentVar.modifyReturning \count ->
                   Task.yield (count + 1, count + 1)
-                if attempt < (3 :: Int)
+                if attempt < (4 :: Int)
                   then Task.throw (EventStoreCore.StorageFailure "transient fixture failure")
                   else Stream.fromArray Array.empty
             }
@@ -360,7 +360,7 @@ spec = do
         |> Task.mapError (show .> toText)
       attempts <- ConcurrentVar.peek transientAttempts
       transientReadiness <- Subscriber.readinessOf transientSubscriber
-      attempts |> shouldBe 3
+      attempts |> shouldBe 4
       transientReadiness |> shouldBe Ready
 
       updaterShouldFail <- ConcurrentVar.containing True

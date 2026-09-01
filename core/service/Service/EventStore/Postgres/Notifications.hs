@@ -38,6 +38,7 @@ connectTo acquireConnections store = do
   -- reconnect catch-up. The DB is the durable cursor — this Var is transient.
   lastProcessedRef <- (Var.new (0 :: Int64) :: Task Text (Var Int64))
   initialisedRef <- (Var.new False :: Task Text (Var Bool))
+  listenerReadyRef <- (Var.new False :: Task Text (Var Bool))
   let listenerWithReconnect backoffMs = do
         isShutdown <- Var.get shutdownRef
         Task.unless isShutdown do
@@ -65,6 +66,7 @@ connectTo acquireConnections store = do
                 -- the cursor to the current max ("from now") and skip catch-up.
                 -- Do NOT move this catch-up before the LISTEN call.
                 initialiseOrCatchUp queryConnection store lastProcessedRef initialisedRef
+                listenerReadyRef |> Var.set True
                 listenConnection
                   |> HasqlNotifications.waitForNotifications (handler queryConnection store lastProcessedRef)
                   |> Task.fromIO
@@ -90,7 +92,19 @@ connectTo acquireConnections store = do
             Hasql.release listenConn |> Task.fromIO
             Hasql.release queryConn |> Task.fromIO
             currentConnectionsRef |> Var.set Maybe.Nothing
-  Task.yield cleanup
+  let waitUntilReady attemptsLeft = do
+        isReady <- Var.get listenerReadyRef
+        case isReady || attemptsLeft <= (0 :: Int) of
+          True -> Task.yield isReady
+          False -> do
+            AsyncTask.sleep 10
+            waitUntilReady (attemptsLeft - 1)
+  listenerReady <- waitUntilReady 1000
+  case listenerReady of
+    True -> Task.yield cleanup
+    False -> do
+      cleanup
+      Task.throw "LISTEN/NOTIFY listener did not initialize within 10 seconds"
 
 
 subscribeToStream ::

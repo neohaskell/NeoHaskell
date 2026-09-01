@@ -269,6 +269,8 @@ jobs:
         env:
           PGPASSWORD: neohaskell
       - name: Run nhcore-test-service
+        env:
+          POSTGRES_AVAILABLE: "true"
         run: LOG_LEVEL=Warn nix develop --command cabal test nhcore-test-service
 
   test-hurl:

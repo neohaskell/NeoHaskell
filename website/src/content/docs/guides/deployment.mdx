@@ -1,0 +1,81 @@
+---
+title: "Deployment"
+description: "Probe configuration and rollout checks for NeoHaskell services with event-sourced read models."
+sidebar:
+  order: 1
+---
+
+## Start with a startup probe
+
+A NeoHaskell process has two distinct startup signals:
+
+- `GET /health` is **liveness**: the HTTP process has bound its port.
+- `GET /ready` is **readiness**: every registered query projection has caught up.
+
+Configure a startup probe first. Without one, an orchestrator can apply the
+steady-state liveness budget while the process is still connecting to its
+database and initializing transports.
+
+```yaml
+startupProbe:
+  httpGet:
+    path: /health
+    port: 8080
+  periodSeconds: 5
+  failureThreshold: 12
+  timeoutSeconds: 2
+
+livenessProbe:
+  httpGet:
+    path: /health
+    port: 8080
+  periodSeconds: 10
+  failureThreshold: 3
+  timeoutSeconds: 2
+
+readinessProbe:
+  httpGet:
+    path: /ready
+    port: 8080
+  periodSeconds: 5
+  failureThreshold: 3
+  timeoutSeconds: 2
+```
+
+The startup budget is explicit arithmetic:
+`periodSeconds × failureThreshold = 5 × 12 = 60 seconds`. Size that budget for
+bounded process/database initialization, not for event-log replay. Historical
+query replay runs after live subscription registration and must not delay the
+HTTP bind; `/ready` remains `503` until replay and overlapping live events are
+fully drained.
+
+## Rollout contract
+
+1. Start the new revision without routing traffic to it.
+2. Wait for `/health` to prove the process is accepting connections.
+3. Keep it out of service while `/ready` is `503`.
+4. Route traffic only after `/ready` becomes `200`.
+5. Run post-deploy smoke tests against the **new revision identity**, not only
+   the shared ingress. A shared ingress may still route to the old revision and
+   report green while the rollout has failed.
+
+Alert separately on startup-probe failure, a prolonged `/ready` 503, and a
+rollout whose active revision did not change.
+
+## Postgres connections
+
+NeoHaskell owns one bounded client pool for each configured Postgres subsystem.
+The EventStore reuses its pool for reads and writes; it does not construct a new
+pool for every replayed event.
+
+`LISTEN/NOTIFY` requires a direct, session-preserving Postgres connection. Do not
+route listener connections through a transaction-mode PgBouncer endpoint. Neon
+scale-to-zero and split pooled/direct endpoint support are tracked in
+[issue #857](https://github.com/neohaskell/NeoHaskell/issues/857).
+
+## Shutdown limitation
+
+SIGTERM cancellation and checkpoint flushing during an active rebuild are still
+tracked in [issue #662](https://github.com/neohaskell/NeoHaskell/issues/662).
+Do not extend termination grace indefinitely to wait for replay; use the probe
+contract above and follow that issue for the completed shutdown behavior.
