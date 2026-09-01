@@ -270,10 +270,10 @@ when WRITING TESTS; they are not feature-code frequency signal.
 
 ## Task
 - `mapError :: (err1 -> err2) -> Task err1 value -> Task err2 value`  <!-- 813 test call sites -->
-- `yield :: value -> Task w value`  <!-- 447 test call sites -->
+- `yield :: value -> Task w value`  <!-- 448 test call sites -->
 - `asResult :: Task err value -> Task err2 (Result err value)`  <!-- 276 test call sites -->
 - `mapArray :: (element -> Task err output) -> Array element -> Task err (Array output)`  <!-- 126 test call sites -->
-- `throw :: err -> Task err w`  <!-- 114 test call sites -->
+- `throw :: err -> Task err w`  <!-- 115 test call sites -->
 - `andThen :: (input -> Task err output) -> Task err input -> Task err output`  <!-- 90 test call sites -->
 - `fromIO :: IO value -> Task w value`  <!-- 90 test call sites -->
 - `map :: (input -> output) -> Task err input -> Task err output`  <!-- 81 test call sites -->
@@ -284,7 +284,7 @@ when WRITING TESTS; they are not feature-code frequency signal.
 - `empty :: Array a`  <!-- 217 test call sites -->
 - `map :: (a -> b) -> Array a -> Array b`  <!-- 118 test call sites -->
 - `get :: Int -> Array a -> Maybe a`  <!-- 78 test call sites -->
-- `wrap :: a -> Array a`  <!-- 50 test call sites -->
+- `wrap :: a -> Array a`  <!-- 54 test call sites -->
 - `initialize :: Int -> (Int -> a) -> Array a`  <!-- 47 test call sites -->
 - `contains :: Eq value => value -> Array value -> Bool`  <!-- 41 test call sites -->
 
@@ -345,4 +345,4 @@ when WRITING TESTS; they are not feature-code frequency signal.
 - `generateV5 :: Uuid -> Text -> Uuid`  <!-- 17 test call sites -->
 - `fromText :: Text -> Maybe Uuid`  <!-- 3 test call sites -->
 
-*cut: 135 more modules (Map (257), Service.Application (250), Set (233), Stream (206), AsyncTask (200), …) — full surface: codemap/signatures/*
+*cut: 135 more modules (Map (257), Service.Application (250), Set (233), Stream (210), AsyncTask (200), …) — full surface: codemap/signatures/*

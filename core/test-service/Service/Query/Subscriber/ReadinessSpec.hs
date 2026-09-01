@@ -99,10 +99,15 @@ spec = do
       let events = Array.initialize 1001 mkEvent
       filteredReads <- ConcurrentVar.containing (Array.empty :: Array (StreamPosition, Limit, Array EntityName))
       unfilteredReads <- ConcurrentVar.containing (0 :: Int)
+      replayHeadEvent <- case events |> Array.last of
+        Just lastEvent -> Task.yield lastEvent
+        Nothing -> Task.throw "paged fixture created no replay head"
       let pagedStore = baseStore
             { readAllEventsForwardFrom = \_ _ -> do
                 unfilteredReads |> ConcurrentVar.modify (\count -> count + 1)
                 Stream.fromArray Array.empty
+            , readAllEventsBackwardFromFiltered = \_ _ _ ->
+                Stream.fromArray (Array.wrap (AllEvent replayHeadEvent))
             , readAllEventsForwardFromFiltered = \start limit@(Limit rawLimit) entityNames -> do
                 filteredReads |> ConcurrentVar.modify (Array.push (start, limit, entityNames))
                 let page =
@@ -406,7 +411,8 @@ spec = do
               , metadata = eventMeta { globalPosition = Just (StreamPosition 0) }
               }
       let blockedStore = baseStore
-            { readAllEventsForwardFromFiltered = \_ _ _ -> Stream.fromArray (Array.wrap (AllEvent event))
+            { readAllEventsBackwardFromFiltered = \_ _ _ -> Stream.fromArray (Array.wrap (AllEvent event))
+            , readAllEventsForwardFromFiltered = \_ _ _ -> Stream.fromArray (Array.wrap (AllEvent event))
             }
       let blockedUpdater name = QueryUpdater
             { queryName = name
@@ -473,7 +479,8 @@ spec = do
             }
       let checkpointRegistry = Registry.register entityName checkpointUpdater Registry.empty
       let checkpointReplayStore = baseStore
-            { readAllEventsForwardFromFiltered = \startPosition _ _ ->
+            { readAllEventsBackwardFromFiltered = \_ _ _ -> Stream.fromArray (Array.wrap (AllEvent event))
+            , readAllEventsForwardFromFiltered = \startPosition _ _ ->
                 case startPosition <= StreamPosition 0 of
                   True -> Stream.fromArray (Array.wrap (AllEvent event))
                   False -> Stream.fromArray Array.empty
@@ -490,7 +497,8 @@ spec = do
 
       updaterShouldFail <- ConcurrentVar.containing True
       let recoveryStore = baseStore
-            { readAllEventsForwardFromFiltered = \_ _ _ -> Stream.fromArray (Array.wrap (AllEvent event))
+            { readAllEventsBackwardFromFiltered = \_ _ _ -> Stream.fromArray (Array.wrap (AllEvent event))
+            , readAllEventsForwardFromFiltered = \_ _ _ -> Stream.fromArray (Array.wrap (AllEvent event))
             }
       let recoveryUpdater = QueryUpdater
             { queryName = "recovery-query"
