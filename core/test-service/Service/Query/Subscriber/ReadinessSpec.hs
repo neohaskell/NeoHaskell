@@ -53,6 +53,30 @@ createTestStore = PostgresQOS.newFromConfig testConfig "readiness-test"
 
 spec :: Spec Unit
 spec = do
+  describe "startup liveness" do
+    it "returns from start before historical catch-up completes" \_ -> do
+      baseStore <- InMemory.new |> Task.mapError toText
+      catchUpStarted <- ConcurrentVar.containing False
+      startReturned <- ConcurrentVar.containing False
+      let blockedCatchUpStore = baseStore
+            { subscribeToAllEventsFromPosition = \position handler -> do
+                catchUpStarted |> ConcurrentVar.modify (\_ -> True)
+                AsyncTask.sleep 5000
+                baseStore.subscribeToAllEventsFromPosition position handler
+            }
+      subscriber <- Subscriber.new blockedCatchUpStore Registry.empty
+      startTask <- AsyncTask.run do
+        Subscriber.start subscriber
+        startReturned |> ConcurrentVar.modify (\_ -> True)
+      Task.finally
+        (AsyncTask.cancel startTask |> Task.asResultSafe |> discard)
+        do
+          AsyncTask.sleep 100 |> Task.mapError (\_ -> "timeout")
+          catchUpWasStarted <- ConcurrentVar.peek catchUpStarted
+          didStartReturn <- ConcurrentVar.peek startReturned
+          catchUpWasStarted |> shouldBe True
+          didStartReturn |> shouldBe True
+
   describe "rebuildFrom" do
     it "replays all events from startPosition to EventStore head and writes to store" \_ -> do
       pending "needs a registered QueryUpdater and a populated EventStore to observe that rows are actually written; current empty-registry setup completes in microseconds without exercising any replay logic"
