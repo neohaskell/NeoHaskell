@@ -44,6 +44,7 @@ connectTo acquireConnections store = do
   requireListenerReady cleanup listenerReady
 
 
+-- | Keep one listener alive until shutdown, reconnecting after failed attempts.
 listenerWithReconnect
   :: Task Text (Hasql.Connection, Hasql.Connection)
   -> SubscriptionStore
@@ -63,6 +64,7 @@ listenerWithReconnect acquireConnections store shutdownRef currentConnectionsRef
     reconnectListener acquireConnections store shutdownRef currentConnectionsRef lastProcessedRef initialisedRef listenerReadyRef backoffMs result
 
 
+-- | Publish readiness only after LISTEN and catch-up are both established.
 runListenerAttempt
   :: Task Text (Hasql.Connection, Hasql.Connection)
   -> SubscriptionStore
@@ -100,6 +102,7 @@ releaseListenerConnections currentConnectionsRef listenConnection queryConnectio
   Hasql.release queryConnection |> Task.fromIO
 
 
+-- | Release failed connections before applying the bounded reconnect delay.
 reconnectListener
   :: Task Text (Hasql.Connection, Hasql.Connection)
   -> SubscriptionStore
@@ -117,6 +120,7 @@ reconnectListener acquireConnections store shutdownRef currentConnectionsRef las
   listenerWithReconnect acquireConnections store shutdownRef currentConnectionsRef lastProcessedRef initialisedRef listenerReadyRef (nextBackoff backoffMs)
 
 
+-- | Report restart cause without leaking connection details.
 logListenerRestart :: Int -> Result Text Unit -> Task w Unit
 logListenerRestart backoffMs result =
   case result of
@@ -143,6 +147,7 @@ cleanupListener shutdownRef currentConnectionsRef asyncTask = do
       releaseListenerConnections currentConnectionsRef listenConnection queryConnection
 
 
+-- | Poll the initialization barrier within its bounded startup budget.
 waitForListenerReady :: Var Bool -> Int -> Task w Bool
 waitForListenerReady listenerReadyRef attemptsLeft = do
   isReady <- Var.get listenerReadyRef
@@ -153,6 +158,7 @@ waitForListenerReady listenerReadyRef attemptsLeft = do
     waitForListenerReady listenerReadyRef (attemptsLeft - 1)
 
 
+-- | Return cleanup only when the listener crossed its initialization barrier.
 requireListenerReady :: Task Text Unit -> Bool -> Task Text (Task Text Unit)
 requireListenerReady cleanup listenerReady =
   if listenerReady then

@@ -641,6 +641,7 @@ handleLiveEvent subscriber coordinator rawEvent = do
   deliverCoordinatedLiveEvent subscriber outcome
 
 
+-- | Decide query delivery without running updater code under replay state.
 coordinateQueryLiveEvent
   :: Event Json.Value
   -> ReplayState
@@ -685,6 +686,7 @@ bufferQueryReplayOverlap rawEvent position state =
       )
 
 
+-- | True when a query position has already crossed the delivery high-water.
 queryReplayPositionProcessed :: ReplayState -> StreamPosition -> Bool
 queryReplayPositionProcessed state position =
   case state.highWaterPosition of
@@ -732,6 +734,7 @@ processCoordinatedReplayEvent subscriber coordinator rawEvent = do
         advanceQueryReplayHighWater coordinator position
 
 
+-- | Advance the query delivery watermark monotonically.
 advanceQueryReplayHighWater :: ReplayCoordinator -> StreamPosition -> Task w Unit
 advanceQueryReplayHighWater coordinator position =
   coordinator.replayState
@@ -802,6 +805,7 @@ runReplayPages subscriber maybeCoordinator options startPosition stats replayedC
     continueReplayPages subscriber maybeCoordinator options replayedCountRef replayHead startedAt pageResult nextStats
 
 
+-- | Consume one replay page while preserving cumulative progress and bounds.
 consumeReplayPage
   :: QuerySubscriber
   -> Maybe ReplayCoordinator
@@ -846,6 +850,7 @@ consumeReplayMessage subscriber maybeCoordinator replayedCountRef replayHead (la
     _ -> Task.yield (lastPosition, count)
 
 
+-- | Keep historical query delivery inside the captured replay head.
 eventIsWithinReplayHead :: Maybe StreamPosition -> Event Json.Value -> Bool
 eventIsWithinReplayHead replayHead rawEvent =
   case replayHead of
@@ -876,6 +881,7 @@ recordReplayProgress options startPosition replayHead startedAt replayedCountRef
   Task.yield ReplayStats {replayedCount = totalCount, replayedThrough = lastPosition}
 
 
+-- | Measure remaining global-position distance for progress telemetry.
 replayLagFromHead :: StreamPosition -> Maybe StreamPosition -> Maybe StreamPosition -> Int64
 replayLagFromHead startPosition replayHead lastPosition =
   case (replayHead, lastPosition) of
@@ -1022,6 +1028,7 @@ finishReplayCoordinator subscriber coordinator options replayedCountRef = do
       finishReplayCoordinator subscriber coordinator options replayedCountRef
 
 
+-- | Recover overlap after the bounded inbox reports overflow.
 recoverQueryReplayOverflow
   :: QuerySubscriber
   -> ReplayCoordinator
@@ -1048,6 +1055,7 @@ recoverQueryReplayOverflow subscriber coordinator options replayedCountRef highW
     |> discard
 
 
+-- | Snapshot and clear pending query overlap while retaining replay mode.
 takePendingReplayEvents :: ReplayCoordinator -> Task w (Array (StreamPosition, Event Json.Value))
 takePendingReplayEvents coordinator =
   coordinator.replayState
@@ -1147,6 +1155,7 @@ recordCoordinatedReplayFailure subscriber message replayError = do
   Task.throw replayError
 
 
+-- | Publish final replay telemetry only after the coordinator reaches live mode.
 completeCoordinatedReplay
   :: QuerySubscriber
   -> ConcurrentVar Int

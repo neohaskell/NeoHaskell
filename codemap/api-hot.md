@@ -9,11 +9,11 @@ separately below). Consult BEFORE writing code; full surface:
 codemap/signatures/ · type-directed search: ./dev api "<type>"
 
 ## Task
-- `yield :: value -> Task w value`  <!-- 597 call sites -->
-- `ignoreError :: Task err Unit -> Task w Unit`  <!-- 241 call sites -->
+- `yield :: value -> Task w value`  <!-- 596 call sites -->
+- `ignoreError :: Task err Unit -> Task w Unit`  <!-- 240 call sites -->
 - `mapError :: (err1 -> err2) -> Task err1 value -> Task err2 value`  <!-- 224 call sites -->
-- `throw :: err -> Task err w`  <!-- 212 call sites -->
-- `fromIO :: IO value -> Task w value`  <!-- 132 call sites -->
+- `throw :: err -> Task err w`  <!-- 211 call sites -->
+- `fromIO :: IO value -> Task w value`  <!-- 130 call sites -->
 - `asResult :: Task err value -> Task err2 (Result err value)`  <!-- 88 call sites -->
 - `when :: Bool -> Task err Unit -> Task err Unit`  <!-- 31 call sites -->
 - `forEach :: (element -> Task err Unit) -> Array element -> Task err Unit`  <!-- 30 call sites -->
@@ -67,8 +67,8 @@ codemap/signatures/ · type-directed search: ./dev api "<type>"
 
 ## Log
 - `debug :: HasCallStack => Text -> Task w Unit`  <!-- 114 call sites -->
-- `warn :: HasCallStack => Text -> Task w Unit`  <!-- 73 call sites -->
-- `withScope :: Array (Text, Text) -> Task err value -> Task err value`  <!-- 58 call sites -->
+- `warn :: HasCallStack => Text -> Task w Unit`  <!-- 72 call sites -->
+- `withScope :: Array (Text, Text) -> Task err value -> Task err value`  <!-- 57 call sites -->
 - `info :: HasCallStack => Text -> Task w Unit`  <!-- 35 call sites -->
 - `critical :: HasCallStack => Text -> Task w Unit`  <!-- 11 call sites -->
 
@@ -138,7 +138,7 @@ codemap/signatures/ · type-directed search: ./dev api "<type>"
 - `lookup :: Text -> ImmutableProviderRegistry -> Maybe ValidatedOAuth2ProviderConfig`  <!-- 1 call sites -->
 
 ## Var
-- `set :: value -> Var value -> Task err Unit`  <!-- 24 call sites -->
+- `set :: value -> Var value -> Task err Unit`  <!-- 23 call sites -->
 - `get :: Var value -> Task err value`  <!-- 20 call sites -->
 - `new :: value -> Task err (Var value)`  <!-- 14 call sites -->
 - `decrement :: Num number => Var number -> Task err Unit`  <!-- 2 call sites -->
@@ -153,15 +153,6 @@ codemap/signatures/ · type-directed search: ./dev api "<type>"
 - `cliShort :: Char -> FieldDef -> FieldDef`  <!-- 1 call sites -->
 - `load :: HasParser config => Task Text config`  <!-- 1 call sites -->
 - `secret :: FieldDef -> FieldDef`  <!-- 1 call sites -->
-
-## AsyncTask
-- `sleep :: Int -> Task w Unit`  <!-- 19 call sites -->
-- `run :: Show err => Task err result -> Task err (AsyncTask err result)`  <!-- 13 call sites -->
-- `runConcurrently :: Show err => (Task err a, Task err b) -> Task err (a, b)`  <!-- 8 call sites -->
-- `cancel :: AsyncTask err result -> Task Text Unit`  <!-- 5 call sites -->
-- `runAllIgnoringErrors :: Show err => Array (Task err a) -> Task w Unit`  <!-- 2 call sites -->
-- `race :: Show err => Task err a -> Task err b -> Task err (RaceWinner a b)`  <!-- 1 call sites -->
-- `waitCatch :: Show err => AsyncTask err result -> Task err2 (Result Text result)`  <!-- 1 call sites -->
 
 ## LinkedList
 - `map :: (a -> b) -> LinkedList a -> LinkedList b`  <!-- 15 call sites -->
@@ -184,6 +175,15 @@ codemap/signatures/ · type-directed search: ./dev api "<type>"
 - `generateV5 :: Uuid -> Text -> Uuid`  <!-- 3 call sites -->
   - `>>> Uuid.fromText "6ba7b810-9dad-11d1-80b4-00c04fd430c8" |> Maybe.getOrDie |> (\ns -> Uuid.generateV5 ns "python.org") |> Uuid.toText` → `"886313e1-3b8a-5372-9b90-0c9aee199e5d"`
 - `fromLegacy :: UUID -> Uuid`  <!-- 2 call sites -->
+
+## AsyncTask
+- `sleep :: Int -> Task w Unit`  <!-- 18 call sites -->
+- `run :: Show err => Task err result -> Task err (AsyncTask err result)`  <!-- 13 call sites -->
+- `runConcurrently :: Show err => (Task err a, Task err b) -> Task err (a, b)`  <!-- 8 call sites -->
+- `cancel :: AsyncTask err result -> Task Text Unit`  <!-- 5 call sites -->
+- `runAllIgnoringErrors :: Show err => Array (Task err a) -> Task w Unit`  <!-- 2 call sites -->
+- `race :: Show err => Task err a -> Task err b -> Task err (RaceWinner a b)`  <!-- 1 call sites -->
+- `waitCatch :: Show err => AsyncTask err result -> Task err2 (Result Text result)`  <!-- 1 call sites -->
 
 ## Path
 - `toLinkedList :: Path -> LinkedList Char`  <!-- 18 call sites -->

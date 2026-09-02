@@ -752,6 +752,7 @@ handlePostgresLiveEvent callback coordinator event = do
     Nothing -> Task.yield unit
 
 
+-- | Decide live delivery without executing subscriber code under replay state.
 coordinatePostgresLiveEvent
   :: Event Json.Value
   -> PostgresReplayState
@@ -792,6 +793,7 @@ bufferPostgresReplayOverlap event position state =
       )
 
 
+-- | True when a global position has already crossed the delivery high-water.
 isPostgresReplayDuplicate :: PostgresReplayState -> StreamPosition -> Bool
 isPostgresReplayDuplicate state position =
   case state.replayHighWater of
@@ -817,6 +819,7 @@ processPostgresReplayEvent callback coordinator event = do
         advancePostgresReplayHighWater coordinator position
 
 
+-- | Advance the delivered-position watermark monotonically.
 advancePostgresReplayHighWater :: PostgresReplayCoordinator -> StreamPosition -> Task w Unit
 advancePostgresReplayHighWater coordinator position =
   coordinator.replayState
@@ -842,6 +845,7 @@ readPostgresReplayPages ops cfg startPosition replayEnd callback coordinator = d
   continuePostgresReplay ops cfg replayEnd callback coordinator lastPosition count
 
 
+-- | Consume one bounded page and retain its last accepted global position.
 consumePostgresReplayPage
   :: Maybe StreamPosition
   -> (Event Json.Value -> Task Text Unit)
@@ -874,6 +878,7 @@ processPostgresReplayMessage replayEnd callback coordinator (lastPosition, count
     _ -> Task.yield (lastPosition, count)
 
 
+-- | Keep historical delivery inside the replay head captured at registration.
 withinPostgresReplayEnd :: Maybe StreamPosition -> Event Json.Value -> Bool
 withinPostgresReplayEnd replayEnd event =
   case (replayEnd, event.metadata.globalPosition) of
@@ -931,6 +936,7 @@ stabilizePostgresReplay ops cfg requestedStart callback coordinator = do
       stabilizePostgresReplay ops cfg requestedStart callback coordinator
 
 
+-- | Recover discarded overlap from the first position not yet delivered.
 recoverPostgresReplayOverflow
   :: Ops
   -> PostgresEventStore
@@ -951,6 +957,7 @@ recoverPostgresReplayOverflow ops cfg requestedStart callback coordinator highWa
   readPostgresReplayPages ops cfg catchUpPosition catchUpEnd callback coordinator
 
 
+-- | Snapshot and clear pending overlap while retaining replay mode.
 takePostgresReplayInbox :: PostgresReplayCoordinator -> Task w (Array (StreamPosition, Event Json.Value))
 takePostgresReplayInbox coordinator =
   coordinator.replayState
@@ -1019,6 +1026,7 @@ subscribeToAllEventsFromPositionImpl ops cfg store startPosition callback = do
   Task.yield subscriptionId
 
 
+-- | Run replay asynchronously and remove subscriptions that cannot catch up.
 startPostgresReplayTask
   :: Ops
   -> PostgresEventStore

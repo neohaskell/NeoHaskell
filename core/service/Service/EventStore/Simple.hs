@@ -531,6 +531,7 @@ subscribeToAllEventsFromPositionImpl store fromPosition handler = do
   Task.yield subscriptionId
 
 
+-- | Register live delivery before historical replay can begin.
 registerSimplePositionalSubscription
   :: StreamStore
   -> SubscriptionId
@@ -562,6 +563,7 @@ startSimpleReplayTask store fromPosition handler coordinator subscriptionId = do
     |> discard
 
 
+-- | Remove a subscription whose asynchronous replay cannot become live.
 removeFailedSimpleSubscription :: StreamStore -> SubscriptionId -> Task w Unit
 removeFailedSimpleSubscription store subscriptionId = do
   store.subscriptions
@@ -724,6 +726,7 @@ handleSimpleLiveEvent _store handler coordinator event = do
     Nothing -> Task.yield unit
 
 
+-- | Decide live delivery without executing subscriber code under replay state.
 coordinateSimpleLiveEvent
   :: Event Json.Value
   -> SimpleReplayState
@@ -764,6 +767,7 @@ bufferSimpleReplayOverlap event position state =
       )
 
 
+-- | True when a global position has already crossed the delivery high-water.
 isSimpleReplayDuplicate :: SimpleReplayState -> StreamPosition -> Bool
 isSimpleReplayDuplicate state position =
   case state.replayHighWater of
@@ -789,6 +793,7 @@ processSimpleReplayEvent handler coordinator event = do
         advanceSimpleReplayHighWater coordinator position
 
 
+-- | Advance the delivered-position watermark monotonically.
 advanceSimpleReplayHighWater :: SimpleReplayCoordinator -> StreamPosition -> Task w Unit
 advanceSimpleReplayHighWater coordinator position =
   coordinator.replayState
@@ -837,6 +842,7 @@ stabilizeSimpleReplay store requestedStart handler coordinator = do
       stabilizeSimpleReplay store requestedStart handler coordinator
 
 
+-- | Recover discarded overlap from the requested or next unseen position.
 recoverSimpleReplayOverflow
   :: StreamStore
   -> StreamPosition
@@ -852,6 +858,7 @@ recoverSimpleReplayOverflow store requestedStart handler coordinator highWater =
   catchUpEvents |> Task.forEach (processSimpleReplayEvent handler coordinator)
 
 
+-- | Snapshot and clear pending overlap while retaining replay mode.
 takeSimpleReplayInbox :: SimpleReplayCoordinator -> Task w (Array (StreamPosition, Event Json.Value))
 takeSimpleReplayInbox coordinator =
   coordinator.replayState
@@ -870,6 +877,7 @@ takeSimpleReplayInbox coordinator =
           Task.yield (state {replayInbox = Map.empty}, pendingEntries)
 
 
+-- | Deliver an ordered inbox snapshot outside the coordinator critical section.
 drainSimpleReplayInbox
   :: (Event Json.Value -> Task Text Unit)
   -> SimpleReplayCoordinator
