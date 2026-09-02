@@ -34,6 +34,7 @@ to the model.
 import json
 import os
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -189,6 +190,65 @@ def check(tool: str, payload: dict):
     return violations
 
 
+def diff_case_bool_violations(diff_text: str):
+    """Return case-of-Bool constructs touched by added lines in a unified diff."""
+    violations = []
+    path = ""
+    hunk_lines = []
+    added_lines = set()
+
+    def check_hunk():
+        if not path.endswith(".hs") or not hunk_lines:
+            return
+        blob = "\n".join(hunk_lines)
+        for match in CASE_BOOL.finditer(blob):
+            first_line = blob.count("\n", 0, match.start())
+            last_line = blob.count("\n", 0, match.end())
+            touched = any(index in added_lines for index in range(first_line, last_line + 1))
+            if touched:
+                violations.append((path, first_line + 1))
+
+    for raw_line in diff_text.splitlines():
+        if raw_line.startswith("+++ b/"):
+            check_hunk()
+            path = raw_line[6:]
+            hunk_lines = []
+            added_lines = set()
+        elif raw_line.startswith("@@"):
+            check_hunk()
+            hunk_lines = []
+            added_lines = set()
+        elif raw_line.startswith("+") and not raw_line.startswith("+++"):
+            added_lines.add(len(hunk_lines))
+            hunk_lines.append(raw_line[1:])
+        elif raw_line.startswith("-") and not raw_line.startswith("---"):
+            continue
+        elif path and not raw_line.startswith("diff --git"):
+            hunk_lines.append(raw_line[1:] if raw_line.startswith(" ") else raw_line)
+    check_hunk()
+    return violations
+
+
+def check_pr_diff(base: str) -> int:
+    result = subprocess.run(
+        ["git", "diff", "--unified=3", "--no-ext-diff", base, "--", "*.hs"],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        print(result.stderr.rstrip(), file=sys.stderr)
+        return result.returncode
+    violations = diff_case_bool_violations(result.stdout)
+    if violations:
+        for path, _line in violations:
+            print(
+                f"dialect-guard: {path}: added `case cond of True/False`; use if-then-else",
+                file=sys.stderr,
+            )
+        return 2
+    return 0
+
+
 def read_event():
     """Official contract: JSON on stdin ({tool_name, tool_input}).
     Fallback: CLAUDE_TOOL_* env vars (older runtimes / manual testing)."""
@@ -236,6 +296,28 @@ def self_test() -> int:
             print(f"self-test FAIL coverage: rule '{rule_id}' has no {kind} case in {CASES_FILE.name}")
             fails += 1
 
+    diff_blocked = """diff --git a/core/x.hs b/core/x.hs
++++ b/core/x.hs
+@@ -1,1 +1,4 @@
+ keep = unit
++f = case cond of
++  True -> a
++  False -> b
+"""
+    diff_clean = """diff --git a/core/x.hs b/core/x.hs
++++ b/core/x.hs
+@@ -1,1 +1,2 @@
+ keep = case result of
+  Ok value -> value
++  Err _ -> fallback
+"""
+    if not diff_case_bool_violations(diff_blocked):
+        print("self-test FAIL pr-diff: added case-of-Bool was not blocked")
+        fails += 1
+    if diff_case_bool_violations(diff_clean):
+        print("self-test FAIL pr-diff: constructor case was blocked")
+        fails += 1
+
     if fails == 0:
         print(f"dialect-guard self-test: OK — {len(cases)} cases, {len(all_ids)} rules fully covered")
     return 1 if fails else 0
@@ -244,6 +326,8 @@ def self_test() -> int:
 def main() -> int:
     if len(sys.argv) > 1 and sys.argv[1] == "--self-test":
         return self_test()
+    if len(sys.argv) > 2 and sys.argv[1] == "--pr-diff":
+        return check_pr_diff(sys.argv[2])
 
     tool, payload = read_event()
     violations = check(tool, payload)

@@ -32,79 +32,134 @@ connectTo ::
 connectTo acquireConnections store = do
   shutdownRef <- (Var.new False :: Task Text (Var Bool))
   currentConnectionsRef <- (Var.new (Maybe.Nothing :: Maybe (Hasql.Connection, Hasql.Connection)) :: Task Text (Var (Maybe (Hasql.Connection, Hasql.Connection))))
-  -- ADR-0061: last-processed globalPosition, shared across reconnects for the
-  -- life of this listener task. Initialised to the current max on the first
-  -- connect ("subscribe from now"); advanced by the live handler and by the
-  -- reconnect catch-up. The DB is the durable cursor — this Var is transient.
+  -- ADR-0061: this transient cursor tracks the durable database cursor across reconnects.
   lastProcessedRef <- (Var.new (0 :: Int64) :: Task Text (Var Int64))
   initialisedRef <- (Var.new False :: Task Text (Var Bool))
   listenerReadyRef <- (Var.new False :: Task Text (Var Bool))
-  let listenerWithReconnect backoffMs = do
-        isShutdown <- Var.get shutdownRef
-        Task.unless isShutdown do
-          result <- Task.asResultSafe do
-            (listenConnection, queryConnection) <- acquireConnections
-            let releaseConns = do
-                  currentConnectionsRef |> Var.set Maybe.Nothing
-                  Hasql.release listenConnection |> Task.fromIO
-                  Hasql.release queryConnection |> Task.fromIO
-            Task.finally
-              releaseConns
-              do
-                currentConnectionsRef |> Var.set (Maybe.Just (listenConnection, queryConnection))
-                let channelToListen = HasqlNotifications.toPgIdentifier "global"
-                HasqlNotifications.listen listenConnection channelToListen
-                  |> Task.fromIO
-                  |> discard
-                Log.info "LISTEN/NOTIFY listener started"
-                  |> Task.ignoreError
-                -- LOAD-BEARING ORDERING (ADR-0061): the catch-up below runs
-                -- AFTER LISTEN is active and BEFORE the live wait. LISTEN being
-                -- active first guarantees that an event committed during the
-                -- catch-up read is also delivered live (at-least-once overlap,
-                -- never a gap). On the very first connect we instead initialise
-                -- the cursor to the current max ("from now") and skip catch-up.
-                -- Do NOT move this catch-up before the LISTEN call.
-                initialiseOrCatchUp queryConnection store lastProcessedRef initialisedRef
-                listenerReadyRef |> Var.set True
-                listenConnection
-                  |> HasqlNotifications.waitForNotifications (handler queryConnection store lastProcessedRef)
-                  |> Task.fromIO
-          case result of
-            Ok _ -> do
-              Log.critical "LISTEN/NOTIFY listener returned unexpectedly. Reconnecting..."
-                |> Task.ignoreError
-              AsyncTask.sleep backoffMs
-              listenerWithReconnect (nextBackoff backoffMs)
-            Err err -> do
-              Log.critical [fmt|LISTEN/NOTIFY listener crashed: #{err}. Reconnecting in #{backoffMs}ms...|]
-                |> Task.ignoreError
-              AsyncTask.sleep backoffMs
-              listenerWithReconnect (nextBackoff backoffMs)
-  asyncTask <- listenerWithReconnect 1000 |> AsyncTask.run
-  let cleanup = do
-        shutdownRef |> Var.set True
-        asyncTask |> AsyncTask.cancel
-        maybeConns <- Var.get currentConnectionsRef
-        case maybeConns of
-          Maybe.Nothing -> Task.yield unit
-          Maybe.Just (listenConn, queryConn) -> do
-            Hasql.release listenConn |> Task.fromIO
-            Hasql.release queryConn |> Task.fromIO
-            currentConnectionsRef |> Var.set Maybe.Nothing
-  let waitUntilReady attemptsLeft = do
-        isReady <- Var.get listenerReadyRef
-        case isReady || attemptsLeft <= (0 :: Int) of
-          True -> Task.yield isReady
-          False -> do
-            AsyncTask.sleep 10
-            waitUntilReady (attemptsLeft - 1)
-  listenerReady <- waitUntilReady 1000
-  case listenerReady of
-    True -> Task.yield cleanup
-    False -> do
-      cleanup
-      Task.throw "LISTEN/NOTIFY listener did not initialize within 10 seconds"
+  asyncTask <-
+    listenerWithReconnect acquireConnections store shutdownRef currentConnectionsRef lastProcessedRef initialisedRef listenerReadyRef 1000
+      |> AsyncTask.run
+  let cleanup = cleanupListener shutdownRef currentConnectionsRef asyncTask
+  listenerReady <- waitForListenerReady listenerReadyRef 1000
+  requireListenerReady cleanup listenerReady
+
+
+listenerWithReconnect
+  :: Task Text (Hasql.Connection, Hasql.Connection)
+  -> SubscriptionStore
+  -> Var Bool
+  -> Var (Maybe (Hasql.Connection, Hasql.Connection))
+  -> Var Int64
+  -> Var Bool
+  -> Var Bool
+  -> Int
+  -> Task Text Unit
+listenerWithReconnect acquireConnections store shutdownRef currentConnectionsRef lastProcessedRef initialisedRef listenerReadyRef backoffMs = do
+  isShutdown <- Var.get shutdownRef
+  Task.unless isShutdown do
+    result <-
+      runListenerAttempt acquireConnections store currentConnectionsRef lastProcessedRef initialisedRef listenerReadyRef
+        |> Task.asResultSafe
+    reconnectListener acquireConnections store shutdownRef currentConnectionsRef lastProcessedRef initialisedRef listenerReadyRef backoffMs result
+
+
+runListenerAttempt
+  :: Task Text (Hasql.Connection, Hasql.Connection)
+  -> SubscriptionStore
+  -> Var (Maybe (Hasql.Connection, Hasql.Connection))
+  -> Var Int64
+  -> Var Bool
+  -> Var Bool
+  -> Task Text Unit
+runListenerAttempt acquireConnections store currentConnectionsRef lastProcessedRef initialisedRef listenerReadyRef = do
+  (listenConnection, queryConnection) <- acquireConnections
+  let releaseConnections = releaseListenerConnections currentConnectionsRef listenConnection queryConnection
+  Task.finally releaseConnections do
+    currentConnectionsRef |> Var.set (Maybe.Just (listenConnection, queryConnection))
+    let channelToListen = HasqlNotifications.toPgIdentifier "global"
+    HasqlNotifications.listen listenConnection channelToListen
+      |> Task.fromIO
+      |> discard
+    Log.info "LISTEN/NOTIFY listener started" |> Task.ignoreError
+    -- ADR-0061: LISTEN must be active before catch-up so overlap is at-least-once, never a gap.
+    initialiseOrCatchUp queryConnection store lastProcessedRef initialisedRef
+    listenerReadyRef |> Var.set True
+    listenConnection
+      |> HasqlNotifications.waitForNotifications (handler queryConnection store lastProcessedRef)
+      |> Task.fromIO
+
+
+releaseListenerConnections
+  :: Var (Maybe (Hasql.Connection, Hasql.Connection))
+  -> Hasql.Connection
+  -> Hasql.Connection
+  -> Task Text Unit
+releaseListenerConnections currentConnectionsRef listenConnection queryConnection = do
+  currentConnectionsRef |> Var.set Maybe.Nothing
+  Hasql.release listenConnection |> Task.fromIO
+  Hasql.release queryConnection |> Task.fromIO
+
+
+reconnectListener
+  :: Task Text (Hasql.Connection, Hasql.Connection)
+  -> SubscriptionStore
+  -> Var Bool
+  -> Var (Maybe (Hasql.Connection, Hasql.Connection))
+  -> Var Int64
+  -> Var Bool
+  -> Var Bool
+  -> Int
+  -> Result Text Unit
+  -> Task Text Unit
+reconnectListener acquireConnections store shutdownRef currentConnectionsRef lastProcessedRef initialisedRef listenerReadyRef backoffMs result = do
+  logListenerRestart backoffMs result
+  AsyncTask.sleep backoffMs
+  listenerWithReconnect acquireConnections store shutdownRef currentConnectionsRef lastProcessedRef initialisedRef listenerReadyRef (nextBackoff backoffMs)
+
+
+logListenerRestart :: Int -> Result Text Unit -> Task w Unit
+logListenerRestart backoffMs result =
+  case result of
+    Ok _ ->
+      Log.critical "LISTEN/NOTIFY listener returned unexpectedly. Reconnecting..."
+        |> Task.ignoreError
+    Err err ->
+      Log.critical [fmt|LISTEN/NOTIFY listener crashed: #{err}. Reconnecting in #{backoffMs}ms...|]
+        |> Task.ignoreError
+
+
+cleanupListener
+  :: Var Bool
+  -> Var (Maybe (Hasql.Connection, Hasql.Connection))
+  -> AsyncTask.AsyncTask Text Unit
+  -> Task Text Unit
+cleanupListener shutdownRef currentConnectionsRef asyncTask = do
+  shutdownRef |> Var.set True
+  asyncTask |> AsyncTask.cancel
+  maybeConnections <- Var.get currentConnectionsRef
+  case maybeConnections of
+    Maybe.Nothing -> Task.yield unit
+    Maybe.Just (listenConnection, queryConnection) ->
+      releaseListenerConnections currentConnectionsRef listenConnection queryConnection
+
+
+waitForListenerReady :: Var Bool -> Int -> Task w Bool
+waitForListenerReady listenerReadyRef attemptsLeft = do
+  isReady <- Var.get listenerReadyRef
+  if isReady || attemptsLeft <= (0 :: Int) then
+    Task.yield isReady
+  else do
+    AsyncTask.sleep 10
+    waitForListenerReady listenerReadyRef (attemptsLeft - 1)
+
+
+requireListenerReady :: Task Text Unit -> Bool -> Task Text (Task Text Unit)
+requireListenerReady cleanup listenerReady =
+  if listenerReady then
+    Task.yield cleanup
+  else do
+    cleanup |> discard
+    Task.throw "LISTEN/NOTIFY listener did not initialize within 10 seconds"
 
 
 subscribeToStream ::
@@ -200,18 +255,17 @@ initialiseOrCatchUp ::
   Task Text Unit
 initialiseOrCatchUp queryConnection store lastProcessedRef initialisedRef = do
   initialised <- Var.get initialisedRef
-  case initialised of
-    False -> do
-      maybeMax <-
-        Sessions.selectMaxGlobalPosition
-          |> Sessions.runConnection queryConnection
-          |> Task.mapError toText
-      case maybeMax of
-        Maybe.Nothing -> lastProcessedRef |> Var.set 0
-        Maybe.Just (StreamPosition maxPos) -> lastProcessedRef |> Var.set maxPos
-      initialisedRef |> Var.set True
-    True ->
-      catchUpFromCursor queryConnection store lastProcessedRef
+  if initialised then
+    catchUpFromCursor queryConnection store lastProcessedRef
+  else do
+    maybeMax <-
+      Sessions.selectMaxGlobalPosition
+        |> Sessions.runConnection queryConnection
+        |> Task.mapError toText
+    case maybeMax of
+      Maybe.Nothing -> lastProcessedRef |> Var.set 0
+      Maybe.Just (StreamPosition maxPos) -> lastProcessedRef |> Var.set maxPos
+    initialisedRef |> Var.set True
 
 
 -- | Catch-up batch size: events read per forward page during a reconnect

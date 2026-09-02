@@ -629,18 +629,18 @@ spec newStore = do
                   case event.metadata.globalPosition of
                     Just position -> receivedPositions |> ConcurrentVar.modify (Array.push position)
                     Nothing -> Task.throw "overflow fixture event had no global position"
-                  case event.metadata.globalPosition == Just startPosition of
-                    False -> Task.yield unit
-                    True -> do
-                      replayEntered |> ConcurrentVar.modify (\_ -> True)
-                      let waitUntilReleased attempts = do
-                            released <- ConcurrentVar.peek releaseReplay
-                            if released || attempts <= (0 :: Int)
-                              then Task.yield unit
-                              else do
-                                AsyncTask.sleep 10 |> Task.mapError (\_ -> "replay barrier sleep failed")
-                                waitUntilReleased (attempts - 1)
-                      waitUntilReleased 1000
+                  if event.metadata.globalPosition == Just startPosition then do
+                    replayEntered |> ConcurrentVar.modify (\_ -> True)
+                    let waitUntilReleased attempts = do
+                          released <- ConcurrentVar.peek releaseReplay
+                          if released || attempts <= (0 :: Int) then
+                            Task.yield unit
+                          else do
+                            AsyncTask.sleep 10 |> Task.mapError (\_ -> "replay barrier sleep failed")
+                            waitUntilReleased (attempts - 1)
+                    waitUntilReleased 1000
+                  else
+                    Task.yield unit
 
         subscriptionTask <- AsyncTask.run do
           subscriptionId <-
@@ -704,18 +704,18 @@ spec newStore = do
               case (event.entityName == entityName, event.metadata.globalPosition) of
                 (True, Just position) -> do
                   receivedPositions |> ConcurrentVar.modify (Array.push position)
-                  case position == historicalPosition of
-                    True -> do
-                      replayEntered |> ConcurrentVar.modify (\_ -> True)
-                      let waitForRelease attempts = do
-                            released <- ConcurrentVar.peek releaseReplay
-                            case released || attempts <= (0 :: Int) of
-                              True -> Task.yield unit
-                              False -> do
-                                AsyncTask.sleep 10 |> Task.mapError (\_ -> "concurrent overlap barrier failed")
-                                waitForRelease (attempts - 1)
-                      waitForRelease 500
-                    False -> Task.yield unit
+                  if position == historicalPosition then do
+                    replayEntered |> ConcurrentVar.modify (\_ -> True)
+                    let waitForRelease attempts = do
+                          released <- ConcurrentVar.peek releaseReplay
+                          if released || attempts <= (0 :: Int) then
+                            Task.yield unit
+                          else do
+                            AsyncTask.sleep 10 |> Task.mapError (\_ -> "concurrent overlap barrier failed")
+                            waitForRelease (attempts - 1)
+                    waitForRelease 500
+                  else
+                    Task.yield unit
                 (True, Nothing) -> Task.throw "concurrent overlap event had no global position"
                 _ -> Task.yield unit
         subscriptionId <-
@@ -728,11 +728,11 @@ spec newStore = do
           do
             let waitForReplay attempts = do
                   entered <- ConcurrentVar.peek replayEntered
-                  case entered || attempts <= (0 :: Int) of
-                    True -> Task.yield entered
-                    False -> do
-                      AsyncTask.sleep 10 |> Task.mapError (\_ -> "concurrent overlap start failed")
-                      waitForReplay (attempts - 1)
+                  if entered || attempts <= (0 :: Int) then
+                    Task.yield entered
+                  else do
+                    AsyncTask.sleep 10 |> Task.mapError (\_ -> "concurrent overlap start failed")
+                    waitForReplay (attempts - 1)
             entered <- waitForReplay 500
             entered |> shouldBe True
             payloads <-
@@ -752,11 +752,11 @@ spec newStore = do
             releaseReplay |> ConcurrentVar.modify (\_ -> True)
             let waitForDeliveries attempts = do
                   positions <- ConcurrentVar.peek receivedPositions
-                  case Array.length positions >= (51 :: Int) || attempts <= (0 :: Int) of
-                    True -> Task.yield positions
-                    False -> do
-                      AsyncTask.sleep 10 |> Task.mapError (\_ -> "concurrent overlap delivery failed")
-                      waitForDeliveries (attempts - 1)
+                  if Array.length positions >= (51 :: Int) || attempts <= (0 :: Int) then
+                    Task.yield positions
+                  else do
+                    AsyncTask.sleep 10 |> Task.mapError (\_ -> "concurrent overlap delivery failed")
+                    waitForDeliveries (attempts - 1)
             delivered <- waitForDeliveries 500
             delivered |> Array.length |> shouldBe 51
             delivered
@@ -843,15 +843,16 @@ spec newStore = do
         nestedStarted <- ConcurrentVar.containing False
         receivedCount <- ConcurrentVar.containing (0 :: Int)
         let recursiveHandler event = do
-              case event.entityName == context.entityName of
-                False -> Task.yield unit
-                True -> do
-                  receivedCount |> ConcurrentVar.modify (\count -> count + 1)
-                  shouldInsert <- nestedStarted |> ConcurrentVar.modifyReturning \started ->
-                    Task.yield (True, not started)
-                  case shouldInsert of
-                    True -> context.store.insert nestedPayload |> Task.mapError toText |> discard
-                    False -> Task.yield unit
+              if event.entityName == context.entityName then do
+                receivedCount |> ConcurrentVar.modify (\count -> count + 1)
+                shouldInsert <- nestedStarted |> ConcurrentVar.modifyReturning \started ->
+                  Task.yield (True, not started)
+                if shouldInsert then
+                  context.store.insert nestedPayload |> Task.mapError toText |> discard
+                else
+                  Task.yield unit
+              else
+                Task.yield unit
         subscriptionId <- context.store.subscribeToAllEvents recursiveHandler |> Task.mapError toText
         Task.finally
           (context.store.unsubscribe subscriptionId |> Task.mapError toText)
@@ -866,13 +867,13 @@ spec newStore = do
                 let waitForCompletion attempts = do
                       isComplete <- ConcurrentVar.peek completed
                       callbacks <- ConcurrentVar.peek receivedCount
-                      case isComplete && callbacks >= (2 :: Int) of
-                        True -> Task.yield True
-                        False -> case attempts <= (0 :: Int) of
-                          True -> Task.yield False
-                          False -> do
-                            AsyncTask.sleep 25 |> Task.mapError (\_ -> "recursive insert sleep failed")
-                            waitForCompletion (attempts - 1)
+                      if isComplete && callbacks >= (2 :: Int) then
+                        Task.yield True
+                      else if attempts <= (0 :: Int) then
+                        Task.yield False
+                      else do
+                        AsyncTask.sleep 25 |> Task.mapError (\_ -> "recursive insert sleep failed")
+                        waitForCompletion (attempts - 1)
                 finished <- waitForCompletion 200
                 AsyncTask.cancel insertTask |> Task.asResultSafe |> discard
                 finished |> shouldBe True

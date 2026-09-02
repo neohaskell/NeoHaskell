@@ -481,9 +481,10 @@ spec = do
       let checkpointReplayStore = baseStore
             { readAllEventsBackwardFromFiltered = \_ _ _ -> Stream.fromArray (Array.wrap (AllEvent event))
             , readAllEventsForwardFromFiltered = \startPosition _ _ ->
-                case startPosition <= StreamPosition 0 of
-                  True -> Stream.fromArray (Array.wrap (AllEvent event))
-                  False -> Stream.fromArray Array.empty
+                if startPosition <= StreamPosition 0 then
+                  Stream.fromArray (Array.wrap (AllEvent event))
+                else
+                  Stream.fromArray Array.empty
             }
       checkpointSubscriber <- newWithCheckpointStore checkpointReplayStore checkpointRegistry retryingCheckpointStore
       Subscriber.rebuildAllAsync checkpointSubscriber rebuildOptionsDefault

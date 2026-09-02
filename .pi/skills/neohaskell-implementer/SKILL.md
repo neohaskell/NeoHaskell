@@ -95,6 +95,26 @@ hallucinated symbol: resolve via `./dev api`, and the pipeline records the
 count (per-stage `invented_api_events`, schema v4; `invented-api` failure
 label when it kills the run) — do not guess twice.
 
+## Readable control flow (implementation completion criterion)
+
+Before implementation is complete, inspect every changed function and refactor
+it until its top level reads as orchestration prose:
+
+- Keep one abstraction level per function. Extract branch mechanics into named
+  helpers (local helpers are fine); the caller should state the sequence and
+  policy, not implement both.
+- Keep control flow flat. Two nested decision points in a changed function are
+  the refactor trigger: introduce a named decision/helper or an early-exit
+  sentinel rather than adding another indentation level.
+- Name predicates and transitions by domain intent. A reader should not need to
+  mentally execute a compound Boolean or state mutation to understand the path.
+- Comments explain constraints, invariants, or non-obvious reasons. When a
+  comment narrates what the next block does, replace the block with a function
+  carrying that name.
+
+Completion means every changed function passes that inspection; compilation and
+tests alone do not satisfy the implement stage.
+
 ## Repair loop (protocol, not suggestion)
 
 ```

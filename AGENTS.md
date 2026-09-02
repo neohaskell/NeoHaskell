@@ -31,6 +31,8 @@ The only exception to this rule is if you COMPLETELY EXHAUST all the resources h
 | `do let y = expr` | `let..in`, `where` |
 | `case x of` | patterns in function head |
 | `if cond then a else b` | `case cond of True -> …` |
+| Named helpers with one abstraction level; orchestration reads top-to-bottom | nested control-flow pyramids, orchestration mixed with branch mechanics |
+| Comments that explain constraints or intent | comments narrating what code does; extract a named function instead |
 | Early-exit sentinel guards in `Task` validation | nested if/case pyramids |
 | `[fmt\|Hello #{name}!\|]` | `<>` / `++` for strings |
 | `Result err val` | `Either` |
@@ -74,7 +76,7 @@ subsequent change request.
 ## Dialect enforcement (Phase 2, live since 2026-07-07)
 
 Portable enforcement has two gates:
-1. **`./dev lint`** (seconds; portable + CI gate in `checks.yml`): dialect-first `.hlint.yaml` — vanilla modules restricted to Core wrappers + grandfathered boundaries.
+1. **`./dev lint`** (seconds; portable + CI gate in `checks.yml`): dialect-first `.hlint.yaml` plus a PR-diff syntax ratchet — vanilla modules are restricted to Core wrappers, and added `case … of True/False` is rejected in every harness.
 2. **GHC** (`./dev check`): `NoImplicitPrelude`.
 
 Claude compatibility adds optional earlier feedback through `.claude/hooks/dialect-guard.py` (~50ms). Pi does not depend on that hook. It rejects `$`, `where`-as-let-substitute (declaration `where` — module/class/instance/data/GADT/type-family — is fine), `Either`, `pure`/`return`, vanilla/unqualified imports, and `case`-of-Bool on added lines. False positive? Add `-- HOOK-ALLOW: <reason>` on that line. Adding/changing rules routes to `neohaskell-dialect-rules`.

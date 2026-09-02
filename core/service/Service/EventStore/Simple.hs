@@ -526,29 +526,49 @@ subscribeToAllEventsFromPositionImpl store fromPosition handler = do
   coordinator <- newSimpleReplayCoordinator
   let orderedHandler = handleSimpleLiveEvent store handler coordinator
   let subscription = Subscription {subscriptionType = AllEvents, handler = orderedHandler}
+  registerSimplePositionalSubscription store subscriptionId subscription
+  startSimpleReplayTask store fromPosition handler coordinator subscriptionId
+  Task.yield subscriptionId
 
-  -- Register before replay. The wrapped handler buffers overlap by global
-  -- position until the background replay has drained and switched atomically
-  -- to live mode.
+
+registerSimplePositionalSubscription
+  :: StreamStore
+  -> SubscriptionId
+  -> Subscription
+  -> Task w Unit
+registerSimplePositionalSubscription store subscriptionId subscription = do
+  -- Registration precedes replay so live overlap is buffered without gaps.
   store.subscriptions
     |> ConcurrentVar.modify (Map.set subscriptionId subscription)
     |> Lock.with store.globalLock
   Log.debug [fmt|Subscription created: #{toText subscriptionId}|] |> Task.ignoreError
 
+
+startSimpleReplayTask
+  :: StreamStore
+  -> StreamPosition
+  -> (Event Json.Value -> Task Text Unit)
+  -> SimpleReplayCoordinator
+  -> SubscriptionId
+  -> Task Error Unit
+startSimpleReplayTask store fromPosition handler coordinator subscriptionId = do
   let replayTask = do
         replayResult <- runSimpleReplay store fromPosition handler coordinator |> Task.asResult
         case replayResult of
           Ok _ -> Task.yield unit
-          Err _ -> do
-            store.subscriptions
-              |> ConcurrentVar.modify (Map.remove subscriptionId)
-              |> Lock.with store.globalLock
-            Log.warn [fmt|Positional subscription replay failed; removed #{toText subscriptionId}|]
-              |> Task.ignoreError
-  _replayTask <-
-    AsyncTask.run replayTask
-      |> Task.mapError StorageFailure
-  Task.yield subscriptionId
+          Err _ -> removeFailedSimpleSubscription store subscriptionId
+  AsyncTask.run replayTask
+    |> Task.mapError StorageFailure
+    |> discard
+
+
+removeFailedSimpleSubscription :: StreamStore -> SubscriptionId -> Task w Unit
+removeFailedSimpleSubscription store subscriptionId = do
+  store.subscriptions
+    |> ConcurrentVar.modify (Map.remove subscriptionId)
+    |> Lock.with store.globalLock
+  Log.warn [fmt|Positional subscription replay failed; removed #{toText subscriptionId}|]
+    |> Task.ignoreError
 
 
 subscribeToAllEventsFromStartImpl ::
@@ -698,29 +718,57 @@ handleSimpleLiveEvent
   -> Task Text Unit
 handleSimpleLiveEvent _store handler coordinator event = do
   delivery <- coordinator.replayState
-    |> ConcurrentVar.modifyReturning \state -> do
-        case event.metadata.globalPosition of
-          Nothing -> Task.yield (state, Nothing)
-          Just position -> do
-            let duplicate = case state.replayHighWater of
-                  Just highWater -> position <= highWater
-                  Nothing -> False
-            case duplicate of
-              True -> Task.yield (state, Nothing)
-              False -> case state.replayPhase of
-                SimpleReplaying ->
-                  case state.replayOverflow || Map.length state.replayInbox >= simpleReplayInboxCapacity of
-                    True -> Task.yield (state {replayOverflow = True}, Nothing)
-                    False ->
-                      Task.yield
-                        ( state {replayInbox = state.replayInbox |> Map.set position event}
-                        , Nothing
-                        )
-                SimpleLive ->
-                  Task.yield (state {replayHighWater = Just position}, Just event)
+    |> ConcurrentVar.modifyReturning (coordinateSimpleLiveEvent event)
   case delivery of
     Just eventToDeliver -> notifySubscriberSafely handler eventToDeliver
     Nothing -> Task.yield unit
+
+
+coordinateSimpleLiveEvent
+  :: Event Json.Value
+  -> SimpleReplayState
+  -> Task w (SimpleReplayState, Maybe (Event Json.Value))
+coordinateSimpleLiveEvent event state =
+  case event.metadata.globalPosition of
+    Nothing -> Task.yield (state, Nothing)
+    Just position ->
+      if isSimpleReplayDuplicate state position then
+        Task.yield (state, Nothing)
+      else
+        coordinateSimpleReplayPhase event position state
+
+
+coordinateSimpleReplayPhase
+  :: Event Json.Value
+  -> StreamPosition
+  -> SimpleReplayState
+  -> Task w (SimpleReplayState, Maybe (Event Json.Value))
+coordinateSimpleReplayPhase event position state =
+  case state.replayPhase of
+    SimpleReplaying -> bufferSimpleReplayOverlap event position state
+    SimpleLive -> Task.yield (state {replayHighWater = Just position}, Just event)
+
+
+bufferSimpleReplayOverlap
+  :: Event Json.Value
+  -> StreamPosition
+  -> SimpleReplayState
+  -> Task w (SimpleReplayState, Maybe (Event Json.Value))
+bufferSimpleReplayOverlap event position state =
+  if state.replayOverflow || Map.length state.replayInbox >= simpleReplayInboxCapacity then
+    Task.yield (state {replayOverflow = True}, Nothing)
+  else
+    Task.yield
+      ( state {replayInbox = state.replayInbox |> Map.set position event}
+      , Nothing
+      )
+
+
+isSimpleReplayDuplicate :: SimpleReplayState -> StreamPosition -> Bool
+isSimpleReplayDuplicate state position =
+  case state.replayHighWater of
+    Just highWater -> position <= highWater
+    Nothing -> False
 
 
 processSimpleReplayEvent
@@ -732,23 +780,24 @@ processSimpleReplayEvent handler coordinator event = do
   state <- ConcurrentVar.peek coordinator.replayState
   case event.metadata.globalPosition of
     Nothing -> Task.yield unit
-    Just position -> do
-      let duplicate = case state.replayHighWater of
-            Just highWater -> position <= highWater
-            Nothing -> False
-      case duplicate of
-        True -> Task.yield unit
-        False -> do
-          -- Do not hold the coordinator while user code runs: live callbacks
-          -- must remain able to enter the bounded inbox during replay.
-          notifySubscriberSafely handler event
-          coordinator.replayState
-            |> ConcurrentVar.modify
-              ( \current ->
-                  case current.replayHighWater of
-                    Just highWater -> current {replayHighWater = Just (max highWater position)}
-                    Nothing -> current {replayHighWater = Just position}
-              )
+    Just position ->
+      if isSimpleReplayDuplicate state position then
+        Task.yield unit
+      else do
+        -- User code runs outside the coordinator so live events can enter the inbox.
+        notifySubscriberSafely handler event
+        advanceSimpleReplayHighWater coordinator position
+
+
+advanceSimpleReplayHighWater :: SimpleReplayCoordinator -> StreamPosition -> Task w Unit
+advanceSimpleReplayHighWater coordinator position =
+  coordinator.replayState
+    |> ConcurrentVar.modify
+      ( \current ->
+          case current.replayHighWater of
+            Just highWater -> current {replayHighWater = Just (max highWater position)}
+            Nothing -> current {replayHighWater = Just position}
+      )
 
 
 -- | Snapshot events at or after the inclusive global position.
@@ -778,39 +827,57 @@ stabilizeSimpleReplay
   -> Task w Unit
 stabilizeSimpleReplay store requestedStart handler coordinator = do
   (overflowed, highWater) <- clearSimpleOverflow coordinator
-  case overflowed of
-    True -> do
-      let catchUpPosition = case highWater of
-            Just (StreamPosition position) -> StreamPosition (position + 1)
-            Nothing -> requestedStart
-      catchUpEvents <- eventsFromPosition store catchUpPosition
-      catchUpEvents |> Task.forEach (processSimpleReplayEvent handler coordinator)
+  if overflowed then do
+    recoverSimpleReplayOverflow store requestedStart handler coordinator highWater
+    stabilizeSimpleReplay store requestedStart handler coordinator
+  else do
+    entries <- takeSimpleReplayInbox coordinator
+    drainSimpleReplayInbox handler coordinator entries
+    Task.unless (Array.isEmpty entries) do
       stabilizeSimpleReplay store requestedStart handler coordinator
-    False -> do
-      entries <- coordinator.replayState
-        |> ConcurrentVar.modifyReturning \state -> do
-            let pendingEntries = state.replayInbox |> Map.entries
-            case Array.isEmpty pendingEntries of
-              True ->
-                Task.yield
-                  ( state
-                      { replayPhase = SimpleLive
-                      , replayInbox = Map.empty
-                      , replayOverflow = False
-                      }
-                  , pendingEntries
-                  )
-              False ->
-                Task.yield
-                  ( state {replayInbox = Map.empty}
-                  , pendingEntries
-                  )
-      case Array.isEmpty entries of
-        True -> Task.yield unit
-        False -> do
-          entries
-            |> Task.forEach (\(_, pendingEvent) -> processSimpleReplayEvent handler coordinator pendingEvent)
-          stabilizeSimpleReplay store requestedStart handler coordinator
+
+
+recoverSimpleReplayOverflow
+  :: StreamStore
+  -> StreamPosition
+  -> (Event Json.Value -> Task Text Unit)
+  -> SimpleReplayCoordinator
+  -> Maybe StreamPosition
+  -> Task w Unit
+recoverSimpleReplayOverflow store requestedStart handler coordinator highWater = do
+  let catchUpPosition = case highWater of
+        Just (StreamPosition position) -> StreamPosition (position + 1)
+        Nothing -> requestedStart
+  catchUpEvents <- eventsFromPosition store catchUpPosition
+  catchUpEvents |> Task.forEach (processSimpleReplayEvent handler coordinator)
+
+
+takeSimpleReplayInbox :: SimpleReplayCoordinator -> Task w (Array (StreamPosition, Event Json.Value))
+takeSimpleReplayInbox coordinator =
+  coordinator.replayState
+    |> ConcurrentVar.modifyReturning \state -> do
+        let pendingEntries = state.replayInbox |> Map.entries
+        if Array.isEmpty pendingEntries then
+          Task.yield
+            ( state
+                { replayPhase = SimpleLive
+                , replayInbox = Map.empty
+                , replayOverflow = False
+                }
+            , pendingEntries
+            )
+        else
+          Task.yield (state {replayInbox = Map.empty}, pendingEntries)
+
+
+drainSimpleReplayInbox
+  :: (Event Json.Value -> Task Text Unit)
+  -> SimpleReplayCoordinator
+  -> Array (StreamPosition, Event Json.Value)
+  -> Task w Unit
+drainSimpleReplayInbox handler coordinator entries =
+  entries
+    |> Task.forEach (\(_, pendingEvent) -> processSimpleReplayEvent handler coordinator pendingEvent)
 
 
 runSimpleReplay
