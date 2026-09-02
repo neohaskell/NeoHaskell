@@ -289,6 +289,51 @@ spec = do
             let closeOp2 = store2.close :: Task Text Unit
             closeOp2
 
+  describe "listener initialization barrier" do
+    whenEnvVar "POSTGRES_AVAILABLE" do
+      it "waits for delayed LISTEN initialization before returning cleanup" \_ -> do
+        let cfg =
+              (def :: PostgresEventStore)
+                { host = "localhost"
+                , databaseName = "neohaskell"
+                , user = "neohaskell"
+                , password = "neohaskell"
+                , port = 5432
+                }
+        store0 <- Postgres.new cfg |> Task.mapError toText
+        store0.close
+        subStore <- SubscriptionStore.new |> Task.mapError toText
+        factoryCompleted <- Var.new False
+        let factory = do
+              AsyncTask.sleep 100
+              listenConnection <- acquireConn cfg
+              queryConnection <- acquireConn cfg
+              factoryCompleted |> Var.set True
+              Task.yield (listenConnection, queryConnection)
+        cleanup <- subStore |> connectTo factory
+        Task.finally cleanup do
+          completed <- Var.get factoryCompleted
+          completed |> shouldBe True
+
+    it "times out and cancels a listener that never becomes ready" \_ -> do
+      subStore <- SubscriptionStore.new |> Task.mapError toText
+      factoryCancelled <- Var.new False
+      let neverReadyFactory =
+            Task.finally
+              (factoryCancelled |> Var.set True)
+              do
+                AsyncTask.sleep 20000
+                Task.throw "fixture factory unexpectedly completed"
+      result <- subStore |> connectTo neverReadyFactory |> Task.asResult
+      case result of
+        Err err -> err |> Text.contains "did not initialize" |> shouldBe True
+        Ok cleanup -> do
+          cleanup
+          fail "Expected listener initialization timeout"
+      waitUntil 20 (Var.get factoryCancelled)
+      cancelled <- Var.get factoryCancelled
+      cancelled |> shouldBe True
+
   -- ADR-0061: reconnect catch-up — the cursor never moves backwards (monotonic
   -- max), so an out-of-order or duplicate boundary event during catch-up keeps
   -- at-least-once safety without skipping or regressing the cursor. These are

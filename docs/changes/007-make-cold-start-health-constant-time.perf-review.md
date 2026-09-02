@@ -1,0 +1,13 @@
+# Performance design review: Make cold-start health constant-time without losing replayed events
+Spec: docs/changes/007-make-cold-start-health-constant-time.md | Capabilities: event-store, queries, entities | Date: 2026-09-01
+
+| # | Checklist | Finding | Grounding | Verdict |
+|---|-----------|---------|-----------|---------|
+| 1 | P1 | Startup replay sits directly on event apply and persistence paths. The design removes the measured anti-patterns: synchronous pre-bind replay, one global-log pass per query, uncached entity reconstruction, and per-operation pool construction. | kept: production measured 82-320s startup gaps; exercised for every historical event; framework absorbs the change; proportional | advisory |
+| 2 | P3/P5 | Paging is bounded only if no catch-up path first materializes the unbounded log. Do not use `Limit maxValue` with `Stream.toArray`; accumulation remains bounded by the 1,000-event page/inbox limits. | kept: current Postgres catch-up buffers the full log and repeatedly `Array.push`es; C2/C3/C10 exercise it; internal fix; proportional | advisory |
+| 3 | P6 | Exactly-once ordering requires per-subscription serialization because live dispatch enters concurrently. One bounded positional inbox/monotonic cursor is appropriate during catch-up; after reaching head it must not retain history or serialize unrelated subscribers. | kept: concurrent callback entry is verified; whole-store serialization would affect the live path; framework-internal; proportional | advisory |
+| 4 | P5 | `registeredEntityNames` enables filtering before fetch. Entity routing precedes updater invocation and automatic wiring uses the existing cache adapter, avoiding wrong-entity fetches and repeated full-stream reconstruction. | kept: current Q×N plus N×u multiplier is concrete; C6/C7 measure the seams; no user knob; proportional | advisory |
+| 5 | P7 | C10 supplies numeric evidence: health ≤5s and spread ≤2s across 1k/10k/100k. Treat it as a startup regression bound, not a replay-throughput benchmark; nightly measurement remains non-PR-blocking. | kept: the performance claim now has deterministic tolerances and a process harness | advisory |
+| 6 | P2/P4 | The additive accessor is monomorphic and no codec is introduced, so no `INLINE`/`INLINABLE`/`UNPACK` or serialization change is justified without profile evidence. | informational (failed Q2: those optimization paths are not introduced by the contract) | informational |
+
+**Blockers:** 0 — the corrected criteria provide bounded-memory invariants, concrete timing tolerances, and test seams for each named multiplier.

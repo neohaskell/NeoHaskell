@@ -174,6 +174,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          # The dialect syntax ratchet evaluates the complete PR diff.
+          fetch-depth: 0
       - name: Install hlint 3.10 (pinned binary + checksum)
         run: |
           curl -sSfL -o hlint.tar.gz \
@@ -181,4 +183,6 @@ jobs:
           echo "ccabc8802a58154699a3583b8dddc5ea2e6d65753a62c45c0e80088ebb16b42b  hlint.tar.gz" | sha256sum -c -
           tar xzf hlint.tar.gz
       - name: Dialect gate
+        env:
+          DIALECT_DIFF_BASE: origin/${{ github.base_ref || github.event.repository.default_branch }}
         run: HLINT=./hlint-3.10/hlint ./dev lint

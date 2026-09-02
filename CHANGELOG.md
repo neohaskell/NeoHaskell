@@ -13,6 +13,43 @@ has been cut yet — everything accrues under Unreleased until the first tag.)
 
 ## [Unreleased]
 
+### 007-make-cold-start-health-constant-time — Change 007: Make cold-start health constant-time without losing replayed events
+
+**Runtime:** container liveness no longer scales with event-store size. Operators
+can probe `/health` for process liveness and `/ready` for traffic readiness
+without widening a grace period as the store grows. Replay remains ordered and
+complete when live events overlap startup; fixing the bind delay must not trade
+a loud crash-loop for silent projection loss.
+
+**Performance:** rebuild changes from one full-log pass per query plus
+per-operation pool construction to one paged, entity-filtered pass over a
+reused Postgres pool. Entity snapshots prevent repeated full-stream fetches.
+Progress is visible through the ADR-0059 field names rather than a silent
+multi-minute gap.
+
+**Public Haskell surface:** additive only. `Service.Query.Registry` exposes
+`registeredEntityNames :: QueryRegistry -> Array EntityName`; existing callers
+need no migration.
+
+**CI:** `.github/workflows/test.yml` exports `POSTGRES_AVAILABLE=true` for the
+Postgres-backed suites so the concurrency and pool regressions execute on every
+substantive PR.
+
+**Deployment documentation:** restore the deployment guide and lead with a
+`startupProbe`/readiness configuration, including explicit
+`periodSeconds × failureThreshold` arithmetic and the distinction between
+`/health` and `/ready`.
+
+**Deliberately deferred:** production checkpoint-store wiring and query-state
+migration remain tracked by #854/#855/#666. SIGTERM cancellation remains #662;
+outbound-integration recovery is #856; the missing `X-Query-Status` contract is
+#664; Neon scale-to-zero support is #857. None is required to make port binding
+constant-time and in-process replay/live overlap gap-free.
+
+API delta:
+
+- `+ Service.Query.Registry: registeredEntityNames :: QueryRegistry -> Array EntityName`
+
 ### 006-deterministic-uuid-v5 — Change 006: Add deterministic UUID v5 generation to `Uuid` and the `Decision` monad
 
 **Not breaking.** Three added signatures, no removals, no behavior change to any

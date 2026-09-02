@@ -5,7 +5,9 @@
 # boundaries, banned partials, teaching rewrite hints.
 #
 # Same config as CI (.github/workflows/checks.yml) — if it passes here, it
-# passes there. Exit non-zero on any hint.
+# passes there. The PR-diff ratchet rejects added case-of-Bool syntax that HLint
+# cannot enforce without rewriting grandfathered modules. Exit non-zero on any
+# violation or hint.
 #
 # Usage:
 #   ./dev lint                 # everything
@@ -22,6 +24,15 @@ cd "${SCRIPT_DIR}/.."
 if [ $# -eq 0 ]; then
   set -- core integrations testbed
 fi
+
+# The syntax ratchet is portable and evaluates the complete branch diff. CI
+# checks out full history; local clones must expose origin/main as well.
+DIALECT_DIFF_BASE="${DIALECT_DIFF_BASE:-origin/main}"
+if ! git rev-parse --verify "${DIALECT_DIFF_BASE}" >/dev/null 2>&1; then
+  echo "lint: missing diff base ${DIALECT_DIFF_BASE}; fetch it or set DIALECT_DIFF_BASE" >&2
+  exit 2
+fi
+python3 .claude/hooks/dialect-guard.py --pr-diff "${DIALECT_DIFF_BASE}"
 
 # HLINT override lets CI supply its pinned standalone binary without nix.
 if [ -n "${HLINT:-}" ]; then

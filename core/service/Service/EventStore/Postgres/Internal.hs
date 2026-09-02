@@ -13,6 +13,8 @@ import Array (Array)
 import Array qualified
 import AsyncTask qualified
 import Basics
+import ConcurrentVar (ConcurrentVar)
+import ConcurrentVar qualified
 import Default (Default)
 import Default qualified
 import Hasql.Connection qualified as Hasql
@@ -21,6 +23,9 @@ import Hasql.Pool qualified as HasqlPool
 import Json qualified
 import Log qualified
 import LinkedList (LinkedList)
+import Lock qualified
+import Map (Map)
+import Map qualified
 import Maybe (Maybe (..))
 import Maybe qualified
 import Result (Result (..))
@@ -220,27 +225,41 @@ new ::
   Task Text (EventStore Json.Value)
 new ops cfg = do
   pool <- ops.acquire cfg |> Task.mapError toText
+  -- The store owns one pool for its whole lifetime. Sessions.run performs the
+  -- per-operation checkout/return through HasqlPool.use; these closures prevent
+  -- withConnection from constructing and destroying another pool per call.
+  let sharedOps =
+        ops
+          { acquire = \_ -> Task.yield pool
+          , release = \_ -> Task.yield unit
+          }
   result <- Task.asResult do
     ops.initializeTable pool |> Task.mapError (TableInitializationError .> toText)
+    insertionLock <- Lock.new
     subscriptionStore <- SubscriptionStore.new |> Task.mapError (toText .> SubscriptionInitializationError .> toText)
     cleanup <- ops.initializeSubscriptions pool subscriptionStore cfg |> Task.mapError (SubscriptionInitializationError .> toText)
+    let insertSerially payload = do
+          insertResult <- insertImpl sharedOps cfg 0 payload |> Task.asResult |> Lock.with insertionLock
+          case insertResult of
+            Ok success -> Task.yield success
+            Err err -> Task.throw err
     let eventStore =
           EventStore
-            { insert = insertImpl ops cfg 0,
-              readStreamForwardFrom = readStreamForwardFromImpl ops cfg,
-              readStreamBackwardFrom = readStreamBackwardFromImpl ops cfg,
-              readAllStreamEvents = readAllStreamEventsImpl ops cfg,
-              readAllEventsForwardFrom = readAllEventsForwardFromImpl ops cfg,
-              readAllEventsBackwardFrom = readAllEventsBackwardFromImpl ops cfg,
-              readAllEventsForwardFromFiltered = readAllEventsForwardFromFilteredImpl ops cfg,
-              readAllEventsBackwardFromFiltered = readAllEventsBackwardFromFilteredImpl ops cfg,
-              subscribeToAllEvents = subscribeToAllEventsImpl ops cfg subscriptionStore,
-              subscribeToAllEventsFromPosition = subscribeToAllEventsFromPositionImpl ops cfg subscriptionStore,
-              subscribeToAllEventsFromStart = subscribeToAllEventsFromStartImpl ops cfg subscriptionStore,
-              subscribeToEntityEvents = subscribeToEntityEventsImpl ops cfg subscriptionStore,
-              subscribeToStreamEvents = subscribeToStreamEventsImpl ops cfg subscriptionStore,
+            { insert = insertSerially,
+              readStreamForwardFrom = readStreamForwardFromImpl sharedOps cfg,
+              readStreamBackwardFrom = readStreamBackwardFromImpl sharedOps cfg,
+              readAllStreamEvents = readAllStreamEventsImpl sharedOps cfg,
+              readAllEventsForwardFrom = readAllEventsForwardFromImpl sharedOps cfg,
+              readAllEventsBackwardFrom = readAllEventsBackwardFromImpl sharedOps cfg,
+              readAllEventsForwardFromFiltered = readAllEventsForwardFromFilteredImpl sharedOps cfg,
+              readAllEventsBackwardFromFiltered = readAllEventsBackwardFromFilteredImpl sharedOps cfg,
+              subscribeToAllEvents = subscribeToAllEventsImpl sharedOps cfg subscriptionStore,
+              subscribeToAllEventsFromPosition = subscribeToAllEventsFromPositionImpl sharedOps cfg subscriptionStore,
+              subscribeToAllEventsFromStart = subscribeToAllEventsFromStartImpl sharedOps cfg subscriptionStore,
+              subscribeToEntityEvents = subscribeToEntityEventsImpl sharedOps cfg subscriptionStore,
+              subscribeToStreamEvents = subscribeToStreamEventsImpl sharedOps cfg subscriptionStore,
               unsubscribe = unsubscribeImpl subscriptionStore,
-              truncateStream = truncateStreamImpl ops cfg,
+              truncateStream = truncateStreamImpl sharedOps cfg,
               close =
                 Task.finally
                   (ops.release pool |> Task.mapError toText |> discard)
@@ -668,6 +687,318 @@ subscribeToAllEventsImpl ops cfg store callback = do
     Task.yield subscriptionId
 
 
+data PostgresReplayPhase
+  = PostgresReplaying
+  | PostgresLive
+  deriving (Eq, Show)
+
+
+data PostgresReplayState = PostgresReplayState
+  { replayPhase :: PostgresReplayPhase,
+    replayHighWater :: Maybe StreamPosition,
+    replayInbox :: Map StreamPosition (Event Json.Value),
+    replayOverflow :: Bool
+  }
+
+
+newtype PostgresReplayCoordinator = PostgresReplayCoordinator
+  { replayState :: ConcurrentVar PostgresReplayState
+  }
+
+
+-- | Maximum notification overlap retained before positional reread.
+postgresReplayInboxCapacity :: Int
+postgresReplayInboxCapacity = 1000
+
+
+-- | Allocate ordering state for one Postgres positional subscription.
+newPostgresReplayCoordinator :: Task w PostgresReplayCoordinator
+newPostgresReplayCoordinator = do
+  replayState <-
+    ConcurrentVar.containing
+      PostgresReplayState
+        { replayPhase = PostgresReplaying,
+          replayHighWater = Nothing,
+          replayInbox = Map.empty,
+          replayOverflow = False
+        }
+  Task.yield PostgresReplayCoordinator {replayState}
+
+
+notifyPostgresSubscriberSafely
+  :: (Event Json.Value -> Task Text Unit)
+  -> Event Json.Value
+  -> Task w Unit
+notifyPostgresSubscriberSafely callback event = do
+  result <- callback event |> Task.asResult
+  case result of
+    Ok _ -> Task.yield unit
+    Err _ -> do
+      Log.warn "Subscription callback failed"
+        |> Task.ignoreError
+      Task.yield unit
+
+
+handlePostgresLiveEvent
+  :: (Event Json.Value -> Task Text Unit)
+  -> PostgresReplayCoordinator
+  -> Event Json.Value
+  -> Task Text Unit
+handlePostgresLiveEvent callback coordinator event = do
+  delivery <- coordinator.replayState
+    |> ConcurrentVar.modifyReturning (coordinatePostgresLiveEvent event)
+  case delivery of
+    Just eventToDeliver -> notifyPostgresSubscriberSafely callback eventToDeliver
+    Nothing -> Task.yield unit
+
+
+-- | Decide live delivery without executing subscriber code under replay state.
+coordinatePostgresLiveEvent
+  :: Event Json.Value
+  -> PostgresReplayState
+  -> Task w (PostgresReplayState, Maybe (Event Json.Value))
+coordinatePostgresLiveEvent event state =
+  case event.metadata.globalPosition of
+    Nothing -> Task.yield (state, Nothing)
+    Just position ->
+      if isPostgresReplayDuplicate state position then
+        Task.yield (state, Nothing)
+      else
+        coordinatePostgresReplayPhase event position state
+
+
+coordinatePostgresReplayPhase
+  :: Event Json.Value
+  -> StreamPosition
+  -> PostgresReplayState
+  -> Task w (PostgresReplayState, Maybe (Event Json.Value))
+coordinatePostgresReplayPhase event position state =
+  case state.replayPhase of
+    PostgresReplaying -> bufferPostgresReplayOverlap event position state
+    PostgresLive -> Task.yield (state {replayHighWater = Just position}, Just event)
+
+
+bufferPostgresReplayOverlap
+  :: Event Json.Value
+  -> StreamPosition
+  -> PostgresReplayState
+  -> Task w (PostgresReplayState, Maybe (Event Json.Value))
+bufferPostgresReplayOverlap event position state =
+  if state.replayOverflow || Map.length state.replayInbox >= postgresReplayInboxCapacity then
+    Task.yield (state {replayOverflow = True}, Nothing)
+  else
+    Task.yield
+      ( state {replayInbox = state.replayInbox |> Map.set position event}
+      , Nothing
+      )
+
+
+-- | True when a global position has already crossed the delivery high-water.
+isPostgresReplayDuplicate :: PostgresReplayState -> StreamPosition -> Bool
+isPostgresReplayDuplicate state position =
+  case state.replayHighWater of
+    Just highWater -> position <= highWater
+    Nothing -> False
+
+
+processPostgresReplayEvent
+  :: (Event Json.Value -> Task Text Unit)
+  -> PostgresReplayCoordinator
+  -> Event Json.Value
+  -> Task w Unit
+processPostgresReplayEvent callback coordinator event = do
+  state <- ConcurrentVar.peek coordinator.replayState
+  case event.metadata.globalPosition of
+    Nothing -> Task.yield unit
+    Just position ->
+      if isPostgresReplayDuplicate state position then
+        Task.yield unit
+      else do
+        -- Keep the inbox available while the historical callback runs.
+        notifyPostgresSubscriberSafely callback event
+        advancePostgresReplayHighWater coordinator position
+
+
+-- | Advance the delivered-position watermark monotonically.
+advancePostgresReplayHighWater :: PostgresReplayCoordinator -> StreamPosition -> Task w Unit
+advancePostgresReplayHighWater coordinator position =
+  coordinator.replayState
+    |> ConcurrentVar.modify
+      ( \current ->
+          case current.replayHighWater of
+            Just highWater -> current {replayHighWater = Just (max highWater position)}
+            Nothing -> current {replayHighWater = Just position}
+      )
+
+
+readPostgresReplayPages
+  :: Ops
+  -> PostgresEventStore
+  -> StreamPosition
+  -> Maybe StreamPosition
+  -> (Event Json.Value -> Task Text Unit)
+  -> PostgresReplayCoordinator
+  -> Task Error Unit
+readPostgresReplayPages ops cfg startPosition replayEnd callback coordinator = do
+  eventStream <- readAllEventsForwardFromImpl ops cfg startPosition (Limit 1000)
+  (lastPosition, count) <- consumePostgresReplayPage replayEnd callback coordinator eventStream
+  continuePostgresReplay ops cfg replayEnd callback coordinator lastPosition count
+
+
+-- | Consume one bounded page and retain its last accepted global position.
+consumePostgresReplayPage
+  :: Maybe StreamPosition
+  -> (Event Json.Value -> Task Text Unit)
+  -> PostgresReplayCoordinator
+  -> Stream.Stream (ReadAllMessage Json.Value)
+  -> Task Error (Maybe StreamPosition, Int)
+consumePostgresReplayPage replayEnd callback coordinator eventStream =
+  eventStream
+    |> Stream.consume
+      (processPostgresReplayMessage replayEnd callback coordinator)
+      (Nothing, 0)
+    |> Task.mapError StorageFailure
+
+
+processPostgresReplayMessage
+  :: Maybe StreamPosition
+  -> (Event Json.Value -> Task Text Unit)
+  -> PostgresReplayCoordinator
+  -> (Maybe StreamPosition, Int)
+  -> ReadAllMessage Json.Value
+  -> Task w (Maybe StreamPosition, Int)
+processPostgresReplayMessage replayEnd callback coordinator (lastPosition, count) message =
+  case message of
+    AllEvent event ->
+      if withinPostgresReplayEnd replayEnd event then do
+        processPostgresReplayEvent callback coordinator event
+        Task.yield (event.metadata.globalPosition, count + 1)
+      else
+        Task.yield (lastPosition, count)
+    _ -> Task.yield (lastPosition, count)
+
+
+-- | Keep historical delivery inside the replay head captured at registration.
+withinPostgresReplayEnd :: Maybe StreamPosition -> Event Json.Value -> Bool
+withinPostgresReplayEnd replayEnd event =
+  case (replayEnd, event.metadata.globalPosition) of
+    (Just endPosition, Just eventPosition) -> eventPosition <= endPosition
+    (Nothing, _) -> False
+    _ -> True
+
+
+continuePostgresReplay
+  :: Ops
+  -> PostgresEventStore
+  -> Maybe StreamPosition
+  -> (Event Json.Value -> Task Text Unit)
+  -> PostgresReplayCoordinator
+  -> Maybe StreamPosition
+  -> Int
+  -> Task Error Unit
+continuePostgresReplay ops cfg replayEnd callback coordinator lastPosition count =
+  if count < (1000 :: Int) then
+    Task.yield unit
+  else
+    case lastPosition of
+      Nothing -> Task.yield unit
+      Just (StreamPosition position) ->
+        readPostgresReplayPages ops cfg (StreamPosition (position + 1)) replayEnd callback coordinator
+
+
+-- | Atomically begin one Postgres overflow-recovery read.
+clearPostgresOverflow :: PostgresReplayCoordinator -> Task w (Bool, Maybe StreamPosition)
+clearPostgresOverflow coordinator =
+  coordinator.replayState
+    |> ConcurrentVar.modifyReturning \state ->
+        Task.yield
+          ( state {replayOverflow = False}
+          , (state.replayOverflow, state.replayHighWater)
+          )
+
+
+stabilizePostgresReplay
+  :: Ops
+  -> PostgresEventStore
+  -> StreamPosition
+  -> (Event Json.Value -> Task Text Unit)
+  -> PostgresReplayCoordinator
+  -> Task Error Unit
+stabilizePostgresReplay ops cfg requestedStart callback coordinator = do
+  (overflowed, highWater) <- clearPostgresOverflow coordinator
+  if overflowed then do
+    recoverPostgresReplayOverflow ops cfg requestedStart callback coordinator highWater
+    stabilizePostgresReplay ops cfg requestedStart callback coordinator
+  else do
+    entries <- takePostgresReplayInbox coordinator
+    drainPostgresReplayInbox callback coordinator entries
+    Task.unless (Array.isEmpty entries) do
+      stabilizePostgresReplay ops cfg requestedStart callback coordinator
+
+
+-- | Recover discarded overlap from the first position not yet delivered.
+recoverPostgresReplayOverflow
+  :: Ops
+  -> PostgresEventStore
+  -> StreamPosition
+  -> (Event Json.Value -> Task Text Unit)
+  -> PostgresReplayCoordinator
+  -> Maybe StreamPosition
+  -> Task Error Unit
+recoverPostgresReplayOverflow ops cfg requestedStart callback coordinator highWater = do
+  let catchUpPosition = case highWater of
+        Just (StreamPosition position) -> StreamPosition (position + 1)
+        Nothing -> requestedStart
+  catchUpEnd <-
+    ops |> withConnectionAndError cfg \conn -> do
+      Sessions.selectMaxGlobalPosition
+        |> Sessions.run conn
+        |> Task.mapError (toText .> StorageFailure)
+  readPostgresReplayPages ops cfg catchUpPosition catchUpEnd callback coordinator
+
+
+-- | Snapshot and clear pending overlap while retaining replay mode.
+takePostgresReplayInbox :: PostgresReplayCoordinator -> Task w (Array (StreamPosition, Event Json.Value))
+takePostgresReplayInbox coordinator =
+  coordinator.replayState
+    |> ConcurrentVar.modifyReturning \state -> do
+        let pendingEntries = state.replayInbox |> Map.entries
+        if Array.isEmpty pendingEntries then
+          Task.yield
+            ( state
+                { replayPhase = PostgresLive
+                , replayInbox = Map.empty
+                , replayOverflow = False
+                }
+            , pendingEntries
+            )
+        else
+          Task.yield (state {replayInbox = Map.empty}, pendingEntries)
+
+
+drainPostgresReplayInbox
+  :: (Event Json.Value -> Task Text Unit)
+  -> PostgresReplayCoordinator
+  -> Array (StreamPosition, Event Json.Value)
+  -> Task w Unit
+drainPostgresReplayInbox callback coordinator entries =
+  entries
+    |> Task.forEach (\(_, pendingEvent) -> processPostgresReplayEvent callback coordinator pendingEvent)
+
+
+runPostgresReplay
+  :: Ops
+  -> PostgresEventStore
+  -> StreamPosition
+  -> Maybe StreamPosition
+  -> (Event Json.Value -> Task Text Unit)
+  -> PostgresReplayCoordinator
+  -> Task Error Unit
+runPostgresReplay ops cfg startPosition replayEnd callback coordinator = do
+  readPostgresReplayPages ops cfg startPosition replayEnd callback coordinator
+  stabilizePostgresReplay ops cfg startPosition callback coordinator
+
+
 subscribeToAllEventsFromPositionImpl ::
   Ops ->
   PostgresEventStore ->
@@ -676,60 +1007,58 @@ subscribeToAllEventsFromPositionImpl ::
   (Event Json.Value -> Task Text Unit) ->
   Task Error SubscriptionId
 subscribeToAllEventsFromPositionImpl ops cfg store startPosition callback = do
-  -- Catch up loop: read historical events and process them
-  let catchUp currentPosition =
-        ops |> withConnectionAndError cfg \conn -> do
-          -- Get current max position
-          maxPosition <-
-            Sessions.selectMaxGlobalPosition
-              |> Sessions.run conn
-              |> Task.mapError (toText .> StorageFailure)
-
-          case maxPosition of
-            Nothing -> do
-              -- No events in database, just subscribe from now
-              Task.yield currentPosition
-            Just maxPos -> do
-              if maxPos <= currentPosition
-                then do
-                  -- No new events, we're caught up
-                  Task.yield currentPosition
-                else do
-                  -- Read events from currentPosition to maxPos
-                  let limit = Limit maxValue -- Read all available events
-                  eventStream <-
-                    readAllEventsForwardFromImpl ops cfg currentPosition limit
-                      |> Task.mapError (\_ -> StorageFailure "Failed to read events during catch-up")
-
-                  -- Collect all events from the stream
-                  events <- eventStream |> Stream.toArray |> Task.mapError (toText .> StorageFailure)
-
-                  -- Process each event serially through the callback
-                  events
-                    |> collectAllEvents
-                    |> Task.forEach (\event -> do
-                      callbackResult <- callback event |> Task.asResult
-                      case callbackResult of
-                        Ok _ -> Task.yield unit
-                        Err err -> do
-                          Log.warn [fmt|Subscription callback failed during catch-up: #{toText err}|]
-                            |> Task.ignoreError
-                          Task.yield unit
-                    )
-
-                  -- Check if more events were added while processing
-                  catchUp maxPos
-
-  -- Start catch-up from the requested position
-  finalPosition <- catchUp startPosition
-
-  -- Now subscribe from the final position onwards
+  currentMaxPosition <-
+    ops |> withConnectionAndError cfg \conn -> do
+      Sessions.selectMaxGlobalPosition
+        |> Sessions.run conn
+        |> Task.mapError (toText .> StorageFailure)
+  coordinator <- newPostgresReplayCoordinator
+  let orderedCallback = handlePostgresLiveEvent callback coordinator
+  let liveStart =
+        currentMaxPosition
+          |> Maybe.map (\(StreamPosition position) -> StreamPosition (position + 1))
   subscriptionId <-
     store
-      |> SubscriptionStore.addGlobalSubscriptionFromPosition (Just finalPosition) callback
+      |> SubscriptionStore.addGlobalSubscriptionFromPosition liveStart orderedCallback
       |> Task.mapError (\err -> SubscriptionError (SubscriptionId "fromPosition") (err |> toText))
+  startPostgresReplayTask ops cfg store startPosition currentMaxPosition callback coordinator subscriptionId
   Log.debug [fmt|Subscription created: #{toText subscriptionId}|] |> Task.ignoreError
   Task.yield subscriptionId
+
+
+-- | Run replay asynchronously and remove subscriptions that cannot catch up.
+startPostgresReplayTask
+  :: Ops
+  -> PostgresEventStore
+  -> SubscriptionStore
+  -> StreamPosition
+  -> Maybe StreamPosition
+  -> (Event Json.Value -> Task Text Unit)
+  -> PostgresReplayCoordinator
+  -> SubscriptionId
+  -> Task Error Unit
+startPostgresReplayTask ops cfg store startPosition replayEnd callback coordinator subscriptionId = do
+  let replayTask = do
+        replayResult <- runPostgresReplay ops cfg startPosition replayEnd callback coordinator |> Task.asResult
+        case replayResult of
+          Ok _ -> Task.yield unit
+          Err _ -> removeFailedPostgresSubscription store subscriptionId
+  AsyncTask.run replayTask |> discard
+
+
+removeFailedPostgresSubscription
+  :: SubscriptionStore
+  -> SubscriptionId
+  -> Task w Unit
+removeFailedPostgresSubscription store subscriptionId = do
+  removalResult <- SubscriptionStore.removeSubscription subscriptionId store |> Task.asResult
+  case removalResult of
+    Ok _ ->
+      Log.warn [fmt|Positional subscription replay failed; removed #{toText subscriptionId}|]
+        |> Task.ignoreError
+    Err _ ->
+      Log.warn [fmt|Positional subscription replay failed and removal failed for #{toText subscriptionId}|]
+        |> Task.ignoreError
 
 
 subscribeToAllEventsFromStartImpl ::

@@ -84,7 +84,11 @@ advance without that stop/start pair. Human waits use `./dev telemetry wait
    hspec-discovered).
 8. **implement** — `neohaskell-implementer` skill; repair loop via
    `./dev check` (never `cabal build` in the loop); max 2 repair rounds per
-   error, then the failure policy below. Log the aids you actually use
+   error, then the failure policy below. Before advancing, apply the skill's
+   readable-control-flow inspection to **every changed function**: one
+   abstraction level, flat orchestration, named helpers instead of narrated
+   blocks, and no third nested decision point. Compilation alone cannot advance
+   the stage. Log the aids you actually use
    (`./dev telemetry consult --asset hot-card:Text.toLower`,
    `phrasebook:task-validation`, …) so never-consulted assets surface as PRUNE.
 9. **verify** — in order, no skipping:

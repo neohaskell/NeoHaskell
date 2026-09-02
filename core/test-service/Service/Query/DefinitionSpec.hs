@@ -1,29 +1,87 @@
 module Service.Query.DefinitionSpec where
 
+import Array qualified
 import ConcurrentVar qualified
-import Core
+import Core hiding (event)
+import Json qualified
 import Service.AccessControl (AccessError, UserClaims)
 import Service.AccessControl qualified as AccessControl
+import Service.Entity.Core (Event (..))
+import Service.Event (EntityName (..), StreamId (..))
+import Service.Event qualified as RawEvent
+import Service.Event.EventMetadata (EventMetadata (..))
+import Service.Event.EventMetadata qualified as EventMetadata
+import Service.Event.StreamPosition (StreamPosition (..))
+import Service.Event.TH (event)
+import Service.EventStore.Core (EventStore (..), ReadStreamMessage (..))
 import Service.EventStore.InMemory qualified as EventStoreInMemory
 import Service.Query.Definition (QueryDefinition (..), createDefinitionWithStore)
+import Service.Query.Registry qualified as Registry
 import Service.Query.TH (deriveQuery)
 import Service.QueryObjectStore.Core (QueryObjectStore)
 import Service.QueryObjectStore.InMemory qualified as QOSInMemory
+import Stream qualified
 import Task qualified
 import Test
+import Uuid qualified
 
 
--- | A minimal zero-entity query fixture, derived the canonical way.
+data CacheEntity = CacheEntity
+  { cacheEntityId :: Uuid
+  , cacheEntityValue :: Int
+  }
+  deriving (Generic)
+
+
+instance Json.FromJSON CacheEntity
+
+
+instance Json.ToJSON CacheEntity
+
+
+type instance NameOf CacheEntity = "CacheEntity"
+
+
+data CacheEvent = CacheEvent
+  { cacheEventEntityId :: Uuid
+  , cacheEventValue :: Int
+  }
+
+
+getCacheEventEntityId :: CacheEvent -> Uuid
+getCacheEventEntityId cacheEvent = cacheEvent.cacheEventEntityId
+
+
+type instance EventOf CacheEntity = CacheEvent
+
+
+type instance EntityOf CacheEvent = CacheEntity
+
+
+instance Entity CacheEntity where
+  initialStateImpl = CacheEntity { cacheEntityId = Uuid.nil, cacheEntityValue = 0 }
+  updateImpl cacheEvent _ =
+    CacheEntity
+      { cacheEntityId = cacheEvent.cacheEventEntityId
+      , cacheEntityValue = cacheEvent.cacheEventValue
+      }
+
+
+instance Event CacheEvent where
+  getEventEntityIdImpl = getCacheEventEntityId
+
+
+event ''CacheEvent
+
+
+-- | A one-entity query fixture, derived the canonical way.
 --
--- It exists only to exercise the generic wiring in 'createDefinitionWithStore'.
--- Per the neohaskell-concept-derivation skill the type carries NO hand-written
--- boilerplate: 'deriveQuery' emits Show, Generic, the JSON instances, ToSchema,
--- @NameOf = "StoreWiringQuery"@, @EntitiesOf = '[]@ (zero entities → the trivial
--- 'WireEntities' base case, so no Postgres or entity fixtures are needed),
--- 'Query', and 'KnownHash'. Only the required 'canAccess'/'canView' companion
--- functions are authored here.
+-- It exercises both query-name threading and the automatic entity-fetcher
+-- wiring. The marker owns the mechanical instances; the Entity and QueryOf
+-- business behavior stay explicit.
 data StoreWiringQuery = StoreWiringQuery
-  { probe :: Int
+  { probeId :: Uuid
+  , probe :: Int
   }
 
 
@@ -35,7 +93,20 @@ canView :: Maybe UserClaims -> StoreWiringQuery -> Maybe AccessError
 canView = AccessControl.publicView
 
 
-deriveQuery ''StoreWiringQuery []
+-- QueryOf has Query as a superclass, and Query is emitted by this splice.
+-- GHC therefore requires the marker's declaration group before the business
+-- instance; placing the marker last fails with "No instance for Query".
+deriveQuery ''StoreWiringQuery [''CacheEntity]
+
+
+instance QueryOf CacheEntity StoreWiringQuery where
+  queryId cacheEntity = cacheEntity.cacheEntityId
+  combine cacheEntity _ =
+    Update
+      StoreWiringQuery
+        { probeId = cacheEntity.cacheEntityId
+        , probe = cacheEntity.cacheEntityValue
+        }
 
 
 -- | Wire the fixture query through 'createDefinitionWithStore' with a spy store
@@ -78,3 +149,47 @@ spec = do
         fail [fmt|definition exposed queryName "#{exposedName}"; expected "#{expectedName}"|]
       Task.unless (capturedName == expectedName && capturedName != "__trait__" && capturedName != "") do
         fail [fmt|store factory received "#{capturedName}"; expected the query's own name "#{expectedName}" (not the "__trait__" sentinel)|]
+
+    it "automatic query wiring reuses entity snapshots during replay" \_ -> do
+      baseStore <- EventStoreInMemory.new |> Task.mapError toText
+      metadata <- EventMetadata.new
+      entityId <- Uuid.generate
+      let entityName = EntityName "CacheEntity"
+      let streamId = StreamId "cache-wiring-stream"
+      let rawEvent localPosition value =
+            RawEvent.Event
+              { entityName
+              , streamId
+              , event = CacheEvent { cacheEventEntityId = entityId, cacheEventValue = value } |> Json.encode
+              , metadata =
+                  metadata
+                    { localPosition = Just (StreamPosition localPosition)
+                    , globalPosition = Just (StreamPosition localPosition)
+                    }
+              }
+      let storedEvents = Array.fromLinkedList [rawEvent 0 10, rawEvent 1 20]
+      readAllCalls <- ConcurrentVar.containing (0 :: Int)
+      readStarts <- ConcurrentVar.containing (Array.empty :: Array StreamPosition)
+      let spyStore = baseStore
+            { readAllStreamEvents = \_ _ -> do
+                readAllCalls |> ConcurrentVar.modify (\count -> count + 1)
+                Stream.fromArray (storedEvents |> Array.map StreamEvent)
+            , readStreamForwardFrom = \_ _ startPosition _ -> do
+                readStarts |> ConcurrentVar.modify (Array.push startPosition)
+                let page =
+                      storedEvents
+                        |> Array.takeIf (\stored -> stored.metadata.localPosition >= Just startPosition)
+                        |> Array.map StreamEvent
+                Stream.fromArray page
+            }
+      let definition = wireWithSpy (\_ -> QOSInMemory.new |> Task.mapError toText)
+      (registry, _) <- definition.wireQuery spyStore
+      updater <- case Registry.getUpdatersForEntity entityName registry |> Array.get 0 of
+        Just found -> Task.yield found
+        Nothing -> Task.throw "automatic cache fixture produced no updater"
+      updater.updateQuery (rawEvent 0 10)
+      updater.updateQuery (rawEvent 1 20)
+      uncachedReads <- ConcurrentVar.peek readAllCalls
+      starts <- ConcurrentVar.peek readStarts
+      uncachedReads |> shouldBe 0
+      starts |> shouldBe (Array.fromLinkedList [StreamPosition 0, StreamPosition 2])

@@ -27,6 +27,7 @@ import Basics
 import ConcurrentVar (ConcurrentVar)
 import ConcurrentVar qualified
 import Data.Hashable qualified as Hashable
+import DateTime qualified
 import Json qualified
 import Log qualified
 import Map (Map)
@@ -34,6 +35,7 @@ import Map qualified
 import Maybe (Maybe (..))
 import Result (Result (..))
 import Service.Event (Event (..))
+import Service.Event.EntityName (EntityName)
 import Service.Event.EventMetadata (EventMetadata (..))
 import Service.Event.StreamPosition (StreamPosition (..))
 import Service.EventStore (EventStore (..))
@@ -188,28 +190,65 @@ rebuildAll subscriber = do
   Task.yield unit
 
 
--- | Start live subscription for query updates.
--- Should be called after rebuildAll completes.
+data ReplayPhase
+  = ReplayInProgress
+  | ReplayLive
+  deriving (Eq, Show)
+
+
+data ReplayState = ReplayState
+  { phase :: ReplayPhase,
+    highWaterPosition :: Maybe StreamPosition,
+    pendingEvents :: Map StreamPosition (Event Json.Value),
+    needsCatchUp :: Bool
+  }
+
+
+newtype ReplayCoordinator = ReplayCoordinator
+  { replayState :: ConcurrentVar ReplayState
+  }
+
+
+-- | Maximum live overlap retained before positional recovery takes over.
+replayInboxCapacity :: Int
+replayInboxCapacity = 1000
+
+
+-- | Allocate the internal replay/live ordering state.
+newReplayCoordinator :: Task w ReplayCoordinator
+newReplayCoordinator = do
+  replayState <-
+    ConcurrentVar.containing
+      ReplayState
+        { phase = ReplayInProgress,
+          highWaterPosition = Nothing,
+          pendingEvents = Map.empty,
+          needsCatchUp = False
+        }
+  Task.yield ReplayCoordinator {replayState}
+
+
+-- | Register live delivery first, then rebuild in the background.
+-- Live events overlap the replay through a bounded positional inbox; the
+-- coordinator drains that inbox before readiness can become Ready.
 start :: QuerySubscriber -> Task Text Unit
 start subscriber = do
-  maybeStartPosition <- ConcurrentVar.peek subscriber.lastProcessedPosition
-
-  let startPosition = case maybeStartPosition of
-        Just (StreamPosition pos) -> StreamPosition (pos + 1)
-        Nothing -> StreamPosition 0
+  coordinator <- newReplayCoordinator
+  setAllReadiness subscriber Rebuilding
 
   Log.withScope [("component", "QuerySubscriber")] do
-    Log.info [fmt|Starting query subscriber from position #{startPosition}|]
+    Log.info "Starting register-first query subscriber"
       |> Task.ignoreError
 
   subId <-
-    subscriber.eventStore.subscribeToAllEventsFromPosition
-      startPosition
-      (processEventHandler subscriber)
+    subscriber.eventStore.subscribeToAllEvents
+      (handleLiveEvent subscriber coordinator)
       |> Task.mapError (toText :: Error -> Text)
-
   subscriber.subscriptionId |> ConcurrentVar.modify (\_ -> Just subId)
 
+  _rebuildTask <-
+    AsyncTask.run (runCoordinatedRebuild subscriber coordinator rebuildOptionsDefault)
+      |> Task.mapError (toText .> (\message -> [fmt|Could not start query replay: #{message}|]))
   Task.yield unit
 
 
@@ -231,20 +270,36 @@ stop subscriber = do
 processEventHandler :: QuerySubscriber -> Event Json.Value -> Task Text Unit
 processEventHandler subscriber rawEvent = do
   processEvent subscriber rawEvent
-  -- Update last processed position (same logic as rebuildAll)
+  recordProcessedEvent subscriber rawEvent
+  writeLiveCheckpoints subscriber rawEvent
+
+
+-- | Rebuild handler that propagates updater failures into readiness.
+processEventHandlerStrict :: QuerySubscriber -> Event Json.Value -> Task Text Unit
+processEventHandlerStrict subscriber rawEvent = do
+  processEventStrict subscriber rawEvent
+  recordProcessedEvent subscriber rawEvent
+
+
+-- | Advance the in-process cursor without multiplying replay checkpoint writes.
+recordProcessedEvent :: QuerySubscriber -> Event Json.Value -> Task Text Unit
+recordProcessedEvent subscriber rawEvent = do
   case rawEvent.metadata.globalPosition of
     Just pos -> subscriber.lastProcessedPosition |> ConcurrentVar.modify (\_ -> Just pos)
     Nothing -> pass
-  -- Persist checkpoint for every registered query after each live event.
-  -- CAS-on-position in the SQL protects against position regression.
-  -- Task.ignoreError keeps a transient DB blip from killing the subscription.
+
+
+-- | Preserve the existing live-subscription checkpoint contract.
+writeLiveCheckpoints :: QuerySubscriber -> Event Json.Value -> Task Text Unit
+writeLiveCheckpoints subscriber rawEvent =
   case (subscriber.checkpointStore, rawEvent.metadata.globalPosition) of
-    (Just cpStore, Just (StreamPosition p)) -> do
-      let queryNames = getAllQueryNames subscriber.registry
-      queryNames
-        |> Task.forEach (\qn ->
-            cpStore.writeCheckpoint qn (queryHashFor qn) p
-              |> Task.ignoreError)
+    (Just cpStore, Just (StreamPosition position)) -> do
+      getAllQueryNames subscriber.registry
+        |> Task.forEach
+          ( \queryName ->
+              cpStore.writeCheckpoint queryName (queryHashFor queryName) position
+                |> Task.ignoreError
+          )
     _ -> pass
 
 
@@ -372,44 +427,82 @@ rebuildFromInner subscriber queryName startPosition options = do
   subscriber.queryReadiness
     |> ConcurrentVar.modify (Map.set queryName Rebuilding)
 
-  -- Step 3: Read events from the event store in chunks.
-  let chunkLimit = Limit (fromIntegral options.chunkSize)
-  streamResult <-
-    subscriber.eventStore.readAllEventsForwardFrom effectiveStart chunkLimit
-      |> Task.asResult
-
-  messageStream <- case streamResult of
-    Err err ->
-      if hashMismatchOccurred
-        then
-          -- Hash mismatch deletion succeeded but replay read failed → H5
-          Task.throw (HashMismatchReplay [fmt|Query #{queryName}: stale hash deleted, but replay failed: #{toText err}|])
-        else
-          Task.throw (EventStoreFailed (toText err))
-    Ok stream -> Task.yield stream
-
-  -- Process events, routing only to updaters for this queryName.
+  -- Step 3: Read every page and route only to this query's updaters.
   let updaters = getUpdatersForQuery queryName subscriber.registry
-  result <-
-    processEventsForQuery updaters options messageStream
+  pageResult <-
+    rebuildQueryPages
+      subscriber
+      queryName
+      updaters
+      options
+      hashMismatchOccurred
+      effectiveStart
+      0
       |> Task.asResult
 
-  case result of
-    Err errText -> do
-      let err = UpdaterException errText
+  case pageResult of
+    Err replayError -> do
+      let failure = sanitizedFailure replayError
       subscriber.queryReadiness
-        |> ConcurrentVar.modify (Map.set queryName (Failed errText))
-      Task.throw err
+        |> ConcurrentVar.modify (Map.set queryName (Failed failure))
+      Task.throw replayError
     Ok finalPos -> do
-      -- Persist the new checkpoint so a restart can resume from finalPos.
-      case subscriber.checkpointStore of
+      checkpointResult <- case subscriber.checkpointStore of
         Just cpStore ->
           cpStore.writeCheckpoint queryName (queryHashFor queryName) finalPos
-            |> Task.mapError (\err -> CheckpointWriteFailed (toText (show err)))
-        Nothing -> pass
-      -- Mark query as ready.
-      subscriber.queryReadiness
-        |> ConcurrentVar.modify (Map.set queryName Ready)
+            |> Task.mapError (toText .> CheckpointWriteFailed)
+            |> Task.asResult
+        Nothing -> Task.yield (Ok unit)
+      case checkpointResult of
+        Err checkpointError -> do
+          let failure = sanitizedFailure checkpointError
+          subscriber.queryReadiness
+            |> ConcurrentVar.modify (Map.set queryName (Failed failure))
+          Task.throw checkpointError
+        Ok _ ->
+          subscriber.queryReadiness
+            |> ConcurrentVar.modify (Map.set queryName Ready)
+
+
+rebuildQueryPages
+  :: QuerySubscriber
+  -> Text
+  -> Array QueryUpdater
+  -> RebuildOptions
+  -> Bool
+  -> StreamPosition
+  -> Int64
+  -> Task QueryRebuildError Int64
+rebuildQueryPages subscriber queryName updaters options hashMismatchOccurred startPosition lastPosition = do
+  streamResult <-
+    subscriber.eventStore.readAllEventsForwardFrom
+      startPosition
+      (Limit (fromIntegral options.chunkSize))
+      |> Task.asResult
+  messageStream <- case streamResult of
+    Err err ->
+      if hashMismatchOccurred then
+        Task.throw
+          (HashMismatchReplay [fmt|Query #{queryName}: stale hash deleted, but replay failed|])
+      else
+        Task.throw (EventStoreFailed (toText err))
+    Ok stream -> Task.yield stream
+  pageResult <-
+    processEventsForQuery updaters options messageStream
+      |> Task.mapError UpdaterException
+  let (pageLastPosition, pageCount) = pageResult
+  let finalPosition = max lastPosition pageLastPosition
+  if pageCount < options.chunkSize then
+    Task.yield finalPosition
+  else
+    rebuildQueryPages
+      subscriber
+      queryName
+      updaters
+      options
+      hashMismatchOccurred
+      (StreamPosition (pageLastPosition + 1))
+      finalPosition
 
 
 -- | Resolve the effective start position, performing hash-mismatch cleanup if needed.
@@ -447,8 +540,8 @@ resolveStartPosition subscriber queryName startPosition _options =
           |> Task.mapError (\err -> CheckpointFetchFailed (toText (show err)))
       case resumeResult of
         Just minPos ->
-          -- Rows found with matching hash: resume from the persisted position.
-          Task.yield (StreamPosition minPos, False)
+          -- Reads are inclusive, so resume at the event after the committed checkpoint.
+          Task.yield (StreamPosition (minPos + 1), False)
         Nothing -> do
           -- No matching rows: delete any stale rows (hash mismatch / first run).
           _ <-
@@ -474,26 +567,26 @@ queryHashFor queryName =
     |> toText
 
 
--- | Process events from a stream for a specific set of updaters.
--- Returns the maximum globalPosition seen (0 if no events), or Err Text when
--- any updater fails (propagated as UpdaterException).
+-- | Process one page for a specific set of updaters.
+-- Returns the maximum global position and number of events consumed.
 processEventsForQuery
   :: Array QueryUpdater
   -> RebuildOptions
   -> Stream.Stream (ReadAllMessage Json.Value)
-  -> Task Text Int64
+  -> Task Text (Int64, Int)
 processEventsForQuery updaters _options messageStream =
   messageStream
     |> Stream.consume
-        (\lastPos message ->
-          case message of
-            AllEvent rawEvent -> do
-              applyEvent updaters rawEvent
-              case rawEvent.metadata.globalPosition of
-                Just (StreamPosition p) -> Task.yield (max lastPos p)
-                Nothing -> Task.yield lastPos
-            _ -> Task.yield lastPos)
-        0
+        ( \(lastPos, count) message ->
+            case message of
+              AllEvent rawEvent -> do
+                applyEvent updaters rawEvent
+                case rawEvent.metadata.globalPosition of
+                  Just (StreamPosition position) -> Task.yield (max lastPos position, count + 1)
+                  Nothing -> Task.yield (lastPos, count + 1)
+              _ -> Task.yield (lastPos, count)
+        )
+        (0, 0)
 
 
 -- | Apply an event to a set of updaters.
@@ -511,8 +604,12 @@ applyEvent updaters rawEvent =
         case result of
           Ok _ -> pass
           Err err -> do
-            Log.warn [fmt|Query updater #{updaterName} failed: #{err}|]
-              |> Task.ignoreError
+            let position = case rawEvent.metadata.globalPosition of
+                  Just globalPosition -> toText globalPosition
+                  Nothing -> "unknown"
+            Log.withScope [("queryName", updaterName), ("position", position)] do
+              Log.warn "Query updater failed"
+                |> Task.ignoreError
             Task.throw err
 
 
@@ -523,27 +620,575 @@ getUpdatersForQuery queryName registry =
     |> Array.takeIf (\updater -> updater.queryName == queryName)
 
 
--- | Spawn async rebuild for all registered queries, updating readiness states.
---
--- Returns Ok Unit when all queries have completed (either Ready or Failed).
--- Per-query failures are recorded in readiness state, not propagated as errors.
+-- | Replace readiness with one state for every registered query.
+setAllReadiness :: QuerySubscriber -> Readiness -> Task w Unit
+setAllReadiness subscriber readiness = do
+  let queryNames = getAllQueryNames subscriber.registry
+  subscriber.queryReadiness
+    |> ConcurrentVar.modify
+      ( \_ ->
+          queryNames
+            |> Array.reduce (\queryName states -> states |> Map.set queryName readiness) Map.empty
+      )
+
+
+-- | Buffer overlap during replay and serialize delivery after it reaches head.
+handleLiveEvent :: QuerySubscriber -> ReplayCoordinator -> Event Json.Value -> Task Text Unit
+handleLiveEvent subscriber coordinator rawEvent = do
+  outcome <-
+    coordinator.replayState
+      |> ConcurrentVar.modifyReturning (coordinateQueryLiveEvent rawEvent)
+  deliverCoordinatedLiveEvent subscriber outcome
+
+
+-- | Decide query delivery without running updater code under replay state.
+coordinateQueryLiveEvent
+  :: Event Json.Value
+  -> ReplayState
+  -> Task w (ReplayState, Result Text (Maybe (Event Json.Value)))
+coordinateQueryLiveEvent rawEvent state =
+  case rawEvent.metadata.globalPosition of
+    Nothing -> Task.yield (state, Err "Live event had no global position")
+    Just position ->
+      if queryReplayPositionProcessed state position then
+        Task.yield (state, Ok Nothing)
+      else
+        coordinateQueryReplayPhase rawEvent position state
+
+
+coordinateQueryReplayPhase
+  :: Event Json.Value
+  -> StreamPosition
+  -> ReplayState
+  -> Task w (ReplayState, Result Text (Maybe (Event Json.Value)))
+coordinateQueryReplayPhase rawEvent position state =
+  case state.phase of
+    ReplayInProgress -> bufferQueryReplayOverlap rawEvent position state
+    ReplayLive ->
+      Task.yield
+        ( state {highWaterPosition = Just position}
+        , Ok (Just rawEvent)
+        )
+
+
+bufferQueryReplayOverlap
+  :: Event Json.Value
+  -> StreamPosition
+  -> ReplayState
+  -> Task w (ReplayState, Result Text (Maybe (Event Json.Value)))
+bufferQueryReplayOverlap rawEvent position state =
+  if state.needsCatchUp || Map.length state.pendingEvents >= replayInboxCapacity then
+    Task.yield (state {needsCatchUp = True}, Ok Nothing)
+  else
+    Task.yield
+      ( state {pendingEvents = state.pendingEvents |> Map.set position rawEvent}
+      , Ok Nothing
+      )
+
+
+-- | True when a query position has already crossed the delivery high-water.
+queryReplayPositionProcessed :: ReplayState -> StreamPosition -> Bool
+queryReplayPositionProcessed state position =
+  case state.highWaterPosition of
+    Just highWater -> position <= highWater
+    Nothing -> False
+
+
+deliverCoordinatedLiveEvent
+  :: QuerySubscriber
+  -> Result Text (Maybe (Event Json.Value))
+  -> Task Text Unit
+deliverCoordinatedLiveEvent subscriber outcome =
+  case outcome of
+    Ok (Just eventToProcess) -> processEventHandler subscriber eventToProcess
+    Ok Nothing -> Task.yield unit
+    Err err -> Task.throw err
+
+
+processReplayEvent
+  :: QuerySubscriber
+  -> Maybe ReplayCoordinator
+  -> Event Json.Value
+  -> Task Text Unit
+processReplayEvent subscriber maybeCoordinator rawEvent =
+  case maybeCoordinator of
+    Nothing -> processEventHandlerStrict subscriber rawEvent
+    Just coordinator -> processCoordinatedReplayEvent subscriber coordinator rawEvent
+
+
+processCoordinatedReplayEvent
+  :: QuerySubscriber
+  -> ReplayCoordinator
+  -> Event Json.Value
+  -> Task Text Unit
+processCoordinatedReplayEvent subscriber coordinator rawEvent = do
+  state <- ConcurrentVar.peek coordinator.replayState
+  case rawEvent.metadata.globalPosition of
+    Nothing -> Task.throw "Replay event had no global position"
+    Just position ->
+      if queryReplayPositionProcessed state position then
+        Task.yield unit
+      else do
+        -- Updaters run outside the coordinator so live events can enter the inbox.
+        processEventHandlerStrict subscriber rawEvent
+        advanceQueryReplayHighWater coordinator position
+
+
+-- | Advance the query delivery watermark monotonically.
+advanceQueryReplayHighWater :: ReplayCoordinator -> StreamPosition -> Task w Unit
+advanceQueryReplayHighWater coordinator position =
+  coordinator.replayState
+    |> ConcurrentVar.modify
+      ( \current ->
+          case current.highWaterPosition of
+            Just highWater -> current {highWaterPosition = Just (max highWater position)}
+            Nothing -> current {highWaterPosition = Just position}
+      )
+
+
+data ReplayStats = ReplayStats
+  { replayedCount :: Int,
+    replayedThrough :: Maybe StreamPosition
+  }
+
+
+-- | Inclusive read position immediately after the last successful event.
+nextReplayPosition :: QuerySubscriber -> Task w StreamPosition
+nextReplayPosition subscriber = do
+  lastPosition <- ConcurrentVar.peek subscriber.lastProcessedPosition
+  case lastPosition of
+    Just (StreamPosition position) -> Task.yield (StreamPosition (position + 1))
+    Nothing -> Task.yield (StreamPosition 0)
+
+
+-- | Read the last matching global position with one bounded reverse lookup.
+readReplayHead
+  :: QuerySubscriber
+  -> Array EntityName
+  -> Task QueryRebuildError (Maybe StreamPosition)
+readReplayHead subscriber entityNames = do
+  messageStream <-
+    subscriber.eventStore.readAllEventsBackwardFromFiltered
+      (StreamPosition 9223372036854775807)
+      (Limit 1)
+      entityNames
+      |> Task.mapError (toText .> EventStoreFailed)
+  messageStream
+    |> Stream.consume
+      ( \current message ->
+          case (current, message) of
+            (Just position, _) -> Task.yield (Just position)
+            (Nothing, AllEvent rawEvent) -> Task.yield rawEvent.metadata.globalPosition
+            _ -> Task.yield Nothing
+      )
+      Nothing
+    |> Task.mapError (toText .> EventStoreFailed)
+
+
+runReplayPages
+  :: QuerySubscriber
+  -> Maybe ReplayCoordinator
+  -> RebuildOptions
+  -> StreamPosition
+  -> ReplayStats
+  -> ConcurrentVar Int
+  -> Maybe StreamPosition
+  -> DateTime.DateTime
+  -> Task QueryRebuildError ReplayStats
+runReplayPages subscriber maybeCoordinator options startPosition stats replayedCountRef replayHead startedAt = do
+  let entityNames = Registry.registeredEntityNames subscriber.registry
+  if Array.isEmpty entityNames then
+    Task.yield stats
+  else do
+    pageResult <- consumeReplayPage subscriber maybeCoordinator options startPosition stats replayedCountRef replayHead entityNames
+    nextStats <- recordReplayProgress options startPosition replayHead startedAt replayedCountRef pageResult
+    continueReplayPages subscriber maybeCoordinator options replayedCountRef replayHead startedAt pageResult nextStats
+
+
+-- | Consume one replay page while preserving cumulative progress and bounds.
+consumeReplayPage
+  :: QuerySubscriber
+  -> Maybe ReplayCoordinator
+  -> RebuildOptions
+  -> StreamPosition
+  -> ReplayStats
+  -> ConcurrentVar Int
+  -> Maybe StreamPosition
+  -> Array EntityName
+  -> Task QueryRebuildError (Maybe StreamPosition, Int)
+consumeReplayPage subscriber maybeCoordinator options startPosition stats replayedCountRef replayHead entityNames = do
+  messageStream <-
+    subscriber.eventStore.readAllEventsForwardFromFiltered
+      startPosition
+      (Limit (fromIntegral options.chunkSize))
+      entityNames
+      |> Task.mapError (toText .> EventStoreFailed)
+  messageStream
+    |> Stream.consume
+      (consumeReplayMessage subscriber maybeCoordinator replayedCountRef replayHead)
+      (stats.replayedThrough, 0)
+    |> Task.mapError UpdaterException
+
+
+consumeReplayMessage
+  :: QuerySubscriber
+  -> Maybe ReplayCoordinator
+  -> ConcurrentVar Int
+  -> Maybe StreamPosition
+  -> (Maybe StreamPosition, Int)
+  -> ReadAllMessage Json.Value
+  -> Task Text (Maybe StreamPosition, Int)
+consumeReplayMessage subscriber maybeCoordinator replayedCountRef replayHead (lastPosition, count) message =
+  case message of
+    AllEvent rawEvent ->
+      if eventIsWithinReplayHead replayHead rawEvent then do
+        processReplayEvent subscriber maybeCoordinator rawEvent
+        replayedCountRef |> ConcurrentVar.modify (\replayedCount -> replayedCount + 1)
+        Task.yield (rawEvent.metadata.globalPosition, count + 1)
+      else
+        Task.yield (lastPosition, count)
+    _ -> Task.yield (lastPosition, count)
+
+
+-- | Keep historical query delivery inside the captured replay head.
+eventIsWithinReplayHead :: Maybe StreamPosition -> Event Json.Value -> Bool
+eventIsWithinReplayHead replayHead rawEvent =
+  case replayHead of
+    Nothing -> False
+    Just headPosition ->
+      case rawEvent.metadata.globalPosition of
+        Just eventPosition -> eventPosition <= headPosition
+        Nothing -> True
+
+
+recordReplayProgress
+  :: RebuildOptions
+  -> StreamPosition
+  -> Maybe StreamPosition
+  -> DateTime.DateTime
+  -> ConcurrentVar Int
+  -> (Maybe StreamPosition, Int)
+  -> Task w ReplayStats
+recordReplayProgress options startPosition replayHead startedAt replayedCountRef (lastPosition, _pageCount) = do
+  totalCount <- ConcurrentVar.peek replayedCountRef
+  finishedAt <- DateTime.now
+  let durationSeconds = DateTime.toEpochSeconds finishedAt - DateTime.toEpochSeconds startedAt
+  let lagFromHead = replayLagFromHead startPosition replayHead lastPosition
+  Task.when options.logProgress do
+    Log.info
+      [fmt|Query replay progress events_replayed=#{totalCount} lag_from_head=#{lagFromHead} duration_seconds=#{durationSeconds}|]
+      |> Task.ignoreError
+  Task.yield ReplayStats {replayedCount = totalCount, replayedThrough = lastPosition}
+
+
+-- | Measure remaining global-position distance for progress telemetry.
+replayLagFromHead :: StreamPosition -> Maybe StreamPosition -> Maybe StreamPosition -> Int64
+replayLagFromHead startPosition replayHead lastPosition =
+  case (replayHead, lastPosition) of
+    (Just (StreamPosition headPosition), Just (StreamPosition processedPosition)) ->
+      max 0 (headPosition - processedPosition)
+    (Just (StreamPosition headPosition), Nothing) -> do
+      let (StreamPosition requestedPosition) = startPosition
+      max 0 (headPosition - requestedPosition + 1)
+    _ -> 0
+
+
+continueReplayPages
+  :: QuerySubscriber
+  -> Maybe ReplayCoordinator
+  -> RebuildOptions
+  -> ConcurrentVar Int
+  -> Maybe StreamPosition
+  -> DateTime.DateTime
+  -> (Maybe StreamPosition, Int)
+  -> ReplayStats
+  -> Task QueryRebuildError ReplayStats
+continueReplayPages subscriber maybeCoordinator options replayedCountRef replayHead startedAt (_lastPosition, pageCount) nextStats =
+  if pageCount < options.chunkSize then
+    Task.yield nextStats
+  else
+    case nextStats.replayedThrough of
+      Nothing -> Task.yield nextStats
+      Just (StreamPosition position) ->
+        runReplayPages
+          subscriber
+          maybeCoordinator
+          options
+          (StreamPosition (position + 1))
+          nextStats
+          replayedCountRef
+          replayHead
+          startedAt
+
+
+-- | Persist the final replay position for each query when configured.
+writeFinalCheckpoints :: QuerySubscriber -> ReplayStats -> Task QueryRebuildError Unit
+writeFinalCheckpoints subscriber stats = do
+  lastProcessed <- ConcurrentVar.peek subscriber.lastProcessedPosition
+  let checkpointPosition = case stats.replayedThrough of
+        Just position -> Just position
+        Nothing -> lastProcessed
+  case (subscriber.checkpointStore, checkpointPosition) of
+    (Just checkpointStore, Just (StreamPosition position)) -> do
+      getAllQueryNames subscriber.registry
+        |> Task.forEach
+          ( \queryName ->
+              checkpointStore.writeCheckpoint queryName (queryHashFor queryName) position
+                |> Task.mapError (toText .> CheckpointWriteFailed)
+          )
+    _ -> Task.yield unit
+
+
+-- | Fixed bounded retry schedule in milliseconds.
+retryDelay :: Int -> Maybe Int
+retryDelay retryIndex =
+  case retryIndex of
+    0 -> Just 100
+    1 -> Just 500
+    2 -> Just 2000
+    _ -> Nothing
+
+
+-- | Failures safe to retry without re-running a deterministic updater error.
+isTransientReplayError :: QueryRebuildError -> Bool
+isTransientReplayError replayError =
+  case replayError of
+    EventStoreFailed _ -> True
+    CheckpointFetchFailed _ -> True
+    CheckpointWriteFailed _ -> True
+    _ -> False
+
+
+runReplayWithRetries
+  :: QuerySubscriber
+  -> Maybe ReplayCoordinator
+  -> RebuildOptions
+  -> Int
+  -> ConcurrentVar Int
+  -> DateTime.DateTime
+  -> Task QueryRebuildError ReplayStats
+runReplayWithRetries subscriber maybeCoordinator options retryIndex replayedCountRef startedAt = do
+  startPosition <- nextReplayPosition subscriber
+  let entityNames = Registry.registeredEntityNames subscriber.registry
+  result <-
+    readReplayHead subscriber entityNames
+      |> Task.andThen
+        ( \replayHead ->
+            runReplayPages
+              subscriber
+              maybeCoordinator
+              options
+              startPosition
+              ReplayStats {replayedCount = 0, replayedThrough = Nothing}
+              replayedCountRef
+              replayHead
+              startedAt
+        )
+      |> Task.andThen (\stats -> writeFinalCheckpoints subscriber stats |> Task.map (\_ -> stats))
+      |> Task.asResult
+  case result of
+    Ok stats -> Task.yield stats
+    Err replayError ->
+      case (isTransientReplayError replayError, retryDelay retryIndex) of
+        (True, Just delayMs) -> do
+          Log.warn [fmt|Transient query replay failure; retrying after #{delayMs}ms|]
+            |> Task.ignoreError
+          AsyncTask.sleep delayMs
+            |> Task.mapError (\_ -> replayError)
+          runReplayWithRetries subscriber maybeCoordinator options (retryIndex + 1) replayedCountRef startedAt
+        _ -> Task.throw replayError
+
+
+-- | Atomically begin one overflow-recovery pass.
+clearCatchUpFlag :: ReplayCoordinator -> Task w (Bool, Maybe StreamPosition)
+clearCatchUpFlag coordinator =
+  coordinator.replayState
+    |> ConcurrentVar.modifyReturning \state ->
+        Task.yield
+          ( state {needsCatchUp = False}
+          , (state.needsCatchUp, state.highWaterPosition)
+          )
+
+
+finishReplayCoordinator
+  :: QuerySubscriber
+  -> ReplayCoordinator
+  -> RebuildOptions
+  -> ConcurrentVar Int
+  -> Task QueryRebuildError Unit
+finishReplayCoordinator subscriber coordinator options replayedCountRef = do
+  (catchUpRequired, highWater) <- clearCatchUpFlag coordinator
+  if catchUpRequired then do
+    recoverQueryReplayOverflow subscriber coordinator options replayedCountRef highWater
+    finishReplayCoordinator subscriber coordinator options replayedCountRef
+  else do
+    entries <- takePendingReplayEvents coordinator
+    drainPendingReplayEvents subscriber coordinator entries
+    Task.unless (Array.isEmpty entries) do
+      finishReplayCoordinator subscriber coordinator options replayedCountRef
+
+
+-- | Recover overlap after the bounded inbox reports overflow.
+recoverQueryReplayOverflow
+  :: QuerySubscriber
+  -> ReplayCoordinator
+  -> RebuildOptions
+  -> ConcurrentVar Int
+  -> Maybe StreamPosition
+  -> Task QueryRebuildError Unit
+recoverQueryReplayOverflow subscriber coordinator options replayedCountRef highWater = do
+  let catchUpStart = case highWater of
+        Just (StreamPosition position) -> StreamPosition (position + 1)
+        Nothing -> StreamPosition 0
+  startedAt <- DateTime.now
+  let entityNames = Registry.registeredEntityNames subscriber.registry
+  replayHead <- readReplayHead subscriber entityNames
+  runReplayPages
+    subscriber
+    (Just coordinator)
+    options
+    catchUpStart
+    ReplayStats {replayedCount = 0, replayedThrough = highWater}
+    replayedCountRef
+    replayHead
+    startedAt
+    |> discard
+
+
+-- | Snapshot and clear pending query overlap while retaining replay mode.
+takePendingReplayEvents :: ReplayCoordinator -> Task w (Array (StreamPosition, Event Json.Value))
+takePendingReplayEvents coordinator =
+  coordinator.replayState
+    |> ConcurrentVar.modifyReturning \state -> do
+        let pendingEntries = state.pendingEvents |> Map.entries
+        if Array.isEmpty pendingEntries then
+          Task.yield
+            ( state
+                { phase = ReplayLive
+                , pendingEvents = Map.empty
+                , needsCatchUp = False
+                }
+            , pendingEntries
+            )
+        else
+          Task.yield (state {pendingEvents = Map.empty}, pendingEntries)
+
+
+drainPendingReplayEvents
+  :: QuerySubscriber
+  -> ReplayCoordinator
+  -> Array (StreamPosition, Event Json.Value)
+  -> Task QueryRebuildError Unit
+drainPendingReplayEvents subscriber coordinator entries =
+  entries
+    |> Task.forEach
+      ( \(_, pendingEvent) ->
+          processReplayEvent subscriber (Just coordinator) pendingEvent
+            |> Task.mapError UpdaterException
+      )
+
+
+-- | Choose bounded structured context for aggregate replay failure logs.
+replayFailureContext :: QuerySubscriber -> Task w (Text, Text)
+replayFailureContext subscriber = do
+  lastPosition <- ConcurrentVar.peek subscriber.lastProcessedPosition
+  let queryName = "all"
+  let position = case lastPosition of
+        Just processedPosition -> toText processedPosition
+        Nothing -> "0"
+  Task.yield (queryName, position)
+
+
+-- | Operator/client-safe readiness reason with database internals removed.
+sanitizedFailure :: QueryRebuildError -> Text
+sanitizedFailure replayError =
+  case replayError of
+    UpdaterException _ -> "Query updater failed"
+    RebuildTimeout _ -> "Query replay timed out"
+    HashMismatchReplay _ -> "Query replay failed after schema change"
+    CheckpointFetchFailed _ -> "Query checkpoint read failed"
+    CheckpointWriteFailed _ -> "Query checkpoint write failed"
+    EventStoreFailed _ -> "Event store replay failed"
+
+
+runCoordinatedRebuild
+  :: QuerySubscriber
+  -> ReplayCoordinator
+  -> RebuildOptions
+  -> Task QueryRebuildError Unit
+runCoordinatedRebuild subscriber coordinator options = do
+  startedAt <- DateTime.now
+  replayedCountRef <- ConcurrentVar.containing (0 :: Int)
+  replayResult <-
+    runReplayWithRetries subscriber (Just coordinator) options 0 replayedCountRef startedAt
+      |> Task.asResult
+  requireCoordinatedReplaySuccess subscriber "Query replay failed" replayResult
+  drainResult <-
+    finishReplayCoordinator subscriber coordinator options replayedCountRef
+      |> Task.asResult
+  requireCoordinatedReplaySuccess subscriber "Query replay overlap drain failed" drainResult
+  completeCoordinatedReplay subscriber replayedCountRef startedAt
+
+
+requireCoordinatedReplaySuccess
+  :: QuerySubscriber
+  -> Text
+  -> Result QueryRebuildError value
+  -> Task QueryRebuildError Unit
+requireCoordinatedReplaySuccess subscriber message result =
+  case result of
+    Ok _ -> Task.yield unit
+    Err replayError -> recordCoordinatedReplayFailure subscriber message replayError
+
+
+recordCoordinatedReplayFailure
+  :: QuerySubscriber
+  -> Text
+  -> QueryRebuildError
+  -> Task QueryRebuildError Unit
+recordCoordinatedReplayFailure subscriber message replayError = do
+  let failure = sanitizedFailure replayError
+  setAllReadiness subscriber (Failed failure)
+  (queryName, position) <- replayFailureContext subscriber
+  Log.withScope [("queryName", queryName), ("position", position)] do
+    Log.warn [fmt|#{message}: #{failure}|] |> Task.ignoreError
+  Task.throw replayError
+
+
+-- | Publish final replay telemetry only after the coordinator reaches live mode.
+completeCoordinatedReplay
+  :: QuerySubscriber
+  -> ConcurrentVar Int
+  -> DateTime.DateTime
+  -> Task w Unit
+completeCoordinatedReplay subscriber replayedCountRef startedAt = do
+  setAllReadiness subscriber Ready
+  completedCount <- ConcurrentVar.peek replayedCountRef
+  finishedAt <- DateTime.now
+  let durationSeconds = DateTime.toEpochSeconds finishedAt - DateTime.toEpochSeconds startedAt
+  Log.info
+    [fmt|Query replay complete events_replayed=#{completedCount} lag_from_head=0 duration_seconds=#{durationSeconds}|]
+    |> Task.ignoreError
+
+
+-- | Rebuild all registered queries in one entity-filtered, paged pass.
+-- A failure is recorded in readiness and does not escape; callers inspect
+-- readinessOf/readinessOfQuery for the operational result.
 rebuildAllAsync
   :: QuerySubscriber
   -> RebuildOptions
   -> Task QueryRebuildError Unit
 rebuildAllAsync subscriber options = do
-  let queryNames = getAllQueryNames subscriber.registry
-  queryNames
-    |> Task.forEach (\queryName -> do
-        result <-
-          rebuildFrom subscriber queryName (StreamPosition 0) options
-            |> Task.asResult
-        case result of
-          Ok _ -> pass
-          Err err ->
-            Log.withScope [("component", "QuerySubscriber"), ("queryName", queryName)] do
-              Log.warn [fmt|Query rebuild failed: #{toText (show err)}|]
-                |> Task.ignoreError)
+  setAllReadiness subscriber Rebuilding
+  startedAt <- DateTime.now
+  replayedCountRef <- ConcurrentVar.containing (0 :: Int)
+  result <- runReplayWithRetries subscriber Nothing options 0 replayedCountRef startedAt |> Task.asResult
+  case result of
+    Ok _ -> setAllReadiness subscriber Ready
+    Err replayError -> do
+      let failure = sanitizedFailure replayError
+      setAllReadiness subscriber (Failed failure)
+      Log.warn [fmt|Query replay failed: #{failure}|] |> Task.ignoreError
 
 
 -- | Fetch the aggregate readiness state of all registered queries.
@@ -613,27 +1258,37 @@ deduplicateTexts arr =
         Array.empty
 
 
--- | Process a single raw event through all relevant query updaters.
+-- | Process a live/legacy event without letting one updater terminate the
+-- subscription. Rebuild uses processEventStrict so readiness can expose failure.
 processEvent :: QuerySubscriber -> Event Json.Value -> Task Text Unit
 processEvent subscriber rawEvent = do
+  let updaters = Registry.getUpdatersForEntity rawEvent.entityName subscriber.registry
+  updaters
+    |> Task.forEach \updater -> do
+      result <- updater.updateQuery rawEvent |> Task.asResult
+      case result of
+        Ok _ -> Task.yield unit
+        Err _ -> do
+          let updaterName = updater.queryName
+          let position = case rawEvent.metadata.globalPosition of
+                Just globalPosition -> toText globalPosition
+                Nothing -> "unknown"
+          Log.withScope [("component", "QuerySubscriber"), ("queryName", updaterName), ("position", position)] do
+            Log.warn "Query updater failed"
+              |> Task.ignoreError
+
+
+-- | Apply every matching updater and propagate the first failure.
+processEventStrict :: QuerySubscriber -> Event Json.Value -> Task Text Unit
+processEventStrict subscriber rawEvent = do
   let entityName = rawEvent.entityName
   let updaters = Registry.getUpdatersForEntity entityName subscriber.registry
 
   Log.withScope [("component", "QuerySubscriber")] do
     case rawEvent.metadata.globalPosition of
-      Just pos ->
-        Log.debug [fmt|Processing event at position #{toText pos}|] |> Task.ignoreError
+      Just position ->
+        Log.debug [fmt|Processing event at position #{toText position}|] |> Task.ignoreError
       Nothing ->
         Log.debug "Processing event (no position)" |> Task.ignoreError
 
-  -- Run all updaters for this entity type
-  updaters
-    |> Task.forEach \updater -> do
-      let updaterName = updater.queryName
-      result <- updater.updateQuery rawEvent |> Task.asResult
-      case result of
-        Ok _ -> pass
-        Err errText ->
-          Log.withScope [("component", "QuerySubscriber"), ("queryName", updaterName)] do
-            Log.warn [fmt|Query updater failed: #{errText}|]
-              |> Task.ignoreError
+  applyEvent updaters rawEvent
