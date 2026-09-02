@@ -850,23 +850,24 @@ clearPostgresOverflow coordinator =
 stabilizePostgresReplay
   :: Ops
   -> PostgresEventStore
+  -> StreamPosition
   -> (Event Json.Value -> Task Text Unit)
   -> PostgresReplayCoordinator
   -> Task Error Unit
-stabilizePostgresReplay ops cfg callback coordinator = do
+stabilizePostgresReplay ops cfg requestedStart callback coordinator = do
   (overflowed, highWater) <- clearPostgresOverflow coordinator
   case overflowed of
     True -> do
       let catchUpPosition = case highWater of
             Just (StreamPosition position) -> StreamPosition (position + 1)
-            Nothing -> StreamPosition 0
+            Nothing -> requestedStart
       catchUpEnd <-
         ops |> withConnectionAndError cfg \conn -> do
           Sessions.selectMaxGlobalPosition
             |> Sessions.run conn
             |> Task.mapError (toText .> StorageFailure)
       readPostgresReplayPages ops cfg catchUpPosition catchUpEnd callback coordinator
-      stabilizePostgresReplay ops cfg callback coordinator
+      stabilizePostgresReplay ops cfg requestedStart callback coordinator
     False -> do
       entries <- coordinator.replayState
         |> ConcurrentVar.modifyReturning \state -> do
@@ -891,7 +892,7 @@ stabilizePostgresReplay ops cfg callback coordinator = do
         False -> do
           entries
             |> Task.forEach (\(_, pendingEvent) -> processPostgresReplayEvent callback coordinator pendingEvent)
-          stabilizePostgresReplay ops cfg callback coordinator
+          stabilizePostgresReplay ops cfg requestedStart callback coordinator
 
 
 runPostgresReplay
@@ -904,7 +905,7 @@ runPostgresReplay
   -> Task Error Unit
 runPostgresReplay ops cfg startPosition replayEnd callback coordinator = do
   readPostgresReplayPages ops cfg startPosition replayEnd callback coordinator
-  stabilizePostgresReplay ops cfg callback coordinator
+  stabilizePostgresReplay ops cfg startPosition callback coordinator
 
 
 subscribeToAllEventsFromPositionImpl ::

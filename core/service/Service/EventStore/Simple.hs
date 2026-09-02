@@ -772,19 +772,20 @@ clearSimpleOverflow coordinator =
 
 stabilizeSimpleReplay
   :: StreamStore
+  -> StreamPosition
   -> (Event Json.Value -> Task Text Unit)
   -> SimpleReplayCoordinator
   -> Task w Unit
-stabilizeSimpleReplay store handler coordinator = do
+stabilizeSimpleReplay store requestedStart handler coordinator = do
   (overflowed, highWater) <- clearSimpleOverflow coordinator
   case overflowed of
     True -> do
       let catchUpPosition = case highWater of
             Just (StreamPosition position) -> StreamPosition (position + 1)
-            Nothing -> StreamPosition 0
+            Nothing -> requestedStart
       catchUpEvents <- eventsFromPosition store catchUpPosition
       catchUpEvents |> Task.forEach (processSimpleReplayEvent handler coordinator)
-      stabilizeSimpleReplay store handler coordinator
+      stabilizeSimpleReplay store requestedStart handler coordinator
     False -> do
       entries <- coordinator.replayState
         |> ConcurrentVar.modifyReturning \state -> do
@@ -809,7 +810,7 @@ stabilizeSimpleReplay store handler coordinator = do
         False -> do
           entries
             |> Task.forEach (\(_, pendingEvent) -> processSimpleReplayEvent handler coordinator pendingEvent)
-          stabilizeSimpleReplay store handler coordinator
+          stabilizeSimpleReplay store requestedStart handler coordinator
 
 
 runSimpleReplay
@@ -821,7 +822,7 @@ runSimpleReplay
 runSimpleReplay store fromPosition handler coordinator = do
   historicalEvents <- eventsFromPosition store fromPosition
   historicalEvents |> Task.forEach (processSimpleReplayEvent handler coordinator)
-  stabilizeSimpleReplay store handler coordinator
+  stabilizeSimpleReplay store fromPosition handler coordinator
 
 
 notifySubscriberSafely :: (Event Json.Value -> Task Text Unit) -> Event Json.Value -> Task _ Unit
