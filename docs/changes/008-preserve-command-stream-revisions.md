@@ -5,7 +5,7 @@ Fix `CommandExecutor` so decisions keep their atomic stream preconditions at the
 ```yaml spec
 issue: issue#858
 kind: bug
-touches: [commands, entities, event-store, dev-pipeline]
+touches: [commands, entities, event-store]
 breaking: false
 new-dependency: false
 new-capability: false
@@ -28,11 +28,10 @@ This change corrects internal execution semantics without changing the public AP
 | C3 | Concurrent `acceptNew` commands for one stream durably create exactly one stream | `CommandHandler Execute Specification Tests` "allows exactly one concurrent acceptNew creation" against PostgreSQL | integration |
 | C4 | `acceptAny` remains an unconditional append | `CommandHandler Execute Specification Tests` "keeps acceptAny unconditional" against PostgreSQL | integration |
 | C5 | A consistency retry refetches both aggregate state and expected stream position before rebuilding the insertion payload | `CommandHandler Execute Specification Tests` "refreshes state and stream position before retrying" | unit |
-| C6 | Issue-backed pipeline runs assign the issue to the current GitHub user before work, and require Conventional Commit subjects and PR titles | `./dev doctor` validates the registered `neohaskell-pipeline` skill | unit |
 
 ## User impact
 
-Commands using `acceptExisting` and `acceptNew` regain their documented atomic semantics under concurrent PostgreSQL writes. Existing APIs and call sites require no migration. The testbed behavior is unchanged except that stale history-derived event payloads can no longer be persisted during races. Issue-backed pipeline runs now visibly mark work in progress through assignment, and generated commit subjects and PR titles follow Conventional Commits.
+Commands using `acceptExisting` and `acceptNew` regain their documented atomic semantics under concurrent PostgreSQL writes. Existing APIs and call sites require no migration. The testbed behavior is unchanged except that stale history-derived event payloads can no longer be persisted during races.
 
 ## ADR
 
