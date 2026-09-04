@@ -157,9 +157,8 @@ warm_hie_index() {
 
   start_refresh() {
     WATCH_REFRESH_EXEC="${REFRESH}" WATCH_REFRESH_GROUP_FILE="${REFRESH_GROUP_FILE}" \
-      python3 - --if-needed --quiet <<'PY' >/dev/null 2>&1 &
+      python3 - <<'PY' >/dev/null 2>&1 &
 import os
-import sys
 from pathlib import Path
 
 os.setsid()
@@ -168,7 +167,7 @@ temporary = group_file.with_name(f"{group_file.name}.{os.getpid()}")
 temporary.write_text(f"{os.getpgrp()}\n", encoding="utf-8")
 temporary.replace(group_file)
 program = os.environ["WATCH_REFRESH_EXEC"]
-os.execv(program, [program, *sys.argv[1:]])
+os.execv(program, [program, "--if-needed", "--quiet"])
 PY
     refresh_pid=$!
     refresh_pgid=""

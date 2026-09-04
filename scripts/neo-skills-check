@@ -238,7 +238,7 @@ def check_pi_skill_layer(root):
         directory_name = skill_md.parent.name
         skill_text = read(skill_md)
         frontmatter, fm_errors = parse_frontmatter(skill_text)
-        if re.search(r"\bschema v[0-5]\b", skill_text, flags=re.IGNORECASE):
+        if re.search(r"\bschema v(?!6\b)[0-9]+\b", skill_text, flags=re.IGNORECASE):
             errors.append(f"{rel}: references obsolete telemetry schema (v6 is canonical)")
         for error in fm_errors:
             errors.append(f"{rel}: {error}")
@@ -1009,6 +1009,13 @@ def self_test():
     errors = mutated(obsolete_schema)
     expect(any("obsolete telemetry schema" in error for error in errors),
            f"obsolete schema reference should fail, got {errors}")
+
+    def future_schema(root):
+        path = root / ".pi" / "skills" / "neohaskell-implementer" / "SKILL.md"
+        path.write_text(read(path) + "\nRecord telemetry with schema v7.\n")
+    errors = mutated(future_schema)
+    expect(any("obsolete telemetry schema" in error for error in errors),
+           f"future schema reference should fail, got {errors}")
 
     def runtime_specific_pipeline(root):
         path = root / ".pi" / "skills" / "neohaskell-pipeline" / "SKILL.md"
