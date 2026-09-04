@@ -203,9 +203,13 @@ applies. The emitter refuses a missing delta; `complete` archives and releases
 ## Resume contract
 
 `./dev pipeline status` → resume at the recorded stage with the recorded
-plan. Never re-derive `touches:`/`files:`/`uses:` on resume. If reality
-contradicts the plan (file moved, API changed under you), park with
-`wrong-localization` — the asset fix (alias, capability, extension point)
-ships with the retry, per the failure→asset-delta protocol (ADR-0068). Log the
-aids you consult while working (`./dev telemetry consult --asset
-<kind>:<name>`) so the weekly miner can PRUNE what nothing uses.
+plan. Never re-derive `touches:`/`files:`/`uses:` on resume. A user-requested
+scope expansion after localization does not authorize mutating the binding
+plan: park with `wrong-localization`, stop and close telemetry with the
+applicable asset delta, complete the parked run, then restart from intake and
+localize the expanded request. If reality contradicts the plan (file moved,
+API changed under you), use the same park-and-restart path; the asset fix
+(alias, capability, extension point) ships with the retry, per the
+failure→asset-delta protocol (ADR-0068). Log the aids you consult while working
+(`./dev telemetry consult --asset <kind>:<name>`) so the weekly miner can PRUNE
+what nothing uses.
