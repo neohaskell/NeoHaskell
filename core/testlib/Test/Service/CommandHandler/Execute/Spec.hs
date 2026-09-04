@@ -18,6 +18,7 @@ import Test.Service.Command.Core (
   AddItemToCart (..),
   CartEntity (..),
   CheckoutCart (..),
+  NoOpExisting (..),
  )
 import Test.Service.EventStore.Core (CartEvent (..))
 import Test.Service.CommandHandler.Execute.Context qualified as Context
@@ -100,6 +101,47 @@ basicExecutionSpecs newCartStoreAndFetcher = do
 
           cart.cartId |> shouldBe context.cartId
           Array.length cart.cartItems |> shouldBe 1
+        CommandRejected msg ->
+          fail ("Expected CommandAccepted, got CommandRejected: " |> Text.append msg)
+        CommandFailed err _ ->
+          fail ("Expected CommandAccepted, got CommandFailed: " |> Text.append err)
+        CommandUnauthorized _ ->
+          fail "Expected CommandAccepted, got CommandUnauthorized"
+
+    it "accepts a zero-event decision for an existing stream" \context -> do
+      eventId <- Uuid.generate
+      metadata <- EventMetadata.new
+      let insertion =
+            Event.Insertion
+              { id = eventId,
+                event = CartCreated {entityId = context.cartId},
+                metadata =
+                  metadata
+                    { EventMetadata.localPosition = Just (Event.StreamPosition 0),
+                      EventMetadata.eventId = eventId
+                    }
+              }
+      let payload =
+            Event.InsertionPayload
+              { streamId = context.cartId |> Uuid.toText |> StreamId.fromTextUnsafe,
+                entityName = context.cartEntityName,
+                insertionType = Event.StreamCreation,
+                insertions = [insertion]
+              }
+
+      payload
+        |> context.cartStore.insert
+        |> Task.mapError toText
+        |> discard
+
+      result <-
+        NoOpExisting {cartId = context.cartId}
+          |> CommandExecutor.execute context.cartStore context.cartFetcher context.cartEntityName Auth.emptyContext
+
+      case result of
+        CommandAccepted {eventsAppended, retriesAttempted} -> do
+          eventsAppended |> shouldBe 0
+          retriesAttempted |> shouldBe 0
         CommandRejected msg ->
           fail ("Expected CommandAccepted, got CommandRejected: " |> Text.append msg)
         CommandFailed err _ ->
