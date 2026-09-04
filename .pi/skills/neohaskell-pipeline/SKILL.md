@@ -65,7 +65,9 @@ the activity vocabulary is `localization`, `index`, `test-scaffolding`,
    the exact offending commit SHA/subject or PR title and records the validated
    HEAD/title/base. Advancing past the spec gate is mechanically blocked when that
    evidence is absent or stale. Then open a **draft PR** whose diff is the spec
-   (+ADR, +red repro).
+   (+ADR, +red repro), record it with `./dev pipeline set pr_number <N>`, and run
+   the same validation again so evidence is bound to the actual immutable PR
+   number and GitHub title before advancing.
    Park: `./dev pipeline park` is NOT used here — waiting on the gate is
    `waiting_on_human_s`, not a failure. **How approval arrives (local-agent
    canonical flow):** the orchestrator remains in a persistent local agent
@@ -124,7 +126,8 @@ the activity vocabulary is `localization`, `index`, `test-scaffolding`,
 10. **pr** — prepare the final substantive commit, then run `./dev pipeline
     validate --pr-title "<title>" --base origin/main` again before push and before
     flipping the draft to ready-for-review. The `pr → ci` transition refuses
-    missing evidence or a validation from any earlier HEAD. Every commit subject
+    missing evidence, a validation from any earlier HEAD/branch/PR, a non-main
+    base, or a GitHub title that changed after validation. Every commit subject
     and the final PR title must retain the Conventional Commit form. Then flip the draft to
     ready-for-review (this triggers the full CI matrix; drafts run only cheap
     checks). PR body: spec link, criteria → test mapping, review records. **Flip
