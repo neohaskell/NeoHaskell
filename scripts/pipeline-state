@@ -8,11 +8,12 @@ re-plans** — a run continued after the maintainer's signal picks up the
 recorded plan verbatim; if the plan is wrong, the run is parked and re-entered
 from the top, visibly.
 
-Stage names are the telemetry schema v4 canonical list (telemetry/SCHEMA.md)
+Stage names are the telemetry schema v5 canonical list (telemetry/SCHEMA.md)
 — one vocabulary across state, telemetry lines, and the pipeline skill.
 
 Commands:
-  init --run-id ID --request REF [--branch B]   start a run (refuses to clobber)
+  init --run-id ID --request REF [--branch B]   start a run; issue#N is assigned
+                                                to and verified for current viewer
   status                                        human-readable summary
   advance                                       move to the next stage
   set KEY VALUE                                 data keys only (spec_path,
@@ -28,7 +29,8 @@ Commands:
   complete --outcome ok|parked|failed           archive terminal state and release
                                                 state.json for the next run; ok
                                                 requires `ci`, parked requires park
-  validate                                      schema check (also runs on save)
+  validate [--pr-title TITLE] [--base REF]       state schema check; with a title,
+                                                also validate commit subjects + PR title
   --self-test                                   full lifecycle in a temp dir (doctor/CI)
 
 Run: ./dev pipeline <command>
@@ -48,9 +50,14 @@ STATE_DIR = ROOT / ".pipeline"
 TELEMETRY_CURRENT = ROOT / "telemetry" / ".current-run.json"
 TELEMETRY_RUNS = ROOT / "telemetry" / "runs.jsonl"
 RUN_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+ISSUE_REF_RE = re.compile(r"^issue#([1-9][0-9]*)$")
+CONVENTIONAL_SUBJECT_RE = re.compile(
+    r"^(fix|feat|test|docs|refactor|perf|build|ci|chore|revert)"
+    r"(?:\([a-z0-9][a-z0-9._/-]*\))?: \S.*$"
+)
 
 # telemetry/SCHEMA.md stage enum, in pipeline order. Changing it there means
-# changing it here in the same PR (both quote schema v4).
+# changing it here in the same PR (both quote schema v5).
 STAGES = ["intake", "localize", "spec", "design-review", "plan",
           "test-writing", "implement", "verify", "pr", "ci"]
 
@@ -83,6 +90,66 @@ def git_bytes(*args):
         stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
     )
     return result.stdout if result.returncode == 0 else None
+
+
+def command_output(argv):
+    try:
+        result = subprocess.run(
+            argv, cwd=ROOT, text=True,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
+        )
+    except OSError as error:
+        return 127, "", str(error)
+    return result.returncode, result.stdout.strip(), result.stderr.strip()
+
+
+def claim_issue(request_ref, run_command=command_output):
+    match = ISSUE_REF_RE.fullmatch(request_ref)
+    if match is None:
+        return None
+    issue_number = match.group(1)
+    edit_code, _edit_out, edit_err = run_command(
+        ["gh", "issue", "edit", issue_number, "--add-assignee", "@me"]
+    )
+    if edit_code != 0:
+        return f"could not assign issue#{issue_number} to @me: {edit_err or 'gh failed'}"
+    viewer_code, viewer, viewer_err = run_command(["gh", "api", "user", "--jq", ".login"])
+    if viewer_code != 0 or not viewer:
+        return f"could not identify the current GitHub viewer: {viewer_err or 'gh returned no login'}"
+    assignee_code, assignees, assignee_err = run_command(
+        ["gh", "issue", "view", issue_number, "--json", "assignees", "--jq", ".assignees[].login"]
+    )
+    if assignee_code != 0:
+        return f"could not verify issue#{issue_number} assignees: {assignee_err or 'gh failed'}"
+    if viewer not in assignees.splitlines():
+        return f"issue#{issue_number} assignment verification failed: viewer `{viewer}` is not assigned"
+    return None
+
+
+def invalid_conventional_subject(subject):
+    return CONVENTIONAL_SUBJECT_RE.fullmatch(subject) is None
+
+
+def validate_change_metadata(pr_title, commits):
+    errors = []
+    if invalid_conventional_subject(pr_title):
+        errors.append(f"offending PR title: `{pr_title}`")
+    for sha, subject in commits:
+        if invalid_conventional_subject(subject):
+            errors.append(f"offending commit {sha}: `{subject}`")
+    return errors
+
+
+def commits_since(base):
+    output = git_output("log", "--format=%H%x09%s", f"{base}..HEAD")
+    if output is None:
+        return None
+    commits = []
+    for line in output.splitlines():
+        sha, separator, subject = line.partition("\t")
+        if separator:
+            commits.append((sha, subject))
+    return commits
 
 
 def current_head():
@@ -202,7 +269,7 @@ def save(state_dir, state):
     tmp.replace(f)
 
 
-def cmd_init(args, state_dir):
+def cmd_init(args, state_dir, issue_claimer=claim_issue):
     if not RUN_ID_RE.fullmatch(args.run_id):
         print(f"pipeline-state: invalid run-id `{args.run_id}`", file=sys.stderr)
         return 2
@@ -216,6 +283,10 @@ def cmd_init(args, state_dir):
         print(f"pipeline-state: {f} exists — complete the current run first "
               "(or --force to discard it)", file=sys.stderr)
         return 2
+    claim_error = issue_claimer(args.request)
+    if claim_error:
+        print(f"pipeline-state: {claim_error}; intake did not start", file=sys.stderr)
+        return 1
     state = {
         "schema": 1,
         "run_id": args.run_id,
@@ -232,6 +303,20 @@ def cmd_init(args, state_dir):
     }
     save(state_dir, state)
     print(f"pipeline-state: run {args.run_id} started at stage `intake`")
+    return 0
+
+
+def cmd_validate_metadata(args):
+    commits = commits_since(args.base)
+    if commits is None:
+        print(f"pipeline-state: cannot inspect commits from base `{args.base}`", file=sys.stderr)
+        return 2
+    errors = validate_change_metadata(args.pr_title, commits)
+    if errors:
+        for error in errors:
+            print(f"pipeline-state: invalid Conventional Commit metadata — {error}", file=sys.stderr)
+        return 1
+    print(f"pipeline-state: Conventional Commit metadata valid ({len(commits)} commit(s), PR title checked)")
     return 0
 
 
@@ -522,9 +607,59 @@ def self_test():
             print("self-test FAIL telemetry append: wrong run-id should fail")
             fails += 1
 
+        valid_subjects = [
+            "fix: preserve stream revision",
+            "test(event-store): cover concurrent creation",
+            "docs: Document the explicit rebuild path",
+        ]
+        invalid_subjects = ["Fix stream revision", "feature: add helper", "fix(scope) missing colon"]
+        for subject in valid_subjects:
+            if invalid_conventional_subject(subject):
+                print(f"self-test FAIL conventional-valid: {subject}")
+                fails += 1
+        for subject in invalid_subjects:
+            if not invalid_conventional_subject(subject):
+                print(f"self-test FAIL conventional-invalid: {subject}")
+                fails += 1
+        metadata_errors = validate_change_metadata(
+            "Not conventional", [("deadbeef", "also invalid")]
+        )
+        if metadata_errors != [
+            "offending PR title: `Not conventional`",
+            "offending commit deadbeef: `also invalid`",
+        ]:
+            print(f"self-test FAIL conventional-exact-errors: {metadata_errors}")
+            fails += 1
+
+        successful_claim_calls = []
+        def successful_gh(argv):
+            successful_claim_calls.append(argv)
+            if argv[:3] == ["gh", "api", "user"]:
+                return 0, "octocat", ""
+            if argv[:3] == ["gh", "issue", "view"]:
+                return 0, "octocat\nother", ""
+            return 0, "", ""
+        if claim_issue("issue#862", successful_gh) is not None:
+            print("self-test FAIL issue-claim-success")
+            fails += 1
+        if successful_claim_calls[0] != ["gh", "issue", "edit", "862", "--add-assignee", "@me"]:
+            print(f"self-test FAIL issue-claim-command: {successful_claim_calls[0]}")
+            fails += 1
+        missing_assignment = claim_issue(
+            "issue#862",
+            lambda argv: (0, "octocat", "") if argv[:3] == ["gh", "api", "user"]
+            else ((0, "other", "") if argv[:3] == ["gh", "issue", "view"] else (0, "", "")),
+        )
+        if missing_assignment != "issue#862 assignment verification failed: viewer `octocat` is not assigned":
+            print(f"self-test FAIL issue-claim-verification: {missing_assignment}")
+            fails += 1
+        if claim_issue("adhoc:docs", lambda _argv: (1, "", "must not run")) is not None:
+            print("self-test FAIL adhoc-claim-skip")
+            fails += 1
+
         ns = argparse.Namespace(run_id="t-001", request="issue#0", branch="b", force=False)
-        run("init", lambda: cmd_init(ns, d), 0)
-        run("init-refuses-clobber", lambda: cmd_init(ns, d), 2)
+        run("init", lambda: cmd_init(ns, d, issue_claimer=lambda _request: None), 0)
+        run("init-refuses-clobber", lambda: cmd_init(ns, d, issue_claimer=lambda _request: None), 2)
         run("advance-to-localize", lambda: cmd_advance(d), 0)
         run("set-plan-during-localize", lambda: cmd_set(argparse.Namespace(
             key="plan.touches", value='["auth"]'), d), 0)
@@ -588,9 +723,9 @@ def self_test():
         if state_file(d).exists() or not (d / "completed" / "t-001.json").is_file():
             print("self-test FAIL complete: live state remained or archive is missing")
             fails += 1
-        run("reuse-completed-runid-denied", lambda: cmd_init(ns, d), 2)
+        run("reuse-completed-runid-denied", lambda: cmd_init(ns, d, issue_claimer=lambda _request: None), 2)
         next_ns = argparse.Namespace(run_id="t-002", request="issue#1", branch="b2", force=False)
-        run("init-after-complete", lambda: cmd_init(next_ns, d), 0)
+        run("init-after-complete", lambda: cmd_init(next_ns, d, issue_claimer=lambda _request: None), 0)
 
         # Fix 6: a truncated state file exits cleanly (exit 1), never tracebacks.
         # Runs last — it clobbers the valid state file on purpose.
@@ -606,7 +741,7 @@ def self_test():
 
         parked_dir = d / "parked-case"
         parked_ns = argparse.Namespace(run_id="t-parked", request="issue#2", branch="p", force=False)
-        run("parked-init", lambda: cmd_init(parked_ns, parked_dir), 0)
+        run("parked-init", lambda: cmd_init(parked_ns, parked_dir, issue_claimer=lambda _request: None), 0)
         run("parked-park", lambda: cmd_park(
             argparse.Namespace(label="timeout", note="budget"), parked_dir), 0)
         run("parked-as-ok-denied", lambda: complete(parked_dir, "ok"), 1)
@@ -614,11 +749,11 @@ def self_test():
         run("parked-complete", lambda: complete(parked_dir, "parked"), 0)
         run("init-after-parked", lambda: cmd_init(
             argparse.Namespace(run_id="t-after-park", request="issue#3", branch="p2", force=False),
-            parked_dir), 0)
+            parked_dir, issue_claimer=lambda _request: None), 0)
 
         retry_dir = d / "retry-case"
         retry_ns = argparse.Namespace(run_id="t-retry", request="issue#retry", branch="r", force=False)
-        run("retry-init", lambda: cmd_init(retry_ns, retry_dir), 0)
+        run("retry-init", lambda: cmd_init(retry_ns, retry_dir, issue_claimer=lambda _request: None), 0)
         retry_state = load(retry_dir)
         retry_state["stage"] = "ci"
         retry_state["approvals"]["ci"] = {
@@ -641,7 +776,7 @@ def self_test():
         conflict_ns = argparse.Namespace(
             run_id="t-conflict", request="issue#conflict", branch="c", force=False
         )
-        run("conflict-init", lambda: cmd_init(conflict_ns, conflict_dir), 0)
+        run("conflict-init", lambda: cmd_init(conflict_ns, conflict_dir, issue_claimer=lambda _request: None), 0)
         conflict_state = load(conflict_dir)
         conflict_state["stage"] = "ci"
         conflict_state["approvals"]["ci"] = {
@@ -662,12 +797,12 @@ def self_test():
 
         failed_dir = d / "failed-case"
         failed_ns = argparse.Namespace(run_id="t-failed", request="issue#4", branch="f", force=False)
-        run("failed-init", lambda: cmd_init(failed_ns, failed_dir), 0)
+        run("failed-init", lambda: cmd_init(failed_ns, failed_dir, issue_claimer=lambda _request: None), 0)
         finish_telemetry(failed_dir, "failed")
         run("failed-complete", lambda: complete(failed_dir, "failed"), 0)
         run("init-after-failed", lambda: cmd_init(
             argparse.Namespace(run_id="t-after-fail", request="issue#5", branch="f2", force=False),
-            failed_dir), 0)
+            failed_dir, issue_claimer=lambda _request: None), 0)
 
         if fails == 0:
             print("pipeline-state self-test: OK — lifecycle, both approval gates, immutable "
@@ -703,7 +838,9 @@ def main():
     sub.add_parser("resume")
     pc = sub.add_parser("complete")
     pc.add_argument("--outcome", required=True, choices=["ok", "parked", "failed"])
-    sub.add_parser("validate")
+    pv = sub.add_parser("validate")
+    pv.add_argument("--pr-title")
+    pv.add_argument("--base", default="origin/main")
     args = p.parse_args()
 
     if args.cmd == "init":
@@ -724,6 +861,8 @@ def main():
         return cmd_complete(args, STATE_DIR)
     if args.cmd == "validate":
         load(STATE_DIR)
+        if args.pr_title is not None:
+            return cmd_validate_metadata(args)
         print("pipeline-state: valid")
         return 0
     return 2

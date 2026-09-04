@@ -21,9 +21,13 @@ capability ontology, extension points, generated API signatures, symbol DB.
    `nhcore-auth-config-testlib`, `nhintegrations`. One Read/grep; do not open
    source files to discover APIs.
 5. **Edit-set expansion**: `./dev who-calls <symbol> [defining-module]` —
-   who breaks if this changes, grouped by capability. testbed hits = update
-   acceptance tests too. (Index: `./dev hiedb`; caveat: record-field
-   accessors may not resolve via name-refs — fall back to grep for those.)
+   who breaks if this changes, grouped by capability. The command only indexes
+   already-emitted `.hie` artifacts and is cached per worktree/toolchain; it never
+   builds. A cold worktree returns immediately with the exact executable bounded
+   `git grep` fallback. `./dev watch` keeps the index warm; only a human explicitly
+   choosing `./dev hiedb --rebuild` starts a full build. testbed hits = update
+   acceptance tests too. Record-field accessors may not resolve via name-refs —
+   use the emitted grep fallback for those.
 6. **Resolve symbols (Phase 4)**: for every API the task will call, resolve
    the exact name NOW — `codemap/api-hot.md` first (the frequency-ranked
    card of what this repo actually calls, with call-site counts), then

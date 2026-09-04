@@ -7,7 +7,9 @@
 # .ghcid-errors.txt at the repo root.
 #
 # The agent repair loop NEVER spawns `cabal build`: after an edit it waits ~2s
-# and reads .ghcid-errors.txt. Empty file (or "All good") = typechecks.
+# and reads .ghcid-errors.txt. Empty file (or "All good") = typechecks. A
+# debounced sidecar incrementally indexes .hie files emitted by successful
+# reloads; indexing failures never interrupt typechecking.
 #
 # Usage:
 #   ./dev watch                # watch lib:nhcore
@@ -32,6 +34,31 @@ echo "watch: watching ${TARGET} (dev flavor, -O0); errors -> ${OUT}"
 
 # with-toolchain enters `nix develop` on demand — ghcid and cabal come from the
 # pinned dev shell, so this works from any bare shell (agent or human).
-exec "${SCRIPT_DIR}/with-toolchain" ghcid \
+"${SCRIPT_DIR}/with-toolchain" ghcid \
   --command "cabal repl ${TARGET} --project-file=cabal.project.dev" \
-  --outputfile "${OUT}"
+  --outputfile "${OUT}" &
+WATCH_PID=$!
+
+warm_hie_index() {
+  local previous_stamp=""
+  while kill -0 "${WATCH_PID}" 2>/dev/null; do
+    local stamp="missing"
+    if [ -f "${OUT}" ]; then
+      stamp="$(python3 -c 'import os,sys; print(os.stat(sys.argv[1]).st_mtime_ns)' "${OUT}")"
+    fi
+    if [ "${stamp}" != "${previous_stamp}" ]; then
+      previous_stamp="${stamp}"
+      sleep 1
+      "${SCRIPT_DIR}/refresh-hiedb" --if-needed --quiet >/dev/null 2>&1 || true
+    fi
+    sleep 2
+  done
+}
+
+warm_hie_index &
+WARMER_PID=$!
+cleanup() {
+  kill "${WARMER_PID}" "${WATCH_PID}" 2>/dev/null || true
+}
+trap cleanup EXIT INT TERM
+wait "${WATCH_PID}"

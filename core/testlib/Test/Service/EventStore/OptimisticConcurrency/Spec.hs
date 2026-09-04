@@ -15,6 +15,7 @@ import Stream qualified
 import Task qualified
 import Test
 import Test.Service.EventStore.Core (CartEvent (..))
+import Test.Service.EventStore.Regression qualified as Regression
 import Test.Service.EventStore.OptimisticConcurrency.Context qualified as Context
 import Uuid qualified
 
@@ -97,19 +98,27 @@ spec newStore = do
                   insertions = [event2Insertion]
                 }
 
-        let event1Task =
+        barrier <- Regression.newInsertBarrier
+        let blockedStore = Regression.barrierBeforeInsert barrier context.store
+        let event1Task :: Task Text (Result EventStore.Error Unit)
+            event1Task =
               event1Payload
-                |> context.store.insert
+                |> blockedStore.insert
                 |> discard
                 |> Task.asResult
-
-        let event2Task =
+        let event2Task :: Task Text (Result EventStore.Error Unit)
+            event2Task =
               event2Payload
-                |> context.store.insert
+                |> blockedStore.insert
                 |> discard
                 |> Task.asResult
 
-        (result1, result2) <- AsyncTask.runConcurrently (event1Task, event2Task)
+        event1Async <- AsyncTask.run event1Task
+        event2Async <- AsyncTask.run event2Task
+        Regression.awaitInsertions 2 barrier
+        Regression.releaseInsertions 2 barrier
+        result1 <- AsyncTask.waitFor event1Async
+        result2 <- AsyncTask.waitFor event2Async
 
         [result1, result2]
           |> Array.map (\x -> if Result.isOk x then 1 else 0)
@@ -140,6 +149,77 @@ spec newStore = do
           |> Array.get 1
           |> Maybe.map (\event -> event.metadata.eventId)
           |> shouldSatisfy (\id -> id == Just event1Id || id == Just event2Id)
+
+      it "allows only one concurrent StreamCreation" \context -> do
+        entityNameText <- Uuid.generate |> Task.map toText
+        let entityName = Event.EntityName entityNameText
+        firstPayload <-
+          Event.payloadFromEvents
+            entityName
+            context.streamId
+            [CartCreated {entityId = def}]
+        secondPayload <-
+          Event.payloadFromEvents
+            entityName
+            context.streamId
+            [CartCreated {entityId = def}]
+        let firstCreation = firstPayload {Event.insertionType = Event.StreamCreation}
+        let secondCreation = secondPayload {Event.insertionType = Event.StreamCreation}
+
+        barrier <- Regression.newInsertBarrier
+        let blockedStore = Regression.barrierBeforeInsert barrier context.store
+        let firstTask :: Task Text (Result EventStore.Error Event.InsertionSuccess)
+            firstTask = firstCreation |> blockedStore.insert |> Task.asResult
+        let secondTask :: Task Text (Result EventStore.Error Event.InsertionSuccess)
+            secondTask = secondCreation |> blockedStore.insert |> Task.asResult
+        firstAsync <- AsyncTask.run firstTask
+        secondAsync <- AsyncTask.run secondTask
+        Regression.awaitInsertions 2 barrier
+        Regression.releaseInsertions 2 barrier
+        firstResult <- AsyncTask.waitFor firstAsync
+        secondResult <- AsyncTask.waitFor secondAsync
+
+        [firstResult, secondResult]
+          |> Array.map (\result -> if Result.isOk result then 1 else 0)
+          |> Array.sumIntegers
+          |> shouldBe 1
+
+      it "keeps AnyStreamState deliberately unconditional" \context -> do
+        entityNameText <- Uuid.generate |> Task.map toText
+        let entityName = Event.EntityName entityNameText
+        Regression.seedStream
+          context.store
+          entityName
+          context.streamId
+          [CartCreated {entityId = def}]
+
+        firstPayload <-
+          Event.payloadFromEvents
+            entityName
+            context.streamId
+            [ItemAdded {entityId = def, itemId = def, amount = 10}]
+        secondPayload <-
+          Event.payloadFromEvents
+            entityName
+            context.streamId
+            [ItemAdded {entityId = def, itemId = def, amount = 20}]
+        firstPayload
+          |> context.store.insert
+          |> Task.mapError toText
+          |> discard
+        secondPayload
+          |> context.store.insert
+          |> Task.mapError toText
+          |> discard
+
+        streamMessages <-
+          context.store.readAllStreamEvents entityName context.streamId
+            |> Task.mapError toText
+            |> Task.andThen Stream.toArray
+        streamMessages
+          |> EventStore.collectStreamEvents
+          |> Array.length
+          |> shouldBe 3
 
       it "gives consistency error when stream position is not up to date" \context -> do
         entityNameText <- Uuid.generate |> Task.map toText

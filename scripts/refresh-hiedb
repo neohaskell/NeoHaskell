@@ -1,21 +1,202 @@
 #!/usr/bin/env bash
 #
-# (Re)build the symbol reference database (pipeline Phase 3).
+# Incrementally index already-emitted .hie files (pipeline Phase 3).
 #
-# .hie files are emitted by GHC (-fwrite-ide-info, set in cabal.project) into
-# dist-newstyle during any build; hiedb indexes them into .hiedb (gitignored —
-# build artifact, never committed).
+# The default path never builds. GHC emits .hie files during normal check/watch
+# work; this command indexes those artifacts and caches their worktree/toolchain
+# fingerprint. A human may explicitly request a full rebuild with --rebuild.
 #
-# Usage: ./dev hiedb   (run after significant code changes; ./dev who-calls
-#        will tell you if the index is missing)
+# Usage: ./dev hiedb [--if-needed|--force|--rebuild] [--quiet]
+#        ./dev hiedb --self-test
 #
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-cd "${SCRIPT_DIR}/.."
+ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+cd "${ROOT}"
 
-echo "hiedb: building (dev flavor) so .hie files are current…"
-"${SCRIPT_DIR}/with-toolchain" cabal build all --project-file=cabal.project.dev -j 2>&1 | tail -1
+DIST_DIR="${HIEDB_DIST_DIR:-${ROOT}/dist-newstyle}"
+DB_PATH="${HIEDB_DB_PATH:-${ROOT}/.hiedb}"
+META_PATH="${HIEDB_META_PATH:-${ROOT}/.hiedb-meta}"
+TOOLS_PATH="${HIEDB_TOOLS_PATH:-${ROOT}/.hiedb-tools}"
+TOOLCHAIN="${HIEDB_TOOLCHAIN:-${SCRIPT_DIR}/with-toolchain}"
+LOCK_PATH="${HIEDB_LOCK_PATH:-${DB_PATH}.index-lock}"
+TOOLCHAIN_FINGERPRINT="${HIEDB_TOOLCHAIN_FINGERPRINT:-$(${SCRIPT_DIR}/toolchain-fp)}"
+MODE="if-needed"
+QUIET=0
 
-echo "hiedb: indexing…"
-"${SCRIPT_DIR}/with-toolchain" hiedb -D .hiedb index dist-newstyle --quiet
-echo "hiedb: done → .hiedb"
+usage() {
+  echo "usage: ./dev hiedb [--if-needed|--force|--rebuild] [--quiet]" >&2
+}
+
+fingerprint() {
+  HIEDB_FP_ROOT="${ROOT}" \
+  HIEDB_FP_DIST="${DIST_DIR}" \
+  HIEDB_FP_TOOLCHAIN="${TOOLCHAIN_FINGERPRINT}" \
+    python3 - <<'PY'
+import hashlib
+import os
+from pathlib import Path
+
+root = os.environ["HIEDB_FP_ROOT"]
+dist = Path(os.environ["HIEDB_FP_DIST"])
+toolchain = os.environ["HIEDB_FP_TOOLCHAIN"]
+hash_value = hashlib.sha256()
+hash_value.update(root.encode())
+hash_value.update(b"\0")
+hash_value.update(toolchain.encode())
+for path in sorted(dist.rglob("*.hie")):
+    stat = path.stat()
+    hash_value.update(str(path.relative_to(dist)).encode())
+    hash_value.update(f"\0{stat.st_size}\0{stat.st_mtime_ns}\0".encode())
+print(hash_value.hexdigest())
+PY
+}
+
+resolve_tools() {
+  local cached_fingerprint cached_hiedb cached_python resolved
+  if [ -n "${HIEDB_HIEDB_BIN:-}" ] && [ -n "${HIEDB_PYTHON_BIN:-}" ]; then
+    HIEDB_BIN="${HIEDB_HIEDB_BIN}"
+    PYTHON_BIN="${HIEDB_PYTHON_BIN}"
+    return 0
+  fi
+  cached_fingerprint="$(sed -n '1p' "${TOOLS_PATH}" 2>/dev/null || true)"
+  cached_hiedb="$(sed -n '2p' "${TOOLS_PATH}" 2>/dev/null || true)"
+  cached_python="$(sed -n '3p' "${TOOLS_PATH}" 2>/dev/null || true)"
+  if [ "${cached_fingerprint}" = "${TOOLCHAIN_FINGERPRINT}" ] \
+      && [ -x "${cached_hiedb}" ] && [ -x "${cached_python}" ]; then
+    HIEDB_BIN="${cached_hiedb}"
+    PYTHON_BIN="${cached_python}"
+    return 0
+  fi
+  resolved="$("${TOOLCHAIN}" sh -c 'command -v hiedb; command -v python3')"
+  HIEDB_BIN="$(printf '%s\n' "${resolved}" | sed -n '1p')"
+  PYTHON_BIN="$(printf '%s\n' "${resolved}" | sed -n '2p')"
+  if [ ! -x "${HIEDB_BIN}" ] || [ ! -x "${PYTHON_BIN}" ]; then
+    echo "hiedb: pinned hiedb/python3 tools could not be resolved" >&2
+    return 1
+  fi
+  printf '%s\n%s\n%s\n' "${TOOLCHAIN_FINGERPRINT}" "${HIEDB_BIN}" "${PYTHON_BIN}" > "${TOOLS_PATH}.tmp.$$"
+  mv "${TOOLS_PATH}.tmp.$$" "${TOOLS_PATH}"
+}
+
+has_hie_artifacts() {
+  [ -d "${DIST_DIR}" ] && find "${DIST_DIR}" -type f -name '*.hie' -print -quit | grep -q .
+}
+
+index_artifacts() {
+  if ! has_hie_artifacts; then
+    [ "${QUIET}" -eq 1 ] || echo "hiedb: no emitted .hie files under ${DIST_DIR}; run ./dev watch, ./dev check, or explicitly ./dev hiedb --rebuild" >&2
+    return 2
+  fi
+
+  if ! mkdir "${LOCK_PATH}" 2>/dev/null; then
+    if [ -f "${DB_PATH}" ]; then
+      [ "${QUIET}" -eq 1 ] || echo "hiedb: another incremental refresh is already running; using the current index"
+      return 0
+    fi
+    [ "${QUIET}" -eq 1 ] || echo "hiedb: initial index is already being created; retry shortly" >&2
+    return 2
+  fi
+  trap 'rmdir "${LOCK_PATH}" 2>/dev/null || true' RETURN
+
+  local current_fingerprint
+  current_fingerprint="$(fingerprint)"
+  if [ "${MODE}" = "if-needed" ] && [ -f "${DB_PATH}" ] && [ -f "${META_PATH}" ] \
+      && [ "$(cat "${META_PATH}")" = "${current_fingerprint}" ]; then
+    resolve_tools
+    [ "${QUIET}" -eq 1 ] || echo "hiedb: current — cached for this worktree/toolchain"
+    return 0
+  fi
+
+  [ "${QUIET}" -eq 1 ] || echo "hiedb: incrementally indexing emitted .hie files…"
+  resolve_tools
+  "${HIEDB_BIN}" -D "${DB_PATH}" index "${DIST_DIR}" --quiet
+  printf '%s\n' "${current_fingerprint}" > "${META_PATH}.tmp.$$"
+  mv "${META_PATH}.tmp.$$" "${META_PATH}"
+  [ "${QUIET}" -eq 1 ] || echo "hiedb: done → ${DB_PATH}"
+}
+
+self_test() {
+  local tmp fake log before
+  tmp="$(mktemp -d)"
+  trap 'rm -rf "${tmp}"' RETURN
+  mkdir -p "${tmp}/dist"
+  log="${tmp}/calls"
+  fake="${tmp}/toolchain"
+  cat > "${fake}" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$*" >> "${HIEDB_TEST_LOG}"
+if [ "${1:-}" = "hiedb" ]; then shift; fi
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = "-D" ]; then shift; : > "$1"; break; fi
+  shift
+done
+SH
+  chmod +x "${fake}"
+  export HIEDB_HIEDB_BIN="${fake}"
+  export HIEDB_PYTHON_BIN="$(command -v python3)"
+  export HIEDB_TOOLS_PATH="${tmp}/tools"
+
+  if HIEDB_DIST_DIR="${tmp}/empty" HIEDB_DB_PATH="${tmp}/db" \
+      HIEDB_META_PATH="${tmp}/meta" HIEDB_TOOLCHAIN="${fake}" \
+      HIEDB_TOOLCHAIN_FINGERPRINT="test" HIEDB_TEST_LOG="${log}" \
+      "$0" --if-needed --quiet; then
+    echo "refresh-hiedb self-test FAIL: cold indexing unexpectedly succeeded" >&2
+    return 1
+  fi
+  [ ! -e "${log}" ] || { echo "refresh-hiedb self-test FAIL: cold path invoked a tool" >&2; return 1; }
+
+  printf 'first' > "${tmp}/dist/A.hie"
+  HIEDB_DIST_DIR="${tmp}/dist" HIEDB_DB_PATH="${tmp}/db" \
+    HIEDB_META_PATH="${tmp}/meta" HIEDB_TOOLCHAIN="${fake}" \
+    HIEDB_TOOLCHAIN_FINGERPRINT="test" HIEDB_TEST_LOG="${log}" \
+    "$0" --if-needed --quiet
+  before="$(wc -l < "${log}" | tr -d ' ')"
+  HIEDB_DIST_DIR="${tmp}/dist" HIEDB_DB_PATH="${tmp}/db" \
+    HIEDB_META_PATH="${tmp}/meta" HIEDB_TOOLCHAIN="${fake}" \
+    HIEDB_TOOLCHAIN_FINGERPRINT="test" HIEDB_TEST_LOG="${log}" \
+    "$0" --if-needed --quiet
+  [ "$(wc -l < "${log}" | tr -d ' ')" = "${before}" ] \
+    || { echo "refresh-hiedb self-test FAIL: warm cache re-indexed" >&2; return 1; }
+
+  printf 'changed-size' > "${tmp}/dist/A.hie"
+  HIEDB_DIST_DIR="${tmp}/dist" HIEDB_DB_PATH="${tmp}/db" \
+    HIEDB_META_PATH="${tmp}/meta" HIEDB_TOOLCHAIN="${fake}" \
+    HIEDB_TOOLCHAIN_FINGERPRINT="test" HIEDB_TEST_LOG="${log}" \
+    "$0" --if-needed --quiet
+  [ "$(wc -l < "${log}" | tr -d ' ')" -gt "${before}" ] \
+    || { echo "refresh-hiedb self-test FAIL: changed artifact was not indexed" >&2; return 1; }
+
+  : > "${log}"
+  HIEDB_DIST_DIR="${tmp}/dist" HIEDB_DB_PATH="${tmp}/db2" \
+    HIEDB_META_PATH="${tmp}/meta2" HIEDB_TOOLCHAIN="${fake}" \
+    HIEDB_TOOLCHAIN_FINGERPRINT="test" HIEDB_TEST_LOG="${log}" \
+    "$0" --rebuild --quiet
+  grep -q '^cabal build all --project-file=cabal.project.dev -j$' "${log}" \
+    || { echo "refresh-hiedb self-test FAIL: explicit rebuild did not build" >&2; return 1; }
+  grep -q '^-D ' "${log}" \
+    || { echo "refresh-hiedb self-test FAIL: explicit rebuild did not index" >&2; return 1; }
+  echo "refresh-hiedb self-test: OK — cold path is bounded, warm index is cached, changed artifacts re-index, rebuild is explicit"
+}
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --if-needed) MODE="if-needed" ;;
+    --force) MODE="force" ;;
+    --rebuild) MODE="rebuild" ;;
+    --quiet) QUIET=1 ;;
+    --self-test) self_test; exit $? ;;
+    -h|--help) usage; exit 0 ;;
+    *) usage; exit 2 ;;
+  esac
+  shift
+done
+
+if [ "${MODE}" = "rebuild" ]; then
+  [ "${QUIET}" -eq 1 ] || echo "hiedb: explicit full dev rebuild requested…"
+  "${TOOLCHAIN}" cabal build all --project-file=cabal.project.dev -j
+  MODE="force"
+fi
+
+index_artifacts

@@ -1,29 +1,93 @@
 #!/usr/bin/env bash
 #
-# Who references this symbol? (pipeline Phase 3 — plan-time edit-set expansion:
-# "I'm changing this signature; what breaks?")
+# Who references this symbol? The command incrementally indexes only .hie files
+# already emitted by normal development. It never starts a build.
 #
-# Output is joined against codemap/capabilities.yaml so results read as
-# capabilities, not bare file lists.
-#
-# Usage:
-#   ./dev who-calls insert            # by symbol name
-#   ./dev who-calls insert Service.EventStore.Core   # narrowed by defining module
+# Usage: ./dev who-calls <symbol> [module]
 #
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-cd "${SCRIPT_DIR}/.."
+ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+cd "${ROOT}"
+
+self_test() {
+  local tmp refresh output code
+  tmp="$(mktemp -d)"
+  trap 'rm -rf "${tmp}"' RETURN
+  refresh="${tmp}/refresh"
+  printf '%s\n' '#!/usr/bin/env bash' 'exit 2' > "${refresh}"
+  chmod +x "${refresh}"
+  set +e
+  output="$(WHO_CALLS_REFRESH="${refresh}" WHO_CALLS_DB_PATH="${tmp}/missing" "$0" 'InsertAfter' 2>&1)"
+  code=$?
+  set -e
+  [ "${code}" -eq 2 ] \
+    || { echo "who-calls self-test FAIL: cold path exit ${code}, want 2" >&2; return 1; }
+  printf '%s\n' "${output}" \
+    | grep -Fx 'git grep -n -F -- InsertAfter -- core testbed integrations' >/dev/null \
+    || { echo "who-calls self-test FAIL: executable fallback missing" >&2; return 1; }
+  if printf '%s\n' "${output}" | grep -q 'cabal build'; then
+    echo "who-calls self-test FAIL: cold path suggested a build" >&2
+    return 1
+  fi
+
+  local warm_refresh fake_hiedb fake_python calls tools
+  warm_refresh="${tmp}/warm-refresh"
+  fake_hiedb="${tmp}/hiedb"
+  fake_python="${tmp}/python3"
+  calls="${tmp}/calls"
+  tools="${tmp}/tools"
+  printf '%s\n' '#!/usr/bin/env bash' 'exit 0' > "${warm_refresh}"
+  printf '%s\n' '#!/usr/bin/env bash' 'printf "%s\\n" "$*" >> "${WHO_CALLS_TEST_LOG}"' > "${fake_hiedb}"
+  printf '%s\n' '#!/usr/bin/env bash' 'cat >/dev/null' > "${fake_python}"
+  chmod +x "${warm_refresh}" "${fake_hiedb}" "${fake_python}"
+  : > "${tmp}/db"
+  printf 'test\n%s\n%s\n' "${fake_hiedb}" "${fake_python}" > "${tools}"
+  WHO_CALLS_REFRESH="${warm_refresh}" WHO_CALLS_DB_PATH="${tmp}/db" \
+    WHO_CALLS_TOOLS_PATH="${tools}" WHO_CALLS_TEST_LOG="${calls}" \
+    "$0" 'execute' 'Service.CommandExecutor.Core'
+  grep -Fx -- "-D ${tmp}/db name-refs execute Service.CommandExecutor.Core" "${calls}" >/dev/null \
+    || { echo "who-calls self-test FAIL: warm lookup did not use the cached hiedb directly" >&2; return 1; }
+  echo "who-calls self-test: OK — cold lookup is bounded; warm lookup uses cached pinned tools directly"
+}
+
+if [ "${1:-}" = "--self-test" ]; then
+  self_test
+  exit $?
+fi
 
 NAME="${1:?usage: who-calls <symbol> [module]}"
+DB_PATH="${WHO_CALLS_DB_PATH:-${ROOT}/.hiedb}"
+TOOLS_PATH="${WHO_CALLS_TOOLS_PATH:-${ROOT}/.hiedb-tools}"
+REFRESH="${WHO_CALLS_REFRESH:-${SCRIPT_DIR}/refresh-hiedb}"
 
-if [ ! -f .hiedb ]; then
-  echo "who-calls: no index — run ./dev hiedb first" >&2
+fallback() {
+  local escaped
+  printf -v escaped '%q' "${NAME}"
+  echo "who-calls: no usable HIE index; bounded fallback:" >&2
+  echo "git grep -n -F -- ${escaped} -- core testbed integrations" >&2
+}
+
+if ! HIEDB_DB_PATH="${DB_PATH}" "${REFRESH}" --if-needed --quiet; then
+  fallback
+  exit 2
+fi
+if [ ! -f "${DB_PATH}" ]; then
+  fallback
   exit 2
 fi
 
-# Args travel as argv end-to-end (never interpolated into a shell string).
+HIEDB_BIN="${WHO_CALLS_HIEDB_BIN:-$(sed -n '2p' "${TOOLS_PATH}" 2>/dev/null || true)}"
+PYTHON_BIN="${WHO_CALLS_PYTHON_BIN:-$(sed -n '3p' "${TOOLS_PATH}" 2>/dev/null || true)}"
+if [ ! -x "${HIEDB_BIN}" ] || [ ! -x "${PYTHON_BIN}" ]; then
+  fallback
+  exit 2
+fi
+
+# The resolved pinned executables are cached by refresh-hiedb. Warm lookups avoid
+# re-entering the whole development shell while retaining the exact toolchain.
 if [ $# -ge 2 ]; then
-  "${SCRIPT_DIR}/with-toolchain" hiedb -D .hiedb name-refs "${NAME}" "$2"
+  "${HIEDB_BIN}" -D "${DB_PATH}" name-refs "${NAME}" "$2"
 else
-  "${SCRIPT_DIR}/with-toolchain" hiedb -D .hiedb name-refs "${NAME}"
-fi | "${SCRIPT_DIR}/with-toolchain" python3 codemap/join-refs.py
+  "${HIEDB_BIN}" -D "${DB_PATH}" name-refs "${NAME}"
+fi | "${PYTHON_BIN}" codemap/join-refs.py

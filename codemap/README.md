@@ -23,7 +23,10 @@ never searches.
 3. **Symbol level:** grep the capability's API surface in `signatures/*.txt`
    (one Read; never open source files to discover APIs).
 4. **Edit-set expansion:** `./dev who-calls <symbol> [module]` — who breaks if
-   this signature changes, grouped by capability. (`./dev hiedb` builds the index.)
+   this signature changes, grouped by capability. It incrementally indexes emitted
+   `.hie` artifacts and never builds; a cold worktree prints an executable bounded
+   `git grep` fallback. `./dev watch` keeps the cache warm. A human-only full refresh
+   is explicit: `./dev hiedb --rebuild`.
 5. **Write exact paths + symbols into the plan.** Low confidence or empty
    match → escalate model tier; never guess.
 
@@ -56,7 +59,8 @@ Pass bar: **≥8/10**. Record the score in the PR body.
 ```sh
 ./dev codemap        # signatures + MAP.md + ratchet (after API changes)
 ./dev codemap-check  # validity gate (also in CI: checks.yml)
-./dev hiedb          # symbol reference DB (local only, gitignored)
+./dev hiedb          # incrementally index emitted .hie files (local, gitignored)
+./dev hiedb --rebuild # explicit full rebuild before indexing
 ```
 
 Governing rule applies: curated files are CI-gated, generated files carry a

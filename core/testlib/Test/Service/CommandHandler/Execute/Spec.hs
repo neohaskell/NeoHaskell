@@ -20,6 +20,7 @@ import Test.Service.Command.Core (
   CheckoutCart (..),
  )
 import Test.Service.EventStore.Core (CartEvent (..))
+import Test.Service.EventStore.Regression qualified as Regression
 import Test.Service.CommandHandler.Execute.Context qualified as Context
 import Text qualified
 import Uuid qualified
@@ -199,6 +200,42 @@ retryLogicSpecs ::
   Spec Unit
 retryLogicSpecs newCartStoreAndFetcher = do
   before (Context.initialize newCartStoreAndFetcher) do
+    it "canonically records a consistency conflict, refetch, and re-decision" \context -> do
+      let streamId = context.cartId |> Uuid.toText |> StreamId.fromTextUnsafe
+      Regression.seedStream
+        context.cartStore
+        context.cartEntityName
+        streamId
+        [CartCreated {entityId = context.cartId}]
+
+      conflictingStore <- Regression.failFirstWithConsistencyConflict context.cartStore
+      (recordingStore, readInsertions) <- Regression.recordInsertions conflictingStore
+      let guardedStore = Regression.requireInsertionType Event.AnyStreamState recordingStore
+      (recordingFetcher, readRevisions) <- Regression.recordFetchedRevisions context.cartFetcher
+      let command = AddItemToCart {cartId = context.cartId, itemId = context.itemId1, amount = 1}
+
+      result <-
+        CommandExecutor.execute
+          guardedStore
+          recordingFetcher
+          context.cartEntityName
+          Auth.emptyContext
+          command
+
+      case result of
+        CommandAccepted {retriesAttempted} -> retriesAttempted |> shouldBe 1
+        CommandRejected reason -> fail [fmt|Expected retry acceptance, got rejection: #{reason}|]
+        CommandFailed failure _ -> fail [fmt|Expected retry acceptance, got failure: #{failure}|]
+        CommandUnauthorized _ -> fail "Expected retry acceptance, got unauthorized"
+
+      insertionPayloads <- readInsertions
+      insertionPayloads
+        |> Array.map (\payload -> payload.insertionType)
+        |> shouldBe [Event.AnyStreamState, Event.AnyStreamState]
+
+      fetchedRevisions <- readRevisions
+      Array.length fetchedRevisions |> shouldBe 2
+
     it "retries on consistency check failure (ExistingStream)" \context -> do
       -- Create initial cart
       let cartCreatedEvent = CartCreated {entityId = context.cartId}

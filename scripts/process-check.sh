@@ -29,7 +29,7 @@ grep -qF 'name: neohaskell-pipeline' "$active_skill" || err "active skill has th
 grep -qF '.pipeline/state.json' "$active_skill" || err "active skill does not name its resume state"
 grep -qF '.claude/allow-expectation-edits' "$active_skill" || err "active skill has a stale expectation-approval path"
 grep -qF './dev telemetry' "$active_skill" || err "active skill does not restore pipeline telemetry"
-grep -qF 'telemetry schema v4 canon' "$adr_0067" || err "ADR-0067 has a stale telemetry schema version"
+grep -qF 'telemetry schema v5 canon' "$adr_0067" || err "ADR-0067 has a stale telemetry schema version"
 grep -qF '.claude/allow-expectation-edits' "$adr_0067" || err "ADR-0067 has a stale expectation-approval path"
 grep -qF './dev pipeline approve spec --by <who> --via <channel>' "$adr_0067" || err "ADR-0067 does not name the canonical local approval record"
 if grep -qE 'telemetry schema v2|\.pipeline/allow-expectation-edits|maintainer `@claude` comment' "$adr_0067"; then

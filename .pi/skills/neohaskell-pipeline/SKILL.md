@@ -11,7 +11,7 @@ description: Orchestrate a NeoHaskell change end-to-end through the spec-gated p
 Exactly **two human gates**: spec approval (draft PR) and final PR review.
 Everything between them is mechanical or agent-run, resumable from
 `.pipeline/state.json`, and telemetered. Stage names below are the telemetry
-schema v4 canon (`telemetry/SCHEMA.md`) — state, telemetry lines, and this
+schema v5 canon (`telemetry/SCHEMA.md`) — state, telemetry lines, and this
 skill share one vocabulary.
 
 ## Stage flow
@@ -27,14 +27,23 @@ is explicit. On entry to every stage run `./dev telemetry stage --name <stage>
 --event start`. Before every transition run `./dev telemetry stage --name
 <stage> --event stop`, then `./dev pipeline advance`, then start `<next>`. Never
 advance without that stop/start pair. Human waits use `./dev telemetry wait
---seconds <n>` and do not count against the stage time-box.
+--seconds <n>` and do not count against the stage time-box. Within stages, time
+bounded work with `./dev telemetry activity --name <activity> --event start|stop`;
+the activity vocabulary is `localization`, `index`, `test-scaffolding`,
+`compilation`, and `test-execution`.
 
-1. **intake** — `./dev pipeline init --run-id YYYY-MM-DD-NNN --request issue#N
-   --branch <branch>`; `./dev telemetry start --run-id YYYY-MM-DD-NNN --request
-   issue#N`; `./dev telemetry stage --name intake --event start`. Restate the request;
+1. **intake** — For `issue#N`, visibly claim the work first: intake runs
+   `gh issue edit N --add-assignee @me`, resolves `gh api user --jq .login`, and
+   verifies that viewer appears in the issue assignees. `./dev pipeline init
+   --run-id YYYY-MM-DD-NNN --request issue#N --branch <branch>` performs this
+   fail-closed before writing state; assignment failure means intake did not start.
+   Then run `./dev telemetry start --run-id YYYY-MM-DD-NNN --request issue#N` and
+   `./dev telemetry stage --name intake --event start`. Restate the request;
    ambiguity that changes the contract → one clarifying question NOW (cheap
    here, a wrong PR later).
-2. **localize** — `neohaskell-localizer` skill. Output: capability IDs +
+2. **localize** — Start the `localization` activity; wrap `./dev who-calls`
+   refresh work in the nested `index` activity. Use the `neohaskell-localizer`
+   skill. Output: capability IDs +
    `touches:`/`files:`/`uses:` lists → `./dev pipeline set plan.touches …`
    etc. The plan is now BINDING: resume never re-plans; a wrong plan parks
    the run (`wrong-localization`) and re-enters from intake, visibly.
@@ -49,7 +58,12 @@ advance without that stop/start pair. Human waits use `./dev telemetry wait
    the repro is the spec. ADR trigger flags honest (`./dev spec-check`
    cross-checks removals vs `breaking:`); triggered → write the ADR, link it
    — it's part of what the maintainer approves.
-4. **GATE 1** — open a **draft PR** whose diff is the spec (+ADR, +red repro).
+4. **GATE 1** — Commit subjects and the draft PR title use Conventional Commits:
+   `<type>(<optional-scope>): <imperative description>`, where type is one of
+   `fix|feat|test|docs|refactor|perf|build|ci|chore|revert`. Before push/opening,
+   run `./dev pipeline validate --pr-title "<title>" --base origin/main`; it prints
+   the exact offending commit SHA/subject or PR title and blocks on any mismatch.
+   Then open a **draft PR** whose diff is the spec (+ADR, +red repro).
    Park: `./dev pipeline park` is NOT used here — waiting on the gate is
    `waiting_on_human_s`, not a failure. **How approval arrives (local-agent
    canonical flow):** the orchestrator remains in a persistent local agent
@@ -74,7 +88,9 @@ advance without that stop/start pair. Human waits use `./dev telemetry wait
 6. **plan** — order the work: which files in what sequence, which neighbor
    module each copy-adapts from (`neohaskell-implementer` discipline).
 7. **test-writing** — tests FIRST, from the criteria table, red before any
-   implementation. Never weaken an existing expectation. Under the harness
+   implementation. Time scaffolding, compilation, and the red run separately with
+   telemetry activities `test-scaffolding`, `compilation`, and `test-execution`.
+   Never weaken an existing expectation. Under the harness
    configured by `.claude/settings.json`, the expectation-guard hook blocks it
    without the maintainer marker (`.claude/allow-expectation-edits`). Pi does
    not install those hooks: before continuing in Pi, run `python3
@@ -103,7 +119,10 @@ advance without that stop/start pair. Human waits use `./dev telemetry wait
       --require-all`. A missing PostgreSQL or Hurl prerequisite is red, never a
       skipped-green result.
    f. acceptance as the user runs it: `./dev testbed`
-10. **pr** — prepare the final substantive commit, then flip the draft to
+10. **pr** — prepare the final substantive commit, then run `./dev pipeline
+    validate --pr-title "<title>" --base origin/main` again before push and before
+    flipping the draft to ready-for-review. Every commit subject and the final PR
+    title must retain the Conventional Commit form. Then flip the draft to
     ready-for-review (this triggers the full CI matrix; drafts run only cheap
     checks). PR body: spec link, criteria → test mapping, review records. **Flip
     the ADR's `## Status` to `Implemented`** here (and the matching row in

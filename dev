@@ -37,8 +37,9 @@ usage: ./dev <verb> [args]
                           per ADR — from docs/decisions/ (also runs from pnpm
                           predev/prebuild/precheck; --check: fail if the tracked
                           landing page is out of sync)
-  hiedb                 (re)build the symbol reference DB
-  who-calls <sym> [mod] symbol references, grouped by capability
+  hiedb [--rebuild]     incrementally index emitted .hie files; --rebuild is
+                          the explicit cold full-build path
+  who-calls <sym> [mod] cached symbol references, or an immediate git-grep fallback
   where-defined <sym>   symbol definition site, capability-tagged
   api <query>           search the NeoHaskell API surface — by type
                           ("Text -> Int") or by name (toInt)
@@ -52,6 +53,7 @@ usage: ./dev <verb> [args]
   pipeline <cmd>        pipeline run state (.pipeline/state.json): init,
                           status, advance, set, approve, park, resume,
                           complete --outcome ok|parked|failed, validate
+                          [--pr-title TITLE] [--base REF]
   bench                 run the perf suites against telemetry/bench-budgets.json
                           (nightly in CI; needs POSTGRES_AVAILABLE=true for
                           the Postgres entries)

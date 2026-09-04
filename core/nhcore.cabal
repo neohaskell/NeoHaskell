@@ -340,6 +340,7 @@ library
     Test.Service.EventStore.LocalPositionStamping.Spec
     Test.Service.EventStore.OptimisticConcurrency.Context
     Test.Service.EventStore.OptimisticConcurrency.Spec
+    Test.Service.EventStore.Regression
     Test.Service.EventStore.ReadAllBackwardsFromEnd.Context
     Test.Service.EventStore.ReadAllBackwardsFromEnd.Spec
     Test.Service.EventStore.ReadAllForwardsFromStart.Context

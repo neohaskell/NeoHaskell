@@ -1,4 +1,4 @@
-# Telemetry schema v4 (current)
+# Telemetry schema v5 (current)
 
 A version's field shape is frozen; adding a field mints a new version (see the
 history below) — that is the mechanism, not a smell. The emitter always writes
@@ -10,8 +10,10 @@ adds `asset_delta` (the class-fix a failed run ships, task 4) and
 `assets_consulted` (usage accounting, task 5e); v3 → v4 adds `improvements` (the
 class-fixes an `ok` run ships — the loop learns from successes, not only failures;
 ADR-0068 amendment). The only v1 line in `runs.jsonl` is the Phase-1
-schema-validation dummy. **Readers tolerate older versions** (missing fields read
-as their defaults); the emitter always writes v4.
+schema-validation dummy. v4 → v5 adds bounded work `activities`, separating
+localization/index and test scaffolding/compilation/execution time without changing
+the resumable pipeline stage machine. **Readers tolerate older versions** (missing
+fields read as their defaults); the emitter always writes v5.
 
 Every pipeline run emits **exactly one JSON line** appended to `telemetry/runs.jsonl`
 (committed). Lines are emitted by `./dev telemetry` — never hand-written. Before
@@ -24,7 +26,7 @@ line again, so committed history remains append-only.
 
 ```json
 {
-  "schema": 4,
+  "schema": 5,
   "run_id": "2026-07-07-001",
   "request_ref": "issue#712 | adhoc:<slug>",
   "stages": {
@@ -35,6 +37,13 @@ line again, so committed history remains append-only.
       "repair_rounds": 1,
       "invented_api_events": 0
     }
+  },
+  "activities": {
+    "localization": {"start": "2026-07-07T14:03:22Z", "stop": "2026-07-07T14:04:01Z"},
+    "index": {"start": "2026-07-07T14:03:31Z", "stop": "2026-07-07T14:03:33Z"},
+    "test-scaffolding": {"start": "2026-07-07T14:05:10Z", "stop": "2026-07-07T14:06:02Z"},
+    "compilation": {"start": "2026-07-07T14:06:02Z", "stop": "2026-07-07T14:06:18Z"},
+    "test-execution": {"start": "2026-07-07T14:06:18Z", "stop": "2026-07-07T14:06:25Z"}
   },
   "waiting_on_human_s": 340,
   "modules_rebuilt_after_restore": 4,
@@ -52,6 +61,11 @@ line again, so committed history remains append-only.
 - `stages` — canonical stage names: `intake`, `localize`, `spec`, `design-review`,
   `plan`, `test-writing`, `implement`, `verify`, `pr`, `ci`. Add stages only by
   amending this schema (bump `schema`).
+- `activities` (v5) — optional bounded work timers emitted with
+  `./dev telemetry activity --name <activity> --event start|stop`. The closed
+  activity vocabulary is `localization`, `index`, `test-scaffolding`,
+  `compilation`, and `test-execution`. Activities may sit inside a broader stage;
+  readers treat a missing activity as unmeasured, never as zero seconds.
 - `waiting_on_human_s` — total seconds parked on a human gate. Kept separate so
   work-time metrics stay honest.
 - `modules_rebuilt_after_restore` — cache-health metric from `./dev refresh`
@@ -169,6 +183,8 @@ with transcripts/diffs).
 | Incremental: leaf module edit | 1 module / 4.9s | — |
 | Incremental: comment-level edit to core/core/Text.hs | 6 modules / 6.2s | — |
 | No-op `cabal build` overhead | 0.3s | — |
+| Cold `who-calls` fallback (no `.hie`, measured 2026-09-04) | **0.32s** | <3s ✓ |
+| Warm cached `who-calls` (31 refs, measured 2026-09-04) | **0.74s** | <3s ✓ |
 
 Notes: GHC recompilation checking is content-hash based (touch ≠ rebuild;
 interface-preserving edits don't cascade). All loop scripts self-provision the

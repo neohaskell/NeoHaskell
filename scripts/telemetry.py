@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Pipeline telemetry emitter (Phase 1; schema v4 Phase 6). Schema: telemetry/SCHEMA.md.
+"""Pipeline telemetry emitter (Phase 1; schema v5 Phase 6). Schema: telemetry/SCHEMA.md.
 
 One JSON line per pipeline run, appended to telemetry/runs.jsonl. Never
 hand-written — pipeline scripts call this tool.
@@ -8,6 +8,7 @@ Usage (via the `./dev telemetry` verb — this file has no PATH entry):
   ./dev telemetry start   --run-id 2026-07-07-001 --request "issue#712"
   ./dev telemetry stage   --name implement --event start [--model sonnet]
   ./dev telemetry stage   --name implement --event stop  [--repair-rounds 2] [--invented-api-events 3]
+  ./dev telemetry activity --name compilation --event start|stop
   ./dev telemetry wait    --seconds 340            # add waiting-on-human time
   ./dev telemetry rebuilt --count 4                # cache-health metric
   ./dev telemetry consult --asset alias:auth       # usage accounting (Phase 6, task 5e)
@@ -43,6 +44,7 @@ STAGES = [
     "intake", "localize", "spec", "design-review", "plan",
     "test-writing", "implement", "verify", "pr", "ci",
 ]
+ACTIVITIES = ["localization", "index", "test-scaffolding", "compilation", "test-execution"]
 OUTCOMES = ["ok", "parked", "failed", "abandoned"]
 FAILURE_LABELS = [
     "wrong-intent", "wrong-localization", "dialect-violation", "invented-api",
@@ -56,7 +58,7 @@ DELTA_TYPES = [
     "alias", "extension-point", "phrasebook", "hot-card", "hlint-rule",
     "hook", "cli-utility", "skill-edit", "telemetry-label", "PRUNE", "none",
 ]
-CURRENT_SCHEMA = 4
+CURRENT_SCHEMA = 5
 
 
 # De-facto run-id format (documented in telemetry/SCHEMA.md): also guards the
@@ -126,6 +128,7 @@ def cmd_start(args) -> None:
         "run_id": args.run_id,
         "request_ref": args.request,
         "stages": {},
+        "activities": {},
         "waiting_on_human_s": 0,
         "modules_rebuilt_after_restore": None,
         "assets_consulted": [],
@@ -154,6 +157,20 @@ def cmd_stage(args) -> None:
         if args.invented_api_events is not None:
             stage["invented_api_events"] = non_negative(args.invented_api_events,
                                                         "--invented-api-events")
+    save(run)
+
+
+def cmd_activity(args) -> None:
+    if args.name not in ACTIVITIES:
+        sys.exit(
+            f"telemetry: unknown activity '{args.name}' "
+            f"(activity vocabulary: {', '.join(ACTIVITIES)})"
+        )
+    run = load()
+    activity = run.setdefault("activities", {}).setdefault(
+        args.name, {"start": None, "stop": None}
+    )
+    activity[args.event] = now()
     save(run)
 
 
@@ -426,9 +443,20 @@ def self_test() -> int:
         check("start", lambda: cmd_start(ns(run_id="t-001", request="issue#0")), False)
         cur = json.loads(CURRENT.read_text())
         if cur.get("schema") != CURRENT_SCHEMA or cur.get("asset_delta") is not None \
-                or cur.get("assets_consulted") != [] or cur.get("improvements") != []:
+                or cur.get("assets_consulted") != [] or cur.get("improvements") != [] \
+                or cur.get("activities") != {}:
             print(f"telemetry self-test FAIL start-shape: {cur}")
             fails += 1
+        for activity_name in ACTIVITIES:
+            check(f"activity-{activity_name}-start", lambda name=activity_name: cmd_activity(
+                ns(name=name, event="start")), False)
+            check(f"activity-{activity_name}-stop", lambda name=activity_name: cmd_activity(
+                ns(name=name, event="stop")), False)
+        activity_run = json.loads(CURRENT.read_text())
+        if set(activity_run.get("activities", {})) != set(ACTIVITIES):
+            print(f"telemetry self-test FAIL activities: {activity_run.get('activities')}")
+            fails += 1
+        check("activity-unknown", lambda: cmd_activity(ns(name="thinking", event="start")), True)
         check("consult-ok", lambda: cmd_consult(ns(asset="alias:auth")), False)
         check("consult-bad", lambda: cmd_consult(ns(asset="nocolon")), True)
         # non-ok outcomes require an asset delta from the closed taxonomy
@@ -553,7 +581,7 @@ def self_test() -> int:
             fails += 1
 
     if fails == 0:
-        print("telemetry self-test: OK — schema-v4 fields, usage accounting, asset-delta "
+        print("telemetry self-test: OK — schema-v5 activities, usage accounting, asset-delta "
               "enforcement, unmerged-tail reopen, run-id collision guard, none-colon "
               "justification, and label/schema-version/delta-type parity covered")
     return 1 if fails else 0
@@ -577,6 +605,11 @@ def main() -> None:
     s.add_argument("--repair-rounds", type=int)
     s.add_argument("--invented-api-events", type=int)
     s.set_defaults(fn=cmd_stage)
+
+    s = sub.add_parser("activity")
+    s.add_argument("--name", required=True)
+    s.add_argument("--event", required=True, choices=["start", "stop"])
+    s.set_defaults(fn=cmd_activity)
 
     s = sub.add_parser("wait")
     s.add_argument("--seconds", type=int, required=True)

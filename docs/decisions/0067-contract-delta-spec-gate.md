@@ -82,7 +82,7 @@ process that already has write access to the checkout and gate implementation.
 
 `.pipeline/state.json` (gitignored), manipulated only via `./dev pipeline`
 (init/status/advance/set/approve/park/resume; schema-validated on every
-save). Stage names are the telemetry schema v4 canon. Advancing past `spec`
+save). Stage names are the telemetry schema v5 canon. Advancing past `spec`
 without a recorded approval is mechanically refused. Parking requires a
 label from the closed failure taxonomy.
 

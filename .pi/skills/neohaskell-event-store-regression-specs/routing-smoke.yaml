@@ -1,0 +1,60 @@
+{
+  "recipes": [
+    {
+      "key": "insertion-guard",
+      "prompt": "Require the command executor to send one exact InsertionType to the event-store boundary.",
+      "canonical_example": "core/testlib/Test/Service/CommandHandler/Execute/Spec.hs:canonically records a consistency conflict, refetch, and re-decision",
+      "helpers": ["seedStream", "requireInsertionType", "recordInsertions"],
+      "compile_command": "./dev check lib:nhcore",
+      "test_command": "./dev test \"canonically records a consistency conflict\" nhcore-test-service"
+    },
+    {
+      "key": "record-payloads-and-revisions",
+      "prompt": "Record attempted insertion payloads and every fetched entity revision around command execution.",
+      "canonical_example": "core/testlib/Test/Service/CommandHandler/Execute/Spec.hs:canonically records a consistency conflict, refetch, and re-decision",
+      "helpers": ["recordInsertions", "recordFetchedRevisions"],
+      "compile_command": "./dev check lib:nhcore",
+      "test_command": "./dev test \"canonically records a consistency conflict\" nhcore-test-service"
+    },
+    {
+      "key": "consistency-conflict-refetch",
+      "prompt": "Fail the first append with ConsistencyCheckFailed and prove the executor refetches and re-decides.",
+      "canonical_example": "core/testlib/Test/Service/CommandHandler/Execute/Spec.hs:canonically records a consistency conflict, refetch, and re-decision",
+      "helpers": ["failFirstWithConsistencyConflict", "recordFetchedRevisions", "recordInsertions"],
+      "compile_command": "./dev check lib:nhcore",
+      "test_command": "./dev test \"canonically records a consistency conflict\" nhcore-test-service"
+    },
+    {
+      "key": "postgres-append-barrier",
+      "prompt": "Hold two PostgreSQL appends at the insert boundary and release both without sleeps.",
+      "canonical_example": "core/testlib/Test/Service/EventStore/OptimisticConcurrency/Spec.hs:will only allow one event to be appended, when two writers try to append at the same time",
+      "helpers": ["newInsertBarrier", "barrierBeforeInsert", "awaitInsertions", "releaseInsertions"],
+      "compile_command": "./dev check lib:nhcore",
+      "test_command": "POSTGRES_AVAILABLE=true ./dev test \"will only allow one event to be appended\" nhcore-test-service"
+    },
+    {
+      "key": "stream-creation-race",
+      "prompt": "Race two StreamCreation decisions and prove exactly one append wins.",
+      "canonical_example": "core/testlib/Test/Service/EventStore/OptimisticConcurrency/Spec.hs:allows only one concurrent StreamCreation",
+      "helpers": ["newInsertBarrier", "barrierBeforeInsert", "awaitInsertions", "releaseInsertions"],
+      "compile_command": "./dev check lib:nhcore",
+      "test_command": "POSTGRES_AVAILABLE=true ./dev test \"allows only one concurrent StreamCreation\" nhcore-test-service"
+    },
+    {
+      "key": "any-stream-state",
+      "prompt": "Prove AnyStreamState remains deliberately unconditional.",
+      "canonical_example": "core/testlib/Test/Service/EventStore/OptimisticConcurrency/Spec.hs:keeps AnyStreamState deliberately unconditional",
+      "helpers": ["seedStream"],
+      "compile_command": "./dev check lib:nhcore",
+      "test_command": "./dev test \"keeps AnyStreamState deliberately unconditional\" nhcore-test-service"
+    }
+  ],
+  "scaffold_contract": {
+    "reasoning_tier": "low",
+    "source_reads": [
+      "core/testlib/Test/Service/EventStore/Regression.hs",
+      "the selected canonical_example"
+    ],
+    "required_result": "The generated test compiles and its one new expectation fails on unchanged production code for the intended reason."
+  }
+}

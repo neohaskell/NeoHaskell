@@ -92,6 +92,8 @@ installer/target/
 .hiedb
 .hiedb-shm
 .hiedb-wal
+.hiedb-meta
+.hiedb-tools
 __pycache__/
 
 # Phase 4: ./dev api hoogle databases (local build artifacts — rebuilt by

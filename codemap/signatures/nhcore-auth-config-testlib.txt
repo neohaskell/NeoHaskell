@@ -1120,6 +1120,18 @@ module Test.Service.EventStore.ReadAllForwardsFromStart.Spec
 spec :: Task Text (EventStore CartEvent) -> Spec Unit
 specWithCount :: Task Text (EventStore CartEvent) -> Int -> Spec Unit
 
+module Test.Service.EventStore.Regression
+awaitInsertions :: Int -> InsertBarrier -> Task error Unit
+barrierBeforeInsert :: InsertBarrier -> EventStore event -> EventStore event
+data InsertBarrier
+failFirstWithConsistencyConflict :: EventStore event -> Task error (EventStore event)
+newInsertBarrier :: Task error InsertBarrier
+recordFetchedRevisions :: forall k state (event :: k) error. EntityFetcher state event -> Task error (EntityFetcher state event, Task error (Array (Maybe StreamPosition)))
+recordInsertions :: EventStore event -> Task error (EventStore event, Task error (Array (InsertionPayload event)))
+releaseInsertions :: Int -> InsertBarrier -> Task error Unit
+requireInsertionType :: InsertionType -> EventStore event -> EventStore event
+seedStream :: EventStore event -> EntityName -> StreamId -> Array event -> Task Text Unit
+
 module Test.Service.EventStore.StreamTruncation.Context
 Context :: EventStore CartEvent -> StreamId -> Context
 [store] :: Context -> EventStore CartEvent
