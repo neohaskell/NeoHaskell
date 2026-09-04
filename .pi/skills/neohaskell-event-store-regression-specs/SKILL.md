@@ -16,7 +16,7 @@ Create one compiling test whose new expectation is red for the requested behavio
 | `consistency-conflict-refetch` | Fail the first append and prove refetch plus re-decision | `in-memory` | `2` | `core/testlib/Test/Service/CommandHandler/Execute/Spec.hs` | `canonically records a consistency conflict, refetch, and re-decision` | `failFirstWithConsistencyConflict`, `recordFetchedRevisions`, `recordInsertions` |
 | `postgres-append-barrier` | Hold two PostgreSQL appends at the insert boundary without sleeps | `postgres` | `3` | `core/testlib/Test/Service/EventStore/OptimisticConcurrency/Spec.hs` | `will only allow one event to be appended, when two writers try to append at the same time` | `newInsertBarrier`, `barrierBeforeInsert`, `awaitInsertions`, `releaseInsertions` |
 | `stream-creation-race` | Race two PostgreSQL `StreamCreation` decisions | `postgres` | `3` | `core/testlib/Test/Service/EventStore/OptimisticConcurrency/Spec.hs` | `allows only one concurrent StreamCreation` | `newInsertBarrier`, `barrierBeforeInsert`, `awaitInsertions`, `releaseInsertions` |
-| `any-stream-state` | Prove unconditional `AnyStreamState` behavior | `in-memory` | `3` | `core/testlib/Test/Service/EventStore/OptimisticConcurrency/Spec.hs` | `keeps AnyStreamState deliberately unconditional` | `seedStream` |
+| `any-stream-state` | Prove unconditional `AnyStreamState` behavior | `in-memory` | `3` | `core/testlib/Test/Service/EventStore/OptimisticConcurrency/Spec.hs` | `keeps AnyStreamState deliberately unconditional` | `seedStream`, `newInsertBarrier`, `barrierBeforeInsert`, `awaitInsertions`, `releaseInsertions` |
 
 ## Procedure
 

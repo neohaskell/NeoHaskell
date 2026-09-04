@@ -9,6 +9,7 @@ separately below). Consult BEFORE writing code; full surface:
 codemap/signatures/ · type-directed search: ./dev api "<type>"
 
 ## Task
+
 - `yield :: value -> Task w value`  <!-- 596 call sites -->
 - `ignoreError :: Task err Unit -> Task w Unit`  <!-- 240 call sites -->
 - `mapError :: (err1 -> err2) -> Task err1 value -> Task err2 value`  <!-- 224 call sites -->
@@ -21,6 +22,7 @@ codemap/signatures/ · type-directed search: ./dev api "<type>"
 - `map :: (input -> output) -> Task err input -> Task err output`  <!-- 23 call sites -->
 
 ## Array
+
 - `map :: (a -> b) -> Array a -> Array b`  <!-- 101 call sites -->
   - `>>> map sqrt (fromLinkedList [1,4,9] :: Array Float)` → `Array [1.0,2.0,3.0]`
 - `fromLinkedList :: LinkedList a -> Array a`  <!-- 92 call sites -->
@@ -42,6 +44,7 @@ codemap/signatures/ · type-directed search: ./dev api "<type>"
   - `>>> reduce (+) 0 (repeat 3 5 :: Array Int)` → `15`
 
 ## Text
+
 - `fromLinkedList :: LinkedList Char -> Text`  <!-- 90 call sites -->
 - `toLinkedList :: Text -> LinkedList Char`  <!-- 78 call sites -->
 - `toBytes :: Text -> Bytes`  <!-- 66 call sites -->
@@ -54,6 +57,7 @@ codemap/signatures/ · type-directed search: ./dev api "<type>"
 - `toLower :: Text -> Text`  <!-- 20 call sites -->
 
 ## Json
+
 - `object :: [(Text, Value)] -> Value`  <!-- 102 call sites -->
 - `toJSON :: ToJSON a => a -> Value`  <!-- 92 call sites -->
 - `yield :: value -> Parser value`  <!-- 44 call sites -->
@@ -66,6 +70,7 @@ codemap/signatures/ · type-directed search: ./dev api "<type>"
 - `null :: Value`  <!-- 4 call sites -->
 
 ## Log
+
 - `debug :: HasCallStack => Text -> Task w Unit`  <!-- 114 call sites -->
 - `warn :: HasCallStack => Text -> Task w Unit`  <!-- 72 call sites -->
 - `withScope :: Array (Text, Text) -> Task err value -> Task err value`  <!-- 57 call sites -->
@@ -73,6 +78,7 @@ codemap/signatures/ · type-directed search: ./dev api "<type>"
 - `critical :: HasCallStack => Text -> Task w Unit`  <!-- 11 call sites -->
 
 ## Map
+
 - `empty :: Map k a`  <!-- 64 call sites -->
 - `set :: (Eq key, Ord key) => key -> value -> Map key value -> Map key value`  <!-- 61 call sites -->
 - `get :: (Eq key, Ord key) => key -> Map key value -> Maybe value`  <!-- 41 call sites -->
@@ -85,6 +91,7 @@ codemap/signatures/ · type-directed search: ./dev api "<type>"
 - `mapValues :: (valueA -> valueB) -> Map key valueA -> Map key valueB`  <!-- 2 call sites -->
 
 ## Parser
+
 - `char :: Char -> Parser Char`  <!-- 32 call sites -->
 - `yield :: value -> Parser value`  <!-- 32 call sites -->
 - `spaces :: Parser Unit`  <!-- 28 call sites -->
@@ -97,6 +104,7 @@ codemap/signatures/ · type-directed search: ./dev api "<type>"
 - `whitespace :: Parser Unit`  <!-- 7 call sites -->
 
 ## ConcurrentVar
+
 - `modify :: (value -> value) -> ConcurrentVar value -> Task w Unit`  <!-- 44 call sites -->
 - `containing :: value -> Task w (ConcurrentVar value)`  <!-- 34 call sites -->
 - `peek :: ConcurrentVar value -> Task w value`  <!-- 34 call sites -->
@@ -107,6 +115,7 @@ codemap/signatures/ · type-directed search: ./dev api "<type>"
 - `new :: forall value w. Task w (ConcurrentVar value)`  <!-- 2 call sites -->
 
 ## Bytes
+
 - `unwrap :: Bytes -> ByteString`  <!-- 47 call sites -->
 - `fromLegacy :: ByteString -> Bytes`  <!-- 30 call sites -->
 - `toLazyLegacy :: Bytes -> LazyByteString`  <!-- 16 call sites -->
@@ -120,12 +129,14 @@ codemap/signatures/ · type-directed search: ./dev api "<type>"
 - `fromLazyLegacy :: LazyByteString -> Bytes`  <!-- 1 call sites -->
 
 ## Maybe
+
 - `withDefault :: a -> Maybe a -> a`  <!-- 55 call sites -->
 - `map :: (a -> b) -> Maybe a -> Maybe b`  <!-- 12 call sites -->
 - `getOrDie :: HasCallStack => Maybe a -> a`  <!-- 9 call sites -->
 - `andThen :: (a -> Maybe b) -> Maybe a -> Maybe b`  <!-- 3 call sites -->
 
 ## Integration
+
 - `action :: (ActionContext -> Task IntegrationError (Maybe CommandPayload)) -> Action`  <!-- 26 call sites -->
 - `outbound :: ToAction config => config -> Action`  <!-- 17 call sites -->
 - `emitCommand :: forall command (name :: Symbol). (ToJSON command, name ~ NameOf command, KnownSymbol name) => command -> Task IntegrationError (Maybe CommandPayload)`  <!-- 10 call sites -->
@@ -138,12 +149,14 @@ codemap/signatures/ · type-directed search: ./dev api "<type>"
 - `lookup :: Text -> ImmutableProviderRegistry -> Maybe ValidatedOAuth2ProviderConfig`  <!-- 1 call sites -->
 
 ## Var
+
 - `set :: value -> Var value -> Task err Unit`  <!-- 23 call sites -->
 - `get :: Var value -> Task err value`  <!-- 20 call sites -->
 - `new :: value -> Task err (Var value)`  <!-- 14 call sites -->
 - `decrement :: Num number => Var number -> Task err Unit`  <!-- 2 call sites -->
 
 ## Config
+
 - `get :: (Typeable config, HasCallStack) => config`  <!-- 11 call sites -->
 - `defaultsTo :: Lift value => value -> FieldDef -> FieldDef`  <!-- 10 call sites -->
 - `doc :: Text -> FieldDef -> FieldDef`  <!-- 10 call sites -->
@@ -155,6 +168,7 @@ codemap/signatures/ · type-directed search: ./dev api "<type>"
 - `secret :: FieldDef -> FieldDef`  <!-- 1 call sites -->
 
 ## LinkedList
+
 - `map :: (a -> b) -> LinkedList a -> LinkedList b`  <!-- 15 call sites -->
 - `any :: (a -> Bool) -> LinkedList a -> Bool`  <!-- 6 call sites -->
 - `filter :: (a -> Bool) -> LinkedList a -> LinkedList a`  <!-- 5 call sites -->
@@ -167,6 +181,7 @@ codemap/signatures/ · type-directed search: ./dev api "<type>"
 - `concat :: LinkedList (LinkedList a) -> LinkedList a`  <!-- 1 call sites -->
 
 ## Uuid
+
 - `generate :: Task w Uuid`  <!-- 21 call sites -->
 - `toText :: Uuid -> Text`  <!-- 9 call sites -->
 - `nil :: Uuid`  <!-- 6 call sites -->
@@ -177,6 +192,7 @@ codemap/signatures/ · type-directed search: ./dev api "<type>"
 - `fromLegacy :: UUID -> Uuid`  <!-- 2 call sites -->
 
 ## AsyncTask
+
 - `sleep :: Int -> Task w Unit`  <!-- 18 call sites -->
 - `run :: Show err => Task err result -> Task err (AsyncTask err result)`  <!-- 13 call sites -->
 - `runConcurrently :: Show err => (Task err a, Task err b) -> Task err (a, b)`  <!-- 8 call sites -->
@@ -186,6 +202,7 @@ codemap/signatures/ · type-directed search: ./dev api "<type>"
 - `waitCatch :: Show err => AsyncTask err result -> Task err2 (Result Text result)`  <!-- 1 call sites -->
 
 ## Path
+
 - `toLinkedList :: Path -> LinkedList Char`  <!-- 18 call sites -->
 - `fromText :: Text -> Maybe Path`  <!-- 9 call sites -->
 - `toText :: Path -> Text`  <!-- 7 call sites -->
@@ -195,6 +212,7 @@ codemap/signatures/ · type-directed search: ./dev api "<type>"
 - `endsWith :: Text -> Path -> Bool`  <!-- 1 call sites -->
 
 ## ConcurrentMap
+
 - `new :: forall key value w. Task w (ConcurrentMap key value)`  <!-- 10 call sites -->
 - `get :: (Hashable key, Eq key) => key -> ConcurrentMap key value -> Task w (Maybe value)`  <!-- 7 call sites -->
 - `getOrInsert :: (Hashable key, Eq key) => key -> value -> ConcurrentMap key value -> Task w (value, Maybe value)`  <!-- 4 call sites -->
@@ -207,6 +225,7 @@ codemap/signatures/ · type-directed search: ./dev api "<type>"
 - `getOrInsertIfM :: (Hashable key, Eq key) => key -> value -> (value -> STM Bool) -> ConcurrentMap key value -> Task w (value, Maybe value)`  <!-- 1 call sites -->
 
 ## Service.EventStore.Postgres.Sessions
+
 - `run :: Default result => Connection -> Session result -> Task UsageError result`  <!-- 13 call sites -->
 - `selectMaxGlobalPosition :: Session (Maybe StreamPosition)`  <!-- 6 call sites -->
 - `runConnection :: Default result => Connection -> Session result -> Task SessionError result`  <!-- 5 call sites -->
@@ -219,6 +238,7 @@ codemap/signatures/ · type-directed search: ./dev api "<type>"
 - `selectEventByGlobalPositionSession :: Int64 -> Session (Maybe PostgresEventRecord)`  <!-- 1 call sites -->
 
 ## Stream
+
 - `fromArray :: Array value -> Task error (Stream value)`  <!-- 7 call sites -->
 - `mapStream :: (valueA -> valueB) -> Stream valueA -> Task error (Stream valueB)`  <!-- 7 call sites -->
 - `new :: forall value error. Task error (Stream value)`  <!-- 7 call sites -->
@@ -228,12 +248,14 @@ codemap/signatures/ · type-directed search: ./dev api "<type>"
 - `end :: Stream value -> Task error Unit`  <!-- 2 call sites -->
 
 ## DateTime
+
 - `now :: Task w DateTime`  <!-- 18 call sites -->
 - `toEpochSeconds :: DateTime -> Int64`  <!-- 10 call sites -->
 - `fromEpochSeconds :: Int64 -> DateTime`  <!-- 6 call sites -->
 - `addSeconds :: Int64 -> DateTime -> DateTime`  <!-- 1 call sites -->
 
 ## Http.Client
+
 - `request :: Request`  <!-- 6 call sites -->
 - `withUrl :: Text -> Request -> Request`  <!-- 6 call sites -->
 - `withTimeout :: Int -> Request -> Request`  <!-- 5 call sites -->
@@ -246,6 +268,7 @@ codemap/signatures/ · type-directed search: ./dev api "<type>"
 - `delete :: FromJSON response => Request -> Task Error (Response response)`  <!-- 1 call sites -->
 
 ## Service.Transport.Mcp.JsonRpc
+
 - `errorResponse :: Maybe Value -> JsonRpcError -> JsonRpcResponse`  <!-- 12 call sites -->
 - `invalidParams :: Text -> JsonRpcError`  <!-- 8 call sites -->
 - `successResponse :: Maybe Value -> Value -> JsonRpcResponse`  <!-- 7 call sites -->
@@ -256,6 +279,7 @@ codemap/signatures/ · type-directed search: ./dev api "<type>"
 - `parseRequest :: Bytes -> Result JsonRpcResponse JsonRpcRequest`  <!-- 1 call sites -->
 
 ## Mappable
+
 - `fmap :: Functor f => (a -> b) -> f a -> f b`  <!-- 17 call sites -->
 - `map :: Mappable mappable => (typeA -> typeB) -> mappable typeA -> mappable typeB`  <!-- 16 call sites -->
 
@@ -269,26 +293,29 @@ Ranked from call sites in spec/test files only. Reach for these
 when WRITING TESTS; they are not feature-code frequency signal.
 
 ## Task
-- `mapError :: (err1 -> err2) -> Task err1 value -> Task err2 value`  <!-- 817 test call sites -->
-- `yield :: value -> Task w value`  <!-- 458 test call sites -->
-- `asResult :: Task err value -> Task err2 (Result err value)`  <!-- 281 test call sites -->
+
+- `mapError :: (err1 -> err2) -> Task err1 value -> Task err2 value`  <!-- 815 test call sites -->
+- `yield :: value -> Task w value`  <!-- 459 test call sites -->
+- `asResult :: Task err value -> Task err2 (Result err value)`  <!-- 284 test call sites -->
 - `mapArray :: (element -> Task err output) -> Array element -> Task err (Array output)`  <!-- 126 test call sites -->
-- `throw :: err -> Task err w`  <!-- 118 test call sites -->
+- `throw :: err -> Task err w`  <!-- 119 test call sites -->
 - `andThen :: (input -> Task err output) -> Task err input -> Task err output`  <!-- 91 test call sites -->
 - `fromIO :: IO value -> Task w value`  <!-- 90 test call sites -->
 - `map :: (input -> output) -> Task err input -> Task err output`  <!-- 84 test call sites -->
 
 ## Array
-- `length :: Array a -> Int`  <!-- 263 test call sites -->
+
+- `length :: Array a -> Int`  <!-- 262 test call sites -->
 - `fromLinkedList :: LinkedList a -> Array a`  <!-- 220 test call sites -->
 - `empty :: Array a`  <!-- 219 test call sites -->
-- `map :: (a -> b) -> Array a -> Array b`  <!-- 120 test call sites -->
+- `map :: (a -> b) -> Array a -> Array b`  <!-- 121 test call sites -->
 - `get :: Int -> Array a -> Maybe a`  <!-- 78 test call sites -->
 - `wrap :: a -> Array a`  <!-- 54 test call sites -->
 - `initialize :: Int -> (Int -> a) -> Array a`  <!-- 47 test call sites -->
 - `contains :: Eq value => value -> Array value -> Bool`  <!-- 41 test call sites -->
 
 ## Text
+
 - `contains :: Text -> Text -> Bool`  <!-- 436 test call sites -->
 - `toBytes :: Text -> Bytes`  <!-- 89 test call sites -->
 - `fromLinkedList :: LinkedList Char -> Text`  <!-- 56 test call sites -->
@@ -299,6 +326,7 @@ when WRITING TESTS; they are not feature-code frequency signal.
 - `all :: (Char -> Bool) -> Text -> Bool`  <!-- 10 test call sites -->
 
 ## Parser
+
 - `run :: Parser value -> Text -> Result ParseError value`  <!-- 246 test call sites -->
 - `char :: Char -> Parser Char`  <!-- 134 test call sites -->
 - `text :: Text -> Parser Text`  <!-- 65 test call sites -->
@@ -309,6 +337,7 @@ when WRITING TESTS; they are not feature-code frequency signal.
 - `anyChar :: Parser Char`  <!-- 10 test call sites -->
 
 ## Layout
+
 - `text :: Text -> Blueprint annotation`  <!-- 230 test call sites -->
 - `render :: Blueprint ann -> Text`  <!-- 48 test call sites -->
 - `joinTight :: Array (Blueprint ann) -> Blueprint ann`  <!-- 38 test call sites -->
@@ -319,6 +348,7 @@ when WRITING TESTS; they are not feature-code frequency signal.
 - `empty :: Blueprint annotation`  <!-- 15 test call sites -->
 
 ## Json
+
 - `toJSON :: ToJSON a => a -> Value`  <!-- 146 test call sites -->
 - `decodeText :: FromJSON value => Text -> Result Text value`  <!-- 137 test call sites -->
 - `encodeText :: ToJSON value => value -> Text`  <!-- 117 test call sites -->
@@ -329,6 +359,7 @@ when WRITING TESTS; they are not feature-code frequency signal.
 - `withObject :: Text -> (Object -> Parser value) -> Value -> Parser value`  <!-- 3 test call sites -->
 
 ## ConcurrentVar
+
 - `modify :: (value -> value) -> ConcurrentVar value -> Task w Unit`  <!-- 119 test call sites -->
 - `containing :: value -> Task w (ConcurrentVar value)`  <!-- 118 test call sites -->
 - `peek :: ConcurrentVar value -> Task w value`  <!-- 101 test call sites -->
@@ -339,10 +370,11 @@ when WRITING TESTS; they are not feature-code frequency signal.
 - `modifyReturning :: (value -> Task Never (value, a)) -> ConcurrentVar value -> Task w a`  <!-- 3 test call sites -->
 
 ## Uuid
+
 - `generate :: Task w Uuid`  <!-- 183 test call sites -->
 - `nil :: Uuid`  <!-- 95 test call sites -->
 - `toText :: Uuid -> Text`  <!-- 40 test call sites -->
 - `generateV5 :: Uuid -> Text -> Uuid`  <!-- 17 test call sites -->
 - `fromText :: Text -> Maybe Uuid`  <!-- 3 test call sites -->
 
-*cut: 137 more modules (Map (257), Service.Application (250), Set (233), Stream (211), AsyncTask (207), …) — full surface: codemap/signatures/*
+*cut: 137 more modules (Map (257), Service.Application (250), Set (233), AsyncTask (211), Stream (211), …) — full surface: codemap/signatures/*

@@ -190,15 +190,31 @@ def cmd_activity(args) -> None:
     save(run)
 
 
+def parse_activity_timestamp(value):
+    if not isinstance(value, str):
+        return None
+    try:
+        return datetime.datetime.strptime(value, "%Y-%m-%dT%H:%M:%SZ").replace(
+            tzinfo=datetime.timezone.utc
+        )
+    except ValueError:
+        return None
+
+
+def completed_activity_interval(interval) -> bool:
+    if not isinstance(interval, dict):
+        return False
+    start = parse_activity_timestamp(interval.get("start"))
+    stop = parse_activity_timestamp(interval.get("stop"))
+    return start is not None and stop is not None and stop >= start
+
+
 def open_activities(run: dict) -> list:
     open_names = []
     for name, raw_intervals in (run.get("activities", {}) or {}).items():
         intervals = [raw_intervals] if isinstance(raw_intervals, dict) else raw_intervals
-        if not isinstance(intervals, list):
-            open_names.append(name)
-            continue
-        if any(not isinstance(interval, dict) or not interval.get("start")
-               or interval.get("stop") is None for interval in intervals):
+        if not isinstance(intervals, list) or not intervals \
+                or any(not completed_activity_interval(interval) for interval in intervals):
             open_names.append(name)
     return open_names
 
@@ -493,12 +509,20 @@ def self_test() -> int:
                 or len(activity_run["activities"]["compilation"]) != 2:
             print(f"telemetry self-test FAIL activities: {activity_run.get('activities')}")
             fails += 1
-        check("activity-stop-without-start", lambda: cmd_activity(
+        completed_activity = CURRENT.read_text()
+        check("activity-duplicate-stop", lambda: cmd_activity(
             ns(name="index", event="stop")), True)
+        if CURRENT.read_text() != completed_activity:
+            print("telemetry self-test FAIL duplicate stop modified activity data")
+            fails += 1
         check("activity-open", lambda: cmd_activity(
             ns(name="test-execution", event="start")), False)
+        running_activity = CURRENT.read_text()
         check("activity-double-start", lambda: cmd_activity(
             ns(name="test-execution", event="start")), True)
+        if CURRENT.read_text() != running_activity:
+            print("telemetry self-test FAIL duplicate start modified activity data")
+            fails += 1
         check("finish-with-open-activity", lambda: cmd_finish(ns(
             outcome="ok", failure_label=None, failure_note=None, asset_delta=None,
             improvement=[])), True)
@@ -573,6 +597,35 @@ def self_test() -> int:
         check("finish-improvement-none-rejected", lambda: cmd_finish(
             ns(outcome="ok", failure_label=None, failure_note=None, asset_delta=None,
                improvement=["none:whatever"])), True)
+
+        invalid_interval_run = json.loads(CURRENT.read_text())
+        invalid_interval_run["activities"] = {
+            "compilation": {
+                "start": "2026-01-01T00:00:02Z",
+                "stop": "2026-01-01T00:00:01Z",
+            }
+        }
+        save(invalid_interval_run)
+        reversed_activity = CURRENT.read_text()
+        check("finish-reversed-legacy-activity-rejected", lambda: cmd_finish(
+            ns(outcome="ok", failure_label=None, failure_note=None, asset_delta=None,
+               improvement=[])), True)
+        if CURRENT.read_text() != reversed_activity:
+            print("telemetry self-test FAIL reversed interval modified activity data")
+            fails += 1
+
+        invalid_interval_run["activities"]["compilation"] = {
+            "start": "not-a-timestamp",
+            "stop": "2026-01-01T00:00:03Z",
+        }
+        save(invalid_interval_run)
+        unparsable_activity = CURRENT.read_text()
+        check("finish-unparsable-activity-rejected", lambda: cmd_finish(
+            ns(outcome="ok", failure_label=None, failure_note=None, asset_delta=None,
+               improvement=[])), True)
+        if CURRENT.read_text() != unparsable_activity:
+            print("telemetry self-test FAIL unparsable interval modified activity data")
+            fails += 1
 
     # anti-rot: the failure-label taxonomy is duplicated in scripts/pipeline-state
     # (LABELS) — a drift there means a run the emitter accepts, the state machine

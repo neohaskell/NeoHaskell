@@ -40,14 +40,29 @@ while [ "$#" -gt 0 ]; do
 done
 printf 'loading\n' > "${out}"
 sleep 0.08
-printf 'All good\n' > "${out}"
-sleep 0.15
+if [ "${WATCH_TEST_ERROR:-0}" = "1" ]; then
+  printf 'src/Foo.hs:1:1: error: All good is not defined\n' > "${out}"
+  sleep 0.5
+else
+  printf 'All good\n' > "${out}"
+  for _attempt in $(seq 1 500); do
+    [ -s "${WATCH_TEST_CALLS}" ] && break
+    sleep 0.01
+  done
+fi
 SH
   cat > "${refresh}" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
-printf '%s %s\n' "$$" "$*" >> "${WATCH_TEST_CALLS}"
-if [ "${WATCH_TEST_BLOCK:-0}" = "1" ]; then sleep 30; else sleep 0.03; fi
+if [ "${WATCH_TEST_BLOCK:-0}" = "1" ]; then
+  sleep 30 &
+  child=$!
+  printf '%s %s %s\n' "$$" "${child}" "$*" >> "${WATCH_TEST_CALLS}"
+  wait "${child}"
+else
+  printf '%s - %s\n' "$$" "$*" >> "${WATCH_TEST_CALLS}"
+  sleep 0.03
+fi
 SH
   chmod +x "${toolchain}" "${refresh}"
   WATCH_TOOLCHAIN="${toolchain}" WATCH_REFRESH="${refresh}" \
@@ -60,7 +75,7 @@ SH
     echo "watch self-test FAIL: refresh was not incremental" >&2
     failures=1
   fi
-  pids="$(awk '{print $1}' "${calls}" 2>/dev/null || true)"
+  pids="$(awk '{print $1 " " $2}' "${calls}" 2>/dev/null || true)"
   for pid in ${pids}; do
     if kill -0 "${pid}" 2>/dev/null; then
       echo "watch self-test FAIL: refresh child ${pid} survived watcher exit" >&2
@@ -68,21 +83,36 @@ SH
     fi
   done
 
-  local blocked_calls blocked_pid
+  local blocked_calls blocked_pid blocked_child
   blocked_calls="${tmp}/blocked-refresh-calls"
   WATCH_TOOLCHAIN="${toolchain}" WATCH_REFRESH="${refresh}" \
     WATCH_OUT="${tmp}/blocked-errors" WATCH_DEBOUNCE_SECONDS=0.02 WATCH_POLL_SECONDS=0.02 \
     WATCH_TEST_CALLS="${blocked_calls}" WATCH_TEST_BLOCK=1 "$0" lib:nhcore-test
   blocked_pid="$(awk 'NR==1 {print $1}' "${blocked_calls}" 2>/dev/null || true)"
-  if [ -z "${blocked_pid}" ]; then
-    echo "watch self-test FAIL: blocked refresh never started" >&2
+  blocked_child="$(awk 'NR==1 {print $2}' "${blocked_calls}" 2>/dev/null || true)"
+  if [ -z "${blocked_pid}" ] || [ -z "${blocked_child}" ]; then
+    echo "watch self-test FAIL: blocked refresh process tree never started" >&2
     failures=1
-  elif kill -0 "${blocked_pid}" 2>/dev/null; then
-    echo "watch self-test FAIL: blocked refresh child ${blocked_pid} survived watcher exit" >&2
+  else
+    for pid in "${blocked_pid}" "${blocked_child}"; do
+      if kill -0 "${pid}" 2>/dev/null; then
+        echo "watch self-test FAIL: blocked refresh process ${pid} survived watcher exit" >&2
+        failures=1
+      fi
+    done
+  fi
+
+  local error_calls
+  error_calls="${tmp}/error-refresh-calls"
+  WATCH_TOOLCHAIN="${toolchain}" WATCH_REFRESH="${refresh}" \
+    WATCH_OUT="${tmp}/error-output" WATCH_DEBOUNCE_SECONDS=0.02 WATCH_POLL_SECONDS=0.02 \
+    WATCH_TEST_CALLS="${error_calls}" WATCH_TEST_ERROR=1 "$0" lib:nhcore-test
+  if [ -s "${error_calls}" ]; then
+    echo "watch self-test FAIL: failed reload refreshed the HIE index" >&2
     failures=1
   fi
   if [ "${failures}" -ne 0 ]; then return 1; fi
-  echo "watch self-test: OK — reloads refresh incrementally; normal and blocked children are reaped"
+  echo "watch self-test: OK — successful reloads refresh; failed reloads skip; process groups are reaped"
 }
 
 if [ "${1:-}" = "--self-test" ]; then
@@ -96,6 +126,7 @@ TOOLCHAIN="${WATCH_TOOLCHAIN:-${SCRIPT_DIR}/with-toolchain}"
 REFRESH="${WATCH_REFRESH:-${SCRIPT_DIR}/refresh-hiedb}"
 DEBOUNCE_SECONDS="${WATCH_DEBOUNCE_SECONDS:-1}"
 POLL_SECONDS="${WATCH_POLL_SECONDS:-2}"
+REFRESH_GROUP_FILE="${WATCH_REFRESH_GROUP_FILE:-${OUT}.hiedb-refresh-pgid}"
 
 # TARGET is spliced into ghcid's --command STRING (shell-evaluated), unlike the
 # other scripts where targets travel as argv. Restrict to cabal target syntax
@@ -117,12 +148,58 @@ WATCH_PID=$!
 warm_hie_index() {
   local previous_stamp=""
   local refresh_pid=""
+  local refresh_pgid=""
+
+  reload_succeeded() {
+    [ -f "${OUT}" ] \
+      && { [ ! -s "${OUT}" ] || grep -Eq '^All good( \([^)]*\))?$' "${OUT}"; }
+  }
+
+  start_refresh() {
+    WATCH_REFRESH_EXEC="${REFRESH}" WATCH_REFRESH_GROUP_FILE="${REFRESH_GROUP_FILE}" \
+      python3 - --if-needed --quiet <<'PY' >/dev/null 2>&1 &
+import os
+import sys
+from pathlib import Path
+
+os.setsid()
+group_file = Path(os.environ["WATCH_REFRESH_GROUP_FILE"])
+temporary = group_file.with_name(f"{group_file.name}.{os.getpid()}")
+temporary.write_text(f"{os.getpgrp()}\n", encoding="utf-8")
+temporary.replace(group_file)
+program = os.environ["WATCH_REFRESH_EXEC"]
+os.execv(program, [program, *sys.argv[1:]])
+PY
+    refresh_pid=$!
+    refresh_pgid=""
+    local attempts=0
+    while [ "${attempts}" -lt 100 ] && kill -0 "${refresh_pid}" 2>/dev/null; do
+      if [ -s "${REFRESH_GROUP_FILE}" ]; then
+        refresh_pgid="$(cat "${REFRESH_GROUP_FILE}")"
+        return 0
+      fi
+      attempts=$((attempts + 1))
+      sleep 0.01
+    done
+    return 0
+  }
+
   cleanup_refresh() {
     if [ -n "${refresh_pid}" ]; then
-      kill "${refresh_pid}" 2>/dev/null || true
+      if [ -n "${refresh_pgid}" ]; then
+        kill -TERM -- "-${refresh_pgid}" 2>/dev/null || true
+        sleep 0.05
+        kill -KILL -- "-${refresh_pgid}" 2>/dev/null || true
+      else
+        kill "${refresh_pid}" 2>/dev/null || true
+      fi
       wait "${refresh_pid}" 2>/dev/null || true
+      refresh_pid=""
+      refresh_pgid=""
+      rm -f "${REFRESH_GROUP_FILE}"
     fi
   }
+
   trap cleanup_refresh EXIT
   trap 'cleanup_refresh; exit 130' INT TERM
   while kill -0 "${WATCH_PID}" 2>/dev/null; do
@@ -133,10 +210,13 @@ warm_hie_index() {
     if [ "${stamp}" != "${previous_stamp}" ]; then
       previous_stamp="${stamp}"
       sleep "${DEBOUNCE_SECONDS}"
-      "${REFRESH}" --if-needed --quiet >/dev/null 2>&1 &
-      refresh_pid=$!
-      wait "${refresh_pid}" 2>/dev/null || true
-      refresh_pid=""
+      if reload_succeeded; then
+        start_refresh
+        wait "${refresh_pid}" 2>/dev/null || true
+        refresh_pid=""
+        refresh_pgid=""
+        rm -f "${REFRESH_GROUP_FILE}"
+      fi
     fi
     sleep "${POLL_SECONDS}"
   done
@@ -144,10 +224,24 @@ warm_hie_index() {
 
 warm_hie_index &
 WARMER_PID=$!
+terminate_refresh_group() {
+  local pgid=""
+  pgid="$(cat "${REFRESH_GROUP_FILE}" 2>/dev/null || true)"
+  if [[ "${pgid}" =~ ^[0-9]+$ ]]; then
+    kill -TERM -- "-${pgid}" 2>/dev/null || true
+  fi
+}
 cleanup() {
+  local active_refresh_pgid=""
+  active_refresh_pgid="$(cat "${REFRESH_GROUP_FILE}" 2>/dev/null || true)"
+  terminate_refresh_group
   kill "${WARMER_PID}" "${WATCH_PID}" 2>/dev/null || true
   wait "${WARMER_PID}" 2>/dev/null || true
   wait "${WATCH_PID}" 2>/dev/null || true
+  if [[ "${active_refresh_pgid}" =~ ^[0-9]+$ ]]; then
+    kill -KILL -- "-${active_refresh_pgid}" 2>/dev/null || true
+  fi
+  rm -f "${REFRESH_GROUP_FILE}"
 }
 trap cleanup EXIT
 trap 'exit 130' INT TERM

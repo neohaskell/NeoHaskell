@@ -32,7 +32,7 @@ grep -qF './dev telemetry' "$active_skill" || err "active skill does not restore
 grep -qF 'telemetry schema v6 canon' "$adr_0067" || err "ADR-0067 has a stale telemetry schema version"
 grep -qF '.claude/allow-expectation-edits' "$adr_0067" || err "ADR-0067 has a stale expectation-approval path"
 grep -qF './dev pipeline approve spec --by <who> --via <channel>' "$adr_0067" || err "ADR-0067 does not name the canonical local approval record"
-if grep -qE 'telemetry schema v2|\.pipeline/allow-expectation-edits|maintainer `@claude` comment' "$adr_0067"; then
+if grep -qE 'telemetry schema v2|telemetry schema v4 canon|\.pipeline/allow-expectation-edits|maintainer `@claude` comment' "$adr_0067"; then
   err "ADR-0067 still contains a superseded active-process contract"
 fi
 grep -qF 'Any request that should end in a PR runs the `neohaskell-pipeline` skill' AGENTS.md || err "AGENTS.md does not route PR work to the restored pipeline"

@@ -210,8 +210,21 @@ retryLogicSpecs backend newCartStoreAndFetcher = do
         streamId
         [CartCreated {entityId = context.cartId}]
 
+      competingPayload <-
+        Event.payloadFromEvents
+          context.cartEntityName
+          streamId
+          [CartCheckedOut {entityId = context.cartId}]
       conflictingStore <- Regression.failFirstWithConsistencyConflict context.cartStore
-      (recordingStore, readInsertions) <- Regression.recordInsertions conflictingStore
+      let insert payload = do
+            firstAttempt <- conflictingStore.insert payload |> Task.asResult
+            case firstAttempt of
+              Err failure -> do
+                context.cartStore.insert competingPayload |> discard
+                Task.throw failure
+              Ok success -> Task.yield success
+      let racingStore = conflictingStore {EventStore.insert = insert}
+      (recordingStore, readInsertions) <- Regression.recordInsertions racingStore
       let guardedStore = Regression.requireInsertionType Event.AnyStreamState recordingStore
       (recordingFetcher, readRevisions) <- Regression.recordFetchedRevisions context.cartFetcher
       let command = AddItemToCart {cartId = context.cartId, itemId = context.itemId1, amount = 1}
@@ -225,18 +238,20 @@ retryLogicSpecs backend newCartStoreAndFetcher = do
           command
 
       case result of
-        CommandAccepted {retriesAttempted} -> retriesAttempted |> shouldBe 1
-        CommandRejected reason -> fail [fmt|Expected retry acceptance, got rejection: #{reason}|]
-        CommandFailed failure _ -> fail [fmt|Expected retry acceptance, got failure: #{failure}|]
-        CommandUnauthorized _ -> fail "Expected retry acceptance, got unauthorized"
+        CommandRejected reason ->
+          reason |> shouldBe "Cannot add items to a checked out cart"
+        CommandAccepted {} -> fail "Expected retry rejection, got acceptance"
+        CommandFailed failure _ -> fail [fmt|Expected retry rejection, got failure: #{failure}|]
+        CommandUnauthorized _ -> fail "Expected retry rejection, got unauthorized"
 
       insertionPayloads <- readInsertions
       insertionPayloads
         |> Array.map (\payload -> payload.insertionType)
-        |> shouldBe [Event.AnyStreamState, Event.AnyStreamState]
+        |> shouldBe [Event.AnyStreamState]
 
       fetchedRevisions <- readRevisions
-      Array.length fetchedRevisions |> shouldBe 2
+      fetchedRevisions
+        |> shouldBe [Just (Event.StreamPosition 0), Just (Event.StreamPosition 1)]
 
       Regression.intentionalRed "insertion-guard" backend
       Regression.intentionalRed "record-payloads-and-revisions" backend

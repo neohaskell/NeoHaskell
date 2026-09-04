@@ -23,6 +23,7 @@ LOCK_PATH="${HIEDB_LOCK_PATH:-${DB_PATH}.index-lock}"
 TOOLCHAIN_FINGERPRINT="${HIEDB_TOOLCHAIN_FINGERPRINT:-$(${SCRIPT_DIR}/toolchain-fp)}"
 MODE="if-needed"
 QUIET=0
+LOCK_HELD="${HIEDB_INDEX_LOCK_HELD:-0}"
 
 usage() {
   echo "usage: ./dev hiedb [--if-needed|--force|--rebuild] [--quiet]" >&2
@@ -83,32 +84,81 @@ has_hie_artifacts() {
   [ -d "${DIST_DIR}" ] && find "${DIST_DIR}" -type f -name '*.hie' -print -quit | grep -q .
 }
 
-cleanup_lock() {
-  rm -f "${LOCK_PATH}/owner" 2>/dev/null || true
-  rmdir "${LOCK_PATH}" 2>/dev/null || true
-}
+run_under_index_lock() {
+  local code=0
+  if HIEDB_LOCK_FILE="${LOCK_PATH}" HIEDB_LOCK_SCRIPT="$0" \
+      HIEDB_LOCK_MODE="${MODE}" HIEDB_LOCK_QUIET="${QUIET}" python3 - <<'PY'
+import fcntl
+import os
+import shutil
+import subprocess
+import time
+from pathlib import Path
 
-lock_owner_is_alive() {
-  local owner
-  owner="$(cat "${LOCK_PATH}/owner" 2>/dev/null || true)"
-  [[ "${owner}" =~ ^[0-9]+$ ]] && kill -0 "${owner}" 2>/dev/null
-}
-
-acquire_lock() {
-  if mkdir "${LOCK_PATH}" 2>/dev/null; then
-    printf '%s\n' "$$" > "${LOCK_PATH}/owner"
+lock_path = Path(os.environ["HIEDB_LOCK_FILE"])
+script = os.environ["HIEDB_LOCK_SCRIPT"]
+mode = os.environ["HIEDB_LOCK_MODE"]
+quiet = os.environ["HIEDB_LOCK_QUIET"] == "1"
+if lock_path.is_dir():
+    owner_file = lock_path / "owner"
+    try:
+        owner = int(owner_file.read_text(encoding="utf-8").strip())
+    except (FileNotFoundError, ValueError):
+        owner = None
+    owner_is_alive = False
+    if owner is not None:
+        try:
+            os.kill(owner, 0)
+            owner_is_alive = True
+        except ProcessLookupError:
+            pass
+        except PermissionError:
+            owner_is_alive = True
+    initialization_is_recent = False
+    if owner is None:
+        try:
+            initialization_is_recent = time.time() - lock_path.stat().st_mtime < 5
+        except FileNotFoundError:
+            pass
+    if owner_is_alive or initialization_is_recent:
+        raise SystemExit(75)
+    quarantine = lock_path.with_name(f"{lock_path.name}.legacy.{os.getpid()}")
+    try:
+        lock_path.rename(quarantine)
+    except FileNotFoundError:
+        pass
+    except OSError:
+        raise SystemExit(75)
+    else:
+        shutil.rmtree(quarantine)
+with lock_path.open("a+", encoding="utf-8") as lock:
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        raise SystemExit(75)
+    command = [script, f"--{mode}"]
+    if quiet:
+        command.append("--quiet")
+    child_environment = os.environ.copy()
+    child_environment["HIEDB_INDEX_LOCK_HELD"] = "1"
+    raise SystemExit(subprocess.run(
+        command, check=False, env=child_environment
+    ).returncode)
+PY
+  then
     return 0
+  else
+    code=$?
   fi
-  if lock_owner_is_alive; then
-    return 1
+  if [ "${code}" -eq 75 ]; then
+    if [ -f "${DB_PATH}" ]; then
+      [ "${QUIET}" -eq 1 ] || echo "hiedb: another incremental refresh is already running; using the current index"
+      return 0
+    fi
+    [ "${QUIET}" -eq 1 ] || echo "hiedb: initial index is already being created; retry shortly" >&2
+    return 2
   fi
-  cleanup_lock
-  if ! mkdir "${LOCK_PATH}" 2>/dev/null; then
-    return 1
-  fi
-  printf '%s\n' "$$" > "${LOCK_PATH}/owner"
-  [ "${QUIET}" -eq 1 ] || echo "hiedb: recovered stale index lock"
-  return 0
+  return "${code}"
 }
 
 index_artifacts() {
@@ -117,16 +167,10 @@ index_artifacts() {
     return 2
   fi
 
-  if ! acquire_lock; then
-    if [ -f "${DB_PATH}" ]; then
-      [ "${QUIET}" -eq 1 ] || echo "hiedb: another incremental refresh is already running; using the current index"
-      return 0
-    fi
-    [ "${QUIET}" -eq 1 ] || echo "hiedb: initial index is already being created; retry shortly" >&2
-    return 2
+  if [ "${LOCK_HELD}" -eq 0 ]; then
+    run_under_index_lock
+    return $?
   fi
-  trap cleanup_lock EXIT
-  trap 'cleanup_lock; exit 130' INT TERM
 
   local current_fingerprint
   current_fingerprint="$(fingerprint)"
@@ -134,7 +178,6 @@ index_artifacts() {
       && [ "$(cat "${META_PATH}")" = "${current_fingerprint}" ]; then
     resolve_tools
     [ "${QUIET}" -eq 1 ] || echo "hiedb: current — cached for this worktree/toolchain"
-    cleanup_lock
     return 0
   fi
 
@@ -143,12 +186,11 @@ index_artifacts() {
   "${HIEDB_BIN}" -D "${DB_PATH}" index "${DIST_DIR}" --quiet
   printf '%s\n' "${current_fingerprint}" > "${META_PATH}.tmp.$$"
   mv "${META_PATH}.tmp.$$" "${META_PATH}"
-  cleanup_lock
   [ "${QUIET}" -eq 1 ] || echo "hiedb: done → ${DB_PATH}"
 }
 
 self_test() {
-  local tmp fake log before
+  local tmp fake log before legacy_before
   tmp="$(mktemp -d)"
   trap 'rm -rf "${tmp}"' RETURN
   mkdir -p "${tmp}/dist"
@@ -192,16 +234,50 @@ SH
     || { echo "refresh-hiedb self-test FAIL: warm cache re-indexed" >&2; return 1; }
 
   printf 'changed-size' > "${tmp}/dist/A.hie"
+  legacy_before="${before}"
+  rm -f "${tmp}/db.index-lock"
   mkdir "${tmp}/db.index-lock"
   printf '99999999\n' > "${tmp}/db.index-lock/owner"
   HIEDB_DIST_DIR="${tmp}/dist" HIEDB_DB_PATH="${tmp}/db" \
     HIEDB_META_PATH="${tmp}/meta" HIEDB_TOOLCHAIN="${fake}" \
     HIEDB_TOOLCHAIN_FINGERPRINT="test" HIEDB_TEST_LOG="${log}" \
     "$0" --if-needed --quiet
+  [ -f "${tmp}/db.index-lock" ] \
+    || { echo "refresh-hiedb self-test FAIL: legacy lock was not migrated" >&2; return 1; }
+  before="$(wc -l < "${log}" | tr -d ' ')"
+  [ "${before}" -gt "${legacy_before}" ] \
+    || { echo "refresh-hiedb self-test FAIL: stale legacy lock suppressed indexing" >&2; return 1; }
+
+  printf 'changed-size-again' > "${tmp}/dist/A.hie"
+  local locker_pid
+  python3 - "${tmp}/db.index-lock" "${tmp}/lock-ready" <<'PY' &
+import fcntl
+import sys
+import time
+
+with open(sys.argv[1], "a+", encoding="utf-8") as lock:
+    fcntl.flock(lock, fcntl.LOCK_EX)
+    with open(sys.argv[2], "w", encoding="utf-8") as ready:
+        ready.write("ready\n")
+    time.sleep(30)
+PY
+  locker_pid=$!
+  while [ ! -f "${tmp}/lock-ready" ]; do sleep 0.01; done
+  HIEDB_DIST_DIR="${tmp}/dist" HIEDB_DB_PATH="${tmp}/db" \
+    HIEDB_META_PATH="${tmp}/meta" HIEDB_TOOLCHAIN="${fake}" \
+    HIEDB_TOOLCHAIN_FINGERPRINT="test" HIEDB_TEST_LOG="${log}" \
+    "$0" --if-needed --quiet
+  [ "$(wc -l < "${log}" | tr -d ' ')" = "${before}" ] \
+    || { echo "refresh-hiedb self-test FAIL: active kernel lock was bypassed" >&2; return 1; }
+  kill "${locker_pid}" 2>/dev/null || true
+  wait "${locker_pid}" 2>/dev/null || true
+
+  HIEDB_DIST_DIR="${tmp}/dist" HIEDB_DB_PATH="${tmp}/db" \
+    HIEDB_META_PATH="${tmp}/meta" HIEDB_TOOLCHAIN="${fake}" \
+    HIEDB_TOOLCHAIN_FINGERPRINT="test" HIEDB_TEST_LOG="${log}" \
+    "$0" --if-needed --quiet
   [ "$(wc -l < "${log}" | tr -d ' ')" -gt "${before}" ] \
-    || { echo "refresh-hiedb self-test FAIL: changed artifact was not indexed" >&2; return 1; }
-  [ ! -d "${tmp}/db.index-lock" ] \
-    || { echo "refresh-hiedb self-test FAIL: stale lock survived recovery" >&2; return 1; }
+    || { echo "refresh-hiedb self-test FAIL: terminated lock holder suppressed indexing" >&2; return 1; }
 
   : > "${log}"
   HIEDB_DIST_DIR="${tmp}/dist" HIEDB_DB_PATH="${tmp}/db2" \

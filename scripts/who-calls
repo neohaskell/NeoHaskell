@@ -31,13 +31,15 @@ self_test() {
     return 1
   fi
 
-  local warm_refresh fake_hiedb fake_python calls tools
+  local warm_refresh fake_hiedb fake_python calls refresh_calls tools
   warm_refresh="${tmp}/warm-refresh"
   fake_hiedb="${tmp}/hiedb"
   fake_python="${tmp}/python3"
   calls="${tmp}/calls"
+  refresh_calls="${tmp}/refresh-calls"
   tools="${tmp}/tools"
-  printf '%s\n' '#!/usr/bin/env bash' 'exit 0' > "${warm_refresh}"
+  printf '%s\n' '#!/usr/bin/env bash' \
+    'printf "%s\\n" "${HIEDB_TOOLS_PATH:-missing}" >> "${WHO_CALLS_REFRESH_LOG}"' > "${warm_refresh}"
   printf '%s\n' '#!/usr/bin/env bash' 'printf "%s\\n" "$*" >> "${WHO_CALLS_TEST_LOG}"' > "${fake_hiedb}"
   printf '%s\n' '#!/usr/bin/env bash' 'cat >/dev/null' > "${fake_python}"
   chmod +x "${warm_refresh}" "${fake_hiedb}" "${fake_python}"
@@ -45,9 +47,12 @@ self_test() {
   printf 'test\n%s\n%s\n' "${fake_hiedb}" "${fake_python}" > "${tools}"
   WHO_CALLS_REFRESH="${warm_refresh}" WHO_CALLS_DB_PATH="${tmp}/db" \
     WHO_CALLS_TOOLS_PATH="${tools}" WHO_CALLS_TEST_LOG="${calls}" \
+    WHO_CALLS_REFRESH_LOG="${refresh_calls}" \
     "$0" 'execute' 'Service.CommandExecutor.Core'
   grep -Fx -- "-D ${tmp}/db name-refs execute Service.CommandExecutor.Core" "${calls}" >/dev/null \
     || { echo "who-calls self-test FAIL: warm lookup did not use the cached hiedb directly" >&2; return 1; }
+  grep -Fx -- "${tools}" "${refresh_calls}" >/dev/null \
+    || { echo "who-calls self-test FAIL: refresh did not share the configured tools cache" >&2; return 1; }
   echo "who-calls self-test: OK — cold lookup is bounded; warm lookup uses cached pinned tools directly"
 }
 
@@ -68,7 +73,8 @@ fallback() {
   echo "git grep -n -F -- ${escaped} -- core testbed integrations" >&2
 }
 
-if ! HIEDB_DB_PATH="${DB_PATH}" "${REFRESH}" --if-needed --quiet; then
+if ! HIEDB_DB_PATH="${DB_PATH}" HIEDB_TOOLS_PATH="${TOOLS_PATH}" \
+    "${REFRESH}" --if-needed --quiet; then
   fallback
   exit 2
 fi

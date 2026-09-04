@@ -207,14 +207,23 @@ spec backend newStore = do
             entityName
             context.streamId
             [ItemAdded {entityId = def, itemId = def, amount = 20}]
-        firstPayload
-          |> context.store.insert
-          |> Task.mapError toText
-          |> discard
-        secondPayload
-          |> context.store.insert
-          |> Task.mapError toText
-          |> discard
+        barrier <- Regression.newInsertBarrier
+        let blockedStore = Regression.barrierBeforeInsert barrier context.store
+        let firstTask :: Task Text (Result EventStore.Error Event.InsertionSuccess)
+            firstTask = firstPayload |> blockedStore.insert |> Task.asResult
+        let secondTask :: Task Text (Result EventStore.Error Event.InsertionSuccess)
+            secondTask = secondPayload |> blockedStore.insert |> Task.asResult
+        firstAsync <- AsyncTask.run firstTask
+        secondAsync <- AsyncTask.run secondTask
+        Regression.awaitInsertions 2 barrier
+        Regression.releaseInsertions 2 barrier
+        firstResult <- AsyncTask.waitFor firstAsync
+        secondResult <- AsyncTask.waitFor secondAsync
+
+        [firstResult, secondResult]
+          |> Array.map (\result -> if Result.isOk result then 1 else 0)
+          |> Array.sumIntegers
+          |> shouldBe 2
 
         streamMessages <-
           context.store.readAllStreamEvents entityName context.streamId

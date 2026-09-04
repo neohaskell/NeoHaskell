@@ -316,15 +316,25 @@ def check_regression_skill(root, skills_dir):
     skill_path = skills_dir / "neohaskell-event-store-regression-specs" / "SKILL.md"
     helper_path = root / "core" / "testlib" / "Test" / "Service" / "EventStore" / "Regression.hs"
     smoke_path = root / "scripts" / "regression-scaffold-smoke"
-    required_recipes = {
-        "insertion-guard", "record-payloads-and-revisions", "consistency-conflict-refetch",
-        "postgres-append-barrier", "stream-creation-race", "any-stream-state",
+    recipe_helpers = {
+        "insertion-guard": {"seedStream", "requireInsertionType", "recordInsertions"},
+        "record-payloads-and-revisions": {"recordInsertions", "recordFetchedRevisions"},
+        "consistency-conflict-refetch": {
+            "failFirstWithConsistencyConflict", "recordFetchedRevisions", "recordInsertions",
+        },
+        "postgres-append-barrier": {
+            "newInsertBarrier", "barrierBeforeInsert", "awaitInsertions", "releaseInsertions",
+        },
+        "stream-creation-race": {
+            "newInsertBarrier", "barrierBeforeInsert", "awaitInsertions", "releaseInsertions",
+        },
+        "any-stream-state": {
+            "seedStream", "newInsertBarrier", "barrierBeforeInsert",
+            "awaitInsertions", "releaseInsertions",
+        },
     }
-    required_helpers = {
-        "seedStream", "recordInsertions", "recordFetchedRevisions", "requireInsertionType",
-        "failFirstWithConsistencyConflict", "newInsertBarrier", "barrierBeforeInsert",
-        "awaitInsertions", "releaseInsertions",
-    }
+    required_recipes = set(recipe_helpers)
+    required_helpers = set().union(*recipe_helpers.values())
     if not skill_path.is_file():
         return [f"{skill_path.relative_to(root)} is missing"]
     if not helper_path.is_file():
@@ -332,14 +342,32 @@ def check_regression_skill(root, skills_dir):
     if not smoke_path.is_file():
         return [f"{smoke_path.relative_to(root)} is missing"]
     recipe_rows = {}
-    for line in read(skill_path).splitlines():
-        if not line.startswith("| `"):
+    inside_recipe_table = False
+    for line_number, line in enumerate(read(skill_path).splitlines(), start=1):
+        if line == "## Recipe routing":
+            inside_recipe_table = True
+            continue
+        if inside_recipe_table and line.startswith("## "):
+            break
+        if not inside_recipe_table or not line.startswith("|") \
+                or line.startswith("| Recipe ") or line.startswith("|---"):
             continue
         raw_cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
-        if len(raw_cells) != 7:
+        if len(raw_cells) != 7 or not raw_cells[0].startswith("`") \
+                or not raw_cells[0].endswith("`"):
+            errors.append(f"{skill_path.relative_to(root)}:{line_number} malformed recipe row")
             continue
         recipe = raw_cells[0].strip("`")
-        cells = [
+        if not re.fullmatch(r"[a-z0-9-]+", recipe):
+            errors.append(f"{skill_path.relative_to(root)}:{line_number} invalid recipe key")
+            continue
+        if recipe not in recipe_helpers:
+            errors.append(f"{skill_path.relative_to(root)}:{line_number} unknown recipe `{recipe}`")
+            continue
+        if recipe in recipe_rows:
+            errors.append(f"{skill_path.relative_to(root)}:{line_number} duplicate recipe `{recipe}`")
+            continue
+        recipe_rows[recipe] = [
             recipe,
             raw_cells[1],
             raw_cells[2].strip("`"),
@@ -348,8 +376,6 @@ def check_regression_skill(root, skills_dir):
             raw_cells[5].strip("`"),
             raw_cells[6],
         ]
-        if re.fullmatch(r"[a-z0-9-]+", recipe):
-            recipe_rows[recipe] = cells
     if set(recipe_rows) != required_recipes:
         errors.append(
             f"{skill_path.relative_to(root)} recipe rows must be {sorted(required_recipes)}, "
@@ -363,6 +389,7 @@ def check_regression_skill(root, skills_dir):
     for recipe, cells in recipe_rows.items():
         _key, trigger, backend, expected_examples, example_path, example_name, helpers_cell = cells
         target = root / example_path
+        target_text = None
         if not trigger:
             errors.append(f"recipe `{recipe}` has no use-when trigger")
         if backend not in {"in-memory", "simple", "postgres"}:
@@ -372,15 +399,23 @@ def check_regression_skill(root, skills_dir):
         if (recipe.startswith("postgres-") or recipe == "stream-creation-race") \
                 and backend != "postgres":
             errors.append(f"recipe `{recipe}` must be bound to the PostgreSQL backend")
-        if not target.is_file() or example_name not in read(target):
+        if target.is_file():
+            target_text = read(target)
+            if example_name not in target_text:
+                errors.append(
+                    f"recipe `{recipe}` has invalid canonical example `{example_path}:{example_name}`"
+                )
+        else:
             errors.append(
                 f"recipe `{recipe}` has invalid canonical example `{example_path}:{example_name}`"
             )
         helpers = set(re.findall(r"`([A-Za-z][A-Za-z0-9]*)`", helpers_cell))
-        unknown_helpers = helpers - required_helpers
-        if not helpers or unknown_helpers:
-            errors.append(f"recipe `{recipe}` references invalid helpers {sorted(unknown_helpers)}")
-        if f'intentionalRed "{recipe}"' not in read(target):
+        if helpers != recipe_helpers[recipe]:
+            errors.append(
+                f"recipe `{recipe}` helpers must be {sorted(recipe_helpers[recipe])}, "
+                f"got {sorted(helpers)}"
+            )
+        if target_text is not None and f'intentionalRed "{recipe}"' not in target_text:
             errors.append(f"recipe `{recipe}` canonical example lacks its compiled red sentinel")
     for snippet in (
         "recipes()", "expected_examples", "NEOHASKELL_REGRESSION_SMOKE_BACKEND",
@@ -667,12 +702,12 @@ def _build_good_tree(root):
     optimistic = root / "core" / "testlib" / "Test" / "Service" / "EventStore" / "OptimisticConcurrency" / "Spec.hs"
     optimistic.parent.mkdir(parents=True)
     examples = {
-        "insertion-guard": (execute, "in-memory", 2, "canonically records a consistency conflict, refetch, and re-decision", ["seedStream", "requireInsertionType"]),
+        "insertion-guard": (execute, "in-memory", 2, "canonically records a consistency conflict, refetch, and re-decision", ["seedStream", "requireInsertionType", "recordInsertions"]),
         "record-payloads-and-revisions": (execute, "in-memory", 2, "canonically records a consistency conflict, refetch, and re-decision", ["recordInsertions", "recordFetchedRevisions"]),
-        "consistency-conflict-refetch": (execute, "in-memory", 2, "canonically records a consistency conflict, refetch, and re-decision", ["failFirstWithConsistencyConflict"]),
-        "postgres-append-barrier": (optimistic, "postgres", 3, "will only allow one event to be appended, when two writers try to append at the same time", ["barrierBeforeInsert"]),
-        "stream-creation-race": (optimistic, "postgres", 3, "allows only one concurrent StreamCreation", ["newInsertBarrier"]),
-        "any-stream-state": (optimistic, "in-memory", 3, "keeps AnyStreamState deliberately unconditional", ["seedStream"]),
+        "consistency-conflict-refetch": (execute, "in-memory", 2, "canonically records a consistency conflict, refetch, and re-decision", ["failFirstWithConsistencyConflict", "recordFetchedRevisions", "recordInsertions"]),
+        "postgres-append-barrier": (optimistic, "postgres", 3, "will only allow one event to be appended, when two writers try to append at the same time", ["newInsertBarrier", "barrierBeforeInsert", "awaitInsertions", "releaseInsertions"]),
+        "stream-creation-race": (optimistic, "postgres", 3, "allows only one concurrent StreamCreation", ["newInsertBarrier", "barrierBeforeInsert", "awaitInsertions", "releaseInsertions"]),
+        "any-stream-state": (optimistic, "in-memory", 3, "keeps AnyStreamState deliberately unconditional", ["seedStream", "newInsertBarrier", "barrierBeforeInsert", "awaitInsertions", "releaseInsertions"]),
     }
     for key, (path, _backend, _count, example_name, _helpers) in examples.items():
         with path.open("a", encoding="utf-8") as handle:
@@ -688,7 +723,7 @@ def _build_good_tree(root):
     regression_skill.write_text(
         "---\nname: neohaskell-event-store-regression-specs\n"
         "description: Use when scaffolding compiled event-store regression tests from canonical examples.\n"
-        "---\n\n# Recipes\n\n| Recipe | Use when | Smoke backend | Smoke examples | Canonical file | Canonical test | Helpers |\n"
+        "---\n\n# Recipes\n\n## Recipe routing\n\n| Recipe | Use when | Smoke backend | Smoke examples | Canonical file | Canonical test | Helpers |\n"
         "|---|---|---|---|---|---|---|\n" + "\n".join(rows) + "\n",
         encoding="utf-8",
     )
@@ -796,6 +831,43 @@ def self_test():
     errors = mutated(remove_regression_recipe)
     expect(any("recipe rows must be" in error for error in errors),
            f"missing regression recipe should fail, got {errors}")
+
+    def add_malformed_regression_recipe(root):
+        path = root / ".pi" / "skills" / "neohaskell-event-store-regression-specs" / "SKILL.md"
+        path.write_text(read(path) + "| `extra-recipe` | malformed |\n", encoding="utf-8")
+    errors = mutated(add_malformed_regression_recipe)
+    expect(any("malformed recipe row" in error for error in errors),
+           f"malformed regression recipe should fail, got {errors}")
+
+    def add_unknown_regression_recipe(root):
+        path = root / ".pi" / "skills" / "neohaskell-event-store-regression-specs" / "SKILL.md"
+        path.write_text(
+            read(path) +
+            "| `extra-recipe` | extra | `in-memory` | `1` | `missing.hs` | `extra` | `seedStream` |\n",
+            encoding="utf-8",
+        )
+    errors = mutated(add_unknown_regression_recipe)
+    expect(any("unknown recipe" in error for error in errors),
+           f"unknown regression recipe should fail cleanly, got {errors}")
+
+    def remove_required_recipe_helper(root):
+        path = root / ".pi" / "skills" / "neohaskell-event-store-regression-specs" / "SKILL.md"
+        path.write_text(read(path).replace("`seedStream`, `requireInsertionType`, `recordInsertions`",
+                                           "`seedStream`, `requireInsertionType`"), encoding="utf-8")
+    errors = mutated(remove_required_recipe_helper)
+    expect(any("helpers must be" in error for error in errors),
+           f"missing required recipe helper should fail, got {errors}")
+
+    def point_recipe_at_missing_example(root):
+        path = root / ".pi" / "skills" / "neohaskell-event-store-regression-specs" / "SKILL.md"
+        path.write_text(read(path).replace(
+            "core/testlib/Test/Service/CommandHandler/Execute/Spec.hs",
+            "core/testlib/Test/Service/CommandHandler/Execute/Missing.hs",
+            1,
+        ), encoding="utf-8")
+    errors = mutated(point_recipe_at_missing_example)
+    expect(any("invalid canonical example" in error for error in errors),
+           f"missing canonical example should be a validation error, got {errors}")
 
     def invalid_name(root):
         path = root / ".pi" / "skills" / "neohaskell-localizer" / "SKILL.md"
