@@ -150,14 +150,17 @@ releaseInsertions count barrier = do
 
 
 -- | Emit the exact red sentinel selected by the mechanical recipe smoke.
-intentionalRed :: Text -> Task Text Unit
-intentionalRed recipe = do
-  selectedResult <-
+intentionalRed :: Text -> Text -> Task Text Unit
+intentionalRed recipe backend = do
+  selectedRecipeResult <-
     Environment.getVariable "NEOHASKELL_REGRESSION_SMOKE"
       |> Task.asResult
-  case selectedResult of
-    Result.Err _ -> Task.yield unit
-    Result.Ok selected ->
-      if selected == recipe
-        then Task.throw [fmt|INTENTIONAL_RED:#{recipe}|]
+  selectedBackendResult <-
+    Environment.getVariable "NEOHASKELL_REGRESSION_SMOKE_BACKEND"
+      |> Task.asResult
+  case (selectedRecipeResult, selectedBackendResult) of
+    (Result.Ok selectedRecipe, Result.Ok selectedBackend) ->
+      if selectedRecipe == recipe && selectedBackend == backend
+        then Task.throw [fmt|INTENTIONAL_RED:#{recipe}:#{backend}|]
         else Task.yield unit
+    _ -> Task.yield unit

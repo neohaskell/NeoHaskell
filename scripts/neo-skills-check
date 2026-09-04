@@ -336,10 +336,18 @@ def check_regression_skill(root, skills_dir):
         if not line.startswith("| `"):
             continue
         raw_cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
-        if len(raw_cells) != 5:
+        if len(raw_cells) != 7:
             continue
         recipe = raw_cells[0].strip("`")
-        cells = [recipe, raw_cells[1], raw_cells[2].strip("`"), raw_cells[3].strip("`"), raw_cells[4]]
+        cells = [
+            recipe,
+            raw_cells[1],
+            raw_cells[2].strip("`"),
+            raw_cells[3].strip("`"),
+            raw_cells[4].strip("`"),
+            raw_cells[5].strip("`"),
+            raw_cells[6],
+        ]
         if re.fullmatch(r"[a-z0-9-]+", recipe):
             recipe_rows[recipe] = cells
     if set(recipe_rows) != required_recipes:
@@ -353,10 +361,17 @@ def check_regression_skill(root, skills_dir):
         if not re.search(rf"\b{re.escape(helper)}\b", helper_text):
             errors.append(f"{helper_path.relative_to(root)} is missing helper `{helper}`")
     for recipe, cells in recipe_rows.items():
-        _key, trigger, example_path, example_name, helpers_cell = cells
+        _key, trigger, backend, expected_examples, example_path, example_name, helpers_cell = cells
         target = root / example_path
         if not trigger:
             errors.append(f"recipe `{recipe}` has no use-when trigger")
+        if backend not in {"in-memory", "simple", "postgres"}:
+            errors.append(f"recipe `{recipe}` has invalid smoke backend `{backend}`")
+        if not expected_examples.isdigit() or int(expected_examples) <= 0:
+            errors.append(f"recipe `{recipe}` has invalid smoke example count `{expected_examples}`")
+        if (recipe.startswith("postgres-") or recipe == "stream-creation-race") \
+                and backend != "postgres":
+            errors.append(f"recipe `{recipe}` must be bound to the PostgreSQL backend")
         if not target.is_file() or example_name not in read(target):
             errors.append(
                 f"recipe `{recipe}` has invalid canonical example `{example_path}:{example_name}`"
@@ -367,8 +382,12 @@ def check_regression_skill(root, skills_dir):
             errors.append(f"recipe `{recipe}` references invalid helpers {sorted(unknown_helpers)}")
         if f'intentionalRed "{recipe}"' not in read(target):
             errors.append(f"recipe `{recipe}` canonical example lacks its compiled red sentinel")
-        if recipe not in smoke_text:
-            errors.append(f"{smoke_path.relative_to(root)} does not cover recipe `{recipe}`")
+    for snippet in (
+        "recipes()", "expected_examples", "NEOHASKELL_REGRESSION_SMOKE_BACKEND",
+        "examples?, 1 failure", "sentinel_count",
+    ):
+        if snippet not in smoke_text:
+            errors.append(f"{smoke_path.relative_to(root)} is missing smoke contract `{snippet}`")
     return errors
 
 
@@ -468,8 +487,10 @@ def check_pipeline_contract(root, pipeline_path):
             errors.append(
                 "scripts/pipeline-state must implement the checked `complete` lifecycle command"
             )
-        if "metadata_validation_matches" not in state_text \
-                or 'next_stage in {"design-review", "ci"}' not in state_text:
+        if "metadata_transition_error" not in state_text \
+                or 'next_stage in {"design-review", "ci"}' not in state_text \
+                or "TRUSTED_METADATA_BASE" not in state_text \
+                or "pr_number is immutable once set" not in state_text:
             errors.append(
                 "scripts/pipeline-state must enforce current-HEAD metadata at spec and PR transitions"
             )
@@ -646,41 +667,43 @@ def _build_good_tree(root):
     optimistic = root / "core" / "testlib" / "Test" / "Service" / "EventStore" / "OptimisticConcurrency" / "Spec.hs"
     optimistic.parent.mkdir(parents=True)
     examples = {
-        "insertion-guard": (execute, "canonically records a consistency conflict, refetch, and re-decision", ["seedStream", "requireInsertionType"]),
-        "record-payloads-and-revisions": (execute, "canonically records a consistency conflict, refetch, and re-decision", ["recordInsertions", "recordFetchedRevisions"]),
-        "consistency-conflict-refetch": (execute, "canonically records a consistency conflict, refetch, and re-decision", ["failFirstWithConsistencyConflict"]),
-        "postgres-append-barrier": (optimistic, "will only allow one event to be appended, when two writers try to append at the same time", ["barrierBeforeInsert"]),
-        "stream-creation-race": (optimistic, "allows only one concurrent StreamCreation", ["newInsertBarrier"]),
-        "any-stream-state": (optimistic, "keeps AnyStreamState deliberately unconditional", ["seedStream"]),
+        "insertion-guard": (execute, "in-memory", 2, "canonically records a consistency conflict, refetch, and re-decision", ["seedStream", "requireInsertionType"]),
+        "record-payloads-and-revisions": (execute, "in-memory", 2, "canonically records a consistency conflict, refetch, and re-decision", ["recordInsertions", "recordFetchedRevisions"]),
+        "consistency-conflict-refetch": (execute, "in-memory", 2, "canonically records a consistency conflict, refetch, and re-decision", ["failFirstWithConsistencyConflict"]),
+        "postgres-append-barrier": (optimistic, "postgres", 3, "will only allow one event to be appended, when two writers try to append at the same time", ["barrierBeforeInsert"]),
+        "stream-creation-race": (optimistic, "postgres", 3, "allows only one concurrent StreamCreation", ["newInsertBarrier"]),
+        "any-stream-state": (optimistic, "in-memory", 3, "keeps AnyStreamState deliberately unconditional", ["seedStream"]),
     }
-    for key, (path, example_name, _helpers) in examples.items():
+    for key, (path, _backend, _count, example_name, _helpers) in examples.items():
         with path.open("a", encoding="utf-8") as handle:
             handle.write(f'{example_name}\nintentionalRed "{key}"\n')
     rows = []
-    for key, (path, example_name, helpers) in examples.items():
+    for key, (path, backend, count, example_name, helpers) in examples.items():
         helper_cell = ", ".join(f"`{helper_name}`" for helper_name in helpers)
         rows.append(
-            f"| `{key}` | scaffold {key} | `{path.relative_to(root)}` | "
+            f"| `{key}` | scaffold {key} | `{backend}` | `{count}` | `{path.relative_to(root)}` | "
             f"`{example_name}` | {helper_cell} |"
         )
     regression_skill = root / ".pi" / "skills" / "neohaskell-event-store-regression-specs" / "SKILL.md"
     regression_skill.write_text(
         "---\nname: neohaskell-event-store-regression-specs\n"
         "description: Use when scaffolding compiled event-store regression tests from canonical examples.\n"
-        "---\n\n# Recipes\n\n| Recipe | Use when | Canonical file | Canonical test | Helpers |\n"
-        "|---|---|---|---|---|\n" + "\n".join(rows) + "\n",
+        "---\n\n# Recipes\n\n| Recipe | Use when | Smoke backend | Smoke examples | Canonical file | Canonical test | Helpers |\n"
+        "|---|---|---|---|---|---|---|\n" + "\n".join(rows) + "\n",
         encoding="utf-8",
     )
     (root / "scripts").mkdir(parents=True)
     (root / "scripts" / "regression-scaffold-smoke").write_text(
-        "insertion-guard record-payloads-and-revisions consistency-conflict-refetch "
-        "postgres-append-barrier stream-creation-race any-stream-state\n",
+        "recipes() expected_examples NEOHASKELL_REGRESSION_SMOKE_BACKEND "
+        "examples?, 1 failure sentinel_count\n",
         encoding="utf-8",
     )
     (root / "scripts" / "pipeline-state").write_text(
         'PLAN_WRITABLE_STAGES = {"intake", "localize"}\n'
-        'def metadata_validation_matches(): pass\n'
+        'TRUSTED_METADATA_BASE = "origin/main"\n'
+        'def metadata_transition_error(): pass\n'
         'if next_stage in {"design-review", "ci"}: pass\n'
+        'message = "pr_number is immutable once set"\n'
         'def cmd_complete(): pass\n'
         'pc = sub.add_parser("complete")\n'
         'pc.add_argument("--outcome", required=True)\n',

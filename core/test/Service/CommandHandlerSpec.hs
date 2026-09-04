@@ -13,4 +13,4 @@ spec :: Spec Unit
 spec = do
   describe "CommandHandler with InMemory EventStore" do
     let newStore = InMemory.new |> Task.map (EventStore.castEventStore @CartEvent) |> Task.mapError toText
-    CommandHandler.spec newStore
+    CommandHandler.spec "in-memory" newStore

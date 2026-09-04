@@ -21,27 +21,40 @@ for line in Path(sys.argv[1]).read_text().splitlines():
     if not line.startswith("| `"):
         continue
     cells = [cell.strip().strip("`") for cell in line.strip().strip("|").split("|")]
-    if len(cells) == 5 and re.fullmatch(r"[a-z0-9-]+", cells[0]):
-        rows.append((cells[0], cells[2], cells[3]))
-for recipe, path, test in rows:
-    print(f"{recipe}\t{path}\t{test}")
+    if len(cells) == 7 and re.fullmatch(r"[a-z0-9-]+", cells[0]):
+        rows.append((cells[0], cells[2], cells[3], cells[4], cells[5]))
+for recipe, backend, expected_examples, path, test in rows:
+    print(f"{recipe}\t{backend}\t{expected_examples}\t{path}\t{test}")
 PY
 }
 
 self_test() {
-  local count recipe path test failures=0
+  local count recipe backend expected_examples path test failures=0
   count="$(recipes | wc -l | tr -d ' ')"
   if [ "${count}" -ne 6 ]; then
     echo "regression-smoke self-test FAIL: expected 6 skill recipes, found ${count}" >&2
     return 1
   fi
-  while IFS=$'\t' read -r recipe path test; do
+  while IFS=$'\t' read -r recipe backend expected_examples path test; do
     if [ ! -f "${path}" ] || ! grep -Fq "${test}" "${path}"; then
       echo "regression-smoke self-test FAIL: ${recipe} canonical example is missing" >&2
       failures=1
     fi
     if ! grep -Fq "intentionalRed \"${recipe}\"" "${path}"; then
       echo "regression-smoke self-test FAIL: ${recipe} lacks its compiled red sentinel" >&2
+      failures=1
+    fi
+    if [[ "${backend}" != "in-memory" && "${backend}" != "simple" && "${backend}" != "postgres" ]]; then
+      echo "regression-smoke self-test FAIL: ${recipe} has invalid smoke backend ${backend}" >&2
+      failures=1
+    fi
+    if ! [[ "${expected_examples}" =~ ^[1-9][0-9]*$ ]]; then
+      echo "regression-smoke self-test FAIL: ${recipe} has invalid example count" >&2
+      failures=1
+    fi
+    if [[ "${recipe}" == postgres-* || "${recipe}" == "stream-creation-race" ]] \
+        && [ "${backend}" != "postgres" ]; then
+      echo "regression-smoke self-test FAIL: ${recipe} is not bound to PostgreSQL" >&2
       failures=1
     fi
   done < <(recipes)
@@ -56,22 +69,29 @@ self_test() {
   if [ "${failures}" -ne 0 ]; then
     return 1
   fi
-  echo "regression-smoke self-test: OK — six skill routes have canonical files, tests, helpers, and red sentinels"
+  echo "regression-smoke self-test: OK — six routes bind tests, backends, counts, helpers, and red sentinels"
 }
 
 run_smoke() {
-  local recipe path test output code failures=0
-  while IFS=$'\t' read -r recipe path test; do
-    echo "regression-smoke: ${recipe} -> ${path} :: ${test}"
+  local recipe backend expected_examples path test output code sentinel_count failures=0
+  while IFS=$'\t' read -r recipe backend expected_examples path test; do
+    echo "regression-smoke: ${recipe} -> ${test} [red backend: ${backend}]"
     set +e
-    output="$(NEOHASKELL_REGRESSION_SMOKE="${recipe}" ./dev test "${test}" nhcore-test-service 2>&1)"
+    output="$(POSTGRES_AVAILABLE=true NEOHASKELL_REGRESSION_SMOKE="${recipe}" \
+      NEOHASKELL_REGRESSION_SMOKE_BACKEND="${backend}" \
+      ./dev test "${test}" nhcore-test-service 2>&1)"
     code=$?
     set -e
+    sentinel_count="$(printf '%s\n' "${output}" | grep -Fc "INTENTIONAL_RED:${recipe}:${backend}" || true)"
     if [ "${code}" -eq 0 ]; then
       echo "regression-smoke: FAIL ${recipe} unexpectedly passed" >&2
       failures=1
-    elif ! printf '%s\n' "${output}" | grep -Fq "INTENTIONAL_RED:${recipe}"; then
-      echo "regression-smoke: FAIL ${recipe} did not reach its intended assertion" >&2
+    elif ! printf '%s\n' "${output}" | grep -Eq "^${expected_examples} examples?, 1 failure$"; then
+      echo "regression-smoke: FAIL ${recipe} had extra, missing, or setup failures" >&2
+      printf '%s\n' "${output}" | tail -20 >&2
+      failures=1
+    elif [ "${sentinel_count}" -ne 1 ]; then
+      echo "regression-smoke: FAIL ${recipe} reached ${sentinel_count} red sentinels, want exactly 1" >&2
       printf '%s\n' "${output}" | tail -20 >&2
       failures=1
     else
@@ -81,7 +101,7 @@ run_smoke() {
   if [ "${failures}" -ne 0 ]; then
     return 1
   fi
-  echo "regression-smoke: OK — all six compiled recipes failed only at their intended red sentinel"
+  echo "regression-smoke: OK — all six routes had exact example counts and one backend-bound failure"
 }
 
 case "${1:-}" in

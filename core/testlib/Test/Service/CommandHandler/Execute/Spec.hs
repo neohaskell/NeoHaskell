@@ -27,15 +27,16 @@ import Uuid qualified
 
 
 spec ::
+  Text ->
   Task Text (EventStore.EventStore CartEvent, EntityFetcher CartEntity CartEvent) ->
   Spec Unit
-spec newCartStoreAndFetcher = do
+spec backend newCartStoreAndFetcher = do
   describe "CommandHandler Execute Specification Tests" do
     describe "Basic Command Execution" do
       basicExecutionSpecs newCartStoreAndFetcher
 
     describe "Retry Logic" do
-      retryLogicSpecs newCartStoreAndFetcher
+      retryLogicSpecs backend newCartStoreAndFetcher
 
     describe "Concurrency Handling" do
       concurrencySpecs newCartStoreAndFetcher
@@ -196,9 +197,10 @@ basicExecutionSpecs newCartStoreAndFetcher = do
 
 
 retryLogicSpecs ::
+  Text ->
   Task Text (EventStore.EventStore CartEvent, EntityFetcher CartEntity CartEvent) ->
   Spec Unit
-retryLogicSpecs newCartStoreAndFetcher = do
+retryLogicSpecs backend newCartStoreAndFetcher = do
   before (Context.initialize newCartStoreAndFetcher) do
     it "canonically records a consistency conflict, refetch, and re-decision" \context -> do
       let streamId = context.cartId |> Uuid.toText |> StreamId.fromTextUnsafe
@@ -236,9 +238,9 @@ retryLogicSpecs newCartStoreAndFetcher = do
       fetchedRevisions <- readRevisions
       Array.length fetchedRevisions |> shouldBe 2
 
-      Regression.intentionalRed "insertion-guard"
-      Regression.intentionalRed "record-payloads-and-revisions"
-      Regression.intentionalRed "consistency-conflict-refetch"
+      Regression.intentionalRed "insertion-guard" backend
+      Regression.intentionalRed "record-payloads-and-revisions" backend
+      Regression.intentionalRed "consistency-conflict-refetch" backend
 
     it "retries on consistency check failure (ExistingStream)" \context -> do
       -- Create initial cart

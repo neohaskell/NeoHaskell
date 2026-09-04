@@ -51,6 +51,7 @@ TELEMETRY_CURRENT = ROOT / "telemetry" / ".current-run.json"
 TELEMETRY_RUNS = ROOT / "telemetry" / "runs.jsonl"
 RUN_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 ISSUE_REF_RE = re.compile(r"^issue#([1-9][0-9]*)$")
+TRUSTED_METADATA_BASE = "origin/main"
 CONVENTIONAL_SUBJECT_RE = re.compile(
     r"^(fix|feat|test|docs|refactor|perf|build|ci|chore|revert)"
     r"(?:\([a-z0-9][a-z0-9._/-]*\))?: \S.*$"
@@ -156,14 +157,40 @@ def current_head():
     return git_output("rev-parse", "HEAD")
 
 
-def metadata_validation_matches(state):
-    validation = state.get("metadata_validation")
-    return (
-        isinstance(validation, dict)
-        and validation.get("head") == current_head()
-        and bool(validation.get("pr_title"))
-        and bool(validation.get("base"))
+def remote_pr_title(pr_number):
+    code, title, error = command_output(
+        ["gh", "pr", "view", str(pr_number), "--json", "title", "--jq", ".title"]
     )
+    if code != 0:
+        return None, error or "gh failed"
+    return title, None
+
+
+def metadata_transition_error(state, next_stage, pr_title_lookup=remote_pr_title):
+    validation = state.get("metadata_validation")
+    if not isinstance(validation, dict):
+        return "metadata validation evidence is missing"
+    if validation.get("head") != current_head():
+        return "metadata validation is stale for current HEAD"
+    if validation.get("base") != TRUSTED_METADATA_BASE:
+        return f"metadata base must be `{TRUSTED_METADATA_BASE}`"
+    if validation.get("branch") != state.get("branch"):
+        return "metadata validation is stale for the current branch"
+    if not validation.get("pr_title"):
+        return "validated PR title is empty"
+    if next_stage != "ci":
+        return None
+    pr_number = state.get("pr_number")
+    if not isinstance(pr_number, int) or pr_number <= 0:
+        return "PR-ready transition requires a positive pr_number"
+    if validation.get("pr_number") != pr_number:
+        return "metadata validation is not bound to the current PR number"
+    actual_title, lookup_error = pr_title_lookup(pr_number)
+    if lookup_error:
+        return f"cannot verify current PR title: {lookup_error}"
+    if actual_title != validation.get("pr_title"):
+        return f"current PR title `{actual_title}` differs from validated title `{validation.get('pr_title')}`"
+    return None
 
 
 def tracked_worktree_clean(status):
@@ -323,12 +350,17 @@ def cmd_init(args, state_dir, issue_claimer=claim_issue):
 
 def cmd_validate_metadata(args, state_dir):
     state = load(state_dir)
-    if state.get("pr_number") is not None:
-        code, actual_title, error = command_output(
-            ["gh", "pr", "view", str(state["pr_number"]), "--json", "title", "--jq", ".title"]
+    if args.base != TRUSTED_METADATA_BASE:
+        print(
+            f"pipeline-state: metadata validation base must be `{TRUSTED_METADATA_BASE}`, "
+            f"got `{args.base}`",
+            file=sys.stderr,
         )
-        if code != 0:
-            print(f"pipeline-state: cannot verify PR title: {error or 'gh failed'}", file=sys.stderr)
+        return 2
+    if state.get("pr_number") is not None:
+        actual_title, error = remote_pr_title(state["pr_number"])
+        if error:
+            print(f"pipeline-state: cannot verify PR title: {error}", file=sys.stderr)
             return 2
         if actual_title != args.pr_title:
             print(
@@ -354,6 +386,8 @@ def cmd_validate_metadata(args, state_dir):
         "head": head,
         "base": args.base,
         "pr_title": args.pr_title,
+        "pr_number": state.get("pr_number"),
+        "branch": state.get("branch"),
         "at": now(),
     }
     save(state_dir, state)
@@ -381,7 +415,7 @@ def cmd_status(state_dir):
     return 0
 
 
-def cmd_advance(state_dir):
+def cmd_advance(state_dir, pr_title_lookup=remote_pr_title):
     s = load(state_dir)
     if s["parked"]:
         print("pipeline-state: run is parked — `resume` first", file=sys.stderr)
@@ -395,13 +429,15 @@ def cmd_advance(state_dir):
         print("pipeline-state: cannot advance past `spec` without a recorded spec "
               "approval (`approve spec --by …`) — the gate is the contract", file=sys.stderr)
         return 1
-    if next_stage in {"design-review", "ci"} and not metadata_validation_matches(s):
-        print(
-            f"pipeline-state: cannot advance to `{next_stage}` without Conventional Commit "
-            "metadata validated at current HEAD (`pipeline validate --pr-title …`)",
-            file=sys.stderr,
-        )
-        return 1
+    if next_stage in {"design-review", "ci"}:
+        metadata_error = metadata_transition_error(s, next_stage, pr_title_lookup)
+        if metadata_error:
+            print(
+                f"pipeline-state: cannot advance to `{next_stage}` — {metadata_error}; "
+                "run `pipeline validate --pr-title …`",
+                file=sys.stderr,
+            )
+            return 1
     s["stage"] = next_stage
     s["history"].append({"stage": s["stage"], "entered": now()})
     save(state_dir, s)
@@ -452,9 +488,22 @@ def cmd_set(args, state_dir):
         value = json.loads(args.value)
     except json.JSONDecodeError:
         value = args.value
+    if node == "pr_number":
+        if not isinstance(value, int) or value <= 0:
+            print("pipeline-state: `pr_number` must be a positive integer", file=sys.stderr)
+            return 2
+        existing_pr = s.get("pr_number")
+        if existing_pr is not None and existing_pr != value:
+            print(
+                f"pipeline-state: pr_number is immutable once set (`{existing_pr}` != `{value}`)",
+                file=sys.stderr,
+            )
+            return 2
     if node == "plan":
         s["plan"][parts[1]] = value
     else:
+        if node in {"branch", "pr_number"} and s.get(node) != value:
+            s["metadata_validation"] = None
         s[node] = value
     save(state_dir, s)
     print(f"pipeline-state: {args.key} = {json.dumps(value)}")
@@ -634,8 +683,10 @@ def self_test():
             state = load(run_dir)
             state["metadata_validation"] = {
                 "head": current_head(),
-                "base": "origin/main",
+                "base": TRUSTED_METADATA_BASE,
                 "pr_title": "fix: test pipeline",
+                "pr_number": state.get("pr_number"),
+                "branch": state.get("branch"),
                 "at": now(),
             }
             save(run_dir, state)
@@ -734,6 +785,8 @@ def self_test():
         run("gate-blocks-unapproved", lambda: cmd_advance(d), 1)
         run("approve-spec", lambda: cmd_approve(
             argparse.Namespace(stage="spec", by="nick", via="pr-comment"), d), 0)
+        run("metadata-untrusted-base-denied", lambda: cmd_validate_metadata(
+            argparse.Namespace(base="HEAD", pr_title="fix: test pipeline"), d), 2)
         run("advance-past-gate-without-metadata-denied", lambda: cmd_advance(d), 1)
         mark_metadata(d)
         run("advance-past-gate", lambda: cmd_advance(d), 0)
@@ -746,6 +799,10 @@ def self_test():
         run("replan-after-resume-denied", lambda: cmd_set(argparse.Namespace(
             key="plan.touches", value='["json"]'), d), 2)
         run("set-pr", lambda: cmd_set(argparse.Namespace(key="pr_number", value="721"), d), 0)
+        run("change-pr-denied", lambda: cmd_set(
+            argparse.Namespace(key="pr_number", value="722"), d), 2)
+        run("clear-pr-denied", lambda: cmd_set(
+            argparse.Namespace(key="pr_number", value="null"), d), 2)
         state = json.loads(state_file(d).read_text())
         if state["pr_number"] != 721 or state["plan"]["touches"] != ["auth"]:
             print(f"self-test FAIL set: {state['pr_number']}, {state['plan']['touches']}")
@@ -780,7 +837,10 @@ def self_test():
         save(d, pre_ci_state)
         run("advance-to-ci-without-current-metadata-denied", lambda: cmd_advance(d), 1)
         mark_metadata(d)
-        run("advance-to-ci", lambda: cmd_advance(d), 0)
+        run("advance-to-ci-with-changed-title-denied", lambda: cmd_advance(
+            d, pr_title_lookup=lambda _pr: ("fix: changed title", None)), 1)
+        run("advance-to-ci", lambda: cmd_advance(
+            d, pr_title_lookup=lambda _pr: ("fix: test pipeline", None)), 0)
         run("complete-without-gate2-denied", lambda: complete(d, "ok"), 1)
         run("approve-ci-without-head-denied", lambda: cmd_approve(
             argparse.Namespace(stage="ci", by="nick", via="github-review", head=None), d), 2)

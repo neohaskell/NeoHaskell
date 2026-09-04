@@ -47,7 +47,7 @@ SH
 #!/usr/bin/env bash
 set -euo pipefail
 printf '%s %s\n' "$$" "$*" >> "${WATCH_TEST_CALLS}"
-sleep 0.03
+if [ "${WATCH_TEST_BLOCK:-0}" = "1" ]; then sleep 30; else sleep 0.03; fi
 SH
   chmod +x "${toolchain}" "${refresh}"
   WATCH_TOOLCHAIN="${toolchain}" WATCH_REFRESH="${refresh}" \
@@ -67,8 +67,22 @@ SH
       failures=1
     fi
   done
+
+  local blocked_calls blocked_pid
+  blocked_calls="${tmp}/blocked-refresh-calls"
+  WATCH_TOOLCHAIN="${toolchain}" WATCH_REFRESH="${refresh}" \
+    WATCH_OUT="${tmp}/blocked-errors" WATCH_DEBOUNCE_SECONDS=0.02 WATCH_POLL_SECONDS=0.02 \
+    WATCH_TEST_CALLS="${blocked_calls}" WATCH_TEST_BLOCK=1 "$0" lib:nhcore-test
+  blocked_pid="$(awk 'NR==1 {print $1}' "${blocked_calls}" 2>/dev/null || true)"
+  if [ -z "${blocked_pid}" ]; then
+    echo "watch self-test FAIL: blocked refresh never started" >&2
+    failures=1
+  elif kill -0 "${blocked_pid}" 2>/dev/null; then
+    echo "watch self-test FAIL: blocked refresh child ${blocked_pid} survived watcher exit" >&2
+    failures=1
+  fi
   if [ "${failures}" -ne 0 ]; then return 1; fi
-  echo "watch self-test: OK — reloads trigger incremental refresh and watcher exit reaps children"
+  echo "watch self-test: OK — reloads refresh incrementally; normal and blocked children are reaped"
 }
 
 if [ "${1:-}" = "--self-test" ]; then
@@ -102,6 +116,15 @@ WATCH_PID=$!
 
 warm_hie_index() {
   local previous_stamp=""
+  local refresh_pid=""
+  cleanup_refresh() {
+    if [ -n "${refresh_pid}" ]; then
+      kill "${refresh_pid}" 2>/dev/null || true
+      wait "${refresh_pid}" 2>/dev/null || true
+    fi
+  }
+  trap cleanup_refresh EXIT
+  trap 'cleanup_refresh; exit 130' INT TERM
   while kill -0 "${WATCH_PID}" 2>/dev/null; do
     local stamp="missing"
     if [ -f "${OUT}" ]; then
@@ -110,7 +133,10 @@ warm_hie_index() {
     if [ "${stamp}" != "${previous_stamp}" ]; then
       previous_stamp="${stamp}"
       sleep "${DEBOUNCE_SECONDS}"
-      "${REFRESH}" --if-needed --quiet >/dev/null 2>&1 || true
+      "${REFRESH}" --if-needed --quiet >/dev/null 2>&1 &
+      refresh_pid=$!
+      wait "${refresh_pid}" 2>/dev/null || true
+      refresh_pid=""
     fi
     sleep "${POLL_SECONDS}"
   done

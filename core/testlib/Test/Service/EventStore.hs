@@ -16,14 +16,14 @@ import Test.Service.EventStore.Subscriptions.SimpleSpec qualified as SimpleSubsc
 import Test.Service.EventStore.Subscriptions.Spec qualified as Subscriptions
 
 
-spec :: Task Text (EventStore CartEvent) -> Spec Unit
-spec newStore = do
+spec :: Text -> Task Text (EventStore CartEvent) -> Spec Unit
+spec backend newStore = do
   describe "Event Store Specification Tests" do
     ReadAllForwardsFromStart.spec newStore
     ReadAllBackwardsFromEnd.spec newStore
     IndividualStreamOrdering.spec newStore
     GlobalStreamOrdering.spec newStore
-    OptimisticConcurrency.spec newStore
+    OptimisticConcurrency.spec backend newStore
     StreamTruncation.spec newStore
     SimpleSubscriptions.spec newStore
     Subscriptions.spec newStore

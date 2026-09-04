@@ -937,7 +937,7 @@ spec :: Spec Unit
 testUser :: Text -> UserClaims
 
 module Test.Service.CommandHandler
-spec :: Task Text (EventStore CartEvent) -> Spec Unit
+spec :: Text -> Task Text (EventStore CartEvent) -> Spec Unit
 
 module Test.Service.CommandHandler.Core
 
@@ -957,8 +957,8 @@ module Test.Service.CommandHandler.Execute.Spec
 basicExecutionSpecs :: Task Text (EventStore CartEvent, EntityFetcher CartEntity CartEvent) -> Spec Unit
 concurrencySpecs :: Task Text (EventStore CartEvent, EntityFetcher CartEntity CartEvent) -> Spec Unit
 errorScenarioSpecs :: Task Text (EventStore CartEvent, EntityFetcher CartEntity CartEvent) -> Spec Unit
-retryLogicSpecs :: Task Text (EventStore CartEvent, EntityFetcher CartEntity CartEvent) -> Spec Unit
-spec :: Task Text (EventStore CartEvent, EntityFetcher CartEntity CartEvent) -> Spec Unit
+retryLogicSpecs :: Text -> Task Text (EventStore CartEvent, EntityFetcher CartEntity CartEvent) -> Spec Unit
+spec :: Text -> Task Text (EventStore CartEvent, EntityFetcher CartEntity CartEvent) -> Spec Unit
 
 module Test.Service.EntityFetcher
 spec :: Task Text (EventStore CartEvent, EntityFetcher CartState CartEvent) -> Spec Unit
@@ -1018,7 +1018,7 @@ module Test.Service.EntityFetcher.FetchWithCache.Spec
 spec :: Task Text (EventStore CartEvent, EntityFetcher CartState CartEvent, SnapshotCache CartState) -> Spec Unit
 
 module Test.Service.EventStore
-spec :: Task Text (EventStore CartEvent) -> Spec Unit
+spec :: Text -> Task Text (EventStore CartEvent) -> Spec Unit
 
 module Test.Service.EventStore.BatchValidation.Context
 Context :: EventStore CartEvent -> StreamId -> Context
@@ -1086,7 +1086,7 @@ data Context
 initialize :: Task Text (EventStore CartEvent) -> Task Text Context
 
 module Test.Service.EventStore.OptimisticConcurrency.Spec
-spec :: Task Text (EventStore CartEvent) -> Spec Unit
+spec :: Text -> Task Text (EventStore CartEvent) -> Spec Unit
 
 module Test.Service.EventStore.ReadAllBackwardsFromEnd.Context
 Context :: Int -> EntityName -> EntityName -> StreamId -> EventStore CartEvent -> Array (InsertionPayload CartEvent) -> StreamPosition -> Context
@@ -1125,7 +1125,7 @@ awaitInsertions :: Int -> InsertBarrier -> Task error Unit
 barrierBeforeInsert :: InsertBarrier -> EventStore event -> EventStore event
 data InsertBarrier
 failFirstWithConsistencyConflict :: EventStore event -> Task error (EventStore event)
-intentionalRed :: Text -> Task Text Unit
+intentionalRed :: Text -> Text -> Task Text Unit
 newInsertBarrier :: Task error InsertBarrier
 recordFetchedRevisions :: forall k state (event :: k) error. EntityFetcher state event -> Task error (EntityFetcher state event, Task error (Array (Maybe StreamPosition)))
 recordInsertions :: EventStore event -> Task error (EventStore event, Task error (Array (InsertionPayload event)))

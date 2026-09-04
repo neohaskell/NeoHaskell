@@ -20,8 +20,8 @@ import Test.Service.EventStore.OptimisticConcurrency.Context qualified as Contex
 import Uuid qualified
 
 
-spec :: Task Text (EventStore CartEvent) -> Spec Unit
-spec newStore = do
+spec :: Text -> Task Text (EventStore CartEvent) -> Spec Unit
+spec backend newStore = do
   describe "Optimistic Concurrency" do
     beforeAll (Context.initialize newStore) do
       it "will only allow one event to be appended, when two writers try to append at the same time" \context -> do
@@ -150,7 +150,7 @@ spec newStore = do
           |> Maybe.map (\event -> event.metadata.eventId)
           |> shouldSatisfy (\id -> id == Just event1Id || id == Just event2Id)
 
-        Regression.intentionalRed "postgres-append-barrier"
+        Regression.intentionalRed "postgres-append-barrier" backend
 
       it "allows only one concurrent StreamCreation" \context -> do
         entityNameText <- Uuid.generate |> Task.map toText
@@ -186,7 +186,7 @@ spec newStore = do
           |> Array.sumIntegers
           |> shouldBe 1
 
-        Regression.intentionalRed "stream-creation-race"
+        Regression.intentionalRed "stream-creation-race" backend
 
       it "keeps AnyStreamState deliberately unconditional" \context -> do
         entityNameText <- Uuid.generate |> Task.map toText
@@ -225,7 +225,7 @@ spec newStore = do
           |> Array.length
           |> shouldBe 3
 
-        Regression.intentionalRed "any-stream-state"
+        Regression.intentionalRed "any-stream-state" backend
 
       it "rejects an unexpected insertion type at the guard boundary" \context -> do
         entityNameText <- Uuid.generate |> Task.map toText

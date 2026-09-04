@@ -271,7 +271,7 @@ when WRITING TESTS; they are not feature-code frequency signal.
 ## Task
 - `mapError :: (err1 -> err2) -> Task err1 value -> Task err2 value`  <!-- 817 test call sites -->
 - `yield :: value -> Task w value`  <!-- 458 test call sites -->
-- `asResult :: Task err value -> Task err2 (Result err value)`  <!-- 280 test call sites -->
+- `asResult :: Task err value -> Task err2 (Result err value)`  <!-- 281 test call sites -->
 - `mapArray :: (element -> Task err output) -> Array element -> Task err (Array output)`  <!-- 126 test call sites -->
 - `throw :: err -> Task err w`  <!-- 118 test call sites -->
 - `andThen :: (input -> Task err output) -> Task err input -> Task err output`  <!-- 91 test call sites -->
