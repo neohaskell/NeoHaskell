@@ -311,6 +311,23 @@ def check_pi_skill_layer(root):
     return errors
 
 
+def named_test_block(text, test_name):
+    lines = text.splitlines()
+    pattern = re.compile(rf'^\s*it\s+"{re.escape(test_name)}"(?:\s|$)')
+    for index, line in enumerate(lines):
+        if not pattern.search(line):
+            continue
+        indentation = len(line) - len(line.lstrip())
+        block = [line]
+        for candidate in lines[index + 1:]:
+            candidate_indentation = len(candidate) - len(candidate.lstrip())
+            if candidate.strip() and candidate_indentation <= indentation:
+                break
+            block.append(candidate)
+        return "\n".join(block)
+    return None
+
+
 def check_regression_skill(root, skills_dir):
     errors = []
     skill_path = skills_dir / "neohaskell-event-store-regression-specs" / "SKILL.md"
@@ -390,6 +407,7 @@ def check_regression_skill(root, skills_dir):
         _key, trigger, backend, expected_examples, example_path, example_name, helpers_cell = cells
         target = root / example_path
         target_text = None
+        test_block = None
         if not trigger:
             errors.append(f"recipe `{recipe}` has no use-when trigger")
         if backend not in {"in-memory", "simple", "postgres"}:
@@ -401,7 +419,8 @@ def check_regression_skill(root, skills_dir):
             errors.append(f"recipe `{recipe}` must be bound to the PostgreSQL backend")
         if target.is_file():
             target_text = read(target)
-            if example_name not in target_text:
+            test_block = named_test_block(target_text, example_name)
+            if test_block is None:
                 errors.append(
                     f"recipe `{recipe}` has invalid canonical example `{example_path}:{example_name}`"
                 )
@@ -415,8 +434,11 @@ def check_regression_skill(root, skills_dir):
                 f"recipe `{recipe}` helpers must be {sorted(recipe_helpers[recipe])}, "
                 f"got {sorted(helpers)}"
             )
-        if target_text is not None and f'intentionalRed "{recipe}"' not in target_text:
-            errors.append(f"recipe `{recipe}` canonical example lacks its compiled red sentinel")
+        if target_text is not None and test_block is not None \
+                and f'intentionalRed "{recipe}"' not in test_block:
+            errors.append(
+                f"recipe `{recipe}` canonical test block lacks its compiled red sentinel"
+            )
     for snippet in (
         "recipes()", "expected_examples", "NEOHASKELL_REGRESSION_SMOKE_BACKEND",
         "examples?, 1 failure", "sentinel_count",
@@ -709,9 +731,15 @@ def _build_good_tree(root):
         "stream-creation-race": (optimistic, "postgres", 3, "allows only one concurrent StreamCreation", ["newInsertBarrier", "barrierBeforeInsert", "awaitInsertions", "releaseInsertions"]),
         "any-stream-state": (optimistic, "in-memory", 3, "keeps AnyStreamState deliberately unconditional", ["seedStream", "newInsertBarrier", "barrierBeforeInsert", "awaitInsertions", "releaseInsertions"]),
     }
+    grouped_examples = {}
     for key, (path, _backend, _count, example_name, _helpers) in examples.items():
+        grouped_examples.setdefault((path, example_name), []).append(key)
+    for (path, example_name), recipe_keys in grouped_examples.items():
         with path.open("a", encoding="utf-8") as handle:
-            handle.write(f'{example_name}\nintentionalRed "{key}"\n')
+            handle.write(f'it "{example_name}" \\context -> do\n')
+            for key in recipe_keys:
+                handle.write(f'  intentionalRed "{key}"\n')
+            handle.write("\n")
     rows = []
     for key, (path, backend, count, example_name, helpers) in examples.items():
         helper_cell = ", ".join(f"`{helper_name}`" for helper_name in helpers)
@@ -868,6 +896,17 @@ def self_test():
     errors = mutated(point_recipe_at_missing_example)
     expect(any("invalid canonical example" in error for error in errors),
            f"missing canonical example should be a validation error, got {errors}")
+
+    def move_sentinel_to_another_test(root):
+        path = root / "core" / "testlib" / "Test" / "Service" / "CommandHandler" / "Execute" / "Spec.hs"
+        text = read(path).replace('  intentionalRed "insertion-guard"\n', "")
+        path.write_text(
+            text + 'it "unrelated test" \\context -> do\n  intentionalRed "insertion-guard"\n',
+            encoding="utf-8",
+        )
+    errors = mutated(move_sentinel_to_another_test)
+    expect(any("canonical test block lacks" in error for error in errors),
+           f"sentinel outside canonical test block should fail, got {errors}")
 
     def invalid_name(root):
         path = root / ".pi" / "skills" / "neohaskell-localizer" / "SKILL.md"
