@@ -150,6 +150,8 @@ spec newStore = do
           |> Maybe.map (\event -> event.metadata.eventId)
           |> shouldSatisfy (\id -> id == Just event1Id || id == Just event2Id)
 
+        Regression.intentionalRed "postgres-append-barrier"
+
       it "allows only one concurrent StreamCreation" \context -> do
         entityNameText <- Uuid.generate |> Task.map toText
         let entityName = Event.EntityName entityNameText
@@ -183,6 +185,8 @@ spec newStore = do
           |> Array.map (\result -> if Result.isOk result then 1 else 0)
           |> Array.sumIntegers
           |> shouldBe 1
+
+        Regression.intentionalRed "stream-creation-race"
 
       it "keeps AnyStreamState deliberately unconditional" \context -> do
         entityNameText <- Uuid.generate |> Task.map toText
@@ -220,6 +224,27 @@ spec newStore = do
           |> EventStore.collectStreamEvents
           |> Array.length
           |> shouldBe 3
+
+        Regression.intentionalRed "any-stream-state"
+
+      it "rejects an unexpected insertion type at the guard boundary" \context -> do
+        entityNameText <- Uuid.generate |> Task.map toText
+        payload <-
+          Event.payloadFromEvents
+            (Event.EntityName entityNameText)
+            context.streamId
+            [CartCreated {entityId = def}]
+        let guardedStore = Regression.requireInsertionType Event.StreamCreation context.store
+        result <- guardedStore.insert payload |> Task.asResult
+        case result of
+          Err (EventStore.InsertionError (Event.InsertionFailed _)) -> Task.yield unit
+          _ -> fail "Expected the insertion guard to reject AnyStreamState"
+
+      it "treats a zero-party insert barrier as complete" \_ -> do
+        barrier <- Regression.newInsertBarrier
+        Regression.awaitInsertions 0 barrier
+        Regression.releaseInsertions 0 barrier
+        True |> shouldBe True
 
       it "gives consistency error when stream position is not up to date" \context -> do
         entityNameText <- Uuid.generate |> Task.map toText

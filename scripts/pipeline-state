@@ -8,7 +8,7 @@ re-plans** — a run continued after the maintainer's signal picks up the
 recorded plan verbatim; if the plan is wrong, the run is parked and re-entered
 from the top, visibly.
 
-Stage names are the telemetry schema v5 canonical list (telemetry/SCHEMA.md)
+Stage names are the telemetry schema v6 canonical list (telemetry/SCHEMA.md)
 — one vocabulary across state, telemetry lines, and the pipeline skill.
 
 Commands:
@@ -57,7 +57,7 @@ CONVENTIONAL_SUBJECT_RE = re.compile(
 )
 
 # telemetry/SCHEMA.md stage enum, in pipeline order. Changing it there means
-# changing it here in the same PR (both quote schema v5).
+# changing it here in the same PR (both quote schema v6).
 STAGES = ["intake", "localize", "spec", "design-review", "plan",
           "test-writing", "implement", "verify", "pr", "ci"]
 
@@ -156,6 +156,16 @@ def current_head():
     return git_output("rev-parse", "HEAD")
 
 
+def metadata_validation_matches(state):
+    validation = state.get("metadata_validation")
+    return (
+        isinstance(validation, dict)
+        and validation.get("head") == current_head()
+        and bool(validation.get("pr_title"))
+        and bool(validation.get("base"))
+    )
+
+
 def tracked_worktree_clean(status):
     return status is not None and not status.strip()
 
@@ -217,6 +227,10 @@ def validate(state):
             errs.append(f"`{key}` must be a {want.__name__}")
     if state.get("park") is not None and not isinstance(state["park"], dict):
         errs.append("`park` must be null or an object")
+    if state.get("metadata_validation") is not None and not isinstance(
+        state["metadata_validation"], dict
+    ):
+        errs.append("`metadata_validation` must be null or an object")
     if errs:
         return errs
     if state["stage"] not in STAGES:
@@ -299,6 +313,7 @@ def cmd_init(args, state_dir, issue_claimer=claim_issue):
         "pr_number": None,
         "plan": {"touches": [], "files": [], "uses": []},
         "approvals": {},
+        "metadata_validation": None,
         "history": [{"stage": "intake", "entered": now()}],
     }
     save(state_dir, state)
@@ -306,7 +321,22 @@ def cmd_init(args, state_dir, issue_claimer=claim_issue):
     return 0
 
 
-def cmd_validate_metadata(args):
+def cmd_validate_metadata(args, state_dir):
+    state = load(state_dir)
+    if state.get("pr_number") is not None:
+        code, actual_title, error = command_output(
+            ["gh", "pr", "view", str(state["pr_number"]), "--json", "title", "--jq", ".title"]
+        )
+        if code != 0:
+            print(f"pipeline-state: cannot verify PR title: {error or 'gh failed'}", file=sys.stderr)
+            return 2
+        if actual_title != args.pr_title:
+            print(
+                f"pipeline-state: invalid Conventional Commit metadata — offending PR title: "
+                f"`{actual_title}` (validated argument was `{args.pr_title}`)",
+                file=sys.stderr,
+            )
+            return 1
     commits = commits_since(args.base)
     if commits is None:
         print(f"pipeline-state: cannot inspect commits from base `{args.base}`", file=sys.stderr)
@@ -316,7 +346,21 @@ def cmd_validate_metadata(args):
         for error in errors:
             print(f"pipeline-state: invalid Conventional Commit metadata — {error}", file=sys.stderr)
         return 1
-    print(f"pipeline-state: Conventional Commit metadata valid ({len(commits)} commit(s), PR title checked)")
+    head = current_head()
+    if head is None:
+        print("pipeline-state: cannot resolve current HEAD for metadata validation", file=sys.stderr)
+        return 2
+    state["metadata_validation"] = {
+        "head": head,
+        "base": args.base,
+        "pr_title": args.pr_title,
+        "at": now(),
+    }
+    save(state_dir, state)
+    print(
+        f"pipeline-state: Conventional Commit metadata valid and recorded at {head} "
+        f"({len(commits)} commit(s), PR title checked)"
+    )
     return 0
 
 
@@ -330,6 +374,9 @@ def cmd_status(state_dir):
     if s["approvals"]:
         for stage, a in s["approvals"].items():
             print(f"  approved {stage}: by {a['by']} via {a.get('via', '?')} at {a['at']}")
+    if s.get("metadata_validation"):
+        validation = s["metadata_validation"]
+        print(f"  metadata validated: {validation['head']} title={validation['pr_title']!r}")
     print(f"  history: {' -> '.join(h['stage'] for h in s['history'])}")
     return 0
 
@@ -343,11 +390,19 @@ def cmd_advance(state_dir):
     if i + 1 >= len(STAGES):
         print(f"pipeline-state: already at final stage `{s['stage']}`", file=sys.stderr)
         return 1
-    if STAGES[i + 1] == "design-review" and "spec" not in s["approvals"]:
+    next_stage = STAGES[i + 1]
+    if next_stage == "design-review" and "spec" not in s["approvals"]:
         print("pipeline-state: cannot advance past `spec` without a recorded spec "
               "approval (`approve spec --by …`) — the gate is the contract", file=sys.stderr)
         return 1
-    s["stage"] = STAGES[i + 1]
+    if next_stage in {"design-review", "ci"} and not metadata_validation_matches(s):
+        print(
+            f"pipeline-state: cannot advance to `{next_stage}` without Conventional Commit "
+            "metadata validated at current HEAD (`pipeline validate --pr-title …`)",
+            file=sys.stderr,
+        )
+        return 1
+    s["stage"] = next_stage
     s["history"].append({"stage": s["stage"], "entered": now()})
     save(state_dir, s)
     print(f"pipeline-state: -> {s['stage']}")
@@ -575,6 +630,16 @@ def self_test():
                 approval_matcher=lambda _head, _run_id, _outcome: True,
             )
 
+        def mark_metadata(run_dir):
+            state = load(run_dir)
+            state["metadata_validation"] = {
+                "head": current_head(),
+                "base": "origin/main",
+                "pr_title": "fix: test pipeline",
+                "at": now(),
+            }
+            save(run_dir, state)
+
         if approval_covers_head("a", "a", "parent", ["other"]):
             print("self-test FAIL approval coverage: exact HEAD must not bypass telemetry ordering")
             fails += 1
@@ -669,6 +734,8 @@ def self_test():
         run("gate-blocks-unapproved", lambda: cmd_advance(d), 1)
         run("approve-spec", lambda: cmd_approve(
             argparse.Namespace(stage="spec", by="nick", via="pr-comment"), d), 0)
+        run("advance-past-gate-without-metadata-denied", lambda: cmd_advance(d), 1)
+        mark_metadata(d)
         run("advance-past-gate", lambda: cmd_advance(d), 0)
         run("park-bad-label", lambda: cmd_park(
             argparse.Namespace(label="vibes", note=""), d), 2)
@@ -708,6 +775,11 @@ def self_test():
         run("advance-to-implement", lambda: cmd_advance(d), 0)
         run("advance-to-verify", lambda: cmd_advance(d), 0)
         run("advance-to-pr", lambda: cmd_advance(d), 0)
+        pre_ci_state = load(d)
+        pre_ci_state["metadata_validation"] = None
+        save(d, pre_ci_state)
+        run("advance-to-ci-without-current-metadata-denied", lambda: cmd_advance(d), 1)
+        mark_metadata(d)
         run("advance-to-ci", lambda: cmd_advance(d), 0)
         run("complete-without-gate2-denied", lambda: complete(d, "ok"), 1)
         run("approve-ci-without-head-denied", lambda: cmd_approve(
@@ -862,7 +934,7 @@ def main():
     if args.cmd == "validate":
         load(STATE_DIR)
         if args.pr_title is not None:
-            return cmd_validate_metadata(args)
+            return cmd_validate_metadata(args, STATE_DIR)
         print("pipeline-state: valid")
         return 0
     return 2

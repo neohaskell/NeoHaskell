@@ -236,6 +236,10 @@ retryLogicSpecs newCartStoreAndFetcher = do
       fetchedRevisions <- readRevisions
       Array.length fetchedRevisions |> shouldBe 2
 
+      Regression.intentionalRed "insertion-guard"
+      Regression.intentionalRed "record-payloads-and-revisions"
+      Regression.intentionalRed "consistency-conflict-refetch"
+
     it "retries on consistency check failure (ExistingStream)" \context -> do
       -- Create initial cart
       let cartCreatedEvent = CartCreated {entityId = context.cartId}

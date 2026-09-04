@@ -1125,6 +1125,7 @@ awaitInsertions :: Int -> InsertBarrier -> Task error Unit
 barrierBeforeInsert :: InsertBarrier -> EventStore event -> EventStore event
 data InsertBarrier
 failFirstWithConsistencyConflict :: EventStore event -> Task error (EventStore event)
+intentionalRed :: Text -> Task Text Unit
 newInsertBarrier :: Task error InsertBarrier
 recordFetchedRevisions :: forall k state (event :: k) error. EntityFetcher state event -> Task error (EntityFetcher state event, Task error (Array (Maybe StreamPosition)))
 recordInsertions :: EventStore event -> Task error (EventStore event, Task error (Array (InsertionPayload event)))

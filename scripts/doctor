@@ -101,6 +101,8 @@ scripts/spec-drift --self-test || fail=1
 scripts/pipeline-state --self-test || fail=1
 scripts/refresh-hiedb --self-test || fail=1
 scripts/who-calls --self-test || fail=1
+scripts/watch --self-test || fail=1
+scripts/regression-scaffold-smoke --self-test || fail=1
 scripts/telemetry.py --self-test || fail=1
 scripts/changelog --self-test || fail=1
 scripts/revert --self-test || fail=1
@@ -128,7 +130,7 @@ fi
 if [ "$(grep -c '^  "${TOOLCHAIN}" cabal build all' scripts/refresh-hiedb)" -ne 1 ]; then
   err "scripts/refresh-hiedb must contain exactly one explicit full-build path"
 fi
-if ! grep -q 'refresh-hiedb" --if-needed --quiet' scripts/watch; then
+if ! grep -q '"${REFRESH}" --if-needed --quiet' scripts/watch; then
   err "scripts/watch must keep the HIE index warm through incremental refresh"
 fi
 

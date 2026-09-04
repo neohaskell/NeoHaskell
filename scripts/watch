@@ -14,13 +14,74 @@
 # Usage:
 #   ./dev watch                # watch lib:nhcore
 #   ./dev watch lib:nhtestbed  # watch another target
+#   ./dev watch --self-test    # fake watcher/refresh lifecycle
 #
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "${SCRIPT_DIR}/.."
 
+self_test() {
+  local tmp toolchain refresh calls output pids failures=0
+  tmp="$(mktemp -d)"
+  trap 'rm -rf "${tmp}"' RETURN
+  toolchain="${tmp}/toolchain"
+  refresh="${tmp}/refresh"
+  calls="${tmp}/refresh-calls"
+  output="${tmp}/errors"
+  cat > "${toolchain}" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+[ "${1:-}" = "ghcid" ] || exit 2
+shift
+out=""
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = "--outputfile" ]; then shift; out="$1"; fi
+  shift
+done
+printf 'loading\n' > "${out}"
+sleep 0.08
+printf 'All good\n' > "${out}"
+sleep 0.15
+SH
+  cat > "${refresh}" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s %s\n' "$$" "$*" >> "${WATCH_TEST_CALLS}"
+sleep 0.03
+SH
+  chmod +x "${toolchain}" "${refresh}"
+  WATCH_TOOLCHAIN="${toolchain}" WATCH_REFRESH="${refresh}" \
+    WATCH_OUT="${output}" WATCH_DEBOUNCE_SECONDS=0.02 WATCH_POLL_SECONDS=0.02 \
+    WATCH_TEST_CALLS="${calls}" "$0" lib:nhcore-test
+  if [ ! -s "${calls}" ]; then
+    echo "watch self-test FAIL: a compiled reload did not refresh the HIE index" >&2
+    failures=1
+  elif ! grep -Fq -- '--if-needed --quiet' "${calls}"; then
+    echo "watch self-test FAIL: refresh was not incremental" >&2
+    failures=1
+  fi
+  pids="$(awk '{print $1}' "${calls}" 2>/dev/null || true)"
+  for pid in ${pids}; do
+    if kill -0 "${pid}" 2>/dev/null; then
+      echo "watch self-test FAIL: refresh child ${pid} survived watcher exit" >&2
+      failures=1
+    fi
+  done
+  if [ "${failures}" -ne 0 ]; then return 1; fi
+  echo "watch self-test: OK — reloads trigger incremental refresh and watcher exit reaps children"
+}
+
+if [ "${1:-}" = "--self-test" ]; then
+  self_test
+  exit $?
+fi
+
 TARGET="${1:-lib:nhcore}"
-OUT=".ghcid-errors.txt"
+OUT="${WATCH_OUT:-.ghcid-errors.txt}"
+TOOLCHAIN="${WATCH_TOOLCHAIN:-${SCRIPT_DIR}/with-toolchain}"
+REFRESH="${WATCH_REFRESH:-${SCRIPT_DIR}/refresh-hiedb}"
+DEBOUNCE_SECONDS="${WATCH_DEBOUNCE_SECONDS:-1}"
+POLL_SECONDS="${WATCH_POLL_SECONDS:-2}"
 
 # TARGET is spliced into ghcid's --command STRING (shell-evaluated), unlike the
 # other scripts where targets travel as argv. Restrict to cabal target syntax
@@ -34,7 +95,7 @@ echo "watch: watching ${TARGET} (dev flavor, -O0); errors -> ${OUT}"
 
 # with-toolchain enters `nix develop` on demand — ghcid and cabal come from the
 # pinned dev shell, so this works from any bare shell (agent or human).
-"${SCRIPT_DIR}/with-toolchain" ghcid \
+"${TOOLCHAIN}" ghcid \
   --command "cabal repl ${TARGET} --project-file=cabal.project.dev" \
   --outputfile "${OUT}" &
 WATCH_PID=$!
@@ -48,10 +109,10 @@ warm_hie_index() {
     fi
     if [ "${stamp}" != "${previous_stamp}" ]; then
       previous_stamp="${stamp}"
-      sleep 1
-      "${SCRIPT_DIR}/refresh-hiedb" --if-needed --quiet >/dev/null 2>&1 || true
+      sleep "${DEBOUNCE_SECONDS}"
+      "${REFRESH}" --if-needed --quiet >/dev/null 2>&1 || true
     fi
-    sleep 2
+    sleep "${POLL_SECONDS}"
   done
 }
 
@@ -59,6 +120,9 @@ warm_hie_index &
 WARMER_PID=$!
 cleanup() {
   kill "${WARMER_PID}" "${WATCH_PID}" 2>/dev/null || true
+  wait "${WARMER_PID}" 2>/dev/null || true
+  wait "${WATCH_PID}" 2>/dev/null || true
 }
-trap cleanup EXIT INT TERM
+trap cleanup EXIT
+trap 'exit 130' INT TERM
 wait "${WATCH_PID}"

@@ -238,8 +238,8 @@ def check_pi_skill_layer(root):
         directory_name = skill_md.parent.name
         skill_text = read(skill_md)
         frontmatter, fm_errors = parse_frontmatter(skill_text)
-        if re.search(r"\bschema v[0-4]\b", skill_text, flags=re.IGNORECASE):
-            errors.append(f"{rel}: references obsolete telemetry schema (v5 is canonical)")
+        if re.search(r"\bschema v[0-5]\b", skill_text, flags=re.IGNORECASE):
+            errors.append(f"{rel}: references obsolete telemetry schema (v6 is canonical)")
         for error in fm_errors:
             errors.append(f"{rel}: {error}")
         if frontmatter is None:
@@ -313,9 +313,9 @@ def check_pi_skill_layer(root):
 
 def check_regression_skill(root, skills_dir):
     errors = []
-    skill_dir = skills_dir / "neohaskell-event-store-regression-specs"
-    catalog_path = skill_dir / "routing-smoke.yaml"
+    skill_path = skills_dir / "neohaskell-event-store-regression-specs" / "SKILL.md"
     helper_path = root / "core" / "testlib" / "Test" / "Service" / "EventStore" / "Regression.hs"
+    smoke_path = root / "scripts" / "regression-scaffold-smoke"
     required_recipes = {
         "insertion-guard", "record-payloads-and-revisions", "consistency-conflict-refetch",
         "postgres-append-barrier", "stream-creation-race", "any-stream-state",
@@ -325,41 +325,50 @@ def check_regression_skill(root, skills_dir):
         "failFirstWithConsistencyConflict", "newInsertBarrier", "barrierBeforeInsert",
         "awaitInsertions", "releaseInsertions",
     }
-    if not catalog_path.is_file():
-        return [f"{catalog_path.relative_to(root)} is missing"]
+    if not skill_path.is_file():
+        return [f"{skill_path.relative_to(root)} is missing"]
     if not helper_path.is_file():
         return [f"{helper_path.relative_to(root)} is missing"]
-    try:
-        catalog = json.loads(read(catalog_path))
-    except json.JSONDecodeError as exc:
-        return [f"{catalog_path.relative_to(root)} is not JSON-compatible YAML: {exc.msg}"]
-    recipes = catalog.get("recipes")
-    if not isinstance(recipes, list):
-        return [f"{catalog_path.relative_to(root)} must contain a recipes list"]
-    keys = {recipe.get("key") for recipe in recipes if isinstance(recipe, dict)}
-    if keys != required_recipes:
+    if not smoke_path.is_file():
+        return [f"{smoke_path.relative_to(root)} is missing"]
+    recipe_rows = {}
+    for line in read(skill_path).splitlines():
+        if not line.startswith("| `"):
+            continue
+        raw_cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
+        if len(raw_cells) != 5:
+            continue
+        recipe = raw_cells[0].strip("`")
+        cells = [recipe, raw_cells[1], raw_cells[2].strip("`"), raw_cells[3].strip("`"), raw_cells[4]]
+        if re.fullmatch(r"[a-z0-9-]+", recipe):
+            recipe_rows[recipe] = cells
+    if set(recipe_rows) != required_recipes:
         errors.append(
-            f"{catalog_path.relative_to(root)} recipe keys must be {sorted(required_recipes)}, got {sorted(str(key) for key in keys)}"
+            f"{skill_path.relative_to(root)} recipe rows must be {sorted(required_recipes)}, "
+            f"got {sorted(recipe_rows)}"
         )
     helper_text = read(helper_path)
+    smoke_text = read(smoke_path)
     for helper in sorted(required_helpers):
         if not re.search(rf"\b{re.escape(helper)}\b", helper_text):
             errors.append(f"{helper_path.relative_to(root)} is missing helper `{helper}`")
-    for recipe in recipes:
-        if not isinstance(recipe, dict):
-            errors.append(f"{catalog_path.relative_to(root)} recipes must be objects")
-            continue
-        for field in ("prompt", "canonical_example", "helpers", "compile_command", "test_command"):
-            if not recipe.get(field):
-                errors.append(f"recipe `{recipe.get('key')}` is missing `{field}`")
-        example = recipe.get("canonical_example", "")
-        example_path, separator, example_name = example.partition(":")
+    for recipe, cells in recipe_rows.items():
+        _key, trigger, example_path, example_name, helpers_cell = cells
         target = root / example_path
-        if not separator or not target.is_file() or example_name not in read(target):
-            errors.append(f"recipe `{recipe.get('key')}` has invalid canonical example `{example}`")
-        unknown_helpers = set(recipe.get("helpers", [])) - required_helpers
-        if unknown_helpers:
-            errors.append(f"recipe `{recipe.get('key')}` references unknown helpers {sorted(unknown_helpers)}")
+        if not trigger:
+            errors.append(f"recipe `{recipe}` has no use-when trigger")
+        if not target.is_file() or example_name not in read(target):
+            errors.append(
+                f"recipe `{recipe}` has invalid canonical example `{example_path}:{example_name}`"
+            )
+        helpers = set(re.findall(r"`([A-Za-z][A-Za-z0-9]*)`", helpers_cell))
+        unknown_helpers = helpers - required_helpers
+        if not helpers or unknown_helpers:
+            errors.append(f"recipe `{recipe}` references invalid helpers {sorted(unknown_helpers)}")
+        if f'intentionalRed "{recipe}"' not in read(target):
+            errors.append(f"recipe `{recipe}` canonical example lacks its compiled red sentinel")
+        if recipe not in smoke_text:
+            errors.append(f"{smoke_path.relative_to(root)} does not cover recipe `{recipe}`")
     return errors
 
 
@@ -393,6 +402,8 @@ def check_pipeline_contract(root, pipeline_path):
         "issue ownership verification": "verifies that viewer appears in the issue assignees",
         "Conventional Commit form": "<type>(<optional-scope>): <imperative description>",
         "metadata validation": "./dev pipeline validate --pr-title \"<title>\" --base origin/main",
+        "metadata transition gate": "Advancing past the spec gate is mechanically blocked",
+        "PR metadata transition gate": "The `pr → ci` transition refuses",
         "work activity telemetry": "./dev telemetry activity --name <activity> --event start|stop",
         "spec-first stage": "3. **spec**",
         "draft/spec approval gate": "4. **GATE 1**",
@@ -456,6 +467,11 @@ def check_pipeline_contract(root, pipeline_path):
                 or 'pc.add_argument("--outcome"' not in state_text):
             errors.append(
                 "scripts/pipeline-state must implement the checked `complete` lifecycle command"
+            )
+        if "metadata_validation_matches" not in state_text \
+                or 'next_stage in {"design-review", "ci"}' not in state_text:
+            errors.append(
+                "scripts/pipeline-state must enforce current-HEAD metadata at spec and PR transitions"
             )
 
     full_suite = root / "scripts" / "run-all-tests.sh"
@@ -572,6 +588,7 @@ Exactly **two human gates**.
 .pipeline/state.json is authoritative.
 For issues, run `gh issue edit N --add-assignee @me` and verifies that viewer appears in the issue assignees.
 Use `<type>(<optional-scope>): <imperative description>` and run `./dev pipeline validate --pr-title "<title>" --base origin/main`.
+Advancing past the spec gate is mechanically blocked without it. The `pr → ci` transition refuses stale evidence.
 Time work with `./dev telemetry activity --name <activity> --event start|stop`.
 ## Stages
 3. **spec** — write the contract first.
@@ -626,43 +643,44 @@ def _build_good_tree(root):
     helper.write_text("\n".join(helper_names) + "\n", encoding="utf-8")
     execute = root / "core" / "testlib" / "Test" / "Service" / "CommandHandler" / "Execute" / "Spec.hs"
     execute.parent.mkdir(parents=True)
-    execute.write_text("canonically records a consistency conflict, refetch, and re-decision\n", encoding="utf-8")
     optimistic = root / "core" / "testlib" / "Test" / "Service" / "EventStore" / "OptimisticConcurrency" / "Spec.hs"
     optimistic.parent.mkdir(parents=True)
-    optimistic.write_text(
-        "will only allow one event to be appended, when two writers try to append at the same time\n"
-        "allows only one concurrent StreamCreation\n"
-        "keeps AnyStreamState deliberately unconditional\n",
+    examples = {
+        "insertion-guard": (execute, "canonically records a consistency conflict, refetch, and re-decision", ["seedStream", "requireInsertionType"]),
+        "record-payloads-and-revisions": (execute, "canonically records a consistency conflict, refetch, and re-decision", ["recordInsertions", "recordFetchedRevisions"]),
+        "consistency-conflict-refetch": (execute, "canonically records a consistency conflict, refetch, and re-decision", ["failFirstWithConsistencyConflict"]),
+        "postgres-append-barrier": (optimistic, "will only allow one event to be appended, when two writers try to append at the same time", ["barrierBeforeInsert"]),
+        "stream-creation-race": (optimistic, "allows only one concurrent StreamCreation", ["newInsertBarrier"]),
+        "any-stream-state": (optimistic, "keeps AnyStreamState deliberately unconditional", ["seedStream"]),
+    }
+    for key, (path, example_name, _helpers) in examples.items():
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write(f'{example_name}\nintentionalRed "{key}"\n')
+    rows = []
+    for key, (path, example_name, helpers) in examples.items():
+        helper_cell = ", ".join(f"`{helper_name}`" for helper_name in helpers)
+        rows.append(
+            f"| `{key}` | scaffold {key} | `{path.relative_to(root)}` | "
+            f"`{example_name}` | {helper_cell} |"
+        )
+    regression_skill = root / ".pi" / "skills" / "neohaskell-event-store-regression-specs" / "SKILL.md"
+    regression_skill.write_text(
+        "---\nname: neohaskell-event-store-regression-specs\n"
+        "description: Use when scaffolding compiled event-store regression tests from canonical examples.\n"
+        "---\n\n# Recipes\n\n| Recipe | Use when | Canonical file | Canonical test | Helpers |\n"
+        "|---|---|---|---|---|\n" + "\n".join(rows) + "\n",
         encoding="utf-8",
     )
-    examples = {
-        "insertion-guard": (execute, ["seedStream", "requireInsertionType"]),
-        "record-payloads-and-revisions": (execute, ["recordInsertions", "recordFetchedRevisions"]),
-        "consistency-conflict-refetch": (execute, ["failFirstWithConsistencyConflict"]),
-        "postgres-append-barrier": (optimistic, ["barrierBeforeInsert"]),
-        "stream-creation-race": (optimistic, ["newInsertBarrier"]),
-        "any-stream-state": (optimistic, ["seedStream"]),
-    }
-    recipe_rows = []
-    for key, (path, helpers) in examples.items():
-        example_name = read(path).splitlines()[0]
-        if key == "stream-creation-race":
-            example_name = "allows only one concurrent StreamCreation"
-        if key == "any-stream-state":
-            example_name = "keeps AnyStreamState deliberately unconditional"
-        recipe_rows.append({
-            "key": key,
-            "prompt": f"scaffold {key}",
-            "canonical_example": f"{path.relative_to(root)}:{example_name}",
-            "helpers": helpers,
-            "compile_command": "./dev check lib:nhcore",
-            "test_command": "./dev test recipe nhcore-test-service",
-        })
-    catalog = root / ".pi" / "skills" / "neohaskell-event-store-regression-specs" / "routing-smoke.yaml"
-    catalog.write_text(json.dumps({"recipes": recipe_rows}), encoding="utf-8")
     (root / "scripts").mkdir(parents=True)
+    (root / "scripts" / "regression-scaffold-smoke").write_text(
+        "insertion-guard record-payloads-and-revisions consistency-conflict-refetch "
+        "postgres-append-barrier stream-creation-race any-stream-state\n",
+        encoding="utf-8",
+    )
     (root / "scripts" / "pipeline-state").write_text(
         'PLAN_WRITABLE_STAGES = {"intake", "localize"}\n'
+        'def metadata_validation_matches(): pass\n'
+        'if next_stage in {"design-review", "ci"}: pass\n'
         'def cmd_complete(): pass\n'
         'pc = sub.add_parser("complete")\n'
         'pc.add_argument("--outcome", required=True)\n',
@@ -749,12 +767,11 @@ def self_test():
            f"missing canonical SKILL.md should fail, got {errors}")
 
     def remove_regression_recipe(root):
-        path = root / ".pi" / "skills" / "neohaskell-event-store-regression-specs" / "routing-smoke.yaml"
-        catalog = json.loads(read(path))
-        catalog["recipes"] = catalog["recipes"][1:]
-        path.write_text(json.dumps(catalog), encoding="utf-8")
+        path = root / ".pi" / "skills" / "neohaskell-event-store-regression-specs" / "SKILL.md"
+        lines = [line for line in read(path).splitlines() if "`insertion-guard`" not in line]
+        path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     errors = mutated(remove_regression_recipe)
-    expect(any("recipe keys must be" in error for error in errors),
+    expect(any("recipe rows must be" in error for error in errors),
            f"missing regression recipe should fail, got {errors}")
 
     def invalid_name(root):

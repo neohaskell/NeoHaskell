@@ -11,7 +11,7 @@ description: Orchestrate a NeoHaskell change end-to-end through the spec-gated p
 Exactly **two human gates**: spec approval (draft PR) and final PR review.
 Everything between them is mechanical or agent-run, resumable from
 `.pipeline/state.json`, and telemetered. Stage names below are the telemetry
-schema v5 canon (`telemetry/SCHEMA.md`) — state, telemetry lines, and this
+schema v6 canon (`telemetry/SCHEMA.md`) — state, telemetry lines, and this
 skill share one vocabulary.
 
 ## Stage flow
@@ -62,8 +62,10 @@ the activity vocabulary is `localization`, `index`, `test-scaffolding`,
    `<type>(<optional-scope>): <imperative description>`, where type is one of
    `fix|feat|test|docs|refactor|perf|build|ci|chore|revert`. Before push/opening,
    run `./dev pipeline validate --pr-title "<title>" --base origin/main`; it prints
-   the exact offending commit SHA/subject or PR title and blocks on any mismatch.
-   Then open a **draft PR** whose diff is the spec (+ADR, +red repro).
+   the exact offending commit SHA/subject or PR title and records the validated
+   HEAD/title/base. Advancing past the spec gate is mechanically blocked when that
+   evidence is absent or stale. Then open a **draft PR** whose diff is the spec
+   (+ADR, +red repro).
    Park: `./dev pipeline park` is NOT used here — waiting on the gate is
    `waiting_on_human_s`, not a failure. **How approval arrives (local-agent
    canonical flow):** the orchestrator remains in a persistent local agent
@@ -121,8 +123,9 @@ the activity vocabulary is `localization`, `index`, `test-scaffolding`,
    f. acceptance as the user runs it: `./dev testbed`
 10. **pr** — prepare the final substantive commit, then run `./dev pipeline
     validate --pr-title "<title>" --base origin/main` again before push and before
-    flipping the draft to ready-for-review. Every commit subject and the final PR
-    title must retain the Conventional Commit form. Then flip the draft to
+    flipping the draft to ready-for-review. The `pr → ci` transition refuses
+    missing evidence or a validation from any earlier HEAD. Every commit subject
+    and the final PR title must retain the Conventional Commit form. Then flip the draft to
     ready-for-review (this triggers the full CI matrix; drafts run only cheap
     checks). PR body: spec link, criteria → test mapping, review records. **Flip
     the ADR's `## Status` to `Implemented`** here (and the matching row in

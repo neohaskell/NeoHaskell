@@ -177,5 +177,12 @@ Ok SslModeUnset
 "8b743db0-26d8-5500-9136-1f28e2940a25"
 ```
 
+## testlib
+### Test.Service.EventStore.Regression
+```haskell
+>>> Event.AnyStreamState == Event.AnyStreamState
+True
+```
+
 ---
-*30 example sessions · modules with ZERO doctests: 315 (the documentation backlog — see codemap/.doc-ratchet)*
+*31 example sessions · modules with ZERO doctests: 315 (the documentation backlog — see codemap/.doc-ratchet)*

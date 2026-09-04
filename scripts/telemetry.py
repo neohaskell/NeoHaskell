@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Pipeline telemetry emitter (Phase 1; schema v5 Phase 6). Schema: telemetry/SCHEMA.md.
+"""Pipeline telemetry emitter (Phase 1; schema v6 Phase 6). Schema: telemetry/SCHEMA.md.
 
 One JSON line per pipeline run, appended to telemetry/runs.jsonl. Never
 hand-written — pipeline scripts call this tool.
@@ -58,7 +58,7 @@ DELTA_TYPES = [
     "alias", "extension-point", "phrasebook", "hot-card", "hlint-rule",
     "hook", "cli-utility", "skill-edit", "telemetry-label", "PRUNE", "none",
 ]
-CURRENT_SCHEMA = 5
+CURRENT_SCHEMA = 6
 
 
 # De-facto run-id format (documented in telemetry/SCHEMA.md): also guards the
@@ -160,6 +160,17 @@ def cmd_stage(args) -> None:
     save(run)
 
 
+def activity_intervals(run: dict, name: str) -> list:
+    activities = run.setdefault("activities", {})
+    intervals = activities.setdefault(name, [])
+    if isinstance(intervals, dict):
+        intervals = [intervals]
+        activities[name] = intervals
+    if not isinstance(intervals, list):
+        sys.exit(f"telemetry: activity '{name}' has invalid interval storage")
+    return intervals
+
+
 def cmd_activity(args) -> None:
     if args.name not in ACTIVITIES:
         sys.exit(
@@ -167,11 +178,29 @@ def cmd_activity(args) -> None:
             f"(activity vocabulary: {', '.join(ACTIVITIES)})"
         )
     run = load()
-    activity = run.setdefault("activities", {}).setdefault(
-        args.name, {"start": None, "stop": None}
-    )
-    activity[args.event] = now()
+    intervals = activity_intervals(run, args.name)
+    if args.event == "start":
+        if intervals and intervals[-1].get("stop") is None:
+            sys.exit(f"telemetry: activity '{args.name}' is already running")
+        intervals.append({"start": now(), "stop": None})
+    else:
+        if not intervals or intervals[-1].get("stop") is not None:
+            sys.exit(f"telemetry: activity '{args.name}' is not running")
+        intervals[-1]["stop"] = now()
     save(run)
+
+
+def open_activities(run: dict) -> list:
+    open_names = []
+    for name, raw_intervals in (run.get("activities", {}) or {}).items():
+        intervals = [raw_intervals] if isinstance(raw_intervals, dict) else raw_intervals
+        if not isinstance(intervals, list):
+            open_names.append(name)
+            continue
+        if any(not isinstance(interval, dict) or not interval.get("start")
+               or interval.get("stop") is None for interval in intervals):
+            open_names.append(name)
+    return open_names
 
 
 def cmd_wait(args) -> None:
@@ -224,6 +253,9 @@ def parse_asset_delta(raw: str) -> dict:
 
 def cmd_finish(args) -> None:
     run = load()
+    unfinished = open_activities(run)
+    if unfinished:
+        sys.exit(f"telemetry: cannot finish with open/invalid activities: {', '.join(sorted(unfinished))}")
     if args.outcome not in OUTCOMES:
         sys.exit(f"telemetry: outcome must be one of {OUTCOMES}")
     if args.failure_label is not None and args.failure_label not in FAILURE_LABELS:
@@ -452,10 +484,26 @@ def self_test() -> int:
                 ns(name=name, event="start")), False)
             check(f"activity-{activity_name}-stop", lambda name=activity_name: cmd_activity(
                 ns(name=name, event="stop")), False)
+        check("activity-repeat-start", lambda: cmd_activity(
+            ns(name="compilation", event="start")), False)
+        check("activity-repeat-stop", lambda: cmd_activity(
+            ns(name="compilation", event="stop")), False)
         activity_run = json.loads(CURRENT.read_text())
-        if set(activity_run.get("activities", {})) != set(ACTIVITIES):
+        if set(activity_run.get("activities", {})) != set(ACTIVITIES) \
+                or len(activity_run["activities"]["compilation"]) != 2:
             print(f"telemetry self-test FAIL activities: {activity_run.get('activities')}")
             fails += 1
+        check("activity-stop-without-start", lambda: cmd_activity(
+            ns(name="index", event="stop")), True)
+        check("activity-open", lambda: cmd_activity(
+            ns(name="test-execution", event="start")), False)
+        check("activity-double-start", lambda: cmd_activity(
+            ns(name="test-execution", event="start")), True)
+        check("finish-with-open-activity", lambda: cmd_finish(ns(
+            outcome="ok", failure_label=None, failure_note=None, asset_delta=None,
+            improvement=[])), True)
+        check("activity-close", lambda: cmd_activity(
+            ns(name="test-execution", event="stop")), False)
         check("activity-unknown", lambda: cmd_activity(ns(name="thinking", event="start")), True)
         check("consult-ok", lambda: cmd_consult(ns(asset="alias:auth")), False)
         check("consult-bad", lambda: cmd_consult(ns(asset="nocolon")), True)
@@ -581,7 +629,7 @@ def self_test() -> int:
             fails += 1
 
     if fails == 0:
-        print("telemetry self-test: OK — schema-v5 activities, usage accounting, asset-delta "
+        print("telemetry self-test: OK — schema-v6 activity intervals, usage accounting, asset-delta "
               "enforcement, unmerged-tail reopen, run-id collision guard, none-colon "
               "justification, and label/schema-version/delta-type parity covered")
     return 1 if fails else 0

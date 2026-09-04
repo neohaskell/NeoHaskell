@@ -157,12 +157,15 @@ def digest(runs, all_runs):
                     stage_secs.setdefault(name, []).append(sec)
         activities = r.get("activities", {})
         if isinstance(activities, dict):
-            for name, activity in activities.items():
-                if not isinstance(activity, dict):
+            for name, raw_intervals in activities.items():
+                intervals = [raw_intervals] if isinstance(raw_intervals, dict) else raw_intervals
+                if not isinstance(intervals, list):
                     continue
-                sec = stage_seconds(activity)
-                if sec is not None:
-                    activity_secs.setdefault(name, []).append(sec)
+                measured = [stage_seconds(interval) for interval in intervals
+                            if isinstance(interval, dict)]
+                measured = [seconds for seconds in measured if seconds is not None]
+                if measured:
+                    activity_secs.setdefault(name, []).append(sum(measured))
         consulted = r.get("assets_consulted", []) or []
         if isinstance(consulted, list):
             for a in consulted:
@@ -337,9 +340,10 @@ def self_test():
     def run(rid, outcome, label, inv, wait):
         return {"schema": 5, "run_id": rid, "outcome": outcome, "failure_label": label,
                 "waiting_on_human_s": wait, "assets_consulted": ["alias:auth"],
-                "activities": {"test-scaffolding": {
-                    "start": "2026-07-09T10:00:00Z", "stop": "2026-07-09T10:02:00Z"
-                }},
+                "activities": {"test-scaffolding": [
+                    {"start": "2026-07-09T10:00:00Z", "stop": "2026-07-09T10:02:00Z"},
+                    {"start": "2026-07-09T10:03:00Z", "stop": "2026-07-09T10:05:00Z"}
+                ]},
                 "stages": {"implement": {"start": "2026-07-09T10:00:00Z",
                                          "stop": "2026-07-09T10:10:00Z",
                                          "invented_api_events": inv}}}
@@ -351,7 +355,7 @@ def self_test():
     check("digest-labels", "invented-api: 1" in d)
     check("digest-baseline", "baseline 0.00 → window 1.00 ↑" in d)
     check("digest-stage", "implement: 600s" in d)
-    check("digest-activity", "test-scaffolding: 120s" in d)
+    check("digest-activity", "test-scaffolding: 240s" in d)
     check("digest-empty", "No real runs in the window" in digest([], []))
     # v4: improvements from ok runs surface in the digest (class-fixes from success)
     imp_run = {**run("2026-07-09-003", "ok", None, 0, 0),

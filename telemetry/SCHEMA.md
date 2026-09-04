@@ -1,4 +1,4 @@
-# Telemetry schema v5 (current)
+# Telemetry schema v6 (current)
 
 A version's field shape is frozen; adding a field mints a new version (see the
 history below) — that is the mechanism, not a smell. The emitter always writes
@@ -12,8 +12,10 @@ class-fixes an `ok` run ships — the loop learns from successes, not only failu
 ADR-0068 amendment). The only v1 line in `runs.jsonl` is the Phase-1
 schema-validation dummy. v4 → v5 adds bounded work `activities`, separating
 localization/index and test scaffolding/compilation/execution time without changing
-the resumable pipeline stage machine. **Readers tolerate older versions** (missing
-fields read as their defaults); the emitter always writes v5.
+the resumable pipeline stage machine. v5 → v6 changes each activity from one
+start/stop pair to an interval list, so retries accumulate instead of overwriting
+prior work. **Readers tolerate older versions** (a v5 activity object is read as a
+one-element list); the emitter always writes v6.
 
 Every pipeline run emits **exactly one JSON line** appended to `telemetry/runs.jsonl`
 (committed). Lines are emitted by `./dev telemetry` — never hand-written. Before
@@ -26,7 +28,7 @@ line again, so committed history remains append-only.
 
 ```json
 {
-  "schema": 5,
+  "schema": 6,
   "run_id": "2026-07-07-001",
   "request_ref": "issue#712 | adhoc:<slug>",
   "stages": {
@@ -39,11 +41,14 @@ line again, so committed history remains append-only.
     }
   },
   "activities": {
-    "localization": {"start": "2026-07-07T14:03:22Z", "stop": "2026-07-07T14:04:01Z"},
-    "index": {"start": "2026-07-07T14:03:31Z", "stop": "2026-07-07T14:03:33Z"},
-    "test-scaffolding": {"start": "2026-07-07T14:05:10Z", "stop": "2026-07-07T14:06:02Z"},
-    "compilation": {"start": "2026-07-07T14:06:02Z", "stop": "2026-07-07T14:06:18Z"},
-    "test-execution": {"start": "2026-07-07T14:06:18Z", "stop": "2026-07-07T14:06:25Z"}
+    "localization": [{"start": "2026-07-07T14:03:22Z", "stop": "2026-07-07T14:04:01Z"}],
+    "index": [{"start": "2026-07-07T14:03:31Z", "stop": "2026-07-07T14:03:33Z"}],
+    "test-scaffolding": [{"start": "2026-07-07T14:05:10Z", "stop": "2026-07-07T14:06:02Z"}],
+    "compilation": [
+      {"start": "2026-07-07T14:06:02Z", "stop": "2026-07-07T14:06:18Z"},
+      {"start": "2026-07-07T14:07:10Z", "stop": "2026-07-07T14:07:15Z"}
+    ],
+    "test-execution": [{"start": "2026-07-07T14:06:18Z", "stop": "2026-07-07T14:06:25Z"}]
   },
   "waiting_on_human_s": 340,
   "modules_rebuilt_after_restore": 4,
@@ -61,10 +66,11 @@ line again, so committed history remains append-only.
 - `stages` — canonical stage names: `intake`, `localize`, `spec`, `design-review`,
   `plan`, `test-writing`, `implement`, `verify`, `pr`, `ci`. Add stages only by
   amending this schema (bump `schema`).
-- `activities` (v5) — optional bounded work timers emitted with
+- `activities` (v6) — optional lists of bounded work intervals emitted with
   `./dev telemetry activity --name <activity> --event start|stop`. The closed
   activity vocabulary is `localization`, `index`, `test-scaffolding`,
-  `compilation`, and `test-execution`. Activities may sit inside a broader stage;
+  `compilation`, and `test-execution`. Repeated work appends intervals; finish
+  rejects open or invalid intervals. Activities may sit inside a broader stage;
   readers treat a missing activity as unmeasured, never as zero seconds.
 - `waiting_on_human_s` — total seconds parked on a human gate. Kept separate so
   work-time metrics stay honest.
