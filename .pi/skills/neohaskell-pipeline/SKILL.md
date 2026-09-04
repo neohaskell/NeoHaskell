@@ -29,11 +29,21 @@ is explicit. On entry to every stage run `./dev telemetry stage --name <stage>
 advance without that stop/start pair. Human waits use `./dev telemetry wait
 --seconds <n>` and do not count against the stage time-box.
 
-1. **intake** — `./dev pipeline init --run-id YYYY-MM-DD-NNN --request issue#N
-   --branch <branch>`; `./dev telemetry start --run-id YYYY-MM-DD-NNN --request
-   issue#N`; `./dev telemetry stage --name intake --event start`. Restate the request;
-   ambiguity that changes the contract → one clarifying question NOW (cheap
-   here, a wrong PR later).
+**Change naming:** every commit subject and PR title uses Conventional Commits:
+`<type>(<optional-scope>): <imperative description>`. Choose the narrowest
+standard type (`fix`, `feat`, `test`, `docs`, `refactor`, `perf`, `build`, `ci`,
+`chore`, or `revert`) and a stable subsystem scope when useful. Validate the
+actual commit subjects and PR title before each push; a pipeline stage cannot
+advance while either is non-conventional.
+
+1. **intake** — for an `issue#N` request, first claim it with `gh issue edit N
+   --add-assignee @me`, then verify the current viewer appears in `gh issue view
+   N --json assignees`; assignment is the visible in-progress marker and must
+   succeed before work begins. Then run `./dev pipeline init --run-id
+   YYYY-MM-DD-NNN --request issue#N --branch <branch>`; `./dev telemetry start
+   --run-id YYYY-MM-DD-NNN --request issue#N`; `./dev telemetry stage --name
+   intake --event start`. Restate the request; ambiguity that changes the
+   contract → one clarifying question NOW (cheap here, a wrong PR later).
 2. **localize** — `neohaskell-localizer` skill. Output: capability IDs +
    `touches:`/`files:`/`uses:` lists → `./dev pipeline set plan.touches …`
    etc. The plan is now BINDING: resume never re-plans; a wrong plan parks

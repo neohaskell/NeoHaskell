@@ -199,6 +199,52 @@ retryLogicSpecs ::
   Spec Unit
 retryLogicSpecs newCartStoreAndFetcher = do
   before (Context.initialize newCartStoreAndFetcher) do
+    it "binds acceptExisting to the fetched stream revision" \context -> do
+      let cartCreatedEvent = CartCreated {entityId = context.cartId}
+      eventId <- Uuid.generate
+      metadata <- EventMetadata.new
+
+      let insertion =
+            Event.Insertion
+              { id = eventId,
+                event = cartCreatedEvent,
+                metadata =
+                  metadata
+                    { EventMetadata.localPosition = Just (Event.StreamPosition 0),
+                      EventMetadata.eventId = eventId
+                    }
+              }
+
+      let payload =
+            Event.InsertionPayload
+              { streamId = context.cartId |> Uuid.toText |> StreamId.fromTextUnsafe,
+                entityName = context.cartEntityName,
+                insertionType = Event.StreamCreation,
+                insertions = [insertion]
+              }
+
+      payload
+        |> context.cartStore.insert
+        |> Task.mapError toText
+        |> discard
+
+      let revisionCheckingStore =
+            context.cartStore
+              { EventStore.insert = \candidate ->
+                  case candidate.insertionType of
+                    Event.InsertAfter _ -> context.cartStore.insert candidate
+                    _ -> Task.throw (EventStore.StorageFailure "acceptExisting append was not bound to the fetched revision")
+              }
+      let cmd = AddItemToCart {cartId = context.cartId, itemId = context.itemId1, amount = 1}
+
+      result <- CommandExecutor.execute revisionCheckingStore context.cartFetcher context.cartEntityName Auth.emptyContext cmd
+
+      case result of
+        CommandAccepted {} -> Task.yield unit
+        CommandRejected _ -> fail "Expected revision-bound acceptExisting, got CommandRejected"
+        CommandFailed _ _ -> fail "Expected revision-bound acceptExisting, got CommandFailed"
+        CommandUnauthorized _ -> fail "Expected revision-bound acceptExisting, got CommandUnauthorized"
+
     it "retries on consistency check failure (ExistingStream)" \context -> do
       -- Create initial cart
       let cartCreatedEvent = CartCreated {entityId = context.cartId}
