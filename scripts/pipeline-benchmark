@@ -2,6 +2,7 @@
 """Validate and summarize the issue-862 same-task pipeline benchmark."""
 
 import argparse
+import fcntl
 import hashlib
 import os
 import json
@@ -227,16 +228,16 @@ def run_bounded(command, cwd, timeout=900):
 
 def prepare_cache_evidence(root, cache_state, protocol):
     watcher_state = root / ".ghcid-watch.lock"
-    if watcher_state.exists():
+    with watcher_state.open("a+", encoding="utf-8") as watcher_lock:
         try:
-            watcher_pid = int((watcher_state / "owner").read_text().strip())
-            os.kill(watcher_pid, 0)
-        except ProcessLookupError:
-            raise ValueError("benchmark requires stale watcher state to be recovered first")
-        except (OSError, TypeError, ValueError, PermissionError):
-            raise ValueError("benchmark cannot attest malformed watcher state")
-        else:
+            fcntl.flock(watcher_lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
             raise ValueError("benchmark requires the watcher to be stopped")
+        finally:
+            try:
+                fcntl.flock(watcher_lock, fcntl.LOCK_UN)
+            except OSError:
+                pass
     has_db = (root / ".hiedb").is_file() and (root / ".hiedb-meta").is_file()
     has_hie = (root / "dist-newstyle").is_dir() \
         and any((root / "dist-newstyle").rglob("*.hie"))

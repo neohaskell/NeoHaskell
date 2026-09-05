@@ -99,7 +99,7 @@ installer/target/
 .hiedb.index-lock
 .hiedb.tmp.*
 *.hiedb-refresh-pgid
-.ghcid-watch.lock/
+.ghcid-watch.lock
 .ghcid-watch.pid
 __pycache__/
 

@@ -116,9 +116,20 @@ SH
     failures=1
   fi
 
-  local active_code=0
-  mkdir "${tmp}/active-watch.pid"
-  printf '%s\n' "$$" > "${tmp}/active-watch.pid/owner"
+  local active_code=0 lock_holder
+  python3 - "${tmp}/active-watch.pid" "${tmp}/active-lock-ready" <<'PY' &
+import fcntl
+import sys
+import time
+from pathlib import Path
+
+with Path(sys.argv[1]).open("a+") as lock:
+    fcntl.flock(lock, fcntl.LOCK_EX)
+    Path(sys.argv[2]).write_text("ready\n")
+    time.sleep(30)
+PY
+  lock_holder=$!
+  while [ ! -f "${tmp}/active-lock-ready" ]; do sleep 0.01; done
   set +e
   WATCH_TOOLCHAIN="${toolchain}" WATCH_REFRESH="${refresh}" \
     WATCH_STATE_FILE="${tmp}/active-watch.pid" WATCH_OUT="${tmp}/active-output" \
@@ -126,9 +137,9 @@ SH
   active_code=$?
   set -e
   [ "${active_code}" -eq 2 ] \
-    || { echo "watch self-test FAIL: atomic watcher owner allowed a second watcher" >&2; failures=1; }
-  rm -f "${tmp}/active-watch.pid/owner"
-  rmdir "${tmp}/active-watch.pid"
+    || { echo "watch self-test FAIL: kernel watcher lock allowed a second watcher" >&2; failures=1; }
+  kill "${lock_holder}" 2>/dev/null || true
+  wait "${lock_holder}" 2>/dev/null || true
   if [ "${failures}" -ne 0 ]; then return 1; fi
   echo "watch self-test: OK — successful reloads refresh; failed reloads skip; process groups are reaped"
 }
@@ -155,51 +166,44 @@ if ! [[ "${TARGET}" =~ ^[A-Za-z0-9:._-]+$ ]]; then
   exit 2
 fi
 
-acquire_watcher_state() {
-  local existing_watcher=""
-  if mkdir "${STATE_FILE}" 2>/dev/null; then
-    printf '%s\n' "$$" > "${STATE_FILE}/owner"
-    return 0
-  fi
-  existing_watcher="$(cat "${STATE_FILE}/owner" 2>/dev/null || true)"
-  if [ -z "${existing_watcher}" ]; then
-    if WATCH_STATE_AGE_PATH="${STATE_FILE}" python3 - <<'PY'
+STATE_READY="${STATE_FILE}.ready.$$"
+WATCH_STATE_FILE_PATH="${STATE_FILE}" WATCH_STATE_READY_PATH="${STATE_READY}" \
+  WATCH_STATE_PARENT="$$" python3 - <<'PY' &
+import fcntl
 import os
 import time
 from pathlib import Path
 
-path = Path(os.environ["WATCH_STATE_AGE_PATH"])
-try:
-    stale = time.time() - path.stat().st_mtime >= 5
-except FileNotFoundError:
-    stale = False
-raise SystemExit(0 if stale else 1)
+lock_path = Path(os.environ["WATCH_STATE_FILE_PATH"])
+ready_path = Path(os.environ["WATCH_STATE_READY_PATH"])
+parent = int(os.environ["WATCH_STATE_PARENT"])
+with lock_path.open("a+", encoding="utf-8") as lock:
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        raise SystemExit(75)
+    lock.seek(0)
+    lock.truncate()
+    lock.write(f"{parent}\n")
+    lock.flush()
+    os.fsync(lock.fileno())
+    ready_path.write_text("ready\n", encoding="utf-8")
+    while os.getppid() == parent:
+        time.sleep(0.1)
 PY
-    then
-      rmdir "${STATE_FILE}" 2>/dev/null || true
-      if mkdir "${STATE_FILE}" 2>/dev/null; then
-        printf '%s\n' "$$" > "${STATE_FILE}/owner"
-        return 0
-      fi
-    fi
-    return 1
-  fi
-  if [[ "${existing_watcher}" =~ ^[0-9]+$ ]] && kill -0 "${existing_watcher}" 2>/dev/null; then
-    return 1
-  fi
-  rm -f "${STATE_FILE}/owner" 2>/dev/null || true
-  rmdir "${STATE_FILE}" 2>/dev/null || true
-  if mkdir "${STATE_FILE}" 2>/dev/null; then
-    printf '%s\n' "$$" > "${STATE_FILE}/owner"
-    return 0
-  fi
-  return 1
-}
-if ! acquire_watcher_state; then
+STATE_HOLDER_PID=$!
+for _attempt in $(seq 1 100); do
+  [ -f "${STATE_READY}" ] && break
+  kill -0 "${STATE_HOLDER_PID}" 2>/dev/null || break
+  sleep 0.01
+done
+if [ ! -f "${STATE_READY}" ]; then
+  wait "${STATE_HOLDER_PID}" 2>/dev/null || true
   echo "watch: another watcher owns ${STATE_FILE}" >&2
   exit 2
 fi
-trap 'rm -f "${STATE_FILE}/owner"; rmdir "${STATE_FILE}" 2>/dev/null || true' EXIT
+rm -f "${STATE_READY}"
+trap 'kill "${STATE_HOLDER_PID}" 2>/dev/null || true; wait "${STATE_HOLDER_PID}" 2>/dev/null || true; rm -f "${STATE_READY}"' EXIT
 
 echo "watch: watching ${TARGET} (dev flavor, -O0); errors -> ${OUT}"
 rm -f "${OUT}" "${REFRESH_GROUP_FILE}"
@@ -306,10 +310,9 @@ cleanup() {
     kill -KILL -- "-${active_refresh_pgid}" 2>/dev/null || true
   fi
   rm -f "${REFRESH_GROUP_FILE}"
-  if [ "$(cat "${STATE_FILE}/owner" 2>/dev/null || true)" = "$$" ]; then
-    rm -f "${STATE_FILE}/owner"
-    rmdir "${STATE_FILE}" 2>/dev/null || true
-  fi
+  kill "${STATE_HOLDER_PID}" 2>/dev/null || true
+  wait "${STATE_HOLDER_PID}" 2>/dev/null || true
+  rm -f "${STATE_READY}"
 }
 trap cleanup EXIT
 trap 'exit 130' INT TERM
