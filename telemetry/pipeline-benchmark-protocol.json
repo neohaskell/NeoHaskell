@@ -12,7 +12,7 @@
     "index": ["./dev", "hiedb", "--if-needed", "--quiet"],
     "test-scaffolding": ["./dev", "regression-smoke", "--self-test"],
     "compilation": ["./dev", "check", "lib:nhcore"],
-    "test-execution": ["./dev", "regression-smoke"]
+    "test-execution": ["./dev", "regression-smoke", "--recipe", "consistency-conflict-refetch"]
   },
   "activities": [
     "localization",

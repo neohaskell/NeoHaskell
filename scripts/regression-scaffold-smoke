@@ -180,11 +180,13 @@ self_test() {
 }
 
 run_smoke() {
+  local selected_recipe="${1:-}"
   local tmp results recipe prompt backend examples locator suite path exact bad assertion helpers
   tmp="$(mktemp -d)"
   trap 'rm -rf "${tmp}"' RETURN
   results="${tmp}/results.jsonl"
   while IFS=$'\t' read -r recipe prompt backend examples locator suite path exact bad assertion helpers; do
+    if [ -n "${selected_recipe}" ] && [ "${recipe}" != "${selected_recipe}" ]; then continue; fi
     echo "regression-smoke: ${recipe} — good"
     run_case good "${recipe}" "${backend}" "${suite}" "${exact}" \
       "${tmp}/good.out" "${tmp}/good.json"
@@ -222,11 +224,22 @@ from pathlib import Path
 rows=[json.loads(line) for line in Path(os.environ["RESULTS"]).read_text().splitlines()]
 Path(os.environ["DESTINATION"]).write_text(json.dumps({"schema":1,"recipes":rows},indent=2)+"\n")
 PY
-  echo "regression-smoke: OK — six semantic good/bad discriminations -> ${RECEIPT}"
+  if [ -n "${selected_recipe}" ]; then
+    echo "regression-smoke: OK — ${selected_recipe} semantic good/bad discrimination -> ${RECEIPT}"
+  else
+    echo "regression-smoke: OK — six semantic good/bad discriminations -> ${RECEIPT}"
+  fi
 }
 
 case "${1:-}" in
   --self-test) self_test ;;
+  --recipe)
+    [ $# -eq 2 ] || { echo "usage: ./dev regression-smoke --recipe <key>" >&2; exit 2; }
+    self_test
+    recipes | cut -f1 | grep -Fxq "$2" \
+      || { echo "regression-smoke: unknown recipe $2" >&2; exit 2; }
+    run_smoke "$2"
+    ;;
   "") self_test; run_smoke ;;
-  *) echo "usage: ./dev regression-smoke [--self-test]" >&2; exit 2 ;;
+  *) echo "usage: ./dev regression-smoke [--self-test|--recipe <key>]" >&2; exit 2 ;;
 esac
