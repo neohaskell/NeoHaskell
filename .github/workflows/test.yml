@@ -282,8 +282,7 @@ jobs:
         env:
           BASE_REF: ${{ github.base_ref }}
           POSTGRES_AVAILABLE: "true"
-        run: ./dev spec-check --criteria-runtime "origin/${BASE_REF}" \
-          --report .nhcore-test-service.report
+        run: ./dev spec-check --criteria-runtime "origin/${BASE_REF}" --report .nhcore-test-service.report
 
   test-hurl:
     needs: [build]
