@@ -599,7 +599,19 @@ def runtime_probe_errors(locator, boundary_entry, runner=run_locator_probe):
     return errors
 
 
-def criteria_runtime_pr(base, runner=run_locator_probe):
+def runtime_report_errors(locator, boundary_entry, report_text):
+    passed = re.findall(rf"^\s*{re.escape(locator['match'])}\s+\[✔\]$",
+                        report_text, re.MULTILINE)
+    errors = []
+    if len(passed) != boundary_entry["expected_examples"]:
+        errors.append(f"runtime report selected {len(passed)} passing examples; expected "
+                      f"{boundary_entry['expected_examples']} `{locator['raw']}`")
+    if boundary_entry["fixture"] not in report_text:
+        errors.append(f"runtime report omitted fixture `{boundary_entry['fixture']}`")
+    return errors
+
+
+def criteria_runtime_pr(base, runner=run_locator_probe, report_text=None):
     try:
         specs = [path for path in speclib.changed_specs(ROOT, base)
                  if is_spec_file(path.name) and path.name != "TEMPLATE.md" and path.exists()]
@@ -623,8 +635,13 @@ def criteria_runtime_pr(base, runner=run_locator_probe):
                 if entry is None:
                     errors.append(f"{spec.name}: {criterion['id']} has no boundary fixture")
                     continue
+                probe_errors = (
+                    runtime_report_errors(locator, entry, report_text)
+                    if report_text is not None
+                    else runtime_probe_errors(locator, entry, runner)
+                )
                 errors += [f"{spec.name}: {criterion['id']} {error}"
-                           for error in runtime_probe_errors(locator, entry, runner)]
+                           for error in probe_errors]
     for error in errors:
         print(f"spec-check: FAIL — {error}", file=sys.stderr)
     if errors:
@@ -858,6 +875,12 @@ def self_test():
         if not runtime_probe_errors(valid_locator, fixture_entry,
                 runner=lambda _locator: (124, "", True)):
             print("self-test FAIL runtime locator timeout accepted"); fails += 1
+        report = "fixture-postgres\n  exact example [✔]\n"
+        if runtime_report_errors(valid_locator, fixture_entry, report):
+            print("self-test FAIL runtime report valid selection"); fails += 1
+        if not runtime_report_errors(valid_locator, fixture_entry,
+                                     "fixture-postgres\n"):
+            print("self-test FAIL runtime report zero-match accepted"); fails += 1
 
     joins = plan_joins(
         VALID_FIXTURE.replace("[core-primitives]", "[auth, concurrency]"), caps)
@@ -967,8 +990,21 @@ def main():
         return require_changed_spec(base)
 
     if args and args[0] == "--criteria-runtime":
-        base = args[1] if len(args) > 1 else "origin/main"
-        return criteria_runtime_pr(base)
+        runtime_args = args[1:]
+        report_text = None
+        if "--report" in runtime_args:
+            index = runtime_args.index("--report")
+            if index + 1 >= len(runtime_args):
+                print("spec-check: --report needs a path", file=sys.stderr)
+                return 2
+            report_path = Path(runtime_args[index + 1])
+            if not report_path.is_file():
+                print("spec-check: runtime report is missing", file=sys.stderr)
+                return 2
+            report_text = report_path.read_text()
+            del runtime_args[index:index + 2]
+        base = runtime_args[0] if runtime_args else "origin/main"
+        return criteria_runtime_pr(base, report_text=report_text)
 
     files = [Path(a) for a in args] if args else sorted(CHANGES.glob("*.md"))
     files = [p for p in files if is_spec_file(p.name)]
