@@ -15,7 +15,7 @@ spec :: Spec Unit
 spec = do
   describe "InMemoryEventStore" do
     let newStore = InMemory.new |> Task.map (EventStoreCore.castEventStore @EntityFetcherCore.CartEvent) |> Task.mapError toText
-    EventStore.spec newStore
+    EventStore.spec "in-memory" newStore
 
     let newStoreAndFetcher = do
           store <- newStore

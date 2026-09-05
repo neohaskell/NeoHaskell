@@ -92,6 +92,15 @@ installer/target/
 .hiedb
 .hiedb-shm
 .hiedb-wal
+.hiedb-meta
+.hiedb-meta.tmp.*
+.hiedb-tools
+.hiedb-tools.tmp.*
+.hiedb.index-lock
+.hiedb.tmp.*
+*.hiedb-refresh-pgid
+.ghcid-watch.lock
+.ghcid-watch.pid
 __pycache__/
 
 # Phase 4: ./dev api hoogle databases (local build artifacts — rebuilt by

@@ -1,0 +1,186 @@
+{
+  "schema": 1,
+  "hspec_suites": {
+    "nhcore-test": {
+      "roots": [
+        "core/test"
+      ]
+    },
+    "nhcore-test-core": {
+      "roots": [
+        "core/test-core",
+        "core/test"
+      ]
+    },
+    "nhcore-test-auth": {
+      "roots": [
+        "core/test-auth",
+        "core/test"
+      ]
+    },
+    "nhcore-test-service": {
+      "roots": [
+        "core/test-service",
+        "core/test",
+        "core/testlib"
+      ]
+    },
+    "nhcore-test-integration": {
+      "roots": [
+        "core/test-integration",
+        "core/test"
+      ]
+    }
+  },
+  "boundaries": [
+    {
+      "kind": "script",
+      "path": "testbed/scripts/cold-start-readiness.sh",
+      "boundary": "http:real"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-service",
+      "path": "core/testlib/Test/Service/CommandHandler/Execute/Spec.hs",
+      "match": "records the exact insertion precondition after refetch",
+      "boundary": "postgres:real",
+      "expected_examples": 2,
+      "fixture": "Service.EventStore.Postgres"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-service",
+      "path": "core/testlib/Test/Service/EventStore/OptimisticConcurrency/Spec.hs",
+      "match": "will only allow one event to be appended, when two writers try to append at the same time",
+      "boundary": "postgres:real",
+      "expected_examples": 3,
+      "fixture": "Service.EventStore.Postgres"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-service",
+      "path": "core/testlib/Test/Service/EventStore/OptimisticConcurrency/Spec.hs",
+      "match": "allows only one concurrent StreamCreation and persists one creation fact",
+      "boundary": "postgres:real",
+      "expected_examples": 3,
+      "fixture": "Service.EventStore.Postgres"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-service",
+      "path": "core/testlib/Test/Service/EventStore/OptimisticConcurrency/Spec.hs",
+      "match": "persists both AnyStreamState events in durable order",
+      "boundary": "postgres:real",
+      "expected_examples": 3,
+      "fixture": "Service.EventStore.Postgres"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-service",
+      "path": "core/testlib/Test/Service/EventStore/Subscriptions/Spec.hs",
+      "match": "register-first replay overlap is ordered and gap-free after inbox overflow",
+      "boundary": "postgres:real",
+      "expected_examples": 3,
+      "fixture": "Service.EventStore.Postgres"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-service",
+      "path": "core/testlib/Test/Service/EventStore/Subscriptions/Spec.hs",
+      "match": "inclusive start position is consistent across backends",
+      "boundary": "postgres:real",
+      "expected_examples": 3,
+      "fixture": "Service.EventStore.Postgres"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-service",
+      "path": "core/test/Service/FileUpload/ContentDedupSpec.hs",
+      "match": "dedup self-heals a missing Pending blob on re-upload",
+      "boundary": "filesystem:real",
+      "expected_examples": 1,
+      "fixture": "Service.FileUpload.ContentDedup"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-service",
+      "path": "core/test/Service/FileUpload/ContentDedupSpec.hs",
+      "match": "dedup self-heals a missing Confirmed blob on re-upload",
+      "boundary": "filesystem:real",
+      "expected_examples": 1,
+      "fixture": "Service.FileUpload.ContentDedup"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-service",
+      "path": "core/test/Service/FileUpload/ContentDedupSpec.hs",
+      "match": "dedup self-heal preserves FileRef/blobKey and restores exact content",
+      "boundary": "filesystem:real",
+      "expected_examples": 1,
+      "fixture": "Service.FileUpload.ContentDedup"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-service",
+      "path": "core/test/Service/FileUpload/ContentDedupSpec.hs",
+      "match": "dedup self-heals when the existence check errors",
+      "boundary": "filesystem:real",
+      "expected_examples": 1,
+      "fixture": "Service.FileUpload.ContentDedup"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-service",
+      "path": "core/test/Service/FileUpload/ContentDedupSpec.hs",
+      "match": "duplicate upload returns same blobKey as original",
+      "boundary": "filesystem:real",
+      "expected_examples": 1,
+      "fixture": "Service.FileUpload.ContentDedup"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-service",
+      "path": "core/test-service/Service/QueryObjectStore/PostgresSpec.hs",
+      "match": "state round-trips under the threaded query name",
+      "boundary": "postgres:real",
+      "expected_examples": 1,
+      "fixture": "Service.QueryObjectStore.Postgres"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-service",
+      "path": "core/test-service/Service/QueryObjectStore/PostgresSpec.hs",
+      "match": "distinct query names isolate rows for the same instance uuid (#734)",
+      "boundary": "postgres:real",
+      "expected_examples": 1,
+      "fixture": "Service.QueryObjectStore.Postgres"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-service",
+      "path": "core/test-service/Service/QueryObjectStore/PostgresSpec.hs",
+      "match": "getAll is scoped to the store's own query name (#734)",
+      "boundary": "postgres:real",
+      "expected_examples": 1,
+      "fixture": "Service.QueryObjectStore.Postgres"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-service",
+      "path": "core/test-service/Service/QueryObjectStore/PostgresSpec.hs",
+      "match": "getAll excludes the reserved nil-uuid checkpoint marker row (#734)",
+      "boundary": "postgres:real",
+      "expected_examples": 1,
+      "fixture": "Service.QueryObjectStore.Postgres"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-service",
+      "path": "core/test-service/Service/QueryObjectStore/PostgresSpec.hs",
+      "match": "N concurrent read-modify-write increments on one key all apply (#739)",
+      "boundary": "postgres:real",
+      "expected_examples": 1,
+      "fixture": "Service.QueryObjectStore.Postgres"
+    }
+  ]
+}

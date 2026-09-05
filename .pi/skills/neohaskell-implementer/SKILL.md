@@ -92,7 +92,7 @@ never is.**
 
 If `./dev check` reports `invented-api-events=N` ("not in scope"), that is a
 hallucinated symbol: resolve via `./dev api`, and the pipeline records the
-count (per-stage `invented_api_events`, schema v4; `invented-api` failure
+count (per-stage `invented_api_events`, schema v6; `invented-api` failure
 label when it kills the run) — do not guess twice.
 
 ## Readable control flow (implementation completion criterion)

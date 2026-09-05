@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Pipeline telemetry emitter (Phase 1; schema v4 Phase 6). Schema: telemetry/SCHEMA.md.
+"""Pipeline telemetry emitter (Phase 1; schema v6 Phase 6). Schema: telemetry/SCHEMA.md.
 
 One JSON line per pipeline run, appended to telemetry/runs.jsonl. Never
 hand-written — pipeline scripts call this tool.
@@ -8,6 +8,7 @@ Usage (via the `./dev telemetry` verb — this file has no PATH entry):
   ./dev telemetry start   --run-id 2026-07-07-001 --request "issue#712"
   ./dev telemetry stage   --name implement --event start [--model sonnet]
   ./dev telemetry stage   --name implement --event stop  [--repair-rounds 2] [--invented-api-events 3]
+  ./dev telemetry activity --name compilation --event start|stop
   ./dev telemetry wait    --seconds 340            # add waiting-on-human time
   ./dev telemetry rebuilt --count 4                # cache-health metric
   ./dev telemetry consult --asset alias:auth       # usage accounting (Phase 6, task 5e)
@@ -43,6 +44,7 @@ STAGES = [
     "intake", "localize", "spec", "design-review", "plan",
     "test-writing", "implement", "verify", "pr", "ci",
 ]
+ACTIVITIES = ["localization", "index", "test-scaffolding", "compilation", "test-execution"]
 OUTCOMES = ["ok", "parked", "failed", "abandoned"]
 FAILURE_LABELS = [
     "wrong-intent", "wrong-localization", "dialect-violation", "invented-api",
@@ -56,7 +58,7 @@ DELTA_TYPES = [
     "alias", "extension-point", "phrasebook", "hot-card", "hlint-rule",
     "hook", "cli-utility", "skill-edit", "telemetry-label", "PRUNE", "none",
 ]
-CURRENT_SCHEMA = 4
+CURRENT_SCHEMA = 6
 
 
 # De-facto run-id format (documented in telemetry/SCHEMA.md): also guards the
@@ -77,7 +79,9 @@ def non_negative(value: int, flag: str) -> int:
 
 
 def now() -> str:
-    return datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return datetime.datetime.now(datetime.timezone.utc).isoformat(
+        timespec="microseconds"
+    ).replace("+00:00", "Z")
 
 
 def load() -> dict:
@@ -126,6 +130,7 @@ def cmd_start(args) -> None:
         "run_id": args.run_id,
         "request_ref": args.request,
         "stages": {},
+        "activities": {},
         "waiting_on_human_s": 0,
         "modules_rebuilt_after_restore": None,
         "assets_consulted": [],
@@ -157,9 +162,95 @@ def cmd_stage(args) -> None:
     save(run)
 
 
+def activity_intervals(run: dict, name: str) -> list:
+    activities = run.setdefault("activities", {})
+    intervals = activities.setdefault(name, [])
+    if isinstance(intervals, dict):
+        intervals = [intervals]
+        activities[name] = intervals
+    if not isinstance(intervals, list):
+        sys.exit(f"telemetry: activity '{name}' has invalid interval storage")
+    return intervals
+
+
+def cmd_activity(args) -> None:
+    if args.name not in ACTIVITIES:
+        sys.exit(
+            f"telemetry: unknown activity '{args.name}' "
+            f"(activity vocabulary: {', '.join(ACTIVITIES)})"
+        )
+    run = load()
+    intervals = activity_intervals(run, args.name)
+    if args.event == "start":
+        if intervals and intervals[-1].get("stop") is None:
+            sys.exit(f"telemetry: activity '{args.name}' is already running")
+        intervals.append({"start": now(), "stop": None})
+    else:
+        if not intervals or intervals[-1].get("stop") is not None:
+            sys.exit(f"telemetry: activity '{args.name}' is not running")
+        intervals[-1]["stop"] = now()
+    save(run)
+
+
+def parse_activity_timestamp(value):
+    if not isinstance(value, str):
+        return None
+    try:
+        return datetime.datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def activity_interval_error(interval):
+    if not isinstance(interval, dict):
+        return "interval is not an object"
+    start = parse_activity_timestamp(interval.get("start"))
+    if start is None:
+        return "start timestamp is invalid"
+    if interval.get("stop") is None:
+        return None
+    stop = parse_activity_timestamp(interval.get("stop"))
+    if stop is None or stop < start:
+        return "stop timestamp is invalid or precedes start"
+    return None
+
+
+def completed_activity_interval(interval) -> bool:
+    return activity_interval_error(interval) is None and interval.get("stop") is not None
+
+
+def activity_collections(run):
+    for name, raw_intervals in (run.get("activities", {}) or {}).items():
+        intervals = [raw_intervals] if isinstance(raw_intervals, dict) else raw_intervals
+        yield name, intervals
+
+
+def invalid_activities(run: dict) -> list:
+    invalid = []
+    for name, intervals in activity_collections(run):
+        if not isinstance(intervals, list) or not intervals \
+                or any(activity_interval_error(interval) is not None for interval in intervals):
+            invalid.append(name)
+    return invalid
+
+
+def open_activities(run: dict) -> list:
+    open_names = []
+    for name, intervals in activity_collections(run):
+        if isinstance(intervals, list) and any(
+                isinstance(interval, dict) and interval.get("stop") is None
+                and activity_interval_error(interval) is None for interval in intervals):
+            open_names.append(name)
+    return open_names
+
+
 def cmd_wait(args) -> None:
     non_negative(args.seconds, "--seconds")
     run = load()
+    running = sorted(set(open_activities(run) + invalid_activities(run)))
+    if running:
+        sys.exit("telemetry: stop or repair active work before recording human wait: "
+                 + ", ".join(running))
     run["waiting_on_human_s"] += args.seconds
     save(run)
 
@@ -209,6 +300,12 @@ def cmd_finish(args) -> None:
     run = load()
     if args.outcome not in OUTCOMES:
         sys.exit(f"telemetry: outcome must be one of {OUTCOMES}")
+    invalid = invalid_activities(run)
+    if invalid:
+        sys.exit(f"telemetry: cannot finish with malformed/reversed activities: {', '.join(sorted(invalid))}")
+    unfinished = open_activities(run)
+    if unfinished and args.outcome == "ok":
+        sys.exit(f"telemetry: cannot finish successful run with open activities: {', '.join(sorted(unfinished))}")
     if args.failure_label is not None and args.failure_label not in FAILURE_LABELS:
         sys.exit(f"telemetry: failure-label must be from the closed taxonomy: {', '.join(FAILURE_LABELS)}")
     if args.outcome == "ok" and args.failure_label is not None:
@@ -426,9 +523,48 @@ def self_test() -> int:
         check("start", lambda: cmd_start(ns(run_id="t-001", request="issue#0")), False)
         cur = json.loads(CURRENT.read_text())
         if cur.get("schema") != CURRENT_SCHEMA or cur.get("asset_delta") is not None \
-                or cur.get("assets_consulted") != [] or cur.get("improvements") != []:
+                or cur.get("assets_consulted") != [] or cur.get("improvements") != [] \
+                or cur.get("activities") != {}:
             print(f"telemetry self-test FAIL start-shape: {cur}")
             fails += 1
+        for activity_name in ACTIVITIES:
+            check(f"activity-{activity_name}-start", lambda name=activity_name: cmd_activity(
+                ns(name=name, event="start")), False)
+            check(f"activity-{activity_name}-stop", lambda name=activity_name: cmd_activity(
+                ns(name=name, event="stop")), False)
+        check("activity-repeat-start", lambda: cmd_activity(
+            ns(name="compilation", event="start")), False)
+        check("activity-repeat-stop", lambda: cmd_activity(
+            ns(name="compilation", event="stop")), False)
+        activity_run = json.loads(CURRENT.read_text())
+        if set(activity_run.get("activities", {})) != set(ACTIVITIES) \
+                or len(activity_run["activities"]["compilation"]) != 2:
+            print(f"telemetry self-test FAIL activities: {activity_run.get('activities')}")
+            fails += 1
+        completed_activity = CURRENT.read_text()
+        check("activity-duplicate-stop", lambda: cmd_activity(
+            ns(name="index", event="stop")), True)
+        if CURRENT.read_text() != completed_activity:
+            print("telemetry self-test FAIL duplicate stop modified activity data")
+            fails += 1
+        check("activity-open", lambda: cmd_activity(
+            ns(name="test-execution", event="start")), False)
+        check("human-wait-overlap-rejected", lambda: cmd_wait(ns(seconds=30)), True)
+        if json.loads(CURRENT.read_text()).get("waiting_on_human_s") != 0:
+            print("telemetry self-test FAIL rejected wait changed waiting total")
+            fails += 1
+        running_activity = CURRENT.read_text()
+        check("activity-double-start", lambda: cmd_activity(
+            ns(name="test-execution", event="start")), True)
+        if CURRENT.read_text() != running_activity:
+            print("telemetry self-test FAIL duplicate start modified activity data")
+            fails += 1
+        check("finish-with-open-activity", lambda: cmd_finish(ns(
+            outcome="ok", failure_label=None, failure_note=None, asset_delta=None,
+            improvement=[])), True)
+        check("activity-close", lambda: cmd_activity(
+            ns(name="test-execution", event="stop")), False)
+        check("activity-unknown", lambda: cmd_activity(ns(name="thinking", event="start")), True)
         check("consult-ok", lambda: cmd_consult(ns(asset="alias:auth")), False)
         check("consult-bad", lambda: cmd_consult(ns(asset="nocolon")), True)
         # non-ok outcomes require an asset delta from the closed taxonomy
@@ -498,6 +634,49 @@ def self_test() -> int:
             ns(outcome="ok", failure_label=None, failure_note=None, asset_delta=None,
                improvement=["none:whatever"])), True)
 
+        invalid_interval_run = json.loads(CURRENT.read_text())
+        invalid_interval_run["activities"] = {
+            "compilation": {
+                "start": "2026-01-01T00:00:02Z",
+                "stop": "2026-01-01T00:00:01Z",
+            }
+        }
+        save(invalid_interval_run)
+        reversed_activity = CURRENT.read_text()
+        check("finish-reversed-legacy-activity-rejected", lambda: cmd_finish(
+            ns(outcome="ok", failure_label=None, failure_note=None, asset_delta=None,
+               improvement=[])), True)
+        if CURRENT.read_text() != reversed_activity:
+            print("telemetry self-test FAIL reversed interval modified activity data")
+            fails += 1
+
+        invalid_interval_run["activities"]["compilation"] = {
+            "start": "not-a-timestamp",
+            "stop": "2026-01-01T00:00:03Z",
+        }
+        save(invalid_interval_run)
+        unparsable_activity = CURRENT.read_text()
+        check("finish-unparsable-activity-rejected", lambda: cmd_finish(
+            ns(outcome="ok", failure_label=None, failure_note=None, asset_delta=None,
+               improvement=[])), True)
+        if CURRENT.read_text() != unparsable_activity:
+            print("telemetry self-test FAIL unparsable interval modified activity data")
+            fails += 1
+
+        CURRENT.unlink()
+        check("start-interrupted", lambda: cmd_start(
+            ns(run_id="t-005", request="issue#0")), False)
+        check("start-interrupted-activity", lambda: cmd_activity(
+            ns(name="compilation", event="start")), False)
+        check("finish-failed-preserves-interruption", lambda: cmd_finish(ns(
+            outcome="failed", failure_label="timeout", failure_note=None,
+            asset_delta="none:interrupted by timeout", improvement=[])), False)
+        interrupted = json.loads(RUNS.read_text().splitlines()[-1])
+        intervals = interrupted.get("activities", {}).get("compilation", [])
+        if len(intervals) != 1 or intervals[0].get("stop") is not None:
+            print("telemetry self-test FAIL interrupted activity was not preserved")
+            fails += 1
+
     # anti-rot: the failure-label taxonomy is duplicated in scripts/pipeline-state
     # (LABELS) — a drift there means a run the emitter accepts, the state machine
     # rejects (or vice-versa). Assert parity so the two can't silently diverge.
@@ -553,7 +732,7 @@ def self_test() -> int:
             fails += 1
 
     if fails == 0:
-        print("telemetry self-test: OK — schema-v4 fields, usage accounting, asset-delta "
+        print("telemetry self-test: OK — schema-v6 activity intervals, usage accounting, asset-delta "
               "enforcement, unmerged-tail reopen, run-id collision guard, none-colon "
               "justification, and label/schema-version/delta-type parity covered")
     return 1 if fails else 0
@@ -577,6 +756,11 @@ def main() -> None:
     s.add_argument("--repair-rounds", type=int)
     s.add_argument("--invented-api-events", type=int)
     s.set_defaults(fn=cmd_stage)
+
+    s = sub.add_parser("activity")
+    s.add_argument("--name", required=True)
+    s.add_argument("--event", required=True, choices=["start", "stop"])
+    s.set_defaults(fn=cmd_activity)
 
     s = sub.add_parser("wait")
     s.add_argument("--seconds", type=int, required=True)

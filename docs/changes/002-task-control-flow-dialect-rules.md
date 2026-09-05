@@ -79,14 +79,14 @@ All proving is `unit`: the rules operate on source text, and each rule's proof
 is a harness self-test or `./dev lint`, with no runtime boundary crossed. The
 migration's compile-safety is proven by the typechecker.
 
-| ID | Behavior | Proving test | Level |
-|----|----------|--------------|-------|
-| C1 | The edit hook rejects a newly-added discarded Task bind `_ <- action` in non-parser code, quoting the `discard` pipeline alternative and the escape hatch | `dialect-guard.py --self-test` blocking case for rule `no-discard-bind` | unit |
-| C2 | The edit hook does NOT flag a named bind `x <- action`, nor a parser-package `_ <- Parser.char …`, nor a list-comprehension generator | `dialect-guard.py --self-test` passing cases for rule `no-discard-bind` | unit |
-| C3 | `./dev lint` rewrites `if c then a else pass` to `Task.when c a` (and not a `case`-arm `-> pass`) | `./dev lint` custom hint `NeoHaskell: use Task.when` | unit |
-| C4 | `./dev lint` rewrites `if c then pass else a` to `Task.unless c a` | `./dev lint` custom hint `NeoHaskell: use Task.unless` | unit |
-| C5 | All 29 genuine Task sites are migrated — 21 `if c then a else pass` to `Task.when`, 8 `if c then pass else a` (incl. multi-line) to `Task.unless`; the non-Task `pure ()`/`return ()` sites are left untouched; `./dev lint` is clean on `core/`+`testbed/src/` and the migrated modules typecheck | `./dev lint` clean plus `./dev check` typecheck-clean | unit |
-| C6 | Every hook rule has a blocking and a passing case; all governance self-checks pass | `./dev doctor` harness self-check | unit |
+| ID | Behavior | Proving test | Level | Boundary |
+|----|----------|--------------|-------|----------|
+| C1 | The edit hook rejects a newly-added discarded Task bind `_ <- action` in non-parser code, quoting the `discard` pipeline alternative and the escape hatch | `script:.claude/hooks/dialect-guard.py#--self-test` | unit | none |
+| C2 | The edit hook does NOT flag a named bind `x <- action`, nor a parser-package `_ <- Parser.char …`, nor a list-comprehension generator | `script:.claude/hooks/dialect-guard.py#--self-test` | unit | none |
+| C3 | `./dev lint` rewrites `if c then a else pass` to `Task.when c a` (and not a `case`-arm `-> pass`) | `script:scripts/lint#` | unit | none |
+| C4 | `./dev lint` rewrites `if c then pass else a` to `Task.unless c a` | `script:scripts/lint#` | unit | none |
+| C5 | All 29 genuine Task sites are migrated — 21 `if c then a else pass` to `Task.when`, 8 `if c then pass else a` (incl. multi-line) to `Task.unless`; the non-Task `pure ()`/`return ()` sites are left untouched; `./dev lint` is clean on `core/`+`testbed/src/` and the migrated modules typecheck | `script:scripts/lint#`<br>`script:scripts/check#` | unit | none |
+| C6 | Every hook rule has a blocking and a passing case; all governance self-checks pass | `script:scripts/doctor#` | unit | none |
 
 ## User impact
 

@@ -1,4 +1,4 @@
-# Telemetry schema v4 (current)
+# Telemetry schema v6 (current)
 
 A version's field shape is frozen; adding a field mints a new version (see the
 history below) — that is the mechanism, not a smell. The emitter always writes
@@ -10,8 +10,12 @@ adds `asset_delta` (the class-fix a failed run ships, task 4) and
 `assets_consulted` (usage accounting, task 5e); v3 → v4 adds `improvements` (the
 class-fixes an `ok` run ships — the loop learns from successes, not only failures;
 ADR-0068 amendment). The only v1 line in `runs.jsonl` is the Phase-1
-schema-validation dummy. **Readers tolerate older versions** (missing fields read
-as their defaults); the emitter always writes v4.
+schema-validation dummy. v4 → v5 adds bounded work `activities`, separating
+localization/index and test scaffolding/compilation/execution time without changing
+the resumable pipeline stage machine. v5 → v6 changes each activity from one
+start/stop pair to an interval list, so retries accumulate instead of overwriting
+prior work. **Readers tolerate older versions** (a v5 activity object is read as a
+one-element list); the emitter always writes v6.
 
 Every pipeline run emits **exactly one JSON line** appended to `telemetry/runs.jsonl`
 (committed). Lines are emitted by `./dev telemetry` — never hand-written. Before
@@ -24,7 +28,7 @@ line again, so committed history remains append-only.
 
 ```json
 {
-  "schema": 4,
+  "schema": 6,
   "run_id": "2026-07-07-001",
   "request_ref": "issue#712 | adhoc:<slug>",
   "stages": {
@@ -35,6 +39,16 @@ line again, so committed history remains append-only.
       "repair_rounds": 1,
       "invented_api_events": 0
     }
+  },
+  "activities": {
+    "localization": [{"start": "2026-07-07T14:03:22Z", "stop": "2026-07-07T14:04:01Z"}],
+    "index": [{"start": "2026-07-07T14:03:31Z", "stop": "2026-07-07T14:03:33Z"}],
+    "test-scaffolding": [{"start": "2026-07-07T14:05:10Z", "stop": "2026-07-07T14:06:02Z"}],
+    "compilation": [
+      {"start": "2026-07-07T14:06:02Z", "stop": "2026-07-07T14:06:18Z"},
+      {"start": "2026-07-07T14:07:10Z", "stop": "2026-07-07T14:07:15Z"}
+    ],
+    "test-execution": [{"start": "2026-07-07T14:06:18Z", "stop": "2026-07-07T14:06:25Z"}]
   },
   "waiting_on_human_s": 340,
   "modules_rebuilt_after_restore": 4,
@@ -52,8 +66,18 @@ line again, so committed history remains append-only.
 - `stages` — canonical stage names: `intake`, `localize`, `spec`, `design-review`,
   `plan`, `test-writing`, `implement`, `verify`, `pr`, `ci`. Add stages only by
   amending this schema (bump `schema`).
-- `waiting_on_human_s` — total seconds parked on a human gate. Kept separate so
-  work-time metrics stay honest.
+- `activities` (v6) — optional lists of bounded work intervals emitted with
+  `./dev telemetry activity --name <activity> --event start|stop`. The closed
+  activity vocabulary is `localization`, `index`, `test-scaffolding`,
+  `compilation`, and `test-execution`. Timestamps are UTC RFC3339 with
+  microseconds; whole-second v5/v6 timestamps remain readable. Repeated work
+  appends intervals. A successful finish rejects open or invalid intervals; a
+  failed/parked finish preserves an open interval (`stop: null`) as an explicit
+  interrupted attempt. A missing activity is unmeasured (`null` in summaries),
+  while equal valid endpoints are a measured zero-duration attempt.
+- `waiting_on_human_s` — total seconds parked on a human gate. `telemetry wait`
+  is rejected while any work activity is open, mechanically preventing human
+  wait from being counted in both work duration and this scalar.
 - `modules_rebuilt_after_restore` — cache-health metric from `./dev refresh`
   at run start (null if not refreshed).
 - `assets_consulted` (v3) — list of `<kind>:<name>` an aid the run actually
@@ -157,6 +181,16 @@ retention is that command, not a bare promise). The committed `runs.jsonl` is th
 durable trend record; no golden artifact is committed (avoids bloating the repo
 with transcripts/diffs).
 
+## Pipeline workflow benchmark
+
+`telemetry/pipeline-benchmark-protocol.json` is the versioned same-task protocol
+for issue #862. `./dev pipeline-benchmark --self-test` validates protocol binding,
+activity-interval union, human-wait subtraction, five-sample completeness,
+median/nearest-rank-p95 statistics, exact good/bad regression outcomes, and the
+240-second warm median/p95 thresholds. Real wall-clock evidence is local/nightly,
+not a shared-PR gate; correctness failures, zero matches, wrong assertions, and
+timeouts are invalid samples rather than removable noise.
+
 ## Inner-loop baseline (measured 2026-07-07, Apple Silicon, GHC 9.8.4, -O0 dev flavor)
 
 | Measurement | Value | Target |
@@ -169,6 +203,8 @@ with transcripts/diffs).
 | Incremental: leaf module edit | 1 module / 4.9s | — |
 | Incremental: comment-level edit to core/core/Text.hs | 6 modules / 6.2s | — |
 | No-op `cabal build` overhead | 0.3s | — |
+| Cold `who-calls` fallback (no `.hie`, measured 2026-09-04) | **0.32s** | <3s ✓ |
+| Warm cached `who-calls` (31 refs, measured 2026-09-04) | **0.74s** | <3s ✓ |
 
 Notes: GHC recompilation checking is content-hash based (touch ≠ rebuild;
 interface-preserving edits don't cascade). All loop scripts self-provision the

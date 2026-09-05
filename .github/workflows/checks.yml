@@ -107,6 +107,11 @@ jobs:
       # validated instance) parses and machine-joins. Runs on drafts too —
       # this is what the maintainer's gate decision reads.
       - run: ./dev spec-check
+      - name: PR changes a contract spec (maintainer bootstrap label may exempt)
+        if: github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'pipeline-bootstrap-exempt')
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: ./dev spec-check --require-changed "origin/${BASE_REF}"
       # Drift gate: at PR-READY only, the specs this PR touches must be
       # honored by the generated API surface (codemap-sync proves committed
       # signatures == code; this proves signatures == promise). A draft is

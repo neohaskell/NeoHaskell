@@ -23,7 +23,7 @@ spec = do
               persistent = False
             }
     let newStore = Simple.new config |> Task.map (EventStoreCore.castEventStore @EntityFetcherCore.CartEvent) |> Task.mapError toText
-    EventStore.spec newStore
+    EventStore.spec "simple" newStore
 
     let newStoreAndFetcher = do
           store <- newStore

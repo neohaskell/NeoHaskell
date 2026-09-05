@@ -8,11 +8,12 @@ re-plans** — a run continued after the maintainer's signal picks up the
 recorded plan verbatim; if the plan is wrong, the run is parked and re-entered
 from the top, visibly.
 
-Stage names are the telemetry schema v4 canonical list (telemetry/SCHEMA.md)
+Stage names are the telemetry schema v6 canonical list (telemetry/SCHEMA.md)
 — one vocabulary across state, telemetry lines, and the pipeline skill.
 
 Commands:
-  init --run-id ID --request REF [--branch B]   start a run (refuses to clobber)
+  init --run-id ID --request REF --change-id NNN-slug --branch B [--base origin/main]
+                                                assign issue, fetch/verify base, reserve ID
   status                                        human-readable summary
   advance                                       move to the next stage
   set KEY VALUE                                 data keys only (spec_path,
@@ -24,11 +25,14 @@ Commands:
   approve STAGE --by WHO [--via HOW] [--head SHA] record a human approval;
                                                 ci requires current reviewed SHA
   park --label LABEL [--note NOTE]              park with a taxonomy label
+  red-evidence --receipt PATH                   bind verified bug C1 red receipt
   resume                                        clear parked (plan is kept — the contract)
+  release-reservation --change-id ID --run-id ID recover a crashed same-worktree run
   complete --outcome ok|parked|failed           archive terminal state and release
                                                 state.json for the next run; ok
                                                 requires `ci`, parked requires park
-  validate                                      schema check (also runs on save)
+  validate [--pr-title TITLE] [--base REF]       state schema check; with a title,
+                                                also validate commit subjects + PR title
   --self-test                                   full lifecycle in a temp dir (doctor/CI)
 
 Run: ./dev pipeline <command>
@@ -36,6 +40,7 @@ Run: ./dev pipeline <command>
 
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
@@ -48,9 +53,18 @@ STATE_DIR = ROOT / ".pipeline"
 TELEMETRY_CURRENT = ROOT / "telemetry" / ".current-run.json"
 TELEMETRY_RUNS = ROOT / "telemetry" / "runs.jsonl"
 RUN_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+ISSUE_REF_RE = re.compile(r"^issue#([1-9][0-9]*)$")
+CHANGE_ID_RE = re.compile(r"^[0-9]{3}-[a-z0-9][a-z0-9-]*$")
+REMOTE_REF_RE = re.compile(r"^([A-Za-z0-9._-]+)/([A-Za-z0-9._/-]+)$")
+TRUSTED_METADATA_BASE = "origin/main"
+RED_EVIDENCE = ROOT / "scripts" / "spec-red-evidence"
+CONVENTIONAL_SUBJECT_RE = re.compile(
+    r"^(fix|feat|test|docs|refactor|perf|build|ci|chore|revert)"
+    r"(?:\([a-z0-9][a-z0-9._/-]*\))?: \S.*$"
+)
 
 # telemetry/SCHEMA.md stage enum, in pipeline order. Changing it there means
-# changing it here in the same PR (both quote schema v4).
+# changing it here in the same PR (both quote schema v6).
 STAGES = ["intake", "localize", "spec", "design-review", "plan",
           "test-writing", "implement", "verify", "pr", "ci"]
 
@@ -85,8 +99,354 @@ def git_bytes(*args):
     return result.stdout if result.returncode == 0 else None
 
 
+def command_output(argv):
+    try:
+        result = subprocess.run(
+            argv, cwd=ROOT, text=True,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
+        )
+    except OSError as error:
+        return 127, "", str(error)
+    return result.returncode, result.stdout.strip(), result.stderr.strip()
+
+
+def repository_from_remote_url(url):
+    match = re.search(r"github\.com(?::|/)([^/]+/[^/]+?)(?:\.git)?$", url.strip())
+    return match.group(1) if match else None
+
+
+def prepare_intake(base_ref, expected_branch, run_command=command_output):
+    match = REMOTE_REF_RE.fullmatch(base_ref)
+    if match is None:
+        return None, "base must be an owning remote ref such as `origin/main`"
+    remote, branch_name = match.groups()
+    if branch_name != "main":
+        return None, "owning base branch must be `main`"
+    remote_code, remote_url, remote_error = run_command(["git", "remote", "get-url", remote])
+    if remote_code != 0:
+        return None, f"could not resolve base remote URL: {remote_error or 'git failed'}"
+    fetch_refspec = f"+refs/heads/{branch_name}:refs/remotes/{remote}/{branch_name}"
+    fetch_code, _out, fetch_error = run_command(
+        ["git", "fetch", "--quiet", "--no-tags", remote, fetch_refspec]
+    )
+    if fetch_code != 0:
+        return None, f"could not fetch owning base: {fetch_error or 'git fetch failed'}"
+    base_code, base_sha, base_error = run_command(["git", "rev-parse", base_ref])
+    if base_code != 0 or not re.fullmatch(r"[0-9a-f]{40}", base_sha):
+        return None, f"could not resolve fetched base: {base_error or 'invalid SHA'}"
+    head_code, head_sha, head_error = run_command(["git", "rev-parse", "HEAD"])
+    if head_code != 0 or not re.fullmatch(r"[0-9a-f]{40}", head_sha):
+        return None, f"could not resolve HEAD: {head_error or 'invalid SHA'}"
+    ancestor_code, _out, _error = run_command(
+        ["git", "merge-base", "--is-ancestor", base_sha, head_sha]
+    )
+    if ancestor_code != 0:
+        return None, "fetched owning base is not an ancestor of HEAD"
+    branch_code, active_branch, branch_error = run_command(
+        ["git", "branch", "--show-current"]
+    )
+    if branch_code != 0 or active_branch != expected_branch:
+        return None, f"active branch does not match requested branch: {branch_error or 'mismatch'}"
+    repo_code, repository, repo_error = run_command(
+        ["gh", "repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner"]
+    )
+    if repo_code != 0 or not repository:
+        return None, f"could not resolve owning repository: {repo_error or 'gh failed'}"
+    if repository_from_remote_url(remote_url) != repository:
+        return None, "selected Git remote is not the owning GitHub repository"
+    return {
+        "base_ref": base_ref,
+        "base_sha": base_sha,
+        "head_sha": head_sha,
+        "branch": active_branch,
+        "repository": repository,
+        "remote_url": remote_url,
+        "fetch_refspec": fetch_refspec,
+    }, None
+
+
+def reservation_root():
+    common = git_output("rev-parse", "--git-common-dir")
+    if not common:
+        return None
+    path = Path(common)
+    if not path.is_absolute():
+        path = ROOT / path
+    return path.resolve() / "neohaskell-change-reservations"
+
+
+def reserve_change_id(change_id, run_id, repository, base_sha, root=None):
+    if not CHANGE_ID_RE.fullmatch(change_id):
+        return None, "change-id must be NNN-kebab-case"
+    root = root or reservation_root()
+    if root is None:
+        return None, "cannot resolve repository-global reservation directory"
+    root.mkdir(parents=True, exist_ok=True)
+    reservation = root / change_id
+    payload = {
+        "change_id": change_id,
+        "run_id": run_id,
+        "repository": repository,
+        "base_sha": base_sha,
+        "worktree": str(ROOT.resolve()),
+    }
+    try:
+        reservation.mkdir()
+    except FileExistsError:
+        try:
+            existing = json.loads((reservation / "owner.json").read_text())
+        except (OSError, json.JSONDecodeError):
+            return None, f"change-id `{change_id}` is reserved with invalid owner metadata"
+        if existing == payload:
+            return reservation, None
+        return None, f"change-id `{change_id}` is already reserved by another run/worktree"
+    temporary = reservation / "owner.json.tmp"
+    temporary.write_text(json.dumps(payload, sort_keys=True) + "\n")
+    temporary.replace(reservation / "owner.json")
+    return reservation, None
+
+
+def release_change_id(state, root=None):
+    change_id = state.get("change_id")
+    if not change_id:
+        return
+    root = root or reservation_root()
+    if root is None:
+        return
+    reservation = root / change_id
+    try:
+        owner = json.loads((reservation / "owner.json").read_text())
+    except (OSError, json.JSONDecodeError):
+        return
+    if owner.get("run_id") != state.get("run_id") or owner.get("worktree") != str(ROOT.resolve()):
+        return
+    (reservation / "owner.json").unlink(missing_ok=True)
+    reservation.rmdir()
+
+
+def cmd_release_reservation(args, state_dir=STATE_DIR, root=None):
+    root = root or reservation_root()
+    if root is None or not CHANGE_ID_RE.fullmatch(args.change_id):
+        print("pipeline-state: invalid reservation release request", file=sys.stderr)
+        return 2
+    reservation = root / args.change_id
+    try:
+        owner = json.loads((reservation / "owner.json").read_text())
+    except (OSError, json.JSONDecodeError):
+        print("pipeline-state: reservation is missing or corrupt", file=sys.stderr)
+        return 1
+    if owner.get("run_id") != args.run_id or owner.get("worktree") != str(ROOT.resolve()):
+        print("pipeline-state: reservation belongs to another run/worktree", file=sys.stderr)
+        return 1
+    if state_file(state_dir).exists():
+        print("pipeline-state: live state exists; resume or complete it instead", file=sys.stderr)
+        return 1
+    (reservation / "owner.json").unlink()
+    reservation.rmdir()
+    print(f"pipeline-state: released crashed reservation `{args.change_id}`")
+    return 0
+
+
+def claim_issue(request_ref, run_command=command_output):
+    match = ISSUE_REF_RE.fullmatch(request_ref)
+    if match is None:
+        return None
+    issue_number = match.group(1)
+    edit_code, _edit_out, edit_err = run_command(
+        ["gh", "issue", "edit", issue_number, "--add-assignee", "@me"]
+    )
+    if edit_code != 0:
+        return f"could not assign issue#{issue_number} to @me: {edit_err or 'gh failed'}"
+    viewer_code, viewer, viewer_err = run_command(["gh", "api", "user", "--jq", ".login"])
+    if viewer_code != 0 or not viewer:
+        return f"could not identify the current GitHub viewer: {viewer_err or 'gh returned no login'}"
+    assignee_code, assignees, assignee_err = run_command(
+        ["gh", "issue", "view", issue_number, "--json", "assignees", "--jq", ".assignees[].login"]
+    )
+    if assignee_code != 0:
+        return f"could not verify issue#{issue_number} assignees: {assignee_err or 'gh failed'}"
+    if viewer not in assignees.splitlines():
+        return f"issue#{issue_number} assignment verification failed: viewer `{viewer}` is not assigned"
+    return None
+
+
+def invalid_conventional_subject(subject):
+    return CONVENTIONAL_SUBJECT_RE.fullmatch(subject) is None
+
+
+def validate_change_metadata(pr_title, commits):
+    errors = []
+    if invalid_conventional_subject(pr_title):
+        errors.append(f"offending PR title: `{pr_title}`")
+    for sha, subject in commits:
+        if invalid_conventional_subject(subject):
+            errors.append(f"offending commit {sha}: `{subject}`")
+    return errors
+
+
+def commits_since(base):
+    output = git_output("log", "--format=%H%x09%s", f"{base}..HEAD")
+    if output is None:
+        return None
+    commits = []
+    for line in output.splitlines():
+        sha, separator, subject = line.partition("\t")
+        if separator:
+            commits.append((sha, subject))
+    return commits
+
+
 def current_head():
     return git_output("rev-parse", "HEAD")
+
+
+def current_branch():
+    branch = git_output("branch", "--show-current")
+    if branch:
+        return branch
+    return os.environ.get("GITHUB_HEAD_REF") or os.environ.get("GITHUB_REF_NAME")
+
+
+def remote_pr_metadata(pr_number):
+    code, output, error = command_output([
+        "gh", "pr", "view", str(pr_number), "--json",
+        "title,baseRefName,headRefOid,headRefName,state",
+    ])
+    if code != 0:
+        return None, error or "gh failed"
+    try:
+        metadata = json.loads(output)
+    except json.JSONDecodeError:
+        return None, "gh returned invalid PR metadata"
+    return metadata, None
+
+
+def refresh_recorded_base(state, run_command=command_output):
+    match = REMOTE_REF_RE.fullmatch(state.get("base_ref", ""))
+    if match is None:
+        return None, "recorded base ref is invalid"
+    remote, branch_name = match.groups()
+    refspec = f"+refs/heads/{branch_name}:refs/remotes/{remote}/{branch_name}"
+    code, _out, error = run_command(
+        ["git", "fetch", "--quiet", "--no-tags", remote, refspec]
+    )
+    if code != 0:
+        return None, error or "git fetch failed"
+    code, sha, error = run_command(["git", "rev-parse", state["base_ref"]])
+    if code != 0 or not re.fullmatch(r"[0-9a-f]{40}", sha):
+        return None, error or "invalid fetched base SHA"
+    return sha, None
+
+
+def metadata_transition_error(
+    state, next_stage, pr_metadata_lookup=remote_pr_metadata,
+    branch_lookup=current_branch, base_refresher=refresh_recorded_base,
+    ancestor_checker=lambda base, head: git_output(
+        "merge-base", "--is-ancestor", base, head
+    ) is not None
+):
+    validation = state.get("metadata_validation")
+    if not isinstance(validation, dict):
+        return "metadata validation evidence is missing"
+    if validation.get("head") != current_head():
+        return "metadata validation is stale for current HEAD"
+    if validation.get("base_ref") != state.get("base_ref") \
+            or validation.get("base_sha") != state.get("base_sha"):
+        return "metadata validation is stale for the recorded base"
+    active_branch = branch_lookup()
+    if not active_branch:
+        return "cannot resolve the active Git branch"
+    if validation.get("branch") != active_branch or state.get("branch") != active_branch:
+        return "metadata validation is stale for the active Git branch"
+    if not validation.get("pr_title"):
+        return "validated PR title is empty"
+    pr_number = state.get("pr_number")
+    if not isinstance(pr_number, int) or pr_number <= 0:
+        return "PR-ready transition requires a positive pr_number"
+    if validation.get("pr_number") != pr_number:
+        return "metadata validation is not bound to the current PR number"
+    fresh_base_sha, base_error = base_refresher(state)
+    if base_error or fresh_base_sha != state.get("base_sha"):
+        return "owning remote base moved or could not be refreshed"
+    if not ancestor_checker(fresh_base_sha, current_head()):
+        return "fresh owning base is not an ancestor of current HEAD"
+    metadata, lookup_error = pr_metadata_lookup(pr_number)
+    if lookup_error or not isinstance(metadata, dict):
+        return "cannot verify current PR metadata"
+    expected_base_name = state["base_ref"].split("/", 1)[1]
+    if metadata.get("title") != validation.get("pr_title"):
+        return "current PR title differs from the validated title"
+    if metadata.get("baseRefName") != expected_base_name:
+        return "current PR targets a different base branch"
+    if metadata.get("headRefOid") != current_head() or metadata.get("headRefName") != active_branch:
+        return "current PR head identity differs from local HEAD/branch"
+    if metadata.get("state") != "OPEN":
+        return "current PR is not open"
+    return None
+
+
+def spec_kind(spec_path):
+    if not spec_path:
+        return None
+    path = ROOT / spec_path
+    if not path.is_file():
+        return None
+    match = re.search(r"^kind:\s*(feature|bug|refactor)\b", path.read_text(), re.MULTILINE)
+    return match.group(1) if match else None
+
+
+def verify_red_evidence(state, run_command=command_output):
+    if spec_kind(state.get("spec_path")) != "bug":
+        return None
+    evidence = state.get("red_evidence")
+    if not isinstance(evidence, dict) or not evidence.get("path"):
+        return "bug Gate 1 requires recorded C1 red evidence"
+    head = current_head()
+    if head is None:
+        return "cannot resolve current HEAD for red evidence"
+    try:
+        receipt = json.loads(Path(evidence["path"]).read_text())
+    except (OSError, json.JSONDecodeError):
+        return "bug C1 red evidence receipt is missing or invalid"
+    if receipt.get("receipt_id") != evidence.get("receipt_id"):
+        return "bug C1 red evidence receipt ID changed after recording"
+    approval = state.get("approvals", {}).get("spec")
+    if approval and (approval.get("red_receipt_id") != evidence.get("receipt_id")
+                     or approval.get("head") != receipt.get("tested_head_sha")):
+        return "bug spec approval does not cover the current red receipt/tested HEAD"
+    command = [
+        str(RED_EVIDENCE), "verify", "--receipt", evidence["path"],
+        "--spec", state["spec_path"], "--base-sha", state["base_sha"],
+        "--head", head, "--pr-number", str(state.get("pr_number") or 0),
+        "--repository", state["repository"],
+    ]
+    code, _output, _error = run_command(command)
+    if code != 0:
+        return "bug C1 red evidence is missing, invalid, or stale"
+    return None
+
+
+def cmd_red_evidence(args, state_dir, evidence_verifier=verify_red_evidence):
+    state = load(state_dir)
+    if state["stage"] != "spec" or spec_kind(state.get("spec_path")) != "bug":
+        print("pipeline-state: red evidence can only be recorded for a bug at `spec`",
+              file=sys.stderr)
+        return 1
+    try:
+        receipt = json.loads(Path(args.receipt).read_text())
+    except (OSError, json.JSONDecodeError):
+        print("pipeline-state: red evidence receipt is missing or invalid", file=sys.stderr)
+        return 1
+    state["red_evidence"] = {"path": str(Path(args.receipt)),
+                             "receipt_id": receipt.get("receipt_id")}
+    error = evidence_verifier(state)
+    if error:
+        print(f"pipeline-state: {error}", file=sys.stderr)
+        return 1
+    state["approvals"].pop("spec", None)
+    save(state_dir, state)
+    print(f"pipeline-state: red evidence recorded: {receipt.get('receipt_id')}")
+    return 0
 
 
 def tracked_worktree_clean(status):
@@ -137,8 +497,8 @@ def state_file(state_dir):
 
 def validate(state):
     errs = []
-    for key in ("schema", "run_id", "request_ref", "stage", "parked", "plan",
-                "approvals", "history"):
+    for key in ("schema", "run_id", "request_ref", "change_id", "base_ref", "base_sha",
+                "repository", "remote_url", "stage", "parked", "plan", "approvals", "history"):
         if key not in state:
             errs.append(f"missing key `{key}`")
     if errs:
@@ -150,8 +510,20 @@ def validate(state):
             errs.append(f"`{key}` must be a {want.__name__}")
     if state.get("park") is not None and not isinstance(state["park"], dict):
         errs.append("`park` must be null or an object")
+    if state.get("metadata_validation") is not None and not isinstance(
+        state["metadata_validation"], dict
+    ):
+        errs.append("`metadata_validation` must be null or an object")
+    if state.get("red_evidence") is not None and not isinstance(state["red_evidence"], dict):
+        errs.append("`red_evidence` must be null or an object")
     if errs:
         return errs
+    if state.get("schema") != 2:
+        errs.append("state schema must be 2")
+    if not CHANGE_ID_RE.fullmatch(str(state.get("change_id", ""))):
+        errs.append("`change_id` must be NNN-kebab-case")
+    if not re.fullmatch(r"[0-9a-f]{40}", str(state.get("base_sha", ""))):
+        errs.append("`base_sha` must be a full Git SHA")
     if state["stage"] not in STAGES:
         errs.append(f"stage `{state['stage']}` not in {STAGES}")
     if not isinstance(state["parked"], bool):
@@ -193,16 +565,24 @@ def save(state_dir, state):
             print(f"pipeline-state: refusing to save invalid state — {e}", file=sys.stderr)
         sys.exit(1)
     state_dir.mkdir(exist_ok=True)
-    # write-to-temp then atomic replace: an interrupted write (crash, Ctrl-C,
-    # full disk) can leave a stray state.json.tmp but never a truncated
-    # state.json — the binding resume contract stays readable
+    # Write-to-temp then atomically replace. The descriptor starts at mode 0600,
+    # so even an interrupted write never exposes this non-credential run metadata.
     f = state_file(state_dir)
     tmp = f.with_name(f.name + ".tmp")
-    tmp.write_text(json.dumps(state, indent=2) + "\n")
+    payload = (json.dumps(state, indent=2) + "\n").encode()
+    descriptor = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    try:
+        with os.fdopen(descriptor, "wb", closefd=False) as handle:
+            handle.write(payload)
+            handle.flush()
+            os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
     tmp.replace(f)
 
 
-def cmd_init(args, state_dir):
+def cmd_init(args, state_dir, issue_claimer=claim_issue,
+             intake_preparer=prepare_intake, reservation_dir=None):
     if not RUN_ID_RE.fullmatch(args.run_id):
         print(f"pipeline-state: invalid run-id `{args.run_id}`", file=sys.stderr)
         return 2
@@ -216,11 +596,32 @@ def cmd_init(args, state_dir):
         print(f"pipeline-state: {f} exists — complete the current run first "
               "(or --force to discard it)", file=sys.stderr)
         return 2
+    claim_error = issue_claimer(args.request)
+    if claim_error:
+        print(f"pipeline-state: {claim_error}; intake did not start", file=sys.stderr)
+        return 1
+    base_ref = getattr(args, "base", TRUSTED_METADATA_BASE)
+    change_id = getattr(args, "change_id", None)
+    prepared, prepare_error = intake_preparer(base_ref, args.branch)
+    if prepare_error:
+        print(f"pipeline-state: {prepare_error}; intake did not start", file=sys.stderr)
+        return 1
+    reservation, reserve_error = reserve_change_id(
+        change_id, args.run_id, prepared["repository"], prepared["base_sha"], reservation_dir
+    )
+    if reserve_error:
+        print(f"pipeline-state: {reserve_error}; intake did not start", file=sys.stderr)
+        return 1
     state = {
-        "schema": 1,
+        "schema": 2,
         "run_id": args.run_id,
         "request_ref": args.request,
-        "branch": args.branch,
+        "change_id": change_id,
+        "branch": prepared["branch"],
+        "base_ref": prepared["base_ref"],
+        "base_sha": prepared["base_sha"],
+        "repository": prepared["repository"],
+        "remote_url": prepared["remote_url"],
         "stage": "intake",
         "parked": False,
         "park": None,
@@ -228,10 +629,88 @@ def cmd_init(args, state_dir):
         "pr_number": None,
         "plan": {"touches": [], "files": [], "uses": []},
         "approvals": {},
+        "metadata_validation": None,
+        "red_evidence": None,
         "history": [{"stage": "intake", "entered": now()}],
     }
+    try:
+        save(state_dir, state)
+    except BaseException:
+        release_change_id(state, reservation_dir)
+        raise
+    print(f"pipeline-state: run {args.run_id} started at stage `intake` "
+          f"from {prepared['base_sha']}")
+    return 0
+
+
+def cmd_validate_metadata(
+    args, state_dir, pr_metadata_lookup=remote_pr_metadata,
+    branch_lookup=current_branch, base_refresher=refresh_recorded_base,
+    commits_lookup=commits_since,
+    ancestor_checker=lambda base, head: git_output(
+        "merge-base", "--is-ancestor", base, head
+    ) is not None
+):
+    state = load(state_dir)
+    if args.base != state.get("base_ref"):
+        print("pipeline-state: metadata validation base must match the recorded owning base",
+              file=sys.stderr)
+        return 2
+    active_branch = branch_lookup()
+    if not active_branch or state.get("branch") != active_branch:
+        print("pipeline-state: metadata validation requires the recorded active Git branch",
+              file=sys.stderr)
+        return 2
+    fresh_base_sha, base_error = base_refresher(state)
+    if base_error or fresh_base_sha != state.get("base_sha"):
+        print("pipeline-state: recorded base is stale; rebase/restart from the fresh owning base",
+              file=sys.stderr)
+        return 2
+    if not ancestor_checker(fresh_base_sha, "HEAD"):
+        print("pipeline-state: fresh owning base is not an ancestor of HEAD", file=sys.stderr)
+        return 2
+    if state.get("pr_number") is not None:
+        metadata, error = pr_metadata_lookup(state["pr_number"])
+        expected_base = state["base_ref"].split("/", 1)[1]
+        if error or not isinstance(metadata, dict):
+            print("pipeline-state: cannot verify PR metadata", file=sys.stderr)
+            return 2
+        if metadata.get("title") != args.pr_title \
+                or metadata.get("baseRefName") != expected_base \
+                or metadata.get("headRefOid") != current_head() \
+                or metadata.get("headRefName") != active_branch \
+                or metadata.get("state") != "OPEN":
+            print("pipeline-state: live PR title/base/head/state differs from this run",
+                  file=sys.stderr)
+            return 1
+    commits = commits_lookup(state["base_sha"])
+    if commits is None:
+        print("pipeline-state: cannot inspect commits from the recorded base SHA", file=sys.stderr)
+        return 2
+    errors = validate_change_metadata(args.pr_title, commits)
+    if errors:
+        for error in errors:
+            print(f"pipeline-state: invalid Conventional Commit metadata — {error}",
+                  file=sys.stderr)  # lgtm[py/clear-text-logging-sensitive-data]
+        return 1
+    head = current_head()
+    if head is None:
+        print("pipeline-state: cannot resolve current HEAD for metadata validation", file=sys.stderr)
+        return 2
+    state["metadata_validation"] = {
+        "head": head,
+        "base_ref": state["base_ref"],
+        "base_sha": state["base_sha"],
+        "pr_title": args.pr_title,
+        "pr_number": state.get("pr_number"),
+        "branch": active_branch,
+        "at": now(),
+    }
     save(state_dir, state)
-    print(f"pipeline-state: run {args.run_id} started at stage `intake`")
+    print(
+        f"pipeline-state: Conventional Commit metadata valid and recorded at {head} "
+        f"({len(commits)} commit(s), PR title checked)"
+    )
     return 0
 
 
@@ -245,11 +724,20 @@ def cmd_status(state_dir):
     if s["approvals"]:
         for stage, a in s["approvals"].items():
             print(f"  approved {stage}: by {a['by']} via {a.get('via', '?')} at {a['at']}")
+    if s.get("metadata_validation"):
+        validation = s["metadata_validation"]
+        print(f"  metadata validated: {validation['head']} (PR title checked)")
     print(f"  history: {' -> '.join(h['stage'] for h in s['history'])}")
     return 0
 
 
-def cmd_advance(state_dir):
+def cmd_advance(
+    state_dir, pr_metadata_lookup=remote_pr_metadata, branch_lookup=current_branch,
+    base_refresher=refresh_recorded_base, red_verifier=verify_red_evidence,
+    ancestor_checker=lambda base, head: git_output(
+        "merge-base", "--is-ancestor", base, head
+    ) is not None
+):
     s = load(state_dir)
     if s["parked"]:
         print("pipeline-state: run is parked — `resume` first", file=sys.stderr)
@@ -258,11 +746,29 @@ def cmd_advance(state_dir):
     if i + 1 >= len(STAGES):
         print(f"pipeline-state: already at final stage `{s['stage']}`", file=sys.stderr)
         return 1
-    if STAGES[i + 1] == "design-review" and "spec" not in s["approvals"]:
+    next_stage = STAGES[i + 1]
+    if next_stage == "design-review" and "spec" not in s["approvals"]:
         print("pipeline-state: cannot advance past `spec` without a recorded spec "
               "approval (`approve spec --by …`) — the gate is the contract", file=sys.stderr)
         return 1
-    s["stage"] = STAGES[i + 1]
+    if next_stage == "design-review":
+        red_error = red_verifier(s)
+        if red_error:
+            print(f"pipeline-state: cannot advance past Gate 1 — {red_error}", file=sys.stderr)
+            return 1
+    if next_stage in {"design-review", "ci"}:
+        metadata_error = metadata_transition_error(
+            s, next_stage, pr_metadata_lookup, branch_lookup, base_refresher,
+            ancestor_checker
+        )
+        if metadata_error:
+            print(
+                f"pipeline-state: cannot advance to `{next_stage}` — metadata evidence is invalid; "
+                "run `pipeline validate --pr-title …`",
+                file=sys.stderr,
+            )
+            return 1
+    s["stage"] = next_stage
     s["history"].append({"stage": s["stage"], "entered": now()})
     save(state_dir, s)
     print(f"pipeline-state: -> {s['stage']}")
@@ -312,23 +818,53 @@ def cmd_set(args, state_dir):
         value = json.loads(args.value)
     except json.JSONDecodeError:
         value = args.value
+    if node == "spec_path":
+        expected_spec = f"docs/changes/{s['change_id']}.md"
+        if value != expected_spec:
+            print(f"pipeline-state: spec_path must match reserved change-id: {expected_spec}",
+                  file=sys.stderr)
+            return 2
+    if node == "pr_number":
+        if not isinstance(value, int) or value <= 0:
+            print("pipeline-state: `pr_number` must be a positive integer", file=sys.stderr)
+            return 2
+        existing_pr = s.get("pr_number")
+        if existing_pr is not None and existing_pr != value:
+            print(
+                f"pipeline-state: pr_number is immutable once set (`{existing_pr}` != `{value}`)",
+                file=sys.stderr,
+            )
+            return 2
     if node == "plan":
         s["plan"][parts[1]] = value
     else:
+        if node in {"branch", "pr_number"} and s.get(node) != value:
+            s["metadata_validation"] = None
+        if node == "spec_path" and s.get(node) != value:
+            s["red_evidence"] = None
+            s["approvals"].pop("spec", None)
         s[node] = value
     save(state_dir, s)
     print(f"pipeline-state: {args.key} = {json.dumps(value)}")
     return 0
 
 
-def cmd_approve(args, state_dir):
+def cmd_approve(args, state_dir, red_verifier=verify_red_evidence):
     s = load(state_dir)
     if s["stage"] != args.stage:
         print(f"pipeline-state: cannot approve `{args.stage}` while the run is at "
               f"`{s['stage']}` — approvals are recorded at the gate, not pre-seeded",
               file=sys.stderr)
         return 1
+    if args.stage == "spec":
+        red_error = red_verifier(s)
+        if red_error:
+            print(f"pipeline-state: cannot approve bug spec — {red_error}", file=sys.stderr)
+            return 1
     approval = {"by": args.by, "via": args.via, "at": now()}
+    if args.stage == "spec" and s.get("red_evidence"):
+        approval["red_receipt_id"] = s["red_evidence"].get("receipt_id")
+        approval["head"] = current_head()
     head = getattr(args, "head", None)
     if args.stage == "ci":
         actual_head = current_head()
@@ -388,7 +924,7 @@ def telemetry_completion_error(run_id, outcome, current_path, runs_path):
 
 def cmd_complete(args, state_dir, telemetry_current=TELEMETRY_CURRENT,
                  telemetry_runs=TELEMETRY_RUNS,
-                 approval_matcher=final_approval_matches):
+                 approval_matcher=final_approval_matches, reservation_dir=None):
     s = load(state_dir)
     if args.outcome == "ok" and (s["parked"] or s["stage"] != "ci"):
         print("pipeline-state: outcome `ok` requires a non-parked run at final stage `ci`",
@@ -440,6 +976,7 @@ def cmd_complete(args, state_dir, telemetry_current=TELEMETRY_CURRENT,
                 and existing.get("terminal_outcome") == args.outcome
                 and existing_head == live_head):
             state_file(state_dir).unlink(missing_ok=True)
+            release_change_id(s, reservation_dir)
             print(f"pipeline-state: recovered completed run {s['run_id']} -> {archive}")
             return 0
         print(f"pipeline-state: completion archive conflicts with live state: {archive}",
@@ -451,6 +988,7 @@ def cmd_complete(args, state_dir, telemetry_current=TELEMETRY_CURRENT,
     tmp.write_text(json.dumps(s, indent=2) + "\n")
     tmp.replace(archive)
     state_file(state_dir).unlink()
+    release_change_id(s, reservation_dir)
     print(f"pipeline-state: run {s['run_id']} closed as {args.outcome} and archived -> {archive}")
     return 0
 
@@ -466,6 +1004,51 @@ def self_test():
             if got != want:
                 print(f"self-test FAIL {label}: exit {got}, want {want}")
                 fails += 1
+
+        reservations = d / "reservations"
+        test_base_sha = git_output("rev-parse", "origin/main") or ("a" * 40)
+
+        def fake_prepare(base_ref, branch):
+            return {
+                "base_ref": base_ref,
+                "base_sha": test_base_sha,
+                "head_sha": "b" * 40,
+                "branch": branch,
+                "repository": "neohaskell/NeoHaskell",
+                "remote_url": "https://github.com/neohaskell/NeoHaskell.git",
+                "fetch_refspec": "+refs/heads/main:refs/remotes/origin/main",
+            }, None
+
+        def init_run(namespace, run_dir, issue_claimer=lambda _request: None):
+            if not hasattr(namespace, "base"):
+                namespace.base = TRUSTED_METADATA_BASE
+            if not hasattr(namespace, "change_id"):
+                suffix = re.sub(r"[^a-z0-9]+", "-", namespace.run_id.lower()).strip("-")
+                namespace.change_id = f"900-{suffix}"
+            return cmd_init(
+                namespace, run_dir, issue_claimer=issue_claimer,
+                intake_preparer=fake_prepare, reservation_dir=reservations,
+            )
+
+        def advance(run_dir, pr_title_lookup=lambda _pr: ("fix: test pipeline", None),
+                    branch_lookup=lambda: active_branch,
+                    red_verifier=verify_red_evidence):
+            def metadata_lookup(pr_number):
+                title, error = pr_title_lookup(pr_number)
+                return {
+                    "title": title,
+                    "baseRefName": "main",
+                    "headRefOid": current_head(),
+                    "headRefName": branch_lookup(),
+                    "state": "OPEN",
+                }, error
+            return cmd_advance(
+                run_dir, pr_metadata_lookup=metadata_lookup,
+                branch_lookup=branch_lookup,
+                base_refresher=lambda state: (state["base_sha"], None),
+                red_verifier=red_verifier,
+                ancestor_checker=lambda _base, _head: True,
+            )
 
         def telemetry_paths(run_dir):
             return run_dir / "telemetry-current.json", run_dir / "runs.jsonl"
@@ -488,6 +1071,24 @@ def self_test():
                 argparse.Namespace(outcome=outcome), run_dir,
                 telemetry_current=current, telemetry_runs=runs,
                 approval_matcher=lambda _head, _run_id, _outcome: True,
+                reservation_dir=reservations,
+            )
+
+        def validate_metadata(run_dir):
+            state = load(run_dir)
+            def pr_lookup(_pr_number):
+                return {
+                    "title": "fix: test pipeline", "baseRefName": "main",
+                    "headRefOid": current_head(), "headRefName": active_branch,
+                    "state": "OPEN",
+                }, None
+            return cmd_validate_metadata(
+                argparse.Namespace(base=state["base_ref"], pr_title="fix: test pipeline"),
+                run_dir, pr_metadata_lookup=pr_lookup,
+                branch_lookup=lambda: active_branch,
+                base_refresher=lambda current: (current["base_sha"], None),
+                commits_lookup=lambda _base: [("deadbeef", "fix: valid subject")],
+                ancestor_checker=lambda _base, _head: True,
             )
 
         if approval_covers_head("a", "a", "parent", ["other"]):
@@ -522,28 +1123,248 @@ def self_test():
             print("self-test FAIL telemetry append: wrong run-id should fail")
             fails += 1
 
-        ns = argparse.Namespace(run_id="t-001", request="issue#0", branch="b", force=False)
-        run("init", lambda: cmd_init(ns, d), 0)
-        run("init-refuses-clobber", lambda: cmd_init(ns, d), 2)
-        run("advance-to-localize", lambda: cmd_advance(d), 0)
+        valid_subjects = [
+            "fix: preserve stream revision",
+            "test(event-store): cover concurrent creation",
+            "docs: Document the explicit rebuild path",
+        ]
+        invalid_subjects = ["Fix stream revision", "feature: add helper", "fix(scope) missing colon"]
+        for subject in valid_subjects:
+            if invalid_conventional_subject(subject):
+                print(f"self-test FAIL conventional-valid: {subject}")
+                fails += 1
+        for subject in invalid_subjects:
+            if not invalid_conventional_subject(subject):
+                print(f"self-test FAIL conventional-invalid: {subject}")
+                fails += 1
+        metadata_errors = validate_change_metadata(
+            "Not conventional", [("deadbeef", "also invalid")]
+        )
+        if metadata_errors != [
+            "offending PR title: `Not conventional`",
+            "offending commit deadbeef: `also invalid`",
+        ]:
+            print(f"self-test FAIL conventional-exact-errors: {metadata_errors}")
+            fails += 1
+
+        successful_claim_calls = []
+        def successful_gh(argv):
+            successful_claim_calls.append(argv)
+            if argv[:3] == ["gh", "api", "user"]:
+                return 0, "octocat", ""
+            if argv[:3] == ["gh", "issue", "view"]:
+                return 0, "octocat\nother", ""
+            return 0, "", ""
+        if claim_issue("issue#862", successful_gh) is not None:
+            print("self-test FAIL issue-claim-success")
+            fails += 1
+        if successful_claim_calls[0] != ["gh", "issue", "edit", "862", "--add-assignee", "@me"]:
+            print(f"self-test FAIL issue-claim-command: {successful_claim_calls[0]}")
+            fails += 1
+        missing_assignment = claim_issue(
+            "issue#862",
+            lambda argv: (0, "octocat", "") if argv[:3] == ["gh", "api", "user"]
+            else ((0, "other", "") if argv[:3] == ["gh", "issue", "view"] else (0, "", "")),
+        )
+        if missing_assignment != "issue#862 assignment verification failed: viewer `octocat` is not assigned":
+            print(f"self-test FAIL issue-claim-verification: {missing_assignment}")
+            fails += 1
+        assignment_failures = [
+            lambda argv: (1, "", "edit failed"),
+            lambda argv: (0, "", "") if argv[:3] != ["gh", "api", "user"] else (1, "", "viewer failed"),
+            lambda argv: (0, "octocat", "") if argv[:3] == ["gh", "api", "user"]
+                else ((1, "", "lookup failed") if argv[:3] == ["gh", "issue", "view"] else (0, "", "")),
+        ]
+        for index, failing_gh in enumerate(assignment_failures):
+            if claim_issue("issue#862", failing_gh) is None:
+                print(f"self-test FAIL issue-claim-failure-{index} accepted")
+                fails += 1
+        if claim_issue("adhoc:docs", lambda _argv: (1, "", "must not run")) is not None:
+            print("self-test FAIL adhoc-claim-skip")
+            fails += 1
+
+        intake_calls = []
+        def fake_intake_command(argv):
+            intake_calls.append(argv)
+            if argv == ["git", "remote", "get-url", "origin"]:
+                return 0, "https://github.com/neohaskell/NeoHaskell.git", ""
+            if argv[:2] == ["git", "fetch"]:
+                return 0, "", ""
+            if argv == ["git", "rev-parse", "origin/main"]:
+                return 0, "a" * 40, ""
+            if argv == ["git", "rev-parse", "HEAD"]:
+                return 0, "b" * 40, ""
+            if argv[:3] == ["git", "merge-base", "--is-ancestor"]:
+                return 0, "", ""
+            if argv == ["git", "branch", "--show-current"]:
+                return 0, "feature-branch", ""
+            if argv[:3] == ["gh", "repo", "view"]:
+                return 0, "neohaskell/NeoHaskell", ""
+            return 1, "", "unexpected command"
+        prepared, prepare_error = prepare_intake(
+            "origin/main", "feature-branch", fake_intake_command
+        )
+        if prepare_error or prepared["base_sha"] != "a" * 40 \
+                or intake_calls[1] != [
+                    "git", "fetch", "--quiet", "--no-tags", "origin",
+                    "+refs/heads/main:refs/remotes/origin/main",
+                ]:
+            print(f"self-test FAIL prepared intake: {prepare_error}, {intake_calls}")
+            fails += 1
+        divergent_calls = lambda argv: (
+            (1, "", "diverged") if argv[:3] == ["git", "merge-base", "--is-ancestor"]
+            else fake_intake_command(argv)
+        )
+        if prepare_intake("origin/main", "feature-branch", divergent_calls)[1] is None:
+            print("self-test FAIL divergent base accepted")
+            fails += 1
+        def wrong_owner_command(argv):
+            if argv == ["git", "remote", "get-url", "origin"]:
+                return 0, "https://github.com/other/repository.git", ""
+            return fake_intake_command(argv)
+        if prepare_intake("origin/main", "feature-branch", wrong_owner_command)[1] is None:
+            print("self-test FAIL non-owning remote accepted")
+            fails += 1
+        reservation_test_root = d / "reservation-race"
+        first_reservation, first_error = reserve_change_id(
+            "008-hardening", "run-a", "neohaskell/NeoHaskell", "a" * 40,
+            reservation_test_root,
+        )
+        _same, same_error = reserve_change_id(
+            "008-hardening", "run-a", "neohaskell/NeoHaskell", "a" * 40,
+            reservation_test_root,
+        )
+        _other, other_error = reserve_change_id(
+            "008-hardening", "run-b", "neohaskell/NeoHaskell", "a" * 40,
+            reservation_test_root,
+        )
+        if first_error or same_error or first_reservation is None or other_error is None:
+            print("self-test FAIL repository-global reservation conflict/idempotency")
+            fails += 1
+        run("release-crashed-reservation", lambda: cmd_release_reservation(
+            argparse.Namespace(change_id="008-hardening", run_id="run-a"),
+            d / "no-live-state", reservation_test_root), 0)
+        if (reservation_test_root / "008-hardening").exists():
+            print("self-test FAIL crashed reservation was not released")
+            fails += 1
+
+        active_branch = current_branch()
+        if not active_branch:
+            print("self-test FAIL current branch could not be resolved")
+            fails += 1
+            active_branch = "self-test-branch"
+        failed_intake_dir = d / "failed-intake"
+        failed_intake_ns = argparse.Namespace(
+            run_id="t-no-assignment", request="issue#9", branch=active_branch,
+            change_id="902-no-assignment", base=TRUSTED_METADATA_BASE, force=False,
+        )
+        run("init-assignment-failure", lambda: init_run(
+            failed_intake_ns, failed_intake_dir,
+            issue_claimer=lambda _request: "assignment failed"), 1)
+        if state_file(failed_intake_dir).exists() or (reservations / "902-no-assignment").exists():
+            print("self-test FAIL assignment failure created state/reservation")
+            fails += 1
+
+        bug_dir = d / "bug-gate"
+        bug_ns = argparse.Namespace(
+            run_id="t-bug", request="issue#1", branch=active_branch,
+            change_id="001-fileupload-dedup-blob-existence-check",
+            base=TRUSTED_METADATA_BASE, force=False,
+        )
+        run("bug-init", lambda: init_run(bug_ns, bug_dir), 0)
+        run("bug-localize", lambda: advance(bug_dir), 0)
+        run("bug-set-spec", lambda: cmd_set(argparse.Namespace(
+            key="spec_path", value="docs/changes/001-fileupload-dedup-blob-existence-check.md"
+        ), bug_dir), 0)
+        run("bug-spec", lambda: advance(bug_dir), 0)
+        run("bug-approval-without-red-denied", lambda: cmd_approve(
+            argparse.Namespace(stage="spec", by="nick", via="local", head=None), bug_dir), 1)
+        receipt_path = bug_dir / "receipt.json"
+        receipt_path.write_text(json.dumps({"receipt_id": "receipt-1"}) + "\n")
+        run("bug-record-red", lambda: cmd_red_evidence(
+            argparse.Namespace(receipt=str(receipt_path)), bug_dir,
+            evidence_verifier=lambda _state: None), 0)
+        run("bug-approve-red", lambda: cmd_approve(
+            argparse.Namespace(stage="spec", by="nick", via="local", head=None), bug_dir,
+            red_verifier=lambda _state: None), 0)
+        run("bug-set-pr", lambda: cmd_set(argparse.Namespace(
+            key="pr_number", value="721"), bug_dir), 0)
+        run("bug-metadata-valid", lambda: validate_metadata(bug_dir), 0)
+        run("bug-stale-red-blocks-advance", lambda: advance(
+            bug_dir, red_verifier=lambda _state: "stale receipt"), 1)
+        run("bug-current-red-advances", lambda: advance(
+            bug_dir, red_verifier=lambda _state: None), 0)
+
+        ns = argparse.Namespace(
+            run_id="t-001", request="issue#0", branch=active_branch, force=False
+        )
+        run("init", lambda: init_run(ns, d, issue_claimer=lambda _request: None), 0)
+        run("init-refuses-clobber", lambda: init_run(ns, d, issue_claimer=lambda _request: None), 2)
+        run("advance-to-localize", lambda: advance(d), 0)
         run("set-plan-during-localize", lambda: cmd_set(argparse.Namespace(
             key="plan.touches", value='["auth"]'), d), 0)
-        run("advance-to-spec", lambda: cmd_advance(d), 0)
+        run("advance-to-spec", lambda: advance(d), 0)
         run("replan-at-spec-denied", lambda: cmd_set(argparse.Namespace(
             key="plan.touches", value='["json"]'), d), 2)
-        run("gate-blocks-unapproved", lambda: cmd_advance(d), 1)
+        run("gate-blocks-unapproved", lambda: advance(d), 1)
         run("approve-spec", lambda: cmd_approve(
             argparse.Namespace(stage="spec", by="nick", via="pr-comment"), d), 0)
-        run("advance-past-gate", lambda: cmd_advance(d), 0)
+        run("metadata-untrusted-base-denied", lambda: cmd_validate_metadata(
+            argparse.Namespace(base="HEAD", pr_title="fix: test pipeline"), d), 2)
+        run("advance-past-gate-without-metadata-denied", lambda: advance(d), 1)
+        run("set-pr-before-gate", lambda: cmd_set(
+            argparse.Namespace(key="pr_number", value="721"), d), 0)
+        run("metadata-valid", lambda: validate_metadata(d), 0)
+        gate_state = load(d)
+        bad_pr_base = lambda _pr: ({
+            "title": "fix: test pipeline", "baseRefName": "develop",
+            "headRefOid": current_head(), "headRefName": active_branch, "state": "OPEN",
+        }, None)
+        bad_pr_head = lambda _pr: ({
+            "title": "fix: test pipeline", "baseRefName": "main",
+            "headRefOid": "f" * 40, "headRefName": active_branch, "state": "OPEN",
+        }, None)
+        if metadata_transition_error(
+                gate_state, "design-review", bad_pr_base, lambda: active_branch,
+                lambda state: (state["base_sha"], None),
+                lambda _base, _head: True) is None:
+            print("self-test FAIL non-owning PR base accepted")
+            fails += 1
+        if metadata_transition_error(
+                gate_state, "design-review", bad_pr_head, lambda: active_branch,
+                lambda state: (state["base_sha"], None),
+                lambda _base, _head: True) is None:
+            print("self-test FAIL remote PR head mismatch accepted")
+            fails += 1
+        if metadata_transition_error(
+                gate_state, "design-review", bad_pr_base, lambda: active_branch,
+                lambda _state: ("f" * 40, None),
+                lambda _base, _head: True) is None:
+            print("self-test FAIL moved owning base accepted")
+            fails += 1
+        run("advance-past-gate-after-branch-switch-denied", lambda: advance(
+            d,
+            pr_title_lookup=lambda _pr: ("fix: test pipeline", None),
+            branch_lookup=lambda: "other-branch",
+        ), 1)
+        run("advance-past-gate-after-title-change-denied", lambda: advance(
+            d, pr_title_lookup=lambda _pr: ("fix: changed title", None)), 1)
+        run("advance-past-gate", lambda: advance(
+            d, pr_title_lookup=lambda _pr: ("fix: test pipeline", None)), 0)
         run("park-bad-label", lambda: cmd_park(
             argparse.Namespace(label="vibes", note=""), d), 2)
         run("park", lambda: cmd_park(
             argparse.Namespace(label="timeout", note="stage budget"), d), 0)
-        run("advance-while-parked", lambda: cmd_advance(d), 1)
+        run("advance-while-parked", lambda: advance(d), 1)
         run("resume", lambda: cmd_resume(d), 0)
         run("replan-after-resume-denied", lambda: cmd_set(argparse.Namespace(
             key="plan.touches", value='["json"]'), d), 2)
-        run("set-pr", lambda: cmd_set(argparse.Namespace(key="pr_number", value="721"), d), 0)
+        run("set-pr-idempotent", lambda: cmd_set(
+            argparse.Namespace(key="pr_number", value="721"), d), 0)
+        run("change-pr-denied", lambda: cmd_set(
+            argparse.Namespace(key="pr_number", value="722"), d), 2)
+        run("clear-pr-denied", lambda: cmd_set(
+            argparse.Namespace(key="pr_number", value="null"), d), 2)
         state = json.loads(state_file(d).read_text())
         if state["pr_number"] != 721 or state["plan"]["touches"] != ["auth"]:
             print(f"self-test FAIL set: {state['pr_number']}, {state['plan']['touches']}")
@@ -565,15 +1386,23 @@ def self_test():
             argparse.Namespace(key="spec_path.x", value='"y"'), d), 2)
         run("approve-wrong-stage", lambda: cmd_approve(
             argparse.Namespace(stage="spec", by="nick", via="pr-comment"), d), 1)
-        run("advance-to-plan", lambda: cmd_advance(d), 0)
-        run("advance-to-test-writing", lambda: cmd_advance(d), 0)
+        run("advance-to-plan", lambda: advance(d), 0)
+        run("advance-to-test-writing", lambda: advance(d), 0)
         run("replan-at-plan-denied", lambda: cmd_set(
             argparse.Namespace(key="plan.touches", value='["json"]'), d), 2)
         run("complete-before-ci-denied", lambda: complete(d, "ok"), 1)
-        run("advance-to-implement", lambda: cmd_advance(d), 0)
-        run("advance-to-verify", lambda: cmd_advance(d), 0)
-        run("advance-to-pr", lambda: cmd_advance(d), 0)
-        run("advance-to-ci", lambda: cmd_advance(d), 0)
+        run("advance-to-implement", lambda: advance(d), 0)
+        run("advance-to-verify", lambda: advance(d), 0)
+        run("advance-to-pr", lambda: advance(d), 0)
+        pre_ci_state = load(d)
+        pre_ci_state["metadata_validation"] = None
+        save(d, pre_ci_state)
+        run("advance-to-ci-without-current-metadata-denied", lambda: advance(d), 1)
+        run("metadata-valid-at-ci", lambda: validate_metadata(d), 0)
+        run("advance-to-ci-with-changed-title-denied", lambda: advance(
+            d, pr_title_lookup=lambda _pr: ("fix: changed title", None)), 1)
+        run("advance-to-ci", lambda: advance(
+            d, pr_title_lookup=lambda _pr: ("fix: test pipeline", None)), 0)
         run("complete-without-gate2-denied", lambda: complete(d, "ok"), 1)
         run("approve-ci-without-head-denied", lambda: cmd_approve(
             argparse.Namespace(stage="ci", by="nick", via="github-review", head=None), d), 2)
@@ -588,9 +1417,12 @@ def self_test():
         if state_file(d).exists() or not (d / "completed" / "t-001.json").is_file():
             print("self-test FAIL complete: live state remained or archive is missing")
             fails += 1
-        run("reuse-completed-runid-denied", lambda: cmd_init(ns, d), 2)
+        if (reservations / "900-t-001").exists():
+            print("self-test FAIL complete: change-id reservation was not released")
+            fails += 1
+        run("reuse-completed-runid-denied", lambda: init_run(ns, d, issue_claimer=lambda _request: None), 2)
         next_ns = argparse.Namespace(run_id="t-002", request="issue#1", branch="b2", force=False)
-        run("init-after-complete", lambda: cmd_init(next_ns, d), 0)
+        run("init-after-complete", lambda: init_run(next_ns, d, issue_claimer=lambda _request: None), 0)
 
         # Fix 6: a truncated state file exits cleanly (exit 1), never tracebacks.
         # Runs last — it clobbers the valid state file on purpose.
@@ -606,19 +1438,19 @@ def self_test():
 
         parked_dir = d / "parked-case"
         parked_ns = argparse.Namespace(run_id="t-parked", request="issue#2", branch="p", force=False)
-        run("parked-init", lambda: cmd_init(parked_ns, parked_dir), 0)
+        run("parked-init", lambda: init_run(parked_ns, parked_dir, issue_claimer=lambda _request: None), 0)
         run("parked-park", lambda: cmd_park(
             argparse.Namespace(label="timeout", note="budget"), parked_dir), 0)
         run("parked-as-ok-denied", lambda: complete(parked_dir, "ok"), 1)
         finish_telemetry(parked_dir, "parked")
         run("parked-complete", lambda: complete(parked_dir, "parked"), 0)
-        run("init-after-parked", lambda: cmd_init(
+        run("init-after-parked", lambda: init_run(
             argparse.Namespace(run_id="t-after-park", request="issue#3", branch="p2", force=False),
-            parked_dir), 0)
+            parked_dir, issue_claimer=lambda _request: None), 0)
 
         retry_dir = d / "retry-case"
         retry_ns = argparse.Namespace(run_id="t-retry", request="issue#retry", branch="r", force=False)
-        run("retry-init", lambda: cmd_init(retry_ns, retry_dir), 0)
+        run("retry-init", lambda: init_run(retry_ns, retry_dir, issue_claimer=lambda _request: None), 0)
         retry_state = load(retry_dir)
         retry_state["stage"] = "ci"
         retry_state["approvals"]["ci"] = {
@@ -641,7 +1473,7 @@ def self_test():
         conflict_ns = argparse.Namespace(
             run_id="t-conflict", request="issue#conflict", branch="c", force=False
         )
-        run("conflict-init", lambda: cmd_init(conflict_ns, conflict_dir), 0)
+        run("conflict-init", lambda: init_run(conflict_ns, conflict_dir, issue_claimer=lambda _request: None), 0)
         conflict_state = load(conflict_dir)
         conflict_state["stage"] = "ci"
         conflict_state["approvals"]["ci"] = {
@@ -662,12 +1494,12 @@ def self_test():
 
         failed_dir = d / "failed-case"
         failed_ns = argparse.Namespace(run_id="t-failed", request="issue#4", branch="f", force=False)
-        run("failed-init", lambda: cmd_init(failed_ns, failed_dir), 0)
+        run("failed-init", lambda: init_run(failed_ns, failed_dir, issue_claimer=lambda _request: None), 0)
         finish_telemetry(failed_dir, "failed")
         run("failed-complete", lambda: complete(failed_dir, "failed"), 0)
-        run("init-after-failed", lambda: cmd_init(
+        run("init-after-failed", lambda: init_run(
             argparse.Namespace(run_id="t-after-fail", request="issue#5", branch="f2", force=False),
-            failed_dir), 0)
+            failed_dir, issue_claimer=lambda _request: None), 0)
 
         if fails == 0:
             print("pipeline-state self-test: OK — lifecycle, both approval gates, immutable "
@@ -685,10 +1517,14 @@ def main():
     pi = sub.add_parser("init")
     pi.add_argument("--run-id", required=True)
     pi.add_argument("--request", required=True)
-    pi.add_argument("--branch", default=None)
+    pi.add_argument("--branch", required=True)
+    pi.add_argument("--base", default=TRUSTED_METADATA_BASE)
+    pi.add_argument("--change-id", required=True)
     pi.add_argument("--force", action="store_true")
     sub.add_parser("status")
     sub.add_parser("advance")
+    pre = sub.add_parser("red-evidence")
+    pre.add_argument("--receipt", default=".pipeline/red-evidence.json")
     ps = sub.add_parser("set")
     ps.add_argument("key")
     ps.add_argument("value")
@@ -701,9 +1537,14 @@ def main():
     pp.add_argument("--label", required=True)
     pp.add_argument("--note", default="")
     sub.add_parser("resume")
+    release = sub.add_parser("release-reservation")
+    release.add_argument("--change-id", required=True)
+    release.add_argument("--run-id", required=True)
     pc = sub.add_parser("complete")
     pc.add_argument("--outcome", required=True, choices=["ok", "parked", "failed"])
-    sub.add_parser("validate")
+    pv = sub.add_parser("validate")
+    pv.add_argument("--pr-title")
+    pv.add_argument("--base", default="origin/main")
     args = p.parse_args()
 
     if args.cmd == "init":
@@ -712,6 +1553,8 @@ def main():
         return cmd_status(STATE_DIR)
     if args.cmd == "advance":
         return cmd_advance(STATE_DIR)
+    if args.cmd == "red-evidence":
+        return cmd_red_evidence(args, STATE_DIR)
     if args.cmd == "set":
         return cmd_set(args, STATE_DIR)
     if args.cmd == "approve":
@@ -720,10 +1563,14 @@ def main():
         return cmd_park(args, STATE_DIR)
     if args.cmd == "resume":
         return cmd_resume(STATE_DIR)
+    if args.cmd == "release-reservation":
+        return cmd_release_reservation(args)
     if args.cmd == "complete":
         return cmd_complete(args, STATE_DIR)
     if args.cmd == "validate":
         load(STATE_DIR)
+        if args.pr_title is not None:
+            return cmd_validate_metadata(args, STATE_DIR)
         print("pipeline-state: valid")
         return 0
     return 2

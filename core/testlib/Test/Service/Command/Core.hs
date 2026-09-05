@@ -1,6 +1,7 @@
 module Test.Service.Command.Core (
   -- Cart Command Examples
   AddItemToCart (..),
+  AddItemToCartAfterItemCount (..),
   RemoveItemFromCart (..),
   CheckoutCart (..),
   -- Authorization-aware Commands
@@ -29,10 +30,12 @@ import Array qualified
 import Auth.Claims (UserClaims (..))
 import Core
 import Decider qualified
+import Int qualified
 import Json qualified
 import Service.Auth (RequestContext (..))
 import Service.AccessControl qualified as AccessControl
 import Service.Command.Core (Event (..))
+import Service.Event qualified as Event
 import Test.Service.EventStore.Core (CartEvent (..))
 import Uuid ()
 
@@ -53,6 +56,21 @@ instance Json.ToJSON AddItemToCart
 
 
 instance Json.FromJSON AddItemToCart
+
+
+-- | Test command whose exact append precondition is derived from fetched state.
+data AddItemToCartAfterItemCount = AddItemToCartAfterItemCount
+  { cartId :: Uuid,
+    itemId :: Uuid,
+    amount :: Int
+  }
+  deriving (Eq, Show, Ord, Generic)
+
+
+instance Json.ToJSON AddItemToCartAfterItemCount
+
+
+instance Json.FromJSON AddItemToCartAfterItemCount
 
 
 data RemoveItemFromCart = RemoveItemFromCart
@@ -200,6 +218,30 @@ instance Command AddItemToCart where
             ItemAdded {entityId = cart.cartId, itemId = cmd.itemId, amount = cmd.amount}
               |> Array.wrap
               |> Decider.acceptExisting
+
+
+type instance EntityOf AddItemToCartAfterItemCount = CartEntity
+
+
+type instance NameOf AddItemToCartAfterItemCount = "AddItemToCartAfterItemCount"
+
+
+instance Command AddItemToCartAfterItemCount where
+  getEntityIdImpl cmd = cmd.cartId |> Just
+
+
+  canExecuteImpl claims = AccessControl.publicAccess claims
+
+
+  decideImpl :: AddItemToCartAfterItemCount -> Maybe CartEntity -> RequestContext -> Decision CartEvent
+  decideImpl cmd entity _ctx =
+    case entity of
+      Nothing -> Decider.reject "Cart does not exist"
+      Just cart -> do
+        let expectedPosition = cart.cartItems |> Array.length |> Int.toInt64 |> Event.StreamPosition
+        ItemAdded {entityId = cart.cartId, itemId = cmd.itemId, amount = cmd.amount}
+          |> Array.wrap
+          |> Decider.acceptAfter expectedPosition
 
 
 type instance EntityOf RemoveItemFromCart = CartEntity

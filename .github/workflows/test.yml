@@ -236,9 +236,11 @@ jobs:
   test-service:
     needs: [build]
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
       - uses: DeterminateSystems/determinate-nix-action@v3.22.2
         with:
           extra-conf: |
@@ -271,7 +273,16 @@ jobs:
       - name: Run nhcore-test-service
         env:
           POSTGRES_AVAILABLE: "true"
-        run: LOG_LEVEL=Warn nix develop --command cabal test nhcore-test-service
+        run: |
+          set -o pipefail
+          LOG_LEVEL=Warn nix develop --command cabal test nhcore-test-service \
+            --test-show-details=direct | tee .nhcore-test-service.report
+      - name: Prove integration criterion selectors and real fixtures
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          POSTGRES_AVAILABLE: "true"
+        run: ./dev spec-check --criteria-runtime "origin/${BASE_REF}" --report .nhcore-test-service.report
 
   test-hurl:
     needs: [build]

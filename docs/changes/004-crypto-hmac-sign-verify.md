@@ -45,14 +45,14 @@ unchanged (`Bytes (..)` is re-exported as before).
 
 ## Criteria
 
-| ID | Behavior | Proving test | Level |
-|----|----------|--------------|-------|
-| C1 | Key creation accepts >= 32-byte secrets and rejects shorter ones (text and raw bytes) | `CryptoSpec` "can be created from a 32+ byte secret" / "rejects secrets shorter than 32 bytes" / "accepts 32 raw bytes" / "rejects 31 raw bytes" | unit |
-| C2 | Key never leaks through Show/toText | `CryptoSpec` "Show instance does not reveal the key" | unit |
-| C3 | signWith produces the correct HMAC-SHA256 (independently computed known answers, incl. empty message) as 64 lowercase hex chars | `CryptoSpec` "matches the HMAC-SHA256 known answer" / "matches the known answer for an empty message" / "produces 64 lowercase hex characters" | unit |
-| C4 | verifyWith accepts valid signatures (lower- and uppercase hex) and rejects tampered messages, wrong keys, truncated and non-hex input | `CryptoSpec` "accepts a signature produced by signWith" / "accepts an uppercase hex signature" / "rejects a signature for a different message" / "rejects a signature made with a different key" / "rejects a truncated signature" / "rejects garbage that is not hex at all" | unit |
-| C5 | generateHmacKey yields a usable key and independent keys per call | `CryptoSpec` "generates a key that round-trips sign and verify" / "generates independent keys" | unit |
-| C6 | Bytes.getRandom yields the requested number of bytes (clamping sizes below zero to empty) and independent values per call | `BytesSpec` "generates the requested number of bytes" / "generates empty bytes for size zero" / "generates empty bytes for negative sizes" / "generates independent values" | unit |
+| ID | Behavior | Proving test | Level | Boundary |
+|----|----------|--------------|-------|----------|
+| C1 | Key creation accepts >= 32-byte secrets and rejects shorter ones (text and raw bytes) | `hspec:nhcore-test-core:core/test/CryptoSpec.hs#can be created from a 32+ byte secret`<br>`hspec:nhcore-test-core:core/test/CryptoSpec.hs#rejects secrets shorter than 32 bytes`<br>`hspec:nhcore-test-core:core/test/CryptoSpec.hs#accepts 32 raw bytes`<br>`hspec:nhcore-test-core:core/test/CryptoSpec.hs#rejects 31 raw bytes` | unit | none |
+| C2 | Key never leaks through Show/toText | `hspec:nhcore-test-core:core/test/CryptoSpec.hs#Show instance does not reveal the key` | unit | none |
+| C3 | signWith produces the correct HMAC-SHA256 (independently computed known answers, incl. empty message) as 64 lowercase hex chars | `hspec:nhcore-test-core:core/test/CryptoSpec.hs#matches the HMAC-SHA256 known answer`<br>`hspec:nhcore-test-core:core/test/CryptoSpec.hs#matches the known answer for an empty message`<br>`hspec:nhcore-test-core:core/test/CryptoSpec.hs#produces 64 lowercase hex characters` | unit | none |
+| C4 | verifyWith accepts valid signatures (lower- and uppercase hex) and rejects tampered messages, wrong keys, truncated and non-hex input | `hspec:nhcore-test-core:core/test/CryptoSpec.hs#accepts a signature produced by signWith`<br>`hspec:nhcore-test-core:core/test/CryptoSpec.hs#accepts an uppercase hex signature`<br>`hspec:nhcore-test-core:core/test/CryptoSpec.hs#rejects a signature for a different message`<br>`hspec:nhcore-test-core:core/test/CryptoSpec.hs#rejects a signature made with a different key`<br>`hspec:nhcore-test-core:core/test/CryptoSpec.hs#rejects a truncated signature`<br>`hspec:nhcore-test-core:core/test/CryptoSpec.hs#rejects garbage that is not hex at all` | unit | none |
+| C5 | generateHmacKey yields a usable key and independent keys per call | `hspec:nhcore-test-core:core/test/CryptoSpec.hs#generates a key that round-trips sign and verify`<br>`hspec:nhcore-test-core:core/test/CryptoSpec.hs#generates independent keys` | unit | none |
+| C6 | Bytes.getRandom yields the requested number of bytes (clamping sizes below zero to empty) and independent values per call | `hspec:nhcore-test-core:core/test/BytesSpec.hs#generates the requested number of bytes`<br>`hspec:nhcore-test-core:core/test/BytesSpec.hs#generates empty bytes for size zero`<br>`hspec:nhcore-test-core:core/test/BytesSpec.hs#generates empty bytes for negative sizes`<br>`hspec:nhcore-test-core:core/test/BytesSpec.hs#generates independent values` | unit | none |
 
 ## User impact
 

@@ -90,7 +90,7 @@ spec = do
           Postgres.new config
             |> Task.map (EventStore.castEventStore @CartEvent)
             |> Task.mapError toText
-    EventStoreSpec.spec newStore
+    EventStoreSpec.spec "postgres" newStore
 
     let newStoreAndFetcher = do
           store <- newStore
@@ -106,7 +106,7 @@ spec = do
           Postgres.new config
             |> Task.map (EventStore.castEventStore @CartEvent)
             |> Task.mapError toText
-    CommandHandler.spec newCartStore
+    CommandHandler.spec "postgres" newCartStore
 
     describe "per-stream connection release (ADR-0063)" do
       whenEnvVar "POSTGRES_AVAILABLE" do

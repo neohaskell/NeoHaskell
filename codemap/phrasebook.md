@@ -4,11 +4,14 @@
 # NeoHaskell phrasebook — verified usage examples
 
 ## core-primitives
+
 ### Array
+
 ```haskell
 >>> empty :: Array Int
 Array []
 ```
+
 ```haskell
 >>> isEmpty empty
 True
@@ -17,18 +20,21 @@ False
 >>> isEmpty (['a', 'b', 'c'])
 False
 ```
+
 ```haskell
 >>> length ([1,2,3] :: Array Int)
 3
 >>> length (empty :: Array Int)
 0
 ```
+
 ```haskell
 >>> indices ([10,20,30] :: Array Int)
 Array [0,1,2]
 >>> indices (empty :: Array Int)
 Array []
 ```
+
 ```haskell
 >>> initialize 4 identity
 Array [0,1,2,3]
@@ -37,6 +43,7 @@ Array [0,1,4,9]
 >>> initialize 4 (always (0 :: Int))
 Array [0,0,0,0]
 ```
+
 ```haskell
 >>> range 3 6
 Array [3,4,5,6]
@@ -45,35 +52,45 @@ Array [3]
 >>> range 6 3
 Array []
 ```
+
 ```haskell
 >>> repeat 5 (0 :: Int)
 Array [0,0,0,0,0]
 >>> repeat 0 (0 :: Int)
 Array []
 ```
+
 ```haskell
 >>> wrap (0 :: Int)
 Array [0]
 ```
+
 *… 39 more doctest sessions in the source module*
+
 ### Bytes
+
 ```haskell
 >>> [1, 2, 3] |> Bytes.pack |> Bytes.length
 3
 ```
+
 ```haskell
 >>> Bytes.empty |> Bytes.length
 0
 ```
+
 ```haskell
 >>> [1, 2, 3] |> Bytes.pack |> Bytes.unpack
 [1,2,3]
 ```
+
 ```haskell
 >>> Bytes.empty |> Bytes.unpack
 []
 ```
+
 ### Float
+
 ```haskell
 >>> Float.toInt 3.7
 3
@@ -83,75 +100,95 @@ Array [0]
 -3
 -- … (+2 more lines in the source doctest)
 ```
+
 ### Int
+
 ```haskell
 >>> Task.runNoErrors (Int.getRandomBetween 5 5)
 5
 ```
+
 ```haskell
 >>> 3 |> Int.powerOf 2
 8
 ```
+
 ```haskell
 >>> 10 |> Int.powerOf 2
 1024
 ```
+
 ```haskell
 >>> 0 |> Int.powerOf 5
 1
 ```
+
 ```haskell
 >>> (-1) |> Int.powerOf 2
 1
 ```
+
 ### Set
+
 ```haskell
 >>> empty :: Set Int
 Set (fromList [])
 ```
+
 ```haskell
 >>> isEmpty empty
 True
 >>> isEmpty (singleton (0 :: Int))
 False
 ```
+
 ```haskell
 >>> size (fromLinkedList [1,2,3] :: Set Int)
 3
 >>> size empty
 0
 ```
+
 ```haskell
 >>> wrap (0 :: Int)
 Set (fromList [0])
 ```
+
 ```haskell
 >>> singleton (0 :: Int)
 Set (fromList [0])
 ```
+
 ```haskell
 >>> fromLinkedList [1,2,3,2,1] :: Set Int
 Set (fromList [1,2,3])
 ```
+
 ```haskell
 >>> fromArray ([1,2,3,2,1] :: Array Int) :: Set Int
 Set (fromList [1,2,3])
 ```
+
 ```haskell
 >>> insert 4 (fromLinkedList [1,2,3] :: Set Int)
 Set (fromList [1,2,3,4])
 >>> insert 2 (fromLinkedList [1,2,3] :: Set Int)
 Set (fromList [1,2,3])
 ```
+
 *… 13 more doctest sessions in the source module*
+
 ### Uuid
+
 ```haskell
 >>> Uuid.fromText "6ba7b810-9dad-11d1-80b4-00c04fd430c8" |> Maybe.getOrDie |> (\ns -> Uuid.generateV5 ns "python.org") |> Uuid.toText
 "886313e1-3b8a-5372-9b90-0c9aee199e5d"
 ```
 
 ## postgres-infra
+
 ### Service.Infra.Postgres.SslMode
+
 ```haskell
 >>> sslModeToText SslModeRequire
 Just "require"
@@ -160,6 +197,7 @@ Just "verify-full"
 >>> sslModeToText SslModeUnset
 Nothing
 ```
+
 ```haskell
 >>> textToSslMode "require"
 Ok SslModeRequire
@@ -171,11 +209,23 @@ Ok SslModeUnset
 ```
 
 ## testbed
+
 ### Testbed.Cart.Commands.RegisterCartByKey
+
 ```haskell
 >>> Uuid.generateV5 keyNamespace "acme/widgets" |> Uuid.toText
 "8b743db0-26d8-5500-9136-1f28e2940a25"
 ```
 
+## testlib
+
+### Test.Service.EventStore.Regression
+
+```haskell
+>>> Event.AnyStreamState == Event.AnyStreamState
+True
+```
+
 ---
-*30 example sessions · modules with ZERO doctests: 315 (the documentation backlog — see codemap/.doc-ratchet)*
+
+*31 example sessions · modules with ZERO doctests: 315 (the documentation backlog — see codemap/.doc-ratchet)*

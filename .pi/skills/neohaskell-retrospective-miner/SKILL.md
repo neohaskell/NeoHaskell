@@ -14,7 +14,8 @@ nothing to mine. Never infer activation from a hard-coded line count.
 ## Procedure
 
 1. **Digest.** `./dev retrospect --since <YYYY-MM-DD of the week>` → the markdown
-   digest (outcomes, failure labels, stage times, invented-API trend vs the
+   digest (outcomes, failure labels, stage times, localization/index and test
+   scaffolding/compilation/execution activity times, invented-API trend vs the
    first-5-runs baseline, waiting-on-human, assets-consulted frequency, bench
    pointer). This is your evidence base — do not recall, transcribe.
 2. **Find friction.** From the digest + the week's golden stage summaries

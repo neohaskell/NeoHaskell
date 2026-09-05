@@ -32,15 +32,19 @@ empty block — that is a first-class spec, not a degenerate one.
 
 ## Criteria
 
-Every numbered criterion names the test that proves it and declares its level.
-A behavior that crosses a real boundary (filesystem, Postgres, HTTP) must
-declare `integration` or `acceptance` — a mocked unit test cannot satisfy it.
+Every numbered criterion contains only typed proving-test locators and declares
+its level plus real boundary. Supported forms are
+`hspec:<suite>:<repo-path>#<exact-match>`, `script:<repo-path>#<arguments>`, and
+`hurl:<repo-path>`. Separate multiple independent locators with `<br>`; prose,
+duplicates, unresolved paths, zero/ambiguous matches, and unknown suites fail.
+`unit` uses boundary `none`; `integration` uses an attested boundary from
+`test-surfaces.json`; `acceptance` uses an exact Hurl path and `http:real`.
 For `kind: bug`, C1 is the failing reproduction test, committed red in the
-draft PR: the repro **is** the spec.
+draft PR: the repro **is** the spec and Gate 1 requires its current red receipt.
 
-| ID | Behavior | Proving test | Level |
-|----|----------|--------------|-------|
-| C1 | example: slugifies unicode titles | `TextSpec` "slugifies unicode" | unit |
+| ID | Behavior | Proving test | Level | Boundary |
+|----|----------|--------------|-------|----------|
+| C1 | example: slugifies unicode titles | `hspec:nhcore-test-core:core/test/TextSpec.hs#slugifies unicode` | unit | none |
 
 ## User impact
 

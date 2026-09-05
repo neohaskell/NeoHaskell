@@ -13,6 +13,28 @@ has been cut yet — everything accrues under Unreleased until the first tag.)
 
 ## [Unreleased]
 
+### 008-harden-pipeline-evidence-and-regression-smoke — Change 008: Harden pipeline evidence and regression smoke
+
+No public application API breaks. Contributors get earlier, deterministic failures instead of false-green specs, red tests, stale localization data, or incomparable timing claims. The new benchmark is local/nightly rather than PR-blocking because shared-runner wall-clock noise is not deterministic.
+
+API delta:
+
+- `+ Test.Service.Command.Core: AddItemToCartAfterItemCount :: Uuid -> Uuid -> Int -> AddItemToCartAfterItemCount`
+- `+ Test.Service.Command.Core: data AddItemToCartAfterItemCount`
+- `+ Test.Service.EventStore.Regression: assertBehavior :: Text -> Bool -> Task Text Unit`
+- `+ Test.Service.EventStore.Regression: awaitInsertions :: Int -> InsertBarrier -> Task error Unit`
+- `+ Test.Service.EventStore.Regression: barrierBeforeInsert :: InsertBarrier -> EventStore event -> EventStore event`
+- `+ Test.Service.EventStore.Regression: data InsertBarrier`
+- `+ Test.Service.EventStore.Regression: failFirstWithConsistencyConflict :: EventStore event -> Task error (EventStore event)`
+- `+ Test.Service.EventStore.Regression: knownBad :: Text -> Text -> Task error Bool`
+- `+ Test.Service.EventStore.Regression: newInsertBarrier :: Task error InsertBarrier`
+- `+ Test.Service.EventStore.Regression: recordFetchedRevisions :: forall k state (event :: k) error. EntityFetcher state event -> Task error (EntityFetcher state event, Task error (Array (Maybe StreamPosition)))`
+- `+ Test.Service.EventStore.Regression: recordFetches :: forall k state (event :: k) error. EntityFetcher state event -> Task error (EntityFetcher state event, Task error (Array (EntityFetchResult state)))`
+- `+ Test.Service.EventStore.Regression: recordInsertions :: EventStore event -> Task error (EventStore event, Task error (Array (InsertionPayload event)))`
+- `+ Test.Service.EventStore.Regression: releaseInsertions :: Int -> InsertBarrier -> Task error Unit`
+- `+ Test.Service.EventStore.Regression: requireInsertionType :: InsertionType -> EventStore event -> EventStore event`
+- `+ Test.Service.EventStore.Regression: seedStream :: EventStore event -> EntityName -> StreamId -> Array event -> Task Text Unit`
+
 ### 007-make-cold-start-health-constant-time — Change 007: Make cold-start health constant-time without losing replayed events
 
 **Runtime:** container liveness no longer scales with event-store size. Operators

@@ -11,8 +11,8 @@ import Test.Service.EventStore.Core (CartEvent (..))
 import Test.Service.CommandHandler.Execute.Spec qualified as Execute
 
 
-spec :: Task Text (EventStore CartEvent) -> Spec Unit
-spec newStore = do
+spec :: Text -> Task Text (EventStore CartEvent) -> Spec Unit
+spec backend newStore = do
   describe "CommandHandler Specification Tests" do
     let newCartStoreAndFetcher = do
           store <- newStore
@@ -25,4 +25,4 @@ spec newStore = do
           fetcher <- EntityFetcher.new store initialState applyCartEvent |> Task.mapError toText
           pure (store, fetcher)
 
-    Execute.spec newCartStoreAndFetcher
+    Execute.spec backend newCartStoreAndFetcher

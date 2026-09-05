@@ -99,6 +99,12 @@ fi
 scripts/spec-check --self-test || fail=1
 scripts/spec-drift --self-test || fail=1
 scripts/pipeline-state --self-test || fail=1
+scripts/refresh-hiedb --self-test || fail=1
+scripts/who-calls --self-test || fail=1
+scripts/watch --self-test || fail=1
+scripts/regression-scaffold-smoke --self-test || fail=1
+scripts/spec-red-evidence --self-test || fail=1
+scripts/pipeline-benchmark --self-test || fail=1
 scripts/telemetry.py --self-test || fail=1
 scripts/changelog --self-test || fail=1
 scripts/revert --self-test || fail=1
@@ -117,6 +123,18 @@ scripts/neo-skills-check || fail=1
 scripts/neo-skills-check --self-test || fail=1
 scripts/adr-website --self-test || fail=1
 scripts/adr-index-check --self-test || fail=1
+
+# HIE localization must remain bounded: only the explicit --rebuild branch may
+# mention the full build, and who-calls must delegate solely to incremental indexing.
+if grep -q 'cabal build all' scripts/who-calls; then
+  err "scripts/who-calls may not launch a full build"
+fi
+if [ "$(grep -c '^  "${TOOLCHAIN}" cabal build all' scripts/refresh-hiedb)" -ne 1 ]; then
+  err "scripts/refresh-hiedb must contain exactly one explicit full-build path"
+fi
+if ! grep -Fq 'os.execv(program, [program, "--if-needed", "--quiet"])' scripts/watch; then
+  err "scripts/watch must keep the HIE index warm through incremental refresh"
+fi
 
 # 5c. Wiring gate: the DoD criterion-test-exists gate must have a CI caller, so
 #     the "criteria green at their declared levels" claim is a live gate, not a

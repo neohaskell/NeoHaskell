@@ -7,18 +7,156 @@
 # .ghcid-errors.txt at the repo root.
 #
 # The agent repair loop NEVER spawns `cabal build`: after an edit it waits ~2s
-# and reads .ghcid-errors.txt. Empty file (or "All good") = typechecks.
+# and reads .ghcid-errors.txt. Empty file (or "All good") = typechecks. A
+# debounced sidecar incrementally indexes .hie files emitted by successful
+# reloads; indexing failures never interrupt typechecking.
 #
 # Usage:
 #   ./dev watch                # watch lib:nhcore
 #   ./dev watch lib:nhtestbed  # watch another target
+#   ./dev watch --self-test    # fake watcher/refresh lifecycle
 #
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "${SCRIPT_DIR}/.."
 
+self_test() {
+  local tmp toolchain refresh calls output pids failures=0
+  tmp="$(mktemp -d)"
+  trap 'rm -rf "${tmp}"' RETURN
+  toolchain="${tmp}/toolchain"
+  refresh="${tmp}/refresh"
+  calls="${tmp}/refresh-calls"
+  output="${tmp}/errors"
+  cat > "${toolchain}" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+[ "${1:-}" = "ghcid" ] || exit 2
+shift
+out=""
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = "--outputfile" ]; then shift; out="$1"; fi
+  shift
+done
+printf 'loading\n' > "${out}"
+sleep 0.08
+if [ "${WATCH_TEST_ERROR:-0}" = "1" ]; then
+  printf 'src/Foo.hs:1:1: error: All good is not defined\n' > "${out}"
+  sleep 0.5
+else
+  printf 'All good\n' > "${out}"
+  for _attempt in $(seq 1 500); do
+    [ -s "${WATCH_TEST_CALLS}" ] && break
+    sleep 0.01
+  done
+fi
+SH
+  cat > "${refresh}" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+if [ "${WATCH_TEST_BLOCK:-0}" = "1" ]; then
+  sleep 30 &
+  child=$!
+  printf '%s %s %s\n' "$$" "${child}" "$*" >> "${WATCH_TEST_CALLS}"
+  wait "${child}"
+else
+  printf '%s - %s\n' "$$" "$*" >> "${WATCH_TEST_CALLS}"
+  sleep 0.03
+fi
+SH
+  chmod +x "${toolchain}" "${refresh}"
+  WATCH_TOOLCHAIN="${toolchain}" WATCH_REFRESH="${refresh}" \
+    WATCH_STATE_FILE="${tmp}/watch.pid" WATCH_OUT="${output}" \
+    WATCH_DEBOUNCE_SECONDS=0.02 WATCH_POLL_SECONDS=0.02 \
+    WATCH_TEST_CALLS="${calls}" "$0" lib:nhcore-test
+  if [ ! -s "${calls}" ]; then
+    echo "watch self-test FAIL: a compiled reload did not refresh the HIE index" >&2
+    failures=1
+  elif ! grep -Fq -- '--if-needed --quiet' "${calls}"; then
+    echo "watch self-test FAIL: refresh was not incremental" >&2
+    failures=1
+  fi
+  pids="$(awk '{print $1 " " $2}' "${calls}" 2>/dev/null || true)"
+  for pid in ${pids}; do
+    if kill -0 "${pid}" 2>/dev/null; then
+      echo "watch self-test FAIL: refresh child ${pid} survived watcher exit" >&2
+      failures=1
+    fi
+  done
+
+  local blocked_calls blocked_pid blocked_child
+  blocked_calls="${tmp}/blocked-refresh-calls"
+  WATCH_TOOLCHAIN="${toolchain}" WATCH_REFRESH="${refresh}" \
+    WATCH_STATE_FILE="${tmp}/blocked-watch.pid" WATCH_OUT="${tmp}/blocked-errors" \
+    WATCH_DEBOUNCE_SECONDS=0.02 WATCH_POLL_SECONDS=0.02 \
+    WATCH_TEST_CALLS="${blocked_calls}" WATCH_TEST_BLOCK=1 "$0" lib:nhcore-test
+  blocked_pid="$(awk 'NR==1 {print $1}' "${blocked_calls}" 2>/dev/null || true)"
+  blocked_child="$(awk 'NR==1 {print $2}' "${blocked_calls}" 2>/dev/null || true)"
+  if [ -z "${blocked_pid}" ] || [ -z "${blocked_child}" ]; then
+    echo "watch self-test FAIL: blocked refresh process tree never started" >&2
+    failures=1
+  else
+    for pid in "${blocked_pid}" "${blocked_child}"; do
+      if kill -0 "${pid}" 2>/dev/null; then
+        echo "watch self-test FAIL: blocked refresh process ${pid} survived watcher exit" >&2
+        failures=1
+      fi
+    done
+  fi
+
+  local error_calls
+  error_calls="${tmp}/error-refresh-calls"
+  printf 'All good\n' > "${tmp}/error-output"
+  WATCH_TOOLCHAIN="${toolchain}" WATCH_REFRESH="${refresh}" \
+    WATCH_STATE_FILE="${tmp}/error-watch.pid" WATCH_OUT="${tmp}/error-output" \
+    WATCH_DEBOUNCE_SECONDS=0.02 WATCH_POLL_SECONDS=0.02 \
+    WATCH_TEST_CALLS="${error_calls}" WATCH_TEST_ERROR=1 "$0" lib:nhcore-test
+  if [ -s "${error_calls}" ]; then
+    echo "watch self-test FAIL: failed reload refreshed the HIE index" >&2
+    failures=1
+  fi
+
+  local active_code=0 lock_holder
+  python3 - "${tmp}/active-watch.pid" "${tmp}/active-lock-ready" <<'PY' &
+import fcntl
+import sys
+import time
+from pathlib import Path
+
+with Path(sys.argv[1]).open("a+") as lock:
+    fcntl.flock(lock, fcntl.LOCK_EX)
+    Path(sys.argv[2]).write_text("ready\n")
+    time.sleep(30)
+PY
+  lock_holder=$!
+  while [ ! -f "${tmp}/active-lock-ready" ]; do sleep 0.01; done
+  set +e
+  WATCH_TOOLCHAIN="${toolchain}" WATCH_REFRESH="${refresh}" \
+    WATCH_STATE_FILE="${tmp}/active-watch.pid" WATCH_OUT="${tmp}/active-output" \
+    WATCH_TEST_CALLS="${tmp}/active-calls" "$0" lib:nhcore-test >/dev/null 2>&1
+  active_code=$?
+  set -e
+  [ "${active_code}" -eq 2 ] \
+    || { echo "watch self-test FAIL: kernel watcher lock allowed a second watcher" >&2; failures=1; }
+  kill "${lock_holder}" 2>/dev/null || true
+  wait "${lock_holder}" 2>/dev/null || true
+  if [ "${failures}" -ne 0 ]; then return 1; fi
+  echo "watch self-test: OK — successful reloads refresh; failed reloads skip; process groups are reaped"
+}
+
+if [ "${1:-}" = "--self-test" ]; then
+  self_test
+  exit $?
+fi
+
 TARGET="${1:-lib:nhcore}"
-OUT=".ghcid-errors.txt"
+OUT="${WATCH_OUT:-.ghcid-errors.txt}"
+TOOLCHAIN="${WATCH_TOOLCHAIN:-${SCRIPT_DIR}/with-toolchain}"
+REFRESH="${WATCH_REFRESH:-${SCRIPT_DIR}/refresh-hiedb}"
+DEBOUNCE_SECONDS="${WATCH_DEBOUNCE_SECONDS:-1}"
+POLL_SECONDS="${WATCH_POLL_SECONDS:-2}"
+REFRESH_GROUP_FILE="${WATCH_REFRESH_GROUP_FILE:-${OUT}.hiedb-refresh-pgid}"
+STATE_FILE="${WATCH_STATE_FILE:-.ghcid-watch.lock}"
 
 # TARGET is spliced into ghcid's --command STRING (shell-evaluated), unlike the
 # other scripts where targets travel as argv. Restrict to cabal target syntax
@@ -28,10 +166,154 @@ if ! [[ "${TARGET}" =~ ^[A-Za-z0-9:._-]+$ ]]; then
   exit 2
 fi
 
+STATE_READY="${STATE_FILE}.ready.$$"
+WATCH_STATE_FILE_PATH="${STATE_FILE}" WATCH_STATE_READY_PATH="${STATE_READY}" \
+  WATCH_STATE_PARENT="$$" python3 - <<'PY' &
+import fcntl
+import os
+import time
+from pathlib import Path
+
+lock_path = Path(os.environ["WATCH_STATE_FILE_PATH"])
+ready_path = Path(os.environ["WATCH_STATE_READY_PATH"])
+parent = int(os.environ["WATCH_STATE_PARENT"])
+with lock_path.open("a+", encoding="utf-8") as lock:
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        raise SystemExit(75)
+    lock.seek(0)
+    lock.truncate()
+    lock.write(f"{parent}\n")
+    lock.flush()
+    os.fsync(lock.fileno())
+    ready_path.write_text("ready\n", encoding="utf-8")
+    while os.getppid() == parent:
+        time.sleep(0.1)
+PY
+STATE_HOLDER_PID=$!
+for _attempt in $(seq 1 100); do
+  [ -f "${STATE_READY}" ] && break
+  kill -0 "${STATE_HOLDER_PID}" 2>/dev/null || break
+  sleep 0.01
+done
+if [ ! -f "${STATE_READY}" ]; then
+  wait "${STATE_HOLDER_PID}" 2>/dev/null || true
+  echo "watch: another watcher owns ${STATE_FILE}" >&2
+  exit 2
+fi
+rm -f "${STATE_READY}"
+trap 'kill "${STATE_HOLDER_PID}" 2>/dev/null || true; wait "${STATE_HOLDER_PID}" 2>/dev/null || true; rm -f "${STATE_READY}"' EXIT
+
 echo "watch: watching ${TARGET} (dev flavor, -O0); errors -> ${OUT}"
+rm -f "${OUT}" "${REFRESH_GROUP_FILE}"
 
 # with-toolchain enters `nix develop` on demand — ghcid and cabal come from the
 # pinned dev shell, so this works from any bare shell (agent or human).
-exec "${SCRIPT_DIR}/with-toolchain" ghcid \
+"${TOOLCHAIN}" ghcid \
   --command "cabal repl ${TARGET} --project-file=cabal.project.dev" \
-  --outputfile "${OUT}"
+  --outputfile "${OUT}" &
+WATCH_PID=$!
+
+warm_hie_index() {
+  local previous_stamp=""
+  local refresh_pid=""
+  local refresh_pgid=""
+
+  reload_succeeded() {
+    [ -s "${OUT}" ] && grep -Eq '^All good( \([^)]*\))?$' "${OUT}"
+  }
+
+  start_refresh() {
+    WATCH_REFRESH_EXEC="${REFRESH}" WATCH_REFRESH_GROUP_FILE="${REFRESH_GROUP_FILE}" \
+      python3 - <<'PY' >/dev/null 2>&1 &
+import os
+from pathlib import Path
+
+os.setsid()
+group_file = Path(os.environ["WATCH_REFRESH_GROUP_FILE"])
+temporary = group_file.with_name(f"{group_file.name}.{os.getpid()}")
+temporary.write_text(f"{os.getpgrp()}\n", encoding="utf-8")
+temporary.replace(group_file)
+program = os.environ["WATCH_REFRESH_EXEC"]
+os.execv(program, [program, "--if-needed", "--quiet"])
+PY
+    refresh_pid=$!
+    refresh_pgid=""
+    local attempts=0
+    while [ "${attempts}" -lt 100 ] && kill -0 "${refresh_pid}" 2>/dev/null; do
+      if [ -s "${REFRESH_GROUP_FILE}" ]; then
+        refresh_pgid="$(cat "${REFRESH_GROUP_FILE}")"
+        return 0
+      fi
+      attempts=$((attempts + 1))
+      sleep 0.01
+    done
+    return 0
+  }
+
+  cleanup_refresh() {
+    if [ -n "${refresh_pid}" ]; then
+      if [ -n "${refresh_pgid}" ]; then
+        kill -TERM -- "-${refresh_pgid}" 2>/dev/null || true
+        sleep 0.05
+        kill -KILL -- "-${refresh_pgid}" 2>/dev/null || true
+      else
+        kill "${refresh_pid}" 2>/dev/null || true
+      fi
+      wait "${refresh_pid}" 2>/dev/null || true
+      refresh_pid=""
+      refresh_pgid=""
+      rm -f "${REFRESH_GROUP_FILE}"
+    fi
+  }
+
+  trap cleanup_refresh EXIT
+  trap 'cleanup_refresh; exit 130' INT TERM
+  while kill -0 "${WATCH_PID}" 2>/dev/null; do
+    local stamp="missing"
+    if [ -f "${OUT}" ]; then
+      stamp="$(python3 -c 'import os,sys; print(os.stat(sys.argv[1]).st_mtime_ns)' "${OUT}")"
+    fi
+    if [ "${stamp}" != "${previous_stamp}" ]; then
+      previous_stamp="${stamp}"
+      sleep "${DEBOUNCE_SECONDS}"
+      if reload_succeeded; then
+        start_refresh
+        wait "${refresh_pid}" 2>/dev/null || true
+        refresh_pid=""
+        refresh_pgid=""
+        rm -f "${REFRESH_GROUP_FILE}"
+      fi
+    fi
+    sleep "${POLL_SECONDS}"
+  done
+}
+
+warm_hie_index &
+WARMER_PID=$!
+terminate_refresh_group() {
+  local pgid=""
+  pgid="$(cat "${REFRESH_GROUP_FILE}" 2>/dev/null || true)"
+  if [[ "${pgid}" =~ ^[0-9]+$ ]]; then
+    kill -TERM -- "-${pgid}" 2>/dev/null || true
+  fi
+}
+cleanup() {
+  local active_refresh_pgid=""
+  active_refresh_pgid="$(cat "${REFRESH_GROUP_FILE}" 2>/dev/null || true)"
+  terminate_refresh_group
+  kill "${WARMER_PID}" "${WATCH_PID}" 2>/dev/null || true
+  wait "${WARMER_PID}" 2>/dev/null || true
+  wait "${WATCH_PID}" 2>/dev/null || true
+  if [[ "${active_refresh_pgid}" =~ ^[0-9]+$ ]]; then
+    kill -KILL -- "-${active_refresh_pgid}" 2>/dev/null || true
+  fi
+  rm -f "${REFRESH_GROUP_FILE}"
+  kill "${STATE_HOLDER_PID}" 2>/dev/null || true
+  wait "${STATE_HOLDER_PID}" 2>/dev/null || true
+  rm -f "${STATE_READY}"
+}
+trap cleanup EXIT
+trap 'exit 130' INT TERM
+wait "${WATCH_PID}"

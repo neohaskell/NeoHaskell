@@ -1,21 +1,443 @@
 #!/usr/bin/env bash
 #
-# (Re)build the symbol reference database (pipeline Phase 3).
+# Incrementally index already-emitted .hie files (pipeline Phase 3).
 #
-# .hie files are emitted by GHC (-fwrite-ide-info, set in cabal.project) into
-# dist-newstyle during any build; hiedb indexes them into .hiedb (gitignored —
-# build artifact, never committed).
+# The default path never builds. GHC emits .hie files during normal check/watch
+# work; this command indexes those artifacts and caches their worktree/toolchain
+# fingerprint. A human may explicitly request a full rebuild with --rebuild.
 #
-# Usage: ./dev hiedb   (run after significant code changes; ./dev who-calls
-#        will tell you if the index is missing)
+# Usage: ./dev hiedb [--if-needed|--force|--rebuild] [--quiet]
+#        ./dev hiedb --self-test
 #
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-cd "${SCRIPT_DIR}/.."
+ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+cd "${ROOT}"
 
-echo "hiedb: building (dev flavor) so .hie files are current…"
-"${SCRIPT_DIR}/with-toolchain" cabal build all --project-file=cabal.project.dev -j 2>&1 | tail -1
+DIST_DIR="${HIEDB_DIST_DIR:-${ROOT}/dist-newstyle}"
+DB_PATH="${HIEDB_DB_PATH:-${ROOT}/.hiedb}"
+META_PATH="${HIEDB_META_PATH:-${ROOT}/.hiedb-meta}"
+TOOLS_PATH="${HIEDB_TOOLS_PATH:-${ROOT}/.hiedb-tools}"
+TOOLCHAIN="${HIEDB_TOOLCHAIN:-${SCRIPT_DIR}/with-toolchain}"
+LOCK_PATH="${HIEDB_LOCK_PATH:-${DB_PATH}.index-lock}"
+TOOLCHAIN_FINGERPRINT="${HIEDB_TOOLCHAIN_FINGERPRINT:-$(${SCRIPT_DIR}/toolchain-fp)}"
+MODE="if-needed"
+QUIET=0
+LOCK_HELD="${HIEDB_INDEX_LOCK_HELD:-0}"
+TIMEOUT_SECONDS="${HIEDB_TIMEOUT_SECONDS:-300}"
 
-echo "hiedb: indexing…"
-"${SCRIPT_DIR}/with-toolchain" hiedb -D .hiedb index dist-newstyle --quiet
-echo "hiedb: done → .hiedb"
+usage() {
+  echo "usage: ./dev hiedb [--if-needed|--force|--rebuild] [--quiet]" >&2
+}
+
+fingerprint() {
+  HIEDB_FP_ROOT="${ROOT}" \
+  HIEDB_FP_DIST="${DIST_DIR}" \
+  HIEDB_FP_TOOLCHAIN="${TOOLCHAIN_FINGERPRINT}" \
+    python3 - <<'PY'
+import hashlib
+import os
+from pathlib import Path
+
+root = os.environ["HIEDB_FP_ROOT"]
+dist = Path(os.environ["HIEDB_FP_DIST"])
+toolchain = os.environ["HIEDB_FP_TOOLCHAIN"]
+hash_value = hashlib.sha256()
+hash_value.update(root.encode())
+hash_value.update(b"\0")
+hash_value.update(toolchain.encode())
+for path in sorted(dist.rglob("*.hie")):
+    stat = path.stat()
+    hash_value.update(str(path.relative_to(dist)).encode())
+    hash_value.update(f"\0{stat.st_size}\0{stat.st_mtime_ns}\0".encode())
+print(hash_value.hexdigest())
+PY
+}
+
+resolve_tools() {
+  local cached_fingerprint cached_hiedb cached_python resolved
+  if [ -n "${HIEDB_HIEDB_BIN:-}" ] && [ -n "${HIEDB_PYTHON_BIN:-}" ]; then
+    HIEDB_BIN="${HIEDB_HIEDB_BIN}"
+    PYTHON_BIN="${HIEDB_PYTHON_BIN}"
+    return 0
+  fi
+  cached_fingerprint="$(sed -n '1p' "${TOOLS_PATH}" 2>/dev/null || true)"
+  cached_hiedb="$(sed -n '2p' "${TOOLS_PATH}" 2>/dev/null || true)"
+  cached_python="$(sed -n '3p' "${TOOLS_PATH}" 2>/dev/null || true)"
+  if [ "${cached_fingerprint}" = "${TOOLCHAIN_FINGERPRINT}" ] \
+      && [ -x "${cached_hiedb}" ] && [ -x "${cached_python}" ]; then
+    HIEDB_BIN="${cached_hiedb}"
+    PYTHON_BIN="${cached_python}"
+    return 0
+  fi
+  if ! resolved="$(run_bounded "${TOOLCHAIN}" sh -c 'command -v hiedb; command -v python3')"; then
+    echo "hiedb: pinned tool resolution failed or timed out" >&2
+    return 1
+  fi
+  HIEDB_BIN="$(printf '%s\n' "${resolved}" | sed -n '1p')"
+  PYTHON_BIN="$(printf '%s\n' "${resolved}" | sed -n '2p')"
+  if [ ! -x "${HIEDB_BIN}" ] || [ ! -x "${PYTHON_BIN}" ]; then
+    echo "hiedb: pinned hiedb/python3 tools could not be resolved" >&2
+    return 1
+  fi
+  printf '%s\n%s\n%s\n' "${TOOLCHAIN_FINGERPRINT}" "${HIEDB_BIN}" "${PYTHON_BIN}" > "${TOOLS_PATH}.tmp.$$"
+  mv "${TOOLS_PATH}.tmp.$$" "${TOOLS_PATH}"
+}
+
+has_hie_artifacts() {
+  [ -d "${DIST_DIR}" ] && find "${DIST_DIR}" -type f -name '*.hie' -print -quit | grep -q .
+}
+
+checkpoint_database() {
+  local database="$1"
+  HIEDB_CHECKPOINT_DB="${database}" python3 - <<'PY'
+import os
+import sqlite3
+
+try:
+    connection = sqlite3.connect(os.environ["HIEDB_CHECKPOINT_DB"])
+    connection.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
+    connection.close()
+except sqlite3.Error:
+    raise SystemExit(1)
+PY
+}
+
+database_is_valid() {
+  local database="$1"
+  [ -f "${database}" ] || return 1
+  HIEDB_VALIDATE_DB="${database}" python3 - <<'PY'
+import os
+import sqlite3
+
+try:
+    connection = sqlite3.connect(f"file:{os.environ['HIEDB_VALIDATE_DB']}?mode=ro", uri=True)
+    result = connection.execute("PRAGMA integrity_check").fetchone()
+    connection.close()
+except sqlite3.Error:
+    raise SystemExit(1)
+raise SystemExit(0 if result and result[0] == "ok" else 1)
+PY
+}
+
+run_bounded() {
+  python3 - "${TIMEOUT_SECONDS}" "$@" <<'PY'
+import os
+import signal
+import subprocess
+import sys
+
+timeout = float(sys.argv[1])
+process = subprocess.Popen(sys.argv[2:], start_new_session=True)
+try:
+    raise SystemExit(process.wait(timeout=timeout))
+except subprocess.TimeoutExpired:
+    os.killpg(process.pid, signal.SIGKILL)
+    process.wait()
+    raise SystemExit(124)
+PY
+}
+
+run_under_index_lock() {
+  local code=0
+  if HIEDB_LOCK_FILE="${LOCK_PATH}" HIEDB_LOCK_SCRIPT="$0" \
+      HIEDB_LOCK_MODE="${MODE}" HIEDB_LOCK_QUIET="${QUIET}" python3 - <<'PY'
+import fcntl
+import os
+import shutil
+import subprocess
+import time
+from pathlib import Path
+
+lock_path = Path(os.environ["HIEDB_LOCK_FILE"])
+script = os.environ["HIEDB_LOCK_SCRIPT"]
+mode = os.environ["HIEDB_LOCK_MODE"]
+quiet = os.environ["HIEDB_LOCK_QUIET"] == "1"
+if lock_path.is_dir():
+    owner_file = lock_path / "owner"
+    try:
+        owner = int(owner_file.read_text(encoding="utf-8").strip())
+    except (FileNotFoundError, ValueError):
+        owner = None
+    owner_is_alive = False
+    if owner is not None:
+        try:
+            os.kill(owner, 0)
+            owner_is_alive = True
+        except ProcessLookupError:
+            pass
+        except PermissionError:
+            owner_is_alive = True
+    initialization_is_recent = False
+    if owner is None:
+        try:
+            initialization_is_recent = time.time() - lock_path.stat().st_mtime < 5
+        except FileNotFoundError:
+            pass
+    if owner_is_alive or initialization_is_recent:
+        raise SystemExit(75)
+    quarantine = lock_path.with_name(f"{lock_path.name}.legacy.{os.getpid()}")
+    try:
+        lock_path.rename(quarantine)
+    except FileNotFoundError:
+        pass
+    except OSError:
+        raise SystemExit(75)
+    else:
+        shutil.rmtree(quarantine)
+with lock_path.open("a+", encoding="utf-8") as lock:
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        raise SystemExit(75)
+    command = [script, f"--{mode}"]
+    if quiet:
+        command.append("--quiet")
+    child_environment = os.environ.copy()
+    child_environment["HIEDB_INDEX_LOCK_HELD"] = "1"
+    raise SystemExit(subprocess.run(
+        command, check=False, env=child_environment
+    ).returncode)
+PY
+  then
+    return 0
+  else
+    code=$?
+  fi
+  if [ "${code}" -eq 75 ]; then
+    local locked_fingerprint=""
+    locked_fingerprint="$(fingerprint)"
+    if database_is_valid "${DB_PATH}" && [ -f "${META_PATH}" ] \
+        && [ "$(cat "${META_PATH}")" = "${locked_fingerprint}" ]; then
+      [ "${QUIET}" -eq 1 ] || echo "hiedb: refresh busy; current verified index remains usable"
+      return 0
+    fi
+    [ "${QUIET}" -eq 1 ] || echo "hiedb: initial index is already being created; retry shortly" >&2
+    return 2
+  fi
+  return "${code}"
+}
+
+index_artifacts() {
+  if ! has_hie_artifacts; then
+    [ "${QUIET}" -eq 1 ] || echo "hiedb: no emitted .hie files under ${DIST_DIR}; run ./dev watch, ./dev check, or explicitly ./dev hiedb --rebuild" >&2
+    return 2
+  fi
+
+  if [ "${LOCK_HELD}" -eq 0 ]; then
+    run_under_index_lock
+    return $?
+  fi
+
+  local current_fingerprint
+  current_fingerprint="$(fingerprint)"
+  if [ "${MODE}" = "if-needed" ] && [ -f "${META_PATH}" ] \
+      && [ "$(cat "${META_PATH}")" = "${current_fingerprint}" ] \
+      && database_is_valid "${DB_PATH}"; then
+    if ! resolve_tools; then return 2; fi
+    [ "${QUIET}" -eq 1 ] || echo "hiedb: current — cached for this worktree/toolchain"
+    return 0
+  fi
+
+  [ "${QUIET}" -eq 1 ] || echo "hiedb: incrementally indexing emitted .hie files…"
+  if ! resolve_tools; then return 2; fi
+  local temporary_db="${DB_PATH}.tmp.$$"
+  rm -f "${temporary_db}" "${temporary_db}-wal" "${temporary_db}-shm"
+  if database_is_valid "${DB_PATH}"; then
+    cp "${DB_PATH}" "${temporary_db}"
+  fi
+  local index_code=0
+  if run_bounded "${HIEDB_BIN}" -D "${temporary_db}" index "${DIST_DIR}" --quiet; then
+    index_code=0
+  else
+    index_code=$?
+    rm -f "${temporary_db}" "${temporary_db}-wal" "${temporary_db}-shm"
+    [ "${QUIET}" -eq 1 ] || echo "hiedb: indexing failed or timed out (exit ${index_code})" >&2
+    return 2
+  fi
+  if ! checkpoint_database "${temporary_db}" \
+      || ! database_is_valid "${temporary_db}"; then
+    rm -f "${temporary_db}" "${temporary_db}-wal" "${temporary_db}-shm"
+    [ "${QUIET}" -eq 1 ] || echo "hiedb: rebuilt index failed SQLite integrity validation" >&2
+    return 2
+  fi
+  rm -f "${temporary_db}-wal" "${temporary_db}-shm"
+  mv "${temporary_db}" "${DB_PATH}"
+  printf '%s\n' "${current_fingerprint}" > "${META_PATH}.tmp.$$"
+  mv "${META_PATH}.tmp.$$" "${META_PATH}"
+  [ "${QUIET}" -eq 1 ] || echo "hiedb: done → ${DB_PATH}"
+}
+
+self_test() {
+  local tmp fake log before legacy_before
+  tmp="$(mktemp -d)"
+  trap 'rm -rf "${tmp}"' RETURN
+  mkdir -p "${tmp}/dist"
+  log="${tmp}/calls"
+  fake="${tmp}/toolchain"
+  cat > "${fake}" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$*" >> "${HIEDB_TEST_LOG}"
+if [ "${1:-}" = "hiedb" ]; then shift; fi
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = "-D" ]; then shift; : > "$1"; break; fi
+  shift
+done
+SH
+  chmod +x "${fake}"
+  export HIEDB_HIEDB_BIN="${fake}"
+  export HIEDB_PYTHON_BIN="$(command -v python3)"
+  export HIEDB_TOOLS_PATH="${tmp}/tools"
+
+  if HIEDB_DIST_DIR="${tmp}/empty" HIEDB_DB_PATH="${tmp}/db" \
+      HIEDB_META_PATH="${tmp}/meta" HIEDB_TOOLCHAIN="${fake}" \
+      HIEDB_TOOLCHAIN_FINGERPRINT="test" HIEDB_TEST_LOG="${log}" \
+      "$0" --if-needed --quiet; then
+    echo "refresh-hiedb self-test FAIL: cold indexing unexpectedly succeeded" >&2
+    return 1
+  fi
+  [ ! -e "${log}" ] || { echo "refresh-hiedb self-test FAIL: cold path invoked a tool" >&2; return 1; }
+
+  printf 'first' > "${tmp}/dist/A.hie"
+  HIEDB_DIST_DIR="${tmp}/dist" HIEDB_DB_PATH="${tmp}/db" \
+    HIEDB_META_PATH="${tmp}/meta" HIEDB_TOOLCHAIN="${fake}" \
+    HIEDB_TOOLCHAIN_FINGERPRINT="test" HIEDB_TEST_LOG="${log}" \
+    "$0" --if-needed --quiet
+  before="$(wc -l < "${log}" | tr -d ' ')"
+  HIEDB_DIST_DIR="${tmp}/dist" HIEDB_DB_PATH="${tmp}/db" \
+    HIEDB_META_PATH="${tmp}/meta" HIEDB_TOOLCHAIN="${fake}" \
+    HIEDB_TOOLCHAIN_FINGERPRINT="test" HIEDB_TEST_LOG="${log}" \
+    "$0" --if-needed --quiet
+  [ "$(wc -l < "${log}" | tr -d ' ')" = "${before}" ] \
+    || { echo "refresh-hiedb self-test FAIL: warm cache re-indexed" >&2; return 1; }
+
+  printf 'changed-size' > "${tmp}/dist/A.hie"
+  legacy_before="${before}"
+  rm -f "${tmp}/db.index-lock"
+  mkdir "${tmp}/db.index-lock"
+  printf '99999999\n' > "${tmp}/db.index-lock/owner"
+  HIEDB_DIST_DIR="${tmp}/dist" HIEDB_DB_PATH="${tmp}/db" \
+    HIEDB_META_PATH="${tmp}/meta" HIEDB_TOOLCHAIN="${fake}" \
+    HIEDB_TOOLCHAIN_FINGERPRINT="test" HIEDB_TEST_LOG="${log}" \
+    "$0" --if-needed --quiet
+  [ -f "${tmp}/db.index-lock" ] \
+    || { echo "refresh-hiedb self-test FAIL: legacy lock was not migrated" >&2; return 1; }
+  before="$(wc -l < "${log}" | tr -d ' ')"
+  [ "${before}" -gt "${legacy_before}" ] \
+    || { echo "refresh-hiedb self-test FAIL: stale legacy lock suppressed indexing" >&2; return 1; }
+
+  printf 'changed-size-again' > "${tmp}/dist/A.hie"
+  local locker_pid
+  python3 - "${tmp}/db.index-lock" "${tmp}/lock-ready" <<'PY' &
+import fcntl
+import sys
+import time
+
+with open(sys.argv[1], "a+", encoding="utf-8") as lock:
+    fcntl.flock(lock, fcntl.LOCK_EX)
+    with open(sys.argv[2], "w", encoding="utf-8") as ready:
+        ready.write("ready\n")
+    time.sleep(30)
+PY
+  locker_pid=$!
+  while [ ! -f "${tmp}/lock-ready" ]; do sleep 0.01; done
+  local locked_code=0
+  set +e
+  HIEDB_DIST_DIR="${tmp}/dist" HIEDB_DB_PATH="${tmp}/db" \
+    HIEDB_META_PATH="${tmp}/meta" HIEDB_TOOLCHAIN="${fake}" \
+    HIEDB_TOOLCHAIN_FINGERPRINT="test" HIEDB_TEST_LOG="${log}" \
+    "$0" --if-needed --quiet
+  locked_code=$?
+  set -e
+  [ "${locked_code}" -eq 2 ] \
+    || { echo "refresh-hiedb self-test FAIL: stale locked index was reported usable" >&2; return 1; }
+  [ "$(wc -l < "${log}" | tr -d ' ')" = "${before}" ] \
+    || { echo "refresh-hiedb self-test FAIL: active kernel lock was bypassed" >&2; return 1; }
+  kill "${locker_pid}" 2>/dev/null || true
+  wait "${locker_pid}" 2>/dev/null || true
+
+  HIEDB_DIST_DIR="${tmp}/dist" HIEDB_DB_PATH="${tmp}/db" \
+    HIEDB_META_PATH="${tmp}/meta" HIEDB_TOOLCHAIN="${fake}" \
+    HIEDB_TOOLCHAIN_FINGERPRINT="test" HIEDB_TEST_LOG="${log}" \
+    "$0" --if-needed --quiet
+  [ "$(wc -l < "${log}" | tr -d ' ')" -gt "${before}" ] \
+    || { echo "refresh-hiedb self-test FAIL: terminated lock holder suppressed indexing" >&2; return 1; }
+
+  before="$(wc -l < "${log}" | tr -d ' ')"
+  printf 'not sqlite' > "${tmp}/db"
+  HIEDB_DIST_DIR="${tmp}/dist" HIEDB_DB_PATH="${tmp}/db" \
+    HIEDB_META_PATH="${tmp}/meta" HIEDB_TOOLCHAIN="${fake}" \
+    HIEDB_TOOLCHAIN_FINGERPRINT="test" HIEDB_TEST_LOG="${log}" \
+    "$0" --if-needed --quiet
+  [ "$(wc -l < "${log}" | tr -d ' ')" -gt "${before}" ] \
+    || { echo "refresh-hiedb self-test FAIL: corrupt index was trusted" >&2; return 1; }
+
+  local blocker hung_code=0
+  blocker="${tmp}/blocked-hiedb"
+  cat > "${blocker}" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+read -r _line < "${HIEDB_BLOCK_FIFO}"
+SH
+  chmod +x "${blocker}"
+  mkfifo "${tmp}/never-written"
+  printf 'changed-for-timeout' > "${tmp}/dist/A.hie"
+  set +e
+  HIEDB_DIST_DIR="${tmp}/dist" HIEDB_DB_PATH="${tmp}/db" \
+    HIEDB_META_PATH="${tmp}/meta" HIEDB_HIEDB_BIN="${blocker}" \
+    HIEDB_PYTHON_BIN="$(command -v python3)" HIEDB_TIMEOUT_SECONDS=0.1 \
+    HIEDB_BLOCK_FIFO="${tmp}/never-written" HIEDB_TOOLCHAIN_FINGERPRINT="test" \
+    "$0" --force --quiet
+  hung_code=$?
+  set -e
+  [ "${hung_code}" -eq 2 ] \
+    || { echo "refresh-hiedb self-test FAIL: hung indexer was not bounded" >&2; return 1; }
+
+  local tool_resolution_code=0
+  set +e
+  (
+    unset HIEDB_HIEDB_BIN HIEDB_PYTHON_BIN HIEDB_TOOLS_PATH
+    HIEDB_DIST_DIR="${tmp}/dist" HIEDB_DB_PATH="${tmp}/tool-db" \
+      HIEDB_META_PATH="${tmp}/tool-meta" HIEDB_TOOLS_PATH="${tmp}/missing-tools" \
+      HIEDB_TOOLCHAIN="${blocker}" HIEDB_TIMEOUT_SECONDS=0.1 \
+      HIEDB_BLOCK_FIFO="${tmp}/never-written" HIEDB_TOOLCHAIN_FINGERPRINT="test" \
+      "$0" --force --quiet
+  )
+  tool_resolution_code=$?
+  set -e
+  [ "${tool_resolution_code}" -eq 2 ] \
+    || { echo "refresh-hiedb self-test FAIL: hung tool resolution was not bounded" >&2; return 1; }
+
+  : > "${log}"
+  HIEDB_DIST_DIR="${tmp}/dist" HIEDB_DB_PATH="${tmp}/db2" \
+    HIEDB_META_PATH="${tmp}/meta2" HIEDB_TOOLCHAIN="${fake}" \
+    HIEDB_TOOLCHAIN_FINGERPRINT="test" HIEDB_TEST_LOG="${log}" \
+    "$0" --rebuild --quiet
+  grep -q '^cabal build all --project-file=cabal.project.dev -j$' "${log}" \
+    || { echo "refresh-hiedb self-test FAIL: explicit rebuild did not build" >&2; return 1; }
+  grep -q '^-D ' "${log}" \
+    || { echo "refresh-hiedb self-test FAIL: explicit rebuild did not index" >&2; return 1; }
+  echo "refresh-hiedb self-test: OK — cold path is bounded, warm index is cached, stale locks recover, changed artifacts re-index, rebuild is explicit"
+}
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --if-needed) MODE="if-needed" ;;
+    --force) MODE="force" ;;
+    --rebuild) MODE="rebuild" ;;
+    --quiet) QUIET=1 ;;
+    --self-test) self_test; exit $? ;;
+    -h|--help) usage; exit 0 ;;
+    *) usage; exit 2 ;;
+  esac
+  shift
+done
+
+if [ "${MODE}" = "rebuild" ]; then
+  [ "${QUIET}" -eq 1 ] || echo "hiedb: explicit full dev rebuild requested…"
+  "${TOOLCHAIN}" cabal build all --project-file=cabal.project.dev -j
+  MODE="force"
+fi
+
+index_artifacts

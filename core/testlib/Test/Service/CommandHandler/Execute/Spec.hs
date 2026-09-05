@@ -2,6 +2,7 @@ module Test.Service.CommandHandler.Execute.Spec where
 
 import Array qualified
 import AsyncTask qualified
+import ConcurrentVar qualified
 import Core
 import Maybe qualified
 import Service.Auth qualified as Auth
@@ -16,25 +17,28 @@ import Task qualified
 import Test
 import Test.Service.Command.Core (
   AddItemToCart (..),
+  AddItemToCartAfterItemCount (..),
   CartEntity (..),
   CheckoutCart (..),
  )
 import Test.Service.EventStore.Core (CartEvent (..))
+import Test.Service.EventStore.Regression qualified as Regression
 import Test.Service.CommandHandler.Execute.Context qualified as Context
 import Text qualified
 import Uuid qualified
 
 
 spec ::
+  Text ->
   Task Text (EventStore.EventStore CartEvent, EntityFetcher CartEntity CartEvent) ->
   Spec Unit
-spec newCartStoreAndFetcher = do
+spec backend newCartStoreAndFetcher = do
   describe "CommandHandler Execute Specification Tests" do
     describe "Basic Command Execution" do
       basicExecutionSpecs newCartStoreAndFetcher
 
     describe "Retry Logic" do
-      retryLogicSpecs newCartStoreAndFetcher
+      retryLogicSpecs backend newCartStoreAndFetcher
 
     describe "Concurrency Handling" do
       concurrencySpecs newCartStoreAndFetcher
@@ -195,10 +199,131 @@ basicExecutionSpecs newCartStoreAndFetcher = do
 
 
 retryLogicSpecs ::
+  Text ->
   Task Text (EventStore.EventStore CartEvent, EntityFetcher CartEntity CartEvent) ->
   Spec Unit
-retryLogicSpecs newCartStoreAndFetcher = do
+retryLogicSpecs backend newCartStoreAndFetcher = do
   before (Context.initialize newCartStoreAndFetcher) do
+    it "rejects an unexpected insertion type with exact guard evidence" \context -> do
+      payload <-
+        Event.payloadFromEvents
+          context.cartEntityName
+          context.cartStreamId
+          [CartCreated {entityId = context.cartId}]
+      bad <- Regression.knownBad "insertion-guard" backend
+      let guardedStore =
+            if bad
+              then context.cartStore
+              else Regression.requireInsertionType Event.StreamCreation context.cartStore
+      result <- guardedStore.insert payload |> Task.asResult
+      let observedExactFailure = case result of
+            Err (EventStore.InsertionError (Event.InsertionFailed message)) ->
+              message == "Expected insertion type StreamCreation, got AnyStreamState"
+            _ -> False
+      Regression.assertBehavior "insertion-guard" observedExactFailure
+
+    it "records exact insertion payloads and fetched revisions" \context -> do
+      let streamId = context.cartId |> Uuid.toText |> StreamId.fromTextUnsafe
+      Regression.seedStream context.cartStore context.cartEntityName streamId
+        [CartCreated {entityId = context.cartId}]
+      payload <- Event.payloadFromEvents context.cartEntityName streamId
+        [ItemAdded {entityId = context.cartId, itemId = context.itemId1, amount = 3}]
+      let positionedPayload = payload {Event.insertionType = Event.AnyStreamState}
+      (recordingStore, readInsertions) <- Regression.recordInsertions context.cartStore
+      (recordingFetcher, readRevisions) <- Regression.recordFetchedRevisions context.cartFetcher
+      bad <- Regression.knownBad "record-payloads-and-revisions" backend
+      let observedStore = if bad then context.cartStore else recordingStore
+      let observedFetcher = if bad then context.cartFetcher else recordingFetcher
+      observedFetcher.fetch context.cartEntityName streamId |> Task.mapError toText |> discard
+      observedStore.insert positionedPayload |> Task.mapError toText |> discard
+      insertionPayloads <- readInsertions
+      fetchedRevisions <- readRevisions
+      Regression.assertBehavior
+        "record-payloads-and-revisions"
+        (insertionPayloads == [positionedPayload]
+          && fetchedRevisions == [Just (Event.StreamPosition 0)])
+
+    it "records the exact insertion precondition after refetch" \context -> do
+      let streamId = context.cartId |> Uuid.toText |> StreamId.fromTextUnsafe
+      Regression.seedStream context.cartStore context.cartEntityName streamId
+        [CartCreated {entityId = context.cartId}]
+      staleFetch <-
+        context.cartFetcher.fetch context.cartEntityName streamId
+          |> Task.mapError toText
+      competingPayload <- Event.payloadFromEvents context.cartEntityName streamId
+        [ItemAdded {entityId = context.cartId, itemId = context.itemId2, amount = 10}]
+      context.cartStore.insert competingPayload |> Task.mapError toText |> discard
+      serveStaleFetch <- ConcurrentVar.containing True
+      let fetch entityName requestedStreamId = do
+            serveStale <- ConcurrentVar.swap False serveStaleFetch
+            if serveStale
+              then Task.yield staleFetch
+              else context.cartFetcher.fetch entityName requestedStreamId
+      let scriptedFetcher = context.cartFetcher {fetch = fetch}
+      conflictingStore <- Regression.failFirstWithConsistencyConflict context.cartStore
+      (recordingStore, readInsertions) <- Regression.recordInsertions conflictingStore
+      bad <- Regression.knownBad "consistency-conflict-refetch" backend
+      firstInsertion <- ConcurrentVar.containing True
+      corruptNextInsertion <- ConcurrentVar.containing True
+      let mutateSecondInsertion payload = do
+            isFirst <- ConcurrentVar.swap False firstInsertion
+            shouldCorrupt <-
+              if isFirst
+                then Task.yield False
+                else ConcurrentVar.swap False corruptNextInsertion
+            let submittedPayload =
+                  if bad && shouldCorrupt
+                    then payload {Event.insertionType = Event.InsertAfter (Event.StreamPosition 0)}
+                    else payload
+            recordingStore.insert submittedPayload
+      let controlledStore = conflictingStore {EventStore.insert = mutateSecondInsertion}
+      (fetchRecording, readFetches) <- Regression.recordFetches scriptedFetcher
+      (recordingFetcher, readRevisions) <- Regression.recordFetchedRevisions fetchRecording
+      let command = AddItemToCartAfterItemCount
+            {cartId = context.cartId, itemId = context.itemId1, amount = 1}
+      result <- CommandExecutor.execute controlledStore recordingFetcher
+        context.cartEntityName Auth.emptyContext command
+      insertionPayloads <- readInsertions
+      fetchedRevisions <- readRevisions
+      fetchedEntities <- readFetches
+      finalFetch <- context.cartFetcher.fetch context.cartEntityName streamId |> Task.mapError toText
+      let retries = case result of
+            CommandAccepted {retriesAttempted} -> Just retriesAttempted
+            _ -> Nothing
+      let insertionTypes = insertionPayloads |> Array.map (\payload -> payload.insertionType)
+      let attemptedEvents = insertionPayloads
+            |> Array.map (\payload -> payload.insertions |> Array.map (\insertion -> insertion.event))
+      let expectedEvent = ItemAdded
+            {entityId = context.cartId, itemId = context.itemId1, amount = 1}
+      let expectedFetches =
+            [ EntityFound FetchedEntity
+                { state = CartEntity {cartId = context.cartId, cartItems = [], cartCheckedOut = False},
+                  lastPosition = Just (Event.StreamPosition 0)
+                },
+              EntityFound FetchedEntity
+                { state = CartEntity
+                    { cartId = context.cartId,
+                      cartItems = [(context.itemId2, 10)],
+                      cartCheckedOut = False
+                    },
+                  lastPosition = Just (Event.StreamPosition 1)
+                }
+            ]
+      let finalStateIsFresh = case finalFetch of
+            EntityFound fetched ->
+              fetched.lastPosition == Just (Event.StreamPosition 2)
+                && fetched.state.cartItems == [(context.itemId1, 1), (context.itemId2, 10)]
+            EntityNotFound -> False
+      Regression.assertBehavior
+        "consistency-conflict-refetch"
+        (retries == Just 1
+          && fetchedRevisions == [Just (Event.StreamPosition 0), Just (Event.StreamPosition 1)]
+          && fetchedEntities == expectedFetches
+          && insertionTypes ==
+            [Event.InsertAfter (Event.StreamPosition 0), Event.InsertAfter (Event.StreamPosition 1)]
+          && attemptedEvents == [[expectedEvent], [expectedEvent]]
+          && finalStateIsFresh)
+
     it "retries on consistency check failure (ExistingStream)" \context -> do
       -- Create initial cart
       let cartCreatedEvent = CartCreated {entityId = context.cartId}

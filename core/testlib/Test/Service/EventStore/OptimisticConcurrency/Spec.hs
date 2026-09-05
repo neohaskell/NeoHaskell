@@ -15,12 +15,13 @@ import Stream qualified
 import Task qualified
 import Test
 import Test.Service.EventStore.Core (CartEvent (..))
+import Test.Service.EventStore.Regression qualified as Regression
 import Test.Service.EventStore.OptimisticConcurrency.Context qualified as Context
 import Uuid qualified
 
 
-spec :: Task Text (EventStore CartEvent) -> Spec Unit
-spec newStore = do
+spec :: Text -> Task Text (EventStore CartEvent) -> Spec Unit
+spec backend newStore = do
   describe "Optimistic Concurrency" do
     beforeAll (Context.initialize newStore) do
       it "will only allow one event to be appended, when two writers try to append at the same time" \context -> do
@@ -97,24 +98,54 @@ spec newStore = do
                   insertions = [event2Insertion]
                 }
 
-        let event1Task =
-              event1Payload
-                |> context.store.insert
+        bad <- Regression.knownBad "postgres-append-barrier" backend
+        let badEvent2Insertion =
+              Event.Insertion
+                { id = event2Id,
+                  event = event2Insertion.event,
+                  metadata =
+                    event2Metadata'
+                      { EventMetadata.localPosition = Just (Event.StreamPosition 2)
+                      }
+                }
+        let controlledEvent1Payload =
+              if bad
+                then event1Payload {Event.insertionType = Event.AnyStreamState}
+                else event1Payload
+        let controlledEvent2Payload =
+              if bad
+                then event2Payload
+                  { Event.insertionType = Event.AnyStreamState,
+                    Event.insertions = [badEvent2Insertion]
+                  }
+                else event2Payload
+
+        barrier <- Regression.newInsertBarrier
+        let blockedStore = Regression.barrierBeforeInsert barrier context.store
+        let event1Task :: Task Text (Result EventStore.Error Unit)
+            event1Task =
+              controlledEvent1Payload
+                |> blockedStore.insert
+                |> discard
+                |> Task.asResult
+        let event2Task :: Task Text (Result EventStore.Error Unit)
+            event2Task =
+              controlledEvent2Payload
+                |> blockedStore.insert
                 |> discard
                 |> Task.asResult
 
-        let event2Task =
-              event2Payload
-                |> context.store.insert
-                |> discard
-                |> Task.asResult
+        event1Async <- AsyncTask.run event1Task
+        event2Async <- AsyncTask.run event2Task
+        Regression.awaitInsertions 2 barrier
+        Regression.releaseInsertions 2 barrier
+        result1 <- AsyncTask.waitFor event1Async
+        result2 <- AsyncTask.waitFor event2Async
 
-        (result1, result2) <- AsyncTask.runConcurrently (event1Task, event2Task)
-
-        [result1, result2]
-          |> Array.map (\x -> if Result.isOk x then 1 else 0)
-          |> Array.sumIntegers
-          |> shouldBe 1
+        let successfulInsertions =
+              [result1, result2]
+                |> Array.map (\x -> if Result.isOk x then 1 else 0)
+                |> Array.sumIntegers
 
         -- Read back all events to verify
         streamMessages <-
@@ -124,22 +155,153 @@ spec newStore = do
 
         let events = EventStore.collectStreamEvents streamMessages
 
-        -- We should have exactly 2 events (initial + one successful append)
-        events
-          |> Array.length
-          |> shouldBe 2
+        let durableIds = events |> Array.map (\event -> event.metadata.eventId)
+        let durableEvents = events |> Array.map (\event -> event.event)
+        let secondEventIsExpected =
+              Array.get 1 durableEvents == Just event1Insertion.event
+                || Array.get 1 durableEvents == Just event2Insertion.event
+        if not bad
+          then do
+            [result1, result2]
+              |> Array.map (\x -> if Result.isOk x then 1 else 0)
+              |> Array.sumIntegers
+              |> shouldBe 1
+            events
+              |> Array.length
+              |> shouldBe 2
+            events
+              |> Array.get 0
+              |> Maybe.map (\event -> event.metadata.eventId)
+              |> shouldBe (Just initialEventId)
+            events
+              |> Array.get 1
+              |> Maybe.map (\event -> event.metadata.eventId)
+              |> shouldSatisfy (\id -> id == Just event1Id || id == Just event2Id)
+          else Task.yield unit
+        Regression.assertBehavior
+          "postgres-append-barrier"
+          (successfulInsertions == 1
+            && Array.get 0 durableIds == Just initialEventId
+            && Array.length durableEvents == 2
+            && secondEventIsExpected)
 
-        -- The first event should be our initial event
-        events
-          |> Array.get 0
-          |> Maybe.map (\event -> event.metadata.eventId)
-          |> shouldBe (Just initialEventId)
+      it "allows only one concurrent StreamCreation and persists one creation fact" \context -> do
+        entityNameText <- Uuid.generate |> Task.map toText
+        let entityName = Event.EntityName entityNameText
+        firstPayload <-
+          Event.payloadFromEvents
+            entityName
+            context.streamId
+            [CartCreated {entityId = def}]
+        secondPayload <-
+          Event.payloadFromEvents
+            entityName
+            context.streamId
+            [CartCreated {entityId = def}]
+        let firstCreation = firstPayload {Event.insertionType = Event.StreamCreation}
+        let secondCreation = secondPayload {Event.insertionType = Event.StreamCreation}
+        bad <- Regression.knownBad "stream-creation-race" backend
+        let controlledFirst =
+              if bad then firstCreation {Event.insertionType = Event.AnyStreamState} else firstCreation
+        let controlledSecond =
+              if bad then secondCreation {Event.insertionType = Event.AnyStreamState} else secondCreation
 
-        -- The second event should be one of our concurrent events
-        events
-          |> Array.get 1
-          |> Maybe.map (\event -> event.metadata.eventId)
-          |> shouldSatisfy (\id -> id == Just event1Id || id == Just event2Id)
+        barrier <- Regression.newInsertBarrier
+        let blockedStore = Regression.barrierBeforeInsert barrier context.store
+        let firstTask :: Task Text (Result EventStore.Error Event.InsertionSuccess)
+            firstTask = controlledFirst |> blockedStore.insert |> Task.asResult
+        let secondTask :: Task Text (Result EventStore.Error Event.InsertionSuccess)
+            secondTask = controlledSecond |> blockedStore.insert |> Task.asResult
+        firstAsync <- AsyncTask.run firstTask
+        secondAsync <- AsyncTask.run secondTask
+        Regression.awaitInsertions 2 barrier
+        Regression.releaseInsertions 2 barrier
+        firstResult <- AsyncTask.waitFor firstAsync
+        secondResult <- AsyncTask.waitFor secondAsync
+
+        let successfulCreations =
+              [firstResult, secondResult]
+                |> Array.map (\result -> if Result.isOk result then 1 else 0)
+                |> Array.sumIntegers
+        streamMessages <-
+          context.store.readAllStreamEvents entityName context.streamId
+            |> Task.mapError toText
+            |> Task.andThen Stream.toArray
+        let durableEvents = EventStore.collectStreamEvents streamMessages
+              |> Array.map (\event -> event.event)
+        Regression.assertBehavior
+          "stream-creation-race"
+          (successfulCreations == 1 && durableEvents == [CartCreated {entityId = def}])
+
+      it "persists both AnyStreamState events in durable order" \context -> do
+        entityNameText <- Uuid.generate |> Task.map toText
+        let entityName = Event.EntityName entityNameText
+        Regression.seedStream
+          context.store
+          entityName
+          context.streamId
+          [CartCreated {entityId = def}]
+
+        firstPayload <-
+          Event.payloadFromEvents
+            entityName
+            context.streamId
+            [ItemAdded {entityId = def, itemId = def, amount = 10}]
+        secondPayload <-
+          Event.payloadFromEvents
+            entityName
+            context.streamId
+            [ItemAdded {entityId = def, itemId = def, amount = 20}]
+        bad <- Regression.knownBad "any-stream-state" backend
+        let controlledSecond =
+              if bad
+                then secondPayload {Event.insertionType = Event.InsertAfter (Event.StreamPosition 0)}
+                else secondPayload
+        barrier <- Regression.newInsertBarrier
+        let blockedStore = Regression.barrierBeforeInsert barrier context.store
+        let firstTask :: Task Text (Result EventStore.Error Event.InsertionSuccess)
+            firstTask = firstPayload |> blockedStore.insert |> Task.asResult
+        let secondTask :: Task Text (Result EventStore.Error Event.InsertionSuccess)
+            secondTask = controlledSecond |> blockedStore.insert |> Task.asResult
+        firstAsync <- AsyncTask.run firstTask
+        secondAsync <- AsyncTask.run secondTask
+        Regression.awaitInsertions 2 barrier
+        Regression.releaseInsertions 2 barrier
+        firstResult <- AsyncTask.waitFor firstAsync
+        secondResult <- AsyncTask.waitFor secondAsync
+
+        let successfulInsertions =
+              [firstResult, secondResult]
+                |> Array.map (\result -> if Result.isOk result then 1 else 0)
+                |> Array.sumIntegers
+
+        streamMessages <-
+          context.store.readAllStreamEvents entityName context.streamId
+            |> Task.mapError toText
+            |> Task.andThen Stream.toArray
+        let durableEvents = streamMessages
+              |> EventStore.collectStreamEvents
+              |> Array.map (\event -> event.event)
+        let firstOrder =
+              [ CartCreated {entityId = def},
+                ItemAdded {entityId = def, itemId = def, amount = 10},
+                ItemAdded {entityId = def, itemId = def, amount = 20}
+              ]
+        let secondOrder =
+              [ CartCreated {entityId = def},
+                ItemAdded {entityId = def, itemId = def, amount = 20},
+                ItemAdded {entityId = def, itemId = def, amount = 10}
+              ]
+        Regression.assertBehavior
+          "any-stream-state"
+          (successfulInsertions == 2
+            && (durableEvents == firstOrder || durableEvents == secondOrder))
+
+      it "treats a zero-party insert barrier as complete" \_ -> do
+        barrier <- Regression.newInsertBarrier
+        Regression.awaitInsertions 0 barrier
+        Regression.releaseInsertions 0 barrier
+        True |> shouldBe True
 
       it "gives consistency error when stream position is not up to date" \context -> do
         entityNameText <- Uuid.generate |> Task.map toText

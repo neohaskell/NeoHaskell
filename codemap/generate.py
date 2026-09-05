@@ -372,7 +372,7 @@ def hot_card():
     prod_grouped = group(prod_counts)
     src_paths = _module_paths()
     for module, fns in prod_grouped[:PROD_MODULE_CAP]:
-        out.append(f"## {module}")
+        out.extend([f"## {module}", ""])
         src = src_paths.get(module)
         for n, fn, sig in sorted(fns, key=lambda t: (-t[0], t[1]))[:PROD_FN_CAP]:
             out.append(f"- `{sig}`  <!-- {n} call sites -->")
@@ -395,7 +395,7 @@ def hot_card():
             "when WRITING TESTS; they are not feature-code frequency signal.", ""]
     test_grouped = group(test_counts)
     for module, fns in test_grouped[:TEST_MODULE_CAP]:
-        out.append(f"## {module}")
+        out.extend([f"## {module}", ""])
         for n, fn, sig in sorted(fns, key=lambda t: (-t[0], t[1]))[:TEST_FN_CAP]:
             out.append(f"- `{sig}`  <!-- {n} test call sites -->")
             entries += 1
@@ -429,22 +429,21 @@ def phrasebook():
            "# NeoHaskell phrasebook — verified usage examples", ""]
     total = 0
     for cap in sorted(sections):
-        out.append(f"## {cap}")
+        out.extend([f"## {cap}", ""])
         for mod in sorted(sections[cap]):
-            out.append(f"### {mod}")
+            out.extend([f"### {mod}", ""])
             for ex in sections[cap][mod][:8]:
                 out.append("```haskell")
                 out.extend(ex[:6])
                 if len(ex) > 6:
                     out.append(f"-- … (+{len(ex) - 6} more lines in the source doctest)")
-                out.append("```")
+                out.extend(["```", ""])
                 total += 1
             extra = len(sections[cap][mod]) - 8
             if extra > 0:
-                out.append(f"*… {extra} more doctest sessions in the source module*")
-        out.append("")
-    out.append(f"---\n*{total} example sessions · modules with ZERO doctests: "
-               f"{len(no_doctests)} (the documentation backlog — see codemap/.doc-ratchet)*")
+                out.extend([f"*… {extra} more doctest sessions in the source module*", ""])
+    out.extend(["---", "", f"*{total} example sessions · modules with ZERO doctests: "
+                f"{len(no_doctests)} (the documentation backlog — see codemap/.doc-ratchet)*"])
     (ROOT / "codemap" / "phrasebook.md").write_text("\n".join(out).strip() + "\n", encoding="utf-8")
     return total, len(no_doctests)
 
