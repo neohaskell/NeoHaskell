@@ -276,7 +276,7 @@ jobs:
         run: |
           set -o pipefail
           LOG_LEVEL=Warn nix develop --command cabal test nhcore-test-service \
-            | tee .nhcore-test-service.report
+            --test-show-details=direct | tee .nhcore-test-service.report
       - name: Prove integration criterion selectors and real fixtures
         if: github.event_name == 'pull_request'
         env:
