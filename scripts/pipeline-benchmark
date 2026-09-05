@@ -201,7 +201,9 @@ def evaluate(evidence, protocol, commit_resolver=sha_exists,
     if candidate["p95_s"] > thresholds["candidate_warm_p95_s_max"]:
         violations.append("candidate warm p95 exceeds 240s")
     if candidate["index_p95_s"] > thresholds["index_p95_s_max"]:
-        violations.append("candidate warm index p95 exceeds 3s")
+        violations.append(
+            f"candidate warm index p95 exceeds {thresholds['index_p95_s_max']}s"
+        )
     if candidate["human_wait_s"] > thresholds["human_wait_s_max"]:
         violations.append("candidate samples include human wait")
     return {"schema": 1, "protocol_id": protocol["protocol_id"],
