@@ -110,11 +110,21 @@ def command_output(argv):
     return result.returncode, result.stdout.strip(), result.stderr.strip()
 
 
+def repository_from_remote_url(url):
+    match = re.search(r"github\.com(?::|/)([^/]+/[^/]+?)(?:\.git)?$", url.strip())
+    return match.group(1) if match else None
+
+
 def prepare_intake(base_ref, expected_branch, run_command=command_output):
     match = REMOTE_REF_RE.fullmatch(base_ref)
     if match is None:
         return None, "base must be an owning remote ref such as `origin/main`"
     remote, branch_name = match.groups()
+    if branch_name != "main":
+        return None, "owning base branch must be `main`"
+    remote_code, remote_url, remote_error = run_command(["git", "remote", "get-url", remote])
+    if remote_code != 0:
+        return None, f"could not resolve base remote URL: {remote_error or 'git failed'}"
     fetch_refspec = f"+refs/heads/{branch_name}:refs/remotes/{remote}/{branch_name}"
     fetch_code, _out, fetch_error = run_command(
         ["git", "fetch", "--quiet", "--no-tags", remote, fetch_refspec]
@@ -142,12 +152,15 @@ def prepare_intake(base_ref, expected_branch, run_command=command_output):
     )
     if repo_code != 0 or not repository:
         return None, f"could not resolve owning repository: {repo_error or 'gh failed'}"
+    if repository_from_remote_url(remote_url) != repository:
+        return None, "selected Git remote is not the owning GitHub repository"
     return {
         "base_ref": base_ref,
         "base_sha": base_sha,
         "head_sha": head_sha,
         "branch": active_branch,
         "repository": repository,
+        "remote_url": remote_url,
         "fetch_refspec": fetch_refspec,
     }, None
 
@@ -388,6 +401,16 @@ def verify_red_evidence(state, run_command=command_output):
     head = current_head()
     if head is None:
         return "cannot resolve current HEAD for red evidence"
+    try:
+        receipt = json.loads(Path(evidence["path"]).read_text())
+    except (OSError, json.JSONDecodeError):
+        return "bug C1 red evidence receipt is missing or invalid"
+    if receipt.get("receipt_id") != evidence.get("receipt_id"):
+        return "bug C1 red evidence receipt ID changed after recording"
+    approval = state.get("approvals", {}).get("spec")
+    if approval and (approval.get("red_receipt_id") != evidence.get("receipt_id")
+                     or approval.get("head") != receipt.get("tested_head_sha")):
+        return "bug spec approval does not cover the current red receipt/tested HEAD"
     command = [
         str(RED_EVIDENCE), "verify", "--receipt", evidence["path"],
         "--spec", state["spec_path"], "--base-sha", state["base_sha"],
@@ -472,7 +495,7 @@ def state_file(state_dir):
 def validate(state):
     errs = []
     for key in ("schema", "run_id", "request_ref", "change_id", "base_ref", "base_sha",
-                "repository", "stage", "parked", "plan", "approvals", "history"):
+                "repository", "remote_url", "stage", "parked", "plan", "approvals", "history"):
         if key not in state:
             errs.append(f"missing key `{key}`")
     if errs:
@@ -588,6 +611,7 @@ def cmd_init(args, state_dir, issue_claimer=claim_issue,
         "base_ref": prepared["base_ref"],
         "base_sha": prepared["base_sha"],
         "repository": prepared["repository"],
+        "remote_url": prepared["remote_url"],
         "stage": "intake",
         "parked": False,
         "park": None,
@@ -974,6 +998,7 @@ def self_test():
                 "head_sha": "b" * 40,
                 "branch": branch,
                 "repository": "neohaskell/NeoHaskell",
+                "remote_url": "https://github.com/neohaskell/NeoHaskell.git",
                 "fetch_refspec": "+refs/heads/main:refs/remotes/origin/main",
             }, None
 
@@ -1142,6 +1167,8 @@ def self_test():
         intake_calls = []
         def fake_intake_command(argv):
             intake_calls.append(argv)
+            if argv == ["git", "remote", "get-url", "origin"]:
+                return 0, "https://github.com/neohaskell/NeoHaskell.git", ""
             if argv[:2] == ["git", "fetch"]:
                 return 0, "", ""
             if argv == ["git", "rev-parse", "origin/main"]:
@@ -1159,7 +1186,7 @@ def self_test():
             "origin/main", "feature-branch", fake_intake_command
         )
         if prepare_error or prepared["base_sha"] != "a" * 40 \
-                or intake_calls[0] != [
+                or intake_calls[1] != [
                     "git", "fetch", "--quiet", "--no-tags", "origin",
                     "+refs/heads/main:refs/remotes/origin/main",
                 ]:
@@ -1171,6 +1198,13 @@ def self_test():
         )
         if prepare_intake("origin/main", "feature-branch", divergent_calls)[1] is None:
             print("self-test FAIL divergent base accepted")
+            fails += 1
+        def wrong_owner_command(argv):
+            if argv == ["git", "remote", "get-url", "origin"]:
+                return 0, "https://github.com/other/repository.git", ""
+            return fake_intake_command(argv)
+        if prepare_intake("origin/main", "feature-branch", wrong_owner_command)[1] is None:
+            print("self-test FAIL non-owning remote accepted")
             fails += 1
         reservation_test_root = d / "reservation-race"
         first_reservation, first_error = reserve_change_id(

@@ -5,6 +5,7 @@ import argparse
 import hashlib
 import json
 import math
+import re
 import statistics
 import sys
 import tempfile
@@ -65,6 +66,16 @@ def sample_errors(sample, protocol):
         errors.append("unknown cache state")
     if sample.get("status") != "valid":
         errors.append(f"sample status is `{sample.get('status')}`")
+    if not isinstance(sample.get("git_sha"), str) \
+            or not re.fullmatch(r"[0-9a-f]{40}", sample["git_sha"]):
+        errors.append("sample git_sha is not immutable")
+    if sample.get("commands") != protocol["commands"]:
+        errors.append("sample commands differ from the fixed protocol")
+    if not isinstance(sample.get("cache_evidence"), dict) or not sample["cache_evidence"]:
+        errors.append("sample lacks cache preparation evidence")
+    if not isinstance(sample.get("transcript_sha256"), str) \
+            or not re.fullmatch(r"[0-9a-f]{64}", sample["transcript_sha256"]):
+        errors.append("sample lacks a transcript digest")
     activities = sample.get("activities")
     if not isinstance(activities, dict) or set(activities) != set(protocol["activities"]):
         errors.append("sample must contain every exact activity")
@@ -100,6 +111,7 @@ def evaluate(evidence, protocol):
     if not isinstance(samples, list):
         return None, ["evidence samples must be a list"]
     measured = [sample for sample in samples if not sample.get("warmup", False)]
+    warmups = [sample for sample in samples if sample.get("warmup", False)]
     for index, sample in enumerate(samples, start=1):
         errors += [f"sample {index}: {error}" for error in sample_errors(sample, protocol)]
     required = protocol["sampling"]["measured_per_ref_and_cache_state"]
@@ -120,11 +132,17 @@ def evaluate(evidence, protocol):
             waits.setdefault(key, []).append(interval_union_seconds(human_waits))
         except (KeyError, TypeError, ValueError):
             errors.append(f"sample {sample.get('sample')}: invalid active/wait interval union")
+    required_warmups = protocol["sampling"]["warmups_per_ref_and_cache_state"]
     for ref in ("baseline", "candidate"):
         for cache_state in protocol["cache_states"]:
             count = len(grouped.get((ref, cache_state), []))
+            warmup_count = len([sample for sample in warmups
+                                if sample.get("ref") == ref
+                                and sample.get("cache_state") == cache_state])
             if count != required:
                 errors.append(f"{ref}/{cache_state} needs exactly {required} measured samples, got {count}")
+            if warmup_count != required_warmups:
+                errors.append(f"{ref}/{cache_state} needs exactly {required_warmups} warmup sample(s), got {warmup_count}")
     if errors:
         return None, errors
     stats = {}
@@ -174,7 +192,7 @@ def self_test():
     samples = []
     for ref in ("baseline", "candidate"):
         for cache in ("cold", "warm"):
-            for number in range(5):
+            for number in range(6):
                 activities = {}
                 cursor = 0.0
                 for activity in protocol["activities"]:
@@ -183,7 +201,10 @@ def self_test():
                     cursor += duration
                 samples.append({
                     "sample": number + 1, "ref": ref, "cache_state": cache,
-                    "warmup": False, "status": "valid", "activities": activities,
+                    "warmup": number == 0, "status": "valid", "activities": activities,
+                    "git_sha": "a" * 40, "commands": protocol["commands"],
+                    "cache_evidence": {"prepared": True},
+                    "transcript_sha256": "b" * 64,
                     "human_waits": [], "validation": {
                         "compiled": True, "selected_examples": 2, "good_failures": 0,
                         "bad_failures": 1,

@@ -71,9 +71,13 @@ def _ts(s):
 
 
 def stage_seconds(stage):
-    if stage.get("start") and stage.get("stop"):
-        return (_ts(stage["stop"]) - _ts(stage["start"])).total_seconds()
-    return None
+    if not stage.get("start") or not stage.get("stop"):
+        return None
+    try:
+        seconds = (_ts(stage["stop"]) - _ts(stage["start"])).total_seconds()
+    except (TypeError, ValueError):
+        return None
+    return seconds if seconds >= 0 else None
 
 
 def activity_measurement(run, name):

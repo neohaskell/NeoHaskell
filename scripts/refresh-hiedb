@@ -70,7 +70,10 @@ resolve_tools() {
     PYTHON_BIN="${cached_python}"
     return 0
   fi
-  resolved="$("${TOOLCHAIN}" sh -c 'command -v hiedb; command -v python3')"
+  if ! resolved="$(run_bounded "${TOOLCHAIN}" sh -c 'command -v hiedb; command -v python3')"; then
+    echo "hiedb: pinned tool resolution failed or timed out" >&2
+    return 1
+  fi
   HIEDB_BIN="$(printf '%s\n' "${resolved}" | sed -n '1p')"
   PYTHON_BIN="$(printf '%s\n' "${resolved}" | sed -n '2p')"
   if [ ! -x "${HIEDB_BIN}" ] || [ ! -x "${PYTHON_BIN}" ]; then
@@ -216,13 +219,13 @@ index_artifacts() {
   if [ "${MODE}" = "if-needed" ] && [ -f "${META_PATH}" ] \
       && [ "$(cat "${META_PATH}")" = "${current_fingerprint}" ] \
       && database_is_valid "${DB_PATH}"; then
-    resolve_tools
+    if ! resolve_tools; then return 2; fi
     [ "${QUIET}" -eq 1 ] || echo "hiedb: current — cached for this worktree/toolchain"
     return 0
   fi
 
   [ "${QUIET}" -eq 1 ] || echo "hiedb: incrementally indexing emitted .hie files…"
-  resolve_tools
+  if ! resolve_tools; then return 2; fi
   local temporary_db="${DB_PATH}.tmp.$$"
   rm -f "${temporary_db}" "${temporary_db}-wal" "${temporary_db}-shm"
   if database_is_valid "${DB_PATH}"; then
@@ -373,6 +376,21 @@ SH
   set -e
   [ "${hung_code}" -eq 2 ] \
     || { echo "refresh-hiedb self-test FAIL: hung indexer was not bounded" >&2; return 1; }
+
+  local tool_resolution_code=0
+  set +e
+  (
+    unset HIEDB_HIEDB_BIN HIEDB_PYTHON_BIN HIEDB_TOOLS_PATH
+    HIEDB_DIST_DIR="${tmp}/dist" HIEDB_DB_PATH="${tmp}/tool-db" \
+      HIEDB_META_PATH="${tmp}/tool-meta" HIEDB_TOOLS_PATH="${tmp}/missing-tools" \
+      HIEDB_TOOLCHAIN="${blocker}" HIEDB_TIMEOUT_SECONDS=0.1 \
+      HIEDB_BLOCK_FIFO="${tmp}/never-written" HIEDB_TOOLCHAIN_FINGERPRINT="test" \
+      "$0" --force --quiet
+  )
+  tool_resolution_code=$?
+  set -e
+  [ "${tool_resolution_code}" -eq 2 ] \
+    || { echo "refresh-hiedb self-test FAIL: hung tool resolution was not bounded" >&2; return 1; }
 
   : > "${log}"
   HIEDB_DIST_DIR="${tmp}/dist" HIEDB_DB_PATH="${tmp}/db2" \

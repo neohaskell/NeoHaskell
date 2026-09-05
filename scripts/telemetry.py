@@ -201,20 +201,45 @@ def parse_activity_timestamp(value):
         return None
 
 
-def completed_activity_interval(interval) -> bool:
+def activity_interval_error(interval):
     if not isinstance(interval, dict):
-        return False
+        return "interval is not an object"
     start = parse_activity_timestamp(interval.get("start"))
+    if start is None:
+        return "start timestamp is invalid"
+    if interval.get("stop") is None:
+        return None
     stop = parse_activity_timestamp(interval.get("stop"))
-    return start is not None and stop is not None and stop >= start
+    if stop is None or stop < start:
+        return "stop timestamp is invalid or precedes start"
+    return None
+
+
+def completed_activity_interval(interval) -> bool:
+    return activity_interval_error(interval) is None and interval.get("stop") is not None
+
+
+def activity_collections(run):
+    for name, raw_intervals in (run.get("activities", {}) or {}).items():
+        intervals = [raw_intervals] if isinstance(raw_intervals, dict) else raw_intervals
+        yield name, intervals
+
+
+def invalid_activities(run: dict) -> list:
+    invalid = []
+    for name, intervals in activity_collections(run):
+        if not isinstance(intervals, list) or not intervals \
+                or any(activity_interval_error(interval) is not None for interval in intervals):
+            invalid.append(name)
+    return invalid
 
 
 def open_activities(run: dict) -> list:
     open_names = []
-    for name, raw_intervals in (run.get("activities", {}) or {}).items():
-        intervals = [raw_intervals] if isinstance(raw_intervals, dict) else raw_intervals
-        if not isinstance(intervals, list) or not intervals \
-                or any(not completed_activity_interval(interval) for interval in intervals):
+    for name, intervals in activity_collections(run):
+        if isinstance(intervals, list) and any(
+                isinstance(interval, dict) and interval.get("stop") is None
+                and activity_interval_error(interval) is None for interval in intervals):
             open_names.append(name)
     return open_names
 
@@ -222,10 +247,10 @@ def open_activities(run: dict) -> list:
 def cmd_wait(args) -> None:
     non_negative(args.seconds, "--seconds")
     run = load()
-    running = open_activities(run)
+    running = sorted(set(open_activities(run) + invalid_activities(run)))
     if running:
-        sys.exit("telemetry: stop active work before recording human wait: "
-                 + ", ".join(sorted(running)))
+        sys.exit("telemetry: stop or repair active work before recording human wait: "
+                 + ", ".join(running))
     run["waiting_on_human_s"] += args.seconds
     save(run)
 
@@ -275,9 +300,12 @@ def cmd_finish(args) -> None:
     run = load()
     if args.outcome not in OUTCOMES:
         sys.exit(f"telemetry: outcome must be one of {OUTCOMES}")
+    invalid = invalid_activities(run)
+    if invalid:
+        sys.exit(f"telemetry: cannot finish with malformed/reversed activities: {', '.join(sorted(invalid))}")
     unfinished = open_activities(run)
     if unfinished and args.outcome == "ok":
-        sys.exit(f"telemetry: cannot finish successful run with open/invalid activities: {', '.join(sorted(unfinished))}")
+        sys.exit(f"telemetry: cannot finish successful run with open activities: {', '.join(sorted(unfinished))}")
     if args.failure_label is not None and args.failure_label not in FAILURE_LABELS:
         sys.exit(f"telemetry: failure-label must be from the closed taxonomy: {', '.join(FAILURE_LABELS)}")
     if args.outcome == "ok" and args.failure_label is not None:

@@ -57,7 +57,14 @@ def run_bounded(command, timeout_seconds):
         return 124, output, True
 
 
-def classify_expected_red(exit_code, output, expected_failure):
+def structured_failure_block(output, exact_match, expected_failure):
+    blocks = re.findall(r"^\s*\d+\)\s+([^\n]+)\n(.*?)(?=^\s*To rerun)", output,
+                        flags=re.MULTILINE | re.DOTALL)
+    return (len(blocks) == 1 and exact_match in blocks[0][0]
+            and blocks[0][1].count(expected_failure) == 1)
+
+
+def classify_expected_red(exit_code, output, expected_failure, exact_match):
     errors = []
     summaries = SUMMARY.findall(output)
     selected = failures = 0
@@ -71,8 +78,9 @@ def classify_expected_red(exit_code, output, expected_failure):
             errors.append(f"red run must have exactly one failure, got {failures}")
     if exit_code == 0:
         errors.append("red run unexpectedly passed")
-    if output.count(expected_failure) != 1:
-        errors.append("red run did not fail exactly once at the expected assertion identity")
+    if output.count(expected_failure) != 1 \
+            or not structured_failure_block(output, exact_match, expected_failure):
+        errors.append("red run did not bind the sole failure block to the expected test/assertion")
     for marker in SETUP_FAILURE_MARKERS:
         if marker in output:
             errors.append(f"red run contains setup/compile/timeout marker `{marker}`")
@@ -126,7 +134,9 @@ def record(args):
     exit_code, output, timed_out = run_bounded(command, args.timeout)
     if timed_out:
         sys.exit("red-evidence: red run timed out")
-    errors, selected, failures = classify_expected_red(exit_code, output, args.expected_failure)
+    errors, selected, failures = classify_expected_red(
+        exit_code, output, args.expected_failure, locator.get("match", "")
+    )
     if errors:
         for error in errors:
             print(f"red-evidence: FAIL — {error}", file=sys.stderr)
@@ -231,9 +241,12 @@ def verify(args):
 def self_test():
     global ROOT
     failures = 0
-    good_output = "semantic failure\nREGRESSION_ASSERT:fresh-revision\n1 example, 1 failure\n"
-    errors, selected, failed = classify_expected_red(1, good_output,
-                                                      "REGRESSION_ASSERT:fresh-revision")
+    good_output = ("Failures:\n  1) suite, exact-red\n"
+                   "       REGRESSION_ASSERT:fresh-revision\n"
+                   "  To rerun use: --match exact-red\n\n1 example, 1 failure\n")
+    errors, selected, failed = classify_expected_red(
+        1, good_output, "REGRESSION_ASSERT:fresh-revision", "exact-red"
+    )
     if errors or selected != 1 or failed != 1:
         print(f"red-evidence self-test FAIL good classification: {errors}")
         failures += 1
@@ -247,7 +260,7 @@ def self_test():
     }
     for label, (code, output) in cases.items():
         case_errors, _selected, _failed = classify_expected_red(
-            code, output, "REGRESSION_ASSERT:fresh-revision")
+            code, output, "REGRESSION_ASSERT:fresh-revision", "exact-red")
         if not case_errors:
             print(f"red-evidence self-test FAIL {label} accepted")
             failures += 1

@@ -53,9 +53,24 @@ route_prompt() {
   esac
 }
 
+structured_failure_matches() {
+  SMOKE_EXACT="$1" SMOKE_ASSERTION="$2" SMOKE_OUTPUT="$3" python3 - <<'PY'
+import os
+import re
+
+output = os.environ["SMOKE_OUTPUT"]
+exact = os.environ["SMOKE_EXACT"]
+assertion = os.environ["SMOKE_ASSERTION"]
+blocks = re.findall(r"^\s*\d+\)\s+([^\n]+)\n(.*?)(?=^\s*To rerun)", output,
+                    flags=re.MULTILINE | re.DOTALL)
+valid = len(blocks) == 1 and exact in blocks[0][0] and blocks[0][1].count(assertion) == 1
+raise SystemExit(0 if valid else 1)
+PY
+}
+
 validate_output() {
-  local mode="$1" recipe="$2" backend="$3" examples="$4" assertion="$5"
-  local code="$6" timed_out="$7" output="$8"
+  local mode="$1" recipe="$2" backend="$3" examples="$4" assertion="$5" exact="$6"
+  local code="$7" timed_out="$8" output="$9"
   if [ "${timed_out}" = "true" ] || [ "${code}" -eq 124 ]; then
     return 1
   fi
@@ -69,7 +84,8 @@ validate_output() {
   else
     [ "${code}" -ne 0 ] \
       && printf '%s\n' "${output}" | grep -Eq "^${examples} examples?, 1 failure$" \
-      && [ "$(printf '%s\n' "${output}" | grep -Fc "${assertion}" || true)" -eq 1 ]
+      && [ "$(printf '%s\n' "${output}" | grep -Fc "${assertion}" || true)" -eq 1 ] \
+      && structured_failure_matches "${exact}" "${assertion}" "${output}"
   fi
 }
 
@@ -143,20 +159,20 @@ self_test() {
     echo "regression-smoke self-test FAIL: sentinel-only red remains" >&2; failures=1
   fi
   local good='1 example, 0 failures' bad_output setup zero wrong
-  bad_output=$'REGRESSION_ASSERT:x\n1 example, 1 failure'
-  setup=$'Connection refused\nREGRESSION_ASSERT:x\n1 example, 1 failure'
+  bad_output=$'Failures:\n  1) suite, exact-x\n       REGRESSION_ASSERT:x\n  To rerun use: --match x\n\n1 example, 1 failure'
+  setup=$'Connection refused\nFailures:\n  1) suite, exact-x\n       REGRESSION_ASSERT:x\n  To rerun use: --match x\n1 example, 1 failure'
   zero='0 examples, 0 failures'
   wrong=$'OTHER\n1 example, 1 failure'
-  validate_output good x in-memory 1 REGRESSION_ASSERT:x 0 false "${good}" \
+  validate_output good x in-memory 1 REGRESSION_ASSERT:x exact-x 0 false "${good}" \
     || { echo "regression-smoke self-test FAIL: valid good rejected" >&2; failures=1; }
-  validate_output bad x in-memory 1 REGRESSION_ASSERT:x 1 false "${bad_output}" \
+  validate_output bad x in-memory 1 REGRESSION_ASSERT:x exact-x 1 false "${bad_output}" \
     || { echo "regression-smoke self-test FAIL: valid bad rejected" >&2; failures=1; }
   for transcript in "${setup}" "${zero}" "${wrong}"; do
-    if validate_output bad x in-memory 1 REGRESSION_ASSERT:x 1 false "${transcript}"; then
+    if validate_output bad x in-memory 1 REGRESSION_ASSERT:x exact-x 1 false "${transcript}"; then
       echo "regression-smoke self-test FAIL: invalid bad transcript accepted" >&2; failures=1
     fi
   done
-  if validate_output bad x in-memory 1 REGRESSION_ASSERT:x 124 true "${bad_output}"; then
+  if validate_output bad x in-memory 1 REGRESSION_ASSERT:x exact-x 124 true "${bad_output}"; then
     echo "regression-smoke self-test FAIL: timeout accepted" >&2; failures=1
   fi
   [ "${failures}" -eq 0 ] || return 1
@@ -176,7 +192,7 @@ run_smoke() {
     good_code="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["code"])' "${tmp}/good.json")"
     good_timeout="$(python3 -c 'import json,sys; print(str(json.load(open(sys.argv[1]))["timed_out"]).lower())' "${tmp}/good.json")"
     good_output="$(cat "${tmp}/good.out")"
-    validate_output good "${recipe}" "${backend}" "${examples}" "${assertion}" \
+    validate_output good "${recipe}" "${backend}" "${examples}" "${assertion}" "${exact}" \
       "${good_code}" "${good_timeout}" "${good_output}" \
       || { echo "regression-smoke: FAIL ${recipe} known-good" >&2; tail -20 "${tmp}/good.out" >&2; return 1; }
 
@@ -187,7 +203,7 @@ run_smoke() {
     bad_code="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["code"])' "${tmp}/bad.json")"
     bad_timeout="$(python3 -c 'import json,sys; print(str(json.load(open(sys.argv[1]))["timed_out"]).lower())' "${tmp}/bad.json")"
     bad_output="$(cat "${tmp}/bad.out")"
-    validate_output bad "${recipe}" "${backend}" "${examples}" "${assertion}" \
+    validate_output bad "${recipe}" "${backend}" "${examples}" "${assertion}" "${exact}" \
       "${bad_code}" "${bad_timeout}" "${bad_output}" \
       || { echo "regression-smoke: FAIL ${recipe} controlled bad" >&2; tail -20 "${tmp}/bad.out" >&2; return 1; }
     RECIPE="${recipe}" LOCATOR="${locator}" BAD="${bad}" ASSERTION="${assertion}" \

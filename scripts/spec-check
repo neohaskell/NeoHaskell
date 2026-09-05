@@ -132,6 +132,11 @@ def load_test_surfaces():
                 or not safe_repo_path(str(entry.get("path", ""))) \
                 or entry.get("boundary") not in BOUNDARIES:
             raise ValueError("invalid boundary registry entry")
+        if entry.get("kind") == "hspec" and (
+                not entry.get("fixture")
+                or not isinstance(entry.get("expected_examples"), int)
+                or entry["expected_examples"] <= 0):
+            raise ValueError("hspec boundary entry needs fixture and expected_examples")
         key = (entry.get("kind"), entry.get("suite"), entry.get("path"), entry.get("match"))
         if key in seen:
             raise ValueError("duplicate boundary registry entry")
@@ -193,9 +198,10 @@ def parse_test_locators(test_cell):
     return locators, errors
 
 
-def locator_boundary(locator, surfaces):
+def locator_boundary_entry(locator, surfaces):
     if locator["kind"] == "hurl":
-        return "http:real"
+        return {"boundary": "http:real", "fixture": "hurl-http",
+                "expected_examples": 1, "match": None}
     for entry in surfaces["boundaries"]:
         if entry.get("kind") != locator["kind"]:
             continue
@@ -206,8 +212,13 @@ def locator_boundary(locator, surfaces):
         if locator["kind"] == "hspec" \
                 and not fnmatch.fnmatch(locator["match"], entry.get("match", "*")):
             continue
-        return entry.get("boundary")
-    return "none"
+        return entry
+    return None
+
+
+def locator_boundary(locator, surfaces):
+    entry = locator_boundary_entry(locator, surfaces)
+    return entry.get("boundary") if entry else "none"
 
 
 def locator_level_errors(locator, level, boundary, surfaces):
@@ -215,14 +226,21 @@ def locator_level_errors(locator, level, boundary, surfaces):
     if boundary not in BOUNDARIES:
         errors.append(f"boundary `{boundary}` is not in {sorted(BOUNDARIES)}")
         return errors
-    actual_boundary = locator_boundary(locator, surfaces)
+    boundary_entry = locator_boundary_entry(locator, surfaces)
+    actual_boundary = boundary_entry.get("boundary") if boundary_entry else "none"
     if level == "acceptance":
         if locator["kind"] != "hurl" or boundary != "http:real":
             errors.append("acceptance requires an exact hurl locator and `http:real` boundary")
     elif level == "integration":
-        if boundary == "none" or actual_boundary != boundary:
+        exact_attestation = boundary_entry is not None \
+            and boundary_entry.get("fixture") \
+            and isinstance(boundary_entry.get("expected_examples"), int) \
+            and boundary_entry.get("expected_examples") > 0 \
+            and (locator["kind"] != "hspec"
+                 or boundary_entry.get("match") == locator.get("match"))
+        if boundary == "none" or actual_boundary != boundary or not exact_attestation:
             errors.append(
-                f"integration locator is not attested for declared boundary `{boundary}`"
+                f"integration locator is not exactly attested for declared boundary `{boundary}`"
             )
     elif level == "unit":
         if boundary != "none" or actual_boundary != "none":
@@ -727,7 +745,8 @@ def self_test():
             "hspec_suites": {"fixture-suite": {"roots": ["tests"]}},
             "boundaries": [{"kind": "hspec", "suite": "fixture-suite",
                             "path": "tests/ExampleSpec.hs", "match": "exact example",
-                            "boundary": "postgres:real"}],
+                            "boundary": "postgres:real", "fixture": "fake-postgres",
+                            "expected_examples": 1}],
         }
         valid_locator, _ = parse_locator(
             "hspec:fixture-suite:tests/ExampleSpec.hs#exact example")
