@@ -127,6 +127,7 @@ the activity vocabulary is `localization`, `index`, `test-scaffolding`,
       `test_impact_globs` → run those suites
    c. `./dev lint` + `./dev spec-drift <spec>` (the promise check)
    d. PR-ready contract gates: `./dev spec-check --criteria-tests origin/main`,
+      `POSTGRES_AVAILABLE=true ./dev spec-check --criteria-runtime origin/main`,
       `./dev spec-check --reviews-local origin/main`, `./dev spec-check
       --reviews-pr origin/main`, and `./dev changelog --check origin/main`
    e. full suite once with mandatory dependencies: `./dev test-all

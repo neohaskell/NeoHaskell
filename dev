@@ -51,7 +51,8 @@ usage: ./dev <verb> [args]
                           (--plan <spec>: review + test-impact joins;
                           --reviews-pr [base]: gate design-review records;
                           --criteria <spec>: criteria table as JSON;
-                          --criteria-tests [base]: gate criterion proving-tests exist)
+                          --criteria-tests [base]: gate locator resolution;
+                          --criteria-runtime [base]: run exact integration fixtures)
   spec-drift <spec|--pr>  verify the generated API surface honors a spec's
                           promised contract delta (PR-ready gate)
   pipeline <cmd>        pipeline run state (.pipeline/state.json): init,

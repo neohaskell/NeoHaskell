@@ -51,8 +51,10 @@ Run: ./dev spec-check    CI: .github/workflows/checks.yml `spec` job
 
 import fnmatch
 import json
+import os
 import re
 import shlex
+import signal
 import subprocess
 import sys
 import tempfile
@@ -563,6 +565,74 @@ def unresolved_criteria_tests(spec_name, spec_text, root=ROOT, surfaces=None):
     return errs
 
 
+def run_locator_probe(locator, timeout_seconds=120):
+    command = locator_command(locator, ROOT)
+    environment = os.environ.copy()
+    environment["POSTGRES_AVAILABLE"] = "true"
+    process = subprocess.Popen(command, cwd=ROOT, text=True, stdout=subprocess.PIPE,
+                               stderr=subprocess.STDOUT, env=environment,
+                               start_new_session=True)
+    try:
+        output, _ = process.communicate(timeout=timeout_seconds)
+        return process.returncode, output, False
+    except subprocess.TimeoutExpired:
+        os.killpg(process.pid, signal.SIGKILL)
+        output, _ = process.communicate()
+        return 124, output, True
+
+
+def runtime_probe_errors(locator, boundary_entry, runner=run_locator_probe):
+    code, output, timed_out = runner(locator)
+    if timed_out:
+        return [f"runtime locator probe timed out `{locator['raw']}`"]
+    summaries = re.findall(r"^(\d+) examples?, (\d+) failures?$", output, re.MULTILINE)
+    if code != 0 or len(summaries) != 1:
+        return [f"runtime locator probe did not pass cleanly `{locator['raw']}`"]
+    selected, failures = (int(value) for value in summaries[0])
+    expected = boundary_entry["expected_examples"]
+    errors = []
+    if selected != expected or failures != 0:
+        errors.append(f"runtime locator selected {selected} examples/{failures} failures; "
+                      f"expected {expected}/0 `{locator['raw']}`")
+    if boundary_entry["fixture"] not in output:
+        errors.append(f"runtime locator did not execute fixture `{boundary_entry['fixture']}`")
+    return errors
+
+
+def criteria_runtime_pr(base, runner=run_locator_probe):
+    try:
+        specs = [path for path in speclib.changed_specs(ROOT, base)
+                 if is_spec_file(path.name) and path.name != "TEMPLATE.md" and path.exists()]
+    except speclib.GitDiffError as error:
+        print(f"spec-check: runtime diff against `{base}` failed ({error})", file=sys.stderr)
+        return 2
+    surfaces = load_test_surfaces()
+    errors = []
+    probed = set()
+    for spec in specs:
+        for criterion in parse_criteria(spec.read_text()):
+            if criterion["level"] != "integration":
+                continue
+            locators, locator_errors = parse_test_locators(criterion["test"])
+            errors += [f"{spec.name}: {criterion['id']} {error}" for error in locator_errors]
+            for locator in locators:
+                if locator["raw"] in probed:
+                    continue
+                probed.add(locator["raw"])
+                entry = locator_boundary_entry(locator, surfaces)
+                if entry is None:
+                    errors.append(f"{spec.name}: {criterion['id']} has no boundary fixture")
+                    continue
+                errors += [f"{spec.name}: {criterion['id']} {error}"
+                           for error in runtime_probe_errors(locator, entry, runner)]
+    for error in errors:
+        print(f"spec-check: FAIL — {error}", file=sys.stderr)
+    if errors:
+        return 1
+    print(f"spec-check: OK — {len(probed)} integration locator(s) selected exact runtime fixtures")
+    return 0
+
+
 def require_changed_spec(base, changed_lookup=speclib.changed_specs):
     try:
         specs = [path for path in changed_lookup(ROOT, base)
@@ -773,6 +843,21 @@ def self_test():
         if locator_level_errors(valid_locator, "integration", "filesystem:real",
                                 fixture_surfaces) == []:
             print("self-test FAIL locator-incompatible-boundary"); fails += 1
+        fixture_entry = fixture_surfaces["boundaries"][0]
+        fixture_entry["fixture"] = "fixture-postgres"
+        fixture_entry["expected_examples"] = 1
+        if runtime_probe_errors(valid_locator, fixture_entry,
+                runner=lambda _locator: (0, "fixture-postgres\n1 example, 0 failures\n", False)):
+            print("self-test FAIL runtime locator valid probe"); fails += 1
+        if not runtime_probe_errors(valid_locator, fixture_entry,
+                runner=lambda _locator: (0, "fixture-postgres\n0 examples, 0 failures\n", False)):
+            print("self-test FAIL runtime locator zero-match accepted"); fails += 1
+        if not runtime_probe_errors(valid_locator, fixture_entry,
+                runner=lambda _locator: (0, "1 example, 0 failures\n", False)):
+            print("self-test FAIL runtime locator missing fixture accepted"); fails += 1
+        if not runtime_probe_errors(valid_locator, fixture_entry,
+                runner=lambda _locator: (124, "", True)):
+            print("self-test FAIL runtime locator timeout accepted"); fails += 1
 
     joins = plan_joins(
         VALID_FIXTURE.replace("[core-primitives]", "[auth, concurrency]"), caps)
@@ -880,6 +965,10 @@ def main():
     if args and args[0] == "--require-changed":
         base = args[1] if len(args) > 1 else "origin/main"
         return require_changed_spec(base)
+
+    if args and args[0] == "--criteria-runtime":
+        base = args[1] if len(args) > 1 else "origin/main"
+        return criteria_runtime_pr(base)
 
     files = [Path(a) for a in args] if args else sorted(CHANGES.glob("*.md"))
     files = [p for p in files if is_spec_file(p.name)]

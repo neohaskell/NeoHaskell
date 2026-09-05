@@ -3,11 +3,15 @@
 
 import argparse
 import hashlib
+import os
 import json
 import math
 import re
 import statistics
+import signal
+import subprocess
 import sys
+import time
 import tempfile
 from pathlib import Path
 
@@ -21,8 +25,9 @@ def protocol_digest(path=PROTOCOL):
 
 def interval_union_seconds(intervals):
     normalized = sorted((float(item["start_s"]), float(item["stop_s"])) for item in intervals)
-    if any(stop < start for start, stop in normalized):
-        raise ValueError("reversed interval")
+    if any(not math.isfinite(start) or not math.isfinite(stop) or stop < start
+           for start, stop in normalized):
+        raise ValueError("non-finite or reversed interval")
     merged = []
     for start, stop in normalized:
         if not merged or start > merged[-1][1]:
@@ -58,7 +63,17 @@ def nearest_rank(values, percentile):
     return ordered[max(0, math.ceil(percentile * len(ordered)) - 1)]
 
 
-def sample_errors(sample, protocol):
+def sha_exists(sha):
+    return subprocess.run(["git", "cat-file", "-e", f"{sha}^{{commit}}"], cwd=ROOT,
+                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                          check=False).returncode == 0
+
+
+def read_transcript(path):
+    return Path(path).read_bytes()
+
+
+def sample_errors(sample, protocol, transcript_reader=read_transcript):
     errors = []
     if sample.get("ref") not in {"baseline", "candidate"}:
         errors.append("unknown ref")
@@ -71,11 +86,21 @@ def sample_errors(sample, protocol):
         errors.append("sample git_sha is not immutable")
     if sample.get("commands") != protocol["commands"]:
         errors.append("sample commands differ from the fixed protocol")
-    if not isinstance(sample.get("cache_evidence"), dict) or not sample["cache_evidence"]:
-        errors.append("sample lacks cache preparation evidence")
+    expected_cache = protocol["cache_states"].get(sample.get("cache_state"))
+    if sample.get("cache_evidence") != expected_cache:
+        errors.append("sample cache evidence does not match the declared protocol state")
     if not isinstance(sample.get("transcript_sha256"), str) \
             or not re.fullmatch(r"[0-9a-f]{64}", sample["transcript_sha256"]):
         errors.append("sample lacks a transcript digest")
+    else:
+        try:
+            actual_digest = hashlib.sha256(
+                transcript_reader(sample.get("transcript_path"))
+            ).hexdigest()
+        except (OSError, TypeError):
+            actual_digest = None
+        if actual_digest != sample["transcript_sha256"]:
+            errors.append("sample transcript path/digest is unavailable or stale")
     activities = sample.get("activities")
     if not isinstance(activities, dict) or set(activities) != set(protocol["activities"]):
         errors.append("sample must contain every exact activity")
@@ -101,7 +126,8 @@ def sample_errors(sample, protocol):
     return errors
 
 
-def evaluate(evidence, protocol):
+def evaluate(evidence, protocol, commit_resolver=sha_exists,
+             transcript_reader=read_transcript):
     errors = []
     if evidence.get("schema") != 1 or evidence.get("protocol_id") != protocol["protocol_id"]:
         errors.append("evidence schema/protocol mismatch")
@@ -113,7 +139,20 @@ def evaluate(evidence, protocol):
     measured = [sample for sample in samples if not sample.get("warmup", False)]
     warmups = [sample for sample in samples if sample.get("warmup", False)]
     for index, sample in enumerate(samples, start=1):
-        errors += [f"sample {index}: {error}" for error in sample_errors(sample, protocol)]
+        errors += [f"sample {index}: {error}" for error in
+                   sample_errors(sample, protocol, transcript_reader)]
+    ref_shas = {}
+    for ref in ("baseline", "candidate"):
+        shas = {sample.get("git_sha") for sample in samples if sample.get("ref") == ref}
+        if len(shas) != 1:
+            errors.append(f"{ref} samples must use one immutable Git SHA")
+        else:
+            sha = next(iter(shas))
+            ref_shas[ref] = sha
+            if not commit_resolver(sha):
+                errors.append(f"{ref} Git SHA does not resolve to a commit")
+    if ref_shas.get("baseline") == ref_shas.get("candidate"):
+        errors.append("baseline and candidate Git SHAs must be distinct")
     required = protocol["sampling"]["measured_per_ref_and_cache_state"]
     grouped = {}
     durations = {}
@@ -172,6 +211,115 @@ def evaluate(evidence, protocol):
             }}, []
 
 
+def run_bounded(command, cwd, timeout=900):
+    process = subprocess.Popen(command, cwd=cwd, text=True, stdout=subprocess.PIPE,
+                               stderr=subprocess.STDOUT, start_new_session=True)
+    try:
+        output, _ = process.communicate(timeout=timeout)
+        return process.returncode, output
+    except subprocess.TimeoutExpired:
+        os.killpg(process.pid, signal.SIGKILL)
+        output, _ = process.communicate()
+        return 124, output + "\nTIMEOUT\n"
+
+
+def prepare_cache_evidence(root, cache_state, protocol):
+    has_db = (root / ".hiedb").is_file() and (root / ".hiedb-meta").is_file()
+    has_hie = (root / "dist-newstyle").is_dir() \
+        and any((root / "dist-newstyle").rglob("*.hie"))
+    if cache_state == "warm" and not (has_db and has_hie):
+        raise ValueError("warm sample requires a current HIE DB/meta and emitted .hie files")
+    if cache_state == "cold" and (has_db or has_hie):
+        raise ValueError("cold sample requires an isolated worktree with no HIE DB/artifacts")
+    return protocol["cache_states"][cache_state]
+
+
+def materialize_command(root, command):
+    return [str(root / "dev"), *command[1:]] if command[0] == "./dev" else command
+
+
+def record_sample(args):
+    protocol = json.loads(PROTOCOL.read_text())
+    root = Path(args.root).resolve()
+    sha_result = subprocess.run(["git", "rev-parse", "HEAD"], cwd=root, text=True,
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+    if sha_result.returncode != 0:
+        print("pipeline-benchmark: cannot resolve sample HEAD", file=sys.stderr)
+        return 2
+    git_sha = sha_result.stdout.strip()
+    try:
+        cache_evidence = prepare_cache_evidence(root, args.cache_state, protocol)
+    except ValueError as error:
+        print(f"pipeline-benchmark: {error}", file=sys.stderr)
+        return 2
+    before = subprocess.run(["git", "status", "--porcelain", "--untracked-files=no"],
+                            cwd=root, text=True, stdout=subprocess.PIPE, check=False).stdout
+    if before.strip():
+        print("pipeline-benchmark: sample worktree must be clean and pinned", file=sys.stderr)
+        return 2
+    activities = {}
+    transcript_parts = []
+    for activity in protocol["activities"]:
+        command = materialize_command(root, protocol["commands"][activity])
+        start = time.monotonic()
+        code, output = run_bounded(command, root)
+        stop = time.monotonic()
+        activities[activity] = [{"start_s": start, "stop_s": stop}]
+        transcript_parts.append(f"$ {' '.join(command)}\nexit={code}\n{output}\n")
+        allowed_cold_failure = args.cache_state == "cold" and activity in {"localization", "index"}
+        if code != 0 and not (allowed_cold_failure and code == 2):
+            print(f"pipeline-benchmark: activity `{activity}` failed ({code})", file=sys.stderr)
+            return 1
+    after = subprocess.run(["git", "status", "--porcelain", "--untracked-files=no"],
+                           cwd=root, text=True, stdout=subprocess.PIPE, check=False).stdout
+    unexpected = [] if before == after else sorted(set(after.splitlines()) - set(before.splitlines()))
+    smoke_receipt = root / ".pipeline" / "regression-smoke.json"
+    try:
+        smoke = json.loads(smoke_receipt.read_text())
+    except (OSError, json.JSONDecodeError):
+        print("pipeline-benchmark: semantic smoke receipt is missing", file=sys.stderr)
+        return 1
+    consistency = [row for row in smoke.get("recipes", [])
+                   if row.get("recipe") == protocol["task"]["recipe"]]
+    if len(consistency) != 1 or consistency[0].get("good") != "passed" \
+            or consistency[0].get("bad") != "failed-as-expected":
+        print("pipeline-benchmark: semantic good/bad validation is missing", file=sys.stderr)
+        return 1
+    transcript_path = Path(args.evidence).with_suffix(
+        f".{args.ref}.{args.cache_state}.{int(time.time_ns())}.log"
+    )
+    transcript_path.parent.mkdir(parents=True, exist_ok=True)
+    transcript_path.write_text("\n".join(transcript_parts))
+    transcript_hash = hashlib.sha256(transcript_path.read_bytes()).hexdigest()
+    evidence_path = Path(args.evidence)
+    if evidence_path.exists():
+        evidence = json.loads(evidence_path.read_text())
+    else:
+        evidence = {"schema": 1, "protocol_id": protocol["protocol_id"],
+                    "protocol_sha256": protocol_digest(), "samples": []}
+    same_group = [sample for sample in evidence["samples"]
+                  if sample.get("ref") == args.ref
+                  and sample.get("cache_state") == args.cache_state]
+    sample = {
+        "sample": len(same_group) + 1, "ref": args.ref,
+        "cache_state": args.cache_state, "warmup": args.warmup,
+        "status": "valid", "activities": activities, "human_waits": [],
+        "git_sha": git_sha, "commands": protocol["commands"],
+        "cache_evidence": cache_evidence, "transcript_path": str(transcript_path),
+        "transcript_sha256": transcript_hash,
+        "validation": {
+            "compiled": True, "selected_examples": 2, "good_failures": 0,
+            "bad_failures": 1,
+            "failure_identity": protocol["task"]["expected_assertion"],
+            "unexpected_files": unexpected,
+        },
+    }
+    evidence["samples"].append(sample)
+    evidence_path.write_text(json.dumps(evidence, indent=2, sort_keys=True) + "\n")
+    print(f"pipeline-benchmark: recorded {args.ref}/{args.cache_state} sample -> {evidence_path}")
+    return 0
+
+
 def command_evaluate(args):
     protocol = json.loads(PROTOCOL.read_text())
     evidence = json.loads(Path(args.evidence).read_text())
@@ -189,6 +337,10 @@ def command_evaluate(args):
 
 def self_test():
     protocol = json.loads(PROTOCOL.read_text())
+    transcript = tempfile.NamedTemporaryFile(delete=False)
+    transcript.write(b"measured benchmark transcript\n")
+    transcript.close()
+    transcript_digest = hashlib.sha256(Path(transcript.name).read_bytes()).hexdigest()
     samples = []
     for ref in ("baseline", "candidate"):
         for cache in ("cold", "warm"):
@@ -202,9 +354,11 @@ def self_test():
                 samples.append({
                     "sample": number + 1, "ref": ref, "cache_state": cache,
                     "warmup": number == 0, "status": "valid", "activities": activities,
-                    "git_sha": "a" * 40, "commands": protocol["commands"],
-                    "cache_evidence": {"prepared": True},
-                    "transcript_sha256": "b" * 64,
+                    "git_sha": ("a" * 40 if ref == "baseline" else "b" * 40),
+                    "commands": protocol["commands"],
+                    "cache_evidence": protocol["cache_states"][cache],
+                    "transcript_path": transcript.name,
+                    "transcript_sha256": transcript_digest,
                     "human_waits": [], "validation": {
                         "compiled": True, "selected_examples": 2, "good_failures": 0,
                         "bad_failures": 1,
@@ -214,7 +368,7 @@ def self_test():
                 })
     evidence = {"schema": 1, "protocol_id": protocol["protocol_id"],
                 "protocol_sha256": protocol_digest(), "samples": samples}
-    result, errors = evaluate(evidence, protocol)
+    result, errors = evaluate(evidence, protocol, commit_resolver=lambda _sha: True)
     failures = 0
     if errors or result["threshold"]["status"] != "pass" \
             or result["statistics"]["candidate:warm"]["median_s"] != 41.0:
@@ -222,8 +376,13 @@ def self_test():
         failures += 1
     broken = json.loads(json.dumps(evidence))
     broken["samples"][0]["validation"]["selected_examples"] = 0
-    if not evaluate(broken, protocol)[1]:
+    if not evaluate(broken, protocol, commit_resolver=lambda _sha: True)[1]:
         print("pipeline-benchmark self-test FAIL zero-match accepted")
+        failures += 1
+    non_finite = json.loads(json.dumps(evidence))
+    non_finite["samples"][0]["activities"]["index"][0]["stop_s"] = float("nan")
+    if not evaluate(non_finite, protocol, commit_resolver=lambda _sha: True)[1]:
+        print("pipeline-benchmark self-test FAIL non-finite timing accepted")
         failures += 1
     overlap = subtract_intervals(
         [{"start_s": 0, "stop_s": 10}, {"start_s": 5, "stop_s": 15}],
@@ -232,14 +391,24 @@ def self_test():
     if overlap != 13.0:
         print(f"pipeline-benchmark self-test FAIL interval union/wait subtraction: {overlap}")
         failures += 1
+    Path(transcript.name).unlink(missing_ok=True)
     if failures == 0:
-        print("pipeline-benchmark self-test: OK — protocol digest, exact samples, union timing, median/p95, and thresholds enforced")
+        print("pipeline-benchmark self-test: OK — immutable refs, transcripts, cache evidence, finite timing, warmups, median/p95, and thresholds enforced")
     return 1 if failures else 0
 
 
 def main():
     if len(sys.argv) == 2 and sys.argv[1] == "--self-test":
         return self_test()
+    if len(sys.argv) > 1 and sys.argv[1] == "record":
+        parser = argparse.ArgumentParser()
+        parser.add_argument("record")
+        parser.add_argument("--ref", required=True, choices=["baseline", "candidate"])
+        parser.add_argument("--cache-state", required=True, choices=["cold", "warm"])
+        parser.add_argument("--root", default=str(ROOT))
+        parser.add_argument("--evidence", required=True)
+        parser.add_argument("--warmup", action="store_true")
+        return record_sample(parser.parse_args())
     parser = argparse.ArgumentParser()
     parser.add_argument("evidence")
     parser.add_argument("--output")

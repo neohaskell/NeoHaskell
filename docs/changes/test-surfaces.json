@@ -99,7 +99,7 @@
       "match": "dedup self-heals a missing Pending blob on re-upload",
       "boundary": "filesystem:real",
       "expected_examples": 1,
-      "fixture": "filesystem:real"
+      "fixture": "Service.FileUpload.ContentDedup"
     },
     {
       "kind": "hspec",
@@ -108,7 +108,7 @@
       "match": "dedup self-heals a missing Confirmed blob on re-upload",
       "boundary": "filesystem:real",
       "expected_examples": 1,
-      "fixture": "filesystem:real"
+      "fixture": "Service.FileUpload.ContentDedup"
     },
     {
       "kind": "hspec",
@@ -117,7 +117,7 @@
       "match": "dedup self-heal preserves FileRef/blobKey and restores exact content",
       "boundary": "filesystem:real",
       "expected_examples": 1,
-      "fixture": "filesystem:real"
+      "fixture": "Service.FileUpload.ContentDedup"
     },
     {
       "kind": "hspec",
@@ -126,7 +126,7 @@
       "match": "dedup self-heals when the existence check errors",
       "boundary": "filesystem:real",
       "expected_examples": 1,
-      "fixture": "filesystem:real"
+      "fixture": "Service.FileUpload.ContentDedup"
     },
     {
       "kind": "hspec",
@@ -135,7 +135,7 @@
       "match": "duplicate upload returns same blobKey as original",
       "boundary": "filesystem:real",
       "expected_examples": 1,
-      "fixture": "filesystem:real"
+      "fixture": "Service.FileUpload.ContentDedup"
     },
     {
       "kind": "hspec",
@@ -144,7 +144,7 @@
       "match": "operations reuse the store-owned pool until close",
       "boundary": "postgres:real",
       "expected_examples": 1,
-      "fixture": "postgres:real"
+      "fixture": "Service.EventStore.Postgres"
     },
     {
       "kind": "hspec",
@@ -153,7 +153,7 @@
       "match": "state round-trips under the threaded query name",
       "boundary": "postgres:real",
       "expected_examples": 1,
-      "fixture": "postgres:real"
+      "fixture": "Service.QueryObjectStore.Postgres"
     },
     {
       "kind": "hspec",
@@ -162,7 +162,7 @@
       "match": "distinct query names isolate rows for the same instance uuid (#734)",
       "boundary": "postgres:real",
       "expected_examples": 1,
-      "fixture": "postgres:real"
+      "fixture": "Service.QueryObjectStore.Postgres"
     },
     {
       "kind": "hspec",
@@ -171,7 +171,7 @@
       "match": "getAll is scoped to the store's own query name (#734)",
       "boundary": "postgres:real",
       "expected_examples": 1,
-      "fixture": "postgres:real"
+      "fixture": "Service.QueryObjectStore.Postgres"
     },
     {
       "kind": "hspec",
@@ -180,7 +180,7 @@
       "match": "getAll excludes the reserved nil-uuid checkpoint marker row (#734)",
       "boundary": "postgres:real",
       "expected_examples": 1,
-      "fixture": "postgres:real"
+      "fixture": "Service.QueryObjectStore.Postgres"
     },
     {
       "kind": "hspec",
@@ -189,7 +189,7 @@
       "match": "N concurrent read-modify-write increments on one key all apply (#739)",
       "boundary": "postgres:real",
       "expected_examples": 1,
-      "fixture": "postgres:real"
+      "fixture": "Service.QueryObjectStore.Postgres"
     }
   ]
 }
