@@ -4,6 +4,7 @@ module Test.Service.Command.Core (
   AddItemToCartAfterItemCount (..),
   RemoveItemFromCart (..),
   CheckoutCart (..),
+  NoOpExisting (..),
   -- Authorization-aware Commands
   AuthenticatedAddItem (..),
   OwnedCartCheckout (..),
@@ -96,6 +97,18 @@ instance Json.ToJSON CheckoutCart
 
 
 instance Json.FromJSON CheckoutCart
+
+
+data NoOpExisting = NoOpExisting
+  { cartId :: Uuid
+  }
+  deriving (Eq, Show, Ord, Generic)
+
+
+instance Json.ToJSON NoOpExisting
+
+
+instance Json.FromJSON NoOpExisting
 
 
 -- ============================================================================
@@ -273,6 +286,29 @@ instance Command RemoveItemFromCart where
                 let event = ItemRemoved {entityId = cart.cartId, itemId = cmd.itemId}
                 [event]
                   |> Decider.acceptExisting
+
+
+type instance EntityOf NoOpExisting = CartEntity
+
+
+type instance NameOf NoOpExisting = "NoOpExisting"
+
+
+instance Command NoOpExisting where
+  getEntityIdImpl cmd = cmd.cartId |> Just
+
+
+  canExecuteImpl claims = AccessControl.publicAccess claims
+
+
+  decideImpl :: NoOpExisting -> Maybe CartEntity -> RequestContext -> Decision CartEvent
+  decideImpl _cmd entity _ctx =
+    case entity of
+      Nothing ->
+        Decider.reject "Cart does not exist"
+      Just _cart ->
+        (Array.empty :: Array CartEvent)
+          |> Decider.acceptExisting
 
 
 type instance EntityOf CheckoutCart = CartEntity
