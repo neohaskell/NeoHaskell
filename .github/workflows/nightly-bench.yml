@@ -63,11 +63,26 @@ jobs:
         run: ./dev pipeline-benchmark --self-test
       - name: Run benchmark suites against budgets
         run: LOG_LEVEL=Warn POSTGRES_AVAILABLE=true ./dev bench
+      - name: Record and validate candidate warm pipeline workflow evidence
+        run: |
+          rm -f .pipeline-benchmark-evidence.json .pipeline-benchmark-evidence.*.log
+          ./dev pipeline-benchmark record --ref candidate --cache-state warm \
+            --evidence .pipeline-benchmark-evidence.json --warmup
+          for sample in 1 2 3 4 5; do
+            ./dev pipeline-benchmark record --ref candidate --cache-state warm \
+              --evidence .pipeline-benchmark-evidence.json
+          done
+          ./dev pipeline-benchmark .pipeline-benchmark-evidence.json \
+            --candidate-warm-only --output .pipeline-benchmark-result.json
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         if: always()
         with:
           name: bench-results-${{ github.run_id }}
-          path: .bench-results.json
+          path: |
+            .bench-results.json
+            .pipeline-benchmark-evidence.json
+            .pipeline-benchmark-evidence.*.log
+            .pipeline-benchmark-result.json
           # .bench-results.json is a dotfile; upload-artifact excludes hidden
           # files by default, which silently produced empty artifacts (run
           # 29894978953). Opt in explicitly so the evidence actually uploads.
