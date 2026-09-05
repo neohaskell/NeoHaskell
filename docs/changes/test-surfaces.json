@@ -1,0 +1,69 @@
+{
+  "schema": 1,
+  "hspec_suites": {
+    "nhcore-test": {
+      "roots": ["core/test"]
+    },
+    "nhcore-test-core": {
+      "roots": ["core/test-core", "core/test"]
+    },
+    "nhcore-test-auth": {
+      "roots": ["core/test-auth", "core/test"]
+    },
+    "nhcore-test-service": {
+      "roots": ["core/test-service", "core/test", "core/testlib"]
+    },
+    "nhcore-test-integration": {
+      "roots": ["core/test-integration", "core/test"]
+    }
+  },
+  "boundaries": [
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-service",
+      "path": "core/test/Service/FileUpload/ContentDedupSpec.hs",
+      "match": "*",
+      "boundary": "filesystem:real"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-service",
+      "path": "core/test-service/Service/QueryObjectStore/PostgresSpec.hs",
+      "match": "*",
+      "boundary": "postgres:real"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-service",
+      "path": "core/testlib/Test/Service/EventStore/Subscriptions/Spec.hs",
+      "match": "*",
+      "boundary": "postgres:real"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-service",
+      "path": "core/test/Service/EventStore/PostgresSpec.hs",
+      "match": "*",
+      "boundary": "postgres:real"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-service",
+      "path": "core/testlib/Test/Service/EventStore/OptimisticConcurrency/Spec.hs",
+      "match": "*",
+      "boundary": "postgres:real"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-service",
+      "path": "core/testlib/Test/Service/CommandHandler/Execute/Spec.hs",
+      "match": "*",
+      "boundary": "postgres:real"
+    },
+    {
+      "kind": "script",
+      "path": "testbed/scripts/cold-start-readiness.sh",
+      "boundary": "http:real"
+    }
+  ]
+}

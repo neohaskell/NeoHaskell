@@ -49,9 +49,13 @@ Run: ./dev spec-check    CI: .github/workflows/checks.yml `spec` job
 (python3 stdlib only — capabilities.yaml is regex-scanned, no pyyaml)
 """
 
+import fnmatch
 import json
 import re
+import shlex
+import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 sys.dont_write_bytecode = True  # no scripts/__pycache__/ (doctor scans scripts/)
@@ -61,6 +65,7 @@ import speclib  # noqa: E402 — shared delta grammar with spec-drift
 ROOT = Path(__file__).resolve().parent.parent
 CHANGES = ROOT / "docs" / "changes"
 CAPABILITIES = ROOT / "codemap" / "capabilities.yaml"
+TEST_SURFACES = ROOT / "docs" / "changes" / "test-surfaces.json"
 
 KINDS = {"feature", "bug", "refactor"}
 LEVELS = {"unit", "integration", "acceptance"}
@@ -68,6 +73,12 @@ FILENAME = re.compile(r"^\d{3}-[a-z0-9][a-z0-9-]*\.md$")
 CRITERION_ID = re.compile(r"^C(\d+)$")
 ADR_LINK = re.compile(r"decisions/\d{4}-[a-z0-9-]+\.md")
 TRIGGER_FLAGS = ("breaking", "new-dependency", "new-capability", "new-extension-point")
+LOCATOR_TOKEN = re.compile(r"`([^`]+)`")
+LOCATOR_SEPARATOR = re.compile(r"^(?:\s|<br\s*/?>|[,;/])*$", re.IGNORECASE)
+HSPEC_LOCATOR = re.compile(r"^hspec:([a-z0-9-]+):([^#]+\.hs)#(.+)$")
+SCRIPT_LOCATOR = re.compile(r"^script:([^#]+)#(.*)$")
+HURL_LOCATOR = re.compile(r"^hurl:(.+\.hurl)$")
+BOUNDARIES = {"none", "postgres:real", "filesystem:real", "subprocess:real", "http:real"}
 
 
 def is_spec_file(name):
@@ -99,6 +110,150 @@ def load_capabilities():
             if m:
                 caps[current]["tests"] = [g.strip() for g in m.group(1).split(",") if g.strip()]
     return caps
+
+
+def load_test_surfaces():
+    try:
+        data = json.loads(TEST_SURFACES.read_text())
+    except (OSError, json.JSONDecodeError) as error:
+        raise ValueError(f"invalid test-surface registry: {error}") from error
+    if data.get("schema") != 1 or not isinstance(data.get("hspec_suites"), dict) \
+            or not isinstance(data.get("boundaries"), list):
+        raise ValueError("invalid test-surface registry shape")
+    return data
+
+
+def safe_repo_path(raw):
+    path = Path(raw)
+    return not path.is_absolute() and ".." not in path.parts and str(path) == raw
+
+
+def parse_locator(raw):
+    match = HSPEC_LOCATOR.fullmatch(raw)
+    if match:
+        suite, path, exact_match = match.groups()
+        if not safe_repo_path(path) or not exact_match.strip():
+            return None, f"malformed hspec locator `{raw}`"
+        return {"kind": "hspec", "suite": suite, "path": path,
+                "match": exact_match.strip(), "raw": raw}, None
+    match = SCRIPT_LOCATOR.fullmatch(raw)
+    if match:
+        path, arguments = match.groups()
+        if not safe_repo_path(path):
+            return None, f"malformed script locator `{raw}`"
+        try:
+            argv = shlex.split(arguments)
+        except ValueError:
+            return None, f"malformed script arguments in `{raw}`"
+        return {"kind": "script", "path": path, "argv": argv, "raw": raw}, None
+    match = HURL_LOCATOR.fullmatch(raw)
+    if match:
+        path = match.group(1)
+        if not safe_repo_path(path):
+            return None, f"malformed hurl locator `{raw}`"
+        return {"kind": "hurl", "path": path, "raw": raw}, None
+    kind = raw.partition(":")[0] or raw
+    return None, f"unsupported proving-test locator kind `{kind}` in `{raw}`"
+
+
+def parse_test_locators(test_cell):
+    tokens = LOCATOR_TOKEN.findall(test_cell)
+    if not tokens:
+        return [], ["names zero structured proving-test locators"]
+    remainder = LOCATOR_TOKEN.sub("", test_cell)
+    if not LOCATOR_SEPARATOR.fullmatch(remainder):
+        return [], ["contains free-form proving-test prose outside locator tokens"]
+    locators, errors = [], []
+    for token in tokens:
+        locator, error = parse_locator(token)
+        if error:
+            errors.append(error)
+        else:
+            locators.append(locator)
+    raw_locators = [locator["raw"] for locator in locators]
+    duplicates = sorted({raw for raw in raw_locators if raw_locators.count(raw) > 1})
+    for duplicate in duplicates:
+        errors.append(f"duplicates proving-test locator `{duplicate}`")
+    return locators, errors
+
+
+def locator_boundary(locator, surfaces):
+    if locator["kind"] == "hurl":
+        return "http:real"
+    for entry in surfaces["boundaries"]:
+        if entry.get("kind") != locator["kind"]:
+            continue
+        if entry.get("suite") is not None and entry.get("suite") != locator.get("suite"):
+            continue
+        if entry.get("path") != locator["path"]:
+            continue
+        if locator["kind"] == "hspec" \
+                and not fnmatch.fnmatch(locator["match"], entry.get("match", "*")):
+            continue
+        return entry.get("boundary")
+    return "none"
+
+
+def locator_level_errors(locator, level, boundary, surfaces):
+    errors = []
+    if boundary not in BOUNDARIES:
+        errors.append(f"boundary `{boundary}` is not in {sorted(BOUNDARIES)}")
+        return errors
+    actual_boundary = locator_boundary(locator, surfaces)
+    if level == "acceptance":
+        if locator["kind"] != "hurl" or boundary != "http:real":
+            errors.append("acceptance requires an exact hurl locator and `http:real` boundary")
+    elif level == "integration":
+        if boundary == "none" or actual_boundary != boundary:
+            errors.append(
+                f"integration locator is not attested for declared boundary `{boundary}`"
+            )
+    elif level == "unit":
+        if boundary != "none" or actual_boundary != "none":
+            errors.append("unit locator cannot claim or use an attested external boundary")
+    return errors
+
+
+def count_hspec_examples(text, exact_match):
+    escaped = re.escape(exact_match)
+    pattern = re.compile(rf'^\s*(?:it|specify|prop)\s+"{escaped}"(?:\s|$)')
+    return sum(1 for line in text.splitlines() if pattern.search(line))
+
+
+def resolve_locator(locator, root, surfaces):
+    path = root / locator["path"]
+    if not path.is_file():
+        return [f"missing proving-test path `{locator['path']}`"], 0
+    if locator["kind"] == "hurl":
+        if not locator["path"].startswith("testbed/tests/"):
+            return ["hurl locator must name an exact path under `testbed/tests/`"], 0
+        return [], 1
+    if locator["kind"] == "script":
+        if not path.stat().st_mode & 0o111:
+            return [f"script locator path is not executable `{locator['path']}`"], 0
+        return [], 1
+    suite = surfaces["hspec_suites"].get(locator["suite"])
+    if suite is None:
+        return [f"unknown hspec suite `{locator['suite']}`"], 0
+    if not any(locator["path"] == root_path or locator["path"].startswith(root_path + "/")
+               for root_path in suite.get("roots", [])):
+        return [f"hspec path `{locator['path']}` is not registered for suite "
+                f"`{locator['suite']}`"], 0
+    selected = count_hspec_examples(path.read_text(), locator["match"])
+    if selected == 0:
+        return [f"hspec locator selects zero source examples `{locator['raw']}`"], 0
+    if selected > 1:
+        return [f"hspec locator is ambiguous ({selected} source examples) "
+                f"`{locator['raw']}`"], selected
+    return [], selected
+
+
+def locator_command(locator, root):
+    if locator["kind"] == "hspec":
+        return [str(root / "dev"), "test", locator["match"], locator["suite"]]
+    if locator["kind"] == "script":
+        return [str(root / locator["path"]), *locator["argv"]]
+    return ["hurl", "--test", str(root / locator["path"])]
 
 
 def fenced_block(text, info):
@@ -158,16 +313,18 @@ def criteria_cells(text):
 
 
 def parse_criteria(text):
-    """Machine-readable criteria: [{id, behavior, test, level}] for complete
-    rows — the DoD gate's input (Phase 6). Malformed rows are dropped here and
-    caught by check_spec's validation."""
-    return [{"id": c[0], "behavior": c[1], "test": c[2], "level": c[3]}
-            for c in (criteria_cells(text) or []) if len(c) >= 4]
+    """Machine-readable criteria with typed locator and boundary declarations.
+    Malformed rows are omitted here and rejected by check_spec."""
+    return [{"id": c[0], "behavior": c[1], "test": c[2], "level": c[3],
+             "boundary": c[4]}
+            for c in (criteria_cells(text) or []) if len(c) >= 5]
 
 
-def check_spec(text, name, caps):
+def check_spec(text, name, caps, surfaces=None):
     """Returns [errors] — pure, testable."""
     errs = []
+    if surfaces is None:
+        surfaces = load_test_surfaces()
 
     block = fenced_block(text, "yaml spec")
     if block is None:
@@ -220,27 +377,20 @@ def check_spec(text, name, caps):
             cid = cells[0]
             if int(CRITERION_ID.match(cid).group(1)) != i:
                 errs.append(f"{name}: criteria IDs must be sequential — row {i} is `{cid}`")
-            if len(cells) < 4:
-                errs.append(f"{name}: {cid} row needs 4 columns "
-                            "(ID|Behavior|Proving test|Level)")
+            if len(cells) != 5:
+                errs.append(f"{name}: {cid} row needs exactly 5 columns "
+                            "(ID|Behavior|Proving test|Level|Boundary)")
                 continue
-            _behavior, test, level = cells[1], cells[2], cells[3]
-            if not test or test == "—":
-                errs.append(f"{name}: {cid} names no proving test")
+            _behavior, test, level, boundary = cells[1], cells[2], cells[3], cells[4]
+            locators, locator_errors = parse_test_locators(test)
+            errs += [f"{name}: {cid} {error}" for error in locator_errors]
             if level not in LEVELS:
                 errs.append(f"{name}: {cid} level `{level}` not in {sorted(LEVELS)} "
                             "(a boundary-crossing behavior must declare integration/acceptance)")
-            # DoD tier lint (Phase 6): the proving test's shape must match its
-            # declared level, so a boundary behavior can't be "proven" by a unit
-            # test (and vice-versa).
-            tl = test.lower()
-            has_hurl = ".hurl" in tl or "testbed/tests" in tl
-            if level == "acceptance" and not has_hurl:
-                errs.append(f"{name}: {cid} is `acceptance` but its proving test `{test}` "
-                            "names no .hurl acceptance test (testbed/tests/**)")
-            if level == "unit" and has_hurl:
-                errs.append(f"{name}: {cid} is `unit` but names a .hurl test "
-                            "— that is acceptance-level, not unit")
+                continue
+            for locator in locators:
+                errs += [f"{name}: {cid} {error}" for error in
+                         locator_level_errors(locator, level, boundary, surfaces)]
 
     impact = section(text, "User impact")
     if impact is None or not impact.strip():
@@ -364,50 +514,19 @@ def reviews_local(base, caps):
 # a criterion can't cite a test that was never written. It does not re-run tests
 # post-merge (see AGENTS.md / ADR-0068) — it checks existence, like reviews_pr.
 
-HURL_REF = re.compile(r"([\w./-]+\.hurl)")
-SPEC_MODULE_REF = re.compile(r"\b([A-Z][A-Za-z0-9]*Spec)\b")
-
-
-def criterion_test_refs(test_cell):
-    """Concrete, checkable references in a proving-test cell:
-    [('hurl', '<path>.hurl'), …] or [('spec-module', 'FooSpec'), …]. A cell with
-    no concrete reference yields [] — nothing mechanically checkable, so the gate
-    conservatively passes it (a human still reviews the criterion)."""
-    hurls = [("hurl", m) for m in HURL_REF.findall(test_cell)]
-    if hurls:
-        return hurls
-    return [("spec-module", m) for m in SPEC_MODULE_REF.findall(test_cell)]
-
-
-def unresolved_criteria_tests(spec_name, spec_text, hurl_exists, module_exists):
-    """Pure gate core: given callbacks resolving a `.hurl` path and a spec module,
-    return [errors] for criteria whose named proving test cannot be found.
-    Callback-driven so it is testable without a repo tree."""
+def unresolved_criteria_tests(spec_name, spec_text, root=ROOT, surfaces=None):
+    """Resolve every typed locator to an exact repository test surface."""
+    if surfaces is None:
+        surfaces = load_test_surfaces()
     errs = []
-    for c in parse_criteria(spec_text):
-        for kind, token in criterion_test_refs(c["test"]):
-            if kind == "hurl" and not hurl_exists(token):
-                errs.append(f"{spec_name}: {c['id']} names acceptance test `{token}` but no "
-                            "such .hurl exists under testbed/tests/ — write it (red first)")
-            elif kind == "spec-module" and not module_exists(token):
-                errs.append(f"{spec_name}: {c['id']} names test module `{token}` but no matching "
-                            "`*.hs` spec file exists in core/ or testbed/ — write it (red first)")
+    for criterion in parse_criteria(spec_text):
+        locators, locator_errors = parse_test_locators(criterion["test"])
+        errs += [f"{spec_name}: {criterion['id']} {error}" for error in locator_errors]
+        for locator in locators:
+            resolution_errors, _selected = resolve_locator(locator, root, surfaces)
+            errs += [f"{spec_name}: {criterion['id']} {error}"
+                     for error in resolution_errors]
     return errs
-
-
-def _hurl_exists(token):
-    base = token.split("/")[-1]
-    tdir = ROOT / "testbed" / "tests"
-    return tdir.exists() and any(p.name == base for p in tdir.rglob("*.hurl"))
-
-
-def _module_exists(mod):
-    # exact stem match (like _hurl_exists) — a substring match would let a
-    # criterion naming `FooSpec` be "satisfied" by an unrelated `FooBarSpec`
-    for root in (ROOT / "core", ROOT / "testbed"):
-        if root.exists() and any(p.stem == mod for p in root.rglob("*.hs")):
-            return True
-    return False
 
 
 def criteria_tests_pr(base):
@@ -426,7 +545,7 @@ def criteria_tests_pr(base):
     for spec in specs:
         if not spec.exists():
             continue
-        errs += unresolved_criteria_tests(spec.name, spec.read_text(), _hurl_exists, _module_exists)
+        errs += unresolved_criteria_tests(spec.name, spec.read_text())
     for e in errs:
         print(f"spec-check: FAIL — {e}", file=sys.stderr)
     if errs:
@@ -459,10 +578,10 @@ new-extension-point: false
 
 ## Criteria
 
-| ID | Behavior | Proving test | Level |
-|----|----------|--------------|-------|
-| C1 | slugifies | `TextSpec` "slugifies" | unit |
-| C2 | rejects empty | `TextSpec` "rejects empty" | unit |
+| ID | Behavior | Proving test | Level | Boundary |
+|----|----------|--------------|-------|----------|
+| C1 | slugifies | `hspec:nhcore-test-core:core/test/TextSpec.hs#slugifies` | unit | none |
+| C2 | rejects empty | `hspec:nhcore-test-core:core/test/TextSpec.hs#rejects empty` | unit | none |
 
 ## User impact
 
@@ -516,50 +635,88 @@ def self_test():
            VALID_FIXTURE.replace("## User impact\n\nNone.\n", "## User impact\n\n"),
            "User impact")
 
-    expect("short-criteria-row",
-           VALID_FIXTURE.replace("| C1 | slugifies | `TextSpec` \"slugifies\" | unit |",
-                                 "| C1 | slugifies | `TextSpec` \"slugifies\" |"),
-           "row needs 4 columns")
-    # Phase 6: DoD tier lint — an acceptance criterion must name a .hurl test
-    expect("acceptance-needs-hurl",
-           VALID_FIXTURE.replace("| C1 | slugifies | `TextSpec` \"slugifies\" | unit |",
-                                 "| C1 | slugifies | `TextSpec` \"slugifies\" | acceptance |"),
-           "names no .hurl acceptance test")
-    # a real acceptance test (.hurl) at acceptance level passes the tier lint
-    expect("acceptance-with-hurl",
-           VALID_FIXTURE.replace("| C1 | slugifies | `TextSpec` \"slugifies\" | unit |",
-                                 "| C1 | slugifies | `commands/slug.hurl` | acceptance |"),
+    criterion_row = "| C1 | slugifies | `hspec:nhcore-test-core:core/test/TextSpec.hs#slugifies` | unit | none |"
+    expect("short-criteria-row", VALID_FIXTURE.replace(criterion_row,
+           "| C1 | slugifies | `hspec:nhcore-test-core:core/test/TextSpec.hs#slugifies` | unit |"),
+           "exactly 5 columns")
+    expect("zero-locators", VALID_FIXTURE.replace(
+           "`hspec:nhcore-test-core:core/test/TextSpec.hs#slugifies`", "manual QA", 1),
+           "zero structured")
+    expect("malformed-locator", VALID_FIXTURE.replace(
+           "hspec:nhcore-test-core:core/test/TextSpec.hs#slugifies",
+           "hspec:nhcore-test-core:core/test/TextSpec.hs", 1), "unsupported")
+    expect("unsupported-locator", VALID_FIXTURE.replace(
+           "hspec:nhcore-test-core:core/test/TextSpec.hs#slugifies",
+           "browser:testbed/tests/x#slugifies", 1), "unsupported")
+    expect("duplicate-locator", VALID_FIXTURE.replace(
+           "`hspec:nhcore-test-core:core/test/TextSpec.hs#slugifies`",
+           "`hspec:nhcore-test-core:core/test/TextSpec.hs#slugifies`<br>"
+           "`hspec:nhcore-test-core:core/test/TextSpec.hs#slugifies`", 1), "duplicates")
+    expect("free-prose-with-locator", VALID_FIXTURE.replace(
+           "`hspec:nhcore-test-core:core/test/TextSpec.hs#slugifies`",
+           "manual `hspec:nhcore-test-core:core/test/TextSpec.hs#slugifies`", 1),
+           "free-form")
+    expect("acceptance-needs-hurl", VALID_FIXTURE.replace(
+           criterion_row,
+           "| C1 | slugifies | `hspec:nhcore-test-core:core/test/TextSpec.hs#slugifies` | acceptance | http:real |"),
+           "acceptance requires")
+    expect("unit-cannot-claim-boundary", VALID_FIXTURE.replace(
+           "| unit | none |", "| unit | postgres:real |", 1),
+           "unit locator cannot")
+    expect("acceptance-with-hurl", VALID_FIXTURE.replace(
+           criterion_row,
+           "| C1 | slugifies | `hurl:testbed/tests/commands/slug.hurl` | acceptance | http:real |"),
            None)
-    # Phase 6: machine-readable criteria (the DoD gate's input)
+
     crit = parse_criteria(VALID_FIXTURE)
     if [c["id"] for c in crit] != ["C1", "C2"] or crit[0]["level"] != "unit" \
-            or crit[0]["test"] != '`TextSpec` "slugifies"':
+            or crit[0]["boundary"] != "none":
         print(f"self-test FAIL parse-criteria: {crit}")
         fails += 1
 
-    # Phase 6: criterion-test-exists gate (pure, callback-driven like reviews_pr)
-    if criterion_test_refs("`commands/slug.hurl`") != [("hurl", "commands/slug.hurl")]:
-        print("self-test FAIL refs-hurl"); fails += 1
-    if criterion_test_refs('`TextSpec` "x"') != [("spec-module", "TextSpec")]:
-        print("self-test FAIL refs-module"); fails += 1
-    if criterion_test_refs("manual QA — see notes") != []:
-        print("self-test FAIL refs-freetext"); fails += 1
-    hurl_spec = VALID_FIXTURE.replace('`TextSpec` "slugifies"', "`commands/slug.hurl`") \
-                             .replace("| C1 | slugifies | `commands/slug.hurl` | unit |",
-                                      "| C1 | slugifies | `commands/slug.hurl` | acceptance |")
-    # resolvable refs pass; a missing .hurl and a missing module each error
-    if unresolved_criteria_tests("x.md", hurl_spec, lambda t: True, lambda m: True):
-        print("self-test FAIL criteria-tests: resolvable refs should pass"); fails += 1
-    if not any(".hurl" in e for e in
-               unresolved_criteria_tests("x.md", hurl_spec, lambda t: False, lambda m: True)):
-        print("self-test FAIL criteria-tests: missing .hurl must error"); fails += 1
-    if not any("test module" in e for e in
-               unresolved_criteria_tests("x.md", VALID_FIXTURE, lambda t: True, lambda m: False)):
-        print("self-test FAIL criteria-tests: missing spec module must error"); fails += 1
-    freetext = VALID_FIXTURE.replace('`TextSpec` "slugifies"', "manual QA") \
-                            .replace('`TextSpec` "rejects empty"', "manual QA")
-    if unresolved_criteria_tests("x.md", freetext, lambda t: False, lambda m: False):
-        print("self-test FAIL criteria-tests: free-text cell must not hard-fail"); fails += 1
+    with tempfile.TemporaryDirectory() as temp_dir:
+        fixture_root = Path(temp_dir)
+        (fixture_root / "tests").mkdir()
+        spec_path = fixture_root / "tests" / "ExampleSpec.hs"
+        spec_path.write_text('it "exact example" \\ctx -> do\n  pass\n')
+        (fixture_root / "testbed" / "tests").mkdir(parents=True)
+        (fixture_root / "testbed" / "tests" / "example.hurl").write_text("GET http://localhost\n")
+        script_path = fixture_root / "scripts" / "example"
+        script_path.parent.mkdir()
+        script_path.write_text("#!/bin/sh\nexit 0\n")
+        script_path.chmod(0o755)
+        fixture_surfaces = {
+            "schema": 1,
+            "hspec_suites": {"fixture-suite": {"roots": ["tests"]}},
+            "boundaries": [{"kind": "hspec", "suite": "fixture-suite",
+                            "path": "tests/ExampleSpec.hs", "match": "exact example",
+                            "boundary": "postgres:real"}],
+        }
+        valid_locator, _ = parse_locator(
+            "hspec:fixture-suite:tests/ExampleSpec.hs#exact example")
+        errors, selected = resolve_locator(valid_locator, fixture_root, fixture_surfaces)
+        if errors or selected != 1:
+            print(f"self-test FAIL locator-resolves: {errors}, selected={selected}")
+            fails += 1
+        missing, _ = parse_locator("hspec:fixture-suite:tests/MissingSpec.hs#x")
+        if not any("missing" in error for error in resolve_locator(
+                missing, fixture_root, fixture_surfaces)[0]):
+            print("self-test FAIL locator-missing-path"); fails += 1
+        wrong_suite, _ = parse_locator("hspec:wrong:tests/ExampleSpec.hs#exact example")
+        if not any("unknown hspec suite" in error for error in resolve_locator(
+                wrong_suite, fixture_root, fixture_surfaces)[0]):
+            print("self-test FAIL locator-wrong-suite"); fails += 1
+        zero, _ = parse_locator("hspec:fixture-suite:tests/ExampleSpec.hs#absent")
+        if not any("zero source examples" in error for error in resolve_locator(
+                zero, fixture_root, fixture_surfaces)[0]):
+            print("self-test FAIL locator-zero-match"); fails += 1
+        spec_path.write_text(spec_path.read_text() + 'it "exact example" \\ctx -> do\n  pass\n')
+        if not any("ambiguous" in error for error in resolve_locator(
+                valid_locator, fixture_root, fixture_surfaces)[0]):
+            print("self-test FAIL locator-ambiguous"); fails += 1
+        if locator_level_errors(valid_locator, "integration", "filesystem:real",
+                                fixture_surfaces) == []:
+            print("self-test FAIL locator-incompatible-boundary"); fails += 1
 
     joins = plan_joins(
         VALID_FIXTURE.replace("[core-primitives]", "[auth, concurrency]"), caps)

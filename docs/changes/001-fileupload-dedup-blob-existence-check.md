@@ -36,13 +36,13 @@ the promised diff is empty.
 PR. The behavior crosses the filesystem boundary (a real `BlobStore.Local`
 losing a blob), so the reproductions are `integration`.
 
-| ID | Behavior | Proving test | Level |
-|----|----------|--------------|-------|
-| C1 | Re-uploading content whose deduplicated **Pending** blob was lost returns a `FileRef` whose blob is present again (self-heal), not a dangling ref | `Service.FileUpload.ContentDedupSpec` "dedup self-heals a missing Pending blob on re-upload" | integration |
-| C2 | Same self-heal when the dedup match is a **Confirmed** file | `Service.FileUpload.ContentDedupSpec` "dedup self-heals a missing Confirmed blob on re-upload" | integration |
-| C3 | Self-heal preserves dedup identity — same `FileRef` and same `blobKey` as the original — and the re-stored blob retrieves the exact uploaded content | `Service.FileUpload.ContentDedupSpec` "dedup self-heal preserves FileRef/blobKey and restores exact content" | integration |
-| C4 | When the existence check itself errors, dedup still heals (re-stores) rather than returning a possibly-dangling ref | `Service.FileUpload.ContentDedupSpec` "dedup self-heals when the existence check errors" | integration |
-| C5 | Healthy path preserved — when the blob is present, a duplicate upload still returns the existing `FileRef`/`blobKey` unchanged | `Service.FileUpload.ContentDedupSpec` "duplicate upload returns same blobKey as original" | integration |
+| ID | Behavior | Proving test | Level | Boundary |
+|----|----------|--------------|-------|----------|
+| C1 | Re-uploading content whose deduplicated **Pending** blob was lost returns a `FileRef` whose blob is present again (self-heal), not a dangling ref | `hspec:nhcore-test-service:core/test/Service/FileUpload/ContentDedupSpec.hs#dedup self-heals a missing Pending blob on re-upload` | integration | filesystem:real |
+| C2 | Same self-heal when the dedup match is a **Confirmed** file | `hspec:nhcore-test-service:core/test/Service/FileUpload/ContentDedupSpec.hs#dedup self-heals a missing Confirmed blob on re-upload` | integration | filesystem:real |
+| C3 | Self-heal preserves dedup identity — same `FileRef` and same `blobKey` as the original — and the re-stored blob retrieves the exact uploaded content | `hspec:nhcore-test-service:core/test/Service/FileUpload/ContentDedupSpec.hs#dedup self-heal preserves FileRef/blobKey and restores exact content` | integration | filesystem:real |
+| C4 | When the existence check itself errors, dedup still heals (re-stores) rather than returning a possibly-dangling ref | `hspec:nhcore-test-service:core/test/Service/FileUpload/ContentDedupSpec.hs#dedup self-heals when the existence check errors` | integration | filesystem:real |
+| C5 | Healthy path preserved — when the blob is present, a duplicate upload still returns the existing `FileRef`/`blobKey` unchanged | `hspec:nhcore-test-service:core/test/Service/FileUpload/ContentDedupSpec.hs#duplicate upload returns same blobKey as original` | integration | filesystem:real |
 
 ## User impact
 
