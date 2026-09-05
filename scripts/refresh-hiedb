@@ -88,6 +88,21 @@ has_hie_artifacts() {
   [ -d "${DIST_DIR}" ] && find "${DIST_DIR}" -type f -name '*.hie' -print -quit | grep -q .
 }
 
+checkpoint_database() {
+  local database="$1"
+  HIEDB_CHECKPOINT_DB="${database}" python3 - <<'PY'
+import os
+import sqlite3
+
+try:
+    connection = sqlite3.connect(os.environ["HIEDB_CHECKPOINT_DB"])
+    connection.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
+    connection.close()
+except sqlite3.Error:
+    raise SystemExit(1)
+PY
+}
+
 database_is_valid() {
   local database="$1"
   [ -f "${database}" ] || return 1
@@ -240,11 +255,13 @@ index_artifacts() {
     [ "${QUIET}" -eq 1 ] || echo "hiedb: indexing failed or timed out (exit ${index_code})" >&2
     return 2
   fi
-  if ! database_is_valid "${temporary_db}"; then
+  if ! checkpoint_database "${temporary_db}" \
+      || ! database_is_valid "${temporary_db}"; then
     rm -f "${temporary_db}" "${temporary_db}-wal" "${temporary_db}-shm"
     [ "${QUIET}" -eq 1 ] || echo "hiedb: rebuilt index failed SQLite integrity validation" >&2
     return 2
   fi
+  rm -f "${temporary_db}-wal" "${temporary_db}-shm"
   mv "${temporary_db}" "${DB_PATH}"
   printf '%s\n' "${current_fingerprint}" > "${META_PATH}.tmp.$$"
   mv "${META_PATH}.tmp.$$" "${META_PATH}"

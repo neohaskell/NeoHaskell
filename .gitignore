@@ -97,6 +97,7 @@ installer/target/
 .hiedb-tools
 .hiedb-tools.tmp.*
 .hiedb.index-lock
+.hiedb.tmp.*
 *.hiedb-refresh-pgid
 __pycache__/
 
