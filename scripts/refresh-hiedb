@@ -24,7 +24,7 @@ TOOLCHAIN_FINGERPRINT="${HIEDB_TOOLCHAIN_FINGERPRINT:-$(${SCRIPT_DIR}/toolchain-
 MODE="if-needed"
 QUIET=0
 LOCK_HELD="${HIEDB_INDEX_LOCK_HELD:-0}"
-TIMEOUT_SECONDS="${HIEDB_TIMEOUT_SECONDS:-30}"
+TIMEOUT_SECONDS="${HIEDB_TIMEOUT_SECONDS:-300}"
 
 usage() {
   echo "usage: ./dev hiedb [--if-needed|--force|--rebuild] [--quiet]" >&2

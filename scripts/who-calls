@@ -101,6 +101,7 @@ fallback() {
 }
 
 if ! HIEDB_DB_PATH="${DB_PATH}" HIEDB_TOOLS_PATH="${TOOLS_PATH}" \
+    HIEDB_TIMEOUT_SECONDS="${WHO_CALLS_REFRESH_TIMEOUT_SECONDS:-2}" \
     "${REFRESH}" --if-needed --quiet; then
   fallback
   exit 2
