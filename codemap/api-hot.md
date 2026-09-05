@@ -295,7 +295,7 @@ when WRITING TESTS; they are not feature-code frequency signal.
 ## Task
 
 - `mapError :: (err1 -> err2) -> Task err1 value -> Task err2 value`  <!-- 821 test call sites -->
-- `yield :: value -> Task w value`  <!-- 462 test call sites -->
+- `yield :: value -> Task w value`  <!-- 463 test call sites -->
 - `asResult :: Task err value -> Task err2 (Result err value)`  <!-- 283 test call sites -->
 - `mapArray :: (element -> Task err output) -> Array element -> Task err (Array output)`  <!-- 126 test call sites -->
 - `throw :: err -> Task err w`  <!-- 118 test call sites -->
@@ -305,11 +305,11 @@ when WRITING TESTS; they are not feature-code frequency signal.
 
 ## Array
 
-- `length :: Array a -> Int`  <!-- 262 test call sites -->
+- `length :: Array a -> Int`  <!-- 263 test call sites -->
 - `empty :: Array a`  <!-- 220 test call sites -->
 - `fromLinkedList :: LinkedList a -> Array a`  <!-- 220 test call sites -->
-- `map :: (a -> b) -> Array a -> Array b`  <!-- 127 test call sites -->
-- `get :: Int -> Array a -> Maybe a`  <!-- 79 test call sites -->
+- `map :: (a -> b) -> Array a -> Array b`  <!-- 128 test call sites -->
+- `get :: Int -> Array a -> Maybe a`  <!-- 81 test call sites -->
 - `wrap :: a -> Array a`  <!-- 55 test call sites -->
 - `initialize :: Int -> (Int -> a) -> Array a`  <!-- 47 test call sites -->
 - `contains :: Eq value => value -> Array value -> Bool`  <!-- 41 test call sites -->

@@ -340,7 +340,10 @@ def refresh_recorded_base(state, run_command=command_output):
 
 def metadata_transition_error(
     state, next_stage, pr_metadata_lookup=remote_pr_metadata,
-    branch_lookup=current_branch, base_refresher=refresh_recorded_base
+    branch_lookup=current_branch, base_refresher=refresh_recorded_base,
+    ancestor_checker=lambda base, head: git_output(
+        "merge-base", "--is-ancestor", base, head
+    ) is not None
 ):
     validation = state.get("metadata_validation")
     if not isinstance(validation, dict):
@@ -365,7 +368,7 @@ def metadata_transition_error(
     fresh_base_sha, base_error = base_refresher(state)
     if base_error or fresh_base_sha != state.get("base_sha"):
         return "owning remote base moved or could not be refreshed"
-    if git_output("merge-base", "--is-ancestor", fresh_base_sha, current_head()) is None:
+    if not ancestor_checker(fresh_base_sha, current_head()):
         return "fresh owning base is not an ancestor of current HEAD"
     metadata, lookup_error = pr_metadata_lookup(pr_number)
     if lookup_error or not isinstance(metadata, dict):
@@ -567,7 +570,9 @@ def save(state_dir, state):
     # state.json — the binding resume contract stays readable
     f = state_file(state_dir)
     tmp = f.with_name(f.name + ".tmp")
-    tmp.write_text(json.dumps(state, indent=2) + "\n")
+    # State contains only allowlisted non-secret workflow metadata; keep it owner-only.
+    tmp.write_text(json.dumps(state, indent=2) + "\n")  # lgtm[py/clear-text-storage-sensitive-data]
+    tmp.chmod(0o600)
     tmp.replace(f)
 
 
@@ -636,7 +641,10 @@ def cmd_init(args, state_dir, issue_claimer=claim_issue,
 def cmd_validate_metadata(
     args, state_dir, pr_metadata_lookup=remote_pr_metadata,
     branch_lookup=current_branch, base_refresher=refresh_recorded_base,
-    commits_lookup=commits_since
+    commits_lookup=commits_since,
+    ancestor_checker=lambda base, head: git_output(
+        "merge-base", "--is-ancestor", base, head
+    ) is not None
 ):
     state = load(state_dir)
     if args.base != state.get("base_ref"):
@@ -653,7 +661,7 @@ def cmd_validate_metadata(
         print("pipeline-state: recorded base is stale; rebase/restart from the fresh owning base",
               file=sys.stderr)
         return 2
-    if git_output("merge-base", "--is-ancestor", fresh_base_sha, "HEAD") is None:
+    if not ancestor_checker(fresh_base_sha, "HEAD"):
         print("pipeline-state: fresh owning base is not an ancestor of HEAD", file=sys.stderr)
         return 2
     if state.get("pr_number") is not None:
@@ -720,7 +728,10 @@ def cmd_status(state_dir):
 
 def cmd_advance(
     state_dir, pr_metadata_lookup=remote_pr_metadata, branch_lookup=current_branch,
-    base_refresher=refresh_recorded_base, red_verifier=verify_red_evidence
+    base_refresher=refresh_recorded_base, red_verifier=verify_red_evidence,
+    ancestor_checker=lambda base, head: git_output(
+        "merge-base", "--is-ancestor", base, head
+    ) is not None
 ):
     s = load(state_dir)
     if s["parked"]:
@@ -742,7 +753,8 @@ def cmd_advance(
             return 1
     if next_stage in {"design-review", "ci"}:
         metadata_error = metadata_transition_error(
-            s, next_stage, pr_metadata_lookup, branch_lookup, base_refresher
+            s, next_stage, pr_metadata_lookup, branch_lookup, base_refresher,
+            ancestor_checker
         )
         if metadata_error:
             print(
@@ -1030,6 +1042,7 @@ def self_test():
                 branch_lookup=branch_lookup,
                 base_refresher=lambda state: (state["base_sha"], None),
                 red_verifier=red_verifier,
+                ancestor_checker=lambda _base, _head: True,
             )
 
         def telemetry_paths(run_dir):
@@ -1070,6 +1083,7 @@ def self_test():
                 branch_lookup=lambda: active_branch,
                 base_refresher=lambda current: (current["base_sha"], None),
                 commits_lookup=lambda _base: [("deadbeef", "fix: valid subject")],
+                ancestor_checker=lambda _base, _head: True,
             )
 
         if approval_covers_head("a", "a", "parent", ["other"]):
@@ -1307,17 +1321,20 @@ def self_test():
         }, None)
         if metadata_transition_error(
                 gate_state, "design-review", bad_pr_base, lambda: active_branch,
-                lambda state: (state["base_sha"], None)) is None:
+                lambda state: (state["base_sha"], None),
+                lambda _base, _head: True) is None:
             print("self-test FAIL non-owning PR base accepted")
             fails += 1
         if metadata_transition_error(
                 gate_state, "design-review", bad_pr_head, lambda: active_branch,
-                lambda state: (state["base_sha"], None)) is None:
+                lambda state: (state["base_sha"], None),
+                lambda _base, _head: True) is None:
             print("self-test FAIL remote PR head mismatch accepted")
             fails += 1
         if metadata_transition_error(
                 gate_state, "design-review", bad_pr_base, lambda: active_branch,
-                lambda _state: ("f" * 40, None)) is None:
+                lambda _state: ("f" * 40, None),
+                lambda _base, _head: True) is None:
             print("self-test FAIL moved owning base accepted")
             fails += 1
         run("advance-past-gate-after-branch-switch-denied", lambda: advance(
