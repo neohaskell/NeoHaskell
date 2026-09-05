@@ -24,8 +24,9 @@ never searches.
    (one Read; never open source files to discover APIs).
 4. **Edit-set expansion:** `./dev who-calls <symbol> [module]` — who breaks if
    this signature changes, grouped by capability. It incrementally indexes emitted
-   `.hie` artifacts and never builds; a cold worktree prints an executable bounded
-   `git grep` fallback. `./dev watch` keeps the cache warm. A human-only full refresh
+   `.hie` artifacts and never builds; cold, stale, busy, corrupt, or timed-out
+   state prints an executable bounded `git grep` fallback. `./dev watch` keeps the
+   cache warm only after a new successful reload. A human-only full refresh
    is explicit: `./dev hiedb --rebuild`.
 5. **Write exact paths + symbols into the plan.** Low confidence or empty
    match → escalate model tier; never guess.

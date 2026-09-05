@@ -6,6 +6,7 @@ module Test.Service.EventStore.Regression (
   seedStream,
   recordInsertions,
   recordFetchedRevisions,
+  recordFetches,
   requireInsertionType,
   failFirstWithConsistencyConflict,
   InsertBarrier,
@@ -13,7 +14,8 @@ module Test.Service.EventStore.Regression (
   barrierBeforeInsert,
   awaitInsertions,
   releaseInsertions,
-  intentionalRed,
+  knownBad,
+  assertBehavior,
 ) where
 
 import Array qualified
@@ -56,6 +58,20 @@ recordInsertions store = do
         store.insert payload
   let observingStore = store {EventStore.insert = insert}
   Task.yield (observingStore, ConcurrentVar.peek recorded)
+
+
+-- | Wrap a fetcher and return every exact fetch result in call order.
+recordFetches ::
+  EntityFetcher state event ->
+  Task error (EntityFetcher state event, Task error (Array (EntityFetchResult state)))
+recordFetches fetcher = do
+  recorded <- ConcurrentVar.containing Array.empty
+  let fetch entityName streamId = do
+        result <- fetcher.fetch entityName streamId
+        ConcurrentVar.modify (Array.push result) recorded
+        Task.yield result
+  let observingFetcher = fetcher {fetch = fetch}
+  Task.yield (observingFetcher, ConcurrentVar.peek recorded)
 
 
 -- | Wrap a fetcher and return an observer for fetched local revisions.
@@ -149,18 +165,20 @@ releaseInsertions count barrier = do
       releaseInsertions (count - 1) barrier
 
 
--- | Emit the exact red sentinel selected by the mechanical recipe smoke.
-intentionalRed :: Text -> Text -> Task Text Unit
-intentionalRed recipe backend = do
-  selectedRecipeResult <-
-    Environment.getVariable "NEOHASKELL_REGRESSION_SMOKE"
-      |> Task.asResult
-  selectedBackendResult <-
-    Environment.getVariable "NEOHASKELL_REGRESSION_SMOKE_BACKEND"
-      |> Task.asResult
+-- | Select one committed controlled mutation for regression-smoke.
+knownBad :: Text -> Text -> Task error Bool
+knownBad recipe backend = do
+  selectedRecipeResult <- Environment.getVariable "NEOHASKELL_REGRESSION_BAD" |> Task.asResult
+  selectedBackendResult <- Environment.getVariable "NEOHASKELL_REGRESSION_BACKEND" |> Task.asResult
   case (selectedRecipeResult, selectedBackendResult) of
     (Result.Ok selectedRecipe, Result.Ok selectedBackend) ->
-      if selectedRecipe == recipe && selectedBackend == backend
-        then Task.throw [fmt|INTENTIONAL_RED:#{recipe}:#{backend}|]
-        else Task.yield unit
-    _ -> Task.yield unit
+      Task.yield (selectedRecipe == recipe && selectedBackend == backend)
+    _ -> Task.yield False
+
+
+-- | Name the exact semantic assertion exercised by a controlled mutation.
+assertBehavior :: Text -> Bool -> Task Text Unit
+assertBehavior identity condition = do
+  if condition
+    then Task.yield unit
+    else Task.throw [fmt|REGRESSION_ASSERT:#{identity}|]

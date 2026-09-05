@@ -31,6 +31,7 @@ import Service.EntityFetcher.Core qualified
 import Service.Event (EntityName, InsertionPayload (..), InsertionType (..))
 import Service.Event qualified as Event
 import Service.Event.EntityName qualified as EntityName
+import Service.Event.EventMetadata qualified as EventMetadata
 import Service.Event.StreamId (StreamId, ToStreamId (..))
 import Service.Event.StreamId qualified as StreamId
 import Service.EventStore.Core (EventStore)
@@ -115,6 +116,29 @@ extractEventNames events =
 -- 3. Runs the decision logic to produce events or rejection (with RequestContext)
 -- 4. Persists accepted events to the event store
 -- 5. Handles concurrency conflicts with exponential backoff retry
+positionInsertions ::
+  InsertionType ->
+  Array (Event.Insertion event) ->
+  Array (Event.Insertion event)
+positionInsertions insertionType insertions = do
+  case insertionType of
+    InsertAfter (Event.StreamPosition previousPosition) ->
+      insertions
+        |> Array.indexedMap (\index insertion -> do
+            let localPosition = previousPosition + 1 + Int.toInt64 index
+            Event.Insertion
+              { id = insertion.id,
+                event = insertion.event,
+                metadata =
+                  insertion.metadata
+                    { EventMetadata.localPosition = Just (Event.StreamPosition localPosition)
+                    }
+              }
+          )
+    _ -> insertions
+
+
+-- | Execute a command through fetch, decision, append, and bounded conflict retry.
 execute ::
   forall command commandEntity commandEvent.
   ( Command command,
@@ -319,7 +343,11 @@ executeInner eventStore entityFetcher entityName requestContext command maybeEnt
                         InsertAfter pos -> InsertAfter pos
                         _ -> AnyStreamState
 
-                  let payloadWithType = payload {insertionType = finalInsertionType}
+                  let payloadWithType =
+                        payload
+                          { insertionType = finalInsertionType,
+                            insertions = positionInsertions insertionType payload.insertions
+                          }
 
                   insertResult <-
                     eventStore.insert payloadWithType

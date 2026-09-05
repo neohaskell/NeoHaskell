@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
-# Validate the agent-facing CommandExecutor/event-store regression recipes.
-# Default mode runs every compiled canonical example and requires its exact
-# intentional-red sentinel. --self-test validates routing without building.
+# Prove every regression recipe discriminates known-good from a controlled bad behavior.
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
@@ -9,6 +7,9 @@ cd "${ROOT}"
 
 SKILL=".pi/skills/neohaskell-event-store-regression-specs/SKILL.md"
 HELPERS="core/testlib/Test/Service/EventStore/Regression.hs"
+TIMEOUT_SECONDS="${REGRESSION_SMOKE_TIMEOUT_SECONDS:-180}"
+RECEIPT="${REGRESSION_SMOKE_RECEIPT:-.pipeline/regression-smoke.json}"
+SETUP_MARKERS='Failed to build|Compilation failed|no specs matched|Connection refused|could not connect|Timed out|TIMEOUT:'
 
 recipes() {
   python3 - "${SKILL}" <<'PY'
@@ -16,92 +17,196 @@ import re
 import sys
 from pathlib import Path
 
+inside = False
 rows = []
 for line in Path(sys.argv[1]).read_text().splitlines():
-    if not line.startswith("| `"):
+    if line == "## Recipe routing":
+        inside = True
+        continue
+    if inside and line.startswith("## "):
+        break
+    if not inside or not line.startswith("| `"):
         continue
     cells = [cell.strip().strip("`") for cell in line.strip().strip("|").split("|")]
-    if len(cells) == 7 and re.fullmatch(r"[a-z0-9-]+", cells[0]):
-        rows.append((cells[0], cells[2], cells[3], cells[4], cells[5]))
-for recipe, backend, expected_examples, path, test in rows:
-    print(f"{recipe}\t{backend}\t{expected_examples}\t{path}\t{test}")
+    if len(cells) == 8 and re.fullmatch(r"[a-z0-9-]+", cells[0]):
+        recipe, prompt, backend, examples, locator, bad, assertion, helpers = cells
+        match = re.fullmatch(r"hspec:([^:]+):([^#]+)#(.+)", locator)
+        if match:
+            suite, path, exact = match.groups()
+            rows.append((recipe, prompt, backend, examples, locator, suite, path,
+                         exact, bad, assertion, helpers))
+for row in rows:
+    print("\t".join(row))
+PY
+}
+
+route_prompt() {
+  local prompt="$1"
+  case "${prompt}" in
+    *"exact rejected insertion type"*) echo insertion-guard ;;
+    *"complete append payload"*) echo record-payloads-and-revisions ;;
+    *"refetches, re-decides"*) echo consistency-conflict-refetch ;;
+    *"PostgreSQL appends"*) echo postgres-append-barrier ;;
+    *"StreamCreation"*) echo stream-creation-race ;;
+    *"AnyStreamState"*) echo any-stream-state ;;
+    *) return 1 ;;
+  esac
+}
+
+validate_output() {
+  local mode="$1" recipe="$2" backend="$3" examples="$4" assertion="$5"
+  local code="$6" timed_out="$7" output="$8"
+  if [ "${timed_out}" = "true" ] || [ "${code}" -eq 124 ]; then
+    return 1
+  fi
+  if printf '%s\n' "${output}" | grep -Eq "${SETUP_MARKERS}"; then
+    return 1
+  fi
+  if [ "${mode}" = good ]; then
+    [ "${code}" -eq 0 ] \
+      && printf '%s\n' "${output}" | grep -Eq "^${examples} examples?, 0 failures$" \
+      && ! printf '%s\n' "${output}" | grep -Fq "${assertion}"
+  else
+    [ "${code}" -ne 0 ] \
+      && printf '%s\n' "${output}" | grep -Eq "^${examples} examples?, 1 failure$" \
+      && [ "$(printf '%s\n' "${output}" | grep -Fc "${assertion}" || true)" -eq 1 ]
+  fi
+}
+
+run_case() {
+  local mode="$1" recipe="$2" backend="$3" suite="$4" exact="$5"
+  local output_file="$6" status_file="$7"
+  REGRESSION_RUN_MODE="${mode}" REGRESSION_RUN_RECIPE="${recipe}" \
+    REGRESSION_RUN_BACKEND="${backend}" REGRESSION_RUN_SUITE="${suite}" \
+    REGRESSION_RUN_EXACT="${exact}" REGRESSION_RUN_TIMEOUT="${TIMEOUT_SECONDS}" \
+    REGRESSION_RUN_OUTPUT="${output_file}" REGRESSION_RUN_STATUS="${status_file}" \
+    python3 - <<'PY'
+import json
+import os
+import signal
+import subprocess
+
+mode = os.environ["REGRESSION_RUN_MODE"]
+environment = os.environ.copy()
+environment.pop("NEOHASKELL_REGRESSION_BAD", None)
+environment.pop("NEOHASKELL_REGRESSION_BACKEND", None)
+if mode == "bad":
+    environment["NEOHASKELL_REGRESSION_BAD"] = os.environ["REGRESSION_RUN_RECIPE"]
+    environment["NEOHASKELL_REGRESSION_BACKEND"] = os.environ["REGRESSION_RUN_BACKEND"]
+command = ["./dev", "test", os.environ["REGRESSION_RUN_EXACT"],
+           os.environ["REGRESSION_RUN_SUITE"]]
+process = subprocess.Popen(command, text=True, stdout=subprocess.PIPE,
+                           stderr=subprocess.STDOUT, env=environment,
+                           start_new_session=True)
+timed_out = False
+try:
+    output, _ = process.communicate(timeout=int(os.environ["REGRESSION_RUN_TIMEOUT"]))
+    code = process.returncode
+except subprocess.TimeoutExpired:
+    timed_out = True
+    os.killpg(process.pid, signal.SIGKILL)
+    output, _ = process.communicate()
+    code = 124
+with open(os.environ["REGRESSION_RUN_OUTPUT"], "w", encoding="utf-8") as handle:
+    handle.write(output)
+with open(os.environ["REGRESSION_RUN_STATUS"], "w", encoding="utf-8") as handle:
+    json.dump({"code": code, "timed_out": timed_out, "command": command}, handle)
 PY
 }
 
 self_test() {
-  local count recipe backend expected_examples path test failures=0
+  local failures=0 count recipe prompt backend examples locator suite path exact bad assertion helpers
   count="$(recipes | wc -l | tr -d ' ')"
-  if [ "${count}" -ne 6 ]; then
-    echo "regression-smoke self-test FAIL: expected 6 skill recipes, found ${count}" >&2
-    return 1
-  fi
-  while IFS=$'\t' read -r recipe backend expected_examples path test; do
-    if [ ! -f "${path}" ] || ! grep -Fq "${test}" "${path}"; then
-      echo "regression-smoke self-test FAIL: ${recipe} canonical example is missing" >&2
-      failures=1
+  [ "${count}" -eq 6 ] || { echo "regression-smoke self-test FAIL: expected six routes" >&2; return 1; }
+  declare -A seen_tests=()
+  while IFS=$'\t' read -r recipe prompt backend examples locator suite path exact bad assertion helpers; do
+    if [ "$(route_prompt "${prompt}" 2>/dev/null || true)" != "${recipe}" ]; then
+      echo "regression-smoke self-test FAIL: prompt misroutes ${recipe}" >&2; failures=1
     fi
-    if ! grep -Fq "intentionalRed \"${recipe}\"" "${path}"; then
-      echo "regression-smoke self-test FAIL: ${recipe} lacks its compiled red sentinel" >&2
-      failures=1
+    if [ -n "${seen_tests[${exact}]:-}" ]; then
+      echo "regression-smoke self-test FAIL: canonical test reused by ${recipe}" >&2; failures=1
     fi
-    if [[ "${backend}" != "in-memory" && "${backend}" != "simple" && "${backend}" != "postgres" ]]; then
-      echo "regression-smoke self-test FAIL: ${recipe} has invalid smoke backend ${backend}" >&2
-      failures=1
-    fi
-    if ! [[ "${expected_examples}" =~ ^[1-9][0-9]*$ ]]; then
-      echo "regression-smoke self-test FAIL: ${recipe} has invalid example count" >&2
-      failures=1
-    fi
-    if [[ "${recipe}" == postgres-* || "${recipe}" == "stream-creation-race" ]] \
-        && [ "${backend}" != "postgres" ]; then
-      echo "regression-smoke self-test FAIL: ${recipe} is not bound to PostgreSQL" >&2
-      failures=1
-    fi
+    seen_tests[${exact}]=1
+    [ -f "${path}" ] || { echo "regression-smoke self-test FAIL: missing ${path}" >&2; failures=1; }
+    grep -Fq "it \"${exact}\"" "${path}" \
+      || { echo "regression-smoke self-test FAIL: missing exact test ${exact}" >&2; failures=1; }
+    grep -A3 'Regression.assertBehavior' "${path}" | grep -Fq "\"${recipe}\"" \
+      || { echo "regression-smoke self-test FAIL: semantic assertion missing ${recipe}" >&2; failures=1; }
+    grep -Fq "Regression.knownBad \"${recipe}\" backend" "${path}" \
+      || { echo "regression-smoke self-test FAIL: controlled bad missing ${recipe}" >&2; failures=1; }
+    [ "${assertion}" = "REGRESSION_ASSERT:${recipe}" ] \
+      || { echo "regression-smoke self-test FAIL: assertion identity mismatch ${recipe}" >&2; failures=1; }
   done < <(recipes)
-  for helper in seedStream recordInsertions recordFetchedRevisions requireInsertionType \
-      failFirstWithConsistencyConflict newInsertBarrier barrierBeforeInsert \
-      awaitInsertions releaseInsertions; do
-    if ! grep -Eq "^${helper} ::|^  ${helper}," "${HELPERS}"; then
-      echo "regression-smoke self-test FAIL: helper ${helper} is not compiled/exported" >&2
-      failures=1
+  if grep -Rq 'intentionalRed\|INTENTIONAL_RED' "${HELPERS}" \
+      core/testlib/Test/Service/CommandHandler/Execute/Spec.hs \
+      core/testlib/Test/Service/EventStore/OptimisticConcurrency/Spec.hs; then
+    echo "regression-smoke self-test FAIL: sentinel-only red remains" >&2; failures=1
+  fi
+  local good='1 example, 0 failures' bad_output setup zero wrong
+  bad_output=$'REGRESSION_ASSERT:x\n1 example, 1 failure'
+  setup=$'Connection refused\nREGRESSION_ASSERT:x\n1 example, 1 failure'
+  zero='0 examples, 0 failures'
+  wrong=$'OTHER\n1 example, 1 failure'
+  validate_output good x in-memory 1 REGRESSION_ASSERT:x 0 false "${good}" \
+    || { echo "regression-smoke self-test FAIL: valid good rejected" >&2; failures=1; }
+  validate_output bad x in-memory 1 REGRESSION_ASSERT:x 1 false "${bad_output}" \
+    || { echo "regression-smoke self-test FAIL: valid bad rejected" >&2; failures=1; }
+  for transcript in "${setup}" "${zero}" "${wrong}"; do
+    if validate_output bad x in-memory 1 REGRESSION_ASSERT:x 1 false "${transcript}"; then
+      echo "regression-smoke self-test FAIL: invalid bad transcript accepted" >&2; failures=1
     fi
   done
-  if [ "${failures}" -ne 0 ]; then
-    return 1
+  if validate_output bad x in-memory 1 REGRESSION_ASSERT:x 124 true "${bad_output}"; then
+    echo "regression-smoke self-test FAIL: timeout accepted" >&2; failures=1
   fi
-  echo "regression-smoke self-test: OK — six routes bind tests, backends, counts, helpers, and red sentinels"
+  [ "${failures}" -eq 0 ] || return 1
+  echo "regression-smoke self-test: OK — six unique routes discriminate semantic known-good/known-bad fixtures"
 }
 
 run_smoke() {
-  local recipe backend expected_examples path test output code sentinel_count failures=0
-  while IFS=$'\t' read -r recipe backend expected_examples path test; do
-    echo "regression-smoke: ${recipe} -> ${test} [red backend: ${backend}]"
-    set +e
-    output="$(POSTGRES_AVAILABLE=true NEOHASKELL_REGRESSION_SMOKE="${recipe}" \
-      NEOHASKELL_REGRESSION_SMOKE_BACKEND="${backend}" \
-      ./dev test "${test}" nhcore-test-service 2>&1)"
-    code=$?
-    set -e
-    sentinel_count="$(printf '%s\n' "${output}" | grep -Fc "INTENTIONAL_RED:${recipe}:${backend}" || true)"
-    if [ "${code}" -eq 0 ]; then
-      echo "regression-smoke: FAIL ${recipe} unexpectedly passed" >&2
-      failures=1
-    elif ! printf '%s\n' "${output}" | grep -Eq "^${expected_examples} examples?, 1 failure$"; then
-      echo "regression-smoke: FAIL ${recipe} had extra, missing, or setup failures" >&2
-      printf '%s\n' "${output}" | tail -20 >&2
-      failures=1
-    elif [ "${sentinel_count}" -ne 1 ]; then
-      echo "regression-smoke: FAIL ${recipe} reached ${sentinel_count} red sentinels, want exactly 1" >&2
-      printf '%s\n' "${output}" | tail -20 >&2
-      failures=1
-    else
-      echo "regression-smoke: red as intended — ${recipe}"
-    fi
+  local tmp results recipe prompt backend examples locator suite path exact bad assertion helpers
+  tmp="$(mktemp -d)"
+  trap 'rm -rf "${tmp}"' RETURN
+  results="${tmp}/results.jsonl"
+  while IFS=$'\t' read -r recipe prompt backend examples locator suite path exact bad assertion helpers; do
+    echo "regression-smoke: ${recipe} — good"
+    run_case good "${recipe}" "${backend}" "${suite}" "${exact}" \
+      "${tmp}/good.out" "${tmp}/good.json"
+    local good_code good_timeout good_output
+    good_code="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["code"])' "${tmp}/good.json")"
+    good_timeout="$(python3 -c 'import json,sys; print(str(json.load(open(sys.argv[1]))["timed_out"]).lower())' "${tmp}/good.json")"
+    good_output="$(cat "${tmp}/good.out")"
+    validate_output good "${recipe}" "${backend}" "${examples}" "${assertion}" \
+      "${good_code}" "${good_timeout}" "${good_output}" \
+      || { echo "regression-smoke: FAIL ${recipe} known-good" >&2; tail -20 "${tmp}/good.out" >&2; return 1; }
+
+    echo "regression-smoke: ${recipe} — controlled bad: ${bad}"
+    run_case bad "${recipe}" "${backend}" "${suite}" "${exact}" \
+      "${tmp}/bad.out" "${tmp}/bad.json"
+    local bad_code bad_timeout bad_output
+    bad_code="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["code"])' "${tmp}/bad.json")"
+    bad_timeout="$(python3 -c 'import json,sys; print(str(json.load(open(sys.argv[1]))["timed_out"]).lower())' "${tmp}/bad.json")"
+    bad_output="$(cat "${tmp}/bad.out")"
+    validate_output bad "${recipe}" "${backend}" "${examples}" "${assertion}" \
+      "${bad_code}" "${bad_timeout}" "${bad_output}" \
+      || { echo "regression-smoke: FAIL ${recipe} controlled bad" >&2; tail -20 "${tmp}/bad.out" >&2; return 1; }
+    RECIPE="${recipe}" LOCATOR="${locator}" BAD="${bad}" ASSERTION="${assertion}" \
+      python3 - <<'PY' >> "${results}"
+import json, os
+print(json.dumps({"recipe": os.environ["RECIPE"], "locator": os.environ["LOCATOR"],
+                  "bad_behavior": os.environ["BAD"],
+                  "expected_assertion": os.environ["ASSERTION"],
+                  "good": "passed", "bad": "failed-as-expected"}, sort_keys=True))
+PY
   done < <(recipes)
-  if [ "${failures}" -ne 0 ]; then
-    return 1
-  fi
-  echo "regression-smoke: OK — all six routes had exact example counts and one backend-bound failure"
+  mkdir -p "$(dirname "${RECEIPT}")"
+  RESULTS="${results}" DESTINATION="${RECEIPT}" python3 - <<'PY'
+import json, os
+from pathlib import Path
+rows=[json.loads(line) for line in Path(os.environ["RESULTS"]).read_text().splitlines()]
+Path(os.environ["DESTINATION"]).write_text(json.dumps({"schema":1,"recipes":rows},indent=2)+"\n")
+PY
+  echo "regression-smoke: OK — six semantic good/bad discriminations -> ${RECEIPT}"
 }
 
 case "${1:-}" in

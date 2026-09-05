@@ -24,6 +24,7 @@ TOOLCHAIN_FINGERPRINT="${HIEDB_TOOLCHAIN_FINGERPRINT:-$(${SCRIPT_DIR}/toolchain-
 MODE="if-needed"
 QUIET=0
 LOCK_HELD="${HIEDB_INDEX_LOCK_HELD:-0}"
+TIMEOUT_SECONDS="${HIEDB_TIMEOUT_SECONDS:-30}"
 
 usage() {
   echo "usage: ./dev hiedb [--if-needed|--force|--rebuild] [--quiet]" >&2
@@ -82,6 +83,41 @@ resolve_tools() {
 
 has_hie_artifacts() {
   [ -d "${DIST_DIR}" ] && find "${DIST_DIR}" -type f -name '*.hie' -print -quit | grep -q .
+}
+
+database_is_valid() {
+  local database="$1"
+  [ -f "${database}" ] || return 1
+  HIEDB_VALIDATE_DB="${database}" python3 - <<'PY'
+import os
+import sqlite3
+
+try:
+    connection = sqlite3.connect(f"file:{os.environ['HIEDB_VALIDATE_DB']}?mode=ro", uri=True)
+    result = connection.execute("PRAGMA integrity_check").fetchone()
+    connection.close()
+except sqlite3.Error:
+    raise SystemExit(1)
+raise SystemExit(0 if result and result[0] == "ok" else 1)
+PY
+}
+
+run_bounded() {
+  python3 - "${TIMEOUT_SECONDS}" "$@" <<'PY'
+import os
+import signal
+import subprocess
+import sys
+
+timeout = float(sys.argv[1])
+process = subprocess.Popen(sys.argv[2:], start_new_session=True)
+try:
+    raise SystemExit(process.wait(timeout=timeout))
+except subprocess.TimeoutExpired:
+    os.killpg(process.pid, signal.SIGKILL)
+    process.wait()
+    raise SystemExit(124)
+PY
 }
 
 run_under_index_lock() {
@@ -151,8 +187,11 @@ PY
     code=$?
   fi
   if [ "${code}" -eq 75 ]; then
-    if [ -f "${DB_PATH}" ]; then
-      [ "${QUIET}" -eq 1 ] || echo "hiedb: another incremental refresh is already running; using the current index"
+    local locked_fingerprint=""
+    locked_fingerprint="$(fingerprint)"
+    if database_is_valid "${DB_PATH}" && [ -f "${META_PATH}" ] \
+        && [ "$(cat "${META_PATH}")" = "${locked_fingerprint}" ]; then
+      [ "${QUIET}" -eq 1 ] || echo "hiedb: refresh busy; current verified index remains usable"
       return 0
     fi
     [ "${QUIET}" -eq 1 ] || echo "hiedb: initial index is already being created; retry shortly" >&2
@@ -174,8 +213,9 @@ index_artifacts() {
 
   local current_fingerprint
   current_fingerprint="$(fingerprint)"
-  if [ "${MODE}" = "if-needed" ] && [ -f "${DB_PATH}" ] && [ -f "${META_PATH}" ] \
-      && [ "$(cat "${META_PATH}")" = "${current_fingerprint}" ]; then
+  if [ "${MODE}" = "if-needed" ] && [ -f "${META_PATH}" ] \
+      && [ "$(cat "${META_PATH}")" = "${current_fingerprint}" ] \
+      && database_is_valid "${DB_PATH}"; then
     resolve_tools
     [ "${QUIET}" -eq 1 ] || echo "hiedb: current — cached for this worktree/toolchain"
     return 0
@@ -183,7 +223,26 @@ index_artifacts() {
 
   [ "${QUIET}" -eq 1 ] || echo "hiedb: incrementally indexing emitted .hie files…"
   resolve_tools
-  "${HIEDB_BIN}" -D "${DB_PATH}" index "${DIST_DIR}" --quiet
+  local temporary_db="${DB_PATH}.tmp.$$"
+  rm -f "${temporary_db}" "${temporary_db}-wal" "${temporary_db}-shm"
+  if database_is_valid "${DB_PATH}"; then
+    cp "${DB_PATH}" "${temporary_db}"
+  fi
+  local index_code=0
+  if run_bounded "${HIEDB_BIN}" -D "${temporary_db}" index "${DIST_DIR}" --quiet; then
+    index_code=0
+  else
+    index_code=$?
+    rm -f "${temporary_db}" "${temporary_db}-wal" "${temporary_db}-shm"
+    [ "${QUIET}" -eq 1 ] || echo "hiedb: indexing failed or timed out (exit ${index_code})" >&2
+    return 2
+  fi
+  if ! database_is_valid "${temporary_db}"; then
+    rm -f "${temporary_db}" "${temporary_db}-wal" "${temporary_db}-shm"
+    [ "${QUIET}" -eq 1 ] || echo "hiedb: rebuilt index failed SQLite integrity validation" >&2
+    return 2
+  fi
+  mv "${temporary_db}" "${DB_PATH}"
   printf '%s\n' "${current_fingerprint}" > "${META_PATH}.tmp.$$"
   mv "${META_PATH}.tmp.$$" "${META_PATH}"
   [ "${QUIET}" -eq 1 ] || echo "hiedb: done → ${DB_PATH}"
@@ -263,10 +322,16 @@ with open(sys.argv[1], "a+", encoding="utf-8") as lock:
 PY
   locker_pid=$!
   while [ ! -f "${tmp}/lock-ready" ]; do sleep 0.01; done
+  local locked_code=0
+  set +e
   HIEDB_DIST_DIR="${tmp}/dist" HIEDB_DB_PATH="${tmp}/db" \
     HIEDB_META_PATH="${tmp}/meta" HIEDB_TOOLCHAIN="${fake}" \
     HIEDB_TOOLCHAIN_FINGERPRINT="test" HIEDB_TEST_LOG="${log}" \
     "$0" --if-needed --quiet
+  locked_code=$?
+  set -e
+  [ "${locked_code}" -eq 2 ] \
+    || { echo "refresh-hiedb self-test FAIL: stale locked index was reported usable" >&2; return 1; }
   [ "$(wc -l < "${log}" | tr -d ' ')" = "${before}" ] \
     || { echo "refresh-hiedb self-test FAIL: active kernel lock was bypassed" >&2; return 1; }
   kill "${locker_pid}" 2>/dev/null || true
@@ -278,6 +343,36 @@ PY
     "$0" --if-needed --quiet
   [ "$(wc -l < "${log}" | tr -d ' ')" -gt "${before}" ] \
     || { echo "refresh-hiedb self-test FAIL: terminated lock holder suppressed indexing" >&2; return 1; }
+
+  before="$(wc -l < "${log}" | tr -d ' ')"
+  printf 'not sqlite' > "${tmp}/db"
+  HIEDB_DIST_DIR="${tmp}/dist" HIEDB_DB_PATH="${tmp}/db" \
+    HIEDB_META_PATH="${tmp}/meta" HIEDB_TOOLCHAIN="${fake}" \
+    HIEDB_TOOLCHAIN_FINGERPRINT="test" HIEDB_TEST_LOG="${log}" \
+    "$0" --if-needed --quiet
+  [ "$(wc -l < "${log}" | tr -d ' ')" -gt "${before}" ] \
+    || { echo "refresh-hiedb self-test FAIL: corrupt index was trusted" >&2; return 1; }
+
+  local blocker hung_code=0
+  blocker="${tmp}/blocked-hiedb"
+  cat > "${blocker}" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+read -r _line < "${HIEDB_BLOCK_FIFO}"
+SH
+  chmod +x "${blocker}"
+  mkfifo "${tmp}/never-written"
+  printf 'changed-for-timeout' > "${tmp}/dist/A.hie"
+  set +e
+  HIEDB_DIST_DIR="${tmp}/dist" HIEDB_DB_PATH="${tmp}/db" \
+    HIEDB_META_PATH="${tmp}/meta" HIEDB_HIEDB_BIN="${blocker}" \
+    HIEDB_PYTHON_BIN="$(command -v python3)" HIEDB_TIMEOUT_SECONDS=0.1 \
+    HIEDB_BLOCK_FIFO="${tmp}/never-written" HIEDB_TOOLCHAIN_FINGERPRINT="test" \
+    "$0" --force --quiet
+  hung_code=$?
+  set -e
+  [ "${hung_code}" -eq 2 ] \
+    || { echo "refresh-hiedb self-test FAIL: hung indexer was not bounded" >&2; return 1; }
 
   : > "${log}"
   HIEDB_DIST_DIR="${tmp}/dist" HIEDB_DB_PATH="${tmp}/db2" \

@@ -771,6 +771,7 @@ spec :: Spec Unit
 
 module Test.Service.Command.Core
 AddItemToCart :: Uuid -> Uuid -> Int -> AddItemToCart
+AddItemToCartAfterItemCount :: Uuid -> Uuid -> Int -> AddItemToCartAfterItemCount
 AuthenticatedAddItem :: Uuid -> Uuid -> Int -> AuthenticatedAddItem
 CartEntity :: Uuid -> Array (Uuid, Int) -> Bool -> CartEntity
 CheckoutCart :: Uuid -> CheckoutCart
@@ -786,6 +787,7 @@ TenantCartEntity :: Uuid -> Uuid -> Array (Uuid, Int) -> Bool -> TenantCartEntit
 TenantCreateCart :: TenantCreateCart
 TenantItemAdded :: Uuid -> Uuid -> Int -> TenantCartEvent
 [amount] :: AddItemToCart -> Int
+[amount] :: AddItemToCartAfterItemCount -> Int
 [amount] :: AuthenticatedAddItem -> Int
 [amount] :: OwnedCartEvent -> Int
 [amount] :: TenantAddItem -> Int
@@ -794,6 +796,7 @@ TenantItemAdded :: Uuid -> Uuid -> Int -> TenantCartEvent
 [cartCheckedOut] :: OwnedCartEntity -> Bool
 [cartCheckedOut] :: TenantCartEntity -> Bool
 [cartId] :: AddItemToCart -> Uuid
+[cartId] :: AddItemToCartAfterItemCount -> Uuid
 [cartId] :: AuthenticatedAddItem -> Uuid
 [cartId] :: CartEntity -> Uuid
 [cartId] :: CheckoutCart -> Uuid
@@ -808,6 +811,7 @@ TenantItemAdded :: Uuid -> Uuid -> Int -> TenantCartEvent
 [entityId] :: OwnedCartEvent -> Uuid
 [entityId] :: TenantCartEvent -> Uuid
 [itemId] :: AddItemToCart -> Uuid
+[itemId] :: AddItemToCartAfterItemCount -> Uuid
 [itemId] :: AuthenticatedAddItem -> Uuid
 [itemId] :: OwnedCartEvent -> Uuid
 [itemId] :: RemoveItemFromCart -> Uuid
@@ -821,6 +825,7 @@ applyCartEvent :: CartEvent -> CartEntity -> CartEntity
 applyOwnedCartEvent :: OwnedCartEvent -> OwnedCartEntity -> OwnedCartEntity
 applyTenantCartEvent :: TenantCartEvent -> TenantCartEntity -> TenantCartEntity
 data AddItemToCart
+data AddItemToCartAfterItemCount
 data AuthenticatedAddItem
 data CartEntity
 data CheckoutCart
@@ -836,6 +841,7 @@ initialCartState :: CartEntity
 initialOwnedCartState :: OwnedCartEntity
 initialTenantCartState :: TenantCartEntity
 instance Data.Aeson.Types.FromJSON.FromJSON Test.Service.Command.Core.AddItemToCart
+instance Data.Aeson.Types.FromJSON.FromJSON Test.Service.Command.Core.AddItemToCartAfterItemCount
 instance Data.Aeson.Types.FromJSON.FromJSON Test.Service.Command.Core.AuthenticatedAddItem
 instance Data.Aeson.Types.FromJSON.FromJSON Test.Service.Command.Core.CartEntity
 instance Data.Aeson.Types.FromJSON.FromJSON Test.Service.Command.Core.CheckoutCart
@@ -848,6 +854,7 @@ instance Data.Aeson.Types.FromJSON.FromJSON Test.Service.Command.Core.TenantCart
 instance Data.Aeson.Types.FromJSON.FromJSON Test.Service.Command.Core.TenantCartEvent
 instance Data.Aeson.Types.FromJSON.FromJSON Test.Service.Command.Core.TenantCreateCart
 instance Data.Aeson.Types.ToJSON.ToJSON Test.Service.Command.Core.AddItemToCart
+instance Data.Aeson.Types.ToJSON.ToJSON Test.Service.Command.Core.AddItemToCartAfterItemCount
 instance Data.Aeson.Types.ToJSON.ToJSON Test.Service.Command.Core.AuthenticatedAddItem
 instance Data.Aeson.Types.ToJSON.ToJSON Test.Service.Command.Core.CartEntity
 instance Data.Aeson.Types.ToJSON.ToJSON Test.Service.Command.Core.CheckoutCart
@@ -860,6 +867,7 @@ instance Data.Aeson.Types.ToJSON.ToJSON Test.Service.Command.Core.TenantCartEnti
 instance Data.Aeson.Types.ToJSON.ToJSON Test.Service.Command.Core.TenantCartEvent
 instance Data.Aeson.Types.ToJSON.ToJSON Test.Service.Command.Core.TenantCreateCart
 instance GHC.Classes.Eq Test.Service.Command.Core.AddItemToCart
+instance GHC.Classes.Eq Test.Service.Command.Core.AddItemToCartAfterItemCount
 instance GHC.Classes.Eq Test.Service.Command.Core.AuthenticatedAddItem
 instance GHC.Classes.Eq Test.Service.Command.Core.CartEntity
 instance GHC.Classes.Eq Test.Service.Command.Core.CheckoutCart
@@ -872,6 +880,7 @@ instance GHC.Classes.Eq Test.Service.Command.Core.TenantCartEntity
 instance GHC.Classes.Eq Test.Service.Command.Core.TenantCartEvent
 instance GHC.Classes.Eq Test.Service.Command.Core.TenantCreateCart
 instance GHC.Classes.Ord Test.Service.Command.Core.AddItemToCart
+instance GHC.Classes.Ord Test.Service.Command.Core.AddItemToCartAfterItemCount
 instance GHC.Classes.Ord Test.Service.Command.Core.AuthenticatedAddItem
 instance GHC.Classes.Ord Test.Service.Command.Core.CartEntity
 instance GHC.Classes.Ord Test.Service.Command.Core.CheckoutCart
@@ -882,6 +891,7 @@ instance GHC.Classes.Ord Test.Service.Command.Core.TenantAddItem
 instance GHC.Classes.Ord Test.Service.Command.Core.TenantCartEntity
 instance GHC.Classes.Ord Test.Service.Command.Core.TenantCreateCart
 instance GHC.Generics.Generic Test.Service.Command.Core.AddItemToCart
+instance GHC.Generics.Generic Test.Service.Command.Core.AddItemToCartAfterItemCount
 instance GHC.Generics.Generic Test.Service.Command.Core.AuthenticatedAddItem
 instance GHC.Generics.Generic Test.Service.Command.Core.CartEntity
 instance GHC.Generics.Generic Test.Service.Command.Core.CheckoutCart
@@ -894,6 +904,7 @@ instance GHC.Generics.Generic Test.Service.Command.Core.TenantCartEntity
 instance GHC.Generics.Generic Test.Service.Command.Core.TenantCartEvent
 instance GHC.Generics.Generic Test.Service.Command.Core.TenantCreateCart
 instance GHC.Show.Show Test.Service.Command.Core.AddItemToCart
+instance GHC.Show.Show Test.Service.Command.Core.AddItemToCartAfterItemCount
 instance GHC.Show.Show Test.Service.Command.Core.AuthenticatedAddItem
 instance GHC.Show.Show Test.Service.Command.Core.CartEntity
 instance GHC.Show.Show Test.Service.Command.Core.CheckoutCart
@@ -906,6 +917,7 @@ instance GHC.Show.Show Test.Service.Command.Core.TenantCartEntity
 instance GHC.Show.Show Test.Service.Command.Core.TenantCartEvent
 instance GHC.Show.Show Test.Service.Command.Core.TenantCreateCart
 instance Service.Command.Core.Command Test.Service.Command.Core.AddItemToCart
+instance Service.Command.Core.Command Test.Service.Command.Core.AddItemToCartAfterItemCount
 instance Service.Command.Core.Command Test.Service.Command.Core.AuthenticatedAddItem
 instance Service.Command.Core.Command Test.Service.Command.Core.CheckoutCart
 instance Service.Command.Core.Command Test.Service.Command.Core.OwnedCartCheckout
@@ -1121,13 +1133,15 @@ spec :: Task Text (EventStore CartEvent) -> Spec Unit
 specWithCount :: Task Text (EventStore CartEvent) -> Int -> Spec Unit
 
 module Test.Service.EventStore.Regression
+assertBehavior :: Text -> Bool -> Task Text Unit
 awaitInsertions :: Int -> InsertBarrier -> Task error Unit
 barrierBeforeInsert :: InsertBarrier -> EventStore event -> EventStore event
 data InsertBarrier
 failFirstWithConsistencyConflict :: EventStore event -> Task error (EventStore event)
-intentionalRed :: Text -> Text -> Task Text Unit
+knownBad :: Text -> Text -> Task error Bool
 newInsertBarrier :: Task error InsertBarrier
 recordFetchedRevisions :: forall k state (event :: k) error. EntityFetcher state event -> Task error (EntityFetcher state event, Task error (Array (Maybe StreamPosition)))
+recordFetches :: forall k state (event :: k) error. EntityFetcher state event -> Task error (EntityFetcher state event, Task error (Array (EntityFetchResult state)))
 recordInsertions :: EventStore event -> Task error (EventStore event, Task error (Array (InsertionPayload event)))
 releaseInsertions :: Int -> InsertBarrier -> Task error Unit
 requireInsertionType :: InsertionType -> EventStore event -> EventStore event

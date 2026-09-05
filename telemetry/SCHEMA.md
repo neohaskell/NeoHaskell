@@ -69,11 +69,15 @@ line again, so committed history remains append-only.
 - `activities` (v6) — optional lists of bounded work intervals emitted with
   `./dev telemetry activity --name <activity> --event start|stop`. The closed
   activity vocabulary is `localization`, `index`, `test-scaffolding`,
-  `compilation`, and `test-execution`. Repeated work appends intervals; finish
-  rejects open or invalid intervals. Activities may sit inside a broader stage;
-  readers treat a missing activity as unmeasured, never as zero seconds.
-- `waiting_on_human_s` — total seconds parked on a human gate. Kept separate so
-  work-time metrics stay honest.
+  `compilation`, and `test-execution`. Timestamps are UTC RFC3339 with
+  microseconds; whole-second v5/v6 timestamps remain readable. Repeated work
+  appends intervals. A successful finish rejects open or invalid intervals; a
+  failed/parked finish preserves an open interval (`stop: null`) as an explicit
+  interrupted attempt. A missing activity is unmeasured (`null` in summaries),
+  while equal valid endpoints are a measured zero-duration attempt.
+- `waiting_on_human_s` — total seconds parked on a human gate. `telemetry wait`
+  is rejected while any work activity is open, mechanically preventing human
+  wait from being counted in both work duration and this scalar.
 - `modules_rebuilt_after_restore` — cache-health metric from `./dev refresh`
   at run start (null if not refreshed).
 - `assets_consulted` (v3) — list of `<kind>:<name>` an aid the run actually
@@ -176,6 +180,16 @@ deletes dirs older than the window and is run at the weekly review (the "4 weeks
 retention is that command, not a bare promise). The committed `runs.jsonl` is the
 durable trend record; no golden artifact is committed (avoids bloating the repo
 with transcripts/diffs).
+
+## Pipeline workflow benchmark
+
+`telemetry/pipeline-benchmark-protocol.json` is the versioned same-task protocol
+for issue #862. `./dev pipeline-benchmark --self-test` validates protocol binding,
+activity-interval union, human-wait subtraction, five-sample completeness,
+median/nearest-rank-p95 statistics, exact good/bad regression outcomes, and the
+240-second warm median/p95 thresholds. Real wall-clock evidence is local/nightly,
+not a shared-PR gate; correctness failures, zero matches, wrong assertions, and
+timeouts are invalid samples rather than removable noise.
 
 ## Inner-loop baseline (measured 2026-07-07, Apple Silicon, GHC 9.8.4, -O0 dev flavor)
 

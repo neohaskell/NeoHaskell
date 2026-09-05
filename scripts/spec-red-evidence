@@ -1,0 +1,333 @@
+#!/usr/bin/env python3
+"""Record and verify Gate 1 expected-red evidence for a bug specification."""
+
+import argparse
+import hashlib
+import importlib.machinery
+import importlib.util
+import json
+import os
+import re
+import signal
+import subprocess
+import sys
+import tempfile
+from datetime import datetime, timezone
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+loader = importlib.machinery.SourceFileLoader("spec_check", str(ROOT / "scripts" / "spec-check"))
+spec = importlib.util.spec_from_loader(loader.name, loader)
+spec_check = importlib.util.module_from_spec(spec)
+loader.exec_module(spec_check)
+SUMMARY = re.compile(r"^(\d+) examples?, (\d+) failures?$", re.MULTILINE)
+SETUP_FAILURE_MARKERS = (
+    "Failed to build", "Compilation failed", "no specs matched", "test-match: no specs",
+    "Connection refused", "could not connect", "Timed out", "TIMEOUT:",
+)
+
+
+def digest_bytes(value):
+    return hashlib.sha256(value).hexdigest()
+
+
+def digest_file(path):
+    return digest_bytes(path.read_bytes())
+
+
+def canonical_json(value):
+    return json.dumps(value, sort_keys=True, separators=(",", ":"))
+
+
+def git_output(*arguments):
+    result = subprocess.run(["git", *arguments], cwd=ROOT, text=True,
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+    return result.returncode, result.stdout.strip(), result.stderr.strip()
+
+
+def run_bounded(command, timeout_seconds):
+    process = subprocess.Popen(command, cwd=ROOT, text=True, stdout=subprocess.PIPE,
+                               stderr=subprocess.STDOUT, start_new_session=True)
+    try:
+        output, _ = process.communicate(timeout=timeout_seconds)
+        return process.returncode, output, False
+    except subprocess.TimeoutExpired:
+        os.killpg(process.pid, signal.SIGKILL)
+        output, _ = process.communicate()
+        return 124, output, True
+
+
+def classify_expected_red(exit_code, output, expected_failure):
+    errors = []
+    summaries = SUMMARY.findall(output)
+    selected = failures = 0
+    if len(summaries) != 1:
+        errors.append("test output must contain exactly one hspec summary")
+    else:
+        selected, failures = (int(value) for value in summaries[0])
+        if selected <= 0:
+            errors.append("red run selected zero examples")
+        if failures != 1:
+            errors.append(f"red run must have exactly one failure, got {failures}")
+    if exit_code == 0:
+        errors.append("red run unexpectedly passed")
+    if output.count(expected_failure) != 1:
+        errors.append("red run did not fail exactly once at the expected assertion identity")
+    for marker in SETUP_FAILURE_MARKERS:
+        if marker in output:
+            errors.append(f"red run contains setup/compile/timeout marker `{marker}`")
+    return errors, selected, failures
+
+
+def criterion_by_id(spec_text, criterion_id):
+    matches = [criterion for criterion in spec_check.parse_criteria(spec_text)
+               if criterion["id"] == criterion_id]
+    return matches[0] if len(matches) == 1 else None
+
+
+def path_changed(base_sha, head_sha, path):
+    code, _out, _err = git_output("diff", "--quiet", base_sha, head_sha, "--", str(path))
+    return code == 1
+
+
+def record(args):
+    spec_path = (ROOT / args.spec).resolve()
+    try:
+        relative_spec = spec_path.relative_to(ROOT)
+    except ValueError:
+        sys.exit("red-evidence: spec must be inside the repository")
+    if not spec_path.is_file():
+        sys.exit("red-evidence: spec path is missing")
+    text = spec_path.read_text()
+    header, header_errors = spec_check.parse_header(spec_check.fenced_block(text, "yaml spec") or "")
+    if header_errors or header.get("kind") != "bug" or args.criterion != "C1":
+        sys.exit("red-evidence: only bug criterion C1 can record Gate 1 red evidence")
+    criterion = criterion_by_id(text, args.criterion)
+    if criterion is None:
+        sys.exit("red-evidence: criterion C1 is missing or ambiguous")
+    locators, locator_errors = spec_check.parse_test_locators(criterion["test"])
+    if locator_errors or len(locators) != 1:
+        sys.exit("red-evidence: bug C1 must contain exactly one valid proving-test locator")
+    locator = locators[0]
+    surfaces = spec_check.load_test_surfaces()
+    resolution_errors, static_selected = spec_check.resolve_locator(locator, ROOT, surfaces)
+    if resolution_errors or static_selected != 1:
+        sys.exit("red-evidence: C1 locator does not resolve to one source example")
+    head_code, head_sha, _ = git_output("rev-parse", "HEAD")
+    base_code, resolved_base, _ = git_output("rev-parse", args.base_sha)
+    ancestor_code, _, _ = git_output("merge-base", "--is-ancestor", resolved_base, head_sha)
+    if head_code or base_code or ancestor_code:
+        sys.exit("red-evidence: base/head ancestry is invalid")
+    test_path = ROOT / locator["path"]
+    if not path_changed(resolved_base, head_sha, relative_spec) \
+            or not path_changed(resolved_base, head_sha, Path(locator["path"])):
+        sys.exit("red-evidence: bug C1 spec and proving test must be materially changed from base")
+    command = spec_check.locator_command(locator, ROOT)
+    exit_code, output, timed_out = run_bounded(command, args.timeout)
+    if timed_out:
+        sys.exit("red-evidence: red run timed out")
+    errors, selected, failures = classify_expected_red(exit_code, output, args.expected_failure)
+    if errors:
+        for error in errors:
+            print(f"red-evidence: FAIL — {error}", file=sys.stderr)
+        return 1
+    receipt = {
+        "schema": 1,
+        "spec": str(relative_spec),
+        "criterion": "C1",
+        "locator": locator["raw"],
+        "command": command,
+        "expected_failure": args.expected_failure,
+        "base_sha": resolved_base,
+        "tested_head_sha": head_sha,
+        "spec_sha256": digest_file(spec_path),
+        "test_sha256": digest_file(test_path),
+        "selected_examples": selected,
+        "failures": failures,
+        "compiled": True,
+        "failure_kind": "expected-assertion",
+        "output_sha256": digest_bytes(output.encode()),
+        "output_path": str(Path(args.receipt).with_suffix(Path(args.receipt).suffix + ".output")),
+        "pr_number": args.pr_number,
+        "repository": args.repository,
+        "recorded_at": datetime.now(timezone.utc).isoformat(),
+    }
+    receipt["receipt_id"] = digest_bytes(canonical_json(receipt).encode())
+    destination = Path(args.receipt)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    output_path = Path(receipt["output_path"])
+    output_path.write_text(output)
+    temporary = destination.with_name(destination.name + ".tmp")
+    temporary.write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n")
+    temporary.replace(destination)
+    print(f"red-evidence: recorded {receipt['receipt_id']} -> {destination}")
+    return 0
+
+
+def receipt_errors(receipt, spec_path, expected_base, expected_head, expected_pr,
+                   expected_repository):
+    errors = []
+    required = {
+        "schema", "spec", "criterion", "locator", "command", "expected_failure",
+        "base_sha", "tested_head_sha", "spec_sha256", "test_sha256",
+        "selected_examples", "failures", "compiled", "failure_kind", "output_sha256",
+        "output_path", "pr_number", "repository", "recorded_at", "receipt_id",
+    }
+    if set(receipt) != required or receipt.get("schema") != 1:
+        return ["receipt shape/schema is invalid"]
+    unsigned = dict(receipt)
+    receipt_id = unsigned.pop("receipt_id")
+    if digest_bytes(canonical_json(unsigned).encode()) != receipt_id:
+        errors.append("receipt digest is invalid")
+    if receipt.get("criterion") != "C1" or receipt.get("base_sha") != expected_base \
+            or receipt.get("tested_head_sha") != expected_head:
+        errors.append("receipt base/tested-head binding is stale")
+    if receipt.get("pr_number") != expected_pr or receipt.get("repository") != expected_repository:
+        errors.append("receipt PR/repository binding is stale")
+    if receipt.get("spec") != str(spec_path.relative_to(ROOT)) \
+            or digest_file(spec_path) != receipt.get("spec_sha256"):
+        errors.append("receipt spec binding is stale")
+    parsed_locator, locator_error = spec_check.parse_locator(receipt.get("locator", ""))
+    test_path = ROOT / parsed_locator["path"] if parsed_locator is not None else None
+    if locator_error or test_path is None or not test_path.is_file() \
+            or digest_file(test_path) != receipt.get("test_sha256"):
+        errors.append("receipt proving-test binding is stale")
+    current_text = spec_path.read_text() if spec_path.is_file() else ""
+    criterion = criterion_by_id(current_text, "C1")
+    current_locators, current_locator_errors = spec_check.parse_test_locators(
+        criterion["test"] if criterion else ""
+    )
+    if parsed_locator is None or current_locator_errors or len(current_locators) != 1 \
+            or current_locators[0]["raw"] != receipt.get("locator") \
+            or receipt.get("command") != spec_check.locator_command(parsed_locator, ROOT):
+        errors.append("receipt locator/command binding is stale")
+    output_path = Path(str(receipt.get("output_path", "")))
+    if not output_path.is_file() or digest_file(output_path) != receipt.get("output_sha256"):
+        errors.append("receipt output transcript binding is stale")
+    if not isinstance(receipt.get("selected_examples"), int) \
+            or receipt.get("selected_examples") <= 0 or receipt.get("failures") != 1 \
+            or receipt.get("compiled") is not True \
+            or receipt.get("failure_kind") != "expected-assertion":
+        errors.append("receipt does not prove one compiled expected assertion failure")
+    return errors
+
+
+def verify(args):
+    try:
+        receipt = json.loads(Path(args.receipt).read_text())
+    except (OSError, json.JSONDecodeError):
+        print("red-evidence: FAIL — receipt is missing or invalid", file=sys.stderr)
+        return 1
+    errors = receipt_errors(receipt, ROOT / args.spec, args.base_sha, args.head,
+                            args.pr_number, args.repository)
+    for error in errors:
+        print(f"red-evidence: FAIL — {error}", file=sys.stderr)
+    if errors:
+        return 1
+    print(f"red-evidence: OK — {receipt['receipt_id']}")
+    return 0
+
+
+def self_test():
+    global ROOT
+    failures = 0
+    good_output = "semantic failure\nREGRESSION_ASSERT:fresh-revision\n1 example, 1 failure\n"
+    errors, selected, failed = classify_expected_red(1, good_output,
+                                                      "REGRESSION_ASSERT:fresh-revision")
+    if errors or selected != 1 or failed != 1:
+        print(f"red-evidence self-test FAIL good classification: {errors}")
+        failures += 1
+    cases = {
+        "zero-match": (1, "0 examples, 0 failures\n"),
+        "compile": (1, "Failed to build\n"),
+        "setup": (1, "Connection refused\n1 example, 1 failure\n"),
+        "wrong-assertion": (1, "OTHER\n1 example, 1 failure\n"),
+        "unconditional-pass": (0, good_output),
+        "extra-failure": (1, "REGRESSION_ASSERT:fresh-revision\n2 examples, 2 failures\n"),
+    }
+    for label, (code, output) in cases.items():
+        case_errors, _selected, _failed = classify_expected_red(
+            code, output, "REGRESSION_ASSERT:fresh-revision")
+        if not case_errors:
+            print(f"red-evidence self-test FAIL {label} accepted")
+            failures += 1
+    with tempfile.TemporaryDirectory() as temp_dir:
+        previous_root = ROOT
+        ROOT = Path(temp_dir)
+        try:
+            spec_path = ROOT / "docs" / "changes" / "001-x.md"
+            test_path = ROOT / "tests" / "XSpec.hs"
+            spec_path.parent.mkdir(parents=True)
+            test_path.parent.mkdir()
+            spec_path.write_text(
+                "## Criteria\n\n| ID | Behavior | Proving test | Level | Boundary |\n"
+                "|---|---|---|---|---|\n"
+                "| C1 | x | `hspec:suite:tests/XSpec.hs#x` | unit | none |\n"
+            )
+            test_path.write_text('it "x" \\ctx -> do\n  pass\n')
+            output_path = ROOT / "receipt.output"
+            output_path.write_text(good_output)
+            locator, _ = spec_check.parse_locator("hspec:suite:tests/XSpec.hs#x")
+            unsigned = {
+                "schema": 1, "spec": "docs/changes/001-x.md", "criterion": "C1",
+                "locator": "hspec:suite:tests/XSpec.hs#x",
+                "command": spec_check.locator_command(locator, ROOT),
+                "expected_failure": "REGRESSION_ASSERT:x", "base_sha": "base",
+                "tested_head_sha": "head", "spec_sha256": digest_file(spec_path),
+                "test_sha256": digest_file(test_path), "selected_examples": 1,
+                "failures": 1, "compiled": True, "failure_kind": "expected-assertion",
+                "output_sha256": digest_file(output_path), "output_path": str(output_path),
+                "pr_number": 1, "repository": "o/r",
+                "recorded_at": "now",
+            }
+            receipt = dict(unsigned)
+            receipt["receipt_id"] = digest_bytes(canonical_json(unsigned).encode())
+            if receipt_errors(receipt, spec_path, "base", "head", 1, "o/r"):
+                print("red-evidence self-test FAIL valid receipt")
+                failures += 1
+            test_path.write_text("changed\n")
+            if not any("proving-test" in error for error in
+                       receipt_errors(receipt, spec_path, "base", "head", 1, "o/r")):
+                print("red-evidence self-test FAIL stale test accepted")
+                failures += 1
+            if not receipt_errors(receipt, spec_path, "other", "head", 1, "o/r"):
+                print("red-evidence self-test FAIL stale base accepted")
+                failures += 1
+        finally:
+            ROOT = previous_root
+    if failures == 0:
+        print("red-evidence self-test: OK — expected assertion receipts fail closed and stale bindings reject")
+    return 1 if failures else 0
+
+
+def main():
+    if len(sys.argv) == 2 and sys.argv[1] == "--self-test":
+        return self_test()
+    parser = argparse.ArgumentParser()
+    sub = parser.add_subparsers(dest="command", required=True)
+    record_parser = sub.add_parser("record")
+    record_parser.add_argument("--spec", required=True)
+    record_parser.add_argument("--criterion", default="C1")
+    record_parser.add_argument("--expected-failure", required=True)
+    record_parser.add_argument("--base-sha", required=True)
+    record_parser.add_argument("--pr-number", required=True, type=int)
+    record_parser.add_argument("--repository", required=True)
+    record_parser.add_argument("--receipt", default=".pipeline/red-evidence.json")
+    record_parser.add_argument("--timeout", type=int, default=120)
+    verify_parser = sub.add_parser("verify")
+    verify_parser.add_argument("--receipt", required=True)
+    verify_parser.add_argument("--spec", required=True)
+    verify_parser.add_argument("--base-sha", required=True)
+    verify_parser.add_argument("--head", required=True)
+    verify_parser.add_argument("--pr-number", required=True, type=int)
+    verify_parser.add_argument("--repository", required=True)
+    args = parser.parse_args()
+    if args.command == "record":
+        return record(args)
+    if args.command == "verify":
+        return verify(args)
+    return self_test()
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -17,10 +17,14 @@ new-extension-point: false
 The test helper surface remains additive. Pipeline command formats are internal repository tooling contracts and are proved by their script locators below.
 
 ```diff signatures
++ Test.Service.Command.Core: AddItemToCartAfterItemCount :: Uuid -> Uuid -> Int -> AddItemToCartAfterItemCount
++ Test.Service.Command.Core: data AddItemToCartAfterItemCount
++ Test.Service.EventStore.Regression: assertBehavior :: Text -> Bool -> Task Text Unit
 + Test.Service.EventStore.Regression: awaitInsertions :: Int -> InsertBarrier -> Task error Unit
 + Test.Service.EventStore.Regression: barrierBeforeInsert :: InsertBarrier -> EventStore event -> EventStore event
 + Test.Service.EventStore.Regression: data InsertBarrier
 + Test.Service.EventStore.Regression: failFirstWithConsistencyConflict :: EventStore event -> Task error (EventStore event)
++ Test.Service.EventStore.Regression: knownBad :: Text -> Text -> Task error Bool
 + Test.Service.EventStore.Regression: newInsertBarrier :: Task error InsertBarrier
 + Test.Service.EventStore.Regression: recordFetchedRevisions :: forall k state (event :: k) error. EntityFetcher state event -> Task error (EntityFetcher state event, Task error (Array (Maybe StreamPosition)))
 + Test.Service.EventStore.Regression: recordFetches :: forall k state (event :: k) error. EntityFetcher state event -> Task error (EntityFetcher state event, Task error (Array (EntityFetchResult state)))

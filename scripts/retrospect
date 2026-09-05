@@ -67,13 +67,31 @@ def load_runs(path, include_dummy=False):
 
 
 def _ts(s):
-    return datetime.strptime(s, "%Y-%m-%dT%H:%M:%SZ")
+    return datetime.fromisoformat(s.replace("Z", "+00:00"))
 
 
 def stage_seconds(stage):
     if stage.get("start") and stage.get("stop"):
         return (_ts(stage["stop"]) - _ts(stage["start"])).total_seconds()
     return None
+
+
+def activity_measurement(run, name):
+    activities = run.get("activities")
+    if not isinstance(activities, dict) or name not in activities:
+        return {"measured": False, "seconds": None, "attempts": 0, "interrupted": 0}
+    raw = activities[name]
+    intervals = [raw] if isinstance(raw, dict) else raw
+    if not isinstance(intervals, list):
+        return {"measured": True, "seconds": None, "attempts": 0, "interrupted": 1}
+    durations = [stage_seconds(interval) for interval in intervals if isinstance(interval, dict)]
+    complete = [seconds for seconds in durations if seconds is not None]
+    return {
+        "measured": True,
+        "seconds": sum(complete),
+        "attempts": len(intervals),
+        "interrupted": len(intervals) - len(complete),
+    }
 
 
 def invented(run):
@@ -139,6 +157,7 @@ def digest(runs, all_runs):
     labels = {}
     stage_secs = {}
     activity_secs = {}
+    activity_interrupts = {}
     waits = []
     assets = {}
     improvements = {}
@@ -155,17 +174,14 @@ def digest(runs, all_runs):
                 sec = stage_seconds(st)
                 if sec is not None:
                     stage_secs.setdefault(name, []).append(sec)
-        activities = r.get("activities", {})
-        if isinstance(activities, dict):
-            for name, raw_intervals in activities.items():
-                intervals = [raw_intervals] if isinstance(raw_intervals, dict) else raw_intervals
-                if not isinstance(intervals, list):
-                    continue
-                measured = [stage_seconds(interval) for interval in intervals
-                            if isinstance(interval, dict)]
-                measured = [seconds for seconds in measured if seconds is not None]
-                if measured:
-                    activity_secs.setdefault(name, []).append(sum(measured))
+        for name in telemetry.ACTIVITIES:
+            measurement = activity_measurement(r, name)
+            if measurement["measured"] and measurement["seconds"] is not None:
+                activity_secs.setdefault(name, []).append(measurement["seconds"])
+            if measurement["interrupted"]:
+                activity_interrupts[name] = (
+                    activity_interrupts.get(name, 0) + measurement["interrupted"]
+                )
         consulted = r.get("assets_consulted", []) or []
         if isinstance(consulted, list):
             for a in consulted:
@@ -193,7 +209,12 @@ def digest(runs, all_runs):
     for name in telemetry.ACTIVITIES:
         secs = activity_secs.get(name)
         if secs:
-            lines.append(f"- {name}: {sum(secs) / len(secs):.0f}s (n={len(secs)})")
+            interrupted = activity_interrupts.get(name, 0)
+            lines.append(f"- {name}: {sum(secs) / len(secs):.3f}s "
+                         f"(n={len(secs)}, interrupted={interrupted})")
+        else:
+            interrupted = activity_interrupts.get(name, 0)
+            lines.append(f"- {name}: unmeasured (interrupted={interrupted})")
 
     base = invented_baseline(all_runs)
     win = [invented(r) for r in runs]
@@ -338,7 +359,7 @@ def self_test():
 
     # digest math on a synthetic history (6 runs so the baseline is defined)
     def run(rid, outcome, label, inv, wait):
-        return {"schema": 5, "run_id": rid, "outcome": outcome, "failure_label": label,
+        return {"schema": 6, "run_id": rid, "outcome": outcome, "failure_label": label,
                 "waiting_on_human_s": wait, "assets_consulted": ["alias:auth"],
                 "activities": {"test-scaffolding": [
                     {"start": "2026-07-09T10:00:00Z", "stop": "2026-07-09T10:02:00Z"},
@@ -355,7 +376,22 @@ def self_test():
     check("digest-labels", "invented-api: 1" in d)
     check("digest-baseline", "baseline 0.00 → window 1.00 ↑" in d)
     check("digest-stage", "implement: 600s" in d)
-    check("digest-activity", "test-scaffolding: 240s" in d)
+    check("digest-activity", "test-scaffolding: 240.000s" in d)
+    v4_missing = activity_measurement({"schema": 4}, "index")
+    v5_object = activity_measurement({"schema": 5, "activities": {
+        "index": {"start": "2026-01-01T00:00:00Z", "stop": "2026-01-01T00:00:00.500000Z"}
+    }}, "index")
+    measured_zero = activity_measurement({"schema": 6, "activities": {
+        "index": [{"start": "2026-01-01T00:00:00Z", "stop": "2026-01-01T00:00:00Z"}]
+    }}, "index")
+    interrupted = activity_measurement({"schema": 6, "activities": {
+        "index": [{"start": "2026-01-01T00:00:00Z", "stop": None}]
+    }}, "index")
+    check("activity-v4-missing", v4_missing == {
+        "measured": False, "seconds": None, "attempts": 0, "interrupted": 0})
+    check("activity-v5-object", v5_object["seconds"] == 0.5 and v5_object["attempts"] == 1)
+    check("activity-measured-zero", measured_zero["measured"] and measured_zero["seconds"] == 0.0)
+    check("activity-interrupted", interrupted["interrupted"] == 1 and interrupted["seconds"] == 0)
     check("digest-empty", "No real runs in the window" in digest([], []))
     # v4: improvements from ok runs surface in the digest (class-fixes from success)
     imp_run = {**run("2026-07-09-003", "ok", None, 0, 0),

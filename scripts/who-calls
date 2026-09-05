@@ -53,7 +53,33 @@ self_test() {
     || { echo "who-calls self-test FAIL: warm lookup did not use the cached hiedb directly" >&2; return 1; }
   grep -Fx -- "${tools}" "${refresh_calls}" >/dev/null \
     || { echo "who-calls self-test FAIL: refresh did not share the configured tools cache" >&2; return 1; }
-  echo "who-calls self-test: OK — cold lookup is bounded; warm lookup uses cached pinned tools directly"
+
+  printf '%s\n' '#!/usr/bin/env bash' 'exit 1' > "${fake_hiedb}"
+  set +e
+  output="$(WHO_CALLS_REFRESH="${warm_refresh}" WHO_CALLS_DB_PATH="${tmp}/db" \
+    WHO_CALLS_TOOLS_PATH="${tools}" WHO_CALLS_REFRESH_LOG="${refresh_calls}" \
+    "$0" 'broken' 2>&1)"
+  code=$?
+  set -e
+  [ "${code}" -eq 2 ] && printf '%s\n' "${output}" | grep -Fq 'git grep -n -F -- broken' \
+    || { echo "who-calls self-test FAIL: corrupt query did not fall back" >&2; return 1; }
+
+  mkfifo "${tmp}/never-written"
+  cat > "${fake_hiedb}" <<'SH'
+#!/usr/bin/env bash
+read -r _line < "${WHO_CALLS_BLOCK_FIFO}"
+SH
+  chmod +x "${fake_hiedb}"
+  set +e
+  output="$(WHO_CALLS_REFRESH="${warm_refresh}" WHO_CALLS_DB_PATH="${tmp}/db" \
+    WHO_CALLS_TOOLS_PATH="${tools}" WHO_CALLS_REFRESH_LOG="${refresh_calls}" \
+    WHO_CALLS_TIMEOUT_SECONDS=0.1 WHO_CALLS_BLOCK_FIFO="${tmp}/never-written" \
+    "$0" 'hung' 2>&1)"
+  code=$?
+  set -e
+  [ "${code}" -eq 2 ] && printf '%s\n' "${output}" | grep -Fq 'git grep -n -F -- hung' \
+    || { echo "who-calls self-test FAIL: hung query did not time out to fallback" >&2; return 1; }
+  echo "who-calls self-test: OK — cold/corrupt/hung paths are bounded fallbacks; warm lookup uses cached tools"
 }
 
 if [ "${1:-}" = "--self-test" ]; then
@@ -65,6 +91,7 @@ NAME="${1:?usage: who-calls <symbol> [module]}"
 DB_PATH="${WHO_CALLS_DB_PATH:-${ROOT}/.hiedb}"
 TOOLS_PATH="${WHO_CALLS_TOOLS_PATH:-${ROOT}/.hiedb-tools}"
 REFRESH="${WHO_CALLS_REFRESH:-${SCRIPT_DIR}/refresh-hiedb}"
+QUERY_TIMEOUT_SECONDS="${WHO_CALLS_TIMEOUT_SECONDS:-10}"
 
 fallback() {
   local escaped
@@ -90,10 +117,41 @@ if [ ! -x "${HIEDB_BIN}" ] || [ ! -x "${PYTHON_BIN}" ]; then
   exit 2
 fi
 
-# The resolved pinned executables are cached by refresh-hiedb. Warm lookups avoid
-# re-entering the whole development shell while retaining the exact toolchain.
-if [ $# -ge 2 ]; then
-  "${HIEDB_BIN}" -D "${DB_PATH}" name-refs "${NAME}" "$2"
-else
-  "${HIEDB_BIN}" -D "${DB_PATH}" name-refs "${NAME}"
-fi | "${PYTHON_BIN}" codemap/join-refs.py
+# The resolved pinned executables are cached by refresh-hiedb. Every query is
+# bounded; corruption, lock errors, and hangs all return the executable fallback.
+query_output="$(mktemp)"
+trap 'rm -f "${query_output}"' EXIT
+query=("${HIEDB_BIN}" -D "${DB_PATH}" name-refs "${NAME}")
+if [ $# -ge 2 ]; then query+=("$2"); fi
+set +e
+python3 - "${QUERY_TIMEOUT_SECONDS}" "${query_output}" "${query[@]}" <<'PY'
+import os
+import signal
+import subprocess
+import sys
+
+timeout = float(sys.argv[1])
+output_path = sys.argv[2]
+process = subprocess.Popen(sys.argv[3:], stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                           start_new_session=True)
+try:
+    output, _ = process.communicate(timeout=timeout)
+    code = process.returncode
+except subprocess.TimeoutExpired:
+    os.killpg(process.pid, signal.SIGKILL)
+    output, _ = process.communicate()
+    code = 124
+with open(output_path, "wb") as handle:
+    handle.write(output)
+raise SystemExit(code)
+PY
+query_code=$?
+set -e
+if [ "${query_code}" -ne 0 ]; then
+  fallback
+  exit 2
+fi
+if ! "${PYTHON_BIN}" codemap/join-refs.py < "${query_output}"; then
+  fallback
+  exit 2
+fi

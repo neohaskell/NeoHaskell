@@ -104,6 +104,7 @@ SH
 
   local error_calls
   error_calls="${tmp}/error-refresh-calls"
+  printf 'All good\n' > "${tmp}/error-output"
   WATCH_TOOLCHAIN="${toolchain}" WATCH_REFRESH="${refresh}" \
     WATCH_OUT="${tmp}/error-output" WATCH_DEBOUNCE_SECONDS=0.02 WATCH_POLL_SECONDS=0.02 \
     WATCH_TEST_CALLS="${error_calls}" WATCH_TEST_ERROR=1 "$0" lib:nhcore-test
@@ -137,6 +138,7 @@ if ! [[ "${TARGET}" =~ ^[A-Za-z0-9:._-]+$ ]]; then
 fi
 
 echo "watch: watching ${TARGET} (dev flavor, -O0); errors -> ${OUT}"
+rm -f "${OUT}" "${REFRESH_GROUP_FILE}"
 
 # with-toolchain enters `nix develop` on demand — ghcid and cabal come from the
 # pinned dev shell, so this works from any bare shell (agent or human).
@@ -151,8 +153,7 @@ warm_hie_index() {
   local refresh_pgid=""
 
   reload_succeeded() {
-    [ -f "${OUT}" ] \
-      && { [ ! -s "${OUT}" ] || grep -Eq '^All good( \([^)]*\))?$' "${OUT}"; }
+    [ -s "${OUT}" ] && grep -Eq '^All good( \([^)]*\))?$' "${OUT}"
   }
 
   start_refresh() {

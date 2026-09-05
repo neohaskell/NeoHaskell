@@ -79,7 +79,9 @@ def non_negative(value: int, flag: str) -> int:
 
 
 def now() -> str:
-    return datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return datetime.datetime.now(datetime.timezone.utc).isoformat(
+        timespec="microseconds"
+    ).replace("+00:00", "Z")
 
 
 def load() -> dict:
@@ -194,9 +196,7 @@ def parse_activity_timestamp(value):
     if not isinstance(value, str):
         return None
     try:
-        return datetime.datetime.strptime(value, "%Y-%m-%dT%H:%M:%SZ").replace(
-            tzinfo=datetime.timezone.utc
-        )
+        return datetime.datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError:
         return None
 
@@ -222,6 +222,10 @@ def open_activities(run: dict) -> list:
 def cmd_wait(args) -> None:
     non_negative(args.seconds, "--seconds")
     run = load()
+    running = open_activities(run)
+    if running:
+        sys.exit("telemetry: stop active work before recording human wait: "
+                 + ", ".join(sorted(running)))
     run["waiting_on_human_s"] += args.seconds
     save(run)
 
@@ -269,11 +273,11 @@ def parse_asset_delta(raw: str) -> dict:
 
 def cmd_finish(args) -> None:
     run = load()
-    unfinished = open_activities(run)
-    if unfinished:
-        sys.exit(f"telemetry: cannot finish with open/invalid activities: {', '.join(sorted(unfinished))}")
     if args.outcome not in OUTCOMES:
         sys.exit(f"telemetry: outcome must be one of {OUTCOMES}")
+    unfinished = open_activities(run)
+    if unfinished and args.outcome == "ok":
+        sys.exit(f"telemetry: cannot finish successful run with open/invalid activities: {', '.join(sorted(unfinished))}")
     if args.failure_label is not None and args.failure_label not in FAILURE_LABELS:
         sys.exit(f"telemetry: failure-label must be from the closed taxonomy: {', '.join(FAILURE_LABELS)}")
     if args.outcome == "ok" and args.failure_label is not None:
@@ -517,6 +521,10 @@ def self_test() -> int:
             fails += 1
         check("activity-open", lambda: cmd_activity(
             ns(name="test-execution", event="start")), False)
+        check("human-wait-overlap-rejected", lambda: cmd_wait(ns(seconds=30)), True)
+        if json.loads(CURRENT.read_text()).get("waiting_on_human_s") != 0:
+            print("telemetry self-test FAIL rejected wait changed waiting total")
+            fails += 1
         running_activity = CURRENT.read_text()
         check("activity-double-start", lambda: cmd_activity(
             ns(name="test-execution", event="start")), True)
@@ -625,6 +633,20 @@ def self_test() -> int:
                improvement=[])), True)
         if CURRENT.read_text() != unparsable_activity:
             print("telemetry self-test FAIL unparsable interval modified activity data")
+            fails += 1
+
+        CURRENT.unlink()
+        check("start-interrupted", lambda: cmd_start(
+            ns(run_id="t-005", request="issue#0")), False)
+        check("start-interrupted-activity", lambda: cmd_activity(
+            ns(name="compilation", event="start")), False)
+        check("finish-failed-preserves-interruption", lambda: cmd_finish(ns(
+            outcome="failed", failure_label="timeout", failure_note=None,
+            asset_delta="none:interrupted by timeout", improvement=[])), False)
+        interrupted = json.loads(RUNS.read_text().splitlines()[-1])
+        intervals = interrupted.get("activities", {}).get("compilation", [])
+        if len(intervals) != 1 or intervals[0].get("stop") is not None:
+            print("telemetry self-test FAIL interrupted activity was not preserved")
             fails += 1
 
     # anti-rot: the failure-label taxonomy is duplicated in scripts/pipeline-state

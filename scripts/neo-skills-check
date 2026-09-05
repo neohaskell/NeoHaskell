@@ -334,117 +334,99 @@ def check_regression_skill(root, skills_dir):
     helper_path = root / "core" / "testlib" / "Test" / "Service" / "EventStore" / "Regression.hs"
     smoke_path = root / "scripts" / "regression-scaffold-smoke"
     recipe_helpers = {
-        "insertion-guard": {"seedStream", "requireInsertionType", "recordInsertions"},
-        "record-payloads-and-revisions": {"recordInsertions", "recordFetchedRevisions"},
+        "insertion-guard": {"requireInsertionType", "knownBad", "assertBehavior"},
+        "record-payloads-and-revisions": {
+            "seedStream", "recordInsertions", "recordFetchedRevisions", "knownBad", "assertBehavior",
+        },
         "consistency-conflict-refetch": {
-            "failFirstWithConsistencyConflict", "recordFetchedRevisions", "recordInsertions",
+            "seedStream", "failFirstWithConsistencyConflict", "recordFetches",
+            "recordFetchedRevisions", "recordInsertions", "knownBad", "assertBehavior",
         },
         "postgres-append-barrier": {
             "newInsertBarrier", "barrierBeforeInsert", "awaitInsertions", "releaseInsertions",
+            "knownBad", "assertBehavior",
         },
         "stream-creation-race": {
             "newInsertBarrier", "barrierBeforeInsert", "awaitInsertions", "releaseInsertions",
+            "knownBad", "assertBehavior",
         },
         "any-stream-state": {
-            "seedStream", "newInsertBarrier", "barrierBeforeInsert",
-            "awaitInsertions", "releaseInsertions",
+            "seedStream", "newInsertBarrier", "barrierBeforeInsert", "awaitInsertions",
+            "releaseInsertions", "knownBad", "assertBehavior",
         },
     }
     required_recipes = set(recipe_helpers)
-    required_helpers = set().union(*recipe_helpers.values())
-    if not skill_path.is_file():
-        return [f"{skill_path.relative_to(root)} is missing"]
-    if not helper_path.is_file():
-        return [f"{helper_path.relative_to(root)} is missing"]
-    if not smoke_path.is_file():
-        return [f"{smoke_path.relative_to(root)} is missing"]
-    recipe_rows = {}
-    inside_recipe_table = False
+    if not skill_path.is_file() or not helper_path.is_file() or not smoke_path.is_file():
+        return ["regression skill, helper module, and smoke script must all exist"]
+    rows = {}
+    inside = False
     for line_number, line in enumerate(read(skill_path).splitlines(), start=1):
         if line == "## Recipe routing":
-            inside_recipe_table = True
+            inside = True
             continue
-        if inside_recipe_table and line.startswith("## "):
+        if inside and line.startswith("## "):
             break
-        if not inside_recipe_table or not line.startswith("|") \
+        if not inside or not line.startswith("|") \
                 or line.startswith("| Recipe ") or line.startswith("|---"):
             continue
-        raw_cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
-        if len(raw_cells) != 7 or not raw_cells[0].startswith("`") \
-                or not raw_cells[0].endswith("`"):
+        cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
+        if len(cells) != 8 or not cells[0].startswith("`") or not cells[0].endswith("`"):
             errors.append(f"{skill_path.relative_to(root)}:{line_number} malformed recipe row")
             continue
-        recipe = raw_cells[0].strip("`")
-        if not re.fullmatch(r"[a-z0-9-]+", recipe):
-            errors.append(f"{skill_path.relative_to(root)}:{line_number} invalid recipe key")
-            continue
-        if recipe not in recipe_helpers:
+        recipe = cells[0].strip("`")
+        if recipe not in required_recipes:
             errors.append(f"{skill_path.relative_to(root)}:{line_number} unknown recipe `{recipe}`")
             continue
-        if recipe in recipe_rows:
+        if recipe in rows:
             errors.append(f"{skill_path.relative_to(root)}:{line_number} duplicate recipe `{recipe}`")
             continue
-        recipe_rows[recipe] = [
-            recipe,
-            raw_cells[1],
-            raw_cells[2].strip("`"),
-            raw_cells[3].strip("`"),
-            raw_cells[4].strip("`"),
-            raw_cells[5].strip("`"),
-            raw_cells[6],
-        ]
-    if set(recipe_rows) != required_recipes:
-        errors.append(
-            f"{skill_path.relative_to(root)} recipe rows must be {sorted(required_recipes)}, "
-            f"got {sorted(recipe_rows)}"
-        )
+        rows[recipe] = cells
+    if set(rows) != required_recipes:
+        errors.append(f"recipe rows must be exactly {sorted(required_recipes)}")
     helper_text = read(helper_path)
     smoke_text = read(smoke_path)
-    for helper in sorted(required_helpers):
+    for helper in sorted(set().union(*recipe_helpers.values())):
         if not re.search(rf"\b{re.escape(helper)}\b", helper_text):
-            errors.append(f"{helper_path.relative_to(root)} is missing helper `{helper}`")
-    for recipe, cells in recipe_rows.items():
-        _key, trigger, backend, expected_examples, example_path, example_name, helpers_cell = cells
-        target = root / example_path
-        target_text = None
-        test_block = None
-        if not trigger:
-            errors.append(f"recipe `{recipe}` has no use-when trigger")
-        if backend not in {"in-memory", "simple", "postgres"}:
-            errors.append(f"recipe `{recipe}` has invalid smoke backend `{backend}`")
-        if not expected_examples.isdigit() or int(expected_examples) <= 0:
-            errors.append(f"recipe `{recipe}` has invalid smoke example count `{expected_examples}`")
-        if (recipe.startswith("postgres-") or recipe == "stream-creation-race") \
-                and backend != "postgres":
-            errors.append(f"recipe `{recipe}` must be bound to the PostgreSQL backend")
-        if target.is_file():
-            target_text = read(target)
-            test_block = named_test_block(target_text, example_name)
-            if test_block is None:
-                errors.append(
-                    f"recipe `{recipe}` has invalid canonical example `{example_path}:{example_name}`"
-                )
+            errors.append(f"helper module is missing `{helper}`")
+    seen_tests = set()
+    for recipe, cells in rows.items():
+        _key, prompt, backend_cell, examples_cell, locator_cell, bad_behavior, assertion_cell, helpers_cell = cells
+        backend = backend_cell.strip("`")
+        examples = examples_cell.strip("`")
+        locator = locator_cell.strip("`")
+        assertion = assertion_cell.strip("`")
+        match = re.fullmatch(r"hspec:([^:]+):([^#]+)#(.+)", locator)
+        if not prompt or not bad_behavior or match is None:
+            errors.append(f"recipe `{recipe}` needs prompt, bad behavior, and typed hspec locator")
+            continue
+        _suite, path, test_name = match.groups()
+        if test_name in seen_tests:
+            errors.append(f"recipe `{recipe}` reuses canonical test `{test_name}`")
+        seen_tests.add(test_name)
+        if backend not in {"in-memory", "simple", "postgres"} or not examples.isdigit():
+            errors.append(f"recipe `{recipe}` has invalid backend/example count")
+        if recipe in {"postgres-append-barrier", "stream-creation-race"} and backend != "postgres":
+            errors.append(f"recipe `{recipe}` must exercise PostgreSQL")
+        target = root / path
+        block = named_test_block(read(target), test_name) if target.is_file() else None
+        if block is None:
+            errors.append(f"recipe `{recipe}` canonical test does not resolve")
         else:
-            errors.append(
-                f"recipe `{recipe}` has invalid canonical example `{example_path}:{example_name}`"
-            )
+            if f'Regression.knownBad "{recipe}" backend' not in block:
+                errors.append(f"recipe `{recipe}` lacks its controlled bad adapter")
+            if f'"{recipe}"' not in block or "Regression.assertBehavior" not in block:
+                errors.append(f"recipe `{recipe}` lacks its semantic assertion")
         helpers = set(re.findall(r"`([A-Za-z][A-Za-z0-9]*)`", helpers_cell))
         if helpers != recipe_helpers[recipe]:
-            errors.append(
-                f"recipe `{recipe}` helpers must be {sorted(recipe_helpers[recipe])}, "
-                f"got {sorted(helpers)}"
-            )
-        if target_text is not None and test_block is not None \
-                and f'intentionalRed "{recipe}"' not in test_block:
-            errors.append(
-                f"recipe `{recipe}` canonical test block lacks its compiled red sentinel"
-            )
-    for snippet in (
-        "recipes()", "expected_examples", "NEOHASKELL_REGRESSION_SMOKE_BACKEND",
-        "examples?, 1 failure", "sentinel_count",
-    ):
+            errors.append(f"recipe `{recipe}` helpers must be {sorted(recipe_helpers[recipe])}")
+        if assertion != f"REGRESSION_ASSERT:{recipe}":
+            errors.append(f"recipe `{recipe}` assertion identity is invalid")
+    for snippet in ("route_prompt()", "validate_output()", "known-good", "controlled bad",
+                    "REGRESSION_SMOKE_TIMEOUT_SECONDS"):
         if snippet not in smoke_text:
-            errors.append(f"{smoke_path.relative_to(root)} is missing smoke contract `{snippet}`")
+            errors.append(f"smoke script is missing contract `{snippet}`")
+    if "intentionalRed" in helper_text or "INTENTIONAL_RED" in helper_text:
+        errors.append("sentinel-only regression helper must not exist")
     return errors
 
 
@@ -476,6 +458,10 @@ def check_pipeline_contract(root, pipeline_path):
         "Pi resume state": ".pipeline/state.json",
         "issue ownership": "gh issue edit N --add-assignee @me",
         "issue ownership verification": "verifies that viewer appears in the issue assignees",
+        "fresh base and reservation": "--change-id NNN-slug",
+        "typed proving-test locators": "hspec:<suite>:<path>#<exact-match>",
+        "bug red receipt": "./dev red-evidence record --spec <spec>",
+        "same-task benchmark": "./dev pipeline-benchmark <evidence.json>",
         "Conventional Commit form": "<type>(<optional-scope>): <imperative description>",
         "metadata validation": "./dev pipeline validate --pr-title \"<title>\" --base origin/main",
         "metadata transition gate": "Advancing past the spec gate is mechanically blocked",
@@ -547,6 +533,8 @@ def check_pipeline_contract(root, pipeline_path):
         if "metadata_transition_error" not in state_text \
                 or 'next_stage in {"design-review", "ci"}' not in state_text \
                 or "TRUSTED_METADATA_BASE" not in state_text \
+                or "reserve_change_id" not in state_text \
+                or "verify_red_evidence" not in state_text \
                 or "pr_number is immutable once set" not in state_text:
             errors.append(
                 "scripts/pipeline-state must enforce current-HEAD metadata at spec and PR transitions"
@@ -664,7 +652,9 @@ description: Orchestrate a NeoHaskell change through its spec-first process and 
 # Pipeline
 Exactly **two human gates**.
 .pipeline/state.json is authoritative.
-For issues, run `gh issue edit N --add-assignee @me` and verifies that viewer appears in the issue assignees.
+For issues, run `gh issue edit N --add-assignee @me` and verifies that viewer appears in the issue assignees; reserve with `--change-id NNN-slug`.
+Criteria use `hspec:<suite>:<path>#<exact-match>`. Bugs run `./dev red-evidence record --spec <spec>`.
+Validate timing with `./dev pipeline-benchmark <evidence.json>`.
 Use `<type>(<optional-scope>): <imperative description>` and run `./dev pipeline validate --pr-title "<title>" --base origin/main`.
 Advancing past the spec gate is mechanically blocked without it. The `pr → ci` transition refuses stale evidence.
 Time work with `./dev telemetry activity --name <activity> --event start|stop`.
@@ -712,9 +702,10 @@ def _build_good_tree(root):
     for name in CANONICAL_SKILLS:
         _write_skill(root, name, PIPELINE_FIXTURE if name == "neohaskell-pipeline" else None)
     helper_names = [
-        "seedStream", "recordInsertions", "recordFetchedRevisions", "requireInsertionType",
-        "failFirstWithConsistencyConflict", "newInsertBarrier", "barrierBeforeInsert",
-        "awaitInsertions", "releaseInsertions",
+        "seedStream", "recordInsertions", "recordFetchedRevisions", "recordFetches",
+        "requireInsertionType", "failFirstWithConsistencyConflict", "newInsertBarrier",
+        "barrierBeforeInsert", "awaitInsertions", "releaseInsertions", "knownBad",
+        "assertBehavior",
     ]
     helper = root / "core" / "testlib" / "Test" / "Service" / "EventStore" / "Regression.hs"
     helper.parent.mkdir(parents=True)
@@ -724,46 +715,43 @@ def _build_good_tree(root):
     optimistic = root / "core" / "testlib" / "Test" / "Service" / "EventStore" / "OptimisticConcurrency" / "Spec.hs"
     optimistic.parent.mkdir(parents=True)
     examples = {
-        "insertion-guard": (execute, "in-memory", 2, "canonically records a consistency conflict, refetch, and re-decision", ["seedStream", "requireInsertionType", "recordInsertions"]),
-        "record-payloads-and-revisions": (execute, "in-memory", 2, "canonically records a consistency conflict, refetch, and re-decision", ["recordInsertions", "recordFetchedRevisions"]),
-        "consistency-conflict-refetch": (execute, "in-memory", 2, "canonically records a consistency conflict, refetch, and re-decision", ["failFirstWithConsistencyConflict", "recordFetchedRevisions", "recordInsertions"]),
-        "postgres-append-barrier": (optimistic, "postgres", 3, "will only allow one event to be appended, when two writers try to append at the same time", ["newInsertBarrier", "barrierBeforeInsert", "awaitInsertions", "releaseInsertions"]),
-        "stream-creation-race": (optimistic, "postgres", 3, "allows only one concurrent StreamCreation", ["newInsertBarrier", "barrierBeforeInsert", "awaitInsertions", "releaseInsertions"]),
-        "any-stream-state": (optimistic, "in-memory", 3, "keeps AnyStreamState deliberately unconditional", ["seedStream", "newInsertBarrier", "barrierBeforeInsert", "awaitInsertions", "releaseInsertions"]),
+        "insertion-guard": (execute, "Require the exact rejected insertion type", "in-memory", 2, "rejects an unexpected insertion type with exact guard evidence", "bypass guard", ["requireInsertionType", "knownBad", "assertBehavior"]),
+        "record-payloads-and-revisions": (execute, "Record the complete append payload", "in-memory", 2, "records exact insertion payloads and fetched revisions", "bypass recorders", ["seedStream", "recordInsertions", "recordFetchedRevisions", "knownBad", "assertBehavior"]),
+        "consistency-conflict-refetch": (execute, "Prove conflict refetches, re-decides", "in-memory", 2, "records the exact insertion precondition after refetch", "reuse stale position", ["seedStream", "failFirstWithConsistencyConflict", "recordFetches", "recordFetchedRevisions", "recordInsertions", "knownBad", "assertBehavior"]),
+        "postgres-append-barrier": (optimistic, "Coordinate PostgreSQL appends", "postgres", 3, "will only allow one event to be appended, when two writers try to append at the same time", "unconditional writes", ["newInsertBarrier", "barrierBeforeInsert", "awaitInsertions", "releaseInsertions", "knownBad", "assertBehavior"]),
+        "stream-creation-race": (optimistic, "Race StreamCreation writes", "postgres", 3, "allows only one concurrent StreamCreation and persists one creation fact", "unconditional creations", ["newInsertBarrier", "barrierBeforeInsert", "awaitInsertions", "releaseInsertions", "knownBad", "assertBehavior"]),
+        "any-stream-state": (optimistic, "Prove concurrent AnyStreamState writes", "in-memory", 3, "persists both AnyStreamState events in durable order", "stale InsertAfter", ["seedStream", "newInsertBarrier", "barrierBeforeInsert", "awaitInsertions", "releaseInsertions", "knownBad", "assertBehavior"]),
     }
-    grouped_examples = {}
-    for key, (path, _backend, _count, example_name, _helpers) in examples.items():
-        grouped_examples.setdefault((path, example_name), []).append(key)
-    for (path, example_name), recipe_keys in grouped_examples.items():
-        with path.open("a", encoding="utf-8") as handle:
-            handle.write(f'it "{example_name}" \\context -> do\n')
-            for key in recipe_keys:
-                handle.write(f'  intentionalRed "{key}"\n')
-            handle.write("\n")
     rows = []
-    for key, (path, backend, count, example_name, helpers) in examples.items():
+    for key, (path, prompt, backend, count, test_name, bad, helpers) in examples.items():
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write(f'it "{test_name}" \\context -> do\n')
+            handle.write(f'  Regression.knownBad "{key}" backend\n')
+            handle.write(f'  Regression.assertBehavior "{key}" condition\n\n')
+        locator = f"hspec:nhcore-test-service:{path.relative_to(root)}#{test_name}"
         helper_cell = ", ".join(f"`{helper_name}`" for helper_name in helpers)
-        rows.append(
-            f"| `{key}` | scaffold {key} | `{backend}` | `{count}` | `{path.relative_to(root)}` | "
-            f"`{example_name}` | {helper_cell} |"
-        )
+        rows.append(f"| `{key}` | {prompt} | `{backend}` | `{count}` | `{locator}` | "
+                    f"{bad} | `REGRESSION_ASSERT:{key}` | {helper_cell} |")
     regression_skill = root / ".pi" / "skills" / "neohaskell-event-store-regression-specs" / "SKILL.md"
     regression_skill.write_text(
         "---\nname: neohaskell-event-store-regression-specs\n"
-        "description: Use when scaffolding compiled event-store regression tests from canonical examples.\n"
-        "---\n\n# Recipes\n\n## Recipe routing\n\n| Recipe | Use when | Smoke backend | Smoke examples | Canonical file | Canonical test | Helpers |\n"
-        "|---|---|---|---|---|---|---|\n" + "\n".join(rows) + "\n",
+        "description: Use when scaffolding mutation-proved event-store regressions.\n"
+        "---\n\n# Recipes\n\n## Recipe routing\n\n"
+        "| Recipe | Representative prompt | Smoke backend | Smoke examples | Locator | Known-bad behavior | Expected assertion | Helpers |\n"
+        "|---|---|---|---|---|---|---|---|\n" + "\n".join(rows) + "\n",
         encoding="utf-8",
     )
     (root / "scripts").mkdir(parents=True)
     (root / "scripts" / "regression-scaffold-smoke").write_text(
-        "recipes() expected_examples NEOHASKELL_REGRESSION_SMOKE_BACKEND "
-        "examples?, 1 failure sentinel_count\n",
+        "route_prompt() validate_output() known-good controlled bad "
+        "REGRESSION_SMOKE_TIMEOUT_SECONDS\n",
         encoding="utf-8",
     )
     (root / "scripts" / "pipeline-state").write_text(
         'PLAN_WRITABLE_STAGES = {"intake", "localize"}\n'
         'TRUSTED_METADATA_BASE = "origin/main"\n'
+        'def reserve_change_id(): pass\n'
+        'def verify_red_evidence(): pass\n'
         'def metadata_transition_error(): pass\n'
         'if next_stage in {"design-review", "ci"}: pass\n'
         'message = "pr_number is immutable once set"\n'
@@ -871,7 +859,7 @@ def self_test():
         path = root / ".pi" / "skills" / "neohaskell-event-store-regression-specs" / "SKILL.md"
         path.write_text(
             read(path) +
-            "| `extra-recipe` | extra | `in-memory` | `1` | `missing.hs` | `extra` | `seedStream` |\n",
+            "| `extra-recipe` | extra prompt | `in-memory` | `1` | `hspec:suite:missing.hs#extra` | bad | `REGRESSION_ASSERT:extra-recipe` | `seedStream` |\n",
             encoding="utf-8",
         )
     errors = mutated(add_unknown_regression_recipe)
@@ -880,8 +868,8 @@ def self_test():
 
     def remove_required_recipe_helper(root):
         path = root / ".pi" / "skills" / "neohaskell-event-store-regression-specs" / "SKILL.md"
-        path.write_text(read(path).replace("`seedStream`, `requireInsertionType`, `recordInsertions`",
-                                           "`seedStream`, `requireInsertionType`"), encoding="utf-8")
+        path.write_text(read(path).replace("`requireInsertionType`, `knownBad`, `assertBehavior`",
+                                           "`requireInsertionType`, `knownBad`"), encoding="utf-8")
     errors = mutated(remove_required_recipe_helper)
     expect(any("helpers must be" in error for error in errors),
            f"missing required recipe helper should fail, got {errors}")
@@ -894,19 +882,19 @@ def self_test():
             1,
         ), encoding="utf-8")
     errors = mutated(point_recipe_at_missing_example)
-    expect(any("invalid canonical example" in error for error in errors),
+    expect(any("canonical test does not resolve" in error for error in errors),
            f"missing canonical example should be a validation error, got {errors}")
 
-    def move_sentinel_to_another_test(root):
+    def move_assertion_to_another_test(root):
         path = root / "core" / "testlib" / "Test" / "Service" / "CommandHandler" / "Execute" / "Spec.hs"
-        text = read(path).replace('  intentionalRed "insertion-guard"\n', "")
+        text = read(path).replace('  Regression.assertBehavior "insertion-guard" condition\n', "")
         path.write_text(
-            text + 'it "unrelated test" \\context -> do\n  intentionalRed "insertion-guard"\n',
+            text + 'it "unrelated test" \\context -> do\n  Regression.assertBehavior "insertion-guard" condition\n',
             encoding="utf-8",
         )
-    errors = mutated(move_sentinel_to_another_test)
-    expect(any("canonical test block lacks" in error for error in errors),
-           f"sentinel outside canonical test block should fail, got {errors}")
+    errors = mutated(move_assertion_to_another_test)
+    expect(any("lacks its semantic assertion" in error for error in errors),
+           f"assertion outside canonical test block should fail, got {errors}")
 
     def invalid_name(root):
         path = root / ".pi" / "skills" / "neohaskell-localizer" / "SKILL.md"

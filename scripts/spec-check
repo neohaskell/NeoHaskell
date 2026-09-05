@@ -120,6 +120,22 @@ def load_test_surfaces():
     if data.get("schema") != 1 or not isinstance(data.get("hspec_suites"), dict) \
             or not isinstance(data.get("boundaries"), list):
         raise ValueError("invalid test-surface registry shape")
+    for suite, definition in data["hspec_suites"].items():
+        if not re.fullmatch(r"[a-z0-9-]+", suite) or not isinstance(definition, dict) \
+                or not isinstance(definition.get("roots"), list) \
+                or not definition["roots"] or any(not safe_repo_path(root)
+                                                   for root in definition["roots"]):
+            raise ValueError(f"invalid hspec suite registry entry `{suite}`")
+    seen = set()
+    for entry in data["boundaries"]:
+        if not isinstance(entry, dict) or entry.get("kind") not in {"hspec", "script"} \
+                or not safe_repo_path(str(entry.get("path", ""))) \
+                or entry.get("boundary") not in BOUNDARIES:
+            raise ValueError("invalid boundary registry entry")
+        key = (entry.get("kind"), entry.get("suite"), entry.get("path"), entry.get("match"))
+        if key in seen:
+            raise ValueError("duplicate boundary registry entry")
+        seen.add(key)
     return data
 
 
@@ -529,6 +545,20 @@ def unresolved_criteria_tests(spec_name, spec_text, root=ROOT, surfaces=None):
     return errs
 
 
+def require_changed_spec(base, changed_lookup=speclib.changed_specs):
+    try:
+        specs = [path for path in changed_lookup(ROOT, base)
+                 if is_spec_file(path.name) and path.name != "TEMPLATE.md"]
+    except speclib.GitDiffError as error:
+        print(f"spec-check: git diff against `{base}` failed ({error})", file=sys.stderr)
+        return 2
+    if not specs:
+        print("spec-check: FAIL — PR changes no contract-delta spec", file=sys.stderr)
+        return 1
+    print(f"spec-check: OK — {len(specs)} changed contract-delta spec(s)")
+    return 0
+
+
 def criteria_tests_pr(base):
     """PR-ready gate: every criterion in a changed spec names a proving test that
     RESOLVES. Mirrors reviews_pr. Exit 0 ok / 1 unresolved / 2 bad base."""
@@ -609,6 +639,13 @@ def self_test():
             fails += 1
 
     expect("valid", VALID_FIXTURE, None)
+    if require_changed_spec("base", changed_lookup=lambda _root, _base: []) != 1:
+        print("self-test FAIL require-changed accepted zero specs")
+        fails += 1
+    if require_changed_spec("base", changed_lookup=lambda _root, _base: [
+            Path("docs/changes/001-x.md")]) != 0:
+        print("self-test FAIL require-changed rejected changed spec")
+        fails += 1
     # regression: `issue#712` must survive comment stripping (only
     # whitespace-preceded `#` starts a YAML comment)
     header, _ = parse_header("issue: issue#712  # trailing comment")
@@ -820,6 +857,10 @@ def main():
     if args and args[0] == "--criteria-tests":
         base = args[1] if len(args) > 1 else "origin/main"
         return criteria_tests_pr(base)
+
+    if args and args[0] == "--require-changed":
+        base = args[1] if len(args) > 1 else "origin/main"
+        return require_changed_spec(base)
 
     files = [Path(a) for a in args] if args else sorted(CHANGES.glob("*.md"))
     files = [p for p in files if is_spec_file(p.name)]

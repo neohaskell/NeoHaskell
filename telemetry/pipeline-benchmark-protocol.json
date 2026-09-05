@@ -1,0 +1,59 @@
+{
+  "schema": 1,
+  "protocol_id": "issue-862-consistency-conflict-refetch-v1",
+  "task": {
+    "prompt": "Scaffold a consistency-conflict regression proving refetch, re-decision, stale-payload rejection, and fresh-revision insertion.",
+    "recipe": "consistency-conflict-refetch",
+    "locator": "hspec:nhcore-test-service:core/testlib/Test/Service/CommandHandler/Execute/Spec.hs#records the exact insertion precondition after refetch",
+    "expected_assertion": "REGRESSION_ASSERT:consistency-conflict-refetch"
+  },
+  "activities": [
+    "localization",
+    "index",
+    "test-scaffolding",
+    "compilation",
+    "test-execution"
+  ],
+  "cache_states": {
+    "cold": {
+      "hie_index": "absent",
+      "hie_artifacts": "absent",
+      "dev_build_cache": "warm",
+      "watcher": "stopped"
+    },
+    "warm": {
+      "hie_index": "fresh-for-ref-and-toolchain",
+      "hie_artifacts": "present",
+      "dev_build_cache": "warm",
+      "watcher": "successful-reload-observed"
+    }
+  },
+  "sampling": {
+    "warmups_per_ref_and_cache_state": 1,
+    "measured_per_ref_and_cache_state": 5,
+    "minimum_valid": 5,
+    "outlier_removal": "none"
+  },
+  "statistics": {
+    "duration": "union(activity intervals) minus union(human wait intervals)",
+    "median": "sorted middle (mean of two middle values for even n)",
+    "p95": "nearest rank ceil(0.95*n)"
+  },
+  "thresholds": {
+    "candidate_warm_median_s_max": 240,
+    "candidate_warm_p95_s_max": 240,
+    "index_p95_s_max": 3,
+    "human_wait_s_max": 0
+  },
+  "noise_policy": {
+    "replacement_attempts": 1,
+    "replace_only": ["runner-unavailable", "network-unavailable", "host-preempted"],
+    "never_replace": ["compile-failed", "zero-match", "wrong-failure", "timeout", "unexpected-file-change"],
+    "retain_all_attempts": true
+  },
+  "gates": {
+    "pull_request_wall_clock": false,
+    "local_comparison": true,
+    "nightly_evidence_validation": true
+  }
+}

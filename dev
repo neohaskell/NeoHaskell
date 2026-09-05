@@ -40,8 +40,10 @@ usage: ./dev <verb> [args]
   hiedb [--rebuild]     incrementally index emitted .hie files; --rebuild is
                           the explicit cold full-build path
   who-calls <sym> [mod] cached symbol references, or an immediate git-grep fallback
-  regression-smoke      compile and intentionally fail every event-store skill recipe
-                          (--self-test validates routing without building)
+  regression-smoke      prove all six event-store recipes against known-good and
+                          controlled known-bad behavior (--self-test is build-free)
+  red-evidence <cmd>     record/verify a bug C1 Gate 1 expected-red receipt
+  pipeline-benchmark    validate same-task baseline/candidate timing evidence
   where-defined <sym>   symbol definition site, capability-tagged
   api <query>           search the NeoHaskell API surface — by type
                           ("Text -> Int") or by name (toInt)
@@ -126,6 +128,8 @@ case "${VERB}" in
   hiedb)    exec scripts/refresh-hiedb "$@" ;;
   who-calls) exec scripts/who-calls "$@" ;;
   regression-smoke) exec scripts/regression-scaffold-smoke "$@" ;;
+  red-evidence) exec scripts/spec-red-evidence "$@" ;;
+  pipeline-benchmark) exec scripts/pipeline-benchmark "$@" ;;
   where-defined) exec scripts/where-defined "$@" ;;
   api)      exec scripts/api "$@" ;;
   spec-check) exec scripts/spec-check "$@" ;;

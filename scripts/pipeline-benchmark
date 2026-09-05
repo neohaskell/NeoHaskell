@@ -1,0 +1,229 @@
+#!/usr/bin/env python3
+"""Validate and summarize the issue-862 same-task pipeline benchmark."""
+
+import argparse
+import hashlib
+import json
+import math
+import statistics
+import sys
+import tempfile
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+PROTOCOL = ROOT / "telemetry" / "pipeline-benchmark-protocol.json"
+
+
+def protocol_digest(path=PROTOCOL):
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def interval_union_seconds(intervals):
+    normalized = sorted((float(item["start_s"]), float(item["stop_s"])) for item in intervals)
+    if any(stop < start for start, stop in normalized):
+        raise ValueError("reversed interval")
+    merged = []
+    for start, stop in normalized:
+        if not merged or start > merged[-1][1]:
+            merged.append([start, stop])
+        else:
+            merged[-1][1] = max(merged[-1][1], stop)
+    return sum(stop - start for start, stop in merged)
+
+
+def subtract_intervals(active, waits):
+    points = []
+    for interval in active:
+        points.extend([(float(interval["start_s"]), 1, 0),
+                       (float(interval["stop_s"]), -1, 0)])
+    for interval in waits:
+        points.extend([(float(interval["start_s"]), 0, 1),
+                       (float(interval["stop_s"]), 0, -1)])
+    points.sort(key=lambda point: (point[0], -point[1], -point[2]))
+    active_depth = wait_depth = 0
+    previous = None
+    total = 0.0
+    for moment, active_delta, wait_delta in points:
+        if previous is not None and active_depth > 0 and wait_depth == 0:
+            total += moment - previous
+        active_depth += active_delta
+        wait_depth += wait_delta
+        previous = moment
+    return total
+
+
+def nearest_rank(values, percentile):
+    ordered = sorted(values)
+    return ordered[max(0, math.ceil(percentile * len(ordered)) - 1)]
+
+
+def sample_errors(sample, protocol):
+    errors = []
+    if sample.get("ref") not in {"baseline", "candidate"}:
+        errors.append("unknown ref")
+    if sample.get("cache_state") not in protocol["cache_states"]:
+        errors.append("unknown cache state")
+    if sample.get("status") != "valid":
+        errors.append(f"sample status is `{sample.get('status')}`")
+    activities = sample.get("activities")
+    if not isinstance(activities, dict) or set(activities) != set(protocol["activities"]):
+        errors.append("sample must contain every exact activity")
+    else:
+        for name, intervals in activities.items():
+            if not isinstance(intervals, list) or not intervals:
+                errors.append(f"activity `{name}` has no intervals")
+            else:
+                try:
+                    interval_union_seconds(intervals)
+                except (KeyError, TypeError, ValueError):
+                    errors.append(f"activity `{name}` has invalid intervals")
+    validation = sample.get("validation", {})
+    if validation != {
+        "compiled": True,
+        "selected_examples": 2,
+        "good_failures": 0,
+        "bad_failures": 1,
+        "failure_identity": protocol["task"]["expected_assertion"],
+        "unexpected_files": [],
+    }:
+        errors.append("sample correctness validation is not exact")
+    return errors
+
+
+def evaluate(evidence, protocol):
+    errors = []
+    if evidence.get("schema") != 1 or evidence.get("protocol_id") != protocol["protocol_id"]:
+        errors.append("evidence schema/protocol mismatch")
+    if evidence.get("protocol_sha256") != protocol_digest():
+        errors.append("evidence protocol digest is stale")
+    samples = evidence.get("samples")
+    if not isinstance(samples, list):
+        return None, ["evidence samples must be a list"]
+    measured = [sample for sample in samples if not sample.get("warmup", False)]
+    for index, sample in enumerate(samples, start=1):
+        errors += [f"sample {index}: {error}" for error in sample_errors(sample, protocol)]
+    required = protocol["sampling"]["measured_per_ref_and_cache_state"]
+    grouped = {}
+    durations = {}
+    index_durations = {}
+    waits = {}
+    for sample in measured:
+        key = (sample.get("ref"), sample.get("cache_state"))
+        grouped.setdefault(key, []).append(sample)
+        activity_intervals = [interval for name in protocol["activities"]
+                              for interval in sample.get("activities", {}).get(name, [])]
+        human_waits = sample.get("human_waits", [])
+        try:
+            durations.setdefault(key, []).append(subtract_intervals(activity_intervals, human_waits))
+            index_durations.setdefault(key, []).append(
+                interval_union_seconds(sample.get("activities", {}).get("index", [])))
+            waits.setdefault(key, []).append(interval_union_seconds(human_waits))
+        except (KeyError, TypeError, ValueError):
+            errors.append(f"sample {sample.get('sample')}: invalid active/wait interval union")
+    for ref in ("baseline", "candidate"):
+        for cache_state in protocol["cache_states"]:
+            count = len(grouped.get((ref, cache_state), []))
+            if count != required:
+                errors.append(f"{ref}/{cache_state} needs exactly {required} measured samples, got {count}")
+    if errors:
+        return None, errors
+    stats = {}
+    for key, values in durations.items():
+        name = f"{key[0]}:{key[1]}"
+        stats[name] = {
+            "n": len(values), "median_s": statistics.median(values),
+            "p95_s": nearest_rank(values, 0.95),
+            "index_p95_s": nearest_rank(index_durations[key], 0.95),
+            "human_wait_s": sum(waits[key]),
+        }
+    thresholds = protocol["thresholds"]
+    candidate = stats["candidate:warm"]
+    violations = []
+    if candidate["median_s"] > thresholds["candidate_warm_median_s_max"]:
+        violations.append("candidate warm median exceeds 240s")
+    if candidate["p95_s"] > thresholds["candidate_warm_p95_s_max"]:
+        violations.append("candidate warm p95 exceeds 240s")
+    if candidate["index_p95_s"] > thresholds["index_p95_s_max"]:
+        violations.append("candidate warm index p95 exceeds 3s")
+    if candidate["human_wait_s"] > thresholds["human_wait_s_max"]:
+        violations.append("candidate samples include human wait")
+    return {"schema": 1, "protocol_id": protocol["protocol_id"],
+            "statistics": stats, "threshold": {
+                "status": "pass" if not violations else "fail",
+                "violations": violations,
+            }}, []
+
+
+def command_evaluate(args):
+    protocol = json.loads(PROTOCOL.read_text())
+    evidence = json.loads(Path(args.evidence).read_text())
+    result, errors = evaluate(evidence, protocol)
+    for error in errors:
+        print(f"pipeline-benchmark: FAIL — {error}", file=sys.stderr)
+    if errors:
+        return 1
+    output = json.dumps(result, indent=2, sort_keys=True) + "\n"
+    if args.output:
+        Path(args.output).write_text(output)
+    print(output, end="")
+    return 0 if result["threshold"]["status"] == "pass" else 1
+
+
+def self_test():
+    protocol = json.loads(PROTOCOL.read_text())
+    samples = []
+    for ref in ("baseline", "candidate"):
+        for cache in ("cold", "warm"):
+            for number in range(5):
+                activities = {}
+                cursor = 0.0
+                for activity in protocol["activities"]:
+                    duration = 20.0 if ref == "baseline" else (1.0 if activity == "index" else 10.0)
+                    activities[activity] = [{"start_s": cursor, "stop_s": cursor + duration}]
+                    cursor += duration
+                samples.append({
+                    "sample": number + 1, "ref": ref, "cache_state": cache,
+                    "warmup": False, "status": "valid", "activities": activities,
+                    "human_waits": [], "validation": {
+                        "compiled": True, "selected_examples": 2, "good_failures": 0,
+                        "bad_failures": 1,
+                        "failure_identity": protocol["task"]["expected_assertion"],
+                        "unexpected_files": [],
+                    },
+                })
+    evidence = {"schema": 1, "protocol_id": protocol["protocol_id"],
+                "protocol_sha256": protocol_digest(), "samples": samples}
+    result, errors = evaluate(evidence, protocol)
+    failures = 0
+    if errors or result["threshold"]["status"] != "pass" \
+            or result["statistics"]["candidate:warm"]["median_s"] != 41.0:
+        print(f"pipeline-benchmark self-test FAIL valid evidence: {errors}, {result}")
+        failures += 1
+    broken = json.loads(json.dumps(evidence))
+    broken["samples"][0]["validation"]["selected_examples"] = 0
+    if not evaluate(broken, protocol)[1]:
+        print("pipeline-benchmark self-test FAIL zero-match accepted")
+        failures += 1
+    overlap = subtract_intervals(
+        [{"start_s": 0, "stop_s": 10}, {"start_s": 5, "stop_s": 15}],
+        [{"start_s": 7, "stop_s": 9}],
+    )
+    if overlap != 13.0:
+        print(f"pipeline-benchmark self-test FAIL interval union/wait subtraction: {overlap}")
+        failures += 1
+    if failures == 0:
+        print("pipeline-benchmark self-test: OK — protocol digest, exact samples, union timing, median/p95, and thresholds enforced")
+    return 1 if failures else 0
+
+
+def main():
+    if len(sys.argv) == 2 and sys.argv[1] == "--self-test":
+        return self_test()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("evidence")
+    parser.add_argument("--output")
+    return command_evaluate(parser.parse_args())
+
+
+if __name__ == "__main__":
+    sys.exit(main())

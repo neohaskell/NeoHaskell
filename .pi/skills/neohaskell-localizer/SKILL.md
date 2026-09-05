@@ -23,8 +23,9 @@ capability ontology, extension points, generated API signatures, symbol DB.
 5. **Edit-set expansion**: `./dev who-calls <symbol> [defining-module]` —
    who breaks if this changes, grouped by capability. The command only indexes
    already-emitted `.hie` artifacts and is cached per worktree/toolchain; it never
-   builds. A cold worktree returns immediately with the exact executable bounded
-   `git grep` fallback. `./dev watch` keeps the index warm; only a human explicitly
+   builds. Cold, stale, busy, corrupt, or timed-out state returns the exact
+   executable bounded `git grep` fallback. `./dev watch` warms the index only after
+   a new successful reload; only a human explicitly
    choosing `./dev hiedb --rebuild` starts a full build. testbed hits = update
    acceptance tests too. Record-field accessors may not resolve via name-refs —
    use the emitted grep fallback for those.
