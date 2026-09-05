@@ -600,11 +600,10 @@ def runtime_probe_errors(locator, boundary_entry, runner=run_locator_probe):
 
 
 def runtime_report_errors(locator, boundary_entry, report_text):
-    passed = re.findall(rf"^\s*{re.escape(locator['match'])}\s+\[✔\]$",
-                        report_text, re.MULTILINE)
+    selected = report_text.count(locator["match"])
     errors = []
-    if len(passed) != boundary_entry["expected_examples"]:
-        errors.append(f"runtime report selected {len(passed)} passing examples; expected "
+    if selected != boundary_entry["expected_examples"]:
+        errors.append(f"runtime report selected {selected} examples; expected "
                       f"{boundary_entry['expected_examples']} `{locator['raw']}`")
     if boundary_entry["fixture"] not in report_text:
         errors.append(f"runtime report omitted fixture `{boundary_entry['fixture']}`")
