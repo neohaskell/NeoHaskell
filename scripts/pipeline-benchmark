@@ -247,6 +247,14 @@ def record_sample(args):
         print("pipeline-benchmark: cannot resolve sample HEAD", file=sys.stderr)
         return 2
     git_sha = sha_result.stdout.strip()
+    if args.cache_state == "warm":
+        warm_code, warm_output = run_bounded(
+            [str(root / "dev"), "hiedb", "--if-needed", "--quiet"], root
+        )
+        if warm_code != 0:
+            print(f"pipeline-benchmark: cannot prepare warm HIE state ({warm_code})\n{warm_output}",
+                  file=sys.stderr)
+            return 2
     try:
         cache_evidence = prepare_cache_evidence(root, args.cache_state, protocol)
     except ValueError as error:
