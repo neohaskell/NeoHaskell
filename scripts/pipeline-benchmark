@@ -224,6 +224,11 @@ def run_bounded(command, cwd, timeout=900):
 
 
 def prepare_cache_evidence(root, cache_state, protocol):
+    watcher = subprocess.run(["pgrep", "-f", f"{root}/scripts/watch "],
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                             check=False)
+    if watcher.returncode == 0:
+        raise ValueError("benchmark requires the watcher to be stopped")
     has_db = (root / ".hiedb").is_file() and (root / ".hiedb-meta").is_file()
     has_hie = (root / "dist-newstyle").is_dir() \
         and any((root / "dist-newstyle").rglob("*.hie"))
@@ -247,6 +252,30 @@ def record_sample(args):
         print("pipeline-benchmark: cannot resolve sample HEAD", file=sys.stderr)
         return 2
     git_sha = sha_result.stdout.strip()
+    clean_command = ["git", "status", "--porcelain", "--untracked-files=all"]
+    initial_status = subprocess.run(clean_command, cwd=root, text=True,
+                                    stdout=subprocess.PIPE, check=False).stdout
+    if initial_status.strip():
+        print("pipeline-benchmark: sample worktree must be fully clean and pinned",
+              file=sys.stderr)
+        return 2
+    (root / ".ghcid-errors.txt").unlink(missing_ok=True)
+    preflight_code, preflight_output = run_bounded(
+        [str(root / "dev"), "check", "lib:nhcore"], root
+    )
+    if preflight_code != 0:
+        print(f"pipeline-benchmark: build-cache preflight failed ({preflight_code})\n"
+              f"{preflight_output}", file=sys.stderr)
+        return 2
+    if args.cache_state == "cold":
+        if not args.prepare_cold or root == ROOT:
+            print("pipeline-benchmark: cold reset requires --prepare-cold in an isolated worktree",
+                  file=sys.stderr)
+            return 2
+        for hie in (root / "dist-newstyle").rglob("*.hie"):
+            hie.unlink()
+        for artifact in (".hiedb", ".hiedb-meta", ".hiedb-shm", ".hiedb-wal"):
+            (root / artifact).unlink(missing_ok=True)
     if args.cache_state == "warm":
         warm_code, warm_output = run_bounded(
             [str(root / "dev"), "hiedb", "--if-needed", "--quiet"], root
@@ -260,10 +289,10 @@ def record_sample(args):
     except ValueError as error:
         print(f"pipeline-benchmark: {error}", file=sys.stderr)
         return 2
-    before = subprocess.run(["git", "status", "--porcelain", "--untracked-files=no"],
-                            cwd=root, text=True, stdout=subprocess.PIPE, check=False).stdout
+    before = subprocess.run(clean_command, cwd=root, text=True,
+                            stdout=subprocess.PIPE, check=False).stdout
     if before.strip():
-        print("pipeline-benchmark: sample worktree must be clean and pinned", file=sys.stderr)
+        print("pipeline-benchmark: cache preparation dirtied the worktree", file=sys.stderr)
         return 2
     activities = {}
     transcript_parts = []
@@ -278,8 +307,8 @@ def record_sample(args):
         if code != 0 and not (allowed_cold_failure and code == 2):
             print(f"pipeline-benchmark: activity `{activity}` failed ({code})", file=sys.stderr)
             return 1
-    after = subprocess.run(["git", "status", "--porcelain", "--untracked-files=no"],
-                           cwd=root, text=True, stdout=subprocess.PIPE, check=False).stdout
+    after = subprocess.run(clean_command, cwd=root, text=True,
+                           stdout=subprocess.PIPE, check=False).stdout
     unexpected = [] if before == after else sorted(set(after.splitlines()) - set(before.splitlines()))
     smoke_receipt = root / ".pipeline" / "regression-smoke.json"
     try:
@@ -416,6 +445,7 @@ def main():
         parser.add_argument("--root", default=str(ROOT))
         parser.add_argument("--evidence", required=True)
         parser.add_argument("--warmup", action="store_true")
+        parser.add_argument("--prepare-cold", action="store_true")
         return record_sample(parser.parse_args())
     parser = argparse.ArgumentParser()
     parser.add_argument("evidence")

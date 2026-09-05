@@ -25,14 +25,14 @@
     "cold": {
       "hie_index": "absent",
       "hie_artifacts": "absent",
-      "dev_build_cache": "warm",
+      "dev_build_cache": "preflight-check-passed-before-hie-reset",
       "watcher": "stopped"
     },
     "warm": {
       "hie_index": "fresh-for-ref-and-toolchain",
       "hie_artifacts": "present",
-      "dev_build_cache": "warm",
-      "watcher": "successful-reload-observed"
+      "dev_build_cache": "preflight-check-passed",
+      "watcher": "stopped"
     }
   },
   "sampling": {

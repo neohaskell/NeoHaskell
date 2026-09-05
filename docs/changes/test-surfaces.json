@@ -140,15 +140,6 @@
     {
       "kind": "hspec",
       "suite": "nhcore-test-service",
-      "path": "core/test/Service/EventStore/PostgresSpec.hs",
-      "match": "operations reuse the store-owned pool until close",
-      "boundary": "postgres:real",
-      "expected_examples": 1,
-      "fixture": "Service.EventStore.Postgres"
-    },
-    {
-      "kind": "hspec",
-      "suite": "nhcore-test-service",
       "path": "core/test-service/Service/QueryObjectStore/PostgresSpec.hs",
       "match": "state round-trips under the threaded query name",
       "boundary": "postgres:real",
