@@ -226,11 +226,17 @@ def run_bounded(command, cwd, timeout=900):
 
 
 def prepare_cache_evidence(root, cache_state, protocol):
-    watcher = subprocess.run(["pgrep", "-f", f"{root}/scripts/watch "],
-                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                             check=False)
-    if watcher.returncode == 0:
-        raise ValueError("benchmark requires the watcher to be stopped")
+    watcher_state = root / ".ghcid-watch.pid"
+    if watcher_state.exists():
+        try:
+            watcher_pid = int(watcher_state.read_text().strip())
+            os.kill(watcher_pid, 0)
+        except ProcessLookupError:
+            watcher_state.unlink(missing_ok=True)
+        except (ValueError, PermissionError):
+            raise ValueError("watcher PID state is invalid or unverifiable")
+        else:
+            raise ValueError("benchmark requires the watcher to be stopped")
     has_db = (root / ".hiedb").is_file() and (root / ".hiedb-meta").is_file()
     has_hie = (root / "dist-newstyle").is_dir() \
         and any((root / "dist-newstyle").rglob("*.hie"))

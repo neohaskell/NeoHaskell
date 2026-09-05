@@ -66,7 +66,8 @@ fi
 SH
   chmod +x "${toolchain}" "${refresh}"
   WATCH_TOOLCHAIN="${toolchain}" WATCH_REFRESH="${refresh}" \
-    WATCH_OUT="${output}" WATCH_DEBOUNCE_SECONDS=0.02 WATCH_POLL_SECONDS=0.02 \
+    WATCH_STATE_FILE="${tmp}/watch.pid" WATCH_OUT="${output}" \
+    WATCH_DEBOUNCE_SECONDS=0.02 WATCH_POLL_SECONDS=0.02 \
     WATCH_TEST_CALLS="${calls}" "$0" lib:nhcore-test
   if [ ! -s "${calls}" ]; then
     echo "watch self-test FAIL: a compiled reload did not refresh the HIE index" >&2
@@ -86,7 +87,8 @@ SH
   local blocked_calls blocked_pid blocked_child
   blocked_calls="${tmp}/blocked-refresh-calls"
   WATCH_TOOLCHAIN="${toolchain}" WATCH_REFRESH="${refresh}" \
-    WATCH_OUT="${tmp}/blocked-errors" WATCH_DEBOUNCE_SECONDS=0.02 WATCH_POLL_SECONDS=0.02 \
+    WATCH_STATE_FILE="${tmp}/blocked-watch.pid" WATCH_OUT="${tmp}/blocked-errors" \
+    WATCH_DEBOUNCE_SECONDS=0.02 WATCH_POLL_SECONDS=0.02 \
     WATCH_TEST_CALLS="${blocked_calls}" WATCH_TEST_BLOCK=1 "$0" lib:nhcore-test
   blocked_pid="$(awk 'NR==1 {print $1}' "${blocked_calls}" 2>/dev/null || true)"
   blocked_child="$(awk 'NR==1 {print $2}' "${blocked_calls}" 2>/dev/null || true)"
@@ -106,12 +108,25 @@ SH
   error_calls="${tmp}/error-refresh-calls"
   printf 'All good\n' > "${tmp}/error-output"
   WATCH_TOOLCHAIN="${toolchain}" WATCH_REFRESH="${refresh}" \
-    WATCH_OUT="${tmp}/error-output" WATCH_DEBOUNCE_SECONDS=0.02 WATCH_POLL_SECONDS=0.02 \
+    WATCH_STATE_FILE="${tmp}/error-watch.pid" WATCH_OUT="${tmp}/error-output" \
+    WATCH_DEBOUNCE_SECONDS=0.02 WATCH_POLL_SECONDS=0.02 \
     WATCH_TEST_CALLS="${error_calls}" WATCH_TEST_ERROR=1 "$0" lib:nhcore-test
   if [ -s "${error_calls}" ]; then
     echo "watch self-test FAIL: failed reload refreshed the HIE index" >&2
     failures=1
   fi
+
+  local active_code=0
+  printf '%s\n' "$$" > "${tmp}/active-watch.pid"
+  set +e
+  WATCH_TOOLCHAIN="${toolchain}" WATCH_REFRESH="${refresh}" \
+    WATCH_STATE_FILE="${tmp}/active-watch.pid" WATCH_OUT="${tmp}/active-output" \
+    WATCH_TEST_CALLS="${tmp}/active-calls" "$0" lib:nhcore-test >/dev/null 2>&1
+  active_code=$?
+  set -e
+  [ "${active_code}" -eq 2 ] \
+    || { echo "watch self-test FAIL: active PID state did not block a second watcher" >&2; failures=1; }
+  rm -f "${tmp}/active-watch.pid"
   if [ "${failures}" -ne 0 ]; then return 1; fi
   echo "watch self-test: OK — successful reloads refresh; failed reloads skip; process groups are reaped"
 }
@@ -128,6 +143,7 @@ REFRESH="${WATCH_REFRESH:-${SCRIPT_DIR}/refresh-hiedb}"
 DEBOUNCE_SECONDS="${WATCH_DEBOUNCE_SECONDS:-1}"
 POLL_SECONDS="${WATCH_POLL_SECONDS:-2}"
 REFRESH_GROUP_FILE="${WATCH_REFRESH_GROUP_FILE:-${OUT}.hiedb-refresh-pgid}"
+STATE_FILE="${WATCH_STATE_FILE:-.ghcid-watch.pid}"
 
 # TARGET is spliced into ghcid's --command STRING (shell-evaluated), unlike the
 # other scripts where targets travel as argv. Restrict to cabal target syntax
@@ -136,6 +152,15 @@ if ! [[ "${TARGET}" =~ ^[A-Za-z0-9:._-]+$ ]]; then
   echo "watch: invalid target '${TARGET}' (allowed charset: [A-Za-z0-9:._-])" >&2
   exit 2
 fi
+
+existing_watcher="$(cat "${STATE_FILE}" 2>/dev/null || true)"
+if [[ "${existing_watcher}" =~ ^[0-9]+$ ]] && kill -0 "${existing_watcher}" 2>/dev/null; then
+  echo "watch: watcher already active (PID ${existing_watcher})" >&2
+  exit 2
+fi
+printf '%s\n' "$$" > "${STATE_FILE}.tmp.$$"
+mv "${STATE_FILE}.tmp.$$" "${STATE_FILE}"
+trap 'rm -f "${STATE_FILE}"' EXIT
 
 echo "watch: watching ${TARGET} (dev flavor, -O0); errors -> ${OUT}"
 rm -f "${OUT}" "${REFRESH_GROUP_FILE}"
@@ -242,6 +267,9 @@ cleanup() {
     kill -KILL -- "-${active_refresh_pgid}" 2>/dev/null || true
   fi
   rm -f "${REFRESH_GROUP_FILE}"
+  if [ "$(cat "${STATE_FILE}" 2>/dev/null || true)" = "$$" ]; then
+    rm -f "${STATE_FILE}"
+  fi
 }
 trap cleanup EXIT
 trap 'exit 130' INT TERM

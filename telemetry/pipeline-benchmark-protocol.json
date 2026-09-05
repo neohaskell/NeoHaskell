@@ -49,7 +49,7 @@
   "thresholds": {
     "candidate_warm_median_s_max": 240,
     "candidate_warm_p95_s_max": 240,
-    "index_p95_s_max": 10,
+    "index_p95_s_max": 3,
     "human_wait_s_max": 0
   },
   "noise_policy": {
