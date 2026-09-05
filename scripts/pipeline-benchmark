@@ -226,15 +226,15 @@ def run_bounded(command, cwd, timeout=900):
 
 
 def prepare_cache_evidence(root, cache_state, protocol):
-    watcher_state = root / ".ghcid-watch.pid"
+    watcher_state = root / ".ghcid-watch.lock"
     if watcher_state.exists():
         try:
-            watcher_pid = int(watcher_state.read_text().strip())
+            watcher_pid = int((watcher_state / "owner").read_text().strip())
             os.kill(watcher_pid, 0)
         except ProcessLookupError:
-            watcher_state.unlink(missing_ok=True)
-        except (ValueError, PermissionError):
-            raise ValueError("watcher PID state is invalid or unverifiable")
+            raise ValueError("benchmark requires stale watcher state to be recovered first")
+        except (OSError, TypeError, ValueError, PermissionError):
+            raise ValueError("benchmark cannot attest malformed watcher state")
         else:
             raise ValueError("benchmark requires the watcher to be stopped")
     has_db = (root / ".hiedb").is_file() and (root / ".hiedb-meta").is_file()
