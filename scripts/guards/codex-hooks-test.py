@@ -60,6 +60,8 @@ with tempfile.TemporaryDirectory() as directory:
                     'git --git-dir=.git --work-tree . reset --hard',
                     'git -C "directory with spaces" push origin --force',
                     'git push --force-with-lease', 'git push -f',
+                    'git push origin +main:main', 'git -C . push origin +HEAD:main',
+                    'git push -- origin +main:main',
                     'rm --recursive --force temporary', 'rm --force --recursive temporary',
                     'rm -fr temporary', 'rm -r -f temporary', 'rm -rf temporary',
                     'git status; git -C . reset --hard'):

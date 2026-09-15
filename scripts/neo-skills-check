@@ -166,7 +166,12 @@ def parse_frontmatter(text):
 def active_guidance_files(root):
     candidates = [
         root / "AGENTS.md",
+        root / "core" / "AGENTS.md",
+        root / "core" / "service" / "AGENTS.md",
+        root / "integrations" / "AGENTS.md",
+        root / "testbed" / "AGENTS.md",
         root / "neo" / "AGENTS.md",
+        root / "neo" / "assets" / "ide" / "AGENTS.md",
     ]
     candidates.extend(sorted((root / ".agents" / "skills").glob("*/SKILL.md")))
     return [path for path in candidates if path.is_file()]
@@ -837,6 +842,18 @@ def self_test():
     errors = mutated(retired_yaml_action)
     expect(any("retired agent automation" in error for error in errors),
            f"retired workflow action in .yaml should fail, got {errors}")
+
+    for guide in ('core/AGENTS.md', 'core/service/AGENTS.md', 'integrations/AGENTS.md',
+                  'testbed/AGENTS.md', 'neo/assets/ide/AGENTS.md'):
+        def scoped_bad_references(root):
+            path = root / guide
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text('Use neohaskell-nonexistent and STATE.md.\n')
+        errors = mutated(scoped_bad_references)
+        expect(any(guide in error and 'unknown skill' in error for error in errors),
+               f'{guide} must validate skill references, got {errors}')
+        expect(any(guide in error and 'references deleted file' in error for error in errors),
+               f'{guide} must validate retired guidance, got {errors}')
 
     def add_duplicate(root):
         duplicate = root / ".pi" / "skills" / "copied"

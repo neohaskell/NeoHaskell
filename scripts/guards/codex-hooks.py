@@ -109,6 +109,9 @@ def destructive_argv(words):
             if not args:
                 continue
             subcommand, args = args[0], args[1:]
+            # '+' forces a ref update even after the end-of-options delimiter.
+            if subcommand == 'push' and any(arg.startswith('+') for arg in args):
+                return True
             args = args[:args.index('--')] if '--' in args else args
             if subcommand == 'reset' and '--hard' in args:
                 return True
