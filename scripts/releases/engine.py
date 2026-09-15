@@ -125,7 +125,9 @@ def fragment(path, text):
     if meta["category"] == "Breaking changes" and meta["impact"] != "breaking":
         raise ValueError(f"{path}: breaking category requires breaking impact")
     if meta["impact"] == "breaking":
-        verification = re.search(r"(?ms)^### Verify\s*\n(.*?)(?=^### |\Z)", parts.get("Migration", ""))
+        verification = re.search(
+            r"(?ms)^### Verify\s*\n(.*?)(?=^### |\Z)", parts.get("Migration", "")
+        )
         if (
             meta["category"] != "Breaking changes"
             or not substantive(parts.get("Migration", ""))
