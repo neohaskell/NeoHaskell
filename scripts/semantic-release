@@ -17,6 +17,29 @@ import engine as release
 import github as remote
 
 
+def work_outputs(items):
+    runners = [
+        "ubuntu-latest",
+        "ubuntu-24.04-arm",
+        "macos-15-intel",
+        "macos-latest",
+    ]
+    outputs = {}
+    for group in ("platform", "installer"):
+        selected = [item for item in items if item["group"] == group]
+        matrix = {
+            "include": [
+                {**item, "target": target, "runner": runner}
+                for item in selected
+                for target, runner in zip(release.TARGETS, runners)
+            ]
+        }
+        outputs[f"{group}_has_work"] = str(bool(selected)).lower()
+        outputs[f"{group}_items"] = json.dumps(selected)
+        outputs[f"{group}_matrix"] = json.dumps(matrix)
+    return outputs
+
+
 def ci_only():
     if (
         os.environ.get("GITHUB_ACTIONS") != "true"
@@ -345,28 +368,14 @@ def main():
                     args.attempt,
                     args.reason,
                 )
-        runners = [
-            "ubuntu-latest",
-            "ubuntu-24.04-arm",
-            "macos-15-intel",
-            "macos-latest",
-        ]
-        result["matrix"] = {
-            "include": [
-                {**item, "target": target, "runner": runner}
-                for item in result["items"]
-                for target, runner in zip(release.TARGETS, runners)
-            ]
-        }
         print(release.canonical(result))
         if args.out:
             Path(args.out).write_text(release.canonical(result))
         output = os.environ.get("GITHUB_OUTPUT")
         if output:
             with open(output, "a") as handle:
-                handle.write("has_work=" + str(bool(result["items"])).lower() + "\n")
-                handle.write("items=" + json.dumps(result["items"]) + "\n")
-                handle.write("matrix=" + json.dumps(result["matrix"]) + "\n")
+                for key, value in work_outputs(result["items"]).items():
+                    handle.write(f"{key}={value}\n")
         return 0
     revision = repo.revision(args.revision)
     plan = get_plan(repo, revision, args.attempt or "")

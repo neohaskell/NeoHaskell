@@ -768,6 +768,105 @@ class Bootstrap(History):
 
 
 class Workflow(unittest.TestCase):
+    def test_group_failures_and_skips_do_not_block_the_other_publisher(self):
+        import re
+        import runpy
+
+        check = runpy.run_path(str(ROOT / "scripts/workflow-check"))
+        jobs = check["job_blocks"](
+            (ROOT / ".github/workflows/semantic-release.yml").read_text()
+        )
+        dependencies = {}
+        for name, body in jobs.items():
+            match = re.search(r"^    needs: (.+)$", body, re.M)
+            dependencies[name] = (
+                [part.strip() for part in match[1].strip("[]").split(",")]
+                if match
+                else []
+            )
+        for group in ("platform", "installer"):
+            self.assertIn(f"{group}_publish", jobs)
+            ancestors = set()
+            pending = list(dependencies[f"{group}_publish"])
+            while pending:
+                name = pending.pop()
+                if name not in ancestors:
+                    ancestors.add(name)
+                    pending.extend(dependencies[name])
+            self.assertIn(f"{group}_native", ancestors)
+            self.assertEqual(
+                {name.split("_")[0] for name in ancestors} - {"prepare"},
+                {group},
+            )
+            for stage in ("seed", "native", "publish"):
+                self.assertIn(
+                    f"needs.prepare.outputs.{group}_has_work == 'true'",
+                    jobs[f"{group}_{stage}"],
+                )
+        self.assertIn("platform_consumer", dependencies["platform_publish"])
+        reconcile = jobs["reconcile"]
+        self.assertIn("!cancelled()", reconcile)
+        self.assertIn("needs.platform_publish.result == 'success' ||", reconcile)
+        self.assertIn("needs.installer_publish.result == 'success'", reconcile)
+
+        # Execute the checked dependency graph with GitHub's implicit success()
+        # rule. A failure or absence in one chain must not gate the other chain.
+        for absent, failed, cancelled, expected in [
+            (set(), {"installer_native"}, False, {"platform"}),
+            (set(), {"platform_consumer"}, False, {"installer"}),
+            ({"installer"}, set(), False, {"platform"}),
+            ({"platform"}, set(), False, {"installer"}),
+            ({"platform", "installer"}, set(), False, set()),
+            (set(), {"platform_native", "installer_native"}, False, set()),
+            (set(), set(), False, {"platform", "installer"}),
+            (set(), set(), True, set()),
+        ]:
+            with self.subTest(absent=absent, failed=failed, cancelled=cancelled):
+                results = {}
+                for name in jobs:
+                    if name == "reconcile":
+                        continue
+                    if (
+                        cancelled
+                        or name.split("_")[0] in absent
+                        or any(
+                            results[parent] != "success"
+                            for parent in dependencies[name]
+                        )
+                    ):
+                        results[name] = "skipped"
+                    else:
+                        results[name] = "failure" if name in failed else "success"
+                published = {
+                    group
+                    for group in ("platform", "installer")
+                    if results[f"{group}_publish"] == "success"
+                }
+                self.assertEqual(published, expected)
+
+    def test_work_outputs_partition_groups_and_preserve_reuse(self):
+        import runpy
+
+        cli = runpy.run_path(str(ROOT / "scripts/semantic-release"))
+        items = [
+            {"group": group, "attempt": group, "revision": "a" * 40, "reuse": True}
+            for group in ("platform", "installer")
+        ]
+        for selected in ([], items[:1], items[1:], items):
+            outputs = cli["work_outputs"](selected)
+            for group in ("platform", "installer"):
+                expected = [item for item in selected if item["group"] == group]
+                self.assertEqual(
+                    outputs[f"{group}_has_work"], str(bool(expected)).lower()
+                )
+                self.assertEqual(json.loads(outputs[f"{group}_items"]), expected)
+                matrix = json.loads(outputs[f"{group}_matrix"])["include"]
+                self.assertEqual(len(matrix), len(expected) * len(release.TARGETS))
+                self.assertEqual(
+                    {item["group"] for item in matrix}, {group} if expected else set()
+                )
+                self.assertTrue(all(item["reuse"] for item in matrix))
+
     def test_main_only_and_no_legacy_publishers(self):
         import runpy
 
@@ -778,7 +877,9 @@ class Workflow(unittest.TestCase):
         )
         for old, new in [
             ("cancel-in-progress: false", "cancel-in-progress: true"),
-            ("needs: [prepare, native, consumer]", "needs: prepare"),
+            ("needs: [prepare, platform_native, platform_consumer]", "needs: prepare"),
+            ("needs: [prepare, installer_native]", "needs: [prepare, platform_native]"),
+            ("!cancelled()", "true"),
             ("github.ref == 'refs/heads/main'", "github.ref != 'refs/heads/main'"),
             ("persist-credentials: false", "persist-credentials: true"),
         ]:

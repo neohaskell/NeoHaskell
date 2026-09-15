@@ -569,25 +569,39 @@ def check_semantic_release(name, text):
     if re.search(r"(secrets\.|OPENAI|ANTHROPIC|softprops/action-gh-release|persist-credentials: true|tags:)", code):
         errors.append(f"{name}: credentials, alternate publication, or tag-trigger bypass")
     jobs = job_blocks(code)
-    expected = {"prepare", "seed", "native", "consumer", "publish", "reconcile"}
+    expected = {"prepare", "platform_seed", "platform_native", "platform_consumer",
+                "platform_publish", "installer_seed", "installer_native",
+                "installer_publish", "reconcile"}
     if set(jobs) != expected: errors.append(f"{name}: release stages changed")
     for job, body in jobs.items():
         if "github.ref == 'refs/heads/main'" not in body:
             errors.append(f"{name}: {job} must be main-only")
-        if "contents: write" in body and job not in {"prepare", "publish", "reconcile"}:
+        if "contents: write" in body and job not in {"prepare", "platform_publish", "installer_publish", "reconcile"}:
             errors.append(f"{name}: {job} must be read-only")
         if "pull-requests: write" in body and job not in {"prepare", "reconcile"}:
             errors.append(f"{name}: {job} must not write PRs")
         if "persist-credentials: false" not in body:
             errors.append(f"{name}: {job} must not persist Git credentials")
-    for job, tokens in {
-        "prepare": ["semantic-release orchestrate", "outputs.has_work", "pull-requests: write"],
-        "seed": ["outputs.has_work == 'true'", "semantic-release seed", "ref: ${{ matrix.revision }}"],
-        "native": ["needs: [prepare, seed]", "semantic-release build-native", "dtolnay/rust-toolchain@1.94.0", "ref: ${{ matrix.revision }}"],
-        "consumer": ["needs: [prepare, native]", "semantic-release consumer", "ref: ${{ matrix.revision }}"],
-        "publish": ["needs: [prepare, native, consumer]", "semantic-release publish", "ref: ${{ matrix.revision }}", "contents: write", "pattern: release-${{ matrix.attempt }}-*"],
-        "reconcile": ["needs: publish", "semantic-release orchestrate", "ref: main"],
-    }.items():
+    contracts = {
+        "prepare": ["semantic-release orchestrate", "pull-requests: write"],
+        "platform_consumer": ["needs: [prepare, platform_native]", "semantic-release consumer", "ref: ${{ matrix.revision }}"],
+        "reconcile": ["needs: [platform_publish, installer_publish]", "!cancelled()",
+                      "needs.platform_publish.result == 'success' || needs.installer_publish.result == 'success'",
+                      "semantic-release orchestrate", "ref: main"],
+    }
+    for group in ("platform", "installer"):
+        contracts["prepare"] += [f"steps.plan.outputs.{group}_{key}" for key in ("has_work", "items", "matrix")]
+        contracts[f"{group}_seed"] = ["needs: prepare", "semantic-release seed", f"outputs.{group}_items"]
+        contracts[f"{group}_native"] = [f"needs: [prepare, {group}_seed]", "semantic-release build-native",
+                                        "dtolnay/rust-toolchain@1.94.0", f"outputs.{group}_matrix"]
+        dependencies = f"needs: [prepare, {group}_native" + (", platform_consumer]" if group == "platform" else "]")
+        contracts[f"{group}_publish"] = [dependencies, "semantic-release publish", "contents: write",
+                                         "pattern: release-${{ matrix.attempt }}-*", f"outputs.{group}_items"]
+        for stage in ("seed", "native", "consumer", "publish"):
+            job = f"{group}_{stage}"
+            if job in contracts:
+                contracts[job] += [f"outputs.{group}_has_work == 'true'", "ref: ${{ matrix.revision }}"]
+    for job, tokens in contracts.items():
         for token in tokens:
             if token not in jobs.get(job, ""): errors.append(f"{name}: {job} missing {token}")
     return errors
