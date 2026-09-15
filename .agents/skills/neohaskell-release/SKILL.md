@@ -42,8 +42,12 @@ what to do, and how to check the result, rewrite the notes.
 
 ## What happens on main
 
-After activation, main merges are classified from their Conventional Commit and
-reviewed fragments. Versions remain `0.BREAKING.COMPATIBLE`: breaking increments
+After activation, the complete unreleased first-parent history and pending
+reviewed fragments determine the highest platform impact. Squash, two-parent
+merge, and rebase merges are supported; notes may be committed after the code.
+The required PR gate checks each PR's notes, while release planning checks the
+whole range. It never requires notes in every implementation commit. Local
+review still checks that the prose covers the actual changes. Versions remain `0.BREAKING.COMPATIBLE`: breaking increments
 the second number and resets the third; features/fixes increment only the third.
 A generated PR proposes package versions, dated changelog sections, fragment
 consumption, and an immutable record in `scripts/releases/manifest.json`.

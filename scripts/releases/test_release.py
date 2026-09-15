@@ -398,7 +398,7 @@ class Prepare(History):
         self.assertIn("Existing published words stay intact.", changelog)
         self.assertNotIn("Unreleased", changelog)
 
-    def test_next_version_from_merge_commits(self):
+    def test_next_version_from_squash_commit(self):
         first, r = self.publish_bootstrap()
         self.note(
             "another",
@@ -414,6 +414,108 @@ class Prepare(History):
         self.assertEqual([n["path"] for n in plan["notes"]], [".changes/another.md"])
         with self.assertRaisesRegex(ValueError, "release group"):
             release.plan_release(self.repo, "HEAD", "installer", public, "2026-09-16")
+
+    def test_real_merge_commit_retains_notes_and_first_parent_origin(self):
+        first, baseline = self.publish_bootstrap()
+        self.git("checkout", "-qb", "feature")
+        self.write("source.txt", "save correctly")
+        self.commit("fix: save correctly")
+        self.note("merged", message="docs: explain the fix")
+        self.assertEqual(
+            release.check_checkout(self.repo, baseline), "release fragments valid"
+        )
+        self.git("checkout", "-q", "main")
+        self.git("merge", "--no-ff", "feature", "-m", "fix: merge the save repair")
+        merged = self.git("rev-parse", "HEAD")
+        self.assertEqual(
+            len(self.git("rev-list", "--parents", "-n", "1", merged).split()), 3
+        )
+        plan = release.plan_release(
+            self.repo, merged, "platform", {first["id"]: baseline}, "2026-09-16"
+        )
+        self.assertEqual(plan["version"], "0.4.3")
+        self.assertEqual(
+            [(n["path"], n["commit"]) for n in plan["notes"]],
+            [(".changes/merged.md", merged)],
+        )
+        self.assertTrue(release.verify_plan(self.repo, plan, {first["id"]: baseline}))
+        prepared = self.prepare(plan)
+        self.assertTrue(release.verify_generated(self.repo, prepared, plan))
+
+    def test_rebase_merge_allows_notes_after_implementation(self):
+        first, baseline = self.publish_bootstrap()
+        self.git("checkout", "-qb", "feature")
+        self.write("source.txt", "save correctly")
+        self.commit("fix: save correctly")
+        original = self.note("rebased", message="docs: explain the fix")
+        self.assertEqual(
+            release.check_checkout(self.repo, baseline), "release fragments valid"
+        )
+        self.git("checkout", "-q", "main")
+        self.write("ci-config.txt", "independent main change")
+        self.commit("ci: configure checks")
+        self.git("checkout", "-q", "feature")
+        self.git("rebase", "main")
+        introducing = self.git("rev-parse", "HEAD")
+        self.assertNotEqual(introducing, original)
+        self.git("checkout", "-q", "main")
+        self.git("merge", "--ff-only", "feature")
+        plan = release.plan_release(
+            self.repo, "HEAD", "platform", {first["id"]: baseline}, "2026-09-16"
+        )
+        self.assertEqual(plan["version"], "0.4.3")
+        self.assertEqual(
+            [(n["path"], n["commit"]) for n in plan["notes"]],
+            [(".changes/rebased.md", introducing)],
+        )
+        self.assertTrue(release.verify_plan(self.repo, plan, {first["id"]: baseline}))
+
+    def test_later_notes_repair_history_without_rewriting_commits(self):
+        first, baseline = self.publish_bootstrap()
+        self.write("source.txt", "fixed")
+        implementation = self.commit("fix: save correctly")
+        with self.assertRaisesRegex(ValueError, "fragment"):
+            release.plan_release(
+                self.repo, "HEAD", "platform", {first["id"]: baseline}, "2026-09-16"
+            )
+        introducing = self.note("late", message="docs: supply missing release notes")
+        plan = release.plan_release(
+            self.repo, "HEAD", "platform", {first["id"]: baseline}, "2026-09-16"
+        )
+        self.assertTrue(self.repo.ancestor(implementation, plan["source_sha"]))
+        self.assertEqual(plan["notes"][0]["commit"], introducing)
+        self.assertEqual(plan["version"], "0.4.3")
+
+    def test_separate_breaking_commit_requires_migration_in_pending_notes(self):
+        first, baseline = self.publish_bootstrap()
+        self.write("source.txt", "new save API")
+        self.commit("feat!: rename save")
+        self.note("compatible", message="docs: describe compatible improvements")
+        with self.assertRaisesRegex(ValueError, "migration"):
+            release.plan_release(
+                self.repo, "HEAD", "platform", {first["id"]: baseline}, "2026-09-16"
+            )
+        self.note("migration", BREAKING, "docs: explain how to migrate")
+        plan = release.plan_release(
+            self.repo, "HEAD", "platform", {first["id"]: baseline}, "2026-09-16"
+        )
+        self.assertEqual(plan["impact"], "breaking")
+        self.assertEqual(plan["version"], "0.5.0")
+        self.assertEqual(len(plan["notes"]), 2)
+
+    def test_none_fragment_cannot_cover_releasable_history(self):
+        first, baseline = self.publish_bootstrap()
+        self.write("source.txt", "fixed")
+        self.commit("fix: save correctly")
+        self.note(
+            "internal",
+            NOTE.replace("impact: compatible", "impact: none"),
+            "ci: document internal work",
+        )
+        with self.assertRaisesRegex(ValueError, "user-facing"):
+            release.plan_release(
+                self.repo, "HEAD", "platform", {first["id"]: baseline}, "2026-09-16"
+            )
 
     def test_repeated_main_snapshot_freezes_proposal_date(self):
         first, r = self.publish_bootstrap()

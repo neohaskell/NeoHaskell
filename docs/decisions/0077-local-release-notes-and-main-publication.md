@@ -50,9 +50,18 @@ change in either a fragment or its merged Conventional Commit (`!`,
 The pipeline's commit validator must accept `!` syntax. Feature/fix/performance
 changes need release notes; other changes may declare an explicit no-release
 impact with a reason. Internal housekeeping does not release itself.
-Classification uses the merged first-parent history and reviewed fragments,
-not every transient feature-branch commit. Fragments identify the affected components; an ambiguous breaking marker fails
-for local correction.
+Classification takes the highest impact across the complete unreleased
+first-parent history and pending reviewed fragments. This supports squash,
+two-parent merge, and rebase merges, including notes committed after the code.
+PR admission checks each complete PR for its own required notes and migrations;
+release planning does not require a fragment in every implementation commit or
+consult mutable GitHub PR metadata. The release range still requires user-facing
+notes for any releasable impact and breaking migration notes for breaking impact.
+This division relies on the required PR gate on protected main; it does not
+certify that prose describes every change. Local review owns that judgment.
+Fragments retain their introducing first-parent commit for source links. Impact
+attribution is valid for the single platform group; independent release groups
+would require a new attribution contract.
 
 ### 2. Temporary user-facing fragments
 

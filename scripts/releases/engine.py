@@ -392,31 +392,9 @@ def plan_release(repo, source, group, completed, date, bootstrap=None, check_tag
         for sha in repo.commits(base_sha, source):
             message = repo.git("show", "-s", "--format=%B", sha)
             level = commit_impact(message)
-            if level == "none":
-                continue
-            associated = [
-                n
-                for n in repo.fragments(sha)
-                if n["path"]
-                in repo.git(
-                    "diff-tree", "--no-commit-id", "--name-only", "-r", sha
-                ).splitlines()
-            ]
-            if not associated:
-                raise ValueError(f"{sha}: releasable commit needs a release fragment")
-            groups = {n["group"] for n in associated}
-            if (
-                level == "breaking"
-                and len(groups) != 1
-                and not any(n["impact"] == "breaking" for n in associated)
-            ):
-                raise ValueError("Ambiguous cross-group breaking marker")
-            if (
-                group in groups
-                and len(groups) == 1
-                and IMPACTS[level] > IMPACTS[impact]
-            ):
-                impact = level
+            # PR admission checks notes across the complete PR. Rebase preserves
+            # implementation and later note-authoring commits separately on main.
+            impact = max(impact, level, key=IMPACTS.get)
     if impact == "none":
         if bootstrap:
             raise ValueError(
@@ -424,7 +402,7 @@ def plan_release(repo, source, group, completed, date, bootstrap=None, check_tag
             )
         return None
     if not any(n["impact"] != "none" for n in notes):
-        raise ValueError("Releasable commit requires user-facing release notes")
+        raise ValueError("Releasable history requires a user-facing release fragment")
     if impact == "breaking" and not any(n["impact"] == "breaking" for n in notes):
         raise ValueError("Breaking commit requires breaking migration notes")
     reserved = max([base_version] + [p["version"] for p in attempts], key=version)
