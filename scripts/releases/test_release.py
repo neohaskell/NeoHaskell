@@ -967,6 +967,26 @@ class GitHubReads(unittest.TestCase):
 
 
 class Workflow(unittest.TestCase):
+    def test_native_installer_selection_supports_intel(self):
+        import re
+        import runpy
+
+        check = runpy.run_path(str(ROOT / "scripts/workflow-check"))
+        workflow = (ROOT / ".github/workflows/semantic-release.yml").read_text()
+        native = check["job_blocks"](workflow)["platform_native"]
+        fallback = "cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24"
+        self.assertIn(fallback, native, "INTEL_NIX_REQUIRED")
+        installers = re.findall(
+            r"- uses: ((?:DeterminateSystems/determinate-nix-action|cachix/install-nix-action)@\S+)[^\n]*\n\s+if: ([^\n]+)",
+            native,
+        )
+        self.assertCountEqual(installers, [
+            ("DeterminateSystems/determinate-nix-action@v3.22.2", "matrix.reuse != true && matrix.target != 'x86_64-apple-darwin'"),
+            (fallback, "matrix.reuse != true && matrix.target == 'x86_64-apple-darwin'"),
+        ])
+        for installer, _ in installers:
+            self.assertLess(native.index(installer), native.index("./scripts/semantic-release build-native"))
+
     def test_native_runners_install_nix_before_testing(self):
         import runpy
 
