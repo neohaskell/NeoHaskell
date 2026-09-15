@@ -767,6 +767,43 @@ class Bootstrap(History):
             remote.select_work(self.api, self.repo, self.base, "bootstrap")
 
 
+class GitHubReads(unittest.TestCase):
+    def test_draft_lookup_paginates_when_tag_endpoint_only_returns_published(self):
+        from unittest.mock import Mock
+
+        api = remote.GitHub.__new__(remote.GitHub)
+        tag = "neo-v0.5.0"
+        draft = {"id": 17, "tag_name": tag, "draft": True}
+        others = [{"id": n + 100, "tag_name": f"other-{n}"} for n in range(100)]
+        api.request = Mock(side_effect=[None, others, [draft]])
+        self.assertEqual(api.get_release(tag), draft)
+        self.assertEqual(
+            [call.args for call in api.request.call_args_list],
+            [
+                (f"releases/tags/{tag}",),
+                ("releases?per_page=100&page=1",),
+                ("releases?per_page=100&page=2",),
+            ],
+        )
+        published = {**draft, "draft": False}
+        api.request = Mock(return_value=published)
+        self.assertEqual(api.get_release(tag), published)
+        api.request.assert_called_once_with(f"releases/tags/{tag}")
+
+    def test_missing_ambiguous_and_inaccessible_drafts_fail_safely(self):
+        from unittest.mock import Mock
+
+        api = remote.GitHub.__new__(remote.GitHub)
+        tag = "neo-v0.5.0"
+        api.request = Mock(side_effect=[None, []])
+        self.assertIsNone(api.get_release(tag))
+        for listing in (None, [{"tag_name": tag, "id": 1}, {"tag_name": tag, "id": 2}]):
+            with self.subTest(listing=listing):
+                api.request = Mock(side_effect=[None, listing])
+                with self.assertRaises(ValueError):
+                    api.get_release(tag)
+
+
 class Workflow(unittest.TestCase):
     def test_group_failures_and_skips_do_not_block_the_other_publisher(self):
         import re
@@ -933,6 +970,8 @@ def main():
         suite.addTests(
             unittest.defaultTestLoader.loadTestsFromTestCase(FragmentDetails)
         )
+    if "recovery" in groups:
+        suite.addTests(unittest.defaultTestLoader.loadTestsFromTestCase(GitHubReads))
     return not unittest.TextTestRunner(verbosity=2).run(suite).wasSuccessful()
 
 

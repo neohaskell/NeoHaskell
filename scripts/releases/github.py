@@ -82,7 +82,22 @@ class GitHub:
         self.request("git/refs/heads/release-pause/" + identity, "DELETE")
 
     def get_release(self, tag):
-        return self.request("releases/tags/" + urllib.parse.quote(tag, safe=""))
+        published = self.request("releases/tags/" + urllib.parse.quote(tag, safe=""))
+        if published:
+            return published
+        # The tag endpoint only promises published releases. Authenticated
+        # listings include drafts, which hold the frozen bundle during retries.
+        matches = []
+        for page in range(1, 100):
+            batch = self.request(f"releases?per_page=100&page={page}")
+            if not isinstance(batch, list):
+                raise ValueError("Cannot list repository releases for draft recovery")
+            matches.extend(item for item in batch if item["tag_name"] == tag)
+            if len(matches) > 1:
+                raise ValueError(f"Ambiguous existing releases for {tag}")
+            if len(batch) < 100:
+                return matches[0] if matches else None
+        raise ValueError("Unexpectedly large release list during draft recovery")
 
     def create_release(self, tag, sha, title, body):
         return self.request(
