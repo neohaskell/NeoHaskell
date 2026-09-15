@@ -101,6 +101,8 @@ jobs:
           ref: ${{ matrix.revision }}
           fetch-depth: 0
           persist-credentials: false
+      - uses: DeterminateSystems/determinate-nix-action@v3.22.2
+        if: matrix.reuse != true
       - uses: dtolnay/rust-toolchain@1.94.0
         if: matrix.reuse != true
         with:

@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """Behavioral release contracts; isolated Git histories and an in-memory publisher."""
 
 import copy
@@ -815,6 +816,19 @@ class Artifacts(History):
 
 
 class Bootstrap(History):
+    def test_runner_setup_retry_preserves_frozen_release_revision(self):
+        plan, revision = self.bootstrap()
+        ledger = self.repo.ledger(revision)
+        self.write(".github/workflows/semantic-release.yml", "name: Correct runner prerequisites\n")
+        current = self.commit("ci(release): install native build prerequisites")
+        result = remote.select_work(self.api, self.repo, current)
+        self.assertEqual(result["items"], [{
+            "group": "platform", "attempt": plan["id"],
+            "revision": revision, "reuse": False,
+        }])
+        self.assertEqual(result["prs"], [])
+        self.assertEqual(self.repo.ledger(current), ledger)
+
     def test_installation_is_inactive_without_any_api_call(self):
         class NoAPI:
             def __getattr__(self, name):
@@ -953,6 +967,17 @@ class GitHubReads(unittest.TestCase):
 
 
 class Workflow(unittest.TestCase):
+    def test_native_runners_install_nix_before_testing(self):
+        import runpy
+
+        check = runpy.run_path(str(ROOT / "scripts/workflow-check"))
+        workflow = (ROOT / ".github/workflows/semantic-release.yml").read_text()
+        native = check["job_blocks"](workflow)["platform_native"]
+        installer = "uses: DeterminateSystems/determinate-nix-action@"
+        self.assertIn(installer, native, "NATIVE_NIX_REQUIRED")
+        self.assertLess(native.index(installer), native.index("./scripts/semantic-release build-native"))
+        self.assertRegex(native, r"uses: DeterminateSystems/determinate-nix-action@\S+\n\s+if: matrix.reuse != true")
+
     def test_only_platform_jobs_and_all_publication_gates_remain(self):
         import runpy
 
@@ -1010,6 +1035,23 @@ class Workflow(unittest.TestCase):
             )
         with self.assertRaisesRegex(ValueError, "release group"):
             cli["work_outputs"]([{**item, "group": "installer"}])
+
+    def test_matrix_preserves_fresh_and_reused_items_per_target(self):
+        import runpy
+
+        cli = runpy.run_path(str(ROOT / "scripts/semantic-release"))
+        items = [
+            {"group": "platform", "attempt": "a" * 64, "revision": "c" * 40, "reuse": False},
+            {"group": "platform", "attempt": "b" * 64, "revision": "d" * 40, "reuse": True},
+        ]
+        outputs = cli["work_outputs"](items)
+        self.assertEqual(json.loads(outputs["platform_items"]), items)
+        rows = json.loads(outputs["platform_matrix"])["include"]
+        self.assertEqual(len(rows), len(items) * len(release.TARGETS))
+        self.assertEqual(
+            {(row["attempt"], row["target"]): row["reuse"] for row in rows},
+            {(item["attempt"], target): item["reuse"] for item in items for target in release.TARGETS},
+        )
 
     def test_runner_mapping_survives_target_reordering(self):
         import runpy
