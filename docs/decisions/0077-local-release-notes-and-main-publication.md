@@ -105,6 +105,19 @@ specs, while CLI-only PRs may carry a release fragment without a Haskell spec.
 The skill can be invoked directly and is also called before final substantive
 review in the feature pipeline. It uses the local signed-in Codex session.
 
+The shared `neohaskell-pr` skill owns PR names, stack management, and descriptions
+that lead with outcomes Jess understands. Its
+[Jess writing guide](../../.agents/skills/neohaskell-pr/references/jess-writing.md)
+is the common prose standard for PR introductions and all release notes. Jess is
+the time-constrained junior application developer, not a framework maintainer.
+Before publication, every release entry must explain what changed, whether Jess
+is affected, what action she needs to take, and how to verify it, without assuming
+knowledge of implementation internals. Migration prompts must also be understandable
+to Jess so she can judge what she is asking her agent to do. Unclear prose is not
+ready to publish, even if technically accurate; rewrite it locally. CI can check
+structure and references but cannot certify comprehension. Final prose review
+belongs with the local authoring and maintainer review, not a hosted model call.
+
 ### 3. Deterministic changelog format
 
 Each release section contains:

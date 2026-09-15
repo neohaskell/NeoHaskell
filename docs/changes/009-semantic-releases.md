@@ -6,6 +6,9 @@ versioned. Codex prepares reviewed user-facing notes in temporary `.changes/`
 files. Deterministic GitHub Actions assign versions from changes merged to
 `main`, generate changelogs, and publish releases without model API credentials.
 Implementation specifications remain in `docs/changes/` and are not release prose.
+The companion PR-management skill owns titles, stack bases, and descriptions
+that begin with outcomes Jess can understand. All release prose must be usable
+by Jess, the time-constrained junior developer building an application.
 
 ```yaml spec
 issue: adhoc:semantic-releases
@@ -40,6 +43,7 @@ through `dev`; their behavioral contracts are proved below.
 | C8 | The workflow retains required PR checks and main protection, explicitly connects preparation/build/publication without relying on GITHUB_TOKEN-created tag events, grants write permissions only to necessary jobs, and never invokes an AI provider; installer and platform releases stay independently selectable | `script:scripts/semantic-release#--self-test workflow`<br>`script:scripts/workflow-check#--self-test` | unit | none |
 | C9 | The pipeline routes release-note authoring to a discoverable local skill before final substantive review, accepts Conventional Commit exclamation-mark syntax, gates fragments instead of feature-branch changelog edits, and recognizes generated release bookkeeping only after checking its exact derivation rather than trusting an actor, title, or label | `script:scripts/neo-skills-check#--self-test`<br>`script:scripts/pipeline-state#--self-test`<br>`script:scripts/spec-check#--self-test` | unit | none |
 | C10 | Bootstrap preserves historical changelog content and all existing tags/releases, requires an explicit reviewed baseline and initial platform release plan, and does not classify or publish the entire historical backlog merely because the new workflow was installed | `script:scripts/semantic-release#--self-test bootstrap` | unit | none |
+| C11 | The shared PR-management skill is discoverable across Haskell and Neo CLI work, checks the owning stack base, provides outcome-based Conventional Commit naming examples, and links the maintained Jess writing guide | `script:scripts/neo-skills-check#--self-test` | unit | none |
 
 These are deterministic unit/fixture contracts, including temporary Git histories
 and mocked GitHub responses; they do not claim a live publication or a successful

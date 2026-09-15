@@ -14,6 +14,22 @@ Everything between them is mechanical or agent-run, resumable from
 schema v6 canon (`telemetry/SCHEMA.md`) — state, telemetry lines, and this
 skill share one vocabulary.
 
+## Pull requests and user-facing prose
+
+Use the [neohaskell-pr](../neohaskell-pr/SKILL.md) skill for PR creation,
+titles/descriptions, base-branch selection, stack management, and review updates.
+It owns those presentation and GitHub mechanics; this skill owns the applicable
+approval and verification gates. Keep the owning lower stack layer as the live
+PR base. If the current state validator only accepts main, report that limitation
+before advancing; never flatten a stack or fabricate validation evidence to
+satisfy it.
+
+PR introductions and all release notes must pass the
+[Jess comprehension review](../neohaskell-pr/references/jess-writing.md).
+Jess must understand the user-visible change, whether she is affected, required
+actions, and how to verify them. Release prose that fails this review must be
+rewritten locally before publication; a structural CI check cannot certify it.
+
 ## Stage flow
 
 ```

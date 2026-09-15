@@ -30,6 +30,10 @@ holds.
 
 ## Skills - one source of truth (repo-root `neo-cli-*`)
 
+For PR creation, naming, descriptions, and stack management, use the shared
+`neohaskell-pr` skill. Its Jess writing guidance applies to the PR opening and
+all user-facing release notes; it does not impose the Haskell spec pipeline on Rust.
+
 Route `neo/**` work through these discoverable skills; they hold the detail this
 file only summarizes:
 

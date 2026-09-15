@@ -23,6 +23,9 @@ portable checks remain required when a host does not load hooks.
   `integrations/AGENTS.md`, `testbed/AGENTS.md`, `neo/AGENTS.md`, and
   `neo/assets/ide/AGENTS.md`. Scoped routing points back to the shared contract.
 - Skills: `.agents/skills/` is the single source; no compatibility copies.
+- Pull requests: use `neohaskell-pr` for naming, descriptions, and GitHub stack
+  management. Lead PR descriptions with outcomes Jess understands; all release
+  notes and migration instructions must pass its Jess comprehension review.
 - Runtime: `.codex/config.toml` supplies sandbox defaults; `.codex/hooks.json`
   delegates to `scripts/guards/codex-hooks.py` and the shared dialect/expectation
   guards. Shell edits and other tool paths still require portable verification.

@@ -35,6 +35,7 @@ CANONICAL_SKILLS = (
     "neohaskell-localizer",
     "neohaskell-performance-design-review",
     "neohaskell-pipeline",
+    "neohaskell-pr",
     "neohaskell-retrospective-miner",
     "neohaskell-security-design-review",
 )
@@ -291,8 +292,8 @@ def check_codex_skill_layer(root):
                     f"{path.relative_to(root)} references unknown skill `{reference}`"
                 )
 
-    # Codex resolves relative links from the skill directory after loading it.
-    for skill_md in skill_files:
+    # Check supporting writing guides as well as skill entrypoints.
+    for skill_md in sorted(skills_dir.rglob("*.md")):
         for raw_target in MARKDOWN_LINK_RE.findall(read(skill_md)):
             parts = raw_target.strip().split()
             if not parts:
