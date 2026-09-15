@@ -6,7 +6,7 @@ import {
 
 // ──────────────────────────────────────────────────────────────────────────
 // Centralized theme — the SINGLE source of styling truth for the neo IDE.
-// See assets/ide/CLAUDE.md: no in-place styling; everything flows from here.
+// See assets/ide/AGENTS.md: no in-place styling; everything flows from here.
 //
 // The event-modeling color grammar (orange events / blue commands / green
 // queries / gray integrations / yellow UI / indigo features) is encoded as

@@ -93,6 +93,7 @@ python3 scripts/guards/dialect-guard.py --self-test || fail=1
 python3 scripts/guards/expectation-guard.py --self-test || fail=1
 
 python3 scripts/guards/codex-hooks-test.py || fail=1
+python3 scripts/guards/with-toolchain-test.py || fail=1
 scripts/agent-config-check || fail=1
 scripts/agent-config-check --self-test || fail=1
 

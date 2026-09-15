@@ -1,5 +1,5 @@
 /* Global reset only. All component styling lives in the Mantine theme
-   (src/theme.ts) — see assets/ide/CLAUDE.md. React Flow canvas internals live
+   (src/theme.ts) — see assets/ide/AGENTS.md. React Flow canvas internals live
    in src/styles/canvas.css. Do NOT add component styles here. */
 html,
 body,

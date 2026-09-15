@@ -24,7 +24,7 @@
 #      the config files but still trusted the session's PATH — the
 #      python3-with-pyyaml failure class. This one restores the recorded
 #      PATH instead of trusting the current one.)
-#   2. nix available -> `nix develop --command` (~0.4s warm eval).
+#   2. nix on PATH or in the cloud setup profile -> `nix develop --command`.
 #   3. no nix -> host tools + loud warning.
 #
 set -euo pipefail
@@ -41,6 +41,13 @@ if [ -n "${NEOHASKELL_SHELL_FP:-}" ] \
    && [ -n "${NEOHASKELL_SHELL_PATH:-}" ] \
    && PATH="${NEOHASKELL_SHELL_PATH}" command -v "$1" >/dev/null 2>&1; then
   PATH="${NEOHASKELL_SHELL_PATH}" exec "$@"
+fi
+
+# Cloud snapshots retain the installed profile, but not setup's PATH export.
+# Restore it locally so portable commands work without a session hook.
+NIX_PROFILE_BIN="/nix/var/nix/profiles/default/bin"
+if ! command -v nix >/dev/null 2>&1 && [ -x "${NIX_PROFILE_BIN}/nix" ]; then
+  export PATH="${NIX_PROFILE_BIN}:${PATH}"
 fi
 
 if command -v nix >/dev/null 2>&1; then

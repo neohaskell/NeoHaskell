@@ -2,6 +2,7 @@
 """Exercise native Codex event payloads through the shared guard adapter."""
 import importlib.util
 import json
+import re
 from pathlib import Path
 import subprocess
 import tempfile
@@ -13,6 +14,11 @@ spec.loader.exec_module(module)
 config = json.loads((module.ROOT / '.codex/hooks.json').read_text())
 assert set(config['hooks']) == {'PreToolUse', 'PostToolUse', 'SessionStart'}
 assert 'apply_patch' in config['hooks']['PreToolUse'][0]['matcher']
+for source in ('startup', 'resume', 'clear', 'compact'):
+    assert any(re.search(group.get('matcher', ''), source)
+               and any('scripts/guards/codex-hooks.py' in hook.get('command', '')
+                       for hook in group.get('hooks', []))
+               for group in config['hooks']['SessionStart']), f'Missing SessionStart source: {source}'
 
 with tempfile.TemporaryDirectory() as directory:
     root = Path(directory)
