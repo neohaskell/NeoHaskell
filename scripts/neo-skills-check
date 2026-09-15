@@ -179,7 +179,9 @@ def check_retired_agent_config(root):
             path = root / directory / name
             if path.exists() or path.is_symlink():
                 errors.append(f"retired agent configuration must be absent: {path.relative_to(root)}")
-    for path in (root / ".github" / "workflows").glob("*.yml"):
+    for path in (root / ".github" / "workflows").glob("*"):
+        if path.suffix not in (".yml", ".yaml") or not path.is_file():
+            continue
         if re.search(r"anthropics/|CLAUDE_CODE_|@claude", read(path), re.IGNORECASE):
             errors.append(f"retired agent automation in {path.relative_to(root)}")
     return errors
@@ -827,6 +829,14 @@ def self_test():
     errors = mutated(retired_action)
     expect(any("retired agent automation" in error for error in errors),
            f"retired workflow action should fail, got {errors}")
+
+    def retired_yaml_action(root):
+        directory = root / ".github" / "workflows"
+        directory.mkdir(parents=True)
+        (directory / "review.yaml").write_text("uses: anthropics/claude-code-action@v1\n")
+    errors = mutated(retired_yaml_action)
+    expect(any("retired agent automation" in error for error in errors),
+           f"retired workflow action in .yaml should fail, got {errors}")
 
     def add_duplicate(root):
         duplicate = root / ".pi" / "skills" / "copied"

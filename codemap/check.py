@@ -5,7 +5,8 @@ Enforces (CI: checks.yml `codemap` job; local: ./dev codemap-check):
  1. every exposed module of nhcore/nhintegrations/nhtestbed is owned by
     EXACTLY one capability's owns-globs (orphans and double-owners fail —
     adding a module without a codemap entry fails the PR)
- 2. every owns-glob matches at least one real file (no ghost entries)
+ 2. every owns-glob matches at least one real file (no ghost entries), and
+    every tracked AGENTS.md has exactly one capability owner
  3. aliases are globally unique (ambiguous routing fails)
  4. extension-point create/register/tests paths reference real directories
     (prefix-existence, since they contain <placeholders>) and skills exist
@@ -111,6 +112,8 @@ def main() -> int:
     #     (catches e.g. a workflow file owned by two capabilities)
     for f in tracked:
         owners = owned_by(f, caps)
+        if Path(f).name == 'AGENTS.md' and not owners:
+            err(f"agent guide {f} is owned by NO capability — add it to capabilities.yaml")
         if len(owners) > 1:
             err(f"file {f} owned by multiple capabilities: {owners}")
 

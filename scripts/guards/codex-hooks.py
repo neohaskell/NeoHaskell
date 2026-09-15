@@ -4,6 +4,7 @@ import importlib.util
 import json
 from pathlib import Path
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -60,8 +61,12 @@ def pre_edit(command, root, cwd=None):
                             capture_output=True, text=True, check=True).stdout.strip()
     if branch == 'main':
         return ['Cannot edit on main. Create a feature branch first.']
+    if not branch:
+        return ['Cannot edit on detached HEAD. Create a feature branch first.']
     dialect, expectations = module('dialect-guard'), module('expectation-guard')
     problems = []
+    # Maintainer opt-in; filesystem isolation belongs to the host sandbox.
+    # This hook is early feedback, not an independent authorization boundary.
     approved = (root / '.agents/allow-expectation-edits').exists()
     for edit in edits:
         paths = [edit['path'], edit['dest'] or edit['path']]
@@ -90,6 +95,59 @@ def post_edit(command, root, cwd=None):
     return 'Test file modified — run the relevant ./dev test or testbed suite.' if touched_tests else ''
 
 
+def destructive_argv(words):
+    """Recognize literal destructive commands, including shell command prefixes."""
+    for index, word in enumerate(words):
+        name = Path(word).name
+        args = words[index + 1:]
+        if name == 'git':
+            # Global options can precede the subcommand; some consume a value.
+            while args and args[0].startswith('-'):
+                takes_value = args[0] in {'-C', '-c', '--git-dir', '--work-tree',
+                                         '--namespace', '--config-env', '--super-prefix'}
+                args = args[2 if takes_value else 1:]
+            if not args:
+                continue
+            subcommand, args = args[0], args[1:]
+            args = args[:args.index('--')] if '--' in args else args
+            if subcommand == 'reset' and '--hard' in args:
+                return True
+            if subcommand == 'push' and any(
+                    arg.startswith('--force') or (arg.startswith('-') and not arg.startswith('--') and 'f' in arg)
+                    for arg in args):
+                return True
+        elif name == 'rm':
+            args = args[:args.index('--')] if '--' in args else args
+            short = ''.join(arg[1:] for arg in args if arg.startswith('-') and not arg.startswith('--'))
+            recursive = '--recursive' in args or 'r' in short or 'R' in short
+            force = '--force' in args or 'f' in short
+            if recursive and force:
+                return True
+    return False
+
+
+def destructive_command(command):
+    # Tokenization respects quoting and command boundaries. This is early
+    # feedback for literal commands, not an evaluator or a sandbox replacement.
+    lexer = shlex.shlex(command, posix=True, punctuation_chars=';&|()\n')
+    lexer.whitespace = ' \t\r'
+    words = []
+    try:
+        for token in lexer:
+            if token and all(char in ';&|()\n' for char in token):
+                if destructive_argv(words):
+                    return True
+                words = []
+            else:
+                words.append(token)
+    except ValueError:
+        # shlex is not a Bash parser: valid heredoc bodies can contain unmatched
+        # quotes. Retain the former literal check instead of rejecting all such scripts.
+        return destructive_argv(words) or bool(re.search(
+            r'\bgit\s+(?:push\b[^\n;]*(?:--force\b|\s-f\b)|reset\s+--hard\b)|\brm\s+-[a-z]*r[a-z]*f\b', command))
+    return destructive_argv(words)
+
+
 def handle(event, root=ROOT):
     kind = event.get('hook_event_name', '')
     tool = event.get('tool_name', '')
@@ -108,7 +166,7 @@ def handle(event, root=ROOT):
         return post_edit(command, root, event.get('cwd'))
     if kind == 'PreToolUse' and tool == 'Bash':
         # Retain the former explicit destructive-command denials as early feedback.
-        if re.search(r'\bgit\s+(?:push\b[^\n;]*(?:--force\b|\s-f\b)|reset\s+--hard\b)|\brm\s+-[a-z]*r[a-z]*f\b', command):
+        if destructive_command(command):
             raise ValueError('Destructive command blocked by repository policy.')
     return ''
 

@@ -56,4 +56,24 @@ with tempfile.TemporaryDirectory() as directory:
         assert './dev watch' in module.handle({'hook_event_name': 'SessionStart'}, root)
     rejected({'hook_event_name': 'PreToolUse', 'tool_name': 'Bash',
               'tool_input': {'command': 'git reset --hard'}}, 'Destructive command')
+    for command in ('git -C . reset --hard', 'git -c color.ui=false reset HEAD --hard',
+                    'git --git-dir=.git --work-tree . reset --hard',
+                    'git -C "directory with spaces" push origin --force',
+                    'git push --force-with-lease', 'git push -f',
+                    'rm --recursive --force temporary', 'rm --force --recursive temporary',
+                    'rm -fr temporary', 'rm -r -f temporary', 'rm -rf temporary',
+                    'git status; git -C . reset --hard'):
+        rejected({'hook_event_name': 'PreToolUse', 'tool_name': 'Bash',
+                  'tool_input': {'command': command}}, 'Destructive command')
+    for command in ('git -C . status', 'git reset --soft HEAD~1', 'git push origin feature',
+                    'rm -r temporary', 'rm -f temporary', 'rm -- --recursive --force',
+                    'echo "git reset --hard"', 'git status; echo --force',
+                    "cat <<'EOF'\nIt's a valid heredoc.\nEOF"):
+        assert module.handle({'hook_event_name': 'PreToolUse', 'tool_name': 'Bash',
+                              'tool_input': {'command': command}}, root) == '', command
+    subprocess.run(['git', '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.test',
+                    '-c', 'commit.gpgsign=false', 'commit', '--allow-empty', '-m', 'fixture'],
+                   cwd=root, check=True, capture_output=True)
+    subprocess.run(['git', 'checkout', '--detach'], cwd=root, check=True, capture_output=True)
+    rejected(clean, 'detached HEAD')
 print('codex-hooks self-test: OK — native patches, nested cwd, branch, dialect, expectations, formatting, and session guidance')

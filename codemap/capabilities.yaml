@@ -194,7 +194,8 @@ capabilities:
     tests: []
 
   - id: governance-docs
-    owns: [docs/**, AGENTS.md, README.md, LICENSE]
+    # Integration/testbed guides already belong to their component capabilities.
+    owns: [docs/**, AGENTS.md, core/AGENTS.md, core/service/AGENTS.md, neo/AGENTS.md, neo/assets/ide/AGENTS.md, README.md, LICENSE]
     responsibility: Plans, ADRs (docs/decisions/), agent guide, contributor guide.
     aliases: [adr, decisions, plans, agent docs, readme, archive]
     tests: []
