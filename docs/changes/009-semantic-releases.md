@@ -44,6 +44,7 @@ through `dev`; their behavioral contracts are proved below.
 | C9 | The pipeline routes release-note authoring to a discoverable local skill before final substantive review, accepts Conventional Commit exclamation-mark syntax, gates fragments instead of feature-branch changelog edits, and recognizes generated release bookkeeping only after checking its exact derivation rather than trusting an actor, title, or label | `script:scripts/neo-skills-check#--self-test`<br>`script:scripts/pipeline-state#--self-test`<br>`script:scripts/spec-check#--self-test` | unit | none |
 | C10 | Bootstrap preserves historical changelog content and all existing tags/releases, requires an explicit reviewed baseline and initial platform release plan, and does not classify or publish the entire historical backlog merely because the new workflow was installed | `script:scripts/semantic-release#--self-test bootstrap` | unit | none |
 | C11 | The shared PR-management skill is discoverable across Haskell and Neo CLI work, checks the owning stack base, provides outcome-based Conventional Commit naming examples, and links the maintained Jess writing guide | `script:scripts/neo-skills-check#--self-test` | unit | none |
+| C12 | A release requiring a source fix can be explicitly abandoned through a verified recovery PR without blocking source fixes or the other group; its version remains reserved, tags/assets are not rewritten, consumed notes carry forward exactly once, and replacement allocation uses the highest reservation while migration/source history uses the last completed public release; fixtures cover no-tag and partial-tag/draft failures, repeated recovery, publish/recovery races, refusal to abandon a published release, and rejection of late retries of an abandoned attempt | `script:scripts/semantic-release#--self-test recovery` | unit | none |
 
 These are deterministic unit/fixture contracts, including temporary Git histories
 and mocked GitHub responses; they do not claim a live publication or a successful
@@ -70,6 +71,10 @@ Two operational details accompany the agreed format:
 - The date in the generated section is the planned release date, fixed in the
   reviewed release manifest. GitHub records the actual publication timestamp
   separately; a delayed or retried publication does not rewrite committed history.
+- If a release needs a code fix before it can ship, a maintainer can abandon the
+  unpublished attempt through a recovery PR. Its notes carry into a replacement
+  release, while its version stays reserved. Users may see a gap in version
+  numbers, but migration instructions still start from their last public release.
 
 ## ADR
 

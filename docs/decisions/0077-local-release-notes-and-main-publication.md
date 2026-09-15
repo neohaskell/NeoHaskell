@@ -156,8 +156,10 @@ release manifest, and removal of the consumed fragments. The manifest records
 the source range, prior and target versions, fragment identities and hashes,
 planned date, and note hashes. New main changes invalidate a stale preparation
 until it is regenerated; they cannot disappear behind already-consumed notes.
-An in-progress or partially published release must be resolved before planning
-the next version. The maintainer merges the release PR after required checks.
+An in-progress release must be completed or explicitly abandoned under section 6
+before planning the next version for that group. This does not prevent merging
+source fixes or releasing the other group. The maintainer merges the release PR
+after required checks.
 
 The release manifest is provenance, not an authorization token. The publisher
 independently reconstructs the expected preparation and checks the merged diff,
@@ -168,8 +170,9 @@ existing spec and changelog gates; normal feature PRs keep their contracts.
 
 After the preparation PR's merge reaches main, the workflow builds the exact
 release revision and publishes only after native build, checksum, portability,
-and consumer verification succeed. Failed builds leave a retriable release,
-not an apparently complete public release. The first rollout does not cut a
+and consumer verification succeed. Transient failures leave a retriable release;
+failures requiring a source change use the abandonment/replacement path below.
+Neither is an apparently complete public release. The first rollout does not cut a
 production release merely as a validation exercise.
 
 Use the built-in `GITHUB_TOKEN`; no model API keys, personal Codex credentials,
@@ -212,7 +215,86 @@ not the assumption that one event equals one unreleased commit. Existing tags
 and completed release assets are immutable inputs: verify and reuse an identical
 result, otherwise stop with the conflicting tag/SHA/hash. Never force-retag or
 silently overwrite a completed release. Publication failures resume the same
-manifest/version; they do not calculate another bump.
+manifest/version; they do not calculate another bump. Retrying cannot change the
+source, notes, planned date, or checksums recorded for that attempt.
+
+#### Unpublished releases that require a source fix
+
+If release revision R cannot pass a build or consumer gate without changing
+source, repeatedly rebuilding R is not recovery. A maintainer can prepare a
+generated **release-recovery PR** that abandons that attempt. It uses the same
+protected-main checks and exact-diff reconstruction as release preparation;
+ordinary source fixes land in their own reviewed PRs. Abandonment is never an
+automatic response to a timeout.
+
+The recovery contract is:
+
+1. **Record a terminal state.** The committed manifest history records each
+   group's attempt as pending, completed, or abandoned, retaining its identity,
+   source SHA, reserved version, note/fragment hashes, and recovery reason.
+   Merging a preparation PR reserves its version permanently, even if no tag was
+   created. Abandonment adds an auditable terminal record; it does not erase or
+   rewrite the original manifest. Repeating the same recovery is a no-op.
+2. **Pause publication before preparing recovery.** A maintainer starts recovery
+   through a serialized operation sharing the publisher's mutation lock. It
+   verifies that the attempt is unpublished and saves a durable pause record
+   bound to its manifest hash before generating any recovery PR. The pause must
+   survive workflow cancellation; a running job or temporary concurrency lock
+   alone is insufficient. Every publisher, including an older retry, checks
+   that record and current main manifest history under the same lock before
+   any external write. A paused or abandoned attempt can never publish. If
+   publication won the race, recovery refuses to prepare changelog/fragment
+   edits and reconciles the completed release instead. After the recovery PR
+   merges, its exact diff and pause record are validated before recording the
+   terminal abandonment and unblocking planning. Closing a recovery PR keeps
+   the pause in place until an explicit serialized resume verifies the original
+   manifest and absence of a merged recovery result; it cannot implicitly restart
+   publishing.
+3. **Preserve external history.** Abandonment is allowed only when no public
+   GitHub Release for the attempt has been published. Partial tags remain at
+   their original SHAs and keep the version reserved. Partial draft releases and
+   uploaded assets remain unpublished evidence associated with the abandoned
+   attempt; they are never reused by the replacement. Never move/delete a tag
+   or overwrite an existing asset to make recovery pass. An already published
+   release is reconciled against its manifest and completed idempotently; a
+   later source repair ships as a new release, not as changed old binaries.
+4. **Carry notes forward exactly once.** The recovery PR restores the consumed
+   fragments from the original source snapshot, with their identities, hashes,
+   introducing commits, and migration text intact. It removes only the failed
+   attempt's generated changelog section, after verifying its recorded hash;
+   published sections remain untouched. A conflicting restored filename or
+   changed section fails for maintainer correction. These generated recovery
+   edits are bookkeeping, not new user changes. Further note corrections are
+   reviewed normally and retain their link to the original fragment identity.
+   Version metadata need not roll back: it remains the abandoned reservation
+   until a replacement preparation updates it.
+5. **Separate version allocation from user history.** A replacement records
+   which abandoned attempt it supersedes, includes the source fix and every
+   still-unreleased change, and receives a fresh manifest/date/source revision.
+   Allocate above the highest completed or reserved version in that group,
+   applying the ordinary breaking/compatible bump to that allocation baseline.
+   The source range, migration starting version, and comparison link still use
+   the last completed public release (or the reviewed bootstrap baseline).
+   Abandoned tags must not become that public baseline. Original notes and a
+   breaking impact therefore survive abandonment unless a reviewed source/note
+   correction establishes that the change itself was withdrawn. Gaps in version
+   numbers are intentional; failed reservations are not public changelog entries.
+
+For example, users have `0.4.2`; breaking preparation `0.5.0` merges as R, consumes
+its notes, then fails the newly pinned starter's consumer build. A source fix
+lands on main. A recovery PR abandons the unpublished attempt and restores its
+notes; planning is then unblocked. The replacement reserves `0.6.0` because
+`0.5.0` is already reserved and the unreleased changes remain breaking. Its
+migration guide and compare link start at `0.4.2`. An old retry for R is refused,
+even if it resumes after the replacement has been prepared.
+
+The recovery fixture must exercise this source-fix scenario end to end, including
+no-tag and partial-tag/draft failures, repeated abandonment, a publish/recovery
+race, rejection of abandonment after public publication, late retry rejection,
+and exactly-once notes in the replacement. Transient-error retry tests alone do
+not prove this contract.
+
+#### Bootstrap
 
 Bootstrap explicitly records the existing release baselines, accepting both
 historical bare and v-prefixed framework tags and rejecting conflicting aliases.
