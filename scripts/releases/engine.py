@@ -22,7 +22,6 @@ CATEGORIES = ("Breaking changes", "Added", "Improved", "Fixed", "Deprecated", "R
 IMPACTS = {"none": 0, "compatible": 1, "breaking": 2}
 COMPONENTS = {
     "platform": {"Framework", "Integrations", "CLI", "IDE"},
-    "installer": {"Installer"},
 }
 SHA = re.compile(r"[0-9a-f]{40}")
 
@@ -147,11 +146,18 @@ def fragment(path, text):
     return {**meta, "path": path, "text": text, "hash": digest(text), "sections": parts}
 
 
+def group_config(group):
+    if group not in COMPONENTS or group not in CONFIG["groups"]:
+        raise ValueError(f"Unsupported release group: {group}")
+    return CONFIG["groups"][group]
+
+
 def release_tag(plan):
-    return CONFIG["groups"][plan["group"]]["tag"] + plan["version"]
+    return group_config(plan["group"])["tag"] + plan["version"]
 
 
 def render(plan):
+    group_config(plan["group"])
     notes = [n for n in plan["notes"] if n["impact"] != "none"]
     rows = [f"## {plan['version']} — {plan['date']}"]
     for category in CATEGORIES:
@@ -169,9 +175,7 @@ def render(plan):
         rows += ["", f"### Migration from {plan['base_version']}"]
         for note in breaking:
             prompt = note["sections"]["Agent prompt"]
-            product = (
-                "NeoHaskell" if plan["group"] == "platform" else "NeoHaskell Installer"
-            )
+            product = "NeoHaskell"
             preamble = f"Migrate {note['component']} from {product} {plan['base_version']} to {plan['version']}.\n"
             prompt = re.sub(
                 r"(^```(?:text)?\n)",
@@ -359,7 +363,7 @@ def plan_release(repo, source, group, completed, date, bootstrap=None, check_tag
         base_sha = repo.revision(base_tag)
         if not repo.ancestor(base_sha, source):
             raise ValueError("Bootstrap baseline is outside main history")
-        allowed = r"(?:neo-v|v)?" if group == "platform" else r"installer-v"
+        allowed = r"(?:neo-v|v)?"
         prefix = re.fullmatch(allowed + r"(0\.[0-9]+\.[0-9]+)", base_tag)
         if not prefix:
             raise ValueError(
@@ -444,8 +448,8 @@ def plan_release(repo, source, group, completed, date, bootstrap=None, check_tag
         }
     )
     for tag in [release_tag(plan)] + (
-        [CONFIG["groups"][group]["alias"] + target]
-        if "alias" in CONFIG["groups"][group]
+        [group_config(group)["alias"] + target]
+        if "alias" in group_config(group)
         else []
     ):
         if check_tags and repo.git("tag", "--list", tag):
@@ -498,7 +502,7 @@ def expected_edits(repo, plan):
     check_identity(plan)
     source, group = plan["source_sha"], plan["group"]
     ledger = repo.ledger(source)
-    profile = CONFIG["groups"][group]
+    profile = group_config(group)
     if plan["kind"] == "release":
         if plan["id"] in {p["id"] for p in ledger["attempts"]}:
             raise ValueError("Attempt already prepared")

@@ -54,6 +54,9 @@ class Fragments(unittest.TestCase):
             NOTE.replace("compatible", "breaking"),
             NOTE.replace("## Summary", "## Missing"),
             NOTE.replace("Framework", "Installer"),
+            NOTE.replace("group: platform", "group: installer").replace(
+                "Framework", "Installer"
+            ),
             NOTE.replace("group: platform", "group: platform\ngroup: installer"),
             NOTE.replace(
                 "Saving an item now reports completion once, even after reconnecting.",
@@ -156,8 +159,8 @@ class FragmentDetails(unittest.TestCase):
         self.assertIn(note["sections"]["Migration"], result)
         self.assertEqual(result, release.render(plan))
         plan["group"] = "installer"
-        note["component"] = "Installer"
-        self.assertIn("from NeoHaskell Installer 0.4.2 to 0.5.0", release.render(plan))
+        with self.assertRaisesRegex(ValueError, "release group"):
+            release.render(plan)
 
 
 class History(unittest.TestCase):
@@ -191,6 +194,11 @@ class History(unittest.TestCase):
                 profile["changelog"],
                 "# Old history\n\n## [Unreleased]\n\nExisting published words stay intact.\n",
             )
+        self.write(
+            "installer/Cargo.toml",
+            '[package]\nname = "neo-install"\nversion = "0.4.1"\n',
+        )
+        self.write("installer/CHANGELOG.md", "# Historical installer releases\n")
         self.base = self.commit("ci: install inactive automation")
         self.git("tag", "neo-v0.4.1")
         self.git("tag", "installer-v0.4.1")
@@ -217,16 +225,10 @@ class History(unittest.TestCase):
         release.write_edits(self.root, release.expected_edits(self.repo, plan))
         return self.commit("ci(release): prepare reviewed release")
 
-    def bootstrap(self, group="platform"):
-        text = (
-            NOTE
-            if group == "platform"
-            else NOTE.replace("platform", "installer").replace("Framework", "Installer")
-        )
-        self.note(text=text)
-        tag = "neo-v0.4.1" if group == "platform" else "installer-v0.4.1"
+    def bootstrap(self):
+        self.note()
         plan = release.plan_release(
-            self.repo, "HEAD", group, {}, "2026-09-15", (tag, "0.4.2")
+            self.repo, "HEAD", "platform", {}, "2026-09-15", ("neo-v0.4.1", "0.4.2")
         )
         return plan, self.prepare(plan)
 
@@ -372,12 +374,16 @@ class FakeAPI:
 
 
 class Prepare(History):
-    def test_lockstep_and_independent_installer(self):
+    def test_lockstep_excludes_retired_installer(self):
         plan, revision = self.bootstrap()
         self.assertTrue(release.verify_generated(self.repo, revision, plan))
         for path in release.CONFIG["groups"]["platform"]["packages"]:
             self.assertIn("0.4.2", self.repo.read(revision, path))
         self.assertIn("0.4.1", self.repo.read(revision, "installer/Cargo.toml"))
+        self.assertEqual(
+            self.repo.read(revision, "installer/CHANGELOG.md"),
+            "# Historical installer releases\n",
+        )
         self.assertIsNone(self.repo.read(revision, ".changes/save.md"))
         changelog = self.repo.read(revision, "CHANGELOG.md")
         self.assertIn(release.render(plan), changelog)
@@ -398,9 +404,8 @@ class Prepare(History):
         self.assertEqual(plan["version"], "0.4.3")
         self.assertEqual(plan["base_sha"], r)
         self.assertEqual([n["path"] for n in plan["notes"]], [".changes/another.md"])
-        self.assertIsNone(
+        with self.assertRaisesRegex(ValueError, "release group"):
             release.plan_release(self.repo, "HEAD", "installer", public, "2026-09-16")
-        )
 
     def test_repeated_main_snapshot_freezes_proposal_date(self):
         first, r = self.publish_bootstrap()
@@ -681,16 +686,13 @@ class Artifacts(History):
         with self.assertRaisesRegex(ValueError, "consumer"):
             remote.seal_artifacts(plan, r, directory)
 
-    def test_installer_has_all_native_assets(self):
-        plan, r = self.bootstrap("installer")
-        files = self.files(plan, r)
-        self.assertNotIn("consumer.json", files)
-        self.assertIn("installer-neo-install-aarch64-apple-darwin", files)
-        remote.publish(self.api, self.repo, plan, r, files, lambda: None)
-        self.assertEqual(
-            remote.completed_releases(self.api, self.repo, self.repo.ledger(r)),
-            {plan["id"]: r},
-        )
+    def test_installer_publication_is_not_supported(self):
+        plan, r = self.bootstrap()
+        plan["group"] = "installer"
+        with self.assertRaisesRegex(ValueError, "release group"):
+            remote.required_assets(plan)
+        self.assertEqual(set(release.CONFIG["groups"]), {"platform"})
+        self.assertEqual(set(release.COMPONENTS), {"platform"})
 
 
 class Bootstrap(History):
@@ -805,104 +807,63 @@ class GitHubReads(unittest.TestCase):
 
 
 class Workflow(unittest.TestCase):
-    def test_group_failures_and_skips_do_not_block_the_other_publisher(self):
-        import re
+    def test_only_platform_jobs_and_all_publication_gates_remain(self):
         import runpy
 
         check = runpy.run_path(str(ROOT / "scripts/workflow-check"))
-        jobs = check["job_blocks"](
-            (ROOT / ".github/workflows/semantic-release.yml").read_text()
+        text = (ROOT / ".github/workflows/semantic-release.yml").read_text()
+        jobs = check["job_blocks"](text)
+        self.assertEqual(
+            set(jobs),
+            {
+                "prepare",
+                "platform_seed",
+                "platform_native",
+                "platform_consumer",
+                "platform_publish",
+                "reconcile",
+            },
         )
-        dependencies = {}
-        for name, body in jobs.items():
-            match = re.search(r"^    needs: (.+)$", body, re.M)
-            dependencies[name] = (
-                [part.strip() for part in match[1].strip("[]").split(",")]
-                if match
-                else []
+        self.assertNotIn("installer", text)
+        for stage in ("seed", "native", "consumer", "publish"):
+            self.assertIn(
+                "needs.prepare.outputs.platform_has_work == 'true'",
+                jobs[f"platform_{stage}"],
             )
-        for group in ("platform", "installer"):
-            self.assertIn(f"{group}_publish", jobs)
-            ancestors = set()
-            pending = list(dependencies[f"{group}_publish"])
-            while pending:
-                name = pending.pop()
-                if name not in ancestors:
-                    ancestors.add(name)
-                    pending.extend(dependencies[name])
-            self.assertIn(f"{group}_native", ancestors)
-            self.assertEqual(
-                {name.split("_")[0] for name in ancestors} - {"prepare"},
-                {group},
-            )
-            for stage in ("seed", "native", "publish"):
-                self.assertIn(
-                    f"needs.prepare.outputs.{group}_has_work == 'true'",
-                    jobs[f"{group}_{stage}"],
-                )
-        self.assertIn("platform_consumer", dependencies["platform_publish"])
-        reconcile = jobs["reconcile"]
-        self.assertIn("!cancelled()", reconcile)
-        self.assertIn("needs.platform_publish.result == 'success' ||", reconcile)
-        self.assertIn("needs.installer_publish.result == 'success'", reconcile)
+        self.assertIn(
+            "needs: [prepare, platform_native, platform_consumer]",
+            jobs["platform_publish"],
+        )
+        self.assertIn("needs: platform_publish", jobs["reconcile"])
+        self.assertIn("needs.platform_publish.result == 'success'", jobs["reconcile"])
 
-        # Execute the checked dependency graph with GitHub's implicit success()
-        # rule. A failure or absence in one chain must not gate the other chain.
-        for absent, failed, cancelled, expected in [
-            (set(), {"installer_native"}, False, {"platform"}),
-            (set(), {"platform_consumer"}, False, {"installer"}),
-            ({"installer"}, set(), False, {"platform"}),
-            ({"platform"}, set(), False, {"installer"}),
-            ({"platform", "installer"}, set(), False, set()),
-            (set(), {"platform_native", "installer_native"}, False, set()),
-            (set(), set(), False, {"platform", "installer"}),
-            (set(), set(), True, set()),
-        ]:
-            with self.subTest(absent=absent, failed=failed, cancelled=cancelled):
-                results = {}
-                for name in jobs:
-                    if name == "reconcile":
-                        continue
-                    if (
-                        cancelled
-                        or name.split("_")[0] in absent
-                        or any(
-                            results[parent] != "success"
-                            for parent in dependencies[name]
-                        )
-                    ):
-                        results[name] = "skipped"
-                    else:
-                        results[name] = "failure" if name in failed else "success"
-                published = {
-                    group
-                    for group in ("platform", "installer")
-                    if results[f"{group}_publish"] == "success"
-                }
-                self.assertEqual(published, expected)
-
-    def test_work_outputs_partition_groups_and_preserve_reuse(self):
+    def test_work_outputs_are_platform_only_and_preserve_reuse(self):
         import runpy
 
         cli = runpy.run_path(str(ROOT / "scripts/semantic-release"))
-        items = [
-            {"group": group, "attempt": group, "revision": "a" * 40, "reuse": True}
-            for group in ("platform", "installer")
-        ]
-        for selected in ([], items[:1], items[1:], items):
+        item = {
+            "group": "platform",
+            "attempt": "platform",
+            "revision": "a" * 40,
+            "reuse": True,
+        }
+        for selected in ([], [item]):
             outputs = cli["work_outputs"](selected)
-            for group in ("platform", "installer"):
-                expected = [item for item in selected if item["group"] == group]
-                self.assertEqual(
-                    outputs[f"{group}_has_work"], str(bool(expected)).lower()
-                )
-                self.assertEqual(json.loads(outputs[f"{group}_items"]), expected)
-                matrix = json.loads(outputs[f"{group}_matrix"])["include"]
-                self.assertEqual(len(matrix), len(expected) * len(release.TARGETS))
-                self.assertEqual(
-                    {item["group"] for item in matrix}, {group} if expected else set()
-                )
-                self.assertTrue(all(item["reuse"] for item in matrix))
+            self.assertEqual(
+                set(outputs), {"platform_has_work", "platform_items", "platform_matrix"}
+            )
+            self.assertEqual(outputs["platform_has_work"], str(bool(selected)).lower())
+            self.assertEqual(json.loads(outputs["platform_items"]), selected)
+            matrix = json.loads(outputs["platform_matrix"])["include"]
+            self.assertEqual(
+                {row["target"] for row in matrix},
+                set(release.TARGETS) if selected else set(),
+            )
+            self.assertTrue(
+                all(row["reuse"] and row["group"] == "platform" for row in matrix)
+            )
+        with self.assertRaisesRegex(ValueError, "release group"):
+            cli["work_outputs"]([{**item, "group": "installer"}])
 
     def test_main_only_and_no_legacy_publishers(self):
         import runpy
@@ -915,7 +876,6 @@ class Workflow(unittest.TestCase):
         for old, new in [
             ("cancel-in-progress: false", "cancel-in-progress: true"),
             ("needs: [prepare, platform_native, platform_consumer]", "needs: prepare"),
-            ("needs: [prepare, installer_native]", "needs: [prepare, platform_native]"),
             ("!cancelled()", "true"),
             ("github.ref == 'refs/heads/main'", "github.ref != 'refs/heads/main'"),
             ("persist-credentials: false", "persist-credentials: true"),
@@ -934,6 +894,25 @@ class Workflow(unittest.TestCase):
             old = (ROOT / ".github/workflows" / name).read_text()
             self.assertNotIn("softprops/action-gh-release", old)
             self.assertNotIn("contents: write", old)
+
+    def test_installer_download_checks_run_for_platform_publication_changes(self):
+        import re
+
+        workflow = (ROOT / ".github/workflows/installer-ci.yml").read_text()
+        pattern = re.search(r"PATTERN='([^']+)'", workflow)[1]
+        for path in (
+            "installer/tests/consistency.rs",
+            "scripts/releases/config.json",
+            "scripts/releases/engine.py",
+            "scripts/releases/github.py",
+            "scripts/semantic-release",
+            "scripts/neo-release",
+            ".github/workflows/semantic-release.yml",
+            ".github/workflows/installer-ci.yml",
+        ):
+            with self.subTest(path=path):
+                self.assertRegex(path, pattern)
+        self.assertNotRegex("website/package.json", pattern)
 
     def test_pr_rollout_ledger_is_empty(self):
         # This assertion intentionally expires at the first generated preparation:

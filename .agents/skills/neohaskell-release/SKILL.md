@@ -18,9 +18,9 @@ what to do, and how to check the result, rewrite the notes.
 2. Copy [the fragment template](assets/change.md) to `.changes/<unique-slug>.md`.
    Never reuse a consumed filename. Use one fragment per affected component;
    avoid parallel edits to one shared pending document.
-3. Choose `group: platform` for Framework, Integrations, CLI, or IDE; choose
-   `group: installer` for Installer. The framework, integrations, CLI and bundled
-   starter share one platform version. The installer remains independent.
+3. Use `group: platform` for Framework, Integrations, CLI, or IDE. The framework,
+   integrations, CLI and bundled starter share one platform version. Installer
+   publication is retired; installer release fragments are rejected.
 4. Declare `impact: compatible`, `breaking`, or `none`. Features, fixes and
    performance improvements normally mean compatible. Internal CI/docs work
    uses none with a concrete reason in Summary. A breaking Conventional Commit
@@ -37,7 +37,7 @@ what to do, and how to check the result, rewrite the notes.
    Publication adds the actual old/new version preamble automatically.
 7. Run `./dev semantic-release check --base <owning-base>` and apply the Jess
    review. Include these notes in the final substantive PR review. Feature PRs
-   do not assign versions/dates or edit either CHANGELOG.md. The existing
+   do not assign versions/dates or edit CHANGELOG.md. The existing
    pipeline still has two human gates; note authoring adds no approval gate.
 
 ## What happens on main
@@ -56,7 +56,7 @@ are frozen once with a real Nix content hash and embedded in every CLI target.
 Four native builds, portability/install checks and the generated-app consumer
 check must pass before publication. The release body equals its committed
 changelog section. Platform tags `neo-vX` and `vX` share the same commit;
-installer tags use `installer-vX`. The planned date is the UTC date of the main source snapshot and stays fixed
+The planned date is the UTC date of the main source snapshot and stays fixed
 across retries. The first draft asset, `release-bundle.zip`, freezes all verified
 inputs and binaries; retries restore it and skip rebuilding.
 
@@ -70,7 +70,7 @@ GitHub may require approving workflow runs created by its built-in token.
 
 Installing this workflow ships an empty ledger. It performs **no preparation PR,
 tag, or release write** on main until a maintainer explicitly starts a bootstrap.
-A group activates only when that manual first release is public and its source,
+Automation activates only when that manual first release is public and its source,
 notes, aliases, assets and checksums verify. A draft/failed bootstrap cannot
 activate it. Historical tags and changelog prose are preserved.
 
@@ -92,15 +92,14 @@ When the user asks to make the first release **after this CI PR is merged**:
 
    ```sh
    gh workflow run semantic-release.yml --ref main \
-     -f operation=bootstrap -f group=platform \
+     -f operation=bootstrap \
      -f baseline=<existing-v-or-neo-v-tag> -f version=<0.Y.Z>
    ```
 
 5. Review the resulting preparation PR, required checks, rendered notes and
    migration prompt. Merge only within the user's release/merge authorization.
    Watch the main run and verify the public release and all assets. This public
-   first release activates only its group. Installer bootstrap uses group
-   installer and an existing installer-v baseline.
+   first release activates automatic platform releases.
 
 Do not run bootstrap merely to test or install the automation. This first CI PR
 must not cut a release; the manual first release is a separate requested task.
@@ -125,6 +124,10 @@ must not cut a release; the manual first release is a separate requested task.
   Never delete the pause branch manually. Published releases cannot be abandoned.
 
 Validation: `./dev semantic-release --self-test`, `./dev workflow-check`, and
-`./dev neo-skills-check`. Fixtures prove contracts; they do not claim a live
+`./dev neo-skills-check`. When changing platform tags, assets, or release
+workflows, also run `cargo test --manifest-path installer/Cargo.toml --locked
+--all-features`: `installer/tests/consistency.rs` binds existing installer
+downloads to the current platform publisher. Retiring installer publication
+does not retire this compatibility gate. Fixtures prove contracts; they do not claim a live
 four-target build or production publication. For PR titles and status updates,
 use [neohaskell-pr](../neohaskell-pr/SKILL.md).

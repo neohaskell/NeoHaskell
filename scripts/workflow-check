@@ -570,13 +570,12 @@ def check_semantic_release(name, text):
         errors.append(f"{name}: credentials, alternate publication, or tag-trigger bypass")
     jobs = job_blocks(code)
     expected = {"prepare", "platform_seed", "platform_native", "platform_consumer",
-                "platform_publish", "installer_seed", "installer_native",
-                "installer_publish", "reconcile"}
+                "platform_publish", "reconcile"}
     if set(jobs) != expected: errors.append(f"{name}: release stages changed")
     for job, body in jobs.items():
         if "github.ref == 'refs/heads/main'" not in body:
             errors.append(f"{name}: {job} must be main-only")
-        if "contents: write" in body and job not in {"prepare", "platform_publish", "installer_publish", "reconcile"}:
+        if "contents: write" in body and job not in {"prepare", "platform_publish", "reconcile"}:
             errors.append(f"{name}: {job} must be read-only")
         if "pull-requests: write" in body and job not in {"prepare", "reconcile"}:
             errors.append(f"{name}: {job} must not write PRs")
@@ -585,16 +584,16 @@ def check_semantic_release(name, text):
     contracts = {
         "prepare": ["semantic-release orchestrate", "pull-requests: write"],
         "platform_consumer": ["needs: [prepare, platform_native]", "semantic-release consumer", "ref: ${{ matrix.revision }}"],
-        "reconcile": ["needs: [platform_publish, installer_publish]", "!cancelled()",
-                      "needs.platform_publish.result == 'success' || needs.installer_publish.result == 'success'",
+        "reconcile": ["needs: platform_publish", "!cancelled()",
+                      "needs.platform_publish.result == 'success'",
                       "semantic-release orchestrate", "ref: main"],
     }
-    for group in ("platform", "installer"):
+    for group in ("platform",):
         contracts["prepare"] += [f"steps.plan.outputs.{group}_{key}" for key in ("has_work", "items", "matrix")]
         contracts[f"{group}_seed"] = ["needs: prepare", "semantic-release seed", f"outputs.{group}_items"]
         contracts[f"{group}_native"] = [f"needs: [prepare, {group}_seed]", "semantic-release build-native",
                                         "dtolnay/rust-toolchain@1.94.0", f"outputs.{group}_matrix"]
-        dependencies = f"needs: [prepare, {group}_native" + (", platform_consumer]" if group == "platform" else "]")
+        dependencies = f"needs: [prepare, {group}_native, platform_consumer]"
         contracts[f"{group}_publish"] = [dependencies, "semantic-release publish", "contents: write",
                                          "pattern: release-${{ matrix.attempt }}-*", f"outputs.{group}_items"]
         for stage in ("seed", "native", "consumer", "publish"):
@@ -1517,7 +1516,7 @@ def self_test():
 
     # ── installer-ci.yml arbitrary-base + aggregate gate (PR 6) ───────────────
     good_installer = (
-        "on:\n  push:\n    branches: [main]\n    tags: [\"installer-v*\"]\n"
+        "on:\n  push:\n    branches: [main]\n"
         "  pull_request:\n    types: [opened, synchronize]\n"
         "jobs:\n"
         "  changes:\n    steps:\n      - run: echo hi\n"

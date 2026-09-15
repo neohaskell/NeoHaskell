@@ -16,7 +16,7 @@ the second number and resets the third; a compatible feature or fix increments
 only the third. Reaching version 1 is a separate explicit decision.
 
 Framework, integrations, CLI, and starter form one user-facing platform. The
-installer has a different job and can ship repairs independently. Existing
+installer release flow is unused and is being retired. Existing
 release tags are heterogeneous: framework `v0.*` and bare `0.*`, plus `neo-v*`
 and `installer-v*`. Current manifests also differ. Matching numbers alone would
 not prove compatibility: the CLI embeds an immutable framework revision in its
@@ -29,13 +29,14 @@ contain engineering detail; they are not the desired user-facing release notes.
 
 ## Decision
 
-### 1. Two release groups
+### 1. One platform release
 
 - **Platform:** `nhcore`, `nhintegrations`, the reference application's package
   metadata, Neo CLI, and bundled starter share the platform release version.
   `CHANGELOG.md` is the public platform history.
-- **Installer:** retains its independent `installer-vX.Y.Z` releases and gets
-  `installer/CHANGELOG.md`. A platform release need not rebuild the installer.
+- **Installer publication is retired.** Keep existing tags/releases, source, and
+  build/download compatibility tests. Do not generate installer versions,
+  changelog entries, native release assets, or publication jobs.
 
 Use the existing `neo-vX.Y.Z` downloadable release namespace, with the public
 release title `NeoHaskell X.Y.Z`. The corresponding `vX.Y.Z` framework tag is an
@@ -43,21 +44,20 @@ alias at the same main commit; there is one platform GitHub Release with the
 native assets and complete notes. This preserves the installer's existing
 `neo-v*` resolution contract. Never move old tags or rewrite old releases.
 
-Each affected group's highest impact determines its next version. A breaking
+The platform's highest impact determines its next version. A breaking
 change in either a fragment or its merged Conventional Commit (`!`,
 `BREAKING CHANGE:`, or `BREAKING-CHANGE:`) must not be silently downgraded.
 The pipeline's commit validator must accept `!` syntax. Feature/fix/performance
 changes need release notes; other changes may declare an explicit no-release
 impact with a reason. Internal housekeeping does not release itself.
 Classification uses the merged first-parent history and reviewed fragments,
-not every transient feature-branch commit. Fragment groups disambiguate a
-cross-component commit; an ambiguous breaking marker fails for local correction.
+not every transient feature-branch commit. Fragments identify the affected components; an ambiguous breaking marker fails
+for local correction.
 
 ### 2. Temporary user-facing fragments
 
 The local `neohaskell-release` skill prepares `.changes/<unique-slug>.md` in the
-feature PR. One fragment describes one coherent user-facing change in one group;
-a cross-group change can have two fragments. No version or date is assigned on
+feature PR. One fragment describes one coherent user-facing component change. No version or date is assigned on
 the feature branch. Files are consumed when the generated release-preparation
 PR merges. Git history retains the reviewed originals.
 
@@ -94,8 +94,8 @@ Report unresolved cases instead of inventing a mapping or weakening tests.
 ```
 ````
 
-Groups are `platform` and `installer`. Components are `Framework`, `Integrations`,
-`CLI`, `IDE`, and `Installer`; the installer component belongs only to its group.
+The only accepted group is `platform`. Components are `Framework`,
+`Integrations`, `CLI`, and `IDE`. Installer release fragments are rejected.
 Impacts are `breaking`, `compatible`, and `none`. Categories are `Breaking changes`,
 `Added`, `Improved`, `Fixed`, `Deprecated`, and `Removed`, in that order.
 Breaking impact requires the breaking category, substantive migration guidance,
@@ -152,7 +152,7 @@ and is not silently reclassified as a new release.
 The workflow runs on main pushes, with a main-only dispatch path for retries.
 Feature PR CI validates fragments and previews output but cannot publish or
 change versions. Preparation captures an exact main source SHA and examines the
-merged change set since the last completed release for each group.
+merged change set since the last completed platform release.
 
 Preparation creates or updates a dedicated release PR containing only derived
 changes: version metadata/lockfiles, changelog sections, a machine-readable
@@ -161,8 +161,8 @@ the source range, prior and target versions, fragment identities and hashes,
 planned date, and note hashes. New main changes invalidate a stale preparation
 until it is regenerated; they cannot disappear behind already-consumed notes.
 An in-progress release must be completed or explicitly abandoned under section 6
-before planning the next version for that group. This does not prevent merging
-source fixes or releasing the other group. The maintainer merges the release PR
+before planning the next platform version. This does not prevent merging
+source fixes. The maintainer merges the release PR
 after required checks.
 
 The release manifest is provenance, not an authorization token. The publisher
@@ -234,7 +234,7 @@ automatic response to a timeout.
 The recovery contract is:
 
 1. **Record a terminal state.** The committed manifest history records each
-   group's immutable attempt and any abandonment, retaining its identity,
+   immutable platform attempt and any abandonment, retaining its identity,
    source SHA, reserved version, note/fragment hashes, and recovery reason.
    Completion is derived from the verified public GitHub release receipt; it
    does not require a second main bookkeeping commit.
@@ -277,7 +277,7 @@ The recovery contract is:
 5. **Separate version allocation from user history.** A replacement records
    which abandoned attempt it supersedes, includes the source fix and every
    still-unreleased change, and receives a fresh manifest/date/source revision.
-   Allocate above the highest completed or reserved version in that group,
+   Allocate above the highest completed or reserved version for the platform,
    applying the ordinary breaking/compatible bump to that allocation baseline.
    The source range, migration starting version, and comparison link still use
    the last completed public release (or the reviewed bootstrap baseline).
@@ -304,7 +304,7 @@ not prove this contract.
 
 This CI-only rollout MUST NOT create a release or release-preparation PR when
 merged. The committed release ledger starts empty. Automatic handling remains
-inactive per group until its first explicitly invoked manual bootstrap release
+inactive until the first explicitly invoked manual bootstrap release
 has completed public publication and its manifest/assets have been verified.
 A flag, tag alone, draft release, failed attempt, or merged preparation cannot
 activate it. Bootstrap is a separate maintainer operation after this PR merges;
@@ -328,8 +328,8 @@ live GitHub publication before the workflow exists on main; report that limit.
 
 ## Consequences
 
-Users get one platform release story and explicit migrations; installer fixes
-can ship independently. Unchanged platform components may receive a new shared
+Users get one platform release story and explicit migrations. Installer
+publication no longer adds a separate release process. Unchanged platform components may receive a new shared
 version, and a platform release waits for all of its artifact gates.
 
 Release prose is reviewed with implementation and is available without an AI
@@ -351,14 +351,14 @@ rather than an unattended direct push into protected main.
 
 `./dev semantic-release check --base origin/main` validates local fragments and
 exact generated diffs. The local release skill owns prose and manual operations.
-`scripts/releases/config.json` owns groups/package paths; `manifest.json` is the
+`scripts/releases/config.json` owns platform package paths; `manifest.json` is the
 append-only attempt/recovery ledger. `semantic-release.yml` is the sole publisher;
 old tag workflows retain only read-only rehearsal or ordinary component CI.
 
 The workflow dispatch operations are auto, bootstrap, recover, and resume.
-Bootstrap requires a reviewed existing group baseline tag and explicit target
-version. It opens a preparation PR; its successful public release activates only
-that group. Installation ships the empty ledger, leaving all groups inactive.
+Bootstrap requires a reviewed existing platform baseline tag and explicit target
+version. It opens a preparation PR; its successful public release activates
+automation. Installation ships the empty ledger, leaving automation inactive.
 Recovery pauses use immutable `release-pause/<attempt-id>` branches; these remain
 after abandonment to reject late retries. Resume can remove only an unmerged
 recovery pause. No operation bypasses main protection or merges its own PR.

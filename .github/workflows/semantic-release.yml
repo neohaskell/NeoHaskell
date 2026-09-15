@@ -1,4 +1,4 @@
-# Installing this workflow is inert. Only a verified manual bootstrap activates a group.
+# Installing this workflow is inert. Only a verified manual bootstrap activates platform releases.
 name: Semantic Release
 on:
   push:
@@ -9,10 +9,6 @@ on:
         type: choice
         options: [auto, bootstrap, recover, resume]
         default: auto
-      group:
-        type: choice
-        options: [platform, installer]
-        default: platform
       baseline:
         description: Existing baseline tag (manual bootstrap only)
         type: string
@@ -42,9 +38,6 @@ jobs:
       platform_has_work: ${{ steps.plan.outputs.platform_has_work }}
       platform_items: ${{ steps.plan.outputs.platform_items }}
       platform_matrix: ${{ steps.plan.outputs.platform_matrix }}
-      installer_has_work: ${{ steps.plan.outputs.installer_has_work }}
-      installer_items: ${{ steps.plan.outputs.installer_items }}
-      installer_matrix: ${{ steps.plan.outputs.installer_matrix }}
     steps:
       - uses: actions/checkout@v7.0.1
         with:
@@ -55,14 +48,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           OPERATION: ${{ inputs.operation || 'auto' }}
-          GROUP: ${{ inputs.group || 'platform' }}
           BASELINE: ${{ inputs.baseline }}
           VERSION: ${{ inputs.version }}
           ATTEMPT: ${{ inputs.attempt }}
           REASON: ${{ inputs.reason }}
         run: >-
           ./scripts/semantic-release orchestrate --operation "$OPERATION"
-          --group "$GROUP" --baseline "$BASELINE" --version "$VERSION"
+          --baseline "$BASELINE" --version "$VERSION"
           --attempt "$ATTEMPT" --reason "$REASON"
   platform_seed:
     needs: prepare
@@ -201,107 +193,11 @@ jobs:
           ATTEMPT: ${{ matrix.attempt }}
           REVISION: ${{ matrix.revision }}
         run: ./scripts/semantic-release publish --attempt "$ATTEMPT" --revision "$REVISION" --out artifacts
-  installer_seed:
-    needs: prepare
-    if: github.ref == 'refs/heads/main' && needs.prepare.outputs.installer_has_work == 'true'
-    strategy:
-      fail-fast: false
-      matrix:
-        include: ${{ fromJSON(needs.prepare.outputs.installer_items) }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v7.0.1
-        if: matrix.reuse != true
-        with:
-          ref: ${{ matrix.revision }}
-          fetch-depth: 0
-          persist-credentials: false
-      - uses: DeterminateSystems/determinate-nix-action@v3.22.2
-        if: matrix.reuse != true
-      - name: Freeze the starter at the merged release revision
-        if: matrix.reuse != true
-        env:
-          ATTEMPT: ${{ matrix.attempt }}
-          REVISION: ${{ matrix.revision }}
-        run: ./scripts/semantic-release seed --attempt "$ATTEMPT" --revision "$REVISION" --out inputs
-      - uses: actions/upload-artifact@v7
-        if: matrix.reuse != true
-        with:
-          name: inputs-${{ matrix.attempt }}
-          path: inputs/*
-          if-no-files-found: error
-  installer_native:
-    needs: [prepare, installer_seed]
-    if: github.ref == 'refs/heads/main' && needs.prepare.outputs.installer_has_work == 'true'
-    strategy:
-      fail-fast: false
-      matrix: ${{ fromJSON(needs.prepare.outputs.installer_matrix) }}
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 90
-    steps:
-      - uses: actions/checkout@v7.0.1
-        if: matrix.reuse != true
-        with:
-          ref: ${{ matrix.revision }}
-          fetch-depth: 0
-          persist-credentials: false
-      - uses: dtolnay/rust-toolchain@1.94.0
-        if: matrix.reuse != true
-        with:
-          targets: ${{ matrix.target }}
-      - uses: actions/download-artifact@v8
-        if: matrix.reuse != true
-        with:
-          name: inputs-${{ matrix.attempt }}
-          path: inputs
-      - name: Test, build, inspect and smoke the exact native asset
-        if: matrix.reuse != true
-        env:
-          ATTEMPT: ${{ matrix.attempt }}
-          REVISION: ${{ matrix.revision }}
-          TARGET: ${{ matrix.target }}
-        run: ./scripts/semantic-release build-native --attempt "$ATTEMPT" --revision "$REVISION" --target "$TARGET" --inputs inputs --out artifacts
-      - uses: actions/upload-artifact@v7
-        if: matrix.reuse != true
-        with:
-          name: release-${{ matrix.attempt }}-${{ matrix.target }}
-          path: artifacts/*
-          if-no-files-found: error
-  installer_publish:
-    needs: [prepare, installer_native]
-    if: github.ref == 'refs/heads/main' && needs.prepare.outputs.installer_has_work == 'true'
-    strategy:
-      fail-fast: false
-      matrix:
-        include: ${{ fromJSON(needs.prepare.outputs.installer_items) }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v7.0.1
-        with:
-          ref: ${{ matrix.revision }}
-          fetch-depth: 0
-          persist-credentials: false
-      - uses: actions/download-artifact@v8
-        if: matrix.reuse != true
-        with:
-          pattern: release-${{ matrix.attempt }}-*
-          path: artifacts
-          merge-multiple: true
-      - name: Verify provenance and publish immutable assets
-        env:
-          GH_TOKEN: ${{ github.token }}
-          ATTEMPT: ${{ matrix.attempt }}
-          REVISION: ${{ matrix.revision }}
-        run: ./scripts/semantic-release publish --attempt "$ATTEMPT" --revision "$REVISION" --out artifacts
   reconcile:
-    needs: [platform_publish, installer_publish]
+    needs: platform_publish
     if: >-
       !cancelled() && github.ref == 'refs/heads/main' &&
-      (needs.platform_publish.result == 'success' || needs.installer_publish.result == 'success')
+      needs.platform_publish.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:

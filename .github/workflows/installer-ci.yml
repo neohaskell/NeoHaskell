@@ -1,9 +1,7 @@
 # Installer CI — the Rust `installer/` crate (`neo-install`) in the monorepo.
 #
-# Release tags use the 'installer-v*' prefix (e.g. installer-v0.1.0), independent
-# of the Haskell library tags and the neo CLI's 'neo-v*' tags. GitHub Actions
-# path filters do NOT apply to tag triggers, so that prefix is the sole
-# disambiguation for an installer release.
+# Installer publication is retired. Historical assets remain available; this
+# workflow keeps source builds and download compatibility checked.
 #
 # Base-branch policy (deliberate, mirrors neo-ci.yml): there is NO `branches:`
 # allowlist on the pull_request trigger. The installer ships through official
@@ -35,7 +33,7 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  # Per-PR diff scoping. On push/tag the trigger already implies relevance
+  # Per-PR diff scoping. On main push the trigger already implies relevance
   # (touched=true). On a PR we diff against the actual base ref, whatever it is
   # named, so stacked layers work unchanged.
   changes:
@@ -59,9 +57,9 @@ jobs:
             exit 0
           fi
           CHANGED="$(git diff --name-only "origin/${BASE_REF}...HEAD")"
-          # The installer crate PLUS its release workflow (a workflow change can
-          # break the release/asset contract the bootstrap + install path rely on).
-          PATTERN='^(installer/|\.github/workflows/installer-ci\.yml)'
+          # Existing installers download platform releases: check that contract
+          # whenever the platform publisher or shared asset tooling changes.
+          PATTERN='^(installer/|scripts/releases/|scripts/(semantic-release|neo-release)$|\.github/workflows/(installer-ci|semantic-release|neo-release)\.yml$)'
           if echo "$CHANGED" | grep -qE "$PATTERN"; then
             echo "touched=true" >> "$GITHUB_OUTPUT"
           else

@@ -141,9 +141,7 @@ class GitHub:
             "PATCH",
             {
                 "draft": False,
-                "make_latest": (
-                    "false" if item["tag_name"].startswith("installer-v") else "true"
-                ),
+                "make_latest": "true",
             },
         )
 
@@ -223,7 +221,7 @@ class GitHub:
 
 
 def tags(plan):
-    profile = release.CONFIG["groups"][plan["group"]]
+    profile = release.group_config(plan["group"])
     return [release.release_tag(plan)] + (
         [profile["alias"] + plan["version"]] if "alias" in profile else []
     )
@@ -304,18 +302,17 @@ def completed_releases(api, repo, ledger):
 
 
 def required_assets(plan):
-    prefix = release.CONFIG["groups"][plan["group"]]["asset_prefix"]
+    prefix = release.group_config(plan["group"])["asset_prefix"]
     names = {prefix + t for t in release.TARGETS} | {
         "receipt-" + t + ".json" for t in release.TARGETS
     }
-    if plan["group"] == "platform":
-        names |= {
-            "neo-starter-flake.nix",
-            "neo-starter-flake.lock",
-            "neo-starter-cabal.project",
-            "neo-compatibility.json",
-            "consumer.json",
-        }
+    names |= {
+        "neo-starter-flake.nix",
+        "neo-starter-flake.lock",
+        "neo-starter-cabal.project",
+        "neo-compatibility.json",
+        "consumer.json",
+    }
     return names
 
 
@@ -383,7 +380,7 @@ def seal_artifacts(plan, revision, directory):
         if not path.is_file() or path.is_symlink():
             raise ValueError("Release asset is not a regular file")
         hashes[name] = release.digest(path.read_bytes())
-    prefix = release.CONFIG["groups"][plan["group"]]["asset_prefix"]
+    prefix = release.group_config(plan["group"])["asset_prefix"]
     for target in release.TARGETS:
         receipt = json.loads((directory / ("receipt-" + target + ".json")).read_text())
         expected = {
@@ -394,31 +391,27 @@ def seal_artifacts(plan, revision, directory):
             "group": plan["group"],
             "native_verified": True,
         }
-        if plan["group"] == "platform":
-            expected["starter_hashes"] = {
-                n: hashes["neo-starter-" + n]
-                for n in ("flake.nix", "flake.lock", "cabal.project")
-            }
+        expected["starter_hashes"] = {
+            n: hashes["neo-starter-" + n]
+            for n in ("flake.nix", "flake.lock", "cabal.project")
+        }
         if receipt != expected:
             raise ValueError("Native build/source/portability receipt mismatch")
-    if plan["group"] == "platform":
-        compat = json.loads((directory / "neo-compatibility.json").read_text())
-        if (
-            compat["neo_version"] != plan["version"]
-            or compat["neohaskell"]["source_revision"] != revision
-        ):
-            raise ValueError(
-                "Shipped starter compatibility does not match release source"
-            )
-        consumer = json.loads((directory / "consumer.json").read_text())
-        expected = {
-            "attempt": plan["id"],
-            "revision": revision,
-            "binary_hash": hashes["neo-x86_64-unknown-linux-gnu"],
-            "verified": True,
-        }
-        if consumer != expected:
-            raise ValueError("Exact released binary lacks consumer verification")
+    compat = json.loads((directory / "neo-compatibility.json").read_text())
+    if (
+        compat["neo_version"] != plan["version"]
+        or compat["neohaskell"]["source_revision"] != revision
+    ):
+        raise ValueError("Shipped starter compatibility does not match release source")
+    consumer = json.loads((directory / "consumer.json").read_text())
+    expected = {
+        "attempt": plan["id"],
+        "revision": revision,
+        "binary_hash": hashes["neo-x86_64-unknown-linux-gnu"],
+        "verified": True,
+    }
+    if consumer != expected:
+        raise ValueError("Exact released binary lacks consumer verification")
     receipt = {"plan": plan, "revision": revision, "assets": hashes}
     (directory / "release-manifest.json").write_text(release.canonical(receipt))
     hashes["release-manifest.json"] = release.digest(

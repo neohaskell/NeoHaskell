@@ -6,16 +6,16 @@
       "tag": "neo-v",
       "alias": "v",
       "changelog": "CHANGELOG.md",
-      "packages": {"core/nhcore.cabal": "nhcore", "integrations/nhintegrations.cabal": "nhintegrations", "testbed/nhtestbed.cabal": "nhtestbed", "neo/Cargo.toml": "neo"},
-      "locks": {"neo/Cargo.lock": "neo"},
+      "packages": {
+        "core/nhcore.cabal": "nhcore",
+        "integrations/nhintegrations.cabal": "nhintegrations",
+        "testbed/nhtestbed.cabal": "nhtestbed",
+        "neo/Cargo.toml": "neo"
+      },
+      "locks": {
+        "neo/Cargo.lock": "neo"
+      },
       "asset_prefix": "neo-"
-    },
-    "installer": {
-      "tag": "installer-v",
-      "changelog": "installer/CHANGELOG.md",
-      "packages": {"installer/Cargo.toml": "neo-install"},
-      "locks": {"installer/Cargo.lock": "neo-install"},
-      "asset_prefix": "installer-neo-install-"
     }
   }
 }

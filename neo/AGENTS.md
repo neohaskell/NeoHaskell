@@ -95,8 +95,9 @@ by the Haskell Test gate.
 
 ## Release compatibility contract (neo <-> NeoHaskell)
 
-Release versions use two groups: NeoHaskell, integrations, Neo CLI and the bundled starter share
-one platform version; the installer remains independent. Use the local
+NeoHaskell, integrations, Neo CLI and the bundled starter share one platform
+release version. Installer publication is retired; its build and download
+compatibility checks remain. Use the local
 [release skill](../.agents/skills/neohaskell-release/SKILL.md) for fragments,
 migrations and manual bootstrap. Platform tags `neo-vX` and `vX` point to the same
 release revision. **Every neo release must publish an explicit

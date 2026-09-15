@@ -25,7 +25,9 @@ def work_outputs(items):
         "macos-latest",
     ]
     outputs = {}
-    for group in ("platform", "installer"):
+    for item in items:
+        release.group_config(item["group"])
+    for group in release.COMPONENTS:
         selected = [item for item in items if item["group"] == group]
         matrix = {
             "include": [
@@ -67,13 +69,12 @@ def get_plan(repo, revision, identity):
 
 
 def seed(repo, plan, revision, out):
+    release.group_config(plan["group"])
     out = Path(out)
     out.mkdir(parents=True, exist_ok=True)
     (out / "plan.json").write_text(
         release.canonical({"plan": plan, "revision": revision})
     )
-    if plan["group"] != "platform":
-        return
     with tempfile.TemporaryDirectory() as temporary:
         work = Path(temporary) / "source"
         subprocess.run(
@@ -133,21 +134,21 @@ def seed(repo, plan, revision, out):
 
 
 def apply_seed(repo, plan, revision, inputs):
+    release.group_config(plan["group"])
     inputs = Path(inputs)
     received = json.loads((inputs / "plan.json").read_text())
     if received != {"plan": plan, "revision": revision}:
         raise ValueError("Release input provenance mismatch")
     if repo.revision("HEAD") != revision:
         raise ValueError("Build checkout is not the release revision")
-    if plan["group"] == "platform":
-        for name in ("flake.nix", "flake.lock", "cabal.project"):
-            path = inputs / ("neo-starter-" + name)
-            if path.is_symlink():
-                raise ValueError("Symlink release input")
-            shutil.copyfile(path, repo.root / "neo/starter" / name)
-        lock = json.loads((repo.root / "neo/starter/flake.lock").read_text())
-        if lock["nodes"]["neohaskell"]["locked"]["rev"] != revision:
-            raise ValueError("Starter does not pin release source")
+    for name in ("flake.nix", "flake.lock", "cabal.project"):
+        path = inputs / ("neo-starter-" + name)
+        if path.is_symlink():
+            raise ValueError("Symlink release input")
+        shutil.copyfile(path, repo.root / "neo/starter" / name)
+    lock = json.loads((repo.root / "neo/starter/flake.lock").read_text())
+    if lock["nodes"]["neohaskell"]["locked"]["rev"] != revision:
+        raise ValueError("Starter does not pin release source")
 
 
 def build_native(repo, plan, revision, target, inputs, out):
@@ -156,7 +157,7 @@ def build_native(repo, plan, revision, target, inputs, out):
     apply_seed(repo, plan, revision, inputs)
     out = Path(out)
     out.mkdir(parents=True, exist_ok=True)
-    package = "neo" if plan["group"] == "platform" else "installer"
+    package = "neo"
     manifest = str(repo.root / package / "Cargo.toml")
     subprocess.run(
         [
@@ -185,20 +186,13 @@ def build_native(repo, plan, revision, target, inputs, out):
         ],
         check=True,
     )
-    binary = (
-        repo.root
-        / package
-        / "target"
-        / target
-        / "release"
-        / ("neo" if package == "neo" else "neo-install")
-    )
-    # Both native binaries must be portable outside the Nix store.
+    binary = repo.root / package / "target" / target / "release" / "neo"
+    # The native CLI must be portable outside the Nix store.
     subprocess.run(
         [str(repo.root / "scripts/neo-release"), "inspect", str(binary), target],
         check=True,
     )
-    name = release.CONFIG["groups"][plan["group"]]["asset_prefix"] + target
+    name = release.group_config(plan["group"])["asset_prefix"] + target
     shutil.copyfile(binary, out / name)
     (out / name).chmod(0o755)
     output = subprocess.check_output(
@@ -214,43 +208,40 @@ def build_native(repo, plan, revision, target, inputs, out):
         "group": plan["group"],
         "native_verified": True,
     }
-    if package == "neo":
-        for name in ("flake.nix", "flake.lock", "cabal.project"):
-            shutil.copyfile(
-                Path(inputs) / ("neo-starter-" + name), out / ("neo-starter-" + name)
-            )
+    for name in ("flake.nix", "flake.lock", "cabal.project"):
+        shutil.copyfile(
+            Path(inputs) / ("neo-starter-" + name), out / ("neo-starter-" + name)
+        )
+    subprocess.run(
+        [str(repo.root / "scripts/neo-release"), "compat", str(out.resolve())],
+        check=True,
+    )
+    receipt["starter_hashes"] = {
+        n: release.digest((out / ("neo-starter-" + n)).read_bytes())
+        for n in ("flake.nix", "flake.lock", "cabal.project")
+    }
+    subprocess.run(
+        [str(repo.root / "scripts/neo-release"), "checksums", str(out)], check=True
+    )
+    with tempfile.TemporaryDirectory() as temp:
+        installed = Path(temp) / "neo"
         subprocess.run(
-            [str(repo.root / "scripts/neo-release"), "compat", str(out.resolve())],
+            [
+                str(repo.root / "scripts/neo-release"),
+                "install",
+                str(out),
+                target,
+                str(installed),
+            ],
             check=True,
         )
-        receipt["starter_hashes"] = {
-            n: release.digest((out / ("neo-starter-" + n)).read_bytes())
-            for n in ("flake.nix", "flake.lock", "cabal.project")
-        }
-        subprocess.run(
-            [str(repo.root / "scripts/neo-release"), "checksums", str(out)], check=True
-        )
-        with tempfile.TemporaryDirectory() as temp:
-            installed = Path(temp) / "neo"
-            subprocess.run(
-                [
-                    str(repo.root / "scripts/neo-release"),
-                    "install",
-                    str(out),
-                    target,
-                    str(installed),
-                ],
-                check=True,
-            )
-            subprocess.run([str(installed), "--version"], check=True)
-        (out / "SHA256SUMS").unlink()  # Aggregate only after all targets are gathered.
+        subprocess.run([str(installed), "--version"], check=True)
+    (out / "SHA256SUMS").unlink()  # Aggregate only after all targets are gathered.
     (out / ("receipt-" + target + ".json")).write_text(release.canonical(receipt))
 
 
 def consumer(repo, plan, revision, inputs, out):
     apply_seed(repo, plan, revision, inputs)
-    if plan["group"] != "platform":
-        return
     out = Path(out)
     binary = out / "neo-x86_64-unknown-linux-gnu"
     binary.chmod(0o755)
