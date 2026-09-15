@@ -286,10 +286,10 @@ run_contract() {
   info "generated surfaces present; internal provenance absent"
 
   # -- Phase 2b: compatibility contract + coherence of the emitted pins ------ #
-  # NeoHaskell and neo keep independent SemVer, so a neo release publishes a
-  # compatibility contract (scripts/neo-release compat) mapping this neo version
-  # to the compatible NeoHaskell SOURCE REVISION — the one the embedded starter is
-  # locked to. Two independent, drift-proof gates:
+  # Platform releases share one version, and their compatibility contract
+  # (scripts/neo-release compat) also records the exact NeoHaskell SOURCE REVISION
+  # used by the embedded starter. Historical releases can have separate versions;
+  # revision coherence is required in both cases. Two drift-proof gates:
   #  (A) The contract GENERATES and is FAITHFUL to the committed starter lock.
   #      `neo-release compat` reads the starter's authoritative pins
   #      (neo/starter/ flake.nix `neohaskellCommit`, flake.lock `rev`, every
