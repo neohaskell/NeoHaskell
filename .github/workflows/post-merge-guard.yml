@@ -9,9 +9,8 @@
 # nhcore suites incl. the acceptance test-hurl job) and "Test macOS" (Darwin
 # subset). If EITHER concludes `failure` on a push to `main`, the merge is
 # flagged as a **revert-candidate** and a notification is posted. NB: both
-# workflows carry a `paths:` filter, so a pure-tooling merge (only scripts/,
-# docs/, telemetry/, .claude/) triggers neither and this gate correctly no-ops
-# for it — there is no compiled surface to regress.
+# workflows carry a `paths:` filter, so changes confined to tooling and agent
+# configuration trigger neither workflow: there is no compiled surface to regress.
 # It NEVER auto-reverts (ADR-0068); the kill switch (`/revert`, revert.yml) is a
 # separate, deliberate maintainer action.
 name: post-merge guard

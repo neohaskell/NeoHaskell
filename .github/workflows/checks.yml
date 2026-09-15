@@ -169,7 +169,7 @@ jobs:
           # cannot self-apply it (unlike the local, gitignored marker). This is
           # the load-bearing approval signal.
           EXPECTATIONS_APPROVED: ${{ contains(github.event.pull_request.labels.*.name, 'expectations-approved') }}
-        run: python3 .claude/hooks/expectation-guard.py --pr-diff "origin/${BASE_REF}"
+        run: python3 scripts/guards/expectation-guard.py --pr-diff "origin/${BASE_REF}"
 
   lint:
     name: hlint (dialect gate)

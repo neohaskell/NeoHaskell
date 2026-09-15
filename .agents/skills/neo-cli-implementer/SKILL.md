@@ -45,8 +45,7 @@ stay consistent - the test suites assert on these prefixes and messages (see
 
 Every user-facing error - `NeoError` variants (`src/errors.rs`), `miette::miette!`
 / `bail!`, subprocess wraps, `format!` into stderr, any `panic!`/`expect` reachable
-from user input - **must be repairable by the smallest dumb model** (haiku,
-gemini-flash, gpt-3.5-nano level) from the message *alone*, without docs or source.
+from user input - **must be repairable by the smallest dumb model** (a small, low-cost model) from the message *alone*, without docs or source.
 Agentic loops and self-healing pipelines run on tiny models; an opaque error is a
 bug of the same severity as a wrong result.
 

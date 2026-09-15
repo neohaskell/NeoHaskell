@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""PreToolUse expectation guard (pipeline Phase 5, task 6).
+"""Portable expectation guard (pipeline Phase 5, task 6).
 
 Mechanizes the standing rule "never modify existing test expectations without
 maintainer approval" (AGENTS.md, Non-negotiable): an Edit/Write/MultiEdit that
@@ -15,8 +15,8 @@ What counts:
   expectations never trips the guard; deleting or rewording one does.
 
 Two layers, because a local hook alone is not a gate:
-- This hook is the fast LOCAL teacher. Approval marker
-  `.claude/allow-expectation-edits` — a per-checkout, gitignored file the
+- The stdin fragment mode is the fast LOCAL teacher. The Codex lifecycle adapter supplies patch fragments. Approval marker
+  `.agents/allow-expectation-edits` — a per-checkout, gitignored file the
   MAINTAINER creates (or tells the agent to). No inline escape hatch. It fails
   LOUD-open on unparseable stdin (a harness schema change must be visible, not
   a silently-disabled guard).
@@ -40,7 +40,7 @@ import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-APPROVAL_FILE = REPO_ROOT / ".claude" / "allow-expectation-edits"
+APPROVAL_FILE = REPO_ROOT / ".agents" / "allow-expectation-edits"
 CASES_FILE = Path(__file__).parent / "expectation-guard-cases.json"
 
 TEST_FILE = re.compile(r"(Spec\.hs$|\.hurl$|(^|/)(core/test[^/]*|testbed/test|tests)/)")
@@ -173,9 +173,9 @@ def parse_event(stdin_text, env):
         except (json.JSONDecodeError, AttributeError):
             parse_error = True
     if not tool:
-        tool = env.get("CLAUDE_TOOL_NAME", "")
+        tool = env.get("AGENT_TOOL_NAME", "")
         try:
-            payload = json.loads(env.get("CLAUDE_TOOL_INPUT", "") or "{}")
+            payload = json.loads(env.get("AGENT_TOOL_INPUT", "") or "{}")
         except json.JSONDecodeError:
             payload = {}
     return tool, payload, parse_error
@@ -261,7 +261,7 @@ def main() -> int:
             "requires MAINTAINER approval (AGENTS.md, Non-negotiable). If the "
             "maintainer has approved this in writing, record it:\n"
             "  echo 'approved by <name>: <reason / spec ref>' > "
-            ".claude/allow-expectation-edits\n"
+            ".agents/allow-expectation-edits\n"
             "then retry, and delete the marker when the change lands. "
             "Adding NEW tests never needs this.",
             file=sys.stderr)

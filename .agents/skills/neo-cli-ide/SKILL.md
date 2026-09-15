@@ -53,8 +53,8 @@ Adding an IDE JSON-RPC method should be a **one-file change** under
 
 ## Frontend styling - one source of truth
 
-`assets/ide/CLAUDE.md` is the shared frontend contract despite its legacy
-harness-specific filename; every agent must read and follow it.
+`assets/ide/AGENTS.md` is the shared frontend contract loaded by Codex;
+every agent must read and follow it.
 
 All visual styling flows from the central Mantine theme in
 `assets/ide/src/theme.ts`. **Never** style in place: no Tailwind (removed on
@@ -63,7 +63,7 @@ per-call Mantine style props duplicating a theme value. A one-off visual becomes
 self-contained reusable component under `src/ui/primitives/` (with a co-located
 `*.module.css` when it needs real CSS). The only allowed inline styles are
 runtime-computed values (React Flow node `x/y`, cursor anchors, dynamic
-`flex`/`minWidth`). Follow `assets/ide/CLAUDE.md` for the full rule.
+`flex`/`minWidth`). Follow `assets/ide/AGENTS.md` for the full rule.
 
 ## Visual critique - screenshot first, always
 

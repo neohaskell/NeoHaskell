@@ -10,8 +10,27 @@ This file is the **agent-specific contract**: the hard rule, dialect style, and 
 - **`README.md`** — environment setup, the full build/test commands, Postgres, human contributor workflow.
 - **`codemap/README.md`** — localization routing, API discovery (`codemap/api-hot.md`, `./dev api`, `phrasebook.md`), and codemap regeneration.
 
-Pi is the primary agent harness. Canonical project skills live in `.pi/skills/`;
-`.claude/skills` is only a compatibility symlink to that single source.
+Codex is the primary agent harness. Canonical project skills live in `.agents/skills/`.
+Codex loads this `AGENTS.md` and nested `AGENTS.md` contracts. Run the portable
+`./dev` checks explicitly. Native hooks in `.codex/hooks.json` adapt Codex patch
+events to shared guards, format Haskell edits, remind about tests, and warm Postgres.
+Review and trust these project hooks through `/hooks` before relying on them;
+portable checks remain required when a host does not load hooks.
+
+### Consolidated Codex configuration
+
+- Scoped instructions: `core/AGENTS.md`, `core/service/AGENTS.md`,
+  `integrations/AGENTS.md`, `testbed/AGENTS.md`, `neo/AGENTS.md`, and
+  `neo/assets/ide/AGENTS.md`. Scoped routing points back to the shared contract.
+- Skills: `.agents/skills/` is the single source; no compatibility copies.
+- Runtime: `.codex/config.toml` supplies sandbox defaults; `.codex/hooks.json`
+  delegates to `scripts/guards/codex-hooks.py` and the shared dialect/expectation
+  guards. Shell edits and other tool paths still require portable verification.
+- Provisioning: `scripts/cloud-setup.sh` provisions cloud environments; local
+  `./dev` commands select the pinned toolchain and `./dev watch` warms typechecking.
+- Migration coverage: `./dev agent-config-check` verifies every former instruction
+  entrypoint has a Codex destination and checks local Codex hooks.
+  `./dev doctor` runs this check and its negative fixtures.
 
 ## Rust `neo/**` — separate contract (do not apply Haskell rules here)
 
@@ -62,14 +81,14 @@ subsequent change request.
 - **Verification order**: criteria tests red → implement → green at declared levels → test-impact suites (from `--plan`) → `./dev lint` + `./dev spec-drift <spec>` → full suite once at PR-ready with `./dev test-all --require-all` (missing PostgreSQL/Hurl is red, never skipped green).
 - **Gate 2 = final substantive review**: record it with `./dev pipeline approve ci --by <who> --via github-review --head "$(git rev-parse HEAD)"` before `telemetry finish --outcome ok`. Completion requires that approved HEAD to be the parent of one generated `telemetry/runs.jsonl`-only commit; exact-HEAD completion and every other delta are rejected.
 - **Failure policy**: per-stage time-boxes (skill has the table) → retry once → escalate tier → `./dev pipeline park --label <taxonomy>` + structured report. A parked report beats a wrong PR. Closing a failed/parked run records a class-fix — `./dev telemetry finish … --asset-delta <type>:<dest>` (enforced; `none:<reason>` if none), per [ADR-0068](docs/decisions/0068-failure-asset-delta-and-learning-loop.md).
-- **Expectation guard** (`.claude/hooks/expectation-guard.py`): removing/rewording an existing test expectation is blocked by the configured Claude hook (maintainer marker `.claude/allow-expectation-edits`) and by the CI `expectations` census (maintainer `expectations-approved` PR label, which the agent can't self-apply). Pi does not install Claude hooks: run `python3 .claude/hooks/expectation-guard.py --pr-diff <base-ref>` before continuing. Adding tests never needs an override.
+- **Expectation guard** (`scripts/guards/expectation-guard.py`): run `python3 scripts/guards/expectation-guard.py --pr-diff <base-ref>` before continuing. CI enforces the same census with the maintainer-only `expectations-approved` label. Codex patch hooks and direct edit-payload checks use the maintainer-created `.agents/allow-expectation-edits` marker. Adding tests never needs an override.
 - **Benchmarks**: nightly only (`./dev bench` vs `telemetry/bench-budgets.json`, nightly-bench.yml) — never PR-blocking.
 
 ## Release tail + learning loop (Phase 6) — [ADR-0068](docs/decisions/0068-failure-asset-delta-and-learning-loop.md)
 
 - **Definition of done** (three gates, all at spec/PR-ready): the **tier lint** binds each criterion's level to an exact attested boundary; `./dev spec-check --criteria-tests` proves every locator resolves and `./dev spec-check --criteria-runtime` proves integration selectors execute their registered real fixtures; together they prove every criterion's named test **exists** (a real `.hurl` or `*.hs` spec module); and `./dev test-all --require-all` + `./dev testbed` go green with spec-drift trivial. Post-merge, `post-merge-guard.yml` flags a `Test`/`Test macOS` failure on `main` as a **revert-candidate** (notify-only).
 - **Kill switch**: a maintainer comments `/revert` on a merged PR → `revert.yml` (OWNER/MEMBER-gated) runs `./dev revert <sha>` to open a revert PR. Never merges it.
-- **Dependency PRs** ([ADR-0074](docs/decisions/0074-dependabot-auto-merge.md)): `dependabot-auto-merge.yml` enables GitHub's native auto-merge on Dependabot **patch/minor** PRs — GitHub holds them until every *required* check is green, so the workflow never judges CI itself. **Majors** (and any group containing one) are labelled `dependency-major` and never auto-merge; `dependabot-major-review.yml` (a `workflow_run` on the above — base-repo context is the only place Actions secrets exist for a Dependabot PR) posts Claude's breaking-change/migration analysis. That file always runs from the **default branch**, so it cannot be tested from a PR. Corollary: a CI gate that is not a required check is decoration — add it to branch protection.
+- **Dependency PRs** ([ADR-0074](docs/decisions/0074-dependabot-auto-merge.md)): `dependabot-auto-merge.yml` enables GitHub's native auto-merge on Dependabot **patch/minor** PRs — GitHub holds them until every *required* check is green, so the workflow never judges CI itself. **Majors** (and any group containing one) are labelled `dependency-major` and never auto-merge; maintainers review their breaking changes and migration steps manually. Corollary: a CI gate that is not a required check is decoration — add it to branch protection.
 - **Changelog**: generated from specs — `./dev changelog` (breaking = a removed signature line ⇒ mandatory migration note); `--check` gates it at PR-ready. Never hand-write `CHANGELOG.md`.
 - **Learning loop**: closing a failed/parked run records a class-fix (`./dev telemetry finish --asset-delta`, enforced); an `ok` run that ships a class-fix records it via `--improvement <type>:<dest>` (optional). The deterministic weekly `./dev retrospect` digest (automated by `retrospect.yml`, schedule + dispatch) plus the `neohaskell-retrospective-miner` skill turn recurring friction into ≤5 contract-validated recommendations. **Activation** waits on real runs accumulating.
 
@@ -79,7 +98,7 @@ Portable enforcement has two gates:
 1. **`./dev lint`** (seconds; portable + CI gate in `checks.yml`): dialect-first `.hlint.yaml` plus a PR-diff syntax ratchet — vanilla modules are restricted to Core wrappers, and added `case … of True/False` is rejected in every harness.
 2. **GHC** (`./dev check`): `NoImplicitPrelude`.
 
-Claude compatibility adds optional earlier feedback through `.claude/hooks/dialect-guard.py` (~50ms). Pi does not depend on that hook. It rejects `$`, `where`-as-let-substitute (declaration `where` — module/class/instance/data/GADT/type-family — is fine), `Either`, `pure`/`return`, vanilla/unqualified imports, and `case`-of-Bool on added lines. False positive? Add `-- HOOK-ALLOW: <reason>` on that line. Adding/changing rules routes to `neohaskell-dialect-rules`.
+The portable fragment checker `scripts/guards/dialect-guard.py` accepts JSON on stdin for direct diagnostics; `./dev lint` runs its PR-diff syntax ratchet. It rejects `$`, `where`-as-let-substitute (declaration `where` — module/class/instance/data/GADT/type-family — is fine), `Either`, `pure`/`return`, vanilla/unqualified imports, and `case`-of-Bool on added lines. False positive? Add `-- HOOK-ALLOW: <reason>` on that line. Adding/changing rules routes to `neohaskell-dialect-rules`.
 
 **Escape hatch:** no Core wrapper for what you need? Add your module to the `.hlint.yaml` `within:` list with a justification + `belongs-in:` note. Rule of three: third exception for a symbol = promote a Core primitive. Never reimplement a banned thing with allowed vocabulary.
 
@@ -87,7 +106,7 @@ Claude compatibility adds optional earlier feedback through `.claude/hooks/diale
 
 - Every change ships with tests (happy path + error + boundary); bug fixes include regression tests.
 - Never modify existing test expectations without maintainer approval.
-- Branch off `main`; never edit `main` directly (check the branch before editing; the configured Claude hook also enforces it).
+- Branch off `main`; never edit `main` directly (check the branch before editing).
 - ADRs live in `docs/decisions/NNNN-slug.md`.
 
 ## Project brain

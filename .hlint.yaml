@@ -15,7 +15,7 @@
 #
 # Gate: ./dev lint (local) and .github/workflows/checks.yml (CI).
 # pure/return are NOT restricted here — instance definitions must define them;
-# the edit-time hook (.claude/hooks/dialect-guard.py) covers new-code usage.
+# the edit-time hook (scripts/guards/dialect-guard.py) covers new-code usage.
 
 - arguments: [--color, --cpp-simple, -XQuasiQuotes]
 

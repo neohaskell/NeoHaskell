@@ -32,7 +32,7 @@ if ! git rev-parse --verify "${DIALECT_DIFF_BASE}" >/dev/null 2>&1; then
   echo "lint: missing diff base ${DIALECT_DIFF_BASE}; fetch it or set DIALECT_DIFF_BASE" >&2
   exit 2
 fi
-python3 .claude/hooks/dialect-guard.py --pr-diff "${DIALECT_DIFF_BASE}"
+python3 scripts/guards/dialect-guard.py --pr-diff "${DIALECT_DIFF_BASE}"
 
 # HLINT override lets CI supply its pinned standalone binary without nix.
 if [ -n "${HLINT:-}" ]; then

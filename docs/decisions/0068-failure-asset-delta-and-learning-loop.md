@@ -68,7 +68,7 @@ no movement makes it a PRUNE candidate in turn.
 The definition-of-done gate (task 1) flags a post-merge suite failure on `main` as
 a **revert-candidate** (label + notification); it never auto-reverts. The revert
 itself (`./dev revert` + `.github/workflows/revert.yml`) fires only on a maintainer
-label/comment, reusing `claude.yml`'s OWNER/MEMBER author-association check. A
+label/comment, using an OWNER/MEMBER author-association check. A
 flaky post-merge check must not churn good work; a human owns the revert decision.
 
 ## Consequences

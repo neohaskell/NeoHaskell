@@ -8,7 +8,7 @@ cd "$(dirname "$0")/.."
 fail=0
 err() { echo "process-check: $1" >&2; fail=1; }
 
-active_skill=.pi/skills/neohaskell-pipeline/SKILL.md
+active_skill=.agents/skills/neohaskell-pipeline/SKILL.md
 adr_0067=docs/decisions/0067-contract-delta-spec-gate.md
 adr_0075=docs/decisions/0075-change-process-v2.md
 adr_0076=docs/decisions/0076-restore-resumable-change-pipeline.md
@@ -27,10 +27,10 @@ done
 # The restored process must be discoverable and internally coherent.
 grep -qF 'name: neohaskell-pipeline' "$active_skill" || err "active skill has the wrong name"
 grep -qF '.pipeline/state.json' "$active_skill" || err "active skill does not name its resume state"
-grep -qF '.claude/allow-expectation-edits' "$active_skill" || err "active skill has a stale expectation-approval path"
+grep -qF '.agents/allow-expectation-edits' "$active_skill" || err "active skill has a stale expectation-approval path"
 grep -qF './dev telemetry' "$active_skill" || err "active skill does not restore pipeline telemetry"
 grep -qF 'telemetry schema v6 canon' "$adr_0067" || err "ADR-0067 has a stale telemetry schema version"
-grep -qF '.claude/allow-expectation-edits' "$adr_0067" || err "ADR-0067 has a stale expectation-approval path"
+grep -qF '.agents/allow-expectation-edits' "$adr_0067" || err "ADR-0067 has a stale expectation-approval path"
 grep -qF './dev pipeline approve spec --by <who> --via <channel>' "$adr_0067" || err "ADR-0067 does not name the canonical local approval record"
 if grep -qE 'telemetry schema v2|telemetry schema v4 canon|\.pipeline/allow-expectation-edits|maintainer `@claude` comment' "$adr_0067"; then
   err "ADR-0067 still contains a superseded active-process contract"
@@ -38,12 +38,12 @@ fi
 grep -qF 'Any request that should end in a PR runs the `neohaskell-pipeline` skill' AGENTS.md || err "AGENTS.md does not route PR work to the restored pipeline"
 grep -qF '.pipeline/state.json' AGENTS.md || err "AGENTS.md does not name the resume contract"
 
-# The authoritative process must be available to Pi, not merely present under a
+# The authoritative process must be available to Codex, not merely present under a
 # harness-specific directory. Delegate the discovery/frontmatter/pipeline
 # contract to its single validator; keep Neo starter/routing checks out of this
 # process-specific gate.
-if ! scripts/neo-skills-check --pi-only >/dev/null; then
-  err "canonical pipeline is not discoverable or valid in Pi"
+if ! scripts/neo-skills-check --codex-only >/dev/null; then
+  err "canonical pipeline is not discoverable or valid in Codex"
 fi
 
 if grep -qF 'WARNING: ./dev pipeline is deprecated' dev; then
@@ -59,14 +59,6 @@ fi
 retired_paths=(
   .beads
   .agents/skills/beads
-  .claude/agents
-  .claude/skills/beads
-  .claude/skills/neohaskell-change
-  .claude/skills/neohaskell-enqueue
-  .claude/hooks/bd-token-tracking.py
-  .claude/hooks/bd-dolt-sync.sh
-  .codex/config.toml
-  .codex/hooks.json
   docs/legacy/neohaskell-beads
 )
 for path in "${retired_paths[@]}"; do
@@ -76,8 +68,8 @@ done
 if git ls-files | grep -qE '(^|/)(\.beads|neohaskell-beads|beads)(/|$)|bd-(token-tracking|dolt-sync)'; then
   err "tracked Beads artifact remains in the current tree"
 fi
-if grep -qE 'bd-token-tracking|bd prime|bd-dolt-sync' .claude/settings.json; then
-  err ".claude/settings.json still activates retired automation"
+if [ -f .codex/config.toml ] && grep -qE 'bd-token-tracking|bd prime|bd-dolt-sync' .codex/config.toml; then
+  err ".codex/config.toml activates retired automation"
 fi
 if grep -qE 'bd ready|neohaskell-enqueue|BEGIN BEADS INTEGRATION|Beads Issue Tracker' AGENTS.md; then
   err "AGENTS.md still advertises retired work intake"

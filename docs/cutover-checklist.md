@@ -79,7 +79,7 @@ Record the exact tags: `installer-vX.Y.Z`, `neo-vA.B.C`.
 ## 3. Final review & merge (human gate — Nick approval #1)
 
 - [ ] Nick reviews the full diff, green CI, and the §2 evidence artifacts.
-- [ ] Nick gives **explicit** approval to merge (e.g. a maintainer `@claude`
+- [ ] Nick gives **explicit** approval to merge (e.g. a maintainer
       approval comment / recorded sign-off), per the plan's two-touchpoint model.
 - [ ] Squash-merge the integration PR to `main` (one merge; `main` receives only
       the reviewed result).

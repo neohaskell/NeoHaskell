@@ -6,7 +6,7 @@ hand-written — pipeline scripts call this tool.
 
 Usage (via the `./dev telemetry` verb — this file has no PATH entry):
   ./dev telemetry start   --run-id 2026-07-07-001 --request "issue#712"
-  ./dev telemetry stage   --name implement --event start [--model sonnet]
+  ./dev telemetry stage   --name implement --event start [--model <model-id>]
   ./dev telemetry stage   --name implement --event stop  [--repair-rounds 2] [--invented-api-events 3]
   ./dev telemetry activity --name compilation --event start|stop
   ./dev telemetry wait    --seconds 340            # add waiting-on-human time
@@ -623,7 +623,7 @@ def self_test() -> int:
         check("start3", lambda: cmd_start(ns(run_id="t-003", request="issue#0")), False)
         check("finish-ok-improvement", lambda: cmd_finish(
             ns(outcome="ok", failure_label=None, failure_note=None, asset_delta=None,
-               improvement=["cli-utility:scripts/changelog", "skill-edit:.pi/skills/x/SKILL.md"])), False)
+               improvement=["cli-utility:scripts/changelog", "skill-edit:.agents/skills/x/SKILL.md"])), False)
         imp_line = json.loads(RUNS.read_text().splitlines()[-1])
         if [i["type"] for i in imp_line.get("improvements", [])] != ["cli-utility", "skill-edit"]:
             print(f"telemetry self-test FAIL improvements: {imp_line}")
@@ -693,7 +693,7 @@ def self_test() -> int:
     # loaded every session). Every `schema v<N>`/`frozen v<N>` claim must equal it.
     # (Version *history* in SCHEMA.md is written bare — `v1 → v2` — so it is not a
     # claim and not matched here.)
-    SKILLS = ROOT / ".pi" / "skills"
+    SKILLS = ROOT / ".agents" / "skills"
     version_docs = [
         ROOT / "telemetry" / "SCHEMA.md",
         ROOT / "AGENTS.md",
