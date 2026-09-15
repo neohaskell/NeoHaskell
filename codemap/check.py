@@ -5,7 +5,7 @@ Enforces (CI: checks.yml `codemap` job; local: ./dev codemap-check):
  1. every exposed module of nhcore/nhintegrations/nhtestbed is owned by
     EXACTLY one capability's owns-globs (orphans and double-owners fail —
     adding a module without a codemap entry fails the PR)
- 2. every owns-glob matches at least one real file (no ghost entries), and
+ 2. every owns-glob matches a real file except the consumable release queue, and
     every tracked AGENTS.md has exactly one capability owner
  3. aliases are globally unique (ambiguous routing fails)
  4. extension-point create/register/tests paths reference real directories
@@ -104,6 +104,10 @@ def main() -> int:
     # 2. no ghost globs
     for c in caps:
         for g in c["owns"]:
+            # Release preparation consumes every pending note. Keep its owner
+            # even when no files remain; populated paths still pass through 2b.
+            if c["id"] == "dev-pipeline" and g == ".changes/**":
+                continue
             rx = re.compile(glob_to_re(g))
             if not any(rx.fullmatch(f) for f in tracked):
                 err(f"capability '{c['id']}' glob '{g}' matches no tracked file (ghost entry)")
