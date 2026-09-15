@@ -31,6 +31,7 @@ extensions, not a claimed complete commerce product.
 - Public GitHub source links were checked against existing repository paths.
 - Safari review verified the small-window lesson layout, menu ordering, exercise
   disclosure, and search results for stock. This is UI review, not a human reader trial.
+- `./dev lint`: passed with no hints.
 - `./dev doctor`, `./dev workflow-check`, `./dev codemap-check`,
   `./dev adr-website --check`, `./dev spec-check --criteria-tests origin/main`,
   `./dev spec-drift docs/changes/013-human-documentation.md`, local/committed
