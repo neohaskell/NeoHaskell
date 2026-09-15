@@ -24,8 +24,8 @@ These calls still compile but produce the opposite order if left unchanged:
 
 | 0.9 code | Replacement with the same result |
 | --- | --- |
-| `Text.append "butter" "fly"` | `"butter" |> Text.append "fly"` |
-| `Array.append left right` | `left |> Array.append right` |
+| `Text.append "butter" "fly"` | `"butter" \|> Text.append "fly"` |
+| `Array.append left right` | `left \|> Array.append right` |
 
 The first row must still produce `"butterfly"`. The second must put every
 item from `left` before every item from `right`. For direct calls, reverse the
