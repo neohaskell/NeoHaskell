@@ -76,12 +76,19 @@ activate it. Historical tags and changelog prose are preserved.
 
 When the user asks to make the first release **after this CI PR is merged**:
 
-1. Prepare and merge reviewed fragments for the desired initial release using
+1. Check `gh api repos/neohaskell/NeoHaskell/actions/permissions/workflow`.
+   Preparation PRs require `can_approve_pull_request_reviews: true`, controlled by
+   **Settings → Actions → General → Workflow permissions → Allow GitHub Actions
+   to create and approve pull requests**. Include enabling that setting in the
+   authorized first-release setup if disabled; keep default token access read-only
+   and retain main protection. Do not enable it merely to install or test this PR.
+   See [GitHub's setting documentation](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/enabling-features-for-your-repository/managing-github-actions-settings-for-a-repository).
+2. Prepare and merge reviewed fragments for the desired initial release using
    the normal change workflow. Do not synthesize the entire historical backlog.
-2. Inspect existing immutable tags. Agree on the existing baseline tag and target
+3. Inspect existing immutable tags. Agree on the existing baseline tag and target
    version; the target must exceed both the baseline and all reserved attempts.
    Do not infer a baseline from whichever unrelated tag sorts highest.
-3. Dispatch from main, substituting the reviewed values:
+4. Dispatch from main, substituting the reviewed values:
 
    ```sh
    gh workflow run semantic-release.yml --ref main \
@@ -89,7 +96,7 @@ When the user asks to make the first release **after this CI PR is merged**:
      -f baseline=<existing-v-or-neo-v-tag> -f version=<0.Y.Z>
    ```
 
-4. Review the resulting preparation PR, required checks, rendered notes and
+5. Review the resulting preparation PR, required checks, rendered notes and
    migration prompt. Merge only within the user's release/merge authorization.
    Watch the main run and verify the public release and all assets. This public
    first release activates only its group. Installer bootstrap uses group
