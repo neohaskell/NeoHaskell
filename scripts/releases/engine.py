@@ -169,7 +169,10 @@ def render(plan):
         rows += ["", f"### Migration from {plan['base_version']}"]
         for note in breaking:
             prompt = note["sections"]["Agent prompt"]
-            preamble = f"Migrate {note['component']} from NeoHaskell {plan['base_version']} to {plan['version']}.\n"
+            product = (
+                "NeoHaskell" if plan["group"] == "platform" else "NeoHaskell Installer"
+            )
+            preamble = f"Migrate {note['component']} from {product} {plan['base_version']} to {plan['version']}.\n"
             prompt = re.sub(
                 r"(^```(?:text)?\n)",
                 lambda m: m[1] + preamble,

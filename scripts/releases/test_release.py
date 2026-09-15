@@ -155,6 +155,9 @@ class FragmentDetails(unittest.TestCase):
         self.assertIn("<details>", result)
         self.assertIn(note["sections"]["Migration"], result)
         self.assertEqual(result, release.render(plan))
+        plan["group"] = "installer"
+        note["component"] = "Installer"
+        self.assertIn("from NeoHaskell Installer 0.4.2 to 0.5.0", release.render(plan))
 
 
 class History(unittest.TestCase):
