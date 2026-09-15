@@ -126,6 +126,11 @@ class FragmentDetails(unittest.TestCase):
             with self.assertRaises(ValueError):
                 release.fragment(".changes/breaking.md", bad)
 
+    def test_empty_verification_and_mislabeled_breaking_change(self):
+        empty = BREAKING.replace("Run your app tests and save an item twice; each save should report completion once.", "")
+        with self.assertRaises(ValueError): release.fragment(".changes/empty.md", empty)
+        with self.assertRaises(ValueError): release.fragment(".changes/wrong.md", BREAKING.replace("impact: breaking", "impact: compatible"))
+
     def test_nested_fence_and_standalone_migration_versions(self):
         note = release.fragment(".changes/breaking.md", BREAKING)
         note["commit"] = "a" * 40

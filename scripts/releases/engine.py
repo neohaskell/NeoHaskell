@@ -122,11 +122,15 @@ def fragment(path, text):
     parts = sections(match[2])
     if not substantive(parts.get("Summary", "")):
         raise ValueError(f"{path}: write a substantive summary/reason")
+    if meta["category"] == "Breaking changes" and meta["impact"] != "breaking":
+        raise ValueError(f"{path}: breaking category requires breaking impact")
     if meta["impact"] == "breaking":
+        verification = re.search(r"(?ms)^### Verify\s*\n(.*?)(?=^### |\Z)", parts.get("Migration", ""))
         if (
             meta["category"] != "Breaking changes"
             or not substantive(parts.get("Migration", ""))
-            or not re.search(r"^### Verify\b", parts.get("Migration", ""), re.M)
+            or verification is None
+            or not substantive(verification[1])
         ):
             raise ValueError(
                 f"{path}: breaking change needs migration steps and verification"
