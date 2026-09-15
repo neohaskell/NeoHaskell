@@ -1036,6 +1036,23 @@ class Workflow(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "release group"):
             cli["work_outputs"]([{**item, "group": "installer"}])
 
+    def test_matrix_preserves_fresh_and_reused_items_per_target(self):
+        import runpy
+
+        cli = runpy.run_path(str(ROOT / "scripts/semantic-release"))
+        items = [
+            {"group": "platform", "attempt": "a" * 64, "revision": "c" * 40, "reuse": False},
+            {"group": "platform", "attempt": "b" * 64, "revision": "d" * 40, "reuse": True},
+        ]
+        outputs = cli["work_outputs"](items)
+        self.assertEqual(json.loads(outputs["platform_items"]), items)
+        rows = json.loads(outputs["platform_matrix"])["include"]
+        self.assertEqual(len(rows), len(items) * len(release.TARGETS))
+        self.assertEqual(
+            {(row["attempt"], row["target"]): row["reuse"] for row in rows},
+            {(item["attempt"], target): item["reuse"] for item in items for target in release.TARGETS},
+        )
+
     def test_runner_mapping_survives_target_reordering(self):
         import runpy
         from unittest.mock import patch
