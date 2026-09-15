@@ -13,7 +13,7 @@ on:
   pull_request:
     # ready_for_review included so the spec job's drift gate fires the moment
     # a draft (parked spec) is promoted — default types would miss the flip
-    types: [opened, synchronize, reopened, ready_for_review]
+    types: [opened, synchronize, reopened, ready_for_review, edited]
   push:
     branches: [main]
 
@@ -133,13 +133,14 @@ jobs:
         env:
           BASE_REF: ${{ github.base_ref }}
         run: ./dev spec-check --reviews-pr "origin/${BASE_REF}"
-      # Changelog gate: at PR-ready, every changed spec must have a CHANGELOG.md
-      # entry (breaking ones with a migration note) — the changelog is generated,
-      # not hand-written (Phase 6, task 3).
-      - name: Changelog entries present (PR-ready only)
+      # Reviewed fragments replace feature-branch changelog edits. Generated
+      # release bookkeeping passes only after exact diff reconstruction.
+      - name: Release notes and generated bookkeeping (PR-ready only)
         if: github.event_name == 'pull_request' && github.event.pull_request.draft == false
         env:
           BASE_REF: ${{ github.base_ref }}
+          RELEASE_PR_TITLE: ${{ github.event.pull_request.title }}
+          RELEASE_PR_BODY: ${{ github.event.pull_request.body }}
         run: ./dev changelog --check "origin/${BASE_REF}"
       # DoD criterion-test gate: at PR-ready, every criterion in a changed spec
       # must name a proving test that RESOLVES (a real .hurl or *.hs spec module)

@@ -1,18 +1,8 @@
-//! Consistency tests: the `curl | sh` bootstrap script (`scripts/bootstrap.sh`)
-//! must download release assets from the same repository, and under the same
-//! asset-naming scheme, that the monorepo release workflow
-//! (`.github/workflows/installer-ci.yml`) actually publishes them under.
-//!
-//! A mismatch means a real bootstrap 404s against real releases, which no
-//! amount of unit testing of the binary would catch. These tests read the two
-//! sources of truth off disk and assert they agree.
-//!
-//! A second group ties the NATIVE `neo` release contract together: the
-//! installer's own download logic (`neo_install::release`), the release workflow
-//! (`.github/workflows/neo-release.yml`), and the shared naming/checksum script
-//! (`scripts/neo-release`) must agree on the asset names, the supported targets,
-//! the publishing repository, and the `neo-v*` tag prefix — and the installer
-//! must NOT install `neo` by evaluating/compiling the `neo#neo-cli` flake.
+//! Download compatibility with preserved installer releases and current Neo assets.
+//! The bootstrap script must still resolve historical installer assets. Neo's
+//! platform publisher must agree with the installer's download contract on
+//! repository, targets, asset names, checksums, and the `neo-v*` tag prefix.
+//! Installer publication is retired; its build and download tests remain.
 
 use neo_install::release;
 use std::fs;
@@ -56,7 +46,7 @@ fn bootstrap_repo(bootstrap: &str) -> String {
         .to_string()
 }
 
-/// The release-asset base name the workflow publishes, e.g.
+/// The historical release-asset name retained by CI build artifacts, e.g.
 /// `installer-neo-install-` (a per-matrix target is appended to it).
 fn workflow_asset_prefix(workflow: &str) -> &'static str {
     // The Package step copies the built binary to
@@ -89,7 +79,7 @@ fn bootstrap_downloads_workflow_asset_name() {
     let expected = format!("{prefix}${{PLATFORM}}");
     assert!(
         bootstrap.contains(&expected),
-        "bootstrap.sh must download the '{expected}' asset the workflow publishes; \
+        "bootstrap.sh must download the '{expected}' asset name retained by CI builds; \
          download-related lines were: {:?}",
         bootstrap
             .lines()
@@ -100,14 +90,12 @@ fn bootstrap_downloads_workflow_asset_name() {
 
 #[test]
 fn bootstrap_uses_installer_tag_prefix_for_pinned_versions() {
-    // The workflow's release job only fires on `installer-v*` tags, and those
-    // are the only tags carrying installer assets. A pinned NEO_INSTALLER_VERSION
-    // must therefore be resolved as a tag under the same repo's releases.
+    // Historical installer-v tags remain downloadable after publication retires.
+    // Preserve an explicit version pin rather than resolving a new platform tag.
     let bootstrap = read("scripts/bootstrap.sh");
-    let workflow = read("../.github/workflows/installer-ci.yml");
     assert!(
-        workflow.contains("installer-v"),
-        "installer-ci.yml should key releases off the 'installer-v*' tag prefix"
+        bootstrap.contains(r#"VERSION="${NEO_INSTALLER_VERSION:-latest}""#),
+        "bootstrap.sh must preserve the requested historical installer tag"
     );
     assert!(
         bootstrap.contains("releases/download/${VERSION}/"),
@@ -390,48 +378,44 @@ fn installer_targets_match_the_shared_release_script() {
 }
 
 #[test]
-fn neo_release_workflow_builds_every_installer_target() {
-    let wf = read_repo(".github/workflows/neo-release.yml");
+fn platform_release_builds_every_installer_target() {
+    let wf = read_repo("scripts/releases/engine.py");
     for target in release::NEO_TARGETS {
         assert!(
             wf.contains(target),
-            "neo-release.yml no longer builds '{target}' — a platform the installer \
+            "platform release no longer builds '{target}' — a platform the installer \
              downloads would have no published asset"
         );
     }
 }
 
 #[test]
-fn neo_release_workflow_uses_the_neo_v_tag_prefix() {
-    let wf = read_repo(".github/workflows/neo-release.yml");
-    assert!(
-        wf.contains(release::NEO_TAG_PREFIX),
-        "neo-release.yml must key releases off the '{}' tag prefix the installer resolves",
-        release::NEO_TAG_PREFIX
+fn platform_release_uses_the_neo_v_tag_prefix() {
+    let config: serde_json::Value =
+        serde_json::from_str(&read_repo("scripts/releases/config.json")).unwrap();
+    assert_eq!(
+        config["groups"]["platform"]["tag"].as_str(),
+        Some(release::NEO_TAG_PREFIX),
+        "platform publication must use the tag prefix the installer resolves"
     );
 }
 
 #[test]
-fn neo_release_workflow_routes_naming_through_the_shared_script() {
-    let wf = read_repo(".github/workflows/neo-release.yml");
+fn platform_release_routes_naming_through_the_shared_script() {
+    let wf = read_repo("scripts/semantic-release");
     assert!(
         wf.contains("scripts/neo-release"),
-        "neo-release.yml must package/checksum via scripts/neo-release so its asset \
+        "platform release must package/checksum via scripts/neo-release so its asset \
          names cannot drift from what the installer downloads"
     );
 }
 
 #[test]
-fn checksum_manifest_name_is_one_convention_across_both_trains() {
-    // ONE checksum-manifest filename everywhere: the installer's native-download
-    // path (release::SHA256SUMS), the shared script, and BOTH release workflows
-    // must publish/read `SHA256SUMS` — never a divergent `SHA256SUMS.txt`.
+fn checksum_manifest_name_matches_platform_publication() {
+    // Existing installers must keep resolving the platform checksum manifest.
     assert_eq!(release::SHA256SUMS, "SHA256SUMS");
     let txt = format!("{}.txt", release::SHA256SUMS);
-    for wf in [
-        ".github/workflows/neo-release.yml",
-        ".github/workflows/installer-ci.yml",
-    ] {
+    for wf in ["scripts/neo-release", "scripts/releases/github.py"] {
         let text = read_repo(wf);
         assert!(
             text.contains(release::SHA256SUMS),

@@ -35,6 +35,8 @@ CANONICAL_SKILLS = (
     "neohaskell-localizer",
     "neohaskell-performance-design-review",
     "neohaskell-pipeline",
+    "neohaskell-pr",
+    "neohaskell-release",
     "neohaskell-retrospective-miner",
     "neohaskell-security-design-review",
 )
@@ -291,8 +293,8 @@ def check_codex_skill_layer(root):
                     f"{path.relative_to(root)} references unknown skill `{reference}`"
                 )
 
-    # Codex resolves relative links from the skill directory after loading it.
-    for skill_md in skill_files:
+    # Check supporting writing guides as well as skill entrypoints.
+    for skill_md in sorted(skills_dir.rglob("*.md")):
         for raw_target in MARKDOWN_LINK_RE.findall(read(skill_md)):
             parts = raw_target.strip().split()
             if not parts:
@@ -485,6 +487,7 @@ def check_pipeline_contract(root, pipeline_path):
         "local design-review gate": "./dev spec-check --reviews-local origin/main",
         "committed design-review gate": "--reviews-pr origin/main",
         "changelog gate": "./dev changelog --check origin/main",
+        "local release authoring": "neohaskell-release",
         "strict full suite": "./dev test-all --require-all",
         "testbed acceptance": "./dev testbed",
         "telemetry stage start": "./dev telemetry stage --name <stage> --event start",
@@ -650,6 +653,7 @@ description: Orchestrate a NeoHaskell change through its spec-first process and 
 ---
 # Pipeline
 Exactly **two human gates**.
+Use neohaskell-release for reviewed release fragments.
 .pipeline/state.json is authoritative.
 For issues, run `gh issue edit N --add-assignee @me` and verifies that viewer appears in the issue assignees; reserve with `--change-id NNN-slug`.
 Criteria use `hspec:<suite>:<path>#<exact-match>`. Bugs run `./dev red-evidence record --spec <spec>`.
@@ -1075,6 +1079,13 @@ def self_test():
     errors = mutated(remove_complete_command)
     expect(any("complete` lifecycle command" in error for error in errors),
            f"missing state completion should fail, got {errors}")
+
+    def remove_release_authoring(root):
+        path = root / ".agents" / "skills" / "neohaskell-pipeline" / "SKILL.md"
+        path.write_text(read(path).replace("neohaskell-release", "release-writing"))
+    errors = mutated(remove_release_authoring)
+    expect(any("local release authoring" in error for error in errors),
+           f"missing release skill routing should fail, got {errors}")
 
     def remove_stage_start(root):
         path = root / ".agents" / "skills" / "neohaskell-pipeline" / "SKILL.md"

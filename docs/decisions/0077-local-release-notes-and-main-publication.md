@@ -1,0 +1,385 @@
+# ADR-0077: Local release notes and coordinated publication from main
+
+## Status
+
+Implemented
+
+## Context
+
+The maintainer wants semantic release automation without paying for model API
+calls in CI. Local Codex already has the change context needed to write useful
+release notes and migration instructions. Publication should use that reviewed
+text without asking a model to reconstruct intent from commit titles.
+
+The agreed public policy is `0.BREAKING.COMPATIBLE`: a breaking release increments
+the second number and resets the third; a compatible feature or fix increments
+only the third. Reaching version 1 is a separate explicit decision.
+
+Framework, integrations, CLI, and starter form one user-facing platform. The
+installer release flow is unused and is being retired. Existing
+release tags are heterogeneous: framework `v0.*` and bare `0.*`, plus `neo-v*`
+and `installer-v*`. Current manifests also differ. Matching numbers alone would
+not prove compatibility: the CLI embeds an immutable framework revision in its
+starter, verified by the executable compatibility contract.
+
+Main requires pull requests and required checks, with no ruleset bypass actors.
+A workflow cannot simply commit a changelog/version bump straight to main.
+The existing implementation specs and their generated Unreleased changelog
+contain engineering detail; they are not the desired user-facing release notes.
+
+## Decision
+
+### 1. One platform release
+
+- **Platform:** `nhcore`, `nhintegrations`, the reference application's package
+  metadata, Neo CLI, and bundled starter share the platform release version.
+  `CHANGELOG.md` is the public platform history.
+- **Installer publication is retired.** Keep existing tags/releases, source, and
+  build/download compatibility tests. Do not generate installer versions,
+  changelog entries, native release assets, or publication jobs.
+
+Use the existing `neo-vX.Y.Z` downloadable release namespace, with the public
+release title `NeoHaskell X.Y.Z`. The corresponding `vX.Y.Z` framework tag is an
+alias at the same main commit; there is one platform GitHub Release with the
+native assets and complete notes. This preserves the installer's existing
+`neo-v*` resolution contract. Never move old tags or rewrite old releases.
+
+The platform's highest impact determines its next version. A breaking
+change in either a fragment or its merged Conventional Commit (`!`,
+`BREAKING CHANGE:`, or `BREAKING-CHANGE:`) must not be silently downgraded.
+The pipeline's commit validator must accept `!` syntax. Feature/fix/performance
+changes need release notes; other changes may declare an explicit no-release
+impact with a reason. Internal housekeeping does not release itself.
+Classification takes the highest impact across the complete unreleased
+first-parent history and pending reviewed fragments. This supports squash,
+two-parent merge, and rebase merges, including notes committed after the code.
+PR admission checks each complete PR for its own required notes and migrations;
+release planning does not require a fragment in every implementation commit or
+consult mutable GitHub PR metadata. The release range still requires user-facing
+notes for any releasable impact and breaking migration notes for breaking impact.
+This division relies on the required PR gate on protected main; it does not
+certify that prose describes every change. Local review owns that judgment.
+Fragments retain their introducing first-parent commit for source links. Impact
+attribution is valid for the single platform group; independent release groups
+would require a new attribution contract.
+
+### 2. Temporary user-facing fragments
+
+The local `neohaskell-release` skill prepares `.changes/<unique-slug>.md` in the
+feature PR. One fragment describes one coherent user-facing component change. No version or date is assigned on
+the feature branch. Files are consumed when the generated release-preparation
+PR merges. Git history retains the reviewed originals.
+
+Fragment contract (the example is illustrative, not a real migration):
+
+````markdown
+---
+group: platform
+component: Framework
+impact: breaking
+category: Breaking changes
+---
+
+## Summary
+
+Explain the observable change and who needs to act.
+
+## Migration
+
+Explain affected uses, exact edits, before/after examples, and verification.
+State explicitly when persisted data or configuration also needs migration.
+
+### Verify
+
+Give concrete app-level verification steps.
+
+## Agent prompt
+
+```text
+Provide self-contained instructions: identify affected usages, apply the actual
+API/configuration changes, and run the relevant checks. Include the concrete
+examples and verification steps here; do not depend on "the example above".
+Report unresolved cases instead of inventing a mapping or weakening tests.
+```
+````
+
+The only accepted group is `platform`. Components are `Framework`,
+`Integrations`, `CLI`, and `IDE`. Installer release fragments are rejected.
+Impacts are `breaking`, `compatible`, and `none`. Categories are `Breaking changes`,
+`Added`, `Improved`, `Fixed`, `Deprecated`, and `Removed`, in that order.
+Breaking impact requires the breaking category, substantive migration guidance,
+and an agent prompt. A non-breaking removal must explain why supported users are
+unaffected. A no-release record explains its reason and is excluded from public
+notes. Validation checks structure and required content; human review is what
+establishes that the migration advice is correct.
+
+Implementation specs remain separate. Haskell PRs still carry their existing
+specs, while CLI-only PRs may carry a release fragment without a Haskell spec.
+The skill can be invoked directly and is also called before final substantive
+review in the feature pipeline. It uses the local signed-in Codex session.
+
+The shared `neohaskell-pr` skill owns PR names, stack management, and descriptions
+that lead with outcomes Jess understands. Its
+[Jess writing guide](../../.agents/skills/neohaskell-pr/references/jess-writing.md)
+is the common prose standard for PR introductions and all release notes. Jess is
+the time-constrained junior application developer, not a framework maintainer.
+Before publication, every release entry must explain what changed, whether Jess
+is affected, what action she needs to take, and how to verify it, without assuming
+knowledge of implementation internals. Migration prompts must also be understandable
+to Jess so she can judge what she is asking her agent to do. Unclear prose is not
+ready to publish, even if technically accurate; rewrite it locally. CI can check
+structure and references but cannot certify comprehension. Final prose review
+belongs with the local authoring and maintainer review, not a hosted model call.
+
+### 3. Deterministic changelog format
+
+Each release section contains:
+
+1. `## X.Y.Z — YYYY-MM-DD`, newest release first.
+2. Category subsections in the fixed order above, omitting empty categories.
+3. Concise component-labelled bullets with PR links (commit links when there is
+   no PR association); ordering within a category follows merge order and slug.
+4. For breaking releases, `Migration from <previous release>` with per-change
+   instructions and collapsible copy-paste agent prompts.
+5. A compare link between the actual prior and current tags.
+
+The release body is the same generated Markdown section as the changelog. User
+prose and code fences are preserved; the generator never rewrites or summarizes
+them. There is no Unreleased section: `.changes/` is the pending material.
+Migration prompts must work when copied alone, including when several unrelated
+changes appear in the same release. The renderer adds a deterministic from/to
+version preamble inside each copyable prompt and preserves the authored
+instructions following it; the local fragment need not guess a future version.
+
+The date is the planned UTC release date captured once in the release manifest;
+retries do not recompute it. GitHub's actual publication timestamp is separate.
+Historical changelog content is retained with a clearly labelled legacy boundary
+and is not silently reclassified as a new release.
+
+### 4. Main-based release preparation, then publication
+
+The workflow runs on main pushes, with a main-only dispatch path for retries.
+Feature PR CI validates fragments and previews output but cannot publish or
+change versions. Preparation captures an exact main source SHA and examines the
+merged change set since the last completed platform release.
+
+Preparation creates or updates a dedicated release PR containing only derived
+changes: version metadata/lockfiles, changelog sections, a machine-readable
+release manifest, and removal of the consumed fragments. The manifest records
+the source range, prior and target versions, fragment identities and hashes,
+planned date, and note hashes. New main changes invalidate a stale preparation
+until it is regenerated; they cannot disappear behind already-consumed notes.
+An in-progress release must be completed or explicitly abandoned under section 6
+before planning the next platform version. This does not prevent merging
+source fixes. The maintainer merges the release PR
+after required checks.
+
+The release manifest is provenance, not an authorization token. The publisher
+independently reconstructs the expected preparation and checks the merged diff,
+source history, and allowed paths. A release-looking title, label, or bot author
+is insufficient to bypass spec/fragment checks or authorize publication.
+Generated release PRs have a narrowly verified bookkeeping path through the
+existing spec and changelog gates; normal feature PRs keep their contracts.
+
+After the preparation PR's merge reaches main, the workflow builds the exact
+release revision and publishes only after native build, checksum, portability,
+and consumer verification succeed. Transient failures leave a retriable release;
+failures requiring a source change use the abandonment/replacement path below.
+Neither is an apparently complete public release. The first rollout does not cut a
+production release merely as a validation exercise.
+
+Use the built-in `GITHUB_TOKEN`; no model API keys, personal Codex credentials,
+or new hosted AI bots. Main protection remains unchanged. Repository settings
+must permit Actions to create PRs. GitHub may require a maintainer to approve CI
+runs on a PR created by `GITHUB_TOKEN`; the workflow must explain that state
+instead of waiting silently or claiming success. This is an operational release
+step, outside the feature pipeline's two approval gates.
+
+Call build/publication jobs explicitly through the orchestrating workflow or
+reusable workflows. Do not assume tags created using `GITHUB_TOKEN` will trigger
+the old tag workflows. Existing manual rehearsal paths remain non-publishing
+unless the same main-release provenance checks pass.
+
+### 5. Released starter provenance
+
+A commit cannot embed its own SHA. Therefore the release build, after the
+preparation PR has merged as revision R, deterministically prepares the embedded
+starter to pin R before compiling the CLI. It updates all starter pins together
+and obtains a valid Nix lock for R; editing only a lock's revision while retaining
+an old content hash is forbidden.
+
+This preparation occurs in the isolated release workspace and is part of the
+reproducible build recipe. The source tag remains R, which contains the correct
+platform package versions. Release assets include the generated starter inputs
+and provenance/checksums so the release can be reconstructed from R. Every
+native target uses the same prepared inputs. The generated compatibility
+manifest and consumer verification read those actual prepared inputs.
+
+Ordinary development builds continue using the committed starter pin. Their
+compatibility manifest must remain truthful; sharing the release version does
+not make an arbitrary local build the published artifact. Local tooling must be
+able to rehearse the exact release preparation explicitly.
+
+### 6. Recovery and bootstrap
+
+Serialize release mutations; repeated events and skipped/coalesced pending runs
+must not lose merged fragments. Work from the current recorded main snapshot,
+not the assumption that one event equals one unreleased commit. Existing tags
+and completed release assets are immutable inputs: verify and reuse an identical
+result, otherwise stop with the conflicting tag/SHA/hash. Never force-retag or
+silently overwrite a completed release. Publication failures resume the same
+manifest/version; they do not calculate another bump. Retrying cannot change the
+source, notes, planned date, or checksums recorded for that attempt.
+
+#### Unpublished releases that require a source fix
+
+If release revision R cannot pass a build or consumer gate without changing
+source, repeatedly rebuilding R is not recovery. A maintainer can prepare a
+generated **release-recovery PR** that abandons that attempt. It uses the same
+protected-main checks and exact-diff reconstruction as release preparation;
+ordinary source fixes land in their own reviewed PRs. Abandonment is never an
+automatic response to a timeout.
+
+The recovery contract is:
+
+1. **Record a terminal state.** The committed manifest history records each
+   immutable platform attempt and any abandonment, retaining its identity,
+   source SHA, reserved version, note/fragment hashes, and recovery reason.
+   Completion is derived from the verified public GitHub release receipt; it
+   does not require a second main bookkeeping commit.
+   Merging a preparation PR reserves its version permanently, even if no tag was
+   created. Abandonment adds an auditable terminal record; it does not erase or
+   rewrite the original manifest. Repeating the same recovery is a no-op.
+2. **Pause publication before preparing recovery.** A maintainer starts recovery
+   through a serialized operation sharing the publisher's mutation lock. It
+   verifies that the attempt is unpublished and saves a durable pause record
+   bound to its manifest hash before generating any recovery PR. The pause must
+   survive workflow cancellation; a running job or temporary concurrency lock
+   alone is insufficient. Every publisher, including an older retry, checks
+   that record and current main manifest history under the same lock before
+   any external write. A paused or abandoned attempt can never publish. If
+   publication won the race, recovery refuses to prepare changelog/fragment
+   edits and reconciles the completed release instead. After the recovery PR
+   merges, its exact diff and pause record are validated before recording the
+   terminal abandonment and unblocking planning. Closing a recovery PR keeps
+   the pause in place until an explicit serialized resume verifies the original
+   manifest and absence of a merged recovery result; it cannot implicitly restart
+   publishing.
+3. **Preserve external history.** Abandonment is allowed only when no public
+   GitHub Release for the attempt has been published. Partial tags remain at
+   their original SHAs and keep the version reserved. Partial draft releases and
+   uploaded assets remain unpublished evidence associated with the abandoned
+   attempt; they are never reused by the replacement. Never move/delete a tag
+   or overwrite an existing asset to make recovery pass. An already published
+   release is reconciled against its manifest and completed idempotently; a
+   later source repair ships as a new release, not as changed old binaries.
+4. **Carry notes forward exactly once.** The recovery PR restores the consumed
+   fragments from the original source snapshot, with their identities, hashes,
+   introducing commits, and migration text intact. It removes only the failed
+   attempt's generated changelog section, after verifying its recorded hash;
+   published sections remain untouched. A conflicting restored filename or
+   changed section fails for maintainer correction. These generated recovery
+   edits are bookkeeping, not new user changes. Further note corrections are
+   reviewed normally and retain their link to the original fragment identity.
+   Version metadata need not roll back: it remains the abandoned reservation
+   until a replacement preparation updates it.
+5. **Separate version allocation from user history.** A replacement records
+   which abandoned attempt it supersedes, includes the source fix and every
+   still-unreleased change, and receives a fresh manifest/date/source revision.
+   Allocate above the highest completed or reserved version for the platform,
+   applying the ordinary breaking/compatible bump to that allocation baseline.
+   The source range, migration starting version, and comparison link still use
+   the last completed public release (or the reviewed bootstrap baseline).
+   Abandoned tags must not become that public baseline. Original notes and a
+   breaking impact therefore survive abandonment unless a reviewed source/note
+   correction establishes that the change itself was withdrawn. Gaps in version
+   numbers are intentional; failed reservations are not public changelog entries.
+
+For example, users have `0.4.2`; breaking preparation `0.5.0` merges as R, consumes
+its notes, then fails the newly pinned starter's consumer build. A source fix
+lands on main. A recovery PR abandons the unpublished attempt and restores its
+notes; planning is then unblocked. The replacement reserves `0.6.0` because
+`0.5.0` is already reserved and the unreleased changes remain breaking. Its
+migration guide and compare link start at `0.4.2`. An old retry for R is refused,
+even if it resumes after the replacement has been prepared.
+
+The recovery fixture must exercise this source-fix scenario end to end, including
+no-tag and partial-tag/draft failures, repeated abandonment, a publish/recovery
+race, rejection of abandonment after public publication, late retry rejection,
+and exactly-once notes in the replacement. Transient-error retry tests alone do
+not prove this contract.
+
+#### Bootstrap
+
+This CI-only rollout MUST NOT create a release or release-preparation PR when
+merged. The committed release ledger starts empty. Automatic handling remains
+inactive until the first explicitly invoked manual bootstrap release
+has completed public publication and its manifest/assets have been verified.
+A flag, tag alone, draft release, failed attempt, or merged preparation cannot
+activate it. Bootstrap is a separate maintainer operation after this PR merges;
+this implementation never invokes it as a test.
+
+Bootstrap explicitly records the existing release baselines, accepting both
+historical bare and v-prefixed framework tags and rejecting conflicting aliases.
+The first coordinated platform version is prepared as an explicit local release
+plan (the charter targets 0.10.0), with notes covering its declared range. The
+new automation does not invent migration prose for the historical backlog or
+pretend old independent CLI/framework versions were already in lockstep.
+
+## Validation
+
+[Change 009](../changes/009-semantic-releases.md) owns the proving-test contract.
+Fixtures exercise version rules, fragment parsing, exact Markdown rendering,
+temporary Git histories, generated-diff validation, fake GitHub failures and
+retries, and workflow permission/trigger wiring. Existing native release and
+consumer gates continue proving the delivered assets. These checks cannot prove
+live GitHub publication before the workflow exists on main; report that limit.
+
+## Consequences
+
+Users get one platform release story and explicit migrations. Installer
+publication no longer adds a separate release process. Unchanged platform components may receive a new shared
+version, and a platform release waits for all of its artifact gates.
+
+Release prose is reviewed with implementation and is available without an AI
+service during publication. Temporary fragments avoid shared-changelog conflicts.
+Generated metadata is committed through the repository's normal protections.
+The tradeoff is a release-preparation PR and potentially an Actions approval,
+rather than an unattended direct push into protected main.
+
+## Sources
+
+- [GitHub workflow triggering and GITHUB_TOKEN](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow)
+- [GitHub ruleset rules](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/available-rules-for-rulesets)
+- [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/)
+- [SemVer initial development](https://semver.org/)
+- [Changesets](https://github.com/changesets/changesets)
+- [Towncrier](https://towncrier.readthedocs.io/en/stable/)
+
+## Operational entry points
+
+`./dev semantic-release check --base origin/main` validates local fragments and
+exact generated diffs. The local release skill owns prose and manual operations.
+`scripts/releases/config.json` owns platform package paths; `manifest.json` is the
+append-only attempt/recovery ledger. `semantic-release.yml` is the sole publisher;
+old tag workflows retain only read-only rehearsal or ordinary component CI.
+
+The workflow dispatch operations are auto, bootstrap, recover, and resume.
+Bootstrap requires a reviewed existing platform baseline tag and explicit target
+version. It opens a preparation PR; its successful public release activates
+automation. Installation ships the empty ledger, leaving automation inactive.
+Recovery pauses use immutable `release-pause/<attempt-id>` branches; these remain
+after abandonment to reject late retries. Resume can remove only an unmerged
+recovery pause. No operation bypasses main protection or merges its own PR.
+
+A preparation's default date is the UTC date of its immutable main source commit.
+Retries of that snapshot therefore reuse its identity and branch across midnight.
+PR fragment validation inspects the actual commits plus the proposed squash
+title/body; GitHub's synthetic merge message cannot suppress a required note.
+
+Before individual assets are uploaded, the publisher saves `release-bundle.zip`
+as the first draft asset. It contains every verified binary, starter input,
+native/consumer receipt and release manifest. Later runs restore and verify that
+permanent bundle, skipping rebuilds; this avoids runner/SDK changes altering an
+in-progress release. The bundle itself is included in SHA256SUMS. Mismatching
+existing bytes remain a hard failure, with recovery available for source fixes.

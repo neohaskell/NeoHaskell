@@ -63,7 +63,8 @@ usage: ./dev <verb> [args]
                           (nightly in CI; needs POSTGRES_AVAILABLE=true for
                           the Postgres entries)
   testbed               run the testbed acceptance suite (Hurl) via the toolchain
-  changelog <spec|--check|--append>  changelog entries from contract-delta specs
+  changelog --check [BASE]  validate release fragments and generated bookkeeping
+  semantic-release <cmd>  local release checks and main-only publication
                           (breaking = a removed signature line; --check gates CI)
   revert <commit>       kill switch: open a revert PR for a merged change
                           (--dry-run to stage it locally without pushing)
@@ -140,6 +141,7 @@ case "${VERB}" in
   bench)    exec scripts/bench "$@" ;;
   testbed)  exec scripts/testbed "$@" ;;
   changelog) exec scripts/changelog "$@" ;;
+  semantic-release) exec scripts/semantic-release "$@" ;;
   revert)   exec scripts/revert "$@" ;;
   pr-comments) exec scripts/pr-comments-allowlisted "$@" ;;
   retrospect) exec scripts/retrospect "$@" ;;

@@ -30,6 +30,10 @@ holds.
 
 ## Skills - one source of truth (repo-root `neo-cli-*`)
 
+For PR creation, naming, descriptions, and stack management, use the shared
+`neohaskell-pr` skill. Its Jess writing guidance applies to the PR opening and
+all user-facing release notes; it does not impose the Haskell spec pipeline on Rust.
+
 Route `neo/**` work through these discoverable skills; they hold the detail this
 file only summarizes:
 
@@ -77,8 +81,8 @@ nix run   .#neo -- --version
 The derivation is defined once in `nix/neo-package.nix` (called by the root
 `flake.nix`). It stays an independent crate: it reads its version from
 `neo/Cargo.toml`, vendors deps from the pinned `neo/Cargo.lock`, and does NOT
-join a root Cargo workspace, so the Neo CLI release train is not coupled to the
-NeoHaskell library version. `nix build ./neo` (the crate-local flake) still works
+join a root Cargo workspace. Release preparation synchronizes its version with
+the NeoHaskell platform packages. `nix build ./neo` (the crate-local flake) still works
 for a quick dev build without the packaged test check.
 
 The binary embeds `assets/ide/dist/` (rust-embed). That built bundle is committed
@@ -91,9 +95,12 @@ by the Haskell Test gate.
 
 ## Release compatibility contract (neo <-> NeoHaskell)
 
-NeoHaskell (the framework) and neo (the CLI) keep **independent SemVer** and
-release trains (`neo-v*` / `installer-v*` are decoupled from the library tags).
-Because of that independence, **every neo release must publish an explicit
+NeoHaskell, integrations, Neo CLI and the bundled starter share one platform
+release version. Installer publication is retired; its build and download
+compatibility checks remain. Use the local
+[release skill](../.agents/skills/neohaskell-release/SKILL.md) for fragments,
+migrations and manual bootstrap. Platform tags `neo-vX` and `vX` point to the same
+release revision. **Every neo release must publish an explicit
 compatibility contract** stating which NeoHaskell source revision that neo
 version is compatible with.
 
@@ -104,9 +111,11 @@ version is compatible with.
   `cabal.project` `tag:`. It **fails closed on any drift** among those pins and
   emits `neo-compatibility.json` (`schema: neo-compat/v1`, `neo_version`,
   `neohaskell.{repo,ref,source_revision}`).
-- **Released artifact.** `neo-release.yml`'s publish job generates
+- **Released artifact.** `semantic-release.yml` freezes starter inputs at the
+  merged release revision, then generates
   `neo-compatibility.json`, includes it in `SHA256SUMS`, and ships it with the
-  binaries. `scripts/workflow-check` (`check_neo_release`) freezes that.
+  binaries. `./dev semantic-release --self-test artifacts` and `scripts/workflow-check`
+  freeze that. `neo-release.yml` is a read-only native build rehearsal.
 - **Gated, not just documented.** The generated-project consumer contract
   (`./dev neo-consumer-contract`, phase 2b) enforces two things: (A) the contract
   GENERATES and is FAITHFUL — its `source_revision` equals the committed starter

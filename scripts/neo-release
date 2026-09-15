@@ -217,13 +217,13 @@ cmd_inspect() {
 }
 
 # ── neo<->NeoHaskell compatibility contract (executable single source of truth) ─
-# NeoHaskell and neo keep INDEPENDENT SemVer, so every neo release must publish an
+# Coordinated platform releases and historical independent releases publish an
 # explicit mapping from this neo CLI version to the compatible NeoHaskell source
 # revision. That revision is authoritatively pinned by the EMBEDDED starter
 # (neo/starter): flake.nix `neohaskellCommit`, flake.lock's neohaskell `rev`, and
 # every cabal.project `tag:`. This verb READS those pins (never a hand-maintained
 # table that could drift), FAILS CLOSED on any disagreement among them, and emits
-# the contract as JSON. neo-release.yml publishes it as neo-compatibility.json and
+# the contract as JSON. semantic-release.yml publishes neo-compatibility.json and
 # the consumer contract gates that a generated project pins the declared revision.
 compat_starter_dir() { printf '%s\n' "${NEO_COMPAT_STARTER:-$REPO_ROOT/neo/starter}"; }
 compat_cargo_toml()  { printf '%s\n' "${NEO_COMPAT_CARGO:-$REPO_ROOT/neo/Cargo.toml}"; }
