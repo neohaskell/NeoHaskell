@@ -1,6 +1,6 @@
 # Human documentation: progressive depth
 
-Status: methodology approved by Nick in the authoring conversation; implementation requested.
+Status: methodology approved by Nick in the authoring conversation; manuscript implemented and editorially reviewed. Verification results and remaining reader/runtime trials are recorded in DOCUMENTATION_REVIEW.md.
 
 ## Purpose and reader
 
@@ -62,7 +62,7 @@ automation remain the translation strategy. Generated ADR pages keep their gener
 | Section | Purpose | Planned subjects |
 | --- | --- | --- |
 | Start / evaluate | Benefit before setup | Why NeoHaskell; fit and tradeoffs; a shop without setup; trusting an agent; event modeling; reading paths |
-| Build the shop | First working slice to richer behaviour | Setup; visual IDE; first cart; commands/events/entities; queries; stock and checkout; HTTP/frontend; tests; permissions; configuration; language essentials |
+| Build the shop | First working slice to richer behaviour | Setup; visual IDE; first cart; commands/events/entities; queries; stock and checkout; HTTP/frontend; tests; permissions; configuration; transfer the working slice into the reader’s project; language essentials |
 | Connect the shop | Effects beyond a single service | Integration lifecycle; cross-domain workflows; HTTP/providers/payments; email; files; PDF/OCR; AI; tools/agents; timers; custom integration authoring |
 | Run and evolve | Deploy, diagnose, and change | Persistence; deployment; observability; recovery; evolution; security; performance; contribution |
 | Reference | Direct consultation | CLI; language vocabulary; capability map; glossary; troubleshooting |

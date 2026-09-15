@@ -1,24 +1,151 @@
 ---
-title: Getting Started
-description: How to set up a NeoHaskell project.
+title: "Run your first project"
+description: "Check the toolchain with a small working application before building the shop."
+sidebar:
+  order: 0
 ---
 
-NeoHaskell lives in the [neohaskell/NeoHaskell](https://github.com/neohaskell/NeoHaskell)
-monorepo. This documentation site is intentionally small; the authoritative setup,
-build, and test instructions live in the repository's `README.md`.
+Your first technical milestone is modest: make a request, see the accepted result,
+and run the checks that describe it. Start with the bundled counter application so
+you can separate setup problems from the shop's business rules.
 
-## Quick start
+The counter is a toolchain check. The next section uses the public cart and stock
+examples to teach the shop. Creating a project does not generate a storefront or
+payment integration.
 
-1. Install [Determinate Nix](https://determinate.systems/nix).
-2. Clone the repository and enter its development shell:
+## Prepare your tools
 
-   ```bash
-   git clone https://github.com/neohaskell/NeoHaskell.git
-   cd NeoHaskell
-   nix develop
-   ```
+Use macOS or Linux; on Windows, use a Linux environment such as WSL2. You need Git
+and [Nix with flakes enabled](https://nixos.org/download/). Nix supplies the pinned
+build tools and dependencies. The first build can take substantially longer than
+later builds; using the project's declared binary caches can avoid compiling many
+dependencies locally.
 
-3. Run `./dev` to list the available build and test commands.
+If you already have `neo`, check its version:
 
-For the full workflow — Postgres, the test suite, and the contribution process — see
-the [repository README](https://github.com/neohaskell/NeoHaskell#readme).
+```sh
+neo --version
+```
+
+For a source-based installation with pinned dependencies, clone the public repository and build
+its CLI package. Run these commands in a directory where you keep checkouts:
+
+```sh
+git clone https://github.com/neohaskell/NeoHaskell.git
+cd NeoHaskell
+nix build .#neo
+./result/bin/neo --version
+```
+
+Keep the checkout for the reference application later. To make this CLI available
+in the current terminal and terminals it launches:
+
+```sh
+export PATH="$PWD/result/bin:$PATH"
+```
+
+This only changes the current shell environment. A newly opened independent
+terminal needs the same path setup, or your own persistent installation. Review
+Nix's cache-trust prompt before accepting the project configuration. If setup
+fails, keep the complete error and use [troubleshooting](/reference/troubleshooting/).
+
+The generated project's framework dependency is pinned by its CLI's embedded
+starter. A source checkout and an older installed CLI may describe different
+revisions. Use a matching CLI when comparing code with these docs; preserve the
+generated dependency pins until you intentionally upgrade.
+
+## Create the project
+
+From a directory outside the NeoHaskell checkout:
+
+```sh
+neo new mug-shop
+cd mug-shop
+neo build
+```
+
+`neo new` asks for project details and creates a starter. `neo build` reconciles the
+project's `neo.json` configuration into build files, then compiles the application.
+When adding modules or dependencies, work from that configuration instead of
+assuming hand edits to generated Cabal/Nix files will survive reconciliation.
+
+Run the application:
+
+```sh
+neo run
+```
+
+Leave it running while you use a second terminal for the requests below. The
+starter's web transport listens on port 8080. If another application uses that
+port, stop the other development process before starting this one.
+
+## Ask it to do something
+
+In the second terminal, create a counter:
+
+```sh
+curl -i -X POST http://localhost:8080/commands/create-counter   -H 'Content-Type: application/json'   -d '{"label":"mugs"}'
+```
+
+Expect HTTP 200 and an `entityId`. Copy that identifier into this next request,
+replacing `PASTE-UUID`:
+
+```sh
+curl -i -X POST http://localhost:8080/commands/increment-counter   -H 'Content-Type: application/json'   -d '{"entityId":"PASTE-UUID","amount":2}'
+
+curl -i http://localhost:8080/queries/counter-view
+```
+
+The query returns an envelope with an `items` collection. Find your identifier and
+look for value `2`. The view updates asynchronously, so a request made immediately
+after the command may need to be repeated. This distinction becomes important in
+[queries](/build/queries/).
+
+Now send a request the application must refuse:
+
+```sh
+curl -i -X POST http://localhost:8080/commands/create-counter   -H 'Content-Type: application/json'   -d '{"label":""}'
+```
+
+Expect HTTP 400. You have checked an accepted request and an actual business-rule
+refusal, rather than only checking that a server process starts.
+
+## Run the repeatable checks
+
+Stop `neo run` with Ctrl-C before asking the test runner to start its own server.
+From the generated project directory:
+
+```sh
+neo test
+```
+
+This runs the project's unit tests and Hurl HTTP tests. The starter includes a
+counter lifecycle that creates, increments, decrements, and reads the counter,
+plus a refusal for an empty label. Its expected final value is `1`.
+
+The starter event store uses `persistent = False`. Restarting the application
+loses its example history. That is useful for a disposable first run; choose and
+verify [durable persistence](/operate/persistence/) before storing customer orders.
+
+## Make one small prediction
+
+Restart `neo run` and create a new counter first: the test runner stops its own
+server, and the starter does not preserve counters across restarts. Before asking
+your agent to change anything, predict what incrementing by zero will do. Send
+that request with the new counter identifier and compare the result with your
+prediction.
+
+<details>
+<summary>Suggested reasoning</summary>
+
+The starter requires a positive increment. Zero is refused. A refusal must leave
+the previous value unchanged. Check the value as well as the response status.
+
+</details>
+
+Next, [explore the project visually](/getting-started/visual-ide/), then
+[build the first cart slice](/build/first-cart/).
+
+Implementation evidence: [CLI commands](https://github.com/neohaskell/NeoHaskell/blob/main/neo/src/cli.rs),
+[starter wiring](https://github.com/neohaskell/NeoHaskell/blob/main/neo/starter/src/App.hs),
+and [the counter acceptance scenario](https://github.com/neohaskell/NeoHaskell/blob/main/neo/starter/tests/scenarios/counter-flow.hurl).

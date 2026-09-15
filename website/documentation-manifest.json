@@ -1,0 +1,1585 @@
+{
+  "schema": "human-documentation/v1",
+  "methodology": "DOCUMENTATION_PLAN.md",
+  "sourceRevision": "25bd7027a85b8f2999602f66b46b4b6b133c22e8",
+  "requiredPages": [
+    "src/content/docs/index.mdx",
+    "src/content/docs/start/index.md",
+    "src/content/docs/start/why-neohaskell.md",
+    "src/content/docs/start/fit-and-tradeoffs.md",
+    "src/content/docs/start/a-shop-on-paper.md",
+    "src/content/docs/start/event-modeling.md",
+    "src/content/docs/start/trusting-your-agent.md",
+    "src/content/docs/getting-started/index.mdx",
+    "src/content/docs/getting-started/visual-ide.md",
+    "src/content/docs/build/index.md",
+    "src/content/docs/build/first-cart.md",
+    "src/content/docs/build/commands-and-events.md",
+    "src/content/docs/build/entities-and-state.md",
+    "src/content/docs/build/queries.md",
+    "src/content/docs/build/stock-and-checkout.md",
+    "src/content/docs/build/http-and-frontend.md",
+    "src/content/docs/build/testing.md",
+    "src/content/docs/build/access-control.md",
+    "src/content/docs/build/configuration.md",
+    "src/content/docs/build/your-shop.md",
+    "src/content/docs/build/language-essentials.md",
+    "src/content/docs/connect/index.md",
+    "src/content/docs/connect/workflows.md",
+    "src/content/docs/connect/http-and-payments.md",
+    "src/content/docs/connect/provider-accounts.md",
+    "src/content/docs/connect/email.md",
+    "src/content/docs/connect/files.md",
+    "src/content/docs/connect/documents.md",
+    "src/content/docs/connect/ai.md",
+    "src/content/docs/connect/ai-tools.md",
+    "src/content/docs/connect/timers.md",
+    "src/content/docs/connect/custom-integrations.md",
+    "src/content/docs/operate/index.md",
+    "src/content/docs/operate/persistence.md",
+    "src/content/docs/operate/deployment.md",
+    "src/content/docs/operate/observability.md",
+    "src/content/docs/operate/recovery.md",
+    "src/content/docs/operate/evolution.md",
+    "src/content/docs/operate/security.md",
+    "src/content/docs/operate/performance.md",
+    "src/content/docs/operate/contributing.md",
+    "src/content/docs/reference/capabilities.md",
+    "src/content/docs/reference/cli.md",
+    "src/content/docs/reference/glossary.md",
+    "src/content/docs/reference/troubleshooting.md",
+    "src/content/docs/guides/index.mdx",
+    "src/content/docs/guides/deployment.mdx"
+  ],
+  "requiredTopics": [
+    "core-primitives",
+    "traits",
+    "concurrency",
+    "system",
+    "http-client",
+    "json",
+    "schema",
+    "auth",
+    "config",
+    "language-tooling",
+    "event-store",
+    "commands",
+    "entities",
+    "queries",
+    "http-transport",
+    "integration-runtime",
+    "file-upload",
+    "service-wiring",
+    "service-th",
+    "postgres-infra",
+    "testlib",
+    "outbound-integrations",
+    "testbed",
+    "website"
+  ],
+  "sourceHashes": {
+    ".agents/skills/neo-cli-localizer/SKILL.md": "3f030d1867b2ac088c0de4356b392544a3f6c5e79bb493249a6fe7b05184d509",
+    "AGENTS.md": "5f7edafddf96e222eb59a21eb8516aaec391b7ecc05336136ab285e177aac533",
+    "README.md": "af79d9ccb05b1a2a8aff156bf67f468a3b5517645b705cc310898b35538acd35",
+    "codemap/README.md": "b527927d6c4467a86a07f1efbc0843ced4ae0dfce483f2c0064cc87535297501",
+    "codemap/api-hot.md": "ebedf6ea4baaa4635cf9cdb6f5d6a58fec480a23b56d58b49a6f2399922fa864",
+    "codemap/capabilities.yaml": "70d4916c2bf723687e1618820e84e5e6054b3bc2b740e316f939e1a7490df4da",
+    "codemap/signatures/nhcore-core.txt": "4ef7be55ce0f71e77bc9e21f071d593bde2c72eec0a13cd4a45f8f4ed4f3d787",
+    "codemap/signatures/nhcore-service.txt": "7e14a42e8388efe66dbd8fdce32f9dcb9bb3b6fbef32460eb6a4317aed0853a4",
+    "core/auth/Auth/Middleware.hs": "6e739cd5c829adf2796ddcaab868fbf478eb39c37d1c1c18a3c11417caf9ca94",
+    "core/auth/Auth/OAuth2/Client.hs": "c1b3fc7a217f6f5a23992614d54ba9f67f72828c1603ea391e5a20cfe5ab34c9",
+    "core/auth/Auth/OAuth2/Provider.hs": "580ae86aef8bde09df4b11a2f7ba311bb2141d1748e50af6c6bad5ae002cfa4e",
+    "core/auth/Auth/OAuth2/Routes.hs": "844d1e9219b0cd4fd056925a609d62b93024e07f88194fb55227aad1fa4ebf15",
+    "core/auth/Auth/OAuth2/TokenRefresh.hs": "a58888d6d8b85d4931ebcd84e1d7c10c34777d1c7dbd637449e2c1711bc957e0",
+    "core/auth/Auth/OAuth2/Types.hs": "c586e0ed08e18f0fadf275ed82d18b16b594b116b9db597bcb9cf1016b7cf9bf",
+    "core/auth/Auth/SecretStore.hs": "f32a80fd6388e302ed19fd49db9387e3773309391466f940456f3b4343d4db16",
+    "core/auth/Auth/SecretStore/InMemory.hs": "4897d63f06d17f4bff38951a206f99d4e02f6e308e577ebcf3f66d057fa36ebc",
+    "core/config/Config.hs": "75c465e9ae0b8fc4f147b250b62db41141365b1f12e06259979ede5ecb5d8435",
+    "core/config/Config/TH.hs": "72b50bb9708434ee015123eda1373592f196864da166547e90b9c4d2b76fbe2e",
+    "core/core/Log.hs": "ee73004e6b65bd13b1b55f9f2fd22070a5ba381ca62c75bbe5ae1b885403b200",
+    "core/core/Redacted.hs": "1a4fbf66d276c64007e8bcc9a1761e50633869d011872219b20563661a632a19",
+    "core/core/Result.hs": "f4c30b16eac1855e417f8f9887bf12491e0b8a7ccefe2e5551b3ab9988a87748",
+    "core/core/Task.hs": "84862811a13c08e035b48db3f515f5afed9e428d8231c2f355e9cfab1248886c",
+    "core/decimal/Decimal.hs": "55e6d8450917668eafe53cb45bbd69dbc5f8a363a9768e42c7ad8fc17bfad312",
+    "core/neoql/NeoQL.hs": "b7a4a32e119c6fedd8f1a67482f35c116e9a3dea6330c502b2b2f89a5f606f01",
+    "core/neoql/NeoQL/Parser.hs": "9a64e2e3352ee775e45eeffc1db5956453e9230ffee35de7147300d83bd3a115",
+    "core/service/Integration.hs": "5a5ba6c6585d030eaf600daec5c0931761a6feb75196d67d757a7a77a80e0924",
+    "core/service/Integration/Command.hs": "b047be9cb79c33cd0117387f16960fa7c4178dbcc14156c2088f8426eda62324",
+    "core/service/Integration/Lifecycle.hs": "c58e4f425d63915b0d7e52bb52811be36eb6c92a9867d2652d30c4a30b8b6a0e",
+    "core/service/Integration/Timer.hs": "ac5ca34d455a56a726b497fb558a84941ed3ebfb1f1d3b46570ee5142fcfe1e0",
+    "core/service/Service/AccessControl.hs": "12d07d425cb6f529cbccf810e933c2339bede9c09f7b15f7fc5b78d3eb3a3037",
+    "core/service/Service/Application.hs": "0bb49c419277d046e054f529aceecaee84704e738289ca1957746f8c84b78416",
+    "core/service/Service/Application/Integrations.hs": "ddb1f562dd93954e6b622a33e332d35c71b3bdcc73f0a15a1c915d3485131c0a",
+    "core/service/Service/Auth.hs": "1cf7799accdf59fd1281c6a74542258033fd492b54886e38de90a1fffa7bb8d9",
+    "core/service/Service/Command/Core.hs": "034fd81190ae3dda556cf3430afa97505e14f3d11894e0cfba4280bd182b4d35",
+    "core/service/Service/CommandExecutor/Core.hs": "f70426423f17e3f8df40f8599caa293493eb4e1d0cb40a3a5f81ae379d946468",
+    "core/service/Service/CommandExecutor/TH.hs": "8b61866d2047b7412efaa436588a84f774555e3314b9729a8c82b36a48f3167d",
+    "core/service/Service/Event/TH.hs": "671712d5c4dbb9bb6d5f97dd088d19e239c02036acbe38988c953a16bef526e3",
+    "core/service/Service/FileUpload/Resolver.hs": "25b64eeb2c4101013165348e9160d34ccbbad35c06b5f4dff1c6b8c56d083904",
+    "core/service/Service/FileUpload/Web.hs": "8c7ac5577f78af6efe74b37c5e2ad06bfcc22cb624aba135edbfbe4e70dfacde",
+    "core/service/Service/Infra/Postgres/ConnectionConfig.hs": "a9b4f80abea827262163f306235c40feacbb5187f9ae2fc46626013c96dde3ba",
+    "core/service/Service/Infra/Postgres/SslMode.hs": "98fe13adf8f8ab94b4eccd886086e84db858f049bfb9afd439ba169d9bf94975",
+    "core/service/Service/Integration/Dispatcher.hs": "3d21c5673426bb649d8c1c58b3e919bd939775dc90674db7a057c5b6ecbc5b06",
+    "core/service/Service/OutboundIntegration/TH.hs": "3f37c9fedc3bf36690df9b9f5c055733f68744a1e35e0ccc17c5ffb9d3fef260",
+    "core/service/Service/Query/Core.hs": "610f35c757a290204dc12d70dd11e48839acc0148a55fa29e5e399ad4db1e4cc",
+    "core/service/Service/Query/Endpoint.hs": "419a086dd0784cd1f0e7b516c3b1119630a81f1d1eb1fe2c651d931254cceef0",
+    "core/service/Service/Query/Pagination.hs": "5f8d9a49041ffec78e949326d8ab963080a890d7037b8b3b08ffe16e8b9cbb2a",
+    "core/service/Service/Query/Subscriber.hs": "269374a6d2f2a36e512ebd66078cdc701549d7c350b53f75a5905c690a24823e",
+    "core/service/Service/Query/TH.hs": "e6f144bde2f8e88035f8d45919eec1a77c66f8e98517cd50d3907e90cc5a8ca3",
+    "core/service/Service/QueryObjectStore/Postgres.hs": "25748f61e86002d7e3fcc2d3871d3a1ec3d3c6d5c83db02821c64f10628e05f0",
+    "core/service/Service/Response.hs": "01232e340b10670b8e8e2cae75fc99b68ffae9e42b269d20d726e0aaf629e032",
+    "core/service/Service/Transport/Web.hs": "6359523d86c3806aa3d37b6b1fd53d51b46220b2a7bd77efe213d25a8c19b125",
+    "core/test-service/Service/EventStore/Postgres/PoolBudgetSpec.hs": "5567b642c5995542518c156b67fc4cec75c3a94d9c8cadf9f06f24767959b8c9",
+    "core/test-service/Service/Query/DefinitionSpec.hs": "673b2588c0076af0252ea0ffd9538166e4806ed13efcc8c5869ea572000aed28",
+    "core/test-service/Service/Query/Subscriber/ReadinessSpec.hs": "c7a93a3b70a037b47906bb4dd0614bdee7e9b58f72259917da7f09f6ac384a8a",
+    "core/test/Auth/OAuth2/RoutesSpec.hs": "ab23f589c2280ec9792a8319cbd0db7efe08778a9b20f09862ab940b76fe9ad2",
+    "core/test/Auth/OAuth2/TokenRefreshSpec.hs": "71f529aab9e864108b0c4fef7e1b58ba10304d3c764ecbbb4dc73e1e9d42c560",
+    "core/traits/Default.hs": "acce7b8080724b518a25ce128e74ac7c69dfb4baead3bb438c986bbd808fea61",
+    "core/traits/Mappable.hs": "ba797bc708038518c7d852bfae471e24a38573a1353007f44c1419b53feaec76",
+    "docker-compose.yml": "23c4085a106f3087dc0e19342a58da242064bc81ed1522ebf2e7eec8eba67b3f",
+    "docs/charter.md": "1001ae984213e37e9e741971a96788efa36278a3f956f2482b79e815bd635d1a",
+    "integrations/Integration/Acs/Internal.hs": "c7071101670a0231fd0edfb464549ca329e700d06c3d4c9e773f44e69e19175c",
+    "integrations/Integration/Acs/Request.hs": "40510725dd3f3aeea41b1619664ab6e9ea3d0790dc802f2b4e87b86d4cee9b5b",
+    "integrations/Integration/Acs/Response.hs": "9a4e5749c19366cd95c9da15f6caa826da6298b6fd07af6dd416ab194a22ce88",
+    "integrations/Integration/Agent.hs": "ca99f63ab377abf958858d3aaff675fd984e7db507e290860f98b63634534a90",
+    "integrations/Integration/Agent/Internal.hs": "e9df1595740e65ee9045dbbd3c9b338f57b7d049b68c85d0ca63ac5d605104d3",
+    "integrations/Integration/Agent/Types.hs": "414edde374c389312f914ae163f3a58788ecf46b0995c4e4357dfb680a24eb4b",
+    "integrations/Integration/Audio/Transcribe.hs": "da101a17bc4b43ce1b58d654ebb2b56c79396e7d10a319c52d5f1022361a2f54",
+    "integrations/Integration/Audio/Transcribe/Internal.hs": "1ec4fff941b4dceb1ec321f03db9e1163a2889b02894b00c560902e118688f7e",
+    "integrations/Integration/AzureAI/Request.hs": "a00a4d95d5061bbd4aa5cc4d0e178e3b0634a384bd7f176f086051c05ee8d5ed",
+    "integrations/Integration/Brevo.hs": "1877f6c1a32543d482f0cca499ac80ef11a60d3c4912c3b001d0660faebf7bce",
+    "integrations/Integration/Brevo/Internal.hs": "8eecd984615234cbc32fa2d12c837477a9af6467eea749d52381823b6230170d",
+    "integrations/Integration/Brevo/Request.hs": "1f64ad9fbf7901b5986a95d149f7963dee401cc500f18aea8cfcf4b7232d9913",
+    "integrations/Integration/Brevo/Response.hs": "5d7a54a70fa7f2bf193ef8bb5fce602e93fd3ab7b38de1de09120a927c1d7de6",
+    "integrations/Integration/Http/Internal.hs": "812cab504d75bccef7259eaf4ac2aa344937931d0e302f6d7f482a0799619532",
+    "integrations/Integration/Http/Request.hs": "5708583718ec36d8103caf58d14aa3cecfbaedf48f2925bd0ed06869fb44aee1",
+    "integrations/Integration/Http/Response.hs": "c770df33d2a41ed2d76ab6ec47571a67bd0fec8b77d36fc266806f6fca60f5fe",
+    "integrations/Integration/Http/Retry.hs": "1045179f3eb52458f89ee4c7d3e4189a7a543737d83ff2666a97ee71ce5e06fd",
+    "integrations/Integration/Ocr/Ai.hs": "d4109f16363c38c6899a29722cf5d29f14305812e17ab4576156be7416d7c45a",
+    "integrations/Integration/Ocr/Ai/Internal.hs": "b30dc806a1cd110fc2221778f74a85d535cd2569997deeaf6770911088a5d4bc",
+    "integrations/Integration/OpenRouter/Internal.hs": "5f9da50ae6495cf82ddb9b484f1b9b939c523f54299549eb8a9d53509e9914a3",
+    "integrations/Integration/OpenRouter/Request.hs": "5f41fa05afd9a6d995fe96650a16560ca0bd3cf741b4154d9e8c20e87f7e19e5",
+    "integrations/Integration/OpenRouter/Response.hs": "24a66bb8edc3396effc1e86f7df23d9a1cb76964520149c4213a39a53cd5afeb",
+    "integrations/Integration/Pdf/ExtractText.hs": "7f22063af0f41b5bfc029da824cd0a2aa999f11b26f4a3e408f2eb6621ae0b60",
+    "integrations/Integration/Pdf/ExtractText/Internal.hs": "258b96cd77427a6f43704920ca1cf2ab0a12dd3fbd248bd2f5fc9600de882dc9",
+    "integrations/nhintegrations.cabal": "78986a3e9feb8230f831d6407057154adbec530cf1b7c8d7068040ff078e52d8",
+    "integrations/test/Integration/Agent/CompileSpec.hs": "bafe302f0c00cc23e1eb06e6aae713bcf6a5fbdf439fad638b36cf837257e41e",
+    "integrations/test/Integration/AzureAI/RequestSpec.hs": "27ed2a50f5690a56a01b59e84195312dc9c14dab660bf6a219714307c3b500ad",
+    "integrations/test/Integration/Brevo/InternalSpec.hs": "85e3981ce6399e873045e5473e900c76b6313b2045a3aeed6d449b18afd398be",
+    "integrations/test/Integration/Http/InternalSpec.hs": "934a9e4eeac2aa779f1eba076ce9f9d3441a45fdda07636219f91edea122e410",
+    "neo/AGENTS.md": "ce9feedf178969be3abdc2a68e319799a6ff85a97a57eaac690e9760991d2749",
+    "neo/assets/ide/src/App.tsx": "18557b82fff9fa1a7e285c12e35c32715fcede5139bb92100d47dadf1816011d",
+    "neo/assets/ide/src/ui/lenses/lenses.tsx": "f4dacb6c9c2a2ebe1ce55f2cc4d76bb9fdbddcdc93e61f622d5039eef26d10d3",
+    "neo/assets/ide/src/ui/shell/HeaderBar.tsx": "58baaf884d62667ee5a431db1bb026b916dbacaed39563a35ca441a5514246a3",
+    "neo/assets/templates/flake.nix.j2": "4e392b159d2f92498bf268555e4006b6dd281f927332b9e9ec2fd7113d073d7e",
+    "neo/assets/templates/project.cabal.j2": "e177a8e22915c739c31ef30fd4fddff13280b64b22d08374466d8c6d18761655",
+    "neo/src/cli.rs": "7ed174f3513227bbb7d9a4ba537f280ae6dc9c17a08ef7bce3af9279dc3103e0",
+    "neo/src/commands/build.rs": "5892ce2e18bd1bd7ab7ba581ad283419db73c7357ebd2a1bb95eacb71388b9d6",
+    "neo/src/commands/ide.rs": "ccd866368781f63bd0a7b38ef3ade7e4b59bf0fc37bac2d6cb83cffe0af71bdf",
+    "neo/src/commands/inspect.rs": "66a3e767697e0d05495272ef84129594df22a61dc2abefcfe082ebebb68467d0",
+    "neo/src/commands/lock.rs": "2393356b74f1a75a1e11b41bd9864c37f41f6701feb7fc5955f47a9c40e6e7f8",
+    "neo/src/commands/new.rs": "21065d3c3ac2706790d1107ffc82d8ecd82561e45a92b986d8953782049d715e",
+    "neo/src/commands/skills.rs": "260b7b6bd6aa8b5e1730d85db8c867401859e61040881c28c030957b74bbab0e",
+    "neo/src/commands/test.rs": "91e59486e1eaabaec643bdc00e2491e730853bf44aa5e9e255e3bbfe628b6509",
+    "neo/src/commands/validate.rs": "6da370be66b9c19149b0c90f3c61236377a5450aeb3d84dbbab2610bbc3ef167",
+    "neo/src/git.rs": "3f4630e9398cdf429e51a1f742babe27bdec9c7d4d195f86a5b04b46ec3da10b",
+    "neo/src/ide/sync.rs": "a2521e860ec2ec8388bc88d4e3dca468075e742ea5b1b48be25665edc5d3afbc",
+    "neo/src/ide/workspace.rs": "d3385c2a2a237a7a4f9eb64216c46ec515c2e7dc2c70f848726b2a33cbf8d7a8",
+    "neo/src/inspect/mod.rs": "210a76fe0f2b72381d08880cec66434a71aaa261797b2c2081f9c758d4870171",
+    "neo/src/reconcile/mod.rs": "7dbe70a4350a01bd10775c8d99498e22c4aaba4b5f6dc806c60958f41ee9abdd",
+    "neo/src/reconcile/modules.rs": "73f467631b5621c18e386f925dffbf45d6abcba642ddd0ca93c622f97c48b979",
+    "neo/src/subprocess/hurl.rs": "fe17ef100c2a2b5445f7d31123d71cc0072c38695a00dd6eef118b0127be7dc1",
+    "neo/src/subprocess/nix.rs": "8363e270e388153f8a49941e4693df0a3056ad9010f2ffbe0170b208e61ad18e",
+    "neo/starter/src/App.hs": "8dfc238cac9fe6ba36bb6d1369bd9b45543c81a3f394c3c6399cf95cf4132f8d",
+    "neo/starter/src/Starter/Config.hs": "d28341146493c02544c75299e029f808c1d7eb57e924a614c7bd376af657587e",
+    "neo/starter/src/Starter/Counter/Commands/IncrementCounter.hs": "2dec23e0c6217f532733936781f7801f9a6c6d22d27ee67067e2eb683fd36b12",
+    "neo/starter/src/Starter/Counter/Entity.hs": "f6bb9f2b3a313f46d1c25141df35b4d66f4abaac6a5c402dfdbcdc2efdc58ed9",
+    "neo/starter/src/Starter/Counter/Service.hs": "adf75ba97c9b40c30fc1e7be7fcb85b881f7f3b7e9702304efb8c066ec38f3fc",
+    "neo/starter/tests/Decider/Counter/IncrementCounterSpec.hs": "6350c9cb01a7000f44d917cfa7965f23c80656bbc472eee033c2ac66a9634018",
+    "neo/starter/tests/Property/CounterReplaySpec.hs": "7e3f29fad4e9d05a018f3b1b397fcd1e5d75d92d2ee0d62f2046742f7ded783b",
+    "neo/starter/tests/integration/smoke.hurl": "20211345ab506bd94a3f8aea284b2014e69aa4c6796578d78388e777e357191d",
+    "neo/starter/tests/scenarios/counter-flow.hurl": "466cea027d0591de89260ef5d79184c3c2e4a19f9e7bfc4a1aa20364a764c607",
+    "scripts/testbed": "ce6244980a7074366cf9ed300fe99cfabefcfc7f57a3f0744e6859962de4ddcd",
+    "testbed/scripts/cold-start-readiness.sh": "c0d53e5876ef37f67bab05bda093524a5edc570dfe585b8510d266fb9f72b49e",
+    "testbed/scripts/run-tests.sh": "8bc58ea179e82040f9e388263b47aa023e50b06cc30882d0319620af7ed268cc",
+    "testbed/src/App.hs": "1d21642cf2374fd78720c07f93c44273c3e6f51649d31de36f007ffb2513a890",
+    "testbed/src/Testbed/Cart/Commands/AddItem.hs": "89e369017f044ee18a61070779e65cc1ab51d0722c1fa7bd1b35e0cf27c5d1e1",
+    "testbed/src/Testbed/Cart/Commands/CreateCart.hs": "b41309fe14227dea7a7ed36692c15cf0c626d6a715c82b419f7313dabfc51722",
+    "testbed/src/Testbed/Cart/Commands/CreateCartInternal.hs": "08a0e5e46c8938f3d9d83f125e4a240aed2c2987bb4d9b17a51fb9cb47934e86",
+    "testbed/src/Testbed/Cart/Commands/RegisterCartByKey.hs": "35f054e8423ebc378083d2d9e10851f2a3848078a90b3af5d3dca24b4186a8d4",
+    "testbed/src/Testbed/Cart/Core.hs": "14c654a398d69440ee4cfa6467978814df8be529d42acd7c21e78027c7bc86c5",
+    "testbed/src/Testbed/Cart/Integrations.hs": "bc738d5e56879ac1280e9439ecbf185689665c6866802d5471ac758734626da3",
+    "testbed/src/Testbed/Cart/Integrations/EventCounter.hs": "2832afe50b3a3e496ba4d3e50760701c836dad7432afe807df4a1d65dcfc5116",
+    "testbed/src/Testbed/Cart/Integrations/ReserveStockOnItemAdded.hs": "79a75d2e7d57e68bc3b154acd5e3f176b8edc911aa2d7b770ede442750983f38",
+    "testbed/src/Testbed/Cart/Queries/CartSummary.hs": "f399368f362fdbbc609ae20900117ca1eff1e33d4a575c865895bcb8a99dcd67",
+    "testbed/src/Testbed/Cart/Service.hs": "bedac357f9017d86df18aab8f219ffda984ef2cd89f4e2dd748771adf4f1e967",
+    "testbed/src/Testbed/Config.hs": "dbafe479e1b0d8299fb5681c66125ff4b8e79203347d7aa6803abc527f7e3578",
+    "testbed/src/Testbed/Document/Commands/CreateDocument.hs": "4491c5de10ba58d9d6a499744cd94b0f7f9309a89d9340272b03f849f1fd74c1",
+    "testbed/src/Testbed/Examples/PdfExtraction.hs": "9b958ad79fc6ec9c66f5ebf2eda88b33d6fcfb08a71f3ebc34178e68e7325567",
+    "testbed/src/Testbed/Stock/Commands/InitializeStock.hs": "1ed8697a99d82be371b50af6595d7f820b5c6db0eb729b3bfc3364692c5598cf",
+    "testbed/src/Testbed/Stock/Commands/ReserveStock.hs": "112d945a0c8dde847ec30b9d52a5415794d609a5535464ef321ea01ec2988c0e",
+    "testbed/src/Testbed/Stock/Core.hs": "ac8e0ad83fc04807be69a1833ba785a9a06d000ebb0840bd7f1520a563ac43c1",
+    "testbed/src/Testbed/Stock/Queries/StockLevel.hs": "6fb07f5bbe752fcb7451b0e1fa616161fb1bab95bba488640ed91f3a4e3c87f2",
+    "testbed/src/Testbed/Stock/Service.hs": "4e886247f65ccdb0b31e6a845f1141e27c1292f16d55250f3cdda814eadb2b43",
+    "testbed/tests/commands/create-cart.hurl": "3713445875592e709c06067a4638e97bc6c8a731d3e38411179337bace668d9c",
+    "testbed/tests/files/download.hurl": "3ba567b1323fe25d85fba6f609318487c42685ec7df2d8d4e1224992e8ef427e",
+    "testbed/tests/files/upload-errors.hurl": "38c54ef6bab7a9b98a29fbeadc6ff450a02452a1f37a0754d118f946e55b174b",
+    "testbed/tests/files/upload.hurl": "3a7c00958bcdb9b6ad01307754428e3f459e064fd60bd50752709ec46046b983",
+    "testbed/tests/queries/cart-summary.hurl": "3757e83566d996827be885f8e299bfe034fd650dd2e75fe2e0826b7eea123eb0",
+    "testbed/tests/scenarios/stock-reservation.hurl": "7928c3366d5efc5d17d7b74b181eea0c0adaea0cdd6fb2d7900caf2d7d2760da",
+    "website/src/content/docs/guides/deployment.mdx": "9b1a290ad1b9c631b7a253d9d320bb59a87d302d6dc05009b983bd5b8ddbe3ad"
+  },
+  "pages": [
+    {
+      "path": "src/content/docs/build/access-control.md",
+      "section": "build",
+      "topics": [
+        "auth",
+        "service-wiring",
+        "commands",
+        "queries"
+      ],
+      "sources": [
+        "core/service/Service/AccessControl.hs",
+        "core/service/Service/Auth.hs",
+        "core/service/Service/Command/Core.hs",
+        "core/service/Service/CommandExecutor/TH.hs",
+        "core/service/Service/Query/Endpoint.hs",
+        "core/service/Service/Transport/Web.hs",
+        "core/service/Service/Application.hs",
+        "testbed/src/Testbed/Cart/Commands/CreateCart.hs",
+        "testbed/src/Testbed/Cart/Commands/AddItem.hs"
+      ],
+      "review": {
+        "accessibleOpening": true,
+        "progressiveDepth": true,
+        "concreteOutcome": true,
+        "sourceGrounded": true,
+        "independence": true
+      },
+      "notes": "Reviewed actual no-auth command bypass, query row filtering and optional command policy marker wiring. Policy snippets are partial; identity-provider discovery and real-token tests remain required in the reader application.",
+      "excerpts": []
+    },
+    {
+      "path": "src/content/docs/build/commands-and-events.md",
+      "section": "build",
+      "topics": [
+        "commands",
+        "event-store",
+        "service-th",
+        "service-wiring"
+      ],
+      "sources": [
+        "testbed/src/Testbed/Cart/Commands/AddItem.hs",
+        "testbed/src/Testbed/Cart/Commands/CreateCart.hs",
+        "testbed/src/Testbed/Cart/Service.hs",
+        "core/service/Service/CommandExecutor/TH.hs",
+        "core/service/Service/Event/TH.hs"
+      ],
+      "review": {
+        "accessibleOpening": true,
+        "progressiveDepth": true,
+        "concreteOutcome": true,
+        "sourceGrounded": true,
+        "independence": true
+      },
+      "notes": "Decision excerpt matched source. Adapted marker declaration is partial and not separately compiled. Canonical marker pattern avoids legacy redundant instances. Purchase-limit extension is a design exercise.",
+      "excerpts": [
+        {
+          "source": "testbed/src/Testbed/Cart/Commands/AddItem.hs",
+          "text": "decide :: AddItem -> Maybe CartEntity -> RequestContext -> Decision CartEvent\ndecide cmd entity _ctx = case entity of\n  Nothing ->\n    Decider.reject \"Cart not found!\"\n  Just cart ->\n    if cmd.quantity <= 0\n      then Decider.reject \"Quantity must be positive\"\n      else\n        Decider.acceptExisting\n          [ ItemAdded\n              { entityId = cart.cartId\n              , stockId = cmd.stockId\n              , quantity = cmd.quantity\n              }\n          ]"
+        }
+      ]
+    },
+    {
+      "path": "src/content/docs/build/configuration.md",
+      "section": "build",
+      "topics": [
+        "config",
+        "service-wiring",
+        "core-primitives"
+      ],
+      "sources": [
+        "core/config/Config.hs",
+        "core/config/Config/TH.hs",
+        "testbed/src/Testbed/Config.hs",
+        "testbed/src/App.hs",
+        "neo/starter/src/App.hs",
+        "neo/starter/src/Starter/Config.hs",
+        "core/service/Service/Transport/Web.hs",
+        "core/service/Service/Application.hs",
+        "core/core/Redacted.hs"
+      ],
+      "review": {
+        "accessibleOpening": true,
+        "progressiveDepth": true,
+        "concreteOutcome": true,
+        "sourceGrounded": true,
+        "independence": true
+      },
+      "notes": "Macro/loader implementation checked, including secret redaction, no automatic .env load and declared-but-unwired httpPort. Adapted config module not independently compiled; deployment credentials not used.",
+      "excerpts": [
+        {
+          "source": "testbed/src/Testbed/Config.hs",
+          "text": "  [ Config.field @Text \"dbHost\"\n      |> Config.doc \"PostgreSQL host\"\n      |> Config.defaultsTo (\"localhost\" :: Text)\n      |> Config.envVar \"DB_HOST\""
+        }
+      ]
+    },
+    {
+      "path": "src/content/docs/build/entities-and-state.md",
+      "section": "build",
+      "topics": [
+        "entities",
+        "event-store"
+      ],
+      "sources": [
+        "testbed/src/Testbed/Cart/Core.hs",
+        "neo/starter/src/Starter/Counter/Entity.hs",
+        "neo/starter/tests/Property/CounterReplaySpec.hs",
+        "core/decimal/Decimal.hs"
+      ],
+      "review": {
+        "accessibleOpening": true,
+        "progressiveDepth": true,
+        "concreteOutcome": true,
+        "sourceGrounded": true,
+        "independence": true
+      },
+      "notes": "Entity excerpts matched source. Explains entry counts, initial-state distinction, deterministic reconstruction, and pricing as unimplemented shop design. No live replay run during authoring.",
+      "excerpts": [
+        {
+          "source": "testbed/src/Testbed/Cart/Core.hs",
+          "text": "data CartEntity = CartEntity\n  { cartId :: Uuid,\n    ownerId :: Text,\n    items :: Array CartItem\n  }\n  deriving (Generic)"
+        },
+        {
+          "source": "testbed/src/Testbed/Cart/Core.hs",
+          "text": "instance Entity CartEntity where\n  initialStateImpl = initialState\n  updateImpl = update"
+        }
+      ]
+    },
+    {
+      "path": "src/content/docs/build/first-cart.md",
+      "section": "build",
+      "topics": [
+        "commands",
+        "queries",
+        "http-transport",
+        "testbed"
+      ],
+      "sources": [
+        "docker-compose.yml",
+        "scripts/testbed",
+        "testbed/scripts/run-tests.sh",
+        "testbed/src/App.hs",
+        "testbed/src/Testbed/Cart/Commands/CreateCart.hs",
+        "testbed/tests/commands/create-cart.hurl",
+        "testbed/tests/queries/cart-summary.hurl",
+        "testbed/src/Testbed/Cart/Queries/CartSummary.hs",
+        "neo/src/commands/ide.rs",
+        "neo/src/commands/inspect.rs",
+        "neo/src/ide/sync.rs",
+        "neo/src/ide/workspace.rs",
+        "neo/src/inspect/mod.rs"
+      ],
+      "review": {
+        "accessibleOpening": true,
+        "progressiveDepth": true,
+        "concreteOutcome": true,
+        "sourceGrounded": true,
+        "independence": true
+      },
+      "notes": "Requests traced to public Hurl/source, not executed in this documentation run. Explicit PostgreSQL context, [] nullary body, asynchronous projection, timer interference, cart/order boundary. IDE instructions explicitly use testbed as workspace root, create/save a missing model before synchronization, and reload it after CLI sync. Source-audited; not a live IDE trial.",
+      "excerpts": [
+        {
+          "source": "testbed/tests/commands/create-cart.hurl",
+          "text": "POST http://localhost:8080/commands/create-cart\n[]\n\nHTTP/1.1 200\nContent-Type: application/json\n\n[Asserts]\n# Response must have entityId field\njsonpath \"$.entityId\" exists"
+        }
+      ]
+    },
+    {
+      "path": "src/content/docs/build/http-and-frontend.md",
+      "section": "build",
+      "topics": [
+        "http-transport",
+        "schema",
+        "service-wiring"
+      ],
+      "sources": [
+        "core/service/Service/Transport/Web.hs",
+        "core/service/Service/Response.hs",
+        "core/service/Service/Application.hs",
+        "testbed/tests/commands/create-cart.hurl"
+      ],
+      "review": {
+        "accessibleOpening": true,
+        "progressiveDepth": true,
+        "concreteOutcome": true,
+        "sourceGrounded": true,
+        "independence": true
+      },
+      "notes": "Routes, status mapping, CORS fields and response fields checked against source. Browser JS and partial CORS wiring were not browser-tested or compiled. Does not claim built-in static hosting.",
+      "excerpts": []
+    },
+    {
+      "path": "src/content/docs/build/index.md",
+      "section": "build",
+      "topics": [
+        "commands",
+        "entities",
+        "queries",
+        "testbed"
+      ],
+      "sources": [
+        "neo/starter/src/App.hs",
+        "testbed/src/Testbed/Cart/Core.hs",
+        "testbed/src/Testbed/Cart/Queries/CartSummary.hs"
+      ],
+      "review": {
+        "accessibleOpening": true,
+        "progressiveDepth": true,
+        "concreteOutcome": true,
+        "sourceGrounded": true,
+        "independence": true
+      },
+      "notes": "Reviewed as a reading-path page with an evaluator opening and a quantity/count exercise. Distinguishes Counter starter from Cart testbed. Human reader trial remains pending.",
+      "excerpts": []
+    },
+    {
+      "path": "src/content/docs/build/language-essentials.md",
+      "section": "build",
+      "topics": [
+        "core-primitives",
+        "traits",
+        "language-tooling",
+        "json"
+      ],
+      "sources": [
+        "core/core/Result.hs",
+        "core/core/Task.hs",
+        "core/decimal/Decimal.hs",
+        "core/traits/Mappable.hs",
+        "core/traits/Default.hs",
+        "testbed/src/Testbed/Cart/Queries/CartSummary.hs",
+        "codemap/api-hot.md"
+      ],
+      "review": {
+        "accessibleOpening": true,
+        "progressiveDepth": true,
+        "concreteOutcome": true,
+        "sourceGrounded": true,
+        "independence": true
+      },
+      "notes": "API vocabulary grounded in source/signature assets. Explicit Decimal Int64 bounds, float parsing and truncation limits. Small illustrative expressions/helpers were not independently compiled.",
+      "excerpts": []
+    },
+    {
+      "path": "src/content/docs/build/queries.md",
+      "section": "build",
+      "topics": [
+        "queries",
+        "language-tooling",
+        "service-th"
+      ],
+      "sources": [
+        "testbed/src/Testbed/Cart/Queries/CartSummary.hs",
+        "testbed/src/App.hs",
+        "core/service/Service/Query/Core.hs",
+        "core/service/Service/Query/TH.hs",
+        "core/service/Service/Query/Pagination.hs",
+        "core/service/Service/Query/Endpoint.hs",
+        "core/neoql/NeoQL.hs",
+        "core/neoql/NeoQL/Parser.hs",
+        "core/service/Service/Transport/Web.hs",
+        "core/test-service/Service/Query/DefinitionSpec.hs"
+      ],
+      "review": {
+        "accessibleOpening": true,
+        "progressiveDepth": true,
+        "concreteOutcome": true,
+        "sourceGrounded": true,
+        "independence": true
+      },
+      "notes": "Projection excerpt matched source. Pagination, authorization-before-count, filter grammar and marker naming checked against implementation. Filter requests not executed here; new view extension is not compiled. Query declaration order corrected against compiling DefinitionSpec fixture: required companions, deriveQuery, then QueryOf business instances; the generated Query superclass must precede QueryOf.",
+      "excerpts": [
+        {
+          "source": "testbed/src/Testbed/Cart/Queries/CartSummary.hs",
+          "text": "instance QueryOf CartEntity CartSummary where\n  -- | The query is keyed by the cart ID\n  queryId cart = cart.cartId\n\n  -- | When a cart changes, update the summary\n  combine cart _maybeExisting = do\n    let count = cart.items |> Array.length\n    Update\n      CartSummary\n        { cartSummaryId = cart.cartId,\n          ownerId = cart.ownerId,\n          itemCount = count,\n          isEmpty = count == 0\n        }"
+        }
+      ]
+    },
+    {
+      "path": "src/content/docs/build/stock-and-checkout.md",
+      "section": "build",
+      "topics": [
+        "commands",
+        "entities",
+        "integration-runtime",
+        "testbed"
+      ],
+      "sources": [
+        "testbed/src/Testbed/Stock/Core.hs",
+        "testbed/src/Testbed/Stock/Commands/ReserveStock.hs",
+        "testbed/src/Testbed/Cart/Integrations/ReserveStockOnItemAdded.hs",
+        "testbed/tests/scenarios/stock-reservation.hurl"
+      ],
+      "review": {
+        "accessibleOpening": true,
+        "progressiveDepth": true,
+        "concreteOutcome": true,
+        "sourceGrounded": true,
+        "independence": true
+      },
+      "notes": "Scenario and decision inspected. Separate cart and stock acceptance, missing compensation and checkout states are explicit. Curl variation is an adapted scenario, not a run result or complete checkout implementation.",
+      "excerpts": []
+    },
+    {
+      "path": "src/content/docs/build/testing.md",
+      "section": "build",
+      "topics": [
+        "testlib",
+        "testbed",
+        "commands",
+        "entities"
+      ],
+      "sources": [
+        "neo/starter/tests/Decider/Counter/IncrementCounterSpec.hs",
+        "neo/starter/tests/Property/CounterReplaySpec.hs",
+        "testbed/tests/scenarios/stock-reservation.hurl",
+        "scripts/testbed",
+        "testbed/scripts/run-tests.sh",
+        "README.md"
+      ],
+      "review": {
+        "accessibleOpening": true,
+        "progressiveDepth": true,
+        "concreteOutcome": true,
+        "sourceGrounded": true,
+        "independence": true
+      },
+      "notes": "Decision/Hurl excerpts matched public tests. Separates unit, persistence, HTTP and provider evidence. These published tests were inspected, not run by this authoring agent.",
+      "excerpts": [
+        {
+          "source": "neo/starter/tests/Decider/Counter/IncrementCounterSpec.hs",
+          "text": "  it \"rejects a non-positive amount\" \\_ctx -> do\n    let existing = CounterEntity {counterId = Uuid.nil, label = \"downloads\", value = 0}\n    let cmd = IncrementCounter {entityId = Uuid.nil, amount = 0}\n    result <- runTestDecision (decide cmd (Just existing) Auth.emptyContext)\n    case result of\n      RejectCommand msg ->\n        msg |> shouldBe \"Amount must be positive\"\n      AcceptCommand _ _ ->\n        fail \"expected a rejection for a non-positive amount\""
+        },
+        {
+          "source": "testbed/tests/scenarios/stock-reservation.hurl",
+          "text": "GET http://localhost:8080/queries/stock-level\n[Options]\nretry: 10\nretry-interval: 200\n\nHTTP/1.1 200\n[Asserts]\n# Stock should now show 95 available, 5 reserved\njsonpath \"$.items[?(@.stockLevelId == '{{stock_id}}')].available\" nth 0 == 95\njsonpath \"$.items[?(@.stockLevelId == '{{stock_id}}')].reserved\" nth 0 == 5"
+        }
+      ]
+    },
+    {
+      "path": "src/content/docs/build/your-shop.md",
+      "section": "build",
+      "topics": [
+        "commands",
+        "entities",
+        "queries",
+        "event-store",
+        "integration-runtime",
+        "service-wiring",
+        "testbed",
+        "testlib"
+      ],
+      "sources": [
+        "neo/starter/src/App.hs",
+        "neo/starter/src/Starter/Counter/Service.hs",
+        "neo/starter/tests/scenarios/counter-flow.hurl",
+        "neo/starter/tests/integration/smoke.hurl",
+        "neo/src/commands/new.rs",
+        "neo/src/reconcile/mod.rs",
+        "neo/src/reconcile/modules.rs",
+        "neo/src/subprocess/hurl.rs",
+        "testbed/tests/commands/create-cart.hurl",
+        "testbed/tests/scenarios/stock-reservation.hurl",
+        "testbed/src/Testbed/Cart/Commands/AddItem.hs",
+        "testbed/src/Testbed/Cart/Commands/CreateCart.hs",
+        "testbed/src/Testbed/Cart/Commands/CreateCartInternal.hs",
+        "testbed/src/Testbed/Cart/Commands/RegisterCartByKey.hs",
+        "testbed/src/Testbed/Cart/Core.hs",
+        "testbed/src/Testbed/Cart/Integrations/EventCounter.hs",
+        "testbed/src/Testbed/Cart/Integrations/ReserveStockOnItemAdded.hs",
+        "testbed/src/Testbed/Cart/Integrations.hs",
+        "testbed/src/Testbed/Cart/Queries/CartSummary.hs",
+        "testbed/src/Testbed/Cart/Service.hs",
+        "testbed/src/Testbed/Stock/Commands/InitializeStock.hs",
+        "testbed/src/Testbed/Stock/Commands/ReserveStock.hs",
+        "testbed/src/Testbed/Stock/Core.hs",
+        "testbed/src/Testbed/Stock/Queries/StockLevel.hs",
+        "testbed/src/Testbed/Stock/Service.hs"
+      ],
+      "review": {
+        "accessibleOpening": true,
+        "progressiveDepth": true,
+        "concreteOutcome": true,
+        "sourceGrounded": true,
+        "independence": true
+      },
+      "notes": "Concrete transfer milestone retains Counter tests and copies both full public domains plus self-contained HTTP tests. Local imports/transitive modules inspected. App snippet is adapted partial wiring, not a standalone module; source and framework revision compatibility is an explicit prerequisite. Static/source review completed; assembled generated application has not been compiled or its Hurl scenarios executed during this docs task. Proposed payment/order/AI capstones explicitly remain implementation work.",
+      "excerpts": []
+    },
+    {
+      "path": "src/content/docs/connect/ai-tools.md",
+      "section": "connect",
+      "topics": [
+        "outbound-integrations",
+        "schema",
+        "auth",
+        "commands"
+      ],
+      "sources": [
+        "integrations/Integration/Agent.hs",
+        "integrations/Integration/Agent/Types.hs",
+        "integrations/Integration/Agent/Internal.hs",
+        "integrations/test/Integration/Agent/CompileSpec.hs",
+        "core/service/Service/Integration/Dispatcher.hs"
+      ],
+      "review": {
+        "accessibleOpening": true,
+        "progressiveDepth": true,
+        "concreteOutcome": true,
+        "sourceGrounded": true,
+        "independence": true
+      },
+      "notes": "Reviewed against the documentation methodology; snippets are source excerpts or labelled partial adaptations. Live provider tests and human reader trials remain pending.",
+      "excerpts": []
+    },
+    {
+      "path": "src/content/docs/connect/ai.md",
+      "section": "connect",
+      "topics": [
+        "outbound-integrations",
+        "config"
+      ],
+      "sources": [
+        "integrations/Integration/OpenRouter/Request.hs",
+        "integrations/Integration/OpenRouter/Internal.hs",
+        "integrations/Integration/OpenRouter/Response.hs",
+        "integrations/Integration/AzureAI/Request.hs",
+        "integrations/test/Integration/AzureAI/RequestSpec.hs"
+      ],
+      "review": {
+        "accessibleOpening": true,
+        "progressiveDepth": true,
+        "concreteOutcome": true,
+        "sourceGrounded": true,
+        "independence": true
+      },
+      "notes": "Reviewed against the documentation methodology; snippets are source excerpts or labelled partial adaptations. Live provider tests and human reader trials remain pending.",
+      "excerpts": []
+    },
+    {
+      "path": "src/content/docs/connect/custom-integrations.md",
+      "section": "connect",
+      "topics": [
+        "integration-runtime",
+        "outbound-integrations",
+        "concurrency",
+        "service-wiring"
+      ],
+      "sources": [
+        "core/service/Integration.hs",
+        "core/service/Integration/Command.hs",
+        "core/service/Integration/Lifecycle.hs",
+        "integrations/Integration/OpenRouter/Internal.hs",
+        "testbed/src/Testbed/Cart/Integrations/EventCounter.hs",
+        "testbed/src/App.hs",
+        "core/service/Service/Application/Integrations.hs"
+      ],
+      "review": {
+        "accessibleOpening": true,
+        "progressiveDepth": true,
+        "concreteOutcome": true,
+        "sourceGrounded": true,
+        "independence": true
+      },
+      "notes": "Reviewed against the documentation methodology; snippets are source excerpts or labelled partial adaptations. Live provider tests and human reader trials remain pending.",
+      "excerpts": [
+        {
+          "source": "core/service/Integration.hs",
+          "text": "class ToAction config where\n  toAction :: config -> Action"
+        },
+        {
+          "source": "testbed/src/App.hs",
+          "text": "    |> Application.withOutboundLifecycle @() @CartEntity (\\_ -> EventCounter.eventCounterIntegration)"
+        }
+      ]
+    },
+    {
+      "path": "src/content/docs/connect/documents.md",
+      "section": "connect",
+      "topics": [
+        "outbound-integrations",
+        "file-upload",
+        "integration-runtime"
+      ],
+      "sources": [
+        "integrations/Integration/Pdf/ExtractText.hs",
+        "integrations/Integration/Pdf/ExtractText/Internal.hs",
+        "integrations/Integration/Ocr/Ai.hs",
+        "integrations/Integration/Ocr/Ai/Internal.hs",
+        "integrations/Integration/Audio/Transcribe.hs",
+        "integrations/Integration/Audio/Transcribe/Internal.hs",
+        "core/service/Service/Application.hs",
+        "core/service/Service/Integration/Dispatcher.hs",
+        "testbed/src/Testbed/Examples/PdfExtraction.hs"
+      ],
+      "review": {
+        "accessibleOpening": true,
+        "progressiveDepth": true,
+        "concreteOutcome": true,
+        "sourceGrounded": true,
+        "independence": true
+      },
+      "notes": "Reviewed against the documentation methodology; snippets are source excerpts or labelled partial adaptations. Live provider tests and human reader trials remain pending.",
+      "excerpts": []
+    },
+    {
+      "path": "src/content/docs/connect/email.md",
+      "section": "connect",
+      "topics": [
+        "outbound-integrations",
+        "config"
+      ],
+      "sources": [
+        "integrations/Integration/Brevo.hs",
+        "integrations/Integration/Brevo/Request.hs",
+        "integrations/Integration/Brevo/Response.hs",
+        "integrations/Integration/Brevo/Internal.hs",
+        "integrations/test/Integration/Brevo/InternalSpec.hs",
+        "integrations/Integration/Acs/Request.hs",
+        "integrations/Integration/Acs/Response.hs",
+        "integrations/Integration/Acs/Internal.hs",
+        "integrations/nhintegrations.cabal",
+        "core/core/Redacted.hs",
+        "integrations/Integration/Http/Internal.hs"
+      ],
+      "review": {
+        "accessibleOpening": true,
+        "progressiveDepth": true,
+        "concreteOutcome": true,
+        "sourceGrounded": true,
+        "independence": true
+      },
+      "notes": "Reviewed against the documentation methodology; snippets are source excerpts or labelled partial adaptations. Live provider tests and human reader trials remain pending.",
+      "excerpts": []
+    },
+    {
+      "path": "src/content/docs/connect/files.md",
+      "section": "connect",
+      "topics": [
+        "file-upload",
+        "service-wiring",
+        "testbed"
+      ],
+      "sources": [
+        "core/service/Service/FileUpload/Resolver.hs",
+        "core/service/Service/FileUpload/Web.hs",
+        "core/service/Service/Application.hs",
+        "testbed/src/App.hs",
+        "testbed/src/Testbed/Document/Commands/CreateDocument.hs",
+        "testbed/tests/files/upload.hurl",
+        "testbed/tests/files/upload-errors.hurl",
+        "testbed/tests/files/download.hurl",
+        "core/auth/Auth/Middleware.hs",
+        "core/service/Service/Transport/Web.hs"
+      ],
+      "review": {
+        "accessibleOpening": true,
+        "progressiveDepth": true,
+        "concreteOutcome": true,
+        "sourceGrounded": true,
+        "independence": true
+      },
+      "notes": "Reviewed against the documentation methodology; snippets are source excerpts or labelled partial adaptations. Live provider tests and human reader trials remain pending. Explicitly documents authenticated-download middleware limitation, absent automatic cleanup-worker wiring, and background file-access authority boundary.",
+      "excerpts": []
+    },
+    {
+      "path": "src/content/docs/connect/http-and-payments.md",
+      "section": "connect",
+      "topics": [
+        "http-client",
+        "outbound-integrations",
+        "integration-runtime"
+      ],
+      "sources": [
+        "integrations/Integration/Http/Request.hs",
+        "integrations/Integration/Http/Response.hs",
+        "integrations/Integration/Http/Internal.hs",
+        "integrations/Integration/Http/Retry.hs",
+        "integrations/test/Integration/Http/InternalSpec.hs",
+        "core/service/Integration.hs"
+      ],
+      "review": {
+        "accessibleOpening": true,
+        "progressiveDepth": true,
+        "concreteOutcome": true,
+        "sourceGrounded": true,
+        "independence": true
+      },
+      "notes": "Reviewed against the documentation methodology; snippets are source excerpts or labelled partial adaptations. Live provider tests and human reader trials remain pending.",
+      "excerpts": []
+    },
+    {
+      "path": "src/content/docs/connect/index.md",
+      "section": "connect",
+      "topics": [
+        "integration-runtime",
+        "service-wiring"
+      ],
+      "sources": [
+        "core/service/Integration.hs",
+        "core/service/Service/Application/Integrations.hs",
+        "core/service/Service/Integration/Dispatcher.hs"
+      ],
+      "review": {
+        "accessibleOpening": true,
+        "progressiveDepth": true,
+        "concreteOutcome": true,
+        "sourceGrounded": true,
+        "independence": true
+      },
+      "notes": "Reviewed against the documentation methodology; snippets are source excerpts or labelled partial adaptations. Live provider tests and human reader trials remain pending.",
+      "excerpts": []
+    },
+    {
+      "path": "src/content/docs/connect/provider-accounts.md",
+      "section": "connect",
+      "topics": [
+        "auth",
+        "config",
+        "integration-runtime",
+        "service-wiring"
+      ],
+      "sources": [
+        "core/service/Service/Application.hs",
+        "core/auth/Auth/OAuth2/Provider.hs",
+        "core/auth/Auth/OAuth2/Types.hs",
+        "core/auth/Auth/OAuth2/Client.hs",
+        "core/auth/Auth/OAuth2/Routes.hs",
+        "core/service/Service/Transport/Web.hs",
+        "core/auth/Auth/SecretStore.hs",
+        "core/auth/Auth/SecretStore/InMemory.hs",
+        "core/auth/Auth/OAuth2/TokenRefresh.hs",
+        "core/test/Auth/OAuth2/RoutesSpec.hs",
+        "core/test/Auth/OAuth2/TokenRefreshSpec.hs"
+      ],
+      "review": {
+        "accessibleOpening": true,
+        "progressiveDepth": true,
+        "concreteOutcome": true,
+        "sourceGrounded": true,
+        "independence": true
+      },
+      "notes": "Reviewed generic OAuth2 flow, exact config-factory shapes and source limitations: in-memory transaction/secret defaults, reactive refresh, callback error-only gap, ignored deletion failures, no provider revocation. Fictional accounting use case is explicitly adapter work. No live-provider verification or human reader trial claimed.",
+      "excerpts": []
+    },
+    {
+      "path": "src/content/docs/connect/timers.md",
+      "section": "connect",
+      "topics": [
+        "integration-runtime",
+        "service-wiring",
+        "concurrency"
+      ],
+      "sources": [
+        "core/service/Integration/Timer.hs",
+        "testbed/src/Testbed/Cart/Integrations.hs",
+        "testbed/src/App.hs",
+        "core/service/Service/Application/Integrations.hs"
+      ],
+      "review": {
+        "accessibleOpening": true,
+        "progressiveDepth": true,
+        "concreteOutcome": true,
+        "sourceGrounded": true,
+        "independence": true
+      },
+      "notes": "Reviewed against the documentation methodology; snippets are source excerpts or labelled partial adaptations. Live provider tests and human reader trials remain pending.",
+      "excerpts": [
+        {
+          "source": "testbed/src/Testbed/Cart/Integrations.hs",
+          "text": "periodicCartCreator :: Integration.Inbound\nperiodicCartCreator =\n  Timer.every Timer.Every\n    { interval = Timer.seconds 3\n    , toCommand = \\_ -> CreateCartInternal\n    }"
+        },
+        {
+          "source": "testbed/src/App.hs",
+          "text": "    |> Application.withInbound @() (\\_ -> periodicCartCreator)"
+        }
+      ]
+    },
+    {
+      "path": "src/content/docs/connect/workflows.md",
+      "section": "connect",
+      "topics": [
+        "integration-runtime",
+        "commands",
+        "testbed"
+      ],
+      "sources": [
+        "testbed/src/Testbed/Cart/Integrations/ReserveStockOnItemAdded.hs",
+        "core/service/Service/OutboundIntegration/TH.hs",
+        "core/service/Integration/Command.hs",
+        "testbed/src/App.hs",
+        "testbed/tests/scenarios/stock-reservation.hurl"
+      ],
+      "review": {
+        "accessibleOpening": true,
+        "progressiveDepth": true,
+        "concreteOutcome": true,
+        "sourceGrounded": true,
+        "independence": true
+      },
+      "notes": "Reviewed against the documentation methodology; snippets are source excerpts or labelled partial adaptations. Live provider tests and human reader trials remain pending.",
+      "excerpts": [
+        {
+          "source": "testbed/src/Testbed/Cart/Integrations/ReserveStockOnItemAdded.hs",
+          "text": "handleEvent :: CartEntity -> CartEvent -> Integration.Outbound\nhandleEvent cart event =\n  case event of\n    ItemAdded {stockId, quantity} ->\n      Integration.batch\n        [ Integration.outbound\n            Command.Emit\n              { command =\n                  ReserveStock\n                    { stockId = stockId\n                    , quantity = quantity\n                    , cartId = cart.cartId\n                    }\n              }\n        ]\n    _ -> Integration.none"
+        },
+        {
+          "source": "testbed/src/Testbed/Cart/Integrations/ReserveStockOnItemAdded.hs",
+          "text": "type instance EntityOf ReserveStockOnItemAdded = CartEntity"
+        }
+      ]
+    },
+    {
+      "path": "src/content/docs/getting-started/index.mdx",
+      "section": "getting-started",
+      "topics": [
+        "website",
+        "service-wiring",
+        "commands",
+        "queries"
+      ],
+      "sources": [
+        "neo/src/cli.rs",
+        "neo/starter/src/App.hs",
+        "neo/starter/tests/scenarios/counter-flow.hurl",
+        "neo/starter/src/Starter/Counter/Commands/IncrementCounter.hs",
+        "neo/AGENTS.md"
+      ],
+      "review": {
+        "accessibleOpening": true,
+        "progressiveDepth": true,
+        "concreteOutcome": true,
+        "sourceGrounded": true,
+        "independence": true
+      },
+      "notes": "Inspected public source and checked the stated boundaries. Setup requests follow the public starter scenario; fresh-machine execution and human reader trial are separate evidence.",
+      "excerpts": []
+    },
+    {
+      "path": "src/content/docs/getting-started/visual-ide.md",
+      "section": "getting-started",
+      "topics": [
+        "website",
+        "service-wiring",
+        "commands",
+        "queries"
+      ],
+      "sources": [
+        "neo/src/cli.rs",
+        "neo/starter/src/App.hs",
+        "neo/starter/tests/scenarios/counter-flow.hurl",
+        "neo/starter/src/Starter/Counter/Commands/IncrementCounter.hs",
+        "neo/AGENTS.md",
+        "neo/src/commands/ide.rs",
+        "neo/src/ide/sync.rs",
+        "neo/assets/ide/src/App.tsx",
+        "neo/assets/ide/src/ui/lenses/lenses.tsx",
+        "neo/assets/ide/src/ui/shell/HeaderBar.tsx"
+      ],
+      "review": {
+        "accessibleOpening": true,
+        "progressiveDepth": true,
+        "concreteOutcome": true,
+        "sourceGrounded": true,
+        "independence": true
+      },
+      "notes": "Inspected public source and checked the stated boundaries. Setup requests follow the public starter scenario; fresh-machine execution and human reader trial are separate evidence.",
+      "excerpts": []
+    },
+    {
+      "path": "src/content/docs/guides/deployment.mdx",
+      "section": "guides",
+      "topics": [
+        "website",
+        "http-transport",
+        "postgres-infra"
+      ],
+      "sources": [
+        "core/service/Service/Transport/Web.hs",
+        "core/service/Service/Query/Subscriber.hs"
+      ],
+      "review": {
+        "accessibleOpening": true,
+        "progressiveDepth": true,
+        "concreteOutcome": true,
+        "sourceGrounded": true,
+        "independence": true
+      },
+      "notes": "Existing guide URL preserved, linked to the progressive operational journey; probe semantics cross-reviewed against operational documentation.",
+      "excerpts": []
+    },
+    {
+      "path": "src/content/docs/guides/index.mdx",
+      "section": "guides",
+      "topics": [
+        "website",
+        "http-transport",
+        "postgres-infra"
+      ],
+      "sources": [
+        "core/service/Service/Transport/Web.hs",
+        "core/service/Service/Query/Subscriber.hs"
+      ],
+      "review": {
+        "accessibleOpening": true,
+        "progressiveDepth": true,
+        "concreteOutcome": true,
+        "sourceGrounded": true,
+        "independence": true
+      },
+      "notes": "Existing guide URL preserved, linked to the progressive operational journey; probe semantics cross-reviewed against operational documentation.",
+      "excerpts": []
+    },
+    {
+      "path": "src/content/docs/index.mdx",
+      "section": "start",
+      "topics": [
+        "website",
+        "commands",
+        "entities",
+        "queries"
+      ],
+      "sources": [
+        "docs/charter.md",
+        "codemap/capabilities.yaml",
+        "neo/src/cli.rs",
+        "neo/src/ide/sync.rs"
+      ],
+      "review": {
+        "accessibleOpening": true,
+        "progressiveDepth": true,
+        "concreteOutcome": true,
+        "sourceGrounded": true,
+        "independence": true
+      },
+      "notes": "Editorial review of human intent, progressive depth, fictional examples, and claim boundaries. Paper exercises are designs, not implemented order features; reader trial remains pending.",
+      "excerpts": []
+    },
+    {
+      "path": "src/content/docs/operate/contributing.md",
+      "section": "operate",
+      "topics": [
+        "governance-docs",
+        "dev-pipeline",
+        "testlib"
+      ],
+      "sources": [
+        "README.md",
+        "AGENTS.md",
+        "codemap/README.md",
+        "codemap/capabilities.yaml",
+        ".agents/skills/neo-cli-localizer/SKILL.md"
+      ],
+      "review": {
+        "accessibleOpening": true,
+        "progressiveDepth": true,
+        "concreteOutcome": true,
+        "sourceGrounded": true,
+        "independence": true
+      },
+      "notes": "Contribution is a branch after application operation, with low-entry documentation/testing improvements. Exact governed process points to authoritative live repository contract instead of duplicating its full machinery.",
+      "excerpts": []
+    },
+    {
+      "path": "src/content/docs/operate/deployment.md",
+      "section": "operate",
+      "topics": [
+        "ci-cd",
+        "http-transport",
+        "postgres-infra",
+        "service-wiring"
+      ],
+      "sources": [
+        "core/service/Service/Application.hs",
+        "core/service/Service/Transport/Web.hs",
+        "neo/src/subprocess/nix.rs",
+        "neo/src/commands/build.rs",
+        "neo/assets/templates/flake.nix.j2",
+        "neo/assets/templates/project.cabal.j2",
+        "website/src/content/docs/guides/deployment.mdx",
+        "core/test-service/Service/Query/Subscriber/ReadinessSpec.hs"
+      ],
+      "review": {
+        "accessibleOpening": true,
+        "progressiveDepth": true,
+        "concreteOutcome": true,
+        "sourceGrounded": true,
+        "independence": true
+      },
+      "notes": "Preserves established startup/readiness, direct listener connection, and shutdown issue guidance. Executable build/lookup context explicit; Kubernetes fragment labelled illustrative. No cloud rollout was performed.",
+      "excerpts": []
+    },
+    {
+      "path": "src/content/docs/operate/evolution.md",
+      "section": "operate",
+      "topics": [
+        "event-store",
+        "queries",
+        "commands"
+      ],
+      "sources": [
+        "core/service/Service/QueryObjectStore/Postgres.hs",
+        "core/service/Service/Query/Subscriber.hs",
+        "core/service/Service/Application.hs",
+        "neo/src/commands/lock.rs",
+        "neo/src/cli.rs"
+      ],
+      "review": {
+        "accessibleOpening": true,
+        "progressiveDepth": true,
+        "concreteOutcome": true,
+        "sourceGrounded": true,
+        "independence": true
+      },
+      "notes": "Historical compatibility described as required application evidence. Domain lock does not claim to migrate events. Personalisation exercise is explicitly shop design, not implemented example.",
+      "excerpts": []
+    },
+    {
+      "path": "src/content/docs/operate/index.md",
+      "section": "operate",
+      "topics": [
+        "service-wiring",
+        "event-store",
+        "http-transport"
+      ],
+      "sources": [
+        "core/service/Service/Application.hs",
+        "core/service/Service/Transport/Web.hs",
+        "neo/starter/src/App.hs",
+        "testbed/src/App.hs"
+      ],
+      "review": {
+        "accessibleOpening": true,
+        "progressiveDepth": true,
+        "concreteOutcome": true,
+        "sourceGrounded": true,
+        "independence": true
+      },
+      "notes": "Editorial review: accessible operational promises and linked journey; distinguishes fictional commerce from executable public examples. Human reader trial pending.",
+      "excerpts": []
+    },
+    {
+      "path": "src/content/docs/operate/observability.md",
+      "section": "operate",
+      "topics": [
+        "core-primitives",
+        "http-transport",
+        "queries"
+      ],
+      "sources": [
+        "core/service/Service/Application.hs",
+        "core/service/Service/Transport/Web.hs",
+        "core/core/Log.hs",
+        "core/service/Service/Query/Subscriber.hs",
+        "testbed/scripts/cold-start-readiness.sh"
+      ],
+      "review": {
+        "accessibleOpening": true,
+        "progressiveDepth": true,
+        "concreteOutcome": true,
+        "sourceGrounded": true,
+        "independence": true
+      },
+      "notes": "Checked aggregate readiness body and log levels/output format. Progress values are message text, not claimed exported metrics. No production monitoring integration was exercised.",
+      "excerpts": []
+    },
+    {
+      "path": "src/content/docs/operate/performance.md",
+      "section": "operate",
+      "topics": [
+        "commands",
+        "queries",
+        "postgres-infra",
+        "concurrency"
+      ],
+      "sources": [
+        "core/service/Service/CommandExecutor/Core.hs",
+        "core/service/Service/Query/Subscriber.hs",
+        "core/service/Service/QueryObjectStore/Postgres.hs",
+        "core/test-service/Service/EventStore/Postgres/PoolBudgetSpec.hs",
+        "core/test-service/Service/Query/Subscriber/ReadinessSpec.hs",
+        "testbed/scripts/cold-start-readiness.sh"
+      ],
+      "review": {
+        "accessibleOpening": true,
+        "progressiveDepth": true,
+        "concreteOutcome": true,
+        "sourceGrounded": true,
+        "independence": true
+      },
+      "notes": "Defaults and retry bound checked against source. Explicitly avoids universal throughput and pool-budget promises; warns destructive regression script belongs only in disposable test environment. No new benchmark performed.",
+      "excerpts": []
+    },
+    {
+      "path": "src/content/docs/operate/persistence.md",
+      "section": "operate",
+      "topics": [
+        "event-store",
+        "queries",
+        "file-upload",
+        "postgres-infra",
+        "service-wiring"
+      ],
+      "sources": [
+        "core/service/Service/Application.hs",
+        "core/service/Service/Transport/Web.hs",
+        "neo/starter/src/App.hs",
+        "testbed/src/App.hs",
+        "testbed/src/Testbed/Config.hs",
+        "core/service/Service/QueryObjectStore/Postgres.hs",
+        "core/service/Service/Query/Subscriber.hs",
+        "core/service/Service/FileUpload/Web.hs"
+      ],
+      "review": {
+        "accessibleOpening": true,
+        "progressiveDepth": true,
+        "concreteOutcome": true,
+        "sourceGrounded": true,
+        "independence": true
+      },
+      "notes": "Checked current Postgres config fields, independent query storage, and Subscriber.new wiring. No claim that persistent query rows automatically resume checkpoints. Restart/restore exercise is proposed, not executed. Inspected missing cleanup-worker startup and made its operational boundary explicit.",
+      "excerpts": []
+    },
+    {
+      "path": "src/content/docs/operate/recovery.md",
+      "section": "operate",
+      "topics": [
+        "event-store",
+        "queries",
+        "integration-runtime",
+        "file-upload"
+      ],
+      "sources": [
+        "core/service/Service/Application.hs",
+        "core/service/Service/Transport/Web.hs",
+        "core/service/Service/Query/Subscriber.hs",
+        "core/service/Service/QueryObjectStore/Postgres.hs",
+        "testbed/src/App.hs",
+        "core/service/Service/FileUpload/Web.hs"
+      ],
+      "review": {
+        "accessibleOpening": true,
+        "progressiveDepth": true,
+        "concreteOutcome": true,
+        "sourceGrounded": true,
+        "independence": true
+      },
+      "notes": "Recovery guidance distinguishes history, blobs, projections, and external effects. No automated disaster-recovery or payment reconciliation feature claimed. Restore rehearsal and live-provider tests remain pending. Inspected missing cleanup-worker startup and made its operational boundary explicit.",
+      "excerpts": []
+    },
+    {
+      "path": "src/content/docs/operate/security.md",
+      "section": "operate",
+      "topics": [
+        "auth",
+        "config",
+        "service-wiring",
+        "postgres-infra"
+      ],
+      "sources": [
+        "core/service/Service/AccessControl.hs",
+        "core/service/Service/Application.hs",
+        "core/service/Service/Infra/Postgres/ConnectionConfig.hs",
+        "core/service/Service/Infra/Postgres/SslMode.hs",
+        "testbed/src/Testbed/Config.hs",
+        "testbed/src/App.hs",
+        "neo/src/cli.rs"
+      ],
+      "review": {
+        "accessibleOpening": true,
+        "progressiveDepth": true,
+        "concreteOutcome": true,
+        "sourceGrounded": true,
+        "independence": true
+      },
+      "notes": "Authorisation expressions labelled partial and ownership field assumption explicit. Distinguishes typed-secret handling from arbitrary log redaction; no compliance or security certification claimed.",
+      "excerpts": []
+    },
+    {
+      "path": "src/content/docs/reference/capabilities.md",
+      "section": "reference",
+      "topics": [
+        "core-primitives",
+        "traits",
+        "concurrency",
+        "system",
+        "http-client",
+        "json",
+        "schema",
+        "auth",
+        "config",
+        "language-tooling",
+        "event-store",
+        "commands",
+        "entities",
+        "queries",
+        "http-transport",
+        "integration-runtime",
+        "file-upload",
+        "service-wiring",
+        "service-th",
+        "postgres-infra",
+        "testlib",
+        "outbound-integrations",
+        "testbed"
+      ],
+      "sources": [
+        "codemap/capabilities.yaml",
+        "codemap/signatures/nhcore-service.txt",
+        "codemap/signatures/nhcore-core.txt",
+        "testbed/src/App.hs",
+        "neo/src/cli.rs"
+      ],
+      "review": {
+        "accessibleOpening": true,
+        "progressiveDepth": true,
+        "concreteOutcome": true,
+        "sourceGrounded": true,
+        "independence": true
+      },
+      "notes": "Navigation map based on public capability ownership and signatures; deeper implementation evidence lives with feature chapters. Deliberately excludes unrelated integration. Distinguishes building blocks from finished commerce features.",
+      "excerpts": []
+    },
+    {
+      "path": "src/content/docs/reference/cli.md",
+      "section": "reference",
+      "topics": [
+        "website"
+      ],
+      "sources": [
+        "neo/src/cli.rs",
+        "neo/src/commands/build.rs",
+        "neo/src/commands/test.rs",
+        "neo/src/commands/validate.rs",
+        "neo/src/commands/lock.rs",
+        "neo/src/subprocess/nix.rs",
+        "neo/assets/templates/flake.nix.j2",
+        "neo/assets/templates/project.cabal.j2",
+        "neo/src/git.rs",
+        "neo/src/commands/skills.rs"
+      ],
+      "review": {
+        "accessibleOpening": true,
+        "progressiveDepth": true,
+        "concreteOutcome": true,
+        "sourceGrounded": true,
+        "independence": true
+      },
+      "notes": "CLI flags and validation codes checked from source. Fixed test readiness probe port and any-HTTP-response semantics explicit. inspect sync identified as mutation. Installed-binary help may differ; no local release installation implied.",
+      "excerpts": []
+    },
+    {
+      "path": "src/content/docs/reference/glossary.md",
+      "section": "reference",
+      "topics": [
+        "website",
+        "service-wiring",
+        "commands",
+        "queries"
+      ],
+      "sources": [
+        "codemap/capabilities.yaml",
+        "docs/charter.md"
+      ],
+      "review": {
+        "accessibleOpening": true,
+        "progressiveDepth": true,
+        "concreteOutcome": true,
+        "sourceGrounded": true,
+        "independence": true
+      },
+      "notes": "Inspected public source and checked the stated boundaries. Setup requests follow the public starter scenario; fresh-machine execution and human reader trial are separate evidence.",
+      "excerpts": []
+    },
+    {
+      "path": "src/content/docs/reference/troubleshooting.md",
+      "section": "reference",
+      "topics": [
+        "http-transport",
+        "queries",
+        "postgres-infra",
+        "event-store"
+      ],
+      "sources": [
+        "core/service/Service/Application.hs",
+        "core/service/Service/Transport/Web.hs",
+        "neo/src/commands/test.rs",
+        "neo/src/commands/validate.rs",
+        "neo/src/commands/lock.rs",
+        "neo/src/subprocess/nix.rs",
+        "core/service/Service/Infra/Postgres/ConnectionConfig.hs"
+      ],
+      "review": {
+        "accessibleOpening": true,
+        "progressiveDepth": true,
+        "concreteOutcome": true,
+        "sourceGrounded": true,
+        "independence": true
+      },
+      "notes": "Troubleshooting starts from expected result and source-supported boundaries. Does not suggest event deletion, broad authorisation relaxation, or blind external retries.",
+      "excerpts": []
+    },
+    {
+      "path": "src/content/docs/start/a-shop-on-paper.md",
+      "section": "start",
+      "topics": [
+        "website",
+        "commands",
+        "entities",
+        "queries"
+      ],
+      "sources": [
+        "docs/charter.md",
+        "codemap/capabilities.yaml",
+        "neo/src/cli.rs",
+        "neo/src/ide/sync.rs"
+      ],
+      "review": {
+        "accessibleOpening": true,
+        "progressiveDepth": true,
+        "concreteOutcome": true,
+        "sourceGrounded": true,
+        "independence": true
+      },
+      "notes": "Editorial review of human intent, progressive depth, fictional examples, and claim boundaries. Paper exercises are designs, not implemented order features; reader trial remains pending.",
+      "excerpts": []
+    },
+    {
+      "path": "src/content/docs/start/event-modeling.md",
+      "section": "start",
+      "topics": [
+        "website",
+        "commands",
+        "entities",
+        "queries"
+      ],
+      "sources": [
+        "docs/charter.md",
+        "codemap/capabilities.yaml",
+        "neo/src/cli.rs",
+        "neo/src/ide/sync.rs"
+      ],
+      "review": {
+        "accessibleOpening": true,
+        "progressiveDepth": true,
+        "concreteOutcome": true,
+        "sourceGrounded": true,
+        "independence": true
+      },
+      "notes": "Editorial review of human intent, progressive depth, fictional examples, and claim boundaries. Paper exercises are designs, not implemented order features; reader trial remains pending.",
+      "excerpts": []
+    },
+    {
+      "path": "src/content/docs/start/fit-and-tradeoffs.md",
+      "section": "start",
+      "topics": [
+        "website",
+        "commands",
+        "entities",
+        "queries"
+      ],
+      "sources": [
+        "docs/charter.md",
+        "codemap/capabilities.yaml",
+        "neo/src/cli.rs",
+        "neo/src/ide/sync.rs"
+      ],
+      "review": {
+        "accessibleOpening": true,
+        "progressiveDepth": true,
+        "concreteOutcome": true,
+        "sourceGrounded": true,
+        "independence": true
+      },
+      "notes": "Editorial review of human intent, progressive depth, fictional examples, and claim boundaries. Paper exercises are designs, not implemented order features; reader trial remains pending.",
+      "excerpts": []
+    },
+    {
+      "path": "src/content/docs/start/index.md",
+      "section": "start",
+      "topics": [
+        "website",
+        "commands",
+        "entities",
+        "queries"
+      ],
+      "sources": [
+        "docs/charter.md",
+        "codemap/capabilities.yaml",
+        "neo/src/cli.rs",
+        "neo/src/ide/sync.rs"
+      ],
+      "review": {
+        "accessibleOpening": true,
+        "progressiveDepth": true,
+        "concreteOutcome": true,
+        "sourceGrounded": true,
+        "independence": true
+      },
+      "notes": "Editorial review of human intent, progressive depth, fictional examples, and claim boundaries. Paper exercises are designs, not implemented order features; reader trial remains pending.",
+      "excerpts": []
+    },
+    {
+      "path": "src/content/docs/start/trusting-your-agent.md",
+      "section": "start",
+      "topics": [
+        "website",
+        "commands",
+        "entities",
+        "queries"
+      ],
+      "sources": [
+        "docs/charter.md",
+        "codemap/capabilities.yaml",
+        "neo/src/cli.rs",
+        "neo/src/ide/sync.rs"
+      ],
+      "review": {
+        "accessibleOpening": true,
+        "progressiveDepth": true,
+        "concreteOutcome": true,
+        "sourceGrounded": true,
+        "independence": true
+      },
+      "notes": "Editorial review of human intent, progressive depth, fictional examples, and claim boundaries. Paper exercises are designs, not implemented order features; reader trial remains pending.",
+      "excerpts": []
+    },
+    {
+      "path": "src/content/docs/start/why-neohaskell.md",
+      "section": "start",
+      "topics": [
+        "website",
+        "commands",
+        "entities",
+        "queries"
+      ],
+      "sources": [
+        "docs/charter.md",
+        "codemap/capabilities.yaml",
+        "neo/src/cli.rs",
+        "neo/src/ide/sync.rs"
+      ],
+      "review": {
+        "accessibleOpening": true,
+        "progressiveDepth": true,
+        "concreteOutcome": true,
+        "sourceGrounded": true,
+        "independence": true
+      },
+      "notes": "Editorial review of human intent, progressive depth, fictional examples, and claim boundaries. Paper exercises are designs, not implemented order features; reader trial remains pending.",
+      "excerpts": []
+    }
+  ]
+}

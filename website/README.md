@@ -3,10 +3,14 @@
 The documentation site for [NeoHaskell](https://github.com/neohaskell/NeoHaskell),
 built with [Astro Starlight](https://starlight.astro.build/).
 
-This is a deliberately small scaffold: a home page, a getting-started page, and an
-Architecture Decision Records section generated from the repository's decision log.
-It is published in English (the source language) plus Spanish, French, Armenian,
-Japanese, and Russian; the non-English locales are kept in sync automatically by
+The human docs follow a fictional shop from business intent through implementation,
+integrations, and operation. Pages progressively deepen the explanation while
+supporting evaluators and direct consultation. The approved authoring method lives
+in [DOCUMENTATION_PLAN.md](DOCUMENTATION_PLAN.md); verification and its limits live
+in [DOCUMENTATION_REVIEW.md](DOCUMENTATION_REVIEW.md).
+
+English is the source language. Spanish, French, Armenian,
+Japanese, and Russian locales are kept in sync automatically by
 [`.github/workflows/translate.yml`](../.github/workflows/translate.yml).
 
 ## Prerequisites
@@ -31,6 +35,9 @@ Open [localhost:4321](http://localhost:4321) to view the site.
 pnpm build      # production build into ./dist
 pnpm preview    # serve the production build locally
 pnpm check      # type-check and validate content collections
+pnpm test:docs  # positive/negative fixtures for the documentation gate
+pnpm check:docs # inventory, public evidence, excerpts, links, and review records
+pnpm check:links # after build: rendered routes and anchors
 ```
 
 ## Content
@@ -40,10 +47,42 @@ Documentation source files live in `src/content/docs/`:
 | Path | Content |
 |------|---------|
 | `index.mdx` | Home page |
-| `getting-started/index.mdx` | Setup pointer to the repository |
+| `start/**` | Philosophy, evaluation, no-install shop story, modeling, and trust |
+| `getting-started/**` | Executable setup and visual IDE orientation |
+| `build/**` | Cart/stock, commands, state, queries, access, tests, and language |
+| `connect/**` | External providers, email, uploads, documents, AI, and timers |
+| `operate/**` | Persistence, deployment, recovery, evolution, and contribution |
+| `reference/**` | Capability map, CLI, glossary, and troubleshooting |
+| `guides/**` | Preserved guide URLs and deployment probe reference |
 | `adrs/index.mdx` | **Generated** ADR landing page — do not edit by hand |
 | `adrs/<slug>.md` | **Generated** ADR detail pages — gitignored, do not edit |
 | `<locale>/**` | Localized pages for `es`, `fr`, `hy`, `ja`, `ru` |
+
+## Author and verify a human page
+
+Read the plan before writing. Give the page an accessible business opening, a
+purposeful increase in depth, concrete evidence, and useful onward links. Use
+flexible headings. Distinguish runnable public examples, partial snippets, and
+shop-specific design exercises. Human–agent collaboration belongs here;
+agent-consumed instructions belong in their separate documentation project.
+
+`documentation-manifest.json` is the maintained inventory. Add each page to
+`requiredPages` and `pages`, record the public source files actually inspected,
+and complete the per-page semantic review. Register literal code excerpts in
+`excerpts` when they are copied directly. `sourceHashes` uses SHA-256 over the
+UTF-8 source bytes. When the gate reports a changed source, inspect its diff and
+review every page listing it before updating that fingerprint. Update affected
+excerpts, claims, and review notes together; refreshing hashes alone is not review.
+
+Use `sidebar.order` to preserve the intended learning sequence, and link each new
+page from an existing page. The checker rejects unreachable pages and stale
+registered evidence. Run all checks above and inspect the rendered result.
+`.github/workflows/docs.yml` runs the same checks on every PR and main push, so
+an API change can flag affected docs even when no Markdown changed.
+
+The source review proves what the inspected implementation says; compilation,
+live-provider tests, and observed human comprehension are separate evidence.
+Record those boundaries honestly in the review document.
 
 ### Architecture Decision Records
 

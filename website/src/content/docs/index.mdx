@@ -1,35 +1,44 @@
 ---
-title: NeoHaskell
-description: A newcomer-friendly dialect of Haskell with compiler-enforced event sourcing.
-template: splash
-hero:
-  tagline: A newcomer-friendly dialect of Haskell. Write your business logic with compiler guarantees; everything else plugs in around it.
-  actions:
-    - text: View on GitHub
-      link: https://github.com/neohaskell/NeoHaskell
-      icon: external
-    - text: Architecture Decision Records
-      link: /adrs/
-      icon: open-book
-      variant: minimal
+title: "NeoHaskell"
+description: "Understand your application. Build it with an agent. Check that it behaves as you intended."
 ---
 
-## What is NeoHaskell?
+Your shop starts with a simple promise: a customer asks for a mug, and you deliver
+what you agreed. Software makes that promise harder to follow when payments,
+stock, emails, and people all act at different times.
 
-NeoHaskell is a dialect of Haskell designed for beginners and pragmatists. It makes
-event sourcing a first-class language feature: events, entities, commands, queries,
-services, and integrations are language primitives, not library patterns. If a state
-transition is wrong, the program does not compile.
+NeoHaskell gives those actions and their consequences a shared structure. You can
+model what should happen, work with a coding agent to implement it, and check the
+result against the business you understand.
 
-You write the **core** — the business rules that make your product yours. NeoHaskell
-handles the **shell** around them: HTTP endpoints, JSON schemas, CLI parsers, event
-persistence, and a complete audit trail.
+## Choose your next step
 
-## Where to go next
+- **[Understand the idea](/start/why-neohaskell/).** What NeoHaskell helps with,
+  why its choices matter, and where the costs appear.
+- **[Try a shop story without installing anything](/start/a-shop-on-paper/).**
+  Work through one small decision and catch an agent's misunderstanding.
+- **[Start building](/getting-started/).** Run the starter, explore its model,
+  then work through the public cart example.
+- **[Find a specific capability](/reference/capabilities/).** Jump directly to
+  configuration, permissions, integrations, AI, deployment, and other topics.
 
-- **[Getting started](/getting-started/)** — set up a NeoHaskell project.
-- **[Deployment guide](/guides/deployment/)** — configure startup, liveness, and readiness probes.
-- **[Architecture Decision Records](/adrs/)** — the decisions behind the language,
-  generated from the repository's decision log.
-- **[NeoHaskell on GitHub](https://github.com/neohaskell/NeoHaskell)** — source, issues,
-  and the full documentation in the repository.
+## A journey you can grow into
+
+| When you want to… | Start here |
+| --- | --- |
+| Decide whether this approach fits your company | [Fit and tradeoffs](/start/fit-and-tradeoffs/) |
+| Describe what your application should do | [Event modeling](/start/event-modeling/) |
+| Delegate implementation with confidence | [Working with your agent](/start/trusting-your-agent/) |
+| Make your first shop behaviour work | [Build the shop](/build/) |
+| Connect email, documents, payments, or AI | [Connect the shop](/connect/) |
+| Deploy, recover, and change your application | [Operate and evolve](/operate/) |
+
+Each page begins with the situation and becomes more detailed as you read. You can
+stop after understanding the business decision, continue into implementation, or
+return later for a specific answer. [How to use these docs](/start/) explains the
+paths and the difference between a working example and an exercise.
+
+The examples grow around a fictional mug shop. The executable foundations are the
+public NeoHaskell starter and reference application. Payment, shipping, and other
+shop-specific policies are identified as designs you implement; they are not a
+prebuilt commerce product hidden behind the tutorial.

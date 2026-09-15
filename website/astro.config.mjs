@@ -9,7 +9,7 @@ export default defineConfig({
 		starlight({
 			title: 'NeoHaskell',
 			description:
-				'A newcomer-friendly dialect of Haskell with compiler-enforced event sourcing.',
+				'Build understandable applications with events, a visual model, and your coding agent.',
 			social: [
 				{
 					icon: 'github',
@@ -32,17 +32,12 @@ export default defineConfig({
 				ru: { label: 'Русский', lang: 'ru' },
 			},
 			sidebar: [
-				{
-					label: 'Getting Started',
-					link: '/getting-started/',
-					translations: {
-						es: 'Comenzando',
-						fr: 'Commencer',
-						hy: 'Սկսել',
-						ja: 'はじめに',
-						ru: 'Начало работы',
-					},
-				},
+                { label: 'Start and evaluate', items: [{ autogenerate: { directory: 'start' } }] },
+                { label: 'Get started', items: [{ autogenerate: { directory: 'getting-started' } }] },
+                { label: 'Build the shop', collapsed: true, items: [{ autogenerate: { directory: 'build' } }] },
+                { label: 'Connect the shop', collapsed: true, items: [{ autogenerate: { directory: 'connect' } }] },
+                { label: 'Operate and evolve', collapsed: true, items: [{ autogenerate: { directory: 'operate' } }] },
+                { label: 'Reference', collapsed: true, items: [{ autogenerate: { directory: 'reference' } }] },
 				{
 					label: 'Architecture Decision Records',
 					// Collapsible group, folded by default — the 70 records shouldn't

@@ -1,17 +1,15 @@
 ---
-title: Guides
-description: Practical guidance for building and operating NeoHaskell services.
-sidebar:
-  order: 0
+title: Practical guides
+description: Find the shop journey and its operational references.
 ---
 
-import { Card, CardGrid } from '@astrojs/starlight/components';
+Choose the stage of your application that needs attention. Each guide begins with
+the business situation and develops the implementation and evidence you need.
 
-<CardGrid>
-  <Card title="Deployment" icon="rocket">
-    Configure startup, liveness, and readiness probes; verify that a rollout
-    reached the new revision; and preserve direct Postgres listener sessions.
+- [Build the shop](/build/): commands, state, queries, permissions, and tests.
+- [Connect the shop](/connect/): external services, files, email, and AI features.
+- [Operate and evolve](/operate/): persistence, deployment, diagnosis, and recovery.
+- [Deployment probe reference](/guides/deployment/): the existing probe and rollout contract.
+- [Capability reference](/reference/capabilities/): jump to one specific topic.
 
-    [Read →](/guides/deployment/)
-  </Card>
-</CardGrid>
+If you are evaluating the approach, start with [fit and tradeoffs](/start/fit-and-tradeoffs/).

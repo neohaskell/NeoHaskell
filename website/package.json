@@ -16,7 +16,10 @@
     "preview": "astro preview",
     "precheck": "node scripts/generate-adrs.mjs",
     "check": "astro check",
-    "astro": "astro"
+    "astro": "astro",
+    "check:docs": "node scripts/check-docs.mjs --check",
+    "test:docs": "node scripts/check-docs.mjs --self-test",
+    "check:links": "node scripts/check-docs.mjs --built"
   },
   "dependencies": {
     "@astrojs/starlight": "^0.41.3",
