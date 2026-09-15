@@ -33,7 +33,7 @@ extensions, not a claimed complete commerce product.
   disclosure, and search results for stock. This is UI review, not a human reader trial.
 - `./dev doctor`, `./dev workflow-check`, `./dev codemap-check`,
   `./dev adr-website --check`, `./dev spec-check --criteria-tests origin/main`,
-  `./dev spec-drift docs/changes/012-human-documentation.md`, local/committed
+  `./dev spec-drift docs/changes/013-human-documentation.md`, local/committed
   design-review presence checks, release-fragment checks, and the expectation guard passed.
 
 The full Haskell suite was attempted with `./dev exec ./dev test-all --require-all`.

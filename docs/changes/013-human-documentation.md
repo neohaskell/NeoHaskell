@@ -1,4 +1,4 @@
-# Change 012: Teach the human ecommerce journey with progressive depth
+# Change 013: Teach the human ecommerce journey with progressive depth
 
 Publish the approved human documentation methodology and a source-grounded learning
 journey from evaluating NeoHaskell through building, connecting, operating, and
