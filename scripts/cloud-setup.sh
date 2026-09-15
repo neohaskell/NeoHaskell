@@ -2,28 +2,10 @@
 #
 # Cloud environment SETUP SCRIPT for NeoHaskell.
 #
-# Paste the contents of this file into the Claude Code web UI:
-#   environment settings → "Setup script".
-#
-# It runs ONCE as root before Claude launches; the resulting filesystem is
-# then snapshotted and reused by later sessions, so /nix/store and the cabal
-# index are already on disk and this never re-runs — until you change the
-# script, change the environment's allowed hosts, or the ~7-day cache expires.
-# (Resuming an existing session never re-runs it.)
-#
-# Why a setup script and not only a SessionStart hook:
-#   - Setup scripts are snapshotted → the expensive Nix install + dev-shell
-#     pull happens once, not every session.
-#   - SessionStart hooks run every session and are NOT cached, so anything they
-#     download is re-fetched each time.
-# The companion .claude/hooks/session-start.sh keeps only the per-session work
-# (PATH export + a background build warm-up).
-#
-# Time budget: keep this under ~5 minutes so the environment cache can build.
-# The dev-shell warm in step 3 is the long pole; it should fit when the binary
-# caches below are reachable. If your environment can't pull the toolchain in
-# time and the snapshot fails to build, drop step 3 here and let the
-# SessionStart hook warm the dev shell instead (slower per session).
+# Configure this as a cloud environment setup command before agent work.
+# It installs Nix and warms the pinned toolchain. Run in a disposable Linux
+# environment with root access; local contributors use README.md instead.
+# No agent-specific session hook is required.
 #
 # Network: the environment's allowed hosts MUST include the Nix binary caches
 #   cache.iog.io, neohaskell.cachix.org, cache.nixos.org, releases.nixos.org
@@ -83,7 +65,7 @@ fi
 # Pulls GHC + tooling from the caches into /nix/store and populates the cabal
 # index — both land on disk and are captured by the snapshot. Tolerant of a
 # transient cache hiccup: the dev shell simply resolves on first use instead.
-PROJECT_DIR="${CLAUDE_PROJECT_DIR:-}"
+PROJECT_DIR="${NEOHASKELL_PROJECT_DIR:-}"
 if [ -z "${PROJECT_DIR}" ] || [ ! -f "${PROJECT_DIR}/flake.nix" ]; then
   for d in /home/user/NeoHaskell "$(pwd)" /root/NeoHaskell /workspace/NeoHaskell; do
     if [ -f "${d}/flake.nix" ]; then PROJECT_DIR="${d}"; break; fi

@@ -5,7 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 cd "${ROOT}"
 
-SKILL=".pi/skills/neohaskell-event-store-regression-specs/SKILL.md"
+SKILL=".agents/skills/neohaskell-event-store-regression-specs/SKILL.md"
 HELPERS="core/testlib/Test/Service/EventStore/Regression.hs"
 TIMEOUT_SECONDS="${REGRESSION_SMOKE_TIMEOUT_SECONDS:-180}"
 RECEIPT="${REGRESSION_SMOKE_RECEIPT:-.pipeline/regression-smoke.json}"

@@ -1,4 +1,4 @@
-# Dependabot triage — auto-merge the safe updates, explain the dangerous ones.
+# Dependabot triage — auto-merge patch/minor updates; label majors for human review.
 #
 # Policy (ADR-0074):
 #   patch / minor  → enable GitHub's native auto-merge (squash). GitHub then
@@ -7,18 +7,10 @@
 #                    This workflow never decides "CI passed" itself — branch
 #                    protection is the only judge, so the guarantee cannot rot
 #                    when a new gate is added.
-#   major          → never auto-merged. Labelled `dependency-major`; the
-#                    breaking-change analysis is written by Claude in
-#                    `dependabot-major-review.yml`, which this run triggers.
+#   major          → never auto-merged. Labelled `dependency-major`;
+#                    maintainers review breaking changes and migration steps manually.
 #
-# `on: pull_request` (not pull_request_target) is the pattern GitHub documents
-# for Dependabot auto-merge: the run is attributed to dependabot[bot], so it
-# gets the Dependabot secret store and a token whose write scopes come from the
-# `permissions:` block below. Consequence, and the reason the Claude half lives
-# in its own workflow: `secrets.*` here resolves against **Dependabot** secrets,
-# never Actions secrets. Everything this file needs is `secrets.GITHUB_TOKEN`,
-# which is always present; anything needing a real credential runs downstream in
-# a `workflow_run`, in base-repo context.
+# This pull_request workflow uses only GITHUB_TOKEN with per-job permissions.
 name: Dependabot auto-merge
 
 on: pull_request

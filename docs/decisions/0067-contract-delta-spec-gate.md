@@ -114,7 +114,7 @@ through a human, so it is guarded twice. **Locally**, a PreToolUse hook
 (`expectation-guard.py`, same self-test contract as the dialect guard) is the
 fast teacher: it blocks edits that remove or reword existing expectation lines
 unless the maintainer-authored, never-committed marker
-`.claude/allow-expectation-edits` exists (no inline escape hatch), and it
+`.agents/allow-expectation-edits` exists (no inline escape hatch), and it
 fails loud-open on unparseable input rather than silently disabling itself.
 **In CI** — the enforced backstop — the `expectations` job census-diffs the
 committed test files against the merge base and blocks a net-removed/reworded

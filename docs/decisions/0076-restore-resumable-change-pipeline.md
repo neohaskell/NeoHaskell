@@ -26,7 +26,7 @@ the whole tree to an old commit would discard those independent controls.
 
 Restore the contract-delta pipeline as the sole active change process:
 
-1. `.pi/skills/neohaskell-pipeline/SKILL.md` is the canonical discoverable
+1. `.agents/skills/neohaskell-pipeline/SKILL.md` is the canonical discoverable
    end-to-end playbook.
 2. `.pipeline/state.json` is the authoritative, local, gitignored resume state,
    manipulated only through `./dev pipeline`.
@@ -44,7 +44,7 @@ Restore the contract-delta pipeline as the sole active change process:
 5. Risk-tiered design reviews remain governed by ADR-0069: performance records
    are committed; security records stay local and gitignored.
 6. The current expectation override remains
-   `.claude/allow-expectation-edits`; restoring the pipeline does not roll back
+   `.agents/allow-expectation-edits`; restoring the pipeline does not roll back
    that later hardening.
 
 All repository artifacts specific to the Beads process are deleted rather than

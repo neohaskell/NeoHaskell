@@ -104,12 +104,11 @@ the activity vocabulary is `localization`, `index`, `test-scaffolding`,
 7. **test-writing** — tests FIRST, from the criteria table, red before any
    implementation. Time scaffolding, compilation, and the red run separately with
    telemetry activities `test-scaffolding`, `compilation`, and `test-execution`.
-   Never weaken an existing expectation. Under the harness
-   configured by `.claude/settings.json`, the expectation-guard hook blocks it
-   without the maintainer marker (`.claude/allow-expectation-edits`). Pi does
-   not install those hooks: before continuing in Pi, run `python3
-   .claude/hooks/expectation-guard.py --pr-diff
-   <base-ref>`; CI runs the same census. New spec modules: register in the
+   Never weaken an existing expectation. Before continuing, run `python3
+   scripts/guards/expectation-guard.py --pr-diff <base-ref>`; CI runs the same
+   census. Trusted Codex patch hooks provide earlier feedback; the hooks and
+   direct fragment checks use the maintainer-created marker
+   `.agents/allow-expectation-edits`. New spec modules: register in the
    suite's `Main.hs` AND cabal `other-modules` (only `nhcore-test` is
    hspec-discovered).
 8. **implement** — `neohaskell-implementer` skill; repair loop via

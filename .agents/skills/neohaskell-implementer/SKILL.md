@@ -42,12 +42,9 @@ instances the marker emits. Do not copy the boilerplate of a pre-marker module.
 
 ## Dialect (portable gates: hlint → GHC; optional edit feedback)
 
-The style table lives in `AGENTS.md` — read it. The harness configured by
-`.claude/settings.json` adds an **edit hook** (~50ms) that rejects `$`, `where`
-clauses, `Either`, `pure`/`return` usage, vanilla imports, unqualified open
-imports, and `case-of-Bool` on ADDED lines. Pi does not install that hook, so do
-not assume an edit was blocked. In every harness, run the portable gates in
-order:
+The style table lives in `AGENTS.md` — read it. Trusted Codex hooks adapt `apply_patch` to the shared guards and format Haskell
+edits. Use `scripts/guards/dialect-guard.py` for direct fragment diagnostics, and run
+the portable gates in order:
 
 1. **`./dev lint`** (seconds): dialect-first hlint — vanilla modules are
    restricted to their Core wrappers + grandfathered boundaries.

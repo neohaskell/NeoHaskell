@@ -1,0 +1,97 @@
+#!/usr/bin/env python3
+"""Validate the Codex migration destinations and test loss-of-capability mutations."""
+import json
+from pathlib import Path
+import re
+import shutil
+import sys
+import tempfile
+import tomllib
+
+ROOT = Path(__file__).resolve().parent.parent
+# Every removed instruction entrypoint has an explicit Codex destination.
+GUIDES = {
+    'CLAUDE.md': 'AGENTS.md',
+    'core/CLAUDE.md': 'core/AGENTS.md',
+    'core/service/CLAUDE.md': 'core/service/AGENTS.md',
+    'integrations/CLAUDE.md': 'integrations/AGENTS.md',
+    'testbed/CLAUDE.md': 'testbed/AGENTS.md',
+    'neo/CLAUDE.md': 'neo/AGENTS.md',
+    'neo/assets/ide/CLAUDE.md': 'neo/assets/ide/AGENTS.md',
+}
+
+
+def check(root):
+    errors = []
+    for old, new in GUIDES.items():
+        path = root / new
+        if not path.is_file() or not path.read_text().strip():
+            errors.append(f'missing migration destination: {old} -> {new}')
+            continue
+        text = path.read_text()
+        if re.search(r'^@\S+', text, re.M):
+            errors.append(f'{new} uses a legacy @import instead of Codex instructions')
+        for target in re.findall(r'\]\(([^)]+)\)', text):
+            if '://' not in target and not (path.parent / target.split('#')[0]).exists():
+                errors.append(f'{new}: dangling instruction link {target}')
+    try:
+        config = tomllib.loads((root / '.codex/config.toml').read_text())
+        if config.get('sandbox_mode') != 'workspace-write' or config.get('approval_policy') != 'on-request':
+            errors.append('Codex project sandbox defaults missing')
+        hooks = json.loads((root / '.codex/hooks.json').read_text())['hooks']
+        for event in ('PreToolUse', 'PostToolUse', 'SessionStart'):
+            groups = hooks.get(event, [])
+            if not groups or not any('scripts/guards/codex-hooks.py' in h.get('command', '')
+                                     for g in groups for h in g.get('hooks', [])):
+                errors.append(f'missing migrated Codex hook: {event}')
+        if not (root / 'scripts/guards/codex-hooks.py').is_file():
+            errors.append('missing Codex hook adapter')
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        errors.append(f'invalid Codex configuration: {exc}')
+    return errors
+
+
+def self_test():
+    paths = list(GUIDES.values()) + ['.codex/config.toml', '.codex/hooks.json',
+             'scripts/guards/codex-hooks.py']
+    # Link targets from real guides are represented without copying product trees.
+    def fixture(root):
+        for name in paths:
+            dest = root / name
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(ROOT / name, dest)
+        for name in GUIDES.values():
+            path = root / name
+            for target in re.findall(r'\]\(([^)]+)\)', path.read_text()):
+                if '://' in target: continue
+                dest = (path.parent / target.split('#')[0]).resolve()
+                if not dest.exists():
+                    dest.parent.mkdir(parents=True, exist_ok=True)
+                    if target.endswith('/'): dest.mkdir()
+                    else: dest.write_text('reference\n')
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        fixture(root)
+        assert not check(root), check(root)
+        p = root / 'core/AGENTS.md'
+        original = p.read_text(); p.unlink()
+        assert any('core/AGENTS.md' in e for e in check(root))
+        p.write_text('@AGENTS.md\n')
+        assert any('@import' in e for e in check(root))
+        p.write_text(original)
+        p = root / '.codex/hooks.json'; original = p.read_text()
+        hooks = json.loads(original); del hooks['hooks']['PostToolUse']
+        p.write_text(json.dumps(hooks))
+        assert any('PostToolUse' in e for e in check(root))
+        p.write_text(original)
+    print('agent-config-check self-test: OK — missing guides, legacy imports, and lost hooks are rejected')
+
+
+if __name__ == '__main__':
+    if sys.argv[1:] == ['--self-test']:
+        self_test()
+    else:
+        errors = check(ROOT)
+        for error in errors: print('agent-config-check: ' + error, file=sys.stderr)
+        if not errors: print('agent-config-check: OK — seven instruction destinations and local Codex hooks')
+        sys.exit(bool(errors))

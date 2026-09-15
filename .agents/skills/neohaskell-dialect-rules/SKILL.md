@@ -6,18 +6,18 @@ description: Add, modify, or debug NeoHaskell dialect enforcement rules (hlint l
 # Extending the dialect enforcement
 
 Two engines cover the dialect; know which one you're touching. The law is
-portable. The teacher is optional edit-time feedback installed only by the
-harness configured in `.claude/settings.json`; Pi does not run it automatically.
+portable. The teacher accepts edit fragments on stdin for direct diagnostics;
+its PR-diff syntax ratchet runs through `./dev lint`. Trusted `.codex/hooks.json` handlers adapt native patch events to it.
 
-| | `.hlint.yaml` (**the law**) | `.claude/hooks/dialect-guard.py` (**the teacher**) |
+| | `.hlint.yaml` (**the law**) | `scripts/guards/dialect-guard.py` (**the teacher**) |
 |---|---|---|
-| Runs | `./dev lint` + CI gate (all harnesses) | configured-harness PreToolUse, ~50ms per edit |
+| Runs | `./dev lint` + CI gate (all harnesses) | Codex patch hook, stdin JSON, or `--pr-diff BASE` |
 | Precision | exact (parses real Haskell) | heuristic (regex on edit fragments) |
 | Scope | modules, functions, expression rewrites | + syntax (`where`), types (`Either`), usage-vs-definition |
 | Wins on disagreement | **always** | never — gets corrected |
 
-In Pi, run `./dev lint` after edits and `./dev check` for the GHC backstop. Keep
-the teacher's self-test green even when its host integration is inactive.
+In Codex, run `./dev lint` after edits and `./dev check` for the GHC backstop. Keep
+the teacher's self-test green alongside the portable lint gate.
 
 ## Decision tree for a new rule
 
@@ -36,11 +36,11 @@ the teacher's self-test green even when its host integration is inactive.
    - The comment above it MUST name the canonical gate (hlint rule / GHC / review).
    - The message MUST teach: quote the alternative and the escape hatch.
    - Per-rule exemptions go in `exempt()` keyed by rule id — never by message text.
-2. Add cases to `.claude/hooks/dialect-guard-cases.json`:
+2. Add cases to `scripts/guards/dialect-guard-cases.json`:
    - ≥1 **blocking** case: `"expect_rules": ["<your-id>"]`
    - ≥1 **passing** case: `"pass_rules": ["<your-id>"]` — the false-positive
      you engineered against, as a regression test.
-3. Run `python3 .claude/hooks/dialect-guard.py --self-test` (also runs in
+3. Run `python3 scripts/guards/dialect-guard.py --self-test` (also runs in
    `./dev doctor` and CI). **A rule without both cases fails coverage** —
    this is the gate that keeps the rule list from rotting.
 
@@ -56,7 +56,7 @@ the teacher's self-test green even when its host integration is inactive.
 
 ## Debugging a misfire
 
-1. Reproduce the configured-harness payload directly with valid JSON: `echo '{"tool_name":"Edit","tool_input":{"file_path":"<path>","old_string":"<old>","new_string":"<new>"}}' | python3 .claude/hooks/dialect-guard.py`
+1. Reproduce the fragment payload directly with valid JSON: `echo '{"tool_name":"Edit","tool_input":{"file_path":"<path>","old_string":"<old>","new_string":"<new>"}}' | python3 scripts/guards/dialect-guard.py`
 2. If it's a false positive: add the payload as a **passing case** first
    (red), then fix the rule/exemption (green). The case stays forever.
 3. If the rule is fundamentally unsound for fragments: delete it and note the

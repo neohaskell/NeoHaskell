@@ -35,7 +35,7 @@ line again, so committed history remains append-only.
     "<stage-name>": {
       "start": "2026-07-07T14:03:22Z",
       "stop": "2026-07-07T14:05:10Z",
-      "model": "sonnet",
+      "model": "<model-id>",
       "repair_rounds": 1,
       "invented_api_events": 0
     }
@@ -132,8 +132,8 @@ in sync with that list). Each maps to a real destination file:
 
 `alias` → `codemap/capabilities.yaml` · `extension-point` → `codemap/extension-points.yaml`
 · `phrasebook` → `codemap/phrasebook.md` · `hot-card` → `codemap/api-hot.md`
-· `hlint-rule` → `.hlint.yaml` · `hook` → `.claude/hooks/*` · `cli-utility` →
-`scripts/*` (+ `./dev` verb) · `skill-edit` → `.pi/skills/*/SKILL.md`
+· `hlint-rule` → `.hlint.yaml` · `hook` → `scripts/guards/*` · `cli-utility` →
+`scripts/*` (+ `./dev` verb) · `skill-edit` → `.agents/skills/*/SKILL.md`
 · `telemetry-label` → this file (schema bump) · `PRUNE` → remove an unused asset
 · `none` → justified no-asset (the `destination` carries the reason).
 

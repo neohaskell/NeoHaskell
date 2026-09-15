@@ -81,8 +81,8 @@ migration's compile-safety is proven by the typechecker.
 
 | ID | Behavior | Proving test | Level | Boundary |
 |----|----------|--------------|-------|----------|
-| C1 | The edit hook rejects a newly-added discarded Task bind `_ <- action` in non-parser code, quoting the `discard` pipeline alternative and the escape hatch | `script:.claude/hooks/dialect-guard.py#--self-test` | unit | none |
-| C2 | The edit hook does NOT flag a named bind `x <- action`, nor a parser-package `_ <- Parser.char …`, nor a list-comprehension generator | `script:.claude/hooks/dialect-guard.py#--self-test` | unit | none |
+| C1 | The edit hook rejects a newly-added discarded Task bind `_ <- action` in non-parser code, quoting the `discard` pipeline alternative and the escape hatch | `script:scripts/guards/dialect-guard.py#--self-test` | unit | none |
+| C2 | The edit hook does NOT flag a named bind `x <- action`, nor a parser-package `_ <- Parser.char …`, nor a list-comprehension generator | `script:scripts/guards/dialect-guard.py#--self-test` | unit | none |
 | C3 | `./dev lint` rewrites `if c then a else pass` to `Task.when c a` (and not a `case`-arm `-> pass`) | `script:scripts/lint#` | unit | none |
 | C4 | `./dev lint` rewrites `if c then pass else a` to `Task.unless c a` | `script:scripts/lint#` | unit | none |
 | C5 | All 29 genuine Task sites are migrated — 21 `if c then a else pass` to `Task.when`, 8 `if c then pass else a` (incl. multi-line) to `Task.unless`; the non-Task `pure ()`/`return ()` sites are left untouched; `./dev lint` is clean on `core/`+`testbed/src/` and the migrated modules typecheck | `script:scripts/lint#`<br>`script:scripts/check#` | unit | none |

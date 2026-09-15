@@ -2,7 +2,7 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
-// Styling is centralized in Mantine (see src/theme.ts and assets/ide/CLAUDE.md).
+// Styling is centralized in Mantine (see src/theme.ts and assets/ide/AGENTS.md).
 // Tailwind was removed; the PostCSS pipeline (postcss.config.cjs) handles
 // Mantine's CSS. No Tailwind plugin here by design.
 export default defineConfig({

@@ -18,7 +18,7 @@ cd "${SCRIPT_DIR}/.."
 
 # Exemptions: script -> reason. Adding one is a visible, reviewable diff.
 EXEMPT_NAMES=(
-  "cloud-setup.sh:Claude-web environment setup; invoked by the platform, not by developers"
+  "cloud-setup.sh:Cloud environment setup; invoked by the platform, not by developers"
   "build-hoogle-dbs:internal plumbing — invoked by ./dev api and ./dev codemap, not a user verb"
   "toolchain-fp:internal plumbing — fingerprint for with-toolchain fast path + flake shellHook"
   "speclib.py:shared parsing module imported by spec-check and spec-drift — never executed"
@@ -66,15 +66,18 @@ for f in scripts/*; do
 done
 
 # 4. Agent-visible docs (governing rule: no doc without a gate) — every
-#    `./dev <verb>` referenced in a SKILL.md, AGENTS.md, or CLAUDE.md must
+#    `./dev <verb>` referenced in a SKILL.md or AGENTS.md must
 #    actually be registered, so a verb rename can't make the most-read docs
 #    lie silently (AGENTS.md is loaded into every session).
 AGENT_GUIDANCE=(
-  .pi/skills/*/SKILL.md
+  .agents/skills/*/SKILL.md
   AGENTS.md
-  CLAUDE.md
+  core/AGENTS.md
+  core/service/AGENTS.md
+  integrations/AGENTS.md
+  testbed/AGENTS.md
   neo/AGENTS.md
-  neo/CLAUDE.md
+  neo/assets/ide/AGENTS.md
   neo/starter/IMPORT.md
 )
 while IFS= read -r ref; do
@@ -86,12 +89,13 @@ done < <(grep -rhoE '\./dev [a-z-]+' "${AGENT_GUIDANCE[@]}" 2>/dev/null | sort -
 
 # 5. Hook self-tests: every hook rule/scenario must have blocking AND passing
 #    cases in its committed cases file (a rule without cases fails here).
-if [ -f .claude/hooks/dialect-guard.py ]; then
-  python3 .claude/hooks/dialect-guard.py --self-test || fail=1
-fi
-if [ -f .claude/hooks/expectation-guard.py ]; then
-  python3 .claude/hooks/expectation-guard.py --self-test || fail=1
-fi
+python3 scripts/guards/dialect-guard.py --self-test || fail=1
+python3 scripts/guards/expectation-guard.py --self-test || fail=1
+
+python3 scripts/guards/codex-hooks-test.py || fail=1
+python3 scripts/guards/with-toolchain-test.py || fail=1
+scripts/agent-config-check || fail=1
+scripts/agent-config-check --self-test || fail=1
 
 # 5b. Phase 5 validator self-tests (spec gate + resume contract): fixture
 #     mutations must keep failing for the right reasons — a validator that
@@ -117,7 +121,7 @@ if ! crg_out=$(scripts/codemap-regen-guard.py --self-test 2>&1); then
   printf '%s\n' "${crg_out}"
   fail=1
 fi
-# Validate the real checkout first (including Pi discovery), then prove the
+# Validate the real checkout first (including Codex discovery), then prove the
 # validator rejects mutated fixtures. Self-test alone would only test temp data.
 scripts/neo-skills-check || fail=1
 scripts/neo-skills-check --self-test || fail=1
@@ -163,7 +167,7 @@ rm -f "${FIXTURE}" "${FIXTURE_ERR}"
 
 if [ "${fail}" -eq 0 ]; then
   count=$(echo "${registered}" | wc -l | tr -d ' ')
-  skills=$(ls -d .pi/skills/*/ 2>/dev/null | wc -l | tr -d ' ')
-  echo "doctor: OK — ${count} verbs registered, $(ls scripts/ | wc -l | tr -d ' ') scripts accounted for, ${#EXEMPT_NAMES[@]} exemptions (all reasoned), ${skills} canonical skills Pi-discoverable/frontmatter/reference checked"
+  skills=$(ls -d .agents/skills/*/ 2>/dev/null | wc -l | tr -d ' ')
+  echo "doctor: OK — ${count} verbs registered, $(ls scripts/ | wc -l | tr -d ' ') scripts accounted for, ${#EXEMPT_NAMES[@]} exemptions (all reasoned), ${skills} canonical skills Codex-discoverable/frontmatter/reference checked"
 fi
 exit "${fail}"

@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
-"""PreToolUse dialect guard (pipeline Phase 2).
+"""Portable dialect guard (pipeline Phase 2).
 
 Rejects vanilla-Haskell patterns in Write/Edit/MultiEdit payloads targeting
-*.hs files, ~50ms after the edit is attempted — long before hlint (seconds)
-or GHC (the build). The teaching layer: every rejection quotes the rule and
+*.hs files supplied on stdin. The Codex lifecycle adapter supplies patch fragments. The teaching layer: every rejection quotes the rule and
 the escape hatch.
 
 THE LAW/TEACHER SPLIT: this hook is the fast teacher, .hlint.yaml is the law.
@@ -21,13 +20,13 @@ Precision rules:
   hlint and GHC remain the real gates).
 
 EXTENDING THIS HOOK — see the `neohaskell-dialect-rules` skill. Contract:
-every rule has an `id`, and .claude/hooks/dialect-guard-cases.json MUST
+every rule has an `id`, and scripts/guards/dialect-guard-cases.json MUST
 contain at least one blocking case (`expect_rules` includes the id) and one
 passing case (`pass_rules` includes the id). `--self-test` enforces this and
 runs in CI via `./dev doctor`.
 
-Payload: stdin JSON ({tool_name, tool_input}) per the official hook contract;
-CLAUDE_TOOL_* env vars as fallback. Exit 2 = rejection; stderr is fed back
+Payload: stdin JSON ({tool_name, tool_input}) for direct fragment checks;
+AGENT_TOOL_* env vars as fallback. Exit 2 = rejection; stderr is fed back
 to the model.
 """
 
@@ -250,8 +249,8 @@ def check_pr_diff(base: str) -> int:
 
 
 def read_event():
-    """Official contract: JSON on stdin ({tool_name, tool_input}).
-    Fallback: CLAUDE_TOOL_* env vars (older runtimes / manual testing)."""
+    """Fragment contract: JSON on stdin ({tool_name, tool_input}).
+    Fallback: AGENT_TOOL_* env vars (older runtimes / manual testing)."""
     tool, payload = "", {}
     if not sys.stdin.isatty():
         try:
@@ -261,9 +260,9 @@ def read_event():
         except json.JSONDecodeError:
             pass
     if not tool:
-        tool = os.environ.get("CLAUDE_TOOL_NAME", "")
+        tool = os.environ.get("AGENT_TOOL_NAME", "")
         try:
-            payload = json.loads(os.environ.get("CLAUDE_TOOL_INPUT", "") or "{}")
+            payload = json.loads(os.environ.get("AGENT_TOOL_INPUT", "") or "{}")
         except json.JSONDecodeError:
             payload = {}
     return tool, payload

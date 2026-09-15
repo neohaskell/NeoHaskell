@@ -8,6 +8,13 @@
 
 Accepted
 
+## Operational update (2026-09-15)
+
+The hosted agent review workflow has been removed: repository automation will
+not use paid model API keys. Major updates remain labelled `dependency-major`,
+reviewed manually by maintainers, and never auto-merged. Patch/minor auto-merge
+is unchanged. The original decision below records the retired review automation.
+
 ## Context
 
 Dependency PRs are the highest-volume, lowest-judgement work arriving at this
