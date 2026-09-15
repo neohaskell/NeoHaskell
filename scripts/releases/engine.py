@@ -490,7 +490,10 @@ def append_changelog(old, section, first):
     old = old or ""
     if first and old:
         old = re.sub(
-            r"^## \[?Unreleased\]?\s*$", "## Legacy development notes", old, flags=re.M
+            r"^## \[?Unreleased\]?[ \t]*$",
+            "## Legacy development notes",
+            old,
+            flags=re.M,
         )
         old = "## Legacy history\n\n" + old
     elif old.startswith("# Changelog\n\n"):

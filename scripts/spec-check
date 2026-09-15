@@ -659,8 +659,8 @@ def require_changed_spec(base, changed_lookup=speclib.changed_specs):
     if not specs:
         if changed_lookup is speclib.changed_specs and (ROOT / "scripts/releases/manifest.json").exists():
             sys.path.insert(0, str(ROOT / "scripts/releases"))
-            import engine as releases
             try:
+                import engine as releases
                 result = releases.check_checkout(releases.Repo(ROOT), base)
                 if result == "verified generated release operation":
                     print("spec-check: exact generated release bookkeeping verified")

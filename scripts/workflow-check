@@ -1514,6 +1514,23 @@ def self_test():
                "      - uses: cachix/cachix-action@v17\n        if: ${{ env.CACHIX_AUTH_TOKEN != '' }}\n",
                "      - uses: cachix/cachix-action@v17\n"))
 
+    # Exercise the live publisher/rehearsal contracts and reject unsafe mutations.
+    good_semantic = (REPO_ROOT / ".github/workflows/semantic-release.yml").read_text()
+    check("semantic publisher passes", not check_semantic_release("semantic-release.yml", good_semantic))
+    for label, old, new in (
+        ("main guard", "github.ref == 'refs/heads/main'", "true"),
+        ("native write", "  platform_native:\n", "  platform_native:\n    permissions:\n      contents: write\n"),
+        ("credentials", "persist-credentials: false", "persist-credentials: true"),
+        ("missing stage", "  platform_publish:\n", "  absent_publish:\n"),
+        ("secret reference", "${{ github.token }}", "${{ secrets.RELEASE_TOKEN }}"),
+    ):
+        check(f"semantic publisher rejects {label}", bool(check_semantic_release(
+            "semantic-release.yml", good_semantic.replace(old, new))))
+    good_rehearsal_release = (REPO_ROOT / ".github/workflows/neo-release.yml").read_text()
+    check("reusable native rehearsal passes", not check_neo_release("neo-release.yml", good_rehearsal_release))
+    check("reusable native rehearsal rejects publication", bool(check_neo_release(
+        "neo-release.yml", good_rehearsal_release + "\n  publish:\n    runs-on: ubuntu-latest\n")))
+
     # ── installer-ci.yml arbitrary-base + aggregate gate (PR 6) ───────────────
     good_installer = (
         "on:\n  push:\n    branches: [main]\n"

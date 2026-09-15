@@ -18,12 +18,14 @@ import github as remote
 
 
 def work_outputs(items):
-    runners = [
-        "ubuntu-latest",
-        "ubuntu-24.04-arm",
-        "macos-15-intel",
-        "macos-latest",
-    ]
+    runners = {
+        "x86_64-unknown-linux-gnu": "ubuntu-latest",
+        "aarch64-unknown-linux-gnu": "ubuntu-24.04-arm",
+        "x86_64-apple-darwin": "macos-15-intel",
+        "aarch64-apple-darwin": "macos-latest",
+    }
+    if set(runners) != set(release.TARGETS):
+        raise ValueError("Release targets and CI runners disagree")
     outputs = {}
     for item in items:
         release.group_config(item["group"])
@@ -31,9 +33,9 @@ def work_outputs(items):
         selected = [item for item in items if item["group"] == group]
         matrix = {
             "include": [
-                {**item, "target": target, "runner": runner}
+                {**item, "target": target, "runner": runners[target]}
                 for item in selected
-                for target, runner in zip(release.TARGETS, runners)
+                for target in release.TARGETS
             ]
         }
         outputs[f"{group}_has_work"] = str(bool(selected)).lower()
@@ -243,7 +245,9 @@ def build_native(repo, plan, revision, target, inputs, out):
 def consumer(repo, plan, revision, inputs, out):
     apply_seed(repo, plan, revision, inputs)
     out = Path(out)
-    binary = out / "neo-x86_64-unknown-linux-gnu"
+    binary = out / (
+        release.group_config(plan["group"])["asset_prefix"] + "x86_64-unknown-linux-gnu"
+    )
     binary.chmod(0o755)
     env = {**os.environ, "NEO_BIN": str(binary.resolve())}
     subprocess.run(

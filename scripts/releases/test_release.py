@@ -71,6 +71,12 @@ class Fragments(unittest.TestCase):
 
 
 class Render(unittest.TestCase):
+    def test_bootstrap_preserves_legacy_heading_separation(self):
+        for tail in ("\nParagraph\n", "\n\n### Fixed\n\nOld note\n"):
+            old = "# Changelog\n\n## Unreleased" + tail
+            rendered = release.append_changelog(old, "## 0.4.2 — 2026-09-15\n", True)
+            self.assertIn("## Legacy development notes" + tail, rendered)
+
     def test_render(self):
         note = release.fragment(".changes/save.md", NOTE)
         note["commit"] = "a" * 40
@@ -274,7 +280,9 @@ class History(unittest.TestCase):
                         "attempt": plan["id"],
                         "revision": revision,
                         "binary_hash": release.digest(
-                            (directory / "neo-x86_64-unknown-linux-gnu").read_bytes()
+                            (
+                                directory / (prefix + "x86_64-unknown-linux-gnu")
+                            ).read_bytes()
                         ),
                         "verified": True,
                     }
@@ -686,6 +694,15 @@ class Artifacts(History):
         with self.assertRaisesRegex(ValueError, "consumer"):
             remote.seal_artifacts(plan, r, directory)
 
+    def test_artifact_sealing_uses_configured_prefix(self):
+        from unittest.mock import patch
+
+        plan, revision = self.bootstrap()
+        with patch.dict(release.CONFIG["groups"]["platform"], asset_prefix="platform-"):
+            files = self.files(plan, revision)
+            self.assertIn("platform-x86_64-unknown-linux-gnu", files)
+            self.assertNotIn("neo-x86_64-unknown-linux-gnu", files)
+
     def test_installer_publication_is_not_supported(self):
         plan, r = self.bootstrap()
         plan["group"] = "installer"
@@ -770,6 +787,33 @@ class Bootstrap(History):
 
 
 class GitHubReads(unittest.TestCase):
+    def test_asset_redirect_does_not_forward_release_token(self):
+        import io
+        import urllib.request
+        from unittest.mock import patch
+
+        api = object.__new__(remote.GitHub)
+        api.token = "fixture-secret"
+        api.prefix = "repos/example/repo"
+
+        def respond(request, timeout):
+            self.assertEqual(
+                request.get_header("Authorization"), "Bearer fixture-secret"
+            )
+            redirect = urllib.request.HTTPRedirectHandler().redirect_request(
+                request,
+                None,
+                302,
+                "Found",
+                {},
+                "https://release-assets.githubusercontent.com/asset?signed=fixture",
+            )
+            self.assertIsNone(redirect.get_header("Authorization"))
+            return io.BytesIO(b"verified fixture binary")
+
+        with patch("urllib.request.urlopen", side_effect=respond):
+            self.assertEqual(api.read_asset({"id": 123}), b"verified fixture binary")
+
     def test_draft_lookup_paginates_when_tag_endpoint_only_returns_published(self):
         from unittest.mock import Mock
 
@@ -864,6 +908,25 @@ class Workflow(unittest.TestCase):
             )
         with self.assertRaisesRegex(ValueError, "release group"):
             cli["work_outputs"]([{**item, "group": "installer"}])
+
+    def test_runner_mapping_survives_target_reordering(self):
+        import runpy
+        from unittest.mock import patch
+
+        cli = runpy.run_path(str(ROOT / "scripts/semantic-release"))
+        expected = {
+            "x86_64-unknown-linux-gnu": "ubuntu-latest",
+            "aarch64-unknown-linux-gnu": "ubuntu-24.04-arm",
+            "x86_64-apple-darwin": "macos-15-intel",
+            "aarch64-apple-darwin": "macos-latest",
+        }
+        with patch.object(release, "TARGETS", tuple(reversed(release.TARGETS))):
+            output = cli["work_outputs"]([{"group": "platform"}])
+            rows = json.loads(output["platform_matrix"])["include"]
+            self.assertEqual({row["target"]: row["runner"] for row in rows}, expected)
+        with patch.object(release, "TARGETS", (*release.TARGETS, "unsupported")):
+            with self.assertRaisesRegex(ValueError, "runners"):
+                cli["work_outputs"]([])
 
     def test_main_only_and_no_legacy_publishers(self):
         import runpy

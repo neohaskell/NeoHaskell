@@ -46,7 +46,7 @@ fn bootstrap_repo(bootstrap: &str) -> String {
         .to_string()
 }
 
-/// The release-asset base name the workflow publishes, e.g.
+/// The historical release-asset name retained by CI build artifacts, e.g.
 /// `installer-neo-install-` (a per-matrix target is appended to it).
 fn workflow_asset_prefix(workflow: &str) -> &'static str {
     // The Package step copies the built binary to
@@ -79,7 +79,7 @@ fn bootstrap_downloads_workflow_asset_name() {
     let expected = format!("{prefix}${{PLATFORM}}");
     assert!(
         bootstrap.contains(&expected),
-        "bootstrap.sh must download the '{expected}' asset the workflow publishes; \
+        "bootstrap.sh must download the '{expected}' asset name retained by CI builds; \
          download-related lines were: {:?}",
         bootstrap
             .lines()
@@ -90,14 +90,12 @@ fn bootstrap_downloads_workflow_asset_name() {
 
 #[test]
 fn bootstrap_uses_installer_tag_prefix_for_pinned_versions() {
-    // The workflow's release job only fires on `installer-v*` tags, and those
-    // are the only tags carrying installer assets. A pinned NEO_INSTALLER_VERSION
-    // must therefore be resolved as a tag under the same repo's releases.
+    // Historical installer-v tags remain downloadable after publication retires.
+    // Preserve an explicit version pin rather than resolving a new platform tag.
     let bootstrap = read("scripts/bootstrap.sh");
-    let workflow = read("../.github/workflows/installer-ci.yml");
     assert!(
-        workflow.contains("installer-v"),
-        "installer-ci.yml should key releases off the 'installer-v*' tag prefix"
+        bootstrap.contains(r#"VERSION="${NEO_INSTALLER_VERSION:-latest}""#),
+        "bootstrap.sh must preserve the requested historical installer tag"
     );
     assert!(
         bootstrap.contains("releases/download/${VERSION}/"),

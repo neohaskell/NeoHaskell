@@ -24,7 +24,6 @@ class GitHub:
     def request(self, route, method="GET", data=None, binary=False, upload=False):
         host = "https://uploads.github.com/" if upload else "https://api.github.com/"
         headers = {
-            "Authorization": "Bearer " + self.token,
             "Accept": (
                 "application/octet-stream" if binary else "application/vnd.github+json"
             ),
@@ -39,6 +38,8 @@ class GitHub:
         request = urllib.request.Request(
             host + self.prefix + "/" + route, data=data, headers=headers, method=method
         )
+        # Signed asset redirects must not receive the repository token.
+        request.add_unredirected_header("Authorization", "Bearer " + self.token)
         try:
             with urllib.request.urlopen(request, timeout=120) as response:
                 result = response.read()
@@ -407,7 +408,7 @@ def seal_artifacts(plan, revision, directory):
     expected = {
         "attempt": plan["id"],
         "revision": revision,
-        "binary_hash": hashes["neo-x86_64-unknown-linux-gnu"],
+        "binary_hash": hashes[prefix + "x86_64-unknown-linux-gnu"],
         "verified": True,
     }
     if consumer != expected:
