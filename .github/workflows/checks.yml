@@ -74,6 +74,7 @@ jobs:
       # the PYTHON override is the sanctioned CI path, like lint's HLINT=).
       - run: python3 -c "import yaml" 2>/dev/null || pip3 install pyyaml==6.0.3
       - run: PYTHON=python3 ./dev codemap-check
+      - run: python3 scripts/test-codemap-empty-changes
 
   adr-index:
     name: adr index (decisions README faithful)
