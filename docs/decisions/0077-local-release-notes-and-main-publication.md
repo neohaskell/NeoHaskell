@@ -296,6 +296,14 @@ not prove this contract.
 
 #### Bootstrap
 
+This CI-only rollout MUST NOT create a release or release-preparation PR when
+merged. The committed release ledger starts empty. Automatic handling remains
+inactive per group until its first explicitly invoked manual bootstrap release
+has completed public publication and its manifest/assets have been verified.
+A flag, tag alone, draft release, failed attempt, or merged preparation cannot
+activate it. Bootstrap is a separate maintainer operation after this PR merges;
+this implementation never invokes it as a test.
+
 Bootstrap explicitly records the existing release baselines, accepting both
 historical bare and v-prefixed framework tags and rejecting conflicting aliases.
 The first coordinated platform version is prepared as an explicit local release
