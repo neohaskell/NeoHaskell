@@ -570,6 +570,14 @@ class Recovery(History):
             "already abandoned",
         )
 
+    def test_invalid_recovery_does_not_pause_publication(self):
+        plan, revision = self.bootstrap()
+        with self.assertRaises(ValueError):
+            remote.select_work(
+                self.api, self.repo, revision, "recover", attempt=plan["id"], reason=""
+            )
+        self.assertEqual(self.api.writes, [])
+
     def test_public_release_cannot_be_abandoned(self):
         plan, r = self.publish_bootstrap()
         with self.assertRaisesRegex(ValueError, "Published"):

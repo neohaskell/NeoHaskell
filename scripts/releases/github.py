@@ -529,8 +529,8 @@ def select_work(
                 api.resume(attempt)
             return {"status": "resumed; dispatch auto to retry", "items": [], "prs": []}
         # The workflow holds the same global mutation lock as publication.
-        api.pause(attempt, main)
         plan = release.recovery_plan(repo, main, attempt, reason or "")
+        api.pause(attempt, main)
         return {
             "status": "recovery paused and prepared",
             "items": [],
