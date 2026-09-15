@@ -1,6 +1,6 @@
 cabal-version: 3.4
 name: nhtestbed
-version: 0.9.1
+version: 0.10.0
 synopsis: End-to-End Testbed for NeoHaskell
 description: A real NeoHaskell application that demonstrates features and runs blackbox acceptance tests.
 homepage: https://neohaskell.org
