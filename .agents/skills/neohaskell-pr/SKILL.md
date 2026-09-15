@@ -51,9 +51,9 @@ reorganization without behavior changes, and `perf` for performance changes.
 Mixed PRs use the type of their primary delivered outcome and name material
 secondary scope in the body. Automation can be new without being `feat`.
 
-Follow the active validator's accepted Conventional Commit syntax. For breaking
-changes, record the supported `BREAKING CHANGE:` footer and honest spec metadata;
-use `!` only once the validator supports it. A title's type does not replace the
+For breaking changes, use `!` (for example `feat(api)!: rename save`) or a
+`BREAKING CHANGE:` footer, with honest spec metadata and migration fragments
+prepared through [neohaskell-release](../neohaskell-release/SKILL.md). A title's type does not replace the
 release-impact declaration or migration guidance.
 
 ## Write for Jess first, then the reviewer

@@ -192,6 +192,14 @@ def nix_login_env(base_env: dict) -> dict:
     return env
 
 
+def release_sources(source, neo_sha, installer_sha):
+    """Platform source is reviewed; the separately selected installer is immutable."""
+    strict_sha(installer_sha, "installer tag SHA")
+    if neo_sha != source:
+        raise GateError("platform tag SHA does not equal the reviewed source SHA")
+    return {"installer": installer_sha, "neo": neo_sha}
+
+
 def resolve_tag(deadline: float, repo: str, tag: str) -> str:
     """Resolve a release tag to the exact commit it points to, IMMUTABLY and
     TOKENLESSLY via the anonymous git protocol (`git ls-remote`). This replaces
@@ -291,9 +299,7 @@ def run_gate() -> None:
         phase = "resolve-tags"
         installer_tag_sha = resolve_tag(deadline, repo, installer_tag)
         neo_tag_sha = resolve_tag(deadline, repo, neo_tag)
-        if not installer_tag_sha == neo_tag_sha == source:
-            raise GateError("release tag SHAs do not equal the reviewed source SHA")
-        base["release_tag_shas"] = {"installer": installer_tag_sha, "neo": neo_tag_sha}
+        base["release_tag_shas"] = release_sources(source, neo_tag_sha, installer_tag_sha)
 
         phase = "cache-probe"
         cachix = os.getenv("SLO_CACHIX_HOST", CACHIX_DEFAULT)
@@ -399,6 +405,13 @@ def run_gate() -> None:
 
 
 def self_test() -> None:
+    assert release_sources("a"*40, "a"*40, "b"*40) == {"installer": "b"*40, "neo": "a"*40}
+    for neo_sha, installer_sha in [("b"*40, "a"*40), ("a"*40, "main")]:
+        try:
+            release_sources("a"*40, neo_sha, installer_sha)
+            raise AssertionError("accepted mismatched or mutable release source")
+        except GateError:
+            pass
     assert strict_sha("a" * 40, "sha") == "a" * 40
     assert immutable_tag("neo-v1.2.3", "neo-v") == "neo-v1.2.3"
     for bad in (None, "latest", "main", "neo-v../x", "v1"):

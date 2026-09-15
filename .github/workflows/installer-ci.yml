@@ -21,7 +21,6 @@ name: Installer CI
 on:
   push:
     branches: [main]
-    tags: ["installer-v*"]
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
 
@@ -176,37 +175,6 @@ jobs:
           path: |
             installer/artifacts/installer-neo-install-${{ matrix.target }}
           if-no-files-found: error
-
-  # Publish ONLY from an 'installer-v*' tag, and ONLY after lint+test+build pass.
-  release:
-    needs: [lint, test, build]
-    if: startsWith(github.ref, 'refs/tags/installer-v')
-    name: Release
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/download-artifact@v8
-        with:
-          path: artifacts
-          merge-multiple: true
-      # ONE checksum-manifest convention across both release trains: the bare name
-      # SHA256SUMS (no `.txt`), matching the neo train (scripts/neo-release) and
-      # the installer's own native-download path (installer/src/release.rs).
-      - name: Generate aggregate checksums
-        run: |
-          cd artifacts
-          sha256sum installer-neo-install-* > SHA256SUMS
-      - uses: softprops/action-gh-release@v3
-        with:
-          files: |
-            artifacts/installer-neo-install-*
-            artifacts/SHA256SUMS
-          generate_release_notes: true
 
   # THE REQUIRED CHECK for the installer component. `if: always()` + no
   # workflow-level paths filter => it always reports a conclusion, so it is safe

@@ -1,0 +1,218 @@
+# Installing this workflow is inert. Only a verified manual bootstrap activates a group.
+name: Semantic Release
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      operation:
+        type: choice
+        options: [auto, bootstrap, recover, resume]
+        default: auto
+      group:
+        type: choice
+        options: [platform, installer]
+        default: platform
+      baseline:
+        description: Existing baseline tag (manual bootstrap only)
+        type: string
+      version:
+        description: Reviewed first version, 0.Y.Z (manual bootstrap only)
+        type: string
+      attempt:
+        description: Full failed attempt ID (recover/resume only)
+        type: string
+      reason:
+        description: Why this unpublished release needs a source fix
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: semantic-release-${{ github.repository }}
+  cancel-in-progress: false
+jobs:
+  prepare:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      pull-requests: write
+    outputs:
+      has_work: ${{ steps.plan.outputs.has_work }}
+      items: ${{ steps.plan.outputs.items }}
+      matrix: ${{ steps.plan.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+      - id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OPERATION: ${{ inputs.operation || 'auto' }}
+          GROUP: ${{ inputs.group || 'platform' }}
+          BASELINE: ${{ inputs.baseline }}
+          VERSION: ${{ inputs.version }}
+          ATTEMPT: ${{ inputs.attempt }}
+          REASON: ${{ inputs.reason }}
+        run: >-
+          ./scripts/semantic-release orchestrate --operation "$OPERATION"
+          --group "$GROUP" --baseline "$BASELINE" --version "$VERSION"
+          --attempt "$ATTEMPT" --reason "$REASON"
+  seed:
+    needs: prepare
+    if: github.ref == 'refs/heads/main' && needs.prepare.outputs.has_work == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.prepare.outputs.items) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7.0.1
+        if: matrix.reuse != true
+        with:
+          ref: ${{ matrix.revision }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: DeterminateSystems/determinate-nix-action@v3.22.2
+        if: matrix.reuse != true
+      - name: Freeze the starter at the merged release revision
+        if: matrix.reuse != true
+        env:
+          ATTEMPT: ${{ matrix.attempt }}
+          REVISION: ${{ matrix.revision }}
+        run: ./scripts/semantic-release seed --attempt "$ATTEMPT" --revision "$REVISION" --out inputs
+      - uses: actions/upload-artifact@v7
+        if: matrix.reuse != true
+        with:
+          name: inputs-${{ matrix.attempt }}
+          path: inputs/*
+          if-no-files-found: error
+  native:
+    needs: [prepare, seed]
+    if: github.ref == 'refs/heads/main' && needs.prepare.outputs.has_work == 'true'
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7.0.1
+        if: matrix.reuse != true
+        with:
+          ref: ${{ matrix.revision }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@1.94.0
+        if: matrix.reuse != true
+        with:
+          targets: ${{ matrix.target }}
+      - uses: actions/download-artifact@v8
+        if: matrix.reuse != true
+        with:
+          name: inputs-${{ matrix.attempt }}
+          path: inputs
+      - name: Test, build, inspect and smoke the exact native asset
+        if: matrix.reuse != true
+        env:
+          ATTEMPT: ${{ matrix.attempt }}
+          REVISION: ${{ matrix.revision }}
+          TARGET: ${{ matrix.target }}
+        run: ./scripts/semantic-release build-native --attempt "$ATTEMPT" --revision "$REVISION" --target "$TARGET" --inputs inputs --out artifacts
+      - uses: actions/upload-artifact@v7
+        if: matrix.reuse != true
+        with:
+          name: release-${{ matrix.attempt }}-${{ matrix.target }}
+          path: artifacts/*
+          if-no-files-found: error
+  consumer:
+    needs: [prepare, native]
+    if: github.ref == 'refs/heads/main' && needs.prepare.outputs.has_work == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.prepare.outputs.items) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ matrix.revision }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: DeterminateSystems/determinate-nix-action@v3.22.2
+        if: matrix.group == 'platform' && matrix.reuse != true
+      - uses: DeterminateSystems/magic-nix-cache-action@v14
+        if: matrix.group == 'platform' && matrix.reuse != true
+      - uses: actions/download-artifact@v8
+        if: matrix.group == 'platform' && matrix.reuse != true
+        with:
+          name: inputs-${{ matrix.attempt }}
+          path: inputs
+      - uses: actions/download-artifact@v8
+        if: matrix.group == 'platform' && matrix.reuse != true
+        with:
+          name: release-${{ matrix.attempt }}-x86_64-unknown-linux-gnu
+          path: artifacts
+      - name: Build and run an app with the exact release binary and framework
+        if: matrix.group == 'platform' && matrix.reuse != true
+        env:
+          ATTEMPT: ${{ matrix.attempt }}
+          REVISION: ${{ matrix.revision }}
+        run: ./scripts/semantic-release consumer --attempt "$ATTEMPT" --revision "$REVISION" --inputs inputs --out artifacts
+      - uses: actions/upload-artifact@v7
+        if: matrix.group == 'platform' && matrix.reuse != true
+        with:
+          name: release-${{ matrix.attempt }}-consumer
+          path: artifacts/consumer.json
+          if-no-files-found: error
+  publish:
+    needs: [prepare, native, consumer]
+    if: github.ref == 'refs/heads/main' && needs.prepare.outputs.has_work == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.prepare.outputs.items) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ matrix.revision }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/download-artifact@v8
+        if: matrix.reuse != true
+        with:
+          pattern: release-${{ matrix.attempt }}-*
+          path: artifacts
+          merge-multiple: true
+      - name: Verify provenance and publish immutable assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ATTEMPT: ${{ matrix.attempt }}
+          REVISION: ${{ matrix.revision }}
+        run: ./scripts/semantic-release publish --attempt "$ATTEMPT" --revision "$REVISION" --out artifacts
+  reconcile:
+    needs: publish
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Prepare notes that accumulated while the release was building
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ./scripts/semantic-release orchestrate

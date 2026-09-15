@@ -1,0 +1,425 @@
+#!/usr/bin/env python3
+"""Prepare reviewed release PRs and publish verified main releases; inactive until manual bootstrap."""
+import argparse
+import json
+import os
+from pathlib import Path
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+
+sys.dont_write_bytecode = True
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT / "scripts/releases"))
+import engine as release
+import github as remote
+
+
+def ci_only():
+    if (
+        os.environ.get("GITHUB_ACTIONS") != "true"
+        or os.environ.get("GITHUB_REF") != "refs/heads/main"
+        or os.environ.get("GITHUB_REPOSITORY", "").lower() != release.REPOSITORY.lower()
+        or not os.environ.get("GITHUB_WORKFLOW_REF", "").endswith(
+            "/.github/workflows/semantic-release.yml@refs/heads/main"
+        )
+    ):
+        raise ValueError(
+            "Release mutations run only in semantic-release.yml on repository main"
+        )
+
+
+def get_plan(repo, revision, identity):
+    if not re.fullmatch(r"[0-9a-f]{64}", identity):
+        raise ValueError("Invalid release attempt ID")
+    plan = next(
+        (p for p in repo.ledger(revision)["attempts"] if p["id"] == identity), None
+    )
+    if not plan:
+        raise ValueError("Release attempt missing at revision")
+    release.verify_generated(repo, revision, plan)
+    return plan
+
+
+def seed(repo, plan, revision, out):
+    out = Path(out)
+    out.mkdir(parents=True, exist_ok=True)
+    (out / "plan.json").write_text(
+        release.canonical({"plan": plan, "revision": revision})
+    )
+    if plan["group"] != "platform":
+        return
+    with tempfile.TemporaryDirectory() as temporary:
+        work = Path(temporary) / "source"
+        subprocess.run(
+            ["git", "clone", "--quiet", "--no-hardlinks", str(repo.root), str(work)],
+            check=True,
+        )
+        subprocess.run(
+            ["git", "checkout", "--quiet", "--detach", revision], cwd=work, check=True
+        )
+        starter = work / "neo/starter"
+        flake = starter / "flake.nix"
+        text = flake.read_text()
+        text = re.sub(r"(?<=\?rev=)[0-9a-f]{40}", revision, text)
+        text = re.sub(
+            r'(neohaskellCommit = ")[0-9a-f]{40}(";)',
+            lambda m: m[1] + revision + m[2],
+            text,
+        )
+        flake.write_text(text)
+        cabal = starter / "cabal.project"
+        cabal.write_text(
+            re.sub(
+                r"(?m)^(\s*tag:\s*)[0-9a-f]{40}",
+                lambda m: m[1] + revision,
+                cabal.read_text(),
+            )
+        )
+        old_lock = json.loads((starter / "flake.lock").read_text())
+        subprocess.run(
+            ["nix", "flake", "lock", "--update-input", "neohaskell"],
+            cwd=starter,
+            check=True,
+        )
+        new_lock = json.loads((starter / "flake.lock").read_text())
+        locked = new_lock["nodes"]["neohaskell"]["locked"]
+        if locked.get("rev") != revision or not locked.get("narHash", "").startswith(
+            "sha256-"
+        ):
+            raise ValueError(
+                "Nix did not produce a content-hashed lock for the release revision"
+            )
+        for key, value in old_lock["nodes"].items():
+            if key != "neohaskell" and new_lock["nodes"].get(key) != value:
+                raise ValueError("Starter lock changed an unrelated dependency")
+        for name in ("flake.nix", "flake.lock", "cabal.project"):
+            shutil.copyfile(starter / name, out / ("neo-starter-" + name))
+        env = {
+            **os.environ,
+            "NEO_COMPAT_STARTER": str(starter),
+            "NEO_COMPAT_CARGO": str(work / "neo/Cargo.toml"),
+        }
+        subprocess.run(
+            [str(work / "scripts/neo-release"), "compat", str(out.resolve())],
+            env=env,
+            check=True,
+        )
+
+
+def apply_seed(repo, plan, revision, inputs):
+    inputs = Path(inputs)
+    received = json.loads((inputs / "plan.json").read_text())
+    if received != {"plan": plan, "revision": revision}:
+        raise ValueError("Release input provenance mismatch")
+    if repo.revision("HEAD") != revision:
+        raise ValueError("Build checkout is not the release revision")
+    if plan["group"] == "platform":
+        for name in ("flake.nix", "flake.lock", "cabal.project"):
+            path = inputs / ("neo-starter-" + name)
+            if path.is_symlink():
+                raise ValueError("Symlink release input")
+            shutil.copyfile(path, repo.root / "neo/starter" / name)
+        lock = json.loads((repo.root / "neo/starter/flake.lock").read_text())
+        if lock["nodes"]["neohaskell"]["locked"]["rev"] != revision:
+            raise ValueError("Starter does not pin release source")
+
+
+def build_native(repo, plan, revision, target, inputs, out):
+    if target not in release.TARGETS:
+        raise ValueError("Unknown target")
+    apply_seed(repo, plan, revision, inputs)
+    out = Path(out)
+    out.mkdir(parents=True, exist_ok=True)
+    package = "neo" if plan["group"] == "platform" else "installer"
+    manifest = str(repo.root / package / "Cargo.toml")
+    subprocess.run(
+        [
+            "cargo",
+            "test",
+            "--release",
+            "--locked",
+            "--bins",
+            "--manifest-path",
+            manifest,
+            "--target",
+            target,
+        ],
+        check=True,
+    )
+    subprocess.run(
+        [
+            "cargo",
+            "build",
+            "--release",
+            "--locked",
+            "--manifest-path",
+            manifest,
+            "--target",
+            target,
+        ],
+        check=True,
+    )
+    binary = (
+        repo.root
+        / package
+        / "target"
+        / target
+        / "release"
+        / ("neo" if package == "neo" else "neo-install")
+    )
+    # Both native binaries must be portable outside the Nix store.
+    subprocess.run(
+        [str(repo.root / "scripts/neo-release"), "inspect", str(binary), target],
+        check=True,
+    )
+    name = release.CONFIG["groups"][plan["group"]]["asset_prefix"] + target
+    shutil.copyfile(binary, out / name)
+    (out / name).chmod(0o755)
+    output = subprocess.check_output(
+        [str((out / name).resolve()), "--version"], text=True
+    )
+    if plan["version"] not in output.split():
+        raise ValueError("Native binary reports the wrong version")
+    receipt = {
+        "attempt": plan["id"],
+        "revision": revision,
+        "target": target,
+        "binary_hash": release.digest((out / name).read_bytes()),
+        "group": plan["group"],
+        "native_verified": True,
+    }
+    if package == "neo":
+        for name in ("flake.nix", "flake.lock", "cabal.project"):
+            shutil.copyfile(
+                Path(inputs) / ("neo-starter-" + name), out / ("neo-starter-" + name)
+            )
+        subprocess.run(
+            [str(repo.root / "scripts/neo-release"), "compat", str(out.resolve())],
+            check=True,
+        )
+        receipt["starter_hashes"] = {
+            n: release.digest((out / ("neo-starter-" + n)).read_bytes())
+            for n in ("flake.nix", "flake.lock", "cabal.project")
+        }
+        subprocess.run(
+            [str(repo.root / "scripts/neo-release"), "checksums", str(out)], check=True
+        )
+        with tempfile.TemporaryDirectory() as temp:
+            installed = Path(temp) / "neo"
+            subprocess.run(
+                [
+                    str(repo.root / "scripts/neo-release"),
+                    "install",
+                    str(out),
+                    target,
+                    str(installed),
+                ],
+                check=True,
+            )
+            subprocess.run([str(installed), "--version"], check=True)
+        (out / "SHA256SUMS").unlink()  # Aggregate only after all targets are gathered.
+    (out / ("receipt-" + target + ".json")).write_text(release.canonical(receipt))
+
+
+def consumer(repo, plan, revision, inputs, out):
+    apply_seed(repo, plan, revision, inputs)
+    if plan["group"] != "platform":
+        return
+    out = Path(out)
+    binary = out / "neo-x86_64-unknown-linux-gnu"
+    binary.chmod(0o755)
+    env = {**os.environ, "NEO_BIN": str(binary.resolve())}
+    subprocess.run(
+        [str(repo.root / "scripts/neo-consumer-contract")], env=env, check=True
+    )
+    (out / "consumer.json").write_text(
+        release.canonical(
+            {
+                "attempt": plan["id"],
+                "revision": revision,
+                "binary_hash": release.digest(binary.read_bytes()),
+                "verified": True,
+            }
+        )
+    )
+
+
+def main():
+    if "--self-test" in sys.argv:
+        args = sys.argv[sys.argv.index("--self-test") + 1 :]
+        return subprocess.call(
+            [sys.executable, str(ROOT / "scripts/releases/test_release.py"), *args]
+        )
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "command",
+        choices=[
+            "check",
+            "orchestrate",
+            "seed",
+            "build-native",
+            "consumer",
+            "publish",
+            "preview",
+        ],
+    )
+    parser.add_argument("--base", default="origin/main")
+    parser.add_argument(
+        "--operation",
+        choices=["auto", "bootstrap", "recover", "resume"],
+        default="auto",
+    )
+    parser.add_argument("--group", choices=list(release.COMPONENTS), default="platform")
+    parser.add_argument("--baseline")
+    parser.add_argument("--version")
+    parser.add_argument("--date")
+    parser.add_argument("--attempt")
+    parser.add_argument("--reason")
+    parser.add_argument("--revision", default="HEAD")
+    parser.add_argument("--target")
+    parser.add_argument("--inputs")
+    parser.add_argument("--out")
+    args = parser.parse_args()
+    repo = release.Repo()
+    if args.command == "check":
+        message = (
+            os.environ.get("RELEASE_PR_TITLE", "")
+            + "\n\n"
+            + os.environ.get("RELEASE_PR_BODY", "")
+        )
+        print(release.check_checkout(repo, args.base, message))
+        return 0
+    if args.command == "preview":
+        api = remote.GitHub()
+        source = repo.revision("HEAD")
+        public = remote.completed_releases(api, repo, repo.ledger(source))
+        plan = release.plan_release(
+            repo,
+            source,
+            args.group,
+            public,
+            args.date or __import__("datetime").date.today().isoformat(),
+            (args.baseline, args.version) if args.operation == "bootstrap" else None,
+        )
+        print(release.canonical(plan))
+        return 0
+    if args.command == "orchestrate":
+        ci_only()
+        if (
+            args.operation != "auto"
+            and os.environ.get("GITHUB_EVENT_NAME") != "workflow_dispatch"
+        ):
+            raise ValueError(
+                "Bootstrap/recovery/resume require an explicit maintainer dispatch"
+            )
+        source = repo.revision("HEAD")
+        # Inactive installation has no API effects, including no preparation PR.
+        ledger = repo.ledger(source)
+        if args.operation == "auto" and not ledger["attempts"]:
+            result = {
+                "status": "inactive — first manual release required",
+                "items": [],
+                "prs": [],
+            }
+        else:
+            api = remote.GitHub()
+            if api.ref("heads/main") != source:
+                result = {
+                    "status": "stale event; current main event owns preparation",
+                    "items": [],
+                    "prs": [],
+                }
+            else:
+                result = remote.select_work(
+                    api,
+                    repo,
+                    source,
+                    args.operation,
+                    args.group,
+                    args.baseline,
+                    args.version,
+                    args.date,
+                    args.attempt,
+                    args.reason,
+                )
+        runners = [
+            "ubuntu-latest",
+            "ubuntu-24.04-arm",
+            "macos-15-intel",
+            "macos-latest",
+        ]
+        result["matrix"] = {
+            "include": [
+                {**item, "target": target, "runner": runner}
+                for item in result["items"]
+                for target, runner in zip(release.TARGETS, runners)
+            ]
+        }
+        print(release.canonical(result))
+        if args.out:
+            Path(args.out).write_text(release.canonical(result))
+        output = os.environ.get("GITHUB_OUTPUT")
+        if output:
+            with open(output, "a") as handle:
+                handle.write("has_work=" + str(bool(result["items"])).lower() + "\n")
+                handle.write("items=" + json.dumps(result["items"]) + "\n")
+                handle.write("matrix=" + json.dumps(result["matrix"]) + "\n")
+        return 0
+    revision = repo.revision(args.revision)
+    plan = get_plan(repo, revision, args.attempt or "")
+    if args.command == "seed":
+        seed(repo, plan, revision, args.out)
+    elif args.command == "build-native":
+        build_native(repo, plan, revision, args.target, args.inputs, args.out)
+    elif args.command == "consumer":
+        consumer(repo, plan, revision, args.inputs, args.out)
+    elif args.command == "publish":
+        ci_only()
+        api = remote.GitHub()
+
+        def guard():
+            current = api.ref("heads/main")
+            if not release.SHA.fullmatch(current or ""):
+                raise ValueError("Missing main revision")
+            subprocess.run(
+                ["git", "fetch", "--quiet", "origin", current],
+                cwd=repo.root,
+                check=True,
+            )
+            if not repo.ancestor(revision, current):
+                raise ValueError("Release source is not on main")
+            ledger = repo.ledger(current)
+            if plan["id"] in release.abandoned(ledger) or api.paused(plan["id"]):
+                raise ValueError("Attempt abandoned or paused")
+            if not any(p == plan for p in ledger["attempts"]):
+                raise ValueError("Release manifest no longer recorded on main")
+
+        guard()
+        public = remote.completed_releases(api, repo, repo.ledger(plan["source_sha"]))
+        release.verify_plan(repo, plan, public)
+        remote.restore_bundle(api, plan, revision, args.out)
+        files = remote.seal_artifacts(plan, revision, args.out)
+        changed = remote.publish(api, repo, plan, revision, files, guard)
+        print(
+            "Published verified release"
+            if changed
+            else "Identical completed release; no writes"
+        )
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except (
+        ValueError,
+        OSError,
+        subprocess.SubprocessError,
+        KeyError,
+        TypeError,
+    ) as error:
+        print("semantic-release: " + str(error), file=sys.stderr)
+        sys.exit(1)

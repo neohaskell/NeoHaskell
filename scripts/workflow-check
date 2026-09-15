@@ -556,6 +556,43 @@ NEO_RELEASE_TAG_PREFIX = "neo-v"
 NEO_RELEASE_SCRIPT = "scripts/neo-release"
 
 
+def check_semantic_release(name, text):
+    code = strip_comments(text)
+    errors = []
+    triggers = _on_trigger_keys(_on_block(code))
+    if set(triggers) != {"push", "workflow_dispatch"}:
+        errors.append(f"{name}: only main push and manual dispatch may start releases")
+    required = ["branches: [main]", "group: semantic-release-${{ github.repository }}",
+                "cancel-in-progress: false", "permissions:\n  contents: read"]
+    for token in required:
+        if token not in code: errors.append(f"{name}: missing {token}")
+    if re.search(r"(secrets\.|OPENAI|ANTHROPIC|softprops/action-gh-release|persist-credentials: true|tags:)", code):
+        errors.append(f"{name}: credentials, alternate publication, or tag-trigger bypass")
+    jobs = job_blocks(code)
+    expected = {"prepare", "seed", "native", "consumer", "publish", "reconcile"}
+    if set(jobs) != expected: errors.append(f"{name}: release stages changed")
+    for job, body in jobs.items():
+        if "github.ref == 'refs/heads/main'" not in body:
+            errors.append(f"{name}: {job} must be main-only")
+        if "contents: write" in body and job not in {"prepare", "publish", "reconcile"}:
+            errors.append(f"{name}: {job} must be read-only")
+        if "pull-requests: write" in body and job not in {"prepare", "reconcile"}:
+            errors.append(f"{name}: {job} must not write PRs")
+        if "persist-credentials: false" not in body:
+            errors.append(f"{name}: {job} must not persist Git credentials")
+    for job, tokens in {
+        "prepare": ["semantic-release orchestrate", "outputs.has_work", "pull-requests: write"],
+        "seed": ["outputs.has_work == 'true'", "semantic-release seed", "ref: ${{ matrix.revision }}"],
+        "native": ["needs: [prepare, seed]", "semantic-release build-native", "dtolnay/rust-toolchain@1.94.0", "ref: ${{ matrix.revision }}"],
+        "consumer": ["needs: [prepare, native]", "semantic-release consumer", "ref: ${{ matrix.revision }}"],
+        "publish": ["needs: [prepare, native, consumer]", "semantic-release publish", "ref: ${{ matrix.revision }}", "contents: write", "pattern: release-${{ matrix.attempt }}-*"],
+        "reconcile": ["needs: publish", "semantic-release orchestrate", "ref: main"],
+    }.items():
+        for token in tokens:
+            if token not in jobs.get(job, ""): errors.append(f"{name}: {job} missing {token}")
+    return errors
+
+
 def check_neo_release(name, text):
     errs = []
     E = errs.append
@@ -564,7 +601,14 @@ def check_neo_release(name, text):
     triggers = _on_trigger_keys(on)
     jobs = job_blocks(code)
 
-    # (a) tag-only publication trigger.
+    if "workflow_call" in triggers:
+        if set(triggers) != {"workflow_call", "workflow_dispatch"} or "publish" in jobs or "contents: write" in code:
+            E(f"{name}: rehearsal must never publish or trigger from tags")
+        for token in (*NEO_RELEASE_TARGETS, "cargo build", "scripts/neo-release inspect", "scripts/neo-release install", "scripts/neo-release checksums", "dtolnay/rust-toolchain@1.94.0"):
+            if token not in code: E(f"{name}: rehearsal missing {token}")
+        return errs
+
+    # (a) Legacy tag-only publication fixture contract.
     if "push" not in triggers:
         E(f"{name}: no `push:` trigger — a Neo release must fire on a "
           f"'{NEO_RELEASE_TAG_PREFIX}*' tag push")
@@ -967,6 +1011,8 @@ def run(root=WORKFLOWS):
             errs += check_consumer_contract(wf.name, text)
             errs += check_release_rehearsal(wf.name, text)
             errs += check_cache_populate(wf.name, text)
+        if wf.name == "semantic-release.yml":
+            errs += check_semantic_release(wf.name, text)
         if wf.name == NEO_RELEASE_GATE:
             errs += check_neo_release(wf.name, text)
         if wf.name == INSTALLER_GATE:

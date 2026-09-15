@@ -60,7 +60,7 @@ TRUSTED_METADATA_BASE = "origin/main"
 RED_EVIDENCE = ROOT / "scripts" / "spec-red-evidence"
 CONVENTIONAL_SUBJECT_RE = re.compile(
     r"^(fix|feat|test|docs|refactor|perf|build|ci|chore|revert)"
-    r"(?:\([a-z0-9][a-z0-9._/-]*\))?: \S.*$"
+    r"(?:\([a-z0-9][a-z0-9._/-]*\))?!?: \S.*$"
 )
 
 # telemetry/SCHEMA.md stage enum, in pipeline order. Changing it there means
@@ -1125,6 +1125,8 @@ def self_test():
 
         valid_subjects = [
             "fix: preserve stream revision",
+            "feat!: rename save",
+            "fix(api)!: replace output shape",
             "test(event-store): cover concurrent creation",
             "docs: Document the explicit rebuild path",
         ]

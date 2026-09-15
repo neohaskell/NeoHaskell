@@ -169,7 +169,7 @@ capabilities:
     tests: [testbed/tests/**]
 
   - id: dev-pipeline
-    owns: [scripts/**, codemap/**, telemetry/**, dev, cabal.project.dev, .agents/**, .codex/**]  # workflows (incl. checks.yml) belong to ci-cd — exactly-once
+    owns: [scripts/**, codemap/**, telemetry/**, dev, cabal.project.dev, .agents/**, .codex/**, .changes/**]  # workflows (incl. checks.yml) belong to ci-cd — exactly-once
     responsibility: The Continuous Generation pipeline itself — ./dev verbs, dialect gates, codemap, telemetry, hooks, skills, governance checks.
     aliases: [pipeline, tooling, dev scripts, ci checks, hooks, skills, lint config]
     tests: []

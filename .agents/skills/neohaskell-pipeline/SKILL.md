@@ -30,6 +30,17 @@ Jess must understand the user-visible change, whether she is affected, required
 actions, and how to verify them. Release prose that fails this review must be
 rewritten locally before publication; a structural CI check cannot certify it.
 
+## Release notes
+
+Before final substantive review, use [neohaskell-release](../neohaskell-release/SKILL.md)
+to prepare a reviewed `.changes/` fragment, including `impact: none` for internal
+changes. `./dev changelog --check origin/main` now checks these fragments and
+verified generated bookkeeping. Versions and permanent changelogs are assigned
+only by the main workflow after manual bootstrap; feature PRs never edit them.
+Breaking commit metadata accepts `!` or a `BREAKING CHANGE:` footer and requires
+a real migration guide and standalone agent prompt. This remains a CI/release
+concern, so a workflow implementation PR uses `ci`, not `feat`.
+
 ## Stage flow
 
 ```
@@ -167,7 +178,8 @@ the activity vocabulary is `localization`, `index`, `test-scaffolding`,
     fix → wait for re-review. Repeat until CodeRabbit has no outstanding
     actionable comments (its review state leaves `CHANGES_REQUESTED`) and the
     required check matrix is green on the substantive change. Generated
-    artifacts (`codemap/**`, `CHANGELOG.md`) are regenerated, never hand-edited.
+    artifacts (`codemap/**`) are regenerated, never hand-edited. Permanent
+    changelogs change only in verified release-preparation/recovery PRs.
     Fix real findings; decline incorrect/generated-file findings with a reason
     on the PR.
 

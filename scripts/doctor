@@ -111,6 +111,7 @@ scripts/spec-red-evidence --self-test || fail=1
 scripts/pipeline-benchmark --self-test || fail=1
 scripts/telemetry.py --self-test || fail=1
 scripts/changelog --self-test || fail=1
+scripts/semantic-release --self-test || fail=1
 scripts/revert --self-test || fail=1
 scripts/retrospect --self-test || fail=1
 scripts/workflow-check --self-test || fail=1

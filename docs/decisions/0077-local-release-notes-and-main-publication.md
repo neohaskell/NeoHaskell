@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed
+Implemented
 
 ## Context
 
@@ -61,7 +61,7 @@ a cross-group change can have two fragments. No version or date is assigned on
 the feature branch. Files are consumed when the generated release-preparation
 PR merges. Git history retains the reviewed originals.
 
-Proposed fragment contract (the example is illustrative, not a real migration):
+Fragment contract (the example is illustrative, not a real migration):
 
 ````markdown
 ---
@@ -79,6 +79,10 @@ Explain the observable change and who needs to act.
 
 Explain affected uses, exact edits, before/after examples, and verification.
 State explicitly when persisted data or configuration also needs migration.
+
+### Verify
+
+Give concrete app-level verification steps.
 
 ## Agent prompt
 
@@ -230,8 +234,10 @@ automatic response to a timeout.
 The recovery contract is:
 
 1. **Record a terminal state.** The committed manifest history records each
-   group's attempt as pending, completed, or abandoned, retaining its identity,
+   group's immutable attempt and any abandonment, retaining its identity,
    source SHA, reserved version, note/fragment hashes, and recovery reason.
+   Completion is derived from the verified public GitHub release receipt; it
+   does not require a second main bookkeeping commit.
    Merging a preparation PR reserves its version permanently, even if no tag was
    created. Abandonment adds an auditable terminal record; it does not erase or
    rewrite the original manifest. Repeating the same recovery is a no-op.
@@ -340,3 +346,31 @@ rather than an unattended direct push into protected main.
 - [SemVer initial development](https://semver.org/)
 - [Changesets](https://github.com/changesets/changesets)
 - [Towncrier](https://towncrier.readthedocs.io/en/stable/)
+
+## Operational entry points
+
+`./dev semantic-release check --base origin/main` validates local fragments and
+exact generated diffs. The local release skill owns prose and manual operations.
+`scripts/releases/config.json` owns groups/package paths; `manifest.json` is the
+append-only attempt/recovery ledger. `semantic-release.yml` is the sole publisher;
+old tag workflows retain only read-only rehearsal or ordinary component CI.
+
+The workflow dispatch operations are auto, bootstrap, recover, and resume.
+Bootstrap requires a reviewed existing group baseline tag and explicit target
+version. It opens a preparation PR; its successful public release activates only
+that group. Installation ships the empty ledger, leaving all groups inactive.
+Recovery pauses use immutable `release-pause/<attempt-id>` branches; these remain
+after abandonment to reject late retries. Resume can remove only an unmerged
+recovery pause. No operation bypasses main protection or merges its own PR.
+
+A preparation's default date is the UTC date of its immutable main source commit.
+Retries of that snapshot therefore reuse its identity and branch across midnight.
+PR fragment validation inspects the actual commits plus the proposed squash
+title/body; GitHub's synthetic merge message cannot suppress a required note.
+
+Before individual assets are uploaded, the publisher saves `release-bundle.zip`
+as the first draft asset. It contains every verified binary, starter input,
+native/consumer receipt and release manifest. Later runs restore and verify that
+permanent bundle, skipping rebuilds; this avoids runner/SDK changes altering an
+in-progress release. The bundle itself is included in SHA256SUMS. Mismatching
+existing bytes remain a hard failure, with recovery available for source fixes.

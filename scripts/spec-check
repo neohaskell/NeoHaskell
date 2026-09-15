@@ -657,6 +657,16 @@ def require_changed_spec(base, changed_lookup=speclib.changed_specs):
         print(f"spec-check: git diff against `{base}` failed ({error})", file=sys.stderr)
         return 2
     if not specs:
+        if changed_lookup is speclib.changed_specs and (ROOT / "scripts/releases/manifest.json").exists():
+            sys.path.insert(0, str(ROOT / "scripts/releases"))
+            import engine as releases
+            try:
+                result = releases.check_checkout(releases.Repo(ROOT), base)
+                if result == "verified generated release operation":
+                    print("spec-check: exact generated release bookkeeping verified")
+                    return 0
+            except (ValueError, OSError, subprocess.SubprocessError):
+                pass
         print("spec-check: FAIL — PR changes no contract-delta spec", file=sys.stderr)
         return 1
     print(f"spec-check: OK — {len(specs)} changed contract-delta spec(s)")
