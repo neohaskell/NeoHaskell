@@ -104,7 +104,7 @@ jobs:
         with:
           extra-conf: |
             accept-flake-config = true
-      - uses: DeterminateSystems/magic-nix-cache-action@v14
+      - uses: DeterminateSystems/magic-nix-cache-action@v15
       - name: Unit tests (all in-crate binary tests, --bins)
         run: nix develop ./neo -c cargo test --manifest-path neo/Cargo.toml --locked --bins
       - name: rustfmt (report-only baseline)
@@ -142,7 +142,7 @@ jobs:
         with:
           extra-conf: |
             accept-flake-config = true
-      - uses: DeterminateSystems/magic-nix-cache-action@v14
+      - uses: DeterminateSystems/magic-nix-cache-action@v15
       - name: Install from lockfile
         run: |
           nix develop ./neo -c bash -c '
@@ -191,7 +191,7 @@ jobs:
         with:
           extra-conf: |
             accept-flake-config = true
-      - uses: DeterminateSystems/magic-nix-cache-action@v14
+      - uses: DeterminateSystems/magic-nix-cache-action@v15
       - name: Build the flake package (runs the in-crate unit tests as checkPhase)
         run: nix build .#neo --print-build-logs
       - name: Smoke the built binary
@@ -250,7 +250,7 @@ jobs:
         with:
           extra-conf: |
             accept-flake-config = true
-      - uses: DeterminateSystems/magic-nix-cache-action@v14
+      - uses: DeterminateSystems/magic-nix-cache-action@v15
       - name: Self-test the contract orchestration logic (timeout, cleanup, quoting, readiness)
         run: ./dev neo-consumer-contract --self-test
       # Build the PORTABLE binary the same way the release does, gate portability,
@@ -319,7 +319,7 @@ jobs:
         with:
           extra-conf: |
             accept-flake-config = true
-      - uses: DeterminateSystems/magic-nix-cache-action@v14
+      - uses: DeterminateSystems/magic-nix-cache-action@v15
         if: ${{ env.CACHIX_AUTH_TOKEN != '' }}
       # Cachix push is set up only now — after the trust guard (trusted push ref +
       # token present) — so the token is never present alongside PR-controlled code. Its

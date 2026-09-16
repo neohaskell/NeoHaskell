@@ -147,7 +147,7 @@ jobs:
         with:
           extra-conf: |
             accept-flake-config = true
-      - uses: DeterminateSystems/magic-nix-cache-action@v14
+      - uses: DeterminateSystems/magic-nix-cache-action@v15
         if: matrix.reuse != true
       - uses: actions/download-artifact@v8
         if: matrix.reuse != true
