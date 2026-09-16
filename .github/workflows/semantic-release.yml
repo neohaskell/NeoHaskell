@@ -102,7 +102,9 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - uses: DeterminateSystems/determinate-nix-action@v3.22.2
-        if: matrix.reuse != true
+        if: matrix.reuse != true && matrix.target != 'x86_64-apple-darwin'
+      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1; supports Intel macOS
+        if: matrix.reuse != true && matrix.target == 'x86_64-apple-darwin'
       - uses: dtolnay/rust-toolchain@1.94.0
         if: matrix.reuse != true
         with:
@@ -142,6 +144,9 @@ jobs:
           persist-credentials: false
       - uses: DeterminateSystems/determinate-nix-action@v3.22.2
         if: matrix.reuse != true
+        with:
+          extra-conf: |
+            accept-flake-config = true
       - uses: DeterminateSystems/magic-nix-cache-action@v14
         if: matrix.reuse != true
       - uses: actions/download-artifact@v8
