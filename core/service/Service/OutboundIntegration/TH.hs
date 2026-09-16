@@ -1,9 +1,12 @@
 module Service.OutboundIntegration.TH (
+  deriveOutboundIntegration,
   outboundIntegration,
 ) where
 
 import Control.Monad.Fail qualified as MonadFail
-import Core
+import Appendable ((++))
+import Basics -- HOOK-ALLOW: Core reexports these markers, so TH must use the lower-level prelude.
+import Maybe (Maybe (..))
 import GHC.Base (String)
 import Language.Haskell.TH.Lib qualified as THLib
 import Language.Haskell.TH.Ppr qualified as THPpr
@@ -17,7 +20,6 @@ import Service.CommandExecutor.TH (deriveKnownHash)
 --
 -- @
 -- data ReserveStockOnItemAdded = ReserveStockOnItemAdded
---   deriving (Generic, Typeable, Show)
 --
 -- type instance EntityOf ReserveStockOnItemAdded = CartEntity
 --
@@ -26,7 +28,7 @@ import Service.CommandExecutor.TH (deriveKnownHash)
 --   ItemAdded {stockId, quantity} -> Integration.batch [...]
 --   _ -> Integration.none
 --
--- outboundIntegration ''ReserveStockOnItemAdded
+-- deriveOutboundIntegration ''ReserveStockOnItemAdded
 -- @
 --
 -- Validates at compile time:
@@ -42,6 +44,12 @@ import Service.CommandExecutor.TH (deriveKnownHash)
 --   to the event ADT type (EventOf entity)
 -- * @type instance NameOf HandlerType = "HandlerType"@
 -- * @instance KnownHash "HandlerType"@
+deriveOutboundIntegration :: TH.Name -> THLib.DecsQ
+deriveOutboundIntegration = outboundIntegration
+{-# INLINE deriveOutboundIntegration #-}
+
+
+-- | Compatibility name for 'deriveOutboundIntegration'.
 outboundIntegration :: TH.Name -> THLib.DecsQ
 outboundIntegration handlerName = do
   let handlerNameStr = TH.nameBase handlerName

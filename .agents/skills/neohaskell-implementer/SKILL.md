@@ -34,11 +34,13 @@ Stack Overflow Haskell. Before writing:
 **Creating or editing a concept (query, command, event, outbound integration)?**
 These are declared through a Template Haskell marker — **load the
 `neohaskell-concept-derivation` skill and follow it**: use the marker
-(`deriveQuery` / `command` / `event` / `outboundIntegration`) and author only
+(`deriveQuery` / `deriveCommand` / `deriveEvent` / `deriveEntity` /
+`deriveOutboundIntegration` from `Core`) and author only
 the required companion functions and business-logic instances; never hand-write
 the `Show`/`Generic`/JSON/`ToSchema`/`NameOf`/`EntitiesOf`/`Query`/`KnownHash`
 instances the marker emits. Do not copy the boilerplate of a pre-marker module.
-(Entities are the exception — no marker; hand-write their `Entity` instance.)
+Use `deriveEntity` for entity wiring; keep `initialState`, `update`, and
+`getEventEntityId` as application functions.
 
 ## Dialect (portable gates: hlint → GHC; optional edit feedback)
 

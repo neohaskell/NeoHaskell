@@ -10,7 +10,6 @@ import Core
 import Json qualified
 import Service.AccessControl (AccessError, UserClaims)
 import Service.AccessControl qualified as AccessControl
-import Service.Query.TH (deriveQuery)
 import Testbed.Stock.Core (StockEntity (..))
 
 

@@ -17,7 +17,6 @@ import Service.EventStore.Core (EventStore (..), ReadStreamMessage (..))
 import Service.EventStore.InMemory qualified as EventStoreInMemory
 import Service.Query.Definition (QueryDefinition (..), createDefinitionWithStore)
 import Service.Query.Registry qualified as Registry
-import Service.Query.TH (deriveQuery)
 import Service.QueryObjectStore.Core (QueryObjectStore)
 import Service.QueryObjectStore.InMemory qualified as QOSInMemory
 import Stream qualified

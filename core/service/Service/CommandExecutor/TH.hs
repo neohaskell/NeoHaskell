@@ -1,10 +1,13 @@
 module Service.CommandExecutor.TH (
+  deriveCommand,
   command,
   deriveKnownHash,
 ) where
 
 import Control.Monad.Fail qualified as MonadFail
-import Core
+import Appendable ((++))
+import Basics -- HOOK-ALLOW: Core reexports these markers, so TH must use the lower-level prelude.
+import Maybe (Maybe (..))
 import Data.Hashable qualified as Hashable
 import Data.List qualified as GhcList
 import GHC.Base (String)
@@ -248,6 +251,12 @@ Please ensure you have `import Core` at the top of your module.
 
   pure [knownHashInstance]
 {-# INLINE deriveKnownHash #-}
+
+
+-- | Derive the command instances from its decision and routing declarations.
+deriveCommand :: TH.Name -> THLib.DecsQ
+deriveCommand = command
+{-# INLINE deriveCommand #-}
 
 
 command :: TH.Name -> THLib.DecsQ

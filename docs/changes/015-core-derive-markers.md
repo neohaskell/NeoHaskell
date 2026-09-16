@@ -18,10 +18,10 @@ new-extension-point: false
 ## Contract delta
 
 ```diff signatures
-+ Service.Event.TH: deriveEvent :: TH.Name -> THLib.DecsQ
-+ Service.CommandExecutor.TH: deriveCommand :: TH.Name -> THLib.DecsQ
-+ Service.Entity.TH: deriveEntity :: TH.Name -> TH.Name -> THLib.DecsQ
-+ Service.OutboundIntegration.TH: deriveOutboundIntegration :: TH.Name -> THLib.DecsQ
++ Service.Event.TH: deriveEvent :: Name -> DecsQ
++ Service.CommandExecutor.TH: deriveCommand :: Name -> DecsQ
++ Service.Entity.TH: deriveEntity :: Name -> Name -> DecsQ
++ Service.OutboundIntegration.TH: deriveOutboundIntegration :: Name -> DecsQ
 ```
 
 `Core` reexports all five canonical helpers; its value-level `event` remains
@@ -40,10 +40,10 @@ event routing, and query projections remain application code.
 
 | ID | Behavior | Proving test | Level | Boundary |
 |----|----------|--------------|-------|----------|
-| C1 | Core exposes event derivation while retaining value-level event injection | `hspec:nhcore-test-service:core/test/Service/Entity/THSpec.hs#Core derivation helpers` | unit | none |
-| C2 | Entity derivation delegates state, update, routing and default behavior | `hspec:nhcore-test-service:core/test/Service/Entity/THSpec.hs#derived entity behavior` | unit | none |
-| C3 | Missing entity companions fail and existing instances remain valid | `hspec:nhcore-test-service:core/test/Service/Entity/THSpec.hs#entity derivation boundaries` | unit | none |
-| C4 | Canonical command, query and integration exports compile with existing behavior | `hspec:nhcore-test-service:core/test/Service/CommandExecutor/THSpec.hs#Service.CommandExecutor.TH`<br>`hspec:nhcore-test-service:core/test/Service/Query/THSpec.hs#Service.Query.TH`<br>`hspec:nhcore-test-integration:core/test/OutboundIntegrationSpec.hs#OutboundIntegration` | unit | none |
+| C1 | Core exposes event derivation while retaining value-level event injection | `hspec:nhcore-test-service:core/test/Service/Entity/THSpec.hs#derives an event while retaining Core.event injection` | unit | none |
+| C2 | Entity derivation delegates state, update, routing and default behavior | `hspec:nhcore-test-service:core/test/Service/Entity/THSpec.hs#delegates updates and routes the event despite a local Event type` | unit | none |
+| C3 | Missing entity companions fail and existing instances remain valid | `hspec:nhcore-test-service:core/test/Service/Entity/THSpec.hs#requires initialState when deriving a missing Entity instance`<br>`hspec:nhcore-test-service:core/test/Service/Entity/THSpec.hs#preserves custom JSON, name, default, entity behavior and identifier type` | unit | none |
+| C4 | Canonical command, query and integration exports compile with existing behavior | `hspec:nhcore-test-service:core/test/Service/CommandExecutor/THSpec.hs#[impl-driven] emits Show instance on fresh command (has Generic, missing Show/ToJSON/FromJSON)`<br>`hspec:nhcore-test-service:core/test/Service/Query/THSpec.hs#generates Query instance for UserOrders`<br>`hspec:nhcore-test-integration:core/test/OutboundIntegrationSpec.hs#generates a compilable OutboundIntegration instance` | unit | none |
 | C5 | Progressive examples and their downloadable projects use the canonical names | `script:website/scripts/check-docs.mjs#--check` | unit | none |
 
 ## User impact

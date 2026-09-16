@@ -3,7 +3,9 @@ module Service.Query.TH (
 ) where
 
 import Control.Monad.Fail qualified as MonadFail
-import Core
+import Appendable ((++))
+import Basics -- HOOK-ALLOW: Core reexports these markers, so TH must use the lower-level prelude.
+import Maybe (Maybe (..))
 import Data.Hashable qualified as Hashable
 import Data.List qualified as GhcList
 import GHC.Base (String)
