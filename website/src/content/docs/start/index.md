@@ -11,8 +11,10 @@ forget how to configure a service. These docs support both moments.
 
 ## Evaluate before building
 
-Read [why NeoHaskell](/start/why-neohaskell/), [fit and tradeoffs](/start/fit-and-tradeoffs/),
-and [the shop on paper](/start/a-shop-on-paper/). Continue through the opening
+Read [why NeoHaskell](/start/why-neohaskell/), [history and change](/start/history-and-change/),
+[growing by slices](/start/growing-by-slices/), and [fit and tradeoffs](/start/fit-and-tradeoffs/).
+These chapters build the explanation through familiar examples and diagrams before
+introducing implementation. Continue through the opening
 sections of the build, connect, and operate pages. They explain the decisions and
 consequences before introducing code. The advanced pages still begin with a
 recognisable application problem.
@@ -20,6 +22,11 @@ recognisable application problem.
 You can finish this path able to discuss the benefits, implementation effort,
 operational responsibilities, and limits with your team. You do not need to run
 an example to understand those choices.
+
+The diagrams highlight one relationship at a time: a request and its outcome, a
+history and its summary, or a feature and the contract it shares. Their captions
+explain the same idea in words. Diagrams scroll horizontally on narrow screens;
+select one to open it at full size when you want to inspect it more closely.
 
 ## Build with your agent
 

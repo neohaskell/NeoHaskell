@@ -20,11 +20,36 @@ Each page opens with an understandable situation and earns the complexity it add
 Early pages have a low technical ceiling. Later pages can explain sophisticated
 problems in accessible language before developing their implementation.
 
+An accessible introduction still needs depth. Give the reader time to understand
+why the approach exists, how preserving history changes an application, how people
+and agents share a model, and how explicit feature boundaries support change.
+Develop the reasoning through examples and consequences before introducing code.
+Length should serve those explanations; a short outline is not the introduction.
+
 The rhythm is situation → decisions → model → implementation → evidence → deeper
 explanation. This is an editorial tool, not a mandatory set of repeated headings.
 An evaluator reading only accessible openings must still encounter a coherent
 account of business benefits, choices, costs, and limitations. Do not make those
 openings depend on previously skipped code sections.
+
+## Visual explanations
+
+Use diagrams to teach relationships, comparisons, sequences, and decisions that
+are harder to follow in prose alone. The author-supplied strategic explainer
+informs the introductory arc and visual pacing. Its claims still need the same
+implementation review as any other technical explanation.
+
+Keep one central idea per diagram, readable labels, a consistent vocabulary and
+palette, and a textual explanation beside it. Colour must not be the only way to
+distinguish concepts. Provide descriptive alt text and full-size access. Show
+refusals, asynchronous work, and design responsibilities where their absence
+would create a misleading impression.
+
+Author graphical resources with the Draw.io skill. Keep editable `.drawio` sources
+and exported SVGs in `public/diagrams/`. Validate and visually inspect the export,
+then register source/export fingerprints in the documentation manifest. The CI
+gate checks image references, alt text, review records, and artifact drift; it
+does not certify whether a diagram teaches the right idea.
 
 ## Three ways to read
 
@@ -69,7 +94,7 @@ automation remain the translation strategy. Generated ADR pages keep their gener
 
 | Section | Purpose | Planned subjects |
 | --- | --- | --- |
-| Start / evaluate | Benefit before setup | Why NeoHaskell; fit and tradeoffs; a shop without setup; trusting an agent; event modeling; reading paths |
+| Start / evaluate | Benefit before setup | Why NeoHaskell; history and correction; growth by slices; fit and tradeoffs; a modeling exercise without setup; trusting an agent; event modeling; reading paths |
 | Build applications | First working slice to richer behaviour | Setup; visual IDE; first cart; commands/events/entities; queries; stock and checkout; HTTP/frontend; tests; permissions; configuration; transfer the working slice into the reader’s project; language essentials |
 | Connect systems | Effects beyond a single service | Integration lifecycle; cross-domain workflows; HTTP/providers/payments; email; files; PDF/OCR; AI; tools/agents; timers; custom integration authoring |
 | Run and evolve | Deploy, diagnose, and change | Persistence; deployment; observability; recovery; evolution; security; performance; contribution |

@@ -90,6 +90,21 @@ The source review proves what the inspected implementation says; compilation,
 live-provider tests, and observed human comprehension are separate evidence.
 Record those boundaries honestly in the review document.
 
+### Maintain explanatory diagrams
+
+Keep the editable source and exported SVG together in `public/diagrams/`. Use the
+[Draw.io skill](https://github.com/Agents365-ai/drawio-skill) to author, structurally
+validate, render, and visually inspect the diagram. Open the `.drawio` file to edit
+it; export an SVG with embedded diagram data, a light background, and a small border.
+The SVG in the page is also a link to the full-size diagram. Narrow screens keep
+labels readable with horizontal scrolling.
+
+Register each pair in `documentation-manifest.json` under `diagrams`, with SHA-256
+`sourceHash` and `exportHash` and an honest `reviewed` value. Review the relationships,
+labels, alt text, nearby explanation, and mobile rendering before refreshing the
+fingerprints. The gate detects stale assets and missing alt text. It does not
+replace semantic or visual review. Re-export after changing the source.
+
 ### Architecture Decision Records
 
 The ADR pages are generated from `docs/decisions/` by

@@ -8,6 +8,7 @@ export default defineConfig({
 	integrations: [
 		starlight({
 			title: 'NeoHaskell',
+			customCss: ['./src/styles/diagrams.css'],
 			description:
 				'Build understandable applications with events, a visual model, and your coding agent.',
 			social: [

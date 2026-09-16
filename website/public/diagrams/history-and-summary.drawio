@@ -1,0 +1,50 @@
+<?xml version='1.0' encoding='utf-8'?>
+<mxfile host="drawio" version="31.3.2">
+  <diagram id="history-and-summary" name="A summary answers “what is it now?”">
+    <mxGraphModel dx="680" dy="690" grid="1" gridSize="10" page="1" pageScale="1" pageWidth="680" pageHeight="690" background="#FCFCFA">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="heading" value="A summary answers “what is it now?”" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=26;fontColor=#294335;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="30" y="20" width="620" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="left-heading" value="Latest value only" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=22;fontColor=#294335;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="30" y="90" width="280" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="right-heading" value="Meaningful history retained" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=22;fontColor=#294335;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="370" y="90" width="280" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="old-value" value="&lt;b&gt;BALANCE&lt;/b&gt;&lt;br&gt;€100" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=22;fontColor=#20352B;fillColor=#F3EFFA;strokeColor=#7860A0;strokeWidth=1.5;spacing=12;" vertex="1" parent="1">
+          <mxGeometry x="30" y="170" width="280" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="new-value" value="&lt;b&gt;BALANCE&lt;/b&gt;&lt;br&gt;€70" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=22;fontColor=#20352B;fillColor=#F3EFFA;strokeColor=#7860A0;strokeWidth=1.5;spacing=12;" vertex="1" parent="1">
+          <mxGeometry x="30" y="350" width="280" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="edge-1" value="replace" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endSize=8;strokeWidth=1.5;strokeColor=#657A6C;fontFamily=Helvetica;fontSize=19;fontColor=#294335;labelBackgroundColor=#FCFCFA;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="old-value" target="new-value">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="opened" value="&lt;b&gt;ACCOUNT OPENED&lt;/b&gt;&lt;br&gt;+ €100" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=22;fontColor=#20352B;fillColor=#EDF7F1;strokeColor=#247556;strokeWidth=1.5;spacing=12;" vertex="1" parent="1">
+          <mxGeometry x="370" y="170" width="280" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="withdrawn" value="&lt;b&gt;CASH WITHDRAWN&lt;/b&gt;&lt;br&gt;− €30" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=22;fontColor=#20352B;fillColor=#EDF7F1;strokeColor=#247556;strokeWidth=1.5;spacing=12;" vertex="1" parent="1">
+          <mxGeometry x="370" y="350" width="280" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="summary" value="&lt;b&gt;CURRENT BALANCE&lt;/b&gt;&lt;br&gt;€70" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=22;fontColor=#20352B;fillColor=#F3EFFA;strokeColor=#7860A0;strokeWidth=1.5;spacing=12;" vertex="1" parent="1">
+          <mxGeometry x="370" y="530" width="280" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="edge-2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endSize=8;strokeWidth=1.5;strokeColor=#657A6C;fontFamily=Helvetica;fontSize=19;fontColor=#294335;labelBackgroundColor=#FCFCFA;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="opened" target="withdrawn">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge-3" value="calculate" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endSize=8;strokeWidth=1.5;strokeColor=#657A6C;fontFamily=Helvetica;fontSize=19;fontColor=#294335;labelBackgroundColor=#FCFCFA;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="withdrawn" target="summary">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="question" value="The latest value alone&#10;does not explain the change." style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=21;fontColor=#294335;fontStyle=0;" vertex="1" parent="1">
+          <mxGeometry x="30" y="490" width="280" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="footer" value="Illustrative account model. The retained facts explain the summary." style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=19;fontColor=#294335;fontStyle=0;" vertex="1" parent="1">
+          <mxGeometry x="30" y="660" width="620" height="60" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

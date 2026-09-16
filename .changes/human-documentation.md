@@ -13,6 +13,9 @@ An ecommerce practice project connects the examples; readers can apply the conce
 to their own applications or consult individual topics. Each page starts with an
 understandable problem and develops the implementation details gradually.
 
+The introduction explains the philosophy in depth before code, using diagrams to
+connect intent, history, corrections, feature boundaries, and working with an agent.
+
 This changes documentation and its checks; application behaviour and public APIs
 are unchanged. Begin at the website's Start and evaluate section, or use the
 capability reference to find a specific topic.

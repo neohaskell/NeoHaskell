@@ -15,8 +15,23 @@ const routeOf = path => '/' + path.replace(/^src\/content\/docs\//, '').replace(
 const normalizeRoute = route => route.replace(/\/+/g, '/');
 const withoutCode = body => body.replace(/^```[^\n]*\n[\s\S]*?^```\s*$/gm, '');
 
-export function validate(manifest, files, sources) {
+export function validate(manifest, files, sources, assets = {}) {
   const errors = [];
+  const diagramFiles = new Set();
+  for (const diagram of manifest.diagrams ?? []) {
+    if (diagram.reviewed !== true) errors.push(`Missing diagram review: ${diagram.source}`);
+    for (const [field, extension] of [['source', 'drawio'], ['export', 'svg']]) {
+      const path = diagram[field];
+      if (!new RegExp(`^public/diagrams/[a-z0-9-]+\\.${extension}$`).test(path ?? '')) {
+        errors.push(`Invalid diagram path: ${path}`);
+        continue;
+      }
+      const route = path.replace(/^public/, '');
+      diagramFiles.add(route);
+      if (!assets[route]) errors.push(`Missing diagram asset: ${path}`);
+      else if (digest(assets[route]) !== diagram[`${field}Hash`]) errors.push(`Diagram changed; re-export and review: ${path}`);
+    }
+  }
   const paths = new Set();
   const routes = new Set(Object.keys(files).map(path => normalizeRoute(routeOf(path))));
   const covered = new Set();
@@ -41,7 +56,15 @@ export function validate(manifest, files, sources) {
     }
     for (const topic of page.topics ?? []) covered.add(topic);
     const outgoing = [];
+    for (const match of withoutCode(body).matchAll(/!\[([^\]]*)\]\((\/[^)\s]*)(?:\s+"[^"]*")?\)/g)) {
+      if (!match[1].trim()) errors.push(`Missing image alt text: ${page.path}`);
+      if (!assets[match[2]]) errors.push(`Missing image asset ${match[2]} in ${page.path}`);
+    }
     for (const match of withoutCode(body).matchAll(/\[[^\]]*\]\((\/[^)\s]*)(?:\s+"[^"]*")?\)/g)) {
+      if (match[1].startsWith('/diagrams/')) {
+        if (!diagramFiles.has(match[1])) errors.push(`Unreviewed diagram: ${match[1]}`);
+        continue;
+      }
       const route = normalizeRoute(match[1].split(/[?#]/)[0].replace(/\/$/, '') + '/');
       outgoing.push(route);
       if (!routes.has(route)) errors.push(`Broken internal link ${match[1]} in ${page.path}`);
@@ -102,7 +125,19 @@ function selfTest() {
   const orphan = { ...page, path: 'src/content/docs/orphan.md' };
   assert.match(validate({ ...manifest, pages: [page, orphan] }, { ...files, [orphan.path]: body }, sources).join('\n'), /Unreachable from home/);
   assert.deepEqual(validate(manifest, { [path]: body + '\n[Home](/)\n```text\n[Not a link](/absent/)\n```\n' }, sources), []);
-  console.log('docs-check: 13 positive, negative, and boundary cases passed');
+  const diagram = { source: 'public/diagrams/example.drawio', export: 'public/diagrams/example.svg', sourceHash: digest('<mxfile/>'), exportHash: digest('<svg/>'), reviewed: true };
+  const diagramManifest = { ...manifest, diagrams: [diagram] };
+  const assets = { '/diagrams/example.drawio': '<mxfile/>', '/diagrams/example.svg': '<svg/>' };
+  const illustrated = { [path]: body + '\n[![A request becomes a fact](/diagrams/example.svg)](/diagrams/example.svg "Open diagram at full size")\n' };
+  assert.deepEqual(validate(diagramManifest, illustrated, sources, assets), []);
+  assert.match(validate(diagramManifest, illustrated, sources, {}).join('\n'), /Missing diagram asset/);
+  assert.match(validate(diagramManifest, illustrated, sources, { ...assets, '/diagrams/example.drawio': '<mxfile changed="true"/>' }).join('\n'), /Diagram changed/);
+  assert.match(validate(diagramManifest, illustrated, sources, { ...assets, '/diagrams/example.svg': '<svg changed="true"/>' }).join('\n'), /Diagram changed/);
+  assert.match(validate(diagramManifest, { [path]: body + '\n![](/diagrams/example.svg)\n' }, sources, assets).join('\n'), /Missing image alt text/);
+  assert.match(validate(manifest, illustrated, sources, assets).join('\n'), /Unreviewed diagram/);
+  assert.match(validate({ ...manifest, diagrams: [{ ...diagram, reviewed: false }] }, illustrated, sources, assets).join('\n'), /Missing diagram review/);
+  assert.match(validate({ ...manifest, diagrams: [{ ...diagram, source: '../private.drawio' }] }, files, sources, assets).join('\n'), /Invalid diagram path/);
+  console.log('docs-check: 21 positive, negative, and boundary cases passed');
 }
 
 function checkBuilt(manifest) {
@@ -112,7 +147,7 @@ function checkBuilt(manifest) {
     const output = resolve(website, 'dist', route.slice(1), 'index.html');
     if (!existsSync(output)) { failures.push(`Missing built route: ${route}`); continue; }
     const html = read(output);
-    for (const match of html.matchAll(/href="(\/[^"?#]*)(?:\?[^"#]*)?(?:#([^"]*))?"/g)) {
+    for (const match of html.matchAll(/(?:href|src)="(\/[^"?#]*)(?:\?[^"#]*)?(?:#([^"]*))?"/g)) {
       const target = resolve(website, 'dist', decodeURIComponent(match[1]).slice(1));
       const targetFile = existsSync(target) && statSync(target).isDirectory() ? resolve(target, 'index.html') : target;
       if (!existsSync(targetFile)) { failures.push(`Broken rendered link ${match[1]} on ${route}`); continue; }
@@ -137,7 +172,17 @@ else {
       if (relative(repository, absolute).startsWith('..') || path.startsWith('/')) throw new Error(`Source must be repository-local: ${path}`);
       if (existsSync(absolute)) sources[path] = read(absolute);
     }
-    const errors = validate(manifest, files, sources);
+    const assets = {};
+    for (const diagram of manifest.diagrams ?? []) {
+      for (const field of ['source', 'export']) {
+        const path = diagram[field];
+        if (typeof path === 'string' && /^public\/diagrams\/[a-z0-9-]+\.(drawio|svg)$/.test(path)) {
+          const absolute = resolve(website, path);
+          if (existsSync(absolute)) assets[path.replace(/^public/, '')] = read(absolute);
+        }
+      }
+    }
+    const errors = validate(manifest, files, sources, assets);
     for (const document of ['DOCUMENTATION_PLAN.md', 'DOCUMENTATION_REVIEW.md']) {
       if (!existsSync(resolve(website, document))) errors.push(`Missing methodology artifact: ${document}`);
     }

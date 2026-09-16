@@ -7,6 +7,11 @@ example and practice project, with general-purpose concepts leading the topic pa
 Preserve direct consultation and an accessible evaluator path; no existing company's
 story is required. Agent-facing documentation is separate.
 
+The introduction develops the philosophy before code through longer conceptual
+chapters and editable visual explanations. History, correction, feature slices,
+shared modeling, and human-agent trust form the accessible foundation. Diagram
+sources, exports, text alternatives, and review evidence join the maintenance gate.
+
 ```yaml spec
 issue: adhoc:human-documentation
 kind: feature

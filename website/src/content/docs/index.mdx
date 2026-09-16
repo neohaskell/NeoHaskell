@@ -12,27 +12,77 @@ around that work. Describe the actions people can take, the facts your applicati
 records, and the information it shows. Work with a coding agent to implement those
 decisions, then check the result against your intent.
 
-## Choose your next step
+## Software you can keep understanding
 
-- **[Understand the idea](/start/why-neohaskell/).** What NeoHaskell helps with,
-  why its choices matter, and where the costs appear.
-- **[Try a small modeling exercise](/start/a-shop-on-paper/).**
-  Work through one small decision and catch an agent's misunderstanding.
-- **[Start building](/getting-started/).** Run the starter, explore its model,
-  then work through the public cart example.
-- **[Find a specific capability](/reference/capabilities/).** Jump directly to
-  configuration, permissions, integrations, AI, deployment, and other topics.
+A first version is only the beginning. People ask for new behaviour, rules change,
+and an application becomes responsible for work that has already happened. You
+need to explain that work as well as add the next feature.
 
-## A journey you can grow into
+AI makes it easier to produce an implementation. It also makes it important to be
+precise about the meaning of a change. “Update this address” could mean a preference
+for the next order or a change to an order already in progress. Both can be easy
+to code. Choosing the right meaning requires understanding the process.
+
+NeoHaskell connects that understanding to a shared model. The model describes
+what people can request, which rules apply, which facts the application records,
+and what people need to see. Those concepts have corresponding places in the
+implementation, so you and your agent can discuss the same behaviour at different
+levels of detail.
+
+[![A learning cycle connects your intent, a shared model, implementation with your agent, and evidence you inspect before accepting a change.](/diagrams/meaning-to-software.svg)](/diagrams/meaning-to-software.svg "Open diagram at full size")
+
+*Start with a rule you can explain. Follow it into the model and implementation,
+then compare the observable result with what you intended.*
+
+## Why the past matters to the next change
+
+When an application shows a value, it is often showing the result of earlier
+actions. A balance comes from money movements. A reservation status comes from
+requests, confirmations, and cancellations. Keeping only the current result can
+leave you unable to explain how it came about.
+
+NeoHaskell's application framework records accepted changes as events. It uses
+that history to reconstruct state and prepare views. A correction can become an
+explicit new fact, and a new report can use information already retained. You
+choose which facts and context the application needs; the framework cannot recover
+a reason that was never recorded.
+
+That is one part of the philosophy. Another is to make a change small enough to
+understand: a complete request, decision, recorded outcome, and useful result.
+These slices give a coding agent a bounded task and give you something concrete
+to verify. Together, a shared model, retained history, and explicit boundaries help
+an application remain understandable as it grows.
+
+## Begin with the ideas
+
+The introductory journey gives these ideas room before asking you to install a
+tool or read code:
+
+1. **[Why NeoHaskell?](/start/why-neohaskell/)** What changes when implementation
+   becomes easier, and why a model of meaning matters.
+2. **[History and change](/start/history-and-change/)** How facts explain a current
+   value, and how a correction can preserve what happened.
+3. **[Growing by slices](/start/growing-by-slices/)** How explicit boundaries help
+   people and agents work on one understandable capability at a time.
+4. **[Fit and tradeoffs](/start/fit-and-tradeoffs/)** What the approach offers your
+   project, where its costs appear, and how to evaluate it.
+
+You can stop there with a useful understanding of NeoHaskell. Continue into the
+modeling exercises and working examples when you want to experience the approach
+for yourself.
+
+## Put the ideas to work
 
 | When you want to… | Start here |
 | --- | --- |
-| Decide whether this approach fits your company | [Fit and tradeoffs](/start/fit-and-tradeoffs/) |
+| Try the approach without installing anything | [A small modeling exercise](/start/a-shop-on-paper/) |
 | Describe what your application should do | [Event modeling](/start/event-modeling/) |
 | Delegate implementation with confidence | [Working with your agent](/start/trusting-your-agent/) |
+| Make a first working request | [Run the starter](/getting-started/) |
 | Turn a rule into working application behaviour | [Build applications](/build/) |
 | Connect email, documents, external services, or AI | [Connect systems](/connect/) |
 | Deploy, recover, and change your application | [Operate and evolve](/operate/) |
+| Look up a specific feature | [Capability reference](/reference/capabilities/) |
 
 Each page begins with the situation and becomes more detailed as you read. You can
 stop after understanding the decision and its consequences, continue into implementation, or

@@ -1,0 +1,74 @@
+<?xml version='1.0' encoding='utf-8'?>
+<mxfile host="drawio" version="31.3.2">
+  <diagram id="shared-model" name="One model, several questions">
+    <mxGraphModel dx="680" dy="940" grid="1" gridSize="10" page="1" pageScale="1" pageWidth="680" pageHeight="940" background="#FCFCFA">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="heading" value="One model, several questions" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=26;fontColor=#294335;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="30" y="20" width="620" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="history" value="&lt;b&gt;PRIOR EVENTS&lt;/b&gt;&lt;br&gt;What happened so far?" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=22;fontColor=#20352B;fillColor=#EDF7F1;strokeColor=#247556;strokeWidth=1.5;spacing=12;" vertex="1" parent="1">
+          <mxGeometry x="30" y="100" width="280" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="state" value="&lt;b&gt;ENTITY STATE&lt;/b&gt;&lt;br&gt;What is true now?" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=22;fontColor=#20352B;fillColor=#F3EFFA;strokeColor=#7860A0;strokeWidth=1.5;spacing=12;" vertex="1" parent="1">
+          <mxGeometry x="370" y="100" width="280" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="request" value="&lt;b&gt;COMMAND&lt;/b&gt;&lt;br&gt;What is being requested?" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=22;fontColor=#20352B;fillColor=#EEF5FC;strokeColor=#3472A5;strokeWidth=1.5;spacing=12;" vertex="1" parent="1">
+          <mxGeometry x="30" y="350" width="280" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="decision" value="&lt;b&gt;DECISION&lt;/b&gt;&lt;br&gt;Is this allowed now?" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=22;fontColor=#20352B;fillColor=#FFF5E8;strokeColor=#AF6A20;strokeWidth=1.5;spacing=12;" vertex="1" parent="1">
+          <mxGeometry x="370" y="350" width="280" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="event" value="&lt;b&gt;ACCEPTED EVENT&lt;/b&gt;&lt;br&gt;What new fact is recorded?" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=22;fontColor=#20352B;fillColor=#EDF7F1;strokeColor=#247556;strokeWidth=1.5;spacing=12;" vertex="1" parent="1">
+          <mxGeometry x="370" y="600" width="280" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="query" value="&lt;b&gt;QUERY / READ MODEL&lt;/b&gt;&lt;br&gt;What does the reader need?" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=22;fontColor=#20352B;fillColor=#F3EFFA;strokeColor=#7860A0;strokeWidth=1.5;spacing=12;" vertex="1" parent="1">
+          <mxGeometry x="30" y="600" width="280" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="edge-1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endSize=8;strokeWidth=1.5;strokeColor=#657A6C;fontFamily=Helvetica;fontSize=19;fontColor=#294335;labelBackgroundColor=#FCFCFA;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="history" target="state">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge-2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endSize=8;strokeWidth=1.5;strokeColor=#657A6C;fontFamily=Helvetica;fontSize=19;fontColor=#294335;labelBackgroundColor=#FCFCFA;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="state" target="decision">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge-3" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endSize=8;strokeWidth=1.5;strokeColor=#657A6C;fontFamily=Helvetica;fontSize=19;fontColor=#294335;labelBackgroundColor=#FCFCFA;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="request" target="decision">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge-4" value="accept" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endSize=8;strokeWidth=1.5;strokeColor=#657A6C;fontFamily=Helvetica;fontSize=19;fontColor=#294335;labelBackgroundColor=#FCFCFA;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="decision" target="event">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge-5" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endSize=8;strokeWidth=1.5;strokeColor=#657A6C;fontFamily=Helvetica;fontSize=19;fontColor=#294335;labelBackgroundColor=#FCFCFA;exitX=0;exitY=0.5;entryX=1;entryY=0.5;dashed=1;" edge="1" parent="1" source="event" target="query">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="refusal" value="If refused, return a reason without the requested event.&#10;Read models update asynchronously after acceptance." style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=21;fontColor=#294335;fontStyle=0;" vertex="1" parent="1">
+          <mxGeometry x="30" y="760" width="620" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="key-intent" value="" style="rounded=1;html=1;fillColor=#EEF5FC;strokeColor=#3472A5;" vertex="1" parent="1">
+          <mxGeometry x="30.0" y="890" width="20" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="key-label-intent" value="Request" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=17;fontColor=#294335;fontStyle=0;" vertex="1" parent="1">
+          <mxGeometry x="58.0" y="880" width="127.0" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="key-decision" value="" style="rounded=1;html=1;fillColor=#FFF5E8;strokeColor=#AF6A20;" vertex="1" parent="1">
+          <mxGeometry x="185.0" y="890" width="20" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="key-label-decision" value="Decision" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=17;fontColor=#294335;fontStyle=0;" vertex="1" parent="1">
+          <mxGeometry x="213.0" y="880" width="127.0" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="key-event" value="" style="rounded=1;html=1;fillColor=#EDF7F1;strokeColor=#247556;" vertex="1" parent="1">
+          <mxGeometry x="340.0" y="890" width="20" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="key-label-event" value="Fact" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=17;fontColor=#294335;fontStyle=0;" vertex="1" parent="1">
+          <mxGeometry x="368.0" y="880" width="127.0" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="key-view" value="" style="rounded=1;html=1;fillColor=#F3EFFA;strokeColor=#7860A0;" vertex="1" parent="1">
+          <mxGeometry x="495.0" y="890" width="20" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="key-label-view" value="State / view" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=17;fontColor=#294335;fontStyle=0;" vertex="1" parent="1">
+          <mxGeometry x="523.0" y="880" width="127.0" height="40" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

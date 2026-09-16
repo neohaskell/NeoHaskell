@@ -2,7 +2,7 @@
 title: "Try modeling without code"
 description: "Use a tiny ecommerce exercise to describe a rule and catch an agent's misunderstanding."
 sidebar:
-  order: 3
+  order: 5
 ---
 
 Start a practice application with one product: a mug. A customer requests two mugs.

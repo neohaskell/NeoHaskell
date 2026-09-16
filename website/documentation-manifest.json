@@ -49,7 +49,9 @@
     "src/content/docs/reference/glossary.md",
     "src/content/docs/reference/troubleshooting.md",
     "src/content/docs/guides/index.mdx",
-    "src/content/docs/guides/deployment.mdx"
+    "src/content/docs/guides/deployment.mdx",
+    "src/content/docs/start/history-and-change.md",
+    "src/content/docs/start/growing-by-slices.md"
   ],
   "requiredTopics": [
     "core-primitives",
@@ -114,7 +116,10 @@
     "core/service/Service/Command/Core.hs": "034fd81190ae3dda556cf3430afa97505e14f3d11894e0cfba4280bd182b4d35",
     "core/service/Service/CommandExecutor/Core.hs": "f70426423f17e3f8df40f8599caa293493eb4e1d0cb40a3a5f81ae379d946468",
     "core/service/Service/CommandExecutor/TH.hs": "8b61866d2047b7412efaa436588a84f774555e3314b9729a8c82b36a48f3167d",
+    "core/service/Service/Entity/Core.hs": "c615465b6fa11f0fbaf065c8a99d0f04d1eaf7b452d38d0cea61a7bc2cbdf714",
+    "core/service/Service/Event/EventMetadata.hs": "411f23dfad45ead63d92765f3d8bad6a8c6d901a3a8becd686f21b2e9c80a2d0",
     "core/service/Service/Event/TH.hs": "671712d5c4dbb9bb6d5f97dd088d19e239c02036acbe38988c953a16bef526e3",
+    "core/service/Service/EventStore/Core.hs": "f8c5aecec7d2fce60d1806ff43343dfde18c3ca54c3fc3be0c19ca7507741384",
     "core/service/Service/FileUpload/Resolver.hs": "25b64eeb2c4101013165348e9160d34ccbbad35c06b5f4dff1c6b8c56d083904",
     "core/service/Service/FileUpload/Web.hs": "8c7ac5577f78af6efe74b37c5e2ad06bfcc22cb624aba135edbfbe4e70dfacde",
     "core/service/Service/Infra/Postgres/ConnectionConfig.hs": "a9b4f80abea827262163f306235c40feacbb5187f9ae2fc46626013c96dde3ba",
@@ -1511,7 +1516,11 @@
         "docs/charter.md",
         "codemap/capabilities.yaml",
         "neo/src/cli.rs",
-        "neo/src/ide/sync.rs"
+        "neo/src/ide/sync.rs",
+        "testbed/src/Testbed/Cart/Commands/AddItem.hs",
+        "testbed/src/Testbed/Cart/Core.hs",
+        "testbed/src/Testbed/Cart/Queries/CartSummary.hs",
+        "testbed/tests/scenarios/stock-reservation.hurl"
       ],
       "review": {
         "accessibleOpening": true,
@@ -1521,7 +1530,7 @@
         "independence": true,
         "domainTransfer": true
       },
-      "notes": "Editorial review of human intent, progressive depth, fictional examples, and claim boundaries. Paper exercises are designs, not implemented order features; reader trial remains pending. Domain-transfer review: the application concept leads; ecommerce is a worked example without an assumed company story.",
+      "notes": "Editorial review of human intent, progressive depth, fictional examples, and claim boundaries. Paper exercises are designs, not implemented order features; reader trial remains pending. Domain-transfer review: the application concept leads; ecommerce is a worked example without an assumed company story. Expanded conceptual depth reviewed against the strategic explainer and public source; cross-review separates structural checks from business correctness and keeps the early technical ceiling low.",
       "excerpts": []
     },
     {
@@ -1537,7 +1546,11 @@
         "docs/charter.md",
         "codemap/capabilities.yaml",
         "neo/src/cli.rs",
-        "neo/src/ide/sync.rs"
+        "neo/src/ide/sync.rs",
+        "testbed/src/Testbed/Cart/Commands/AddItem.hs",
+        "testbed/src/Testbed/Cart/Core.hs",
+        "testbed/src/Testbed/Cart/Queries/CartSummary.hs",
+        "testbed/tests/scenarios/stock-reservation.hurl"
       ],
       "review": {
         "accessibleOpening": true,
@@ -1547,7 +1560,65 @@
         "independence": true,
         "domainTransfer": true
       },
-      "notes": "Editorial review of human intent, progressive depth, fictional examples, and claim boundaries. Paper exercises are designs, not implemented order features; reader trial remains pending. Domain-transfer review: the application concept leads; ecommerce is a worked example without an assumed company story.",
+      "notes": "Editorial review of human intent, progressive depth, fictional examples, and claim boundaries. Paper exercises are designs, not implemented order features; reader trial remains pending. Domain-transfer review: the application concept leads; ecommerce is a worked example without an assumed company story. Expanded conceptual depth reviewed against the strategic explainer and public source; cross-review separates structural checks from business correctness and keeps the early technical ceiling low.",
+      "excerpts": []
+    },
+    {
+      "path": "src/content/docs/start/growing-by-slices.md",
+      "section": "start",
+      "topics": [
+        "commands",
+        "entities",
+        "queries",
+        "integration-runtime",
+        "testbed"
+      ],
+      "sources": [
+        "docs/charter.md",
+        "testbed/src/Testbed/Cart/Core.hs",
+        "testbed/src/Testbed/Cart/Commands/AddItem.hs",
+        "testbed/src/Testbed/Cart/Queries/CartSummary.hs",
+        "testbed/src/Testbed/Cart/Integrations/ReserveStockOnItemAdded.hs",
+        "testbed/src/Testbed/Stock/Core.hs",
+        "testbed/src/Testbed/Stock/Commands/ReserveStock.hs",
+        "testbed/tests/scenarios/stock-reservation.hurl"
+      ],
+      "review": {
+        "accessibleOpening": true,
+        "progressiveDepth": true,
+        "concreteOutcome": true,
+        "sourceGrounded": true,
+        "independence": true,
+        "domainTransfer": true
+      },
+      "notes": "Expanded conceptual introduction informed by the author-supplied explainer and cross-reviewed against public implementation. Original diagrams have descriptive text alternatives. Examples are domain designs, not shipped banking or institutional features. Retention, policy correctness, historical compatibility, and outcomes require application decisions and verification. Human reader trial remains pending.",
+      "excerpts": []
+    },
+    {
+      "path": "src/content/docs/start/history-and-change.md",
+      "section": "start",
+      "topics": [
+        "event-store",
+        "entities",
+        "queries"
+      ],
+      "sources": [
+        "core/service/Service/Entity/Core.hs",
+        "core/service/Service/Event/EventMetadata.hs",
+        "core/service/Service/EventStore/Core.hs",
+        "core/service/Service/Query/Core.hs",
+        "core/service/Service/Query/Subscriber.hs",
+        "testbed/src/Testbed/Cart/Core.hs"
+      ],
+      "review": {
+        "accessibleOpening": true,
+        "progressiveDepth": true,
+        "concreteOutcome": true,
+        "sourceGrounded": true,
+        "independence": true,
+        "domainTransfer": true
+      },
+      "notes": "Expanded conceptual introduction informed by the author-supplied explainer and cross-reviewed against public implementation. Original diagrams have descriptive text alternatives. Examples are domain designs, not shipped banking or institutional features. Retention, policy correctness, historical compatibility, and outcomes require application decisions and verification. Human reader trial remains pending.",
       "excerpts": []
     },
     {
@@ -1589,7 +1660,11 @@
         "docs/charter.md",
         "codemap/capabilities.yaml",
         "neo/src/cli.rs",
-        "neo/src/ide/sync.rs"
+        "neo/src/ide/sync.rs",
+        "testbed/src/Testbed/Cart/Commands/AddItem.hs",
+        "testbed/src/Testbed/Cart/Core.hs",
+        "testbed/src/Testbed/Cart/Queries/CartSummary.hs",
+        "testbed/tests/scenarios/stock-reservation.hurl"
       ],
       "review": {
         "accessibleOpening": true,
@@ -1599,7 +1674,7 @@
         "independence": true,
         "domainTransfer": true
       },
-      "notes": "Editorial review of human intent, progressive depth, fictional examples, and claim boundaries. Paper exercises are designs, not implemented order features; reader trial remains pending. Domain-transfer review: the application concept leads; ecommerce is a worked example without an assumed company story.",
+      "notes": "Editorial review of human intent, progressive depth, fictional examples, and claim boundaries. Paper exercises are designs, not implemented order features; reader trial remains pending. Domain-transfer review: the application concept leads; ecommerce is a worked example without an assumed company story. Expanded conceptual depth reviewed against the strategic explainer and public source; cross-review separates structural checks from business correctness and keeps the early technical ceiling low.",
       "excerpts": []
     },
     {
@@ -1615,7 +1690,11 @@
         "docs/charter.md",
         "codemap/capabilities.yaml",
         "neo/src/cli.rs",
-        "neo/src/ide/sync.rs"
+        "neo/src/ide/sync.rs",
+        "testbed/src/Testbed/Cart/Commands/AddItem.hs",
+        "testbed/src/Testbed/Cart/Core.hs",
+        "testbed/src/Testbed/Cart/Queries/CartSummary.hs",
+        "testbed/tests/scenarios/stock-reservation.hurl"
       ],
       "review": {
         "accessibleOpening": true,
@@ -1625,8 +1704,59 @@
         "independence": true,
         "domainTransfer": true
       },
-      "notes": "Editorial review of human intent, progressive depth, fictional examples, and claim boundaries. Paper exercises are designs, not implemented order features; reader trial remains pending. Domain-transfer review: the application concept leads; ecommerce is a worked example without an assumed company story.",
+      "notes": "Editorial review of human intent, progressive depth, fictional examples, and claim boundaries. Paper exercises are designs, not implemented order features; reader trial remains pending. Domain-transfer review: the application concept leads; ecommerce is a worked example without an assumed company story. Expanded conceptual depth reviewed against the strategic explainer and public source; cross-review separates structural checks from business correctness and keeps the early technical ceiling low.",
       "excerpts": []
+    }
+  ],
+  "diagrams": [
+    {
+      "source": "public/diagrams/correction-history.drawio",
+      "export": "public/diagrams/correction-history.svg",
+      "sourceHash": "ac9f3a80e221a11fcf15297f336ccb175942b4ba0e5cd5641a66391e6f1e4b19",
+      "exportHash": "d8a65ed3f5639bd383626d7b0ce353f760f568e883b4cfd45b1fcf2461889a82",
+      "reviewed": true
+    },
+    {
+      "source": "public/diagrams/growing-by-slices.drawio",
+      "export": "public/diagrams/growing-by-slices.svg",
+      "sourceHash": "5ef46e3e8468730b926d4255e563a80f1ee2e9b93dce972a4458ad7a9830e269",
+      "exportHash": "51f3e7b1b35f6aea16bef0f975e2b0ec7ecb44a22147a512195a451413afecea",
+      "reviewed": true
+    },
+    {
+      "source": "public/diagrams/history-and-summary.drawio",
+      "export": "public/diagrams/history-and-summary.svg",
+      "sourceHash": "fd7ba468a641682959197f4a3e51bb49d75f68788d34f742b8eda2c0488ea353",
+      "exportHash": "89ad9ad71290a86be1fce097dbbcbef4994047ec0c9762b51c30bb53f03fc548",
+      "reviewed": true
+    },
+    {
+      "source": "public/diagrams/meaning-to-software.drawio",
+      "export": "public/diagrams/meaning-to-software.svg",
+      "sourceHash": "c7b1a16829a1100744a69b0628fba4a587d5c437143015ffd3cb38be5b976d02",
+      "exportHash": "93716d955b86adabe939804b6c3032d5a4a8d94098f1d8ee34f6a55ffea897cf",
+      "reviewed": true
+    },
+    {
+      "source": "public/diagrams/request-decision-event.drawio",
+      "export": "public/diagrams/request-decision-event.svg",
+      "sourceHash": "8f6bb95deaa69d71fb7baa4fca519d11a0200cecbe02a7ad3aa7d46d98126eb0",
+      "exportHash": "4cd047177a4f4605f310e2a38993be87d78a59be07ee4fb5d1f85c347b47970f",
+      "reviewed": true
+    },
+    {
+      "source": "public/diagrams/shared-model.drawio",
+      "export": "public/diagrams/shared-model.svg",
+      "sourceHash": "88792a34095b267ad40df489eab5eb1d966eec6ac92fd129188986b1b58a0b7b",
+      "exportHash": "da5f51914eea45f8c9c09805dc13ec3639da15f976fe8f0f331a8b91e9bc7e97",
+      "reviewed": true
+    },
+    {
+      "source": "public/diagrams/trust-loop.drawio",
+      "export": "public/diagrams/trust-loop.svg",
+      "sourceHash": "0d44f6726db22e772621bb42899d8f5f6f4aa6290e5236e6da6f6ae1c3b0591b",
+      "exportHash": "eca23e97b62165f4c99e17de4307d1552c9737281575450329540fcce6505634",
+      "reviewed": true
     }
   ]
 }

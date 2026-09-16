@@ -21,14 +21,14 @@ policies are design extensions, not a claimed complete commerce product.
 
 ## Verification results
 
-- 47 authored/reviewed human pages, with 24 required public capability areas covered.
-- 150 inspected public source files fingerprinted; 14 literal code excerpts checked.
-- `pnpm test:docs`: 13 positive, negative, and boundary fixtures passed, including a missing domain-transfer review.
+- 49 authored/reviewed human pages, with 24 required public capability areas covered.
+- 153 inspected public source files fingerprinted; 14 literal code excerpts checked.
+- `pnpm test:docs`: 21 positive, negative, and boundary fixtures passed, including missing domain-transfer review, diagram source/export drift, invalid diagram paths, and missing image alternatives.
 - `pnpm check:docs`: complete inventory, review records, source evidence, excerpts,
   internal links, and reachability from the home page passed.
 - `pnpm check`: zero errors, warnings, or hints from Astro diagnostics.
 - `pnpm build`: production build and search index completed, including locale fallback.
-- `pnpm check:links`: all 47 authored routes and rendered local links/anchors passed.
+- `pnpm check:links`: all 49 authored routes and rendered local links/anchors passed.
 - All 40 shell code blocks passed `bash -n`; this checks syntax, not execution.
 - Public GitHub source links were checked against existing repository paths.
 - Safari review verified the small-window lesson layout, menu ordering, exercise
@@ -63,6 +63,33 @@ secret-store persistence from transaction-store lifetime. A transfer milestone n
 assembles Cart/Stock in the reader's own application. Source inspection also bounded
 claims about retries, upload cleanup/downloads, query checkpoints, AI tools, and
 provider callbacks. No framework source was changed as part of this documentation work.
+
+
+## Expanded introduction and visual review
+
+The supplied 13-page `neohaskell-explainer-v5.pdf` was read in full and all pages
+were inspected visually. Its progression from meaning to history, correction,
+shared models, bounded feature growth, and strategic evaluation informed the
+expanded introduction. Technical claims were checked against the public sources;
+the PDF was not treated as evidence of runtime guarantees.
+
+The home page and start section grew from approximately 3,300 to 9,500 words,
+including two new chapters on history/change and growth by slices. Independent
+cross-review checked natural depth, domain transfer, and the boundary between
+compiler checks and policy correctness. Early chapters remain code-free.
+
+Seven original diagrams were authored as editable Draw.io files and exported as
+editable SVGs. All passed the Draw.io skill's structural validation with zero
+errors or warnings after correction of an overlapping annotation. Every draft
+render was inspected for readable labels, routing, and clipping. The final SVGs
+were checked in the site through the Tailscale preview: Safari showed the expanded
+chapter, accessible diagram link names, and a working full-size SVG link. A narrow
+window preserved readable labels and allowed horizontal scrolling within the image.
+
+The current content gate, Astro diagnostics, production build/search, rendered
+links and image resources, spec checks, release fragments, expectation guard, and
+whitespace checks passed. This update changes documentation and its presentation;
+no additional application runtime result is claimed.
 
 ## Explicit remaining validation boundaries
 

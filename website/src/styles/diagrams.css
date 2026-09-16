@@ -1,0 +1,22 @@
+/* Keep labels readable on narrow screens; the link opens the full-size SVG. */
+.sl-markdown-content a:has(> img[src^='/diagrams/']) {
+  display: block;
+  overflow-x: auto;
+  border: 1px solid var(--sl-color-gray-4);
+  border-radius: 0.75rem;
+  background: #fcfcfa;
+}
+
+.sl-markdown-content a > img[src^='/diagrams/'] {
+  display: block;
+  width: 100%;
+  min-width: 36rem;
+  max-width: none;
+  height: auto;
+  margin: 0;
+}
+
+.sl-markdown-content a:has(> img[src^='/diagrams/']):focus-visible {
+  outline: 3px solid var(--sl-color-text-accent);
+  outline-offset: 3px;
+}
