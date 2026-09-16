@@ -144,6 +144,9 @@ jobs:
           persist-credentials: false
       - uses: DeterminateSystems/determinate-nix-action@v3.22.2
         if: matrix.reuse != true
+        with:
+          extra-conf: |
+            accept-flake-config = true
       - uses: DeterminateSystems/magic-nix-cache-action@v14
         if: matrix.reuse != true
       - uses: actions/download-artifact@v8
