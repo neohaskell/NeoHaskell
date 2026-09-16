@@ -81,9 +81,9 @@ The ecommerce project gives you a familiar place to practise this way of growing
 6. **Add outside services.** Decide how payment outcomes, notifications, and
    failures affect the process.
 
-The public reference application contains the cart, summary, and stock examples.
-Order acceptance and payment complete a design you will develop; they are not
-already supplied by those examples. The [build journey](/build/) introduces the
+You will build the cart, summary, and stock features in your own project.
+Order acceptance and payment extend that foundation with decisions you make;
+they are later design exercises. The [build journey](/build/) introduces the
 working pieces before [the practice project milestone](/build/your-shop/) asks
 you to make more of the decisions yourself.
 
@@ -94,7 +94,7 @@ it to answer.
 
 ## Keep relationships visible
 
-Small slices can still participate in a large process. In the reference example,
+Small slices can still participate in a large process. In the workflow you will build,
 adding an item to a cart triggers a separate stock reservation request. The cart
 accepts its change before that later request finishes. The stock decision can
 refuse an unavailable quantity.

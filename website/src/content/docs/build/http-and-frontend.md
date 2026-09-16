@@ -13,7 +13,7 @@ Our worked example is a storefront for the ecommerce practice project. A cart ad
 
 ## Start from the real contract
 
-With the [testbed running](/build/first-cart/), open `http://localhost:8080/docs` to inspect the generated API documentation. The same schema is available at `/openapi.json` and `/openapi.yaml`.
+With [your application running](/build/first-cart/) through `neo run`, open `http://localhost:8080/docs` to inspect the generated API documentation. The same schema is available at `/openapi.json` and `/openapi.yaml`.
 
 | Purpose | Example route | Meaning of success |
 | --- | --- | --- |
@@ -25,7 +25,7 @@ Registration drives the interface: the command declares its transport, the servi
 
 ## Connect one action
 
-This **partial browser JavaScript function** sends the existing testbed request. Call it with the real IDs from [stock and checkout](/build/stock-and-checkout/). It assumes the practice frontend uses a same-origin proxy for `/commands`; cross-origin development needs explicit server CORS configuration.
+This **partial browser JavaScript function** sends your application’s `AddItem` request. Call it with the real IDs from [stock and checkout](/build/stock-and-checkout/). It assumes the practice frontend uses a same-origin proxy for `/commands`; cross-origin development needs explicit server CORS configuration.
 
 ```javascript
 async function addMugs(cartId, stockId, quantity) {
@@ -42,7 +42,7 @@ async function addMugs(cartId, stockId, quantity) {
 }
 ```
 
-An authenticated application must also supply its credential according to the authentication setup. This anonymous demo function is not a complete customer session implementation.
+An authenticated application must also supply its credential according to the authentication setup. This local practice function is not a complete customer session implementation.
 
 The UI should disable accidental duplicate submissions while the request is in flight, show a useful rejection, and refresh the relevant query after acceptance. A lost network response needs special care: the server may already have accepted the request. Decide how the application detects duplicates before automatically resending writes.
 

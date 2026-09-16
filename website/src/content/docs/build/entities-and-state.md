@@ -11,7 +11,7 @@ An **entity** is the business object whose rules you are protecting. It might re
 
 ## Follow one cart through time
 
-The public Cart model behaves like this:
+Your `src/Shop/Cart/Entity.hs` now behaves like this:
 
 | Recorded event | Resulting state |
 | --- | --- |
@@ -23,7 +23,7 @@ The distinction between an entry and a total quantity is a model choice. The cur
 
 ## Read the state and its wiring
 
-Exact excerpt from the public Cart model:
+The record you added in `src/Shop/Cart/Entity.hs`:
 
 ```haskell
 data CartEntity = CartEntity
@@ -31,10 +31,9 @@ data CartEntity = CartEntity
     ownerId :: Text,
     items :: Array CartItem
   }
-  deriving (Generic)
 ```
 
-The entity connects to its initial state and event application through another exact excerpt:
+The entity connects to its initial state and event application through:
 
 ```haskell
 instance Entity CartEntity where
@@ -71,4 +70,4 @@ Expect two entries and five units under the current model. An empty history yiel
 
 Next: [queries](/build/queries/) turns this state into information useful on a screen.
 
-Public sources: [Cart entity and update](https://github.com/neohaskell/NeoHaskell/blob/main/testbed/src/Testbed/Cart/Core.hs), [starter replay test](https://github.com/neohaskell/NeoHaskell/blob/main/neo/starter/tests/Property/CounterReplaySpec.hs).
+Continue working in your project with `neo build`, `neo test`, and `neo ide`. The [testing lesson](/build/testing/) adds a replay check for these exact Cart modules.

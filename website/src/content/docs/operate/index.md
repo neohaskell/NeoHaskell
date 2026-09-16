@@ -21,7 +21,7 @@ For an event-sourced service, begin with these promises and adapt them to your a
 | Failures can be diagnosed | Useful logs, identifiers, and a recovery procedure |
 | Changes preserve existing business history | Old-event fixtures and compatibility tests |
 
-The recurring ecommerce practice project makes these concerns concrete. The public starter runs a counter; the reference testbed demonstrates carts, stock, queries, and integrations. These are examples of reusable framework capabilities, not requirements for your own domain or a finished commerce platform. Apply the checks to the behaviour you implement.
+Continue in the `mug-shop` project you created with `neo new`. Its `src/Shop/Cart/` and `src/Shop/Stock/` modules give you concrete behaviour to operate. The same checks apply to other domains. At this point, the in-memory event store still loses history on restart; the next chapter changes that deliberately.
 
 ## Follow the operational journey
 
@@ -38,8 +38,8 @@ These are connected subjects, not a certification checklist. A single-host pilot
 
 For the ecommerce practice project:
 
-> “Show me that an accepted order survives a process restart. Identify where its events live, show the rebuilt query, and explain what would happen if the upload disk disappeared.”
+> “Show me that a cart and its accepted item quantities survive a process restart. Identify where their events live, show the rebuilt cart summary, and demonstrate that a refused quantity did not change it.”
 
-Use the [visual IDE](/getting-started/visual-ide/) to locate the relevant entity and its consumers—in this example, the order model. The graph helps explain the application; deployment logs and tests establish what the running revision actually did.
+Use the [visual IDE](/getting-started/visual-ide/) to locate the relevant entity and its consumers—in this example, the cart and its summary. The graph helps explain the application; deployment logs and tests establish what the running revision actually did.
 
 Once you can operate and change your own application, [contribution](/operate/contributing/) offers a separate path into improving NeoHaskell.

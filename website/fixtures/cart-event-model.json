@@ -47,7 +47,7 @@
       "order": 0.0
     }
   ],
-  "id": "docs-cart",
+  "id": "mug-shop",
   "layout": {
     "nodePositions": {
       "node-heal-command-920c18eda3e8cb67": {
@@ -77,7 +77,7 @@
       "zoom": 1
     }
   },
-  "name": "Cart example",
+  "name": "Mug shop",
   "nodes": [
     {
       "entityId": "entity-heal-8eec88e6fc173009",

@@ -7,6 +7,11 @@ example and practice project, with general-purpose concepts leading the topic pa
 Preserve direct consultation and an accessible evaluator path; no existing company's
 story is required. Agent-facing documentation is separate.
 
+The reader installs the released CLI, creates one project with `neo new`, and
+continues it through the cart, IDE, tests, integrations, and deployment. Complete
+tutorial checkpoints support source and runtime verification. Framework-repository
+commands belong only in the contribution branch.
+
 The introduction develops the philosophy before code through longer conceptual
 chapters and editable visual explanations. History, correction, feature slices,
 shared modeling, and human-agent trust form the accessible foundation. Diagram
@@ -27,7 +32,12 @@ new-extension-point: false
 
 ## Contract delta
 
-No Haskell or Rust public APIs change.
+No Haskell or Rust public APIs change. The Neo CLI's generated project preset
+adds `DerivingStrategies`, so framework declaration helpers work without per-file
+language pragmas. A regression checks the real rendered template and inheritance
+by application, library, and test components. The published 0.10.0 binary lacks
+this default; pragma-free tutorial verification uses the corrected local CLI,
+and the installation page identifies the next-release requirement.
 
 ```diff signatures
 ```
@@ -37,7 +47,7 @@ No Haskell or Rust public APIs change.
 | ID | Behavior | Proving test | Level | Boundary |
 |----|----------|--------------|-------|----------|
 | C1 | Every planned human page has source evidence, review coverage, and valid local links | `script:website/scripts/check-docs.mjs#--check` | unit | none |
-| C2 | The documentation gate rejects missing pages, source drift, invalid links, and absent review evidence | `script:website/scripts/check-docs.mjs#--self-test` | unit | none |
+| C2 | The documentation gate rejects missing pages, source drift, invalid links, absent review evidence, contributor commands, and boilerplate or undisclosed code walls in app lessons | `script:website/scripts/check-docs.mjs#--self-test` | unit | none |
 | C3 | Built documentation images have a dialog controller and an accessible enlargement trigger | `script:website/scripts/check-docs.mjs#--built` | unit | none |
 
 ## User impact

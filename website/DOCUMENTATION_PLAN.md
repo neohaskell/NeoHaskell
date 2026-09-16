@@ -74,8 +74,14 @@ reading to answer a specific question.
 - Lead general topic pages with the reusable problem and concept. Bring in the
   ecommerce example to make the idea concrete, then help the reader apply it to their
   own domain. Tutorial milestones can open directly with the practice task.
-- Use the existing public starter and testbed as executable anchors. Distinguish
-  implemented examples from shop-specific designs the reader must implement.
+- Create one reader-owned project with the released `neo` CLI. Every main-journey
+  implementation, test, IDE session, integration, and deployment continues that
+  project. Teach `neo new`, `neo build`, `neo run`, and `neo test`; never require
+  a framework checkout, reference application, or contributor build commands.
+- Use public framework source and tests as author evidence. Keep source provenance
+  in maintainer records or optional notes; it must not become the reader's workflow.
+- Provide complete first-slice modules and wiring, followed by explicit additions.
+  Distinguish implemented steps from later design exercises.
 - Introduce complexity when the business needs it: quantity rules, stock, cancellation,
   reads, permissions, integrations, AI features, deployment, and operation.
 - Teach use of the Neo IDE graph to connect business concepts with implementation.
@@ -87,6 +93,55 @@ reading to answer a specific question.
 - End the main journey with operating and evolving an application confidently.
   Reusable packages, integration authoring, and framework contribution are branches.
 
+## Code examples: reveal the behaviour before the file
+
+Teaching examples show the relevant declarations and behaviour, in the style of
+Java documentation examples: omit module headers, import lists, and unrelated
+scaffolding. If an example needs to show a library import, show only `import Core`;
+imports from the reader's own project are allowed when they help explain a connection.
+Do not imply that a fragment is a standalone file or that today's `Core` exports
+every framework API. Complete checkpoints retain the imports required to compile.
+Neo configures
+the compiler extensions in generated project settings. Application examples must
+contain no `LANGUAGE` pragmas. If an example needs an extension missing from Neo's
+preset, fix that preset and record the required CLI version; do not make the
+reader configure the language manually.
+
+Show each concept's canonical derivation marker with its declaration:
+`command`, `event`, `deriveQuery`, or `outboundIntegration`. Do not teach manual
+`deriving` clauses or instances for boilerplate the marker supplies. Keep required
+companion functions in the correct order; show them progressively when needed.
+Additional equality used by complete event tests is separate from marker-generated
+instances. Entities and ordinary values currently have no equivalent marker;
+omit their mechanical setup from teaching fragments and retain it in complete files.
+
+Keep files cohesive. Give each command, event payload, query, and integration a
+clear home. Separate entity state and replay from the event definitions, keep a
+small domain `Core` facade where useful, and keep service registration and
+application composition distinct. Use the public starter as the reproducible
+structural model; no private application material belongs in the examples.
+
+Show code progressively within each page:
+
+- Begin with the behaviour or question, then a small relevant declaration or
+  decision. Explain its meaning before introducing the next part.
+- Show only the lines needed for the point under discussion. Do not dump imports,
+  complete modules, wiring, and tests together as the first explanation.
+- Keep complete, runnable files in downloadable checkpoints linked from the step
+  that needs them. Name the destination path and explain whether to create,
+  extend, or replace it. Do not hide a whole implementation dump in a disclosure
+  and treat that as teaching. Disclosures can deepen a specific idea or reveal
+  exercise reasoning without introducing a wall of unrelated scaffolding.
+- Grow the same files and project across lessons. Show incremental changes and
+  observable checks; never switch to another application to simplify the example.
+- Keep a complete verification checkpoint behind the lesson. The reader should
+  see a small next step while maintainers can build and test the whole result.
+
+Automated checks reject language pragmas, module/import/deriving scaffolding, long,
+undisclosed Haskell blocks, and stale downloadable checkpoints.
+This is a backstop against accidental implementation dumps, not a fixed page
+formula; editorial review still decides what belongs at each depth.
+
 ## Content architecture and writing ownership
 
 English source is in `src/content/docs/`; existing locale fallback and translation
@@ -95,7 +150,7 @@ automation remain the translation strategy. Generated ADR pages keep their gener
 | Section | Purpose | Planned subjects |
 | --- | --- | --- |
 | Start / evaluate | Benefit before setup | Why NeoHaskell; history and correction; growth by slices; fit and tradeoffs; a modeling exercise without setup; trusting an agent; event modeling; reading paths |
-| Build applications | First working slice to richer behaviour | Setup; visual IDE; first cart; commands/events/entities; queries; stock and checkout; HTTP/frontend; tests; permissions; configuration; transfer the working slice into the reader’s project; language essentials |
+| Build applications | First working slice to richer behaviour | Setup; first cart; visual IDE; commands/events/entities; queries; stock and checkout; HTTP/frontend; tests; permissions; configuration; extend the reader’s working project; language essentials |
 | Connect systems | Effects beyond a single service | Integration lifecycle; cross-domain workflows; HTTP/providers/payments; email; files; PDF/OCR; AI; tools/agents; timers; custom integration authoring |
 | Run and evolve | Deploy, diagnose, and change | Persistence; deployment; observability; recovery; evolution; security; performance; contribution |
 | Reference | Direct consultation | CLI; language vocabulary; capability map; glossary; troubleshooting |
@@ -133,9 +188,10 @@ Use the same semantic colours in earlier conceptual illustrations.
 
 The visual IDE guide includes actual captures of a running IDE, with a small public
 example and a closer view of a selected command. Explain what to look at in each
-image, state the capture version and any curated scope, and provide in-page image enlargement
+image, and provide in-page image enlargement
 and useful text alternatives. Keep editable Draw.io sources for diagrams
-and a reproducible public model fixture for screenshots. The content gate checks
+and a reproducible public model fixture for screenshots. Record capture version and
+curated scope in the maintainer review, outside the reader-facing lesson. The content gate checks
 registered assets and their hashes; image review checks what readers can see.
 
 Automated checks:

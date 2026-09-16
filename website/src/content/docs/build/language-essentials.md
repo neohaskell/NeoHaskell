@@ -17,9 +17,9 @@ NeoHaskell commonly passes a value through named steps using `|>`:
 cart.items |> Array.length
 ```
 
-That means “take the cart's entries, then count them.” The expression comes from the public Cart summary. Qualified names such as `Array.length` tell you which module supplies the operation.
+That means “take the cart's entries, then count them.” You used this expression in `src/Shop/Cart/Queries/CartSummary.hs`. Qualified names such as `Array.length` tell you which module supplies the operation.
 
-You will see imports like `import Array qualified`, along with `import Core` for the shared vocabulary. A record holds named fields; `cart.ownerId` reads one, and `cart {ownerId = newOwner}` produces an updated record value. Producing that value alone does not persist an event.
+`Core` supplies the default vocabulary. These teaching excerpts omit module headers and import lists; the downloadable checkpoints contain the complete files. Neo manages the language settings, so application files do not need language pragmas. A record holds named fields; `cart.ownerId` reads one, and `cart {ownerId = newOwner}` produces an updated record value. Producing that value alone does not persist an event.
 
 ## Distinguish absence, failure, and work
 
@@ -89,4 +89,4 @@ One mug is a valid quantity but may not be what the customer requested. Preserve
 
 Next: [integrations](/connect/) applies these ideas to work outside the core model. Return to the [build overview](/build/) for the learning sequence.
 
-Public sources: [Result](https://github.com/neohaskell/NeoHaskell/blob/main/core/core/Result.hs), [Task](https://github.com/neohaskell/NeoHaskell/blob/main/core/core/Task.hs), [Decimal](https://github.com/neohaskell/NeoHaskell/blob/main/core/decimal/Decimal.hs), [Mappable](https://github.com/neohaskell/NeoHaskell/blob/main/core/traits/Mappable.hs), [Cart summary](https://github.com/neohaskell/NeoHaskell/blob/main/testbed/src/Testbed/Cart/Queries/CartSummary.hs).
+Public sources: [Result](https://github.com/neohaskell/NeoHaskell/blob/main/core/core/Result.hs), [Task](https://github.com/neohaskell/NeoHaskell/blob/main/core/core/Task.hs), [Decimal](https://github.com/neohaskell/NeoHaskell/blob/main/core/decimal/Decimal.hs), [Mappable](https://github.com/neohaskell/NeoHaskell/blob/main/core/traits/Mappable.hs).

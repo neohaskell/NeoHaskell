@@ -9,22 +9,29 @@ Email gives people a result they can inspect outside your application: a notific
 
 NeoHaskell includes Brevo and Azure Communication Services (ACS) request types. We will use an order confirmation from the practice project to learn the request and callback pattern. Provider credentials, verified sender setup, and live delivery are separate setup work; start with a test recipient you control.
 
+## Add email to mug-shop
+
+Use your existing project and complete the
+[integration setup](/connect/#prepare-your-project). Put the request-building
+helper in `src/Shop/Integrations/Email.hs`. Its caller is an outbound handler in
+the part of the application that owns the notification request. Register that
+handler in `src/App.hs` using the pattern from [workflows](/connect/workflows/).
+
+An order confirmation requires the order and notification workflow you design
+below; it is not present merely because Cart and Stock compile. Start with a
+controlled notification request before making it part of checkout.
+
 ## Define the outcome first
 
-Use an application command capable of representing provider acceptance and failure. It should carry the notification identifier and any identifier needed to connect it to the originating action. Its successful branch records the provider's message/operation ID; its failure branch records a safe explanation that the application can display.
+Use an application command declared with `InternalTransport` and capable of representing provider acceptance and failure. It should carry the notification identifier and any identifier needed to connect it to the originating action. Its successful branch records the provider's message/operation ID; its failure branch records a safe explanation that the application can display.
 
 Trigger email from a committed event. In the example, a notification failure should not make the accepted order disappear. To resend safely, model the notification attempt and decide how duplicate sends are handled.
 
 ## Configure a Brevo request
 
-This **partial builder** uses actual fields. `emailKey` is a `Redacted Text` credential value; `recordAccepted` and `recordFailed` return the same command type. The addresses are fictional examples.
+This **partial builder** describes a plain-text message. `emailKey` is a `Redacted Text` credential value; `recordAccepted` and `recordFailed` return the same command type. The addresses are fictional examples.
 
 ```haskell
-import Integration qualified
-import Integration.Brevo qualified as Brevo
-import Integration.Brevo.Internal qualified as BrevoInternal
-import Integration.Http ()
-
 Brevo.Request
   { sender = Brevo.sender "orders@example.com"
   , to = [Brevo.recipient customerEmail]
@@ -42,7 +49,7 @@ Brevo.Request
   |> Integration.outbound
 ```
 
-For an event handler with no configuration parameter, one supported runtime pattern is to set `emailKey` to `Redacted.wrap "${SHOP_BREVO_API_KEY}"` (with `import Redacted qualified`). This stores a placeholder in the request; the shared HTTP authentication layer expands it from the server environment when executing. Set that environment variable through your deployment's secret configuration. Do not put the actual key in the event or the source file.
+For an event handler with no configuration parameter, one supported runtime pattern is to set `emailKey` to `Redacted.wrap "${SHOP_BREVO_API_KEY}"`. This stores a placeholder in the request; the shared HTTP authentication layer expands it from the server environment when executing. Set that environment variable through your deployment's secret configuration. Do not put the actual key in the event or the source file.
 
 The explicit conversion is needed for the current source: the Brevo facade exposes its request builder but does not supply a direct `ToAction (Brevo.Request command)` instance. `Integration.Brevo.Internal` is exposed by the package; keeping this conversion in one application helper makes that implementation detail easy to replace later.
 
@@ -60,9 +67,20 @@ Keep ACS endpoints in trusted configuration. Its adapter enforces HTTPS; that ch
 
 Both adapters use the shared HTTP machinery. Read the [current retry limitation](/connect/http-and-payments/#understand-the-current-retry-boundary) before assuming one send attempt.
 
+## Run the notification through your application
+
+Use `neo build` to check the helper and handler registration in `mug-shop`.
+Run `neo test` for request and response fixtures, then start `neo run` with your
+development email credential set in its environment. Request a notification to
+your test recipient and inspect the outcome query before checking the mailbox.
+These observations establish different parts of the delivery path.
+
 ## Check what Jess can trust
 
-First test the request and response mapping without sending mail. The public Brevo tests exercise JSON body alternatives and malformed accepted responses. Then send one message in a controlled provider environment and inspect both the application outcome and the recipient mailbox.
+First test request and response mapping without sending mail, covering the body
+alternatives you use and malformed accepted responses. Then send one message in
+a controlled provider environment and inspect both the application outcome and
+the recipient mailbox.
 
 **Exercise:** the provider accepts the email, but recording acceptance in your application fails. Explain what a “resend” button should do.
 
@@ -75,7 +93,8 @@ Treat the local outcome as unresolved. Keep the notification's stable identity a
 
 Next, learn how [file attachments](/connect/files/) connect stored bytes to application actions.
 
-## Implementation and examples
+<details>
+<summary>Framework source notes</summary>
 
 - [integrations/Integration/Brevo.hs](https://github.com/neohaskell/NeoHaskell/blob/main/integrations/Integration/Brevo.hs)
 - [integrations/Integration/Brevo/Request.hs](https://github.com/neohaskell/NeoHaskell/blob/main/integrations/Integration/Brevo/Request.hs)
@@ -88,3 +107,5 @@ Next, learn how [file attachments](/connect/files/) connect stored bytes to appl
 - [core/core/Redacted.hs](https://github.com/neohaskell/NeoHaskell/blob/main/core/core/Redacted.hs)
 - [integrations/Integration/Http/Internal.hs](https://github.com/neohaskell/NeoHaskell/blob/main/integrations/Integration/Http/Internal.hs)
 - [integrations/nhintegrations.cabal](https://github.com/neohaskell/NeoHaskell/blob/main/integrations/nhintegrations.cabal)
+
+</details>

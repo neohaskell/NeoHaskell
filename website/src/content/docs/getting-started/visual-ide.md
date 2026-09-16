@@ -5,18 +5,19 @@ sidebar:
   order: 1
 ---
 
-When your agent changes a rule, you need a way to see where it belongs in the
-application. The Neo IDE provides an event-model canvas: commands, events, queries,
-and integrations can be discussed as connected business concepts.
+You have created a cart and read its summary in the [first cart
+exercise](/build/first-cart/). Now follow that same behaviour through the Neo IDE:
+the request you sent, the fact it recorded, and the information you read back.
+Keep working in `mug-shop`, the project you created during setup.
 
 Use it alongside behaviour checks. A coherent graph helps you understand a change;
 it does not prove that the application executes the intended policy.
 
 ## See the model before opening the code
 
-![The running Neo IDE shows CreateCart and AddItem as blue commands, CartCreated and ItemAdded as orange events, and CartSummary as a green query, with arrows connecting them.](/screenshots/neo-ide-overview.png)
+![The Neo IDE in mug-shop shows the blue CreateCart command, orange CartCreated event, and green CartSummary query connected in the first cart feature.](/screenshots/neo-ide-overview.png)
 
-*The actual Neo IDE, with a small model drawn from the public cart example.
+*Your first cart feature: creation, the recorded fact, and the summary.
 Select either screenshot to enlarge it without leaving this page.*
 
 Read the picture in three passes:
@@ -24,19 +25,12 @@ Read the picture in three passes:
 1. **Find a request.** The blue `CreateCart` card represents asking for a cart.
    Follow its downward arrow to the orange `CartCreated` fact.
 2. **Find the information someone sees.** The green `CartSummary` card receives
-   information from `CartCreated` and `ItemAdded`. Its fields include `itemCount`
+   information from `CartCreated`. Its fields include `itemCount`
    and `isEmpty`. The IDE calls these green cards **queries**; they represent the
    read-model side of the application.
 3. **Find a place to work.** The left panel lists chapters and slices. Here,
-   `CreateCart`, `AddItem`, and `CartSummary` divide the Cart chapter into small
+   `CreateCart` and `CartSummary` divide the Cart chapter into small
    pieces you can discuss with your agent.
-
-These are screenshots of Neo CLI 0.1.4 serving a local workspace. To keep the
-first view readable, the model contains five nodes selected from the public
-reference application's source inspection, arranged into one Cart chapter.
-A complete inspection of that application also includes stock, integrations,
-and other examples. This is a real IDE capture with a deliberately small model;
-it does not show a running customer storefront.
 
 Compare it with the [worked event models](/start/event-modeling/). Those drawings
 follow one example over time, including successive screens and concrete values.
@@ -44,13 +38,17 @@ The IDE graph shows reusable commands, event types, and queries: one `CartSummar
 card can describe the view after many different histories. Its arrows describe
 relationships in the model, rather than a live trace of requests executing.
 
-## Open the right project
+## Continue in your cart project
 
-From the generated project directory, run:
+If you already opened the IDE during the cart exercise, keep that window open.
+Otherwise, run this from the directory containing your cart application's `src/`:
 
 ```sh
 neo ide
 ```
+
+Use the `mug-shop` directory you created during setup. Below, you will synchronise
+its model with the cart code you added under `src/Shop/Cart/`.
 
 Open the printed address, normally `http://127.0.0.1:2323`. The IDE binds to the
 project directory from which you launched it. Confirm the workspace shown in the
@@ -97,10 +95,17 @@ with your intent.
 
 ## Read a small piece of behaviour
 
-Start with the counter you ran in [setup](/getting-started/). Locate creation,
-increment, the accepted events, and the view. Ask your agent to explain how those
-parts correspond to the HTTP requests you sent. Then repeat the exercise with the
-[cart example](/build/first-cart/).
+Find `CreateCart` and follow it to `CartCreated`, then to `CartSummary`. Connect
+those names to the request you sent and the empty-cart summary you observed in
+the previous exercise. Ask your agent to show you where the cart identifier
+travels through that path.
+
+## Return here as the cart grows
+
+After adding `AddItem` in [commands and events](/build/commands-and-events/),
+synchronise the same project again and select that command. What information
+does it need, and what would it record if accepted? The closer view below shows
+what you will be able to inspect then.
 
 ![Selecting the blue AddItem command highlights its arrow to the orange ItemAdded event. AddItem carries cartId, stockId, and quantity; ItemAdded carries entityId, stockId, and quantity. Other nodes are dimmed.](/screenshots/neo-ide-detail.png)
 
@@ -139,11 +144,18 @@ be treated as a production customer interface.
 
 ## Your check
 
-Ask your agent to explain an increment of zero using the graph and the command's
-rule. Can you distinguish where the request is represented from where the refusal
-is decided? A model connection alone cannot answer whether zero is allowed.
+For the feature you have now, predict what a second `CreateCart` request will do.
+Send it and find both identifiers in the summary. The graph still has one
+`CreateCart` node: it describes a kind of request, not each occurrence. Ask your
+agent to locate the code that chooses a fresh identifier, then follow that field
+from the command to the event and query.
 
-Next: [build application behaviour](/build/), or consult the [CLI reference](/reference/cli/).
+After the next lesson, return and check the zero-quantity refusal too. The
+`AddItem` card names the request; its decision function determines which values
+are accepted.
+
+Next: [commands and events](/build/commands-and-events/) explains the decision
+behind these connections. For individual commands, consult the [CLI reference](/reference/cli/).
 
 Implementation evidence: [IDE server](https://github.com/neohaskell/NeoHaskell/blob/main/neo/src/commands/ide.rs),
 [source synchronization](https://github.com/neohaskell/NeoHaskell/blob/main/neo/src/ide/sync.rs),

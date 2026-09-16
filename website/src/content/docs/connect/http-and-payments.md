@@ -11,14 +11,25 @@ NeoHaskell provides the request machinery; your application interprets the provi
 
 Prerequisites: [integration lifecycle](/connect/) and [configuration](/build/configuration/).
 
+## Place the provider call in your project
+
+Continue from your `mug-shop` directory and complete the
+[integration setup](/connect/#prepare-your-project). Keep the protocol helper
+in `src/Shop/Integrations/ProviderStatus.hs`. The cart-side handler that selects
+when to call it belongs under `src/Shop/Cart/Integrations/`, following the complete
+[handler module](/connect/workflows/#add-the-handler-to-your-project).
+
+Before adding the request, define the command that records a status result and
+register it in the relevant service with `InternalTransport`. Give it successful, refused, and unresolved
+outcomes with a stable operation identifier. The following builder is the
+request portion of that feature; the callbacks bind the result to your
+application’s command.
+
 ## Learn the request shape with a read
 
-Start with an operation that reads provider status. The following **partial integration builder** uses the real API; `statusUrl`, `recordReply`, and `recordFailure` are application values you must supply. Both callbacks return one registered command type.
+Start with an operation that reads provider status. In this **partial integration builder**, `statusUrl`, `recordReply`, and `recordFailure` are values supplied by your application. Both callbacks return one registered command type.
 
 ```haskell
-import Integration qualified
-import Integration.Http qualified as Http
-
 -- Inside the event handler's Integration.batch:
 Integration.outbound Http.Request
   { method = Http.GET
@@ -62,6 +73,14 @@ The executor also retries request errors separately from its status-code list. D
 
 Timeouts also do not prove that the remote side did nothing. Preserve an unresolved outcome until you have evidence.
 
+## Run a controlled status check
+
+Run `neo build` from `mug-shop` after adding the helper and callback command.
+Exercise the status mapping in your `tests/` suite with `neo test`, including a
+valid JSON error response. Start your application with `neo run`, trigger the
+request through its command, and inspect the resulting status query. Use a
+controlled endpoint before connecting payment credentials.
+
 ## Exercise: a lost payment reply
 
 Describe the practice application’s state after a timeout, what its screen shows, and how you would resolve the uncertainty. Then consider which parts also apply to creating a calendar entry or submitting a document for processing.
@@ -75,7 +94,8 @@ Use a test provider that accepts an operation and then drops the connection. Che
 
 For a smaller provider integration, continue with [email](/connect/email/).
 
-## Implementation and examples
+<details>
+<summary>Framework source notes</summary>
 
 - [integrations/Integration/Http/Request.hs](https://github.com/neohaskell/NeoHaskell/blob/main/integrations/Integration/Http/Request.hs)
 - [integrations/Integration/Http/Response.hs](https://github.com/neohaskell/NeoHaskell/blob/main/integrations/Integration/Http/Response.hs)
@@ -83,3 +103,5 @@ For a smaller provider integration, continue with [email](/connect/email/).
 - [integrations/Integration/Http/Retry.hs](https://github.com/neohaskell/NeoHaskell/blob/main/integrations/Integration/Http/Retry.hs)
 - [integrations/test/Integration/Http/InternalSpec.hs](https://github.com/neohaskell/NeoHaskell/blob/main/integrations/test/Integration/Http/InternalSpec.hs)
 - [core/service/Integration.hs](https://github.com/neohaskell/NeoHaskell/blob/main/core/service/Integration.hs)
+
+</details>

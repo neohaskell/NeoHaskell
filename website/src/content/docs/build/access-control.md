@@ -7,7 +7,7 @@ sidebar:
 
 Different people need different access to an application. Someone may be allowed to view a record but not change it, or to manage their own records without seeing anyone else's. These are application policies before they become authentication settings.
 
-NeoHaskell supplies identity and permission mechanisms, but your application must connect them and declare its policies. We will practise with customers who should see their own carts and a merchant with wider permissions. The public Cart testbed is intentionally permissive, so adapting it provides a concrete lesson in defining those boundaries.
+NeoHaskell supplies identity and permission mechanisms, but your application must connect them and declare its policies. We will practise with customers who should see their own carts and a merchant with wider permissions. Your current `mug-shop` project deliberately allows local anonymous practice. This chapter shows how to tighten those policies when you introduce a real identity service.
 
 ## Separate identity from permission
 
@@ -15,27 +15,50 @@ NeoHaskell supplies identity and permission mechanisms, but your application mus
 
 The web transport can validate JWT credentials when the application wires `Application.withAuth`. Commands receive the resulting identity in `RequestContext.user`. A client-provided `ownerId` is not equivalent to a validated user identity.
 
-This **partial wiring expression** enables the application's JWT authentication using an auth server URL. The example hostname is a placeholder, not a working provider:
+Add this **application pipeline step** in `src/App.hs` to enable the application's JWT authentication using an auth server URL. The example hostname is a placeholder, not a working provider:
 
 ```haskell
 Application.withAuth @() (\_ -> "https://auth.example.com")
 ```
 
-Use your actual identity service and test its discovery, issuer, audience, and token configuration. `withAuthOverrides` supports configuration overrides. Deployment-specific identity setup belongs in your application's operational documentation.
+Keep this registration when later chapters extend `App.hs`. Use your actual identity service and test its discovery, issuer, audience, and token configuration. `withAuthOverrides` supports configuration overrides. Deployment-specific identity setup belongs in your application's operational documentation.
 
 ## Protect both the command and the record
 
 Commands can define a top-level `canAccess` function before their `command` marker. The marker connects it to the pre-execution permission check. Without an explicit function, the command class defaults to requiring authentication.
 
-Permission to use a command may still depend on the particular record it affects. In the practice project, an authenticated customer should not edit another customer's cart. In the decision function, compare the validated subject with the cart's recorded owner before accepting a change. The existing `AddItem` ignores its request context, so it does not perform that ownership check.
+Permission to use a command may still depend on the particular record it affects. In the practice project, an authenticated customer should not edit another customer's cart. In the decision function, compare the validated subject with the cart's recorded owner before accepting a change. The `AddItem` you wrote in `src/Shop/Cart/Commands/AddItem.hs` currently ignores its request context.
 
 There is an important deployment boundary: **without `Application.withAuth`, the current web transport creates a trusted command context and bypasses the command permission gate**. Merely declaring `canAccess` does not secure an application whose authentication is unwired. Domain checks inside `decide` remain your code's responsibility.
+
+## Check the owner before accepting a change
+
+In `src/Shop/Cart/Commands/AddItem.hs`, replace `decide` and add `addForOwner` below it. Keep the existing `addToCart` quantity helper and the type declarations:
+
+```haskell
+decide :: AddItem -> Maybe CartEntity -> RequestContext -> Decision CartEvent
+decide request existing context = case context.user of
+  Nothing -> Decider.reject "Sign in before changing a cart"
+  Just user -> addForOwner request existing user
+
+addForOwner :: AddItem -> Maybe CartEntity -> UserClaims -> Decision CartEvent
+addForOwner request existing user = case existing of
+  Nothing -> Decider.reject "Cart not found!"
+  Just cart ->
+    if cart.ownerId == user.sub
+      then addToCart request cart
+      else Decider.reject "This cart belongs to another user"
+```
+
+This is an **authenticated variant**, to introduce alongside your identity-service setup. It changes the earlier anonymous contract: the original anonymous HTTP tests will now fail until you supply valid test credentials and create carts under that identity. Keep a development checkpoint before the change, and add owner, other-user, and missing-user tests rather than silently weakening the new rule.
+
+`CreateCart` already records `context.user.sub` for a signed-in caller. Carts created anonymously in earlier exercises do not automatically belong to a newly signed-in user. Use new authenticated carts when checking this variant; a guest-to-account transfer needs its own explicit design.
 
 ## Protect the view separately
 
 Queries require two policies. `canAccess` decides whether the caller may use the query type; `canView` decides whether a particular row is visible.
 
-This **partial replacement for the demo CartSummary policies** uses the real helper API. It assumes `CartSummary` retains its `ownerId :: Text` field and the module imports `AccessError`, `UserClaims`, and qualified `Service.AccessControl`:
+This **replacement for your CartSummary policies** uses the real helper API. It assumes `CartSummary` retains its `ownerId :: Text` field; `AccessControl` supplies the ownership helper:
 
 ```haskell
 canAccess :: Maybe UserClaims -> Maybe AccessError
@@ -47,7 +70,7 @@ canView = AccessControl.ownerOnly (.ownerId)
 
 Place these before `deriveQuery`. `ownerOnly` compares the row's owner with the validated `sub` claim. The endpoint filters out rows that fail `canView`; it computes pagination totals after authorisation and filtering. A user who can access the query but owns no matching carts receives an empty result set, not another customer's information.
 
-The public example instead uses `publicAccess` and `publicView`. Those can suit a product catalogue, but make a deliberate choice before applying them to customer data. Other helpers include `requirePermission`, `requireAnyPermission`, `requireAllPermissions`, and `tenantOnly`.
+Your initial CartSummary uses `publicAccess` and `publicView`. Those can suit a product catalogue, but make a deliberate choice before applying them to customer data. Other helpers include `requirePermission`, `requireAnyPermission`, `requireAllPermissions`, and `tenantOnly`.
 
 ## Design guest carts explicitly
 

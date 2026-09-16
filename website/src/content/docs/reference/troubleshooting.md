@@ -9,7 +9,7 @@ Start with what you expected to happen: a project builds, a process starts, an a
 
 ## Keep a useful diagnostic record
 
-Record the command or request, revision, expected result, actual result, and the smallest safe reproduction. Include the complete relevant error, but remove secrets and private data. Keep the distinction between a local generated application and a framework repository checkout: their commands differ.
+Record the command or request, revision, expected result, actual result, and the smallest safe reproduction. Include the complete relevant error, but remove secrets and private data. Run the commands here from your application directory containing `neo.json`; in this journey that is `mug-shop`.
 
 | Symptom | First check | Next action |
 | --- | --- | --- |
@@ -21,6 +21,18 @@ Record the command or request, revision, expected result, actual result, and the
 | `/health` succeeds, `/ready` returns `503` | Readiness body and replay logs | Distinguish rebuilding from failure |
 | Accepted command is not visible | Query catch-up, identity, and correct revision | Follow the event-to-query path |
 | Integration times out | Provider result and local correlation identity | Resolve uncertainty before resubmitting an external action |
+
+## A new module or dependency is missing
+
+Keep application modules beneath `src/`, with the path matching the module name: `Shop.Cart.Core` belongs in `src/Shop/Cart/Core.hs`. Check the import spelling and that you are building the intended project. Save the file and run:
+
+```sh
+neo --ci build
+```
+
+The CLI discovers source modules and regenerates managed project files. For an external package, edit `dependencies` in `neo.json`; do not add it only to the generated build files. A bare dependency name is looked up in the NeoPackages registry. Use the explicit `hackage:` key prefix when you intend a Hackage package. See the [dependency syntax](/reference/cli/#manage-project-dependencies).
+
+If a lesson uses an API unavailable in your project's pinned framework revision, compare `neo --version` and `neo-version` in `neo.json` with the lesson's version context. Upgrade deliberately and rerun `neo build` and `neo test`; a local framework checkout is not part of the application workflow.
 
 ## A missing model is different from an invalid model
 
@@ -38,7 +50,12 @@ A valid graph does not prove the application implements the intended cancellatio
 
 `neo test` starts the application when Hurl tests are present, and probes port 8080 before running them. Check whether the process crashed, whether another process owns the port, and whether you changed the application's port. In the current implementation the startup probe is fixed at 8080; changing Hurl URLs alone does not update that probe.
 
-Run `neo run` locally and read the startup error. Avoid running a second copy against a port already occupied by the first. If the server responds but query-dependent tests race replay, check `/ready` as well: the CLI startup wait accepts any HTTP response.
+Stop any existing application process first. Run `neo run` locally and read the startup error, then stop that diagnostic run before retrying `neo test`. The test command starts its own process; a separately running server can hide which revision you tested. If the server responds but query-dependent tests race replay, check `/ready` as well: the CLI startup wait accepts any HTTP response.
+
+A cold Nix startup can also exhaust the current 60-second wait before the
+application begins serving. Let the diagnostic `neo run` finish starting, check
+its response, stop it, and retry the test with the build environment warmed.
+Treat an actual configuration or application error separately from that delay.
 
 ## Query catch-up fails
 
@@ -50,12 +67,12 @@ Postgres event storage does not imply persisted query state. Persisted query sta
 
 Inventory pools and listeners across all running revisions. Check the configured pool sizes and the database's available capacity. Listener connections need a session-preserving direct endpoint; transaction-mode pooling cannot supply the required `LISTEN/NOTIFY` behaviour.
 
-Check TLS configuration in each wired store. The testbed's `DB_SSL_MODE` environment variable is an application mapping, not a universal switch for every Postgres client you may create.
+Check TLS configuration in each wired store. The `DB_SSL_MODE` field added in [persistence](/operate/persistence/) affects only the stores to which you pass it. It is not a universal switch for every Postgres client.
 
 ## Return a focused task to your agent
 
 For example, a diagnostic task in the ecommerce practice project might be:
 
-> “The command is accepted on revision A. Readiness becomes ready, but this user's query omits the order. Find the query and its access policy, preserve that policy, and give me a test that distinguishes a projection error from an ownership error.”
+> “The command is accepted on revision A. Readiness becomes ready, but this user's query omits the cart. Find the query and its access policy, preserve that policy, and give me a test that distinguishes a projection error from an ownership error.”
 
 This states the evidence and preserves the business constraint. Once the agent proposes a fix, repeat the original reproduction and a nearby rejection case.

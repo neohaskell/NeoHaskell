@@ -177,7 +177,7 @@
     "neo/assets/ide/src/ui/lenses/lenses.tsx": "f4dacb6c9c2a2ebe1ce55f2cc4d76bb9fdbddcdc93e61f622d5039eef26d10d3",
     "neo/assets/ide/src/ui/shell/HeaderBar.tsx": "58baaf884d62667ee5a431db1bb026b916dbacaed39563a35ca441a5514246a3",
     "neo/assets/templates/flake.nix.j2": "4e392b159d2f92498bf268555e4006b6dd281f927332b9e9ec2fd7113d073d7e",
-    "neo/assets/templates/project.cabal.j2": "e177a8e22915c739c31ef30fd4fddff13280b64b22d08374466d8c6d18761655",
+    "neo/assets/templates/project.cabal.j2": "69574e45e74dc6a2c9b4ff212bcd04b10563049ebf340f49417044801c85e7f1",
     "neo/src/cli.rs": "7ed174f3513227bbb7d9a4ba537f280ae6dc9c17a08ef7bce3af9279dc3103e0",
     "neo/src/commands/build.rs": "5892ce2e18bd1bd7ab7ba581ad283419db73c7357ebd2a1bb95eacb71388b9d6",
     "neo/src/commands/ide.rs": "ccd866368781f63bd0a7b38ef3ade7e4b59bf0fc37bac2d6cb83cffe0af71bdf",
@@ -232,10 +232,74 @@
     "testbed/tests/files/upload.hurl": "3a7c00958bcdb9b6ad01307754428e3f459e064fd60bd50752709ec46046b983",
     "testbed/tests/queries/cart-summary.hurl": "3757e83566d996827be885f8e299bfe034fd650dd2e75fe2e0826b7eea123eb0",
     "testbed/tests/scenarios/stock-reservation.hurl": "7928c3366d5efc5d17d7b74b181eea0c0adaea0cdd6fb2d7900caf2d7d2760da",
-    "website/src/content/docs/guides/deployment.mdx": "57345912acb286b2edbcca2fb6d93f4768a1c95af4ff905cb89de9fc039e4d14",
-    "website/fixtures/cart-event-model.json": "448b71067771c5d2bb85e51619a22dc03e33d52f89a4dd8808bbd0bad2486174",
+    "website/src/content/docs/guides/deployment.mdx": "9524c5755ab9f2b1d8e66dd314787d9e90090643e23e093de02c092530086a77",
+    "website/fixtures/cart-event-model.json": "17fa390204c69d80e09c61191cc49667e43fb6cf590b1ee14c1c87697c54d167",
     "neo/assets/ide/src/ui/Canvas.tsx": "ed7deba71e92f6118b7dc34c94b3262b7dd671dab48e61274a7a7254f81cca9e",
-    "neo/assets/ide/src/ui/canvas/semanticZoom.ts": "eb527ab1e39b117f7f0b6e7738c76ca0c0ef17dff7ba3ebc4fc3e2ed5bd48388"
+    "neo/assets/ide/src/ui/canvas/semanticZoom.ts": "eb527ab1e39b117f7f0b6e7738c76ca0c0ef17dff7ba3ebc4fc3e2ed5bd48388",
+    "core/service/Service/FileUpload/Core.hs": "0c879c67f4ee560e785927cbed00b73cc47fd06953390a22e253188e42e86921",
+    "neo/assets/templates/cabal.project.j2": "fc68c1b7dbbdbe7064cd0e20d39a7986fe3449b3b10c1fc666788e086fc6ef3c",
+    "neo/src/reconcile/cabal.rs": "751f8bd746ed96f10f47dffbf231677ebdcec40e060856f07c336087421fcd32",
+    "neo/src/config.rs": "bb7b26aa9a77ae42a2174cb131399cbcf5b75fe3f4eb7dd691ad96bc81f9b96b",
+    "neo/src/commands/run.rs": "6a00e70d728ef34dd512c62284c9f279298d2264218c7ffd2dfc4a2f8f794836",
+    "neo/src/reconcile/dep_spec.rs": "7dcb7e93ec58b8c75da6594d7be882acd5cf7f46b3480f2435cfd547fa0131cf",
+    "neo/src/reconcile/resolve.rs": "f58f4b2b84a37c45e09f3dfbe7f36c3fe046300b6117751f26353f099962116f",
+    "neo/starter/docker-compose.yml": "646ec50d9fb8864538921989c3b1e094658830285045ccf7deb0b96d4b60efb7",
+    "core/service/Service/EventStore/Postgres/Internal.hs": "18c7b377fc0148ab903be2002d8e7e39c6bb9736948f875a3733afb9e166acd5",
+    "website/examples/mug-shop-connect/src/Shop/Uploads.hs": "2a14d0830b3ec1b7acb9e1434ff080dadd8df1f0b95c21aaa7f2b91b6897d10e",
+    "website/examples/mug-shop-connect/src/Shop/Cart/Timers.hs": "e427255ff8f6d592f11939b0d13f84abd2accedb6bc762a4a2b47e4dd9e46985",
+    "website/examples/mug-shop-connect/src/Shop/Cart/Integrations/ReserveStockOnItemAdded.hs": "12e8ba9350dd0d7752fc6e811b5cfdb92062f8115a7f9942e8a9c660a9bc2c4a",
+    "website/examples/mug-shop-connect/tests/stock-reservation.hurl": "02f8661df9b9ff65089fb2beecb774ac00bfc988d1a802a1609e2ec49d4034f0",
+    "website/examples/mug-shop/src/Shop/Cart/Commands/CreateCart.hs": "5ef0d6009f12ff731362bc9a060ea0348c6ed00d4ecf951575709a1fb032696e",
+    "website/examples/mug-shop/src/Shop/Cart/Commands/AddItem.hs": "e6987e0a7aa8d552f049f3979e994a67d6e75ada114a1328314ce140f70fd14e",
+    "website/examples/mug-shop/src/Shop/Cart/Queries/CartSummary.hs": "ac9355e780fab98b02ee8ed0bf618e09686e4a59dbfc40cb1eac70cbef7df111",
+    "website/examples/mug-shop/src/Shop/Cart/Core.hs": "b040afcfaa9b754559635327480d4247b7755e43cfca2d75d007cc231dd39271",
+    "website/examples/mug-shop/src/Shop/Cart/Service.hs": "20e581f22c8c4be7431250291442cb73122307fad96112de059107608d43f664",
+    "core/service/Decider.hs": "51f945582024bcbc6fcd03b61e48f1ef5b9174076030566901e0386b79a7f27e",
+    "website/examples/mug-shop/src/Shop/Config.hs": "2eb839547e8cae390cc79d3013c333d1b2b826a9f56324c617bb03a1dd47083a",
+    "website/examples/mug-shop/src/App.hs": "405472c1c992621cf5fcbb591000299d5e9cc517ee98f786e9fcef83f2c33fef",
+    "core/service/Service/EventStore/Simple.hs": "f8d6c7095e6bfdff6ddf13e23b3c09116f1267344b7122d0962d6ae445b6830f",
+    "website/examples/mug-shop/first-cart/src/Shop/Cart/Core.hs": "b040afcfaa9b754559635327480d4247b7755e43cfca2d75d007cc231dd39271",
+    "website/examples/mug-shop/first-cart/src/Shop/Cart/Commands/CreateCart.hs": "5ef0d6009f12ff731362bc9a060ea0348c6ed00d4ecf951575709a1fb032696e",
+    "website/examples/mug-shop/first-cart/src/Shop/Cart/Queries/CartSummary.hs": "9eb967c51b48cfbf2faac60bbf77f5e24fb3a9c0f760eec56773a0ba56ca9934",
+    "website/examples/mug-shop/first-cart/src/Shop/Cart/Service.hs": "09a372bc1681aa04a0c8053b75efd42641496139beffecb323ad5f3b25df41a4",
+    "website/examples/mug-shop/first-cart/src/App.hs": "836dedac6dd04ecfd3b25ef36c7c7baf120bc4077ec44296926e3e44e2df01c9",
+    "website/examples/mug-shop/first-cart/tests/scenarios/create-cart.hurl": "167b8dc856d5213b5f37a0078b4114ac8ce4b5a4a29257053f9b0aa411f9fb2b",
+    "website/examples/mug-shop/first-cart/tests/Decider/Cart/CreateCartSpec.hs": "895b3369820d81abde29a89bc0fecb5e1dee277784c2bc7d453ff85e7e2ebcfd",
+    "website/examples/mug-shop/src/Shop/Stock/Core.hs": "77cdd45b4d12d98b6def68ab4a99d4cdd9e257cc4cfa393792e3095c78368479",
+    "website/examples/mug-shop/src/Shop/Stock/Commands/InitializeStock.hs": "8e0322b02fa5fa49fac39b6d7948dad514608c1df88aa2ee56ed7a8c0589262e",
+    "website/examples/mug-shop/src/Shop/Stock/Commands/ReserveStock.hs": "4c78b9d0b44c9b6ebbadc61665994c1aa55aad4f9ae30d1d0cc668f9953aebb0",
+    "website/examples/mug-shop/src/Shop/Stock/Queries/StockLevel.hs": "4eddd10edaf7d177a595523b3bd9bf2b85c85779727e50259a91c51ec3c304d3",
+    "website/examples/mug-shop/src/Shop/Stock/Service.hs": "3e14e9601e713475e302317ca2f86264bb968167f08c8dd2075ea79788eb4017",
+    "website/examples/mug-shop/tests/Decider/Cart/AddItemSpec.hs": "19564ac6d4f6ae164286af88bc0ad16fe7bb3d3bfce0617d8d40a50ff39da1da",
+    "website/examples/mug-shop/tests/Decider/Cart/ReplaySpec.hs": "5d6ba0a3d44d3f541586208a2d6009a3be04d0862798cc19655deb01b7947478",
+    "website/examples/mug-shop/tests/Decider/Stock/ReserveStockSpec.hs": "be96580ab9226336d1f009905aef56c881b59a69abe2dfa2430cd3e8a05da392",
+    "website/examples/mug-shop/tests/scenarios/cart-flow.hurl": "53f7ed5d46f3e345edfecb51bb94a66aa0a7cb0d8975ae5ea76037927a23faa9",
+    "website/fixtures/first-cart-event-model.json": "e413e1f626dd204af9ed33d0ed4bf88f140ce689150775a25198b1480f7f63ac",
+    "website/examples/mug-shop/persistence/src/App.hs": "4ba75ed4fbbe3446631741d09969381ec58cedbafd0c9eb2a806994bf375b5b3",
+    "website/examples/mug-shop/persistence/src/Shop/Config.hs": "4a2d6999193714073902682f4c905f4e0cd781b1335aff8630287f05522ee254",
+    "core/service/Service/ServiceDefinition/Core.hs": "03bc90c9bb9261f52667476890d903abc11c60da05c5fcc1e1bcbe88188afd7c",
+    "website/examples/mug-shop-connect/src/Shop/Cart/Commands/CreateCartInternal.hs": "4df3247e5532f1c9ceb61b43a91934e21844d04311e39ff968f7945f21e161b6",
+    "website/examples/mug-shop-connect/src/Shop/Cart/Service.hs": "44a40f43323c69bae27d5b8c7920ac57ac6d2961cddc12c563a1f2e49bb1773b",
+    "website/examples/mug-shop-connect/README.md": "df2402c80f8dac9213f21e54a172821e3d125e2f42e01e2c55169a917d00a9fb",
+    "website/examples/mug-shop/src/Shop/Cart/Events/ItemAdded.hs": "c944c8a5246a2059f0c5397fa1a87b9dcec0c7daeca9272c6065e2d6307fec3d",
+    "website/examples/mug-shop/src/Shop/Cart/Event.hs": "c0c5b52c5b97d97600db8fbdbc5d75126c278109f198bc75cad59d248c321382",
+    "website/examples/mug-shop/src/Shop/Cart/Entity.hs": "68ae6993b56d0cd10ad0c99fa213c23c70e1f1ecd6d18b938b1c92bea619de01",
+    "website/examples/mug-shop/src/Shop/Cart/Item.hs": "a6889dec388da082dda933472fd1aa6312eef6b7fa663010c938a6cab28931f4",
+    "website/examples/mug-shop/first-cart/src/Shop/Cart/Events/CartCreated.hs": "de47f3413df3812f0b23b2a2c7b9adee4db0a0d1bba41c4e57083c1cf6951a1c",
+    "website/examples/mug-shop/first-cart/src/Shop/Cart/Event.hs": "075e08167be2a01bc7da71e2185144d92f879518f8e166e35ca1c28b25b0a41d",
+    "website/examples/mug-shop/first-cart/src/Shop/Cart/Entity.hs": "fb8d32f4730fa30f0201e635040c6683d0d03a5bbad20a4c70dda8d436119e51",
+    "website/examples/mug-shop/src/Shop/Stock/Event.hs": "95116cbc60cf865a4b336e6c6cc5c1567ba2d374a6850733a788a170954138a7",
+    "website/examples/mug-shop/src/Shop/Stock/Events/StockInitialized.hs": "8a9d9d71902ab13690c7b10d48d2416ffe418baf4a345ac9d3ae5b4267a3d6cc",
+    "website/examples/mug-shop/src/Shop/Stock/Events/StockReserved.hs": "d1e7bbf3a735c2797cb99d2e3065ff1028262a4f49e98d1af71e334e9af216c7",
+    "website/examples/mug-shop/src/Shop/Stock/Entity.hs": "d1498d6894eafadc41b4359613b424306ac827c152f3690298a4b9e66ae60ffb",
+    "website/examples/mug-shop/tests/scenarios/stock-flow.hurl": "8c2be36fac3397e2cc2bd8131c545a379b194f65b42bea2cbd0919bb55dd505b",
+    "website/examples/mug-shop/first-cart/tests/Spec.hs": "2fbd14b119a40eaca54f6255686c7cfbe8ff26a9c18d79ec474a61225232d324",
+    "website/examples/mug-shop/tests/Spec.hs": "2fbd14b119a40eaca54f6255686c7cfbe8ff26a9c18d79ec474a61225232d324",
+    "website/examples/mug-shop/src/Shop/Cart/Events/CartCreated.hs": "de47f3413df3812f0b23b2a2c7b9adee4db0a0d1bba41c4e57083c1cf6951a1c",
+    "website/examples/mug-shop/tests/scenarios/create-cart.hurl": "167b8dc856d5213b5f37a0078b4114ac8ce4b5a4a29257053f9b0aa411f9fb2b",
+    "website/examples/mug-shop/tests/Decider/Cart/CreateCartSpec.hs": "895b3369820d81abde29a89bc0fecb5e1dee277784c2bc7d453ff85e7e2ebcfd",
+    "website/examples/mug-shop/persistence/src/Shop/Storage.hs": "cb00f31e97fb1464ff2a370ecd785a342647832fffba5b55bdc8de368baf0112",
+    "website/examples/mug-shop/persistence/README.md": "1a1724b3dbb30df6c65c4f09933bfa7898317413daacec38a834a05f27d96258"
   },
   "pages": [
     {
@@ -248,6 +312,9 @@
         "queries"
       ],
       "sources": [
+        "website/examples/mug-shop/src/Shop/Cart/Commands/AddItem.hs",
+        "website/examples/mug-shop/src/Shop/Cart/Commands/CreateCart.hs",
+        "website/examples/mug-shop/src/Shop/Cart/Queries/CartSummary.hs",
         "core/service/Service/AccessControl.hs",
         "core/service/Service/Auth.hs",
         "core/service/Service/Command/Core.hs",
@@ -266,7 +333,7 @@
         "independence": true,
         "domainTransfer": true
       },
-      "notes": "Reviewed actual no-auth command bypass, query row filtering and optional command policy marker wiring. Policy snippets are partial; identity-provider discovery and real-token tests remain required in the reader application. Domain-transfer review: the application concept leads; ecommerce is a worked example without an assumed company story.",
+      "notes": "Own-project journey with focused declarations and canonical concept markers; module headers, imports, and optional equality/serialization setup remain in complete downloadable checkpoints. Real event fixtures retain Eq for complete accepted-payload tests: event marker generates Show, Generic and JSON, not Eq. Plain entities/value records have no corresponding concept marker. First-cart build/test verified; intermediate Cart and end-Build runtime checks remain in progress with corrected Neo CLI and released framework pin, no final pass claimed yet. Authentication is an explicit provider-dependent variant; no real provider configuration or credentialed request was executed. Final runtime verification: first Cart build + 2 unit examples + 1 HTTP scenario; Cart additions build + 8 unit examples + 2 HTTP scenarios; end-of-Build build + 12 unit examples + 3 HTTP scenarios, all passing on the corrected local CLI against framework revision 25bd7027a85b8f2999602f66b46b4b6b133c22e8, with no compiler override or language pragmas. Baseline HTTP smoke confirms cart selections do not reserve stock before integration.",
       "excerpts": []
     },
     {
@@ -279,11 +346,16 @@
         "service-wiring"
       ],
       "sources": [
-        "testbed/src/Testbed/Cart/Commands/AddItem.hs",
-        "testbed/src/Testbed/Cart/Commands/CreateCart.hs",
-        "testbed/src/Testbed/Cart/Service.hs",
+        "website/examples/mug-shop/src/Shop/Cart/Events/ItemAdded.hs",
+        "website/examples/mug-shop/src/Shop/Stock/Events/StockReserved.hs",
+        "website/examples/mug-shop/src/Shop/Cart/Event.hs",
+        "website/examples/mug-shop/src/Shop/Cart/Item.hs",
+        "website/examples/mug-shop/src/Shop/Cart/Entity.hs",
+        "website/examples/mug-shop/src/Shop/Cart/Commands/AddItem.hs",
+        "website/examples/mug-shop/src/Shop/Cart/Service.hs",
+        "website/examples/mug-shop/src/Shop/Cart/Queries/CartSummary.hs",
         "core/service/Service/CommandExecutor/TH.hs",
-        "core/service/Service/Event/TH.hs"
+        "core/service/Decider.hs"
       ],
       "review": {
         "accessibleOpening": true,
@@ -293,11 +365,51 @@
         "independence": true,
         "domainTransfer": true
       },
-      "notes": "Decision excerpt matched source. Adapted marker declaration is partial and not separately compiled. Canonical marker pattern avoids legacy redundant instances. Purchase-limit extension is a design exercise. Domain-transfer review: the application concept leads; ecommerce is a worked example without an assumed company story.",
+      "notes": "Own-project journey with focused declarations and canonical concept markers; module headers, imports, and optional equality/serialization setup remain in complete downloadable checkpoints. Real event fixtures retain Eq for complete accepted-payload tests: event marker generates Show, Generic and JSON, not Eq. Plain entities/value records have no corresponding concept marker. First-cart build/test verified; intermediate Cart and end-Build runtime checks remain in progress with corrected Neo CLI and released framework pin, no final pass claimed yet. Final runtime verification: first Cart build + 2 unit examples + 1 HTTP scenario; Cart additions build + 8 unit examples + 2 HTTP scenarios; end-of-Build build + 12 unit examples + 3 HTTP scenarios, all passing on the corrected local CLI against framework revision 25bd7027a85b8f2999602f66b46b4b6b133c22e8, with no compiler override or language pragmas. Baseline HTTP smoke confirms cart selections do not reserve stock before integration.",
       "excerpts": [
         {
-          "source": "testbed/src/Testbed/Cart/Commands/AddItem.hs",
-          "text": "decide :: AddItem -> Maybe CartEntity -> RequestContext -> Decision CartEvent\ndecide cmd entity _ctx = case entity of\n  Nothing ->\n    Decider.reject \"Cart not found!\"\n  Just cart ->\n    if cmd.quantity <= 0\n      then Decider.reject \"Quantity must be positive\"\n      else\n        Decider.acceptExisting\n          [ ItemAdded\n              { entityId = cart.cartId\n              , stockId = cmd.stockId\n              , quantity = cmd.quantity\n              }\n          ]"
+          "source": "website/examples/mug-shop/src/Shop/Cart/Events/ItemAdded.hs",
+          "text": "data Event = Event\n  { entityId :: Uuid\n  , stockId :: Uuid\n  , quantity :: Int\n  }"
+        },
+        {
+          "source": "website/examples/mug-shop/src/Shop/Stock/Events/StockReserved.hs",
+          "text": "EventTH.event ''Event"
+        },
+        {
+          "source": "website/examples/mug-shop/src/Shop/Cart/Event.hs",
+          "text": "data CartEvent\n  = CartCreated CartCreated.Event\n  | ItemAdded ItemAdded.Event"
+        },
+        {
+          "source": "website/examples/mug-shop/src/Shop/Cart/Event.hs",
+          "text": "EventTH.event ''CartEvent"
+        },
+        {
+          "source": "website/examples/mug-shop/src/Shop/Cart/Item.hs",
+          "text": "data CartItem = CartItem {stockId :: Uuid, quantity :: Int}"
+        },
+        {
+          "source": "website/examples/mug-shop/src/Shop/Cart/Entity.hs",
+          "text": "  ItemAdded added ->\n    cart {items = cart.items |> Array.push (CartItem {stockId = added.stockId, quantity = added.quantity})}"
+        },
+        {
+          "source": "website/examples/mug-shop/src/Shop/Cart/Commands/AddItem.hs",
+          "text": "getEntityId :: AddItem -> Maybe Uuid\ngetEntityId request = Just request.cartId"
+        },
+        {
+          "source": "website/examples/mug-shop/src/Shop/Cart/Commands/AddItem.hs",
+          "text": "  if request.quantity <= 0\n    then Decider.reject \"Quantity must be positive\"\n    else Decider.acceptExisting\n      [ItemAdded (ItemAdded.Event {entityId = cart.cartId, stockId = request.stockId, quantity = request.quantity})]"
+        },
+        {
+          "source": "website/examples/mug-shop/src/Shop/Cart/Commands/AddItem.hs",
+          "text": "command ''AddItem"
+        },
+        {
+          "source": "website/examples/mug-shop/src/Shop/Cart/Service.hs",
+          "text": "  |> Service.command @AddItem"
+        },
+        {
+          "source": "website/examples/mug-shop/src/Shop/Cart/Queries/CartSummary.hs",
+          "text": "    let count = cart.items |> Array.length"
         }
       ]
     },
@@ -310,15 +422,12 @@
         "core-primitives"
       ],
       "sources": [
+        "website/examples/mug-shop/src/Shop/Config.hs",
+        "website/examples/mug-shop/src/App.hs",
         "core/config/Config.hs",
         "core/config/Config/TH.hs",
-        "testbed/src/Testbed/Config.hs",
-        "testbed/src/App.hs",
-        "neo/starter/src/App.hs",
-        "neo/starter/src/Starter/Config.hs",
-        "core/service/Service/Transport/Web.hs",
         "core/service/Service/Application.hs",
-        "core/core/Redacted.hs"
+        "core/service/Service/EventStore/Simple.hs"
       ],
       "review": {
         "accessibleOpening": true,
@@ -328,11 +437,15 @@
         "independence": true,
         "domainTransfer": true
       },
-      "notes": "Macro/loader implementation checked, including secret redaction, no automatic .env load and declared-but-unwired httpPort. Adapted config module not independently compiled; deployment credentials not used. Domain-transfer review: the application concept leads; ecommerce is a worked example without an assumed company story.",
+      "notes": "Own-project journey with focused declarations and canonical concept markers; module headers, imports, and optional equality/serialization setup remain in complete downloadable checkpoints. Real event fixtures retain Eq for complete accepted-payload tests: event marker generates Show, Generic and JSON, not Eq. Plain entities/value records have no corresponding concept marker. First-cart build/test verified; intermediate Cart and end-Build runtime checks remain in progress with corrected Neo CLI and released framework pin, no final pass claimed yet. Final runtime verification: first Cart build + 2 unit examples + 1 HTTP scenario; Cart additions build + 8 unit examples + 2 HTTP scenarios; end-of-Build build + 12 unit examples + 3 HTTP scenarios, all passing on the corrected local CLI against framework revision 25bd7027a85b8f2999602f66b46b4b6b133c22e8, with no compiler override or language pragmas. Baseline HTTP smoke confirms cart selections do not reserve stock before integration.",
       "excerpts": [
         {
-          "source": "testbed/src/Testbed/Config.hs",
-          "text": "  [ Config.field @Text \"dbHost\"\n      |> Config.doc \"PostgreSQL host\"\n      |> Config.defaultsTo (\"localhost\" :: Text)\n      |> Config.envVar \"DB_HOST\""
+          "source": "website/examples/mug-shop/src/Shop/Config.hs",
+          "text": "  [ Config.field @Bool \"persistEvents\"\n      |> Config.doc \"Keep local event files between development runs\"\n      |> Config.defaultsTo False\n      |> Config.envVar \"PERSIST_EVENTS\"\n  ]"
+        },
+        {
+          "source": "website/examples/mug-shop/src/App.hs",
+          "text": "  |> Application.withConfig @ShopConfig\n  |> Application.withEventStore (\\(config :: ShopConfig) -> SimpleEventStore\n    { basePath = Path.fromText \".neo/events\" |> Maybe.getOrDie\n    , persistent = config.persistEvents\n    })"
         }
       ]
     },
@@ -344,10 +457,8 @@
         "event-store"
       ],
       "sources": [
-        "testbed/src/Testbed/Cart/Core.hs",
-        "neo/starter/src/Starter/Counter/Entity.hs",
-        "neo/starter/tests/Property/CounterReplaySpec.hs",
-        "core/decimal/Decimal.hs"
+        "website/examples/mug-shop/src/Shop/Cart/Entity.hs",
+        "core/service/Service/Entity/Core.hs"
       ],
       "review": {
         "accessibleOpening": true,
@@ -357,14 +468,10 @@
         "independence": true,
         "domainTransfer": true
       },
-      "notes": "Entity excerpts matched source. Explains entry counts, initial-state distinction, deterministic reconstruction, and pricing as unimplemented shop design. No live replay run during authoring. Domain-transfer review: the application concept leads; ecommerce is a worked example without an assumed company story.",
+      "notes": "Own-project journey with focused declarations and canonical concept markers; module headers, imports, and optional equality/serialization setup remain in complete downloadable checkpoints. Real event fixtures retain Eq for complete accepted-payload tests: event marker generates Show, Generic and JSON, not Eq. Plain entities/value records have no corresponding concept marker. First-cart build/test verified; intermediate Cart and end-Build runtime checks remain in progress with corrected Neo CLI and released framework pin, no final pass claimed yet. Final runtime verification: first Cart build + 2 unit examples + 1 HTTP scenario; Cart additions build + 8 unit examples + 2 HTTP scenarios; end-of-Build build + 12 unit examples + 3 HTTP scenarios, all passing on the corrected local CLI against framework revision 25bd7027a85b8f2999602f66b46b4b6b133c22e8, with no compiler override or language pragmas. Baseline HTTP smoke confirms cart selections do not reserve stock before integration.",
       "excerpts": [
         {
-          "source": "testbed/src/Testbed/Cart/Core.hs",
-          "text": "data CartEntity = CartEntity\n  { cartId :: Uuid,\n    ownerId :: Text,\n    items :: Array CartItem\n  }\n  deriving (Generic)"
-        },
-        {
-          "source": "testbed/src/Testbed/Cart/Core.hs",
+          "source": "website/examples/mug-shop/src/Shop/Cart/Entity.hs",
           "text": "instance Entity CartEntity where\n  initialStateImpl = initialState\n  updateImpl = update"
         }
       ]
@@ -379,19 +486,20 @@
         "testbed"
       ],
       "sources": [
-        "docker-compose.yml",
-        "scripts/testbed",
-        "testbed/scripts/run-tests.sh",
-        "testbed/src/App.hs",
-        "testbed/src/Testbed/Cart/Commands/CreateCart.hs",
-        "testbed/tests/commands/create-cart.hurl",
-        "testbed/tests/queries/cart-summary.hurl",
-        "testbed/src/Testbed/Cart/Queries/CartSummary.hs",
-        "neo/src/commands/ide.rs",
-        "neo/src/commands/inspect.rs",
-        "neo/src/ide/sync.rs",
-        "neo/src/ide/workspace.rs",
-        "neo/src/inspect/mod.rs"
+        "website/examples/mug-shop/first-cart/src/Shop/Cart/Events/CartCreated.hs",
+        "website/examples/mug-shop/first-cart/src/Shop/Cart/Entity.hs",
+        "website/examples/mug-shop/first-cart/src/Shop/Cart/Commands/CreateCart.hs",
+        "website/examples/mug-shop/first-cart/src/Shop/Cart/Queries/CartSummary.hs",
+        "website/examples/mug-shop/first-cart/src/App.hs",
+        "website/examples/mug-shop/first-cart/tests/scenarios/create-cart.hurl",
+        "website/examples/mug-shop/first-cart/tests/Spec.hs",
+        "website/examples/mug-shop/first-cart/src/Shop/Cart/Event.hs",
+        "website/examples/mug-shop/first-cart/src/Shop/Cart/Service.hs",
+        "website/examples/mug-shop/first-cart/src/Shop/Cart/Core.hs",
+        "website/examples/mug-shop/first-cart/tests/Decider/Cart/CreateCartSpec.hs",
+        "core/service/Service/Event/TH.hs",
+        "core/service/Service/Application.hs",
+        "neo/src/commands/test.rs"
       ],
       "review": {
         "accessibleOpening": true,
@@ -401,11 +509,43 @@
         "independence": true,
         "domainTransfer": true
       },
-      "notes": "Requests traced to public Hurl/source, not executed in this documentation run. Explicit PostgreSQL context, [] nullary body, asynchronous projection, timer interference, cart/order boundary. IDE instructions explicitly use testbed as workspace root, create/save a missing model before synchronization, and reload it after CLI sync. Source-audited; not a live IDE trial. Domain-transfer review: explicitly framed as a practice milestone; the exercise teaches a reusable modeling or implementation method.",
+      "notes": "Own-project journey with focused declarations and canonical concept markers; module headers, imports, and optional equality/serialization setup remain in complete downloadable checkpoints. Real event fixtures retain Eq for complete accepted-payload tests: event marker generates Show, Generic and JSON, not Eq. Plain entities/value records have no corresponding concept marker. Verified first-cart checkpoint with local corrected Neo CLI (SHA256 b1dfa23946bb79a19e527633fc7d01855de72414ea1daa4f999fb8a6e02b70c3) and released framework revision25bd7027a85b8f2999602f66b46b4b6b133c22e8: neo build passed; warmed neo test passed2 Hspec examples and1 Hurl scenario. No cabal.project.local override or LANGUAGE pragmas. Initial cold HTTP readiness timed out after60s; diagnostic neo run served HTTP200 and normal neo test retry passed. Final runtime verification: first Cart build + 2 unit examples + 1 HTTP scenario; Cart additions build + 8 unit examples + 2 HTTP scenarios; end-of-Build build + 12 unit examples + 3 HTTP scenarios, all passing on the corrected local CLI against framework revision 25bd7027a85b8f2999602f66b46b4b6b133c22e8, with no compiler override or language pragmas. Baseline HTTP smoke confirms cart selections do not reserve stock before integration.",
       "excerpts": [
         {
-          "source": "testbed/tests/commands/create-cart.hurl",
-          "text": "POST http://localhost:8080/commands/create-cart\n[]\n\nHTTP/1.1 200\nContent-Type: application/json\n\n[Asserts]\n# Response must have entityId field\njsonpath \"$.entityId\" exists"
+          "source": "website/examples/mug-shop/first-cart/src/Shop/Cart/Events/CartCreated.hs",
+          "text": "data Event = Event\n  { entityId :: Uuid\n  , ownerId :: Text\n  }"
+        },
+        {
+          "source": "website/examples/mug-shop/first-cart/src/Shop/Cart/Events/CartCreated.hs",
+          "text": "EventTH.event ''Event"
+        },
+        {
+          "source": "website/examples/mug-shop/first-cart/src/Shop/Cart/Entity.hs",
+          "text": "  CartCreated created ->\n    CartEntity {cartId = created.entityId, ownerId = created.ownerId}"
+        },
+        {
+          "source": "website/examples/mug-shop/first-cart/src/Shop/Cart/Commands/CreateCart.hs",
+          "text": "decide _ existing context = case existing of\n  Just _ -> Decider.reject \"Cart already exists!\"\n  Nothing -> createCart context"
+        },
+        {
+          "source": "website/examples/mug-shop/first-cart/src/Shop/Cart/Commands/CreateCart.hs",
+          "text": "command ''CreateCart"
+        },
+        {
+          "source": "website/examples/mug-shop/first-cart/src/Shop/Cart/Queries/CartSummary.hs",
+          "text": "      , itemCount = count\n      , isEmpty = count == 0"
+        },
+        {
+          "source": "website/examples/mug-shop/first-cart/src/App.hs",
+          "text": "  |> Application.withService Cart.service\n  |> Application.withQuery @CartSummary"
+        },
+        {
+          "source": "website/examples/mug-shop/first-cart/tests/scenarios/create-cart.hurl",
+          "text": "[Asserts]\njsonpath \"$.items[?(@.cartSummaryId == '{{cart_id}}')].itemCount\" nth 0 == 0\njsonpath \"$.items[?(@.cartSummaryId == '{{cart_id}}')].isEmpty\" nth 0 == true"
+        },
+        {
+          "source": "website/examples/mug-shop/first-cart/src/Shop/Cart/Queries/CartSummary.hs",
+          "text": "deriveQuery ''CartSummary [''CartEntity]"
         }
       ]
     },
@@ -431,7 +571,7 @@
         "independence": true,
         "domainTransfer": true
       },
-      "notes": "Routes, status mapping, CORS fields and response fields checked against source. Browser JS and partial CORS wiring were not browser-tested or compiled. Does not claim built-in static hosting. Domain-transfer review: the application concept leads; ecommerce is a worked example without an assumed company story.",
+      "notes": "Own-project journey with focused declarations and canonical concept markers; module headers, imports, and optional equality/serialization setup remain in complete downloadable checkpoints. Real event fixtures retain Eq for complete accepted-payload tests: event marker generates Show, Generic and JSON, not Eq. Plain entities/value records have no corresponding concept marker. First-cart build/test verified; intermediate Cart and end-Build runtime checks remain in progress with corrected Neo CLI and released framework pin, no final pass claimed yet. JavaScript and CORS are partial interface examples, not a shipped frontend. Final runtime verification: first Cart build + 2 unit examples + 1 HTTP scenario; Cart additions build + 8 unit examples + 2 HTTP scenarios; end-of-Build build + 12 unit examples + 3 HTTP scenarios, all passing on the corrected local CLI against framework revision 25bd7027a85b8f2999602f66b46b4b6b133c22e8, with no compiler override or language pragmas. Baseline HTTP smoke confirms cart selections do not reserve stock before integration.",
       "excerpts": []
     },
     {
@@ -444,9 +584,8 @@
         "testbed"
       ],
       "sources": [
-        "neo/starter/src/App.hs",
-        "testbed/src/Testbed/Cart/Core.hs",
-        "testbed/src/Testbed/Cart/Queries/CartSummary.hs"
+        "website/examples/mug-shop/src/App.hs",
+        "neo/starter/src/App.hs"
       ],
       "review": {
         "accessibleOpening": true,
@@ -456,7 +595,7 @@
         "independence": true,
         "domainTransfer": true
       },
-      "notes": "Reviewed as a reading-path page with an evaluator opening and a quantity/count exercise. Distinguishes Counter starter from Cart testbed. Human reader trial remains pending. Domain-transfer review: the application concept leads; ecommerce is a worked example without an assumed company story.",
+      "notes": "Own-project journey with focused declarations and canonical concept markers; module headers, imports, and optional equality/serialization setup remain in complete downloadable checkpoints. Real event fixtures retain Eq for complete accepted-payload tests: event marker generates Show, Generic and JSON, not Eq. Plain entities/value records have no corresponding concept marker. First-cart build/test verified; intermediate Cart and end-Build runtime checks remain in progress with corrected Neo CLI and released framework pin, no final pass claimed yet. Final runtime verification: first Cart build + 2 unit examples + 1 HTTP scenario; Cart additions build + 8 unit examples + 2 HTTP scenarios; end-of-Build build + 12 unit examples + 3 HTTP scenarios, all passing on the corrected local CLI against framework revision 25bd7027a85b8f2999602f66b46b4b6b133c22e8, with no compiler override or language pragmas. Baseline HTTP smoke confirms cart selections do not reserve stock before integration.",
       "excerpts": []
     },
     {
@@ -469,6 +608,7 @@
         "json"
       ],
       "sources": [
+        "website/examples/mug-shop/src/Shop/Cart/Queries/CartSummary.hs",
         "core/core/Result.hs",
         "core/core/Task.hs",
         "core/decimal/Decimal.hs",
@@ -485,8 +625,13 @@
         "independence": true,
         "domainTransfer": true
       },
-      "notes": "API vocabulary grounded in source/signature assets. Explicit Decimal Int64 bounds, float parsing and truncation limits. Small illustrative expressions/helpers were not independently compiled. Domain-transfer review: the application concept leads; ecommerce is a worked example without an assumed company story.",
-      "excerpts": []
+      "notes": "Own-project journey with focused declarations and canonical concept markers; module headers, imports, and optional equality/serialization setup remain in complete downloadable checkpoints. Real event fixtures retain Eq for complete accepted-payload tests: event marker generates Show, Generic and JSON, not Eq. Plain entities/value records have no corresponding concept marker. First-cart build/test verified; intermediate Cart and end-Build runtime checks remain in progress with corrected Neo CLI and released framework pin, no final pass claimed yet. Final runtime verification: first Cart build + 2 unit examples + 1 HTTP scenario; Cart additions build + 8 unit examples + 2 HTTP scenarios; end-of-Build build + 12 unit examples + 3 HTTP scenarios, all passing on the corrected local CLI against framework revision 25bd7027a85b8f2999602f66b46b4b6b133c22e8, with no compiler override or language pragmas. Baseline HTTP smoke confirms cart selections do not reserve stock before integration.",
+      "excerpts": [
+        {
+          "source": "website/examples/mug-shop/src/Shop/Cart/Queries/CartSummary.hs",
+          "text": "cart.items |> Array.length"
+        }
+      ]
     },
     {
       "path": "src/content/docs/build/queries.md",
@@ -497,15 +642,10 @@
         "service-th"
       ],
       "sources": [
-        "testbed/src/Testbed/Cart/Queries/CartSummary.hs",
-        "testbed/src/App.hs",
+        "website/examples/mug-shop/src/Shop/Cart/Queries/CartSummary.hs",
         "core/service/Service/Query/Core.hs",
-        "core/service/Service/Query/TH.hs",
         "core/service/Service/Query/Pagination.hs",
-        "core/service/Service/Query/Endpoint.hs",
-        "core/neoql/NeoQL.hs",
         "core/neoql/NeoQL/Parser.hs",
-        "core/service/Service/Transport/Web.hs",
         "core/test-service/Service/Query/DefinitionSpec.hs"
       ],
       "review": {
@@ -516,11 +656,15 @@
         "independence": true,
         "domainTransfer": true
       },
-      "notes": "Projection excerpt matched source. Pagination, authorization-before-count, filter grammar and marker naming checked against implementation. Filter requests not executed here; new view extension is not compiled. Query declaration order corrected against compiling DefinitionSpec fixture: required companions, deriveQuery, then QueryOf business instances; the generated Query superclass must precede QueryOf. Domain-transfer review: the application concept leads; ecommerce is a worked example without an assumed company story.",
+      "notes": "Own-project journey with focused declarations and canonical concept markers; module headers, imports, and optional equality/serialization setup remain in complete downloadable checkpoints. Real event fixtures retain Eq for complete accepted-payload tests: event marker generates Show, Generic and JSON, not Eq. Plain entities/value records have no corresponding concept marker. First-cart build/test verified; intermediate Cart and end-Build runtime checks remain in progress with corrected Neo CLI and released framework pin, no final pass claimed yet. Final runtime verification: first Cart build + 2 unit examples + 1 HTTP scenario; Cart additions build + 8 unit examples + 2 HTTP scenarios; end-of-Build build + 12 unit examples + 3 HTTP scenarios, all passing on the corrected local CLI against framework revision 25bd7027a85b8f2999602f66b46b4b6b133c22e8, with no compiler override or language pragmas. Baseline HTTP smoke confirms cart selections do not reserve stock before integration.",
       "excerpts": [
         {
-          "source": "testbed/src/Testbed/Cart/Queries/CartSummary.hs",
-          "text": "instance QueryOf CartEntity CartSummary where\n  -- | The query is keyed by the cart ID\n  queryId cart = cart.cartId\n\n  -- | When a cart changes, update the summary\n  combine cart _maybeExisting = do\n    let count = cart.items |> Array.length\n    Update\n      CartSummary\n        { cartSummaryId = cart.cartId,\n          ownerId = cart.ownerId,\n          itemCount = count,\n          isEmpty = count == 0\n        }"
+          "source": "website/examples/mug-shop/src/Shop/Cart/Queries/CartSummary.hs",
+          "text": "instance QueryOf CartEntity CartSummary where\n  queryId cart = cart.cartId\n  combine cart _previous = do\n    let count = cart.items |> Array.length\n    Update CartSummary\n      { cartSummaryId = cart.cartId\n      , ownerId = cart.ownerId\n      , itemCount = count\n      , isEmpty = count == 0\n      }"
+        },
+        {
+          "source": "website/examples/mug-shop/src/Shop/Cart/Queries/CartSummary.hs",
+          "text": "deriveQuery ''CartSummary [''CartEntity]"
         }
       ]
     },
@@ -534,10 +678,13 @@
         "testbed"
       ],
       "sources": [
-        "testbed/src/Testbed/Stock/Core.hs",
-        "testbed/src/Testbed/Stock/Commands/ReserveStock.hs",
-        "testbed/src/Testbed/Cart/Integrations/ReserveStockOnItemAdded.hs",
-        "testbed/tests/scenarios/stock-reservation.hurl"
+        "website/examples/mug-shop/src/Shop/Stock/Event.hs",
+        "website/examples/mug-shop/src/Shop/Stock/Entity.hs",
+        "website/examples/mug-shop/src/Shop/Stock/Commands/InitializeStock.hs",
+        "website/examples/mug-shop/src/Shop/Stock/Commands/ReserveStock.hs",
+        "website/examples/mug-shop/src/App.hs",
+        "website/examples/mug-shop/tests/scenarios/stock-flow.hurl",
+        "core/service/Decider.hs"
       ],
       "review": {
         "accessibleOpening": true,
@@ -547,8 +694,41 @@
         "independence": true,
         "domainTransfer": true
       },
-      "notes": "Scenario and decision inspected. Separate cart and stock acceptance, missing compensation and checkout states are explicit. Curl variation is an adapted scenario, not a run result or complete checkout implementation. Domain-transfer review: explicitly framed as a practice milestone; the exercise teaches a reusable modeling or implementation method.",
-      "excerpts": []
+      "notes": "Own-project journey with focused declarations and canonical concept markers; module headers, imports, and optional equality/serialization setup remain in complete downloadable checkpoints. Real event fixtures retain Eq for complete accepted-payload tests: event marker generates Show, Generic and JSON, not Eq. Plain entities/value records have no corresponding concept marker. First-cart build/test verified; intermediate Cart and end-Build runtime checks remain in progress with corrected Neo CLI and released framework pin, no final pass claimed yet. Reservation is internal and untriggered until Connect; baseline correctly expects available3/reserved0 after cart addition. Final runtime verification: first Cart build + 2 unit examples + 1 HTTP scenario; Cart additions build + 8 unit examples + 2 HTTP scenarios; end-of-Build build + 12 unit examples + 3 HTTP scenarios, all passing on the corrected local CLI against framework revision 25bd7027a85b8f2999602f66b46b4b6b133c22e8, with no compiler override or language pragmas. Baseline HTTP smoke confirms cart selections do not reserve stock before integration.",
+      "excerpts": [
+        {
+          "source": "website/examples/mug-shop/src/Shop/Stock/Event.hs",
+          "text": "data StockEvent\n  = StockInitialized StockInitialized.Event\n  | StockReserved StockReserved.Event"
+        },
+        {
+          "source": "website/examples/mug-shop/src/Shop/Stock/Event.hs",
+          "text": "EventTH.event ''StockEvent"
+        },
+        {
+          "source": "website/examples/mug-shop/src/Shop/Stock/Entity.hs",
+          "text": "  StockReserved reservation ->\n    stock\n      { available = stock.available - reservation.quantity\n      , reserved = stock.reserved + reservation.quantity\n      }"
+        },
+        {
+          "source": "website/examples/mug-shop/src/Shop/Stock/Commands/InitializeStock.hs",
+          "text": "data InitializeStock = InitializeStock\n  { productId :: Uuid\n  , available :: Int\n  }"
+        },
+        {
+          "source": "website/examples/mug-shop/src/Shop/Stock/Commands/InitializeStock.hs",
+          "text": "command ''InitializeStock"
+        },
+        {
+          "source": "website/examples/mug-shop/src/Shop/Stock/Commands/ReserveStock.hs",
+          "text": "  if request.quantity > stock.available\n    then Decider.reject \"Insufficient stock available!\"\n    else Decider.acceptExisting\n      [StockReserved (StockReserved.Event {entityId = stock.stockId, quantity = request.quantity, cartId = request.cartId})]"
+        },
+        {
+          "source": "website/examples/mug-shop/src/App.hs",
+          "text": "  |> Application.withService Stock.service\n  |> Application.withQuery @StockLevel"
+        },
+        {
+          "source": "website/examples/mug-shop/tests/scenarios/stock-flow.hurl",
+          "text": "POST http://localhost:8080/commands/initialize-stock\nContent-Type: application/json\n{\"productId\":\"11111111-1111-1111-1111-111111111111\",\"available\":3}\n\nHTTP 200\n[Captures]\nstock_id: jsonpath \"$.entityId\"\n\nGET http://localhost:8080/queries/stock-level\n[Options]\nretry: 10\nretry-interval: 200\n\nHTTP 200\n[Asserts]\njsonpath \"$.items[?(@.stockLevelId == '{{stock_id}}')].available\" nth 0 == 3\njsonpath \"$.items[?(@.stockLevelId == '{{stock_id}}')].reserved\" nth 0 == 0\n\nPOST http://localhost:8080/commands/initialize-stock\nContent-Type: application/json\n{\"productId\":\"22222222-2222-2222-2222-222222222222\",\"available\":-1}\n\nHTTP 400\n[Asserts]\njsonpath \"$.reason\" == \"Available stock cannot be negative\""
+        }
+      ]
     },
     {
       "path": "src/content/docs/build/testing.md",
@@ -560,12 +740,12 @@
         "entities"
       ],
       "sources": [
+        "website/examples/mug-shop/tests/Decider/Cart/AddItemSpec.hs",
+        "website/examples/mug-shop/tests/Decider/Cart/ReplaySpec.hs",
+        "website/examples/mug-shop/tests/Decider/Stock/ReserveStockSpec.hs",
+        "website/examples/mug-shop/tests/scenarios/cart-flow.hurl",
         "neo/starter/tests/Decider/Counter/IncrementCounterSpec.hs",
-        "neo/starter/tests/Property/CounterReplaySpec.hs",
-        "testbed/tests/scenarios/stock-reservation.hurl",
-        "scripts/testbed",
-        "testbed/scripts/run-tests.sh",
-        "README.md"
+        "neo/src/commands/test.rs"
       ],
       "review": {
         "accessibleOpening": true,
@@ -575,15 +755,23 @@
         "independence": true,
         "domainTransfer": true
       },
-      "notes": "Decision/Hurl excerpts matched public tests. Separates unit, persistence, HTTP and provider evidence. These published tests were inspected, not run by this authoring agent. Domain-transfer review: the application concept leads; ecommerce is a worked example without an assumed company story.",
+      "notes": "Own-project journey with focused declarations and canonical concept markers; module headers, imports, and optional equality/serialization setup remain in complete downloadable checkpoints. Real event fixtures retain Eq for complete accepted-payload tests: event marker generates Show, Generic and JSON, not Eq. Plain entities/value records have no corresponding concept marker. First-cart build/test verified; intermediate Cart and end-Build runtime checks remain in progress with corrected Neo CLI and released framework pin, no final pass claimed yet. Final runtime verification: first Cart build + 2 unit examples + 1 HTTP scenario; Cart additions build + 8 unit examples + 2 HTTP scenarios; end-of-Build build + 12 unit examples + 3 HTTP scenarios, all passing on the corrected local CLI against framework revision 25bd7027a85b8f2999602f66b46b4b6b133c22e8, with no compiler override or language pragmas. Baseline HTTP smoke confirms cart selections do not reserve stock before integration.",
       "excerpts": [
         {
-          "source": "neo/starter/tests/Decider/Counter/IncrementCounterSpec.hs",
-          "text": "  it \"rejects a non-positive amount\" \\_ctx -> do\n    let existing = CounterEntity {counterId = Uuid.nil, label = \"downloads\", value = 0}\n    let cmd = IncrementCounter {entityId = Uuid.nil, amount = 0}\n    result <- runTestDecision (decide cmd (Just existing) Auth.emptyContext)\n    case result of\n      RejectCommand msg ->\n        msg |> shouldBe \"Amount must be positive\"\n      AcceptCommand _ _ ->\n        fail \"expected a rejection for a non-positive amount\""
+          "source": "website/examples/mug-shop/tests/Decider/Cart/AddItemSpec.hs",
+          "text": "    let cart = CartEntity {cartId = cartIdFixture, ownerId = \"owner\", items = Array.empty}\n    let request = AddItem {cartId = cartIdFixture, stockId = stockIdFixture, quantity = 2}\n    result <- runDecision (decide request (Just cart) Auth.emptyContext)\n    result |> shouldBe (AcceptCommand ExistingStream\n      [ItemAdded (ItemAdded.Event {entityId = cartIdFixture, stockId = stockIdFixture, quantity = 2})])"
         },
         {
-          "source": "testbed/tests/scenarios/stock-reservation.hurl",
-          "text": "GET http://localhost:8080/queries/stock-level\n[Options]\nretry: 10\nretry-interval: 200\n\nHTTP/1.1 200\n[Asserts]\n# Stock should now show 95 available, 5 reserved\njsonpath \"$.items[?(@.stockLevelId == '{{stock_id}}')].available\" nth 0 == 95\njsonpath \"$.items[?(@.stockLevelId == '{{stock_id}}')].reserved\" nth 0 == 5"
+          "source": "website/examples/mug-shop/tests/Decider/Cart/ReplaySpec.hs",
+          "text": "    let created = CartCreated (CartCreated.Event {entityId = Uuid.nil, ownerId = \"owner\"})\n    let added = ItemAdded (ItemAdded.Event {entityId = Uuid.nil, stockId = Uuid.nil, quantity = 2})\n    let cart = initialState |> update created |> update added |> update added\n    cart.items |> Array.length |> shouldBe 2"
+        },
+        {
+          "source": "website/examples/mug-shop/tests/Decider/Stock/ReserveStockSpec.hs",
+          "text": "    let stock = StockEntity {stockId = Uuid.nil, productId = Uuid.nil, available = 1, reserved = 0}\n    result <- runDecision (decide (request 2) (Just stock) Auth.emptyContext)\n    result |> shouldBe (RejectCommand \"Insufficient stock available!\")"
+        },
+        {
+          "source": "website/examples/mug-shop/tests/scenarios/cart-flow.hurl",
+          "text": "POST http://localhost:8080/commands/create-cart\nContent-Type: application/json\n[]\n\nHTTP 200\n[Captures]\ncart_id: jsonpath \"$.entityId\"\n\nGET http://localhost:8080/queries/cart-summary\n[Options]\nretry: 10\nretry-interval: 200\n\nHTTP 200\n[Asserts]\njsonpath \"$.items[?(@.cartSummaryId == '{{cart_id}}')].itemCount\" nth 0 == 0\njsonpath \"$.items[?(@.cartSummaryId == '{{cart_id}}')].isEmpty\" nth 0 == true\n\nPOST http://localhost:8080/commands/add-item\nContent-Type: application/json\n{\"cartId\":\"{{cart_id}}\",\"stockId\":\"11111111-1111-1111-1111-111111111111\",\"quantity\":2}\n\nHTTP 200\n\nPOST http://localhost:8080/commands/add-item\nContent-Type: application/json\n{\"cartId\":\"{{cart_id}}\",\"stockId\":\"11111111-1111-1111-1111-111111111111\",\"quantity\":0}\n\nHTTP 400\n[Asserts]\njsonpath \"$.reason\" == \"Quantity must be positive\"\n\nGET http://localhost:8080/queries/cart-summary\n[Options]\nretry: 10\nretry-interval: 200\n\nHTTP 200\n[Asserts]\njsonpath \"$.items[?(@.cartSummaryId == '{{cart_id}}')].itemCount\" nth 0 == 1\njsonpath \"$.items[?(@.cartSummaryId == '{{cart_id}}')].isEmpty\" nth 0 == false"
         }
       ]
     },
@@ -601,31 +789,36 @@
         "testlib"
       ],
       "sources": [
-        "neo/starter/src/App.hs",
-        "neo/starter/src/Starter/Counter/Service.hs",
-        "neo/starter/tests/scenarios/counter-flow.hurl",
-        "neo/starter/tests/integration/smoke.hurl",
-        "neo/src/commands/new.rs",
-        "neo/src/reconcile/mod.rs",
-        "neo/src/reconcile/modules.rs",
-        "neo/src/subprocess/hurl.rs",
-        "testbed/tests/commands/create-cart.hurl",
-        "testbed/tests/scenarios/stock-reservation.hurl",
-        "testbed/src/Testbed/Cart/Commands/AddItem.hs",
-        "testbed/src/Testbed/Cart/Commands/CreateCart.hs",
-        "testbed/src/Testbed/Cart/Commands/CreateCartInternal.hs",
-        "testbed/src/Testbed/Cart/Commands/RegisterCartByKey.hs",
-        "testbed/src/Testbed/Cart/Core.hs",
-        "testbed/src/Testbed/Cart/Integrations/EventCounter.hs",
-        "testbed/src/Testbed/Cart/Integrations/ReserveStockOnItemAdded.hs",
-        "testbed/src/Testbed/Cart/Integrations.hs",
-        "testbed/src/Testbed/Cart/Queries/CartSummary.hs",
-        "testbed/src/Testbed/Cart/Service.hs",
-        "testbed/src/Testbed/Stock/Commands/InitializeStock.hs",
-        "testbed/src/Testbed/Stock/Commands/ReserveStock.hs",
-        "testbed/src/Testbed/Stock/Core.hs",
-        "testbed/src/Testbed/Stock/Queries/StockLevel.hs",
-        "testbed/src/Testbed/Stock/Service.hs"
+        "website/examples/mug-shop/src/App.hs",
+        "website/examples/mug-shop/tests/Spec.hs",
+        "website/examples/mug-shop/src/Shop/Config.hs",
+        "website/examples/mug-shop/src/Shop/Cart/Entity.hs",
+        "website/examples/mug-shop/src/Shop/Cart/Item.hs",
+        "website/examples/mug-shop/src/Shop/Cart/Event.hs",
+        "website/examples/mug-shop/src/Shop/Cart/Service.hs",
+        "website/examples/mug-shop/src/Shop/Cart/Core.hs",
+        "website/examples/mug-shop/src/Shop/Stock/Entity.hs",
+        "website/examples/mug-shop/src/Shop/Stock/Event.hs",
+        "website/examples/mug-shop/src/Shop/Stock/Service.hs",
+        "website/examples/mug-shop/src/Shop/Stock/Core.hs",
+        "website/examples/mug-shop/src/Shop/Stock/Queries/StockLevel.hs",
+        "website/examples/mug-shop/src/Shop/Stock/Commands/ReserveStock.hs",
+        "website/examples/mug-shop/src/Shop/Stock/Commands/InitializeStock.hs",
+        "website/examples/mug-shop/src/Shop/Stock/Events/StockReserved.hs",
+        "website/examples/mug-shop/src/Shop/Stock/Events/StockInitialized.hs",
+        "website/examples/mug-shop/src/Shop/Cart/Queries/CartSummary.hs",
+        "website/examples/mug-shop/src/Shop/Cart/Commands/CreateCart.hs",
+        "website/examples/mug-shop/src/Shop/Cart/Commands/AddItem.hs",
+        "website/examples/mug-shop/src/Shop/Cart/Events/CartCreated.hs",
+        "website/examples/mug-shop/src/Shop/Cart/Events/ItemAdded.hs",
+        "website/examples/mug-shop/tests/scenarios/create-cart.hurl",
+        "website/examples/mug-shop/tests/scenarios/stock-flow.hurl",
+        "website/examples/mug-shop/tests/scenarios/cart-flow.hurl",
+        "website/examples/mug-shop/tests/Decider/Cart/CreateCartSpec.hs",
+        "website/examples/mug-shop/tests/Decider/Cart/AddItemSpec.hs",
+        "website/examples/mug-shop/tests/Decider/Cart/ReplaySpec.hs",
+        "website/examples/mug-shop/tests/Decider/Stock/ReserveStockSpec.hs",
+        "neo/src/reconcile/mod.rs"
       ],
       "review": {
         "accessibleOpening": true,
@@ -635,7 +828,7 @@
         "independence": true,
         "domainTransfer": true
       },
-      "notes": "Concrete transfer milestone retains Counter tests and copies both full public domains plus self-contained HTTP tests. Local imports/transitive modules inspected. App snippet is adapted partial wiring, not a standalone module; source and framework revision compatibility is an explicit prerequisite. Static/source review completed; assembled generated application has not been compiled or its Hurl scenarios executed during this docs task. Proposed payment/order/AI capstones explicitly remain implementation work. Domain-transfer review: explicitly framed as a practice milestone; the exercise teaches a reusable modeling or implementation method.",
+      "notes": "Own-project journey with focused declarations and canonical concept markers; module headers, imports, and optional equality/serialization setup remain in complete downloadable checkpoints. Real event fixtures retain Eq for complete accepted-payload tests: event marker generates Show, Generic and JSON, not Eq. Plain entities/value records have no corresponding concept marker. First-cart build/test verified; intermediate Cart and end-Build runtime checks remain in progress with corrected Neo CLI and released framework pin, no final pass claimed yet. Final runtime verification: first Cart build + 2 unit examples + 1 HTTP scenario; Cart additions build + 8 unit examples + 2 HTTP scenarios; end-of-Build build + 12 unit examples + 3 HTTP scenarios, all passing on the corrected local CLI against framework revision 25bd7027a85b8f2999602f66b46b4b6b133c22e8, with no compiler override or language pragmas. Baseline HTTP smoke confirms cart selections do not reserve stock before integration.",
       "excerpts": []
     },
     {
@@ -652,7 +845,8 @@
         "integrations/Integration/Agent/Types.hs",
         "integrations/Integration/Agent/Internal.hs",
         "integrations/test/Integration/Agent/CompileSpec.hs",
-        "core/service/Service/Integration/Dispatcher.hs"
+        "core/service/Service/Integration/Dispatcher.hs",
+        "core/service/Service/ServiceDefinition/Core.hs"
       ],
       "review": {
         "accessibleOpening": true,
@@ -662,7 +856,7 @@
         "independence": true,
         "domainTransfer": true
       },
-      "notes": "Reviewed against the documentation methodology; snippets are source excerpts or labelled partial adaptations. Live provider tests and human reader trials remain pending. Domain-transfer review: the application concept leads; ecommerce is a worked example without an assumed company story.",
+      "notes": "Reviewed for the progressive-depth method and continuous reader-created mug-shop project: accessible capability opening, focused declarations and logic, explicit file destinations, no module/import boilerplate or language pragmas, canonical concept markers, and clear application-specific outcomes. Complete implementation files are available in the downloadable integration checkpoint. Framework source links are optional evidence, never a checkout prerequisite. Request builders are deliberately partial and grounded in the inspected public implementations. No live provider call or complete provider-specific application workflow is claimed tested; callback commands, service registration, credentials, and provider compatibility remain application work. Relevant retry, trusted dispatch, file ownership, credential lifetime, and asynchronous outcome limits are stated explicitly. Human reader trials remain pending.",
       "excerpts": []
     },
     {
@@ -677,7 +871,8 @@
         "integrations/Integration/OpenRouter/Internal.hs",
         "integrations/Integration/OpenRouter/Response.hs",
         "integrations/Integration/AzureAI/Request.hs",
-        "integrations/test/Integration/AzureAI/RequestSpec.hs"
+        "integrations/test/Integration/AzureAI/RequestSpec.hs",
+        "core/service/Service/ServiceDefinition/Core.hs"
       ],
       "review": {
         "accessibleOpening": true,
@@ -687,7 +882,7 @@
         "independence": true,
         "domainTransfer": true
       },
-      "notes": "Reviewed against the documentation methodology; snippets are source excerpts or labelled partial adaptations. Live provider tests and human reader trials remain pending. Domain-transfer review: the application concept leads; ecommerce is a worked example without an assumed company story.",
+      "notes": "Reviewed for the progressive-depth method and continuous reader-created mug-shop project: accessible capability opening, focused declarations and logic, explicit file destinations, no module/import boilerplate or language pragmas, canonical concept markers, and clear application-specific outcomes. Complete implementation files are available in the downloadable integration checkpoint. Framework source links are optional evidence, never a checkout prerequisite. Request builders are deliberately partial and grounded in the inspected public implementations. No live provider call or complete provider-specific application workflow is claimed tested; callback commands, service registration, credentials, and provider compatibility remain application work. Relevant retry, trusted dispatch, file ownership, credential lifetime, and asynchronous outcome limits are stated explicitly. Human reader trials remain pending.",
       "excerpts": []
     },
     {
@@ -706,7 +901,8 @@
         "integrations/Integration/OpenRouter/Internal.hs",
         "testbed/src/Testbed/Cart/Integrations/EventCounter.hs",
         "testbed/src/App.hs",
-        "core/service/Service/Application/Integrations.hs"
+        "core/service/Service/Application/Integrations.hs",
+        "core/service/Service/ServiceDefinition/Core.hs"
       ],
       "review": {
         "accessibleOpening": true,
@@ -716,15 +912,11 @@
         "independence": true,
         "domainTransfer": true
       },
-      "notes": "Reviewed against the documentation methodology; snippets are source excerpts or labelled partial adaptations. Live provider tests and human reader trials remain pending. Domain-transfer review: the application concept leads; ecommerce is a worked example without an assumed company story.",
+      "notes": "Reviewed for the progressive-depth method and continuous reader-created mug-shop project: accessible capability opening, focused declarations and logic, explicit file destinations, no module/import boilerplate or language pragmas, canonical concept markers, and clear application-specific outcomes. Complete implementation files are available in the downloadable integration checkpoint. Framework source links are optional evidence, never a checkout prerequisite. Request builders are deliberately partial and grounded in the inspected public implementations. No live provider call or complete provider-specific application workflow is claimed tested; callback commands, service registration, credentials, and provider compatibility remain application work. Relevant retry, trusted dispatch, file ownership, credential lifetime, and asynchronous outcome limits are stated explicitly. Human reader trials remain pending.",
       "excerpts": [
         {
           "source": "core/service/Integration.hs",
           "text": "class ToAction config where\n  toAction :: config -> Action"
-        },
-        {
-          "source": "testbed/src/App.hs",
-          "text": "    |> Application.withOutboundLifecycle @() @CartEntity (\\_ -> EventCounter.eventCounterIntegration)"
         }
       ]
     },
@@ -745,7 +937,8 @@
         "integrations/Integration/Audio/Transcribe/Internal.hs",
         "core/service/Service/Application.hs",
         "core/service/Service/Integration/Dispatcher.hs",
-        "testbed/src/Testbed/Examples/PdfExtraction.hs"
+        "testbed/src/Testbed/Examples/PdfExtraction.hs",
+        "core/service/Service/ServiceDefinition/Core.hs"
       ],
       "review": {
         "accessibleOpening": true,
@@ -755,7 +948,7 @@
         "independence": true,
         "domainTransfer": true
       },
-      "notes": "Reviewed against the documentation methodology; snippets are source excerpts or labelled partial adaptations. Live provider tests and human reader trials remain pending. Domain-transfer review: the application concept leads; ecommerce is a worked example without an assumed company story.",
+      "notes": "Reviewed for the progressive-depth method and continuous reader-created mug-shop project: accessible capability opening, focused declarations and logic, explicit file destinations, no module/import boilerplate or language pragmas, canonical concept markers, and clear application-specific outcomes. Complete implementation files are available in the downloadable integration checkpoint. Framework source links are optional evidence, never a checkout prerequisite. Request builders are deliberately partial and grounded in the inspected public implementations. No live provider call or complete provider-specific application workflow is claimed tested; callback commands, service registration, credentials, and provider compatibility remain application work. Relevant retry, trusted dispatch, file ownership, credential lifetime, and asynchronous outcome limits are stated explicitly. Human reader trials remain pending.",
       "excerpts": []
     },
     {
@@ -776,7 +969,8 @@
         "integrations/Integration/Acs/Internal.hs",
         "integrations/nhintegrations.cabal",
         "core/core/Redacted.hs",
-        "integrations/Integration/Http/Internal.hs"
+        "integrations/Integration/Http/Internal.hs",
+        "core/service/Service/ServiceDefinition/Core.hs"
       ],
       "review": {
         "accessibleOpening": true,
@@ -786,7 +980,7 @@
         "independence": true,
         "domainTransfer": true
       },
-      "notes": "Reviewed against the documentation methodology; snippets are source excerpts or labelled partial adaptations. Live provider tests and human reader trials remain pending. Domain-transfer review: the application concept leads; ecommerce is a worked example without an assumed company story.",
+      "notes": "Reviewed for the progressive-depth method and continuous reader-created mug-shop project: accessible capability opening, focused declarations and logic, explicit file destinations, no module/import boilerplate or language pragmas, canonical concept markers, and clear application-specific outcomes. Complete implementation files are available in the downloadable integration checkpoint. Framework source links are optional evidence, never a checkout prerequisite. Request builders are deliberately partial and grounded in the inspected public implementations. No live provider call or complete provider-specific application workflow is claimed tested; callback commands, service registration, credentials, and provider compatibility remain application work. Relevant retry, trusted dispatch, file ownership, credential lifetime, and asynchronous outcome limits are stated explicitly. Human reader trials remain pending.",
       "excerpts": []
     },
     {
@@ -807,7 +1001,9 @@
         "testbed/tests/files/upload-errors.hurl",
         "testbed/tests/files/download.hurl",
         "core/auth/Auth/Middleware.hs",
-        "core/service/Service/Transport/Web.hs"
+        "core/service/Service/Transport/Web.hs",
+        "core/service/Service/FileUpload/Core.hs",
+        "website/examples/mug-shop-connect/src/Shop/Uploads.hs"
       ],
       "review": {
         "accessibleOpening": true,
@@ -817,8 +1013,13 @@
         "independence": true,
         "domainTransfer": true
       },
-      "notes": "Reviewed against the documentation methodology; snippets are source excerpts or labelled partial adaptations. Live provider tests and human reader trials remain pending. Explicitly documents authenticated-download middleware limitation, absent automatic cleanup-worker wiring, and background file-access authority boundary. Domain-transfer review: the application concept leads; ecommerce is a worked example without an assumed company story.",
-      "excerpts": []
+      "notes": "Reviewed for the progressive-depth method and continuous reader-created mug-shop project: accessible capability opening, focused declarations and logic, explicit file destinations, no module/import boilerplate or language pragmas, canonical concept markers, and clear application-specific outcomes. Complete implementation files are available in the downloadable integration checkpoint. Framework source links are optional evidence, never a checkout prerequisite. Executable checkpoint built and final neo test passed (12 unit examples, 4 Hurl scenarios). Separate neo run observation on temporary port 8082 verified a 23-byte text upload/download byte-for-byte with ShopConfig plus the static withFileUpload @() factory. This proves the anonymous local route and configuration wiring; authenticated ownership, persistence across restart, and cleanup were not runtime-verified. Temporary App edits were restored byte-for-byte afterward. Human reader trials remain pending.",
+      "excerpts": [
+        {
+          "source": "website/examples/mug-shop-connect/src/Shop/Uploads.hs",
+          "text": "uploadConfig :: FileUploadConfig\nuploadConfig = FileUploadConfig\n  { blobStoreDir = \"./uploads\"\n  , stateStoreBackend = InMemoryStateStore\n  , maxFileSizeBytes = 10485760\n  , pendingTtlSeconds = 21600\n  , cleanupIntervalSeconds = 900\n  , allowedContentTypes = Just [\"text/plain\", \"image/png\", \"application/pdf\"]\n  , storeOriginalFilename = True\n  }"
+        }
+      ]
     },
     {
       "path": "src/content/docs/connect/http-and-payments.md",
@@ -834,7 +1035,8 @@
         "integrations/Integration/Http/Internal.hs",
         "integrations/Integration/Http/Retry.hs",
         "integrations/test/Integration/Http/InternalSpec.hs",
-        "core/service/Integration.hs"
+        "core/service/Integration.hs",
+        "core/service/Service/ServiceDefinition/Core.hs"
       ],
       "review": {
         "accessibleOpening": true,
@@ -844,7 +1046,7 @@
         "independence": true,
         "domainTransfer": true
       },
-      "notes": "Reviewed against the documentation methodology; snippets are source excerpts or labelled partial adaptations. Live provider tests and human reader trials remain pending. Domain-transfer review: the application concept leads; ecommerce is a worked example without an assumed company story.",
+      "notes": "Reviewed for the progressive-depth method and continuous reader-created mug-shop project: accessible capability opening, focused declarations and logic, explicit file destinations, no module/import boilerplate or language pragmas, canonical concept markers, and clear application-specific outcomes. Complete implementation files are available in the downloadable integration checkpoint. Framework source links are optional evidence, never a checkout prerequisite. Request builders are deliberately partial and grounded in the inspected public implementations. No live provider call or complete provider-specific application workflow is claimed tested; callback commands, service registration, credentials, and provider compatibility remain application work. Relevant retry, trusted dispatch, file ownership, credential lifetime, and asynchronous outcome limits are stated explicitly. Human reader trials remain pending.",
       "excerpts": []
     },
     {
@@ -857,7 +1059,11 @@
       "sources": [
         "core/service/Integration.hs",
         "core/service/Service/Application/Integrations.hs",
-        "core/service/Service/Integration/Dispatcher.hs"
+        "core/service/Service/Integration/Dispatcher.hs",
+        "neo/assets/templates/project.cabal.j2",
+        "neo/assets/templates/cabal.project.j2",
+        "neo/src/reconcile/cabal.rs",
+        "core/service/Service/ServiceDefinition/Core.hs"
       ],
       "review": {
         "accessibleOpening": true,
@@ -867,7 +1073,7 @@
         "independence": true,
         "domainTransfer": true
       },
-      "notes": "Reviewed against the documentation methodology; snippets are source excerpts or labelled partial adaptations. Live provider tests and human reader trials remain pending. Domain-transfer review: the application concept leads; ecommerce is a worked example without an assumed company story.",
+      "notes": "Reviewed for the progressive-depth method and continuous reader-created mug-shop project: accessible capability opening, focused declarations and logic, explicit file destinations, no module/import boilerplate or language pragmas, canonical concept markers, and clear application-specific outcomes. Complete implementation files are available in the downloadable integration checkpoint. Framework source links are optional evidence, never a checkout prerequisite. The integration checkpoint was built and exercised with the locally corrected Neo CLI: 12 unit examples and 4 Hurl scenarios passed. Anonymous file roundtrip and separate timer observations passed. Provider-specific builders remain source-reviewed partial examples requiring application callbacks and independent live-provider verification. Human reader trials remain pending.",
       "excerpts": []
     },
     {
@@ -890,7 +1096,8 @@
         "core/auth/Auth/SecretStore/InMemory.hs",
         "core/auth/Auth/OAuth2/TokenRefresh.hs",
         "core/test/Auth/OAuth2/RoutesSpec.hs",
-        "core/test/Auth/OAuth2/TokenRefreshSpec.hs"
+        "core/test/Auth/OAuth2/TokenRefreshSpec.hs",
+        "core/service/Service/ServiceDefinition/Core.hs"
       ],
       "review": {
         "accessibleOpening": true,
@@ -900,7 +1107,7 @@
         "independence": true,
         "domainTransfer": true
       },
-      "notes": "Reviewed generic OAuth2 flow, exact config-factory shapes and source limitations: in-memory transaction/secret defaults, reactive refresh, callback error-only gap, ignored deletion failures, no provider revocation. Fictional accounting use case is explicitly adapter work. No live-provider verification or human reader trial claimed. Domain-transfer review: the application concept leads; ecommerce is a worked example without an assumed company story.",
+      "notes": "Reviewed for the progressive-depth method and continuous reader-created mug-shop project: accessible capability opening, focused declarations and logic, explicit file destinations, no module/import boilerplate or language pragmas, canonical concept markers, and clear application-specific outcomes. Complete implementation files are available in the downloadable integration checkpoint. Framework source links are optional evidence, never a checkout prerequisite. Request builders are deliberately partial and grounded in the inspected public implementations. No live provider call or complete provider-specific application workflow is claimed tested; callback commands, service registration, credentials, and provider compatibility remain application work. Relevant retry, trusted dispatch, file ownership, credential lifetime, and asynchronous outcome limits are stated explicitly. Human reader trials remain pending.",
       "excerpts": []
     },
     {
@@ -915,7 +1122,14 @@
         "core/service/Integration/Timer.hs",
         "testbed/src/Testbed/Cart/Integrations.hs",
         "testbed/src/App.hs",
-        "core/service/Service/Application/Integrations.hs"
+        "core/service/Service/Application/Integrations.hs",
+        "testbed/src/Testbed/Cart/Commands/CreateCart.hs",
+        "website/examples/mug-shop-connect/src/Shop/Cart/Timers.hs",
+        "core/service/Service/ServiceDefinition/Core.hs",
+        "website/examples/mug-shop-connect/src/Shop/Cart/Commands/CreateCartInternal.hs",
+        "website/examples/mug-shop-connect/src/Shop/Cart/Service.hs",
+        "testbed/src/Testbed/Cart/Commands/CreateCartInternal.hs",
+        "website/examples/mug-shop/src/Shop/Cart/Commands/CreateCart.hs"
       ],
       "review": {
         "accessibleOpening": true,
@@ -925,15 +1139,27 @@
         "independence": true,
         "domainTransfer": true
       },
-      "notes": "Reviewed against the documentation methodology; snippets are source excerpts or labelled partial adaptations. Live provider tests and human reader trials remain pending. Domain-transfer review: the application concept leads; ecommerce is a worked example without an assumed company story.",
+      "notes": "Reviewed for the progressive-depth method and continuous reader-created mug-shop project: accessible capability opening, focused declarations and logic, explicit file destinations, no module/import boilerplate or language pragmas, canonical concept markers, and clear application-specific outcomes. Complete implementation files are available in the downloadable integration checkpoint. Framework source links are optional evidence, never a checkout prerequisite. Executable checkpoint built and final neo test passed (12 unit examples, 4 Hurl scenarios) with timer registration disabled. Separate neo run observation on temporary port 8082 registered CreateCartInternal and observed one empty cart after startup, then two distinct empty carts after 32 seconds. Normal App was restored byte-for-byte and the server stopped. This verifies submission/registration and the observed timer interval, not durable scheduling or a reservation-expiry workflow. Human reader trials remain pending.",
       "excerpts": [
-        {
-          "source": "testbed/src/Testbed/Cart/Integrations.hs",
-          "text": "periodicCartCreator :: Integration.Inbound\nperiodicCartCreator =\n  Timer.every Timer.Every\n    { interval = Timer.seconds 3\n    , toCommand = \\_ -> CreateCartInternal\n    }"
-        },
         {
           "source": "testbed/src/App.hs",
           "text": "    |> Application.withInbound @() (\\_ -> periodicCartCreator)"
+        },
+        {
+          "source": "website/examples/mug-shop-connect/src/Shop/Cart/Timers.hs",
+          "text": "periodicCartCreator :: Integration.Inbound\nperiodicCartCreator =\n  Timer.Every\n    { interval = Timer.seconds 30\n    , toCommand = \\_ -> CreateCartInternal\n    }\n    |> Timer.every"
+        },
+        {
+          "source": "website/examples/mug-shop-connect/src/Shop/Cart/Commands/CreateCartInternal.hs",
+          "text": "decide _ entity context =\n  CreateCart.decide CreateCart.CreateCart entity context"
+        },
+        {
+          "source": "website/examples/mug-shop-connect/src/Shop/Cart/Commands/CreateCartInternal.hs",
+          "text": "data CreateCartInternal = CreateCartInternal\n\n\ngetEntityId :: CreateCartInternal -> Maybe Uuid\ngetEntityId _ = Nothing\n\n\ndecide :: CreateCartInternal -> Maybe CartEntity -> RequestContext -> Decision CartEvent\ndecide _ entity context =\n  CreateCart.decide CreateCart.CreateCart entity context\n\n\ntype instance EntityOf CreateCartInternal = CartEntity\ntype instance TransportsOf CreateCartInternal = '[InternalTransport]\n\n\ncommand ''CreateCartInternal"
+        },
+        {
+          "source": "website/examples/mug-shop-connect/src/Shop/Cart/Service.hs",
+          "text": "  |> Service.command @CreateCartInternal"
         }
       ]
     },
@@ -950,7 +1176,20 @@
         "core/service/Service/OutboundIntegration/TH.hs",
         "core/service/Integration/Command.hs",
         "testbed/src/App.hs",
-        "testbed/tests/scenarios/stock-reservation.hurl"
+        "testbed/tests/scenarios/stock-reservation.hurl",
+        "testbed/src/Testbed/Cart/Core.hs",
+        "testbed/src/Testbed/Stock/Commands/ReserveStock.hs",
+        "website/examples/mug-shop-connect/src/Shop/Cart/Integrations/ReserveStockOnItemAdded.hs",
+        "website/examples/mug-shop-connect/tests/stock-reservation.hurl",
+        "core/service/Service/Transport/Web.hs",
+        "neo/src/subprocess/hurl.rs",
+        "core/service/Service/ServiceDefinition/Core.hs",
+        "website/examples/mug-shop-connect/README.md",
+        "website/examples/mug-shop/src/Shop/Cart/Events/ItemAdded.hs",
+        "website/examples/mug-shop/src/Shop/Cart/Event.hs",
+        "website/examples/mug-shop/src/Shop/Cart/Entity.hs",
+        "website/examples/mug-shop/src/Shop/Stock/Commands/ReserveStock.hs",
+        "core/service/Service/Application.hs"
       ],
       "review": {
         "accessibleOpening": true,
@@ -960,15 +1199,23 @@
         "independence": true,
         "domainTransfer": true
       },
-      "notes": "Reviewed against the documentation methodology; snippets are source excerpts or labelled partial adaptations. Live provider tests and human reader trials remain pending. Domain-transfer review: the application concept leads; ecommerce is a worked example without an assumed company story.",
+      "notes": "Reviewed for the progressive-depth method and continuous reader-created mug-shop project: accessible capability opening, focused declarations and logic, explicit file destinations, no module/import boilerplate or language pragmas, canonical concept markers, and clear application-specific outcomes. Complete implementation files are available in the downloadable integration checkpoint. Framework source links are optional evidence, never a checkout prerequisite. Executable integration checkpoint built with the locally corrected Neo CLI against framework pin 25bd7027a85b8f2999602f66b46b4b6b133c22e8. Final neo test passed 12 unit examples and 4 Hurl scenarios, including stock-reservation success, rejected zero with unchanged views, and the final available-unit boundary. A cold HTTP startup exceeded the CLI 60-second readiness budget; normal neo run verified startup and HTTP 200, then the warmed neo test passed. The Default CartEntity requirement was found by compilation and is taught explicitly. Human reader trials remain pending.",
       "excerpts": [
         {
-          "source": "testbed/src/Testbed/Cart/Integrations/ReserveStockOnItemAdded.hs",
-          "text": "handleEvent :: CartEntity -> CartEvent -> Integration.Outbound\nhandleEvent cart event =\n  case event of\n    ItemAdded {stockId, quantity} ->\n      Integration.batch\n        [ Integration.outbound\n            Command.Emit\n              { command =\n                  ReserveStock\n                    { stockId = stockId\n                    , quantity = quantity\n                    , cartId = cart.cartId\n                    }\n              }\n        ]\n    _ -> Integration.none"
+          "source": "website/examples/mug-shop-connect/src/Shop/Cart/Integrations/ReserveStockOnItemAdded.hs",
+          "text": "data ReserveStockOnItemAdded = ReserveStockOnItemAdded\n\n\ntype instance EntityOf ReserveStockOnItemAdded = CartEntity\n\n\nhandleEvent :: CartEntity -> CartEvent -> Integration.Outbound\nhandleEvent cart event =\n  case event of\n    ItemAdded added ->\n      Integration.batch\n        [ Integration.outbound\n            Command.Emit\n              { command =\n                  ReserveStock\n                    { stockId = added.stockId\n                    , quantity = added.quantity\n                    , cartId = cart.cartId\n                    }\n              }\n        ]\n    _ -> Integration.none\n\n\noutboundIntegration ''ReserveStockOnItemAdded"
         },
         {
-          "source": "testbed/src/Testbed/Cart/Integrations/ReserveStockOnItemAdded.hs",
-          "text": "type instance EntityOf ReserveStockOnItemAdded = CartEntity"
+          "source": "website/examples/mug-shop-connect/tests/stock-reservation.hurl",
+          "text": "GET http://localhost:8080/queries/stock-level\n[Options]\nretry: 10\nretry-interval: 200\nHTTP/1.1 200\n[Asserts]\njsonpath \"$.items[?(@.stockLevelId == '{{stock_id}}')].available\" nth 0 == 1\njsonpath \"$.items[?(@.stockLevelId == '{{stock_id}}')].reserved\" nth 0 == 2"
+        },
+        {
+          "source": "website/examples/mug-shop-connect/tests/stock-reservation.hurl",
+          "text": "POST http://localhost:8080/commands/add-item\nContent-Type: application/json\n{\"cartId\":\"{{cart_id}}\",\"stockId\":\"{{stock_id}}\",\"quantity\":0}\nHTTP/1.1 400"
+        },
+        {
+          "source": "website/examples/mug-shop/src/Shop/Cart/Entity.hs",
+          "text": "instance Default CartEntity where\n  def = initialState"
         }
       ]
     },
@@ -986,7 +1233,9 @@
         "neo/starter/src/App.hs",
         "neo/starter/tests/scenarios/counter-flow.hurl",
         "neo/starter/src/Starter/Counter/Commands/IncrementCounter.hs",
-        "neo/AGENTS.md"
+        "neo/AGENTS.md",
+        "neo/src/config.rs",
+        "neo/src/commands/new.rs"
       ],
       "review": {
         "accessibleOpening": true,
@@ -996,7 +1245,7 @@
         "independence": true,
         "domainTransfer": true
       },
-      "notes": "Inspected public source and checked the stated boundaries. Setup requests follow the public starter scenario; fresh-machine execution and human reader trial are separate evidence. Domain-transfer review: the application concept leads; ecommerce is a worked example without an assumed company story.",
+      "notes": "Inspected public source and checked the stated boundaries. Setup requests follow the public starter scenario; fresh-machine execution and human reader trial are separate evidence. Domain-transfer review: the application concept leads; ecommerce is a worked example without an assumed company story. Revised to continue a reader-owned neo project; framework source is author evidence, not an application checkout requirement.",
       "excerpts": []
     },
     {
@@ -1025,7 +1274,8 @@
         "testbed/src/Testbed/Cart/Commands/CreateCart.hs",
         "testbed/src/Testbed/Cart/Commands/AddItem.hs",
         "testbed/src/Testbed/Cart/Core.hs",
-        "testbed/src/Testbed/Cart/Queries/CartSummary.hs"
+        "testbed/src/Testbed/Cart/Queries/CartSummary.hs",
+        "website/fixtures/first-cart-event-model.json"
       ],
       "review": {
         "accessibleOpening": true,
@@ -1035,7 +1285,7 @@
         "independence": true,
         "domainTransfer": true
       },
-      "notes": "Inspected public source and checked the stated boundaries. Setup requests follow the public starter scenario; fresh-machine execution and human reader trial are separate evidence. Domain-transfer review: the application concept leads; ecommerce is a worked example without an assumed company story. Two actual Neo CLI 0.1.4 IDE captures reviewed: source-inspected public cart subset, one overview and one selected command trace. Fixture retains original field and edge definitions with curated grouping; does not imply a running shop or automatic code generation.",
+      "notes": "Continue the reader-owned first-cart project. Overview captured from the released Neo 0.10.0 IDE after code/model sync and validation; AddItem detail is a later return after adding that feature. Graph structure is not runtime proof.",
       "excerpts": []
     },
     {
@@ -1153,7 +1403,9 @@
         "neo/assets/templates/flake.nix.j2",
         "neo/assets/templates/project.cabal.j2",
         "website/src/content/docs/guides/deployment.mdx",
-        "core/test-service/Service/Query/Subscriber/ReadinessSpec.hs"
+        "core/test-service/Service/Query/Subscriber/ReadinessSpec.hs",
+        "neo/src/commands/run.rs",
+        "neo/src/commands/test.rs"
       ],
       "review": {
         "accessibleOpening": true,
@@ -1163,7 +1415,7 @@
         "independence": true,
         "domainTransfer": true
       },
-      "notes": "Preserves established startup/readiness, direct listener connection, and shutdown issue guidance. Executable build/lookup context explicit; Kubernetes fragment labelled illustrative. No cloud rollout was performed. Domain-transfer review: the application concept leads; ecommerce is a worked example without an assumed company story.",
+      "notes": "Preserves established startup/readiness, direct listener connection, and shutdown issue guidance. Executable build/lookup context explicit; Kubernetes fragment labelled illustrative. No cloud rollout was performed. Domain-transfer review: the application concept leads; ecommerce is a worked example without an assumed company story. Revised to continue a reader-owned neo project; framework source is author evidence, not an application checkout requirement.",
       "excerpts": []
     },
     {
@@ -1289,7 +1541,14 @@
         "testbed/src/Testbed/Config.hs",
         "core/service/Service/QueryObjectStore/Postgres.hs",
         "core/service/Service/Query/Subscriber.hs",
-        "core/service/Service/FileUpload/Web.hs"
+        "core/service/Service/FileUpload/Web.hs",
+        "neo/starter/docker-compose.yml",
+        "core/service/Service/EventStore/Postgres/Internal.hs",
+        "core/service/Service/Infra/Postgres/SslMode.hs",
+        "website/examples/mug-shop/persistence/src/App.hs",
+        "website/examples/mug-shop/persistence/src/Shop/Config.hs",
+        "website/examples/mug-shop/persistence/src/Shop/Storage.hs",
+        "website/examples/mug-shop/persistence/README.md"
       ],
       "review": {
         "accessibleOpening": true,
@@ -1299,8 +1558,17 @@
         "independence": true,
         "domainTransfer": true
       },
-      "notes": "Checked current Postgres config fields, independent query storage, and Subscriber.new wiring. No claim that persistent query rows automatically resume checkpoints. Restart/restore exercise is proposed, not executed. Inspected missing cleanup-worker startup and made its operational boundary explicit. Domain-transfer review: the application concept leads; ecommerce is a worked example without an assumed company story.",
-      "excerpts": []
+      "notes": "Checked current Postgres config fields, independent query storage, and Subscriber.new wiring. No claim that persistent query rows automatically resume checkpoints. Restart/restore exercise is proposed, not executed. Inspected missing cleanup-worker startup and made its operational boundary explicit. Domain-transfer review: the application concept leads; ecommerce is a worked example without an assumed company story. Revised to continue a reader-owned neo project; framework source is author evidence, not an application checkout requirement. Exact final three-file overlay plus baseline compiled with corrected CLI: application and test executables pass compilation without language pragmas or overrides. No database accessed; durability and restore remain separate runtime work.",
+      "excerpts": [
+        {
+          "source": "website/examples/mug-shop/persistence/src/Shop/Storage.hs",
+          "text": "makePostgresConfig :: ShopConfig -> PostgresEventStore"
+        },
+        {
+          "source": "website/examples/mug-shop/persistence/src/Shop/Storage.hs",
+          "text": "      sslMode = case ConnectionConfig.textToSslMode config.dbSslMode of\n        Ok mode -> mode\n        Err message -> panic message,"
+        }
+      ]
     },
     {
       "path": "src/content/docs/operate/recovery.md",
@@ -1421,7 +1689,11 @@
         "neo/assets/templates/flake.nix.j2",
         "neo/assets/templates/project.cabal.j2",
         "neo/src/git.rs",
-        "neo/src/commands/skills.rs"
+        "neo/src/commands/skills.rs",
+        "neo/src/config.rs",
+        "neo/src/reconcile/dep_spec.rs",
+        "neo/src/reconcile/resolve.rs",
+        "neo/src/reconcile/cabal.rs"
       ],
       "review": {
         "accessibleOpening": true,
@@ -1431,7 +1703,7 @@
         "independence": true,
         "domainTransfer": true
       },
-      "notes": "CLI flags and validation codes checked from source. Fixed test readiness probe port and any-HTTP-response semantics explicit. inspect sync identified as mutation. Installed-binary help may differ; no local release installation implied. Domain-transfer review: the application concept leads; ecommerce is a worked example without an assumed company story.",
+      "notes": "CLI flags and validation codes checked from source. Fixed test readiness probe port and any-HTTP-response semantics explicit. inspect sync identified as mutation. Installed-binary help may differ; no local release installation implied. Domain-transfer review: the application concept leads; ecommerce is a worked example without an assumed company story. Revised to continue a reader-owned neo project; framework source is author evidence, not an application checkout requirement.",
       "excerpts": []
     },
     {
@@ -1773,8 +2045,8 @@
       "source": "public/diagrams/event-model-first-cart.drawio",
       "export": "public/diagrams/event-model-first-cart.svg",
       "reviewed": true,
-      "sourceHash": "11194483a87ed8c28eb976fee8083fd3ba44f31f4114deb283ec7b91df58b889",
-      "exportHash": "a4a1c2c7acdc107281e33796a8fea8b0549aa876433f7cfd4d61388c7e811c18"
+      "sourceHash": "3df469eb783ffe88b42fef9f5d916a0bb02877707f98dc652d066aacb0e427e7",
+      "exportHash": "324a22335367c837f53d4af7fb81bd9ba71c50a7ab77c7b60b4000e119cb2be4"
     },
     {
       "source": "public/diagrams/event-model-cart-journey.drawio",
@@ -1787,12 +2059,12 @@
   "screenshots": [
     {
       "path": "public/screenshots/neo-ide-overview.png",
-      "hash": "6932cfc2acf07a5544449ce16172c5a462b3964846c1ffbbfe9ad8d796cbc9d4",
+      "hash": "3eada6f46a317d52daa9a249c4f8d4a803afbf3e0f893bc48b6a8c1cdb48d301",
       "reviewed": true
     },
     {
       "path": "public/screenshots/neo-ide-detail.png",
-      "hash": "87670be1e3b71d2331b70419a32712c99313a87065edb3e4be152f958876198f",
+      "hash": "6c60a5268af721339825703724436801d6bc50575aeb167afb5e74c7c08d0d54",
       "reviewed": true
     }
   ]

@@ -7,6 +7,8 @@ sidebar:
 
 You do not need to learn every module before using NeoHaskell. Start with the task your program needs to perform, find the relevant concept, and go deeper when the current task requires it. This map also helps an evaluator distinguish framework building blocks from application features that a team must implement.
 
+Continue in the application created with `neo new`. In the guided project, Cart and Stock code lives under `src/Shop/`. The links below teach how to use each capability there; public implementation links provide supporting evidence.
+
 ## Model and expose application behaviour
 
 | Need | Capability | Where to continue |

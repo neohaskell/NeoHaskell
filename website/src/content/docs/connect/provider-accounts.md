@@ -11,6 +11,18 @@ This differs from signing in to your application. JWT authentication identifies 
 
 Start with [application access control](/build/access-control/) and [integration outcomes](/connect/). Choose the minimum provider permissions needed for the actual feature.
 
+## Give the connection a place in mug-shop
+
+Continue in the project created by `neo new`. Put provider configuration and
+callback encoding helpers in `src/Shop/Integrations/Accounts.hs`, and wire them
+from `src/App.hs`. The OAuth2 and secret-store modules come from the core package;
+you do not need the provider-integration package just to mount the consent routes.
+
+First add `InternalTransport` commands for connected, failed, and disconnected outcomes to a service
+your application registers. A query should show the connection state without
+exposing tokens. These are new account-connection features; Cart and Stock remain
+the application’s starting slices.
+
 ## Establish provider compatibility
 
 The core supplies a configurable authorization-code flow with PKCE, not an accounting-provider preset. A `Provider` contains `name`, `authorizeEndpoint`, and `tokenEndpoint`. Confirm the selected provider supports the client's actual exchange format: form parameters include `client_id`, `client_secret`, and the PKCE verifier. Provider-specific scopes, additional authorization parameters, and API operations need their own compatibility work.
@@ -19,7 +31,7 @@ Startup validates provider endpoints for HTTPS and network-address restrictions 
 
 ## Wire the account connection
 
-This is a **partial application builder**. The surrounding application must already register its transport, services, and typed configuration. `identityServerUrl`, `accountProviderConfig`, and `existingSecretStore` are values you supply:
+This is a **partial application builder**. The surrounding application must already register its transport and services. `identityServerUrl`, `accountProviderConfig`, and `existingSecretStore` are values you supply:
 
 ```haskell
     |> Application.withAuth @() (\_ -> identityServerUrl)
@@ -49,7 +61,7 @@ OAuth2ProviderConfig
   }
 ```
 
-Import `OAuth2ProviderConfig (..)` from `Auth.OAuth2.Provider`. Client IDs, secrets, redirect URIs, and scopes use the types in `Auth.OAuth2.Types`; use its smart constructors for secrets and validated redirect URIs. Keep credentials in [secret configuration](/build/configuration/).
+`OAuth2ProviderConfig` is defined in `Auth.OAuth2.Provider`. Client IDs, secrets, redirect URIs, and scopes use the types in `Auth.OAuth2.Types`; use its smart constructors for secrets and validated redirect URIs. Keep credentials in [secret configuration](/build/configuration/).
 
 ## Follow the three routes
 
@@ -79,13 +91,24 @@ The default secret store is in memory. Implement and supply durable secret stora
 
 Missing tokens, missing refresh tokens, or a failed refresh need a reconnect outcome. Account disconnection currently attempts local deletion but ignores deletion errors and does not call a provider revocation endpoint. Verify deletion and implement provider revocation where the product requires it; “disconnected” is not evidence of remote revocation.
 
+## Run the connection flow locally
+
+Run `neo build` and `neo test` from `mug-shop` after registering the outcome
+commands and account configuration. Start `neo run` with your development client
+credentials and state key, using the localhost callback registered with the
+provider. Follow consent and inspect the connection query. Separately test a
+provider API call; arriving at a redirect page does not establish API access.
+
 ## Exercise: consent interrupted
 
 Ask your agent to demonstrate connection, a tampered or replayed state, consent denial, restart during consent, refresh failure, and disconnect with a failing secret store. Then explain what the person connecting their account sees in each case.
 
-The public route and refresh tests provide examples with controlled dependencies. They do not certify a particular accounting provider. Record that provider's sandbox verification separately, then build the actual [provider adapter](/connect/custom-integrations/).
+Keep controlled route and refresh checks in your project’s test suite. They
+do not certify a particular accounting provider. Record that provider’s sandbox
+verification separately, then build the actual [provider adapter](/connect/custom-integrations/).
 
-## Implementation and examples
+<details>
+<summary>Framework source notes</summary>
 
 - [Application wiring](https://github.com/neohaskell/NeoHaskell/blob/main/core/service/Service/Application.hs)
 - [Provider configuration](https://github.com/neohaskell/NeoHaskell/blob/main/core/auth/Auth/OAuth2/Provider.hs)
@@ -97,3 +120,5 @@ The public route and refresh tests provide examples with controlled dependencies
 - [Refresh helper](https://github.com/neohaskell/NeoHaskell/blob/main/core/auth/Auth/OAuth2/TokenRefresh.hs)
 - [Route tests](https://github.com/neohaskell/NeoHaskell/blob/main/core/test/Auth/OAuth2/RoutesSpec.hs)
 - [Refresh tests](https://github.com/neohaskell/NeoHaskell/blob/main/core/test/Auth/OAuth2/TokenRefreshSpec.hs)
+
+</details>

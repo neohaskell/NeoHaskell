@@ -5,31 +5,88 @@ sidebar:
   order: 2
 ---
 
-A release is successful when the intended revision serves correct behaviour, not merely when a deployment command finishes. For an event-sourced service, keep traffic away from a fresh process while its read models catch up with history. The same rule applies to a booking view, a document queue, or the practice project’s order summary.
+A release is successful when the intended revision serves correct behaviour, not merely when a deployment command finishes. For an event-sourced service, keep traffic away from a fresh process while its read models catch up with history. The same rule applies to a booking view, a document queue, or the practice project’s cart summary.
 
 NeoHaskell supplies an executable application and HTTP probe endpoints. Your hosting environment supplies the process supervisor, traffic routing, secrets, persistent storage, and restart policy. There is no `neo deploy` command in the current CLI.
 
-## Produce the executable
+## Prepare the same application for a host
 
-Start from a tested application checkout containing `neo.json` and the generated Nix/Cabal files. In this example, the application package and executable are both named `mug-shop`; substitute the name declared by your project.
+Continue with your `mug-shop` project, including `neo.json`, `src/Shop/Cart/`,
+`src/Shop/Stock/`, and its tests. Complete [persistence](/operate/persistence/)
+before promising that accepted changes survive a restart. The initial
+`SimpleEventStore` configuration is intentionally in memory.
+
+One concrete path is a Linux host with Neo CLI, Nix, and Git installed for the
+account that runs the application. Place a tested revision of **your application**
+there, retain its framework pin and lock files, and build on that host or a
+matching build host. Supply the staging `DB_*` environment values from
+[persistence](/operate/persistence/) before running these checks against an
+isolated staging database:
 
 ```sh
 neo --ci build
 neo --ci test
-nix develop --command cabal list-bin exe:mug-shop
 ```
 
-`neo build` reconciles project files and runs `cabal build all` inside `nix develop`. `cabal list-bin` prints the executable path; it does not package or deploy the application.
+The test command creates real application state and starts its own server. Do not
+run it against the production database, or while another process occupies port
+8080. Configure the production database only after the staging checks pass.
 
-One concrete deployment path is a Nix-enabled Linux host built from the tested revision. Build there (or use a matching build host), resolve that path, and configure the host's process supervisor to run the executable directly with the intended working directory and environment. Retain its Nix runtime dependencies. Copying a binary built on macOS to Linux, or copying a Nix-linked binary without its store dependencies, is not a deployment strategy.
+From the application directory, this starts the server without interactive output:
 
-The generated flake also exposes the package outputs from `hixProject.flake`. Inspect the outputs with `nix flake show` before choosing a package for a Nix-native deployment. The template does not provide a ready-made application container, cloud environment, or universal default application package.
+```sh
+neo --ci run
+```
+
+For a small hosted deployment, configure your process supervisor with that launch
+command and the project directory as its working directory. Here is a **systemd
+unit template** for an application installed at `/opt/mug-shop`. Replace the Neo
+path with the output of `command -v neo` for the service account, and ensure its
+`PATH` contains that account's Nix and Git executables:
+
+```ini
+[Unit]
+Description=Mug shop application
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=mug-shop
+WorkingDirectory=/opt/mug-shop
+EnvironmentFile=/etc/mug-shop.env
+Environment=PATH=/home/mug-shop/.nix-profile/bin:/nix/var/nix/profiles/default/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/usr/local/bin/neo --ci run
+Restart=on-failure
+RestartSec=5
+KillMode=control-group
+
+[Install]
+WantedBy=multi-user.target
+```
+
+The account needs access to the project and generated build directories. Create
+`/etc/mug-shop.env` through the host's protected configuration mechanism using the
+fields below. Save the adapted unit as `/etc/systemd/system/mug-shop.service`, then
+use the host's administrative account:
+
+```sh
+sudo systemctl daemon-reload
+sudo systemctl enable --now mug-shop
+sudo journalctl -u mug-shop -f
+```
+
+This launch path still reconciles and builds through the CLI on restart; it needs
+the toolchain and may need network access. It is not a prebuilt minimal runtime
+image. Keep the revision and dependencies fixed, prebuild before admitting traffic,
+and test stop/restart behavior. More specialised packaging is a deployment choice;
+the CLI does not produce a ready-made application container or cloud environment.
 
 ## Supply the runtime resources
 
 Before starting the revision, establish:
 
-- The actual Postgres settings wired by your application and a reachable database.
+- The `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`, `DB_POOL_SIZE`, `DB_SSL_MODE`, and `DB_SSL_ROOT_CERT` fields wired in [persistence](/operate/persistence/), and a reachable database.
 - A durable upload volume if you use the local blob store.
 - Provider credentials and authentication configuration supplied through your deployment's secret mechanism.
 - The HTTP port actually passed into the transport.
@@ -85,7 +142,7 @@ The example startup budget is `5 × 12 = 60` seconds. Size it for bounded proces
 
 A shared ingress can still reach an old revision. Its successful response alone cannot prove the new revision is working.
 
-A complete application smoke test should follow an implemented user journey: submit an allowed action, observe its query result, verify a rejection, and check the relevant external outcome against a controlled provider environment. The built-in probes establish narrower facts. This guide does not supply or certify an end-to-end cloud, payment, or AI deployment.
+For `mug-shop`, create a cart, add an allowed quantity, observe its cart and stock query results, then verify that zero is refused. Reuse the request shapes from [HTTP and frontend](/build/http-and-frontend/) against the new revision. Check any external outcome only if you have implemented that integration, using a controlled provider environment. The built-in probes establish narrower facts. This guide does not supply or certify an end-to-end cloud, payment, or AI deployment.
 
 For a local instance on port 8080:
 

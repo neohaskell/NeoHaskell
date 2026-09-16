@@ -5,7 +5,7 @@ sidebar:
   order: 5
 ---
 
-Requirements change while existing data retains its meaning. New code must support both realities. For example, adding optional text to new records should not pretend that earlier users supplied it. In the ecommerce practice project, this becomes a gift message on new orders while older orders retain an explicit absence of that information.
+Requirements change while existing data retains its meaning. New code must support both realities. For example, adding optional text to new records should not pretend that earlier users supplied it. In the ecommerce practice project, try adding an optional note to newly created carts while older carts retain an explicit absence of that information.
 
 An event-sourced system makes history explicit. That is valuable for explaining decisions, and it creates a responsibility: future code must still understand the facts you already accepted.
 
@@ -23,7 +23,7 @@ Use [event modeling](/start/event-modeling/) and the [visual IDE](/getting-start
 
 ## Preserve a historical fixture
 
-Before accepting a change, keep a small representative history in your tests. Include behaviour from before and after the change, plus a rejected operation. For the ecommerce example, use an old order and a new personalised order. Check that the new code:
+Before accepting a change, keep a small representative history in your tests. Include behaviour from before and after the change, plus a rejected operation. For the ecommerce example, use an old cart and a new cart with a note. Check that the new code:
 
 - Decodes old and new persisted events.
 - Reconstructs the intended state for each.
@@ -31,7 +31,7 @@ Before accepting a change, keep a small representative history in your tests. In
 - Builds the expected query results after replay.
 - Does not repeat an external effect during the exercise.
 
-A JSON type compiling successfully does not prove that historical JSON decodes successfully. Follow [testing](/build/testing/) for executable evidence.
+A JSON type compiling successfully does not prove that historical JSON decodes successfully. Keep the historical cases beside your `Shop.Cart` tests and run `neo test` from `mug-shop` against a disposable database. Follow [testing](/build/testing/) for executable evidence.
 
 ## Use domain locking as a reminder
 
@@ -55,14 +55,14 @@ The Postgres query store and subscriber expose hash/checkpoint operations. Their
 
 For an incompatible persisted query schema, make the transition explicit. Keep the authoritative event history intact and rehearse the transition on a restored copy. Include whether the previous revision can run against the resulting data; “roll back the binary” is not always sufficient after a data change.
 
-## Exercise: add gift messages
+## Exercise: add cart notes
 
-For the ecommerce practice project, ask your agent to propose how new orders acquire a gift message and what old orders display. Before accepting code, explain the old-history behaviour yourself.
+For the ecommerce practice project, ask your agent to propose how new carts acquire an optional note and what old carts display. Before accepting code, explain the old-history behaviour yourself.
 
 <details>
 <summary>A useful acceptance boundary</summary>
 
-An old order should retain its original meaning, with an explicit absence of a gift message. A new order with a message should retain it across restart and replay. A message that violates your size or content policy should be rejected before it becomes an accepted fact. Choose the exact policy for this exercise before checking the implementation.
+An old cart should retain its original meaning, with an explicit absence of a note. A new cart with a note should retain it across restart and replay. A note that violates your size or content policy should be rejected before it becomes an accepted fact. Choose the exact policy for this exercise before checking the implementation.
 
 </details>
 

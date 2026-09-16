@@ -5,6 +5,7 @@ import { resolve, dirname, relative, posix } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 import assert from 'node:assert/strict';
+import { exampleArchives, generateExamples } from './generate-examples.mjs';
 
 const website = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const repository = resolve(website, '..');
@@ -14,6 +15,34 @@ const requiredReview = ['accessibleOpening', 'progressiveDepth', 'concreteOutcom
 const routeOf = path => '/' + path.replace(/^src\/content\/docs\//, '').replace(/\.(md|mdx)$/, '').replace(/(^|\/)index$/, '') .replace(/\/$/, '') + '/';
 const normalizeRoute = route => route.replace(/\/+/g, '/');
 const withoutCode = body => body.replace(/^```[^\n]*\n[\s\S]*?^```\s*$/gm, '');
+
+// The application journey runs in the reader's project; framework contribution is a branch.
+export function validateProjectWorkflow(path, body) {
+  if (path.endsWith('/operate/contributing.md')) return [];
+  const errors = [];
+  const blocks = [...body.matchAll(/^```(?:sh|bash|shell|haskell)[^\n]*\n([\s\S]*?)^```/gm)];
+  for (const [, code] of blocks) {
+    if (/(?:\.\/dev\s|\bcabal\s+(?:build|run|test)\b|\bcd\s+[^\n]*\btestbed\b|git\s+clone\s+[^\n]*neohaskell\/neohaskell|\bTestbed\.)/i.test(code)) {
+      errors.push(`Framework workflow in application guide: ${path}`);
+    }
+  }
+  return errors;
+}
+
+export function validateExamplePresentation(path, body) {
+  const errors = [];
+  for (const match of body.matchAll(/^```haskell[^\n]*\n([\s\S]*?)^```/gm)) {
+    const code = match[1];
+    if (/\{\-#\s*LANGUAGE\b/.test(code)) errors.push(`Language pragma in application example: ${path}`);
+    if (/^\s*module\s+[A-Z]/m.test(code)) errors.push(`Module boilerplate in teaching example: ${path}`);
+    if (/^\s*import\s+(?!Core(?:\s|$)|Shop\.)/m.test(code)) errors.push(`Library import scaffolding in teaching example: ${path}`);
+    if (/\bderiving\s*(?:\(|stock\b|newtype\b|anyclass\b)/.test(code)) errors.push(`Deriving boilerplate in teaching example: ${path}`);
+    const prefix = body.slice(0, match.index);
+    const depth = [...prefix.matchAll(/<details(?:\s[^>]*)?>/g)].length - [...prefix.matchAll(/<\/details>/g)].length;
+    if (code.trim().split('\n').length > 30 && depth <= 0) errors.push(`Long example needs progressive disclosure: ${path}`);
+  }
+  return errors;
+}
 
 export function validate(manifest, files, sources, assets = {}) {
   const errors = [];
@@ -57,6 +86,8 @@ export function validate(manifest, files, sources, assets = {}) {
     paths.add(page.path);
     const body = files[page.path];
     if (!body) { errors.push(`Missing content: ${page.path}`); continue; }
+    errors.push(...validateProjectWorkflow(page.path, body));
+    errors.push(...validateExamplePresentation(page.path, body));
     if (!/^---\n[\s\S]*?^title: .+\n[\s\S]*?^description: .+\n[\s\S]*?^---/m.test(body)) errors.push(`Missing title/description: ${page.path}`);
     for (const field of requiredReview) {
       if (page.review?.[field] !== true) errors.push(`Missing editorial review ${field}: ${page.path}`);
@@ -66,6 +97,7 @@ export function validate(manifest, files, sources, assets = {}) {
     for (const source of page.sources ?? []) {
       if (!sources[source]) errors.push(`Missing public source: ${source}`);
       else if (manifest.sourceHashes?.[source] !== digest(sources[source])) errors.push(`Source changed; review affected pages: ${source}`);
+      if (source.startsWith('website/examples/') && source.endsWith('.hs') && /\{\-#\s*LANGUAGE\b/.test(sources[source] ?? '')) errors.push(`Language pragma in tutorial source: ${source}`);
     }
     for (const topic of page.topics ?? []) covered.add(topic);
     const outgoing = [];
@@ -86,6 +118,10 @@ export function validate(manifest, files, sources, assets = {}) {
       }
       if (target.startsWith('/screenshots/')) {
         if (!screenshotFiles.has(target)) errors.push(`Unreviewed screenshot: ${target}`);
+        continue;
+      }
+      if (target.startsWith('/examples/')) {
+        if (!exampleArchives.some(example => target === `/examples/${example.name}.tar.gz`)) errors.push(`Unknown example download: ${target}`);
         continue;
       }
       const route = normalizeRoute(target.split(/[?#]/)[0].replace(/\/$/, '') + '/');
@@ -198,7 +234,40 @@ function selfTest() {
   assert.match(validateImageZoom(controller + `<a href="/diagrams/example.svg">${zoomImage}</a>`).join('\n'), /lacks an accessible zoom trigger/);
   assert.match(validateImageZoom(controller + zoomable.replace(zoomButton, '')).join('\n'), /lacks an accessible zoom trigger/);
   assert.deepEqual(validateImageZoom('<p>A page with no images.</p>'), []);
-  console.log('docs-check: 36 positive, negative, and boundary cases passed');
+  const appPage = 'src/content/docs/build/first-cart.md';
+  const shellBlock = code => '```sh\n' + code + '\n```';
+  assert.deepEqual(validateProjectWorkflow(appPage, shellBlock('neo new mug-shop\nneo build\nneo test')), []);
+  assert.match(validateProjectWorkflow(appPage, shellBlock('git clone https://github.com/neohaskell/NeoHaskell.git')).join(''), /Framework workflow/);
+  assert.match(validateProjectWorkflow(appPage, shellBlock('cd NeoHaskell/testbed')).join(''), /Framework workflow/);
+  assert.match(validateProjectWorkflow(appPage, shellBlock('./dev test')).join(''), /Framework workflow/);
+  assert.match(validateProjectWorkflow(appPage, shellBlock('cabal run nhtestbed')).join(''), /Framework workflow/);
+  assert.deepEqual(validateProjectWorkflow('src/content/docs/operate/contributing.md', shellBlock('./dev test')), []);
+  assert.deepEqual(validateProjectWorkflow(appPage, '[Source](https://github.com/neohaskell/NeoHaskell/blob/main/testbed/src/App.hs)'), []);
+  const smallExample = '```haskell\nimport Core\n\nquantity = 2\n```';
+  const longExample = '```haskell\n' + Array.from({ length: 31 }, (_, i) => `field${i} = ${i}`).join('\n') + '\n```';
+  assert.deepEqual(validateExamplePresentation(appPage, smallExample), []);
+  assert.match(validateExamplePresentation(appPage, longExample).join(''), /progressive disclosure/);
+  assert.deepEqual(validateExamplePresentation(appPage, '<details><summary>Complete file</summary>\n' + longExample + '\n</details>'), []);
+  assert.match(validateExamplePresentation(appPage, '<details><summary>Earlier</summary></details>\n' + longExample).join(''), /progressive disclosure/);
+  assert.match(validateExamplePresentation(appPage, '```haskell\n{-# LANGUAGE TemplateHaskell #-}\n```').join(''), /Language pragma/);
+  assert.match(validateExamplePresentation(appPage, '<details><summary>Complete file</summary>\n```haskell\n{-# LANGUAGE TemplateHaskell #-}\n```\n</details>').join(''), /Language pragma/);
+  const tutorialSource = 'website/examples/example.hs';
+  const sourceCheck = (sourcePath, contents) => validate(
+    { ...manifest, sourceHashes: { [sourcePath]: digest(contents) }, pages: [{ ...page, sources: [sourcePath], excerpts: [] }] },
+    files, { [sourcePath]: contents },
+  );
+  assert.deepEqual(sourceCheck(tutorialSource, 'module Example where\nimport Core\n'), []);
+  assert.match(sourceCheck(tutorialSource, '{-# LANGUAGE TemplateHaskell #-}\nimport Core\n').join(''), /Language pragma in tutorial source/);
+  assert.deepEqual(sourceCheck('core/Example.hs', '{-# LANGUAGE TemplateHaskell #-}\nimport Core\n'), []);
+  assert.match(validateExamplePresentation(appPage, '```haskell\nmodule Shop.Cart where\n```').join(''), /Module boilerplate/);
+  assert.match(validateExamplePresentation(appPage, '```haskell\nimport Array qualified\n```').join(''), /Library import scaffolding/);
+  assert.deepEqual(validateExamplePresentation(appPage, '```haskell\nimport Core\nimport Shop.Cart qualified\n```'), []);
+  assert.deepEqual(validate(manifest, { [path]: body + '\n[Checkpoint](/examples/mug-shop-first-cart.tar.gz)\n' }, sources), []);
+  assert.match(validate(manifest, { [path]: body + '\n[Missing](/examples/absent.tar.gz)\n' }, sources).join(''), /Unknown example download/);
+  assert.match(validateExamplePresentation(appPage, '```haskell\ndata Event = Event deriving (Show)\n```').join(''), /Deriving boilerplate/);
+  assert.match(validateExamplePresentation(appPage, '```haskell\nderiving stock instance Show Event\n```').join(''), /Deriving boilerplate/);
+  assert.deepEqual(validateExamplePresentation(appPage, "```haskell\ndata Event = Event\n\nEventTH.event ''Event\n```"), []);
+  console.log('docs-check: 60 positive, negative, and boundary cases passed');
 }
 
 function checkBuilt(manifest) {
@@ -252,6 +321,7 @@ else {
       }
     }
     const errors = validate(manifest, files, sources, assets);
+    errors.push(...generateExamples(true));
     for (const document of ['DOCUMENTATION_PLAN.md', 'DOCUMENTATION_REVIEW.md']) {
       if (!existsSync(resolve(website, document))) errors.push(`Missing methodology artifact: ${document}`);
     }

@@ -51,8 +51,8 @@ examples; you do not need to add implementation machinery to the picture.
 ## First example: create an empty cart
 
 Start smaller than adding a product. Someone wants an empty cart they can use.
-This diagram uses the names and behaviour of NeoHaskell's public testbed, with
-illustrative screens drawn for this explanation.
+This is the first feature you will build in your practice project. The screens
+are sketches of the experience that the application will support.
 
 ![A Create cart screen triggers the blue CreateCart command, producing the orange CartCreated event; the green CartSummary read model supplies an empty-cart screen.](/diagrams/event-model-first-cart.svg)
 
@@ -72,9 +72,7 @@ Read the example in four steps:
 The owner field records a relationship; its presence alone does not establish
 an access policy. What matters here is tracing information: the cart identifier
 originates during creation and lets later requests refer to that same cart.
-The testbed's [CreateCart command](https://github.com/neohaskell/NeoHaskell/blob/main/testbed/src/Testbed/Cart/Commands/CreateCart.hs)
-and [CartSummary](https://github.com/neohaskell/NeoHaskell/blob/main/testbed/src/Testbed/Cart/Queries/CartSummary.hs)
-provide the implementation behind this example.
+You will implement this path in [your first cart](/build/first-cart/).
 
 ## Second example: continue the same timeline
 
@@ -97,9 +95,8 @@ units. Its screen should say “1 entry,” not “1 unit.”
 
 This is precisely the kind of misunderstanding a concrete model can expose. If
 you want a total-unit count, that is a different query requirement to implement
-and check. Trace the values in the public [AddItem command](https://github.com/neohaskell/NeoHaskell/blob/main/testbed/src/Testbed/Cart/Commands/AddItem.hs),
-[cart state](https://github.com/neohaskell/NeoHaskell/blob/main/testbed/src/Testbed/Cart/Core.hs),
-and [summary definition](https://github.com/neohaskell/NeoHaskell/blob/main/testbed/src/Testbed/Cart/Queries/CartSummary.hs).
+and check. The [commands and events lesson](/build/commands-and-events/)
+traces these values through the code you add to your project.
 
 ## A request is not a fact
 

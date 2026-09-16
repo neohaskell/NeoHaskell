@@ -51,15 +51,15 @@ you remain responsible for deciding what success means.
 
 ## Recognise what an example promises
 
-A **public example** identifies code or a test in this repository. A **partial
-snippet** teaches one part of an implementation and needs the surrounding module
-and application wiring. A **design exercise** describes behaviour for you to build.
-Do not assume every feature of the practice project is already implemented in the
-starter or reference application.
+A **worked example** gives you code to add to your own project and checks to run.
+A **partial snippet** teaches one part of an implementation and identifies the
+surrounding module or application wiring it needs. A **design exercise** asks you
+to choose and implement behaviour using the tools you have learned.
 
-The starter is a small counter. The reference application contains cart and stock
-examples. We keep that distinction visible so you can run what exists, understand
-it, and use the same concepts in your own application.
+You create the practice project once with `neo new`, then evolve it throughout
+the journey. Later chapters keep using its cart, tests, configuration, and visual
+model. More advanced exercises leave business choices to you while showing how
+to implement and verify the mechanisms behind them.
 
 For direct answers, use the [capability guide](/reference/capabilities/),
 [CLI reference](/reference/cli/), [glossary](/reference/glossary/), or

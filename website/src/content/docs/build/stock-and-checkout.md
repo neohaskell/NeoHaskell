@@ -1,90 +1,187 @@
 ---
 title: "Coordinating changes: stock and checkout"
-description: Practise coordinating separate decisions and recognising when a workflow is complete.
+description: Add a second domain and define where its decisions need coordination.
 sidebar:
   order: 5
 ---
 
-An accepted request can start work that another part of an application must accept or refuse independently. Coordinating those decisions requires a clear definition of completion and a way to handle partial failure. NeoHaskell provides commands, events, and integrations for that coordination; you define the overall policy.
+One accepted action can lead to another decision. A scheduling app may accept a request before a room is reserved; a document workflow may save a draft before a reviewer accepts it. A useful application makes that distinction visible.
 
-For this exercise, we connect the Cart and Stock examples. A mug in a cart represents a customer's intention; a reserved mug represents a commitment of limited stock. If two customers want the last mug, a rule must determine who receives that commitment. The example lets us examine when an application can honestly say “your order is confirmed.”
+Your practice project now gains **Stock**. A cart records selections; stock tracks available and reserved units. We will implement and test the stock decision here, then connect it to cart additions in [the integration lesson](/connect/workflows/).
 
-## Follow the existing reservation
+Examples below show the relevant declarations and behaviour, with each destination named. Module headers and imports are omitted so you can focus on the idea. The [complete end of Build files](/examples/mug-shop-build.tar.gz) include that setup and the tests, including the configuration explained in a later lesson. Use them as a reference, or add them to this same project when you want the complete checkpoint.
 
-The public testbed demonstrates this flow:
+## State the promises
 
-1. `InitializeStock` establishes available units for a product.
-2. `AddItem` records a customer's choice in a cart.
-3. The `ReserveStockOnItemAdded` integration reacts to `ItemAdded`.
-4. It emits an internal `ReserveStock` command.
-5. Stock accepts the reservation only when the quantity is positive and enough units remain.
+`InitializeStock` creates a record with a nonnegative available quantity. `ReserveStock` reserves a positive quantity only when enough remains. A reservation moves units from `available` to `reserved`.
 
-The Stock entity tracks `available` and `reserved`. Applying `StockReserved` subtracts the quantity from the first and adds it to the second. `ReserveStock` uses `InternalTransport`; the public example does not expose it as a customer HTTP endpoint.
+Product and stock IDs have different jobs. The product identifies the mug design; the stock ID identifies the availability record. In this exercise, initialise one stock record per product yourself; the command does not enforce product uniqueness.
 
-## Run a reservation
-
-Use the testbed started in [your first cart](/build/first-cart/). Create a stock record for the fictional mug:
+From your project root, create the module directories:
 
 ```sh
-curl http://localhost:8080/commands/initialize-stock \
+mkdir -p src/Shop/Stock/Commands src/Shop/Stock/Events src/Shop/Stock/Queries
+```
+
+## Give each fact a focused file
+
+Initialisation records the product and starting quantity. Reservation records a quantity committed to a cart. Together they form the stock domain's event type in `src/Shop/Stock/Event.hs`:
+
+```haskell
+data StockEvent
+  = StockInitialized StockInitialized.Event
+  | StockReserved StockReserved.Event
+```
+
+The event marker handles the standard instances:
+
+```haskell
+EventTH.event ''StockEvent
+```
+
+Each payload lives separately in `Events/`. `Event.hs` lists the possible facts and identifies which stock stream each affects.
+
+## Apply accepted history
+
+The entity holds the current availability. Applying a reservation moves its quantity between the two counts:
+
+```haskell
+  StockReserved reservation ->
+    stock
+      { available = stock.available - reservation.quantity
+      , reserved = stock.reserved + reservation.quantity
+      }
+```
+
+That update belongs in `Entity.hs`. It does not ask today's warehouse whether yesterday's accepted reservation was reasonable. The command validates the request before it becomes a fact.
+
+As in Cart, `Core.hs` only re-exports the domain types and their operations. Adding a command does not turn it into a large implementation file.
+
+## Establish stock, including zero
+
+In `src/Shop/Stock/Commands/InitializeStock.hs`, `InitializeStock` has two input fields:
+
+```haskell
+data InitializeStock = InitializeStock
+  { productId :: Uuid
+  , available :: Int
+  }
+```
+
+The command generates a stock ID and refuses a negative initial quantity. Zero is allowed: a product can have a stock record while none remain available. Once its decision and entity/transport declarations are in place, its marker connects them:
+
+```haskell
+command ''InitializeStock
+```
+
+## Protect a reservation
+
+`ReserveStock` checks existence, positive quantity, and availability. Its final decision in `src/Shop/Stock/Commands/ReserveStock.hs` compares the request with the current state:
+
+```haskell
+  if request.quantity > stock.available
+    then Decider.reject "Insufficient stock available!"
+    else Decider.acceptExisting
+      [StockReserved (StockReserved.Event {entityId = stock.stockId, quantity = request.quantity, cartId = request.cartId})]
+```
+
+This command uses `InternalTransport`. It is intended for application work; we are not exposing it as a customer HTTP endpoint. The integration lesson will supply its trigger.
+
+The [testing lesson](/build/testing/) calls this decision directly. You can establish the last-unit rule before any automation invokes it.
+
+## Present the result and register the domain
+
+`StockLevel` provides a view of the product, availability, and reserved quantity. Its current public policy suits this local practice; reconsider what a real catalogue should reveal.
+
+Append these steps to the existing application pipeline, preserving Cart and any other registrations:
+
+```haskell
+  |> Application.withService Stock.service
+  |> Application.withQuery @StockLevel
+```
+
+Run `neo build`, then `neo run`.
+
+## Create and inspect stock
+
+```sh
+curl -i http://localhost:8080/commands/initialize-stock \
   -H 'Content-Type: application/json' \
   --data '{"productId":"11111111-1111-1111-1111-111111111111","available":3}'
 ```
 
-Keep its returned `entityId` as your stock ID. Create a cart with the earlier `create-cart` request and keep that ID too. Replace both placeholders below:
-
-```sh
-curl http://localhost:8080/commands/add-item \
-  -H 'Content-Type: application/json' \
-  --data '{"cartId":"YOUR-CART-UUID","stockId":"YOUR-STOCK-UUID","quantity":2}'
-```
-
-Then read the stock projection, using your actual stock ID:
+Keep the returned `entityId` as your stock ID. Read its view:
 
 ```sh
 curl --get http://localhost:8080/queries/stock-level \
   --data-urlencode 'q=.stockLevelId == "YOUR-STOCK-UUID"'
 ```
 
-After the integration and projection have caught up, expect `available = 1` and `reserved = 2`. The public acceptance scenario exercises the same sequence with 100 units and checks two cumulative reservations. Run it separately with:
+Once the projection catches up, expect three available and zero reserved. Create a cart and submit `AddItem` with this stock ID and quantity two. The cart should have one entry. **Stock still has three available and zero reserved**: we have implemented both decisions, but have not connected them.
 
-```sh
-./dev exec hurl --test testbed/tests/scenarios/stock-reservation.hurl
+That observation is evidence. Two registered services do not imply that one calls the other. In [connecting application steps](/connect/workflows/) you will add the connection and check the change to one available and two reserved.
+
+## Keep a repeatable stock check
+
+Save the HTTP scenario below. It creates its own record, waits for its view, and checks refusal of a negative initial quantity. Stop `neo run` before executing `neo test`.
+
+<details>
+<summary>Complete file: tests/scenarios/stock-flow.hurl</summary>
+
+Save as `tests/scenarios/stock-flow.hurl`:
+
+```hurl
+POST http://localhost:8080/commands/initialize-stock
+Content-Type: application/json
+{"productId":"11111111-1111-1111-1111-111111111111","available":3}
+
+HTTP 200
+[Captures]
+stock_id: jsonpath "$.entityId"
+
+GET http://localhost:8080/queries/stock-level
+[Options]
+retry: 10
+retry-interval: 200
+
+HTTP 200
+[Asserts]
+jsonpath "$.items[?(@.stockLevelId == '{{stock_id}}')].available" nth 0 == 3
+jsonpath "$.items[?(@.stockLevelId == '{{stock_id}}')].reserved" nth 0 == 0
+
+POST http://localhost:8080/commands/initialize-stock
+Content-Type: application/json
+{"productId":"22222222-2222-2222-2222-222222222222","available":-1}
+
+HTTP 400
+[Asserts]
+jsonpath "$.reason" == "Available stock cannot be negative"
 ```
 
-## An accepted addition is not a confirmed reservation
+</details>
 
-This distinction is essential. Cart and Stock receive separate commands. The cart addition can succeed even if a later reservation is rejected. The example does not compensate by removing the cart entry or recording a customer-visible reservation failure.
+## Decide what checkout will promise
 
-Try adding two more units to your three-unit stock after reserving the first two. The cart's positive-quantity rule can accept the addition, but Stock should reject reserving more than its remaining one. Verify both views rather than treating the initial HTTP 200 as the final outcome.
+Even after connecting the domains, a cart addition can be accepted while its later reservation is refused. A checkout needs an observable reservation outcome and a response to partial failure. Design the next promises as further slices:
 
-That is useful demonstration behaviour, but insufficient evidence that the overall workflow succeeded. A production checkout would need an explicit reservation outcome and a policy for failure.
-
-## Design the next promise explicitly
-
-To extend the practice project with payments, sketch these **proposed workflow states**, which are not implemented order types in the testbed:
-
-| Situation | What the shop can honestly say |
+| Promise | Decision still needed |
 | --- | --- |
-| Cart selection recorded | “We saved your choices.” |
-| Reservation pending | “We are checking availability.” |
-| Reservation confirmed | “These units are reserved under our stated expiry policy.” |
-| Payment result pending | “Payment is being confirmed.” |
-| Order accepted | “The shop has accepted this order.” |
+| Stock was reserved | How does Cart learn whether reservation succeeded? |
+| An order was accepted | Which prices, quantities, currency, and delivery details become fixed? |
+| Payment was confirmed | Which provider evidence establishes payment, including late or duplicate replies? |
+| A reservation expired | Which fact releases it, and how does expiry interact with payment? |
 
-Decide how reservation expiry, failed payment, cancellation, and shipment affect stock. Define how to recognise a repeated request before retrying it. A payment provider's result needs its own reconciliation; no built-in payment adapter is assumed here.
+These are application policies, not consequences of naming a domain Stock or Cart.
 
-For your own application, identify the corresponding promises and the evidence each requires. This work belongs in the event model before the agent chooses an implementation. Continue in [integrations](/connect/) for outbound actions and follow-up commands.
+## Exercise: the last mug
 
-## Exercise: reserve on checkout instead
-
-Change the practice project's policy so customers can browse freely and stock is reserved only at checkout. Identify which existing connection must change, then describe the evidence needed before accepting the change.
+Your agent says a successful cart request proves that the last mug belongs to the customer. Identify the missing evidence.
 
 <details>
 <summary>Suggested reasoning and checks</summary>
 
-Stop treating every `ItemAdded` as a reservation trigger. Introduce a checkout request and a visible reservation outcome. Test enough stock, insufficient stock, exactly the remaining stock, two competing requests for the last unit, and repeated delivery of the same request. Also test release or expiry according to the chosen policy. The public happy-path scenario is an anchor, not evidence that this proposed workflow already handles those cases.
+The cart request establishes a selection. Check the reservation decision and its recorded outcome. Reserve two from three, refuse four from three, and accept exactly three. Competing requests for the last unit need a concurrent application-level check. Repeated requests need a deliberate duplicate policy; the current command can reserve again when enough stock remains.
 
 </details>
 
-Public sources: [reservation integration](https://github.com/neohaskell/NeoHaskell/blob/main/testbed/src/Testbed/Cart/Integrations/ReserveStockOnItemAdded.hs), [ReserveStock](https://github.com/neohaskell/NeoHaskell/blob/main/testbed/src/Testbed/Stock/Commands/ReserveStock.hs), [Stock state](https://github.com/neohaskell/NeoHaskell/blob/main/testbed/src/Testbed/Stock/Core.hs), [acceptance scenario](https://github.com/neohaskell/NeoHaskell/blob/main/testbed/tests/scenarios/stock-reservation.hurl).
+Next: [HTTP and frontends](/build/http-and-frontend/) turns these outcomes into an honest interface.

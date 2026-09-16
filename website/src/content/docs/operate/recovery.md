@@ -23,12 +23,12 @@ Preserve useful logs and the failing revision identity. A blind database reset c
 
 ## Rehearse a restore into an isolated environment
 
-Before people depend on retained data, rehearse with representative operations:
+First complete [persistence](/operate/persistence/); the initial in-memory store has no retained history to restore. Before people depend on retained data, rehearse with representative operations:
 
-1. Create a small known history: an accepted change, a rejected change, and any attachment or integration outcome you support. An order provides a concrete example in the practice project.
+1. Create a small known history: an accepted change, a rejected change, and any attachment or integration outcome you support. In `mug-shop`, create a cart, add a positive quantity, and confirm that zero is refused.
 2. Take a backup using the database and file-storage procedures for your hosting environment.
 3. Restore to an isolated environment with production outbound effects disabled or replaced by controlled test endpoints.
-4. Start the same application revision and wait for readiness.
+4. Run `neo run` from the restored application project with its isolated storage configuration, and wait for `/ready`.
 5. Compare the reconstructed entities and views with the known history.
 6. Verify attachment bytes, authorisation boundaries, and the handling of unfinished external work.
 7. Record the recovery duration and the latest accepted operation included in the backup.
@@ -36,6 +36,46 @@ Before people depend on retained data, rehearse with representative operations:
 Include abandoned uploads in that rehearsal. The file-upload module has a cleanup worker, but normal application startup currently does not launch it. Do not assume a configured expiry or cleanup interval proves expired bytes have been removed.
 
 The last two measurements answer business questions: how long could the application be unavailable, and how much recent work could need reconciliation? NeoHaskell does not choose those tolerances for you.
+
+## Rehearse with your local Postgres database
+
+For the Docker Compose database from [persistence](/operate/persistence/), you can
+practise a database-only restore without replacing the original. Stop `neo run`
+after creating a known cart and noting its summary. From `mug-shop`, export the
+local database to a protected backup file:
+
+```sh
+docker compose exec -T postgres pg_dump -U neohaskell -d neohaskell --format=custom > mug-shop.backup
+```
+
+Create a new database inside that same local Postgres service and restore into it:
+
+```sh
+docker compose exec -T postgres createdb -U neohaskell mug_shop_restore
+docker compose exec -T postgres pg_restore -U neohaskell --dbname=mug_shop_restore < mug-shop.backup
+```
+
+`createdb` should fail if that restore database already exists. Choose a fresh
+restore name for a later rehearsal rather than replacing data you have not
+inspected. Check that both commands succeed before starting the application.
+
+If you added real outbound integrations, first use controlled provider endpoints
+or remove their registrations in an isolated application revision. Then select
+the restored database through the configuration you added:
+
+```sh
+DB_NAME=mug_shop_restore DB_PASSWORD=neohaskell neo run
+```
+
+Keep any custom `DB_PORT` you used for the local database. In another terminal,
+check `/ready` and fetch the original cart summary with the same identifier using
+the requests from [HTTP and frontend](/build/http-and-frontend/). Compare it before
+running tests or creating more data. The backup contains database data, including
+potentially sensitive event history; store it with appropriate access protection.
+
+This procedure restores the event database. Upload bytes and separate provider
+credential stores require their own backups. A successful `pg_restore` is the
+start of the application checks, not their replacement.
 
 ## Understand the rebuild boundary
 

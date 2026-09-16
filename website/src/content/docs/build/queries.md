@@ -9,29 +9,25 @@ A screen or report needs information shaped around its reader's question. Displa
 
 NeoHaskell's read models separate presenting information from deciding whether a change is allowed. That gives you freedom to shape the view, with a tradeoff: a newly accepted change may take a short time to appear in it.
 
-We practise with a cart summary: a customer needs their selections, while a merchant needs different stock information. This page continues the [first cart](/build/first-cart/) example. The server and routes below belong to the public testbed.
+We practise with a cart summary: a customer needs their selections, while a merchant needs different stock information. This page continues the [first cart](/build/first-cart/) example. Run `neo run` from your project to serve the routes below.
 
 ## Begin with the question on the screen
 
 The existing `CartSummary` answers: “Which cart is this, who owns it, how many entries does it have, and is it empty?” It does not report total units or prices.
 
-Its business logic is an exact source excerpt:
+Its business logic lives in `src/Shop/Cart/Queries/CartSummary.hs`:
 
 ```haskell
 instance QueryOf CartEntity CartSummary where
-  -- | The query is keyed by the cart ID
   queryId cart = cart.cartId
-
-  -- | When a cart changes, update the summary
-  combine cart _maybeExisting = do
+  combine cart _previous = do
     let count = cart.items |> Array.length
-    Update
-      CartSummary
-        { cartSummaryId = cart.cartId,
-          ownerId = cart.ownerId,
-          itemCount = count,
-          isEmpty = count == 0
-        }
+    Update CartSummary
+      { cartSummaryId = cart.cartId
+      , ownerId = cart.ownerId
+      , itemCount = count
+      , isEmpty = count == 0
+      }
 ```
 
 `queryId` determines which view row this entity contributes to. `combine` receives current entity state and the existing view, if any. Here the current entity contains everything needed, so the old view is unused and replaced with `Update`.
@@ -40,9 +36,15 @@ Other outcomes are `Delete`, which removes the view row, and `NoOp`, which leave
 
 ## Derive and register the view
 
-For a new query, define its data, `canAccess`, and `canView`, then call `deriveQuery ''CartSummary [''CartEntity]`. Put the relevant `QueryOf` business instances **after** that marker: they depend on the `Query` instance it generates. Import the marker from `Service.Query.TH` and let it generate the standard instances. The public query-wiring test demonstrates this declaration order without redundant boilerplate. The application must also register the query with `Application.withQuery @CartSummary`.
+For a new query, define its data, `canAccess`, and `canView`, then call `deriveQuery ''CartSummary [''CartEntity]`. Put the relevant `QueryOf` business instances **after** that marker: they depend on the `Query` instance it generates. Import the marker from `Service.Query.TH` and let it generate the standard instances. The application must also register the query with `Application.withQuery @CartSummary`.
 
-The marker's internal name is `CartSummary`; the HTTP URL is `/queries/cart-summary`. The existing example deliberately allows public access. Before exposing private application data, define and test the [access-control policies](/build/access-control/).
+The marker call in your query file is:
+
+```haskell
+deriveQuery ''CartSummary [''CartEntity]
+```
+
+The marker's internal name is `CartSummary`; the HTTP URL is `/queries/cart-summary`. Your current practice query deliberately allows public access. Before exposing private application data, define and test the [access-control policies](/build/access-control/).
 
 ## Find your cart
 
@@ -77,5 +79,3 @@ The existing summary reports one entry. If the badge means units, design a quant
 </details>
 
 Next: [stock and checkout](/build/stock-and-checkout/).
-
-Public sources: [CartSummary](https://github.com/neohaskell/NeoHaskell/blob/main/testbed/src/Testbed/Cart/Queries/CartSummary.hs), [query declaration and wiring test](https://github.com/neohaskell/NeoHaskell/blob/main/core/test-service/Service/Query/DefinitionSpec.hs), [query contract](https://github.com/neohaskell/NeoHaskell/blob/main/core/service/Service/Query/Core.hs), [pagination](https://github.com/neohaskell/NeoHaskell/blob/main/core/service/Service/Query/Pagination.hs), [NeoQL parser](https://github.com/neohaskell/NeoHaskell/blob/main/core/neoql/NeoQL/Parser.hs).

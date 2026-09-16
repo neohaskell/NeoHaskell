@@ -11,7 +11,7 @@ NeoHaskell's architecture gives these operations different work to do. Measure t
 
 ## Choose an observable budget
 
-Write a target and a workload together. For the ecommerce example, “Order status appears within our agreed time while several customers reserve the last mugs” is testable. “The framework is fast” is not.
+Write a target and a workload together. For the ecommerce example, “Stock availability appears within our agreed time while several customers reserve the last mugs” is testable. “The framework is fast” is not.
 
 Measure at least:
 
@@ -21,7 +21,7 @@ Measure at least:
 - External-provider duration and pending-work age.
 - Database connections, resource use, and failure rate during the test.
 
-Keep the application revision, dataset size, machine size, and workload with the result. A local counter benchmark does not predict checkout latency through a payment provider.
+Keep the application revision, dataset size, machine size, and workload with the result. A cart-only measurement does not predict the latency of a later payment integration.
 
 ## Understand contention on one entity
 
@@ -41,20 +41,31 @@ Increasing a pool can move the bottleneck into Postgres. Measure queueing, query
 
 ## Test replay as history grows
 
-The repository's cold-start test uses histories of 1,000, 10,000, and 100,000 events to check that health binding is decoupled from replay, while readiness waits for catch-up. Its dataset is a controlled regression fixture, not a published production throughput promise.
+Use a disposable Postgres database configured through [persistence](/operate/persistence/). Create representative carts and accepted additions through your application's HTTP routes, record the expected cart and stock results, then stop the application. From the same `mug-shop` directory and against the same database, start it again:
 
-That script intentionally truncates and drops test tables. Run it only through the documented contributor test environment with a disposable database; do not aim it at a database containing application data you need to keep. Read [the public test](https://github.com/neohaskell/NeoHaskell/blob/main/testbed/scripts/cold-start-readiness.sh) to understand what it proves.
+```sh
+LOG_LEVEL=info neo --ci run
+```
 
-For your own load test, use representative histories and controlled substitutes for external effects. Check final state as well as latency; for the ecommerce example, that includes stock and order totals. Fast incorrect results are a failed test.
+In another terminal, check the two signals separately:
+
+```sh
+curl -i http://127.0.0.1:8080/health
+curl -i http://127.0.0.1:8080/ready
+```
+
+Record when each becomes successful and compare the query results with your expected values. Repeat with a larger known history. Use controlled substitutes for any external effects, so a replay experiment cannot send real notifications or repeat provider actions. The initial in-memory store cannot measure recovery of history across restarts.
+
+Keep reusable request scenarios under `tests/` and run `neo test` for correctness checks. Measure the application's request and readiness timings separately from CLI compilation time. Fast incorrect results are a failed test.
 
 ## Exercise: the final two mugs
 
-In the ecommerce practice project, run simultaneous attempts to buy the last two mugs under the reservation policy you implemented. Decide the expected successful count before running the test.
+In the ecommerce practice project, run simultaneous reservation attempts for the last two mugs under the policy you implemented. Decide the expected successful count before running the test.
 
 <details>
 <summary>What to compare</summary>
 
-Check the count of accepted reservations, explicit rejections, final stock, and visible order states. Then compare response times with a workload spread across many products. The difference helps isolate contention from general server capacity.
+Check the count of accepted reservations, explicit rejections, final stock, and visible stock states. Then compare response times with a workload spread across many products. The difference helps isolate contention from general server capacity.
 
 </details>
 

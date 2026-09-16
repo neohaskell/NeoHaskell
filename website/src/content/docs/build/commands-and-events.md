@@ -1,88 +1,140 @@
 ---
-title: Commands and events
-description: Express business requests, reject invalid choices, and record accepted facts.
+title: "Commands and events"
+description: Add a business action while keeping requests, accepted facts, and state separate.
 sidebar:
   order: 2
 ---
 
-An application must distinguish what someone requested from what it accepted. Keeping those separate gives you a clear place to express rules, explain refusals, and question an agent's implementation.
+An application must distinguish what someone requested from what it accepted. That distinction gives you a place to express rules, explain refusals, and question an agent's implementation.
 
-A **command** names an intention. An **event** names something accepted as having happened. In our ecommerce practice project, a customer asks to add two mugs with `AddItem`; acceptance records `ItemAdded`. Start with the [event-modeling introduction](/start/event-modeling/) if you want to sketch that distinction before reading code.
+A **command** names an intention. An **event** names an accepted fact. In your practice project, `AddItem` requests two mugs; `ItemAdded` records an accepted addition. The [event model](/start/event-modeling/) gives those names a shared meaning.
 
-## Name the decision before implementing it
+Examples below show the relevant declarations and behaviour, with each destination named. Module headers and imports are omitted so you can focus on the idea. The [complete cart additions files](/examples/mug-shop-cart.tar.gz) include that setup and the tests; add them to the same project when you want the runnable checkpoint.
 
-The public Cart example has two rules for adding an item:
+## Choose the rule before the files
 
-1. The cart must exist.
-2. The requested quantity must be greater than zero.
+Continue in the same `mug-shop` project. We will require an existing cart and a positive quantity. Each accepted addition becomes one entry, even when the same stock is selected again.
 
-It does not check stock or ownership here. Those are separate concerns we address in [stock and checkout](/build/stock-and-checkout/) and [access control](/build/access-control/). Recognising an absent rule is part of assessing the implementation.
+Availability and ownership are separate policies covered in [stock](/build/stock-and-checkout/) and [access control](/build/access-control/). This action records a selection. Recognising an absent rule is part of reviewing the implementation.
 
-Here is the decision function, exactly as it appears in `Testbed.Cart.Commands.AddItem`:
+Stop the development server while changing these files. The introductory nonpersistent store starts fresh afterward.
 
-```haskell
-decide :: AddItem -> Maybe CartEntity -> RequestContext -> Decision CartEvent
-decide cmd entity _ctx = case entity of
-  Nothing ->
-    Decider.reject "Cart not found!"
-  Just cart ->
-    if cmd.quantity <= 0
-      then Decider.reject "Quantity must be positive"
-      else
-        Decider.acceptExisting
-          [ ItemAdded
-              { entityId = cart.cartId
-              , stockId = cmd.stockId
-              , quantity = cmd.quantity
-              }
-          ]
-```
+## Give the new fact its own home
 
-Read the signature as: “Given the request, possibly a cart, and the request context, decide which cart events to accept.” `Nothing` means no entity was found. `Just cart` means there is a state to inspect. `RequestContext` carries information such as authenticated identity; `_ctx` makes explicit that this example does not use it.
-
-`acceptExisting` targets an existing stream. For creating a new cart, the example generates an identifier and uses `acceptNew`. Rejection is a business outcome, not an accepted event describing a successful addition.
-
-## Connect the command to the application
-
-For a new command, your agent supplies the data, the entity lookup, the decision, and the type wiring. The following is a **partial declaration pattern**, adapted from the public example; the `decide` definition above and appropriate imports belong in the same module:
+Create `src/Shop/Cart/Events/ItemAdded.hs`. Its payload preserves the identifiers and quantity needed to explain the addition:
 
 ```haskell
-data AddItem = AddItem
-  { cartId :: Uuid
+data Event = Event
+  { entityId :: Uuid
   , stockId :: Uuid
   , quantity :: Int
   }
+```
 
+Derive the payload's standard instances with its event marker:
+
+```haskell
+EventTH.event ''Event
+```
+
+Add the fact to the domain's event type in `Event.hs`:
+
+```haskell
+data CartEvent
+  = CartCreated CartCreated.Event
+  | ItemAdded ItemAdded.Event
+```
+
+Its existing event marker continues to derive the standard instances for the expanded event type:
+
+```haskell
+EventTH.event ''CartEvent
+```
+
+`ItemAdded.Event` is the payload; `ItemAdded` is its wrapper in the domain's list of possible facts. Keeping the payload separate makes its meaning and future changes easy to locate. `Core.hs` remains a tiny re-export; it does not grow with every new rule.
+
+## Retain the selection in state
+
+A cart entry needs the selected stock and quantity:
+
+```haskell
+data CartItem = CartItem {stockId :: Uuid, quantity :: Int}
+```
+
+Create `Item.hs` for that value, then replace `Entity.hs` to add an `items` array and apply `ItemAdded`. The update appends one entry. It does not validate a request or contact a supplier. Its new branch is:
+
+```haskell
+  ItemAdded added ->
+    cart {items = cart.items |> Array.push (CartItem {stockId = added.stockId, quantity = added.quantity})}
+```
+
+The quantity is an `Int`. The command below admits only positive values. Any additional producer of `ItemAdded` must preserve that same invariant, because replay treats the event as an accepted fact.
+
+## Implement the decision
+
+The request tells us which cart to load:
+
+```haskell
 getEntityId :: AddItem -> Maybe Uuid
-getEntityId cmd = Just cmd.cartId
+getEntityId request = Just request.cartId
+```
 
-type instance EntityOf AddItem = CartEntity
-type instance TransportsOf AddItem = '[WebTransport]
+The decision refuses a missing cart, then checks the quantity. Notice how the event retains the accepted input:
 
+```haskell
+  if request.quantity <= 0
+    then Decider.reject "Quantity must be positive"
+    else Decider.acceptExisting
+      [ItemAdded (ItemAdded.Event {entityId = cart.cartId, stockId = request.stockId, quantity = request.quantity})]
+```
+
+Place this rule in `src/Shop/Cart/Commands/AddItem.hs`. The complete file in the cart-additions download separates the existence decision from the quantity rule.
+
+The command's `cartId` becomes the event's `entityId`. `stockId` identifies the selection; it is not a product name. The command marker generates routine plumbing from the decision, entity, and transport declarations above it:
+
+```haskell
 command ''AddItem
 ```
 
-The `command` marker comes from `Service.CommandExecutor.TH`. Put it after the declarations it connects. It generates the mechanical instances, including JSON handling and the command instance. New code should let the marker own that boilerplate; older examples sometimes spell it out.
+## Register the action and refresh the answer
 
-The Cart service registers `AddItem` with `Service.command @AddItem`, and the application registers the service. A type sitting in a file is not yet an exposed feature. For HTTP commands the type name becomes a kebab-case URL: `AddItem` is `/commands/add-item`.
+Replace `Service.hs` to register the new command:
 
-Events have a marker too: `event ''YourEvent` from `Service.Event.TH` generates serialization and deriving instances. You still define how domain events identify their entity and how an entity applies them. See [entities and state](/build/entities-and-state/).
+```haskell
+  |> Service.command @AddItem
+```
 
-## Make the agent explain its rule
+Then update `CartSummary` to calculate the count from the entity:
 
-Ask: “What happens for quantities minus one, zero, and one? What happens if the cart does not exist?” You should be able to answer from the decision itself before seeing test results.
+```haskell
+    let count = cart.items |> Array.length
+```
 
-The executor coordinates reading state and recording accepted events. Its concurrency machinery cannot decide whether your business rule is sensible. It also does not turn two different commands into one atomic operation; a checkout spanning Cart and Stock is one example of that boundary.
+Keep `CreateCart.hs`, `Events/CartCreated.hs`, `Core.hs`, and `App.hs`. Your application already registers this service and query, so it needs no extra pipeline step. The [query lesson](/build/queries/) explores the projection in more depth.
 
-## Exercise: a purchase limit
+## Check the new behaviour
 
-For this exercise, choose a limit of six mugs **per cart**. Your agent adds `if cmd.quantity > 6` and says the feature is complete. What case has it missed?
+Run `neo build`, then `neo run`. Create a new cart with the earlier request and replace `YOUR-CART-UUID` below. The fixed stock UUID is an illustrative selection until the Stock lesson creates its real record.
+
+```sh
+curl -i http://localhost:8080/commands/add-item \
+  -H 'Content-Type: application/json' \
+  --data '{"cartId":"YOUR-CART-UUID","stockId":"11111111-1111-1111-1111-111111111111","quantity":2}'
+```
+
+Expect acceptance, then a summary with one entry and `isEmpty: false`. One entry contains two units. Send quantity zero: expect HTTP 400 with `reason: "Quantity must be positive"`, while the accepted count remains one.
+
+The transport declaration, service registration, and application registration together expose `/commands/add-item`. A type sitting in a file is not yet a reachable feature.
+
+## Exercise: a per-cart limit
+
+Choose a limit of six mugs **per cart**. Your agent rejects requests above six and says the work is complete. What case has it missed?
 
 <details>
 <summary>Suggested reasoning and evidence</summary>
 
-Two additions of four each satisfy the proposed check but total eight. Decide whether the limit covers one product or every product, then check existing quantities plus the request. Evidence should include a normal addition, an addition taking the total over six, exactly six, and a second addition after reaching six. Verify the rejected operation adds no successful `ItemAdded` event. This is an exercise extension, not behaviour already implemented by the testbed.
+Two additions of four each pass that check but total eight. Specify whether the limit covers one product or every product, then compare existing quantities plus the request. Check a normal addition, exactly six, more than six, and another addition after reaching six. A refused operation must not produce a successful `ItemAdded`. This is an extension you design, not a rule already in these files.
 
 </details>
 
-Public sources: [AddItem](https://github.com/neohaskell/NeoHaskell/blob/main/testbed/src/Testbed/Cart/Commands/AddItem.hs), [service registration](https://github.com/neohaskell/NeoHaskell/blob/main/testbed/src/Testbed/Cart/Service.hs), [command marker](https://github.com/neohaskell/NeoHaskell/blob/main/core/service/Service/CommandExecutor/TH.hs), [event marker](https://github.com/neohaskell/NeoHaskell/blob/main/core/service/Service/Event/TH.hs).
+Next: [entities and state](/build/entities-and-state/) explains how accepted facts inform the next decision.

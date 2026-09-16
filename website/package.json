@@ -11,15 +11,16 @@
     "predev": "node scripts/generate-adrs.mjs",
     "dev": "astro dev",
     "start": "astro dev",
-    "prebuild": "node scripts/generate-adrs.mjs",
+    "prebuild": "node scripts/generate-adrs.mjs && node scripts/generate-examples.mjs",
     "build": "astro build",
     "preview": "astro preview",
     "precheck": "node scripts/generate-adrs.mjs",
     "check": "astro check",
     "astro": "astro",
     "check:docs": "node scripts/check-docs.mjs --check",
-    "test:docs": "node scripts/check-docs.mjs --self-test",
-    "check:links": "node scripts/check-docs.mjs --built"
+    "test:docs": "node scripts/check-docs.mjs --self-test && node --test scripts/generate-examples.test.mjs",
+    "check:links": "node scripts/check-docs.mjs --built",
+    "generate:examples": "node scripts/generate-examples.mjs"
   },
   "dependencies": {
     "@astrojs/markdown-remark": "7.2.1",

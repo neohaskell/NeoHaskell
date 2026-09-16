@@ -9,6 +9,20 @@ Using an agent to write code and adding an AI feature to that code are different
 
 A useful first feature proposes text for review. In the ecommerce practice project, Jess will generate a product-description draft from supplied facts. She can inspect and approve the draft while keeping the rest of the application usable if the provider is unavailable.
 
+## Keep the feature inside your application
+
+Work from `mug-shop` and complete the
+[integration setup](/connect/#prepare-your-project). Put the request helper in
+`src/Shop/Integrations/ProductDraft.hs`. Add the commands and events for requesting,
+recording, and accepting a draft in the application area that owns product
+information. Cart and Stock do not already supply that feature.
+
+Give provider outcome commands `InternalTransport`; the user-facing draft request
+and approval remain separate public commands. Wire its service, query, and outbound handler in `src/App.hs`, following
+[commands](/build/commands-and-events/) and [handler registration](/connect/workflows/).
+The builder below provides the provider call; your workflow supplies its inputs
+and callbacks.
+
 ## Model a draft before making a request
 
 A draft workflow records a request, calls the provider, and records either generated text or a failure. Acceptance is a separate command. In the example, keep the product identifier and request identity so that a delayed reply does not overwrite a newer draft.
@@ -17,12 +31,9 @@ The provider callback tells you that a response decoded successfully. It does no
 
 ## Build an OpenRouter request
 
-This **partial builder** uses the real API. `modelName` comes from your chosen provider configuration; `productFacts` contains only approved input. `recordDraftResponse` must inspect the response and produce the same command type as `recordDraftFailure`.
+This **partial builder** requests a short draft. `modelName` comes from your chosen provider configuration; `productFacts` contains only approved input. `recordDraftResponse` must inspect the response and produce the same command type as `recordDraftFailure`.
 
 ```haskell
-import Integration qualified
-import Integration.OpenRouter qualified as OpenRouter
-
 Integration.outbound OpenRouter.Request
   { messages =
       [ OpenRouter.system
@@ -47,7 +58,8 @@ This integration makes a non-streaming request. It is appropriate for a backgrou
 
 ## Use Azure AI where appropriate
 
-Azure requests have an explicitly validated endpoint and a redacted API key. First call:
+Azure requests have an explicitly validated endpoint and a redacted API key.
+The helper lives in `Integration.AzureAI`. First call:
 
 ```haskell
 AzureAI.azureEndpoint endpointText
@@ -68,6 +80,14 @@ AzureAI.chatCompletion
 
 The helper reads `?config.azureAiApiKey :: Redacted Text`. For explicit credential plumbing, build `AzureAI.Request` with `apiKey` and a configuration whose `endpoint` is the validated value. Do not use the bare default configuration as a complete endpoint setup. The source pins an API-version default; verify compatibility with your deployment.
 
+## Run a draft through the workflow
+
+Run `neo build` after adding the draft service and handler to `mug-shop`.
+Use `neo test` for fixed response fixtures; those checks should not need a live
+model. Start `neo run` with the provider credential, request a draft, and inspect
+its query. Confirm that generated text stays unapproved until your separate
+acceptance command succeeds.
+
 ## Give Jess evidence beyond a nice paragraph
 
 > **Agent:** “The model returned a description, so I publish it.”
@@ -82,10 +102,13 @@ The shared [HTTP retry caveat](/connect/http-and-payments/#understand-the-curren
 
 Continue to [AI tools](/connect/ai-tools/) only when you are ready for the model to propose structured actions.
 
-## Implementation and examples
+<details>
+<summary>Framework source notes</summary>
 
 - [integrations/Integration/OpenRouter/Request.hs](https://github.com/neohaskell/NeoHaskell/blob/main/integrations/Integration/OpenRouter/Request.hs)
 - [integrations/Integration/OpenRouter/Internal.hs](https://github.com/neohaskell/NeoHaskell/blob/main/integrations/Integration/OpenRouter/Internal.hs)
 - [integrations/Integration/OpenRouter/Response.hs](https://github.com/neohaskell/NeoHaskell/blob/main/integrations/Integration/OpenRouter/Response.hs)
 - [integrations/Integration/AzureAI/Request.hs](https://github.com/neohaskell/NeoHaskell/blob/main/integrations/Integration/AzureAI/Request.hs)
 - [integrations/test/Integration/AzureAI/RequestSpec.hs](https://github.com/neohaskell/NeoHaskell/blob/main/integrations/test/Integration/AzureAI/RequestSpec.hs)
+
+</details>

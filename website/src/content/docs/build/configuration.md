@@ -1,89 +1,101 @@
 ---
-title: Configuration
-description: Define typed deployment settings and keep secrets out of ordinary output.
+title: "Configuration"
+description: Connect typed settings to the parts of your application that consume them.
 sidebar:
   order: 9
 ---
 
-An application often needs different database addresses and provider credentials in development and production. Its business rules should remain consistent across those environments. Configuration makes the environmental choices explicit and validates them before the application starts serving requests.
+Applications need different settings across environments while keeping their business rules consistent. Configuration gives those choices names, validates their types, and makes the connection to the running application explicit.
 
-Decide which values are settings and which belong in the business history. A database host is configuration. In the ecommerce practice project, a price accepted for an order would belong in the commercial record; changing a setting tomorrow should not rewrite yesterday's agreement.
+A database address is configuration. An agreed order price belongs in business history. Changing a setting tomorrow should not rewrite yesterday's agreement.
 
-## Read a configuration definition
+Examples below show the relevant declarations and behaviour, with each destination named. Module headers and imports are omitted so you can focus on the idea. The [complete end of Build files](/examples/mug-shop-build.tar.gz) include that setup and the tests; add them to the same project when you want the runnable checkpoint.
 
-NeoHaskell's `defineConfig` builds a typed configuration record and its parser. This is an exact excerpt from the testbed's field list:
+## Add a setting your application will use
+
+So far, your application always starts with empty in-memory history. We will make local persistence an explicit development setting, defaulting to the same behaviour.
+
+Name the choice and its default first:
 
 ```haskell
-  [ Config.field @Text "dbHost"
-      |> Config.doc "PostgreSQL host"
-      |> Config.defaultsTo ("localhost" :: Text)
-      |> Config.envVar "DB_HOST"
+  [ Config.field @Bool "persistEvents"
+      |> Config.doc "Keep local event files between development runs"
+      |> Config.defaultsTo False
+      |> Config.envVar "PERSIST_EVENTS"
+  ]
 ```
 
-It says that `dbHost` is text, documents its purpose, supplies a development default, and connects it to an environment variable. This is only the beginning of the surrounding `defineConfig` expression; do not paste it as a complete module.
+Place the field inside `defineConfig "ShopConfig"` in `src/Shop/Config.hs`. The checkpoint contains the complete definition.
 
-Every field needs documentation and either a default or a requirement to provide it. The macro rejects missing documentation, missing default/required choices, and conflicting choices.
+`defineConfig` generates a record and its parser. The field has documentation, a Boolean type, a default, and an environment variable. The macro requires each field to have documentation and a deliberate default or required-value policy.
 
-Here is an **adapted complete declaration** for the practice project's configuration module. The same field definitions apply to other NeoHaskell applications; choose names and settings appropriate to your domain. The provider field is illustrative; it does not create an integration:
+## Connect the setting to the store
+
+After completing the Cart and Stock lessons, connect the setting to your **local-development baseline**. If you already added authentication or other registrations, preserve them: add the `Shop.Config` import, insert `withConfig @ShopConfig`, and replace only the `withEventStore` step. Do not discard your application’s permission setup.
+
+The relevant pipeline steps in `src/App.hs` are:
 
 ```haskell
-{-# LANGUAGE TemplateHaskell #-}
+  |> Application.withConfig @ShopConfig
+  |> Application.withEventStore (\(config :: ShopConfig) -> SimpleEventStore
+    { basePath = Path.fromText ".neo/events" |> Maybe.getOrDie
+    , persistent = config.persistEvents
+    })
+```
 
-module Shop.Config (ShopConfig (..), HasShopConfig) where
+`withConfig` registers the type to load. The store factory consumes that loaded record. This is the important connection: declaring `persistEvents` alone would not change storage.
 
-import Config (defineConfig)
-import Config qualified
-import Core
+Run `neo build`, then `neo test` with no `PERSIST_EVENTS` override. The default remains `False`, giving the tests a fresh application.
 
-defineConfig
-  "ShopConfig"
-  [ Config.field @Text "authServerUrl"
-      |> Config.doc "Identity service used by the shop"
-      |> Config.required
-      |> Config.envVar "AUTH_SERVER_URL"
+For a local restart exercise, stop other servers and run:
+
+```sh
+PERSIST_EVENTS=True neo run
+```
+
+Use capitalised `True` and `False`: this Boolean field uses the typed Haskell-value parser. Create a cart and keep its ID. Stop the server and run the same command again. Read the cart summary, allowing time for reconstruction and projection. This exercises the simple store's local persistence. Existing carts from earlier in-memory runs are not migrated into files by enabling the setting.
+
+The [persistence chapter](/operate/persistence/) explains moving to PostgreSQL and checking durable recovery. Local event files are a useful development option; operating an application also requires backups, restore evidence, retention choices, and appropriate access.
+
+## Add required values deliberately
+
+A provider credential can be a required secret field. This is a **field-list fragment** to add when the corresponding provider is implemented, not a requirement for the current application:
+
+```haskell
   , Config.field @Text "providerKey"
       |> Config.doc "Credential for the selected external provider"
       |> Config.required
       |> Config.envVar "SHOP_PROVIDER_KEY"
       |> Config.secret
-  ]
 ```
 
-Your agent must register the module in the application's build configuration, connect the generated type with `Application.withConfig @ShopConfig`, and wire consumers of those fields. This example is source-grounded but is not a compiled application shipped with these docs.
+Your integration must then consume `config.providerKey`. `required` establishes presence; it cannot prove the remote provider will accept the credential.
 
-## Connect settings to their consumers
+`Config.secret` redacts the field from generated record display and JSON. It does not encrypt the value or prevent code from logging the raw field after extraction. Keep real credentials in your deployment's credential mechanism.
 
-Application factories such as `withEventStore` and `withAuth` can receive the loaded configuration. The testbed builds its PostgreSQL configuration this way. Configuration loading happens before those deferred factories run.
+## Verify the consumer, not just the parser
 
-A field's name does not automatically connect it to a subsystem. The current starter and testbed declare `httpPort`, but their application uses the unmodified `WebTransport.server`, whose port is 8080. Changing `PORT` or `HTTP_PORT` alone therefore does not change that listener.
+The loader reads process arguments and environment variables. A `.env` file does not automatically enter the process environment; use an explicit loader or your process manager if you choose that format.
 
-For a fixed alternate development port, this **partial wiring expression** updates the actual transport record:
+A field called `httpPort` also does not automatically change a listener. Your application currently uses `WebTransport.server`, which listens on 8080. For a fixed alternate development port, replace that pipeline step with:
 
 ```haskell
-Application.withTransport (WebTransport.server {port = 8081})
+  |> Application.withTransport (WebTransport.server {port = 8081})
 ```
 
-If you need configuration-driven selection, have your agent show where the parsed value reaches the transport and verify the listening port after startup. A passing parser test cannot establish that wiring.
+Update clients to match. The current `neo test` HTTP workflow probes port 8080, so keep that port for the tutorial tests; changing Hurl URLs alone does not change its startup probe. See the [CLI reference](/reference/cli/). If you later make the port configurable, trace the parsed value all the way to the actual transport and verify the listening address.
 
-## Handle secrets as data with restricted display
+## Exercise: optional or misconfigured?
 
-`Config.secret` makes the generated configuration's `Show` and JSON output redact the field. It does not encrypt the value or prevent code from logging the raw field after extracting it.
-
-For values that need display protection beyond the configuration record, the `Redacted` wrapper provides explicit wrapping and unwrapping. Keep secrets in your deployment's credential mechanism and pass them to the application environment. Do not paste production credentials into examples, screenshots, or agent conversations.
-
-The current loader reads process arguments and environment variables. Do not assume a `.env` file is loaded automatically merely because a template mentions one; use an explicit loader or your process manager and verify the resulting environment.
-
-## Exercise: a missing credential
-
-Your agent added a provider key field with an empty-string default so startup succeeds. Is that the behaviour you want?
+Your agent gives a required provider key an empty-string default so startup succeeds. What behaviour do you want when the provider is unavailable or unconfigured?
 
 <details>
 <summary>Suggested reasoning and checks</summary>
 
-If the provider is required, require the field and fail clearly at startup when it is missing. If the feature is optional, model that choice explicitly rather than treating an empty credential as a usable key. Check valid configuration, a missing required value, and an invalid typed value. Check redaction using harmless test credentials, and separately verify that the configured consumer uses the value. `required` establishes presence, not that a remote provider will accept the credential.
+If the feature is required, require its credential and report a clear startup failure when missing. If optional, model the disabled state explicitly. Test valid configuration, an absent required value, and an invalid typed value. Check redaction with harmless test credentials and separately check that the provider receives the configured value.
 
 </details>
 
-Next: [assemble the practice application](/build/your-shop/) before extending it with providers. Consult [language essentials](/build/language-essentials/) whenever a type or expression needs explanation.
+Next: [review your application](/build/your-shop/) before connecting it to more systems.
 
-Public sources: [configuration API](https://github.com/neohaskell/NeoHaskell/blob/main/core/config/Config.hs), [configuration generation](https://github.com/neohaskell/NeoHaskell/blob/main/core/config/Config/TH.hs), [testbed settings](https://github.com/neohaskell/NeoHaskell/blob/main/testbed/src/Testbed/Config.hs), [starter wiring](https://github.com/neohaskell/NeoHaskell/blob/main/neo/starter/src/App.hs), [Redacted](https://github.com/neohaskell/NeoHaskell/blob/main/core/core/Redacted.hs).
+API reference: [configuration](https://github.com/neohaskell/NeoHaskell/blob/main/core/config/Config.hs), [application factories](https://github.com/neohaskell/NeoHaskell/blob/main/core/service/Service/Application.hs), [simple store](https://github.com/neohaskell/NeoHaskell/blob/main/core/service/Service/EventStore/Simple.hs).

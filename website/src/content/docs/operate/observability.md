@@ -5,7 +5,7 @@ sidebar:
   order: 3
 ---
 
-A user reports that an accepted change is not visible. You need to distinguish a rejected request, a delayed view, a wrong account, and an external failure. “The server is up” answers only one small part of that question. In the ecommerce practice project, the report might be “My order went through, but I cannot see it.”
+A user reports that an accepted change is not visible. You need to distinguish a rejected request, a delayed view, a wrong account, and an external failure. “The server is up” answers only one small part of that question. In the ecommerce practice project, the report might be “I added an item, but my cart is unchanged.”
 
 Observe the application in layers: process, stored facts, views, and external outcomes. Give each alert a question a person can act on.
 
@@ -46,7 +46,7 @@ Framework logs identify query replay progress and failures. Progress messages in
 
 ## Follow one operation through the system
 
-Record the revision, approximate time, and a safe identifier for the operation or entity. An order identifier works for the practice project. Then ask:
+Record the revision, approximate time, and a safe identifier for the operation or entity. Keep the cart identifier returned by your `mug-shop` request. Then ask:
 
 1. Did the command succeed or report a rejection?
 2. Does the persisted history contain the expected fact?
@@ -58,14 +58,14 @@ Use the [IDE graph](/getting-started/visual-ide/) to find the responsible comman
 
 Choose safe diagnostic identifiers. Personal addresses, access tokens, uploaded documents, and full provider responses generally do not belong in routine logs. Redaction of a typed configuration field does not redact arbitrary text you later log.
 
-## Exercise: a green process with an incomplete order
+## Exercise: a green process with a pending outcome
 
-Using the ecommerce practice project, design a staging scenario where an order is accepted but an external confirmation is delayed. Describe the customer-visible status and the operator-visible signal before running it.
+After you add an external integration to `mug-shop`, design a staging scenario where its triggering change is accepted but the external confirmation is delayed. Describe the customer-visible status and the operator-visible signal before running it.
 
 <details>
 <summary>Suggested reasoning</summary>
 
-Health can remain green while the confirmation is pending. The order view should communicate that intermediate state honestly. An operator needs the pending duration and a safe correlation identifier. Repeatedly restarting a healthy process is unlikely to resolve a provider outage and may complicate diagnosis.
+Health can remain green while the confirmation is pending. The relevant view should communicate that intermediate state honestly. An operator needs the pending duration and a safe correlation identifier. Repeatedly restarting a healthy process is unlikely to resolve a provider outage and may complicate diagnosis.
 
 </details>
 

@@ -3,172 +3,173 @@
 ## Scope and method
 
 The approved method lives in [DOCUMENTATION_PLAN.md](DOCUMENTATION_PLAN.md).
-The page inventory, public sources, source fingerprints, exact excerpts, and
-per-page editorial review records live in [documentation-manifest.json](documentation-manifest.json).
+The page inventory, public source fingerprints, exact excerpts, and editorial
+review records live in [documentation-manifest.json](documentation-manifest.json).
 
 Author review covers accessible openings, progressive depth, business decisions,
 implementation evidence, independent consultation, and increasing reader responsibility.
-Parallel cross-review checks executable instructions and capability claims against
-public implementation. Review records represent agent editorial review, not an
-observed human reader trial.
+Parallel cross-review checks instructions and capability claims against public
+implementation. These are editorial reviews, not an observed human reader trial.
 
-The site teaches NeoHaskell concepts and capabilities for the reader's application.
-An ecommerce practice project connects the worked examples without assuming an
-existing company or requiring its story to understand general topic pages. The
-public Counter starter and Cart/Stock testbed are explicitly identified as different
-runnable anchors. Checkout, payment, fulfilment, and other application-specific
-policies are design extensions, not a claimed complete commerce product.
+General concepts lead each topic. Ecommerce connects the examples through one
+reader-created application without assuming an existing company. The reader uses
+`neo new`, `neo build`, `neo run`, `neo test`, and `neo ide`; framework checkout and
+contributor tools are confined to the contribution branch. Checkout, payment,
+fulfilment, and other policies remain explicit design extensions, not a claimed
+complete commerce product. Agent-facing documentation is separate.
 
-## Verification results
+## Progressive examples and complete checkpoints
 
-- 49 authored/reviewed human pages, with 24 required public capability areas covered.
-- 156 public evidence files fingerprinted, including the screenshot model fixture; 14 literal code excerpts checked.
-- `pnpm test:docs`: 36 positive, negative, and boundary fixtures passed, including missing domain-transfer review, diagram source/export drift, binary screenshot drift, invalid asset paths, missing image alternatives, and absent accessible zoom controls.
-- `pnpm check:docs`: complete inventory, review records, source evidence, excerpts,
-  internal links, and reachability from the home page passed.
-- `pnpm check`: zero errors, warnings, or hints from Astro diagnostics.
-- `pnpm build`: production build and search index completed, including locale fallback.
-- `pnpm check:links`: all 49 authored routes and rendered local links/anchors passed.
-- All 40 shell code blocks passed `bash -n`; this checks syntax, not execution.
-- Public GitHub source links were checked against existing repository paths.
-- Safari review verified the small-window lesson layout, menu ordering, exercise
-  disclosure, and search results for stock. This is UI review, not a human reader trial.
-- `./dev lint`: passed with no hints.
-- `./dev doctor`, `./dev workflow-check`, `./dev codemap-check`,
-  `./dev adr-website --check`, `./dev spec-check --criteria-tests origin/main`,
-  `./dev spec-drift docs/changes/013-human-documentation.md`, local/committed
-  design-review presence checks, release-fragment checks, and the expectation guard passed.
+Teaching blocks show relevant declarations and behaviour without module headers
+or import catalogues. Each step identifies its destination and role in the same
+project. Small explanations precede the code they motivate. Complete application
+files live in five downloadable checkpoints: first Cart, Cart additions, end of
+Build, Connect overlays, and the Postgres overlay. They preserve generated project
+settings and split entity state, event definitions, individual payloads, commands,
+queries, integrations, service registration, and application composition.
 
-The full Haskell suite was attempted with `./dev exec ./dev test-all --require-all`.
-Its pinned toolchain began compiling after cache delays. It was stopped before
-runtime tests because the required default database port is occupied by an unrelated
-application. No passing full-suite or acceptance-runtime result is claimed. Complete
-that check in an isolated environment before promoting the draft for final review.
+The downloads are generated from `examples/` by `scripts/generate-examples.mjs`.
+The content check compares their bytes with deterministic regenerated archives;
+CI fails on a stale download. Four tests cover extraction with standard tar,
+binary fidelity, deterministic ordering, unsafe/duplicate paths, and checkpoint
+boundaries. Complete source retains the imports today's APIs require; fragments
+do not claim that `Core` alone currently re-exports every framework operation.
+Application modules contain no `LANGUAGE` pragmas.
 
-These structural checks do not certify pedagogy, historical-data compatibility,
-provider acceptance, or the correctness of a reader's shop-specific policies.
+Concept declaration examples show their canonical marker and omit deriving clauses.
+The event marker generates Show, Generic, FromJSON, and ToJSON, but not Eq; complete
+event fixtures retain equality for full-payload assertions. Entity and ordinary
+value instances remain in complete source because those types have no marker.
 
-## Cross-review changes
+## CLI and application verification
 
-Following reader feedback on the initial framing, the home page, navigation,
-section introductions, and topic pages were reviewed for applicability beyond
-ecommerce. General problems now lead the explanations; cart, stock, and order
-examples remain concrete exercises in the continuing practice project. This is an
-editorial review of domain transfer, not evidence from a human reader trial.
+An official Neo 0.10.0 Apple-silicon release asset was downloaded into an isolated
+temporary directory. Its SHA256 matched the release asset:
+`69323f581ef80f8a9dbe6bc2d02e1311f8dae82b7bbf3b93edea94b846a955d8`.
+`neo new` selected framework revision
+`25bd7027a85b8f2999602f66b46b4b6b133c22e8`.
+The user's installed CLI was not replaced.
 
-Independent readers of the manuscript corrected the query derivation declaration
-order against the compiling public fixture, clarified testbed versus generated-project
-IDE workspaces, exposed the Git side effects of domain locking, and distinguished
-secret-store persistence from transaction-store lifetime. A transfer milestone now
-assembles Cart/Stock in the reader's own application. Source inspection also bounded
-claims about retries, upload cleanup/downloads, query checkpoints, AI tools, and
-provider callbacks. No framework source was changed as part of this documentation work.
+That released CLI lacked `DerivingStrategies` in its generated preset. Framework
+concept markers emit strategy-qualified deriving clauses, so this change adds the
+missing extension to the shared application/library/test configuration. A real
+rendering regression failed before the correction and passed afterward. All 629
+CLI unit tests, the targeted generated-project integration test, and the fresh
+packaged-binary new-project end-to-end test passed. The local corrected binary
+still reports 0.10.0; it is **unreleased**, and the setup guide explicitly records
+that prerequisite. No release was published as part of this work.
 
+The corrected packaged binary's SHA256 is
+`b1dfa23946bb79a19e527633fc7d01855de72414ea1daa4f999fb8a6e02b70c3`.
+All checkpoint builds use this CLI against the released framework pin, with no
+`cabal.project.local` override and no language pragmas.
 
-## Expanded introduction and visual review
+- First Cart: `neo build` and `neo test` passed, including two decision examples
+  and one HTTP scenario. The first cold HTTP startup exceeded Neo's 60-second
+  readiness timeout. Diagnostic `neo run` started normally, and the warmed
+  `neo test` retry passed; the original failure is retained in the evidence. Connect encountered the same
+  cold-start timeout; its diagnostic run also started normally.
+- Cart additions: the exact downloadable archive passed `neo build` and
+  `neo test`, including eight decision/replay examples and two HTTP scenarios.
+- End of Build: all 21 application modules and test modules compiled; `neo test`
+  passed 12 decision/replay examples and three HTTP scenarios. A separate
+  cross-domain smoke confirmed a positive selection changes the cart while stock
+  remains untouched before integration, and a zero-quantity refusal changes neither.
+- Connect: all 25 application modules and test modules compiled; `neo test`
+  passed 12 decision/replay examples and four HTTP scenarios. A separate
+  observation on temporary port 8082 verified an immediate empty cart and a
+  second distinct cart after 32 seconds, plus byte-identical upload/download of
+  a 23-byte text file with application configuration enabled. The timer and
+  temporary port were then removed; ordinary HTTP tests passed with the original
+  App restored byte-for-byte.
+- Postgres overlay: the exact final source compiled all 22 application modules,
+  its executable, and the test executable. No database was accessed.
 
-The supplied 13-page `neohaskell-explainer-v5.pdf` was read in full and all pages
-were inspected visually. Its progression from meaning to history, correction,
-shared models, bounded feature growth, and strategic evaluation informed the
-expanded introduction. Technical claims were checked against the public sources;
-the PDF was not treated as evidence of runtime guarantees.
+The repository-wide Rust formatting check reports pre-existing formatting drift;
+unrelated formatting was not rewritten. The full framework Haskell suite was
+attempted earlier, but stopped before runtime tests because the default database
+port belongs to an unrelated application. No passing full-framework suite is
+claimed. Complete that check in isolation before final PR review.
 
-The home page and start section grew from approximately 3,300 to 9,500 words,
-including two new chapters on history/change and growth by slices. Independent
-cross-review checked natural depth, domain transfer, and the boundary between
-compiler checks and policy correctness. Early chapters remain code-free.
+## Content and website checks
 
-Seven original diagrams were authored as editable Draw.io files and exported as
-editable SVGs. All passed the Draw.io skill's structural validation with zero
-errors or warnings after correction of an overlapping annotation. Every draft
-render was inspected for readable labels, routing, and clipping. The final SVGs
-were checked in the site through the Tailscale preview: Safari showed the expanded
-chapter, accessible diagram link names, and a working full-size SVG link. A narrow
-window preserved readable labels and allowed horizontal scrolling within the image.
+- 49 human pages cover 24 required public capability areas, grounded in 220
+  fingerprinted public evidence files and 51 checked literal excerpts.
+- 60 documentation checker fixtures cover missing content, source/excerpt drift,
+  review coverage, links, diagrams, binary screenshots, image zoom controls,
+  reader-owned workflows, pragma/import/module/deriving scaffolding, and code disclosure.
+- Four archive tests passed; all five downloads are reproducible from source.
+- All 46 shell blocks pass `bash -n`; syntax checks do not imply execution.
+- Public source hyperlinks were checked against existing repository paths.
+- Astro diagnostics passed with zero errors, warnings, or hints. The production
+  build/search indexed 769 pages; all 49 human routes passed rendered-link,
+  anchor, and image-zoom checks.
+- The portable dialect lint passed with no hints. Spec criteria/drift checks and
+  the expectation guard passed. No existing test expectations were changed.
 
-The current content gate, Astro diagnostics, production build/search, rendered
-links and image resources, spec checks, release fragments, expectation guard, and
-whitespace checks passed. This update changes documentation and its presentation;
-no additional application runtime result is claimed.
+These checks do not certify pedagogy, historical-data compatibility, provider
+acceptance, or the correctness of a reader's business policies.
 
-## Event models and actual IDE captures
+## Introduction and diagrams
 
-Notation was researched from Adam Dymitruk's [Event Modeling introduction](https://eventmodeling.org/posts/what-is-event-modeling/),
+The supplied 13-page explainer was read in full and inspected visually. Its
+progression from meaning to history, correction, shared models, bounded feature
+growth, and strategic evaluation informed the longer introduction. Technical
+claims were checked against public implementation rather than inferred from the
+explainer. Early chapters remain code-free.
+
+Nine original diagram pairs are maintained as editable Draw.io files and SVGs.
+Draft renders were inspected for labels, routing, and clipping; structural
+validation passed with zero errors or warnings. Canonical notation was researched
+from Adam Dymitruk's [Event Modeling introduction](https://eventmodeling.org/posts/what-is-event-modeling/),
 Martin Dilger's [documentation article](https://eventmodelers.ai/docs/blog/documenting-software-with-event-modeling/),
 and the [Event Modelers cheat sheet](https://eventmodelers.ai/cheatsheet/).
-Two original Draw.io models trace cart creation and a subsequent addition through
-screens, blue commands, orange events, and green read models. Example values and
-field names were checked against the public Cart commands, events, and query.
-The text explicitly distinguishes two units from one cart entry. Five earlier
-conceptual diagrams were recoloured to use the same semantic mapping.
+Commands are blue, events orange, and read models green. Worked timelines follow
+cart creation and an addition through screens, requests, facts, and views. Two
+units are explicitly distinguished from one cart entry.
 
-Two PNGs were captured from a running Neo CLI 0.1.4 IDE through Safari: an overview
-and a selected AddItem command highlighting its ItemAdded relationship. The model
-was produced by `neo inspect sync` against an isolated copy of public testbed source,
-then reduced to five existing nodes and their original edges/fields for legibility.
-Chapter grouping, slice ordering, and layout were curated; screenshots themselves
-are unaltered captures. `website/fixtures/cart-event-model.json` preserves that
-model and passed `neo validate`. The IDE server connected to the isolated workspace;
-no application HTTP server, database, or external provider was needed for capture.
+The first model's footer now describes the feature the reader builds. Its updated
+Draw.io source passed validation and visual review before the SVG was re-exported.
+Sources, exports, screenshots, and alternatives are checked by the content gate.
 
-Independent visual review checked both screenshots against the guide: visible
-labels, fields, colours, selected connection, public-only content, and the distinction
-between a model relationship and runtime evidence. The guide states the version
-and curated scope, explains each capture, and links to the full-size images.
-Registered PNGs are hashed as binary data; fixtures verify that decoding them as
-text fails the hash check. The checker also validates enclosing full-size image
-links independently from their embedded images.
+## IDE continuity and image enlargement
 
-Both new diagram drafts and the five recoloured drafts passed structural validation
-with zero errors or warnings and were inspected visually. The nine registered
-diagram pairs and two PNG captures pass the content gate. All 31 checker fixtures,
-Astro diagnostics, the 763-route production build/search index, and rendered links
-passed for this revision. Safari verified the event-model lesson, its full-size
-SVG, and the screenshot guide through the hostname-allowed Tailscale preview.
-Spec criteria/drift checks, release fragments, expectation guard, and whitespace
-checks also passed. No additional application-runtime test result is claimed.
+Both IDE images were recaptured from the same actual reader-created project with
+Neo 0.10.0. The overview shows CreateCart, CartCreated, and CartSummary. The detail
+shows the later Cart checkpoint with AddItem selected and its ItemAdded connection
+highlighted. `neo inspect sync` and `neo validate` passed for both saved models.
+The AddItem view belongs to a later return after implementing that command.
+A model relationship is not presented
+as proof that an operation ran. Capture provenance stays here, outside the lesson.
 
-## In-page image enlargement
+Starlight Image Zoom 0.15.0 and the supported Unified Markdown renderer enlarge
+SVGs and PNGs in a dialog without changing pages. [ADR-0078](../docs/decisions/0078-documentation-image-zoom.md)
+records the dependency choice. Earlier Safari verification confirmed Escape,
+close controls, restored focus, Enter to reopen, and preserved URL/scroll position.
+Built-page checks require accessible zoom triggers on all registered illustrations.
 
-Starlight Image Zoom 0.15.0 now opens diagrams and screenshots in a native dialog.
-Linked-image wrappers were removed because the plugin deliberately excludes linked
-images. Editable Draw.io download links remain separate. Inline images fit the
-article width, and SVG backgrounds remain readable in the enlarged view.
+Final Safari review verified the short first-cart examples and download link at
+normal reading size. The recaptured AddItem image opened in the dialog at the same
+guide URL; Escape returned focus to its zoom trigger and retained the reading position.
 
-The plugin requires the supported Unified Markdown renderer on the installed
-Astro/Starlight versions, so `@astrojs/markdown-remark` 7.2.1 is now an explicit
-dependency. [ADR-0078](../docs/decisions/0078-documentation-image-zoom.md) records
-the dependency and renderer choice. The complete 769-route build and search index
-passed, as did Astro's diagnostics, all 36 checker fixtures, and all 49 human
-pages' rendered links and zoom controls. Existing ADR fences named `cabal` and
-`neohaskell` emit highlighting fallback warnings and render as plain text.
+## Remaining validation boundaries
 
-Safari verification on the Tailscale preview opened a PNG screenshot and the wide
-SVG event model without changing the URL. Escape and the close control dismissed
-the overlay. The screenshot's scroll position was unchanged (0.08458921 before
-and after); closing from its button restored focus to the zoom trigger, and Enter
-reopened it. Captions and the dimmed page background rendered correctly. Code
-blocks and copy controls remained present in the guide after changing renderers.
-
-## Explicit remaining validation boundaries
-
-- A human matching Jess's profile has not yet completed the reader trial.
-- An evaluator has not yet walked only the accessible openings.
-- No real customer orders, payments, emails, provider AI calls, or paid services are
-  executed merely to verify prose. Provider sandbox/live checks remain documented
-  application responsibilities.
-- Partial Haskell examples explain named APIs in context; they are not independently
-  compiled complete applications. Exact excerpts are checked against repository
-  source, separately from runtime validation of the owning project.
-- The translated editions use the existing translation workflow and English fallback;
-  this change does not claim reviewed translations of the new English corpus.
+- A reader matching Jess's profile has not completed the reader trial.
+- An evaluator has not walked only the accessible openings.
+- No real orders, payments, email, provider AI, or paid services are triggered to
+  verify prose. Provider sandbox/live checks remain application responsibilities.
+- Postgres compilation, database startup, restart durability, and backup/restore
+  are separate checks; a build is not a durability result.
+- Partial provider examples describe named APIs and application-defined outcomes;
+  they are not claimed as independently runnable provider integrations.
+- New English content uses the existing translation workflow and fallback; no
+  reviewed translations of the new corpus are claimed.
 
 ## Reader trial protocol
 
-Give the reader the shop-on-paper, first-cart, and visual-IDE pages. Without coaching,
-ask them to explain a rule, identify it in the graph, catch the quantity-limit
-misunderstanding, introduce an unseen boundary change, and find the relevant answer
-again. Record observed hesitation, incorrect predictions, and recovery. Ask a second
-reader evaluating adoption to describe benefits, tradeoffs, and remaining operational
-work from the accessible sections. Revise based on observations; do not replace
-these trials with readability scores or an agent's self-assessment.
+Give the reader the shop-on-paper, first-cart, and visual-IDE pages. Without
+coaching, ask them to explain a rule, identify it in the graph, catch the
+quantity-limit misunderstanding, introduce an unseen boundary change, and find
+the relevant answer again. Record hesitation, incorrect predictions, and recovery.
+Ask an evaluator to describe benefits, tradeoffs, and operational work from the
+accessible sections. Revise from observations; agent review does not replace them.

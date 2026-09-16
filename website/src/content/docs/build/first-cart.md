@@ -1,32 +1,132 @@
 ---
-title: "First working slice: a cart"
-description: Practise submitting a command, reading its result, and checking an agent's interpretation.
+title: "Your first working slice"
+description: Give your own project one request, one recorded fact, and a useful answer.
 sidebar:
   order: 1
 ---
 
-The smallest useful application slice connects a request to an observable result. In this first exercise, we use a cart from the public example application: create an empty cart, then find its summary. It is the starting point for the ecommerce practice project that accompanies these docs.
+The smallest useful application slice connects a person's request to something they can observe. Here you will build that slice in **your own `mug-shop` project**: accept “create a cart,” remember that it happened, and show an empty-cart summary.
 
-You will make one request, keep its identifier, and find the corresponding summary. This establishes a habit for everything that follows: identify the business action, observe its result, and check what the application now says.
+The cart is our practice example. The same shape can start a booking or a document review. You decide what the action means; NeoHaskell connects the request, history, state, and view.
 
-## Open the public example
+We will assemble the slice one responsibility at a time. Each section explains the idea before showing its implementation. Read the focused pieces with your agent and discuss what each one promises.
 
-The generated starter from [getting started](/getting-started/) demonstrates a Counter. This page uses the **Cart in the NeoHaskell repository testbed**, not a cart endpoint in the generated starter.
+Examples below show the relevant declarations and behaviour, with each destination named. Module headers and imports are omitted so you can focus on the idea. The [complete first slice files](/examples/mug-shop-first-cart.tar.gz) include that setup and the tests; add them to the same project when you want the runnable checkpoint.
 
-From a local checkout of the public NeoHaskell repository, start its development PostgreSQL and the testbed:
+## Start in your own project
+
+Complete [getting started](/getting-started/) first. All paths below are relative to the `mug-shop` directory created by `neo new mug-shop`. Keep its `neo.json`, launcher, and generated build setup. `neo` supplies the project's compiler configuration.
+
+We are replacing the scaffold's Counter example with our Cart domain. Remove these supplied example files from your newly generated project:
 
 ```sh
-docker compose up -d postgres
-./dev exec cabal run nhtestbed
+rm -r src/Starter tests/Decider/Counter
+rm tests/Property/CounterReplaySpec.hs
+rm tests/scenarios/counter-flow.hurl tests/integration/smoke.hurl
+mkdir -p src/Shop/Cart/Commands src/Shop/Cart/Events src/Shop/Cart/Queries
+mkdir -p tests/scenarios tests/Decider/Cart
 ```
 
-The command stays running. PostgreSQL must be ready and port 8080 available; stop a starter server using that port first. The repository's `./dev exec` selects its pinned toolchain. The testbed uses the local database settings in its config; these are development defaults.
+Keep `tests/Spec.hs`; it will discover your test modules. Extract the first-slice download into this project root, retaining its `src/` and `tests/` paths; it replaces `src/App.hs` and adds the Cart files. You can instead assemble those files with your agent as you work through the concepts below. You do not need to maintain a separate module list: `neo build` discovers your source files.
 
-If you are only reading, follow the request and expected observations below. You can learn the model without running it yet.
+## 1. Name the fact you want to remember
 
-## Ask for a cart
+The fact is **a cart was created**. It needs the cart's identifier and an owner identifier. In `src/Shop/Cart/Events/CartCreated.hs`, the payload is small:
 
-In another terminal, send this request to the running testbed:
+```haskell
+data Event = Event
+  { entityId :: Uuid
+  , ownerId :: Text
+  }
+```
+
+This marker tells NeoHaskell to treat the declaration as an event and supply its routine supporting code:
+
+```haskell
+EventTH.event ''Event
+```
+
+We keep this payload in its own file. A separate `CartEvent` type lists the facts this domain understands; today its only possibility is `CartCreated`.
+
+Your meaningful contribution is the name and information in the fact. Later, another event gets another focused file rather than turning this one into a catalogue of unrelated concerns.
+
+## 2. Turn the fact into current state
+
+After creation, the cart has an identifier and an owner. The entity's update function applies the accepted fact:
+
+```haskell
+  CartCreated created ->
+    CartEntity {cartId = created.entityId, ownerId = created.ownerId}
+```
+
+This belongs in `Entity.hs`. `Core.hs` is only a small convenience module that re-exports the domain's entity and event types; it contains no decisions or state-update logic.
+
+The initial nil identifier is a starting value for reconstruction. It is not evidence that a real cart exists. A real cart begins with an accepted creation event.
+
+## 3. Accept the person's request
+
+`CreateCart` is a request with no input fields. The application generates its identity. In `src/Shop/Cart/Commands/CreateCart.hs`, its decision has two outcomes:
+
+```haskell
+decide _ existing context = case existing of
+  Just _ -> Decider.reject "Cart already exists!"
+  Nothing -> createCart context
+```
+
+After the decision and its entity/transport declarations, the command marker connects this behaviour to the framework:
+
+```haskell
+command ''CreateCart
+```
+
+The creation helper generates the cart ID and records `CartCreated`. For this local exercise it generates an anonymous owner when no signed-in identity exists.
+
+An anonymous owner ID is a label in history. It does not establish a browser session or prove that a future caller owns the cart. We will make that policy explicit in [access control](/build/access-control/).
+
+## 4. Answer the screen's question
+
+A screen needs a useful answer, not the whole event history. Our `CartSummary` answers “which cart is this, and is it empty?” Every cart is empty at this first milestone, so the projection in `src/Shop/Cart/Queries/CartSummary.hs` sets `count` to zero.
+
+```haskell
+      , itemCount = count
+      , isEmpty = count == 0
+```
+
+The complete query also supplies the cart ID and owner. Its public access policy is deliberate for this local practice.
+
+The query marker connects this view to the cart state it reads:
+
+```haskell
+deriveQuery ''CartSummary [''CartEntity]
+```
+
+The complete file puts the declarations in the order NeoHaskell needs. The
+[queries lesson](/build/queries/) explains how to grow the view when the screen
+needs more information.
+
+## 5. Make the pieces reachable
+
+A service registers a domain's commands. The application registers that service and its views:
+
+```haskell
+  |> Application.withService Cart.service
+  |> Application.withQuery @CartSummary
+```
+
+These steps belong in `src/App.hs`; `src/Shop/Cart/Service.hs` registers `CreateCart`. Both are included in the first-slice download.
+
+The store initially uses `persistent = False`. Restarting clears this exercise's history, so you can reach the first result without setting up a database. [Configuration](/build/configuration/) and [persistence](/operate/persistence/) later make storage an explicit choice.
+
+## Build it and make a request
+
+From your project root:
+
+```sh
+neo build
+neo run
+```
+
+In another terminal, request a cart:
 
 ```sh
 curl -i http://localhost:8080/commands/create-cart \
@@ -34,74 +134,43 @@ curl -i http://localhost:8080/commands/create-cart \
   --data '[]'
 ```
 
-Expect HTTP 200 and a JSON object containing `entityId`, a newly generated UUID. Keep that value. The `[]` body is intentional: it is the current encoding of the example's fieldless `CreateCart` command.
+Expect HTTP 200 and a JSON object containing `entityId`. Keep that UUID. The `[]` body is the encoding of this fieldless command.
 
-Read the summaries:
+Read the view:
 
 ```sh
 curl http://localhost:8080/queries/cart-summary
 ```
 
-The response is a page object containing `items`, `total`, `hasMore`, and `effectiveLimit`. Find the item whose `cartSummaryId` equals your returned `entityId`. It should have `itemCount` of zero and `isEmpty` of `true`.
+Find the row whose `cartSummaryId` matches your `entityId`. It should have `itemCount: 0` and `isEmpty: true`. The response is a page containing `items`, `total`, `hasMore`, and `effectiveLimit`.
 
-The read model updates asynchronously. If the row is not visible immediately, repeat the read briefly. The testbed also creates demonstration carts periodically, so “the first row” and “the only row” are unreliable ways to identify yours. With many rows, use the [query filter](/build/queries/).
+The read model updates asynchronously. Repeat the read briefly if your row has not appeared. Resubmitting the creation command would create another cart, not refresh the original one.
 
-## A useful agent misunderstanding
+## Keep evidence you can run again
 
-**Jess:** “We have created the customer's order.”
-
-**Agent:** “Yes; next I will mark it paid.”
-
-**Jess:** “Show me the event that means the shop accepted an order.”
-
-The source only records `CartCreated`. Nothing here establishes prices, payment, stock availability, or an agreement to fulfil. The correction is small and important: **we created a cart**. Order placement needs its own policy and implementation.
-
-Use the [IDE graph](/getting-started/visual-ide/) to locate the command, its entity, and the summary. Launch a separate IDE for the testbed, because the IDE inspects the `src/` directory beneath its working directory. In another terminal, starting from the NeoHaskell repository root:
-
-```sh
-cd testbed
-neo ide
-```
-
-Stop the earlier starter IDE first if it occupies port 2323, and ensure this terminal has the `neo` executable on its path. Confirm the browser's workspace points to `testbed`. If it has no `event-model.json`, create a new model, make a small canvas edit, and wait for autosave. Then run `neo inspect sync` from another terminal in that same `testbed` directory and reopen the workspace model with **Open**. See the [visual IDE walkthrough](/getting-started/visual-ide/) for the save and synchronization steps.
-
-Ask the agent to open the relevant source. The graph gives you a route through the application; the definitions establish what happened. Keep the server and acceptance-test commands in their original repository-root terminals.
-
-## Read the evidence
-
-The public acceptance test checks the real HTTP boundary. This is an exact excerpt from `testbed/tests/commands/create-cart.hurl`:
+The first-slice download includes `tests/scenarios/create-cart.hurl`. It creates its own cart and waits for its empty summary. Its final assertions check the visible outcome:
 
 ```hurl
-POST http://localhost:8080/commands/create-cart
-[]
-
-HTTP/1.1 200
-Content-Type: application/json
-
 [Asserts]
-# Response must have entityId field
-jsonpath "$.entityId" exists
+jsonpath "$.items[?(@.cartSummaryId == '{{cart_id}}')].itemCount" nth 0 == 0
+jsonpath "$.items[?(@.cartSummaryId == '{{cart_id}}')].isEmpty" nth 0 == true
 ```
 
-Run that file against your running testbed, from the repository root:
+Stop `neo run` with Ctrl-C, then run `neo test`. The CLI starts a server for the complete HTTP scenario.
 
-```sh
-./dev exec hurl --test testbed/tests/commands/create-cart.hurl
-```
+The download also includes `tests/Decider/Cart/CreateCartSpec.hs`. It checks the accepted event and refusal of an existing cart without running HTTP. The [testing lesson](/build/testing/) explains this style when you are ready for the next layer.
 
-This proves the response contract when it passes. Further claims need their own checks; a checkout policy or payment integration would require additional evidence.
+You have created a cart, not an accepted order. No price, payment, or fulfilment promise appears in the model. Ask your agent to point to the fact behind each proposed claim.
 
 ## Try a variation
 
-Create two carts and identify both summaries. Then send malformed JSON, such as a body containing only `{`, and compare the outcome. What should remain unchanged after that rejected request?
+Create two carts and identify both summaries. Then send malformed JSON, such as a body containing only `{`. What should remain unchanged after that refused request?
 
 <details>
 <summary>Suggested reasoning and checks</summary>
 
-Each successful creation should return its own UUID. A malformed body should produce a client error rather than an accepted command response. Follow the two known IDs rather than asserting the global cart count, because the demonstration timer can create other carts. The boundary case is an empty cart: it is a valid created entity with zero entries, not a missing entity.
+Two successful requests should return different IDs and acquire separate empty summaries. Malformed JSON should produce a client error without an accepted creation response. An empty cart is a valid created entity, distinct from a missing cart. Restarting this nonpersistent application starts a fresh exercise.
 
 </details>
 
-Next: [commands and events](/build/commands-and-events/) explains how a request becomes an accepted fact.
-
-Public sources: [CreateCart](https://github.com/neohaskell/NeoHaskell/blob/main/testbed/src/Testbed/Cart/Commands/CreateCart.hs), [creation test](https://github.com/neohaskell/NeoHaskell/blob/main/testbed/tests/commands/create-cart.hurl), [testbed wiring](https://github.com/neohaskell/NeoHaskell/blob/main/testbed/src/App.hs).
+Next: [explore your cart in the visual IDE](/getting-started/visual-ide/), running `neo ide` from this same project. Then [add a new command](/build/commands-and-events/).

@@ -7,7 +7,7 @@ sidebar:
 
 The Neo CLI helps you create, build, test, and inspect a NeoHaskell project. Use the command that matches your immediate goal; the visual IDE offers another way to understand the same project.
 
-Run project commands from the directory containing `neo.json`. Run `neo --help` or a command's `--help` for the installed binary's own help. This page describes the command surface in this repository; an older installed release may differ.
+Run project commands from the directory containing `neo.json`. Run `neo --help` or a command's `--help` for the installed binary's own help. This page describes Neo 0.10.0, the release used in [setup](/getting-started/); an older installed release may differ.
 
 ## Shared flags
 
@@ -29,6 +29,12 @@ neo --ci new mug-shop
 cd mug-shop
 neo build
 neo run
+```
+
+`neo run` keeps serving until you stop it with Ctrl-C. Stop it before running tests,
+because `neo test` starts its own application process:
+
+```sh
 neo test
 ```
 
@@ -37,17 +43,59 @@ neo test
 | `neo new [project_name]` | `--library` | Scaffold from the embedded starter; a name is required in CI mode. A library omits the launcher and executable stanza. |
 | `neo build` | `--watch`, `--skip-lock-check` | Reconcile configuration and build; watch uses GHCi feedback; skip only bypasses the build's lock check. |
 | `neo run` | `--watch` | Reconcile, build, and run; watch rebuilds/restarts on changes. |
-| `neo test` | `--watch` | Run Cabal tests, then discovered Hurl integration tests. |
+| `neo test` | `--watch` | Run project unit tests, then discovered Hurl HTTP tests. |
 
-Build, run, and test regenerate managed Nix/Cabal artifacts from `neo.json`. Make dependency/configuration changes at the intended source rather than relying on edits to regenerated output.
+Build, run, and test regenerate managed build files from `neo.json` and discover modules beneath `src/` and `tests/`. Your `Shop.Cart` and `Shop.Stock` modules stay in your application; the CLI handles their inclusion in the build.
 
-When Hurl tests exist, the test command starts the application and waits for an HTTP response on `127.0.0.1:8080`. That wait accepts any HTTP response; it does not wait for the `/ready` projection contract. Keep the starter's test port available and add readiness-aware checks to scenarios that depend on rebuilt queries. A custom application port requires attention to both test targets and the current fixed startup probe.
+When Hurl tests exist, the test command starts the application and waits for an HTTP response on `127.0.0.1:8080`. That wait accepts any HTTP response; it does not wait for the `/ready` projection contract. Keep the project's test port available and add readiness-aware checks to scenarios that depend on rebuilt queries. A custom application port requires attention to both test targets and the current fixed startup probe.
+
+## Manage project dependencies
+
+`neo.json` is the source for your project's dependency choices. Keep its existing
+`name`, `version`, and `neo-version` fields, and edit the `dependencies` object when
+your application needs an additional package. `neo-version` selects the framework
+revision; it is separate from the installed CLI version shown by `neo --version`.
+
+The following table shows the supported syntax. Package names and repositories
+are examples of the declaration form, not dependencies required by the cart lesson.
+
+| Dependency entry | Meaning |
+| --- | --- |
+| `"package-name": "^1.2.3"` | Resolve a NeoPackages registry package whose version matches the range |
+| `"hackage:package-name": "^1.2.3"` | Resolve a package from Hackage explicitly |
+| `"package-name": "github:owner/repository#revision"` | Use the named GitHub source and revision |
+| `"package-name": "git:https://host/repository.git#revision"` | Use another Git source |
+| `"package-name": "file:../package-directory"` | Use a local package you maintain alongside the application |
+
+Version ranges use forms such as `^1.2.3`, `~1.2.3`, and `>=1.2.3 <2.0.0`.
+A bare package name goes to the NeoPackages registry; it does not silently fall
+back to Hackage. Git sources without a revision default to `main`, so name a
+reviewed revision when repeatability matters.
+
+After editing `neo.json`, run from `mug-shop`:
+
+```sh
+neo build
+neo test
+```
+
+Review the generated changes and commit the dependency choice together with the
+application code and tests that use it. Do not maintain separate edits to the
+regenerated `.cabal`, `cabal.project`, or `flake.nix` files. The CLI has no `neo add`
+command in the version described here.
 
 ## Explore the application
 
+Start the IDE from your project directory:
+
 ```sh
 neo ide
-neo ide --port 2324
+```
+
+For a different IDE port, use `neo ide --port 2324` instead. Leave that process
+running and inspect the same project from a second terminal:
+
+```sh
 neo inspect
 neo inspect commands
 neo inspect wiring

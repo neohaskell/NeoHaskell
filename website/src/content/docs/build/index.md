@@ -1,60 +1,56 @@
 ---
-title: Build an application
-description: Turn application rules into behaviour you can inspect, test, and confidently delegate.
+title: "Build your application"
+description: Grow one project from its first request to decisions, views, tests, and integrations.
 sidebar:
   order: 0
 ---
 
-An application accepts requests, applies rules, remembers what happened, and presents useful information. NeoHaskell gives those responsibilities explicit places in the code. Understanding how they fit together helps you build applications whose behaviour you can explain and verify.
+An application accepts requests, applies rules, remembers what happened, and presents useful information. NeoHaskell gives those responsibilities explicit places in the code. Understanding those connections helps you build behaviour you can explain and verify.
 
-This section teaches you to direct your agent and assess its work. You will follow business decisions into the model, inspect the implementation, and check the resulting behaviour. You do not need to review every line to retain ownership of those decisions.
+This journey stays inside **your own project**, created with `neo new mug-shop`. You will author its modules, build with `neo build`, run with `neo run`, check it with `neo test`, and explore it with `neo ide`. Each lesson grows that same application.
 
-We practise with a small ecommerce project that begins with one mug and a cart. It gives the concepts a familiar, connected example to grow through the docs. Apply the same reasoning to the requests, rules, and workflows in the application you want to build.
+Our recurring practice project sells a mug. Ecommerce gives quantities, availability, and external work familiar meanings. Your actual application may manage appointments, documents, logistics, or something else; carry the method across to its requests and promises.
 
-## Choose your starting point
+## Choose your depth
 
-If you are evaluating NeoHaskell, read the opening and decision sections of each page. Together they explain what the approach offers and what responsibility remains with your team. Start with [why NeoHaskell](/start/why-neohaskell/) if you want the broader case first.
+If you are evaluating NeoHaskell, read the opening and decision sections. They explain the benefits and the responsibilities your team retains. Start with [why NeoHaskell](/start/why-neohaskell/) for the broader case.
 
-If you are building, complete [getting started](/getting-started/), then follow the sequence below. Keep the [visual IDE](/getting-started/visual-ide/) available to connect the business model with the code. The graph helps you locate relationships; tests establish what those relationships actually do.
+If you are building, complete [getting started](/getting-started/) and follow these milestones. Your coding agent can enter and adapt the files with you. The docs still show the implementation and its evidence, so you can question what it means.
 
-| Milestone | What you can understand or decide afterwards |
+| Milestone | What you will understand or build |
 | --- | --- |
-| [First working slice: a cart](/build/first-cart/) | Identify an accepted request and read its result. |
-| [Commands and events](/build/commands-and-events/) | State a rule and recognise the difference between a request and a recorded fact. |
-| [Entities and state](/build/entities-and-state/) | Explain how history produces the state used for the next decision. |
-| [Queries](/build/queries/) | Choose what each reader needs to see. |
-| [Coordinating changes: stock and checkout](/build/stock-and-checkout/) | Identify where two business processes need coordination. |
-| [HTTP and frontends](/build/http-and-frontend/) | Connect a screen to the real application contract. |
-| [Testing behaviour](/build/testing/) | Ask for evidence at the right boundary. |
-| [Access control](/build/access-control/) | Decide who can act and whose information they can see. |
-| [Configuration](/build/configuration/) | Separate deployment settings from business rules. |
-| [Assemble a practice application](/build/your-shop/) | Bring Cart and Stock into a generated project and verify the connection. |
-| [Language essentials](/build/language-essentials/) | Read the vocabulary your agent uses without a separate language course. |
+| [Your first working slice](/build/first-cart/) | Create Cart modules and read your own application's first result. |
+| [Explore your cart visually](/getting-started/visual-ide/) | Connect the command, event, and summary in your project's IDE. |
+| [Commands and events](/build/commands-and-events/) | Add an action with an explicit positive-quantity rule. |
+| [Entities and state](/build/entities-and-state/) | Explain how accepted history informs the next decision. |
+| [Queries](/build/queries/) | Shape information around a reader's question. |
+| [Stock and checkout](/build/stock-and-checkout/) | Add a second domain and identify the coordination it needs. |
+| [HTTP and frontends](/build/http-and-frontend/) | Connect an interface to real application outcomes. |
+| [Testing behaviour](/build/testing/) | Write decision, replay, and HTTP checks. |
+| [Access control](/build/access-control/) | Decide who may act and whose records they may see. |
+| [Configuration](/build/configuration/) | Connect settings to their actual consumers. |
+| [Review your application](/build/your-shop/) | Establish what works and choose the next useful slice. |
+| [Language essentials](/build/language-essentials/) | Read unfamiliar syntax as it becomes useful. |
 
-The language page is a companion you can consult whenever a symbol gets in the way. It is not a prerequisite exam.
+The language page is a companion, not an entrance exam. You can understand an action's meaning before memorising every declaration that supports it.
 
-## What you will actually run
+## Grow one promise at a time
 
-There are two public examples, with different purposes:
+The first application creates empty carts. We then add selections, a summary, and stock decisions. The [integration section](/connect/) joins those decisions and introduces external providers. [Run and evolve](/operate/) takes the same project into persistence, deployment, and change.
 
-- The **generated starter** contains a Counter. It is a small working orientation to commands, events, and queries.
-- The **repository testbed** contains Cart and Stock. These are the executable anchors for the ecommerce exercises.
+Each step has boundaries. A cart addition establishes a selection; an accepted order would require additional policy. A reservation rule can be tested before it has a trigger. A successful provider reply needs to be matched to the operation that requested it. Keep those meanings explicit as the project grows.
 
-The testbed is a feature demonstration with deliberately permissive policies. A cart is a customer's selection of goods; it is not an accepted, paid, or fulfilled order. The docs identify where you are reading existing behaviour and where you are designing an extension to the practice project. There is no hidden complete ecommerce application to install.
-
-That distinction is useful when working with an agent. Ask it to name which behaviour already exists, which policy you must decide, and which change it proposes. A plausible function name is not evidence that the feature exists.
+The introductory app uses an in-memory store and public local-development policies. Later chapters deliberately introduce durable storage and authentication rather than silently assuming they were already configured.
 
 ## A first decision you own
 
-For the first exercise, call the product **Everyday Mug**. Decide whether “two mugs” means one line with quantity two or two separate selections. Both representations can work, but they affect the count displayed on the cart icon. This is a small example of a general responsibility: define what a displayed value means before asking an agent to calculate it.
+Does “two mugs” mean one cart entry with quantity two, or two separate selections? We will use one entry per accepted addition. That makes one addition of two mugs count as one entry in the summary.
 
 <details>
 <summary>Suggested reasoning and checks</summary>
 
-The current testbed appends an entry for every accepted `AddItem`. Its summary counts entries, even when an entry has quantity greater than one. One addition of two mugs therefore produces `itemCount = 1`. Test a second addition, a rejected zero quantity, and the first valid quantity of one. Decide what the screen label should mean before changing the implementation.
+State what the interface's count means before implementing it. Check an empty cart, one addition of two units, a second addition, and a rejected zero quantity. If your application should merge repeated products or display total units, design and test that change explicitly.
 
 </details>
 
-When the core behaviour is understandable, continue to [integrations](/connect/) and [running and evolving applications](/operate/). Use the [glossary](/reference/glossary/) whenever a term needs a quick reminder.
-
-Public anchors: [starter application](https://github.com/neohaskell/NeoHaskell/blob/main/neo/starter/src/App.hs), [Cart model](https://github.com/neohaskell/NeoHaskell/blob/main/testbed/src/Testbed/Cart/Core.hs), [Cart summary](https://github.com/neohaskell/NeoHaskell/blob/main/testbed/src/Testbed/Cart/Queries/CartSummary.hs).
+Start with [your first working slice](/build/first-cart/). Consult the [glossary](/reference/glossary/) whenever a term needs a quick reminder.

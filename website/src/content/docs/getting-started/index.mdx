@@ -1,64 +1,83 @@
 ---
-title: "Run your first project"
-description: "Create a project, make a request, and check the result with a small working application."
+title: "Create your project"
+description: "Install Neo, create your own application, and learn the commands you will keep using as it grows."
 sidebar:
   order: 0
 ---
 
-Your first technical milestone is modest: make a request, see the accepted result,
-and run the checks that describe it. Start with the bundled counter application so
-you can separate setup problems from the rules you want to implement.
+Your first milestone is a project of your own. You will create it with `neo`, the
+NeoHaskell command-line tool, then grow it through the following chapters. The
+same directory will hold your code, tests, configuration, and visual model.
 
-The counter is a toolchain check. The next section uses the public cart and stock
-examples to teach commands, state, and queries. You can continue with the ecommerce
-practice project or use those concepts in your own application.
+We call the practice project `mug-shop`. It is a small application you are about
+to build. You can choose another name and use that directory wherever the guide
+says `mug-shop`.
 
 ## Prepare your tools
 
-Use macOS or Linux; on Windows, use a Linux environment such as WSL2. You need Git
-and [Nix with flakes enabled](https://nixos.org/download/). Nix supplies the pinned
-build tools and dependencies. The first build can take substantially longer than
-later builds; using the project's declared binary caches can avoid compiling many
-dependencies locally.
+Use macOS or Linux; on Windows, work inside WSL2. Install Git and
+[Nix for your operating system](https://nixos.org/download/). Nix supplies the
+compiler and build dependencies selected by your project. You do not need to
+install GHC or Cabal separately.
 
-If you already have `neo`, check its version:
+Check that both commands are available in a new terminal:
 
 ```sh
+git --version
+nix --version
+```
+
+Neo uses Nix flakes. If your Nix installation has not enabled them, add this line
+to `~/.config/nix/nix.conf`, preserving any existing settings:
+
+```ini
+experimental-features = nix-command flakes
+```
+
+## Install Neo
+
+Download the executable for your computer from the
+[Neo releases](https://github.com/neohaskell/NeoHaskell/releases/latest).
+
+:::note[Release requirement for this draft]
+
+These pragma-free examples target the next corrected Neo release. The published
+0.10.0 CLI is missing a required project default; the correction is being verified
+with this guide. Use the corrected release once available. You should not need
+to add language settings to your source files.
+
+:::
+
+| Computer | Download |
+| --- | --- |
+| macOS, Apple silicon | `neo-aarch64-apple-darwin` |
+| macOS, Intel | `neo-x86_64-apple-darwin` |
+| Linux or WSL2, Intel/AMD 64-bit | `neo-x86_64-unknown-linux-gnu` |
+| Linux, ARM 64-bit | `neo-aarch64-unknown-linux-gnu` |
+
+For example, on an Apple silicon Mac:
+
+```sh
+mkdir -p "$HOME/.local/bin"
+curl -fL https://github.com/neohaskell/NeoHaskell/releases/latest/download/neo-aarch64-apple-darwin -o "$HOME/.local/bin/neo"
+chmod +x "$HOME/.local/bin/neo"
+export PATH="$HOME/.local/bin:$PATH"
 neo --version
 ```
 
-For a source-based installation with pinned dependencies, clone the public repository and build
-its CLI package. Run these commands in a directory where you keep checkouts:
+For another platform, replace the final filename in the download URL with the
+one from the table. Keep the destination filename `neo`. Add the `export PATH`
+line to your shell's startup file (`~/.zshrc` for zsh, or `~/.bashrc` for bash)
+to make Neo available in future terminals too. The release includes `SHA256SUMS`
+if you want to check the downloaded file's checksum.
 
-```sh
-git clone https://github.com/neohaskell/NeoHaskell.git
-cd NeoHaskell
-nix build .#neo
-./result/bin/neo --version
-```
+The command prints the installed Neo version. `command -v neo` shows which
+executable your shell found. When upgrading, check both so an older installation
+does not take precedence on your `PATH`.
 
-Keep the checkout for the reference application later. To make this CLI available
-in the current terminal and terminals it launches:
+## Create the application
 
-```sh
-export PATH="$PWD/result/bin:$PATH"
-```
-
-This only changes the current shell environment. A newly opened independent
-terminal needs the same path setup, or your own persistent installation. Review
-Nix's cache-trust prompt before accepting the project configuration. If setup
-fails, keep the complete error and use [troubleshooting](/reference/troubleshooting/).
-
-The generated project's framework dependency is pinned by its CLI's embedded
-starter. A source checkout and an older installed CLI may describe different
-revisions. Use a matching CLI when comparing code with these docs; preserve the
-generated dependency pins until you intentionally upgrade.
-
-## Create the project
-
-From a directory outside the NeoHaskell checkout, create a project. We use
-`mug-shop` as the name for the ecommerce practice project; choose another name if
-you are working on your own idea, and use that directory in later commands.
+From the directory where you keep your projects:
 
 ```sh
 neo new mug-shop
@@ -66,88 +85,53 @@ cd mug-shop
 neo build
 ```
 
-`neo new` asks for project details and creates a starter. `neo build` reconciles the
-project's `neo.json` configuration into build files, then compiles the application.
-When adding modules or dependencies, work from that configuration instead of
-assuming hand edits to generated Cabal/Nix files will survive reconciliation.
+Accept the project details or choose your own when Neo prompts. `neo new` creates
+an application with a small starter, a test suite, and pinned dependencies.
+`neo build` compiles it. The first build can take longer while dependencies are
+downloaded or built; later builds reuse that work. Nix may ask whether to trust
+the project's declared binary caches.
 
-Run the application:
+The starter includes a counter as sample code. In the next chapter you will
+replace its application wiring with your first cart feature, inside this same
+project. There is no counter exercise to complete first.
 
-```sh
-neo run
-```
+## Find the parts you will change
 
-Leave it running while you use a second terminal for the requests below. The
-starter's web transport listens on port 8080. If another application uses that
-port, stop the other development process before starting this one.
+| Location | What you do there |
+| --- | --- |
+| `src/App.hs` | Connect your services, queries, event store, and web transport. |
+| `src/Shop/` | Add the application features you will write in this guide. |
+| `tests/` | Describe behaviour and check it repeatedly. |
+| `neo.json` | Set project details and declare additional dependencies. |
+| `flake.lock` and the `neo-version` in `neo.json` | Keep the resolved dependency versions reproducible. |
+| `event-model.json` | Save the visual model when you start using the IDE. |
 
-## Ask it to do something
+`src/Shop/` and `event-model.json` arrive in the next steps; they need not exist
+in the fresh starter. Neo generates the lower-level build files from your
+configuration and source modules. Make project changes through `neo.json` and
+rerun `neo build` instead of maintaining generated build files by hand.
 
-In the second terminal, create a counter:
+Keep the dependency pins that `neo new` supplies. They identify the framework
+revision compatible with the starter. Upgrading is a deliberate project change,
+with its own build and behaviour checks.
 
-```sh
-curl -i -X POST http://localhost:8080/commands/create-counter   -H 'Content-Type: application/json'   -d '{"label":"mugs"}'
-```
+## Learn the daily loop
 
-Expect HTTP 200 and an `entityId`. Copy that identifier into this next request,
-replacing `PASTE-UUID`:
+You will keep using these commands from the project root:
 
-```sh
-curl -i -X POST http://localhost:8080/commands/increment-counter   -H 'Content-Type: application/json'   -d '{"entityId":"PASTE-UUID","amount":2}'
+| Command | What it gives you |
+| --- | --- |
+| `neo build` | A compiler check of the application and its wiring. |
+| `neo run` | A running application for trying requests. |
+| `neo test` | Your project's repeatable behaviour checks. |
+| `neo ide` | A visual workspace for exploring the application's model. |
 
-curl -i http://localhost:8080/queries/counter-view
-```
+A successful build is your setup check for now. In the next chapter you will
+create a cart, send a request to it, and read back the result. That connects
+compilation with behaviour you can actually inspect.
 
-The query returns an envelope with an `items` collection. Find your identifier and
-look for value `2`. The view updates asynchronously, so a request made immediately
-after the command may need to be repeated. This distinction becomes important in
-[queries](/build/queries/).
+If a command fails, keep its full error and use
+[troubleshooting](/reference/troubleshooting/). If you already have an application,
+apply the new feature there rather than running `neo new` again.
 
-Now send a request the application must refuse:
-
-```sh
-curl -i -X POST http://localhost:8080/commands/create-counter   -H 'Content-Type: application/json'   -d '{"label":""}'
-```
-
-Expect HTTP 400. You have checked an accepted request and an actual business-rule
-refusal, rather than only checking that a server process starts.
-
-## Run the repeatable checks
-
-Stop `neo run` with Ctrl-C before asking the test runner to start its own server.
-From the generated project directory:
-
-```sh
-neo test
-```
-
-This runs the project's unit tests and Hurl HTTP tests. The starter includes a
-counter lifecycle that creates, increments, decrements, and reads the counter,
-plus a refusal for an empty label. Its expected final value is `1`.
-
-The starter event store uses `persistent = False`. Restarting the application
-loses its example history. That is useful for a disposable first run; choose and
-verify [durable persistence](/operate/persistence/) before storing data you need to keep.
-
-## Make one small prediction
-
-Restart `neo run` and create a new counter first: the test runner stops its own
-server, and the starter does not preserve counters across restarts. Before asking
-your agent to change anything, predict what incrementing by zero will do. Send
-that request with the new counter identifier and compare the result with your
-prediction.
-
-<details>
-<summary>Suggested reasoning</summary>
-
-The starter requires a positive increment. Zero is refused. A refusal must leave
-the previous value unchanged. Check the value as well as the response status.
-
-</details>
-
-Next, [explore the project visually](/getting-started/visual-ide/), then
-[build the first cart slice](/build/first-cart/).
-
-Implementation evidence: [CLI commands](https://github.com/neohaskell/NeoHaskell/blob/main/neo/src/cli.rs),
-[starter wiring](https://github.com/neohaskell/NeoHaskell/blob/main/neo/starter/src/App.hs),
-and [the counter acceptance scenario](https://github.com/neohaskell/NeoHaskell/blob/main/neo/starter/tests/scenarios/counter-flow.hurl).
+Next: [build your first cart](/build/first-cart/).
