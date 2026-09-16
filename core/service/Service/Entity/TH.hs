@@ -68,13 +68,18 @@ emitCheckedFamily familyName argumentName expectedName = do
   case existing of
     [] ->
       pure [familyDeclaration familyName argumentName (TH.ConT expectedName)] -- HOOK-ALLOW: TH.Q declaration generation.
-    [TH.TySynInstD (TH.TySynEqn _ _ existingType)] -> do
-      actual <- resolveNullaryAliases existingType
-      expected <- resolveNullaryAliases (TH.ConT expectedName)
-      if actual == expected
-        then pure [] -- HOOK-ALLOW: TH.Q declaration generation.
-        else conflictingFamily familyName argumentName expectedName
+    [TH.TySynInstD (TH.TySynEqn _ _ existingType)] ->
+      checkExistingMapping familyName argumentName expectedName existingType
     _ -> conflictingFamily familyName argumentName expectedName
+
+
+checkExistingMapping :: TH.Name -> TH.Name -> TH.Name -> TH.Type -> THLib.DecsQ
+checkExistingMapping familyName argumentName expectedName existingType = do
+  actual <- resolveNullaryAliases existingType
+  expected <- resolveNullaryAliases (TH.ConT expectedName)
+  if actual == expected
+    then pure [] -- HOOK-ALLOW: TH.Q declaration generation.
+    else conflictingFamily familyName argumentName expectedName
 
 
 familyDeclaration :: TH.Name -> TH.Name -> TH.Type -> TH.Dec

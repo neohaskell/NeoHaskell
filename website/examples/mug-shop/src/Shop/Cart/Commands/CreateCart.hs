@@ -5,7 +5,6 @@ import Shop.Cart.Events.CartCreated qualified as CartCreated
 import Decider qualified
 import Service.Auth (RequestContext (..), UserClaims (..))
 import Service.Command.Core (TransportsOf)
-import Service.CommandExecutor.TH (command)
 import Service.Transport.Web (WebTransport)
 import Shop.Cart.Core (CartEntity (..), CartEvent (..))
 import Uuid qualified
@@ -33,4 +32,4 @@ createCart context = do
 type instance EntityOf CreateCart = CartEntity
 type instance TransportsOf CreateCart = '[WebTransport]
 
-command ''CreateCart
+deriveCommand ''CreateCart

@@ -5,7 +5,6 @@ import Shop.Cart.Events.ItemAdded qualified as ItemAdded
 import Decider qualified
 import Service.Auth (RequestContext)
 import Service.Command.Core (TransportsOf)
-import Service.CommandExecutor.TH (command)
 import Service.Transport.Web (WebTransport)
 import Shop.Cart.Core (CartEntity (..), CartEvent (..))
 
@@ -29,4 +28,4 @@ addToCart request cart =
 type instance EntityOf AddItem = CartEntity
 type instance TransportsOf AddItem = '[WebTransport]
 
-command ''AddItem
+deriveCommand ''AddItem

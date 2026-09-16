@@ -54,7 +54,7 @@ handleEvent cart event =
     _ -> Integration.none
 
 
-outboundIntegration ''ReserveStockOnItemAdded
+deriveOutboundIntegration ''ReserveStockOnItemAdded
 ```
 
 Read it aloud: when an item is added, ask stock to reserve the quantity for this
@@ -66,16 +66,16 @@ function still supplies the rule; the marker does not choose when stock should
 be reserved.
 
 The typed integration reconstructs Cart state from its recorded history. Its
-registration therefore needs a default starting value for `CartEntity`. In
-`src/Shop/Cart/Entity.hs`, use the same initial state as the entity itself:
+registration needs a default starting value for `CartEntity`; the entity marker
+already supplies it from `initialState`:
 
 ```haskell
-instance Default CartEntity where
-  def = initialState
+deriveEntity ''CartEntity ''CartEvent
 ```
 
-The complete Cart checkpoint already includes this instance. If you have followed
-the declarations by hand, add it once; it introduces no second set of cart rules.
+Keep that declaration in `src/Shop/Cart/Entity.hs` after its companions. The
+complete Cart checkpoint includes it; no second set of cart rules or manual
+`Default` instance is needed.
 
 Bring `ReserveStockOnItemAdded` into scope in `src/App.hs`, then add this line to the existing application pipeline, retaining both service
 registrations and their queries:

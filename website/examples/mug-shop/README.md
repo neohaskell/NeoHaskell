@@ -37,15 +37,24 @@ no reservation integration yet; use the following Connect lessons to add it.
 
 ## API compatibility and provenance
 
-The verification projects use framework revision
-`25bd7027a85b8f2999602f66b46b4b6b133c22e8`. The CLI must supply
-`DerivingStrategies` through its generated compiler configuration; the stock
-0.10.0 CLI lacks that setting. This change corrects the CLI preset. Application
-modules deliberately contain no language pragmas.
+These revised checkpoints require the upcoming framework version that exports
+`deriveEvent`, `deriveCommand`, `deriveEntity`, `deriveQuery`, and
+`deriveOutboundIntegration` from `Core`. They also require the corrected Neo
+compiler preset with `DerivingStrategies`; application modules contain no
+language pragmas. The released 0.10.0 framework pin
+`25bd7027a85b8f2999602f66b46b4b6b133c22e8` does not supply the new helpers, even
+when used with a corrected CLI.
+
+The revised first-Cart checkpoint compiled against framework revision
+`45e6fcc251de413d198be5c13cd583a82d3b2d57`, and its two unit examples passed.
+Further compilation and HTTP checks were stopped at the maintainer’s request
+to prioritize the documentation. Earlier complete checkpoint results predate
+this migration; see `website/DOCUMENTATION_REVIEW.md` for the exact evidence.
 
 The files copy-adapt the public Cart/Stock domain APIs, starter application
 composition, and starter decision/Hurl testing patterns. Events and commands
-use their derivation markers; queries place `deriveQuery` before `QueryOf`.
+use their `Core` derivation helpers; entities use `deriveEntity` after their
+initial-state, update, and event-routing companions; queries place `deriveQuery` before `QueryOf`.
 Each domain separates its Entity, Event, and individual Events modules; Core is
 a small re-export facade. Cart entries use `stockId` and `quantity` directly. Every accepted addition
 appends one entry, even when its quantity is more than one.

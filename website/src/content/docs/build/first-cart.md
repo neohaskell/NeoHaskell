@@ -43,7 +43,7 @@ data Event = Event
 This marker tells NeoHaskell to treat the declaration as an event and supply its routine supporting code:
 
 ```haskell
-EventTH.event ''Event
+deriveEvent ''Event
 ```
 
 We keep this payload in its own file. A separate `CartEvent` type lists the facts this domain understands; today its only possibility is `CartCreated`.
@@ -61,6 +61,17 @@ After creation, the cart has an identifier and an owner. The entity's update fun
 
 This belongs in `Entity.hs`. `Core.hs` is only a small convenience module that re-exports the domain's entity and event types; it contains no decisions or state-update logic.
 
+After `initialState` and `update`, the entity marker connects this state to its events:
+
+```haskell
+deriveEntity ''CartEntity ''CartEvent
+```
+
+The complete file imports `getEventEntityId` from the event module before this
+marker. You supply those three pieces of behaviour; NeoHaskell generates the
+routine entity, JSON, default-state, and event-routing instances. Like the event
+and command helpers, `deriveEntity` comes from `Core`.
+
 The initial nil identifier is a starting value for reconstruction. It is not evidence that a real cart exists. A real cart begins with an accepted creation event.
 
 ## 3. Accept the person's request
@@ -76,7 +87,7 @@ decide _ existing context = case existing of
 After the decision and its entity/transport declarations, the command marker connects this behaviour to the framework:
 
 ```haskell
-command ''CreateCart
+deriveCommand ''CreateCart
 ```
 
 The creation helper generates the cart ID and records `CartCreated`. For this local exercise it generates an anonymous owner when no signed-in identity exists.

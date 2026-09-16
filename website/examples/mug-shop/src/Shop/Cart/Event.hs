@@ -1,7 +1,6 @@
 module Shop.Cart.Event (CartEvent (..), getEventEntityId) where
 
 import Core
-import Service.Event.TH qualified as EventTH
 import Shop.Cart.Events.CartCreated qualified as CartCreated
 import Shop.Cart.Events.ItemAdded qualified as ItemAdded
 
@@ -15,4 +14,4 @@ getEventEntityId change = case change of
   CartCreated fact -> fact.entityId
   ItemAdded fact -> fact.entityId
 
-EventTH.event ''CartEvent
+deriveEvent ''CartEvent

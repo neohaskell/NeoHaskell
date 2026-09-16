@@ -7,7 +7,6 @@ module Shop.Cart.Commands.CreateCartInternal (
 import Core
 import Service.Auth (RequestContext)
 import Service.Command.Core (TransportsOf)
-import Service.CommandExecutor.TH (command)
 import Service.Transport.Internal (InternalTransport)
 import Shop.Cart.Commands.CreateCart qualified as CreateCart
 import Shop.Cart.Core (CartEntity, CartEvent)
@@ -29,4 +28,4 @@ type instance EntityOf CreateCartInternal = CartEntity
 type instance TransportsOf CreateCartInternal = '[InternalTransport]
 
 
-command ''CreateCartInternal
+deriveCommand ''CreateCartInternal

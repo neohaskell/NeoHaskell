@@ -1,7 +1,7 @@
 {
   "schema": "human-documentation/v1",
   "methodology": "DOCUMENTATION_PLAN.md",
-  "sourceRevision": "25bd7027a85b8f2999602f66b46b4b6b133c22e8",
+  "sourceRevision": "45e6fcc251de413d198be5c13cd583a82d3b2d57",
   "requiredPages": [
     "src/content/docs/index.mdx",
     "src/content/docs/start/index.md",
@@ -115,27 +115,27 @@
     "core/service/Service/Auth.hs": "1cf7799accdf59fd1281c6a74542258033fd492b54886e38de90a1fffa7bb8d9",
     "core/service/Service/Command/Core.hs": "034fd81190ae3dda556cf3430afa97505e14f3d11894e0cfba4280bd182b4d35",
     "core/service/Service/CommandExecutor/Core.hs": "f70426423f17e3f8df40f8599caa293493eb4e1d0cb40a3a5f81ae379d946468",
-    "core/service/Service/CommandExecutor/TH.hs": "8b61866d2047b7412efaa436588a84f774555e3314b9729a8c82b36a48f3167d",
+    "core/service/Service/CommandExecutor/TH.hs": "9c4ea884fdd469046cacdd9e42755489df63dab91acdc64fd8fc23ab1abbded3",
     "core/service/Service/Entity/Core.hs": "c615465b6fa11f0fbaf065c8a99d0f04d1eaf7b452d38d0cea61a7bc2cbdf714",
     "core/service/Service/Event/EventMetadata.hs": "411f23dfad45ead63d92765f3d8bad6a8c6d901a3a8becd686f21b2e9c80a2d0",
-    "core/service/Service/Event/TH.hs": "671712d5c4dbb9bb6d5f97dd088d19e239c02036acbe38988c953a16bef526e3",
+    "core/service/Service/Event/TH.hs": "c5032dfe88a2be3644c8cb19cd4e63a6442fecb5444f3b63055fbcb287c5a2fe",
     "core/service/Service/EventStore/Core.hs": "f8c5aecec7d2fce60d1806ff43343dfde18c3ca54c3fc3be0c19ca7507741384",
     "core/service/Service/FileUpload/Resolver.hs": "25b64eeb2c4101013165348e9160d34ccbbad35c06b5f4dff1c6b8c56d083904",
     "core/service/Service/FileUpload/Web.hs": "8c7ac5577f78af6efe74b37c5e2ad06bfcc22cb624aba135edbfbe4e70dfacde",
     "core/service/Service/Infra/Postgres/ConnectionConfig.hs": "a9b4f80abea827262163f306235c40feacbb5187f9ae2fc46626013c96dde3ba",
     "core/service/Service/Infra/Postgres/SslMode.hs": "98fe13adf8f8ab94b4eccd886086e84db858f049bfb9afd439ba169d9bf94975",
     "core/service/Service/Integration/Dispatcher.hs": "3d21c5673426bb649d8c1c58b3e919bd939775dc90674db7a057c5b6ecbc5b06",
-    "core/service/Service/OutboundIntegration/TH.hs": "3f37c9fedc3bf36690df9b9f5c055733f68744a1e35e0ccc17c5ffb9d3fef260",
+    "core/service/Service/OutboundIntegration/TH.hs": "e0a191e7d4eef782e03d1034d315015dbf6f5d8bbb5152843580babad9576964",
     "core/service/Service/Query/Core.hs": "610f35c757a290204dc12d70dd11e48839acc0148a55fa29e5e399ad4db1e4cc",
     "core/service/Service/Query/Endpoint.hs": "419a086dd0784cd1f0e7b516c3b1119630a81f1d1eb1fe2c651d931254cceef0",
     "core/service/Service/Query/Pagination.hs": "5f8d9a49041ffec78e949326d8ab963080a890d7037b8b3b08ffe16e8b9cbb2a",
     "core/service/Service/Query/Subscriber.hs": "269374a6d2f2a36e512ebd66078cdc701549d7c350b53f75a5905c690a24823e",
-    "core/service/Service/Query/TH.hs": "e6f144bde2f8e88035f8d45919eec1a77c66f8e98517cd50d3907e90cc5a8ca3",
+    "core/service/Service/Query/TH.hs": "98d1e270ff75aebd51b247ff8e2e35f78291c990c1d27b0c9d84a4190ac253ce",
     "core/service/Service/QueryObjectStore/Postgres.hs": "25748f61e86002d7e3fcc2d3871d3a1ec3d3c6d5c83db02821c64f10628e05f0",
     "core/service/Service/Response.hs": "01232e340b10670b8e8e2cae75fc99b68ffae9e42b269d20d726e0aaf629e032",
     "core/service/Service/Transport/Web.hs": "6359523d86c3806aa3d37b6b1fd53d51b46220b2a7bd77efe213d25a8c19b125",
     "core/test-service/Service/EventStore/Postgres/PoolBudgetSpec.hs": "5567b642c5995542518c156b67fc4cec75c3a94d9c8cadf9f06f24767959b8c9",
-    "core/test-service/Service/Query/DefinitionSpec.hs": "673b2588c0076af0252ea0ffd9538166e4806ed13efcc8c5869ea572000aed28",
+    "core/test-service/Service/Query/DefinitionSpec.hs": "1a029d11a75967c31a8a8f183fd135bd30e8454e363e2eee46212a1f5ca44df5",
     "core/test-service/Service/Query/Subscriber/ReadinessSpec.hs": "c7a93a3b70a037b47906bb4dd0614bdee7e9b58f72259917da7f09f6ac384a8a",
     "core/test/Auth/OAuth2/RoutesSpec.hs": "ab23f589c2280ec9792a8319cbd0db7efe08778a9b20f09862ab940b76fe9ad2",
     "core/test/Auth/OAuth2/TokenRefreshSpec.hs": "71f529aab9e864108b0c4fef7e1b58ba10304d3c764ecbbb4dc73e1e9d42c560",
@@ -216,7 +216,7 @@
     "testbed/src/Testbed/Cart/Integrations.hs": "bc738d5e56879ac1280e9439ecbf185689665c6866802d5471ac758734626da3",
     "testbed/src/Testbed/Cart/Integrations/EventCounter.hs": "2832afe50b3a3e496ba4d3e50760701c836dad7432afe807df4a1d65dcfc5116",
     "testbed/src/Testbed/Cart/Integrations/ReserveStockOnItemAdded.hs": "79a75d2e7d57e68bc3b154acd5e3f176b8edc911aa2d7b770ede442750983f38",
-    "testbed/src/Testbed/Cart/Queries/CartSummary.hs": "f399368f362fdbbc609ae20900117ca1eff1e33d4a575c865895bcb8a99dcd67",
+    "testbed/src/Testbed/Cart/Queries/CartSummary.hs": "b61544c48fd6a4cfd618c108cafd30de03cbf5247d8dc3993482d9a2b0326daa",
     "testbed/src/Testbed/Cart/Service.hs": "bedac357f9017d86df18aab8f219ffda984ef2cd89f4e2dd748771adf4f1e967",
     "testbed/src/Testbed/Config.hs": "dbafe479e1b0d8299fb5681c66125ff4b8e79203347d7aa6803abc527f7e3578",
     "testbed/src/Testbed/Document/Commands/CreateDocument.hs": "4491c5de10ba58d9d6a499744cd94b0f7f9309a89d9340272b03f849f1fd74c1",
@@ -224,7 +224,7 @@
     "testbed/src/Testbed/Stock/Commands/InitializeStock.hs": "1ed8697a99d82be371b50af6595d7f820b5c6db0eb729b3bfc3364692c5598cf",
     "testbed/src/Testbed/Stock/Commands/ReserveStock.hs": "112d945a0c8dde847ec30b9d52a5415794d609a5535464ef321ea01ec2988c0e",
     "testbed/src/Testbed/Stock/Core.hs": "ac8e0ad83fc04807be69a1833ba785a9a06d000ebb0840bd7f1520a563ac43c1",
-    "testbed/src/Testbed/Stock/Queries/StockLevel.hs": "6fb07f5bbe752fcb7451b0e1fa616161fb1bab95bba488640ed91f3a4e3c87f2",
+    "testbed/src/Testbed/Stock/Queries/StockLevel.hs": "4b98403534bb6b29ef5d218c77c917cfb422e97d5105e8c3f141fba48c584f10",
     "testbed/src/Testbed/Stock/Service.hs": "4e886247f65ccdb0b31e6a845f1141e27c1292f16d55250f3cdda814eadb2b43",
     "testbed/tests/commands/create-cart.hurl": "3713445875592e709c06067a4638e97bc6c8a731d3e38411179337bace668d9c",
     "testbed/tests/files/download.hurl": "3ba567b1323fe25d85fba6f609318487c42685ec7df2d8d4e1224992e8ef427e",
@@ -247,11 +247,11 @@
     "core/service/Service/EventStore/Postgres/Internal.hs": "18c7b377fc0148ab903be2002d8e7e39c6bb9736948f875a3733afb9e166acd5",
     "website/examples/mug-shop-connect/src/Shop/Uploads.hs": "2a14d0830b3ec1b7acb9e1434ff080dadd8df1f0b95c21aaa7f2b91b6897d10e",
     "website/examples/mug-shop-connect/src/Shop/Cart/Timers.hs": "e427255ff8f6d592f11939b0d13f84abd2accedb6bc762a4a2b47e4dd9e46985",
-    "website/examples/mug-shop-connect/src/Shop/Cart/Integrations/ReserveStockOnItemAdded.hs": "12e8ba9350dd0d7752fc6e811b5cfdb92062f8115a7f9942e8a9c660a9bc2c4a",
+    "website/examples/mug-shop-connect/src/Shop/Cart/Integrations/ReserveStockOnItemAdded.hs": "00e04803b7763e15c5fc320247d183c8aa60bda8b64579a22a59b52c66b51ca7",
     "website/examples/mug-shop-connect/tests/stock-reservation.hurl": "02f8661df9b9ff65089fb2beecb774ac00bfc988d1a802a1609e2ec49d4034f0",
-    "website/examples/mug-shop/src/Shop/Cart/Commands/CreateCart.hs": "5ef0d6009f12ff731362bc9a060ea0348c6ed00d4ecf951575709a1fb032696e",
-    "website/examples/mug-shop/src/Shop/Cart/Commands/AddItem.hs": "e6987e0a7aa8d552f049f3979e994a67d6e75ada114a1328314ce140f70fd14e",
-    "website/examples/mug-shop/src/Shop/Cart/Queries/CartSummary.hs": "ac9355e780fab98b02ee8ed0bf618e09686e4a59dbfc40cb1eac70cbef7df111",
+    "website/examples/mug-shop/src/Shop/Cart/Commands/CreateCart.hs": "fecc0c0c09af5b3837e73a5cf631fb7e64b430c8ac69cdfb2788bfcbeffcdf9a",
+    "website/examples/mug-shop/src/Shop/Cart/Commands/AddItem.hs": "5cc9302505f287e1aa8006ebf7162472f55333bff2a7f480fdb0b4436ea14f48",
+    "website/examples/mug-shop/src/Shop/Cart/Queries/CartSummary.hs": "0bdb7d413a2a80b2e2e1987a532b1c8571865c4be671825206528f7411b3a54a",
     "website/examples/mug-shop/src/Shop/Cart/Core.hs": "b040afcfaa9b754559635327480d4247b7755e43cfca2d75d007cc231dd39271",
     "website/examples/mug-shop/src/Shop/Cart/Service.hs": "20e581f22c8c4be7431250291442cb73122307fad96112de059107608d43f664",
     "core/service/Decider.hs": "51f945582024bcbc6fcd03b61e48f1ef5b9174076030566901e0386b79a7f27e",
@@ -259,16 +259,16 @@
     "website/examples/mug-shop/src/App.hs": "405472c1c992621cf5fcbb591000299d5e9cc517ee98f786e9fcef83f2c33fef",
     "core/service/Service/EventStore/Simple.hs": "f8d6c7095e6bfdff6ddf13e23b3c09116f1267344b7122d0962d6ae445b6830f",
     "website/examples/mug-shop/first-cart/src/Shop/Cart/Core.hs": "b040afcfaa9b754559635327480d4247b7755e43cfca2d75d007cc231dd39271",
-    "website/examples/mug-shop/first-cart/src/Shop/Cart/Commands/CreateCart.hs": "5ef0d6009f12ff731362bc9a060ea0348c6ed00d4ecf951575709a1fb032696e",
-    "website/examples/mug-shop/first-cart/src/Shop/Cart/Queries/CartSummary.hs": "9eb967c51b48cfbf2faac60bbf77f5e24fb3a9c0f760eec56773a0ba56ca9934",
+    "website/examples/mug-shop/first-cart/src/Shop/Cart/Commands/CreateCart.hs": "fecc0c0c09af5b3837e73a5cf631fb7e64b430c8ac69cdfb2788bfcbeffcdf9a",
+    "website/examples/mug-shop/first-cart/src/Shop/Cart/Queries/CartSummary.hs": "46877dc4c9f4c2a28e10888a86af08532992fd4dfde565165f9490adfb3ceafe",
     "website/examples/mug-shop/first-cart/src/Shop/Cart/Service.hs": "09a372bc1681aa04a0c8053b75efd42641496139beffecb323ad5f3b25df41a4",
     "website/examples/mug-shop/first-cart/src/App.hs": "836dedac6dd04ecfd3b25ef36c7c7baf120bc4077ec44296926e3e44e2df01c9",
     "website/examples/mug-shop/first-cart/tests/scenarios/create-cart.hurl": "167b8dc856d5213b5f37a0078b4114ac8ce4b5a4a29257053f9b0aa411f9fb2b",
     "website/examples/mug-shop/first-cart/tests/Decider/Cart/CreateCartSpec.hs": "895b3369820d81abde29a89bc0fecb5e1dee277784c2bc7d453ff85e7e2ebcfd",
     "website/examples/mug-shop/src/Shop/Stock/Core.hs": "77cdd45b4d12d98b6def68ab4a99d4cdd9e257cc4cfa393792e3095c78368479",
-    "website/examples/mug-shop/src/Shop/Stock/Commands/InitializeStock.hs": "8e0322b02fa5fa49fac39b6d7948dad514608c1df88aa2ee56ed7a8c0589262e",
-    "website/examples/mug-shop/src/Shop/Stock/Commands/ReserveStock.hs": "4c78b9d0b44c9b6ebbadc61665994c1aa55aad4f9ae30d1d0cc668f9953aebb0",
-    "website/examples/mug-shop/src/Shop/Stock/Queries/StockLevel.hs": "4eddd10edaf7d177a595523b3bd9bf2b85c85779727e50259a91c51ec3c304d3",
+    "website/examples/mug-shop/src/Shop/Stock/Commands/InitializeStock.hs": "3605e2d01a2088e8545d0ba823e3c5ed0188a3d1e66dbe6ea6c1a358bb0f5636",
+    "website/examples/mug-shop/src/Shop/Stock/Commands/ReserveStock.hs": "ae6b2b9907c54ccff070332202684868bb6bb8c95a8f1ac3ff7481c5d9feb803",
+    "website/examples/mug-shop/src/Shop/Stock/Queries/StockLevel.hs": "44128c1781699f5af51595701e61ea2008b4dbd244d19df40c94759f8f7e310d",
     "website/examples/mug-shop/src/Shop/Stock/Service.hs": "3e14e9601e713475e302317ca2f86264bb968167f08c8dd2075ea79788eb4017",
     "website/examples/mug-shop/tests/Decider/Cart/AddItemSpec.hs": "19564ac6d4f6ae164286af88bc0ad16fe7bb3d3bfce0617d8d40a50ff39da1da",
     "website/examples/mug-shop/tests/Decider/Cart/ReplaySpec.hs": "5d6ba0a3d44d3f541586208a2d6009a3be04d0862798cc19655deb01b7947478",
@@ -278,28 +278,30 @@
     "website/examples/mug-shop/persistence/src/App.hs": "4ba75ed4fbbe3446631741d09969381ec58cedbafd0c9eb2a806994bf375b5b3",
     "website/examples/mug-shop/persistence/src/Shop/Config.hs": "4a2d6999193714073902682f4c905f4e0cd781b1335aff8630287f05522ee254",
     "core/service/Service/ServiceDefinition/Core.hs": "03bc90c9bb9261f52667476890d903abc11c60da05c5fcc1e1bcbe88188afd7c",
-    "website/examples/mug-shop-connect/src/Shop/Cart/Commands/CreateCartInternal.hs": "4df3247e5532f1c9ceb61b43a91934e21844d04311e39ff968f7945f21e161b6",
+    "website/examples/mug-shop-connect/src/Shop/Cart/Commands/CreateCartInternal.hs": "c64bae2ba01e591434e0d83e4ac1bc0b6a076c96eec9f3fc51c0f545d99b1e33",
     "website/examples/mug-shop-connect/src/Shop/Cart/Service.hs": "44a40f43323c69bae27d5b8c7920ac57ac6d2961cddc12c563a1f2e49bb1773b",
-    "website/examples/mug-shop-connect/README.md": "df2402c80f8dac9213f21e54a172821e3d125e2f42e01e2c55169a917d00a9fb",
-    "website/examples/mug-shop/src/Shop/Cart/Events/ItemAdded.hs": "c944c8a5246a2059f0c5397fa1a87b9dcec0c7daeca9272c6065e2d6307fec3d",
-    "website/examples/mug-shop/src/Shop/Cart/Event.hs": "c0c5b52c5b97d97600db8fbdbc5d75126c278109f198bc75cad59d248c321382",
-    "website/examples/mug-shop/src/Shop/Cart/Entity.hs": "68ae6993b56d0cd10ad0c99fa213c23c70e1f1ecd6d18b938b1c92bea619de01",
+    "website/examples/mug-shop-connect/README.md": "4cbc9308961bf8fdf222c460ed7948e1cda2088934f31c48dd95b262428fbfc0",
+    "website/examples/mug-shop/src/Shop/Cart/Events/ItemAdded.hs": "1684ebff2e466c904930566fe953ae43a395eaaa5daeedf0bf28786caad5827e",
+    "website/examples/mug-shop/src/Shop/Cart/Event.hs": "727b4236261b9e2c855a62a2acd73b2b047d0e9097da5bd521831ae4c5395cb0",
+    "website/examples/mug-shop/src/Shop/Cart/Entity.hs": "bad0f914f90a18f674fe58185f47c81dc2c143719d57dd63d5c53346cfc3214c",
     "website/examples/mug-shop/src/Shop/Cart/Item.hs": "a6889dec388da082dda933472fd1aa6312eef6b7fa663010c938a6cab28931f4",
-    "website/examples/mug-shop/first-cart/src/Shop/Cart/Events/CartCreated.hs": "de47f3413df3812f0b23b2a2c7b9adee4db0a0d1bba41c4e57083c1cf6951a1c",
-    "website/examples/mug-shop/first-cart/src/Shop/Cart/Event.hs": "075e08167be2a01bc7da71e2185144d92f879518f8e166e35ca1c28b25b0a41d",
-    "website/examples/mug-shop/first-cart/src/Shop/Cart/Entity.hs": "fb8d32f4730fa30f0201e635040c6683d0d03a5bbad20a4c70dda8d436119e51",
-    "website/examples/mug-shop/src/Shop/Stock/Event.hs": "95116cbc60cf865a4b336e6c6cc5c1567ba2d374a6850733a788a170954138a7",
-    "website/examples/mug-shop/src/Shop/Stock/Events/StockInitialized.hs": "8a9d9d71902ab13690c7b10d48d2416ffe418baf4a345ac9d3ae5b4267a3d6cc",
-    "website/examples/mug-shop/src/Shop/Stock/Events/StockReserved.hs": "d1e7bbf3a735c2797cb99d2e3065ff1028262a4f49e98d1af71e334e9af216c7",
-    "website/examples/mug-shop/src/Shop/Stock/Entity.hs": "d1498d6894eafadc41b4359613b424306ac827c152f3690298a4b9e66ae60ffb",
+    "website/examples/mug-shop/first-cart/src/Shop/Cart/Events/CartCreated.hs": "030b05157957afe86b9a6f7a91938fae4bd2672069d4a98adf2565e1c70a127a",
+    "website/examples/mug-shop/first-cart/src/Shop/Cart/Event.hs": "1ee794a0dce8d8b8ba364e24942c26c7cff66f57496ec1b76ef160405d2ec15d",
+    "website/examples/mug-shop/first-cart/src/Shop/Cart/Entity.hs": "0923d56644e44d9ff1d6be56fcc50e92a8ac517cf21ea25673a33fb0df78b79e",
+    "website/examples/mug-shop/src/Shop/Stock/Event.hs": "fc1ff477c0008ad45dd1161eadc93434988d0461703af155b526e6be676cf9ae",
+    "website/examples/mug-shop/src/Shop/Stock/Events/StockInitialized.hs": "7c014636573958107faa4e5cad37498ada09ee1c83aa97d4bcea2cee97edcd21",
+    "website/examples/mug-shop/src/Shop/Stock/Events/StockReserved.hs": "e50b50d0bad3e360a4c770eaf61804412d2bd3509aba0f24ab21641c20dbc6de",
+    "website/examples/mug-shop/src/Shop/Stock/Entity.hs": "30993a8e03f7b0f153ebe4bc84d0cef2bf59968bd7fff23409739514b4a6d528",
     "website/examples/mug-shop/tests/scenarios/stock-flow.hurl": "8c2be36fac3397e2cc2bd8131c545a379b194f65b42bea2cbd0919bb55dd505b",
     "website/examples/mug-shop/first-cart/tests/Spec.hs": "2fbd14b119a40eaca54f6255686c7cfbe8ff26a9c18d79ec474a61225232d324",
     "website/examples/mug-shop/tests/Spec.hs": "2fbd14b119a40eaca54f6255686c7cfbe8ff26a9c18d79ec474a61225232d324",
-    "website/examples/mug-shop/src/Shop/Cart/Events/CartCreated.hs": "de47f3413df3812f0b23b2a2c7b9adee4db0a0d1bba41c4e57083c1cf6951a1c",
+    "website/examples/mug-shop/src/Shop/Cart/Events/CartCreated.hs": "030b05157957afe86b9a6f7a91938fae4bd2672069d4a98adf2565e1c70a127a",
     "website/examples/mug-shop/tests/scenarios/create-cart.hurl": "167b8dc856d5213b5f37a0078b4114ac8ce4b5a4a29257053f9b0aa411f9fb2b",
     "website/examples/mug-shop/tests/Decider/Cart/CreateCartSpec.hs": "895b3369820d81abde29a89bc0fecb5e1dee277784c2bc7d453ff85e7e2ebcfd",
     "website/examples/mug-shop/persistence/src/Shop/Storage.hs": "cb00f31e97fb1464ff2a370ecd785a342647832fffba5b55bdc8de368baf0112",
-    "website/examples/mug-shop/persistence/README.md": "1a1724b3dbb30df6c65c4f09933bfa7898317413daacec38a834a05f27d96258"
+    "website/examples/mug-shop/persistence/README.md": "007ee473907d8ed9184f7d17c4b9fa8644d999c0e9f7fba86c7793d71c2c48b6",
+    "core/core/Core.hs": "c11ab0bd7c125a4cb9fdeac553361a5f899589972e9eb9c478b01e45130638a8",
+    "core/service/Service/Entity/TH.hs": "cb285b50ffefdd190f263d31a4436d6a35211f18e53bf9a4197a09325c038ff5"
   },
   "pages": [
     {
@@ -333,7 +335,7 @@
         "independence": true,
         "domainTransfer": true
       },
-      "notes": "Own-project journey with focused declarations and canonical concept markers; module headers, imports, and optional equality/serialization setup remain in complete downloadable checkpoints. Real event fixtures retain Eq for complete accepted-payload tests: event marker generates Show, Generic and JSON, not Eq. Plain entities/value records have no corresponding concept marker. First-cart build/test verified; intermediate Cart and end-Build runtime checks remain in progress with corrected Neo CLI and released framework pin, no final pass claimed yet. Authentication is an explicit provider-dependent variant; no real provider configuration or credentialed request was executed. Final runtime verification: first Cart build + 2 unit examples + 1 HTTP scenario; Cart additions build + 8 unit examples + 2 HTTP scenarios; end-of-Build build + 12 unit examples + 3 HTTP scenarios, all passing on the corrected local CLI against framework revision 25bd7027a85b8f2999602f66b46b4b6b133c22e8, with no compiler override or language pragmas. Baseline HTTP smoke confirms cart selections do not reserve stock before integration.",
+      "notes": "Own-project journey with focused declarations and canonical concept markers; module headers, imports, and optional equality/serialization setup remain in complete downloadable checkpoints. Real event fixtures retain Eq for complete accepted-payload tests: event marker generates Show, Generic and JSON, not Eq. Entities now use deriveEntity; ordinary value records keep their supporting instances in complete files. First-cart build/test verified; intermediate Cart and end-Build runtime checks remain in progress with corrected Neo CLI and released framework pin, no final pass claimed yet. Authentication is an explicit provider-dependent variant; no real provider configuration or credentialed request was executed. Final runtime verification: first Cart build + 2 unit examples + 1 HTTP scenario; Cart additions build + 8 unit examples + 2 HTTP scenarios; end-of-Build build + 12 unit examples + 3 HTTP scenarios, all passing on the corrected local CLI against framework revision 25bd7027a85b8f2999602f66b46b4b6b133c22e8, with no compiler override or language pragmas. Baseline HTTP smoke confirms cart selections do not reserve stock before integration. Canonical Core derive-helper migration reviewed. The revised first-Cart checkpoint compiled and passed its two unit examples at 45e6fcc251de413d198be5c13cd583a82d3b2d57. Remaining compilation and HTTP revalidation were stopped at the maintainer’s request to prioritize documentation delivery; earlier complete runtime evidence predates this migration.",
       "excerpts": []
     },
     {
@@ -355,7 +357,9 @@
         "website/examples/mug-shop/src/Shop/Cart/Service.hs",
         "website/examples/mug-shop/src/Shop/Cart/Queries/CartSummary.hs",
         "core/service/Service/CommandExecutor/TH.hs",
-        "core/service/Decider.hs"
+        "core/service/Decider.hs",
+        "core/core/Core.hs",
+        "core/service/Service/Entity/TH.hs"
       ],
       "review": {
         "accessibleOpening": true,
@@ -365,7 +369,7 @@
         "independence": true,
         "domainTransfer": true
       },
-      "notes": "Own-project journey with focused declarations and canonical concept markers; module headers, imports, and optional equality/serialization setup remain in complete downloadable checkpoints. Real event fixtures retain Eq for complete accepted-payload tests: event marker generates Show, Generic and JSON, not Eq. Plain entities/value records have no corresponding concept marker. First-cart build/test verified; intermediate Cart and end-Build runtime checks remain in progress with corrected Neo CLI and released framework pin, no final pass claimed yet. Final runtime verification: first Cart build + 2 unit examples + 1 HTTP scenario; Cart additions build + 8 unit examples + 2 HTTP scenarios; end-of-Build build + 12 unit examples + 3 HTTP scenarios, all passing on the corrected local CLI against framework revision 25bd7027a85b8f2999602f66b46b4b6b133c22e8, with no compiler override or language pragmas. Baseline HTTP smoke confirms cart selections do not reserve stock before integration.",
+      "notes": "Own-project journey with focused declarations and canonical concept markers; module headers, imports, and optional equality/serialization setup remain in complete downloadable checkpoints. Real event fixtures retain Eq for complete accepted-payload tests: event marker generates Show, Generic and JSON, not Eq. Entities now use deriveEntity; ordinary value records keep their supporting instances in complete files. First-cart build/test verified; intermediate Cart and end-Build runtime checks remain in progress with corrected Neo CLI and released framework pin, no final pass claimed yet. Final runtime verification: first Cart build + 2 unit examples + 1 HTTP scenario; Cart additions build + 8 unit examples + 2 HTTP scenarios; end-of-Build build + 12 unit examples + 3 HTTP scenarios, all passing on the corrected local CLI against framework revision 25bd7027a85b8f2999602f66b46b4b6b133c22e8, with no compiler override or language pragmas. Baseline HTTP smoke confirms cart selections do not reserve stock before integration. Canonical Core derive-helper migration reviewed. The revised first-Cart checkpoint compiled and passed its two unit examples at 45e6fcc251de413d198be5c13cd583a82d3b2d57. Remaining compilation and HTTP revalidation were stopped at the maintainer’s request to prioritize documentation delivery; earlier complete runtime evidence predates this migration.",
       "excerpts": [
         {
           "source": "website/examples/mug-shop/src/Shop/Cart/Events/ItemAdded.hs",
@@ -373,7 +377,7 @@
         },
         {
           "source": "website/examples/mug-shop/src/Shop/Stock/Events/StockReserved.hs",
-          "text": "EventTH.event ''Event"
+          "text": "deriveEvent ''Event"
         },
         {
           "source": "website/examples/mug-shop/src/Shop/Cart/Event.hs",
@@ -381,7 +385,7 @@
         },
         {
           "source": "website/examples/mug-shop/src/Shop/Cart/Event.hs",
-          "text": "EventTH.event ''CartEvent"
+          "text": "deriveEvent ''CartEvent"
         },
         {
           "source": "website/examples/mug-shop/src/Shop/Cart/Item.hs",
@@ -401,7 +405,7 @@
         },
         {
           "source": "website/examples/mug-shop/src/Shop/Cart/Commands/AddItem.hs",
-          "text": "command ''AddItem"
+          "text": "deriveCommand ''AddItem"
         },
         {
           "source": "website/examples/mug-shop/src/Shop/Cart/Service.hs",
@@ -437,7 +441,7 @@
         "independence": true,
         "domainTransfer": true
       },
-      "notes": "Own-project journey with focused declarations and canonical concept markers; module headers, imports, and optional equality/serialization setup remain in complete downloadable checkpoints. Real event fixtures retain Eq for complete accepted-payload tests: event marker generates Show, Generic and JSON, not Eq. Plain entities/value records have no corresponding concept marker. First-cart build/test verified; intermediate Cart and end-Build runtime checks remain in progress with corrected Neo CLI and released framework pin, no final pass claimed yet. Final runtime verification: first Cart build + 2 unit examples + 1 HTTP scenario; Cart additions build + 8 unit examples + 2 HTTP scenarios; end-of-Build build + 12 unit examples + 3 HTTP scenarios, all passing on the corrected local CLI against framework revision 25bd7027a85b8f2999602f66b46b4b6b133c22e8, with no compiler override or language pragmas. Baseline HTTP smoke confirms cart selections do not reserve stock before integration.",
+      "notes": "Own-project journey with focused declarations and canonical concept markers; module headers, imports, and optional equality/serialization setup remain in complete downloadable checkpoints. Real event fixtures retain Eq for complete accepted-payload tests: event marker generates Show, Generic and JSON, not Eq. Entities now use deriveEntity; ordinary value records keep their supporting instances in complete files. First-cart build/test verified; intermediate Cart and end-Build runtime checks remain in progress with corrected Neo CLI and released framework pin, no final pass claimed yet. Final runtime verification: first Cart build + 2 unit examples + 1 HTTP scenario; Cart additions build + 8 unit examples + 2 HTTP scenarios; end-of-Build build + 12 unit examples + 3 HTTP scenarios, all passing on the corrected local CLI against framework revision 25bd7027a85b8f2999602f66b46b4b6b133c22e8, with no compiler override or language pragmas. Baseline HTTP smoke confirms cart selections do not reserve stock before integration. Canonical Core derive-helper migration reviewed. The revised first-Cart checkpoint compiled and passed its two unit examples at 45e6fcc251de413d198be5c13cd583a82d3b2d57. Remaining compilation and HTTP revalidation were stopped at the maintainer’s request to prioritize documentation delivery; earlier complete runtime evidence predates this migration.",
       "excerpts": [
         {
           "source": "website/examples/mug-shop/src/Shop/Config.hs",
@@ -458,7 +462,8 @@
       ],
       "sources": [
         "website/examples/mug-shop/src/Shop/Cart/Entity.hs",
-        "core/service/Service/Entity/Core.hs"
+        "core/service/Service/Entity/Core.hs",
+        "core/service/Service/Entity/TH.hs"
       ],
       "review": {
         "accessibleOpening": true,
@@ -468,11 +473,11 @@
         "independence": true,
         "domainTransfer": true
       },
-      "notes": "Own-project journey with focused declarations and canonical concept markers; module headers, imports, and optional equality/serialization setup remain in complete downloadable checkpoints. Real event fixtures retain Eq for complete accepted-payload tests: event marker generates Show, Generic and JSON, not Eq. Plain entities/value records have no corresponding concept marker. First-cart build/test verified; intermediate Cart and end-Build runtime checks remain in progress with corrected Neo CLI and released framework pin, no final pass claimed yet. Final runtime verification: first Cart build + 2 unit examples + 1 HTTP scenario; Cart additions build + 8 unit examples + 2 HTTP scenarios; end-of-Build build + 12 unit examples + 3 HTTP scenarios, all passing on the corrected local CLI against framework revision 25bd7027a85b8f2999602f66b46b4b6b133c22e8, with no compiler override or language pragmas. Baseline HTTP smoke confirms cart selections do not reserve stock before integration.",
+      "notes": "Own-project journey with focused declarations and canonical concept markers; module headers, imports, and optional equality/serialization setup remain in complete downloadable checkpoints. Real event fixtures retain Eq for complete accepted-payload tests: event marker generates Show, Generic and JSON, not Eq. Entities now use deriveEntity; ordinary value records keep their supporting instances in complete files. First-cart build/test verified; intermediate Cart and end-Build runtime checks remain in progress with corrected Neo CLI and released framework pin, no final pass claimed yet. Final runtime verification: first Cart build + 2 unit examples + 1 HTTP scenario; Cart additions build + 8 unit examples + 2 HTTP scenarios; end-of-Build build + 12 unit examples + 3 HTTP scenarios, all passing on the corrected local CLI against framework revision 25bd7027a85b8f2999602f66b46b4b6b133c22e8, with no compiler override or language pragmas. Baseline HTTP smoke confirms cart selections do not reserve stock before integration. Canonical Core derive-helper migration reviewed. The revised first-Cart checkpoint compiled and passed its two unit examples at 45e6fcc251de413d198be5c13cd583a82d3b2d57. Remaining compilation and HTTP revalidation were stopped at the maintainer’s request to prioritize documentation delivery; earlier complete runtime evidence predates this migration.",
       "excerpts": [
         {
           "source": "website/examples/mug-shop/src/Shop/Cart/Entity.hs",
-          "text": "instance Entity CartEntity where\n  initialStateImpl = initialState\n  updateImpl = update"
+          "text": "deriveEntity ''CartEntity ''CartEvent"
         }
       ]
     },
@@ -499,7 +504,9 @@
         "website/examples/mug-shop/first-cart/tests/Decider/Cart/CreateCartSpec.hs",
         "core/service/Service/Event/TH.hs",
         "core/service/Service/Application.hs",
-        "neo/src/commands/test.rs"
+        "neo/src/commands/test.rs",
+        "core/core/Core.hs",
+        "core/service/Service/Entity/TH.hs"
       ],
       "review": {
         "accessibleOpening": true,
@@ -509,7 +516,7 @@
         "independence": true,
         "domainTransfer": true
       },
-      "notes": "Own-project journey with focused declarations and canonical concept markers; module headers, imports, and optional equality/serialization setup remain in complete downloadable checkpoints. Real event fixtures retain Eq for complete accepted-payload tests: event marker generates Show, Generic and JSON, not Eq. Plain entities/value records have no corresponding concept marker. Verified first-cart checkpoint with local corrected Neo CLI (SHA256 b1dfa23946bb79a19e527633fc7d01855de72414ea1daa4f999fb8a6e02b70c3) and released framework revision25bd7027a85b8f2999602f66b46b4b6b133c22e8: neo build passed; warmed neo test passed2 Hspec examples and1 Hurl scenario. No cabal.project.local override or LANGUAGE pragmas. Initial cold HTTP readiness timed out after60s; diagnostic neo run served HTTP200 and normal neo test retry passed. Final runtime verification: first Cart build + 2 unit examples + 1 HTTP scenario; Cart additions build + 8 unit examples + 2 HTTP scenarios; end-of-Build build + 12 unit examples + 3 HTTP scenarios, all passing on the corrected local CLI against framework revision 25bd7027a85b8f2999602f66b46b4b6b133c22e8, with no compiler override or language pragmas. Baseline HTTP smoke confirms cart selections do not reserve stock before integration.",
+      "notes": "Own-project journey with focused declarations and canonical concept markers; module headers, imports, and optional equality/serialization setup remain in complete downloadable checkpoints. Real event fixtures retain Eq for complete accepted-payload tests: event marker generates Show, Generic and JSON, not Eq. Entities now use deriveEntity; ordinary value records keep their supporting instances in complete files. Verified first-cart checkpoint with local corrected Neo CLI (SHA256 b1dfa23946bb79a19e527633fc7d01855de72414ea1daa4f999fb8a6e02b70c3) and released framework revision25bd7027a85b8f2999602f66b46b4b6b133c22e8: neo build passed; warmed neo test passed2 Hspec examples and1 Hurl scenario. No cabal.project.local override or LANGUAGE pragmas. Initial cold HTTP readiness timed out after60s; diagnostic neo run served HTTP200 and normal neo test retry passed. Final runtime verification: first Cart build + 2 unit examples + 1 HTTP scenario; Cart additions build + 8 unit examples + 2 HTTP scenarios; end-of-Build build + 12 unit examples + 3 HTTP scenarios, all passing on the corrected local CLI against framework revision 25bd7027a85b8f2999602f66b46b4b6b133c22e8, with no compiler override or language pragmas. Baseline HTTP smoke confirms cart selections do not reserve stock before integration. Canonical Core derive-helper migration reviewed. The revised first-Cart checkpoint compiled and passed its two unit examples at 45e6fcc251de413d198be5c13cd583a82d3b2d57. Remaining compilation and HTTP revalidation were stopped at the maintainer’s request to prioritize documentation delivery; earlier complete runtime evidence predates this migration.",
       "excerpts": [
         {
           "source": "website/examples/mug-shop/first-cart/src/Shop/Cart/Events/CartCreated.hs",
@@ -517,7 +524,7 @@
         },
         {
           "source": "website/examples/mug-shop/first-cart/src/Shop/Cart/Events/CartCreated.hs",
-          "text": "EventTH.event ''Event"
+          "text": "deriveEvent ''Event"
         },
         {
           "source": "website/examples/mug-shop/first-cart/src/Shop/Cart/Entity.hs",
@@ -529,7 +536,7 @@
         },
         {
           "source": "website/examples/mug-shop/first-cart/src/Shop/Cart/Commands/CreateCart.hs",
-          "text": "command ''CreateCart"
+          "text": "deriveCommand ''CreateCart"
         },
         {
           "source": "website/examples/mug-shop/first-cart/src/Shop/Cart/Queries/CartSummary.hs",
@@ -546,6 +553,10 @@
         {
           "source": "website/examples/mug-shop/first-cart/src/Shop/Cart/Queries/CartSummary.hs",
           "text": "deriveQuery ''CartSummary [''CartEntity]"
+        },
+        {
+          "source": "website/examples/mug-shop/first-cart/src/Shop/Cart/Entity.hs",
+          "text": "deriveEntity ''CartEntity ''CartEvent"
         }
       ]
     },
@@ -571,7 +582,7 @@
         "independence": true,
         "domainTransfer": true
       },
-      "notes": "Own-project journey with focused declarations and canonical concept markers; module headers, imports, and optional equality/serialization setup remain in complete downloadable checkpoints. Real event fixtures retain Eq for complete accepted-payload tests: event marker generates Show, Generic and JSON, not Eq. Plain entities/value records have no corresponding concept marker. First-cart build/test verified; intermediate Cart and end-Build runtime checks remain in progress with corrected Neo CLI and released framework pin, no final pass claimed yet. JavaScript and CORS are partial interface examples, not a shipped frontend. Final runtime verification: first Cart build + 2 unit examples + 1 HTTP scenario; Cart additions build + 8 unit examples + 2 HTTP scenarios; end-of-Build build + 12 unit examples + 3 HTTP scenarios, all passing on the corrected local CLI against framework revision 25bd7027a85b8f2999602f66b46b4b6b133c22e8, with no compiler override or language pragmas. Baseline HTTP smoke confirms cart selections do not reserve stock before integration.",
+      "notes": "Own-project journey with focused declarations and canonical concept markers; module headers, imports, and optional equality/serialization setup remain in complete downloadable checkpoints. Real event fixtures retain Eq for complete accepted-payload tests: event marker generates Show, Generic and JSON, not Eq. Entities now use deriveEntity; ordinary value records keep their supporting instances in complete files. First-cart build/test verified; intermediate Cart and end-Build runtime checks remain in progress with corrected Neo CLI and released framework pin, no final pass claimed yet. JavaScript and CORS are partial interface examples, not a shipped frontend. Final runtime verification: first Cart build + 2 unit examples + 1 HTTP scenario; Cart additions build + 8 unit examples + 2 HTTP scenarios; end-of-Build build + 12 unit examples + 3 HTTP scenarios, all passing on the corrected local CLI against framework revision 25bd7027a85b8f2999602f66b46b4b6b133c22e8, with no compiler override or language pragmas. Baseline HTTP smoke confirms cart selections do not reserve stock before integration.",
       "excerpts": []
     },
     {
@@ -595,7 +606,7 @@
         "independence": true,
         "domainTransfer": true
       },
-      "notes": "Own-project journey with focused declarations and canonical concept markers; module headers, imports, and optional equality/serialization setup remain in complete downloadable checkpoints. Real event fixtures retain Eq for complete accepted-payload tests: event marker generates Show, Generic and JSON, not Eq. Plain entities/value records have no corresponding concept marker. First-cart build/test verified; intermediate Cart and end-Build runtime checks remain in progress with corrected Neo CLI and released framework pin, no final pass claimed yet. Final runtime verification: first Cart build + 2 unit examples + 1 HTTP scenario; Cart additions build + 8 unit examples + 2 HTTP scenarios; end-of-Build build + 12 unit examples + 3 HTTP scenarios, all passing on the corrected local CLI against framework revision 25bd7027a85b8f2999602f66b46b4b6b133c22e8, with no compiler override or language pragmas. Baseline HTTP smoke confirms cart selections do not reserve stock before integration.",
+      "notes": "Own-project journey with focused declarations and canonical concept markers; module headers, imports, and optional equality/serialization setup remain in complete downloadable checkpoints. Real event fixtures retain Eq for complete accepted-payload tests: event marker generates Show, Generic and JSON, not Eq. Entities now use deriveEntity; ordinary value records keep their supporting instances in complete files. First-cart build/test verified; intermediate Cart and end-Build runtime checks remain in progress with corrected Neo CLI and released framework pin, no final pass claimed yet. Final runtime verification: first Cart build + 2 unit examples + 1 HTTP scenario; Cart additions build + 8 unit examples + 2 HTTP scenarios; end-of-Build build + 12 unit examples + 3 HTTP scenarios, all passing on the corrected local CLI against framework revision 25bd7027a85b8f2999602f66b46b4b6b133c22e8, with no compiler override or language pragmas. Baseline HTTP smoke confirms cart selections do not reserve stock before integration. Canonical Core derive-helper migration reviewed. The revised first-Cart checkpoint compiled and passed its two unit examples at 45e6fcc251de413d198be5c13cd583a82d3b2d57. Remaining compilation and HTTP revalidation were stopped at the maintainer’s request to prioritize documentation delivery; earlier complete runtime evidence predates this migration.",
       "excerpts": []
     },
     {
@@ -615,7 +626,8 @@
         "core/traits/Mappable.hs",
         "core/traits/Default.hs",
         "testbed/src/Testbed/Cart/Queries/CartSummary.hs",
-        "codemap/api-hot.md"
+        "codemap/api-hot.md",
+        "core/core/Core.hs"
       ],
       "review": {
         "accessibleOpening": true,
@@ -625,7 +637,7 @@
         "independence": true,
         "domainTransfer": true
       },
-      "notes": "Own-project journey with focused declarations and canonical concept markers; module headers, imports, and optional equality/serialization setup remain in complete downloadable checkpoints. Real event fixtures retain Eq for complete accepted-payload tests: event marker generates Show, Generic and JSON, not Eq. Plain entities/value records have no corresponding concept marker. First-cart build/test verified; intermediate Cart and end-Build runtime checks remain in progress with corrected Neo CLI and released framework pin, no final pass claimed yet. Final runtime verification: first Cart build + 2 unit examples + 1 HTTP scenario; Cart additions build + 8 unit examples + 2 HTTP scenarios; end-of-Build build + 12 unit examples + 3 HTTP scenarios, all passing on the corrected local CLI against framework revision 25bd7027a85b8f2999602f66b46b4b6b133c22e8, with no compiler override or language pragmas. Baseline HTTP smoke confirms cart selections do not reserve stock before integration.",
+      "notes": "Own-project journey with focused declarations and canonical concept markers; module headers, imports, and optional equality/serialization setup remain in complete downloadable checkpoints. Real event fixtures retain Eq for complete accepted-payload tests: event marker generates Show, Generic and JSON, not Eq. Entities now use deriveEntity; ordinary value records keep their supporting instances in complete files. First-cart build/test verified; intermediate Cart and end-Build runtime checks remain in progress with corrected Neo CLI and released framework pin, no final pass claimed yet. Final runtime verification: first Cart build + 2 unit examples + 1 HTTP scenario; Cart additions build + 8 unit examples + 2 HTTP scenarios; end-of-Build build + 12 unit examples + 3 HTTP scenarios, all passing on the corrected local CLI against framework revision 25bd7027a85b8f2999602f66b46b4b6b133c22e8, with no compiler override or language pragmas. Baseline HTTP smoke confirms cart selections do not reserve stock before integration. Canonical Core derive-helper migration reviewed. The revised first-Cart checkpoint compiled and passed its two unit examples at 45e6fcc251de413d198be5c13cd583a82d3b2d57. Remaining compilation and HTTP revalidation were stopped at the maintainer’s request to prioritize documentation delivery; earlier complete runtime evidence predates this migration.",
       "excerpts": [
         {
           "source": "website/examples/mug-shop/src/Shop/Cart/Queries/CartSummary.hs",
@@ -646,7 +658,8 @@
         "core/service/Service/Query/Core.hs",
         "core/service/Service/Query/Pagination.hs",
         "core/neoql/NeoQL/Parser.hs",
-        "core/test-service/Service/Query/DefinitionSpec.hs"
+        "core/test-service/Service/Query/DefinitionSpec.hs",
+        "core/core/Core.hs"
       ],
       "review": {
         "accessibleOpening": true,
@@ -656,7 +669,7 @@
         "independence": true,
         "domainTransfer": true
       },
-      "notes": "Own-project journey with focused declarations and canonical concept markers; module headers, imports, and optional equality/serialization setup remain in complete downloadable checkpoints. Real event fixtures retain Eq for complete accepted-payload tests: event marker generates Show, Generic and JSON, not Eq. Plain entities/value records have no corresponding concept marker. First-cart build/test verified; intermediate Cart and end-Build runtime checks remain in progress with corrected Neo CLI and released framework pin, no final pass claimed yet. Final runtime verification: first Cart build + 2 unit examples + 1 HTTP scenario; Cart additions build + 8 unit examples + 2 HTTP scenarios; end-of-Build build + 12 unit examples + 3 HTTP scenarios, all passing on the corrected local CLI against framework revision 25bd7027a85b8f2999602f66b46b4b6b133c22e8, with no compiler override or language pragmas. Baseline HTTP smoke confirms cart selections do not reserve stock before integration.",
+      "notes": "Own-project journey with focused declarations and canonical concept markers; module headers, imports, and optional equality/serialization setup remain in complete downloadable checkpoints. Real event fixtures retain Eq for complete accepted-payload tests: event marker generates Show, Generic and JSON, not Eq. Entities now use deriveEntity; ordinary value records keep their supporting instances in complete files. First-cart build/test verified; intermediate Cart and end-Build runtime checks remain in progress with corrected Neo CLI and released framework pin, no final pass claimed yet. Final runtime verification: first Cart build + 2 unit examples + 1 HTTP scenario; Cart additions build + 8 unit examples + 2 HTTP scenarios; end-of-Build build + 12 unit examples + 3 HTTP scenarios, all passing on the corrected local CLI against framework revision 25bd7027a85b8f2999602f66b46b4b6b133c22e8, with no compiler override or language pragmas. Baseline HTTP smoke confirms cart selections do not reserve stock before integration. Canonical Core derive-helper migration reviewed. The revised first-Cart checkpoint compiled and passed its two unit examples at 45e6fcc251de413d198be5c13cd583a82d3b2d57. Remaining compilation and HTTP revalidation were stopped at the maintainer’s request to prioritize documentation delivery; earlier complete runtime evidence predates this migration.",
       "excerpts": [
         {
           "source": "website/examples/mug-shop/src/Shop/Cart/Queries/CartSummary.hs",
@@ -694,7 +707,7 @@
         "independence": true,
         "domainTransfer": true
       },
-      "notes": "Own-project journey with focused declarations and canonical concept markers; module headers, imports, and optional equality/serialization setup remain in complete downloadable checkpoints. Real event fixtures retain Eq for complete accepted-payload tests: event marker generates Show, Generic and JSON, not Eq. Plain entities/value records have no corresponding concept marker. First-cart build/test verified; intermediate Cart and end-Build runtime checks remain in progress with corrected Neo CLI and released framework pin, no final pass claimed yet. Reservation is internal and untriggered until Connect; baseline correctly expects available3/reserved0 after cart addition. Final runtime verification: first Cart build + 2 unit examples + 1 HTTP scenario; Cart additions build + 8 unit examples + 2 HTTP scenarios; end-of-Build build + 12 unit examples + 3 HTTP scenarios, all passing on the corrected local CLI against framework revision 25bd7027a85b8f2999602f66b46b4b6b133c22e8, with no compiler override or language pragmas. Baseline HTTP smoke confirms cart selections do not reserve stock before integration.",
+      "notes": "Own-project journey with focused declarations and canonical concept markers; module headers, imports, and optional equality/serialization setup remain in complete downloadable checkpoints. Real event fixtures retain Eq for complete accepted-payload tests: event marker generates Show, Generic and JSON, not Eq. Entities now use deriveEntity; ordinary value records keep their supporting instances in complete files. First-cart build/test verified; intermediate Cart and end-Build runtime checks remain in progress with corrected Neo CLI and released framework pin, no final pass claimed yet. Reservation is internal and untriggered until Connect; baseline correctly expects available3/reserved0 after cart addition. Final runtime verification: first Cart build + 2 unit examples + 1 HTTP scenario; Cart additions build + 8 unit examples + 2 HTTP scenarios; end-of-Build build + 12 unit examples + 3 HTTP scenarios, all passing on the corrected local CLI against framework revision 25bd7027a85b8f2999602f66b46b4b6b133c22e8, with no compiler override or language pragmas. Baseline HTTP smoke confirms cart selections do not reserve stock before integration. Canonical Core derive-helper migration reviewed. The revised first-Cart checkpoint compiled and passed its two unit examples at 45e6fcc251de413d198be5c13cd583a82d3b2d57. Remaining compilation and HTTP revalidation were stopped at the maintainer’s request to prioritize documentation delivery; earlier complete runtime evidence predates this migration.",
       "excerpts": [
         {
           "source": "website/examples/mug-shop/src/Shop/Stock/Event.hs",
@@ -702,7 +715,7 @@
         },
         {
           "source": "website/examples/mug-shop/src/Shop/Stock/Event.hs",
-          "text": "EventTH.event ''StockEvent"
+          "text": "deriveEvent ''StockEvent"
         },
         {
           "source": "website/examples/mug-shop/src/Shop/Stock/Entity.hs",
@@ -714,7 +727,7 @@
         },
         {
           "source": "website/examples/mug-shop/src/Shop/Stock/Commands/InitializeStock.hs",
-          "text": "command ''InitializeStock"
+          "text": "deriveCommand ''InitializeStock"
         },
         {
           "source": "website/examples/mug-shop/src/Shop/Stock/Commands/ReserveStock.hs",
@@ -755,7 +768,7 @@
         "independence": true,
         "domainTransfer": true
       },
-      "notes": "Own-project journey with focused declarations and canonical concept markers; module headers, imports, and optional equality/serialization setup remain in complete downloadable checkpoints. Real event fixtures retain Eq for complete accepted-payload tests: event marker generates Show, Generic and JSON, not Eq. Plain entities/value records have no corresponding concept marker. First-cart build/test verified; intermediate Cart and end-Build runtime checks remain in progress with corrected Neo CLI and released framework pin, no final pass claimed yet. Final runtime verification: first Cart build + 2 unit examples + 1 HTTP scenario; Cart additions build + 8 unit examples + 2 HTTP scenarios; end-of-Build build + 12 unit examples + 3 HTTP scenarios, all passing on the corrected local CLI against framework revision 25bd7027a85b8f2999602f66b46b4b6b133c22e8, with no compiler override or language pragmas. Baseline HTTP smoke confirms cart selections do not reserve stock before integration.",
+      "notes": "Own-project journey with focused declarations and canonical concept markers; module headers, imports, and optional equality/serialization setup remain in complete downloadable checkpoints. Real event fixtures retain Eq for complete accepted-payload tests: event marker generates Show, Generic and JSON, not Eq. Entities now use deriveEntity; ordinary value records keep their supporting instances in complete files. First-cart build/test verified; intermediate Cart and end-Build runtime checks remain in progress with corrected Neo CLI and released framework pin, no final pass claimed yet. Final runtime verification: first Cart build + 2 unit examples + 1 HTTP scenario; Cart additions build + 8 unit examples + 2 HTTP scenarios; end-of-Build build + 12 unit examples + 3 HTTP scenarios, all passing on the corrected local CLI against framework revision 25bd7027a85b8f2999602f66b46b4b6b133c22e8, with no compiler override or language pragmas. Baseline HTTP smoke confirms cart selections do not reserve stock before integration. Canonical Core derive-helper migration reviewed. The revised first-Cart checkpoint compiled and passed its two unit examples at 45e6fcc251de413d198be5c13cd583a82d3b2d57. Remaining compilation and HTTP revalidation were stopped at the maintainer’s request to prioritize documentation delivery; earlier complete runtime evidence predates this migration.",
       "excerpts": [
         {
           "source": "website/examples/mug-shop/tests/Decider/Cart/AddItemSpec.hs",
@@ -828,7 +841,7 @@
         "independence": true,
         "domainTransfer": true
       },
-      "notes": "Own-project journey with focused declarations and canonical concept markers; module headers, imports, and optional equality/serialization setup remain in complete downloadable checkpoints. Real event fixtures retain Eq for complete accepted-payload tests: event marker generates Show, Generic and JSON, not Eq. Plain entities/value records have no corresponding concept marker. First-cart build/test verified; intermediate Cart and end-Build runtime checks remain in progress with corrected Neo CLI and released framework pin, no final pass claimed yet. Final runtime verification: first Cart build + 2 unit examples + 1 HTTP scenario; Cart additions build + 8 unit examples + 2 HTTP scenarios; end-of-Build build + 12 unit examples + 3 HTTP scenarios, all passing on the corrected local CLI against framework revision 25bd7027a85b8f2999602f66b46b4b6b133c22e8, with no compiler override or language pragmas. Baseline HTTP smoke confirms cart selections do not reserve stock before integration.",
+      "notes": "Own-project journey with focused declarations and canonical concept markers; module headers, imports, and optional equality/serialization setup remain in complete downloadable checkpoints. Real event fixtures retain Eq for complete accepted-payload tests: event marker generates Show, Generic and JSON, not Eq. Entities now use deriveEntity; ordinary value records keep their supporting instances in complete files. First-cart build/test verified; intermediate Cart and end-Build runtime checks remain in progress with corrected Neo CLI and released framework pin, no final pass claimed yet. Final runtime verification: first Cart build + 2 unit examples + 1 HTTP scenario; Cart additions build + 8 unit examples + 2 HTTP scenarios; end-of-Build build + 12 unit examples + 3 HTTP scenarios, all passing on the corrected local CLI against framework revision 25bd7027a85b8f2999602f66b46b4b6b133c22e8, with no compiler override or language pragmas. Baseline HTTP smoke confirms cart selections do not reserve stock before integration. Canonical Core derive-helper migration reviewed. The revised first-Cart checkpoint compiled and passed its two unit examples at 45e6fcc251de413d198be5c13cd583a82d3b2d57. Remaining compilation and HTTP revalidation were stopped at the maintainer’s request to prioritize documentation delivery; earlier complete runtime evidence predates this migration.",
       "excerpts": []
     },
     {
@@ -1013,7 +1026,7 @@
         "independence": true,
         "domainTransfer": true
       },
-      "notes": "Reviewed for the progressive-depth method and continuous reader-created mug-shop project: accessible capability opening, focused declarations and logic, explicit file destinations, no module/import boilerplate or language pragmas, canonical concept markers, and clear application-specific outcomes. Complete implementation files are available in the downloadable integration checkpoint. Framework source links are optional evidence, never a checkout prerequisite. Executable checkpoint built and final neo test passed (12 unit examples, 4 Hurl scenarios). Separate neo run observation on temporary port 8082 verified a 23-byte text upload/download byte-for-byte with ShopConfig plus the static withFileUpload @() factory. This proves the anonymous local route and configuration wiring; authenticated ownership, persistence across restart, and cleanup were not runtime-verified. Temporary App edits were restored byte-for-byte afterward. Human reader trials remain pending.",
+      "notes": "Reviewed for the progressive-depth method and continuous reader-created mug-shop project: accessible capability opening, focused declarations and logic, explicit file destinations, no module/import boilerplate or language pragmas, canonical concept markers, and clear application-specific outcomes. Complete implementation files are available in the downloadable integration checkpoint. Framework source links are optional evidence, never a checkout prerequisite. Executable checkpoint built and final neo test passed (12 unit examples, 4 Hurl scenarios). Separate neo run observation on temporary port 8082 verified a 23-byte text upload/download byte-for-byte with ShopConfig plus the static withFileUpload @() factory. This proves the anonymous local route and configuration wiring; authenticated ownership, persistence across restart, and cleanup were not runtime-verified. Temporary App edits were restored byte-for-byte afterward. Human reader trials remain pending. Canonical Core derive-helper migration reviewed. The revised first-Cart checkpoint compiled and passed its two unit examples at 45e6fcc251de413d198be5c13cd583a82d3b2d57. Remaining compilation and HTTP revalidation were stopped at the maintainer’s request to prioritize documentation delivery; earlier complete runtime evidence predates this migration.",
       "excerpts": [
         {
           "source": "website/examples/mug-shop-connect/src/Shop/Uploads.hs",
@@ -1139,7 +1152,7 @@
         "independence": true,
         "domainTransfer": true
       },
-      "notes": "Reviewed for the progressive-depth method and continuous reader-created mug-shop project: accessible capability opening, focused declarations and logic, explicit file destinations, no module/import boilerplate or language pragmas, canonical concept markers, and clear application-specific outcomes. Complete implementation files are available in the downloadable integration checkpoint. Framework source links are optional evidence, never a checkout prerequisite. Executable checkpoint built and final neo test passed (12 unit examples, 4 Hurl scenarios) with timer registration disabled. Separate neo run observation on temporary port 8082 registered CreateCartInternal and observed one empty cart after startup, then two distinct empty carts after 32 seconds. Normal App was restored byte-for-byte and the server stopped. This verifies submission/registration and the observed timer interval, not durable scheduling or a reservation-expiry workflow. Human reader trials remain pending.",
+      "notes": "Reviewed for the progressive-depth method and continuous reader-created mug-shop project: accessible capability opening, focused declarations and logic, explicit file destinations, no module/import boilerplate or language pragmas, canonical concept markers, and clear application-specific outcomes. Complete implementation files are available in the downloadable integration checkpoint. Framework source links are optional evidence, never a checkout prerequisite. Executable checkpoint built and final neo test passed (12 unit examples, 4 Hurl scenarios) with timer registration disabled. Separate neo run observation on temporary port 8082 registered CreateCartInternal and observed one empty cart after startup, then two distinct empty carts after 32 seconds. Normal App was restored byte-for-byte and the server stopped. This verifies submission/registration and the observed timer interval, not durable scheduling or a reservation-expiry workflow. Human reader trials remain pending. Canonical Core derive-helper migration reviewed. The revised first-Cart checkpoint compiled and passed its two unit examples at 45e6fcc251de413d198be5c13cd583a82d3b2d57. Remaining compilation and HTTP revalidation were stopped at the maintainer’s request to prioritize documentation delivery; earlier complete runtime evidence predates this migration.",
       "excerpts": [
         {
           "source": "testbed/src/App.hs",
@@ -1155,7 +1168,7 @@
         },
         {
           "source": "website/examples/mug-shop-connect/src/Shop/Cart/Commands/CreateCartInternal.hs",
-          "text": "data CreateCartInternal = CreateCartInternal\n\n\ngetEntityId :: CreateCartInternal -> Maybe Uuid\ngetEntityId _ = Nothing\n\n\ndecide :: CreateCartInternal -> Maybe CartEntity -> RequestContext -> Decision CartEvent\ndecide _ entity context =\n  CreateCart.decide CreateCart.CreateCart entity context\n\n\ntype instance EntityOf CreateCartInternal = CartEntity\ntype instance TransportsOf CreateCartInternal = '[InternalTransport]\n\n\ncommand ''CreateCartInternal"
+          "text": "data CreateCartInternal = CreateCartInternal\n\n\ngetEntityId :: CreateCartInternal -> Maybe Uuid\ngetEntityId _ = Nothing\n\n\ndecide :: CreateCartInternal -> Maybe CartEntity -> RequestContext -> Decision CartEvent\ndecide _ entity context =\n  CreateCart.decide CreateCart.CreateCart entity context\n\n\ntype instance EntityOf CreateCartInternal = CartEntity\ntype instance TransportsOf CreateCartInternal = '[InternalTransport]\n\n\nderiveCommand ''CreateCartInternal"
         },
         {
           "source": "website/examples/mug-shop-connect/src/Shop/Cart/Service.hs",
@@ -1199,11 +1212,11 @@
         "independence": true,
         "domainTransfer": true
       },
-      "notes": "Reviewed for the progressive-depth method and continuous reader-created mug-shop project: accessible capability opening, focused declarations and logic, explicit file destinations, no module/import boilerplate or language pragmas, canonical concept markers, and clear application-specific outcomes. Complete implementation files are available in the downloadable integration checkpoint. Framework source links are optional evidence, never a checkout prerequisite. Executable integration checkpoint built with the locally corrected Neo CLI against framework pin 25bd7027a85b8f2999602f66b46b4b6b133c22e8. Final neo test passed 12 unit examples and 4 Hurl scenarios, including stock-reservation success, rejected zero with unchanged views, and the final available-unit boundary. A cold HTTP startup exceeded the CLI 60-second readiness budget; normal neo run verified startup and HTTP 200, then the warmed neo test passed. The Default CartEntity requirement was found by compilation and is taught explicitly. Human reader trials remain pending.",
+      "notes": "Reviewed for the progressive-depth method and continuous reader-created mug-shop project: accessible capability opening, focused declarations and logic, explicit file destinations, no module/import boilerplate or language pragmas, canonical concept markers, and clear application-specific outcomes. Complete implementation files are available in the downloadable integration checkpoint. Framework source links are optional evidence, never a checkout prerequisite. Executable integration checkpoint built with the locally corrected Neo CLI against framework pin 25bd7027a85b8f2999602f66b46b4b6b133c22e8. Final neo test passed 12 unit examples and 4 Hurl scenarios, including stock-reservation success, rejected zero with unchanged views, and the final available-unit boundary. A cold HTTP startup exceeded the CLI 60-second readiness budget; normal neo run verified startup and HTTP 200, then the warmed neo test passed. The Default CartEntity requirement was found by compilation and is taught explicitly. Human reader trials remain pending. Canonical Core derive-helper migration reviewed. The revised first-Cart checkpoint compiled and passed its two unit examples at 45e6fcc251de413d198be5c13cd583a82d3b2d57. Remaining compilation and HTTP revalidation were stopped at the maintainer’s request to prioritize documentation delivery; earlier complete runtime evidence predates this migration.",
       "excerpts": [
         {
           "source": "website/examples/mug-shop-connect/src/Shop/Cart/Integrations/ReserveStockOnItemAdded.hs",
-          "text": "data ReserveStockOnItemAdded = ReserveStockOnItemAdded\n\n\ntype instance EntityOf ReserveStockOnItemAdded = CartEntity\n\n\nhandleEvent :: CartEntity -> CartEvent -> Integration.Outbound\nhandleEvent cart event =\n  case event of\n    ItemAdded added ->\n      Integration.batch\n        [ Integration.outbound\n            Command.Emit\n              { command =\n                  ReserveStock\n                    { stockId = added.stockId\n                    , quantity = added.quantity\n                    , cartId = cart.cartId\n                    }\n              }\n        ]\n    _ -> Integration.none\n\n\noutboundIntegration ''ReserveStockOnItemAdded"
+          "text": "data ReserveStockOnItemAdded = ReserveStockOnItemAdded\n\n\ntype instance EntityOf ReserveStockOnItemAdded = CartEntity\n\n\nhandleEvent :: CartEntity -> CartEvent -> Integration.Outbound\nhandleEvent cart event =\n  case event of\n    ItemAdded added ->\n      Integration.batch\n        [ Integration.outbound\n            Command.Emit\n              { command =\n                  ReserveStock\n                    { stockId = added.stockId\n                    , quantity = added.quantity\n                    , cartId = cart.cartId\n                    }\n              }\n        ]\n    _ -> Integration.none\n\n\nderiveOutboundIntegration ''ReserveStockOnItemAdded"
         },
         {
           "source": "website/examples/mug-shop-connect/tests/stock-reservation.hurl",
@@ -1215,7 +1228,7 @@
         },
         {
           "source": "website/examples/mug-shop/src/Shop/Cart/Entity.hs",
-          "text": "instance Default CartEntity where\n  def = initialState"
+          "text": "deriveEntity ''CartEntity ''CartEvent"
         }
       ]
     },
@@ -1558,7 +1571,7 @@
         "independence": true,
         "domainTransfer": true
       },
-      "notes": "Checked current Postgres config fields, independent query storage, and Subscriber.new wiring. No claim that persistent query rows automatically resume checkpoints. Restart/restore exercise is proposed, not executed. Inspected missing cleanup-worker startup and made its operational boundary explicit. Domain-transfer review: the application concept leads; ecommerce is a worked example without an assumed company story. Revised to continue a reader-owned neo project; framework source is author evidence, not an application checkout requirement. Exact final three-file overlay plus baseline compiled with corrected CLI: application and test executables pass compilation without language pragmas or overrides. No database accessed; durability and restore remain separate runtime work.",
+      "notes": "Checked current Postgres config fields, independent query storage, and Subscriber.new wiring. No claim that persistent query rows automatically resume checkpoints. Restart/restore exercise is proposed, not executed. Inspected missing cleanup-worker startup and made its operational boundary explicit. Domain-transfer review: the application concept leads; ecommerce is a worked example without an assumed company story. Revised to continue a reader-owned neo project; framework source is author evidence, not an application checkout requirement. Exact final three-file overlay plus baseline compiled with corrected CLI: application and test executables pass compilation without language pragmas or overrides. No database accessed; durability and restore remain separate runtime work. Canonical Core derive-helper migration reviewed. The revised first-Cart checkpoint compiled and passed its two unit examples at 45e6fcc251de413d198be5c13cd583a82d3b2d57. Remaining compilation and HTTP revalidation were stopped at the maintainer’s request to prioritize documentation delivery; earlier complete runtime evidence predates this migration.",
       "excerpts": [
         {
           "source": "website/examples/mug-shop/persistence/src/Shop/Storage.hs",

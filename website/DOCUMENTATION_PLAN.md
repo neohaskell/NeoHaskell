@@ -108,12 +108,18 @@ preset, fix that preset and record the required CLI version; do not make the
 reader configure the language manually.
 
 Show each concept's canonical derivation marker with its declaration:
-`command`, `event`, `deriveQuery`, or `outboundIntegration`. Do not teach manual
+`deriveEvent`, `deriveCommand`, `deriveEntity`, `deriveQuery`, or
+`deriveOutboundIntegration`, all imported through `Core`. The previous marker
+names are compatibility APIs, not the style taught by new examples. Do not teach manual
 `deriving` clauses or instances for boilerplate the marker supplies. Keep required
 companion functions in the correct order; show them progressively when needed.
 Additional equality used by complete event tests is separate from marker-generated
-instances. Entities and ordinary values currently have no equivalent marker;
-omit their mechanical setup from teaching fragments and retain it in complete files.
+instances. Entity files place `initialState`, `update`, and their imported or
+defined `getEventEntityId` before `deriveEntity ''CartEntity ''CartEvent`. The
+marker supplies entity JSON, type-family, default, replay, and event-routing
+instances, but does not impose `Show`. Ordinary value types retain any required
+mechanical setup in complete files. Record the upcoming framework export version
+as a prerequisite; the old released pin cannot compile the new helpers.
 
 Keep files cohesive. Give each command, event payload, query, and integration a
 clear home. Separate entity state and replay from the event definitions, keep a

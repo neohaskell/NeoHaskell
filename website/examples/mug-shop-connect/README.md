@@ -12,6 +12,14 @@ Apply this directory's `src/` and `tests/` contents over that project's matching
 directories. Keep its `neo.json`, launcher, Cart and Stock services, queries, and
 configuration. Built-in integrations are already included by `neo new`.
 
+## Required framework version
+
+Use the upcoming framework release with the five `Core` derive helpers and the
+corrected CLI compiler preset described in setup. The released 0.10.0 framework
+pin lacks these exports. These revised modules use `deriveCommand` and
+`deriveOutboundIntegration` through `Core`. Compilation and runtime checks
+were not repeated for this migration; historical Connect runs preceded it.
+
 ## Connect Cart to Stock
 
 Add this import to the existing `src/App.hs`:

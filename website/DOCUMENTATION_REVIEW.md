@@ -38,10 +38,54 @@ Application modules contain no `LANGUAGE` pragmas.
 
 Concept declaration examples show their canonical marker and omit deriving clauses.
 The event marker generates Show, Generic, FromJSON, and ToJSON, but not Eq; complete
-event fixtures retain equality for full-payload assertions. Entity and ordinary
-value instances remain in complete source because those types have no marker.
+event fixtures retain equality for full-payload assertions. Entity files now use `deriveEntity` after `initialState`, `update`, and the
+imported event-routing companion. Ordinary value instances remain in complete
+source; entity derivation deliberately does not impose Show.
 
 ## CLI and application verification
+
+### Current derive-helper migration
+
+The current examples and downloads use the five canonical helpers from `Core`,
+including the new `deriveEntity`. They require the upcoming framework exports;
+the released revision below is insufficient. Entity business functions and event
+routing were preserved while generated instances and direct TH imports were
+removed. Checker coverage now rejects legacy markers and direct TH imports in
+both teaching fragments and downloadable source.
+
+The compilation and runtime evidence below is **historical, before this marker
+migration**. It must not be read as verification of the changed downloads.
+Framework verification now passes: all 253 library modules typecheck;
+70 service TH/auth examples and 28 outbound integration examples pass. The new
+13 entity tests cover replay, routing, defaults, JSON, fields without Show,
+custom instances and names, custom identifiers, missing companions, conflicting
+families, aliases, and repeated derivation. The service fixtures first failed on
+missing Core exports, then passed with the implementation. One new fixture needed
+an explicit record constructor to satisfy the existing duplicate-field warning.
+Portable lint and the expectation guard pass.
+
+The correct outbound test registration is `nhcore-test-core`. An initial run in
+`nhcore-test-integration` selected zero tests and was rejected by the runner; the
+old aggregate `nhcore-test` suite has an unrelated missing `ArraySpec` registration.
+Neither attempt is counted as a pass. The declared criterion now names the
+registered core suite.
+
+The revised first-Cart checkpoint compiled against framework revision
+`45e6fcc251de413d198be5c13cd583a82d3b2d57`; its two unit examples passed.
+Its HTTP readiness check was interrupted before a result. On 2026-09-16 Nick
+explicitly requested stopping compilation and prioritizing delivery of the docs.
+The checkpoint runner, API-catalog regeneration, and watcher were stopped.
+The other four checkpoints were not recompiled after this migration; no passing
+HTTP run is claimed for the revised downloads. API-catalog refresh and full
+framework acceptance remain unfinished; the PR stays a draft.
+
+The only production delta after the consumer pin extracts the unchanged
+entity-family comparison into a private helper; the local 253-module check and
+98 targeted tests cover that final source. The cold consumer build reported
+1410.2 seconds. Build optimization and the requested retrospective are deferred
+so they do not delay documentation delivery.
+
+### Historical verification before the derive-helper migration
 
 An official Neo 0.10.0 Apple-silicon release asset was downloaded into an isolated
 temporary directory. Its SHA256 matched the release asset:
@@ -61,7 +105,7 @@ that prerequisite. No release was published as part of this work.
 
 The corrected packaged binary's SHA256 is
 `b1dfa23946bb79a19e527633fc7d01855de72414ea1daa4f999fb8a6e02b70c3`.
-All checkpoint builds use this CLI against the released framework pin, with no
+Those checkpoint builds used this CLI against the released framework pin, with no
 `cabal.project.local` override and no language pragmas.
 
 - First Cart: `neo build` and `neo test` passed, including two decision examples
@@ -69,7 +113,7 @@ All checkpoint builds use this CLI against the released framework pin, with no
   readiness timeout. Diagnostic `neo run` started normally, and the warmed
   `neo test` retry passed; the original failure is retained in the evidence. Connect encountered the same
   cold-start timeout; its diagnostic run also started normally.
-- Cart additions: the exact downloadable archive passed `neo build` and
+- Cart additions: the then-current downloadable archive passed `neo build` and
   `neo test`, including eight decision/replay examples and two HTTP scenarios.
 - End of Build: all 21 application modules and test modules compiled; `neo test`
   passed 12 decision/replay examples and three HTTP scenarios. A separate
@@ -82,7 +126,7 @@ All checkpoint builds use this CLI against the released framework pin, with no
   a 23-byte text file with application configuration enabled. The timer and
   temporary port were then removed; ordinary HTTP tests passed with the original
   App restored byte-for-byte.
-- Postgres overlay: the exact final source compiled all 22 application modules,
+- Postgres overlay: the then-current source compiled all 22 application modules,
   its executable, and the test executable. No database was accessed.
 
 The repository-wide Rust formatting check reports pre-existing formatting drift;
@@ -93,19 +137,20 @@ claimed. Complete that check in isolation before final PR review.
 
 ## Content and website checks
 
-- 49 human pages cover 24 required public capability areas, grounded in 220
+- 49 human pages cover 24 required public capability areas, grounded in 222
   fingerprinted public evidence files and 51 checked literal excerpts.
-- 60 documentation checker fixtures cover missing content, source/excerpt drift,
+- 73 documentation checker assertions cover missing content, source/excerpt drift,
   review coverage, links, diagrams, binary screenshots, image zoom controls,
-  reader-owned workflows, pragma/import/module/deriving scaffolding, and code disclosure.
+  reader-owned workflows, pragma/import/module/deriving scaffolding, canonical
+  Core helper usage, entity boilerplate rejection, and code disclosure.
 - Four archive tests passed; all five downloads are reproducible from source.
 - All 46 shell blocks pass `bash -n`; syntax checks do not imply execution.
 - Public source hyperlinks were checked against existing repository paths.
 - Astro diagnostics passed with zero errors, warnings, or hints. The production
   build/search indexed 769 pages; all 49 human routes passed rendered-link,
   anchor, and image-zoom checks.
-- The portable dialect lint passed with no hints. Spec criteria/drift checks and
-  the expectation guard passed. No existing test expectations were changed.
+- The portable dialect lint passed with no hints. Spec criteria and
+  the expectation guard passed; current API drift validation awaits catalog regeneration. No existing test expectations were changed.
 
 These checks do not certify pedagogy, historical-data compatibility, provider
 acceptance, or the correctness of a reader's business policies.

@@ -48,7 +48,7 @@ type instance EntityOf CreateCartInternal = CartEntity
 type instance TransportsOf CreateCartInternal = '[InternalTransport]
 
 
-command ''CreateCartInternal
+deriveCommand ''CreateCartInternal
 ```
 
 `getEntityId` returns `Nothing`, as the command creates a new cart. The marker

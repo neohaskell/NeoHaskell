@@ -7,7 +7,6 @@ module Shop.Stock.Queries.StockLevel (
 import Core
 import Service.AccessControl (AccessError, UserClaims)
 import Service.AccessControl qualified as AccessControl
-import Service.Query.TH (deriveQuery)
 import Shop.Stock.Core (StockEntity (..))
 
 data StockLevel = StockLevel

@@ -9,7 +9,6 @@ import Shop.Stock.Events.StockInitialized qualified as StockInitialized
 import Decider qualified
 import Service.Auth (RequestContext)
 import Service.Command.Core (TransportsOf)
-import Service.CommandExecutor.TH (command)
 import Service.Transport.Web (WebTransport)
 import Shop.Stock.Core
 
@@ -39,4 +38,4 @@ type instance EntityOf InitializeStock = StockEntity
 
 type instance TransportsOf InitializeStock = '[WebTransport]
 
-command ''InitializeStock
+deriveCommand ''InitializeStock

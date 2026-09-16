@@ -74,7 +74,7 @@ The implementation stores an `Int64`, so amounts need bounds. Its text parser cu
 
 A trait describes behaviour a type supports. `Mappable` permits transforming contained values, `Default` supplies a starting value, and serialization traits connect values with JSON. A constraint in a function signature tells you which behaviour it needs.
 
-Markers such as `command`, `event`, and `deriveQuery` generate common instances. They reduce repetitive wiring, while the decision, state update, and projection remain business logic you can inspect. See [commands and events](/build/commands-and-events/) for their declaration order and [queries](/build/queries/#derive-and-register-the-view) for the query-specific order.
+The helpers `deriveEvent`, `deriveCommand`, `deriveEntity`, `deriveQuery`, and `deriveOutboundIntegration` come from `Core` and generate common instances. They reduce repetitive wiring, while the decision, state update, and projection remain business logic you can inspect. See [commands and events](/build/commands-and-events/) for their declaration order and [queries](/build/queries/#derive-and-register-the-view) for the query-specific order.
 
 ## Exercise: review a “safe” helper
 

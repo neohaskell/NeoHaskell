@@ -11,6 +11,11 @@ A **command** names an intention. An **event** names an accepted fact. In your p
 
 Examples below show the relevant declarations and behaviour, with each destination named. Module headers and imports are omitted so you can focus on the idea. The [complete cart additions files](/examples/mug-shop-cart.tar.gz) include that setup and the tests; add them to the same project when you want the runnable checkpoint.
 
+The derive helpers used here come from `Core`. Older code may call the TH
+markers `event`, `command`, or `outboundIntegration` from their defining modules;
+those names remain compatibility APIs. New examples use the consistent
+`derive…` names.
+
 ## Choose the rule before the files
 
 Continue in the same `mug-shop` project. We will require an existing cart and a positive quantity. Each accepted addition becomes one entry, even when the same stock is selected again.
@@ -34,7 +39,7 @@ data Event = Event
 Derive the payload's standard instances with its event marker:
 
 ```haskell
-EventTH.event ''Event
+deriveEvent ''Event
 ```
 
 Add the fact to the domain's event type in `Event.hs`:
@@ -48,7 +53,7 @@ data CartEvent
 Its existing event marker continues to derive the standard instances for the expanded event type:
 
 ```haskell
-EventTH.event ''CartEvent
+deriveEvent ''CartEvent
 ```
 
 `ItemAdded.Event` is the payload; `ItemAdded` is its wrapper in the domain's list of possible facts. Keeping the payload separate makes its meaning and future changes easy to locate. `Core.hs` remains a tiny re-export; it does not grow with every new rule.
@@ -93,7 +98,7 @@ Place this rule in `src/Shop/Cart/Commands/AddItem.hs`. The complete file in the
 The command's `cartId` becomes the event's `entityId`. `stockId` identifies the selection; it is not a product name. The command marker generates routine plumbing from the decision, entity, and transport declarations above it:
 
 ```haskell
-command ''AddItem
+deriveCommand ''AddItem
 ```
 
 ## Register the action and refresh the answer

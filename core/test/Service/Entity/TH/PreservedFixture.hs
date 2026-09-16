@@ -52,7 +52,7 @@ type instance EntityOf ExistingEvent = ExistingEntityAlias
 instance Entity ExistingEntity where
   type EntityIdType ExistingEntity = Text
   initialStateImpl = ExistingEntity {count = 33}
-  updateImpl change entity = entity {count = entity.count + change.delta}
+  updateImpl change entity = ExistingEntity {count = entity.count + change.delta}
 
 instance Entity.Event ExistingEvent where
   getEventEntityIdImpl change = change.customId

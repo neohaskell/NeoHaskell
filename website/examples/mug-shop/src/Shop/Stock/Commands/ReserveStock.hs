@@ -9,7 +9,6 @@ import Shop.Stock.Events.StockReserved qualified as StockReserved
 import Decider qualified
 import Service.Auth (RequestContext)
 import Service.Command.Core (TransportsOf)
-import Service.CommandExecutor.TH (command)
 import Service.Transport.Internal (InternalTransport)
 import Shop.Stock.Core
 
@@ -46,4 +45,4 @@ type instance EntityOf ReserveStock = StockEntity
 
 type instance TransportsOf ReserveStock = '[InternalTransport]
 
-command ''ReserveStock
+deriveCommand ''ReserveStock

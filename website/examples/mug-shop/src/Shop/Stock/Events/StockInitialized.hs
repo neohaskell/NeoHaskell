@@ -1,7 +1,6 @@
 module Shop.Stock.Events.StockInitialized (Event (..)) where
 
 import Core
-import Service.Event.TH qualified as EventTH
 
 data Event = Event
   { entityId :: Uuid
@@ -10,4 +9,4 @@ data Event = Event
   }
   deriving (Eq)
 
-EventTH.event ''Event
+deriveEvent ''Event

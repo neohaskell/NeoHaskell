@@ -36,7 +36,7 @@ data StockEvent
 The event marker handles the standard instances:
 
 ```haskell
-EventTH.event ''StockEvent
+deriveEvent ''StockEvent
 ```
 
 Each payload lives separately in `Events/`. `Event.hs` lists the possible facts and identifies which stock stream each affects.
@@ -71,7 +71,7 @@ data InitializeStock = InitializeStock
 The command generates a stock ID and refuses a negative initial quantity. Zero is allowed: a product can have a stock record while none remain available. Once its decision and entity/transport declarations are in place, its marker connects them:
 
 ```haskell
-command ''InitializeStock
+deriveCommand ''InitializeStock
 ```
 
 ## Protect a reservation

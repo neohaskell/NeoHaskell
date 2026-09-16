@@ -36,7 +36,7 @@ Other outcomes are `Delete`, which removes the view row, and `NoOp`, which leave
 
 ## Derive and register the view
 
-For a new query, define its data, `canAccess`, and `canView`, then call `deriveQuery ''CartSummary [''CartEntity]`. Put the relevant `QueryOf` business instances **after** that marker: they depend on the `Query` instance it generates. Import the marker from `Service.Query.TH` and let it generate the standard instances. The application must also register the query with `Application.withQuery @CartSummary`.
+For a new query, define its data, `canAccess`, and `canView`, then call `deriveQuery ''CartSummary [''CartEntity]`. Put the relevant `QueryOf` business instances **after** that marker: they depend on the `Query` instance it generates. The marker comes from `Core` and generates the standard instances. The application must also register the query with `Application.withQuery @CartSummary`.
 
 The marker call in your query file is:
 

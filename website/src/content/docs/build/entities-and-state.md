@@ -33,19 +33,24 @@ data CartEntity = CartEntity
   }
 ```
 
-The entity connects to its initial state and event application through:
+After its `initialState` and `update` functions, connect the entity to its event
+type with the helper exported by `Core`:
 
 ```haskell
-instance Entity CartEntity where
-  initialStateImpl = initialState
-  updateImpl = update
+deriveEntity ''CartEntity ''CartEvent
 ```
 
 The `initialState` is the starting value for reconstruction. It uses an empty array and a nil identifier. That starting value is not evidence that a real cart was created; the creation event establishes the cart's identity.
 
-The model also declares `EventOf CartEntity = CartEvent` and `EntityOf CartEvent = CartEntity`. These tell the framework which event type belongs to the entity. An event's `getEventEntityIdImpl` identifies the stream it affects.
+The marker supplies the links between `CartEntity` and `CartEvent`, JSON
+conversion, the default starting value, and the framework's replay and event-routing
+instances. It does not require the entity's fields to support `Show`.
 
-Entities have no equivalent of the command marker: their state and update behaviour are business logic. Your agent writes the record, serialization instances, type connections, and `Entity` instance. For new event types it can use the [event marker](/build/commands-and-events/) for the mechanical instances.
+You still write the record, `initialState`, and `update`. The event module's
+`getEventEntityId` function chooses the stream an event affects; this entity file
+imports it before calling `deriveEntity`. Those three companions must be in scope
+before the marker. They are the behaviour to review with your agent; the helper
+connects that behaviour to the framework without choosing the business rules.
 
 ## Apply facts; make decisions elsewhere
 

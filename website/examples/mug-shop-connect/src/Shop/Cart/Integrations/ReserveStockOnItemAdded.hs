@@ -6,7 +6,6 @@ module Shop.Cart.Integrations.ReserveStockOnItemAdded (
 import Core
 import Integration qualified
 import Integration.Command qualified as Command
-import Service.OutboundIntegration.TH (outboundIntegration)
 import Shop.Cart.Core (CartEntity (..), CartEvent (..))
 import Shop.Cart.Events.ItemAdded qualified as ItemAdded
 import Shop.Stock.Commands.ReserveStock (ReserveStock (..))
@@ -36,4 +35,4 @@ handleEvent cart event =
     _ -> Integration.none
 
 
-outboundIntegration ''ReserveStockOnItemAdded
+deriveOutboundIntegration ''ReserveStockOnItemAdded

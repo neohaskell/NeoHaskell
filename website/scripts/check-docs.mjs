@@ -29,10 +29,19 @@ export function validateProjectWorkflow(path, body) {
   return errors;
 }
 
+export function validateCanonicalMarkers(path, code) {
+  const errors = [];
+  if (/\b(?:[A-Z]\w*\.)?(?:event|command|outboundIntegration)\s+''[A-Z]/.test(code)) errors.push(`Legacy derivation marker in tutorial: ${path}`);
+  if (/^\s*import\s+Service\.(?:Event|CommandExecutor|Entity|Query|OutboundIntegration)\.TH\b/m.test(code)) errors.push(`Derivation helper must come from Core: ${path}`);
+  if (/\bderiveEntity\s+''/.test(code) && /^\s*(?:instance\s+(?:(?:Json\.)?(?:FromJSON|ToJSON)|Default|Entity|Event)\b|type instance\s+(?:NameOf|EventOf|EntityOf)\b)/m.test(code)) errors.push(`Entity marker-owned boilerplate in tutorial: ${path}`);
+  return errors;
+}
+
 export function validateExamplePresentation(path, body) {
   const errors = [];
   for (const match of body.matchAll(/^```haskell[^\n]*\n([\s\S]*?)^```/gm)) {
     const code = match[1];
+    errors.push(...validateCanonicalMarkers(path, code));
     if (/\{\-#\s*LANGUAGE\b/.test(code)) errors.push(`Language pragma in application example: ${path}`);
     if (/^\s*module\s+[A-Z]/m.test(code)) errors.push(`Module boilerplate in teaching example: ${path}`);
     if (/^\s*import\s+(?!Core(?:\s|$)|Shop\.)/m.test(code)) errors.push(`Library import scaffolding in teaching example: ${path}`);
@@ -98,6 +107,7 @@ export function validate(manifest, files, sources, assets = {}) {
       if (!sources[source]) errors.push(`Missing public source: ${source}`);
       else if (manifest.sourceHashes?.[source] !== digest(sources[source])) errors.push(`Source changed; review affected pages: ${source}`);
       if (source.startsWith('website/examples/') && source.endsWith('.hs') && /\{\-#\s*LANGUAGE\b/.test(sources[source] ?? '')) errors.push(`Language pragma in tutorial source: ${source}`);
+      if (source.startsWith('website/examples/') && source.endsWith('.hs')) errors.push(...validateCanonicalMarkers(source, sources[source] ?? ''));
     }
     for (const topic of page.topics ?? []) covered.add(topic);
     const outgoing = [];
@@ -266,8 +276,18 @@ function selfTest() {
   assert.match(validate(manifest, { [path]: body + '\n[Missing](/examples/absent.tar.gz)\n' }, sources).join(''), /Unknown example download/);
   assert.match(validateExamplePresentation(appPage, '```haskell\ndata Event = Event deriving (Show)\n```').join(''), /Deriving boilerplate/);
   assert.match(validateExamplePresentation(appPage, '```haskell\nderiving stock instance Show Event\n```').join(''), /Deriving boilerplate/);
-  assert.deepEqual(validateExamplePresentation(appPage, "```haskell\ndata Event = Event\n\nEventTH.event ''Event\n```"), []);
-  console.log('docs-check: 60 positive, negative, and boundary cases passed');
+  assert.deepEqual(validateExamplePresentation(appPage, "```haskell\ndata Event = Event\n\nderiveEvent ''Event\n```"), []);
+  for (const marker of ['deriveEvent', 'deriveCommand', 'deriveEntity', 'deriveQuery', 'deriveOutboundIntegration']) {
+    assert.deepEqual(validateCanonicalMarkers(appPage, `import Core\n${marker} ''Example`), []);
+  }
+  for (const marker of ['event', 'EventTH.event', 'command', 'outboundIntegration']) {
+    assert.match(validateCanonicalMarkers(appPage, `${marker} ''Example`).join(''), /Legacy derivation marker/);
+  }
+  assert.deepEqual(validateCanonicalMarkers(appPage, 'event = acceptedFact\nservice |> Service.command @CreateCart'), []);
+  assert.match(validateCanonicalMarkers(appPage, 'import Service.Query.TH (deriveQuery)').join(''), /must come from Core/);
+  assert.match(validateCanonicalMarkers(appPage, "instance Default CartEntity where\n  def = initialState\nderiveEntity ''CartEntity ''CartEvent").join(''), /marker-owned boilerplate/);
+  assert.match(sourceCheck(tutorialSource, "import Core\ncommand ''Example").join(''), /Legacy derivation marker/);
+  console.log('docs-check: 73 positive, negative, and boundary assertions passed');
 }
 
 function checkBuilt(manifest) {
@@ -322,6 +342,11 @@ else {
     }
     const errors = validate(manifest, files, sources, assets);
     errors.push(...generateExamples(true));
+    for (const checkpoint of exampleArchives) {
+      for (const [path, contents] of checkpoint.files()) {
+        if (path.endsWith('.hs')) errors.push(...validateCanonicalMarkers(`${checkpoint.name}/${path}`, contents.toString('utf8')));
+      }
+    }
     for (const document of ['DOCUMENTATION_PLAN.md', 'DOCUMENTATION_REVIEW.md']) {
       if (!existsSync(resolve(website, document))) errors.push(`Missing methodology artifact: ${document}`);
     }
