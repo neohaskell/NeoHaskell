@@ -1,13 +1,15 @@
 ---
-title: HTTP and the storefront
-description: Connect a storefront to commands and queries without confusing a button click with a completed workflow.
+title: HTTP and frontends
+description: Connect an interface to commands and queries and communicate the status of each request.
 sidebar:
   order: 6
 ---
 
-A storefront turns a customer's choices into requests and shows the results. Its most important job is to communicate the application's actual state: a cart addition, a pending reservation, and a confirmed order mean different things.
+A user interface turns choices into requests and shows their results. It needs to distinguish acceptance, work still in progress, and failure so people know what happened and what they can do next.
 
-NeoHaskell's web transport exposes commands and queries over HTTP. You can build the storefront with a frontend framework suited to your team. The current transport serves the application API and its documentation; it does not provide a general static storefront hosting API.
+NeoHaskell's web transport exposes commands and queries over HTTP. You can build the interface with a frontend framework suited to your team. The current transport serves the application API and its documentation; it does not provide a general static frontend hosting API.
+
+Our worked example is a storefront for the ecommerce practice project. A cart addition, a pending reservation, and a confirmed order give us concrete examples of the different states an interface must communicate.
 
 ## Start from the real contract
 
@@ -23,7 +25,7 @@ Registration drives the interface: the command declares its transport, the servi
 
 ## Connect one action
 
-This **partial browser JavaScript function** sends the existing testbed request. Call it with the real IDs from [stock and checkout](/build/stock-and-checkout/). It assumes your storefront uses a same-origin proxy for `/commands`; cross-origin development needs explicit server CORS configuration.
+This **partial browser JavaScript function** sends the existing testbed request. Call it with the real IDs from [stock and checkout](/build/stock-and-checkout/). It assumes the practice frontend uses a same-origin proxy for `/commands`; cross-origin development needs explicit server CORS configuration.
 
 ```javascript
 async function addMugs(cartId, stockId, quantity) {
@@ -52,7 +54,7 @@ Authentication and permission failures use 401 or 403. An unregistered route pro
 
 ## Put browser access in application wiring
 
-The API has a `CorsConfig` with allowed origins, methods, headers, and an optional preflight cache age. This **partial application-wiring expression** illustrates a local storefront policy; it requires the existing `Application` and `WebTransport` imports:
+The API has a `CorsConfig` with allowed origins, methods, headers, and an optional preflight cache age. This **partial application-wiring expression** illustrates a local frontend policy; it requires the existing `Application` and `WebTransport` imports:
 
 ```haskell
 Application.withCors @() (\_ -> WebTransport.CorsConfig
@@ -63,7 +65,7 @@ Application.withCors @() (\_ -> WebTransport.CorsConfig
   })
 ```
 
-Apply it in your application's pipeline and use your actual frontend origin. CORS governs browser access; it does not grant business permission. Protect customer information with [access control](/build/access-control/).
+Apply it in your application's pipeline and use your actual frontend origin. CORS governs browser access; it does not grant business permission. Protect private information with [access control](/build/access-control/).
 
 ## Exercise: a delayed summary
 

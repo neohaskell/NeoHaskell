@@ -5,9 +5,9 @@ sidebar:
   order: 11
 ---
 
-You can direct your shop's behaviour without memorising a language manual. Still, a small vocabulary lets you inspect an agent's proposal and ask sharper questions: Can this value be absent? Can this operation fail? Does this function make a decision or perform an external action?
+You can direct an application's behaviour without memorising a language manual. Still, a small vocabulary lets you inspect an agent's proposal and ask sharper questions: Can this value be absent? Can this operation fail? Does this function make a decision or perform an external action?
 
-Use this page as a reading companion. The examples are small expressions or partial functions for a configured NeoHaskell module, not a second application to install.
+Use this page as a reading companion. The examples draw on the ecommerce practice project and common data-handling tasks. They are small expressions or partial functions for a configured NeoHaskell module, not a second application to install.
 
 ## Read a pipeline from left to right
 
@@ -40,7 +40,7 @@ validateQuantity quantity =
     else Err "Quantity must be positive"
 ```
 
-`Task.yield` produces a successful task result; `Task.throw` produces a task error. `Task.mapError` translates an error type at a boundary, and `Task.asResult` lets you inspect an error as a value. Do not replace a meaningful failure with a default merely to make code continue: the customer may need to know the action did not complete.
+`Task.yield` produces a successful task result; `Task.throw` produces a task error. `Task.mapError` translates an error type at a boundary, and `Task.asResult` lets you inspect an error as a value. Do not replace a meaningful failure with a default merely to make code continue: the caller may need to know the action did not complete.
 
 `do` sequences steps, `<-` receives the result of a step, and `let` names a local value. The application's orchestration can therefore read top to bottom without putting every branch into one large function.
 
@@ -48,13 +48,13 @@ validateQuantity quantity =
 
 Use `Array` for ordered values and `Map` for values keyed by an identifier. `Array.map` transforms entries; `Array.takeIf` retains matching entries; `Array.reduce` combines entries into a result. `Map.get` returns `Maybe` because a key can be absent.
 
-`Uuid.fromText` also returns `Maybe`: text from a URL is not guaranteed to be a valid identifier. An ID parsing successfully establishes its format, not that the customer owns the corresponding cart.
+`Uuid.fromText` also returns `Maybe`: text from a URL is not guaranteed to be a valid identifier. An ID parsing successfully establishes its format, not that the caller may access the corresponding record.
 
 `Text` is the usual string type. Formatting such as `[fmt|Cart #{cartId}|]` keeps interpolation readable. Use named domain types and record fields so the agent's implementation preserves the distinctions in your event model.
 
 ## Amounts and money
 
-An ecommerce application must state its currency, quantity limits, and rounding policy. The `Decimal` type supplies fixed-point storage with four decimal places. It serializes to JSON as a string, such as `"12.5000"`.
+Numeric values need defined units, bounds, and rounding rules. Money in the practice project gives us a useful example: a price needs both an amount and a currency. The `Decimal` type supplies fixed-point storage with four decimal places. It serializes to JSON as a string, such as `"12.5000"`.
 
 These **source-grounded expressions** illustrate construction and formatting:
 
@@ -78,15 +78,15 @@ Markers such as `command`, `event`, and `deriveQuery` generate common instances.
 
 ## Exercise: review a “safe” helper
 
-An agent parses an invalid quantity and substitutes one so the request always succeeds. Explain why that might violate your shop's policy, then propose an observable check.
+In the practice project, an agent parses an invalid quantity and substitutes one so the request always succeeds. Explain why that might violate the requested behaviour, then propose an observable check.
 
 <details>
 <summary>Suggested reasoning and checks</summary>
 
-One mug is a valid quantity but may not be what the customer requested. Preserve invalid input as an error, and let the interface ask for correction. Verify a normal positive value, malformed input, zero, and the largest quantity your business permits. Test any conversion to smaller numeric or monetary representations at their limits too. Type checking helps distinguish categories; it does not select acceptable business defaults.
+One mug is a valid quantity but may not be what the customer requested. Preserve invalid input as an error, and let the interface ask for correction. Verify a normal positive value, malformed input, zero, and the largest quantity the exercise's policy permits. Test any conversion to smaller numeric or monetary representations at their limits too. Type checking helps distinguish categories; it does not select acceptable business defaults.
 
 </details>
 
-Next: [connect the shop](/connect/) applies these ideas to work outside the core model. Return to the [build overview](/build/) for the learning sequence.
+Next: [integrations](/connect/) applies these ideas to work outside the core model. Return to the [build overview](/build/) for the learning sequence.
 
 Public sources: [Result](https://github.com/neohaskell/NeoHaskell/blob/main/core/core/Result.hs), [Task](https://github.com/neohaskell/NeoHaskell/blob/main/core/core/Task.hs), [Decimal](https://github.com/neohaskell/NeoHaskell/blob/main/core/decimal/Decimal.hs), [Mappable](https://github.com/neohaskell/NeoHaskell/blob/main/core/traits/Mappable.hs), [Cart summary](https://github.com/neohaskell/NeoHaskell/blob/main/testbed/src/Testbed/Cart/Queries/CartSummary.hs).

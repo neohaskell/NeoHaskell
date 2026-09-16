@@ -3,8 +3,9 @@
 The documentation site for [NeoHaskell](https://github.com/neohaskell/NeoHaskell),
 built with [Astro Starlight](https://starlight.astro.build/).
 
-The human docs follow a fictional shop from business intent through implementation,
-integrations, and operation. Pages progressively deepen the explanation while
+The human docs teach NeoHaskell from application intent through implementation,
+integrations, and operation, with ecommerce as a continuing practice project.
+Pages progressively deepen the explanation while
 supporting evaluators and direct consultation. The approved authoring method lives
 in [DOCUMENTATION_PLAN.md](DOCUMENTATION_PLAN.md); verification and its limits live
 in [DOCUMENTATION_REVIEW.md](DOCUMENTATION_REVIEW.md).
@@ -47,7 +48,7 @@ Documentation source files live in `src/content/docs/`:
 | Path | Content |
 |------|---------|
 | `index.mdx` | Home page |
-| `start/**` | Philosophy, evaluation, no-install shop story, modeling, and trust |
+| `start/**` | Philosophy, evaluation, no-install modeling exercise, and trust |
 | `getting-started/**` | Executable setup and visual IDE orientation |
 | `build/**` | Cart/stock, commands, state, queries, access, tests, and language |
 | `connect/**` | External providers, email, uploads, documents, AI, and timers |
@@ -61,14 +62,19 @@ Documentation source files live in `src/content/docs/`:
 ## Author and verify a human page
 
 Read the plan before writing. Give the page an accessible business opening, a
-purposeful increase in depth, concrete evidence, and useful onward links. Use
-flexible headings. Distinguish runnable public examples, partial snippets, and
-shop-specific design exercises. Human–agent collaboration belongs here;
+purposeful increase in depth, concrete evidence, and useful onward links. Teach
+NeoHaskell concepts first; use ecommerce as the continuing example and practice
+project without assuming the reader belongs to a particular business. Use flexible
+headings. Distinguish runnable public examples, partial snippets, and design
+exercises. Human–agent collaboration belongs here;
 agent-consumed instructions belong in their separate documentation project.
 
 `documentation-manifest.json` is the maintained inventory. Add each page to
 `requiredPages` and `pages`, record the public source files actually inspected,
-and complete the per-page semantic review. Register literal code excerpts in
+and complete the per-page semantic review, including `domainTransfer`: the concept
+can be applied outside ecommerce, and the example requires no existing company
+story. The checker requires that review record; a boolean is not proof of teaching
+quality. Register literal code excerpts in
 `excerpts` when they are copied directly. `sourceHashes` uses SHA-256 over the
 UTF-8 source bytes. When the gate reports a changed source, inspect its diff and
 review every page listing it before updating that fingerprint. Update affected

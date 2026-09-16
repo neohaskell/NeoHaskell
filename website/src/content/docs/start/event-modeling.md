@@ -1,17 +1,18 @@
 ---
 title: "Describe the application with events"
-description: "Connect requests, facts, state, and views using the shop you already understand."
+description: "Connect what people ask for, what happens, and what your application needs to show."
 sidebar:
   order: 4
 ---
 
-An order means different things to different people. The customer wants a promise,
-the merchant needs work to fulfil, and support needs to explain what happened.
-An event model helps you connect those perspectives before code makes the choices
-harder to see.
+A single process can look different to the person making a request, the person
+acting on it, and someone trying to explain the result. An event model connects
+those perspectives by describing actions and outcomes in time order, before code
+makes the choices harder to see.
 
-Start with a short story in time order. A customer requests an action, the business
-accepts or refuses it, and people see the resulting information.
+Start with a short sequence: someone requests an action, the application accepts
+or refuses it, and people see the resulting information. We will use adding an
+item to a cart as a concrete example.
 
 ## Four useful words
 
@@ -58,8 +59,9 @@ it? The cart's contents and the stock available are different concerns. Drawing
 the transition between them makes the coordination question visible. The
 [stock and checkout chapter](/build/stock-and-checkout/) develops it later.
 
-Before moving on, describe a refusal in your own shop. What remains unchanged?
-What message does the customer need? What fact, if any, should be recorded?
+Before moving on, describe a refusal in an application you want to build. What
+remains unchanged? What message does the person making the request need? What
+fact, if any, should be recorded?
 Your agent can propose answers, but the policy belongs to you.
 
 Next: [work with your agent](/start/trusting-your-agent/) and then use the

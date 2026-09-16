@@ -3,19 +3,20 @@ title: "NeoHaskell"
 description: "Understand your application. Build it with an agent. Check that it behaves as you intended."
 ---
 
-Your shop starts with a simple promise: a customer asks for a mug, and you deliver
-what you agreed. Software makes that promise harder to follow when payments,
-stock, emails, and people all act at different times.
+You have an idea for an application and understand what it needs to do. As it grows,
+you need a way to keep its rules clear, explain its behaviour, and change it with
+confidence.
 
-NeoHaskell gives those actions and their consequences a shared structure. You can
-model what should happen, work with a coding agent to implement it, and check the
-result against the business you understand.
+NeoHaskell brings a language, application framework, and development tools together
+around that work. Describe the actions people can take, the facts your application
+records, and the information it shows. Work with a coding agent to implement those
+decisions, then check the result against your intent.
 
 ## Choose your next step
 
 - **[Understand the idea](/start/why-neohaskell/).** What NeoHaskell helps with,
   why its choices matter, and where the costs appear.
-- **[Try a shop story without installing anything](/start/a-shop-on-paper/).**
+- **[Try a small modeling exercise](/start/a-shop-on-paper/).**
   Work through one small decision and catch an agent's misunderstanding.
 - **[Start building](/getting-started/).** Run the starter, explore its model,
   then work through the public cart example.
@@ -29,16 +30,22 @@ result against the business you understand.
 | Decide whether this approach fits your company | [Fit and tradeoffs](/start/fit-and-tradeoffs/) |
 | Describe what your application should do | [Event modeling](/start/event-modeling/) |
 | Delegate implementation with confidence | [Working with your agent](/start/trusting-your-agent/) |
-| Make your first shop behaviour work | [Build the shop](/build/) |
-| Connect email, documents, payments, or AI | [Connect the shop](/connect/) |
+| Turn a rule into working application behaviour | [Build applications](/build/) |
+| Connect email, documents, external services, or AI | [Connect systems](/connect/) |
 | Deploy, recover, and change your application | [Operate and evolve](/operate/) |
 
 Each page begins with the situation and becomes more detailed as you read. You can
-stop after understanding the business decision, continue into implementation, or
+stop after understanding the decision and its consequences, continue into implementation, or
 return later for a specific answer. [How to use these docs](/start/) explains the
 paths and the difference between a working example and an exercise.
 
-The examples grow around a fictional mug shop. The executable foundations are the
-public NeoHaskell starter and reference application. Payment, shipping, and other
-shop-specific policies are identified as designs you implement; they are not a
-prebuilt commerce product hidden behind the tutorial.
+## Learn with a practice project
+
+The worked examples gradually build a small ecommerce application, starting with
+one product and a cart. This gives you a familiar setting in which to try each
+concept. You can follow the practice project or apply the same ideas to your own
+application.
+
+The executable foundations are the public NeoHaskell starter and reference
+application. Each lesson distinguishes working code from features you design and
+implement as exercises, such as payment and shipping policies.

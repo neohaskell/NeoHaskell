@@ -1,13 +1,15 @@
 ---
-title: "Your first shop, on paper"
-description: "Describe one sale and catch a misunderstanding before installing any tools."
+title: "Try modeling without code"
+description: "Use a tiny ecommerce exercise to describe a rule and catch an agent's misunderstanding."
 sidebar:
   order: 3
 ---
 
-Imagine a small shop that sells one kind of mug. A customer requests two mugs.
+Start a practice application with one product: a mug. A customer requests two mugs.
 The merchant receives the request and decides how to fulfil it. There is no payment
-provider, stock reservation, or shipping integration yet.
+provider, stock reservation, or shipping integration yet. Ecommerce gives us a
+familiar example; the skill you are practicing is turning a rule into behaviour
+you can check in any application.
 
 For this first sketch, choose a simple rule: **a request may contain between one
 and five mugs**. This is a fictional policy for the exercise, not a built-in
@@ -56,7 +58,7 @@ correct the request. A silent failure leaves them guessing whether an order exis
 
 ## Your first variation
 
-The merchant now accepts up to twelve mugs. Tell your agent what changes and what
+Change the exercise's rule to accept up to twelve mugs. Tell your agent what changes and what
 must remain true. Choose the examples you would inspect before accepting its work.
 
 <details>
@@ -69,6 +71,8 @@ a new policy must not rewrite what customers already ordered.
 </details>
 
 You have already practiced modeling, boundary testing, and correcting an agent.
+Try naming a limit in your own application: who sets it, which requests does it
+affect, and how would you show that the boundary is respected?
 Next, [give those ideas names](/start/event-modeling/). When you start coding, the
 [public cart example](/build/first-cart/) supplies executable building blocks; the
 order policy above remains an explicit design exercise.

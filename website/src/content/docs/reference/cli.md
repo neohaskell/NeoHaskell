@@ -22,6 +22,8 @@ Run project commands from the directory containing `neo.json`. Run `neo --help` 
 
 ## Create, build, run, and test
 
+This sequence uses `mug-shop`, the recurring practice project’s name. Substitute your own project name; the commands work the same way.
+
 ```sh
 neo --ci new mug-shop
 cd mug-shop

@@ -12,16 +12,18 @@ Parallel cross-review checks executable instructions and capability claims again
 public implementation. Review records represent agent editorial review, not an
 observed human reader trial.
 
-The site uses one fictional mug shop as its narrative. The public Counter starter
-and Cart/Stock testbed are explicitly identified as different runnable anchors.
-Checkout, payment, fulfilment, and other application-specific policies are design
-extensions, not a claimed complete commerce product.
+The site teaches NeoHaskell concepts and capabilities for the reader's application.
+An ecommerce practice project connects the worked examples without assuming an
+existing company or requiring its story to understand general topic pages. The
+public Counter starter and Cart/Stock testbed are explicitly identified as different
+runnable anchors. Checkout, payment, fulfilment, and other application-specific
+policies are design extensions, not a claimed complete commerce product.
 
 ## Verification results
 
 - 47 authored/reviewed human pages, with 24 required public capability areas covered.
 - 150 inspected public source files fingerprinted; 14 literal code excerpts checked.
-- `pnpm test:docs`: 12 positive, negative, and boundary fixtures passed.
+- `pnpm test:docs`: 13 positive, negative, and boundary fixtures passed, including a missing domain-transfer review.
 - `pnpm check:docs`: complete inventory, review records, source evidence, excerpts,
   internal links, and reachability from the home page passed.
 - `pnpm check`: zero errors, warnings, or hints from Astro diagnostics.
@@ -47,6 +49,12 @@ These structural checks do not certify pedagogy, historical-data compatibility,
 provider acceptance, or the correctness of a reader's shop-specific policies.
 
 ## Cross-review changes
+
+Following reader feedback on the initial framing, the home page, navigation,
+section introductions, and topic pages were reviewed for applicability beyond
+ecommerce. General problems now lead the explanations; cart, stock, and order
+examples remain concrete exercises in the continuing practice project. This is an
+editorial review of domain transfer, not evidence from a human reader trial.
 
 Independent readers of the manuscript corrected the query derivation declaration
 order against the compiling public fixture, clarified testbed versus generated-project

@@ -10,7 +10,7 @@ const website = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const repository = resolve(website, '..');
 const read = path => readFileSync(path, 'utf8');
 const digest = value => createHash('sha256').update(value).digest('hex');
-const requiredReview = ['accessibleOpening', 'progressiveDepth', 'concreteOutcome', 'sourceGrounded', 'independence'];
+const requiredReview = ['accessibleOpening', 'progressiveDepth', 'concreteOutcome', 'sourceGrounded', 'independence', 'domainTransfer'];
 const routeOf = path => '/' + path.replace(/^src\/content\/docs\//, '').replace(/\.(md|mdx)$/, '').replace(/(^|\/)index$/, '') .replace(/\/$/, '') + '/';
 const normalizeRoute = route => route.replace(/\/+/g, '/');
 const withoutCode = body => body.replace(/^```[^\n]*\n[\s\S]*?^```\s*$/gm, '');
@@ -93,6 +93,8 @@ function selfTest() {
   assert.match(validate(manifest, files, { [source]: 'example = 2' }).join('\n'), /Source changed/);
   assert.match(validate(manifest, { [path]: body + '\n[Broken](/missing/)\n' }, sources).join('\n'), /Broken internal/);
   assert.match(validate({ ...manifest, pages: [{ ...page, review: {} }] }, files, sources).join('\n'), /Missing editorial/);
+  const { domainTransfer, ...previousReview } = page.review;
+  assert.match(validate({ ...manifest, pages: [{ ...page, review: previousReview }] }, files, sources).join('\n'), /Missing editorial review domainTransfer/);
   assert.match(validate({ ...manifest, requiredTopics: ['queries'] }, files, sources).join('\n'), /Uncovered capability/);
   assert.match(validate(manifest, files, {}).join('\n'), /Missing public source/);
   assert.match(validate(manifest, { ...files, 'src/content/docs/new.md': body }, sources).join('\n'), /Unreviewed human page/);
@@ -100,7 +102,7 @@ function selfTest() {
   const orphan = { ...page, path: 'src/content/docs/orphan.md' };
   assert.match(validate({ ...manifest, pages: [page, orphan] }, { ...files, [orphan.path]: body }, sources).join('\n'), /Unreachable from home/);
   assert.deepEqual(validate(manifest, { [path]: body + '\n[Home](/)\n```text\n[Not a link](/absent/)\n```\n' }, sources), []);
-  console.log('docs-check: 12 positive, negative, and boundary cases passed');
+  console.log('docs-check: 13 positive, negative, and boundary cases passed');
 }
 
 function checkBuilt(manifest) {

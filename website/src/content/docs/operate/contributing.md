@@ -5,13 +5,13 @@ sidebar:
   order: 8
 ---
 
-You do not need to understand the whole framework to make it better. A confusing installation step, a missing boundary case, or an example that no longer compiles is a useful starting point. Your experience building the shop is evidence about where the next reader may struggle.
+You do not need to understand the whole framework to make it better. A confusing installation step, a missing boundary case, or an example that no longer compiles is a useful starting point. Your experience learning NeoHaskell or building an application is evidence about where the next reader may struggle.
 
-Contribution branches from the application journey. Running your shop confidently does not require becoming a framework maintainer.
+Contribution branches from the application journey. Running your application confidently does not require becoming a framework maintainer.
 
 ## Start with a bounded improvement
 
-A good first report includes what you were trying to accomplish, the smallest reproduction, the expected behaviour, the actual result, and the relevant version. Remove credentials and customer data before sharing it.
+A good first report includes what you were trying to accomplish, the smallest reproduction, the expected behaviour, the actual result, and the relevant version. Remove credentials and private data before sharing it.
 
 For a documentation change, preserve the gradual learning path: explain the situation first, provide an accurate example, and say how a reader can verify the outcome. For a bug, add a regression case that fails for the reported reason before changing implementation.
 
@@ -60,4 +60,4 @@ The core service architecture separates command decisions, event persistence, en
 
 A CLI change can also change every newly generated application. The embedded starter and the starter-to-framework compatibility checks are part of that responsibility.
 
-**Try a first contribution:** choose one confusing moment from the shop tutorial. Write the explanation you needed, identify the public source that supports it, and ask another reader to follow it. That is a concrete improvement even before you touch framework internals.
+**Try a first contribution:** choose one confusing moment from the learning journey or your own project. Write the explanation you needed, identify the public source that supports it, and ask another reader to follow it. That is a concrete improvement even before you touch framework internals.

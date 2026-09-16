@@ -1,27 +1,27 @@
 ---
-title: Connect the shop
-description: Turn business events into useful work across services and providers.
+title: Integrations
+description: Connect application events, external services, and follow-up commands.
 sidebar:
   order: 0
 ---
 
-An order may be recorded in your shop while its confirmation email has not yet been accepted by the email provider. Both facts matter. A customer should not lose their order because an email service is unavailable, and your team needs to see which work remains unfinished.
+Saving a change and completing its follow-up work are separate things. A document can be saved before its preview is generated; a message can be recorded before its notification is sent. Your application needs to represent both the accepted change and the work still to do.
 
 An **integration** connects a fact in your application to another piece of work. NeoHaskell lets you describe the request and turn its result back into a command. You still decide what success means, how failures appear to people, and which operations may safely be repeated.
 
-Before implementing integrations, be comfortable with [commands and events](/build/commands-and-events/) and [queries](/build/queries/). Evaluators can read the opening and decision sections throughout this chapter without following the code.
+Before implementing integrations, be comfortable with [commands and events](/build/commands-and-events/) and [queries](/build/queries/). The examples extend the ecommerce practice project, while the same integration lifecycle applies to other applications. Evaluators can follow the opening and decision sections without implementing the examples.
 
-If you have followed the public examples, first [assemble the cart and stock slice in your own project](/build/your-shop/). Keep its working tests as you add external effects.
+To practise with the continuing example, [assemble the cart and stock slice](/build/your-shop/) and keep its working tests as you add external effects.
 
-## Follow the business conversation
+## Follow an event through an integration
 
-Consider an order confirmation. This is an original shop design, not a built-in commerce workflow:
+For the practice project, consider an order confirmation. The workflow is an application design built from these integration primitives:
 
 1. A command accepts the order and records an order-placed event.
 2. An outbound handler recognises that event and describes an email request.
 3. The integration runs the request outside the order's decision function.
 4. Its callback produces a command recording either provider acceptance or failure.
-5. A query gives staff the resulting status.
+5. A query makes the resulting status visible.
 
 The fourth step is deliberately a **command**: new information still enters through the application's rules. Calling a provider does not directly edit an entity or a query.
 
@@ -60,16 +60,16 @@ Typed handlers reconstruct the entity from its stream when processing; they do n
 
 ## Choose the next need
 
-- [Coordinate cart and stock](/connect/workflows/).
-- [Call a provider and design payment boundaries](/connect/http-and-payments/).
-- [Connect a merchant’s provider account](/connect/provider-accounts/) through explicit OAuth consent.
+- [Coordinate work across entities](/connect/workflows/).
+- [Call an external HTTP API](/connect/http-and-payments/).
+- [Connect an external account](/connect/provider-accounts/) through explicit OAuth consent.
 - [Send email](/connect/email/).
 - [Attach files](/connect/files/) and [extract document or audio content](/connect/documents/).
 - [Add AI assistance](/connect/ai/) and [constrain AI tools](/connect/ai-tools/).
 - [Schedule periodic work](/connect/timers/).
 - [Build a reusable integration](/connect/custom-integrations/).
 
-**Try this:** describe what staff should see when an order exists but its email request times out. Include a state for an unknown provider outcome. Check your explanation with a colleague before choosing event names.
+**Try this:** describe what the practice application should show when an order exists but its email request times out. Include a state for an unknown provider outcome. Then identify a similar handoff in an application you would like to build, and explain which parts of the model carry over.
 
 ## Implementation and examples
 

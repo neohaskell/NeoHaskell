@@ -1,11 +1,11 @@
 ---
-title: Change the shop without rewriting its past
+title: Evolve an application without rewriting its past
 description: Separate business changes, historical event compatibility, and query evolution.
 sidebar:
   order: 5
 ---
 
-The merchant starts selling personalised mugs. New orders need a custom message; older orders never had one. A useful change must support both realities without pretending yesterday's customers supplied information they never gave you.
+Requirements change while existing data retains its meaning. New code must support both realities. For example, adding optional text to new records should not pretend that earlier users supplied it. In the ecommerce practice project, this becomes a gift message on new orders while older orders retain an explicit absence of that information.
 
 An event-sourced system makes history explicit. That is valuable for explaining decisions, and it creates a responsibility: future code must still understand the facts you already accepted.
 
@@ -13,7 +13,7 @@ An event-sourced system makes history explicit. That is valuable for explaining 
 
 | Change | Main question |
 | --- | --- |
-| New rule for future orders | Can existing state still be reconstructed before the new decision runs? |
+| New rule for future operations | Can existing state still be reconstructed before the new decision runs? |
 | New event kind | Can old and new application revisions read the histories they may encounter? |
 | Change to a stored event shape | How will historical JSON remain decodable and meaningful? |
 | New or changed query | Can it rebuild correctly from all supported histories? |
@@ -23,7 +23,7 @@ Use [event modeling](/start/event-modeling/) and the [visual IDE](/getting-start
 
 ## Preserve a historical fixture
 
-Before accepting a change, keep a small representative history in your tests. Include an old order, the new personalised order, and a rejected operation. Check that the new code:
+Before accepting a change, keep a small representative history in your tests. Include behaviour from before and after the change, plus a rejected operation. For the ecommerce example, use an old order and a new personalised order. Check that the new code:
 
 - Decodes old and new persisted events.
 - Reconstructs the intended state for each.
@@ -57,12 +57,12 @@ For an incompatible persisted query schema, make the transition explicit. Keep t
 
 ## Exercise: add gift messages
 
-Ask your agent to propose how new orders acquire a gift message and what old orders display. Before accepting code, explain the old-history behaviour yourself.
+For the ecommerce practice project, ask your agent to propose how new orders acquire a gift message and what old orders display. Before accepting code, explain the old-history behaviour yourself.
 
 <details>
 <summary>A useful acceptance boundary</summary>
 
-An old order should retain its original meaning, with an explicit absence of a gift message. A new order with a message should retain it across restart and replay. A message that violates your size or content policy should be rejected before it becomes an accepted fact. The exact policy belongs to the shop.
+An old order should retain its original meaning, with an explicit absence of a gift message. A new order with a message should retain it across restart and replay. A message that violates your size or content policy should be rejected before it becomes an accepted fact. Choose the exact policy for this exercise before checking the implementation.
 
 </details>
 

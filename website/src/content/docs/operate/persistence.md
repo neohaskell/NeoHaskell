@@ -1,19 +1,19 @@
 ---
-title: Keep the shop's history
+title: Persist application data
 description: Choose storage for events, read models, files, and credentials, then prove what survives restart.
 sidebar:
   order: 1
 ---
 
-Restarting the shop should not erase a customer's order. It is less alarming if a temporary dashboard has to be rebuilt. That distinction is the starting point for persistence: decide which information is authoritative and which can be reconstructed.
+Restarting an application should not erase work it promised to retain. A temporary dashboard, however, may be safe to rebuild. Persistence begins with that distinction: decide which information is authoritative and which can be reconstructed. An accepted order in the ecommerce practice project is one example of information that must survive.
 
 In an event-sourced application, accepted events preserve business history. Entities and queries interpret that history for different purposes. Keeping events safely is essential, but events are not the only data your application may need to retain.
 
 ## Identify each kind of storage
 
-| Information | NeoHaskell surface | Decision for the shop |
+| Information | NeoHaskell surface | Application decision |
 | --- | --- | --- |
-| Accepted events | `Service.EventStore` | Use durable storage before accepting real orders |
+| Accepted events | `Service.EventStore` | Use durable storage before accepting work that must survive restart |
 | Query results | `Service.QueryObjectStore` | Choose memory or Postgres independently of event storage |
 | Uploaded bytes | Local blob store configured by `blobStoreDir` | Retain and back up the actual files |
 | File ownership and lifecycle | File state store | Choose persistent state as well as persistent bytes |
@@ -37,13 +37,13 @@ Read the [current application example](https://github.com/neohaskell/NeoHaskell/
 
 ## Persistent events and persistent queries are separate
 
-Queries use memory unless you supply a query-store backend with `Application.withQueryObjectStore` (also exposed as `useQueryObjectStore`). `PostgresQueryObjectStoreConfig` has its own connection and pool settings. Stores distinguish queries by name as well as instance identifier, so two views of the same order remain separate.
+Queries use memory unless you supply a query-store backend with `Application.withQueryObjectStore` (also exposed as `useQueryObjectStore`). `PostgresQueryObjectStoreConfig` has its own connection and pool settings. Stores distinguish queries by name as well as instance identifier, so two views of the same entity remain separate.
 
 There is an important operational boundary: lower-level query subscriber APIs provide checkpoint and hash-aware rebuild support, but normal `Application` wiring currently constructs `Subscriber.new`. Choosing a Postgres query store alone is **not proof that startup resumes from a persisted checkpoint**. Test restart and replay with your actual wiring and projection logic, especially if a projection accumulates values rather than replacing them.
 
-## Prove durability with one order
+## Prove durability with a representative change
 
-In an isolated shop environment:
+Choose an accepted operation from your application and compare its state before and after restart. For the ecommerce practice project, use an order in an isolated environment:
 
 1. Submit a valid order and save its identifier and expected contents.
 2. Wait until its query shows the expected result.

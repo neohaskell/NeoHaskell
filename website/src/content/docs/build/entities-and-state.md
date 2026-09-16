@@ -5,9 +5,9 @@ sidebar:
   order: 3
 ---
 
-The shop needs to know what is in a cart now. It can also benefit from knowing how the cart reached that point. NeoHaskell connects those needs: an entity's current state is built by applying its events in order.
+Before accepting a new request, an application needs to know the relevant current state. Knowing how that state came about also helps explain past decisions. NeoHaskell connects those needs: an entity's current state is built by applying its events in order.
 
-An **entity** is the business object whose rules you are protecting. In our example it is one cart, identified by a UUID. Its state helps decide the next command; its event history records the changes that were accepted.
+An **entity** is the business object whose rules you are protecting. It might represent a reservation, a document, or an account. In the ecommerce practice project it is one cart, identified by a UUID. Its state helps decide the next command; its event history records the changes that were accepted.
 
 ## Follow one cart through time
 
@@ -50,11 +50,11 @@ Entities have no equivalent of the command marker: their state and update behavi
 
 ## Apply facts; make decisions elsewhere
 
-The Cart update appends an entry when it receives `ItemAdded`. It does not call a warehouse, consult today's catalogue, or ask whether the request should have been accepted. Those decisions belong before recording the fact, or in an integration reacting to it.
+An update function applies an accepted fact to state. Validation belongs before recording that fact; external work belongs in an integration reacting to it. In the practice project, the Cart update appends an entry when it receives `ItemAdded`. It does not call a warehouse, consult today's catalogue, or reconsider whether the request should have been accepted.
 
 This separation helps replay produce a stable answer. If rebuilding yesterday's cart consulted today's product price, the same history could produce a different commercial result. When a price must become part of an order agreement, design an event that records the agreed amount and currency at the appropriate moment.
 
-That is a **shop design requirement**, not a field already present in this cart. See [language essentials](/build/language-essentials/#amounts-and-money) for the current Decimal type and its limits.
+Capturing that price is a **design extension to the practice project**, not a field already present in this cart. The general lesson is to preserve the information that gives a past decision its meaning. See [language essentials](/build/language-essentials/#amounts-and-money) for the current Decimal type and its limits.
 
 Snapshots can reduce the work needed to reconstruct an entity. They are a performance aid; the behaviour you teach and verify remains the ordered application of recorded facts. Persistence and recovery receive their own treatment in [run and evolve](/operate/).
 

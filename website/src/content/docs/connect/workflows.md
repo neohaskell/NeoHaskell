@@ -1,13 +1,13 @@
 ---
-title: Coordinate cart and stock
-description: Make cross-service business steps explicit and observable.
+title: Coordinate work across entities
+description: Connect events and commands across services while keeping each rule explicit.
 sidebar:
   order: 1
 ---
 
-A customer adds two mugs to a cart. The cart knows what the customer wants; stock knows what the shop can supply. Connecting those responsibilities gives each rule a clear home, but it also introduces a period when one side has changed and the other has not.
+One accepted change can require work in another part of an application. Keeping those responsibilities separate gives each rule a clear home, but introduces a period when one side has changed and the other has not. An integration makes that handoff explicit.
 
-The public testbed demonstrates this connection. Its policy is to reserve stock when an item is added. That is an example policy: your shop might reserve only at checkout, or expire reservations after a defined period.
+The public testbed demonstrates the pattern with cart and stock entities. A customer adds two mugs: the cart records what they want, then stock decides whether it can reserve them. The example reserves on adding an item; try reserving at checkout or expiring reservations to explore different rules.
 
 ## Trace a working connection
 
@@ -74,13 +74,13 @@ Explore the same connection in the Neo IDE graph. Identify the originating comma
 >
 > **Jess:** “The cart event was already accepted. Show me the return path that updates the cart.”
 
-A rejection on the stock side cannot erase an already recorded cart event. The displayed handler supplies one direction of communication. A production workflow needs an explicit outcome path, such as recording reservation failure and changing what checkout permits. Those shop-specific commands and events are reader work.
+A rejection on the stock side cannot erase an already recorded cart event. The displayed handler supplies one direction of communication. A complete workflow needs an explicit outcome path, such as recording reservation failure and changing what checkout permits. Implementing that return path is a useful extension to the practice project.
 
-This is a **process manager** problem: coordinating steps across entities, tracking progress, and handling incomplete work. Design a durable representation of pending work and a recovery policy before treating it as complete checkout.
+This is a **process manager** problem: coordinating steps across entities, tracking progress, and handling incomplete work. The general lesson is to represent pending work and its recovery explicitly. In the example, that means checkout cannot be considered complete merely because the cart accepted an item.
 
 ## Exercise: choose when stock is reserved
 
-Change the proposed shop policy from “on add” to “on checkout request.” Write the event sequence before changing code.
+Change the practice project’s reservation policy from “on add” to “on checkout request.” Write the event sequence before changing code.
 
 <details>
 <summary>Suggested reasoning and checks</summary>

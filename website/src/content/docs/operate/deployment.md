@@ -5,7 +5,7 @@ sidebar:
   order: 2
 ---
 
-A release is successful when the new shop is serving correct behaviour, not merely when a deployment command finishes. Customers should not reach a fresh process while its order views are still catching up with history.
+A release is successful when the intended revision serves correct behaviour, not merely when a deployment command finishes. For an event-sourced service, keep traffic away from a fresh process while its read models catch up with history. The same rule applies to a booking view, a document queue, or the practice project’s order summary.
 
 NeoHaskell supplies an executable application and HTTP probe endpoints. Your hosting environment supplies the process supervisor, traffic routing, secrets, persistent storage, and restart policy. There is no `neo deploy` command in the current CLI.
 
@@ -23,7 +23,7 @@ nix develop --command cabal list-bin exe:mug-shop
 
 One concrete deployment path is a Nix-enabled Linux host built from the tested revision. Build there (or use a matching build host), resolve that path, and configure the host's process supervisor to run the executable directly with the intended working directory and environment. Retain its Nix runtime dependencies. Copying a binary built on macOS to Linux, or copying a Nix-linked binary without its store dependencies, is not a deployment strategy.
 
-The generated flake also exposes the package outputs from `hixProject.flake`. Inspect the outputs with `nix flake show` before choosing a package for a Nix-native deployment. The template does not provide a ready-made shop container, cloud environment, or universal default application package.
+The generated flake also exposes the package outputs from `hixProject.flake`. Inspect the outputs with `nix flake show` before choosing a package for a Nix-native deployment. The template does not provide a ready-made application container, cloud environment, or universal default application package.
 
 ## Supply the runtime resources
 
@@ -78,14 +78,14 @@ The example startup budget is `5 × 12 = 60` seconds. Size it for bounded proces
 
 ## Admit traffic deliberately
 
-1. Start the revision without sending customer traffic to it.
+1. Start the revision without sending user traffic to it.
 2. Observe `/health`, then wait for `/ready` to return `200`.
 3. Run representative smoke tests against the **new revision identity**.
 4. Admit traffic and monitor failures, latency, and business outcomes.
 
 A shared ingress can still reach an old revision. Its successful response alone cannot prove the new revision is working.
 
-A complete shop smoke test should follow an implemented customer journey: submit an allowed action, observe its query result, verify a rejection, and check the relevant external outcome against a controlled provider environment. The built-in probes establish narrower facts. This guide does not supply or certify an end-to-end cloud, payment, or AI deployment.
+A complete application smoke test should follow an implemented user journey: submit an allowed action, observe its query result, verify a rejection, and check the relevant external outcome against a controlled provider environment. The built-in probes establish narrower facts. This guide does not supply or certify an end-to-end cloud, payment, or AI deployment.
 
 For a local instance on port 8080:
 

@@ -227,7 +227,7 @@
     "testbed/tests/files/upload.hurl": "3a7c00958bcdb9b6ad01307754428e3f459e064fd60bd50752709ec46046b983",
     "testbed/tests/queries/cart-summary.hurl": "3757e83566d996827be885f8e299bfe034fd650dd2e75fe2e0826b7eea123eb0",
     "testbed/tests/scenarios/stock-reservation.hurl": "7928c3366d5efc5d17d7b74b181eea0c0adaea0cdd6fb2d7900caf2d7d2760da",
-    "website/src/content/docs/guides/deployment.mdx": "9b1a290ad1b9c631b7a253d9d320bb59a87d302d6dc05009b983bd5b8ddbe3ad"
+    "website/src/content/docs/guides/deployment.mdx": "57345912acb286b2edbcca2fb6d93f4768a1c95af4ff905cb89de9fc039e4d14"
   },
   "pages": [
     {
@@ -255,9 +255,10 @@
         "progressiveDepth": true,
         "concreteOutcome": true,
         "sourceGrounded": true,
-        "independence": true
+        "independence": true,
+        "domainTransfer": true
       },
-      "notes": "Reviewed actual no-auth command bypass, query row filtering and optional command policy marker wiring. Policy snippets are partial; identity-provider discovery and real-token tests remain required in the reader application.",
+      "notes": "Reviewed actual no-auth command bypass, query row filtering and optional command policy marker wiring. Policy snippets are partial; identity-provider discovery and real-token tests remain required in the reader application. Domain-transfer review: the application concept leads; ecommerce is a worked example without an assumed company story.",
       "excerpts": []
     },
     {
@@ -281,9 +282,10 @@
         "progressiveDepth": true,
         "concreteOutcome": true,
         "sourceGrounded": true,
-        "independence": true
+        "independence": true,
+        "domainTransfer": true
       },
-      "notes": "Decision excerpt matched source. Adapted marker declaration is partial and not separately compiled. Canonical marker pattern avoids legacy redundant instances. Purchase-limit extension is a design exercise.",
+      "notes": "Decision excerpt matched source. Adapted marker declaration is partial and not separately compiled. Canonical marker pattern avoids legacy redundant instances. Purchase-limit extension is a design exercise. Domain-transfer review: the application concept leads; ecommerce is a worked example without an assumed company story.",
       "excerpts": [
         {
           "source": "testbed/src/Testbed/Cart/Commands/AddItem.hs",
@@ -315,9 +317,10 @@
         "progressiveDepth": true,
         "concreteOutcome": true,
         "sourceGrounded": true,
-        "independence": true
+        "independence": true,
+        "domainTransfer": true
       },
-      "notes": "Macro/loader implementation checked, including secret redaction, no automatic .env load and declared-but-unwired httpPort. Adapted config module not independently compiled; deployment credentials not used.",
+      "notes": "Macro/loader implementation checked, including secret redaction, no automatic .env load and declared-but-unwired httpPort. Adapted config module not independently compiled; deployment credentials not used. Domain-transfer review: the application concept leads; ecommerce is a worked example without an assumed company story.",
       "excerpts": [
         {
           "source": "testbed/src/Testbed/Config.hs",
@@ -343,9 +346,10 @@
         "progressiveDepth": true,
         "concreteOutcome": true,
         "sourceGrounded": true,
-        "independence": true
+        "independence": true,
+        "domainTransfer": true
       },
-      "notes": "Entity excerpts matched source. Explains entry counts, initial-state distinction, deterministic reconstruction, and pricing as unimplemented shop design. No live replay run during authoring.",
+      "notes": "Entity excerpts matched source. Explains entry counts, initial-state distinction, deterministic reconstruction, and pricing as unimplemented shop design. No live replay run during authoring. Domain-transfer review: the application concept leads; ecommerce is a worked example without an assumed company story.",
       "excerpts": [
         {
           "source": "testbed/src/Testbed/Cart/Core.hs",
@@ -386,9 +390,10 @@
         "progressiveDepth": true,
         "concreteOutcome": true,
         "sourceGrounded": true,
-        "independence": true
+        "independence": true,
+        "domainTransfer": true
       },
-      "notes": "Requests traced to public Hurl/source, not executed in this documentation run. Explicit PostgreSQL context, [] nullary body, asynchronous projection, timer interference, cart/order boundary. IDE instructions explicitly use testbed as workspace root, create/save a missing model before synchronization, and reload it after CLI sync. Source-audited; not a live IDE trial.",
+      "notes": "Requests traced to public Hurl/source, not executed in this documentation run. Explicit PostgreSQL context, [] nullary body, asynchronous projection, timer interference, cart/order boundary. IDE instructions explicitly use testbed as workspace root, create/save a missing model before synchronization, and reload it after CLI sync. Source-audited; not a live IDE trial. Domain-transfer review: explicitly framed as a practice milestone; the exercise teaches a reusable modeling or implementation method.",
       "excerpts": [
         {
           "source": "testbed/tests/commands/create-cart.hurl",
@@ -415,9 +420,10 @@
         "progressiveDepth": true,
         "concreteOutcome": true,
         "sourceGrounded": true,
-        "independence": true
+        "independence": true,
+        "domainTransfer": true
       },
-      "notes": "Routes, status mapping, CORS fields and response fields checked against source. Browser JS and partial CORS wiring were not browser-tested or compiled. Does not claim built-in static hosting.",
+      "notes": "Routes, status mapping, CORS fields and response fields checked against source. Browser JS and partial CORS wiring were not browser-tested or compiled. Does not claim built-in static hosting. Domain-transfer review: the application concept leads; ecommerce is a worked example without an assumed company story.",
       "excerpts": []
     },
     {
@@ -439,9 +445,10 @@
         "progressiveDepth": true,
         "concreteOutcome": true,
         "sourceGrounded": true,
-        "independence": true
+        "independence": true,
+        "domainTransfer": true
       },
-      "notes": "Reviewed as a reading-path page with an evaluator opening and a quantity/count exercise. Distinguishes Counter starter from Cart testbed. Human reader trial remains pending.",
+      "notes": "Reviewed as a reading-path page with an evaluator opening and a quantity/count exercise. Distinguishes Counter starter from Cart testbed. Human reader trial remains pending. Domain-transfer review: the application concept leads; ecommerce is a worked example without an assumed company story.",
       "excerpts": []
     },
     {
@@ -467,9 +474,10 @@
         "progressiveDepth": true,
         "concreteOutcome": true,
         "sourceGrounded": true,
-        "independence": true
+        "independence": true,
+        "domainTransfer": true
       },
-      "notes": "API vocabulary grounded in source/signature assets. Explicit Decimal Int64 bounds, float parsing and truncation limits. Small illustrative expressions/helpers were not independently compiled.",
+      "notes": "API vocabulary grounded in source/signature assets. Explicit Decimal Int64 bounds, float parsing and truncation limits. Small illustrative expressions/helpers were not independently compiled. Domain-transfer review: the application concept leads; ecommerce is a worked example without an assumed company story.",
       "excerpts": []
     },
     {
@@ -497,9 +505,10 @@
         "progressiveDepth": true,
         "concreteOutcome": true,
         "sourceGrounded": true,
-        "independence": true
+        "independence": true,
+        "domainTransfer": true
       },
-      "notes": "Projection excerpt matched source. Pagination, authorization-before-count, filter grammar and marker naming checked against implementation. Filter requests not executed here; new view extension is not compiled. Query declaration order corrected against compiling DefinitionSpec fixture: required companions, deriveQuery, then QueryOf business instances; the generated Query superclass must precede QueryOf.",
+      "notes": "Projection excerpt matched source. Pagination, authorization-before-count, filter grammar and marker naming checked against implementation. Filter requests not executed here; new view extension is not compiled. Query declaration order corrected against compiling DefinitionSpec fixture: required companions, deriveQuery, then QueryOf business instances; the generated Query superclass must precede QueryOf. Domain-transfer review: the application concept leads; ecommerce is a worked example without an assumed company story.",
       "excerpts": [
         {
           "source": "testbed/src/Testbed/Cart/Queries/CartSummary.hs",
@@ -527,9 +536,10 @@
         "progressiveDepth": true,
         "concreteOutcome": true,
         "sourceGrounded": true,
-        "independence": true
+        "independence": true,
+        "domainTransfer": true
       },
-      "notes": "Scenario and decision inspected. Separate cart and stock acceptance, missing compensation and checkout states are explicit. Curl variation is an adapted scenario, not a run result or complete checkout implementation.",
+      "notes": "Scenario and decision inspected. Separate cart and stock acceptance, missing compensation and checkout states are explicit. Curl variation is an adapted scenario, not a run result or complete checkout implementation. Domain-transfer review: explicitly framed as a practice milestone; the exercise teaches a reusable modeling or implementation method.",
       "excerpts": []
     },
     {
@@ -554,9 +564,10 @@
         "progressiveDepth": true,
         "concreteOutcome": true,
         "sourceGrounded": true,
-        "independence": true
+        "independence": true,
+        "domainTransfer": true
       },
-      "notes": "Decision/Hurl excerpts matched public tests. Separates unit, persistence, HTTP and provider evidence. These published tests were inspected, not run by this authoring agent.",
+      "notes": "Decision/Hurl excerpts matched public tests. Separates unit, persistence, HTTP and provider evidence. These published tests were inspected, not run by this authoring agent. Domain-transfer review: the application concept leads; ecommerce is a worked example without an assumed company story.",
       "excerpts": [
         {
           "source": "neo/starter/tests/Decider/Counter/IncrementCounterSpec.hs",
@@ -613,9 +624,10 @@
         "progressiveDepth": true,
         "concreteOutcome": true,
         "sourceGrounded": true,
-        "independence": true
+        "independence": true,
+        "domainTransfer": true
       },
-      "notes": "Concrete transfer milestone retains Counter tests and copies both full public domains plus self-contained HTTP tests. Local imports/transitive modules inspected. App snippet is adapted partial wiring, not a standalone module; source and framework revision compatibility is an explicit prerequisite. Static/source review completed; assembled generated application has not been compiled or its Hurl scenarios executed during this docs task. Proposed payment/order/AI capstones explicitly remain implementation work.",
+      "notes": "Concrete transfer milestone retains Counter tests and copies both full public domains plus self-contained HTTP tests. Local imports/transitive modules inspected. App snippet is adapted partial wiring, not a standalone module; source and framework revision compatibility is an explicit prerequisite. Static/source review completed; assembled generated application has not been compiled or its Hurl scenarios executed during this docs task. Proposed payment/order/AI capstones explicitly remain implementation work. Domain-transfer review: explicitly framed as a practice milestone; the exercise teaches a reusable modeling or implementation method.",
       "excerpts": []
     },
     {
@@ -639,9 +651,10 @@
         "progressiveDepth": true,
         "concreteOutcome": true,
         "sourceGrounded": true,
-        "independence": true
+        "independence": true,
+        "domainTransfer": true
       },
-      "notes": "Reviewed against the documentation methodology; snippets are source excerpts or labelled partial adaptations. Live provider tests and human reader trials remain pending.",
+      "notes": "Reviewed against the documentation methodology; snippets are source excerpts or labelled partial adaptations. Live provider tests and human reader trials remain pending. Domain-transfer review: the application concept leads; ecommerce is a worked example without an assumed company story.",
       "excerpts": []
     },
     {
@@ -663,9 +676,10 @@
         "progressiveDepth": true,
         "concreteOutcome": true,
         "sourceGrounded": true,
-        "independence": true
+        "independence": true,
+        "domainTransfer": true
       },
-      "notes": "Reviewed against the documentation methodology; snippets are source excerpts or labelled partial adaptations. Live provider tests and human reader trials remain pending.",
+      "notes": "Reviewed against the documentation methodology; snippets are source excerpts or labelled partial adaptations. Live provider tests and human reader trials remain pending. Domain-transfer review: the application concept leads; ecommerce is a worked example without an assumed company story.",
       "excerpts": []
     },
     {
@@ -691,9 +705,10 @@
         "progressiveDepth": true,
         "concreteOutcome": true,
         "sourceGrounded": true,
-        "independence": true
+        "independence": true,
+        "domainTransfer": true
       },
-      "notes": "Reviewed against the documentation methodology; snippets are source excerpts or labelled partial adaptations. Live provider tests and human reader trials remain pending.",
+      "notes": "Reviewed against the documentation methodology; snippets are source excerpts or labelled partial adaptations. Live provider tests and human reader trials remain pending. Domain-transfer review: the application concept leads; ecommerce is a worked example without an assumed company story.",
       "excerpts": [
         {
           "source": "core/service/Integration.hs",
@@ -729,9 +744,10 @@
         "progressiveDepth": true,
         "concreteOutcome": true,
         "sourceGrounded": true,
-        "independence": true
+        "independence": true,
+        "domainTransfer": true
       },
-      "notes": "Reviewed against the documentation methodology; snippets are source excerpts or labelled partial adaptations. Live provider tests and human reader trials remain pending.",
+      "notes": "Reviewed against the documentation methodology; snippets are source excerpts or labelled partial adaptations. Live provider tests and human reader trials remain pending. Domain-transfer review: the application concept leads; ecommerce is a worked example without an assumed company story.",
       "excerpts": []
     },
     {
@@ -759,9 +775,10 @@
         "progressiveDepth": true,
         "concreteOutcome": true,
         "sourceGrounded": true,
-        "independence": true
+        "independence": true,
+        "domainTransfer": true
       },
-      "notes": "Reviewed against the documentation methodology; snippets are source excerpts or labelled partial adaptations. Live provider tests and human reader trials remain pending.",
+      "notes": "Reviewed against the documentation methodology; snippets are source excerpts or labelled partial adaptations. Live provider tests and human reader trials remain pending. Domain-transfer review: the application concept leads; ecommerce is a worked example without an assumed company story.",
       "excerpts": []
     },
     {
@@ -789,9 +806,10 @@
         "progressiveDepth": true,
         "concreteOutcome": true,
         "sourceGrounded": true,
-        "independence": true
+        "independence": true,
+        "domainTransfer": true
       },
-      "notes": "Reviewed against the documentation methodology; snippets are source excerpts or labelled partial adaptations. Live provider tests and human reader trials remain pending. Explicitly documents authenticated-download middleware limitation, absent automatic cleanup-worker wiring, and background file-access authority boundary.",
+      "notes": "Reviewed against the documentation methodology; snippets are source excerpts or labelled partial adaptations. Live provider tests and human reader trials remain pending. Explicitly documents authenticated-download middleware limitation, absent automatic cleanup-worker wiring, and background file-access authority boundary. Domain-transfer review: the application concept leads; ecommerce is a worked example without an assumed company story.",
       "excerpts": []
     },
     {
@@ -815,9 +833,10 @@
         "progressiveDepth": true,
         "concreteOutcome": true,
         "sourceGrounded": true,
-        "independence": true
+        "independence": true,
+        "domainTransfer": true
       },
-      "notes": "Reviewed against the documentation methodology; snippets are source excerpts or labelled partial adaptations. Live provider tests and human reader trials remain pending.",
+      "notes": "Reviewed against the documentation methodology; snippets are source excerpts or labelled partial adaptations. Live provider tests and human reader trials remain pending. Domain-transfer review: the application concept leads; ecommerce is a worked example without an assumed company story.",
       "excerpts": []
     },
     {
@@ -837,9 +856,10 @@
         "progressiveDepth": true,
         "concreteOutcome": true,
         "sourceGrounded": true,
-        "independence": true
+        "independence": true,
+        "domainTransfer": true
       },
-      "notes": "Reviewed against the documentation methodology; snippets are source excerpts or labelled partial adaptations. Live provider tests and human reader trials remain pending.",
+      "notes": "Reviewed against the documentation methodology; snippets are source excerpts or labelled partial adaptations. Live provider tests and human reader trials remain pending. Domain-transfer review: the application concept leads; ecommerce is a worked example without an assumed company story.",
       "excerpts": []
     },
     {
@@ -869,9 +889,10 @@
         "progressiveDepth": true,
         "concreteOutcome": true,
         "sourceGrounded": true,
-        "independence": true
+        "independence": true,
+        "domainTransfer": true
       },
-      "notes": "Reviewed generic OAuth2 flow, exact config-factory shapes and source limitations: in-memory transaction/secret defaults, reactive refresh, callback error-only gap, ignored deletion failures, no provider revocation. Fictional accounting use case is explicitly adapter work. No live-provider verification or human reader trial claimed.",
+      "notes": "Reviewed generic OAuth2 flow, exact config-factory shapes and source limitations: in-memory transaction/secret defaults, reactive refresh, callback error-only gap, ignored deletion failures, no provider revocation. Fictional accounting use case is explicitly adapter work. No live-provider verification or human reader trial claimed. Domain-transfer review: the application concept leads; ecommerce is a worked example without an assumed company story.",
       "excerpts": []
     },
     {
@@ -893,9 +914,10 @@
         "progressiveDepth": true,
         "concreteOutcome": true,
         "sourceGrounded": true,
-        "independence": true
+        "independence": true,
+        "domainTransfer": true
       },
-      "notes": "Reviewed against the documentation methodology; snippets are source excerpts or labelled partial adaptations. Live provider tests and human reader trials remain pending.",
+      "notes": "Reviewed against the documentation methodology; snippets are source excerpts or labelled partial adaptations. Live provider tests and human reader trials remain pending. Domain-transfer review: the application concept leads; ecommerce is a worked example without an assumed company story.",
       "excerpts": [
         {
           "source": "testbed/src/Testbed/Cart/Integrations.hs",
@@ -927,9 +949,10 @@
         "progressiveDepth": true,
         "concreteOutcome": true,
         "sourceGrounded": true,
-        "independence": true
+        "independence": true,
+        "domainTransfer": true
       },
-      "notes": "Reviewed against the documentation methodology; snippets are source excerpts or labelled partial adaptations. Live provider tests and human reader trials remain pending.",
+      "notes": "Reviewed against the documentation methodology; snippets are source excerpts or labelled partial adaptations. Live provider tests and human reader trials remain pending. Domain-transfer review: the application concept leads; ecommerce is a worked example without an assumed company story.",
       "excerpts": [
         {
           "source": "testbed/src/Testbed/Cart/Integrations/ReserveStockOnItemAdded.hs",
@@ -962,9 +985,10 @@
         "progressiveDepth": true,
         "concreteOutcome": true,
         "sourceGrounded": true,
-        "independence": true
+        "independence": true,
+        "domainTransfer": true
       },
-      "notes": "Inspected public source and checked the stated boundaries. Setup requests follow the public starter scenario; fresh-machine execution and human reader trial are separate evidence.",
+      "notes": "Inspected public source and checked the stated boundaries. Setup requests follow the public starter scenario; fresh-machine execution and human reader trial are separate evidence. Domain-transfer review: the application concept leads; ecommerce is a worked example without an assumed company story.",
       "excerpts": []
     },
     {
@@ -993,9 +1017,10 @@
         "progressiveDepth": true,
         "concreteOutcome": true,
         "sourceGrounded": true,
-        "independence": true
+        "independence": true,
+        "domainTransfer": true
       },
-      "notes": "Inspected public source and checked the stated boundaries. Setup requests follow the public starter scenario; fresh-machine execution and human reader trial are separate evidence.",
+      "notes": "Inspected public source and checked the stated boundaries. Setup requests follow the public starter scenario; fresh-machine execution and human reader trial are separate evidence. Domain-transfer review: the application concept leads; ecommerce is a worked example without an assumed company story.",
       "excerpts": []
     },
     {
@@ -1015,9 +1040,10 @@
         "progressiveDepth": true,
         "concreteOutcome": true,
         "sourceGrounded": true,
-        "independence": true
+        "independence": true,
+        "domainTransfer": true
       },
-      "notes": "Existing guide URL preserved, linked to the progressive operational journey; probe semantics cross-reviewed against operational documentation.",
+      "notes": "Existing guide URL preserved, linked to the progressive operational journey; probe semantics cross-reviewed against operational documentation. Domain-transfer review: the application concept leads; ecommerce is a worked example without an assumed company story.",
       "excerpts": []
     },
     {
@@ -1037,9 +1063,10 @@
         "progressiveDepth": true,
         "concreteOutcome": true,
         "sourceGrounded": true,
-        "independence": true
+        "independence": true,
+        "domainTransfer": true
       },
-      "notes": "Existing guide URL preserved, linked to the progressive operational journey; probe semantics cross-reviewed against operational documentation.",
+      "notes": "Existing guide URL preserved, linked to the progressive operational journey; probe semantics cross-reviewed against operational documentation. Domain-transfer review: the application concept leads; ecommerce is a worked example without an assumed company story.",
       "excerpts": []
     },
     {
@@ -1062,9 +1089,10 @@
         "progressiveDepth": true,
         "concreteOutcome": true,
         "sourceGrounded": true,
-        "independence": true
+        "independence": true,
+        "domainTransfer": true
       },
-      "notes": "Editorial review of human intent, progressive depth, fictional examples, and claim boundaries. Paper exercises are designs, not implemented order features; reader trial remains pending.",
+      "notes": "Editorial review of human intent, progressive depth, fictional examples, and claim boundaries. Paper exercises are designs, not implemented order features; reader trial remains pending. Domain-transfer review: the application concept leads; ecommerce is a worked example without an assumed company story.",
       "excerpts": []
     },
     {
@@ -1087,9 +1115,10 @@
         "progressiveDepth": true,
         "concreteOutcome": true,
         "sourceGrounded": true,
-        "independence": true
+        "independence": true,
+        "domainTransfer": true
       },
-      "notes": "Contribution is a branch after application operation, with low-entry documentation/testing improvements. Exact governed process points to authoritative live repository contract instead of duplicating its full machinery.",
+      "notes": "Contribution is a branch after application operation, with low-entry documentation/testing improvements. Exact governed process points to authoritative live repository contract instead of duplicating its full machinery. Domain-transfer review: the application concept leads; ecommerce is a worked example without an assumed company story.",
       "excerpts": []
     },
     {
@@ -1116,9 +1145,10 @@
         "progressiveDepth": true,
         "concreteOutcome": true,
         "sourceGrounded": true,
-        "independence": true
+        "independence": true,
+        "domainTransfer": true
       },
-      "notes": "Preserves established startup/readiness, direct listener connection, and shutdown issue guidance. Executable build/lookup context explicit; Kubernetes fragment labelled illustrative. No cloud rollout was performed.",
+      "notes": "Preserves established startup/readiness, direct listener connection, and shutdown issue guidance. Executable build/lookup context explicit; Kubernetes fragment labelled illustrative. No cloud rollout was performed. Domain-transfer review: the application concept leads; ecommerce is a worked example without an assumed company story.",
       "excerpts": []
     },
     {
@@ -1141,9 +1171,10 @@
         "progressiveDepth": true,
         "concreteOutcome": true,
         "sourceGrounded": true,
-        "independence": true
+        "independence": true,
+        "domainTransfer": true
       },
-      "notes": "Historical compatibility described as required application evidence. Domain lock does not claim to migrate events. Personalisation exercise is explicitly shop design, not implemented example.",
+      "notes": "Historical compatibility described as required application evidence. Domain lock does not claim to migrate events. Personalisation exercise is explicitly shop design, not implemented example. Domain-transfer review: the application concept leads; ecommerce is a worked example without an assumed company story.",
       "excerpts": []
     },
     {
@@ -1165,9 +1196,10 @@
         "progressiveDepth": true,
         "concreteOutcome": true,
         "sourceGrounded": true,
-        "independence": true
+        "independence": true,
+        "domainTransfer": true
       },
-      "notes": "Editorial review: accessible operational promises and linked journey; distinguishes fictional commerce from executable public examples. Human reader trial pending.",
+      "notes": "Editorial review: accessible operational promises and linked journey; distinguishes fictional commerce from executable public examples. Human reader trial pending. Domain-transfer review: the application concept leads; ecommerce is a worked example without an assumed company story.",
       "excerpts": []
     },
     {
@@ -1190,9 +1222,10 @@
         "progressiveDepth": true,
         "concreteOutcome": true,
         "sourceGrounded": true,
-        "independence": true
+        "independence": true,
+        "domainTransfer": true
       },
-      "notes": "Checked aggregate readiness body and log levels/output format. Progress values are message text, not claimed exported metrics. No production monitoring integration was exercised.",
+      "notes": "Checked aggregate readiness body and log levels/output format. Progress values are message text, not claimed exported metrics. No production monitoring integration was exercised. Domain-transfer review: the application concept leads; ecommerce is a worked example without an assumed company story.",
       "excerpts": []
     },
     {
@@ -1217,9 +1250,10 @@
         "progressiveDepth": true,
         "concreteOutcome": true,
         "sourceGrounded": true,
-        "independence": true
+        "independence": true,
+        "domainTransfer": true
       },
-      "notes": "Defaults and retry bound checked against source. Explicitly avoids universal throughput and pool-budget promises; warns destructive regression script belongs only in disposable test environment. No new benchmark performed.",
+      "notes": "Defaults and retry bound checked against source. Explicitly avoids universal throughput and pool-budget promises; warns destructive regression script belongs only in disposable test environment. No new benchmark performed. Domain-transfer review: the application concept leads; ecommerce is a worked example without an assumed company story.",
       "excerpts": []
     },
     {
@@ -1247,9 +1281,10 @@
         "progressiveDepth": true,
         "concreteOutcome": true,
         "sourceGrounded": true,
-        "independence": true
+        "independence": true,
+        "domainTransfer": true
       },
-      "notes": "Checked current Postgres config fields, independent query storage, and Subscriber.new wiring. No claim that persistent query rows automatically resume checkpoints. Restart/restore exercise is proposed, not executed. Inspected missing cleanup-worker startup and made its operational boundary explicit.",
+      "notes": "Checked current Postgres config fields, independent query storage, and Subscriber.new wiring. No claim that persistent query rows automatically resume checkpoints. Restart/restore exercise is proposed, not executed. Inspected missing cleanup-worker startup and made its operational boundary explicit. Domain-transfer review: the application concept leads; ecommerce is a worked example without an assumed company story.",
       "excerpts": []
     },
     {
@@ -1274,9 +1309,10 @@
         "progressiveDepth": true,
         "concreteOutcome": true,
         "sourceGrounded": true,
-        "independence": true
+        "independence": true,
+        "domainTransfer": true
       },
-      "notes": "Recovery guidance distinguishes history, blobs, projections, and external effects. No automated disaster-recovery or payment reconciliation feature claimed. Restore rehearsal and live-provider tests remain pending. Inspected missing cleanup-worker startup and made its operational boundary explicit.",
+      "notes": "Recovery guidance distinguishes history, blobs, projections, and external effects. No automated disaster-recovery or payment reconciliation feature claimed. Restore rehearsal and live-provider tests remain pending. Inspected missing cleanup-worker startup and made its operational boundary explicit. Domain-transfer review: the application concept leads; ecommerce is a worked example without an assumed company story.",
       "excerpts": []
     },
     {
@@ -1302,9 +1338,10 @@
         "progressiveDepth": true,
         "concreteOutcome": true,
         "sourceGrounded": true,
-        "independence": true
+        "independence": true,
+        "domainTransfer": true
       },
-      "notes": "Authorisation expressions labelled partial and ownership field assumption explicit. Distinguishes typed-secret handling from arbitrary log redaction; no compliance or security certification claimed.",
+      "notes": "Authorisation expressions labelled partial and ownership field assumption explicit. Distinguishes typed-secret handling from arbitrary log redaction; no compliance or security certification claimed. Domain-transfer review: the application concept leads; ecommerce is a worked example without an assumed company story.",
       "excerpts": []
     },
     {
@@ -1347,9 +1384,10 @@
         "progressiveDepth": true,
         "concreteOutcome": true,
         "sourceGrounded": true,
-        "independence": true
+        "independence": true,
+        "domainTransfer": true
       },
-      "notes": "Navigation map based on public capability ownership and signatures; deeper implementation evidence lives with feature chapters. Deliberately excludes unrelated integration. Distinguishes building blocks from finished commerce features.",
+      "notes": "Navigation map based on public capability ownership and signatures; deeper implementation evidence lives with feature chapters. Deliberately excludes unrelated integration. Distinguishes building blocks from finished commerce features. Domain-transfer review: the application concept leads; ecommerce is a worked example without an assumed company story.",
       "excerpts": []
     },
     {
@@ -1375,9 +1413,10 @@
         "progressiveDepth": true,
         "concreteOutcome": true,
         "sourceGrounded": true,
-        "independence": true
+        "independence": true,
+        "domainTransfer": true
       },
-      "notes": "CLI flags and validation codes checked from source. Fixed test readiness probe port and any-HTTP-response semantics explicit. inspect sync identified as mutation. Installed-binary help may differ; no local release installation implied.",
+      "notes": "CLI flags and validation codes checked from source. Fixed test readiness probe port and any-HTTP-response semantics explicit. inspect sync identified as mutation. Installed-binary help may differ; no local release installation implied. Domain-transfer review: the application concept leads; ecommerce is a worked example without an assumed company story.",
       "excerpts": []
     },
     {
@@ -1398,9 +1437,10 @@
         "progressiveDepth": true,
         "concreteOutcome": true,
         "sourceGrounded": true,
-        "independence": true
+        "independence": true,
+        "domainTransfer": true
       },
-      "notes": "Inspected public source and checked the stated boundaries. Setup requests follow the public starter scenario; fresh-machine execution and human reader trial are separate evidence.",
+      "notes": "Inspected public source and checked the stated boundaries. Setup requests follow the public starter scenario; fresh-machine execution and human reader trial are separate evidence. Domain-transfer review: the application concept leads; ecommerce is a worked example without an assumed company story.",
       "excerpts": []
     },
     {
@@ -1426,9 +1466,10 @@
         "progressiveDepth": true,
         "concreteOutcome": true,
         "sourceGrounded": true,
-        "independence": true
+        "independence": true,
+        "domainTransfer": true
       },
-      "notes": "Troubleshooting starts from expected result and source-supported boundaries. Does not suggest event deletion, broad authorisation relaxation, or blind external retries.",
+      "notes": "Troubleshooting starts from expected result and source-supported boundaries. Does not suggest event deletion, broad authorisation relaxation, or blind external retries. Domain-transfer review: the application concept leads; ecommerce is a worked example without an assumed company story.",
       "excerpts": []
     },
     {
@@ -1451,9 +1492,10 @@
         "progressiveDepth": true,
         "concreteOutcome": true,
         "sourceGrounded": true,
-        "independence": true
+        "independence": true,
+        "domainTransfer": true
       },
-      "notes": "Editorial review of human intent, progressive depth, fictional examples, and claim boundaries. Paper exercises are designs, not implemented order features; reader trial remains pending.",
+      "notes": "Editorial review of human intent, progressive depth, fictional examples, and claim boundaries. Paper exercises are designs, not implemented order features; reader trial remains pending. Domain-transfer review: explicitly framed as a practice milestone; the exercise teaches a reusable modeling or implementation method.",
       "excerpts": []
     },
     {
@@ -1476,9 +1518,10 @@
         "progressiveDepth": true,
         "concreteOutcome": true,
         "sourceGrounded": true,
-        "independence": true
+        "independence": true,
+        "domainTransfer": true
       },
-      "notes": "Editorial review of human intent, progressive depth, fictional examples, and claim boundaries. Paper exercises are designs, not implemented order features; reader trial remains pending.",
+      "notes": "Editorial review of human intent, progressive depth, fictional examples, and claim boundaries. Paper exercises are designs, not implemented order features; reader trial remains pending. Domain-transfer review: the application concept leads; ecommerce is a worked example without an assumed company story.",
       "excerpts": []
     },
     {
@@ -1501,9 +1544,10 @@
         "progressiveDepth": true,
         "concreteOutcome": true,
         "sourceGrounded": true,
-        "independence": true
+        "independence": true,
+        "domainTransfer": true
       },
-      "notes": "Editorial review of human intent, progressive depth, fictional examples, and claim boundaries. Paper exercises are designs, not implemented order features; reader trial remains pending.",
+      "notes": "Editorial review of human intent, progressive depth, fictional examples, and claim boundaries. Paper exercises are designs, not implemented order features; reader trial remains pending. Domain-transfer review: the application concept leads; ecommerce is a worked example without an assumed company story.",
       "excerpts": []
     },
     {
@@ -1526,9 +1570,10 @@
         "progressiveDepth": true,
         "concreteOutcome": true,
         "sourceGrounded": true,
-        "independence": true
+        "independence": true,
+        "domainTransfer": true
       },
-      "notes": "Editorial review of human intent, progressive depth, fictional examples, and claim boundaries. Paper exercises are designs, not implemented order features; reader trial remains pending.",
+      "notes": "Editorial review of human intent, progressive depth, fictional examples, and claim boundaries. Paper exercises are designs, not implemented order features; reader trial remains pending. Domain-transfer review: the application concept leads; ecommerce is a worked example without an assumed company story.",
       "excerpts": []
     },
     {
@@ -1551,9 +1596,10 @@
         "progressiveDepth": true,
         "concreteOutcome": true,
         "sourceGrounded": true,
-        "independence": true
+        "independence": true,
+        "domainTransfer": true
       },
-      "notes": "Editorial review of human intent, progressive depth, fictional examples, and claim boundaries. Paper exercises are designs, not implemented order features; reader trial remains pending.",
+      "notes": "Editorial review of human intent, progressive depth, fictional examples, and claim boundaries. Paper exercises are designs, not implemented order features; reader trial remains pending. Domain-transfer review: the application concept leads; ecommerce is a worked example without an assumed company story.",
       "excerpts": []
     },
     {
@@ -1576,9 +1622,10 @@
         "progressiveDepth": true,
         "concreteOutcome": true,
         "sourceGrounded": true,
-        "independence": true
+        "independence": true,
+        "domainTransfer": true
       },
-      "notes": "Editorial review of human intent, progressive depth, fictional examples, and claim boundaries. Paper exercises are designs, not implemented order features; reader trial remains pending.",
+      "notes": "Editorial review of human intent, progressive depth, fictional examples, and claim boundaries. Paper exercises are designs, not implemented order features; reader trial remains pending. Domain-transfer review: the application concept leads; ecommerce is a worked example without an assumed company story.",
       "excerpts": []
     }
   ]

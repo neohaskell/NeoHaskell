@@ -1,13 +1,13 @@
 ---
-title: Call providers and model payments
-description: Connect external APIs without confusing a request with a completed business operation.
+title: Call external HTTP APIs
+description: Connect external APIs without confusing a request with a completed operation.
 sidebar:
   order: 2
 ---
 
-The shop asks a payment provider to collect money. The connection closes before the reply arrives. Did the payment fail, or did the reply disappear after the provider charged the customer?
+Your application sends a request to another service, but the connection closes before the reply arrives. Did the service reject the work, or did the reply disappear after the work completed? An HTTP integration must handle that uncertainty as well as ordinary success and failure.
 
-This is why a payment needs more than an HTTP request. NeoHaskell provides a general HTTP integration; your application supplies the provider contract, payment state, reconciliation, and duplicate protection. The same reasoning applies to purchasing shipping labels.
+NeoHaskell provides the request machinery; your application interprets the provider’s response and decides which operations can safely be repeated. We will start with a status lookup, then use a simulated payment in the ecommerce project to practise a more consequential handoff.
 
 Prerequisites: [integration lifecycle](/connect/) and [configuration](/build/configuration/).
 
@@ -41,7 +41,7 @@ For request bodies, use `Http.json`, `Http.form`, `Http.raw`, or `Http.noBody`. 
 
 ## Move from HTTP to payment meaning
 
-Design these boundaries before enabling a real charge:
+Use a test provider to model a payment in the practice project:
 
 1. Record an application payment attempt with a stable identifier and the order amount/currency.
 2. Build the provider request from trusted application state.
@@ -64,7 +64,7 @@ Timeouts also do not prove that the remote side did nothing. Preserve an unresol
 
 ## Exercise: a lost payment reply
 
-Describe the shop state after a timeout, what the customer sees, and how an operator resolves it.
+Describe the practice application’s state after a timeout, what its screen shows, and how you would resolve the uncertainty. Then consider which parts also apply to creating a calendar entry or submitting a document for processing.
 
 <details>
 <summary>Suggested checks</summary>

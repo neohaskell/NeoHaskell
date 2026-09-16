@@ -1,13 +1,13 @@
 ---
-title: Connect a merchant's provider account
-description: Link an external account while keeping consent, credentials, and business outcomes explicit.
+title: Connect external accounts with OAuth2
+description: Link an external account while keeping consent, credentials, and application outcomes explicit.
 sidebar:
   order: 3
 ---
 
-The merchant wants the shop to send accepted orders to their accounting service. They should authorise that connection without giving the shop their accounting password. OAuth2 provides a consent flow and credentials for subsequent access.
+A person wants your application to use an account they hold elsewhere, such as a calendar, document service, or accounting tool. They should be able to authorise that connection without giving your application their provider password. OAuth2 provides a consent flow and credentials for subsequent access.
 
-This differs from customer sign-in. The shop's JWT authentication identifies the merchant using your application; the provider's OAuth2 tokens authorise your application to access an external account. Connecting that account still does not implement invoice creation or order export.
+This differs from signing in to your application. JWT authentication identifies its user; the provider's OAuth2 tokens authorise access to an external account. For the practice project, consider connecting a test accounting account. Consent is one part of that feature; invoice creation or order export would need a separate adapter.
 
 Start with [application access control](/build/access-control/) and [integration outcomes](/connect/). Choose the minimum provider permissions needed for the actual feature.
 
@@ -19,7 +19,7 @@ Startup validates provider endpoints for HTTPS and network-address restrictions 
 
 ## Wire the account connection
 
-This is a **partial application builder**. The surrounding application must already register its transport, business services, and typed configuration. `identityServerUrl`, `accountProviderConfig`, and `existingSecretStore` are values you supply:
+This is a **partial application builder**. The surrounding application must already register its transport, services, and typed configuration. `identityServerUrl`, `accountProviderConfig`, and `existingSecretStore` are values you supply:
 
 ```haskell
     |> Application.withAuth @() (\_ -> identityServerUrl)
@@ -55,21 +55,21 @@ Import `OAuth2ProviderConfig (..)` from `Auth.OAuth2.Provider`. Client IDs, secr
 
 | Intended request | What happens |
 | --- | --- |
-| `GET /connect/{provider}` | Authenticates the merchant and redirects to provider consent |
+| `GET /connect/{provider}` | Authenticates the user and redirects to provider consent |
 | `GET /callback/{provider}?code=…&state=…` | Checks signed state, consumes the saved transaction, and exchanges the code |
-| `POST /disconnect/{provider}` | Authenticates the merchant and attempts local token deletion |
+| `POST /disconnect/{provider}` | Authenticates the user and attempts local token deletion |
 
 The connect route accepts a bearer header and has a query-token fallback for browser redirects. Prefer the header where feasible; prevent token-bearing URLs from entering application or proxy logs. The callback uses the signed state and saved transaction rather than requiring a JWT from the provider's redirect.
 
-State expires after five minutes. Its transaction retains the merchant identity and PKCE verifier server-side and is consumed once. A failed exchange therefore requires starting a fresh connection rather than replaying the same callback.
+State expires after five minutes. Its transaction retains the user identity and PKCE verifier server-side and is consumed once. A failed exchange therefore requires starting a fresh connection rather than replaying the same callback.
 
-## Turn consent into a visible business outcome
+## Turn consent into an application outcome
 
-After successful exchange, tokens are stored before `onSuccess` receives the merchant user ID and a `TokenKey`. Each callback returns JSON text in `Integration.CommandPayload` format; construct that with `Integration.encodeCommand` around a registered application command.
+After successful exchange, tokens are stored before `onSuccess` receives the authenticated user ID and a `TokenKey`. Each callback returns JSON text in `Integration.CommandPayload` format; construct that with `Integration.encodeCommand` around a registered application command.
 
 `encodeConnected` handles `Text -> TokenKey -> Text`; `encodeConnectionFailure` handles `Text -> OAuth2Error -> Text`; `encodeDisconnected` handles `Text -> Text`. Their resulting commands can be different types because the callback boundary is encoded text. Keep raw tokens out of command payloads and events. Let the connection command record the application association and a suitable reference, then expose its outcome through a query.
 
-Do not treat arrival at a success URL as proof that order export works. Test callback command dispatch and a real provider API operation separately. Errors before exchange, and consent-denial redirects lacking `code`, do not necessarily call `onFailure`; the current web callback expects both `code` and `state`.
+Do not treat arrival at a success URL as proof that the connected feature works. Test callback command dispatch and a real provider API operation separately. Errors before exchange, and consent-denial redirects lacking `code`, do not necessarily call `onFailure`; the current web callback expects both `code` and `state`.
 
 ## Plan the credential lifetime
 
@@ -81,7 +81,7 @@ Missing tokens, missing refresh tokens, or a failed refresh need a reconnect out
 
 ## Exercise: consent interrupted
 
-Ask your agent to demonstrate connection, a tampered or replayed state, consent denial, restart during consent, refresh failure, and disconnect with a failing secret store. Then explain what the merchant sees in each case.
+Ask your agent to demonstrate connection, a tampered or replayed state, consent denial, restart during consent, refresh failure, and disconnect with a failing secret store. Then explain what the person connecting their account sees in each case.
 
 The public route and refresh tests provide examples with controlled dependencies. They do not certify a particular accounting provider. Record that provider's sandbox verification separately, then build the actual [provider adapter](/connect/custom-integrations/).
 

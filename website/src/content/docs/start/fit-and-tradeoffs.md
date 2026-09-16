@@ -6,8 +6,8 @@ sidebar:
 ---
 
 A framework is useful when its choices help your team handle the work that matters.
-For our shop, that work includes explaining orders, making safe changes to rules,
-and coordinating with services that can fail independently.
+That might include explaining past decisions, changing rules while preserving
+existing records, or coordinating with services that can fail independently.
 
 NeoHaskell is worth evaluating when those concerns are central to your application.
 A short experiment with one real business rule is stronger evidence than a broad
@@ -17,15 +17,17 @@ promise about productivity.
 
 | Your need | What to examine | Cost or responsibility |
 | --- | --- | --- |
-| Explain how an order reached its state | Events and reconstructed state | Choose meaningful facts and preserve their history |
+| Explain how a record reached its current state | Events and reconstructed state | Choose meaningful facts and preserve their history |
 | Change software with an agent | Shared conventions, model inspection, tests | Review intent and evidence; do not delegate business ownership |
 | Serve several views of the same process | Query projections | Account for the delay between accepting a command and updating a view |
-| Coordinate payment, stock, and email | Explicit integrations and outcomes | Handle partial failure, duplicates, and provider-specific rules |
+| Coordinate actions across services | Explicit integrations and outcomes | Handle partial failure, duplicates, and provider-specific rules |
 | Run a durable service | Postgres-backed components and readiness | Operate backups, restore tests, secrets, and rollout checks |
 
 The ecosystem includes concrete integrations and lower-level building blocks.
-It does not provide a complete ecommerce platform. Check the [capability guide](/reference/capabilities/)
-for what is present and what your application must supply.
+Check the [capability guide](/reference/capabilities/) against your requirements
+to distinguish what is present from what your application must supply. The
+ecommerce practice project in these docs illustrates those building blocks;
+it is not a ready-made commerce platform.
 
 ## Where to look especially carefully
 
@@ -46,9 +48,11 @@ permissions and persistence; their defaults are not production approval.
 
 ## Run a useful pilot
 
-Choose a workflow small enough to finish: adding an item to a cart, refusing an
-invalid quantity, and showing the resulting cart. Before implementation, write
-three examples: one that succeeds, one that must fail, and one at the allowed limit.
+Choose a workflow from your own domain small enough to finish: one request, a rule
+that can refuse it, and a view of the result. In the ecommerce practice project,
+that is adding an item to a cart, refusing an invalid quantity, and showing the
+resulting cart. Before implementation, write three examples: one that succeeds,
+one that must fail, and one at the allowed limit.
 
 After building, ask someone other than the author to explain the rule from the
 model, find its checks, and request a small variation. Record what confused them,

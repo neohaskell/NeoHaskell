@@ -1,9 +1,11 @@
-# Change 013: Teach the human ecommerce journey with progressive depth
+# Change 013: Teach NeoHaskell with progressive depth and a practice project
 
 Publish the approved human documentation methodology and a source-grounded learning
 journey from evaluating NeoHaskell through building, connecting, operating, and
-evolving a fictional shop with an AI coding partner. Preserve direct consultation
-and an accessible evaluator path. Agent-facing documentation is separate.
+evolving applications with an AI coding partner. Use ecommerce as the continuing
+example and practice project, with general-purpose concepts leading the topic pages.
+Preserve direct consultation and an accessible evaluator path; no existing company's
+story is required. Agent-facing documentation is separate.
 
 ```yaml spec
 issue: adhoc:human-documentation
@@ -31,8 +33,9 @@ No Haskell or Rust public APIs change.
 
 ## User impact
 
-Jess can follow one ecommerce learning journey, evaluate business tradeoffs without
-reading every implementation section, and consult individual topics. Existing
+Jess can learn NeoHaskell through a cohesive ecommerce practice project, apply the
+concepts to her own domain, evaluate business tradeoffs without reading every
+implementation section, and consult individual topics. Existing
 getting-started and deployment routes remain usable. The source examples distinguish
 implemented public capabilities from shop-specific designs. The authoring plan is
 `website/DOCUMENTATION_PLAN.md`; the review record explicitly separates automated

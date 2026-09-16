@@ -5,9 +5,9 @@ sidebar:
   order: 2
 ---
 
-A customer asks to add two mugs. The shop can accept that request or explain why it cannot. Keeping the request separate from the accepted fact gives you a clear place to express business rules—and a clear way to question an agent's implementation.
+An application must distinguish what someone requested from what it accepted. Keeping those separate gives you a clear place to express rules, explain refusals, and question an agent's implementation.
 
-A **command** names an intention, such as `AddItem`. An **event** names something accepted as having happened, such as `ItemAdded`. Start with the [event-modeling introduction](/start/event-modeling/) if you want to sketch that distinction before reading code.
+A **command** names an intention. An **event** names something accepted as having happened. In our ecommerce practice project, a customer asks to add two mugs with `AddItem`; acceptance records `ItemAdded`. Start with the [event-modeling introduction](/start/event-modeling/) if you want to sketch that distinction before reading code.
 
 ## Name the decision before implementing it
 
@@ -72,11 +72,11 @@ Events have a marker too: `event ''YourEvent` from `Service.Event.TH` generates 
 
 Ask: “What happens for quantities minus one, zero, and one? What happens if the cart does not exist?” You should be able to answer from the decision itself before seeing test results.
 
-The executor coordinates reading state and recording accepted events. Its concurrency machinery cannot decide whether your business rule is sensible. It also does not turn two different commands into an atomic checkout.
+The executor coordinates reading state and recording accepted events. Its concurrency machinery cannot decide whether your business rule is sensible. It also does not turn two different commands into one atomic operation; a checkout spanning Cart and Stock is one example of that boundary.
 
 ## Exercise: a purchase limit
 
-The merchant wants at most six mugs **per cart**. Your agent adds `if cmd.quantity > 6` and says the feature is complete. What case has it missed?
+For this exercise, choose a limit of six mugs **per cart**. Your agent adds `if cmd.quantity > 6` and says the feature is complete. What case has it missed?
 
 <details>
 <summary>Suggested reasoning and evidence</summary>

@@ -5,11 +5,11 @@ sidebar:
   order: 3
 ---
 
-Start with what you expected to happen: a project builds, a process starts, an accepted order appears, or a provider confirms an action. Then locate the first point where the evidence diverges. This gives you and your agent a smaller problem than “the shop is broken.”
+Start with what you expected to happen: a project builds, a process starts, an accepted change becomes visible, or a provider confirms an action. Then locate the first point where the evidence diverges. This gives you and your agent a smaller problem than “the application is broken.”
 
 ## Keep a useful diagnostic record
 
-Record the command or request, revision, expected result, actual result, and the smallest safe reproduction. Include the complete relevant error, but remove secrets and customer data. Keep the distinction between a local generated application and a framework repository checkout: their commands differ.
+Record the command or request, revision, expected result, actual result, and the smallest safe reproduction. Include the complete relevant error, but remove secrets and private data. Keep the distinction between a local generated application and a framework repository checkout: their commands differ.
 
 | Symptom | First check | Next action |
 | --- | --- | --- |
@@ -53,6 +53,8 @@ Inventory pools and listeners across all running revisions. Check the configured
 Check TLS configuration in each wired store. The testbed's `DB_SSL_MODE` environment variable is an application mapping, not a universal switch for every Postgres client you may create.
 
 ## Return a focused task to your agent
+
+For example, a diagnostic task in the ecommerce practice project might be:
 
 > “The command is accepted on revision A. Readiness becomes ready, but this user's query omits the order. Find the query and its access policy, preserve that policy, and give me a test that distinguishes a projection error from an ownership error.”
 

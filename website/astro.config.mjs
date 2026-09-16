@@ -34,8 +34,8 @@ export default defineConfig({
 			sidebar: [
                 { label: 'Start and evaluate', items: [{ autogenerate: { directory: 'start' } }] },
                 { label: 'Get started', items: [{ autogenerate: { directory: 'getting-started' } }] },
-                { label: 'Build the shop', collapsed: true, items: [{ autogenerate: { directory: 'build' } }] },
-                { label: 'Connect the shop', collapsed: true, items: [{ autogenerate: { directory: 'connect' } }] },
+                { label: 'Build applications', collapsed: true, items: [{ autogenerate: { directory: 'build' } }] },
+                { label: 'Connect systems', collapsed: true, items: [{ autogenerate: { directory: 'connect' } }] },
                 { label: 'Operate and evolve', collapsed: true, items: [{ autogenerate: { directory: 'operate' } }] },
                 { label: 'Reference', collapsed: true, items: [{ autogenerate: { directory: 'reference' } }] },
 				{

@@ -40,7 +40,15 @@ reading to answer a specific question.
 
 - State the central promise early; reveal its consequences through familiar problems.
 - Give readers a useful illustrated experience before installation.
-- Grow one fictional ecommerce business from one product and one order/cart.
+- Teach NeoHaskell's concepts and capabilities as tools for the reader's own
+  application, whatever its domain. The documentation is about the language and
+  framework; ecommerce supplies a continuing example and an optional practice project.
+- Grow that practice project from one product and one order/cart. Introduce it as
+  something the reader builds, with no existing company, brand, or business history
+  they must adopt or remember.
+- Lead general topic pages with the reusable problem and concept. Bring in the
+  ecommerce example to make the idea concrete, then help the reader apply it to their
+  own domain. Tutorial milestones can open directly with the practice task.
 - Use the existing public starter and testbed as executable anchors. Distinguish
   implemented examples from shop-specific designs the reader must implement.
 - Introduce complexity when the business needs it: quantity rules, stock, cancellation,
@@ -62,8 +70,8 @@ automation remain the translation strategy. Generated ADR pages keep their gener
 | Section | Purpose | Planned subjects |
 | --- | --- | --- |
 | Start / evaluate | Benefit before setup | Why NeoHaskell; fit and tradeoffs; a shop without setup; trusting an agent; event modeling; reading paths |
-| Build the shop | First working slice to richer behaviour | Setup; visual IDE; first cart; commands/events/entities; queries; stock and checkout; HTTP/frontend; tests; permissions; configuration; transfer the working slice into the reader’s project; language essentials |
-| Connect the shop | Effects beyond a single service | Integration lifecycle; cross-domain workflows; HTTP/providers/payments; email; files; PDF/OCR; AI; tools/agents; timers; custom integration authoring |
+| Build applications | First working slice to richer behaviour | Setup; visual IDE; first cart; commands/events/entities; queries; stock and checkout; HTTP/frontend; tests; permissions; configuration; transfer the working slice into the reader’s project; language essentials |
+| Connect systems | Effects beyond a single service | Integration lifecycle; cross-domain workflows; HTTP/providers/payments; email; files; PDF/OCR; AI; tools/agents; timers; custom integration authoring |
 | Run and evolve | Deploy, diagnose, and change | Persistence; deployment; observability; recovery; evolution; security; performance; contribution |
 | Reference | Direct consultation | CLI; language vocabulary; capability map; glossary; troubleshooting |
 
@@ -109,6 +117,10 @@ Semantic review of every authored page:
 6. Can a direct-entry reader identify context and the next useful step?
 7. Do exercises transfer responsibility and provide observable checks?
 8. Is the prose natural, with flexible structure and no private-source disclosure?
+9. Is NeoHaskell the subject, with ecommerce serving as the example? Can someone
+   building a different kind of application use the explanation without following
+   an assumed company's story? Keep worked examples concrete rather than replacing
+   every domain term with an abstraction.
 
 Record source inspection, automated results, and semantic review separately. A
 passing link check is not proof of pedagogy or a live external-provider transaction.
@@ -120,6 +132,8 @@ rule, navigate the relevant IDE graph, spot a wrong agent proposal, make an unfa
 variation, and find an answer again later. Separately ask an evaluator to read only
 accessible openings and explain fit and tradeoffs. Record observed difficulty and
 revise. Agent review is a rehearsal, never evidence that these human trials occurred.
+Include a reader working outside ecommerce: ask them to apply a concept to their
+own process and identify which choices in the practice project are domain-specific.
 
 ## Delivery and evidence
 

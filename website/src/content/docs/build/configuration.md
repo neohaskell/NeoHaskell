@@ -1,13 +1,13 @@
 ---
 title: Configuration
-description: Give the shop explicit deployment settings and keep secrets out of ordinary output.
+description: Define typed deployment settings and keep secrets out of ordinary output.
 sidebar:
   order: 9
 ---
 
-Your local shop and your deployed shop need different database addresses and provider credentials. They should still follow the same business rules. Configuration makes those environmental choices explicit and validates them before the application starts serving customers.
+An application often needs different database addresses and provider credentials in development and production. Its business rules should remain consistent across those environments. Configuration makes the environmental choices explicit and validates them before the application starts serving requests.
 
-Decide which values are settings and which belong in the business history. A database host is configuration. A price accepted for an order is part of the commercial record; changing a setting tomorrow should not rewrite yesterday's agreement.
+Decide which values are settings and which belong in the business history. A database host is configuration. In the ecommerce practice project, a price accepted for an order would belong in the commercial record; changing a setting tomorrow should not rewrite yesterday's agreement.
 
 ## Read a configuration definition
 
@@ -24,7 +24,7 @@ It says that `dbHost` is text, documents its purpose, supplies a development def
 
 Every field needs documentation and either a default or a requirement to provide it. The macro rejects missing documentation, missing default/required choices, and conflicting choices.
 
-Here is an **adapted complete declaration**, intended for a module in a configured NeoHaskell application. The provider field is illustrative; it does not create an integration:
+Here is an **adapted complete declaration** for the practice project's configuration module. The same field definitions apply to other NeoHaskell applications; choose names and settings appropriate to your domain. The provider field is illustrative; it does not create an integration:
 
 ```haskell
 {-# LANGUAGE TemplateHaskell #-}
@@ -84,8 +84,6 @@ If the provider is required, require the field and fail clearly at startup when 
 
 </details>
 
-Next: consult [language essentials](/build/language-essentials/), or move on to [connect the shop](/connect/).
+Next: [assemble the practice application](/build/your-shop/) before extending it with providers. Consult [language essentials](/build/language-essentials/) whenever a type or expression needs explanation.
 
 Public sources: [configuration API](https://github.com/neohaskell/NeoHaskell/blob/main/core/config/Config.hs), [configuration generation](https://github.com/neohaskell/NeoHaskell/blob/main/core/config/Config/TH.hs), [testbed settings](https://github.com/neohaskell/NeoHaskell/blob/main/testbed/src/Testbed/Config.hs), [starter wiring](https://github.com/neohaskell/NeoHaskell/blob/main/neo/starter/src/App.hs), [Redacted](https://github.com/neohaskell/NeoHaskell/blob/main/core/core/Redacted.hs).
-
-Next: [bring the working slice into your own shop](/build/your-shop/) before extending it with providers.

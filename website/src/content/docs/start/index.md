@@ -1,12 +1,12 @@
 ---
 title: "Find your path"
-description: "Follow the shop journey, evaluate NeoHaskell, or look up one specific problem."
+description: "Learn NeoHaskell step by step, evaluate it for your team, or look up one specific problem."
 sidebar:
   order: 0
 ---
 
 You do not need to learn a framework's internals before deciding whether it helps
-your business. You also should not need to reread an introduction every time you
+your application. You also should not need to reread an introduction every time you
 forget how to configure a service. These docs support both moments.
 
 ## Evaluate before building
@@ -15,7 +15,7 @@ Read [why NeoHaskell](/start/why-neohaskell/), [fit and tradeoffs](/start/fit-an
 and [the shop on paper](/start/a-shop-on-paper/). Continue through the opening
 sections of the build, connect, and operate pages. They explain the decisions and
 consequences before introducing code. The advanced pages still begin with a
-recognisable business problem.
+recognisable application problem.
 
 You can finish this path able to discuss the benefits, implementation effort,
 operational responsibilities, and limits with your team. You do not need to run
@@ -25,11 +25,16 @@ an example to understand those choices.
 
 The main route is:
 
-1. [Describe the shop](/start/event-modeling/) and [agree how to work](/start/trusting-your-agent/).
+1. [Describe application behaviour](/start/event-modeling/) and [agree how to work](/start/trusting-your-agent/).
 2. [Set up a project](/getting-started/) and [explore it visually](/getting-started/visual-ide/).
-3. [Build the shop](/build/) using the public cart and stock examples.
-4. [Connect it](/connect/) to external systems and add carefully bounded AI features.
-5. [Operate and evolve it](/operate/) with persistence, deployment checks, and recovery.
+3. [Build applications](/build/): learn commands, state, queries, and tests through cart and stock examples.
+4. [Connect systems](/connect/) and add carefully bounded AI features.
+5. [Operate and evolve your application](/operate/) with persistence, deployment checks, and recovery.
+
+Ecommerce is the recurring example. The practice project starts small and grows as
+you learn, so you can see how concepts fit together. General topic pages also work
+on their own: you can learn about queries or permissions while building an entirely
+different application.
 
 The first examples supply decisions and checks. Later exercises ask you to make a
 choice, explain its consequence, or correct an agent's proposal. Optional suggested
@@ -41,12 +46,12 @@ you remain responsible for deciding what success means.
 A **public example** identifies code or a test in this repository. A **partial
 snippet** teaches one part of an implementation and needs the surrounding module
 and application wiring. A **design exercise** describes behaviour for you to build.
-Do not assume every scenario in the shop story is already implemented in the
+Do not assume every feature of the practice project is already implemented in the
 starter or reference application.
 
 The starter is a small counter. The reference application contains cart and stock
 examples. We keep that distinction visible so you can run what exists, understand
-it, and use the same concepts in your own shop.
+it, and use the same concepts in your own application.
 
 For direct answers, use the [capability guide](/reference/capabilities/),
 [CLI reference](/reference/cli/), [glossary](/reference/glossary/), or

@@ -70,8 +70,8 @@ increment, the accepted events, and the view. Ask your agent to explain how thos
 parts correspond to the HTTP requests you sent. Then repeat the exercise with the
 [cart example](/build/first-cart/).
 
-When a shop model grows, use its features and chapters to focus on one behaviour.
-Follow connections across a boundary when investigating stock or an external
+When an application model grows, use its features and chapters to focus on one behaviour.
+Follow connections across a boundary when investigating another domain or an external
 provider. **Tidy by flow** adjusts the presentation; it does not fix business rules.
 The Problems panel helps locate model validation issues.
 
@@ -96,7 +96,7 @@ Ask your agent to explain an increment of zero using the graph and the command's
 rule. Can you distinguish where the request is represented from where the refusal
 is decided? A model connection alone cannot answer whether zero is allowed.
 
-Next: [build the shop](/build/), or consult the [CLI reference](/reference/cli/).
+Next: [build application behaviour](/build/), or consult the [CLI reference](/reference/cli/).
 
 Implementation evidence: [IDE server](https://github.com/neohaskell/NeoHaskell/blob/main/neo/src/commands/ide.rs),
 [source synchronization](https://github.com/neohaskell/NeoHaskell/blob/main/neo/src/ide/sync.rs),

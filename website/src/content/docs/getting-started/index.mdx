@@ -1,17 +1,17 @@
 ---
 title: "Run your first project"
-description: "Check the toolchain with a small working application before building the shop."
+description: "Create a project, make a request, and check the result with a small working application."
 sidebar:
   order: 0
 ---
 
 Your first technical milestone is modest: make a request, see the accepted result,
 and run the checks that describe it. Start with the bundled counter application so
-you can separate setup problems from the shop's business rules.
+you can separate setup problems from the rules you want to implement.
 
 The counter is a toolchain check. The next section uses the public cart and stock
-examples to teach the shop. Creating a project does not generate a storefront or
-payment integration.
+examples to teach commands, state, and queries. You can continue with the ecommerce
+practice project or use those concepts in your own application.
 
 ## Prepare your tools
 
@@ -56,7 +56,9 @@ generated dependency pins until you intentionally upgrade.
 
 ## Create the project
 
-From a directory outside the NeoHaskell checkout:
+From a directory outside the NeoHaskell checkout, create a project. We use
+`mug-shop` as the name for the ecommerce practice project; choose another name if
+you are working on your own idea, and use that directory in later commands.
 
 ```sh
 neo new mug-shop
@@ -125,7 +127,7 @@ plus a refusal for an empty label. Its expected final value is `1`.
 
 The starter event store uses `persistent = False`. Restarting the application
 loses its example history. That is useful for a disposable first run; choose and
-verify [durable persistence](/operate/persistence/) before storing customer orders.
+verify [durable persistence](/operate/persistence/) before storing data you need to keep.
 
 ## Make one small prediction
 

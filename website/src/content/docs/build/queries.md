@@ -1,15 +1,15 @@
 ---
 title: Queries and useful views
-description: Build read models around the questions customers and merchants need answered.
+description: Build read models around the questions each reader needs answered.
 sidebar:
   order: 4
 ---
 
-A customer wants to see their cart. A merchant wants to see stock available to sell. Neither needs the whole internal history on every screen. A query gives each screen a useful view of the application.
+A screen or report needs information shaped around its reader's question. Displaying the application's entire internal history would make that question harder to answer. A query prepares a useful view, such as work awaiting review or the progress of a request.
 
 NeoHaskell's read models separate presenting information from deciding whether a change is allowed. That gives you freedom to shape the view, with a tradeoff: a newly accepted change may take a short time to appear in it.
 
-This page continues the [first cart](/build/first-cart/) example. The server and routes below belong to the public testbed.
+We practise with a cart summary: a customer needs their selections, while a merchant needs different stock information. This page continues the [first cart](/build/first-cart/) example. The server and routes below belong to the public testbed.
 
 ## Begin with the question on the screen
 
@@ -42,7 +42,7 @@ Other outcomes are `Delete`, which removes the view row, and `NoOp`, which leave
 
 For a new query, define its data, `canAccess`, and `canView`, then call `deriveQuery ''CartSummary [''CartEntity]`. Put the relevant `QueryOf` business instances **after** that marker: they depend on the `Query` instance it generates. Import the marker from `Service.Query.TH` and let it generate the standard instances. The public query-wiring test demonstrates this declaration order without redundant boilerplate. The application must also register the query with `Application.withQuery @CartSummary`.
 
-The marker's internal name is `CartSummary`; the HTTP URL is `/queries/cart-summary`. The existing example deliberately allows public access. Before putting customer data online, apply the [access-control policies](/build/access-control/).
+The marker's internal name is `CartSummary`; the HTTP URL is `/queries/cart-summary`. The existing example deliberately allows public access. Before exposing private application data, define and test the [access-control policies](/build/access-control/).
 
 ## Find your cart
 

@@ -1,13 +1,13 @@
 ---
-title: Stock and checkout
-description: Coordinate a customer's choices with stock, and design an honest checkout promise.
+title: "Coordinating changes: stock and checkout"
+description: Practise coordinating separate decisions and recognising when a workflow is complete.
 sidebar:
   order: 5
 ---
 
-A mug in a cart is a customer's intention. A mug reserved in the warehouse is a commitment of limited stock. If two customers want the last mug, the shop needs a rule for who receives that commitment—and a way to tell the other customer what happened.
+An accepted request can start work that another part of an application must accept or refuse independently. Coordinating those decisions requires a clear definition of completion and a way to handle partial failure. NeoHaskell provides commands, events, and integrations for that coordination; you define the overall policy.
 
-This is where the application begins coordinating separate responsibilities. NeoHaskell provides commands, events, and integrations for that coordination. You still decide when the shop is entitled to say “your order is confirmed.”
+For this exercise, we connect the Cart and Stock examples. A mug in a cart represents a customer's intention; a reserved mug represents a commitment of limited stock. If two customers want the last mug, a rule must determine who receives that commitment. The example lets us examine when an application can honestly say “your order is confirmed.”
 
 ## Follow the existing reservation
 
@@ -58,11 +58,11 @@ This distinction is essential. Cart and Stock receive separate commands. The car
 
 Try adding two more units to your three-unit stock after reserving the first two. The cart's positive-quantity rule can accept the addition, but Stock should reject reserving more than its remaining one. Verify both views rather than treating the initial HTTP 200 as the final outcome.
 
-That is useful demonstration behaviour, but insufficient checkout policy for a live shop.
+That is useful demonstration behaviour, but insufficient evidence that the overall workflow succeeded. A production checkout would need an explicit reservation outcome and a policy for failure.
 
 ## Design the next promise explicitly
 
-Before adding payments, sketch these **proposed shop states**, which are not implemented order types in the testbed:
+To extend the practice project with payments, sketch these **proposed workflow states**, which are not implemented order types in the testbed:
 
 | Situation | What the shop can honestly say |
 | --- | --- |
@@ -74,11 +74,11 @@ Before adding payments, sketch these **proposed shop states**, which are not imp
 
 Decide how reservation expiry, failed payment, cancellation, and shipment affect stock. Define how to recognise a repeated request before retrying it. A payment provider's result needs its own reconciliation; no built-in payment adapter is assumed here.
 
-This work belongs in the event model before the agent chooses an implementation. Continue in [connect the shop](/connect/) for outbound actions and follow-up commands.
+For your own application, identify the corresponding promises and the evidence each requires. This work belongs in the event model before the agent chooses an implementation. Continue in [integrations](/connect/) for outbound actions and follow-up commands.
 
 ## Exercise: reserve on checkout instead
 
-The merchant wants customers to browse freely and reserve stock only at checkout. Identify which existing connection must change, then describe the evidence needed before accepting the change.
+Change the practice project's policy so customers can browse freely and stock is reserved only at checkout. Identify which existing connection must change, then describe the evidence needed before accepting the change.
 
 <details>
 <summary>Suggested reasoning and checks</summary>

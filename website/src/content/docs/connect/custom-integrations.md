@@ -5,7 +5,7 @@ sidebar:
   order: 10
 ---
 
-The shop now needs a provider that NeoHaskell does not wrap. A reusable integration lets the application describe business work in a small record while keeping protocol details, credentials, and response parsing in one place.
+When an application needs an external API or local tool that NeoHaskell does not wrap, you can package that work as a reusable integration. Callers describe a request in a small record; protocol details, credentials, and response parsing stay in one implementation.
 
 This is a deeper branch of the journey. You are taking responsibility for networking or subprocess behaviour as well as the application's rules. Begin with [generic HTTP](/connect/http-and-payments/) if that already fits the provider.
 
@@ -20,7 +20,7 @@ The public integrations commonly use:
 
 For an imaginary parcel-label provider, the application request might include a shipment reference and package details. This is a design example, not a supplied shipping API. Decide which exact provider status establishes label creation and what to do if a reply is lost.
 
-Keep both callbacks returning a single command type. Let the caller capture its own workflow identifier in those callbacks. Avoid coupling the reusable integration to a particular shop entity.
+Keep both callbacks returning a single command type. Let the caller capture its own workflow identifier in those callbacks. Avoid coupling the reusable integration to a particular application entity.
 
 ## Understand the execution contract
 
@@ -45,7 +45,7 @@ Decide which failures become an outcome command and which fail preparation befor
 
 Do not return arbitrary provider bodies as error strings. They can contain customer data or credentials. Preserve a safe explanation and a correlation identifier where the provider supports one.
 
-## Keep long-lived resources separate from business state
+## Keep long-lived resources separate from durable state
 
 If an integration needs an expensive per-entity resource, `Integration.Lifecycle.OutboundConfig state` offers:
 
@@ -57,7 +57,7 @@ cleanup :: state -> Task Text Unit
 
 These are **field signatures**, excerpted from the lifecycle type. Workers initialise resources, process events, and clean up when stopped or reaped. A later event can create a fresh worker, so this state is not durable workflow history.
 
-The public `EventCounter` demonstrates a `ConcurrentVar` held by each worker. Its count can reset when the worker is recreated. For the shop, keep “label purchase still pending” in durable application state, not only in a worker variable.
+The public `EventCounter` demonstrates a `ConcurrentVar` held by each worker. Its count can reset when the worker is recreated. Keep unfinished work in durable application state rather than only in a worker variable. In the practice project, “label purchase still pending” is one such state.
 
 The application registration pattern is the public testbed's:
 
@@ -79,7 +79,7 @@ Use `Integration.getActions` to inspect the actions selected by a handler and `I
 
 Check valid input, provider refusal, malformed success data, missing credentials, timeout, duplicate invocation, and the uncertain outcome where the remote operation succeeded but the reply was lost. Count actual requests in a controlled server test. Then separately verify the provider's sandbox contract.
 
-**Exercise:** package a shipment-status lookup before purchasing labels. Have another reader configure it using only the public request API. If they must understand internal HTTP parsing to choose ordinary options, revise the API and documentation together.
+**Exercise:** package a shipment-status lookup against a controlled test provider for the practice project. Have another reader configure it using only the public request API. If they must understand internal HTTP parsing to choose ordinary options, revise the API and documentation together.
 
 Return to [running the application](/operate/deployment/) for runtime dependencies, configuration, and recovery planning.
 

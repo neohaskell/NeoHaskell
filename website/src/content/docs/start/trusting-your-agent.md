@@ -5,7 +5,7 @@ sidebar:
   order: 5
 ---
 
-You should be able to ask an agent to change your shop without reviewing every line
+You should be able to ask an agent to change your application without reviewing every line
 it writes. To do that confidently, you need a clear agreement about the behaviour
 and a reliable way to inspect the result.
 
@@ -15,9 +15,10 @@ and when to ask another question.
 
 ## Agree on the behaviour first
 
-For a quantity limit, tell the agent the rule, who it affects, and examples at its
-boundaries. Ask it to explain the proposed model before implementation. If its
-explanation is wrong, correction is cheap and understandable.
+Tell the agent the rule, who it affects, and examples at its boundaries. Ask it to
+explain the proposed model before implementation. If its explanation is wrong,
+correction is cheap and understandable. Here is that conversation for an order
+quantity limit in the ecommerce practice project:
 
 > **Jess:** Existing customers can still see orders placed under the old limit.
 > Only new requests use the new limit.
@@ -62,5 +63,5 @@ review a deployment plan. The [testing chapter](/build/testing/) provides the
 mechanics behind those conversations.
 
 Your goal is a trustworthy working relationship: implementation can be delegated,
-while you can explain what the shop promises and how you checked it. Continue to
+while you can explain what your application promises and how you checked it. Continue to
 [set up your first project](/getting-started/).

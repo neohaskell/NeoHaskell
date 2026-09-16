@@ -1,17 +1,19 @@
 ---
-title: Bring the working slice into your shop
-description: Assemble the public Cart and Stock examples in your own generated application, retain the starter checks, and define the next business milestone.
+title: Assemble a practice application
+description: Transfer a working example into a generated project, connect its parts, and verify the result.
 sidebar:
   order: 10
 ---
 
-You have seen a cart addition lead to a stock reservation. Now put that working slice in your own `mug-shop` project. The outcome is modest and useful: your application can collect choices, reserve stock, and show both views. You can explain the connection and verify it yourself.
+A feature becomes part of an application when its commands, views, and integrations are wired together and checked in that application's environment. This exercise teaches that assembly process by transferring the public Cart and Stock examples into the `mug-shop` practice project.
 
-Keep the existing Counter while doing this. Its tests give you a known working starting point. You can remove it deliberately after the new slice is established.
+The result can collect choices, reserve stock, and show both views. More importantly, you will know how to take a source-grounded example, establish its dependencies, register its components, and verify the connection. Those are steps you can reuse in the application you want to build.
+
+Keep the generated Counter while doing this. Its tests give you a known working starting point. You can remove it deliberately after the new slice is established.
 
 ## Establish the two workspaces
 
-You need a generated application from [getting started](/getting-started/) and a checkout of the **public NeoHaskell repository**. The commands below run from the generated application's root. If you have not created it yet, run these from its intended parent directory:
+You need the practice application from [getting started](/getting-started/) and a checkout of the **public NeoHaskell repository**. The commands below run from the generated application's root. If you have not created it yet, run these from its intended parent directory:
 
 ```sh
 neo --ci new mug-shop
@@ -89,7 +91,7 @@ app =
     |> Application.withOutbound @ReserveStockOnItemAdded
 ```
 
-This deliberately keeps the starter's nonpersistent store and public demonstration policies. PostgreSQL is not required for this assembled slice. Restarting loses its history; before real customers use it, complete [persistence](/operate/persistence/) and [access control](/build/access-control/).
+This deliberately keeps the starter's nonpersistent store and public demonstration policies. PostgreSQL is not required for this assembled slice. Restarting loses its history. An application serving real users needs appropriate [persistence](/operate/persistence/) and [access control](/build/access-control/), with checks that establish both.
 
 Run:
 
@@ -106,11 +108,11 @@ The retained Counter checks should still pass. Cart creation should return a UUI
 
 Now run `neo run` and repeat the manual requests from [stock and checkout](/build/stock-and-checkout/) against **your application's** port 8080. In another terminal rooted in `mug-shop`, use the [IDE model workflow](/getting-started/visual-ide/) to inspect the copied domains. Do not reuse an IDE still rooted in the framework testbed.
 
-Ask your agent to demonstrate a zero-quantity rejection and an over-reservation. Explain why the second case can leave an accepted cart addition with a rejected stock reservation. That missing return path is the next business problem, not a reason to claim checkout works already.
+Ask your agent to demonstrate a zero-quantity rejection and an over-reservation. Explain why the second case can leave an accepted cart addition with a rejected stock reservation. That missing return path identifies the next design problem in this exercise; it also illustrates why a connected workflow needs evidence of its final outcome.
 
 ## Grow toward order acceptance
 
-Use these **proposed capstone scenarios** to direct the next implementation:
+The ecommerce thread can continue through these **proposed capstone scenarios**. They provide practice with capabilities covered in the following sections:
 
 | Milestone | Evidence required before accepting it |
 | --- | --- |
@@ -121,8 +123,8 @@ Use these **proposed capstone scenarios** to direct the next implementation:
 | AI description drafts | Review before publication and protection against late replies replacing newer work |
 | Operation | Durable restart, restored history, authorised access, and smoke tests against the deployed revision |
 
-Choose one milestone at a time. Write a happy case, a rejection, and a boundary case before asking the agent to implement it. The transferred Cart/Stock slice is executable evidence for its own behaviour; it is not a completed paid shop.
+Choose one milestone at a time. Write a happy case, a rejection, and a boundary case before asking the agent to implement it. The transferred Cart/Stock slice is executable evidence for its own behaviour; the later milestones remain design exercises.
 
-Continue with [integrations](/connect/) and eventually [run and evolve](/operate/). Keep these scenarios as the bridge between framework capabilities and your shop's actual promises.
+Continue with [integrations](/connect/) and eventually [run and evolve](/operate/). When you apply these capabilities to a different project, start from its own requests, accepted facts, and completion criteria. The practice project gives you a method for developing and checking those decisions.
 
 Public sources: [starter application](https://github.com/neohaskell/NeoHaskell/blob/main/neo/starter/src/App.hs), [Cart service](https://github.com/neohaskell/NeoHaskell/blob/main/testbed/src/Testbed/Cart/Service.hs), [Stock service](https://github.com/neohaskell/NeoHaskell/blob/main/testbed/src/Testbed/Stock/Service.hs), [reservation scenario](https://github.com/neohaskell/NeoHaskell/blob/main/testbed/tests/scenarios/stock-reservation.hurl), [project reconciliation](https://github.com/neohaskell/NeoHaskell/blob/main/neo/src/reconcile/mod.rs).

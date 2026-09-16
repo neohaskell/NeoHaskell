@@ -5,9 +5,9 @@ sidebar:
   order: 8
 ---
 
-A customer should see their own cart. A warehouse worker may need stock information without seeing every customer's details. A merchant can change policies that ordinary customers cannot. These are business decisions before they become authentication settings.
+Different people need different access to an application. Someone may be allowed to view a record but not change it, or to manage their own records without seeing anyone else's. These are application policies before they become authentication settings.
 
-NeoHaskell supplies identity and permission mechanisms, but your application must connect them and declare its policies. The public Cart testbed is intentionally permissive; it is a teaching example, not a ready-made access policy for a live shop.
+NeoHaskell supplies identity and permission mechanisms, but your application must connect them and declare its policies. We will practise with customers who should see their own carts and a merchant with wider permissions. The public Cart testbed is intentionally permissive, so adapting it provides a concrete lesson in defining those boundaries.
 
 ## Separate identity from permission
 
@@ -27,7 +27,7 @@ Use your actual identity service and test its discovery, issuer, audience, and t
 
 Commands can define a top-level `canAccess` function before their `command` marker. The marker connects it to the pre-execution permission check. Without an explicit function, the command class defaults to requiring authentication.
 
-An authenticated customer still should not edit another customer's cart. In the decision function, compare the validated subject with the cart's recorded owner before accepting a change. The existing `AddItem` ignores its request context, so it does not perform that ownership check.
+Permission to use a command may still depend on the particular record it affects. In the practice project, an authenticated customer should not edit another customer's cart. In the decision function, compare the validated subject with the cart's recorded owner before accepting a change. The existing `AddItem` ignores its request context, so it does not perform that ownership check.
 
 There is an important deployment boundary: **without `Application.withAuth`, the current web transport creates a trusted command context and bypasses the command permission gate**. Merely declaring `canAccess` does not secure an application whose authentication is unwired. Domain checks inside `decide` remain your code's responsibility.
 
@@ -53,11 +53,11 @@ The public example instead uses `publicAccess` and `publicView`. Those can suit 
 
 `CreateCart` records the authenticated subject when available; otherwise it generates an anonymous owner identifier. That generated identifier does not automatically become a secure browser session or give a later logged-in user ownership.
 
-If the shop needs guest checkout, decide how a guest proves access to their cart and how ownership changes after login. Model and test that transition. Do not solve it by accepting an arbitrary owner identifier from the request body.
+If you add guest checkout to the practice project, decide how a guest proves access to their cart and how ownership changes after login. The same design question arises whenever anonymous work must later belong to an authenticated user. Model and test that transition. Do not solve it by accepting an arbitrary owner identifier from the request body.
 
 ## Exercise: another customer's cart
 
-Create a test plan using two customers and one merchant. What should each be able to read and change? Include a request with no credentials and one with an invalid token.
+Create a test plan for the practice project using two customers and one merchant. What should each be able to read and change? Include a request with no credentials and one with an invalid token.
 
 <details>
 <summary>Suggested reasoning and checks</summary>
@@ -70,4 +70,4 @@ Next: [configuration](/build/configuration/) makes these deployment choices expl
 
 Public sources: [access helpers](https://github.com/neohaskell/NeoHaskell/blob/main/core/service/Service/AccessControl.hs), [request context](https://github.com/neohaskell/NeoHaskell/blob/main/core/service/Service/Auth.hs), [command defaults](https://github.com/neohaskell/NeoHaskell/blob/main/core/service/Service/Command/Core.hs), [query endpoint](https://github.com/neohaskell/NeoHaskell/blob/main/core/service/Service/Query/Endpoint.hs), [web authentication dispatch](https://github.com/neohaskell/NeoHaskell/blob/main/core/service/Service/Transport/Web.hs).
 
-Connecting a merchant’s external account is a separate concern from signing in to the shop. See [provider accounts and consent](/connect/provider-accounts/) for that workflow.
+Connecting a user's external account is a separate concern from signing in to your application. See [provider accounts and consent](/connect/provider-accounts/) for that workflow.

@@ -1,11 +1,11 @@
 ---
-title: Your first cart
-description: Create a cart, inspect its read model, and catch a small misunderstanding with your agent.
+title: "First working slice: a cart"
+description: Practise submitting a command, reading its result, and checking an agent's interpretation.
 sidebar:
   order: 1
 ---
 
-Before the shop takes money, it needs a place to collect a customer's choices. Our first useful result is smaller still: create that empty cart and see it represented in the application.
+The smallest useful application slice connects a request to an observable result. In this first exercise, we use a cart from the public example application: create an empty cart, then find its summary. It is the starting point for the ecommerce practice project that accompanies these docs.
 
 You will make one request, keep its identifier, and find the corresponding summary. This establishes a habit for everything that follows: identify the business action, observe its result, and check what the application now says.
 
@@ -89,7 +89,7 @@ Run that file against your running testbed, from the repository root:
 ./dev exec hurl --test testbed/tests/commands/create-cart.hurl
 ```
 
-This proves the response contract when it passes. It does not prove your future checkout policy or a payment integration.
+This proves the response contract when it passes. Further claims need their own checks; a checkout policy or payment integration would require additional evidence.
 
 ## Try a variation
 

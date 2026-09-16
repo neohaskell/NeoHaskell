@@ -1,18 +1,18 @@
 ---
-title: Attach files to business actions
-description: Upload files, validate references, and keep storage lifecycle separate from business meaning.
+title: Upload and attach files
+description: Store uploaded bytes, validate file references, and attach them to accepted application actions.
 sidebar:
   order: 5
 ---
 
-A customer uploads artwork for a personalised mug, then closes the browser before placing the order. The shop needs temporary storage for unfinished uploads and a clear association once the artwork becomes part of an accepted order.
+Someone uploads a file, then closes the browser before finishing the form. The application needs temporary storage for that unfinished upload and a clear association when the file becomes part of an accepted action.
 
-NeoHaskell provides file references, upload/download routes, ownership checks on the user-facing path, and a file lifecycle. Your shop still decides which files are acceptable and when an attachment becomes business evidence.
+NeoHaskell provides file references, upload/download routes, ownership checks on the user-facing path, and a file lifecycle. You decide which files are acceptable and when to attach them. We will practise with artwork for a personalised mug, using the public document-upload example as the executable starting point.
 
 ## Follow the two-step interaction
 
 1. Upload the bytes to `/files/upload` as multipart form data with a `file` field.
-2. Take the returned `fileRef` and include it in a business command field typed as `FileRef`.
+2. Take the returned `fileRef` and include it in a command field typed as `FileRef`.
 
 The public testbed's `CreateDocument` uses an `attachment :: FileRef`. The framework resolves it before the command runs; the command looks for the resolved metadata in `RequestContext.files`.
 
@@ -27,7 +27,7 @@ Expect a JSON response including `fileRef`, `filename`, `contentType`, `sizeByte
 
 The download route is `GET /files/{fileRef}`. The public testbed tests check bytes and content headers in its no-auth configuration. **Current authenticated-download limitation:** the route uses the `Everyone` middleware mode, which returns anonymous claims even when a token is present. An upload owned by an authenticated subject therefore cannot be assumed downloadable through this route; prove and repair that path before using private customer attachments. The local testbed round trip does not establish authenticated ownership support end to end.
 
-Keep the reference, rather than copying raw file bytes into an event. Your event records the business association, such as which artwork belongs to the accepted order.
+Keep the reference, rather than copying raw file bytes into an event. Your event records the application association, such as which artwork belongs to the accepted order.
 
 ## Enable storage deliberately
 
@@ -39,7 +39,7 @@ The application registration is a fragment from the public testbed:
 
 `makeFileUploadConfig` is a function from your application configuration to `FileUploadConfig`. It chooses:
 
-| Field | Decision for the shop |
+| Field | Application decision |
 | --- | --- |
 | `blobStoreDir` | Where the actual file bytes live |
 | `stateStoreBackend` | Where file lifecycle metadata persists |
@@ -55,20 +55,20 @@ Application startup checks positive size and timing values, requires a nonempty 
 
 ## Understand the validation boundary
 
-The resolver checks file existence, deletion, pending expiry, ownership, and blob presence. Pending references expire; confirmed ones are not rejected merely for pending TTL expiry. The application still needs rules for retention and business-level removal.
+The resolver checks file existence, deletion, pending expiry, ownership, and blob presence. Pending references expire; confirmed ones are not rejected merely for pending TTL expiry. The application still needs rules for retention and removal.
 
-The background integration file-access context is different from a user's request context. Its implementation retrieves by reference from storage; it does not carry a requesting user's ownership check. Therefore trigger processing only from an authorised business action that validated the association. Do not accept an arbitrary reference from an untrusted prompt and hand it to a background processor.
+The background integration file-access context is different from a user's request context. Its implementation retrieves by reference from storage; it does not carry a requesting user's ownership check. Therefore trigger processing only from an authorised action that validated the association. Do not accept an arbitrary reference from an untrusted prompt and hand it to a background processor.
 
-A declared media type is useful for routing and limits, but does not prove the bytes are valid artwork or a safe document. Validate whatever properties your business relies on before accepting them.
+A declared media type is useful for routing and limits, but does not prove the bytes are valid artwork or a safe document. Validate the properties your application relies on before accepting them.
 
 ## Exercise: a customer's abandoned artwork
 
-Decide when the shop should consider artwork attached, what happens after pending expiry, and what the customer sees if the stored bytes are missing.
+In the practice project, decide when artwork becomes attached to an order, what happens after pending expiry, and what the screen shows if the stored bytes are missing.
 
 <details>
 <summary>Suggested checks</summary>
 
-Test a valid owned reference, another user's reference, an expired pending upload, a deleted reference, and missing blob bytes. Test missing multipart data and an oversized file. Keep the business command rejected when its required attachment cannot be resolved. The public upload tests provide working request shapes; add an authenticated ownership scenario for your application.
+Test a valid owned reference, another user's reference, an expired pending upload, a deleted reference, and missing blob bytes. Test missing multipart data and an oversized file. Keep the command rejected when its required attachment cannot be resolved. The public upload tests provide working request shapes; add an authenticated ownership scenario for your application.
 
 </details>
 

@@ -5,9 +5,11 @@ sidebar:
   order: 7
 ---
 
-“The code compiles” is useful evidence. “A customer cannot reserve more mugs than remain” is a different claim. Your confidence grows when each important claim has a check at the place where it could fail.
+“The code compiles” and “this request obeys the intended rule” are different claims. Your confidence grows when each important claim has a check at the place where it could fail. NeoHaskell applications need evidence about decisions, stored state, interfaces, and external effects.
 
 You own the intended behaviour; your agent can implement and run the checks. Ask it to show what a passing result establishes, what a failing result looks like, and what the test never exercises.
+
+The examples below use the Counter starter and the Cart/Stock practice project. For instance, “a customer cannot reserve more mugs than remain” is a specific rule whose evidence should go beyond successful compilation.
 
 ## Match the check to the promise
 
@@ -40,7 +42,7 @@ The starter has a Counter example you can run before building Cart. This exact e
 
 The helper runs the `Decision` using a `DecisionContext`. No HTTP server or database is involved. Adapt that pattern to an `AddItem` decision test, keeping the Cart rule and expected message explicit.
 
-For an accepted command, inspect the event's payload as well as its count. A test that only proves “one event happened” can miss the wrong quantity, product, or entity ID. The starter's existing example demonstrates the test structure; your shop's acceptance criteria should go further where its business requires it.
+For an accepted command, inspect the event's payload as well as its count. A test that only proves “one event happened” can miss the wrong quantity, product, or entity ID. The starter's existing example demonstrates the test structure; your application's acceptance criteria should inspect the values its rules depend on.
 
 ## Exercise the full path
 
@@ -77,7 +79,7 @@ Useful evidence includes the failure before the correction and the pass afterwar
 
 ## Exercise: accept a reservation change
 
-Your agent says it has fixed over-reservation. Ask it for three checks you can understand without reading its implementation.
+For the practice project, your agent says it has fixed over-reservation. Ask it for three checks you can understand without reading its implementation.
 
 <details>
 <summary>Suggested reasoning and checks</summary>

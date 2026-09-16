@@ -5,15 +5,15 @@ sidebar:
   order: 7
 ---
 
-Jess already works with an agent to build the shop. Now she wants an AI feature inside the shop: draft a product description from merchant-supplied facts. These are different relationships. The application's AI feature needs its own inputs, permissions, spending limits, failure states, and acceptance rules.
+Using an agent to write code and adding an AI feature to that code are different relationships. An application feature might summarise notes, draft text, or help interpret a document. It needs its own inputs, permissions, spending limits, failure states, and acceptance rules.
 
-A good first feature proposes text for review. The merchant remains responsible for product claims, and a provider outage leaves the existing catalogue usable.
+A useful first feature proposes text for review. In the ecommerce practice project, Jess will generate a product-description draft from supplied facts. She can inspect and approve the draft while keeping the rest of the application usable if the provider is unavailable.
 
 ## Model a draft before making a request
 
-An original shop workflow could record a description request, call the provider, and then record either a generated draft or a generation failure. Publication is a separate merchant command. Keep the product identifier and request identity so that a delayed reply does not overwrite a newer draft.
+A draft workflow records a request, calls the provider, and records either generated text or a failure. Acceptance is a separate command. In the example, keep the product identifier and request identity so that a delayed reply does not overwrite a newer draft.
 
-The provider callback tells you that a response decoded successfully. It does not establish factual accuracy, suitability for publication, or compliance with the shop's policies.
+The provider callback tells you that a response decoded successfully. It does not establish factual accuracy, suitability for publication, or compliance with the application's rules.
 
 ## Build an OpenRouter request
 
@@ -78,7 +78,7 @@ Test response handling with fixed fixtures before testing a live model. Check mi
 
 The shared [HTTP retry caveat](/connect/http-and-payments/#understand-the-current-retry-boundary) also applies to provider calls. A timeout is not proof that no billable work happened. Set an application spending policy and align provider request timeouts with the [dispatcher budget](/connect/documents/#budget-the-entire-operation).
 
-**Exercise:** let the merchant regenerate a draft. Decide whether an older in-flight response may replace it, then test replies arriving in reverse order.
+**Exercise:** add a regenerate action to the practice project. Decide whether an older in-flight response may replace it, then test replies arriving in reverse order.
 
 Continue to [AI tools](/connect/ai-tools/) only when you are ready for the model to propose structured actions.
 

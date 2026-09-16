@@ -1,19 +1,19 @@
 ---
-title: Send order email
+title: Send email
 description: Record provider acceptance and handle notification failure visibly.
 sidebar:
   order: 4
 ---
 
-The customer has placed an order and wants a confirmation. Sending email is a useful first external integration because Jess can inspect the message and understand its purpose immediately. It also introduces an important distinction: a provider accepting a message does not prove the customer received or read it.
+Email gives people a result they can inspect outside your application: a notification, an invitation, or a confirmation. It also introduces an important distinction: a provider accepting a message does not prove the recipient received or read it.
 
-NeoHaskell includes Brevo and Azure Communication Services (ACS) request types. Provider credentials, verified sender setup, and live delivery are separate setup work. Start with a test recipient you control.
+NeoHaskell includes Brevo and Azure Communication Services (ACS) request types. We will use an order confirmation from the practice project to learn the request and callback pattern. Provider credentials, verified sender setup, and live delivery are separate setup work; start with a test recipient you control.
 
 ## Define the outcome first
 
-Use an application command capable of representing provider acceptance and failure. It should carry the order or notification identifier. Its successful branch records the provider's message/operation ID; its failure branch records a safe explanation for staff.
+Use an application command capable of representing provider acceptance and failure. It should carry the notification identifier and any identifier needed to connect it to the originating action. Its successful branch records the provider's message/operation ID; its failure branch records a safe explanation that the application can display.
 
-Trigger email from a committed business event. A notification failure should not make the order disappear. To resend safely, model the notification attempt and decide how duplicate sends are handled.
+Trigger email from a committed event. In the example, a notification failure should not make the accepted order disappear. To resend safely, model the notification attempt and decide how duplicate sends are handled.
 
 ## Configure a Brevo request
 
@@ -69,11 +69,11 @@ First test the request and response mapping without sending mail. The public Bre
 <details>
 <summary>Suggested reasoning</summary>
 
-Treat the local outcome as unresolved. Keep the notification's stable identity and provider evidence where available, define how staff investigate it, and decide whether the risk of duplicate email is acceptable. Test duplicate triggering events and delayed results as well as the ordinary accepted/failed paths.
+Treat the local outcome as unresolved. Keep the notification's stable identity and provider evidence where available, define how you would investigate it, and decide whether the risk of duplicate email is acceptable. Test duplicate triggering events and delayed results as well as the ordinary accepted/failed paths.
 
 </details>
 
-Next, [attach files](/connect/files/) for product artwork or supplier documents.
+Next, learn how [file attachments](/connect/files/) connect stored bytes to application actions.
 
 ## Implementation and examples
 
