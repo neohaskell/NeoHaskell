@@ -967,6 +967,23 @@ class GitHubReads(unittest.TestCase):
 
 
 class Workflow(unittest.TestCase):
+    def test_consumer_accepts_frozen_project_cache_configuration(self):
+        import runpy
+
+        check = runpy.run_path(str(ROOT / "scripts/workflow-check"))
+        workflow = (ROOT / ".github/workflows/semantic-release.yml").read_text()
+        consumer = check["job_blocks"](workflow)["platform_consumer"]
+        self.assertIn("accept-flake-config = true", consumer, "CONSUMER_CACHE_REQUIRED")
+        self.assertRegex(
+            consumer,
+            r"uses: DeterminateSystems/determinate-nix-action@\S+\n\s+if: matrix.reuse != true\n\s+with:\n\s+extra-conf: \|\n\s+accept-flake-config = true",
+        )
+        self.assertIn("ref: ${{ matrix.revision }}", consumer)
+        self.assertIn("github.ref == 'refs/heads/main'", consumer)
+        self.assertLess(consumer.index("accept-flake-config = true"), consumer.index("./scripts/semantic-release consumer"))
+        existing = check["job_blocks"]((ROOT / ".github/workflows/neo-ci.yml").read_text())["consumer-contract"]
+        self.assertIn("accept-flake-config = true", existing)
+
     def test_native_installer_selection_supports_intel(self):
         import re
         import runpy
