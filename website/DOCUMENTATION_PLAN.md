@@ -123,6 +123,21 @@ Do not present a generic prompt as a substitute for teaching a feature concretel
 
 ## Verification contract
 
+Event-model examples use the notation taught by Adam Dymitruk and Martin Dilger:
+blue commands, orange events, green read models, screens above behaviour, and a
+left-to-right timeline. Use original worked examples with concrete information
+and explicit role labels. Introduce one action before a longer scenario; teach
+acceptance/refusal examples alongside the timeline. Cite the primary teaching
+sources and keep their methodology distinct from NeoHaskell implementation claims.
+Use the same semantic colours in earlier conceptual illustrations.
+
+The visual IDE guide includes actual captures of a running IDE, with a small public
+example and a closer view of a selected command. Explain what to look at in each
+image, state the capture version and any curated scope, and provide full-size
+links and useful text alternatives. Keep editable Draw.io sources for diagrams
+and a reproducible public model fixture for screenshots. The content gate checks
+registered assets and their hashes; image review checks what readers can see.
+
 Automated checks:
 
 - Validate the planned page inventory, frontmatter, source-evidence paths, internal

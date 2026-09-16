@@ -32,6 +32,19 @@ export function validate(manifest, files, sources, assets = {}) {
       else if (digest(assets[route]) !== diagram[`${field}Hash`]) errors.push(`Diagram changed; re-export and review: ${path}`);
     }
   }
+  const screenshotFiles = new Set();
+  for (const screenshot of manifest.screenshots ?? []) {
+    const path = screenshot.path;
+    if (screenshot.reviewed !== true) errors.push(`Missing screenshot review: ${path}`);
+    if (!/^public\/screenshots\/[a-z0-9-]+\.png$/.test(path ?? '')) {
+      errors.push(`Invalid screenshot path: ${path}`);
+      continue;
+    }
+    const route = path.replace(/^public/, '');
+    screenshotFiles.add(route);
+    if (!assets[route]) errors.push(`Missing screenshot asset: ${path}`);
+    else if (digest(assets[route]) !== screenshot.hash) errors.push(`Screenshot changed; review capture: ${path}`);
+  }
   const paths = new Set();
   const routes = new Set(Object.keys(files).map(path => normalizeRoute(routeOf(path))));
   const covered = new Set();
@@ -56,18 +69,28 @@ export function validate(manifest, files, sources, assets = {}) {
     }
     for (const topic of page.topics ?? []) covered.add(topic);
     const outgoing = [];
-    for (const match of withoutCode(body).matchAll(/!\[([^\]]*)\]\((\/[^)\s]*)(?:\s+"[^"]*")?\)/g)) {
+    const prose = withoutCode(body);
+    const imagePattern = /!\[([^\]]*)\]\((\/[^)\s]*)(?:\s+"[^"]*")?\)/g;
+    const imageMatches = [...prose.matchAll(imagePattern)];
+    for (const match of imageMatches) {
       if (!match[1].trim()) errors.push(`Missing image alt text: ${page.path}`);
       if (!assets[match[2]]) errors.push(`Missing image asset ${match[2]} in ${page.path}`);
     }
-    for (const match of withoutCode(body).matchAll(/\[[^\]]*\]\((\/[^)\s]*)(?:\s+"[^"]*")?\)/g)) {
-      if (match[1].startsWith('/diagrams/')) {
-        if (!diagramFiles.has(match[1])) errors.push(`Unreviewed diagram: ${match[1]}`);
+    // Replacing embedded images exposes their enclosing full-size link as ordinary Markdown.
+    const linkMatches = [...prose.replace(imagePattern, 'image').matchAll(/\[[^\]]*\]\((\/[^)\s]*)(?:\s+"[^"]*")?\)/g)];
+    const targets = [...imageMatches.map(match => match[2]), ...linkMatches.map(match => match[1])];
+    for (const target of targets) {
+      if (target.startsWith('/diagrams/')) {
+        if (!diagramFiles.has(target)) errors.push(`Unreviewed diagram: ${target}`);
         continue;
       }
-      const route = normalizeRoute(match[1].split(/[?#]/)[0].replace(/\/$/, '') + '/');
+      if (target.startsWith('/screenshots/')) {
+        if (!screenshotFiles.has(target)) errors.push(`Unreviewed screenshot: ${target}`);
+        continue;
+      }
+      const route = normalizeRoute(target.split(/[?#]/)[0].replace(/\/$/, '') + '/');
       outgoing.push(route);
-      if (!routes.has(route)) errors.push(`Broken internal link ${match[1]} in ${page.path}`);
+      if (!routes.has(route)) errors.push(`Broken internal link ${target} in ${page.path}`);
     }
     edges.set(normalizeRoute(routeOf(page.path)), outgoing);
     if (/\b(?:TODO|TBD|lorem ipsum)\b/i.test(withoutCode(body))) errors.push(`Unfinished prose: ${page.path}`);
@@ -137,7 +160,23 @@ function selfTest() {
   assert.match(validate(manifest, illustrated, sources, assets).join('\n'), /Unreviewed diagram/);
   assert.match(validate({ ...manifest, diagrams: [{ ...diagram, reviewed: false }] }, illustrated, sources, assets).join('\n'), /Missing diagram review/);
   assert.match(validate({ ...manifest, diagrams: [{ ...diagram, source: '../private.drawio' }] }, files, sources, assets).join('\n'), /Invalid diagram path/);
-  console.log('docs-check: 21 positive, negative, and boundary cases passed');
+  // Non-UTF8 bytes ensure screenshot hashes describe the binary capture, not decoded text.
+  const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0xff]);
+  const screenshot = { path: 'public/screenshots/neo-ide-overview.png', hash: digest(png), reviewed: true };
+  const screenshotManifest = { ...manifest, screenshots: [screenshot] };
+  const screenshotAssets = { '/screenshots/neo-ide-overview.png': png };
+  const captured = { [path]: body + '\n[![Commands and events in the Neo IDE](/screenshots/neo-ide-overview.png)](/screenshots/neo-ide-overview.png "Open screenshot at full size")\n' };
+  assert.deepEqual(validate(screenshotManifest, captured, sources, screenshotAssets), []);
+  assert.match(validate(screenshotManifest, captured, sources, {}).join('\n'), /Missing screenshot asset/);
+  assert.match(validate(screenshotManifest, captured, sources, { '/screenshots/neo-ide-overview.png': png.toString('utf8') }).join('\n'), /Screenshot changed/);
+  assert.match(validate(screenshotManifest, { [path]: body + '\n![ ](/screenshots/neo-ide-overview.png)\n' }, sources, screenshotAssets).join('\n'), /Missing image alt text/);
+  assert.match(validate(manifest, captured, sources, screenshotAssets).join('\n'), /Unreviewed screenshot/);
+  assert.match(validate({ ...manifest, screenshots: [{ ...screenshot, reviewed: false }] }, captured, sources, screenshotAssets).join('\n'), /Missing screenshot review/);
+  assert.match(validate({ ...manifest, screenshots: [{ ...screenshot, path: '../private.png' }] }, files, sources, screenshotAssets).join('\n'), /Invalid screenshot path/);
+  assert.match(validate({ ...manifest, screenshots: [{ ...screenshot, hash: undefined }] }, captured, sources, screenshotAssets).join('\n'), /Screenshot changed/);
+  assert.deepEqual(validate(screenshotManifest, { [path]: body + '\n[Open full-size screenshot](/screenshots/neo-ide-overview.png)\n' }, sources, screenshotAssets), []);
+  assert.match(validate(screenshotManifest, { [path]: body + '\n[![The IDE graph](/screenshots/neo-ide-overview.png)](/screenshots/unregistered-full-size.png)\n' }, sources, screenshotAssets).join('\n'), /Unreviewed screenshot: \/screenshots\/unregistered-full-size.png/);
+  console.log('docs-check: 31 positive, negative, and boundary cases passed');
 }
 
 function checkBuilt(manifest) {
@@ -180,6 +219,13 @@ else {
           const absolute = resolve(website, path);
           if (existsSync(absolute)) assets[path.replace(/^public/, '')] = read(absolute);
         }
+      }
+    }
+    for (const screenshot of manifest.screenshots ?? []) {
+      const path = screenshot.path;
+      if (typeof path === 'string' && /^public\/screenshots\/[a-z0-9-]+\.png$/.test(path)) {
+        const absolute = resolve(website, path);
+        if (existsSync(absolute)) assets[path.replace(/^public/, '')] = readFileSync(absolute);
       }
     }
     const errors = validate(manifest, files, sources, assets);

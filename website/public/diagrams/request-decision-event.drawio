@@ -14,10 +14,10 @@
         <mxCell id="access" value="&lt;b&gt;ACCESS&lt;/b&gt;&lt;br&gt;Check who may act" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=22;fontColor=#20352B;fillColor=#F5F5F2;strokeColor=#8B948C;strokeWidth=1.5;spacing=12;" vertex="1" parent="1">
           <mxGeometry x="190" y="260" width="300" height="100" as="geometry" />
         </mxCell>
-        <mxCell id="decision" value="&lt;b&gt;DECISION&lt;/b&gt;&lt;br&gt;Apply rules to current state" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=22;fontColor=#20352B;fillColor=#FFF5E8;strokeColor=#AF6A20;strokeWidth=1.5;spacing=12;" vertex="1" parent="1">
+        <mxCell id="decision" value="&lt;b&gt;DECISION&lt;/b&gt;&lt;br&gt;Apply rules to current state" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=22;fontColor=#20352B;fillColor=#F5F5F2;strokeColor=#8B948C;strokeWidth=1.5;spacing=12;" vertex="1" parent="1">
           <mxGeometry x="190" y="420" width="300" height="100" as="geometry" />
         </mxCell>
-        <mxCell id="event" value="&lt;b&gt;ACCEPTED EVENT&lt;/b&gt;&lt;br&gt;Record what happened" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=22;fontColor=#20352B;fillColor=#EDF7F1;strokeColor=#247556;strokeWidth=1.5;spacing=12;" vertex="1" parent="1">
+        <mxCell id="event" value="&lt;b&gt;ACCEPTED EVENT&lt;/b&gt;&lt;br&gt;Record what happened" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=22;fontColor=#20352B;fillColor=#FFF5E8;strokeColor=#AF6A20;strokeWidth=1.5;spacing=12;" vertex="1" parent="1">
           <mxGeometry x="30" y="610" width="280" height="100" as="geometry" />
         </mxCell>
         <mxCell id="rejection" value="&lt;b&gt;REFUSAL&lt;/b&gt;&lt;br&gt;Explain why; no such event" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=22;fontColor=#20352B;fillColor=#FDF0EE;strokeColor=#A74D43;strokeWidth=1.5;spacing=12;" vertex="1" parent="1">
@@ -51,13 +51,13 @@
         <mxCell id="key-label-intent" value="Request" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=17;fontColor=#294335;fontStyle=0;" vertex="1" parent="1">
           <mxGeometry x="58.0" y="740" width="127.0" height="40" as="geometry" />
         </mxCell>
-        <mxCell id="key-decision" value="" style="rounded=1;html=1;fillColor=#FFF5E8;strokeColor=#AF6A20;" vertex="1" parent="1">
+        <mxCell id="key-decision" value="" style="rounded=1;html=1;fillColor=#F5F5F2;strokeColor=#8B948C;" vertex="1" parent="1">
           <mxGeometry x="185.0" y="750" width="20" height="20" as="geometry" />
         </mxCell>
         <mxCell id="key-label-decision" value="Decision" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=17;fontColor=#294335;fontStyle=0;" vertex="1" parent="1">
           <mxGeometry x="213.0" y="740" width="127.0" height="40" as="geometry" />
         </mxCell>
-        <mxCell id="key-event" value="" style="rounded=1;html=1;fillColor=#EDF7F1;strokeColor=#247556;" vertex="1" parent="1">
+        <mxCell id="key-event" value="" style="rounded=1;html=1;fillColor=#FFF5E8;strokeColor=#AF6A20;" vertex="1" parent="1">
           <mxGeometry x="340.0" y="750" width="20" height="20" as="geometry" />
         </mxCell>
         <mxCell id="key-label-event" value="Fact" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=17;fontColor=#294335;fontStyle=0;" vertex="1" parent="1">

@@ -232,7 +232,10 @@
     "testbed/tests/files/upload.hurl": "3a7c00958bcdb9b6ad01307754428e3f459e064fd60bd50752709ec46046b983",
     "testbed/tests/queries/cart-summary.hurl": "3757e83566d996827be885f8e299bfe034fd650dd2e75fe2e0826b7eea123eb0",
     "testbed/tests/scenarios/stock-reservation.hurl": "7928c3366d5efc5d17d7b74b181eea0c0adaea0cdd6fb2d7900caf2d7d2760da",
-    "website/src/content/docs/guides/deployment.mdx": "57345912acb286b2edbcca2fb6d93f4768a1c95af4ff905cb89de9fc039e4d14"
+    "website/src/content/docs/guides/deployment.mdx": "57345912acb286b2edbcca2fb6d93f4768a1c95af4ff905cb89de9fc039e4d14",
+    "website/fixtures/cart-event-model.json": "448b71067771c5d2bb85e51619a22dc03e33d52f89a4dd8808bbd0bad2486174",
+    "neo/assets/ide/src/ui/Canvas.tsx": "ed7deba71e92f6118b7dc34c94b3262b7dd671dab48e61274a7a7254f81cca9e",
+    "neo/assets/ide/src/ui/canvas/semanticZoom.ts": "eb527ab1e39b117f7f0b6e7738c76ca0c0ef17dff7ba3ebc4fc3e2ed5bd48388"
   },
   "pages": [
     {
@@ -1015,7 +1018,14 @@
         "neo/src/ide/sync.rs",
         "neo/assets/ide/src/App.tsx",
         "neo/assets/ide/src/ui/lenses/lenses.tsx",
-        "neo/assets/ide/src/ui/shell/HeaderBar.tsx"
+        "neo/assets/ide/src/ui/shell/HeaderBar.tsx",
+        "website/fixtures/cart-event-model.json",
+        "neo/assets/ide/src/ui/Canvas.tsx",
+        "neo/assets/ide/src/ui/canvas/semanticZoom.ts",
+        "testbed/src/Testbed/Cart/Commands/CreateCart.hs",
+        "testbed/src/Testbed/Cart/Commands/AddItem.hs",
+        "testbed/src/Testbed/Cart/Core.hs",
+        "testbed/src/Testbed/Cart/Queries/CartSummary.hs"
       ],
       "review": {
         "accessibleOpening": true,
@@ -1025,7 +1035,7 @@
         "independence": true,
         "domainTransfer": true
       },
-      "notes": "Inspected public source and checked the stated boundaries. Setup requests follow the public starter scenario; fresh-machine execution and human reader trial are separate evidence. Domain-transfer review: the application concept leads; ecommerce is a worked example without an assumed company story.",
+      "notes": "Inspected public source and checked the stated boundaries. Setup requests follow the public starter scenario; fresh-machine execution and human reader trial are separate evidence. Domain-transfer review: the application concept leads; ecommerce is a worked example without an assumed company story. Two actual Neo CLI 0.1.4 IDE captures reviewed: source-inspected public cart subset, one overview and one selected command trace. Fixture retains original field and edge definitions with curated grouping; does not imply a running shop or automatic code generation.",
       "excerpts": []
     },
     {
@@ -1520,7 +1530,8 @@
         "testbed/src/Testbed/Cart/Commands/AddItem.hs",
         "testbed/src/Testbed/Cart/Core.hs",
         "testbed/src/Testbed/Cart/Queries/CartSummary.hs",
-        "testbed/tests/scenarios/stock-reservation.hurl"
+        "testbed/tests/scenarios/stock-reservation.hurl",
+        "testbed/src/Testbed/Cart/Commands/CreateCart.hs"
       ],
       "review": {
         "accessibleOpening": true,
@@ -1530,7 +1541,7 @@
         "independence": true,
         "domainTransfer": true
       },
-      "notes": "Editorial review of human intent, progressive depth, fictional examples, and claim boundaries. Paper exercises are designs, not implemented order features; reader trial remains pending. Domain-transfer review: the application concept leads; ecommerce is a worked example without an assumed company story. Expanded conceptual depth reviewed against the strategic explainer and public source; cross-review separates structural checks from business correctness and keeps the early technical ceiling low.",
+      "notes": "Editorial review of human intent, progressive depth, fictional examples, and claim boundaries. Paper exercises are designs, not implemented order features; reader trial remains pending. Domain-transfer review: the application concept leads; ecommerce is a worked example without an assumed company story. Expanded conceptual depth reviewed against the strategic explainer and public source; cross-review separates structural checks from business correctness and keeps the early technical ceiling low. Canonical Event Modeling notation researched from Adam Dymitruk and Martin Dilger primary sources; original cart timelines trace exact testbed fields and distinguish entry count from quantity.",
       "excerpts": []
     },
     {
@@ -1712,22 +1723,22 @@
     {
       "source": "public/diagrams/correction-history.drawio",
       "export": "public/diagrams/correction-history.svg",
-      "sourceHash": "ac9f3a80e221a11fcf15297f336ccb175942b4ba0e5cd5641a66391e6f1e4b19",
-      "exportHash": "d8a65ed3f5639bd383626d7b0ce353f760f568e883b4cfd45b1fcf2461889a82",
+      "sourceHash": "cfdbc1ee457621e7c051471434dcaddde5b12b8b0e71e5828ad1abf0078f3be8",
+      "exportHash": "f0792f7890df8507ef34ef2a03587f7d7db954633014acdab02a6d59147159b1",
       "reviewed": true
     },
     {
       "source": "public/diagrams/growing-by-slices.drawio",
       "export": "public/diagrams/growing-by-slices.svg",
-      "sourceHash": "5ef46e3e8468730b926d4255e563a80f1ee2e9b93dce972a4458ad7a9830e269",
-      "exportHash": "51f3e7b1b35f6aea16bef0f975e2b0ec7ecb44a22147a512195a451413afecea",
+      "sourceHash": "afb6265f22915e92fdf9db30d16d619838e2c496aa140fa3deeed81b3e84496f",
+      "exportHash": "6c1cf2f81d626b3bca69427557a5909d6a2aa976450a1701f084e01c80423544",
       "reviewed": true
     },
     {
       "source": "public/diagrams/history-and-summary.drawio",
       "export": "public/diagrams/history-and-summary.svg",
-      "sourceHash": "fd7ba468a641682959197f4a3e51bb49d75f68788d34f742b8eda2c0488ea353",
-      "exportHash": "89ad9ad71290a86be1fce097dbbcbef4994047ec0c9762b51c30bb53f03fc548",
+      "sourceHash": "2d0ad8f8f62d53d039a134ccc2da96a0a04dded11d4f3a5b396830b7db417e47",
+      "exportHash": "3a45b71d6adb70f222db2cc5b55512e45d351b20c3db981bbbe17271c6b66b09",
       "reviewed": true
     },
     {
@@ -1740,15 +1751,15 @@
     {
       "source": "public/diagrams/request-decision-event.drawio",
       "export": "public/diagrams/request-decision-event.svg",
-      "sourceHash": "8f6bb95deaa69d71fb7baa4fca519d11a0200cecbe02a7ad3aa7d46d98126eb0",
-      "exportHash": "4cd047177a4f4605f310e2a38993be87d78a59be07ee4fb5d1f85c347b47970f",
+      "sourceHash": "470e007d09c06dbb6e274d03307386d53d500317fcd36cdc1793419b8e6b36c5",
+      "exportHash": "9929db700ac86c76f60f8962905daf4425d0950236919d53e5cfad571fcbf22d",
       "reviewed": true
     },
     {
       "source": "public/diagrams/shared-model.drawio",
       "export": "public/diagrams/shared-model.svg",
-      "sourceHash": "88792a34095b267ad40df489eab5eb1d966eec6ac92fd129188986b1b58a0b7b",
-      "exportHash": "da5f51914eea45f8c9c09805dc13ec3639da15f976fe8f0f331a8b91e9bc7e97",
+      "sourceHash": "0d130c4424142846548615c4698c12b728e5c88b226366a1e2c049d940d1de03",
+      "exportHash": "56eb21ee790f31cb6e71c49fb7694a691e69dcdc72e5e15c049a35f1559692e0",
       "reviewed": true
     },
     {
@@ -1756,6 +1767,32 @@
       "export": "public/diagrams/trust-loop.svg",
       "sourceHash": "0d44f6726db22e772621bb42899d8f5f6f4aa6290e5236e6da6f6ae1c3b0591b",
       "exportHash": "eca23e97b62165f4c99e17de4307d1552c9737281575450329540fcce6505634",
+      "reviewed": true
+    },
+    {
+      "source": "public/diagrams/event-model-first-cart.drawio",
+      "export": "public/diagrams/event-model-first-cart.svg",
+      "reviewed": true,
+      "sourceHash": "11194483a87ed8c28eb976fee8083fd3ba44f31f4114deb283ec7b91df58b889",
+      "exportHash": "a4a1c2c7acdc107281e33796a8fea8b0549aa876433f7cfd4d61388c7e811c18"
+    },
+    {
+      "source": "public/diagrams/event-model-cart-journey.drawio",
+      "export": "public/diagrams/event-model-cart-journey.svg",
+      "reviewed": true,
+      "sourceHash": "2ad2691afe0215a98e2aad045ea2baa816a96d6550138fb5623c914a9d41b040",
+      "exportHash": "822ad9ecab0523d6bd29ba5dd141f3f470114694ebd5447bf11bbddd32ed763e"
+    }
+  ],
+  "screenshots": [
+    {
+      "path": "public/screenshots/neo-ide-overview.png",
+      "hash": "6932cfc2acf07a5544449ce16172c5a462b3964846c1ffbbfe9ad8d796cbc9d4",
+      "reviewed": true
+    },
+    {
+      "path": "public/screenshots/neo-ide-detail.png",
+      "hash": "87670be1e3b71d2331b70419a32712c99313a87065edb3e4be152f958876198f",
       "reviewed": true
     }
   ]

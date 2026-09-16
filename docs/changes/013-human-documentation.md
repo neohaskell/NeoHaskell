@@ -11,6 +11,9 @@ The introduction develops the philosophy before code through longer conceptual
 chapters and editable visual explanations. History, correction, feature slices,
 shared modeling, and human-agent trust form the accessible foundation. Diagram
 sources, exports, text alternatives, and review evidence join the maintenance gate.
+Worked Event Models use the canonical command/event/read-model colours and trace
+concrete values across a timeline. Actual IDE screenshots connect the notation to
+the tools; binary image hashes and text alternatives join the documentation checks.
 
 ```yaml spec
 issue: adhoc:human-documentation

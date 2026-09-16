@@ -1,0 +1,193 @@
+{
+  "chapters": [
+    {
+      "id": "chapter-cart",
+      "name": "Cart",
+      "order": 0
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge-heal-0a98606f18030f73",
+      "sourceHandle": "bottom",
+      "sourceId": "node-heal-command-920c18eda3e8cb67",
+      "targetHandle": "top",
+      "targetId": "node-heal-event-138c1dbe36eb0379",
+      "type": "commandProducesEvent"
+    },
+    {
+      "id": "edge-heal-021bc197c505aee7",
+      "sourceHandle": "bottom",
+      "sourceId": "node-heal-command-cb5b408b1ac1fbcc",
+      "targetHandle": "top",
+      "targetId": "node-heal-event-deb777cc57e795cf",
+      "type": "commandProducesEvent"
+    },
+    {
+      "id": "edge-heal-4544a8180cb7559e",
+      "sourceHandle": "right",
+      "sourceId": "node-heal-event-deb777cc57e795cf",
+      "targetHandle": "left",
+      "targetId": "node-heal-query-b5102c3380ef25ad",
+      "type": "eventFeedsQuery"
+    },
+    {
+      "id": "edge-heal-1fe7012f78ed4f5c",
+      "sourceHandle": "right",
+      "sourceId": "node-heal-event-138c1dbe36eb0379",
+      "targetHandle": "left",
+      "targetId": "node-heal-query-b5102c3380ef25ad",
+      "type": "eventFeedsQuery"
+    }
+  ],
+  "entities": [
+    {
+      "id": "entity-heal-8eec88e6fc173009",
+      "name": "Cart",
+      "order": 0.0
+    }
+  ],
+  "id": "docs-cart",
+  "layout": {
+    "nodePositions": {
+      "node-heal-command-920c18eda3e8cb67": {
+        "x": 360,
+        "y": 120
+      },
+      "node-heal-event-138c1dbe36eb0379": {
+        "x": 360,
+        "y": 400
+      },
+      "node-heal-command-cb5b408b1ac1fbcc": {
+        "x": 40,
+        "y": 120
+      },
+      "node-heal-event-deb777cc57e795cf": {
+        "x": 40,
+        "y": 400
+      },
+      "node-heal-query-b5102c3380ef25ad": {
+        "x": 680,
+        "y": 120
+      }
+    },
+    "viewport": {
+      "x": 0,
+      "y": 0,
+      "zoom": 1
+    }
+  },
+  "name": "Cart example",
+  "nodes": [
+    {
+      "entityId": "entity-heal-8eec88e6fc173009",
+      "fields": [
+        {
+          "name": "cartId",
+          "type": "Uuid"
+        },
+        {
+          "name": "stockId",
+          "type": "Uuid"
+        },
+        {
+          "name": "quantity",
+          "type": "Int"
+        }
+      ],
+      "id": "node-heal-command-920c18eda3e8cb67",
+      "name": "AddItem",
+      "sliceId": "slice-heal-4de24b12db104cdd",
+      "type": "command"
+    },
+    {
+      "entityId": "entity-heal-8eec88e6fc173009",
+      "fields": [
+        {
+          "name": "entityId",
+          "type": "Uuid"
+        },
+        {
+          "name": "stockId",
+          "type": "Uuid"
+        },
+        {
+          "name": "quantity",
+          "type": "Int"
+        }
+      ],
+      "id": "node-heal-event-138c1dbe36eb0379",
+      "name": "ItemAdded",
+      "sliceId": "slice-heal-4de24b12db104cdd",
+      "type": "event"
+    },
+    {
+      "entityId": "entity-heal-8eec88e6fc173009",
+      "id": "node-heal-command-cb5b408b1ac1fbcc",
+      "name": "CreateCart",
+      "sliceId": "slice-heal-b72b0d4068cfd3f0",
+      "type": "command"
+    },
+    {
+      "entityId": "entity-heal-8eec88e6fc173009",
+      "fields": [
+        {
+          "name": "entityId",
+          "type": "Uuid"
+        },
+        {
+          "name": "ownerId",
+          "type": "Text"
+        }
+      ],
+      "id": "node-heal-event-deb777cc57e795cf",
+      "name": "CartCreated",
+      "sliceId": "slice-heal-b72b0d4068cfd3f0",
+      "type": "event"
+    },
+    {
+      "fields": [
+        {
+          "name": "cartSummaryId",
+          "type": "Uuid"
+        },
+        {
+          "name": "ownerId",
+          "type": "Text"
+        },
+        {
+          "name": "itemCount",
+          "type": "Int"
+        },
+        {
+          "name": "isEmpty",
+          "type": "Bool"
+        }
+      ],
+      "id": "node-heal-query-b5102c3380ef25ad",
+      "name": "CartSummary",
+      "sliceId": "slice-heal-8f823f6c2667e06f",
+      "type": "query"
+    }
+  ],
+  "slices": [
+    {
+      "chapterId": "chapter-cart",
+      "id": "slice-heal-4de24b12db104cdd",
+      "name": "AddItem",
+      "order": 1
+    },
+    {
+      "chapterId": "chapter-cart",
+      "id": "slice-heal-b72b0d4068cfd3f0",
+      "name": "CreateCart",
+      "order": 0
+    },
+    {
+      "chapterId": "chapter-cart",
+      "id": "slice-heal-8f823f6c2667e06f",
+      "name": "CartSummary",
+      "order": 2
+    }
+  ]
+}

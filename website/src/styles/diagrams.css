@@ -20,3 +20,23 @@
   outline: 3px solid var(--sl-color-text-accent);
   outline-offset: 3px;
 }
+
+/* Screenshots retain their full canvas; readers can open the original capture. */
+.sl-markdown-content a:has(> img[src^='/screenshots/']) {
+  display: block;
+  overflow: hidden;
+  border: 1px solid var(--sl-color-gray-4);
+  border-radius: 0.75rem;
+}
+
+.sl-markdown-content a > img[src^='/screenshots/'] {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin: 0;
+}
+
+.sl-markdown-content a:has(> img[src^='/screenshots/']):focus-visible {
+  outline: 3px solid var(--sl-color-text-accent);
+  outline-offset: 3px;
+}

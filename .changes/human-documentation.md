@@ -15,6 +15,8 @@ understandable problem and develops the implementation details gradually.
 
 The introduction explains the philosophy in depth before code, using diagrams to
 connect intent, history, corrections, feature boundaries, and working with an agent.
+Worked event-model diagrams and real IDE screenshots show how requests, facts,
+and read models relate, from a first cart to a selected command's fields.
 
 This changes documentation and its checks; application behaviour and public APIs
 are unchanged. Begin at the website's Start and evaluate section, or use the

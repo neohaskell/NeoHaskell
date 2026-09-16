@@ -12,6 +12,38 @@ and integrations can be discussed as connected business concepts.
 Use it alongside behaviour checks. A coherent graph helps you understand a change;
 it does not prove that the application executes the intended policy.
 
+## See the model before opening the code
+
+[![The running Neo IDE shows CreateCart and AddItem as blue commands, CartCreated and ItemAdded as orange events, and CartSummary as a green query, with arrows connecting them.](/screenshots/neo-ide-overview.png)](/screenshots/neo-ide-overview.png "Open screenshot at full size")
+
+*The actual Neo IDE, with a small model drawn from the public cart example.
+Open either screenshot at full size to read its labels.*
+
+Read the picture in three passes:
+
+1. **Find a request.** The blue `CreateCart` card represents asking for a cart.
+   Follow its downward arrow to the orange `CartCreated` fact.
+2. **Find the information someone sees.** The green `CartSummary` card receives
+   information from `CartCreated` and `ItemAdded`. Its fields include `itemCount`
+   and `isEmpty`. The IDE calls these green cards **queries**; they represent the
+   read-model side of the application.
+3. **Find a place to work.** The left panel lists chapters and slices. Here,
+   `CreateCart`, `AddItem`, and `CartSummary` divide the Cart chapter into small
+   pieces you can discuss with your agent.
+
+These are screenshots of Neo CLI 0.1.4 serving a local workspace. To keep the
+first view readable, the model contains five nodes selected from the public
+reference application's source inspection, arranged into one Cart chapter.
+A complete inspection of that application also includes stock, integrations,
+and other examples. This is a real IDE capture with a deliberately small model;
+it does not show a running customer storefront.
+
+Compare it with the [worked event models](/start/event-modeling/). Those drawings
+follow one example over time, including successive screens and concrete values.
+The IDE graph shows reusable commands, event types, and queries: one `CartSummary`
+card can describe the view after many different histories. Its arrows describe
+relationships in the model, rather than a live trace of requests executing.
+
 ## Open the right project
 
 From the generated project directory, run:
@@ -69,6 +101,21 @@ Start with the counter you ran in [setup](/getting-started/). Locate creation,
 increment, the accepted events, and the view. Ask your agent to explain how those
 parts correspond to the HTTP requests you sent. Then repeat the exercise with the
 [cart example](/build/first-cart/).
+
+[![Selecting the blue AddItem command highlights its arrow to the orange ItemAdded event. AddItem carries cartId, stockId, and quantity; ItemAdded carries entityId, stockId, and quantity. Other nodes are dimmed.](/screenshots/neo-ide-detail.png)](/screenshots/neo-ide-detail.png "Open screenshot at full size")
+
+*Selecting `AddItem` highlights its connection to `ItemAdded`. Zooming in makes
+the fields readable; the surrounding model stays visible for context.*
+
+Here you can follow a specific piece of information: `quantity` enters the command
+and appears on the accepted event. The requested `cartId` identifies the cart whose
+event carries `entityId`. Ask your agent to show you the corresponding rule in the
+source and demonstrate that zero is refused. Seeing a field named `quantity` tells
+you what information travels; it does not tell you which values the rule accepts.
+
+Use the **+** and **−** canvas controls to change zoom. Selecting a node highlights
+its connections. If the picture is outside the visible area, try **Fit View**;
+reopening or reloading the saved model also restores a useful starting frame.
 
 When an application model grows, use its features and chapters to focus on one behaviour.
 Follow connections across a boundary when investigating another domain or an external

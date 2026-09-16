@@ -22,8 +22,8 @@ policies are design extensions, not a claimed complete commerce product.
 ## Verification results
 
 - 49 authored/reviewed human pages, with 24 required public capability areas covered.
-- 153 inspected public source files fingerprinted; 14 literal code excerpts checked.
-- `pnpm test:docs`: 21 positive, negative, and boundary fixtures passed, including missing domain-transfer review, diagram source/export drift, invalid diagram paths, and missing image alternatives.
+- 156 public evidence files fingerprinted, including the screenshot model fixture; 14 literal code excerpts checked.
+- `pnpm test:docs`: 31 positive, negative, and boundary fixtures passed, including missing domain-transfer review, diagram source/export drift, binary screenshot drift, invalid asset paths, and missing image alternatives.
 - `pnpm check:docs`: complete inventory, review records, source evidence, excerpts,
   internal links, and reachability from the home page passed.
 - `pnpm check`: zero errors, warnings, or hints from Astro diagnostics.
@@ -90,6 +90,43 @@ The current content gate, Astro diagnostics, production build/search, rendered
 links and image resources, spec checks, release fragments, expectation guard, and
 whitespace checks passed. This update changes documentation and its presentation;
 no additional application runtime result is claimed.
+
+## Event models and actual IDE captures
+
+Notation was researched from Adam Dymitruk's [Event Modeling introduction](https://eventmodeling.org/posts/what-is-event-modeling/),
+Martin Dilger's [documentation article](https://eventmodelers.ai/docs/blog/documenting-software-with-event-modeling/),
+and the [Event Modelers cheat sheet](https://eventmodelers.ai/cheatsheet/).
+Two original Draw.io models trace cart creation and a subsequent addition through
+screens, blue commands, orange events, and green read models. Example values and
+field names were checked against the public Cart commands, events, and query.
+The text explicitly distinguishes two units from one cart entry. Five earlier
+conceptual diagrams were recoloured to use the same semantic mapping.
+
+Two PNGs were captured from a running Neo CLI 0.1.4 IDE through Safari: an overview
+and a selected AddItem command highlighting its ItemAdded relationship. The model
+was produced by `neo inspect sync` against an isolated copy of public testbed source,
+then reduced to five existing nodes and their original edges/fields for legibility.
+Chapter grouping, slice ordering, and layout were curated; screenshots themselves
+are unaltered captures. `website/fixtures/cart-event-model.json` preserves that
+model and passed `neo validate`. The IDE server connected to the isolated workspace;
+no application HTTP server, database, or external provider was needed for capture.
+
+Independent visual review checked both screenshots against the guide: visible
+labels, fields, colours, selected connection, public-only content, and the distinction
+between a model relationship and runtime evidence. The guide states the version
+and curated scope, explains each capture, and links to the full-size images.
+Registered PNGs are hashed as binary data; fixtures verify that decoding them as
+text fails the hash check. The checker also validates enclosing full-size image
+links independently from their embedded images.
+
+Both new diagram drafts and the five recoloured drafts passed structural validation
+with zero errors or warnings and were inspected visually. The nine registered
+diagram pairs and two PNG captures pass the content gate. All 31 checker fixtures,
+Astro diagnostics, the 763-route production build/search index, and rendered links
+passed for this revision. Safari verified the event-model lesson, its full-size
+SVG, and the screenshot guide through the hostname-allowed Tailscale preview.
+Spec criteria/drift checks, release fragments, expectation guard, and whitespace
+checks also passed. No additional application-runtime test result is claimed.
 
 ## Explicit remaining validation boundaries
 

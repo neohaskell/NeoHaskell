@@ -8,16 +8,16 @@
         <mxCell id="heading" value="A correction becomes part of the history" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=26;fontColor=#294335;fontStyle=1;" vertex="1" parent="1">
           <mxGeometry x="30" y="20" width="620" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="opening" value="&lt;b&gt;ACCOUNT OPENED&lt;/b&gt;&lt;br&gt;+ €100 → balance €100" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=22;fontColor=#20352B;fillColor=#EDF7F1;strokeColor=#247556;strokeWidth=1.5;spacing=12;" vertex="1" parent="1">
+        <mxCell id="opening" value="&lt;b&gt;ACCOUNT OPENED&lt;/b&gt;&lt;br&gt;+ €100 → balance €100" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=22;fontColor=#20352B;fillColor=#FFF5E8;strokeColor=#AF6A20;strokeWidth=1.5;spacing=12;" vertex="1" parent="1">
           <mxGeometry x="100" y="100" width="480" height="100" as="geometry" />
         </mxCell>
-        <mxCell id="withdrawal" value="&lt;b&gt;CASH WITHDRAWN&lt;/b&gt;&lt;br&gt;− €30 → balance €70" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=22;fontColor=#20352B;fillColor=#EDF7F1;strokeColor=#247556;strokeWidth=1.5;spacing=12;" vertex="1" parent="1">
+        <mxCell id="withdrawal" value="&lt;b&gt;CASH WITHDRAWN&lt;/b&gt;&lt;br&gt;− €30 → balance €70" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=22;fontColor=#20352B;fillColor=#FFF5E8;strokeColor=#AF6A20;strokeWidth=1.5;spacing=12;" vertex="1" parent="1">
           <mxGeometry x="100" y="270" width="480" height="100" as="geometry" />
         </mxCell>
-        <mxCell id="duplicate" value="&lt;b&gt;DUPLICATE WITHDRAWAL&lt;/b&gt;&lt;br&gt;− €30 → balance €40" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=22;fontColor=#20352B;fillColor=#EDF7F1;strokeColor=#247556;strokeWidth=1.5;spacing=12;" vertex="1" parent="1">
+        <mxCell id="duplicate" value="&lt;b&gt;DUPLICATE WITHDRAWAL&lt;/b&gt;&lt;br&gt;− €30 → balance €40" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=22;fontColor=#20352B;fillColor=#FFF5E8;strokeColor=#AF6A20;strokeWidth=1.5;spacing=12;" vertex="1" parent="1">
           <mxGeometry x="100" y="440" width="480" height="100" as="geometry" />
         </mxCell>
-        <mxCell id="reversal" value="&lt;b&gt;DUPLICATE REVERSED&lt;/b&gt;&lt;br&gt;+ €30 → balance €70" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=22;fontColor=#20352B;fillColor=#EDF7F1;strokeColor=#247556;strokeWidth=1.5;spacing=12;" vertex="1" parent="1">
+        <mxCell id="reversal" value="&lt;b&gt;DUPLICATE REVERSED&lt;/b&gt;&lt;br&gt;+ €30 → balance €70" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=22;fontColor=#20352B;fillColor=#FFF5E8;strokeColor=#AF6A20;strokeWidth=1.5;spacing=12;" vertex="1" parent="1">
           <mxGeometry x="100" y="610" width="480" height="100" as="geometry" />
         </mxCell>
         <mxCell id="edge-1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endSize=8;strokeWidth=1.5;strokeColor=#657A6C;fontFamily=Helvetica;fontSize=19;fontColor=#294335;labelBackgroundColor=#FCFCFA;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="opening" target="withdrawal">
