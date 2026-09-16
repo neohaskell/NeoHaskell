@@ -54,7 +54,7 @@ Start smaller than adding a product. Someone wants an empty cart they can use.
 This diagram uses the names and behaviour of NeoHaskell's public testbed, with
 illustrative screens drawn for this explanation.
 
-[![A Create cart screen triggers the blue CreateCart command, producing the orange CartCreated event; the green CartSummary read model supplies an empty-cart screen.](/diagrams/event-model-first-cart.svg)](/diagrams/event-model-first-cart.svg "Open first-cart event model at full size")
+![A Create cart screen triggers the blue CreateCart command, producing the orange CartCreated event; the green CartSummary read model supplies an empty-cart screen.](/diagrams/event-model-first-cart.svg)
 
 *Follow the information from a person's action to a recorded fact and back to
 what they see. [Download the editable diagram](/diagrams/event-model-first-cart.drawio).*
@@ -81,7 +81,7 @@ provide the implementation behind this example.
 Now the person selects a product and requests two units. The model grows to the
 right, retaining the creation step that makes the next action possible.
 
-[![The cart timeline continues from CreateCart and CartCreated to AddItem with quantity two, then ItemAdded and an updated CartSummary showing one entry and isEmpty false.](/diagrams/event-model-cart-journey.svg)](/diagrams/event-model-cart-journey.svg "Open the cart-journey event model at full size")
+![The cart timeline continues from CreateCart and CartCreated to AddItem with quantity two, then ItemAdded and an updated CartSummary showing one entry and isEmpty false.](/diagrams/event-model-cart-journey.svg)
 
 *The second action uses the cart created earlier. Its result supplies the next
 view. [Download the editable diagram](/diagrams/event-model-cart-journey.drawio).*

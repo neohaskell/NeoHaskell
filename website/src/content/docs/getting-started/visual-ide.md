@@ -14,10 +14,10 @@ it does not prove that the application executes the intended policy.
 
 ## See the model before opening the code
 
-[![The running Neo IDE shows CreateCart and AddItem as blue commands, CartCreated and ItemAdded as orange events, and CartSummary as a green query, with arrows connecting them.](/screenshots/neo-ide-overview.png)](/screenshots/neo-ide-overview.png "Open screenshot at full size")
+![The running Neo IDE shows CreateCart and AddItem as blue commands, CartCreated and ItemAdded as orange events, and CartSummary as a green query, with arrows connecting them.](/screenshots/neo-ide-overview.png)
 
 *The actual Neo IDE, with a small model drawn from the public cart example.
-Open either screenshot at full size to read its labels.*
+Select either screenshot to enlarge it without leaving this page.*
 
 Read the picture in three passes:
 
@@ -102,7 +102,7 @@ increment, the accepted events, and the view. Ask your agent to explain how thos
 parts correspond to the HTTP requests you sent. Then repeat the exercise with the
 [cart example](/build/first-cart/).
 
-[![Selecting the blue AddItem command highlights its arrow to the orange ItemAdded event. AddItem carries cartId, stockId, and quantity; ItemAdded carries entityId, stockId, and quantity. Other nodes are dimmed.](/screenshots/neo-ide-detail.png)](/screenshots/neo-ide-detail.png "Open screenshot at full size")
+![Selecting the blue AddItem command highlights its arrow to the orange ItemAdded event. AddItem carries cartId, stockId, and quantity; ItemAdded carries entityId, stockId, and quantity. Other nodes are dimmed.](/screenshots/neo-ide-detail.png)
 
 *Selecting `AddItem` highlights its connection to `ItemAdded`. Zooming in makes
 the fields readable; the surrounding model stays visible for context.*

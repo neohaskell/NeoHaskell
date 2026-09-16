@@ -23,7 +23,7 @@ policies are design extensions, not a claimed complete commerce product.
 
 - 49 authored/reviewed human pages, with 24 required public capability areas covered.
 - 156 public evidence files fingerprinted, including the screenshot model fixture; 14 literal code excerpts checked.
-- `pnpm test:docs`: 31 positive, negative, and boundary fixtures passed, including missing domain-transfer review, diagram source/export drift, binary screenshot drift, invalid asset paths, and missing image alternatives.
+- `pnpm test:docs`: 36 positive, negative, and boundary fixtures passed, including missing domain-transfer review, diagram source/export drift, binary screenshot drift, invalid asset paths, missing image alternatives, and absent accessible zoom controls.
 - `pnpm check:docs`: complete inventory, review records, source evidence, excerpts,
   internal links, and reachability from the home page passed.
 - `pnpm check`: zero errors, warnings, or hints from Astro diagnostics.
@@ -127,6 +127,28 @@ passed for this revision. Safari verified the event-model lesson, its full-size
 SVG, and the screenshot guide through the hostname-allowed Tailscale preview.
 Spec criteria/drift checks, release fragments, expectation guard, and whitespace
 checks also passed. No additional application-runtime test result is claimed.
+
+## In-page image enlargement
+
+Starlight Image Zoom 0.15.0 now opens diagrams and screenshots in a native dialog.
+Linked-image wrappers were removed because the plugin deliberately excludes linked
+images. Editable Draw.io download links remain separate. Inline images fit the
+article width, and SVG backgrounds remain readable in the enlarged view.
+
+The plugin requires the supported Unified Markdown renderer on the installed
+Astro/Starlight versions, so `@astrojs/markdown-remark` 7.2.1 is now an explicit
+dependency. [ADR-0078](../docs/decisions/0078-documentation-image-zoom.md) records
+the dependency and renderer choice. The complete 769-route build and search index
+passed, as did Astro's diagnostics, all 36 checker fixtures, and all 49 human
+pages' rendered links and zoom controls. Existing ADR fences named `cabal` and
+`neohaskell` emit highlighting fallback warnings and render as plain text.
+
+Safari verification on the Tailscale preview opened a PNG screenshot and the wide
+SVG event model without changing the URL. Escape and the close control dismissed
+the overlay. The screenshot's scroll position was unchanged (0.08458921 before
+and after); closing from its button restored focus to the zoom trigger, and Enter
+reopened it. Captions and the dimmed page background rendered correctly. Code
+blocks and copy controls remained present in the guide after changing renderers.
 
 ## Explicit remaining validation boundaries
 

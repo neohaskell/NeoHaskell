@@ -59,7 +59,7 @@ You do not need to memorise those terms yet. Picture a request reaching a clear
 point of decision. If accepted, it becomes a recorded fact. If refused, the caller
 gets a reason and the requested change does not become a fact.
 
-[![A request passes through access checks and a decision based on current state. Acceptance records an event; refusal returns a reason without that event.](/diagrams/request-decision-event.svg)](/diagrams/request-decision-event.svg "Open diagram at full size")
+![A request passes through access checks and a decision based on current state. Acceptance records an event; refusal returns a reason without that event.](/diagrams/request-decision-event.svg)
 
 *The application evaluates intent before recording a change. The diagram describes
 normal command handling; access policies and business rules must be wired and

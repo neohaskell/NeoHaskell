@@ -25,8 +25,9 @@ an example to understand those choices.
 
 The diagrams highlight one relationship at a time: a request and its outcome, a
 history and its summary, or a feature and the contract it shares. Their captions
-explain the same idea in words. Diagrams scroll horizontally on narrow screens;
-select one to open it at full size when you want to inspect it more closely.
+explain the same idea in words. Diagrams fit the width of your screen;
+select one to enlarge it in place. Press Escape or select the close control to
+return to the same point in the page.
 
 ## Build with your agent
 

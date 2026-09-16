@@ -38,7 +38,7 @@ an item-added fact. Writing that down gives the person, agent, and implementatio
 a shared boundary: they can disagree about the proposed code while still agreeing
 on the outcome they are checking.
 
-[![A slice accepts a request and records a fact. Two further slices use that shared event contract: one prepares a view and the other requests a follow-up action.](/diagrams/growing-by-slices.svg)](/diagrams/growing-by-slices.svg "Open diagram at full size")
+![A slice accepts a request and records a fact. Two further slices use that shared event contract: one prepares a view and the other requests a follow-up action.](/diagrams/growing-by-slices.svg)
 
 *Each connection carries an explicit meaning. Accepting one step does not mean
 that every later step has succeeded.*

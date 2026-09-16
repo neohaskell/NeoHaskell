@@ -19,7 +19,7 @@ If the application keeps only the current balance, it can answer “How much is 
 
 Instead, imagine keeping the opening amount and the withdrawal. The application calculates the current balance from those entries: €100 minus €30 equals €70. The useful number is still there, but the facts that explain it remain available too.
 
-[![An opening amount of €100 and a withdrawal of €30 remain in history and produce a current balance of €70.](/diagrams/history-and-summary.svg)](/diagrams/history-and-summary.svg "Open diagram at full size")
+![An opening amount of €100 and a withdrawal of €30 remain in history and produce a current balance of €70.](/diagrams/history-and-summary.svg)
 
 The history retains the two meaningful entries. The balance summarises their effect; displaying €70 does not require replacing either entry.
 
@@ -35,7 +35,7 @@ Changing the number directly to €70 repairs the display. It does not, by itsel
 
 In the retained history, the application can record an explicit reversal of the duplicate withdrawal. The original entries remain, and the correction contributes €30 back to the calculated balance.
 
-[![The duplicate withdrawal reduces the recorded balance to €40; an explicit reversal adds €30 and restores €70 while retaining the mistaken entry.](/diagrams/correction-history.svg)](/diagrams/correction-history.svg "Open diagram at full size")
+![The duplicate withdrawal reduces the recorded balance to €40; an explicit reversal adds €30 and restores €70 while retaining the mistaken entry.](/diagrams/correction-history.svg)
 
 The reversal identifies the duplicate entry it corrects. The resulting balance is €70, and the history explains both the error and its repair.
 

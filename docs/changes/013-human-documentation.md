@@ -20,7 +20,7 @@ issue: adhoc:human-documentation
 kind: feature
 touches: [website, ci-cd, governance-docs]
 breaking: false
-new-dependency: false
+new-dependency: true
 new-capability: false
 new-extension-point: false
 ```
@@ -38,6 +38,7 @@ No Haskell or Rust public APIs change.
 |----|----------|--------------|-------|----------|
 | C1 | Every planned human page has source evidence, review coverage, and valid local links | `script:website/scripts/check-docs.mjs#--check` | unit | none |
 | C2 | The documentation gate rejects missing pages, source drift, invalid links, and absent review evidence | `script:website/scripts/check-docs.mjs#--self-test` | unit | none |
+| C3 | Built documentation images have a dialog controller and an accessible enlargement trigger | `script:website/scripts/check-docs.mjs#--built` | unit | none |
 
 ## User impact
 
@@ -51,4 +52,7 @@ verification from a future human reader trial and live external-provider testing
 
 ## ADR
 
-Not required — no breaking API, new dependency, capability, or extension point.
+[ADR-0078](../decisions/0078-documentation-image-zoom.md) records the Starlight
+image-zoom dependency. Diagrams and screenshots enlarge in a dialog on the
+current page, with keyboard controls and captions. Built-page verification
+requires an accessible zoom trigger for every registered illustration.

@@ -1,13 +1,18 @@
 // @ts-check
 import { defineConfig } from 'astro/config';
+import { unified } from '@astrojs/markdown-remark';
 import starlight from '@astrojs/starlight';
+import starlightImageZoom from 'starlight-image-zoom';
 
 // https://astro.build/config
 export default defineConfig({
 	site: 'https://neohaskell.org',
+	// Image Zoom 0.15 uses rehype; this is Astro 7's supported rehype pipeline.
+	markdown: { processor: unified() },
 	integrations: [
 		starlight({
 			title: 'NeoHaskell',
+			plugins: [starlightImageZoom()],
 			customCss: ['./src/styles/diagrams.css'],
 			description:
 				'Build understandable applications with events, a visual model, and your coding agent.',

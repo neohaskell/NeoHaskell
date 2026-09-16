@@ -1,42 +1,22 @@
-/* Keep labels readable on narrow screens; the link opens the full-size SVG. */
-.sl-markdown-content a:has(> img[src^='/diagrams/']) {
+/* Keep the entire illustration visible; the plugin opens a larger modal view. */
+.sl-markdown-content starlight-image-zoom-zoomable:has(> img:is([src^='/diagrams/'], [src^='/screenshots/'])) {
   display: block;
-  overflow-x: auto;
+}
+
+.sl-markdown-content img:is([src^='/diagrams/'], [src^='/screenshots/']) {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin: 0;
   border: 1px solid var(--sl-color-gray-4);
   border-radius: 0.75rem;
+}
+
+/* This also applies to the SVG clone that the plugin places outside the article. */
+img[src^='/diagrams/'] {
   background: #fcfcfa;
 }
 
-.sl-markdown-content a > img[src^='/diagrams/'] {
-  display: block;
-  width: 100%;
-  min-width: 36rem;
-  max-width: none;
-  height: auto;
-  margin: 0;
-}
-
-.sl-markdown-content a:has(> img[src^='/diagrams/']):focus-visible {
-  outline: 3px solid var(--sl-color-text-accent);
-  outline-offset: 3px;
-}
-
-/* Screenshots retain their full canvas; readers can open the original capture. */
-.sl-markdown-content a:has(> img[src^='/screenshots/']) {
-  display: block;
-  overflow: hidden;
-  border: 1px solid var(--sl-color-gray-4);
-  border-radius: 0.75rem;
-}
-
-.sl-markdown-content a > img[src^='/screenshots/'] {
-  display: block;
-  width: 100%;
-  height: auto;
-  margin: 0;
-}
-
-.sl-markdown-content a:has(> img[src^='/screenshots/']):focus-visible {
-  outline: 3px solid var(--sl-color-text-accent);
-  outline-offset: 3px;
+:root {
+  --starlight-image-zoom-backdrop-bg: color-mix(in srgb, var(--sl-color-black) 92%, transparent);
 }

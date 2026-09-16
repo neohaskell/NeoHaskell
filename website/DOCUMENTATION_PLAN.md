@@ -41,7 +41,7 @@ implementation review as any other technical explanation.
 
 Keep one central idea per diagram, readable labels, a consistent vocabulary and
 palette, and a textual explanation beside it. Colour must not be the only way to
-distinguish concepts. Provide descriptive alt text and full-size access. Show
+distinguish concepts. Provide descriptive alt text and in-page enlargement through Starlight Image Zoom. Show
 refusals, asynchronous work, and design responsibilities where their absence
 would create a misleading impression.
 
@@ -133,8 +133,8 @@ Use the same semantic colours in earlier conceptual illustrations.
 
 The visual IDE guide includes actual captures of a running IDE, with a small public
 example and a closer view of a selected command. Explain what to look at in each
-image, state the capture version and any curated scope, and provide full-size
-links and useful text alternatives. Keep editable Draw.io sources for diagrams
+image, state the capture version and any curated scope, and provide in-page image enlargement
+and useful text alternatives. Keep editable Draw.io sources for diagrams
 and a reproducible public model fixture for screenshots. The content gate checks
 registered assets and their hashes; image review checks what readers can see.
 

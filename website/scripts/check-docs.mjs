@@ -114,6 +114,19 @@ export function validate(manifest, files, sources, assets = {}) {
   return [...new Set(errors)];
 }
 
+export function validateImageZoom(html) {
+  const errors = [];
+  const images = [...html.matchAll(/<img\b[^>]*\bsrc="(\/(?:diagrams|screenshots)\/[^"?#]+)"[^>]*>/g)];
+  const zoomables = [...html.matchAll(/<starlight-image-zoom-zoomable\b[^>]*>([\s\S]*?)<\/starlight-image-zoom-zoomable>/g)];
+  if (images.length && !/<starlight-image-zoom[\s>]/.test(html)) errors.push('Missing image zoom dialog controller');
+  for (const [, source] of images) {
+    if (!zoomables.some(([, content]) => content.includes(`src="${source}"`) && /<button\b[^>]*aria-label="Zoom image/.test(content))) {
+      errors.push(`Image lacks an accessible zoom trigger: ${source}`);
+    }
+  }
+  return errors;
+}
+
 function collect(directory, prefix = '') {
   const result = {};
   for (const entry of readdirSync(directory, { withFileTypes: true })) {
@@ -176,7 +189,16 @@ function selfTest() {
   assert.match(validate({ ...manifest, screenshots: [{ ...screenshot, hash: undefined }] }, captured, sources, screenshotAssets).join('\n'), /Screenshot changed/);
   assert.deepEqual(validate(screenshotManifest, { [path]: body + '\n[Open full-size screenshot](/screenshots/neo-ide-overview.png)\n' }, sources, screenshotAssets), []);
   assert.match(validate(screenshotManifest, { [path]: body + '\n[![The IDE graph](/screenshots/neo-ide-overview.png)](/screenshots/unregistered-full-size.png)\n' }, sources, screenshotAssets).join('\n'), /Unreviewed screenshot: \/screenshots\/unregistered-full-size.png/);
-  console.log('docs-check: 31 positive, negative, and boundary cases passed');
+  const zoomImage = '<img src="/diagrams/example.svg" alt="A request becomes a fact">';
+  const zoomButton = '<button aria-label="Zoom image: A request becomes a fact"></button>';
+  const zoomable = `<starlight-image-zoom-zoomable>${zoomImage}${zoomButton}</starlight-image-zoom-zoomable>`;
+  const controller = '<starlight-image-zoom></starlight-image-zoom>';
+  assert.deepEqual(validateImageZoom(controller + zoomable), []);
+  assert.match(validateImageZoom(zoomable).join('\n'), /Missing image zoom dialog/);
+  assert.match(validateImageZoom(controller + `<a href="/diagrams/example.svg">${zoomImage}</a>`).join('\n'), /lacks an accessible zoom trigger/);
+  assert.match(validateImageZoom(controller + zoomable.replace(zoomButton, '')).join('\n'), /lacks an accessible zoom trigger/);
+  assert.deepEqual(validateImageZoom('<p>A page with no images.</p>'), []);
+  console.log('docs-check: 36 positive, negative, and boundary cases passed');
 }
 
 function checkBuilt(manifest) {
@@ -186,6 +208,7 @@ function checkBuilt(manifest) {
     const output = resolve(website, 'dist', route.slice(1), 'index.html');
     if (!existsSync(output)) { failures.push(`Missing built route: ${route}`); continue; }
     const html = read(output);
+    for (const error of validateImageZoom(html)) failures.push(`${error} on ${route}`);
     for (const match of html.matchAll(/(?:href|src)="(\/[^"?#]*)(?:\?[^"#]*)?(?:#([^"]*))?"/g)) {
       const target = resolve(website, 'dist', decodeURIComponent(match[1]).slice(1));
       const targetFile = existsSync(target) && statSync(target).isDirectory() ? resolve(target, 'index.html') : target;

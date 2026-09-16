@@ -64,7 +64,7 @@ five. These are practice requirements, not a built-in NeoHaskell quantity limit.
 
 ## Make the feedback loop visible
 
-[![A human defines intent and examples, an agent proposes and implements a model, checks produce evidence, and the human reviews the outcome before the next change.](/diagrams/trust-loop.svg)](/diagrams/trust-loop.svg "Open diagram at full size")
+![A human defines intent and examples, an agent proposes and implements a model, checks produce evidence, and the human reviews the outcome before the next change.](/diagrams/trust-loop.svg)
 
 *Confidence grows through a repeatable loop: explain, model, implement, check, and
 review. Each pass gives the next delegation a clearer starting point.*
