@@ -17,7 +17,7 @@ Continue from your `mug-shop` directory and complete the
 [integration setup](/connect/#prepare-your-project). Keep the protocol helper
 in `src/Shop/Integrations/ProviderStatus.hs`. The cart-side handler that selects
 when to call it belongs under `src/Shop/Cart/Integrations/`, following the complete
-[handler module](/connect/workflows/#add-the-handler-to-your-project).
+[handler module](/connect/workflows/#create-the-outbound-integration).
 
 Before adding the request, define the command that records a status result and
 register it in the relevant service with `InternalTransport`. Give it successful, refused, and unresolved
