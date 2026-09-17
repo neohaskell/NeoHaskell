@@ -3,7 +3,7 @@
   "methodology": "DOCUMENTATION_PLAN.md",
   "sourceRevision": "45e6fcc251de413d198be5c13cd583a82d3b2d57",
   "requiredPages": [
-    "src/content/docs/index.mdx",
+    "src/content/docs/docs/index.mdx",
     "src/content/docs/start/index.md",
     "src/content/docs/start/why-neohaskell.md",
     "src/content/docs/start/fit-and-tradeoffs.md",
@@ -1508,8 +1508,8 @@
       "excerpts": []
     },
     {
-      "path": "src/content/docs/index.mdx",
-      "section": "start",
+      "path": "src/content/docs/docs/index.mdx",
+      "section": "docs",
       "topics": [
         "website",
         "commands",

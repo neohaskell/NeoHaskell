@@ -12,6 +12,7 @@ const repository = resolve(website, '..');
 const read = path => readFileSync(path, 'utf8');
 const digest = value => createHash('sha256').update(value).digest('hex');
 const requiredReview = ['accessibleOpening', 'progressiveDepth', 'concreteOutcome', 'sourceGrounded', 'independence', 'domainTransfer'];
+const documentationRoot = '/docs/';
 const routeOf = path => '/' + path.replace(/^src\/content\/docs\//, '').replace(/\.(md|mdx)$/, '').replace(/(^|\/)index$/, '') .replace(/\/$/, '') + '/';
 const normalizeRoute = route => route.replace(/\/+/g, '/');
 const withoutCode = body => body.replace(/^```[^\n]*\n[\s\S]*?^```\s*$/gm, '');
@@ -165,8 +166,8 @@ export function validate(manifest, files, sources, assets = {}) {
   for (const path of Object.keys(files)) {
     if (!paths.has(path)) errors.push(`Unreviewed human page: ${path}`);
   }
-  const reached = new Set(['/']);
-  const queue = ['/'];
+  const reached = new Set([documentationRoot]);
+  const queue = [documentationRoot];
   while (queue.length) {
     for (const target of edges.get(queue.shift()) ?? []) {
       if (!reached.has(target)) { reached.add(target); queue.push(target); }
@@ -189,6 +190,26 @@ export function validateImageZoom(html) {
   return errors;
 }
 
+const localRenderedTargetPattern = /(?:href|src)="(\/[^"?#]*)(?:\?[^"#]*)?(?:#([^"]*))?"/g;
+
+// The marketing page is outside the human-doc inventory, but its local links
+// and assets still need the same built-site verification as documentation.
+export function validateLandingBuilt(html, targetExists) {
+  const errors = [];
+  if (!html) return ['Missing built marketing landing: /'];
+  if (!/<main\b/.test(html) || !/<h1\b/.test(html)) errors.push('Root route is not a marketing landing page');
+  if (/\bdata-has-(?:sidebar|toc)\b/.test(html) || /<nav\b[^>]*\bclass="[^"]*\bsidebar\b/.test(html)) {
+    errors.push('Root route still renders documentation shell');
+  }
+  if (!/<a\b[^>]*\bhref="\/docs\/(?:[?#"])/.test(html)) errors.push(`Marketing landing missing docs CTA: ${documentationRoot}`);
+  if (!targetExists(documentationRoot)) errors.push(`Missing built documentation root: ${documentationRoot}`);
+  for (const match of html.matchAll(localRenderedTargetPattern)) {
+    const target = match[1];
+    if (!targetExists(target)) errors.push(`Broken landing local target ${target}`);
+  }
+  return [...new Set(errors)];
+}
+
 function collect(directory, prefix = '') {
   const result = {};
   for (const entry of readdirSync(directory, { withFileTypes: true })) {
@@ -201,13 +222,15 @@ function collect(directory, prefix = '') {
 }
 
 function selfTest() {
-  const path = 'src/content/docs/index.md';
+  const path = 'src/content/docs/docs/index.md';
   const source = 'core/example.hs';
   const body = '---\ntitle: Example\ndescription: A shop\n---\nA meaningful example.\n```haskell\nexample = 1\n```\n';
   const page = { path, topics: ['commands'], sources: [source], notes: 'Source review; live execution separate.', review: Object.fromEntries(requiredReview.map(k => [k, true])), excerpts: [{ source, text: 'example = 1' }] };
   const manifest = { pages: [page], requiredPages: [path], requiredTopics: ['commands'], sourceHashes: { [source]: digest('example = 1') } };
   const files = { [path]: body };
   const sources = { [source]: 'example = 1' };
+  assert.equal(routeOf('src/content/docs/docs/index.mdx'), '/docs/');
+  assert.equal(routeOf('src/content/docs/start/index.md'), '/start/');
   assert.deepEqual(validate(manifest, files, sources), []);
   assert.match(validate({ ...manifest, requiredPages: [path, 'missing.md'] }, files, sources).join('\n'), /Missing planned/);
   assert.match(validate(manifest, {}, sources).join('\n'), /Missing content/);
@@ -222,7 +245,7 @@ function selfTest() {
   assert.match(validate(manifest, { [path]: body.replace('example = 1', 'example = 2') }, sources).join('\n'), /Page excerpt drift/);
   const orphan = { ...page, path: 'src/content/docs/orphan.md' };
   assert.match(validate({ ...manifest, pages: [page, orphan] }, { ...files, [orphan.path]: body }, sources).join('\n'), /Unreachable from home/);
-  assert.deepEqual(validate(manifest, { [path]: body + '\n[Home](/)\n```text\n[Not a link](/absent/)\n```\n' }, sources), []);
+  assert.deepEqual(validate(manifest, { [path]: body + '\n[Docs](/docs/)\n```text\n[Not a link](/absent/)\n```\n' }, sources), []);
   const diagram = { source: 'public/diagrams/example.drawio', export: 'public/diagrams/example.svg', sourceHash: digest('<mxfile/>'), exportHash: digest('<svg/>'), reviewed: true };
   const diagramManifest = { ...manifest, diagrams: [diagram] };
   const assets = { '/diagrams/example.drawio': '<mxfile/>', '/diagrams/example.svg': '<svg/>' };
@@ -320,7 +343,17 @@ function selfTest() {
   assert.match(validateCompleteCheckpoint(completeFile(completeSource + '\nextra = 1'), checkpoint).join(''), /differs from checkpoint/);
   assert.match(validateCompleteCheckpoint(completeFile(completeSource).repeat(2), checkpoint).join(''), /needs one complete file/);
   assert.deepEqual(validateCompleteCheckpoint('', [['tests/scenarios/create-cart.hurl', Buffer.from('GET /')]]), []);
-  console.log('docs-check: 87 positive, negative, and boundary assertions passed');
+  const landingTargets = new Set(['/', '/docs/', '/start/', '/favicon.svg']);
+  const landing = '<html><body><main><h1>NeoHaskell</h1><a href="/docs/">Read the docs</a><img src="/favicon.svg" alt=""></main></body></html>';
+  const hasLandingTarget = target => landingTargets.has(target);
+  assert.deepEqual(validateLandingBuilt(landing, hasLandingTarget), []);
+  assert.match(validateLandingBuilt('', hasLandingTarget).join(''), /Missing built marketing landing/);
+  assert.match(validateLandingBuilt(landing, target => target !== '/docs/' && hasLandingTarget(target)).join(''), /Missing built documentation root/);
+  assert.match(validateLandingBuilt(landing.replace('/docs/', '/missing/'), hasLandingTarget).join(''), /Broken landing local target/);
+  assert.match(validateLandingBuilt(landing.replace('/favicon.svg', '/missing.svg'), hasLandingTarget).join(''), /Broken landing local target/);
+  assert.match(validateLandingBuilt(landing.replace('<a href="/docs/">Read the docs</a>', '<a href="/start/">Start</a>'), hasLandingTarget).join(''), /missing docs CTA/);
+  assert.match(validateLandingBuilt('<html data-has-sidebar><body><main><h1>NeoHaskell</h1></main></body></html>', hasLandingTarget).join(''), /documentation shell/);
+  console.log('docs-check: 96 positive, negative, and boundary assertions passed');
 }
 
 function checkBuilt(manifest) {
@@ -341,6 +374,14 @@ function checkBuilt(manifest) {
       }
     }
   }
+  const landingOutput = resolve(website, 'dist', 'index.html');
+  const targetExists = target => {
+    const targetPath = resolve(website, 'dist', decodeURIComponent(target).slice(1));
+    const targetFile = existsSync(targetPath) && statSync(targetPath).isDirectory() ? resolve(targetPath, 'index.html') : targetPath;
+    return existsSync(targetFile);
+  };
+  const landingHtml = existsSync(landingOutput) ? read(landingOutput) : '';
+  failures.push(...validateLandingBuilt(landingHtml, targetExists));
   if (failures.length) throw new Error([...new Set(failures)].join('\n'));
   console.log(`docs-check: ${manifest.pages.length} built pages and their local links/anchors passed`);
 }

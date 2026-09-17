@@ -38,6 +38,7 @@ export default defineConfig({
 				ru: { label: 'Русский', lang: 'ru' },
 			},
 			sidebar: [
+				{ label: 'Documentation overview', items: [{ slug: 'docs' }] },
                 { label: 'Start and evaluate', items: [{ autogenerate: { directory: 'start' } }] },
                 { label: 'Get started', items: [{ slug: 'getting-started' }] },
                 { label: 'Build applications', collapsed: true, items: [

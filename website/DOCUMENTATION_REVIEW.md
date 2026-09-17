@@ -221,6 +221,36 @@ Final Safari review verified the short first-cart examples and download link at
 normal reading size. The recaptured AddItem image opened in the dialog at the same
 guide URL; Escape returned focus to its zoom trigger and retained the reading position.
 
+## Main website
+
+The root landing page follows the supplied explainer's argument: meaning becomes
+more valuable as implementation gets easier; recorded facts explain current
+values; explicit corrections retain context; people and agents share a model;
+and bounded capabilities support deliberate growth. It identifies NeoHaskell's
+language, framework, Neo CLI, and visual IDE, with separate routes for builders,
+evaluators, and contributors. The documentation overview moves to `/docs/` while
+individual lesson URLs stay unchanged.
+
+The account illustration is an explanation of an application design, not a live
+banking system. Duplicate detection and compensating events are explicitly the
+application author's responsibility. Compiler checks are distinguished from
+business judgment, and evaluation copy includes modeling and operational costs.
+The landing reuses a maintained Draw.io export and an actual IDE capture; it
+introduces no private application material, customer claims, or performance data.
+
+The final website build produced 775 routes. The checker passed 96 positive,
+negative, and boundary assertions, plus four checkpoint archive tests; the built
+site check passed for the landing's local destinations and all 49 human guide
+pages. Final Astro diagnostics reported no errors, warnings, or hints across nine
+files, including the native disclosure and popover markup.
+
+Safari review covered the hero, history, and IDE sections at the available desktop
+window size. The header CTA contrast was corrected. Native history and correction
+disclosures expanded with keyboard activation. The IDE uses a native image popover
+with a close control; automated Safari clicks did not reliably activate its trigger,
+so its full open/Escape/focus-return interaction is not claimed as verified. Small
+screen layouts were reviewed in CSS, without a physical mobile-device trial.
+
 ## Remaining validation boundaries
 
 - A reader matching Jess's profile has not completed the reader trial.

@@ -261,3 +261,29 @@ Maintain `documentation-manifest.json` as the page/coverage/source inventory and
 `DOCUMENTATION_REVIEW.md` as the review record. The docs checker validates that every
 planned page and every required topic exists. Record pending live-provider tests and
 human reader trials explicitly rather than calling them verified.
+
+## Main website and documentation entry
+
+The public root `/` introduces NeoHaskell as a language, application framework,
+and development toolkit. The documentation overview lives at `/docs/`; existing
+lesson routes remain stable. The landing page links into the ideas, evaluation,
+working-project, and contribution paths rather than duplicating the whole guide.
+
+Its narrative follows the strategic explainer: abundant implementation makes
+meaning important; accepted facts explain current values; explicit corrections
+preserve history; a shared event model connects domain experts and implementers;
+and bounded slices make the next change understandable. Show those relationships
+visually before describing technical foundations. Identify the Haskell dialect,
+typed application concepts, Neo CLI, and actual visual IDE.
+
+Keep the claims grounded. History contains reasons and attribution only when the
+application models them. Corrections and business rules are designed, not inferred
+automatically. Bounded feature costs depend on stable contracts. Include adoption
+tradeoffs and preserve human judgment. Do not invent customer logos, performance
+numbers, release availability, or automatic correctness guarantees.
+
+Use an original responsive visual design, accessible navigation and interactions,
+and clear documentation calls to action. Reuse maintained Draw.io graphics and
+real IDE captures where useful. Website-only verification covers root/docs routing,
+CTA destinations, assets, keyboard interaction, and rendered layout; it does not
+restart framework compilation.
