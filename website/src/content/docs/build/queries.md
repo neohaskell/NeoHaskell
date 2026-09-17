@@ -9,13 +9,13 @@ A screen or report needs information shaped around its reader's question. Displa
 
 NeoHaskell's read models separate presenting information from deciding whether a change is allowed. That gives you freedom to shape the view, with a tradeoff: a newly accepted change may take a short time to appear in it.
 
-We practise with a cart summary: a customer needs their selections, while a merchant needs different stock information. This page continues the [first cart](/build/first-cart/) example. Run `neo run` from your project to serve the routes below.
+This page follows [Cart additions](/build/commands-and-events/). That page changed the same Cart entity so it contains `items`; the query below reads that state. Follow [your first working slice](/build/first-cart/) and the additions page in one `mug-shop` project. If you arrive here directly, use their complete checkpoints first, then create or replace `src/Shop/Cart/Queries/CartSummary.hs` with the complete file on this page.
 
 ## Begin with the question on the screen
 
-The existing `CartSummary` answers: “Which cart is this, who owns it, how many entries does it have, and is it empty?” It does not report total units or prices.
+The existing `CartSummary` answers: “Which Cart is this, who owns it, how many entries does it have, and is it empty?” It does not report total units or prices. Decide the meaning of each field before asking an agent to add one: `itemCount` currently means entries, so one addition of five mugs produces a count of one.
 
-Its business logic lives in `src/Shop/Cart/Queries/CartSummary.hs`:
+The query's business logic belongs in `src/Shop/Cart/Queries/CartSummary.hs`. From the `mug-shop` project root, replace that file after reviewing the focused projection below:
 
 ```haskell
 instance QueryOf CartEntity CartSummary where
@@ -36,19 +36,75 @@ Other outcomes are `Delete`, which removes the view row, and `NoOp`, which leave
 
 ## Derive and register the view
 
-For a new query, define its data, `canAccess`, and `canView`, then call `deriveQuery ''CartSummary [''CartEntity]`. Put the relevant `QueryOf` business instances **after** that marker: they depend on the `Query` instance it generates. The marker comes from `Core` and generates the standard instances. The application must also register the query with `Application.withQuery @CartSummary`.
-
-The marker call in your query file is:
+For this query, the file defines the data record, `canAccess`, and `canView`, then calls the canonical helper:
 
 ```haskell
 deriveQuery ''CartSummary [''CartEntity]
 ```
 
-The marker's internal name is `CartSummary`; the HTTP URL is `/queries/cart-summary`. Your current practice query deliberately allows public access. Before exposing private application data, define and test the [access-control policies](/build/access-control/).
+Put the relevant `QueryOf` business instance **after** that marker: it depends on the `Query` instance the marker generates. The marker comes from the framework-facing `Core` import and generates standard query support. The complete file below preserves the required imports and declaration order.
 
-## Find your cart
+The application registration is already present in `src/App.hs` from the first slice. If an existing application has the Cart service but no query registration, add this line beside its service registration:
 
-This runnable shell request uses NeoQL equality filtering. Replace `YOUR-CART-UUID` with the identifier returned by cart creation:
+```haskell
+  |> Application.withQuery @CartSummary
+```
+
+The marker's internal name is `CartSummary`; the HTTP URL is `/queries/cart-summary`. The practice query deliberately allows public access. Before exposing private application data, define and test the [access-control policies](/build/access-control/).
+
+## Complete current query file
+
+Create the `src/Shop/Cart/Queries` directory if necessary, then replace `src/Shop/Cart/Queries/CartSummary.hs` with this assembled file from the project root:
+
+<!-- complete-file -->
+```haskell title="src/Shop/Cart/Queries/CartSummary.hs"
+module Shop.Cart.Queries.CartSummary (CartSummary (..), canAccess, canView) where
+
+import Array qualified
+import Core
+import Service.AccessControl (AccessError, UserClaims)
+import Service.AccessControl qualified as AccessControl
+import Shop.Cart.Core (CartEntity (..))
+
+data CartSummary = CartSummary
+  { cartSummaryId :: Uuid
+  , ownerId :: Text
+  , itemCount :: Int
+  , isEmpty :: Bool
+  }
+
+canAccess :: Maybe UserClaims -> Maybe AccessError
+canAccess = AccessControl.publicAccess
+
+canView :: Maybe UserClaims -> CartSummary -> Maybe AccessError
+canView = AccessControl.publicView
+
+deriveQuery ''CartSummary [''CartEntity]
+
+instance QueryOf CartEntity CartSummary where
+  queryId cart = cart.cartId
+  combine cart _previous = do
+    let count = cart.items |> Array.length
+    Update CartSummary
+      { cartSummaryId = cart.cartId
+      , ownerId = cart.ownerId
+      , itemCount = count
+      , isEmpty = count == 0
+      }
+```
+
+`Array qualified` is a real import used by the projection; keep it when assembling the file. `canAccess` and `canView` are explicit application policy functions. They are public here so the exercise can inspect a Cart without authentication; that convenience is not a recommendation for private data.
+
+## Find your Cart
+
+Run the application from the `mug-shop` project root:
+
+```sh
+neo build
+neo run
+```
+
+Create a Cart, add an item as described in [Cart additions](/build/commands-and-events/), and replace `YOUR-CART-UUID` with the identifier returned by creation:
 
 ```sh
 curl --get http://localhost:8080/queries/cart-summary \
@@ -67,14 +123,14 @@ Current NeoQL supports field access and equality with string or numeric literals
 
 After an accepted command, show a clear pending state while the view catches up. Read again with a bounded retry and a useful failure state. An empty first response is not proof that the command failed. Resubmitting an addition merely because its summary has not appeared can add it twice.
 
-## Exercise: the cart badge
+## Exercise: the Cart badge
 
 The interface says “5 items,” but the customer made one addition of five mugs. Should the badge show one or five? State the meaning, then ask your agent to identify what must change.
 
 <details>
 <summary>Suggested reasoning and checks</summary>
 
-The existing summary reports one entry. If the badge means units, design a quantity total rather than relabelling `itemCount`. Verify one addition of five, two additions of the same product, an empty cart, and a rejected addition. Also query an unknown cart ID: the filter should produce no matching row, not another customer's cart. Tests should wait for a bounded projection update rather than assuming immediate visibility.
+The existing summary reports one entry. If the badge means units, design a quantity total rather than relabelling `itemCount`. Verify one addition of five, two additions of the same product, an empty Cart, and a rejected addition. Also query an unknown Cart ID: the filter should produce no matching row, not another customer's Cart. Tests should wait for a bounded projection update rather than assuming immediate visibility.
 
 </details>
 

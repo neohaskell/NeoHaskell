@@ -11,7 +11,7 @@ You own the intended outcomes. Your agent can help implement checks, run them, a
 
 All files below belong to the `mug-shop` project you have been building. Keep its generated `tests/Spec.hs`; the CLI discovers tests and runs them with `neo test`.
 
-Examples below show the relevant declarations and behaviour, with each destination named. Module headers and imports are omitted so you can focus on the idea. The [complete end of Build files](/examples/mug-shop-build.tar.gz) include that setup and the tests; add them to the same project when you want the runnable checkpoint.
+Examples below show the relevant declarations and behaviour, with each destination named. The focused snippets make the boundary under test easy to see. The complete test modules later in this page include their imports and helpers, so you can create them directly in the same project. The [complete end of Build files](/examples/mug-shop-build.tar.gz) is supplementary.
 
 ## Match the check to the promise
 
@@ -68,14 +68,213 @@ You do not need to expose `ReserveStock` over HTTP to test its rule. In `tests/D
 
 Accepting the last unit and rejecting too many are distinct checks. These sequential tests do not establish how two simultaneous requests compete for the same final unit. Add an application-level concurrency scenario before making that stronger promise.
 
+## Assemble the testing checkpoint
+
+Create these directories if they do not exist:
+
+```sh
+mkdir -p tests/Decider/Cart tests/Decider/Stock tests/scenarios
+```
+
+The following complete modules can be added to the project as new files. Keep
+the generated `tests/Spec.hs`; it discovers these modules. If a module already
+exists, replace it with the matching file so its imports and helper context stay
+in sync with the assertions.
+
+<!-- complete-file -->
+```haskell title="tests/Decider/Cart/CreateCartSpec.hs"
+module Decider.Cart.CreateCartSpec (spec) where
+
+import Core
+import Shop.Cart.Events.CartCreated qualified as CartCreated
+import Decider qualified
+import Service.Auth qualified as Auth
+import Service.Command.Core (DecisionContext (..))
+import Shop.Cart.Commands.CreateCart (CreateCart (..), decide)
+import Shop.Cart.Core (CartEvent (..), initialState)
+import Task qualified
+import Test
+import Uuid qualified
+
+runDecision :: Decision fact -> Task Text (CommandResult fact)
+runDecision decision =
+  Decider.runDecision (DecisionContext {genUuid = Task.yield Uuid.nil}) decision
+
+spec :: Spec Unit
+spec = describe "CreateCart" do
+  it "records the generated cart and anonymous owner" \_ -> do
+    result <- runDecision (decide CreateCart Nothing Auth.emptyContext)
+    result |> shouldBe (AcceptCommand StreamCreation
+      [CartCreated (CartCreated.Event {entityId = Uuid.nil, ownerId = Uuid.toText Uuid.nil})])
+
+  it "rejects an existing cart" \_ -> do
+    result <- runDecision (decide CreateCart (Just initialState) Auth.emptyContext)
+    result |> shouldBe (RejectCommand "Cart already exists!")
+```
+
+<!-- complete-file -->
+```haskell title="tests/Decider/Cart/AddItemSpec.hs"
+module Decider.Cart.AddItemSpec (spec) where
+
+import Core
+import Array qualified
+import Shop.Cart.Events.ItemAdded qualified as ItemAdded
+import Decider qualified
+import Maybe qualified
+import Service.Auth qualified as Auth
+import Service.Command.Core (DecisionContext (..))
+import Shop.Cart.Commands.AddItem (AddItem (..), decide)
+import Shop.Cart.Core (CartEntity (..), CartEvent (..))
+import Test
+import Uuid qualified
+
+runDecision :: Decision fact -> Task Text (CommandResult fact)
+runDecision decision =
+  Decider.runDecision (DecisionContext {genUuid = Uuid.generate}) decision
+
+cartIdFixture :: Uuid
+cartIdFixture = Uuid.fromText "11111111-1111-1111-1111-111111111111" |> Maybe.getOrDie
+
+stockIdFixture :: Uuid
+stockIdFixture = Uuid.fromText "22222222-2222-2222-2222-222222222222" |> Maybe.getOrDie
+
+spec :: Spec Unit
+spec = describe "AddItem" do
+  it "records the requested stock and quantity" \_ -> do
+    let cart = CartEntity {cartId = cartIdFixture, ownerId = "owner", items = Array.empty}
+    let request = AddItem {cartId = cartIdFixture, stockId = stockIdFixture, quantity = 2}
+    result <- runDecision (decide request (Just cart) Auth.emptyContext)
+    result |> shouldBe (AcceptCommand ExistingStream
+      [ItemAdded (ItemAdded.Event {entityId = cartIdFixture, stockId = stockIdFixture, quantity = 2})])
+
+  it "rejects a missing cart" \_ -> do
+    let request = AddItem {cartId = cartIdFixture, stockId = stockIdFixture, quantity = 1}
+    result <- runDecision (decide request Nothing Auth.emptyContext)
+    result |> shouldBe (RejectCommand "Cart not found!")
+
+  it "rejects zero" \_ -> do
+    let request = AddItem {cartId = cartIdFixture, stockId = stockIdFixture, quantity = 0}
+    result <- runDecision (decide request (Just (CartEntity {cartId = cartIdFixture, ownerId = "owner", items = Array.empty})) Auth.emptyContext)
+    result |> shouldBe (RejectCommand "Quantity must be positive")
+
+  it "accepts the smallest positive quantity" \_ -> do
+    let request = AddItem {cartId = cartIdFixture, stockId = stockIdFixture, quantity = 1}
+    result <- runDecision (decide request (Just (CartEntity {cartId = cartIdFixture, ownerId = "owner", items = Array.empty})) Auth.emptyContext)
+    result |> shouldBe (AcceptCommand ExistingStream
+      [ItemAdded (ItemAdded.Event {entityId = cartIdFixture, stockId = stockIdFixture, quantity = 1})])
+```
+
+<!-- complete-file -->
+```haskell title="tests/Decider/Cart/ReplaySpec.hs"
+module Decider.Cart.ReplaySpec (spec) where
+
+import Array qualified
+import Core
+import Shop.Cart.Events.ItemAdded qualified as ItemAdded
+import Shop.Cart.Events.CartCreated qualified as CartCreated
+import Shop.Cart.Core (CartEntity (..), CartEvent (..), initialState, update)
+import Test
+import Uuid qualified
+
+spec :: Spec Unit
+spec = describe "Cart replay" do
+  it "starts empty after creation" \_ -> do
+    let created = CartCreated (CartCreated.Event {entityId = Uuid.nil, ownerId = "owner"})
+    let cart = initialState |> update created
+    cart.items |> Array.length |> shouldBe 0
+    cart.ownerId |> shouldBe "owner"
+
+  it "retains separate entries for successive additions" \_ -> do
+    let created = CartCreated (CartCreated.Event {entityId = Uuid.nil, ownerId = "owner"})
+    let added = ItemAdded (ItemAdded.Event {entityId = Uuid.nil, stockId = Uuid.nil, quantity = 2})
+    let cart = initialState |> update created |> update added |> update added
+    cart.items |> Array.length |> shouldBe 2
+```
+
+<!-- complete-file -->
+```haskell title="tests/Decider/Stock/ReserveStockSpec.hs"
+module Decider.Stock.ReserveStockSpec (spec) where
+
+import Core
+import Shop.Stock.Events.StockReserved qualified as StockReserved
+import Decider qualified
+import Service.Auth qualified as Auth
+import Service.Command.Core (DecisionContext (..))
+import Shop.Stock.Commands.ReserveStock (ReserveStock (..), decide)
+import Shop.Stock.Core (StockEntity (..), StockEvent (..), initialState)
+import Test
+import Uuid qualified
+
+runDecision :: Decision fact -> Task Text (CommandResult fact)
+runDecision decision =
+  Decider.runDecision (DecisionContext {genUuid = Uuid.generate}) decision
+
+request :: Int -> ReserveStock
+request quantity = ReserveStock {stockId = Uuid.nil, cartId = Uuid.nil, quantity = quantity}
+
+spec :: Spec Unit
+spec = describe "ReserveStock" do
+  it "accepts the last available unit" \_ -> do
+    let stock = StockEntity {stockId = Uuid.nil, productId = Uuid.nil, available = 1, reserved = 0}
+    result <- runDecision (decide (request 1) (Just stock) Auth.emptyContext)
+    result |> shouldBe (AcceptCommand ExistingStream
+      [StockReserved (StockReserved.Event {entityId = Uuid.nil, quantity = 1, cartId = Uuid.nil})])
+
+  it "rejects more units than remain" \_ -> do
+    let stock = StockEntity {stockId = Uuid.nil, productId = Uuid.nil, available = 1, reserved = 0}
+    result <- runDecision (decide (request 2) (Just stock) Auth.emptyContext)
+    result |> shouldBe (RejectCommand "Insufficient stock available!")
+
+  it "rejects zero quantity" \_ -> do
+    result <- runDecision (decide (request 0) (Just initialState) Auth.emptyContext)
+    result |> shouldBe (RejectCommand "Quantity must be positive")
+
+  it "rejects missing stock" \_ -> do
+    result <- runDecision (decide (request 1) Nothing Auth.emptyContext)
+    result |> shouldBe (RejectCommand "Stock not found!")
+```
+
+Run `neo build`, then `neo test`. These modules establish the pure decision and
+replay boundaries; the Hurl file above establishes the running transport and
+projection boundary. If you later add ownership or duplicate-request rules,
+append tests for those decisions rather than changing an existing expected
+outcome to fit a new implementation.
+
+The first-slice HTTP check is a separate small file. Create or replace
+`tests/scenarios/create-cart.hurl` with this content when you want to verify the
+creation route and its empty summary on their own:
+
+<!-- complete-file -->
+```hurl title="tests/scenarios/create-cart.hurl"
+POST http://localhost:8080/commands/create-cart
+Content-Type: application/json
+[]
+
+HTTP 200
+[Captures]
+cart_id: jsonpath "$.entityId"
+
+GET http://localhost:8080/queries/cart-summary
+[Options]
+retry: 10
+retry-interval: 200
+
+HTTP 200
+[Asserts]
+jsonpath "$.items[?(@.cartSummaryId == '{{cart_id}}')].itemCount" nth 0 == 0
+jsonpath "$.items[?(@.cartSummaryId == '{{cart_id}}')].isEmpty" nth 0 == true
+```
+
 ## Exercise the running application
 
-Create `tests/scenarios/cart-flow.hurl`:
+Create or replace `tests/scenarios/cart-flow.hurl` with this complete scenario
+after the modules above are in place:
 
 <details>
-<summary>Complete HTTP scenario</summary>
+<summary>Complete file: tests/scenarios/cart-flow.hurl</summary>
 
-```hurl
+<!-- complete-file -->
+```hurl title="tests/scenarios/cart-flow.hurl"
 POST http://localhost:8080/commands/create-cart
 Content-Type: application/json
 []
@@ -121,7 +320,9 @@ jsonpath "$.items[?(@.cartSummaryId == '{{cart_id}}')].isEmpty" nth 0 == false
 
 </details>
 
-This test creates its own cart, so it does not depend on yesterday's IDs. It checks that the refused zero request leaves the view at one accepted entry. Retries belong to the read: retrying an accepted addition could add it again.
+This test creates its own cart, so it does not depend on yesterday's IDs. It
+checks that the refused zero request leaves the view at one accepted entry.
+Retries belong to the read: retrying an accepted addition could add it again.
 
 Stop any `neo run` server, then execute from the project root:
 
@@ -129,7 +330,10 @@ Stop any `neo run` server, then execute from the project root:
 neo test
 ```
 
-The CLI runs your Haskell tests and starts the application for Hurl scenarios. A passing decision test with a failing HTTP scenario often points to registration, serialization, configuration, or integration rather than the rule alone. Inspect the failing boundary before changing business logic.
+The CLI runs your Haskell tests and starts the application for Hurl scenarios.
+A passing decision test with a failing HTTP scenario often points to
+registration, serialization, configuration, or integration rather than the
+rule alone. Inspect the failing boundary before changing business logic.
 
 ## Keep a regression that explains the mistake
 

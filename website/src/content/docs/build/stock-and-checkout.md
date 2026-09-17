@@ -9,7 +9,7 @@ One accepted action can lead to another decision. A scheduling app may accept a 
 
 Your practice project now gains **Stock**. A cart records selections; stock tracks available and reserved units. We will implement and test the stock decision here, then connect it to cart additions in [the integration lesson](/connect/workflows/).
 
-Examples below show the relevant declarations and behaviour, with each destination named. Module headers and imports are omitted so you can focus on the idea. The [complete end of Build files](/examples/mug-shop-build.tar.gz) include that setup and the tests, including the configuration explained in a later lesson. Use them as a reference, or add them to this same project when you want the complete checkpoint.
+Examples below show the relevant declarations and behaviour, with each destination named. The small snippets teach one decision at a time. The assembled Stock files later in this page include the complete modules needed for this checkpoint. The [complete end of Build files](/examples/mug-shop-build.tar.gz) is supplementary; you can build the checkpoint by creating the files here in the same project.
 
 ## State the promises
 
@@ -100,9 +100,331 @@ Append these steps to the existing application pipeline, preserving Cart and any
   |> Application.withQuery @StockLevel
 ```
 
-Run `neo build`, then `neo run`.
+## Decide what checkout will promise
+
+Even after connecting the domains, a cart addition can be accepted while its later reservation is refused. A checkout needs an observable reservation outcome and a response to partial failure. Design the next promises as further slices:
+
+| Promise | Decision still needed |
+| --- | --- |
+| Stock was reserved | How does Cart learn whether reservation succeeded? |
+| An order was accepted | Which prices, quantities, currency, and delivery details become fixed? |
+| Payment was confirmed | Which provider evidence establishes payment, including late or duplicate replies? |
+| A reservation expired | Which fact releases it, and how does expiry interact with payment? |
+
+These are application policies, not consequences of naming a domain Stock or Cart.
+
+## Assemble the Stock checkpoint
+
+Once the decisions make sense, create the directories from the earlier command and add or replace the files below in the same `mug-shop` project. Keep the Cart files and `tests/Spec.hs` that you already have. This checkpoint keeps the nonpersistent local store from the first cart lesson; if you have added authentication or another transport policy, merge the Stock service and query steps into your existing `app` pipeline instead.
+
+<!-- complete-file -->
+```haskell title="src/Shop/Stock/Events/StockInitialized.hs"
+module Shop.Stock.Events.StockInitialized (Event (..)) where
+
+import Core
+
+data Event = Event
+  { entityId :: Uuid
+  , productId :: Uuid
+  , available :: Int
+  }
+  deriving (Eq)
+
+deriveEvent ''Event
+```
+
+<!-- complete-file -->
+```haskell title="src/Shop/Stock/Events/StockReserved.hs"
+module Shop.Stock.Events.StockReserved (Event (..)) where
+
+import Core
+
+data Event = Event
+  { entityId :: Uuid
+  , quantity :: Int
+  , cartId :: Uuid
+  }
+  deriving (Eq)
+
+deriveEvent ''Event
+```
+
+<!-- complete-file -->
+```haskell title="src/Shop/Stock/Event.hs"
+module Shop.Stock.Event (StockEvent (..), getEventEntityId) where
+
+import Core
+import Shop.Stock.Events.StockInitialized qualified as StockInitialized
+import Shop.Stock.Events.StockReserved qualified as StockReserved
+
+data StockEvent
+  = StockInitialized StockInitialized.Event
+  | StockReserved StockReserved.Event
+  deriving (Eq)
+
+getEventEntityId :: StockEvent -> Uuid
+getEventEntityId change = case change of
+  StockInitialized fact -> fact.entityId
+  StockReserved fact -> fact.entityId
+
+deriveEvent ''StockEvent
+```
+
+<!-- complete-file -->
+```haskell title="src/Shop/Stock/Entity.hs"
+module Shop.Stock.Entity (StockEntity (..), initialState, update) where
+
+import Core
+import Shop.Stock.Event (StockEvent (..), getEventEntityId)
+import Shop.Stock.Events.StockInitialized qualified as StockInitialized
+import Shop.Stock.Events.StockReserved qualified as StockReserved
+import Uuid qualified
+
+data StockEntity = StockEntity
+  { stockId :: Uuid
+  , productId :: Uuid
+  , available :: Int
+  , reserved :: Int
+  }
+
+initialState :: StockEntity
+initialState = StockEntity {stockId = Uuid.nil, productId = Uuid.nil, available = 0, reserved = 0}
+
+update :: StockEvent -> StockEntity -> StockEntity
+update change stock = case change of
+  StockInitialized initialized ->
+    StockEntity
+      { stockId = initialized.entityId
+      , productId = initialized.productId
+      , available = initialized.available
+      , reserved = 0
+      }
+  StockReserved reservation ->
+    stock
+      { available = stock.available - reservation.quantity
+      , reserved = stock.reserved + reservation.quantity
+      }
+
+deriveEntity ''StockEntity ''StockEvent
+```
+
+<!-- complete-file -->
+```haskell title="src/Shop/Stock/Core.hs"
+module Shop.Stock.Core (
+  module Shop.Stock.Entity,
+  module Shop.Stock.Event,
+) where
+
+import Shop.Stock.Entity
+import Shop.Stock.Event
+```
+
+<!-- complete-file -->
+```haskell title="src/Shop/Stock/Commands/InitializeStock.hs"
+module Shop.Stock.Commands.InitializeStock (
+  InitializeStock (..),
+  getEntityId,
+  decide,
+) where
+
+import Core
+import Shop.Stock.Events.StockInitialized qualified as StockInitialized
+import Decider qualified
+import Service.Auth (RequestContext)
+import Service.Command.Core (TransportsOf)
+import Service.Transport.Web (WebTransport)
+import Shop.Stock.Core
+
+data InitializeStock = InitializeStock
+  { productId :: Uuid
+  , available :: Int
+  }
+
+getEntityId :: InitializeStock -> Maybe Uuid
+getEntityId _ = Nothing
+
+decide :: InitializeStock -> Maybe StockEntity -> RequestContext -> Decision StockEvent
+decide request existing _context = case existing of
+  Just _ -> Decider.reject "Stock already initialized for this product!"
+  Nothing -> initialize request
+
+initialize :: InitializeStock -> Decision StockEvent
+initialize request =
+  if request.available < 0
+    then Decider.reject "Available stock cannot be negative"
+    else do
+      stockId <- Decider.generateUuid
+      Decider.acceptNew
+        [StockInitialized (StockInitialized.Event {entityId = stockId, productId = request.productId, available = request.available})]
+
+type instance EntityOf InitializeStock = StockEntity
+
+type instance TransportsOf InitializeStock = '[WebTransport]
+
+deriveCommand ''InitializeStock
+```
+
+<!-- complete-file -->
+```haskell title="src/Shop/Stock/Commands/ReserveStock.hs"
+module Shop.Stock.Commands.ReserveStock (
+  ReserveStock (..),
+  getEntityId,
+  decide,
+) where
+
+import Core
+import Shop.Stock.Events.StockReserved qualified as StockReserved
+import Decider qualified
+import Service.Auth (RequestContext)
+import Service.Command.Core (TransportsOf)
+import Service.Transport.Internal (InternalTransport)
+import Shop.Stock.Core
+
+-- | Command to reserve stock for a cart.
+-- Keep reservation internal; the integration lesson supplies its trigger.
+data ReserveStock = ReserveStock
+  { stockId :: Uuid
+  , quantity :: Int
+  , cartId :: Uuid
+  }
+
+getEntityId :: ReserveStock -> Maybe Uuid
+getEntityId cmd = Just cmd.stockId
+
+decide :: ReserveStock -> Maybe StockEntity -> RequestContext -> Decision StockEvent
+decide request existing _context = case existing of
+  Nothing -> Decider.reject "Stock not found!"
+  Just stock -> reservePositiveQuantity request stock
+
+reservePositiveQuantity :: ReserveStock -> StockEntity -> Decision StockEvent
+reservePositiveQuantity request stock =
+  if request.quantity <= 0
+    then Decider.reject "Quantity must be positive"
+    else reserveAvailableStock request stock
+
+reserveAvailableStock :: ReserveStock -> StockEntity -> Decision StockEvent
+reserveAvailableStock request stock =
+  if request.quantity > stock.available
+    then Decider.reject "Insufficient stock available!"
+    else Decider.acceptExisting
+      [StockReserved (StockReserved.Event {entityId = stock.stockId, quantity = request.quantity, cartId = request.cartId})]
+
+type instance EntityOf ReserveStock = StockEntity
+
+type instance TransportsOf ReserveStock = '[InternalTransport]
+
+deriveCommand ''ReserveStock
+```
+
+<!-- complete-file -->
+```haskell title="src/Shop/Stock/Queries/StockLevel.hs"
+module Shop.Stock.Queries.StockLevel (
+  StockLevel (..),
+  canAccess,
+  canView,
+) where
+
+import Core
+import Service.AccessControl (AccessError, UserClaims)
+import Service.AccessControl qualified as AccessControl
+import Shop.Stock.Core (StockEntity (..))
+
+data StockLevel = StockLevel
+  { stockLevelId :: Uuid
+  , productId :: Uuid
+  , available :: Int
+  , reserved :: Int
+  }
+
+-- | Authorization: Anyone can access stock levels (public catalog data)
+canAccess :: Maybe UserClaims -> Maybe AccessError
+canAccess claims = AccessControl.publicAccess claims
+
+-- | Authorization: Anyone can view any stock level
+canView :: Maybe UserClaims -> StockLevel -> Maybe AccessError
+canView claims stockLevel = AccessControl.publicView claims stockLevel
+
+-- | Use TH to derive Query instances.
+-- Wires canAccess -> canAccessImpl, canView -> canViewImpl
+deriveQuery ''StockLevel [''StockEntity]
+
+instance QueryOf StockEntity StockLevel where
+  queryId stock = stock.stockId
+
+  combine stock _maybeExisting =
+    Update
+      StockLevel
+        { stockLevelId = stock.stockId
+        , productId = stock.productId
+        , available = stock.available
+        , reserved = stock.reserved
+        }
+```
+
+<!-- complete-file -->
+```haskell title="src/Shop/Stock/Service.hs"
+module Shop.Stock.Service (
+  service,
+) where
+
+import Core
+import Service qualified
+import Shop.Stock.Commands.InitializeStock (InitializeStock)
+import Shop.Stock.Commands.ReserveStock (ReserveStock)
+import Shop.Stock.Core ()
+
+service :: Service _ _
+service =
+  Service.new
+    |> Service.command @InitializeStock
+    |> Service.command @ReserveStock
+```
+
+If you have completed the Cart and configuration lessons, `src/App.hs` should
+contain the Stock service and query registrations shown here. Create or replace
+only the pipeline if your application has no additional policies yet; otherwise
+append the final two steps while keeping your existing store, transport, and
+Cart registrations.
+
+<!-- complete-file -->
+```haskell title="src/App.hs"
+module App (app) where
+
+import Core
+import Maybe qualified
+import Path qualified
+import Service.Application (Application)
+import Service.Application qualified as Application
+import Service.EventStore.Simple (SimpleEventStore (..))
+import Service.Transport.Web qualified as WebTransport
+import Shop.Cart.Queries.CartSummary (CartSummary)
+import Shop.Cart.Service qualified as Cart
+import Shop.Stock.Queries.StockLevel (StockLevel)
+import Shop.Stock.Service qualified as Stock
+
+app :: Application
+app = Application.new
+  |> Application.withEventStore @() (\_ -> SimpleEventStore
+    { basePath = Path.fromText ".neo/events" |> Maybe.getOrDie
+    , persistent = False
+    })
+  |> Application.withTransport WebTransport.server
+  |> Application.withService Cart.service
+  |> Application.withQuery @CartSummary
+  |> Application.withService Stock.service
+  |> Application.withQuery @StockLevel
+```
 
 ## Create and inspect stock
+
+Now run the checkpoint from the project root:
+
+```sh
+neo build
+neo run
+```
+
+Create a stock record:
 
 ```sh
 curl -i http://localhost:8080/commands/initialize-stock \
@@ -123,14 +445,13 @@ That observation is evidence. Two registered services do not imply that one call
 
 ## Keep a repeatable stock check
 
-Save the HTTP scenario below. It creates its own record, waits for its view, and checks refusal of a negative initial quantity. Stop `neo run` before executing `neo test`.
+Save the HTTP scenario below as `tests/scenarios/stock-flow.hurl`. It creates its own record, waits for its view, and checks refusal of a negative initial quantity. Stop `neo run` before executing `neo test`.
 
 <details>
 <summary>Complete file: tests/scenarios/stock-flow.hurl</summary>
 
-Save as `tests/scenarios/stock-flow.hurl`:
-
-```hurl
+<!-- complete-file -->
+```hurl title="tests/scenarios/stock-flow.hurl"
 POST http://localhost:8080/commands/initialize-stock
 Content-Type: application/json
 {"productId":"11111111-1111-1111-1111-111111111111","available":3}
@@ -160,18 +481,10 @@ jsonpath "$.reason" == "Available stock cannot be negative"
 
 </details>
 
-## Decide what checkout will promise
-
-Even after connecting the domains, a cart addition can be accepted while its later reservation is refused. A checkout needs an observable reservation outcome and a response to partial failure. Design the next promises as further slices:
-
-| Promise | Decision still needed |
-| --- | --- |
-| Stock was reserved | How does Cart learn whether reservation succeeded? |
-| An order was accepted | Which prices, quantities, currency, and delivery details become fixed? |
-| Payment was confirmed | Which provider evidence establishes payment, including late or duplicate replies? |
-| A reservation expired | Which fact releases it, and how does expiry interact with payment? |
-
-These are application policies, not consequences of naming a domain Stock or Cart.
+Run `neo test` from the project root. The scenario's captured stock ID keeps
+the check independent from earlier runs, and its query retry allows the
+projection to catch up. This page does not yet connect `AddItem` to
+`ReserveStock`; that trigger is an internal integration taught in [Connect](/connect/workflows/).
 
 ## Exercise: the last mug
 

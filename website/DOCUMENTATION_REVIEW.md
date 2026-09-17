@@ -22,8 +22,12 @@ complete commerce product. Agent-facing documentation is separate.
 
 Teaching blocks show relevant declarations and behaviour without module headers
 or import catalogues. Each step identifies its destination and role in the same
-project. Small explanations precede the code they motivate. Complete application
-files live in five downloadable checkpoints: first Cart, Cart additions, end of
+project. Small explanations precede the code they motivate. The September 17
+revision adds complete assembled files after the progressive explanation, with
+project-relative path titles and explicit creation or edit instructions. Downloads
+are supplementary; they must not substitute for the implementation taught on the
+page. Complete application files also live in five downloadable checkpoints:
+first Cart, Cart additions, end of
 Build, Connect overlays, and the Postgres overlay. They preserve generated project
 settings and split entity state, event definitions, individual payloads, commands,
 queries, integrations, service registration, and application composition.
@@ -41,6 +45,25 @@ The event marker generates Show, Generic, FromJSON, and ToJSON, but not Eq; comp
 event fixtures retain equality for full-payload assertions. Entity files now use `deriveEntity` after `initialState`, `update`, and the
 imported event-routing companion. Ordinary value instances remain in complete
 source; entity derivation deliberately does not impose Show.
+
+## September 17: complete files after progressive explanations
+
+Three Luna agents revised the first slice, Build, and Connect/Operate sections;
+the integrating review corrected prerequisites, premature timer dependencies,
+file creation order, and application registrations. Thirteen lessons now contain
+49 complete Haskell file blocks. Forty match an existing checkpoint file exactly;
+the remaining nine are reviewed application compositions and the explicitly
+optional authenticated variant. The latter includes the imports and owner/view
+policies just taught, with a clearly identified identity-service URL placeholder.
+
+The first slice contains all eight application source files and continues the
+project already created in Getting Started. Complete source comes after the
+concepts and before the corresponding build/run checks. Cart creation tests are
+shown in the testing lesson. The first-slice source parity check, complete-file
+presentation checks, and registered exact excerpts run without compiling Haskell.
+The docs checker passes 87 assertions and the four unchanged archive tests pass.
+No Haskell source, downloads, or framework runtime were changed or recompiled.
+The existing compilation and live-provider limitations below still apply.
 
 ## CLI and application verification
 
@@ -138,13 +161,14 @@ claimed. Complete that check in isolation before final PR review.
 ## Content and website checks
 
 - 49 human pages cover 24 required public capability areas, grounded in 222
-  fingerprinted public evidence files and 51 checked literal excerpts.
-- 73 documentation checker assertions cover missing content, source/excerpt drift,
+  fingerprinted public evidence files and 92 checked literal excerpts.
+- 87 documentation checker assertions cover missing content, source/excerpt drift,
   review coverage, links, diagrams, binary screenshots, image zoom controls,
   reader-owned workflows, pragma/import/module/deriving scaffolding, canonical
-  Core helper usage, entity boilerplate rejection, and code disclosure.
+  Core helper usage, entity boilerplate rejection, code disclosure, explicit
+  complete-file destinations, and exact first-slice file parity with its checkpoint.
 - Four archive tests passed; all five downloads are reproducible from source.
-- All 46 shell blocks pass `bash -n`; syntax checks do not imply execution.
+- All 55 shell blocks pass `bash -n`; syntax checks do not imply execution.
 - Public source hyperlinks were checked against existing repository paths.
 - Astro diagnostics passed with zero errors, warnings, or hints. The production
   build/search indexed 769 pages; all 49 human routes passed rendered-link,

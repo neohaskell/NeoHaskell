@@ -100,7 +100,10 @@ Java documentation examples: omit module headers, import lists, and unrelated
 scaffolding. If an example needs to show a library import, show only `import Core`;
 imports from the reader's own project are allowed when they help explain a connection.
 Do not imply that a fragment is a standalone file or that today's `Core` exports
-every framework API. Complete checkpoints retain the imports required to compile.
+every framework API. After teaching the pieces, show the complete resulting file
+in the page, including its module declaration and the imports it actually needs.
+Complete files and checkpoints retain required imports; do not invent exports to
+make an example shorter.
 Neo configures
 the compiler extensions in generated project settings. Application examples must
 contain no `LANGUAGE` pragmas. If an example needs an extension missing from Neo's
@@ -133,20 +136,33 @@ Show code progressively within each page:
   decision. Explain its meaning before introducing the next part.
 - Show only the lines needed for the point under discussion. Do not dump imports,
   complete modules, wiring, and tests together as the first explanation.
-- Keep complete, runnable files in downloadable checkpoints linked from the step
-  that needs them. Name the destination path and explain whether to create,
-  extend, or replace it. Do not hide a whole implementation dump in a disclosure
-  and treat that as teaching. Disclosures can deepen a specific idea or reveal
-  exercise reasoning without introducing a wall of unrelated scaffolding.
+- Name the destination relative to the reader's project root and explicitly say
+  whether to create, replace, or edit it. Explain directory creation when new
+  directories are introduced. For edits, identify the existing declaration or
+  registration beside which the addition belongs.
+- Finish a file's explanation with its complete assembled contents in the page.
+  A reader must be able to create the file without guessing omitted definitions,
+  imports, wiring, or declaration order. Show complete files only after explaining
+  their important pieces; keep separate responsibilities in separate files.
+- Use a path-titled code block for each complete file, preceded in Markdown source
+  by `<!-- complete-file -->`. This distinguishes an intentional assembled file
+  from a focused teaching fragment. Long recaps can use clearly labeled disclosures,
+  but essential creation and edit instructions remain visible.
+- Keep downloads as convenient checkpoints and comparison material. They must not
+  be the only way to obtain the code needed for an implemented lesson. Conceptual
+  sketches and provider-specific exercises must say what still needs designing;
+  never label them as complete runnable files.
 - Grow the same files and project across lessons. Show incremental changes and
   observable checks; never switch to another application to simplify the example.
 - Keep a complete verification checkpoint behind the lesson. The reader should
   see a small next step while maintainers can build and test the whole result.
 
-Automated checks reject language pragmas, module/import/deriving scaffolding, long,
-undisclosed Haskell blocks, and stale downloadable checkpoints.
-This is a backstop against accidental implementation dumps, not a fixed page
-formula; editorial review still decides what belongs at each depth.
+Automated checks distinguish focused teaching fragments from explicit complete-file
+blocks. They reject language pragmas and legacy concept markers in both; complete
+files require a project-relative path title and module declaration. Fragments still
+reject distracting scaffolding and long unexplained blocks. Download drift is checked
+separately. Editorial review verifies the progression, file instructions, and whether
+the assembled code belongs at that point in the journey.
 
 ## Content architecture and writing ownership
 
@@ -216,7 +232,9 @@ Semantic review of every authored page:
 3. Are the business decision, benefit, and relevant tradeoff explicit?
 4. Are implementation claims grounded in public code and limitations honest?
 5. Does Jess gain something she can understand, decide, or confidently delegate?
-6. Can a direct-entry reader identify context and the next useful step?
+6. Can a direct-entry reader identify context and the next useful step? For an
+   implemented lesson, can they create or update each named file from the page,
+   using the complete contents after the explanation rather than guessing gaps?
 7. Do exercises transfer responsibility and provide observable checks?
 8. Is the prose natural, with flexible structure and no private-source disclosure?
 9. Is NeoHaskell the subject, with ecommerce serving as the example? Can someone

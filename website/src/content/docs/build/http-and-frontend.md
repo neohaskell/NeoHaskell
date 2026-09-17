@@ -11,6 +11,10 @@ NeoHaskell's web transport exposes commands and queries over HTTP. You can build
 
 Our worked example is a storefront for the ecommerce practice project. A cart addition, a pending reservation, and a confirmed order give us concrete examples of the different states an interface must communicate.
 
+The examples continue in the same `mug-shop` project. The API is the part this
+lesson implements; a browser frontend is an optional client you add alongside
+the Neo project.
+
 ## Start from the real contract
 
 With [your application running](/build/first-cart/) through `neo run`, open `http://localhost:8080/docs` to inspect the generated API documentation. The same schema is available at `/openapi.json` and `/openapi.yaml`.
@@ -22,6 +26,47 @@ With [your application running](/build/first-cart/) through `neo run`, open `htt
 | Inspect the interface | `GET /openapi.json` | The application's generated API schema was returned. |
 
 Registration drives the interface: the command declares its transport, the service registers the command, and the application registers that service and its queries. The HTTP routes use kebab-case names. Do not infer a route from a screen label such as “checkout” if no matching command exists.
+
+## Assemble the HTTP application wiring
+
+If your project still uses the local nonpersistent store, create or replace
+`src/App.hs` with this complete wiring. It exposes the Cart and Stock commands
+and their query views through the web transport. If your `App.hs` already has
+configuration, authentication, or another transport policy, keep those steps
+and append only the service and query registrations that are missing.
+
+<!-- complete-file -->
+```haskell title="src/App.hs"
+module App (app) where
+
+import Core
+import Maybe qualified
+import Path qualified
+import Service.Application (Application)
+import Service.Application qualified as Application
+import Service.EventStore.Simple (SimpleEventStore (..))
+import Service.Transport.Web qualified as WebTransport
+import Shop.Cart.Queries.CartSummary (CartSummary)
+import Shop.Cart.Service qualified as Cart
+import Shop.Stock.Queries.StockLevel (StockLevel)
+import Shop.Stock.Service qualified as Stock
+
+app :: Application
+app = Application.new
+  |> Application.withEventStore @() (\_ -> SimpleEventStore
+    { basePath = Path.fromText ".neo/events" |> Maybe.getOrDie
+    , persistent = False
+    })
+  |> Application.withTransport WebTransport.server
+  |> Application.withService Cart.service
+  |> Application.withQuery @CartSummary
+  |> Application.withService Stock.service
+  |> Application.withQuery @StockLevel
+```
+
+From the project root, run `neo build` and then `neo run`. Open `/docs` and
+`/openapi.json` to confirm the registered commands and queries are in the
+generated contract before connecting a browser.
 
 ## Connect one action
 
@@ -42,7 +87,13 @@ async function addMugs(cartId, stockId, quantity) {
 }
 ```
 
-An authenticated application must also supply its credential according to the authentication setup. This local practice function is not a complete customer session implementation.
+This is an adapted partial browser function, not a complete frontend file. Put
+it in the module used by your frontend (for example, create
+`frontend/cart.js` if your project has no browser code yet) and call it from
+the event handler for an AddItem form. The Neo project does not generate that
+frontend directory or configure a proxy for it. An authenticated application
+must also supply its credential according to the authentication setup. This
+local practice function is not a complete customer session implementation.
 
 The UI should disable accidental duplicate submissions while the request is in flight, show a useful rejection, and refresh the relevant query after acceptance. A lost network response needs special care: the server may already have accepted the request. Decide how the application detects duplicates before automatically resending writes.
 
@@ -66,6 +117,35 @@ Application.withCors @() (\_ -> WebTransport.CorsConfig
 ```
 
 Apply it in your application's pipeline and use your actual frontend origin. CORS governs browser access; it does not grant business permission. Protect private information with [access control](/build/access-control/).
+
+Create or replace `tests/scenarios/create-cart.hurl` with this complete API
+check. It gives the browser contract a repeatable server-side boundary before
+you add a frontend. Stop `neo run` before running `neo test`.
+
+<!-- complete-file -->
+```hurl title="tests/scenarios/create-cart.hurl"
+POST http://localhost:8080/commands/create-cart
+Content-Type: application/json
+[]
+
+HTTP 200
+[Captures]
+cart_id: jsonpath "$.entityId"
+
+GET http://localhost:8080/queries/cart-summary
+[Options]
+retry: 10
+retry-interval: 200
+
+HTTP 200
+[Asserts]
+jsonpath "$.items[?(@.cartSummaryId == '{{cart_id}}')].itemCount" nth 0 == 0
+jsonpath "$.items[?(@.cartSummaryId == '{{cart_id}}')].isEmpty" nth 0 == true
+```
+
+Run `neo test` from the project root. The Hurl check proves the API response
+and eventual query update; it does not prove that a browser layout, proxy, or
+authentication provider is configured.
 
 ## Exercise: a delayed summary
 

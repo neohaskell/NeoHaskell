@@ -25,7 +25,7 @@ Keep this registration when later chapters extend `App.hs`. Use your actual iden
 
 ## Protect both the command and the record
 
-Commands can define a top-level `canAccess` function before their `command` marker. The marker connects it to the pre-execution permission check. Without an explicit function, the command class defaults to requiring authentication.
+Commands can define a top-level `canAccess` function before their `deriveCommand` marker. The marker connects it to the pre-execution permission check. Without an explicit function, the command class defaults to requiring authentication.
 
 Permission to use a command may still depend on the particular record it affects. In the practice project, an authenticated customer should not edit another customer's cart. In the decision function, compare the validated subject with the cart's recorded owner before accepting a change. The `AddItem` you wrote in `src/Shop/Cart/Commands/AddItem.hs` currently ignores its request context.
 
@@ -77,6 +77,136 @@ Your initial CartSummary uses `publicAccess` and `publicView`. Those can suit a 
 `CreateCart` records the authenticated subject when available; otherwise it generates an anonymous owner identifier. That generated identifier does not automatically become a secure browser session or give a later logged-in user ownership.
 
 If you add guest checkout to the practice project, decide how a guest proves access to their cart and how ownership changes after login. The same design question arises whenever anonymous work must later belong to an authenticated user. Model and test that transition. Do not solve it by accepting an arbitrary owner identifier from the request body.
+
+## Assemble the authenticated variant
+
+Once you have chosen an identity service, replace the command and query files
+below with these complete versions. They assemble the owner checks just explained.
+This is an optional branch from the anonymous practice project: its tests must
+supply authenticated identities. Keep your earlier checkpoint if you are not
+setting up authentication yet.
+
+<!-- complete-file -->
+```haskell title="src/Shop/Cart/Commands/AddItem.hs"
+module Shop.Cart.Commands.AddItem (AddItem (..), getEntityId, decide) where
+
+import Core
+import Shop.Cart.Events.ItemAdded qualified as ItemAdded
+import Decider qualified
+import Service.Auth (RequestContext (..), UserClaims (..))
+import Service.Command.Core (TransportsOf)
+import Service.Transport.Web (WebTransport)
+import Shop.Cart.Core (CartEntity (..), CartEvent (..))
+
+data AddItem = AddItem {cartId :: Uuid, stockId :: Uuid, quantity :: Int}
+
+getEntityId :: AddItem -> Maybe Uuid
+getEntityId request = Just request.cartId
+
+decide :: AddItem -> Maybe CartEntity -> RequestContext -> Decision CartEvent
+decide request existing context = case context.user of
+  Nothing -> Decider.reject "Sign in before changing a cart"
+  Just user -> addForOwner request existing user
+
+addForOwner :: AddItem -> Maybe CartEntity -> UserClaims -> Decision CartEvent
+addForOwner request existing user = case existing of
+  Nothing -> Decider.reject "Cart not found!"
+  Just cart ->
+    if cart.ownerId == user.sub
+      then addToCart request cart
+      else Decider.reject "This cart belongs to another user"
+
+addToCart :: AddItem -> CartEntity -> Decision CartEvent
+addToCart request cart =
+  if request.quantity <= 0
+    then Decider.reject "Quantity must be positive"
+    else Decider.acceptExisting
+      [ItemAdded (ItemAdded.Event {entityId = cart.cartId, stockId = request.stockId, quantity = request.quantity})]
+
+type instance EntityOf AddItem = CartEntity
+type instance TransportsOf AddItem = '[WebTransport]
+
+deriveCommand ''AddItem
+```
+
+<!-- complete-file -->
+```haskell title="src/Shop/Cart/Queries/CartSummary.hs"
+module Shop.Cart.Queries.CartSummary (CartSummary (..), canAccess, canView) where
+
+import Array qualified
+import Core
+import Service.AccessControl (AccessError, UserClaims)
+import Service.AccessControl qualified as AccessControl
+import Shop.Cart.Core (CartEntity (..))
+
+data CartSummary = CartSummary
+  { cartSummaryId :: Uuid
+  , ownerId :: Text
+  , itemCount :: Int
+  , isEmpty :: Bool
+  }
+
+canAccess :: Maybe UserClaims -> Maybe AccessError
+canAccess = AccessControl.authenticatedAccess
+
+canView :: Maybe UserClaims -> CartSummary -> Maybe AccessError
+canView = AccessControl.ownerOnly (.ownerId)
+
+deriveQuery ''CartSummary [''CartEntity]
+
+instance QueryOf CartEntity CartSummary where
+  queryId cart = cart.cartId
+  combine cart _previous = do
+    let count = cart.items |> Array.length
+    Update CartSummary
+      { cartSummaryId = cart.cartId
+      , ownerId = cart.ownerId
+      , itemCount = count
+      , isEmpty = count == 0
+      }
+```
+
+Finally, replace `src/App.hs` with the assembled authentication wiring below,
+substituting your identity service's URL for `https://auth.example.com`.
+That hostname is a placeholder. If you have already extended your application,
+keep those additions and insert `withAuth` after the transport registration.
+
+<!-- complete-file -->
+```haskell title="src/App.hs"
+module App (app) where
+
+import Core
+import Maybe qualified
+import Path qualified
+import Service.Application (Application)
+import Service.Application qualified as Application
+import Service.EventStore.Simple (SimpleEventStore (..))
+import Service.Transport.Web qualified as WebTransport
+import Shop.Cart.Queries.CartSummary (CartSummary)
+import Shop.Cart.Service qualified as Cart
+import Shop.Stock.Queries.StockLevel (StockLevel)
+import Shop.Stock.Service qualified as Stock
+
+app :: Application
+app = Application.new
+  |> Application.withEventStore @() (\_ -> SimpleEventStore
+    { basePath = Path.fromText ".neo/events" |> Maybe.getOrDie
+    , persistent = False
+    })
+  |> Application.withTransport WebTransport.server
+  |> Application.withAuth @() (\_ -> "https://auth.example.com")
+  |> Application.withService Cart.service
+  |> Application.withQuery @CartSummary
+  |> Application.withService Stock.service
+  |> Application.withQuery @StockLevel
+```
+
+After configuring the real provider, run `neo build`. Update the decision tests
+with signed-in request contexts and the HTTP tests with valid credentials before
+running `neo test`; the earlier anonymous success expectations no longer apply.
+Check the owner, another user, missing credentials, and invalid tokens. These
+complete files assemble the application policy; provider setup and credentialed
+verification remain part of adopting this optional branch.
 
 ## Exercise: another customer's cart
 

@@ -41,14 +41,30 @@ export function validateExamplePresentation(path, body) {
   const errors = [];
   for (const match of body.matchAll(/^```haskell[^\n]*\n([\s\S]*?)^```/gm)) {
     const code = match[1];
+    const prefix = body.slice(0, match.index);
+    const completeFile = /<!-- complete-file -->\s*$/.test(prefix);
+    if (completeFile && !/^```haskell\s+title="(?:src|tests|launcher)\/(?:[A-Za-z0-9_-]+\/)*[A-Za-z0-9_-]+\.hs"\s*\n/.test(match[0])) errors.push(`Complete file needs a project-relative destination title: ${path}`);
+    if (completeFile && !/^module\s+[A-Z]/m.test(code)) errors.push(`Complete file needs its module declaration: ${path}`);
     errors.push(...validateCanonicalMarkers(path, code));
     if (/\{\-#\s*LANGUAGE\b/.test(code)) errors.push(`Language pragma in application example: ${path}`);
-    if (/^\s*module\s+[A-Z]/m.test(code)) errors.push(`Module boilerplate in teaching example: ${path}`);
-    if (/^\s*import\s+(?!Core(?:\s|$)|Shop\.)/m.test(code)) errors.push(`Library import scaffolding in teaching example: ${path}`);
-    if (/\bderiving\s*(?:\(|stock\b|newtype\b|anyclass\b)/.test(code)) errors.push(`Deriving boilerplate in teaching example: ${path}`);
-    const prefix = body.slice(0, match.index);
+    if (!completeFile && /^\s*module\s+[A-Z]/m.test(code)) errors.push(`Module boilerplate in teaching example: ${path}`);
+    if (!completeFile && /^\s*import\s+(?!Core(?:\s|$)|Shop\.)/m.test(code)) errors.push(`Library import scaffolding in teaching example: ${path}`);
+    if (!completeFile && /\bderiving\s*(?:\(|stock\b|newtype\b|anyclass\b)/.test(code)) errors.push(`Deriving boilerplate in teaching example: ${path}`);
     const depth = [...prefix.matchAll(/<details(?:\s[^>]*)?>/g)].length - [...prefix.matchAll(/<\/details>/g)].length;
-    if (code.trim().split('\n').length > 30 && depth <= 0) errors.push(`Long example needs progressive disclosure: ${path}`);
+    if (!completeFile && code.trim().split('\n').length > 30 && depth <= 0) errors.push(`Long example needs progressive disclosure: ${path}`);
+  }
+  return errors;
+}
+
+// The first runnable lesson must be followable without downloading its checkpoint.
+export function validateCompleteCheckpoint(body, entries) {
+  const blocks = [...body.matchAll(/<!-- complete-file -->\s*\n```haskell title="([^"]+)"\s*\n([\s\S]*?)^```/gm)];
+  const errors = [];
+  for (const [path, contents] of entries) {
+    if (!path.startsWith('src/') || !path.endsWith('.hs')) continue;
+    const matches = blocks.filter(block => block[1] === path);
+    if (matches.length !== 1) errors.push(`First slice needs one complete file for ${path}`);
+    else if (matches[0][2].trim() !== contents.toString('utf8').trim()) errors.push(`First slice complete file differs from checkpoint: ${path}`);
   }
   return errors;
 }
@@ -287,7 +303,24 @@ function selfTest() {
   assert.match(validateCanonicalMarkers(appPage, 'import Service.Query.TH (deriveQuery)').join(''), /must come from Core/);
   assert.match(validateCanonicalMarkers(appPage, "instance Default CartEntity where\n  def = initialState\nderiveEntity ''CartEntity ''CartEvent").join(''), /marker-owned boilerplate/);
   assert.match(sourceCheck(tutorialSource, "import Core\ncommand ''Example").join(''), /Legacy derivation marker/);
-  console.log('docs-check: 73 positive, negative, and boundary assertions passed');
+  const completeFile = code => '<!-- complete-file -->\n```haskell title="src/Shop/Cart/Entity.hs"\n' + code + '\n```';
+  const completeSource = 'module Shop.Cart.Entity where\nimport Core\nimport Uuid qualified\n' + Array.from({ length: 31 }, (_, i) => `field${i} = ${i}`).join('\n');
+  assert.deepEqual(validateExamplePresentation(appPage, completeFile(completeSource)), []);
+  assert.match(validateExamplePresentation(appPage, completeFile(completeSource).replace(' title="src/Shop/Cart/Entity.hs"', '')).join(''), /destination title/);
+  assert.match(validateExamplePresentation(appPage, completeFile(completeSource).replace('src/Shop/Cart/Entity.hs', '../Entity.hs')).join(''), /destination title/);
+  assert.match(validateExamplePresentation(appPage, completeFile('import Core')).join(''), /module declaration/);
+  assert.match(validateExamplePresentation(appPage, completeFile('{-# LANGUAGE TemplateHaskell #-}\n' + completeSource)).join(''), /Language pragma/);
+  assert.match(validateExamplePresentation(appPage, completeFile(completeSource + "\ncommand ''Example")).join(''), /Legacy derivation marker/);
+  assert.match(validateExamplePresentation(appPage, completeFile(completeSource + "\nimport Service.Event.TH")).join(''), /must come from Core/);
+  assert.match(validateExamplePresentation(appPage, completeFile(completeSource + "\ninstance Default CartEntity where\n  def = initialState\nderiveEntity ''CartEntity ''CartEvent")).join(''), /marker-owned boilerplate/);
+  assert.match(validateExamplePresentation(appPage, '<!-- complete-file -->\nUnrelated explanation\n' + longExample).join(''), /progressive disclosure/);
+  const checkpoint = [['src/Shop/Cart/Entity.hs', Buffer.from(completeSource)]];
+  assert.deepEqual(validateCompleteCheckpoint(completeFile(completeSource), checkpoint), []);
+  assert.match(validateCompleteCheckpoint('', checkpoint).join(''), /needs one complete file/);
+  assert.match(validateCompleteCheckpoint(completeFile(completeSource + '\nextra = 1'), checkpoint).join(''), /differs from checkpoint/);
+  assert.match(validateCompleteCheckpoint(completeFile(completeSource).repeat(2), checkpoint).join(''), /needs one complete file/);
+  assert.deepEqual(validateCompleteCheckpoint('', [['tests/scenarios/create-cart.hurl', Buffer.from('GET /')]]), []);
+  console.log('docs-check: 87 positive, negative, and boundary assertions passed');
 }
 
 function checkBuilt(manifest) {
@@ -341,6 +374,7 @@ else {
       }
     }
     const errors = validate(manifest, files, sources, assets);
+    errors.push(...validateCompleteCheckpoint(files['src/content/docs/build/first-cart.md'] ?? '', exampleArchives.find(example => example.name === 'mug-shop-first-cart').files()));
     errors.push(...generateExamples(true));
     for (const checkpoint of exampleArchives) {
       for (const [path, contents] of checkpoint.files()) {
