@@ -18,6 +18,7 @@ const {
 } = landingContent;
 
 const githubUrl = 'https://github.com/neohaskell/NeoHaskell';
+const discordUrl = 'https://discord.com/invite/wDj3UYzec8';
 ---
 
 <!doctype html>
@@ -25,10 +26,10 @@ const githubUrl = 'https://github.com/neohaskell/NeoHaskell';
 	<head>
 		<meta charset="UTF-8" />
 		<meta name="viewport" content="width=device-width" />
-		<meta name="theme-color" content="#f6f1e8" />
+		<meta name="theme-color" content="#fefce8" />
 		<meta name="description" content={intro} />
 		<link rel="canonical" href="https://neohaskell.org/" />
-		<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+		<link rel="icon" type="image/svg+xml" href="/logo.svg" />
 		<title>{headline[0]} {headline[1]} · NeoHaskell</title>
 		<meta property="og:type" content="website" />
 		<meta property="og:site_name" content="NeoHaskell" />
@@ -45,7 +46,7 @@ const githubUrl = 'https://github.com/neohaskell/NeoHaskell';
 		<header class="site-header">
 			<div class="site-header__inner">
 				<a class="wordmark" href="/" aria-label="NeoHaskell home">
-					<span class="wordmark__mark" aria-hidden="true">N</span>
+					<img class="wordmark__mark" src="/logo.svg" width="36" height="36" alt="" aria-hidden="true" />
 					<span class="wordmark__name">NeoHaskell</span>
 				</a>
 				<nav class="site-nav" aria-label="Primary navigation">
@@ -53,6 +54,7 @@ const githubUrl = 'https://github.com/neohaskell/NeoHaskell';
 					<a href="/getting-started/">Build</a>
 					<a href="/start/fit-and-tradeoffs/">Fit &amp; tradeoffs</a>
 					<a href={githubUrl} target="_blank" rel="noreferrer">GitHub <span aria-hidden="true">↗</span></a>
+					<a href={discordUrl} target="_blank" rel="noreferrer">Discord <span aria-hidden="true">↗</span></a>
 				</nav>
 				<a class="button button--small button--ink site-header__cta" href={primaryCta.href}>{primaryCta.label}</a>
 			</div>
@@ -301,7 +303,7 @@ const githubUrl = 'https://github.com/neohaskell/NeoHaskell';
 						<p id="ide-dialog-title">Neo IDE overview</p>
 						<button class="ide-dialog__close" type="button" popovertarget="ide-dialog" popovertargetaction="hide" aria-label="Close enlarged Neo IDE image">×</button>
 					</div>
-					<img src="/screenshots/neo-ide-overview.png" width="1023" height="768" alt="Neo IDE overview showing the mug-shop model with a CreateCart command, CartCreated event, and CartSummary query connected on a canvas." />
+					<img src="/screenshots/neo-ide-overview.png" width="1023" height="768" loading="lazy" decoding="async" alt="Neo IDE overview showing the mug-shop model with a CreateCart command, CartCreated event, and CartSummary query connected on a canvas." />
 					<p>Commands, Events, and Queries stay visible as one model while the application grows.</p>
 				</div>
 			</div>
@@ -345,7 +347,7 @@ const githubUrl = 'https://github.com/neohaskell/NeoHaskell';
 		<footer class="site-footer">
 			<div class="page-shell site-footer__inner">
 				<a class="wordmark wordmark--footer" href="/" aria-label="NeoHaskell home">
-					<span class="wordmark__mark" aria-hidden="true">N</span>
+					<img class="wordmark__mark" src="/logo.svg" width="36" height="36" alt="" aria-hidden="true" />
 					<span class="wordmark__name">NeoHaskell</span>
 				</a>
 				<p>Understand the rules. Keep the history. Build with an agent.</p>
@@ -354,6 +356,7 @@ const githubUrl = 'https://github.com/neohaskell/NeoHaskell';
 					<a href="/start/fit-and-tradeoffs/">Fit &amp; tradeoffs</a>
 					<a href="/operate/contributing/">Contribute</a>
 					<a href={githubUrl} target="_blank" rel="noreferrer">GitHub <span aria-hidden="true">↗</span></a>
+					<a href={discordUrl} target="_blank" rel="noreferrer">Discord <span aria-hidden="true">↗</span></a>
 				</nav>
 			</div>
 		</footer>

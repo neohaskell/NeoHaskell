@@ -37,13 +37,11 @@ no reservation integration yet; use the following Connect lessons to add it.
 
 ## API compatibility and provenance
 
-These revised checkpoints require the upcoming framework version that exports
-`deriveEvent`, `deriveCommand`, `deriveEntity`, `deriveQuery`, and
-`deriveOutboundIntegration` from `Core`. They also require the corrected Neo
-compiler preset with `DerivingStrategies`; application modules contain no
-language pragmas. The released 0.10.0 framework pin
-`25bd7027a85b8f2999602f66b46b4b6b133c22e8` does not supply the new helpers, even
-when used with a corrected CLI.
+These checkpoints use `deriveEvent`, `deriveCommand`, `deriveEntity`,
+`deriveQuery`, and `deriveOutboundIntegration` from `Core`. Use the CLI and
+starter framework pin from the same compatible Neo release, as described in
+setup. Neo supplies the compiler preset, including `DerivingStrategies`;
+application modules contain no language pragmas.
 
 The revised first-Cart checkpoint compiled against framework revision
 `45e6fcc251de413d198be5c13cd583a82d3b2d57`, and its two unit examples passed.

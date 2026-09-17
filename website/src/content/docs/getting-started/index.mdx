@@ -39,13 +39,13 @@ experimental-features = nix-command flakes
 Download the executable for your computer from the
 [Neo releases](https://github.com/neohaskell/NeoHaskell/releases/latest).
 
-:::note[Release requirement for this draft]
+:::note[Version requirement]
 
-These examples target the upcoming NeoHaskell release that exports all five
-`derive…` helpers through `Core`, including `deriveEntity`, together with the
-corrected Neo compiler preset. The published 0.10.0 CLI and its framework pin
-are not sufficient: correcting the CLI alone does not add the new framework
-helpers. Use the matching release once available. You should not need to add
+These examples require a Neo release whose starter framework pin exports all
+five `derive…` helpers through `Core`, including `deriveEntity`, and uses the
+matching Neo compiler preset. After `neo new`, keep the generated `neo-version`
+pin; if the starter does not provide these helpers, install a release with a
+matching framework pin before changing source files. You should not need to add
 language settings to your source files.
 
 :::

@@ -186,7 +186,7 @@ app = Application.new
   |> Application.withFileUpload @() (\_ -> Uploads.uploadConfig)
 ```
 
-No extra package is needed in `neo.json`: the event-store implementation is supplied by the framework. The persistence overlay's README records the required upcoming framework release and corrected CLI compiler preset; the released 0.10.0 pin lacks the five `Core` derive helpers used by the current examples.
+No extra package is needed in `neo.json`: the event-store implementation is supplied by the framework. Keep the CLI and framework pins from the same Neo release so the generated project and these examples use a compatible compiler and framework.
 
 ## Start the local database and application
 

@@ -61,9 +61,10 @@ project already created in Getting Started. Complete source comes after the
 concepts and before the corresponding build/run checks. Cart creation tests are
 shown in the testing lesson. The first-slice source parity check, complete-file
 presentation checks, and registered exact excerpts run without compiling Haskell.
-The docs checker passes 87 assertions and the four unchanged archive tests pass.
-No Haskell source, downloads, or framework runtime were changed or recompiled.
-The existing compilation and live-provider limitations below still apply.
+The docs checker passes 96 assertions and the four regenerated archive tests pass.
+No Haskell source or framework runtime was changed or recompiled; the downloads
+were regenerated from the reviewed README/source changes. The existing compilation
+and live-provider limitations below still apply.
 
 ## CLI and application verification
 
@@ -123,8 +124,9 @@ missing extension to the shared application/library/test configuration. A real
 rendering regression failed before the correction and passed afterward. All 629
 CLI unit tests, the targeted generated-project integration test, and the fresh
 packaged-binary new-project end-to-end test passed. The local corrected binary
-still reports 0.10.0; it is **unreleased**, and the setup guide explicitly records
-that prerequisite. No release was published as part of this work.
+still reports 0.10.0; this corrected binary was **unreleased** at verification.
+Setup now describes the required preset and helpers without a temporary notice. No
+release was published as part of this work.
 
 The corrected packaged binary's SHA256 is
 `b1dfa23946bb79a19e527633fc7d01855de72414ea1daa4f999fb8a6e02b70c3`.
@@ -162,7 +164,7 @@ claimed. Complete that check in isolation before final PR review.
 
 - 49 human pages cover 24 required public capability areas, grounded in 222
   fingerprinted public evidence files and 92 checked literal excerpts.
-- 87 documentation checker assertions cover missing content, source/excerpt drift,
+- 96 documentation checker assertions cover missing content, source/excerpt drift,
   review coverage, links, diagrams, binary screenshots, image zoom controls,
   reader-owned workflows, pragma/import/module/deriving scaffolding, canonical
   Core helper usage, entity boilerplate rejection, code disclosure, explicit
@@ -170,9 +172,9 @@ claimed. Complete that check in isolation before final PR review.
 - Four archive tests passed; all five downloads are reproducible from source.
 - All 55 shell blocks pass `bash -n`; syntax checks do not imply execution.
 - Public source hyperlinks were checked against existing repository paths.
-- Astro diagnostics passed with zero errors, warnings, or hints. The production
-  build/search indexed 769 pages; all 49 human routes passed rendered-link,
-  anchor, and image-zoom checks.
+- The final website build and search index completed with 775 pages; all 49
+  human routes passed rendered-link, anchor, and image-zoom checks. The built
+  site checker reviewed 49 pages and 24 required capability areas.
 - The portable dialect lint passed with no hints. Spec criteria and
   the expectation guard passed; current API drift validation awaits catalog regeneration. No existing test expectations were changed.
 
@@ -213,13 +215,14 @@ as proof that an operation ran. Capture provenance stays here, outside the lesso
 
 Starlight Image Zoom 0.15.0 and the supported Unified Markdown renderer enlarge
 SVGs and PNGs in a dialog without changing pages. [ADR-0078](../docs/decisions/0078-documentation-image-zoom.md)
-records the dependency choice. Earlier Safari verification confirmed Escape,
-close controls, restored focus, Enter to reopen, and preserved URL/scroll position.
-Built-page checks require accessible zoom triggers on all registered illustrations.
+records the dependency choice. Built-page checks require accessible zoom triggers
+on all registered illustrations. The recaptured AddItem image and its zoom trigger
+are present at the guide URL, but the native popup's complete open, Escape, and
+focus-return keyboard cycle was not reliably exercised; no full interaction pass
+is claimed.
 
 Final Safari review verified the short first-cart examples and download link at
-normal reading size. The recaptured AddItem image opened in the dialog at the same
-guide URL; Escape returned focus to its zoom trigger and retained the reading position.
+normal reading size.
 
 ## Main website
 
@@ -238,18 +241,61 @@ business judgment, and evaluation copy includes modeling and operational costs.
 The landing reuses a maintained Draw.io export and an actual IDE capture; it
 introduces no private application material, customer claims, or performance data.
 
-The final website build produced 775 routes. The checker passed 96 positive,
-negative, and boundary assertions, plus four checkpoint archive tests; the built
-site check passed for the landing's local destinations and all 49 human guide
-pages. Final Astro diagnostics reported no errors, warnings, or hints across nine
-files, including the native disclosure and popover markup.
+Landing and documentation share the official site typography and palette through
+`brand.css`: Lexend Mega 600 for display headings, Ubuntu 400 for body text, and
+Comic Mono 400 for code. The key surfaces are paper `#fefce8`, primary `#9723c9`,
+and code `#2d2a55`, with the Comic Mono face loaded from the supplied official
+asset URL in that shared sheet. `docs-theme.css` maps those values onto Starlight
+light and dark tokens while preserving the existing documentation structure.
 
-Safari review covered the hero, history, and IDE sections at the available desktop
-window size. The header CTA contrast was corrected. Native history and correction
-disclosures expanded with keyboard activation. The IDE uses a native image popover
-with a close control; automated Safari clicks did not reliably activate its trigger,
-so its full open/Escape/focus-return interaction is not claimed as verified. Small
-screen layouts were reviewed in CSS, without a physical mobile-device trial.
+The Impeccable context and craft/type/color/polish guidance were read before the
+bounded landing pass. Its manual detector initially identified a layout-property
+transition in the audience links; the transition now covers background color only,
+and the final detector scan after the visual repair returned no primary findings.
+The visual repair tightened the hero scale and wrapping, restored header and copy
+rhythm, and aligned the hero card and shadow with the official purple/paper palette
+without changing landing markup, data, sections, routes, or the docs theme. The
+latest Vercel Web Interface Guidelines were reviewed as well: the stale
+theme-color, duplicate popup image loading, and skip-link focus selector were
+corrected. Sentence-case headings and labels remain an intentional editorial
+choice for the existing NeoHaskell voice.
+
+The final post-repair website build produced 775 routes. The checker passed 96
+positive, negative, and boundary assertions, plus four checkpoint archive tests;
+the built-site check passed for the landing's local destinations and all 49 human
+guide pages. The preview returned HTTP 200 for `/` and `/docs/` with the required
+host header, and Safari visually inspected the repaired landing and docs overview
+at the available desktop window size.
+
+Safari visual review covered the repaired hero and docs overview. The header CTA
+contrast was corrected. Native history and correction disclosures expanded with
+keyboard activation. The IDE uses a native image popover with a close control;
+automated Safari clicks did not reliably activate its trigger, so its full
+open/Escape/focus-return interaction is not claimed as verified. Small-screen
+layouts were reviewed in CSS, without a physical mobile-device trial.
+
+## Branding, community, and release prerequisites
+
+The landing header/footer and favicon use the official mark copied unchanged
+from `https://neohaskell.org/img/logo.svg`. The old placeholder favicon is also
+replaced; `/logo.svg` gives browsers a new favicon URL. The official homepage's
+Discord destination, `https://discord.com/invite/wDj3UYzec8`, is linked from the
+landing header/footer and the Starlight social navigation.
+
+The September 17 release review confirmed that public `neo-v0.10.0` points to
+`25bd7027a85b8f2999602f66b46b4b6b133c22e8`; its `Core` does not expose these
+helper exports. The compatible framework and CLI fragments already accompany this
+PR. Merging the feature code queues a release-preparation PR; publishing the
+`deriveXXX` helpers must wait until that PR merges and its required native and
+consumer checks pass. No release was performed here.
+
+Human lessons and downloadable README files now use a durable compatibility
+requirement instead of temporary draft/unavailable notices. Setup owns the
+requirement for the five Core helpers and the matching Neo compiler preset.
+Historical compilation limits above remain evidence, not reader instructions.
+Checkpoint archives were regenerated for their README changes; application
+source was not changed or recompiled. The 96 checker assertions and four archive
+tests pass.
 
 ## Remaining validation boundaries
 

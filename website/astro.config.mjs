@@ -12,11 +12,17 @@ export default defineConfig({
 	integrations: [
 		starlight({
 			title: 'NeoHaskell',
+			favicon: '/logo.svg',
 			plugins: [starlightImageZoom()],
-			customCss: ['./src/styles/diagrams.css'],
+			customCss: ['./src/styles/diagrams.css', './src/styles/docs-theme.css'],
 			description:
 				'Build understandable applications with events, a visual model, and your coding agent.',
 			social: [
+				{
+					icon: 'discord',
+					label: 'Discord',
+					href: 'https://discord.com/invite/wDj3UYzec8',
+				},
 				{
 					icon: 'github',
 					label: 'GitHub',

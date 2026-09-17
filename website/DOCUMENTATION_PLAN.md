@@ -121,8 +121,11 @@ instances. Entity files place `initialState`, `update`, and their imported or
 defined `getEventEntityId` before `deriveEntity ''CartEntity ''CartEvent`. The
 marker supplies entity JSON, type-family, default, replay, and event-routing
 instances, but does not impose `Show`. Ordinary value types retain any required
-mechanical setup in complete files. Record the upcoming framework export version
-as a prerequisite; the old released pin cannot compile the new helpers.
+mechanical setup in complete files. State the required framework helpers and CLI
+preset once in setup, with a link to the release notes for version selection.
+Keep temporary release-status notices out of individual lessons. Merging feature
+code and publishing the release are separate steps; maintainer evidence records
+the actual publication state.
 
 Keep files cohesive. Give each command, event payload, query, and integration a
 clear home. Separate entity state and replay from the event definitions, keep a

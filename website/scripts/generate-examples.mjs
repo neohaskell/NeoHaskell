@@ -31,10 +31,10 @@ checkpoints replace earlier versions of the same feature files; merge changes
 you made independently. Remove the generated Counter files and tests as shown
 in the first-cart lesson. Continue using neo build, neo run, and neo test.
 
-These examples require the upcoming framework release exporting the five derive
-helpers through Core, including deriveEntity, and the corrected Neo compiler
-preset described in setup. The published 0.10.0 framework pin lacks those helpers;
-a corrected CLI alone is insufficient.
+These examples require the five derive helpers exported through Core, including
+deriveEntity, and the Neo compiler preset described in setup. Use the CLI and
+starter framework pin from the same compatible Neo release. Keep the generated
+project settings; no language pragmas are needed in application files.
 
 Lessons: https://neohaskell.org/build/first-cart/
 `;

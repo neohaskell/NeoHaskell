@@ -12,7 +12,7 @@ export const landingContent = {
     href: "/start/fit-and-tradeoffs/",
   },
   shift: {
-    eyebrow: "The shift",
+    eyebrow: "When code is abundant",
     title: "When code is cheap, meaning becomes the scarce part.",
     body:
       "AI can turn an idea into code quickly. The harder question is whether that code represents the right rules. NeoHaskell gives each change a visible path: someone makes a request, the application checks its rules, and an accepted fact records what happened. You and your agent have something concrete to discuss and check.",
@@ -27,7 +27,7 @@ export const landingContent = {
   },
   model: {
     eyebrow: "A shared model",
-    title: "Give people and agents the same map.",
+    title: "Share one model from idea to code.",
     body:
       "Event Modeling puts actors, commands, decisions, entities, events, and queries in a language people can discuss before implementation. NeoHaskell gives those ideas executable counterparts, while the Neo IDE graph helps you explore how the model connects to source. A shared vocabulary makes a missing step, refusal, or boundary easier to question.",
   },
@@ -39,7 +39,7 @@ export const landingContent = {
   },
   tools: {
     eyebrow: "Executable foundations",
-    title: "Language, framework, CLI, and visual IDE in one working loop.",
+    title: "Use the language, framework, CLI, and visual IDE together.",
     body:
       "An approachable Haskell dialect gives your model typed foundations. The framework connects commands, events, state, views, and integrations. Use Neo to create, build, run, and test your own project; explore its connections in the visual IDE. The compiler checks structure, and tests check chosen examples. You still decide whether the rules are right.",
   },
@@ -67,7 +67,7 @@ export const landingContent = {
     },
   ],
   closing: {
-    title: "Build for change without losing the thread.",
+    title: "Keep the rules visible as software changes.",
     body:
       "Read the ideas in order, try a no-install modeling exercise, or follow a practice project from its first slice into operation. The documentation keeps the benefits, evidence, costs, and limits together so you can decide what fits.",
     label: "Start with the docs",

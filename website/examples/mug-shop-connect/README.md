@@ -14,9 +14,9 @@ configuration. Built-in integrations are already included by `neo new`.
 
 ## Required framework version
 
-Use the upcoming framework release with the five `Core` derive helpers and the
-corrected CLI compiler preset described in setup. The released 0.10.0 framework
-pin lacks these exports. These revised modules use `deriveCommand` and
+Use the CLI and starter framework pin from the same compatible Neo release,
+with the five `Core` derive helpers and compiler preset described in setup.
+These modules use `deriveCommand` and
 `deriveOutboundIntegration` through `Core`. Compilation and runtime checks
 were not repeated for this migration; historical Connect runs preceded it.
 

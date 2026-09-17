@@ -280,7 +280,7 @@
     "core/service/Service/ServiceDefinition/Core.hs": "03bc90c9bb9261f52667476890d903abc11c60da05c5fcc1e1bcbe88188afd7c",
     "website/examples/mug-shop-connect/src/Shop/Cart/Commands/CreateCartInternal.hs": "c64bae2ba01e591434e0d83e4ac1bc0b6a076c96eec9f3fc51c0f545d99b1e33",
     "website/examples/mug-shop-connect/src/Shop/Cart/Service.hs": "44a40f43323c69bae27d5b8c7920ac57ac6d2961cddc12c563a1f2e49bb1773b",
-    "website/examples/mug-shop-connect/README.md": "4cbc9308961bf8fdf222c460ed7948e1cda2088934f31c48dd95b262428fbfc0",
+    "website/examples/mug-shop-connect/README.md": "4ddf1bae3d6180b4cffc0d6b821b16eac433faf775261ef189be8e4ca732fce6",
     "website/examples/mug-shop/src/Shop/Cart/Events/ItemAdded.hs": "1684ebff2e466c904930566fe953ae43a395eaaa5daeedf0bf28786caad5827e",
     "website/examples/mug-shop/src/Shop/Cart/Event.hs": "727b4236261b9e2c855a62a2acd73b2b047d0e9097da5bd521831ae4c5395cb0",
     "website/examples/mug-shop/src/Shop/Cart/Entity.hs": "bad0f914f90a18f674fe58185f47c81dc2c143719d57dd63d5c53346cfc3214c",
@@ -299,7 +299,7 @@
     "website/examples/mug-shop/tests/scenarios/create-cart.hurl": "167b8dc856d5213b5f37a0078b4114ac8ce4b5a4a29257053f9b0aa411f9fb2b",
     "website/examples/mug-shop/tests/Decider/Cart/CreateCartSpec.hs": "895b3369820d81abde29a89bc0fecb5e1dee277784c2bc7d453ff85e7e2ebcfd",
     "website/examples/mug-shop/persistence/src/Shop/Storage.hs": "cb00f31e97fb1464ff2a370ecd785a342647832fffba5b55bdc8de368baf0112",
-    "website/examples/mug-shop/persistence/README.md": "007ee473907d8ed9184f7d17c4b9fa8644d999c0e9f7fba86c7793d71c2c48b6",
+    "website/examples/mug-shop/persistence/README.md": "d06ae586b0e92d6597057fb928d45df99caf2ab320c5a141f8735abf448d0091",
     "core/core/Core.hs": "c11ab0bd7c125a4cb9fdeac553361a5f899589972e9eb9c478b01e45130638a8",
     "core/service/Service/Entity/TH.hs": "cb285b50ffefdd190f263d31a4436d6a35211f18e53bf9a4197a09325c038ff5"
   },

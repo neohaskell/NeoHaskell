@@ -1,0 +1,122 @@
+@import './brand.css';
+
+/*
+ * Starlight tokens for the current NeoHaskell site. The shared brand sheet
+ * owns the font loading; the fallbacks keep this file usable while it loads.
+ */
+:root {
+	--docs-paper: #fefce8;
+	--docs-primary: #9723c9;
+	--docs-code-bg: #2d2a55;
+	--docs-cyan: #a5f3fc;
+	--docs-green: #bbf7d0;
+	--docs-orange: #fed7aa;
+	--docs-violet: #ddd6fe;
+	--docs-yellow: #fef08a;
+
+	--sl-font: var(--brand-font-body, 'Ubuntu', sans-serif);
+	--sl-font-mono: var(--brand-font-code, 'Comic Mono', monospace);
+
+	/* Dark mode: black and the official code purple anchor the surfaces. */
+	--sl-color-white: #ffffff;
+	--sl-color-gray-1: var(--docs-paper);
+	--sl-color-gray-2: #ffffff;
+	--sl-color-gray-3: color-mix(in srgb, #ffffff 70%, #000000);
+	--sl-color-gray-4: color-mix(in srgb, #ffffff 48%, #000000);
+	--sl-color-gray-5: color-mix(in srgb, #ffffff 24%, #000000);
+	--sl-color-gray-6: var(--docs-code-bg);
+	--sl-color-black: #000000;
+
+	--sl-color-accent-low: var(--docs-code-bg);
+	--sl-color-accent: var(--docs-primary);
+	--sl-color-accent-high: var(--docs-violet);
+	--sl-color-text: var(--sl-color-gray-2);
+	--sl-color-text-accent: var(--docs-violet);
+	--sl-color-text-invert: var(--sl-color-black);
+	--sl-color-bg: var(--sl-color-black);
+	--sl-color-bg-nav: var(--docs-code-bg);
+	--sl-color-bg-sidebar: var(--sl-color-black);
+	--sl-color-bg-inline-code: var(--docs-code-bg);
+	--sl-color-bg-accent: var(--docs-violet);
+	--sl-color-hairline-light: color-mix(in srgb, var(--docs-paper) 34%, transparent);
+	--sl-color-hairline: color-mix(in srgb, var(--docs-paper) 20%, transparent);
+	--sl-color-hairline-shade: var(--sl-color-black);
+	--sl-color-backdrop-overlay: rgb(0 0 0 / 66%);
+
+	--sl-color-blue-low: color-mix(in srgb, var(--docs-cyan) 22%, var(--sl-color-black));
+	--sl-color-blue: var(--docs-cyan);
+	--sl-color-blue-high: var(--docs-cyan);
+	--sl-color-green-low: color-mix(in srgb, var(--docs-green) 22%, var(--sl-color-black));
+	--sl-color-green: var(--docs-green);
+	--sl-color-green-high: var(--docs-green);
+	--sl-color-orange-low: color-mix(in srgb, var(--docs-orange) 22%, var(--sl-color-black));
+	--sl-color-orange: var(--docs-orange);
+	--sl-color-orange-high: var(--docs-orange);
+	--sl-color-purple-low: color-mix(in srgb, var(--docs-violet) 22%, var(--sl-color-black));
+	--sl-color-purple: var(--docs-violet);
+	--sl-color-purple-high: var(--docs-violet);
+	--sl-color-red-low: color-mix(in srgb, var(--docs-yellow) 22%, var(--sl-color-black));
+	--sl-color-red: var(--docs-yellow);
+	--sl-color-red-high: var(--docs-yellow);
+}
+
+:root[data-theme='light'],
+[data-theme='light'] ::backdrop {
+	/* Light mode uses the official paper, black, and pale semantic palette. */
+	--sl-color-white: #000000;
+	--sl-color-gray-1: #000000;
+	--sl-color-gray-2: #000000;
+	--sl-color-gray-3: color-mix(in srgb, #000000 70%, var(--docs-paper));
+	--sl-color-gray-4: color-mix(in srgb, #000000 48%, var(--docs-paper));
+	--sl-color-gray-5: color-mix(in srgb, #000000 24%, var(--docs-paper));
+	--sl-color-gray-6: var(--docs-code-bg);
+	--sl-color-gray-7: var(--docs-paper);
+	--sl-color-black: var(--docs-paper);
+
+	--sl-color-accent-low: var(--docs-violet);
+	--sl-color-accent: var(--docs-primary);
+	--sl-color-accent-high: var(--docs-primary);
+	--sl-color-text: var(--sl-color-gray-2);
+	--sl-color-text-accent: var(--docs-primary);
+	--sl-color-text-invert: var(--sl-color-black);
+	--sl-color-bg: var(--docs-paper);
+	--sl-color-bg-nav: var(--docs-paper);
+	--sl-color-bg-sidebar: var(--docs-paper);
+	--sl-color-bg-inline-code: var(--docs-code-bg);
+	--sl-color-bg-accent: var(--docs-primary);
+	--sl-color-hairline-light: color-mix(in srgb, #000000 18%, transparent);
+	--sl-color-hairline: color-mix(in srgb, #000000 12%, transparent);
+	--sl-color-hairline-shade: var(--docs-paper);
+	--sl-color-backdrop-overlay: rgb(0 0 0 / 66%);
+
+	--sl-color-blue-low: var(--docs-cyan);
+	--sl-color-blue: var(--docs-cyan);
+	--sl-color-blue-high: var(--docs-code-bg);
+	--sl-color-green-low: var(--docs-green);
+	--sl-color-green: var(--docs-green);
+	--sl-color-green-high: var(--docs-code-bg);
+	--sl-color-orange-low: var(--docs-orange);
+	--sl-color-orange: var(--docs-orange);
+	--sl-color-orange-high: var(--docs-code-bg);
+	--sl-color-purple-low: var(--docs-violet);
+	--sl-color-purple: var(--docs-violet);
+	--sl-color-purple-high: var(--docs-code-bg);
+	--sl-color-red-low: var(--docs-yellow);
+	--sl-color-red: var(--docs-yellow);
+	--sl-color-red-high: var(--docs-code-bg);
+}
+
+:where(h1, h2, h3, h4, h5, h6) {
+	font-family: var(--brand-font-display, 'Lexend Mega', sans-serif);
+	font-weight: 600;
+}
+
+:where(pre, code, kbd, samp) {
+	font-family: var(--sl-font-mono);
+	font-weight: 400;
+}
+
+/* Keep the official dark code surface readable when used for inline code. */
+.sl-markdown-content :where(code):not(pre code) {
+	color: #ffffff;
+}
