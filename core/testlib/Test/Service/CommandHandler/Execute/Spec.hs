@@ -243,6 +243,22 @@ retryLogicSpecs backend newCartStoreAndFetcher = do
         (insertionPayloads == [positionedPayload]
           && fetchedRevisions == [Just (Event.StreamPosition 0)])
 
+    it "binds acceptExisting to the fetched stream revision" \context -> do
+      let streamId = context.cartId |> Uuid.toText |> StreamId.fromTextUnsafe
+      Regression.seedStream context.cartStore context.cartEntityName streamId
+        [CartCreated {entityId = context.cartId}]
+      (recordingStore, readInsertions) <- Regression.recordInsertions context.cartStore
+      let command = AddItemToCart
+            {cartId = context.cartId, itemId = context.itemId1, amount = 1}
+      result <- CommandExecutor.execute recordingStore context.cartFetcher
+        context.cartEntityName Auth.emptyContext command
+      insertionPayloads <- readInsertions
+      let insertionTypes = insertionPayloads |> Array.map (\payload -> payload.insertionType)
+      case result of
+        CommandAccepted {} -> pass
+        other -> fail [fmt|Expected CommandAccepted, got #{toText other}|]
+      insertionTypes |> shouldBe [Event.InsertAfter (Event.StreamPosition 0)]
+
     it "records the exact insertion precondition after refetch" \context -> do
       let streamId = context.cartId |> Uuid.toText |> StreamId.fromTextUnsafe
       Regression.seedStream context.cartStore context.cartEntityName streamId
