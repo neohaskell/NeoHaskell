@@ -33,10 +33,8 @@ usage: ./dev <verb> [args]
                           codemap-regen workflow (check-metadata, check-symlinks,
                           reconcile, check-staged-diff; --self-test)
   adr-check             validate the ADR index in docs/decisions/README.md
-  adr-website [--check]  (re)generate the website ADR pages — landing + one page
-                          per ADR — from docs/decisions/ (also runs from pnpm
-                          predev/prebuild/precheck; --check: fail if the tracked
-                          landing page is out of sync)
+  website-migration-check [--check|--self-test]
+                          verify the standalone website-v2 migration boundary
   hiedb [--rebuild]     incrementally index emitted .hie files; --rebuild is
                           the explicit cold full-build path
   who-calls <sym> [mod] cached symbol references, or an immediate git-grep fallback
@@ -127,7 +125,7 @@ case "${VERB}" in
   codemap-check) exec scripts/codemap-check "$@" ;;
   codemap-regen-guard) exec scripts/codemap-regen-guard.py "$@" ;;
   adr-check) exec scripts/adr-index-check "$@" ;;
-  adr-website) exec scripts/adr-website "$@" ;;
+  website-migration-check) exec scripts/website-migration-check "$@" ;;
   hiedb)    exec scripts/refresh-hiedb "$@" ;;
   who-calls) exec scripts/who-calls "$@" ;;
   regression-smoke) exec scripts/regression-scaffold-smoke "$@" ;;

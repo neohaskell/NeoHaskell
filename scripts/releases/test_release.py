@@ -1156,7 +1156,6 @@ class Workflow(unittest.TestCase):
         ):
             with self.subTest(path=path):
                 self.assertRegex(path, pattern)
-        self.assertNotRegex("website/package.json", pattern)
 
     def test_pr_rollout_ledger_is_empty(self):
         # This assertion intentionally expires at the first generated preparation:

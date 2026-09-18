@@ -32,7 +32,7 @@ vocabulary); for NEW code use the extension points. Full contract: codemap/READM
 | `outbound-integrations` | Concrete outbound integrations | `integrations/**` | 🔒 |
 | `testbed` | Reference app + acceptance tests | `testbed/**` |  |
 | `dev-pipeline` | The Continuous Generation pipeline itself | `scripts/**`… |  |
-| `website` | Astro/Starlight docs site (monorepo dir, NOT a separate repo) | `website/**` |  |
+| `website` | Migration pointer for standalone Astro/Starlight site in `neohaskell/website-v2` | `website/**` |  |
 | `installer` | Rust installer (neo-install binary). | `installer/**` |  |
 | `ci-cd` | Build/CI/CD | `.github/workflows/*.yml`… |  |
 | `governance-docs` | Plans, ADRs (docs/decisions/), agent guide, contributor guide. | `docs/**`… |  |

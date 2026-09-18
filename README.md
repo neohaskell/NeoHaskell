@@ -29,7 +29,10 @@ different parts of NeoHaskell:
 - `testbed/` → `nhtestbed` — reference app + acceptance tests
 - `integrations/` → `nhintegrations` — outbound integrations
 - `installer/` → `neo-install` — the Rust installer
-- `website/` — the Astro documentation site
+- `neo/` → `neo` — the Rust CLI and bundled IDE
+
+The public Astro website and documentation now live in the separate
+[`neohaskell/website-v2`](https://github.com/neohaskell/website-v2) repository.
 
 This README is the canonical guide for **human contributors**: environment
 setup, the full build/test commands, and Postgres. Two companion guides own the
@@ -41,10 +44,9 @@ rest:
   regeneration.
 
 Architecture decisions live in `docs/decisions/` (indexed in
-`docs/decisions/README.md`). The website turns each record into its own page
-automatically: the generator runs on `pnpm dev`/`build`/`check` (no manual step),
-and `./dev adr-website` regenerates or (with `--check`) verifies the tracked ADR
-landing page.
+`docs/decisions/README.md`). The standalone website fetches the latest `main`
+commit from this repository when it builds, then generates the public ADR pages
+and runs its documentation evidence checks locally.
 
 ## Installing the required tools
 

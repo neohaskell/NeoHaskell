@@ -1,0 +1,91 @@
+#!/usr/bin/env python3
+"""Validate the monorepo boundary after moving the public website."""
+
+from pathlib import Path
+import sys
+import tempfile
+
+ROOT = Path(__file__).resolve().parent.parent
+WEBSITE_REPOSITORY = "https://github.com/neohaskell/website-v2"
+
+FORBIDDEN_PATHS = (
+    ".github/workflows/docs.yml",
+    ".github/workflows/translate.yml",
+    "scripts/adr-website",
+    "website/package.json",
+    "website/astro.config.mjs",
+    "website/scripts/check-docs.mjs",
+    "website/scripts/generate-adrs.mjs",
+    "website/src",
+)
+
+
+def check(root):
+    errors = []
+    pointer = root / "website" / "README.md"
+    if not pointer.is_file():
+        errors.append("website/README.md migration pointer is missing")
+    else:
+        text = pointer.read_text()
+        if WEBSITE_REPOSITORY not in text:
+            errors.append("website/README.md does not point to website-v2")
+        if "latest `main` commit" not in text:
+            errors.append("website/README.md does not document latest-main source fetching")
+
+    for relative in FORBIDDEN_PATHS:
+        if (root / relative).exists():
+            errors.append(f"obsolete website payload or integration remains: {relative}")
+
+    for relative in ("README.md", "AGENTS.md", "codemap/capabilities.yaml"):
+        path = root / relative
+        if path.is_file() and "neohaskell/website-v2" not in path.read_text():
+            errors.append(f"{relative} does not name the standalone website repository")
+
+    for relative in ("dev", ".agents/skills/neohaskell-pipeline/SKILL.md"):
+        path = root / relative
+        if path.is_file() and "adr-website" in path.read_text():
+            errors.append(f"{relative} still references removed adr-website integration")
+
+    return errors
+
+
+def self_test():
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        (root / "website").mkdir()
+        (root / "website/README.md").write_text(
+            f"Moved to {WEBSITE_REPOSITORY}; fetches the latest `main` commit.\n"
+        )
+        for relative in ("README.md", "AGENTS.md", "codemap/capabilities.yaml"):
+            path = root / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(WEBSITE_REPOSITORY)
+        (root / "dev").write_text("website-migration-check\n")
+        (root / ".agents/skills/neohaskell-pipeline").mkdir(parents=True)
+        (root / ".agents/skills/neohaskell-pipeline/SKILL.md").write_text("website-v2\n")
+        if check(root):
+            raise AssertionError("valid migration fixture was rejected")
+        (root / "website/package.json").write_text("obsolete\n")
+        if not any("website/package.json" in error for error in check(root)):
+            raise AssertionError("obsolete website payload was accepted")
+    print("website-migration-check self-test: OK")
+
+
+def main():
+    if sys.argv[1:] == ["--self-test"]:
+        self_test()
+        return 0
+    if sys.argv[1:] not in ([], ["--check"]):
+        print("usage: scripts/website-migration-check [--check|--self-test]", file=sys.stderr)
+        return 2
+    errors = check(ROOT)
+    for error in errors:
+        print(f"website-migration-check: FAIL — {error}", file=sys.stderr)
+    if errors:
+        return 1
+    print("website-migration-check: OK — standalone website boundary is intact")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -127,8 +127,8 @@ fi
 # validator rejects mutated fixtures. Self-test alone would only test temp data.
 scripts/neo-skills-check || fail=1
 scripts/neo-skills-check --self-test || fail=1
-scripts/adr-website --self-test || fail=1
 scripts/adr-index-check --self-test || fail=1
+scripts/website-migration-check --self-test || fail=1
 
 # HIE localization must remain bounded: only the explicit --rebuild branch may
 # mention the full build, and who-calls must delegate solely to incremental indexing.

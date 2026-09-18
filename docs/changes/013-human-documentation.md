@@ -46,9 +46,8 @@ and the installation page identifies the next-release requirement.
 
 | ID | Behavior | Proving test | Level | Boundary |
 |----|----------|--------------|-------|----------|
-| C1 | Every planned human page has source evidence, review coverage, and valid local links | `script:website/scripts/check-docs.mjs#--check` | unit | none |
-| C2 | The documentation gate rejects missing pages, source drift, invalid links, absent review evidence, contributor commands, and boilerplate or undisclosed code walls in app lessons | `script:website/scripts/check-docs.mjs#--self-test` | unit | none |
-| C3 | Built documentation images have a dialog controller and an accessible enlargement trigger | `script:website/scripts/check-docs.mjs#--built` | unit | none |
+| C1 | The monorepo delegates public website ownership to `neohaskell/website-v2` and retains only a migration pointer | `script:scripts/website-migration-check#--check` | unit | none |
+| C2 | The migration boundary rejects obsolete in-repository website payload, workflows, and ADR integration | `script:scripts/website-migration-check#--self-test` | unit | none |
 
 ## User impact
 
@@ -56,9 +55,10 @@ Jess can learn NeoHaskell through a cohesive ecommerce practice project, apply t
 concepts to her own domain, evaluate business tradeoffs without reading every
 implementation section, and consult individual topics. Existing
 getting-started and deployment routes remain usable. The source examples distinguish
-implemented public capabilities from shop-specific designs. The authoring plan is
-`website/DOCUMENTATION_PLAN.md`; the review record explicitly separates automated
-verification from a future human reader trial and live external-provider testing.
+implemented public capabilities from shop-specific designs. The authoring plan and review record remain in the standalone
+[`neohaskell/website-v2`](https://github.com/neohaskell/website-v2) repository;
+they explicitly separate automated verification from a future human reader trial
+and live external-provider testing.
 
 ## ADR
 
