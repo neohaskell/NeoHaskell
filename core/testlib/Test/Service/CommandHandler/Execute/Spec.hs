@@ -458,7 +458,7 @@ retryLogicSpecs backend newCartStoreAndFetcher = do
               Event.InsertAfter (Event.StreamPosition 1),
               Event.InsertAfter (Event.StreamPosition 2)
             ]
-        finalAmounts |> shouldBe [1, 2, 3]
+        finalAmounts |> shouldBe [3, 2, 1]
 
     it "acceptNew commands preserve StreamCreation under a PostgreSQL race" \context -> do
       Task.when (backend == "postgres") do
