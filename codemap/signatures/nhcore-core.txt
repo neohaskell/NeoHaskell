@@ -545,6 +545,9 @@ data Uuid
 data Var value
 data Version
 decideImpl :: Command command => DecideFunction (IsMultiTenant command) command (EntityOf command) (EventOf (EntityOf command))
+deriveCommand :: Name -> DecsQ
+deriveEvent :: Name -> DecsQ
+deriveOutboundIntegration :: Name -> DecsQ
 getEntityIdImpl :: Command command => GetEntityIdFunction (IsMultiTenant command) command (EntityIdType (EntityOf command))
 hashVal :: KnownHash s => proxy s -> Int
 infixr 5 ++

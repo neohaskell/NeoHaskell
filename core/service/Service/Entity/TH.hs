@@ -6,6 +6,9 @@
 -- A missing 'Default.Default' delegates to the entity's initial state.
 --
 -- Unlike event and command derivation, entity derivation does not require Show.
+--
+-- >>> TH.nameBase (TH.mkName "Cart")
+-- "Cart"
 module Service.Entity.TH (deriveEntity) where
 
 import Appendable ((++))
@@ -52,6 +55,7 @@ deriveEntity entityName eventName = do
     )
 
 
+-- | Emit the entity name mapping when the application has not supplied one.
 emitNameIfMissing :: TH.Name -> THLib.DecsQ
 emitNameIfMissing entityName = do
   existing <- TH.reifyInstances ''Command.NameOf [TH.ConT entityName]
@@ -62,6 +66,7 @@ emitNameIfMissing entityName = do
     _ -> pure [] -- HOOK-ALLOW: TH.Q declaration generation.
 
 
+-- | Emit or validate a type-family mapping required by entity derivation.
 emitCheckedFamily :: TH.Name -> TH.Name -> TH.Name -> THLib.DecsQ
 emitCheckedFamily familyName argumentName expectedName = do
   existing <- TH.reifyInstances familyName [TH.ConT argumentName]
@@ -73,6 +78,7 @@ emitCheckedFamily familyName argumentName expectedName = do
     _ -> conflictingFamily familyName argumentName expectedName
 
 
+-- | Confirm that an existing type-family mapping matches the marker arguments.
 checkExistingMapping :: TH.Name -> TH.Name -> TH.Name -> TH.Type -> THLib.DecsQ
 checkExistingMapping familyName argumentName expectedName existingType = do
   actual <- resolveNullaryAliases existingType
@@ -82,6 +88,7 @@ checkExistingMapping familyName argumentName expectedName existingType = do
     else conflictingFamily familyName argumentName expectedName
 
 
+-- | Build a type-family declaration for a derived entity relationship.
 familyDeclaration :: TH.Name -> TH.Name -> TH.Type -> TH.Dec
 familyDeclaration familyName argumentName resultType =
   TH.TySynInstD
@@ -92,6 +99,7 @@ familyDeclaration familyName argumentName resultType =
     )
 
 
+-- | Report an incompatible existing entity relationship at compile time.
 conflictingFamily :: TH.Name -> TH.Name -> TH.Name -> THLib.DecsQ
 conflictingFamily familyName argumentName expectedName =
   MonadFail.fail
@@ -109,6 +117,7 @@ resolveNullaryAliases originalType =
     _ -> pure originalType -- HOOK-ALLOW: TH.Q type inspection.
 
 
+-- | Resolve a reified nullary type synonym without evaluating type families.
 resolveReifiedAlias :: TH.Type -> TH.Info -> TH.Q TH.Type
 resolveReifiedAlias originalType information =
   case information of
@@ -116,6 +125,7 @@ resolveReifiedAlias originalType information =
     _ -> pure originalType -- HOOK-ALLOW: TH.Q type inspection.
 
 
+-- | Emit the application-owned state and update methods for an entity.
 emitEntityInstance :: TH.Name -> THLib.DecsQ
 emitEntityInstance entityName = do
   initialStateName <- lookupCompanion entityName "initialState"
@@ -127,12 +137,14 @@ emitEntityInstance entityName = do
   pure [instanceDeclaration ''Entity.Entity entityName methods] -- HOOK-ALLOW: TH.Q declaration generation.
 
 
+-- | Emit the default value instance from the entity's initial state.
 emitDefaultInstance :: TH.Name -> THLib.DecsQ
 emitDefaultInstance entityName = do
   let methods = [methodDeclaration 'Default.def 'Entity.initialStateImpl]
   pure [instanceDeclaration ''Default.Default entityName methods] -- HOOK-ALLOW: TH.Q declaration generation.
 
 
+-- | Emit event-to-entity routing from the application companion function.
 emitRoutingInstance :: TH.Name -> THLib.DecsQ
 emitRoutingInstance eventName = do
   routingName <- lookupCompanion eventName "getEventEntityId"
@@ -140,6 +152,7 @@ emitRoutingInstance eventName = do
   pure [instanceDeclaration ''Entity.Event eventName methods] -- HOOK-ALLOW: TH.Q declaration generation.
 
 
+-- | Find a required application companion or report an actionable error.
 lookupCompanion :: TH.Name -> [Char] -> TH.Q TH.Name
 lookupCompanion typeName companion = do
   found <- TH.lookupValueName companion
@@ -150,6 +163,7 @@ lookupCompanion typeName companion = do
         [fmt|deriveEntity: missing '#{companion}' companion for '#{TH.nameBase typeName}'. Define the application function before the deriveEntity marker, or provide the corresponding Entity/Event instance before it. The marker does not invent state transitions or routing rules.|]
 
 
+-- | Build an instance declaration from its class, type, and methods.
 instanceDeclaration :: TH.Name -> TH.Name -> [TH.Dec] -> TH.Dec
 instanceDeclaration className typeName methods =
   TH.InstanceD
@@ -159,6 +173,7 @@ instanceDeclaration className typeName methods =
     methods
 
 
+-- | Build a method declaration that delegates to an application function.
 methodDeclaration :: TH.Name -> TH.Name -> TH.Dec
 methodDeclaration methodName implementationName =
   TH.FunD methodName [TH.Clause [] (TH.NormalB (TH.VarE implementationName)) []]

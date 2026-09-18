@@ -283,7 +283,7 @@ codemap/signatures/ · type-directed search: ./dev api "<type>"
 - `fmap :: Functor f => (a -> b) -> f a -> f b`  <!-- 17 call sites -->
 - `map :: Mappable mappable => (typeA -> typeB) -> mappable typeA -> mappable typeB`  <!-- 16 call sites -->
 
-*cut: 101 more modules (AtomicVar (26), Integration.Http (26), Decider (21), Result (21), Lock (20), …) — full surface: codemap/signatures/*
+*cut: 103 more modules (AtomicVar (26), Integration.Http (26), Decider (21), Result (21), Lock (20), …) — full surface: codemap/signatures/*
 
 ---
 
@@ -318,7 +318,7 @@ when WRITING TESTS; they are not feature-code frequency signal.
 
 - `contains :: Text -> Text -> Bool`  <!-- 436 test call sites -->
 - `toBytes :: Text -> Bytes`  <!-- 89 test call sites -->
-- `fromLinkedList :: LinkedList Char -> Text`  <!-- 56 test call sites -->
+- `fromLinkedList :: LinkedList Char -> Text`  <!-- 58 test call sites -->
 - `length :: Text -> Int`  <!-- 41 test call sites -->
 - `repeat :: Int -> Text -> Text`  <!-- 35 test call sites -->
 - `toLinkedList :: Text -> LinkedList Char`  <!-- 29 test call sites -->
@@ -336,6 +336,17 @@ when WRITING TESTS; they are not feature-code frequency signal.
 - `decimal :: Parser Int`  <!-- 13 test call sites -->
 - `anyChar :: Parser Char`  <!-- 10 test call sites -->
 
+## Json
+
+- `toJSON :: ToJSON a => a -> Value`  <!-- 146 test call sites -->
+- `decodeText :: FromJSON value => Text -> Result Text value`  <!-- 137 test call sites -->
+- `encodeText :: ToJSON value => value -> Text`  <!-- 117 test call sites -->
+- `object :: [(Text, Value)] -> Value`  <!-- 105 test call sites -->
+- `null :: Value`  <!-- 58 test call sites -->
+- `encode :: ToJSON value => value -> Value`  <!-- 55 test call sites -->
+- `decode :: FromJSON value => Value -> Result Text value`  <!-- 29 test call sites -->
+- `yield :: value -> Parser value`  <!-- 4 test call sites -->
+
 ## Layout
 
 - `text :: Text -> Blueprint annotation`  <!-- 230 test call sites -->
@@ -346,17 +357,6 @@ when WRITING TESTS; they are not feature-code frequency signal.
 - `trySingleLine :: Blueprint ann -> Blueprint ann`  <!-- 21 test call sites -->
 - `withAnnotation :: ann -> Blueprint ann -> Blueprint ann`  <!-- 16 test call sites -->
 - `empty :: Blueprint annotation`  <!-- 15 test call sites -->
-
-## Json
-
-- `toJSON :: ToJSON a => a -> Value`  <!-- 146 test call sites -->
-- `decodeText :: FromJSON value => Text -> Result Text value`  <!-- 137 test call sites -->
-- `encodeText :: ToJSON value => value -> Text`  <!-- 117 test call sites -->
-- `object :: [(Text, Value)] -> Value`  <!-- 105 test call sites -->
-- `null :: Value`  <!-- 58 test call sites -->
-- `encode :: ToJSON value => value -> Value`  <!-- 46 test call sites -->
-- `decode :: FromJSON value => Value -> Result Text value`  <!-- 25 test call sites -->
-- `withObject :: Text -> (Object -> Parser value) -> Value -> Parser value`  <!-- 3 test call sites -->
 
 ## ConcurrentVar
 
@@ -372,9 +372,9 @@ when WRITING TESTS; they are not feature-code frequency signal.
 ## Uuid
 
 - `generate :: Task w Uuid`  <!-- 182 test call sites -->
-- `nil :: Uuid`  <!-- 95 test call sites -->
+- `nil :: Uuid`  <!-- 107 test call sites -->
 - `toText :: Uuid -> Text`  <!-- 41 test call sites -->
-- `generateV5 :: Uuid -> Text -> Uuid`  <!-- 17 test call sites -->
+- `generateV5 :: Uuid -> Text -> Uuid`  <!-- 19 test call sites -->
 - `fromText :: Text -> Maybe Uuid`  <!-- 3 test call sites -->
 
-*cut: 137 more modules (Map (257), Service.Application (250), Set (233), Stream (212), AsyncTask (211), …) — full surface: codemap/signatures/*
+*cut: 138 more modules (Map (257), Service.Application (250), Set (233), Stream (212), AsyncTask (211), …) — full surface: codemap/signatures/*
