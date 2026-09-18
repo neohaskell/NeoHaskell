@@ -24,9 +24,9 @@ The public signatures do not change. The fix is internal to `CommandExecutor`; t
 | ID | Behavior | Proving test | Level | Boundary |
 |----|----------|--------------|-------|----------|
 | C1 | `acceptExisting` reaches the event store with the revision fetched for the command | `hspec:nhcore-test-service:core/testlib/Test/Service/CommandHandler/Execute/Spec.hs#binds acceptExisting to the fetched stream revision` | unit | none |
-| C2 | A consistency conflict refetches fresh state and revision, re-decides, and appends with the fresh precondition rather than the stale payload | `hspec:nhcore-test-service:core/testlib/Test/Service/CommandHandler/Execute/Spec.hs#records the exact insertion precondition after refetch` | integration | postgres:real |
-| C3 | Concurrent `StreamCreation` appends allow exactly one durable creation | `hspec:nhcore-test-service:core/testlib/Test/Service/EventStore/OptimisticConcurrency/Spec.hs#allows only one concurrent StreamCreation and persists one creation fact` | integration | postgres:real |
-| C4 | `AnyStreamState` remains an unconditional append | `hspec:nhcore-test-service:core/testlib/Test/Service/EventStore/OptimisticConcurrency/Spec.hs#persists both AnyStreamState events in durable order` | integration | postgres:real |
+| C2 | Concurrent `acceptExisting` commands refetch the fresh revision, re-decide from fresh state, and persist sequential derived values rather than a duplicated stale payload | `hspec:nhcore-test-service:core/testlib/Test/Service/CommandHandler/Execute/Spec.hs#acceptExisting commands refetch and re-decide with fresh state` | integration | postgres:real |
+| C3 | Concurrent `acceptNew` commands preserve `StreamCreation` and allow exactly one durable creation | `hspec:nhcore-test-service:core/testlib/Test/Service/CommandHandler/Execute/Spec.hs#acceptNew commands preserve StreamCreation under a PostgreSQL race` | integration | postgres:real |
+| C4 | Concurrent `acceptAny` commands preserve `AnyStreamState` and remain unconditional appends | `hspec:nhcore-test-service:core/testlib/Test/Service/CommandHandler/Execute/Spec.hs#acceptAny commands preserve unconditional appends` | integration | postgres:real |
 
 ## User impact
 
