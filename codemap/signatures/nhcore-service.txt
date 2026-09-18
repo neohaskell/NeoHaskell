@@ -378,6 +378,7 @@ instance GHC.Show.Show Service.CommandExecutor.Core.ExecutionResult
 
 module Service.CommandExecutor.TH
 command :: Name -> DecsQ
+deriveCommand :: Name -> DecsQ
 deriveKnownHash :: String -> DecsQ
 instance GHC.Classes.Eq Service.CommandExecutor.TH.MultiTenancyMode
 instance GHC.Generics.Generic Service.CommandExecutor.TH.FunctionInfo
@@ -395,6 +396,9 @@ type EntityIdType entity = Uuid
 type family EntityOf command
 type family EventOf entityType
 updateImpl :: Entity entity => EventOf entity -> entity -> entity
+
+module Service.Entity.TH
+deriveEntity :: Name -> Name -> DecsQ
 
 module Service.EntityFetcher
 
@@ -568,6 +572,7 @@ new :: Int64 -> Maybe StreamPosition
 newtype StreamPosition
 
 module Service.Event.TH
+deriveEvent :: Name -> DecsQ
 event :: Name -> DecsQ
 
 module Service.EventStore
@@ -1371,6 +1376,7 @@ handleEventImpl :: OutboundIntegration handler => EntityOf handler -> HandledEve
 type HandledEvent handler
 
 module Service.OutboundIntegration.TH
+deriveOutboundIntegration :: Name -> DecsQ
 outboundIntegration :: Name -> DecsQ
 
 module Service.Query

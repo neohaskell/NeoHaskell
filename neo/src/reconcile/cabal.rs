@@ -239,6 +239,49 @@ mod tests {
     }
 
     #[test]
+    fn cabal_concept_markers_have_shared_deriving_strategy_extension() {
+        // Concept markers emit strategy-qualified deriving clauses. All project
+        // components need the preset so consumer modules do not need pragmas.
+        for kind in [
+            crate::config::ProjectKind::Executable,
+            crate::config::ProjectKind::Library,
+        ] {
+            let dir = tempdir().unwrap();
+            let env = real_template_env();
+            let mut config = rc(vec![]);
+            config.kind = kind;
+            generate(
+                dir.path(),
+                &env,
+                &config,
+                &["App".to_string()],
+                &["ExampleSpec".to_string()],
+            )
+            .unwrap();
+            let content = fs::read_to_string(dir.path().join("p.cabal")).unwrap();
+            let common = content.split("\nlibrary\n").next().unwrap();
+            let extensions = common
+                .split("  default-extensions:\n")
+                .nth(1)
+                .unwrap()
+                .split("\n  build-depends:")
+                .next()
+                .unwrap();
+            for extension in ["TemplateHaskell", "DerivingStrategies"] {
+                assert!(
+                    extensions.lines().any(|line| line.trim() == extension),
+                    "common preset must enable {extension} for pragma-free concept markers:\n{content}"
+                );
+            }
+            assert!(content.contains("library\n  import: common_cfg"));
+            assert!(content.contains("test-suite p-test\n  import: common_cfg"));
+            if !kind.is_library() {
+                assert!(content.contains("executable p\n  import: common_cfg"));
+            }
+        }
+    }
+
+    #[test]
     fn cabal_emits_test_suite() {
         // Every project gets a `test-suite <name>-test` wired to hspec-discover, the
         // project library, and the standard test deps; every discovered spec is an

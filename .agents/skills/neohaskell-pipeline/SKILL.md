@@ -171,8 +171,10 @@ the activity vocabulary is `localization`, `index`, `test-scaffolding`,
     ready-for-review (this triggers the full CI matrix; drafts run only cheap
     checks). PR body: spec link, criteria → test mapping, review records. **Flip
     the ADR's `## Status` to `Implemented`** here (and the matching row in
-    `docs/decisions/README.md`, then `./dev adr-website` to resync the landing
-    page); run `./dev adr-check`. GATE 2 is the maintainer's normal review.
+    `docs/decisions/README.md`). The standalone website fetches that main commit
+    and regenerates its ADR landing page in `neohaskell/website-v2`; run
+    `./dev adr-check` here and `pnpm verify` in the website repository. GATE 2 is
+    the maintainer's normal review.
 11. **ci → GATE 2 → telemetry-only finalization** — each CI round: watch
     checks → read every new bot comment → triage → push the
     fix → wait for re-review. Repeat until CodeRabbit has no outstanding

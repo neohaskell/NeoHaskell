@@ -228,6 +228,7 @@ library
     Service.CommandExecutor.TH
     Service.Entity
     Service.Entity.Core
+    Service.Entity.TH
     Service.EntityFetcher
     Service.EntityFetcher.Core
     Service.Error
@@ -506,6 +507,14 @@ test-suite nhcore-test
     Service.CommandExecutor.TH.SumCommandFixture
     Service.CommandExecutor.THSpec
     Service.Event.THSpec
+    Service.Entity.THSpec
+    Service.Entity.TH.FreshFixture
+    Service.Entity.TH.NoShowFixture
+    Service.Entity.TH.PreservedFixture
+    Service.Entity.TH.MissingInitialStateFixture
+    Service.Entity.TH.MissingUpdateFixture
+    Service.Entity.TH.MissingRoutingFixture
+    Service.Entity.TH.ConflictingFamiliesFixture
     Service.Command.AuthSpec
     Service.Command.CanAccessSpec
     Service.Command.CanAccess.NoCanAccessFixture
@@ -572,6 +581,14 @@ test-suite nhcore-test-service
     Service.CommandHandlerSpec
     Service.CommandSpec
     Service.Event.THSpec
+    Service.Entity.THSpec
+    Service.Entity.TH.FreshFixture
+    Service.Entity.TH.NoShowFixture
+    Service.Entity.TH.PreservedFixture
+    Service.Entity.TH.MissingInitialStateFixture
+    Service.Entity.TH.MissingUpdateFixture
+    Service.Entity.TH.MissingRoutingFixture
+    Service.Entity.TH.ConflictingFamiliesFixture
     Service.EventStore.InMemorySpec
     Service.EventStore.SimpleSpec
     Service.EventStore.Postgres.PoolBudgetSpec

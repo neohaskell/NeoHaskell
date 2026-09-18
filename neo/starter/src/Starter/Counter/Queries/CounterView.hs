@@ -9,7 +9,6 @@ module Starter.Counter.Queries.CounterView (
 import Core
 import Json qualified
 import Service.AccessControl (AccessError, UserClaims, publicAccess, publicView)
-import Service.Query.TH (deriveQuery)
 import Starter.Counter.Core (CounterEntity (..))
 
 

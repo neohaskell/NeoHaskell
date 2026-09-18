@@ -28,7 +28,6 @@ import Service.EventStore.InMemory qualified as InMemory
 import Service.Integration.DispatchRegistry qualified as DispatchRegistry
 import Service.Integration.Types (OutboundRunner (..))
 import Service.OutboundIntegration.Core (OutboundIntegration (..))
-import Service.OutboundIntegration.TH (outboundIntegration)
 import Task qualified
 import Test
 import Text qualified
@@ -132,7 +131,7 @@ handleEvent _entity event =
 
 -- | TH splice: generates OutboundIntegration instance, NameOf, and KnownHash.
 -- IMPORTANT: handleEvent and all type instances MUST appear BEFORE this splice.
-outboundIntegration ''TestHandlerA
+deriveOutboundIntegration ''TestHandlerA
 
 
 -- ============================================================================

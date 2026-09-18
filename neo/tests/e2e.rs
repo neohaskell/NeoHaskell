@@ -250,6 +250,11 @@ fn new_ci_creates_full_project() {
     assert!(project.join("tests/Spec.hs").exists(), "tests/Spec.hs (hspec-discover driver) missing");
     let cabal = std::fs::read_to_string(project.join("my-app.cabal")).unwrap();
     assert!(
+        cabal.lines().any(|line| line.trim() == "DerivingStrategies"),
+        "packaged CLI must enable pragma-free concept markers in generated projects:\n{}",
+        cabal
+    );
+    assert!(
         cabal.contains("test-suite my-app-test"),
         "generated .cabal missing test-suite stanza:\n{}",
         cabal

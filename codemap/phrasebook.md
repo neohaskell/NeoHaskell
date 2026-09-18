@@ -185,6 +185,15 @@ Set (fromList [1,2,3])
 "886313e1-3b8a-5372-9b90-0c9aee199e5d"
 ```
 
+## entities
+
+### Service.Entity.TH
+
+```haskell
+>>> TH.nameBase (TH.mkName "Cart")
+"Cart"
+```
+
 ## postgres-infra
 
 ### Service.Infra.Postgres.SslMode
@@ -228,4 +237,4 @@ True
 
 ---
 
-*31 example sessions · modules with ZERO doctests: 315 (the documentation backlog — see codemap/.doc-ratchet)*
+*32 example sessions · modules with ZERO doctests: 315 (the documentation backlog — see codemap/.doc-ratchet)*
