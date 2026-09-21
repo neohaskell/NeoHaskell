@@ -151,7 +151,7 @@ jobs:
           workspaces: installer
       - name: Install cross
         if: matrix.cross
-        uses: taiki-e/install-action@v2.86.5
+        uses: taiki-e/install-action@v2.87.15
         with:
           tool: cross
       - name: Build (cross)
