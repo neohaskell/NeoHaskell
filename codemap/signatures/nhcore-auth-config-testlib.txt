@@ -966,10 +966,13 @@ data Context
 initialize :: Task Text (EventStore CartEvent, EntityFetcher CartEntity CartEvent) -> Task Text Context
 
 module Test.Service.CommandHandler.Execute.Spec
-basicExecutionSpecs :: Task Text (EventStore CartEvent, EntityFetcher CartEntity CartEvent) -> Spec Unit
-concurrencySpecs :: Task Text (EventStore CartEvent, EntityFetcher CartEntity CartEvent) -> Spec Unit
-errorScenarioSpecs :: Task Text (EventStore CartEvent, EntityFetcher CartEntity CartEvent) -> Spec Unit
-retryLogicSpecs :: Text -> Task Text (EventStore CartEvent, EntityFetcher CartEntity CartEvent) -> Spec Unit
+instance Data.Aeson.Types.FromJSON.FromJSON Test.Service.CommandHandler.Execute.Spec.CommandExecutorConcurrency
+instance Data.Aeson.Types.ToJSON.ToJSON Test.Service.CommandHandler.Execute.Spec.CommandExecutorConcurrency
+instance Data.Record.Anon.Plugin.Internal.Runtime.KnownHash "CommandExecutorConcurrency"
+instance GHC.Generics.Generic Test.Service.CommandHandler.Execute.Spec.CommandExecutorConcurrency
+instance GHC.Show.Show Test.Service.CommandHandler.Execute.Spec.CommandExecutorConcurrency
+instance Schema.ToSchema Test.Service.CommandHandler.Execute.Spec.CommandExecutorConcurrency
+instance Service.Command.Core.Command Test.Service.CommandHandler.Execute.Spec.CommandExecutorConcurrency
 spec :: Text -> Task Text (EventStore CartEvent, EntityFetcher CartEntity CartEvent) -> Spec Unit
 
 module Test.Service.EntityFetcher

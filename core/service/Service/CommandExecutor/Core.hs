@@ -145,6 +145,7 @@ insertionTypeForEntity insertionType maybeFetchedEntity = case insertionType of
   _ -> insertionType
 
 
+-- | Preserve the legacy precondition when a fetcher cannot report a revision.
 existingInsertionType :: Maybe (FetchedEntity entity) -> InsertionType
 existingInsertionType maybeFetchedEntity =
   maybeFetchedEntity

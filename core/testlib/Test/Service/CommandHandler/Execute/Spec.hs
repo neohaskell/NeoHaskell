@@ -1,6 +1,6 @@
 {-# LANGUAGE TemplateHaskell #-}
 
-module Test.Service.CommandHandler.Execute.Spec where
+module Test.Service.CommandHandler.Execute.Spec (spec) where
 
 import Array qualified
 import AsyncTask qualified
@@ -36,6 +36,7 @@ import Text qualified
 import Uuid qualified
 
 
+-- | Test-only commands that isolate each event-store insertion contract.
 data CommandExecutorConcurrency
   = AcceptExistingByItemCount Uuid Uuid
   | AcceptNewCart Uuid
@@ -43,10 +44,12 @@ data CommandExecutorConcurrency
   deriving (Typeable)
 
 
+-- | Keeps authorization orthogonal to the concurrency behavior under test.
 canAccess :: Maybe UserClaims -> Maybe AccessError
 canAccess = AccessControl.publicAccess
 
 
+-- | Routes every fixture command to its selected cart stream.
 getEntityId :: CommandExecutorConcurrency -> Maybe Uuid
 getEntityId commandValue =
   case commandValue of
@@ -55,6 +58,7 @@ getEntityId commandValue =
     AcceptAnyItem cartId _itemId _amount -> Just cartId
 
 
+-- | Selects the insertion policy while deciding from the observed cart state.
 decide :: CommandExecutorConcurrency -> Maybe CartEntity -> RequestContext -> Decision CartEvent
 decide commandValue maybeEntity _context =
   case commandValue of
