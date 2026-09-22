@@ -12,7 +12,9 @@ module Service.TH.Boilerplate (
   emitJsonAndDerivingBoilerplate,
 ) where
 
-import Core
+import Appendable ((++))
+import Basics -- HOOK-ALLOW: Core reexports these markers, so TH must use the lower-level prelude.
+import Maybe (Maybe (..))
 import Data.Aeson qualified as Json
 import Language.Haskell.TH.Lib qualified as THLib
 import Language.Haskell.TH.Syntax qualified as TH

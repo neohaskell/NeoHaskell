@@ -19,7 +19,6 @@ import Decider qualified
 import Json qualified
 import Language.Haskell.TH.Syntax qualified as TH
 import Service.Auth (RequestContext)
-import Service.CommandExecutor.TH (command)
 import Uuid qualified
 
 
@@ -69,7 +68,7 @@ decide :: FreshCommand -> Maybe THTestEntity -> RequestContext -> Decision THTes
 decide _ _ _ = Decider.acceptNew [THTestEntityCreated Uuid.nil]
 
 
-command ''FreshCommand
+deriveCommand ''FreshCommand
 
 
 -- TH probes -----------------------------------------------------------------

@@ -3,6 +3,7 @@
 -- This module is automatically imported in all the NeoHaskell files,
 module Core (
   module Reexported,
+  deriveEntity,
 ) where
 
 import Appendable as Reexported ((++))
@@ -34,10 +35,15 @@ import Schema as Reexported (Schema (..), FieldSchema (..), ToSchema (..))
 -- Command's auth method is named 'canExecuteImpl' (paired with 'execute') to
 -- coexist with 'Query.canAccessImpl' under one Core re-export.
 import Service.Command as Reexported (Command (IsMultiTenant, getEntityIdImpl, decideImpl, canExecuteImpl), NameOf)
+import Service.CommandExecutor.TH as Reexported (deriveCommand)
 import Service.Entity as Reexported (Entity (..), EntityOf, EventOf)
+import Service.Entity.TH (deriveEntity)
 import Service.Event as Reexported (InsertionType (..), StreamId, ToStreamId (..))
+import Service.Event.TH as Reexported (deriveEvent)
 import Service.OutboundIntegration.Core as Reexported (OutboundIntegration (..))
+import Service.OutboundIntegration.TH as Reexported (deriveOutboundIntegration)
 import Service.Query as Reexported (EntitiesOf, Query (..), QueryAction (..), QueryOf (..))
+import Service.Query.TH as Reexported (deriveQuery)
 import Service.ServiceDefinition.Core as Reexported (
   Service,
  )

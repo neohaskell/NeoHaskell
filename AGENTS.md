@@ -3,7 +3,7 @@
 <!-- Governing rule: no agent-visible document without a CI check or a generation
      source. `./dev doctor` validates registered `./dev` verbs named here. -->
 
-Newcomer-friendly Haskell dialect. Monorepo: core library (`core/` → `nhcore`), reference app + acceptance tests (`testbed/` → `nhtestbed`), outbound integrations (`integrations/` → `nhintegrations`), Rust installer (`installer/` → `neo-install`), Rust Neo CLI (`neo/` → the `neo` binary), Astro website (`website/`). Architecture: event-sourcing + CQRS in `core/service/`. (LSP package removed 2026-07-08 — unused.)
+Newcomer-friendly Haskell dialect. Monorepo: core library (`core/` → `nhcore`), reference app + acceptance tests (`testbed/` → `nhtestbed`), outbound integrations (`integrations/` → `nhintegrations`), Rust installer (`installer/` → `neo-install`), and Rust Neo CLI (`neo/` → the `neo` binary`). The public Astro website lives in the separate `neohaskell/website-v2` repository. Architecture: event-sourcing + CQRS in `core/service/`. (LSP package removed 2026-07-08 — unused.)
 
 This file is the **agent-specific contract**: the hard rule, dialect style, and the pipeline/verification gates. Two companion guides own the rest — do not duplicate them here:
 

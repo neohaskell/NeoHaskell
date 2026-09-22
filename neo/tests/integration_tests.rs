@@ -68,6 +68,11 @@ fn test_neo_new_ci() {
     );
     let cabal = std::fs::read_to_string(project_path.join(format!("{}.cabal", project_name))).unwrap();
     assert!(
+        cabal.lines().any(|line| line.trim() == "DerivingStrategies"),
+        "generated project must support concept markers without per-module pragmas:\n{}",
+        cabal
+    );
+    assert!(
         cabal.contains(&format!("test-suite {}-test", project_name)),
         "generated .cabal must declare a test-suite:\n{}",
         cabal

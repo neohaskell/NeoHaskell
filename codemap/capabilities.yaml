@@ -177,7 +177,7 @@ capabilities:
   # ─── non-Haskell surfaces ──────────────────────────────────────────────
   - id: website
     owns: [website/**]
-    responsibility: Astro/Starlight docs site (monorepo dir, NOT a separate repo) — English source in src/content/docs/, locale translations (es/fr/hy/ja/ru) via translate.yml; the ADR landing page + per-ADR pages are generated from docs/decisions/ by website/scripts/generate-adrs.mjs (npm predev/prebuild/precheck, or ./dev adr-website).
+    responsibility: Migration pointer for the standalone Astro/Starlight docs site in neohaskell/website-v2. The public site owns English content, es/fr/hy/ja/ru translations, landing routes, and evidence checks; its CI fetches the latest NeoHaskell main snapshot before generating ADR pages and validating source hashes.
     aliases: [docs site, documentation website, starlight, astro, translations, adr website]
     tests: []
 
