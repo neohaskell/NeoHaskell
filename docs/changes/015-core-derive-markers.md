@@ -44,7 +44,7 @@ event routing, and query projections remain application code.
 | C2 | Entity derivation delegates state, update, routing and default behavior | `hspec:nhcore-test-service:core/test/Service/Entity/THSpec.hs#delegates updates and routes the event despite a local Event type` | unit | none |
 | C3 | Missing entity companions fail and existing instances remain valid | `hspec:nhcore-test-service:core/test/Service/Entity/THSpec.hs#requires initialState when deriving a missing Entity instance`<br>`hspec:nhcore-test-service:core/test/Service/Entity/THSpec.hs#preserves custom JSON, name, default, entity behavior and identifier type` | unit | none |
 | C4 | Canonical command, query and integration exports compile with existing behavior | `hspec:nhcore-test-service:core/test/Service/CommandExecutor/THSpec.hs#[impl-driven] emits Show instance on fresh command (has Generic, missing Show/ToJSON/FromJSON)`<br>`hspec:nhcore-test-service:core/test/Service/Query/THSpec.hs#generates Query instance for UserOrders`<br>`hspec:nhcore-test-core:core/test/OutboundIntegrationSpec.hs#generates a compilable OutboundIntegration instance` | unit | none |
-| C5 | Progressive examples and their downloadable projects remain owned and validated by the standalone website repository rather than a removed monorepo payload | `script:scripts/website-migration-check#--check` | unit | none |
+| C5 | The monorepo retains the standalone website pointer and rejects removed website paths or stale local integration references | `script:scripts/website-migration-check#--check` | unit | none |
 
 ## User impact
 

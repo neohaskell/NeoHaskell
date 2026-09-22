@@ -3,6 +3,7 @@
 -- This module is automatically imported in all the NeoHaskell files,
 module Core (
   module Reexported,
+  deriveEntity,
 ) where
 
 import Appendable as Reexported ((++))
@@ -36,7 +37,7 @@ import Schema as Reexported (Schema (..), FieldSchema (..), ToSchema (..))
 import Service.Command as Reexported (Command (IsMultiTenant, getEntityIdImpl, decideImpl, canExecuteImpl), NameOf)
 import Service.CommandExecutor.TH as Reexported (deriveCommand)
 import Service.Entity as Reexported (Entity (..), EntityOf, EventOf)
-import Service.Entity.TH as Reexported (deriveEntity)
+import Service.Entity.TH (deriveEntity)
 import Service.Event as Reexported (InsertionType (..), StreamId, ToStreamId (..))
 import Service.Event.TH as Reexported (deriveEvent)
 import Service.OutboundIntegration.Core as Reexported (OutboundIntegration (..))
