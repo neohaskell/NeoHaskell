@@ -202,6 +202,34 @@
       ],
       "source_sha": "4ba756552d2b5ba20c734ba9ae29fa31dab3a11e",
       "version": "0.10.1"
+    },
+    {
+      "base_sha": "f4dbf25d9213f7ab339467b8327dcc655c3278f0",
+      "base_tag": "neo-v0.10.1",
+      "base_version": "0.10.1",
+      "bootstrap": false,
+      "date": "2026-09-22",
+      "group": "platform",
+      "id": "ab8fbf63426fb21ffa5d1356cf3defd67a58305624a07dbc2c66f69fb8ab9e18",
+      "impact": "compatible",
+      "kind": "release",
+      "notes": [
+        {
+          "category": "Fixed",
+          "commit": "cab923c0b098fdb82ece539380719c0757ec9057",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "e2710356e0c6ba6265ccbcfd9f46184e10d49a0c98fa35c4ce8f091749dac0cf",
+          "impact": "compatible",
+          "path": ".changes/858-command-executor-revisions.md",
+          "sections": {
+            "Summary": "Concurrent commands that update the same entity now use the entity revision they actually read. If another command writes first, the stale command retries with fresh state instead of appending an outdated event. New-entity commands also prevent duplicate stream creation, while unconditional appends keep their existing behavior.\n\nExisting applications do not need code or data migrations. To verify the fix locally, run `./dev test 'Retry Logic' nhcore-test-service` and confirm the command-handler retry examples pass for the in-memory and PostgreSQL backends."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: compatible\ncategory: Fixed\n---\n\n## Summary\n\nConcurrent commands that update the same entity now use the entity revision they actually read. If another command writes first, the stale command retries with fresh state instead of appending an outdated event. New-entity commands also prevent duplicate stream creation, while unconditional appends keep their existing behavior.\n\nExisting applications do not need code or data migrations. To verify the fix locally, run `./dev test 'Retry Logic' nhcore-test-service` and confirm the command-handler retry examples pass for the in-memory and PostgreSQL backends.\n"
+        }
+      ],
+      "source_sha": "cab923c0b098fdb82ece539380719c0757ec9057",
+      "version": "0.10.2"
     }
   ],
   "recoveries": [],
