@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.10.1 — 2026-09-22
+
+### Added
+
+- **Framework**: Declare events, commands, entities, queries, and outbound integrations with
+`deriveEvent`, `deriveCommand`, `deriveEntity`, `deriveQuery`, and
+`deriveOutboundIntegration`, all available through `import Core`.
+
+The new `deriveEntity ''CartEntity ''CartEvent` helper generates routine entity
+instances and connects your `initialState`, `update`, and `getEventEntityId`
+functions. Existing custom instances remain supported. The previous marker
+names still work, so existing applications need no changes. ([change](https://github.com/neohaskell/NeoHaskell/commit/4ba756552d2b5ba20c734ba9ae29fa31dab3a11e))
+
+### Fixed
+
+- **CLI**: Applications can use the framework's declaration helpers without adding language
+pragmas to their source files. Neo now enables the required deriving strategy in
+the project settings it generates for application, library, and test components.
+
+After updating Neo, run `neo build` and `neo test` from your application directory.
+Neo refreshes the generated settings; no manual Cabal configuration is needed. ([change](https://github.com/neohaskell/NeoHaskell/commit/4ba756552d2b5ba20c734ba9ae29fa31dab3a11e))
+
+[Compare changes](https://github.com/neohaskell/NeoHaskell/compare/neo-v0.10.0...neo-v0.10.1)
+
 ## 0.10.0 — 2026-09-15
 
 ### Breaking changes

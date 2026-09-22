@@ -1,6 +1,6 @@
 cabal-version: 3.4
 name: nhintegrations
-version: 0.10.0
+version: 0.10.1
 synopsis: External Service Integrations for NeoHaskell
 description:
   Provides integrations with external services following the two-persona model.
