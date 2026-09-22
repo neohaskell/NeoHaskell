@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.10.2 — 2026-09-22
+
+### Fixed
+
+- **Framework**: Concurrent commands that update the same entity now use the entity revision they actually read. If another command writes first, the stale command retries with fresh state instead of appending an outdated event. New-entity commands also prevent duplicate stream creation, while unconditional appends keep their existing behavior.
+
+Existing applications do not need code or data migrations. To verify the fix locally, run `./dev test 'Retry Logic' nhcore-test-service` and confirm the command-handler retry examples pass for the in-memory and PostgreSQL backends. ([change](https://github.com/neohaskell/NeoHaskell/commit/cab923c0b098fdb82ece539380719c0757ec9057))
+
+[Compare changes](https://github.com/neohaskell/NeoHaskell/compare/neo-v0.10.1...neo-v0.10.2)
+
 ## 0.10.1 — 2026-09-22
 
 ### Added
