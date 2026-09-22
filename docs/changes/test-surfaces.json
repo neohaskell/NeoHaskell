@@ -50,6 +50,33 @@
     {
       "kind": "hspec",
       "suite": "nhcore-test-service",
+      "path": "core/testlib/Test/Service/CommandHandler/Execute/Spec.hs",
+      "match": "acceptExisting commands refetch and re-decide with fresh state",
+      "boundary": "postgres:real",
+      "expected_examples": 2,
+      "fixture": "Service.EventStore.Postgres"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-service",
+      "path": "core/testlib/Test/Service/CommandHandler/Execute/Spec.hs",
+      "match": "acceptNew commands preserve StreamCreation under a PostgreSQL race",
+      "boundary": "postgres:real",
+      "expected_examples": 2,
+      "fixture": "Service.EventStore.Postgres"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-service",
+      "path": "core/testlib/Test/Service/CommandHandler/Execute/Spec.hs",
+      "match": "acceptAny commands preserve unconditional appends",
+      "boundary": "postgres:real",
+      "expected_examples": 2,
+      "fixture": "Service.EventStore.Postgres"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-service",
       "path": "core/testlib/Test/Service/EventStore/OptimisticConcurrency/Spec.hs",
       "match": "will only allow one event to be appended, when two writers try to append at the same time",
       "boundary": "postgres:real",

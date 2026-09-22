@@ -130,10 +130,10 @@ codemap/signatures/ · type-directed search: ./dev api "<type>"
 
 ## Maybe
 
-- `withDefault :: a -> Maybe a -> a`  <!-- 55 call sites -->
-- `map :: (a -> b) -> Maybe a -> Maybe b`  <!-- 12 call sites -->
+- `withDefault :: a -> Maybe a -> a`  <!-- 56 call sites -->
+- `map :: (a -> b) -> Maybe a -> Maybe b`  <!-- 14 call sites -->
 - `getOrDie :: HasCallStack => Maybe a -> a`  <!-- 9 call sites -->
-- `andThen :: (a -> Maybe b) -> Maybe a -> Maybe b`  <!-- 3 call sites -->
+- `andThen :: (a -> Maybe b) -> Maybe a -> Maybe b`  <!-- 4 call sites -->
 
 ## Integration
 
@@ -294,8 +294,8 @@ when WRITING TESTS; they are not feature-code frequency signal.
 
 ## Task
 
-- `mapError :: (err1 -> err2) -> Task err1 value -> Task err2 value`  <!-- 821 test call sites -->
-- `yield :: value -> Task w value`  <!-- 463 test call sites -->
+- `mapError :: (err1 -> err2) -> Task err1 value -> Task err2 value`  <!-- 824 test call sites -->
+- `yield :: value -> Task w value`  <!-- 466 test call sites -->
 - `asResult :: Task err value -> Task err2 (Result err value)`  <!-- 283 test call sites -->
 - `mapArray :: (element -> Task err output) -> Array element -> Task err (Array output)`  <!-- 126 test call sites -->
 - `throw :: err -> Task err w`  <!-- 118 test call sites -->
@@ -305,12 +305,12 @@ when WRITING TESTS; they are not feature-code frequency signal.
 
 ## Array
 
-- `length :: Array a -> Int`  <!-- 263 test call sites -->
-- `empty :: Array a`  <!-- 220 test call sites -->
+- `length :: Array a -> Int`  <!-- 265 test call sites -->
+- `empty :: Array a`  <!-- 221 test call sites -->
 - `fromLinkedList :: LinkedList a -> Array a`  <!-- 220 test call sites -->
-- `map :: (a -> b) -> Array a -> Array b`  <!-- 128 test call sites -->
+- `map :: (a -> b) -> Array a -> Array b`  <!-- 136 test call sites -->
 - `get :: Int -> Array a -> Maybe a`  <!-- 81 test call sites -->
-- `wrap :: a -> Array a`  <!-- 55 test call sites -->
+- `wrap :: a -> Array a`  <!-- 56 test call sites -->
 - `initialize :: Int -> (Int -> a) -> Array a`  <!-- 47 test call sites -->
 - `contains :: Eq value => value -> Array value -> Bool`  <!-- 41 test call sites -->
 
@@ -360,21 +360,21 @@ when WRITING TESTS; they are not feature-code frequency signal.
 
 ## ConcurrentVar
 
-- `containing :: value -> Task w (ConcurrentVar value)`  <!-- 122 test call sites -->
+- `containing :: value -> Task w (ConcurrentVar value)`  <!-- 125 test call sites -->
 - `modify :: (value -> value) -> ConcurrentVar value -> Task w Unit`  <!-- 120 test call sites -->
 - `peek :: ConcurrentVar value -> Task w value`  <!-- 102 test call sites -->
 - `get :: ConcurrentVar value -> Task w value`  <!-- 39 test call sites -->
 - `set :: value -> ConcurrentVar value -> Task w ()`  <!-- 15 test call sites -->
 - `new :: forall value w. Task w (ConcurrentVar value)`  <!-- 14 test call sites -->
 - `swap :: value -> ConcurrentVar value -> Task w value`  <!-- 7 test call sites -->
-- `modifyReturning :: (value -> Task Never (value, a)) -> ConcurrentVar value -> Task w a`  <!-- 3 test call sites -->
+- `modifyReturning :: (value -> Task Never (value, a)) -> ConcurrentVar value -> Task w a`  <!-- 6 test call sites -->
 
 ## Uuid
 
 - `generate :: Task w Uuid`  <!-- 182 test call sites -->
 - `nil :: Uuid`  <!-- 107 test call sites -->
-- `toText :: Uuid -> Text`  <!-- 41 test call sites -->
+- `toText :: Uuid -> Text`  <!-- 45 test call sites -->
 - `generateV5 :: Uuid -> Text -> Uuid`  <!-- 19 test call sites -->
 - `fromText :: Text -> Maybe Uuid`  <!-- 3 test call sites -->
 
-*cut: 138 more modules (Map (257), Service.Application (250), Set (233), Stream (212), AsyncTask (211), …) — full surface: codemap/signatures/*
+*cut: 138 more modules (Map (257), Service.Application (250), Set (233), AsyncTask (223), Stream (212), …) — full surface: codemap/signatures/*
