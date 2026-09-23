@@ -208,6 +208,13 @@
       "boundary": "postgres:real",
       "expected_examples": 1,
       "fixture": "Service.QueryObjectStore.Postgres"
+    },
+    {
+      "kind": "script",
+      "path": "scripts/pipeline_eval/test_subprocess.py",
+      "boundary": "subprocess:real",
+      "fixture": "pipeline-eval-subprocess",
+      "expected_examples": 8
     }
   ]
 }
