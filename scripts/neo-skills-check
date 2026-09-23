@@ -39,6 +39,7 @@ CANONICAL_SKILLS = (
     "neohaskell-release",
     "neohaskell-retrospective-miner",
     "neohaskell-security-design-review",
+    "typesafe-ai",
 )
 REQUIRED_NEO_SKILLS = tuple(name for name in CANONICAL_SKILLS if name.startswith("neo-cli-"))
 NAME_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")

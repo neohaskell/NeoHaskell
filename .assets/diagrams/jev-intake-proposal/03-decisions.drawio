@@ -1,0 +1,40 @@
+<?xml version='1.0' encoding='utf-8'?>
+<mxfile host="drawio" version="26.0.0"><diagram id="03-decisions" name="Decision design · use each primitive for its actual meaning">
+    <mxGraphModel grid="1" gridSize="10" page="1" pageWidth="1600" pageHeight="1360" background="#ffffff">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title" value="Decision design · use each primitive for its actual meaning" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=34;fontColor=#263449;fillColor=none;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="40" y="25" width="1520" height="60" />
+        </mxCell>
+        <mxCell id="sub" value="Draft question contract. Exact facts and permissions stay in code; Jev only fills semantic gaps with evidence." style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=19;fontColor=#263449;fillColor=none;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="40" y="90" width="1520" height="45" />
+        </mxCell>
+        <mxCell id="choice" value="&lt;b style=&quot;font-size:21px&quot;&gt;CHOICE · one mutually exclusive answer&lt;/b&gt;&lt;div style=&quot;font-size:17px;line-height:1.35;margin-top:8px&quot;&gt;&lt;b&gt;Primary work type?&lt;/b&gt;&lt;br&gt;Choose from the 12 work presets, mixed,&lt;br&gt;action-only, or unknown.&lt;br&gt;&lt;br&gt;&lt;b&gt;Execution mode?&lt;/b&gt;&lt;br&gt;Choose only if the user has not set it.&lt;br&gt;&lt;br&gt;&lt;b&gt;Which named evidence source is missing?&lt;/b&gt;&lt;br&gt;Pick from available source IDs, none, unknown.&lt;br&gt;&lt;br&gt;Never force a match when no option fits.&lt;/div&gt;" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;spacing=18;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=17;fontColor=#172b42;fillColor=#e1d5e7;strokeColor=#9673a6;strokeWidth=2;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="40" y="190" width="480" height="490" />
+        </mxCell>
+        <mxCell id="noul" value="&lt;b style=&quot;font-size:21px&quot;&gt;NOUL · independent yes/no questions&lt;/b&gt;&lt;div style=&quot;font-size:17px;line-height:1.35;margin-top:8px&quot;&gt;&lt;b&gt;Does this request also ask for a PR?&lt;/b&gt;&lt;br&gt;&lt;b&gt;Does capability C own part of the change?&lt;/b&gt;&lt;br&gt;&lt;b&gt;Does resolving this gap require user intent?&lt;/b&gt;&lt;br&gt;&lt;br&gt;One question per independent proposition.&lt;br&gt;Several capabilities/actions may be true.&lt;br&gt;&lt;br&gt;Returns P(yes), not intensity.&lt;br&gt;A value near 0.5 means uncertainty.&lt;br&gt;No separate confidence is returned.&lt;/div&gt;" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;spacing=18;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=17;fontColor=#172b42;fillColor=#e1d5e7;strokeColor=#9673a6;strokeWidth=2;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="560" y="190" width="480" height="490" />
+        </mxCell>
+        <mxCell id="score" value="&lt;b style=&quot;font-size:21px&quot;&gt;SCORE · grade one dimension&lt;/b&gt;&lt;div style=&quot;font-size:17px;line-height:1.35;margin-top:8px&quot;&gt;&lt;b&gt;How well does evidence support target C?&lt;/b&gt;&lt;br&gt;0 unrelated / contradicted&lt;br&gt;1 indirect overlap&lt;br&gt;2 partial support&lt;br&gt;3 direct support&lt;br&gt;&lt;br&gt;Compare targets on the same rubric.&lt;br&gt;Keep the full probability distribution.&lt;br&gt;&lt;br&gt;Do not turn one blended “quality score”&lt;br&gt;into permission to run the workflow.&lt;/div&gt;" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;spacing=18;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=17;fontColor=#172b42;fillColor=#e1d5e7;strokeColor=#9673a6;strokeWidth=2;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="1080" y="190" width="480" height="490" />
+        </mxCell>
+        <mxCell id="code" value="&lt;b style=&quot;font-size:21px&quot;&gt;CODE · decisions that need no model&lt;/b&gt;&lt;div style=&quot;font-size:17px;line-height:1.35;margin-top:8px&quot;&gt;Explicit commands, file/path existence, Git state,&lt;br&gt;request source, allowed operations, budgets,&lt;br&gt;schema checks, risk-tag joins, call-site expansion,&lt;br&gt;test selectors, exit codes, timers and receipts.&lt;br&gt;&lt;br&gt;Choose templates from verified registries;&lt;br&gt;fill parameters with exact IDs or source spans.&lt;/div&gt;" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;spacing=18;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=17;fontColor=#172b42;fillColor=#dae8fc;strokeColor=#6c8ebf;strokeWidth=2;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="40" y="770" width="480" height="315" />
+        </mxCell>
+        <mxCell id="fallback" value="&lt;b style=&quot;font-size:21px&quot;&gt;LLM · bounded work at named gaps&lt;/b&gt;&lt;div style=&quot;font-size:17px;line-height:1.35;margin-top:8px&quot;&gt;Novel multi-step planning or diagnosis.&lt;br&gt;Writing new code, tests, skill prose or explanations.&lt;br&gt;Interpreting evidence when Jev + code cannot.&lt;br&gt;&lt;br&gt;Hand over a compact verified intake record.&lt;br&gt;Preserve the task and constraints; do not restart&lt;br&gt;the whole intake conversation.&lt;/div&gt;" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;spacing=18;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=17;fontColor=#172b42;fillColor=#ffe6cc;strokeColor=#d79b00;strokeWidth=2;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="560" y="770" width="480" height="315" />
+        </mxCell>
+        <mxCell id="metrics" value="&lt;b style=&quot;font-size:21px&quot;&gt;EVAL · prove each replacement helps&lt;/b&gt;&lt;div style=&quot;font-size:17px;line-height:1.35;margin-top:8px&quot;&gt;Wrong automatic routes AND automatic coverage.&lt;br&gt;Unnecessary clarification and missed ambiguity.&lt;br&gt;Intake LLM-free rate; Jev calls and tokens.&lt;br&gt;p50/p95 latency; cost estimates; repeat stability.&lt;br&gt;Evidence validity; preserved user constraints.&lt;br&gt;&lt;br&gt;Separate data for policy tuning and evaluation.&lt;br&gt;Check whole workflows as well as questions.&lt;/div&gt;" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;spacing=18;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=17;fontColor=#172b42;fillColor=#d5e8d4;strokeColor=#82b366;strokeWidth=2;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="1080" y="770" width="480" height="315" />
+        </mxCell>
+        <mxCell id="lesson" value="&lt;b style=&quot;font-size:21px&quot;&gt;What our experiment changes about this proposal&lt;/b&gt;&lt;div style=&quot;font-size:17px;line-height:1.35;margin-top:8px&quot;&gt;The three prompt rewrites did not improve raw judgment. Treat this architecture as a hypothesis:&lt;br&gt;replace one decision at a time, compare against the current process, and keep only demonstrated improvements.&lt;/div&gt;" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;spacing=18;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=17;fontColor=#172b42;fillColor=#f5f5f5;strokeColor=#b3bdca;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="150" y="1150" width="1300" height="100" />
+        </mxCell>
+        <mxCell id="footer" value="Sources: TypeSafe skill; docs.typesafe.ai/patterns/fan-out; docs.typesafe.ai/patterns/intent-routing; local Jev comparison artifacts. Proposed behavior only." style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=15;fontColor=#263449;fillColor=none;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="40" y="1290" width="1520" height="45" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

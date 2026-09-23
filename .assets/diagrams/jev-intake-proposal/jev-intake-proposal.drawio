@@ -1,0 +1,264 @@
+<?xml version='1.0' encoding='utf-8'?>
+<mxfile host="drawio" version="26.0.0">
+  <diagram id="01-flow" name="Proposed intake · code in control, Jev for meaning">
+    <mxGraphModel grid="1" gridSize="10" page="1" pageWidth="1600" pageHeight="2010" background="#ffffff">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title" value="Proposed intake · code in control, Jev for meaning" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=34;fontColor=#263449;fillColor=none;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="40" y="25" width="1520" height="60" />
+        </mxCell>
+        <mxCell id="sub" value="REVIEW DRAFT · A design proposal, not implemented behavior. Zero or a small bounded number of Jev calls; LLM fallback only for a named gap." style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=19;fontColor=#263449;fillColor=none;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="40" y="90" width="1520" height="45" />
+        </mxCell>
+        <mxCell id="request" value="&lt;b style=&quot;font-size:21px&quot;&gt;Request + existing session&lt;/b&gt;&lt;div style=&quot;font-size:17px;line-height:1.35;margin-top:8px&quot;&gt;Keep explicit task settings and user constraints.&lt;/div&gt;" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;spacing=18;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=17;fontColor=#172b42;fillColor=#d5e8d4;strokeColor=#82b366;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="580" y="165" width="460" height="85" />
+        </mxCell>
+        <mxCell id="facts" value="&lt;b style=&quot;font-size:21px&quot;&gt;CODE · Read facts; lock constraints&lt;/b&gt;&lt;div style=&quot;font-size:17px;line-height:1.35;margin-top:8px&quot;&gt;Source: issue / ad hoc / saved session.&lt;br&gt;Branch, worktree, run state, IDs and budget.&lt;br&gt;Explicit pause takes priority over new work.&lt;/div&gt;" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;spacing=18;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=17;fontColor=#172b42;fillColor=#dae8fc;strokeColor=#6c8ebf;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="580" y="305" width="460" height="120" />
+        </mxCell>
+        <mxCell id="explicit" value="&lt;span style=&quot;font-size:12px&quot;&gt;TOOL&lt;/span&gt;&lt;br&gt;&lt;b&gt;Required intent / mode&lt;br&gt;already explicit?&lt;/b&gt;" style="shape=rhombus;perimeter=rhombusPerimeter;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=18;fontColor=#172b42;fillColor=#fff2cc;strokeColor=#d6b656;strokeWidth=2;spacing=2;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="610" y="475" width="400" height="150" />
+        </mxCell>
+        <mxCell id="batch-a" value="&lt;b style=&quot;font-size:21px&quot;&gt;JEV A · Fill unresolved intent slots&lt;/b&gt;&lt;div style=&quot;font-size:17px;line-height:1.35;margin-top:8px&quot;&gt;CHOICE: primary work type and execution mode.&lt;br&gt;NOUL: additional requested actions / mixed work.&lt;br&gt;Never overwrite an explicit setting.&lt;/div&gt;" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;spacing=18;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=17;fontColor=#172b42;fillColor=#e1d5e7;strokeColor=#9673a6;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="580" y="700" width="460" height="125" />
+        </mxCell>
+        <mxCell id="lookup" value="&lt;b style=&quot;font-size:21px&quot;&gt;CODE · Load the matching playbook&lt;/b&gt;&lt;div style=&quot;font-size:17px;line-height:1.35;margin-top:8px&quot;&gt;Retrieve only its required facts and candidates.&lt;br&gt;Code paths, skill IDs, checkpoints, logs or PRs.&lt;br&gt;Operational tasks need no code localization.&lt;/div&gt;" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;spacing=18;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=17;fontColor=#172b42;fillColor=#dae8fc;strokeColor=#6c8ebf;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="580" y="905" width="460" height="130" />
+        </mxCell>
+        <mxCell id="batch-b" value="&lt;b style=&quot;font-size:21px&quot;&gt;JEV B · Judge retrieved candidates&lt;/b&gt;&lt;div style=&quot;font-size:17px;line-height:1.35;margin-top:8px&quot;&gt;NOUL: does each candidate apply?&lt;br&gt;SCORE: evidence fit for each candidate.&lt;br&gt;CHOICE: known next action or missing field.&lt;/div&gt;" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;spacing=18;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=17;fontColor=#172b42;fillColor=#e1d5e7;strokeColor=#9673a6;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="580" y="1110" width="460" height="130" />
+        </mxCell>
+        <mxCell id="usable" value="&lt;span style=&quot;font-size:12px&quot;&gt;TOOL&lt;/span&gt;&lt;br&gt;&lt;b&gt;Required fields resolved&lt;br&gt;and checks pass?&lt;/b&gt;" style="shape=rhombus;perimeter=rhombusPerimeter;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=18;fontColor=#172b42;fillColor=#fff2cc;strokeColor=#d6b656;strokeWidth=2;spacing=2;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="610" y="1320" width="400" height="150" />
+        </mxCell>
+        <mxCell id="brief" value="&lt;b style=&quot;font-size:21px&quot;&gt;CODE · Compile an intake record&lt;/b&gt;&lt;div style=&quot;font-size:17px;line-height:1.35;margin-top:8px&quot;&gt;Task + mode + ordered actions + targets.&lt;br&gt;Evidence references, stop rules and budgets.&lt;/div&gt;" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;spacing=18;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=17;fontColor=#172b42;fillColor=#d5e8d4;strokeColor=#82b366;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="580" y="1555" width="460" height="110" />
+        </mxCell>
+        <mxCell id="dispatch" value="&lt;b style=&quot;font-size:21px&quot;&gt;CODE · Run a registered playbook&lt;/b&gt;&lt;div style=&quot;font-size:17px;line-height:1.35;margin-top:8px&quot;&gt;Tools handle known steps and state transitions.&lt;br&gt;Invoke an LLM only for a step needing&lt;br&gt;new code, prose, planning or diagnosis.&lt;/div&gt;" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;spacing=18;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=17;fontColor=#172b42;fillColor=#dae8fc;strokeColor=#6c8ebf;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="580" y="1745" width="460" height="130" />
+        </mxCell>
+        <mxCell id="gap" value="&lt;span style=&quot;font-size:12px&quot;&gt;TOOL&lt;/span&gt;&lt;br&gt;&lt;b&gt;What is unresolved?&lt;/b&gt;" style="shape=rhombus;perimeter=rhombusPerimeter;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=18;fontColor=#172b42;fillColor=#fff2cc;strokeColor=#d6b656;strokeWidth=2;spacing=2;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="60" y="1320" width="350" height="150" />
+        </mxCell>
+        <mxCell id="fetch" value="&lt;b style=&quot;font-size:21px&quot;&gt;Missing observable evidence&lt;/b&gt;&lt;div style=&quot;font-size:17px;line-height:1.35;margin-top:8px&quot;&gt;Fetch the named source, once within budget.&lt;br&gt;Rejudge only affected questions;&lt;br&gt;if still unresolved, clarify or escalate.&lt;/div&gt;" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;spacing=18;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=17;fontColor=#172b42;fillColor=#dae8fc;strokeColor=#6c8ebf;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="60" y="1100" width="350" height="140" />
+        </mxCell>
+        <mxCell id="ask" value="&lt;b style=&quot;font-size:21px&quot;&gt;Missing user intent&lt;/b&gt;&lt;div style=&quot;font-size:17px;line-height:1.35;margin-top:8px&quot;&gt;Ask one question naming the choice.&lt;br&gt;Re-enter with the reply and saved state.&lt;/div&gt;" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;spacing=18;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=17;fontColor=#172b42;fillColor=#ffe6cc;strokeColor=#d79b00;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="60" y="1555" width="350" height="110" />
+        </mxCell>
+        <mxCell id="reason" value="&lt;b style=&quot;font-size:21px&quot;&gt;Novel interpretation / plan&lt;/b&gt;&lt;div style=&quot;font-size:17px;line-height:1.35;margin-top:8px&quot;&gt;Give an LLM only the unresolved slice.&lt;br&gt;Its proposal returns through the same checks.&lt;br&gt;No expansion of authority.&lt;/div&gt;" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;spacing=18;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=17;fontColor=#172b42;fillColor=#ffe6cc;strokeColor=#d79b00;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="60" y="1745" width="350" height="130" />
+        </mxCell>
+        <mxCell id="e1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endSize=8;strokeWidth=2;strokeColor=#5b6f87;fontFamily=Helvetica;fontSize=16;fontColor=#263449;labelBackgroundColor=#ffffff;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="request" target="facts">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="e2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endSize=8;strokeWidth=2;strokeColor=#5b6f87;fontFamily=Helvetica;fontSize=16;fontColor=#263449;labelBackgroundColor=#ffffff;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="facts" target="explicit">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="e3" value="No" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endSize=8;strokeWidth=2;strokeColor=#5b6f87;fontFamily=Helvetica;fontSize=16;fontColor=#263449;labelBackgroundColor=#ffffff;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="explicit" target="batch-a">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="e4" value="Yes — skip A" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endSize=8;strokeWidth=2;strokeColor=#5b6f87;fontFamily=Helvetica;fontSize=16;fontColor=#263449;labelBackgroundColor=#ffffff;exitX=1;exitY=0.5;entryX=1;entryY=0.5;" edge="1" parent="1" source="explicit" target="lookup">
+          <mxGeometry as="geometry" relative="1">
+            <Array as="points">
+              <mxPoint x="1090" y="550" />
+              <mxPoint x="1090" y="970" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e5" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endSize=8;strokeWidth=2;strokeColor=#5b6f87;fontFamily=Helvetica;fontSize=16;fontColor=#263449;labelBackgroundColor=#ffffff;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="batch-a" target="lookup">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="e6" value="Semantic slots remain" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endSize=8;strokeWidth=2;strokeColor=#5b6f87;fontFamily=Helvetica;fontSize=16;fontColor=#263449;labelBackgroundColor=#ffffff;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="lookup" target="batch-b">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="e7" value="Skip B" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endSize=8;strokeWidth=2;strokeColor=#5b6f87;fontFamily=Helvetica;fontSize=16;fontColor=#263449;labelBackgroundColor=#ffffff;exitX=1;exitY=0.8;entryX=1;entryY=0.5;" edge="1" parent="1" source="lookup" target="usable">
+          <mxGeometry as="geometry" relative="1">
+            <Array as="points">
+              <mxPoint x="1100" y="1010" />
+              <mxPoint x="1100" y="1395" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e8" value="Validate IDs, evidence and policy" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endSize=8;strokeWidth=2;strokeColor=#5b6f87;fontFamily=Helvetica;fontSize=16;fontColor=#263449;labelBackgroundColor=#ffffff;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="batch-b" target="usable">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="e9" value="Yes" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endSize=8;strokeWidth=2;strokeColor=#5b6f87;fontFamily=Helvetica;fontSize=16;fontColor=#263449;labelBackgroundColor=#ffffff;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="usable" target="brief">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="e10" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endSize=8;strokeWidth=2;strokeColor=#5b6f87;fontFamily=Helvetica;fontSize=16;fontColor=#263449;labelBackgroundColor=#ffffff;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="brief" target="dispatch">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="e11" value="No" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endSize=8;strokeWidth=2;strokeColor=#5b6f87;fontFamily=Helvetica;fontSize=16;fontColor=#263449;labelBackgroundColor=#ffffff;exitX=0;exitY=0.5;entryX=1;entryY=0.5;" edge="1" parent="1" source="usable" target="gap">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="e12" value="Evidence" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endSize=8;strokeWidth=2;strokeColor=#5b6f87;fontFamily=Helvetica;fontSize=16;fontColor=#263449;labelBackgroundColor=#ffffff;exitX=0.5;exitY=0;entryX=0.5;entryY=1;" edge="1" parent="1" source="gap" target="fetch">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="e13" value="New evidence" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endSize=8;strokeWidth=2;strokeColor=#5b6f87;fontFamily=Helvetica;fontSize=16;fontColor=#263449;labelBackgroundColor=#ffffff;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="fetch" target="lookup">
+          <mxGeometry as="geometry" relative="1">
+            <Array as="points">
+              <mxPoint x="470" y="1170" />
+              <mxPoint x="470" y="970" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e14" value="Intent" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endSize=8;strokeWidth=2;strokeColor=#5b6f87;fontFamily=Helvetica;fontSize=16;fontColor=#263449;labelBackgroundColor=#ffffff;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="gap" target="ask">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="e15" value="Novel" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endSize=8;strokeWidth=2;strokeColor=#5b6f87;fontFamily=Helvetica;fontSize=16;fontColor=#263449;labelBackgroundColor=#ffffff;exitX=0;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="gap" target="reason">
+          <mxGeometry as="geometry" relative="1">
+            <Array as="points">
+              <mxPoint x="30" y="1395" />
+              <mxPoint x="30" y="1810" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e16" value="Revalidate" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endSize=8;strokeWidth=2;strokeColor=#5b6f87;fontFamily=Helvetica;fontSize=16;fontColor=#263449;labelBackgroundColor=#ffffff;exitX=1;exitY=0.5;entryX=0.25;entryY=0.75;dashed=1;" edge="1" parent="1" source="reason" target="usable">
+          <mxGeometry as="geometry" relative="1">
+            <Array as="points">
+              <mxPoint x="470" y="1810" />
+              <mxPoint x="470" y="1510" />
+              <mxPoint x="710" y="1510" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="locked" value="&lt;b style=&quot;font-size:21px&quot;&gt;A typed decision is not permission&lt;/b&gt;&lt;div style=&quot;font-size:17px;line-height:1.35;margin-top:8px&quot;&gt;Your “same branch / same worktree” rule&lt;br&gt;is a locked constraint, not a Jev judgment.&lt;br&gt;&lt;br&gt;Publishing, merging or deleting still needs&lt;br&gt;the authority required by that action.&lt;/div&gt;" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;spacing=18;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=17;fontColor=#172b42;fillColor=#f5f5f5;strokeColor=#b3bdca;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="1150" y="165" width="400" height="210" />
+        </mxCell>
+        <mxCell id="batch-note" value="&lt;b style=&quot;font-size:21px&quot;&gt;Batch independent questions&lt;/b&gt;&lt;div style=&quot;font-size:17px;line-height:1.35;margin-top:8px&quot;&gt;One shared state, separate narrow questions.&lt;br&gt;Speculative questions state their premise.&lt;br&gt;Code reads only the selected branch.&lt;br&gt;&lt;br&gt;Reuse answers while inputs stay unchanged.&lt;br&gt;New evidence needed? Fetch, then call again.&lt;/div&gt;" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;spacing=18;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=17;fontColor=#172b42;fillColor=#f5f5f5;strokeColor=#b3bdca;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="1150" y="650" width="400" height="230" />
+        </mxCell>
+        <mxCell id="score-note" value="&lt;b style=&quot;font-size:21px&quot;&gt;Evidence fit ≠ confidence&lt;/b&gt;&lt;div style=&quot;font-size:17px;line-height:1.35;margin-top:8px&quot;&gt;0 · unrelated or contradicted&lt;br&gt;1 · related vocabulary / dependency&lt;br&gt;2 · partial support; key fact missing&lt;br&gt;3 · directly supports this target&lt;br&gt;&lt;br&gt;Rubric is proposed. Thresholds need data.&lt;/div&gt;" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;spacing=18;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=17;fontColor=#172b42;fillColor=#f5f5f5;strokeColor=#b3bdca;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="1150" y="1110" width="400" height="220" />
+        </mxCell>
+        <mxCell id="checks" value="&lt;b style=&quot;font-size:21px&quot;&gt;The final check is deterministic&lt;/b&gt;&lt;div style=&quot;font-size:17px;line-height:1.35;margin-top:8px&quot;&gt;Known IDs and valid output schema.&lt;br&gt;Required facts exist and remain current.&lt;br&gt;Mixed tasks have a valid sequence.&lt;br&gt;Only relevant uncertainty is considered.&lt;br&gt;Constraints and action authority are intact.&lt;br&gt;&lt;br&gt;Low confidence alone is not a blanket veto.&lt;/div&gt;" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;spacing=18;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=17;fontColor=#172b42;fillColor=#f5f5f5;strokeColor=#b3bdca;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="1150" y="1535" width="400" height="240" />
+        </mxCell>
+        <mxCell id="legend-model" value="" style="html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="40" y="1900" width="20" height="20" />
+        </mxCell>
+        <mxCell id="legend-label-model" value="Jev judgment" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=16;fontColor=#263449;fillColor=none;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="70" y="1895" width="255" height="30" />
+        </mxCell>
+        <mxCell id="legend-tool" value="" style="html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="340" y="1900" width="20" height="20" />
+        </mxCell>
+        <mxCell id="legend-label-tool" value="Code decision" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=16;fontColor=#263449;fillColor=none;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="370" y="1895" width="255" height="30" />
+        </mxCell>
+        <mxCell id="legend-action" value="" style="html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="640" y="1900" width="20" height="20" />
+        </mxCell>
+        <mxCell id="legend-label-action" value="Code / lookup" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=16;fontColor=#263449;fillColor=none;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="670" y="1895" width="255" height="30" />
+        </mxCell>
+        <mxCell id="legend-stop" value="" style="html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="940" y="1900" width="20" height="20" />
+        </mxCell>
+        <mxCell id="legend-label-stop" value="Human / LLM fallback" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=16;fontColor=#263449;fillColor=none;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="970" y="1895" width="255" height="30" />
+        </mxCell>
+        <mxCell id="legend-output" value="" style="html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="1240" y="1900" width="20" height="20" />
+        </mxCell>
+        <mxCell id="legend-label-output" value="Typed handoff" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=16;fontColor=#263449;fillColor=none;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="1270" y="1895" width="255" height="30" />
+        </mxCell>
+        <mxCell id="source" value="Proposed from the TypeSafe skill + fan-out / intent-routing patterns. Budgeted fallback and task presets are design choices; no speed or accuracy claim is implied." style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=14;fontColor=#263449;fillColor=none;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="40" y="1945" width="1520" height="45" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="02-task-types" name="Your 22 task names · presets that compose">
+    <mxGraphModel grid="1" gridSize="10" page="1" pageWidth="1600" pageHeight="1390" background="#ffffff">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title" value="Your 22 task names · presets that compose" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=34;fontColor=#263449;fillColor=none;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="40" y="25" width="1520" height="60" />
+        </mxCell>
+        <mxCell id="sub" value="Keep the familiar names in the UI. Internally separate what to do, how to run, and which lifecycle actions were requested." style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=19;fontColor=#263449;fillColor=none;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="40" y="90" width="1520" height="45" />
+        </mxCell>
+        <mxCell id="profile" value="&lt;b style=&quot;font-size:21px&quot;&gt;One request → a structured profile&lt;/b&gt;&lt;div style=&quot;font-size:17px;line-height:1.35;margin-top:8px&quot;&gt;Primary work + optional secondary work · execution mode · ordered lifecycle actions · locked constraints&lt;/div&gt;" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;spacing=18;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=17;fontColor=#172b42;fillColor=#d5e8d4;strokeColor=#82b366;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="300" y="170" width="1000" height="100" />
+        </mxCell>
+        <mxCell id="work" value="&lt;b style=&quot;font-size:21px&quot;&gt;WHAT · primary work type&lt;/b&gt;&lt;div style=&quot;font-size:17px;line-height:1.35;margin-top:8px&quot;&gt;&lt;div style=&quot;margin-bottom:13px&quot;&gt;&lt;b&gt;authoring a skill&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:15px&quot;&gt;Create or revise a reusable skill.&lt;/span&gt;&lt;/div&gt;&lt;div style=&quot;margin-bottom:13px&quot;&gt;&lt;b&gt;bug fix&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:15px&quot;&gt;Reproduce and correct wrong behavior.&lt;/span&gt;&lt;/div&gt;&lt;div style=&quot;margin-bottom:13px&quot;&gt;&lt;b&gt;eval&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:15px&quot;&gt;Measure a system against reference cases.&lt;/span&gt;&lt;/div&gt;&lt;div style=&quot;margin-bottom:13px&quot;&gt;&lt;b&gt;feature&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:15px&quot;&gt;Add an agreed capability.&lt;/span&gt;&lt;/div&gt;&lt;div style=&quot;margin-bottom:13px&quot;&gt;&lt;b&gt;hillclimb&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:15px&quot;&gt;Improve a metric within fixed correctness limits.&lt;/span&gt;&lt;/div&gt;&lt;div style=&quot;margin-bottom:13px&quot;&gt;&lt;b&gt;investigation&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:15px&quot;&gt;Answer a question with evidence.&lt;/span&gt;&lt;/div&gt;&lt;div style=&quot;margin-bottom:13px&quot;&gt;&lt;b&gt;multi phase plan&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:15px&quot;&gt;Produce an ordered plan and dependencies.&lt;/span&gt;&lt;/div&gt;&lt;div style=&quot;margin-bottom:13px&quot;&gt;&lt;b&gt;perf issue&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:15px&quot;&gt;Investigate a measured performance problem.&lt;/span&gt;&lt;/div&gt;&lt;div style=&quot;margin-bottom:13px&quot;&gt;&lt;b&gt;prototype&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:15px&quot;&gt;Test feasibility with bounded scope.&lt;/span&gt;&lt;/div&gt;&lt;div style=&quot;margin-bottom:13px&quot;&gt;&lt;b&gt;refactoring&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:15px&quot;&gt;Change structure while preserving behavior.&lt;/span&gt;&lt;/div&gt;&lt;div style=&quot;margin-bottom:13px&quot;&gt;&lt;b&gt;runtime forensics&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:15px&quot;&gt;Diagnose a live or captured runtime state.&lt;/span&gt;&lt;/div&gt;&lt;div style=&quot;margin-bottom:13px&quot;&gt;&lt;b&gt;trace forensics&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:15px&quot;&gt;Reconstruct behavior from traces or logs.&lt;/span&gt;&lt;/div&gt;&lt;/div&gt;" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;spacing=18;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=17;fontColor=#172b42;fillColor=#e1d5e7;strokeColor=#9673a6;strokeWidth=2;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="40" y="380" width="480" height="775" />
+        </mxCell>
+        <mxCell id="mode" value="&lt;b style=&quot;font-size:21px&quot;&gt;HOW · execution mode&lt;/b&gt;&lt;div style=&quot;font-size:17px;line-height:1.35;margin-top:8px&quot;&gt;&lt;div style=&quot;margin-bottom:13px&quot;&gt;&lt;b&gt;autonomous run&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:15px&quot;&gt;Complete one bounded task within a budget.&lt;/span&gt;&lt;/div&gt;&lt;div style=&quot;margin-bottom:13px&quot;&gt;&lt;b&gt;autopilot full&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:15px&quot;&gt;Run an agreed end-to-end playbook to its stop point.&lt;/span&gt;&lt;/div&gt;&lt;div style=&quot;margin-bottom:13px&quot;&gt;&lt;b&gt;autopilot stack&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:15px&quot;&gt;Coordinate dependent changes / PR layers.&lt;/span&gt;&lt;/div&gt;&lt;div style=&quot;margin-bottom:13px&quot;&gt;&lt;b&gt;babysit&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:15px&quot;&gt;Monitor an existing run; recover known failures.&lt;/span&gt;&lt;/div&gt;&lt;div style=&quot;margin-bottom:13px&quot;&gt;&lt;b&gt;orchestrate&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:15px&quot;&gt;Coordinate work items, dependencies and workers.&lt;/span&gt;&lt;/div&gt;&lt;br&gt;&lt;b&gt;Mode is not authority.&lt;/b&gt;&lt;br&gt;“Autopilot full” still stops at the agreed&lt;br&gt;boundary. Default to bounded work when&lt;br&gt;the mode is unspecified.&lt;/div&gt;" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;spacing=18;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=17;fontColor=#172b42;fillColor=#e1d5e7;strokeColor=#9673a6;strokeWidth=2;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="560" y="380" width="480" height="775" />
+        </mxCell>
+        <mxCell id="actions" value="&lt;b style=&quot;font-size:21px&quot;&gt;WHEN · lifecycle actions&lt;/b&gt;&lt;div style=&quot;font-size:17px;line-height:1.35;margin-top:8px&quot;&gt;&lt;div style=&quot;margin-bottom:13px&quot;&gt;&lt;b&gt;opening a pr&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:15px&quot;&gt;Prepare or open the requested PR.&lt;/span&gt;&lt;/div&gt;&lt;div style=&quot;margin-bottom:13px&quot;&gt;&lt;b&gt;pause safely&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:15px&quot;&gt;Checkpoint, record running work, and stop.&lt;/span&gt;&lt;/div&gt;&lt;div style=&quot;margin-bottom:13px&quot;&gt;&lt;b&gt;session pickup&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:15px&quot;&gt;Validate and resume a saved task.&lt;/span&gt;&lt;/div&gt;&lt;div style=&quot;margin-bottom:13px&quot;&gt;&lt;b&gt;shipping&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:15px&quot;&gt;Execute the agreed release / delivery steps.&lt;/span&gt;&lt;/div&gt;&lt;div style=&quot;margin-bottom:13px&quot;&gt;&lt;b&gt;worktree cleanup&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:15px&quot;&gt;Inspect and clean only authorized targets.&lt;/span&gt;&lt;/div&gt;&lt;br&gt;&lt;b&gt;Actions can accompany any work type.&lt;/b&gt;&lt;br&gt;They are ordered steps, not competing&lt;br&gt;labels. An action-only request needs&lt;br&gt;no invented feature or bug task.&lt;/div&gt;" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;spacing=18;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=17;fontColor=#172b42;fillColor=#e1d5e7;strokeColor=#9673a6;strokeWidth=2;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="1080" y="380" width="480" height="775" />
+        </mxCell>
+        <mxCell id="e1" value="CHOICE + optional extra-intent NOULs" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endSize=8;strokeWidth=2;strokeColor=#5b6f87;fontFamily=Helvetica;fontSize=16;fontColor=#263449;labelBackgroundColor=#ffffff;exitX=0.15;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="profile" target="work">
+          <mxGeometry as="geometry" relative="1">
+            <Array as="points">
+              <mxPoint x="450" y="320" />
+              <mxPoint x="280" y="320" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e2" value="CHOICE; explicit setting wins" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endSize=8;strokeWidth=2;strokeColor=#5b6f87;fontFamily=Helvetica;fontSize=16;fontColor=#263449;labelBackgroundColor=#ffffff;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="profile" target="mode">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="e3" value="One NOUL per applicable action" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endSize=8;strokeWidth=2;strokeColor=#5b6f87;fontFamily=Helvetica;fontSize=16;fontColor=#263449;labelBackgroundColor=#ffffff;exitX=0.85;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="profile" target="actions">
+          <mxGeometry as="geometry" relative="1">
+            <Array as="points">
+              <mxPoint x="1150" y="320" />
+              <mxPoint x="1320" y="320" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="example" value="&lt;b style=&quot;font-size:21px&quot;&gt;Example · “Pick up the bug fix, run autonomously, then open a PR”&lt;/b&gt;&lt;div style=&quot;font-size:17px;line-height:1.35;margin-top:8px&quot;&gt;Work = bug fix · Mode = autonomous run · Actions = session pickup → opening a pr.&lt;br&gt;Constraints = preserve this branch/worktree · Stop = the explicitly agreed PR state.&lt;/div&gt;" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;spacing=18;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=17;fontColor=#172b42;fillColor=#d5e8d4;strokeColor=#82b366;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="200" y="1200" width="1200" height="95" />
+        </mxCell>
+        <mxCell id="note" value="Definitions are proposals. Perf issue / runtime forensics / trace forensics can share the investigation engine while retaining distinct presets." style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=16;fontColor=#263449;fillColor=none;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="40" y="1320" width="1520" height="45" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="03-decisions" name="Decision design · use each primitive for its actual meaning">
+    <mxGraphModel grid="1" gridSize="10" page="1" pageWidth="1600" pageHeight="1360" background="#ffffff">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title" value="Decision design · use each primitive for its actual meaning" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=34;fontColor=#263449;fillColor=none;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="40" y="25" width="1520" height="60" />
+        </mxCell>
+        <mxCell id="sub" value="Draft question contract. Exact facts and permissions stay in code; Jev only fills semantic gaps with evidence." style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=19;fontColor=#263449;fillColor=none;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="40" y="90" width="1520" height="45" />
+        </mxCell>
+        <mxCell id="choice" value="&lt;b style=&quot;font-size:21px&quot;&gt;CHOICE · one mutually exclusive answer&lt;/b&gt;&lt;div style=&quot;font-size:17px;line-height:1.35;margin-top:8px&quot;&gt;&lt;b&gt;Primary work type?&lt;/b&gt;&lt;br&gt;Choose from the 12 work presets, mixed,&lt;br&gt;action-only, or unknown.&lt;br&gt;&lt;br&gt;&lt;b&gt;Execution mode?&lt;/b&gt;&lt;br&gt;Choose only if the user has not set it.&lt;br&gt;&lt;br&gt;&lt;b&gt;Which named evidence source is missing?&lt;/b&gt;&lt;br&gt;Pick from available source IDs, none, unknown.&lt;br&gt;&lt;br&gt;Never force a match when no option fits.&lt;/div&gt;" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;spacing=18;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=17;fontColor=#172b42;fillColor=#e1d5e7;strokeColor=#9673a6;strokeWidth=2;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="40" y="190" width="480" height="490" />
+        </mxCell>
+        <mxCell id="noul" value="&lt;b style=&quot;font-size:21px&quot;&gt;NOUL · independent yes/no questions&lt;/b&gt;&lt;div style=&quot;font-size:17px;line-height:1.35;margin-top:8px&quot;&gt;&lt;b&gt;Does this request also ask for a PR?&lt;/b&gt;&lt;br&gt;&lt;b&gt;Does capability C own part of the change?&lt;/b&gt;&lt;br&gt;&lt;b&gt;Does resolving this gap require user intent?&lt;/b&gt;&lt;br&gt;&lt;br&gt;One question per independent proposition.&lt;br&gt;Several capabilities/actions may be true.&lt;br&gt;&lt;br&gt;Returns P(yes), not intensity.&lt;br&gt;A value near 0.5 means uncertainty.&lt;br&gt;No separate confidence is returned.&lt;/div&gt;" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;spacing=18;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=17;fontColor=#172b42;fillColor=#e1d5e7;strokeColor=#9673a6;strokeWidth=2;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="560" y="190" width="480" height="490" />
+        </mxCell>
+        <mxCell id="score" value="&lt;b style=&quot;font-size:21px&quot;&gt;SCORE · grade one dimension&lt;/b&gt;&lt;div style=&quot;font-size:17px;line-height:1.35;margin-top:8px&quot;&gt;&lt;b&gt;How well does evidence support target C?&lt;/b&gt;&lt;br&gt;0 unrelated / contradicted&lt;br&gt;1 indirect overlap&lt;br&gt;2 partial support&lt;br&gt;3 direct support&lt;br&gt;&lt;br&gt;Compare targets on the same rubric.&lt;br&gt;Keep the full probability distribution.&lt;br&gt;&lt;br&gt;Do not turn one blended “quality score”&lt;br&gt;into permission to run the workflow.&lt;/div&gt;" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;spacing=18;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=17;fontColor=#172b42;fillColor=#e1d5e7;strokeColor=#9673a6;strokeWidth=2;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="1080" y="190" width="480" height="490" />
+        </mxCell>
+        <mxCell id="code" value="&lt;b style=&quot;font-size:21px&quot;&gt;CODE · decisions that need no model&lt;/b&gt;&lt;div style=&quot;font-size:17px;line-height:1.35;margin-top:8px&quot;&gt;Explicit commands, file/path existence, Git state,&lt;br&gt;request source, allowed operations, budgets,&lt;br&gt;schema checks, risk-tag joins, call-site expansion,&lt;br&gt;test selectors, exit codes, timers and receipts.&lt;br&gt;&lt;br&gt;Choose templates from verified registries;&lt;br&gt;fill parameters with exact IDs or source spans.&lt;/div&gt;" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;spacing=18;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=17;fontColor=#172b42;fillColor=#dae8fc;strokeColor=#6c8ebf;strokeWidth=2;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="40" y="770" width="480" height="315" />
+        </mxCell>
+        <mxCell id="fallback" value="&lt;b style=&quot;font-size:21px&quot;&gt;LLM · bounded work at named gaps&lt;/b&gt;&lt;div style=&quot;font-size:17px;line-height:1.35;margin-top:8px&quot;&gt;Novel multi-step planning or diagnosis.&lt;br&gt;Writing new code, tests, skill prose or explanations.&lt;br&gt;Interpreting evidence when Jev + code cannot.&lt;br&gt;&lt;br&gt;Hand over a compact verified intake record.&lt;br&gt;Preserve the task and constraints; do not restart&lt;br&gt;the whole intake conversation.&lt;/div&gt;" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;spacing=18;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=17;fontColor=#172b42;fillColor=#ffe6cc;strokeColor=#d79b00;strokeWidth=2;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="560" y="770" width="480" height="315" />
+        </mxCell>
+        <mxCell id="metrics" value="&lt;b style=&quot;font-size:21px&quot;&gt;EVAL · prove each replacement helps&lt;/b&gt;&lt;div style=&quot;font-size:17px;line-height:1.35;margin-top:8px&quot;&gt;Wrong automatic routes AND automatic coverage.&lt;br&gt;Unnecessary clarification and missed ambiguity.&lt;br&gt;Intake LLM-free rate; Jev calls and tokens.&lt;br&gt;p50/p95 latency; cost estimates; repeat stability.&lt;br&gt;Evidence validity; preserved user constraints.&lt;br&gt;&lt;br&gt;Separate data for policy tuning and evaluation.&lt;br&gt;Check whole workflows as well as questions.&lt;/div&gt;" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;spacing=18;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=17;fontColor=#172b42;fillColor=#d5e8d4;strokeColor=#82b366;strokeWidth=2;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="1080" y="770" width="480" height="315" />
+        </mxCell>
+        <mxCell id="lesson" value="&lt;b style=&quot;font-size:21px&quot;&gt;What our experiment changes about this proposal&lt;/b&gt;&lt;div style=&quot;font-size:17px;line-height:1.35;margin-top:8px&quot;&gt;The three prompt rewrites did not improve raw judgment. Treat this architecture as a hypothesis:&lt;br&gt;replace one decision at a time, compare against the current process, and keep only demonstrated improvements.&lt;/div&gt;" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;spacing=18;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=17;fontColor=#172b42;fillColor=#f5f5f5;strokeColor=#b3bdca;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="150" y="1150" width="1300" height="100" />
+        </mxCell>
+        <mxCell id="footer" value="Sources: TypeSafe skill; docs.typesafe.ai/patterns/fan-out; docs.typesafe.ai/patterns/intent-routing; local Jev comparison artifacts. Proposed behavior only." style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=15;fontColor=#263449;fillColor=none;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="40" y="1290" width="1520" height="45" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

@@ -1,0 +1,147 @@
+<?xml version='1.0' encoding='utf-8'?>
+<mxfile host="drawio" version="26.0.0">
+  <diagram id="neohaskell-pipeline" name="Pipeline flow">
+    <mxGraphModel dx="1600" dy="1200" grid="1" gridSize="10" page="1" pageWidth="1600" pageHeight="1200" background="#ffffff">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title" value="&lt;b&gt;NeoHaskell · The change pipeline&lt;/b&gt;" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=36;fontColor=#263449;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="60" y="30" width="1450" height="55" />
+        </mxCell>
+        <mxCell id="subtitle" value="From request to maintainer merge · Two human gates · Follow the numbered steps" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=20;fontColor=#263449;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="60" y="90" width="1450" height="35" />
+        </mxCell>
+        <mxCell id="row-one" value="DEFINE THE CONTRACT  →" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=15;fontColor=#5b6f87;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="60" y="140" width="700" height="25" />
+        </mxCell>
+        <mxCell id="intake-localize" value="&lt;div style=&quot;font-size:21px;font-weight:bold;line-height:1.2&quot;&gt;01  Intake → localize&lt;/div&gt;&lt;div style=&quot;font-size:17px;line-height:1.4;margin-top:10px&quot;&gt;Claim issue; initialize run.&lt;br&gt;Bind capabilities, files and APIs.&lt;/div&gt;" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=18;fontFamily=Helvetica;fontSize=17;fontColor=#172b42;fillColor=#dae8fc;strokeColor=#6c8ebf;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="60" y="180" width="300" height="140" />
+        </mxCell>
+        <mxCell id="spec" value="&lt;div style=&quot;font-size:21px;font-weight:bold;line-height:1.2&quot;&gt;02  Spec + draft PR&lt;/div&gt;&lt;div style=&quot;font-size:17px;line-height:1.4;margin-top:10px&quot;&gt;Contract delta + proving tests.&lt;br&gt;Bugs: commit C1 red + receipt.&lt;/div&gt;" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=18;fontFamily=Helvetica;fontSize=17;fontColor=#172b42;fillColor=#dae8fc;strokeColor=#6c8ebf;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="450" y="180" width="300" height="140" />
+        </mxCell>
+        <mxCell id="gate-spec" value="&lt;div style=&quot;font-size:21px;font-weight:bold;line-height:1.2&quot;&gt;03  GATE 1 · Spec approval&lt;/div&gt;&lt;div style=&quot;font-size:17px;line-height:1.4;margin-top:10px&quot;&gt;Wait for explicit maintainer OK.&lt;br&gt;Record approval in local state.&lt;/div&gt;" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=18;fontFamily=Helvetica;fontSize=17;fontColor=#172b42;fillColor=#fff2cc;strokeColor=#d6b656;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="840" y="180" width="300" height="140" />
+        </mxCell>
+        <mxCell id="design-plan" value="&lt;div style=&quot;font-size:21px;font-weight:bold;line-height:1.2&quot;&gt;04  Design-review → plan&lt;/div&gt;&lt;div style=&quot;font-size:17px;line-height:1.4;margin-top:10px&quot;&gt;Risk-routed security / perf review.&lt;br&gt;Then order the implementation.&lt;/div&gt;" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=18;fontFamily=Helvetica;fontSize=17;fontColor=#172b42;fillColor=#dae8fc;strokeColor=#6c8ebf;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="1230" y="180" width="300" height="140" />
+        </mxCell>
+        <mxCell id="row-two" value="←  PROVE AND IMPLEMENT" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=15;fontColor=#5b6f87;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="450" y="385" width="700" height="25" />
+        </mxCell>
+        <mxCell id="test-writing" value="&lt;div style=&quot;font-size:21px;font-weight:bold;line-height:1.2&quot;&gt;05  Test-writing&lt;/div&gt;&lt;div style=&quot;font-size:17px;line-height:1.4;margin-top:10px&quot;&gt;Criteria tests fail first.&lt;br&gt;Protect existing expectations.&lt;/div&gt;" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=18;fontFamily=Helvetica;fontSize=17;fontColor=#172b42;fillColor=#dae8fc;strokeColor=#6c8ebf;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="1230" y="430" width="300" height="140" />
+        </mxCell>
+        <mxCell id="implement" value="&lt;div style=&quot;font-size:21px;font-weight:bold;line-height:1.2&quot;&gt;06  Implement&lt;/div&gt;&lt;div style=&quot;font-size:17px;line-height:1.4;margin-top:10px&quot;&gt;Copy-adapt; ./dev check loop.&lt;br&gt;Inspect readable control flow.&lt;/div&gt;" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=18;fontFamily=Helvetica;fontSize=17;fontColor=#172b42;fillColor=#dae8fc;strokeColor=#6c8ebf;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="840" y="430" width="300" height="140" />
+        </mxCell>
+        <mxCell id="verify" value="&lt;div style=&quot;font-size:21px;font-weight:bold;line-height:1.2&quot;&gt;07  Verify&lt;/div&gt;&lt;div style=&quot;font-size:17px;line-height:1.4;margin-top:10px&quot;&gt;Criteria → regressions → lint.&lt;br&gt;Contract gates → full acceptance.&lt;/div&gt;" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=18;fontFamily=Helvetica;fontSize=17;fontColor=#172b42;fillColor=#dae8fc;strokeColor=#6c8ebf;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="450" y="430" width="300" height="140" />
+        </mxCell>
+        <mxCell id="pr-ci" value="&lt;div style=&quot;font-size:21px;font-weight:bold;line-height:1.2&quot;&gt;08  PR → CI / review&lt;/div&gt;&lt;div style=&quot;font-size:17px;line-height:1.4;margin-top:10px&quot;&gt;Release notes; validate; mark ready.&lt;br&gt;Fix findings until checks are green.&lt;/div&gt;" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=18;fontFamily=Helvetica;fontSize=17;fontColor=#172b42;fillColor=#dae8fc;strokeColor=#6c8ebf;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="60" y="430" width="300" height="140" />
+        </mxCell>
+        <mxCell id="row-three" value="REVIEW AND FINISH  →" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=15;fontColor=#5b6f87;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="450" y="630" width="700" height="25" />
+        </mxCell>
+        <mxCell id="gate-ci" value="&lt;div style=&quot;font-size:21px;font-weight:bold;line-height:1.2&quot;&gt;09  GATE 2 · Final review&lt;/div&gt;&lt;div style=&quot;font-size:17px;line-height:1.4;margin-top:10px&quot;&gt;Maintainer approves substantive SHA.&lt;br&gt;Record approved HEAD locally.&lt;/div&gt;" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=18;fontFamily=Helvetica;fontSize=17;fontColor=#172b42;fillColor=#fff2cc;strokeColor=#d6b656;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="60" y="670" width="300" height="140" />
+        </mxCell>
+        <mxCell id="finalize" value="&lt;div style=&quot;font-size:21px;font-weight:bold;line-height:1.2&quot;&gt;10  Telemetry finalization&lt;/div&gt;&lt;div style=&quot;font-size:17px;line-height:1.4;margin-top:10px&quot;&gt;Archive verdict; finish telemetry.&lt;br&gt;One runs.jsonl-only commit.&lt;/div&gt;" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=18;fontFamily=Helvetica;fontSize=17;fontColor=#172b42;fillColor=#dae8fc;strokeColor=#6c8ebf;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="450" y="670" width="300" height="140" />
+        </mxCell>
+        <mxCell id="complete" value="&lt;div style=&quot;font-size:21px;font-weight:bold;line-height:1.2&quot;&gt;11  Final checks → complete&lt;/div&gt;&lt;div style=&quot;font-size:17px;line-height:1.4;margin-top:10px&quot;&gt;Wait for checks + CodeRabbit.&lt;br&gt;Verify parent SHA; archive state.&lt;/div&gt;" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=18;fontFamily=Helvetica;fontSize=17;fontColor=#172b42;fillColor=#dae8fc;strokeColor=#6c8ebf;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="840" y="670" width="300" height="140" />
+        </mxCell>
+        <mxCell id="merge" value="&lt;div style=&quot;font-size:21px;font-weight:bold;line-height:1.2&quot;&gt;12  Maintainer merges&lt;/div&gt;&lt;div style=&quot;font-size:17px;line-height:1.4;margin-top:10px&quot;&gt;Merge remains a maintainer action.&lt;br&gt;Post-merge regression guard runs.&lt;/div&gt;" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=18;fontFamily=Helvetica;fontSize=17;fontColor=#172b42;fillColor=#d5e8d4;strokeColor=#82b366;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="1230" y="670" width="300" height="140" />
+        </mxCell>
+        <mxCell id="flow-0" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endSize=8;strokeColor=#5b6f87;strokeWidth=2;fontFamily=Helvetica;fontSize=15;fontColor=#35475b;labelBackgroundColor=#ffffff;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="intake-localize" target="spec">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="flow-1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endSize=8;strokeColor=#5b6f87;strokeWidth=2;fontFamily=Helvetica;fontSize=15;fontColor=#35475b;labelBackgroundColor=#ffffff;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="spec" target="gate-spec">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="flow-2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endSize=8;strokeColor=#5b6f87;strokeWidth=2;fontFamily=Helvetica;fontSize=15;fontColor=#35475b;labelBackgroundColor=#ffffff;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="gate-spec" target="design-plan">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="flow-3" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endSize=8;strokeColor=#5b6f87;strokeWidth=2;fontFamily=Helvetica;fontSize=15;fontColor=#35475b;labelBackgroundColor=#ffffff;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="design-plan" target="test-writing">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="flow-4" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endSize=8;strokeColor=#5b6f87;strokeWidth=2;fontFamily=Helvetica;fontSize=15;fontColor=#35475b;labelBackgroundColor=#ffffff;exitX=0;exitY=0.5;entryX=1;entryY=0.5;" edge="1" parent="1" source="test-writing" target="implement">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="flow-5" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endSize=8;strokeColor=#5b6f87;strokeWidth=2;fontFamily=Helvetica;fontSize=15;fontColor=#35475b;labelBackgroundColor=#ffffff;exitX=0;exitY=0.5;entryX=1;entryY=0.5;" edge="1" parent="1" source="implement" target="verify">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="flow-6" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endSize=8;strokeColor=#5b6f87;strokeWidth=2;fontFamily=Helvetica;fontSize=15;fontColor=#35475b;labelBackgroundColor=#ffffff;exitX=0;exitY=0.5;entryX=1;entryY=0.5;" edge="1" parent="1" source="verify" target="pr-ci">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="flow-7" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endSize=8;strokeColor=#5b6f87;strokeWidth=2;fontFamily=Helvetica;fontSize=15;fontColor=#35475b;labelBackgroundColor=#ffffff;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="pr-ci" target="gate-ci">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="flow-8" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endSize=8;strokeColor=#5b6f87;strokeWidth=2;fontFamily=Helvetica;fontSize=15;fontColor=#35475b;labelBackgroundColor=#ffffff;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="gate-ci" target="finalize">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="flow-9" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endSize=8;strokeColor=#5b6f87;strokeWidth=2;fontFamily=Helvetica;fontSize=15;fontColor=#35475b;labelBackgroundColor=#ffffff;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="finalize" target="complete">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="flow-10" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endSize=8;strokeColor=#5b6f87;strokeWidth=2;fontFamily=Helvetica;fontSize=15;fontColor=#35475b;labelBackgroundColor=#ffffff;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="complete" target="merge">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="ci-loop" value="Fix + re-review" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endSize=8;strokeColor=#5b6f87;strokeWidth=2;fontFamily=Helvetica;fontSize=15;fontColor=#35475b;labelBackgroundColor=#ffffff;exitX=0.25;exitY=0;entryX=0.75;entryY=0;" edge="1" parent="1" source="pr-ci" target="pr-ci">
+          <mxGeometry as="geometry" relative="1">
+            <Array as="points">
+              <mxPoint x="135" y="355" />
+              <mxPoint x="285" y="355" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="tail-loop" value="Tail fails / any further substantive delta: reopen → CI / Gate 2" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endSize=8;strokeColor=#5b6f87;strokeWidth=2;fontFamily=Helvetica;fontSize=15;fontColor=#35475b;labelBackgroundColor=#ffffff;exitX=0.5;exitY=1;entryX=0.5;entryY=1;dashed=1;" edge="1" parent="1" source="complete" target="gate-ci">
+          <mxGeometry as="geometry" relative="1">
+            <Array as="points">
+              <mxPoint x="990" y="850" />
+              <mxPoint x="210" y="850" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="reviews-note" value="&lt;div style=&quot;font-size:21px;font-weight:bold;line-height:1.2&quot;&gt;Design review + verification&lt;/div&gt;&lt;div style=&quot;font-size:17px;line-height:1.4;margin-top:10px&quot;&gt;&lt;b&gt;Security:&lt;/b&gt; local-only record. &lt;b&gt;Perf:&lt;/b&gt; committed.&lt;br&gt;No risk flags → skip design review.&lt;br&gt;&lt;b&gt;Verify:&lt;/b&gt; declared test levels, impact suites, lint,&lt;br&gt;spec drift, review gates and release fragment.&lt;br&gt;Full suite requires PostgreSQL + Hurl;&lt;br&gt;validate timing evidence; run testbed.&lt;/div&gt;" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=18;fontFamily=Helvetica;fontSize=17;fontColor=#172b42;fillColor=#f5f5f5;strokeColor=#666666;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="60" y="920" width="470" height="240" />
+        </mxCell>
+        <mxCell id="resume-note" value="&lt;div style=&quot;font-size:21px;font-weight:bold;line-height:1.2&quot;&gt;Resume + telemetry&lt;/div&gt;&lt;div style=&quot;font-size:17px;line-height:1.4;margin-top:10px&quot;&gt;Resume recorded stage with the binding plan.&lt;br&gt;Each transition: stop → advance → start.&lt;br&gt;Stop activities before waiting for a human;&lt;br&gt;human wait time is outside stage time-boxes.&lt;br&gt;&lt;b&gt;Wrong localization:&lt;/b&gt; park, fix the guiding asset,&lt;br&gt;then re-enter intake with a corrected plan.&lt;/div&gt;" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=18;fontFamily=Helvetica;fontSize=17;fontColor=#172b42;fillColor=#f5f5f5;strokeColor=#666666;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="560" y="920" width="470" height="240" />
+        </mxCell>
+        <mxCell id="failure-note" value="&lt;div style=&quot;font-size:21px;font-weight:bold;line-height:1.2&quot;&gt;Failure / time-box recovery&lt;/div&gt;&lt;div style=&quot;font-size:17px;line-height:1.4;margin-top:10px&quot;&gt;Stage budget breached&lt;br&gt;→ retry once using the same plan&lt;br&gt;→ escalate model tier → park + report.&lt;br&gt;Close parked/failed runs with a class-fix&lt;br&gt;asset delta (or none + reason); archive state.&lt;br&gt;&lt;b&gt;Human approval waits are not failures.&lt;/b&gt;&lt;/div&gt;" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=18;fontFamily=Helvetica;fontSize=17;fontColor=#172b42;fillColor=#f8cecc;strokeColor=#b85450;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="1060" y="920" width="470" height="240" />
+        </mxCell>
+        <mxCell id="legend-work" value="" style="rounded=0;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="60" y="1210" width="20" height="20" />
+        </mxCell>
+        <mxCell id="legend-text-work" value="Agent / automated work" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=16;fontColor=#263449;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="90" y="1205" width="340" height="30" />
+        </mxCell>
+        <mxCell id="legend-gate" value="" style="rounded=0;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="440" y="1210" width="20" height="20" />
+        </mxCell>
+        <mxCell id="legend-text-gate" value="Human approval gate" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=16;fontColor=#263449;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="470" y="1205" width="340" height="30" />
+        </mxCell>
+        <mxCell id="legend-done" value="" style="rounded=0;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="820" y="1210" width="20" height="20" />
+        </mxCell>
+        <mxCell id="legend-text-done" value="Merge outcome" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=16;fontColor=#263449;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="850" y="1205" width="340" height="30" />
+        </mxCell>
+        <mxCell id="legend-recovery" value="" style="rounded=0;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="1200" y="1210" width="20" height="20" />
+        </mxCell>
+        <mxCell id="legend-text-recovery" value="Recovery policy" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=16;fontColor=#263449;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="1230" y="1205" width="340" height="30" />
+        </mxCell>
+        <mxCell id="source" value="Source: .agents/skills/neohaskell-pipeline/SKILL.md · ADR-0076 process · Adjacent stages grouped for readability" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=15;fontColor=#5b6f87;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="60" y="1250" width="1470" height="30" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

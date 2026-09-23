@@ -35,8 +35,9 @@ The public Astro website and documentation now live in the separate
 [`neohaskell/website-v2`](https://github.com/neohaskell/website-v2) repository.
 
 This README is the canonical guide for **human contributors**: environment
-setup, the full build/test commands, and Postgres. Two companion guides own the
-rest:
+setup, the full build/test commands, and Postgres. See
+[CONTRIBUTING.md](CONTRIBUTING.md) for the required change workflow and its
+pipeline diagram. Two companion guides own the remaining details:
 
 - **`AGENTS.md`** — the agent contract: hard rules, dialect style, and the
   spec-gated change pipeline.
