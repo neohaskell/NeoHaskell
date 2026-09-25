@@ -165,7 +165,11 @@ PostgreSQL fixture. It records derivation/output paths and actual builds for:
 no change, Markdown, test-only, implementation, sibling, flags and runtime data.
 All seven passed locally. The runtime case deliberately gets HTTP 404 where its
 new fixture demands 200; Hurl exit 4 proves the changed input executed. Full pilot
-hosted suites and replicated performance interpretation remain pending.
+hosted suites and three matched-configuration repetitions passed, but the
+representative Text edit plus core execution took a median 302.583s versus
+262.835s for the unsplit Nix route. This fails the predeclared expansion threshold:
+do not integrate or expand the extraction on current evidence. The persistent
+[performance log](performance.md) records observations, revisions and caveats.
 
 Before shipping any extraction, update codemap/Hoogle discovery, doctest paths,
 release inventory and CI registration, then pass full required CI. The original
