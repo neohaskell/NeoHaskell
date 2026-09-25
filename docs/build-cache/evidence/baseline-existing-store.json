@@ -1,0 +1,18 @@
+{
+  "commit": "cab923c0b098fdb82ece539380719c0757ec9057",
+  "platform": "macOS-26.5.1-arm64-arm-64bit-Mach-O",
+  "cache": "existing shared local store; remote project outputs not inventoried; not cold",
+  "command": [
+    "nix",
+    "develop",
+    "--accept-flake-config",
+    "--command",
+    "bash",
+    "-c",
+    "ghc --numeric-version; cabal --numeric-version; cabal build all --disable-documentation -v2"
+  ],
+  "started": 1790340521.3503602,
+  "elapsed_s": 147.329087972641,
+  "exit_code": 0,
+  "lock_sha256": "1effc4277140756e9669e68a4585ae4694e5dabe6bba3d586cf2128a5adf3621"
+}

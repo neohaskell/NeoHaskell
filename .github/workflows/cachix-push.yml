@@ -9,6 +9,9 @@ on:
       - "testbed/**"
       - "integrations/**"
       - "nix/**"
+      - "flake.nix"
+      - "flake.lock"
+      - "cabal.project"
       - ".github/workflows/**"
 
 jobs:
@@ -27,4 +30,4 @@ jobs:
           name: neohaskell
           authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
       - name: Build to populate cache
-        run: nix develop --command cabal build all --disable-documentation
+        run: nix build --accept-flake-config -L .#ci-components

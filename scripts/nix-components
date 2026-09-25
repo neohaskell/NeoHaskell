@@ -1,0 +1,167 @@
+#!/usr/bin/env python3
+"""Build, transfer and execute pinned Haskell components without a Cabal rebuild."""
+import argparse
+import json
+import os
+from pathlib import Path
+import platform
+import re
+import subprocess
+import sys
+import time
+
+ROOT = Path(__file__).resolve().parent.parent
+STORE_PATH = re.compile(r"/nix/store/[a-z0-9]{32}-[^/\s]+")
+SUITES = {
+    'nhcore-test-core': 'nhcore:test:nhcore-test-core',
+    'nhcore-test-auth': 'nhcore:test:nhcore-test-auth',
+    'nhcore-test-integration': 'nhcore:test:nhcore-test-integration',
+    'nhcore-test-service': 'nhcore:test:nhcore-test-service',
+    'nhcore-test': 'nhcore:test:nhcore-test',
+    'nhintegrations-test': 'nhintegrations:test:nhintegrations-test',
+}
+
+
+def command(args, **kwargs):
+    return subprocess.run(args, check=True, **kwargs)
+
+
+def output(args):
+    return subprocess.check_output(args, text=True).strip()
+
+
+def store_path(value):
+    if not isinstance(value, str) or not STORE_PATH.fullmatch(value):
+        raise ValueError(f'invalid store output: {value!r}')
+    return value
+
+
+def load_bundle(directory):
+    root = store_path((directory / 'root.txt').read_text().strip())
+    producer = json.loads((directory / 'producer.json').read_text())
+    revision = output(['git', 'rev-parse', 'HEAD'])
+    if producer['revision'] != revision:
+        raise ValueError('component artifact belongs to a different checkout')
+    return root
+
+
+def environment(root):
+    manifest = json.loads((Path(root) / 'manifest.json').read_text())
+    if manifest['schema'] != 1:
+        raise ValueError('unsupported component manifest')
+    machine = {'arm64': 'aarch64', 'AMD64': 'x86_64'}.get(platform.machine(), platform.machine())
+    system = f'{machine}-{platform.system().lower()}'
+    if manifest['system'] != system:
+        raise ValueError(f'component platform {manifest["system"]} != {system}')
+    env = os.environ.copy()
+    env['PATH'] = store_path(manifest['runtime']) + '/bin:' + env['PATH']
+    return manifest, env
+
+
+def executable(manifest, component, name):
+    binary = Path(store_path(manifest['components'][component]['path'])) / 'bin' / name
+    if not binary.is_file() or not os.access(binary, os.X_OK):
+        raise ValueError(f'missing executable: {binary}')
+    return str(binary)
+
+
+def postgres(env):
+    env['PGPASSWORD'] = env.get('PGPASSWORD', 'neohaskell')
+    args = ['-h', env.get('POSTGRES_HOST', '127.0.0.1'),
+            '-U', env.get('POSTGRES_USER', 'neohaskell'),
+            '-d', env.get('POSTGRES_DB', 'neohaskell')]
+    command(['pg_isready', *args], env=env)
+    command(['psql', *args, '-v', 'ON_ERROR_STOP=1', '-c', 'SELECT 1'], env=env)
+    env['POSTGRES_AVAILABLE'] = 'true'
+
+
+def run_suite(manifest, env, suite, report):
+    binary = executable(manifest, SUITES[suite], suite)
+    if suite in ('nhcore-test', 'nhcore-test-service'):
+        postgres(env)
+    env.setdefault('LOG_LEVEL', 'Warn')
+    report.parent.mkdir(parents=True, exist_ok=True)
+    with report.open('w') as log:
+        process = subprocess.Popen([binary], stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                   text=True, env=env)
+        with process.stdout:
+            for line in process.stdout:
+                print(line, end='', flush=True)
+                log.write(line)
+        code = process.wait()
+    if code:
+        raise subprocess.CalledProcessError(code, [binary])
+    summaries = re.findall(r'(?m)^\s*(\d+) examples?, (\d+) failures?', report.read_text())
+    if not summaries or any(int(n) == 0 or int(f) != 0 for n, f in summaries):
+        raise ValueError('test executable produced no nonempty successful Hspec summary')
+    return {'suite': suite, 'examples': sum(int(n) for n, _ in summaries)}
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('action', choices=['build', 'export', 'fetch', 'run', 'hurl', 'cold-start'])
+    parser.add_argument('--directory', type=Path, default=Path('component-artifact'))
+    parser.add_argument('--suite', choices=SUITES)
+    parser.add_argument('--report', type=Path, default=Path('component-report.log'))
+    args = parser.parse_args()
+    os.chdir(ROOT)
+    directory = args.directory.resolve()
+    directory.mkdir(parents=True, exist_ok=True)
+    started = time.time()
+    detail = {}
+    code = 0
+    try:
+        if args.action == 'build':
+            if output(['git', 'status', '--porcelain', '--untracked-files=no']):
+                raise ValueError('commit tracked changes before producing a revision-bound artifact')
+            revision = output(['git', 'rev-parse', 'HEAD'])
+            # --json records resolved output paths; -L retains compilation logs.
+            result = json.loads(output(['nix', 'build', '--accept-flake-config', '-L',
+                                        '--no-link', '--json', '.#ci-components']))
+            if len(result) != 1:
+                raise ValueError('expected exactly one CI bundle')
+            root = store_path(result[0]['outputs']['out'])
+            (directory / 'root.txt').write_text(root + '\n')
+            (directory / 'producer.json').write_text(json.dumps({
+                'revision': revision, 'build': result,
+            }, indent=2) + '\n')
+            command(['nix', 'path-info', '--json', '--recursive', root],
+                    stdout=(directory / 'closure.json').open('w'))
+        else:
+            root = load_bundle(directory)
+            if args.action == 'export':
+                # A local binary cache artifact works for forks without cache-write
+                # secrets. Consumers are tied to this workflow run and revision.
+                command(['nix', 'copy', '--to', (directory / 'cache').as_uri(), root])
+            elif args.action == 'fetch':
+                # No flake evaluation/IFD and no compiler on the consuming route.
+                # Only this run's producer artifact is trusted without signatures.
+                command(['nix', 'copy', '--from', (directory / 'cache').as_uri(),
+                         '--no-check-sigs', '--option', 'max-jobs', '0',
+                         '--option', 'builders', '', root])
+                command(['nix', 'path-info', '--recursive', root])
+                environment(root)
+            else:
+                manifest, env = environment(root)
+                if args.action == 'run':
+                    if args.suite is None:
+                        raise ValueError('run requires --suite')
+                    detail = run_suite(manifest, env, args.suite, args.report)
+                else:
+                    env['NHTESTBED_BINARY'] = executable(manifest, 'nhtestbed:exe:nhtestbed', 'nhtestbed')
+                    postgres(env)
+                    script = 'run-tests.sh' if args.action == 'hurl' else 'cold-start-readiness.sh'
+                    command(['bash', str(ROOT / 'testbed/scripts' / script)], env=env)
+    except (ValueError, OSError, KeyError, subprocess.CalledProcessError) as error:
+        print(f'nix-components: {error}', file=sys.stderr)
+        code = 1
+    finally:
+        with (directory / 'timings.jsonl').open('a') as log:
+            log.write(json.dumps({'action': args.action, 'started_unix_s': started,
+                                  'elapsed_s': time.time() - started, 'exit_code': code,
+                                  **detail}) + '\n')
+    return code
+
+
+if __name__ == '__main__':
+    sys.exit(main())

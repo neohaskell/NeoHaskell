@@ -41,6 +41,7 @@ usage: ./dev <verb> [args]
   regression-smoke      prove all six event-store recipes against known-good and
                           controlled known-bad behavior (--self-test is build-free)
   red-evidence <cmd>     record/verify a bug C1 Gate 1 expected-red receipt
+  nix-components       build/export/fetch/run cached Haskell components
   pipeline-benchmark    validate same-task baseline/candidate timing evidence
   where-defined <sym>   symbol definition site, capability-tagged
   api <query>           search the NeoHaskell API surface — by type
@@ -130,6 +131,7 @@ case "${VERB}" in
   who-calls) exec scripts/who-calls "$@" ;;
   regression-smoke) exec scripts/regression-scaffold-smoke "$@" ;;
   red-evidence) exec scripts/spec-red-evidence "$@" ;;
+  nix-components) exec scripts/nix-components "$@" ;;
   pipeline-benchmark) exec scripts/pipeline-benchmark "$@" ;;
   where-defined) exec scripts/where-defined "$@" ;;
   api)      exec scripts/api "$@" ;;

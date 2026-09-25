@@ -1,0 +1,103 @@
+# Component cache experiment
+
+The implementation plan and current acceptance ledger live in
+[PR #899](https://github.com/neohaskell/NeoHaskell/pull/899). These notes record
+reproducible technical evidence. No speedup or extraction result is claimed yet.
+
+## Revisions and scope
+
+Baseline: `cab923c0b098fdb82ece539380719c0757ec9057` on `main`.
+Pinned haskell.nix: `d7e420f9450ffd26b381e2b01a674c45e42420c3`;
+nixpkgs: `647e5c14cbd5067f44ac86b74f014962df460840`;
+Hackage snapshot: `6628238498c563b52150998747a11ffba9b1d7fe`.
+GHC 9.8.4, project `ghc98`, Cabal O1 by default, dev project O0,
+`-fwrite-ide-info`, Haddock disabled except explicit documentation generation.
+The full compiler invocation is retained in the baseline log.
+
+Pinned implementation inspected: haskell.nix `builder/comp-builder.nix` and
+`lib/clean-cabal-component.nix`. Component derivations do not execute tests;
+test executables install under `bin/`. Component cleaning uses Cabal source,
+data and extra-source declarations; it is not a hand-written extension whitelist.
+Generated attributes were evaluated on aarch64-darwin, not inferred from current
+web documentation. The original flake already exposes all project components.
+
+The first isolated Nix build found an undeclared `hspec-discover` build tool in
+`core/test/Main.hs` and `integrations/test/Main.hs`. The development shell hid
+this missing dependency. Declare this already-used tool in those test components.
+The combined nhcore test executable remains individually available in generated
+outputs; the CI bundle builds the four split suites and integration-package suite
+to avoid compiling and executing the overlapping combined suite unnecessarily.
+
+## Artifact consumers
+
+| Consumer | Working route |
+|---|---|
+| Split core suites and integration package suite | Nix component executable, fresh execution report |
+| Hurl and cold-start readiness | Explicit NHTESTBED_BINARY from Nix; existing Cabal default retained |
+| PostgreSQL fixtures | Real server plus readiness **and SQL connection** preflight |
+| Criterion runtime evidence | Current service execution report, existing spec-check parser |
+| Codemap / hoogle generation | Dedicated existing Cabal route and dist-newstyle cache |
+| Doctest | Existing matching-GHC development shell and source interpretation |
+| test-match / watch / hiedb | Full Cabal workspace and O0 dev project, .hie files unchanged |
+| Rust neo | Original independent flake output unchanged |
+
+`./dev nix-components build` creates a revision-bound producer manifest.
+`export` writes a file binary cache including the complete bundle closure.
+`fetch` reads the producer path, verifies checkout identity, and copies with
+`max-jobs=0` and no remote builders. It does not evaluate the Haskell flake.
+Unsigned imports trust only the artifact from the **same workflow run**; never
+point this command at an arbitrary artifact. No fork job needs cache-write keys.
+The main-only Cachix workflow builds the actual bundle/components for later reuse.
+
+## Comparison protocol (set before interpreting results)
+
+Use dedicated runners, immutable Git revisions and identical target sets. Never
+purge the user's shared Nix store. Fresh runner/store evidence must include the
+pre-build store inventory and queries of the exact project output paths against
+both remote caches. Empty local store with populated remote project outputs and
+empty local store with absent remote project outputs are distinct scenarios.
+Record unavailable remote evidence as unknown, not a cache miss.
+
+For each platform and baseline/candidate pair collect at least three observations
+of A (fresh store, documented remote state), B (repeat exact revision), and C
+(one representative implementation edit). Run each suite separately and retain
+counts/reports; record environment/evaluation (including IFD), dependency/project
+downloads, compile/link, execution and upload/download times separately. Keep
+all raw commands, resolved derivation/output paths, lock hashes and logs. Derive
+critical-path elapsed time from workflow intervals; aggregate runner time is
+the sum of job durations, not the workflow span. Overlapping work must not be
+added to elapsed time. Report all observations and medians, not tail percentiles.
+
+Baseline CI `cabal build all` does **not** build the test executables: the later
+`cabal test` jobs pay their compilation. A valid comparison must include those
+builds, not compare that build-only number against a Nix bundle containing tests.
+A log that combines setup and compilation is diagnostic only, not a phase timing.
+The fixed issue-862 `scripts/pipeline-benchmark` protocol is unchanged and must
+not receive these unrelated observations.
+
+Expansion threshold: correct seven-case invalidation, >=15% **and** >=60s median
+representative-edit elapsed improvement, no >10% median fresh-path regression,
+and no >10% aggregate runner-time increase; n>=3 per compared scenario/platform.
+Noise or incomplete samples means no expansion. Increased cache-hit rate alone
+is not success.
+
+## Initial diagnostic
+
+`evidence/baseline-existing-store.json` and matching `.log.gz` record one
+successful library/testbed build in a detached baseline worktree: 147.329s,
+aarch64-darwin, previously populated shared Nix store and fresh dist-newstyle.
+No suite execution, isolated-store condition or phase separation was measured.
+This is **not** a performance comparison. Reproduce with:
+
+```sh
+git worktree add --detach /tmp/nh-cache-baseline cab923c0b098fdb82ece539380719c0757ec9057
+cd /tmp/nh-cache-baseline
+nix develop --accept-flake-config --command bash -c \
+  'ghc --numeric-version; cabal --numeric-version; cabal build all --disable-documentation -v2'
+```
+
+CI closure and execution artifacts currently retain evidence for 14 days. The
+committed diagnostic has no such expiry. After hosted artifacts expire, check out
+the exact recorded revision and dispatch `test.yml` with `--ref` for Linux;
+macOS dispatch/verification is still pending. Draft-triggered skip results are
+never counted as execution evidence.
