@@ -35,7 +35,8 @@ class Measurements(unittest.TestCase):
                    'command':['build'],'elapsed_s':2,'exit_code':1,
                    'logs':{'command.log':hashlib.sha256(log.read_bytes()).hexdigest()}}
             (path/'observation.json').write_text(json.dumps(entry))
-            self.assertIsNone(m.summarize([path,path,path])[0]['median_s'])
+            self.assertIsNone(m.summarize([path])[0]['median_s'])
+            with self.assertRaisesRegex(ValueError,'duplicate observation'):m.summarize([path,path,path])
             log.write_text('success')
             with self.assertRaisesRegex(ValueError,'digest mismatch'):m.summarize([path])
 

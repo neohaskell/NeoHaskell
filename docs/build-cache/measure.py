@@ -30,6 +30,8 @@ def read_command(args):
 
 def summarize(paths):
     groups = defaultdict(list)
+    if len({path.resolve() for path in paths}) != len(paths):
+        raise ValueError('duplicate observation directory')
     for path in paths:
         entry = json.loads((path / 'observation.json').read_text())
         for filename, digest in entry['logs'].items():

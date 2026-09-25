@@ -16,7 +16,7 @@ record() {
     --remote-state 'cache.nixos.org/cache.iog.io/neohaskell.cachix.org enabled; baseline Cabal project outputs are not substitutable' \
     -- "$@"
 }
-nix-store --query --all > "$evidence/store-before.txt"
+nix path-info --all > "$evidence/store-before.txt"
 nix --version > "$evidence/nix-version.txt"
 uname -a > "$evidence/platform.txt"
 record setup fresh setup 'fresh hosted runner after Nix installation; see store-before.txt' \
