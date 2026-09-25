@@ -1,0 +1,177 @@
+{
+  "schema": 1,
+  "title": "PR #899 build-cache performance log",
+  "generated_utc": "2026-09-25",
+  "source_archive": {
+    "commit": "4a913b4",
+    "branch": "evidence/pr-899-build-cache",
+    "benchmark": "https://github.com/neohaskell/NeoHaskell/blob/4a913b4/docs/build-cache/evidence/benchmark.json",
+    "benchmark_report": "https://github.com/neohaskell/NeoHaskell/blob/4a913b4/docs/build-cache/evidence/benchmark.md",
+    "hosted_ci_report": "https://github.com/neohaskell/NeoHaskell/blob/4a913b4/docs/build-cache/evidence/hosted-ci.md"
+  },
+  "comparability": {
+    "status": "diagnostic/unmatched",
+    "flags_note": "O1 is confirmed for the current baseline, candidate, and pilot measurements. Split-sections and HIE settings differ across the routes, so these observations do not support a speedup claim.",
+    "ci_note": "Run 36143308159 production jobs are still the unsplit candidate. Only its optional measurement jobs apply the split pilot. Its 8m36s production span is cache-rate-limited/disabled and is not evidence that the pilot is faster.",
+    "total_rule": "For a multi-stage workload, sum stages within each repetition first, then take the median of those per-repetition totals. Never sum stage medians and call that a total median."
+  },
+  "workloads": [
+    {
+      "id": "baseline",
+      "commit": "e94a6c576b4b92c70ececacf615113eb6608e25f",
+      "technique": "baseline / Cabal sequential workload",
+      "platform": "x86_64-Linux",
+      "cache_condition": "fresh hosted runner; upstream substituters enabled; baseline Cabal project outputs are not substitutable; no magic cache",
+      "status": "diagnostic/unmatched",
+      "evidence": ["benchmark"],
+      "routes": {
+        "fresh_execution": ["fresh_execute_core", "fresh_execute_auth", "fresh_execute_integration", "fresh_execute_service", "fresh_execute_integrations", "fresh_execute_hurl", "fresh_execute_cold"],
+        "fresh_route": ["fresh_setup", "fresh_compile_link", "fresh_execute_core", "fresh_execute_auth", "fresh_execute_integration", "fresh_execute_service", "fresh_execute_integrations", "fresh_execute_hurl", "fresh_execute_cold"],
+        "edit_route": ["edit_compile_link", "edit_execute_core"],
+        "repeat_build": ["repeat_build"]
+      },
+      "stages_s": {
+        "fresh_setup": [86.373760, 77.204292, 76.355193],
+        "fresh_compile_link": [337.729968, 337.880224, 339.372994],
+        "fresh_execute_core": [17.886847, 17.918430, 17.646233],
+        "fresh_execute_auth": [13.960203, 14.200467, 13.795576],
+        "fresh_execute_integration": [21.598900, 21.763943, 21.463380],
+        "fresh_execute_service": [51.857342, 51.948200, 51.954255],
+        "fresh_execute_integrations": [14.216957, 14.512303, 13.958168],
+        "fresh_execute_hurl": [17.807080, 18.318364, 17.890077],
+        "fresh_execute_cold": [17.990238, 18.201060, 17.911648],
+        "edit_compile_link": [195.880411, 195.658729, 198.422042],
+        "edit_execute_core": [17.733010, 17.823425, 17.617633],
+        "repeat_build": [10.070696, 9.971822, 9.956249]
+      }
+    },
+    {
+      "id": "candidate",
+      "commit": "c65700c92bf8e603cde3e7168d68ee8874201cb5",
+      "technique": "candidate / Nix component sequential workload",
+      "platform": "x86_64-Linux",
+      "cache_condition": "fresh hosted runner; cache.nixos.org/cache.iog.io/neohaskell.cachix.org enabled; substitutions/builds recorded; no magic cache",
+      "status": "diagnostic/unmatched",
+      "evidence": ["benchmark"],
+      "routes": {
+        "fresh_execution": ["fresh_execute_core", "fresh_execute_auth", "fresh_execute_integration", "fresh_execute_service", "fresh_execute_integrations", "fresh_execute_hurl", "fresh_execute_cold"],
+        "fresh_route": ["fresh_evaluate_realize", "fresh_execute_core", "fresh_execute_auth", "fresh_execute_integration", "fresh_execute_service", "fresh_execute_integrations", "fresh_execute_hurl", "fresh_execute_cold"],
+        "edit_route": ["edit_evaluate_realize", "edit_execute_core"],
+        "repeat_build": ["repeat_build"],
+        "transfer": ["transfer_encode_cache"]
+      },
+      "stages_s": {
+        "fresh_evaluate_realize": [287.567669, 350.483107, 314.763022],
+        "fresh_execute_core": [3.517208, 3.692282, 3.595244],
+        "fresh_execute_auth": [0.712868, 0.596670, 0.624632],
+        "fresh_execute_integration": [8.464913, 8.488769, 8.458561],
+        "fresh_execute_service": [36.092870, 38.159343, 37.715456],
+        "fresh_execute_integrations": [0.589613, 0.691289, 0.639732],
+        "fresh_execute_hurl": [9.166997, 9.316341, 9.254479],
+        "fresh_execute_cold": [6.968041, 7.438472, 7.459541],
+        "edit_evaluate_realize": [245.975239, 291.892453, 255.489408],
+        "edit_execute_core": [3.561712, 3.703866, 3.597012],
+        "repeat_build": [2.445401, 4.500445, 3.586073],
+        "transfer_encode_cache": [7.026199, 9.476438, 7.758636]
+      }
+    },
+    {
+      "id": "pilot",
+      "commit": "05c07df6979411d1244e0a643bff3d5aca16b4a4",
+      "technique": "pilot / extracted component sequential workload",
+      "platform": "x86_64-Linux",
+      "cache_condition": "fresh hosted runner; cache.nixos.org/cache.iog.io/neohaskell.cachix.org enabled; substitutions/builds recorded; no magic cache",
+      "status": "diagnostic/unmatched",
+      "evidence": ["benchmark"],
+      "routes": {
+        "fresh_execution": ["fresh_execute_core", "fresh_execute_auth", "fresh_execute_integration", "fresh_execute_service", "fresh_execute_integrations", "fresh_execute_hurl", "fresh_execute_cold"],
+        "fresh_route": ["fresh_evaluate_realize", "fresh_execute_core", "fresh_execute_auth", "fresh_execute_integration", "fresh_execute_service", "fresh_execute_integrations", "fresh_execute_hurl", "fresh_execute_cold"],
+        "edit_route": ["edit_evaluate_realize", "edit_execute_core"],
+        "repeat_build": ["repeat_build"],
+        "transfer": ["transfer_encode_cache"],
+        "compatibility": ["compatibility_build_execute"]
+      },
+      "stages_s": {
+        "fresh_evaluate_realize": [344.239988, 346.185503, 662.893521],
+        "fresh_execute_core": [3.682715, 3.665611, 3.624090],
+        "fresh_execute_auth": [0.613067, 0.608517, 0.594212],
+        "fresh_execute_integration": [8.478334, 8.480387, 8.473676],
+        "fresh_execute_service": [37.702908, 37.205633, 36.916460],
+        "fresh_execute_integrations": [0.689494, 0.632811, 0.650138],
+        "fresh_execute_hurl": [9.216405, 9.335521, 9.310944],
+        "fresh_execute_cold": [7.474322, 7.535237, 7.001210],
+        "edit_evaluate_realize": [287.899986, 278.125082, 270.837230],
+        "edit_execute_core": [3.703198, 3.647510, 3.609262],
+        "repeat_build": [3.741812, 4.430864, 4.320620],
+        "transfer_encode_cache": [9.333105, 10.221309, 11.045009],
+        "compatibility_build_execute": [11.465031, 10.462794, 10.630114]
+      }
+    }
+  ],
+  "ci_runs": [
+    {
+      "run": "36141142936",
+      "commit": "08ecae94d2c6b4b204fc5444ad8dedcc50af3fed",
+      "technique": "candidate production",
+      "platform": "macOS",
+      "cache_condition": "producer magic-cache attempted; post-cache 233s and upload rate-limit evidence",
+      "n": 1,
+      "critical_span_s": 1466,
+      "runner_sum_s": 2303,
+      "artifact_to_consumer_s": 248,
+      "optional_measurement_runner_sum_s": 0,
+      "status": "single run / noncomparable",
+      "evidence": ["hosted_ci", "https://github.com/neohaskell/NeoHaskell/actions/runs/36141142936"]
+    },
+    {
+      "run": "36143016033",
+      "commit": "c65700c92bf8e603cde3e7168d68ee8874201cb5",
+      "technique": "candidate production",
+      "platform": "Linux",
+      "cache_condition": "producer magic-cache attempted; post-cache 635s, upload errors and eventual rate-limit disablement",
+      "n": 1,
+      "critical_span_s": 1272,
+      "runner_sum_s": 2098,
+      "artifact_to_consumer_s": 644,
+      "optional_measurement_runner_sum_s": 4635,
+      "status": "single run / noncomparable",
+      "evidence": ["hosted_ci", "https://github.com/neohaskell/NeoHaskell/actions/runs/36143016033"]
+    },
+    {
+      "run": "36143308159",
+      "commit": "987fe3dbbd520f1ae87f64c2494023b5a1a12b6c",
+      "technique": "candidate-unsplit production (pilot run); optional split pilot measurements",
+      "platform": "Linux",
+      "cache_condition": "producer cache disabled/rate-limited; 13 setup errors, no successful path uploads; optional jobs apply split pilot",
+      "n": 1,
+      "critical_span_s": 516,
+      "runner_sum_s": 1311,
+      "artifact_to_consumer_s": 7,
+      "optional_measurement_runner_sum_s": 2610,
+      "status": "single run / cache-rate-limited / noncomparable",
+      "evidence": ["hosted_ci", "https://github.com/neohaskell/NeoHaskell/actions/runs/36143308159"]
+    }
+  ],
+  "pending": [
+    {
+      "commit": "1efe92a",
+      "technique": "align candidate local-package flags with baseline (explicit O1, split-sections disabled, HIE enabled)",
+      "platform": "Linux + macOS",
+      "cache_condition": "dependencies untouched; matched rerun still required",
+      "status": "pending measurement",
+      "evidence": ["https://github.com/neohaskell/NeoHaskell/commit/1efe92a"]
+    },
+    {
+      "commit": "15eeef1348630b6e96a7a9cba472af8cc7deea53",
+      "equivalent_commit": "f64fe870ec8157ebb9764a143880103717262bd7",
+      "technique": "disable duplicate producer upload (magic-nix-cache GHA/FlakeHub inputs)",
+      "platform": "Linux + macOS",
+      "cache_condition": "producer action configured with use-gha-cache: disabled and use-flakehub: disabled; upstream substituters/artifact path retained",
+      "status": "pending measurement",
+      "evidence": [
+        "https://github.com/neohaskell/NeoHaskell/commit/15eeef1348630b6e96a7a9cba472af8cc7deea53",
+        "https://github.com/neohaskell/NeoHaskell/commit/f64fe870ec8157ebb9764a143880103717262bd7"
+      ]
+    }
+  ]
+}
