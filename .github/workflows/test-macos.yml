@@ -80,4 +80,6 @@ jobs:
         run: nix develop --command cabal build all --disable-documentation
 
       - name: Run ${{ matrix.test-suite }}
+        env:
+          POSTGRES_AVAILABLE: ${{ matrix.needs-postgres && 'true' || '' }}
         run: nix develop --command cabal test ${{ matrix.test-suite }}
