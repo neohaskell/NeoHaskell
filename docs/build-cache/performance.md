@@ -74,6 +74,17 @@ evidence that the pilot is faster. The 644s Linux and 248s macOS
 artifact-ready waits are critical-path delays between the producer artifact and
 the first consumer, not estimates of aggregate upload cost.
 
+## Excluded attempts
+
+These attempts remain part of the experiment history; they are not plotted as
+successful complete-workload timings.
+
+| Run / revision | Outcome | Effect on the experiment |
+|---|---|---|
+| [36138728431](https://github.com/neohaskell/NeoHaskell/actions/runs/36138728431) / `2b4718e` | Three baseline jobs failed before measurement: unsupported store-inventory command | Replaced inventory command; no timing sample counted |
+| [36140072923](https://github.com/neohaskell/NeoHaskell/actions/runs/36140072923) / `45bb2f6` | All three raw-baseline repetitions stopped at two network-dependent mock failures | Applied identical fixture normalization to both routes; partial timings retained, no complete-workload median |
+| [36144876178](https://github.com/neohaskell/NeoHaskell/actions/runs/36144876178) / `d8dacd2` | Deliberately added test failed its job and aggregate gate | Correctness acceptance passed; intentionally excluded from performance comparisons |
+
 ## Pending techniques
 
 No timing is invented for changes that have not had a matched rerun.
