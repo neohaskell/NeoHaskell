@@ -1,0 +1,72 @@
+colocated (1)	Build and execute twice on one worker	﻿2026-09-25T16:19:24.2124991Z ##[group]Run bash docs/build-cache/colocated.sh "$RUNNER_TEMP/colocated-evidence"
+colocated (1)	Build and execute twice on one worker	2026-09-25T16:19:24.2126306Z ^[[36;1mbash docs/build-cache/colocated.sh "$RUNNER_TEMP/colocated-evidence"^[[0m
+colocated (1)	Build and execute twice on one worker	2026-09-25T16:19:24.2215310Z shell: /usr/bin/bash -e {0}
+colocated (1)	Build and execute twice on one worker	2026-09-25T16:19:24.2215759Z env:
+colocated (1)	Build and execute twice on one worker	2026-09-25T16:19:24.2216478Z   DETSYS_BACKTRACE_COLLECTOR: 0ad6de95-44e0-4f7d-9528-55061fb2233f
+colocated (1)	Build and execute twice on one worker	2026-09-25T16:19:24.2217202Z   DETERMINATE_NIX_KVM: 1
+colocated (1)	Build and execute twice on one worker	2026-09-25T16:19:24.2217596Z ##[endgroup]
+colocated (1)	Build and execute twice on one worker	2026-09-25T16:19:24.2911870Z docs/build-cache/colocated.sh: line 12: COLOCATED_REPETITION: parameter null or not set
+colocated (1)	Build and execute twice on one worker	2026-09-25T16:19:24.2941319Z ##[error]Process completed with exit code 1.
+colocated (1)	Run actions/upload-artifact@v7	﻿2026-09-25T16:19:24.3061461Z ##[group]Run actions/upload-artifact@v7
+colocated (1)	Run actions/upload-artifact@v7	2026-09-25T16:19:24.3061971Z with:
+colocated (1)	Run actions/upload-artifact@v7	2026-09-25T16:19:24.3062317Z   name: colocated-linux-1
+colocated (1)	Run actions/upload-artifact@v7	2026-09-25T16:19:24.3062822Z   path: /home/runner/work/_temp/colocated-evidence
+colocated (1)	Run actions/upload-artifact@v7	2026-09-25T16:19:24.3063375Z   include-hidden-files: true
+colocated (1)	Run actions/upload-artifact@v7	2026-09-25T16:19:24.3063810Z   if-no-files-found: error
+colocated (1)	Run actions/upload-artifact@v7	2026-09-25T16:19:24.3064157Z   retention-days: 30
+colocated (1)	Run actions/upload-artifact@v7	2026-09-25T16:19:24.3064394Z   compression-level: 6
+colocated (1)	Run actions/upload-artifact@v7	2026-09-25T16:19:24.3064617Z   overwrite: false
+colocated (1)	Run actions/upload-artifact@v7	2026-09-25T16:19:24.3064827Z   archive: true
+colocated (1)	Run actions/upload-artifact@v7	2026-09-25T16:19:24.3065021Z env:
+colocated (1)	Run actions/upload-artifact@v7	2026-09-25T16:19:24.3065303Z   DETSYS_BACKTRACE_COLLECTOR: 0ad6de95-44e0-4f7d-9528-55061fb2233f
+colocated (1)	Run actions/upload-artifact@v7	2026-09-25T16:19:24.3065669Z   DETERMINATE_NIX_KVM: 1
+colocated (1)	Run actions/upload-artifact@v7	2026-09-25T16:19:24.3066169Z ##[endgroup]
+colocated (1)	Run actions/upload-artifact@v7	2026-09-25T16:19:24.4609628Z ##[error]No files were found with the provided path: /home/runner/work/_temp/colocated-evidence. No artifacts will be uploaded.
+colocated (3)	Build and execute twice on one worker	﻿2026-09-25T16:20:02.3655399Z ##[group]Run bash docs/build-cache/colocated.sh "$RUNNER_TEMP/colocated-evidence"
+colocated (3)	Build and execute twice on one worker	2026-09-25T16:20:02.3656048Z ^[[36;1mbash docs/build-cache/colocated.sh "$RUNNER_TEMP/colocated-evidence"^[[0m
+colocated (3)	Build and execute twice on one worker	2026-09-25T16:20:02.3731951Z shell: /usr/bin/bash -e {0}
+colocated (3)	Build and execute twice on one worker	2026-09-25T16:20:02.3732309Z env:
+colocated (3)	Build and execute twice on one worker	2026-09-25T16:20:02.3732674Z   DETSYS_BACKTRACE_COLLECTOR: 4f657565-87ba-48d6-a2ae-729e91322924
+colocated (3)	Build and execute twice on one worker	2026-09-25T16:20:02.3733072Z   DETERMINATE_NIX_KVM: 1
+colocated (3)	Build and execute twice on one worker	2026-09-25T16:20:02.3733327Z ##[endgroup]
+colocated (3)	Build and execute twice on one worker	2026-09-25T16:20:02.4369515Z docs/build-cache/colocated.sh: line 12: COLOCATED_REPETITION: parameter null or not set
+colocated (3)	Build and execute twice on one worker	2026-09-25T16:20:02.4385844Z ##[error]Process completed with exit code 1.
+colocated (3)	Run actions/upload-artifact@v7	﻿2026-09-25T16:20:02.4499891Z ##[group]Run actions/upload-artifact@v7
+colocated (3)	Run actions/upload-artifact@v7	2026-09-25T16:20:02.4500234Z with:
+colocated (3)	Run actions/upload-artifact@v7	2026-09-25T16:20:02.4500461Z   name: colocated-linux-3
+colocated (3)	Run actions/upload-artifact@v7	2026-09-25T16:20:02.4500796Z   path: /home/runner/work/_temp/colocated-evidence
+colocated (3)	Run actions/upload-artifact@v7	2026-09-25T16:20:02.4501132Z   include-hidden-files: true
+colocated (3)	Run actions/upload-artifact@v7	2026-09-25T16:20:02.4501674Z   if-no-files-found: error
+colocated (3)	Run actions/upload-artifact@v7	2026-09-25T16:20:02.4501935Z   retention-days: 30
+colocated (3)	Run actions/upload-artifact@v7	2026-09-25T16:20:02.4502181Z   compression-level: 6
+colocated (3)	Run actions/upload-artifact@v7	2026-09-25T16:20:02.4502414Z   overwrite: false
+colocated (3)	Run actions/upload-artifact@v7	2026-09-25T16:20:02.4502640Z   archive: true
+colocated (3)	Run actions/upload-artifact@v7	2026-09-25T16:20:02.4502864Z env:
+colocated (3)	Run actions/upload-artifact@v7	2026-09-25T16:20:02.4503159Z   DETSYS_BACKTRACE_COLLECTOR: 4f657565-87ba-48d6-a2ae-729e91322924
+colocated (3)	Run actions/upload-artifact@v7	2026-09-25T16:20:02.4503537Z   DETERMINATE_NIX_KVM: 1
+colocated (3)	Run actions/upload-artifact@v7	2026-09-25T16:20:02.4503801Z ##[endgroup]
+colocated (3)	Run actions/upload-artifact@v7	2026-09-25T16:20:02.5969277Z ##[error]No files were found with the provided path: /home/runner/work/_temp/colocated-evidence. No artifacts will be uploaded.
+colocated (2)	Build and execute twice on one worker	﻿2026-09-25T16:19:44.1416850Z ##[group]Run bash docs/build-cache/colocated.sh "$RUNNER_TEMP/colocated-evidence"
+colocated (2)	Build and execute twice on one worker	2026-09-25T16:19:44.1417525Z ^[[36;1mbash docs/build-cache/colocated.sh "$RUNNER_TEMP/colocated-evidence"^[[0m
+colocated (2)	Build and execute twice on one worker	2026-09-25T16:19:44.1489767Z shell: /usr/bin/bash -e {0}
+colocated (2)	Build and execute twice on one worker	2026-09-25T16:19:44.1490104Z env:
+colocated (2)	Build and execute twice on one worker	2026-09-25T16:19:44.1490408Z   DETSYS_BACKTRACE_COLLECTOR: de60204c-f74c-4910-8f67-a49e13d3045f
+colocated (2)	Build and execute twice on one worker	2026-09-25T16:19:44.1490787Z   DETERMINATE_NIX_KVM: 1
+colocated (2)	Build and execute twice on one worker	2026-09-25T16:19:44.1491030Z ##[endgroup]
+colocated (2)	Build and execute twice on one worker	2026-09-25T16:19:44.2072771Z docs/build-cache/colocated.sh: line 12: COLOCATED_REPETITION: parameter null or not set
+colocated (2)	Build and execute twice on one worker	2026-09-25T16:19:44.2087443Z ##[error]Process completed with exit code 1.
+colocated (2)	Run actions/upload-artifact@v7	﻿2026-09-25T16:19:44.2198206Z ##[group]Run actions/upload-artifact@v7
+colocated (2)	Run actions/upload-artifact@v7	2026-09-25T16:19:44.2198879Z with:
+colocated (2)	Run actions/upload-artifact@v7	2026-09-25T16:19:44.2199107Z   name: colocated-linux-2
+colocated (2)	Run actions/upload-artifact@v7	2026-09-25T16:19:44.2199416Z   path: /home/runner/work/_temp/colocated-evidence
+colocated (2)	Run actions/upload-artifact@v7	2026-09-25T16:19:44.2199749Z   include-hidden-files: true
+colocated (2)	Run actions/upload-artifact@v7	2026-09-25T16:19:44.2200018Z   if-no-files-found: error
+colocated (2)	Run actions/upload-artifact@v7	2026-09-25T16:19:44.2200257Z   retention-days: 30
+colocated (2)	Run actions/upload-artifact@v7	2026-09-25T16:19:44.2200491Z   compression-level: 6
+colocated (2)	Run actions/upload-artifact@v7	2026-09-25T16:19:44.2200712Z   overwrite: false
+colocated (2)	Run actions/upload-artifact@v7	2026-09-25T16:19:44.2200931Z   archive: true
+colocated (2)	Run actions/upload-artifact@v7	2026-09-25T16:19:44.2201149Z env:
+colocated (2)	Run actions/upload-artifact@v7	2026-09-25T16:19:44.2201425Z   DETSYS_BACKTRACE_COLLECTOR: de60204c-f74c-4910-8f67-a49e13d3045f
+colocated (2)	Run actions/upload-artifact@v7	2026-09-25T16:19:44.2201794Z   DETERMINATE_NIX_KVM: 1
+colocated (2)	Run actions/upload-artifact@v7	2026-09-25T16:19:44.2202026Z ##[endgroup]
+colocated (2)	Run actions/upload-artifact@v7	2026-09-25T16:19:44.3653478Z ##[error]No files were found with the provided path: /home/runner/work/_temp/colocated-evidence. No artifacts will be uploaded.
