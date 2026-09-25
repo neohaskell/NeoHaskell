@@ -12,7 +12,6 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[2]
 COMPONENTS = (
     'nhcore:lib:nhcore', 'nhintegrations:lib:nhintegrations', 'nhtestbed:lib:nhtestbed',
     'nhcore:test:nhcore-test-core', 'nhcore:test:nhcore-test-auth', 'nhcore:test:nhcore-test-integration',
@@ -89,18 +88,20 @@ def main():
     args = parser.parse_args()
     args.output.parent.mkdir(parents=True, exist_ok=True)
     started = time.monotonic()
-    revision = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip()
+    # The harness may live in a separate checkout from the measured revision.
+    root = Path(subprocess.check_output(['git', 'rev-parse', '--show-toplevel'], text=True).strip())
+    revision = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=root, text=True).strip()
     record = {
         'schema': 1, 'status': 'unavailable', 'comparison_unusable': True,
         'started_unix_s': time.time(),
-        'revision': revision, 'lock_sha256': hashlib.sha256((ROOT / 'flake.lock').read_bytes()).hexdigest(),
+        'revision': revision, 'lock_sha256': hashlib.sha256((root / 'flake.lock').read_bytes()).hexdigest(),
         'system': system(), 'caches': list(CACHES), 'outputs': {}, 'errors': [],
     }
     eval_started = time.monotonic()
     command = ['nix', 'eval', '--accept-flake-config', '--json',
                f'.#packages.{record["system"]}', '--apply', expression()]
-    result = subprocess.run(command, cwd=ROOT, capture_output=True, text=True, check=False)
-    eval_log = args.output.with_name('cache-state-evaluation.log')
+    result = subprocess.run(command, cwd=root, capture_output=True, text=True, check=False)
+    eval_log = args.output.with_suffix('.evaluation.log')
     eval_log.write_text(result.stderr)
     record['evaluation'] = {
         'eval_s': time.monotonic() - eval_started, 'exit_code': result.returncode,
