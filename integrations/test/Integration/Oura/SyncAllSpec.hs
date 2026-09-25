@@ -14,7 +14,6 @@ import Auth.OAuth2.Types
   ( Provider (..)
   , unsafeValidatedProvider
   , mkAccessToken
-  , mkRefreshToken
   , TokenSet (..)
   , ClientId (..)
   , mkClientSecret
@@ -201,7 +200,9 @@ setupMockContext = do
   let tokenKey = TokenKey "oauth:oura:test-user"
   let tokenSet = TokenSet
         { accessToken = mkAccessToken "mock-access-token"
-        , refreshToken = Just (mkRefreshToken "mock-refresh-token")
+        -- Fetches are mocked; a refresh token would call the real token endpoint
+        -- after the Unauthorized fixtures and make these unit tests network-dependent.
+        , refreshToken = Nothing
         , expiresInSeconds = Just 3600
         }
   secretStore.put tokenKey tokenSet
@@ -266,4 +267,3 @@ mockPersonalInfo = PersonalInfoData
 -- | Re-export from Data.Maybe for test assertions
 isJust :: forall value. Maybe value -> Bool
 isJust = GhcMaybe.isJust
-

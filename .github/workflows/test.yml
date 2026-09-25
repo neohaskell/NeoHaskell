@@ -336,8 +336,9 @@ jobs:
             -p 5432:5432 \
             postgres:16-alpine \
             postgres -c max_connections=200
-          for i in $(seq 1 30); do
-            pg_isready -h 127.0.0.1 -U neohaskell && break || sleep 1
+          for _ in $(seq 1 30); do
+            if pg_isready -h 127.0.0.1 -U neohaskell; then break; fi
+            sleep 1
           done
           if ! pg_isready -h 127.0.0.1 -U neohaskell; then
             echo "::error::PostgreSQL failed to start within 30 seconds"
@@ -398,8 +399,9 @@ jobs:
             -p 5432:5432 \
             postgres:16-alpine \
             postgres -c max_connections=200
-          for i in $(seq 1 30); do
-            pg_isready -h 127.0.0.1 -U neohaskell && break || sleep 1
+          for _ in $(seq 1 30); do
+            if pg_isready -h 127.0.0.1 -U neohaskell; then break; fi
+            sleep 1
           done
           if ! pg_isready -h 127.0.0.1 -U neohaskell; then
             echo "::error::PostgreSQL failed to start within 30 seconds"
@@ -508,8 +510,9 @@ jobs:
             -e POSTGRES_USER=neohaskell -e POSTGRES_PASSWORD=neohaskell \
             -e POSTGRES_DB=neohaskell -p 5432:5432 postgres:16-alpine \
             postgres -c max_connections=200
-          for i in $(seq 1 30); do
-            docker exec baseline-postgres pg_isready -h 127.0.0.1 -U neohaskell && break || sleep 1
+          for _ in $(seq 1 30); do
+            if docker exec baseline-postgres pg_isready -h 127.0.0.1 -U neohaskell; then break; fi
+            sleep 1
           done
           docker exec baseline-postgres pg_isready -h 127.0.0.1 -U neohaskell
       - name: Measure immutable baseline and controlled implementation edit

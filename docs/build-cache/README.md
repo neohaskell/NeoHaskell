@@ -186,3 +186,18 @@ doctest retain their existing dependency-cache route. Build timing now explicitl
 separates flake evaluation (including IFD) from realisation of the resolved `.drv`;
 realisation logs distinguish copying from compiling. Detailed GHC linking and
 transfer comparisons remain owed.
+
+The newly executed integration-package suite exposed two existing network-dependent
+SyncAll fixtures on Linux: mocked Unauthorized fetches used a mock refresh token,
+then unexpectedly POSTed to real `example.com/token` (HTTP 405 HTML). The mock
+context now has no refresh token, so these callback/error tests exercise their
+intended authentication failure without network access. Assertions and expected
+results are unchanged; the expectation guard and dialect lint pass. The rebuilt
+suite passes 606 examples locally. This is a narrow fixture dependency of running
+that suite consistently; no OAuth implementation behavior was changed.
+
+The macOS workflow now has one component producer and five consumers, with
+PostgreSQL 16 from the pinned Nix runtime and a disposable SCRAM-authenticated
+cluster. Both platforms populate Cachix on main. macOS hosted verification is
+pending; local runs are not a substitute for a fresh runner. `actionlint` validates
+the changed workflows, in addition to the repository's workflow checker.

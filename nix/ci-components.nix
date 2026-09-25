@@ -19,7 +19,7 @@ let
   }) names);
   runtime = pkgs.buildEnv {
     name = "neohaskell-ci-runtime";
-    paths = with pkgs; [ bash coreutils curl hurl postgresql poppler_utils python3 ];
+    paths = with pkgs; [ bash coreutils curl hurl postgresql_16 poppler_utils python3 ];
     pathsToLink = [ "/bin" "/share/postgresql" ];
   };
   manifest = pkgs.writeText "neohaskell-components.json" (builtins.toJSON {

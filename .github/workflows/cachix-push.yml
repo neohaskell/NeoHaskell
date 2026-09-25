@@ -16,7 +16,11 @@ on:
 
 jobs:
   cachix-push:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: DeterminateSystems/determinate-nix-action@v3.22.2

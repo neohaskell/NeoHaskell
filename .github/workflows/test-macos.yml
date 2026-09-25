@@ -1,63 +1,30 @@
 name: "Test macOS"
 
 on:
+  workflow_dispatch:
   push:
-    branches:
-      - main
+    branches: [main]
     paths:
       - "core/**"
+      - "integrations/**"
+      - "testbed/**"
       - "nix/**"
+      - "flake.nix"
+      - "flake.lock"
+      - "cabal.project"
+      - "scripts/nix-components"
+      - ".github/workflows/test-macos.yml"
+
+permissions:
+  id-token: write
+  contents: read
 
 jobs:
-  tests-macos:
+  build-macos:
     runs-on: macos-latest
-    permissions:
-      id-token: write
-      contents: read
-
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - test-suite: nhcore-test-auth
-            needs-postgres: false
-          - test-suite: nhcore-test-core
-            needs-postgres: false
-          - test-suite: nhcore-test-integration
-            needs-postgres: false
-          - test-suite: nhcore-test-service
-            needs-postgres: true
-
+    timeout-minutes: 45
     steps:
-      - name: Install current Bash and poppler on macOS
-        run: brew install bash poppler
-
-      - name: Start PostgreSQL on macOS
-        if: matrix.needs-postgres
-        run: |
-          brew install postgresql@16
-
-          # Add PostgreSQL to PATH (keg-only formula)
-          echo "/opt/homebrew/opt/postgresql@16/bin" >> $GITHUB_PATH
-          export PATH="/opt/homebrew/opt/postgresql@16/bin:$PATH"
-
-          brew services start postgresql@16
-
-          # Wait for PostgreSQL to start
-          for i in {1..30}; do
-            if /opt/homebrew/opt/postgresql@16/bin/pg_isready > /dev/null 2>&1; then
-              break
-            fi
-            echo "Waiting for PostgreSQL to start..."
-            sleep 1
-          done
-
-          # Create user with password and database
-          /opt/homebrew/opt/postgresql@16/bin/psql postgres -c "CREATE USER neohaskell WITH PASSWORD 'neohaskell' SUPERUSER CREATEDB CREATEROLE LOGIN;"
-          /opt/homebrew/opt/postgresql@16/bin/psql postgres -c "CREATE DATABASE neohaskell OWNER neohaskell;"
-
       - uses: actions/checkout@v7.0.1
-
       - uses: DeterminateSystems/determinate-nix-action@v3.22.2
         with:
           extra-conf: |
@@ -66,15 +33,90 @@ jobs:
             extra-trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= neohaskell.cachix.org-1:mo2cLaGbwqbrxs9xhqKK8jeNsn3osi7t6XoAmxSZssc=
 
       - uses: DeterminateSystems/magic-nix-cache-action@v14
-      - uses: actions/cache@v6.1.0
+      - name: Build components once for macOS
+        run: ./dev nix-components build
+      - name: Publish complete closure for consumers
+        run: ./dev nix-components export
+      - uses: actions/upload-artifact@v7
         with:
-          path: dist-newstyle
-          key: ${{ runner.os }}-cabal-${{ hashFiles('**/*.cabal', 'cabal.project') }}
-          restore-keys: |
-            ${{ runner.os }}-cabal-
+          name: haskell-components-macos
+          path: component-artifact
+          compression-level: 0
+          retention-days: 14
+          if-no-files-found: error
 
-      - name: Build the project with cabal
-        run: nix develop --command cabal build all --disable-documentation
+  tests-macos:
+    needs: build-macos
+    runs-on: macos-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        test-suite:
+          - nhcore-test-auth
+          - nhcore-test-core
+          - nhcore-test-integration
+          - nhcore-test-service
+          - nhintegrations-test
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: DeterminateSystems/determinate-nix-action@v3.22.2
+        with:
+          extra-conf: |
+            accept-flake-config = true
+            extra-substituters = https://cache.iog.io https://neohaskell.cachix.org
+            extra-trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= neohaskell.cachix.org-1:mo2cLaGbwqbrxs9xhqKK8jeNsn3osi7t6XoAmxSZssc=
 
-      - name: Run ${{ matrix.test-suite }}
-        run: nix develop --command cabal test ${{ matrix.test-suite }}
+      - uses: actions/download-artifact@v8
+        with:
+          name: haskell-components-macos
+          path: component-artifact
+      - name: Fetch exact outputs without compilation
+        run: ./dev nix-components fetch
+      - name: Start PostgreSQL fixture with password authentication
+        if: matrix.test-suite == 'nhcore-test-service'
+        env:
+          PGPASSWORD: neohaskell
+        run: |
+          set -euo pipefail
+          root="$(cat component-artifact/root.txt)"
+          export PATH="$root/runtime/bin:$PATH"
+          pg_bin="$(dirname "$(realpath "$root/runtime/bin/initdb")")"
+          "$pg_bin/initdb" -D "$RUNNER_TEMP/nh-postgres" -U neohaskell \
+            --auth-local=trust --auth-host=scram-sha-256 \
+            --pwfile=<(printf '%s\n' neohaskell)
+          "$pg_bin/pg_ctl" -D "$RUNNER_TEMP/nh-postgres" -l "$RUNNER_TEMP/postgres.log" \
+            -o "-h 127.0.0.1 -p 5432 -k $RUNNER_TEMP -c max_connections=200" -w start
+          "$pg_bin/createdb" -h 127.0.0.1 -U neohaskell neohaskell
+      - name: Run ${{ matrix.test-suite }} from the store
+        env:
+          SUITE: ${{ matrix.test-suite }}
+        run: ./dev nix-components run --suite "$SUITE"
+      - name: Stop disposable PostgreSQL fixture
+        if: always() && matrix.test-suite == 'nhcore-test-service'
+        run: |
+          if [ -f "$RUNNER_TEMP/nh-postgres/postmaster.pid" ]; then
+            root="$(cat component-artifact/root.txt)"
+            pg_bin="$(dirname "$("$root/runtime/bin/realpath" "$root/runtime/bin/pg_ctl")")"
+            "$pg_bin/pg_ctl" -D "$RUNNER_TEMP/nh-postgres" -m fast -w stop
+          fi
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: macos-${{ matrix.test-suite }}-evidence
+          path: |
+            component-report.log
+            component-artifact/timings.jsonl
+            ${{ runner.temp }}/postgres.log
+          retention-days: 14
+
+  ci-gate-macos:
+    if: always()
+    needs: [build-macos, tests-macos]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require build and all macOS suites
+        env:
+          BUILD: ${{ needs.build-macos.result }}
+          TESTS: ${{ needs.tests-macos.result }}
+        run: test "$BUILD" = success && test "$TESTS" = success
