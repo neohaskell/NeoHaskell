@@ -10,6 +10,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
+import urllib.parse
 from pathlib import Path
 
 COMPONENTS = (
@@ -17,10 +18,30 @@ COMPONENTS = (
     'nhcore:test:nhcore-test-core', 'nhcore:test:nhcore-test-auth', 'nhcore:test:nhcore-test-integration',
     'nhcore:test:nhcore-test-service', 'nhintegrations:test:nhintegrations-test', 'nhtestbed:exe:nhtestbed',
 )
-# Keep this list aligned with flake.nix nixConfig.extra-substituters.
+# Flake additions are not included in `nix config show` outside evaluation.
+# Keep these aligned with flake.nix nixConfig.extra-substituters.
 CACHES = ('https://cache.iog.io', 'https://neohaskell.cachix.org')
+PUBLIC_CACHES = frozenset((*CACHES, 'https://cache.nixos.org', 'https://install.determinate.systems'))
 STORE = re.compile(r'^/nix/store/[a-z0-9]{32}-[^/\s]+$')
 TIMEOUT_S = 5
+
+
+def configured_caches(settings):
+    values = settings['substituters']['value']
+    if not isinstance(values, list) or not all(isinstance(value, str) for value in values):
+        raise ValueError('unexpected substituters configuration format')
+    digest = hashlib.sha256(json.dumps(values, sort_keys=True).encode()).hexdigest()
+    caches = set(CACHES)
+    unknown = 0
+    for value in values:
+        parsed = urllib.parse.urlsplit(value)
+        normalized = value.rstrip('/')
+        if normalized in PUBLIC_CACHES and not (parsed.username or parsed.password or parsed.query or parsed.fragment):
+            caches.add(normalized)
+        else:
+            # Never persist arbitrary URLs, which may contain credentials.
+            unknown += 1
+    return sorted(caches), {'sha256': digest, 'unrecognized_count': unknown}
 
 
 def system():
@@ -97,6 +118,16 @@ def main():
         'revision': revision, 'lock_sha256': hashlib.sha256((root / 'flake.lock').read_bytes()).hexdigest(),
         'system': system(), 'caches': list(CACHES), 'outputs': {}, 'errors': [],
     }
+    try:
+        settings = json.loads(subprocess.check_output(['nix', 'config', 'show', '--json'],
+                             cwd=root, text=True, stderr=subprocess.DEVNULL))
+        caches, config = configured_caches(settings)
+        record['caches'] = caches
+        record['substituter_config'] = config
+        if config['unrecognized_count']:
+            record['errors'].append('unrecognized substituters were not probed; URLs redacted')
+    except (subprocess.CalledProcessError, OSError, KeyError, TypeError, ValueError):
+        record['errors'].append('effective substituter configuration unavailable')
     eval_started = time.monotonic()
     command = ['nix', 'eval', '--accept-flake-config', '--json',
                f'.#packages.{record["system"]}', '--apply', expression()]
@@ -120,7 +151,7 @@ def main():
     probe_started = time.monotonic()
     for name, output in record['outputs'].items():
         local = local_state(output['out'])
-        remote = {cache: narinfo(cache, output['out'], args.timeout) for cache in CACHES}
+        remote = {cache: narinfo(cache, output['out'], args.timeout) for cache in record['caches']}
         output['local_state'] = local['state']
         output['local'] = local
         output['remote'] = remote
@@ -130,7 +161,7 @@ def main():
             if state['state'] == 'network-error':
                 record['errors'].append(f'{name}: {cache}: network error')
     record['probe_s'] = time.monotonic() - probe_started
-    record['comparison_unusable'] = any(
+    record['comparison_unusable'] = bool(record['errors']) or any(
         output['local_state'] == 'unavailable' or
         any(state['state'] not in ('present', 'absent') for state in output['remote'].values())
         for output in record['outputs'].values())

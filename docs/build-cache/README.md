@@ -55,6 +55,10 @@ exclude `probe_s` and the rest of the audit wall time as instrumentation, while
 keeping `observation.json.elapsed_s` as the raw command wall time. The probe is
 not run against `baseline.sh`: the raw Cabal baseline has no `ci-components`
 flake output to evaluate.
+The audit includes inherited public substituters (NixOS and Determinate) as well
+as the flake's IOG/NeoHaskell additions. It stores a configuration hash and only
+recognized public URLs. An unknown endpoint or failed probe makes the comparison
+unusable; neither is classified as a cache miss.
 
 `baseline.sh` and `candidate.sh` run matched sequential targets and suites on
 fresh hosted runners, then repeat the build and apply a deterministic Text edit.

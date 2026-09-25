@@ -14,6 +14,22 @@ loader.exec_module(cache_state)
 
 
 class CacheState(unittest.TestCase):
+    def test_configured_caches_include_inherited_and_flake_endpoints(self):
+        caches, config = cache_state.configured_caches({'substituters': {'value': [
+            'https://cache.nixos.org/', 'https://install.determinate.systems',
+            'https://cache.iog.io',
+        ]}})
+        self.assertEqual(set(caches), cache_state.PUBLIC_CACHES)
+        self.assertEqual(config['unrecognized_count'], 0)
+
+    def test_unknown_or_credentialed_cache_is_unusable_and_redacted(self):
+        caches, config = cache_state.configured_caches({'substituters': {'value': [
+            'https://token:secret@cache.nixos.org', 'https://unknown.example?token=secret',
+        ]}})
+        self.assertEqual(config['unrecognized_count'], 2)
+        self.assertNotIn('secret', str((caches, config)))
+        self.assertEqual(len(config['sha256']), 64)
+
     def test_narinfo_200_requires_the_requested_store_path(self):
         path = '/nix/store/' + 'a' * 32 + '-component'
 
