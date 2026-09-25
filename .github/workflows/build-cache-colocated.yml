@@ -31,7 +31,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7.0.1
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ inputs.source_sha || github.sha }}
+          fetch-depth: 1
           persist-credentials: false
       - name: Verify immutable experiment checkout
         env:
@@ -39,6 +40,7 @@ jobs:
         run: |
           set -euo pipefail
           [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$SOURCE_SHA" = "$GITHUB_SHA" ]]
           test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
       - uses: DeterminateSystems/determinate-nix-action@v3.22.2
         with:
@@ -47,6 +49,8 @@ jobs:
             extra-substituters = https://cache.iog.io https://neohaskell.cachix.org
             extra-trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= neohaskell.cachix.org-1:mo2cLaGbwqbrxs9xhqKK8jeNsn3osi7t6XoAmxSZssc=
       - name: Build and execute twice on one worker
+        env:
+          COLOCATED_REPETITION: ${{ matrix.repetition }}
         run: bash docs/build-cache/colocated.sh "$RUNNER_TEMP/colocated-evidence"
       - uses: actions/upload-artifact@v7
         if: always()

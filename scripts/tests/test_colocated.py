@@ -22,7 +22,9 @@ class ColocatedTests(unittest.TestCase):
         for name in ('colocated.sh', 'measure.py'):
             shutil.copy2(ROOT / 'docs/build-cache' / name, harness / name)
         (harness / 'cache-state.py').write_text(
-            'import pathlib,sys\npathlib.Path(sys.argv[2]).write_text(\'{"comparison_unusable": false}\')\n')
+            '''import json,pathlib,sys,os
+pathlib.Path(sys.argv[2]).write_text(json.dumps({'comparison_unusable':False,'status':'complete','revision':os.environ['GITHUB_SHA'],'evaluation':{'exit_code':0,'eval_s':0.1},'outputs':{'bundle':{}}}))
+''')
         for group in ('commands', 'queries', 'scenarios', 'integrations'):
             folder = self.repo / 'testbed/tests' / group
             folder.mkdir(parents=True)
@@ -45,6 +47,10 @@ if '--suite' in args:
  pathlib.Path(args[args.index('--report')+1]).write_text('3 examples, 0 failures\\n')
  entry={'action':action,'exit_code':0,'suite':suite,'examples':3,'pending':0,'executed':3}
 else: entry={'action':action,'exit_code':0}
+if action=='hurl': print('All tests completed!')
+if action=='cold-start':
+ print('cold-start readiness: mocked')
+ pathlib.Path(os.environ['TMPDIR'],'neohaskell-cold-start').mkdir()
 if action=='build':
  root='same-root' if not (os.environ.get('FAKE_ROOT_CHANGE') and 'warm' in str(directory)) else 'wrong-root'
  (directory/'root.txt').write_text(root+'\\n')
@@ -57,7 +63,7 @@ with (directory/'timings.jsonl').open('a') as output: output.write(json.dumps(en
         self.evidence = self.base / 'evidence'
         self.env = {**os.environ, 'PATH': str(self.bin)+os.pathsep+os.environ['PATH'],
                     'GITHUB_ACTIONS': 'true', 'RUNNER_OS': 'Linux', 'GITHUB_SHA': sha,
-                    'GITHUB_RUN_ID': '123', 'GITHUB_RUN_ATTEMPT': '1',
+                    'GITHUB_RUN_ID': '123', 'GITHUB_RUN_ATTEMPT': '1', 'COLOCATED_REPETITION': '1',
                     'DOCKER_TRACE': str(self.base / 'docker.log')}
 
     def executable(self, path, text):
@@ -97,6 +103,15 @@ with (directory/'timings.jsonl').open('a') as output: output.write(json.dumps(en
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('warm pass changed output paths or suite counts', result.stderr)
         self.assertFalse((self.evidence / 'summary.json').exists())
+
+    def test_workflow_supplies_required_repetition(self):
+        workflow = (ROOT / '.github/workflows/build-cache-colocated.yml').read_text()
+        self.assertIn('COLOCATED_REPETITION: ${{ matrix.repetition }}', workflow)
+        del self.env['COLOCATED_REPETITION']
+        result = self.run_script()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('COLOCATED_REPETITION', result.stderr)
+        self.assertFalse((self.base / 'docker.log').exists())
 
     def test_existing_evidence_is_not_overwritten(self):
         self.evidence.mkdir()
