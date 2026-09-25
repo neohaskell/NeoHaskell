@@ -101,3 +101,31 @@ committed diagnostic has no such expiry. After hosted artifacts expire, check ou
 the exact recorded revision and dispatch `test.yml` with `--ref` for Linux;
 macOS dispatch/verification is still pending. Draft-triggered skip results are
 never counted as execution evidence.
+
+## Recording comparable observations
+
+The independent `measure.py` recorder refuses dirty tracked files and never
+rewrites an observation directory. Example (run from the measured checkout):
+
+```sh
+python3 docs/build-cache/measure.py record /path/to/evidence/repeat-1 \
+  --scenario repeat --stage build \
+  --local-state 'exact project outputs present' \
+  --remote-state 'not consulted: local hits' -- \
+  nix build --accept-flake-config -L --no-link .#ci-components
+python3 docs/build-cache/measure.py summarize /path/to/evidence/repeat-{1,2,3}
+```
+
+The report validates log digests and groups by revision, platform, command,
+lock digest, stage and cache conditions. Fewer than three successes, or any
+failure, produces no median. The recorder makes no automatic claim that a
+reported state was established: retain store inventories/cache queries alongside
+it. Timestamped logs distinguish overlap but do not magically identify GHC link
+CPU time. Preserve Nix build-phase logs and workflow step intervals too.
+
+The source-graph reconnaissance found 253 library modules. The dependency closure
+of Text comprises 16 modules / 4,004 lines with 194 direct callers elsewhere;
+Parser requires 29 / 6,344 lines, Schema 23 / 5,255, Config 108 / 18,034.
+These are candidate boundaries, not a selection: fanout and compile cost still
+need weighing. Config.Builder derives TH names from actual `tyConPackage`; the
+pilot must test identity-sensitive derivation and package-qualified imports.
