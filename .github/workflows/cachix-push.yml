@@ -123,8 +123,8 @@ jobs:
         with:
           name: published-component-metadata-${{ matrix.os }}
           path: component-artifact
-      - name: Fetch signed exact outputs with all builders disabled
-        run: ./dev nix-components fetch --from-cachix
+      - name: Fetch signed closure from Cachix and upstream caches with all builders disabled
+        run: ./dev nix-components fetch --from-public-caches
       - name: Execute the fetched core test binary
         run: ./dev nix-components run --suite nhcore-test-core
       - uses: actions/upload-artifact@v7

@@ -116,6 +116,48 @@ class Components(unittest.TestCase):
                  patch.object(c, 'command', side_effect=subprocess.CalledProcessError(1, ['nix'])):
                 self.assertEqual(c.main(), 1)
 
+    def test_public_caches_fetch_uses_signed_substituters_without_building(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = '/nix/store/' + 'a'*32 + '-bundle'
+            args = ['nix-components', 'fetch', '--from-public-caches', '--directory', directory]
+            with patch.object(sys, 'argv', args), \
+                 patch.object(c, 'load_bundle', return_value=root), \
+                 patch.object(c, 'environment'), patch.object(c, 'command') as command:
+                self.assertEqual(c.main(), 0)
+            calls = [call.args[0] for call in command.call_args_list]
+            self.assertEqual(calls[0], [
+                'nix-store', '--realise', root, '--option', 'max-jobs', '0',
+                '--option', 'builders', ''])
+            self.assertNotIn('--no-check-sigs', calls[0])
+            self.assertEqual(calls[1], ['nix', 'path-info', '--recursive', root])
+
+    def test_public_caches_fetch_propagates_cache_misses(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = '/nix/store/' + 'a'*32 + '-bundle'
+            args = ['nix-components', 'fetch', '--from-public-caches', '--directory', directory]
+            with patch.object(sys, 'argv', args), \
+                 patch.object(c, 'load_bundle', return_value=root), \
+                 patch.object(c, 'command', side_effect=subprocess.CalledProcessError(1, ['nix-store'])):
+                self.assertEqual(c.main(), 1)
+
+    def test_public_caches_fetch_rejects_derivation_outputs(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = '/nix/store/' + 'a'*32 + '-bundle.drv'
+            args = ['nix-components', 'fetch', '--from-public-caches', '--directory', directory]
+            with patch.object(sys, 'argv', args), \
+                 patch.object(c, 'load_bundle', return_value=root), \
+                 patch.object(c, 'command') as command:
+                self.assertEqual(c.main(), 1)
+                command.assert_not_called()
+
+    def test_cache_source_flags_are_mutually_exclusive_and_fetch_only(self):
+        for args in [
+                ['nix-components', 'fetch', '--from-cachix', '--from-public-caches'],
+                ['nix-components', 'build', '--from-public-caches'],
+                ['nix-components', 'run', '--from-cachix']]:
+            with self.subTest(args=args), patch.object(sys, 'argv', args), self.assertRaises(SystemExit):
+                c.main()
+
     def test_actual_aggregate_gate_fails_closed(self):
         source = (ROOT/'.github/workflows/test.yml').read_text().split('  ci-gate:', 1)[1]
         source = source.split('\n  baseline-measurement:', 1)[0]

@@ -110,11 +110,16 @@ def main():
     parser.add_argument('--directory', type=Path, default=Path('component-artifact'))
     parser.add_argument('--suite', choices=SUITES)
     parser.add_argument('--report', type=Path, default=Path('component-report.log'))
-    parser.add_argument('--from-cachix', action='store_true',
-                        help='fetch exact producer outputs from the signed public cache')
+    cache_sources = parser.add_mutually_exclusive_group()
+    cache_sources.add_argument('--from-cachix', action='store_true',
+                               help='fetch exact producer outputs from the signed public cache')
+    cache_sources.add_argument('--from-public-caches', action='store_true',
+                               help='fetch the output and closure from Cachix and configured upstream caches')
     args = parser.parse_args()
     if args.from_cachix and args.action != 'fetch':
         parser.error('--from-cachix requires fetch')
+    if args.from_public_caches and args.action != 'fetch':
+        parser.error('--from-public-caches requires fetch')
     os.chdir(ROOT)
     directory = args.directory.resolve()
     directory.mkdir(parents=True, exist_ok=True)
@@ -158,12 +163,19 @@ def main():
                          '?compression=zstd&compression-level=3', root])
             elif args.action == 'fetch':
                 # No flake evaluation/IFD and no compiler on the consuming route.
-                # Only this run's producer artifact is trusted without signatures.
-                source = 'https://neohaskell.cachix.org' if args.from_cachix else (directory / 'cache').as_uri()
-                signature_options = [] if args.from_cachix else ['--no-check-sigs']
-                command(['nix', 'copy', '--from', source,
-                         *signature_options, '--option', 'max-jobs', '0',
-                         '--option', 'builders', '', root])
+                if args.from_public_caches:
+                    # Cachix may omit paths available from upstream caches; use the
+                    # configured signed substituters for the complete closure.
+                    if Path(root).name.endswith('.drv'):
+                        raise ValueError('public cache fetch requires a non-derivation output')
+                    command(['nix-store', '--realise', root,
+                             '--option', 'max-jobs', '0', '--option', 'builders', ''])
+                else:
+                    source = 'https://neohaskell.cachix.org' if args.from_cachix else (directory / 'cache').as_uri()
+                    signature_options = [] if args.from_cachix else ['--no-check-sigs']
+                    command(['nix', 'copy', '--from', source,
+                             *signature_options, '--option', 'max-jobs', '0',
+                             '--option', 'builders', '', root])
                 command(['nix', 'path-info', '--recursive', root])
                 environment(root)
             else:
