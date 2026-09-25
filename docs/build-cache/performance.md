@@ -14,13 +14,16 @@ URL so the image is stable outside the checkout:
 https://raw.githubusercontent.com/neohaskell/NeoHaskell/<PERFORMANCE_COMMIT>/docs/build-cache/performance.png
 ```
 
-The figure is an append-only timeline. A, B, and C are the one measured
-configuration currently available for Cabal, the Nix unsplit candidate, and the
-extracted pilot. D and E are pending duplicate-upload and flag-alignment
-changes, so they have no values. Each measured point is the median of three
-observations; the small dots show those observations. A colored line is drawn
-only when later points share an explicitly matched configuration group. The
-timeline will fill in as those reruns land.
+The figure is a single append-only timeline. Its three lines are **Fresh build +
+suite tests**, **Edit + core tests**, and **Rebuild without edits**. Each measured
+point is the median of three raw repetitions. D and E are pending cumulative
+checkpoints: upload duplication is disabled first, then the candidate compiler
+flags are aligned; neither has an invented value. The lines follow the measured
+experiment history in x-order.
+
+“Suite tests” means the five component suites (`nhcore` core/auth/integration/
+service and `nhintegrations`) plus Hurl integration and cold-start readiness;
+doctest and codemap jobs are excluded.
 
 Hosted CI is kept as a separate table below. Its one-run critical elapsed time
 is not mixed with summed runner time, and the 987fe3d production run is labeled
@@ -29,11 +32,9 @@ evidence that the pilot is faster.
 
 ## Comparability guard
 
-The current baseline, candidate, and pilot measurements all confirm O1, but
-their split-sections and HIE settings differ. The baseline is the Cabal route;
-the candidate and pilot use the Nix component route, and the pilot also changes
-the component graph. These are unmatched diagnostic observations. The chart
-keeps those points separate and does not compute a percentage improvement.
+These are descriptive sequential observations: the baseline uses Cabal, the
+candidate and pilot use Nix components, and build flags/cache conditions differ,
+so the lines do not isolate a causal speedup.
 
 The route totals below are calculated from raw observations by summing every
 stage within each repetition and then taking the median of those totals. The
@@ -104,17 +105,17 @@ No timing is invented for changes that have not had a matched rerun.
 | Commit | Technique | Platform | Cache condition | n / observations / median | Status | Evidence |
 |---|---|---|---|---|---|---|
 | [`15eeef1`](https://github.com/neohaskell/NeoHaskell/commit/15eeef1348630b6e96a7a9cba472af8cc7deea53) (same patch as [`f64fe87`](https://github.com/neohaskell/NeoHaskell/commit/f64fe870ec8157ebb9764a143880103717262bd7)) | Disable duplicate producer upload: `use-gha-cache: disabled`, `use-flakehub: disabled` | Linux + macOS | Upstream substituters and same-run artifact path retained | `— / — / —` | Pending measurement | [15eeef1](https://github.com/neohaskell/NeoHaskell/commit/15eeef1348630b6e96a7a9cba472af8cc7deea53) |
-| [`1efe92a`](https://github.com/neohaskell/NeoHaskell/commit/1efe92a) | Align candidate local-package flags with baseline: explicit O1, split-sections disabled, HIE enabled | Linux + macOS | Dependencies untouched; matched rerun required | `— / — / —` | Pending measurement | [commit](https://github.com/neohaskell/NeoHaskell/commit/1efe92a) |
+| [`1efe92a`](https://github.com/neohaskell/NeoHaskell/commit/1efe92a) | Cumulative: duplicate producer upload disabled + candidate local-package flags aligned (explicit O1, split-sections disabled, HIE enabled) | Linux + macOS | Dependencies untouched; matched rerun required | `— / — / —` | Pending measurement | [commit](https://github.com/neohaskell/NeoHaskell/commit/1efe92a) |
 
 ## Updating the log
 
 1. Append the next change to `timeline` in [`performance.json`](performance.json)
-   with its plain-language label, short commit, series, and status. Use
+   with its plain-language label, short commit, workload, and status. Use
    `pending` until it has a real measurement; do not reuse an earlier point.
 2. For a measured point, add raw stage observations with equal-length arrays
    for stages in each route. Record the exact commit, platform, local/remote
-   cache state, and an evidence URL. Set `line_group` only when the point is a
-   genuinely matched configuration; otherwise leave it `null`.
+   cache state, and an evidence URL. Missing metrics stay unknown and are not
+   represented by zeroes.
 3. For a new hosted run, append critical span, runner sum, and artifact-ready
    wait as separate fields. Keep `n=1` rows visibly noncomparable until matched
    repetitions exist.

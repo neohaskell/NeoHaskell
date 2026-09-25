@@ -3,43 +3,46 @@
 
 Raw stage observations stay in the JSON. A route total sums stages within each
 repetition first, then takes the median of those totals. The timeline renderer
-does not connect unmatched configurations; a colored line appears only after
-two measured points share a ``line_group``.
+connects the measured history for each workload metric; pending or missing
+metrics remain unplotted rather than becoming fabricated zeroes.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import math
 import statistics
-from collections import defaultdict
+import textwrap
 from pathlib import Path
 
 import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-from matplotlib.lines import Line2D
-from matplotlib.patches import Patch
+from matplotlib.ticker import MultipleLocator
 import numpy as np
 
 
 METRICS = (
-    ("fresh_route", "Fresh build + test", "minutes", 60.0),
-    ("edit_route", "Implementation edit + core test", "minutes", 60.0),
-    ("repeat_build", "Repeat build", "seconds", 1.0),
+    ("fresh_route", "Fresh build + suite tests", "#2563eb"),
+    ("edit_route", "Edit + core tests", "#bb640f"),
+    ("repeat_build", "Rebuild without edits", "#168176"),
 )
-
-SERIES = {
-    "cabal": {"label": "Cabal", "color": "#6b7280"},
-    "nix-unsplit": {"label": "Nix unsplit", "color": "#2563eb"},
-    "extracted-pilot": {"label": "Extracted pilot", "color": "#c47a16"},
-}
+MINUTE_ROUTES = {"fresh_route", "edit_route"}
 
 
 def route_observations(workload: dict, route_name: str) -> list[float]:
-    stage_names = workload["routes"][route_name]
-    stages = workload["stages_s"]
+    routes = workload.get("routes", {})
+    if route_name not in routes:
+        raise ValueError(f"{workload['id']} {route_name}: route is missing")
+    stage_names = routes[route_name]
+    stages = workload.get("stages_s", {})
+    missing = [stage_name for stage_name in stage_names if stage_name not in stages]
+    if missing:
+        raise ValueError(
+            f"{workload['id']} {route_name}: missing stages {', '.join(missing)}"
+        )
     observations = [stages[name] for name in stage_names]
     lengths = {len(values) for values in observations}
     if len(lengths) != 1:
@@ -55,23 +58,39 @@ def validate(data: dict) -> None:
         raise ValueError("unsupported performance data schema")
     if data.get("comparability", {}).get("status") != "diagnostic/unmatched":
         raise ValueError("the chart must retain the diagnostic/unmatched guard")
-    workload_ids = {workload["id"] for workload in data["workloads"]}
-    for workload in data["workloads"]:
-        for stage_name, values in workload["stages_s"].items():
-            if not values or any(value < 0 for value in values):
+    workloads = data.get("workloads", [])
+    workload_ids = {workload["id"] for workload in workloads}
+    for workload in workloads:
+        for stage_name, values in workload.get("stages_s", {}).items():
+            if (
+                not isinstance(values, list)
+                or not values
+                or any(
+                    not isinstance(value, (int, float))
+                    or isinstance(value, bool)
+                    or not math.isfinite(value)
+                    or value < 0
+                    for value in values
+                )
+            ):
                 raise ValueError(f"{workload['id']} {stage_name}: invalid observations")
-        for route_name in workload["routes"]:
+        for route_name in workload.get("routes", {}):
             route_observations(workload, route_name)
-    if not data.get("timeline"):
+    events = data.get("timeline", [])
+    if not events:
         raise ValueError("timeline must contain the historical and pending events")
-    for event in data["timeline"]:
-        if event["series"] not in SERIES:
-            raise ValueError(f"unknown timeline series: {event['series']}")
-        if event["status"] == "measured" and event["workload"] not in workload_ids:
+    event_ids = set()
+    for event in events:
+        if event["id"] in event_ids:
+            raise ValueError(f"duplicate timeline event: {event['id']}")
+        event_ids.add(event["id"])
+        if event["status"] not in {"measured", "pending"}:
+            raise ValueError(f"unknown timeline status: {event['status']}")
+        if event["status"] == "measured" and event.get("workload") not in workload_ids:
             raise ValueError(f"measured event has no workload: {event['id']}")
-        if event["status"] == "pending" and event["workload"] is not None:
+        if event["status"] == "pending" and event.get("workload") is not None:
             raise ValueError(f"pending event has fabricated workload: {event['id']}")
-    for run in data["ci_runs"]:
+    for run in data.get("ci_runs", []):
         if run["n"] != 1:
             raise ValueError(f"CI row {run['run']} is no longer the explicit n=1 record")
         if run["critical_span_s"] <= 0 or run["runner_sum_s"] <= 0:
@@ -88,141 +107,158 @@ def timeline_observations(data: dict, event: dict, route_name: str) -> list[floa
     if event["status"] != "measured":
         return None
     workloads = {workload["id"]: workload for workload in data["workloads"]}
-    return route_observations(workloads[event["workload"]], route_name)
+    workload = workloads[event["workload"]]
+    if route_name not in workload.get("routes", {}):
+        return None
+    return route_observations(workload, route_name)
+
+
+def format_duration(seconds: float, route_name: str) -> str:
+    if route_name == "repeat_build":
+        return f"{seconds:.1f}s"
+    rounded = int(round(seconds))
+    minutes, remainder = divmod(rounded, 60)
+    return f"{minutes}m {remainder:02d}s"
+
+
+def summary_duration(seconds: float, route_name: str) -> str:
+    if route_name in MINUTE_ROUTES:
+        return f"{seconds / 60.0:.3f}m"
+    return f"{seconds:.3f}s"
+
+
+def platform_caption(data: dict) -> str:
+    platforms = sorted({workload["platform"] for workload in data["workloads"]})
+    if len(platforms) == 1 and "-" in platforms[0]:
+        return platforms[0].rsplit("-", 1)[-1]
+    return " / ".join(platforms) if platforms else "Recorded runs"
+
+
+def tick_label(label: str) -> str:
+    return "\n".join(textwrap.fill(line, width=20) for line in label.splitlines())
 
 
 def render(data: dict, output: Path) -> None:
-    events = data["timeline"]
+    events = [event for event in data["timeline"] if event["status"] == "measured"]
+    if not events:
+        raise ValueError("timeline has no measured events to plot")
     x_values = np.arange(len(events), dtype=float)
-    figure, axes = plt.subplots(
-        len(METRICS),
-        1,
-        figsize=(11.0, 7.4),
-        dpi=100,
-        sharex=True,
+    figure, axis = plt.subplots(
+        figsize=(11.0, 6.5),
+        dpi=150,
     )
     figure.patch.set_facecolor("#ffffff")
+    figure.subplots_adjust(left=0.085, right=0.72, top=0.79, bottom=0.27)
 
-    for axis, (route_name, title, unit, divisor) in zip(axes, METRICS):
-        measured_by_group: dict[tuple[str, str], list[tuple[float, float]]] = defaultdict(list)
-        all_values: list[float] = []
+    figure.text(
+        0.045,
+        0.94,
+        "How build times changed through the experiment",
+        fontsize=18,
+        weight="bold",
+        color="#182333",
+    )
+    figure.text(
+        0.045,
+        0.891,
+        f"{platform_caption(data)} · median of 3 runs per measured point · lower is faster",
+        fontsize=11,
+        color="#526172",
+    )
+
+    all_minutes: list[float] = []
+    for route_name, label, color in METRICS:
+        points: list[tuple[int, float, float]] = []
         for event_index, event in enumerate(events):
             observations = timeline_observations(data, event, route_name)
             if observations is None:
-                axis.axvline(event_index, color="#d1d5db", linestyle=":", linewidth=0.8, zorder=0)
                 continue
-            display_observations = [value / divisor for value in observations]
-            display_median = statistics.median(display_observations)
-            all_values.extend(display_observations)
-            color = SERIES[event["series"]]["color"]
-            # Three small dots preserve replicated observations without
-            # suggesting that unmatched configurations form a trend.
-            jitter = np.linspace(-0.055, 0.055, len(display_observations))
-            axis.scatter(
-                [event_index + value for value in jitter],
-                display_observations,
-                s=24,
-                color=color,
-                alpha=0.72,
-                edgecolors="#ffffff",
-                linewidths=0.6,
-                zorder=3,
-            )
-            axis.plot(
-                event_index,
-                display_median,
-                marker="D",
-                markersize=6.0,
-                color=color,
-                markeredgecolor="#111827",
-                markeredgewidth=0.55,
-                zorder=4,
-            )
-            if event.get("line_group"):
-                measured_by_group[(event["series"], event["line_group"])].append(
-                    (event_index, display_median)
-                )
+            median_seconds = statistics.median(observations)
+            minutes = median_seconds / 60.0
+            all_minutes.append(minutes)
+            points.append((event_index, minutes, median_seconds))
+
+        if not points:
+            continue
+
+        axis.plot(
+            [point[0] for point in points],
+            [point[1] for point in points],
+            "-o",
+            color=color,
+            linewidth=2.7,
+            markersize=7,
+            zorder=3,
+        )
+        for event_index, minutes, seconds in points:
             axis.annotate(
-                f"{display_median:.1f}{unit[0]}",
-                xy=(event_index, display_median),
-                xytext=(0, 8),
+                format_duration(seconds, route_name),
+                (event_index, minutes),
+                xytext=(0, 12 if route_name != "repeat_build" else 14),
                 textcoords="offset points",
                 ha="center",
                 va="bottom",
-                fontsize=8.7,
-                color="#111827",
+                fontsize=10.5,
+                color=color,
+                weight="bold",
             )
 
-        for (series_name, _), points in measured_by_group.items():
-            if len(points) >= 2:
-                points.sort()
-                axis.plot(
-                    [point[0] for point in points],
-                    [point[1] for point in points],
-                    color=SERIES[series_name]["color"],
-                    linewidth=1.8,
-                    alpha=0.9,
-                    zorder=2,
-                )
+        last_index, last_minutes, _ = points[-1]
+        axis.annotate(
+            label,
+            (last_index, last_minutes),
+            xytext=(25, 0),
+            textcoords="offset points",
+            ha="left",
+            va="center",
+            fontsize=11.5,
+            color=color,
+            weight="bold",
+            annotation_clip=False,
+        )
 
-        axis.set_ylabel(unit)
-        axis.set_title(f"{title} · lower is better", loc="left", fontsize=11, pad=8)
-        axis.grid(axis="y", color="#d1d5db", linewidth=0.7, alpha=0.75)
-        axis.set_axisbelow(True)
-        axis.spines[["top", "right", "left"]].set_visible(False)
-        axis.tick_params(axis="y", length=0)
-        axis.set_xlim(-0.45, len(events) - 0.55)
-        if all_values:
-            axis.set_ylim(bottom=0, top=max(all_values) * 1.28)
+    maximum_minutes = max(all_minutes, default=1.0)
+    axis.set_ylim(-0.4, max(1.0, maximum_minutes * 1.2))
+    axis.yaxis.set_major_locator(MultipleLocator(2 if maximum_minutes >= 4 else 1))
+    axis.set_ylabel("Elapsed time (minutes)", fontsize=11, labelpad=10, color="#526172")
+    axis.set_xlim(-0.1, max(len(events) - 1, 0) + 0.13)
+    axis.set_xticks(x_values)
+    tick_labels = [tick_label(event["label"]) for event in events]
+    axis.set_xticklabels(tick_labels, fontsize=8.7)
+    axis.set_xlabel("Experiment sequence →", fontsize=11, labelpad=16, color="#526172")
+    axis.tick_params(axis="x", length=0, pad=14)
+    axis.tick_params(axis="y", length=0, labelsize=10, labelcolor="#526172")
+    axis.grid(axis="y", color="#e5eaf0", linewidth=0.8)
+    axis.set_axisbelow(True)
+    for spine in axis.spines.values():
+        spine.set_visible(False)
 
-    axes[-1].set_xticks(x_values)
-    tick_labels = [
-        f"{event['id']}\n{event['label']}\n{event['commit']}"
-        + ("\nawaiting measurements" if event["status"] == "pending" else "")
-        for event in events
-    ]
-    axes[-1].set_xticklabels(tick_labels, fontsize=8.4)
-    for tick, event in zip(axes[-1].get_xticklabels(), events):
-        if event["status"] == "pending":
-            tick.set_color("#6b7280")
-    axes[-1].set_xlabel("Chronological experiment changes; pending entries have no invented value")
-
-    figure.suptitle(
-        "Build performance over experiment revisions",
-        fontsize=14,
-        fontweight="bold",
-        x=0.04,
-        ha="left",
-        color="#111827",
-    )
+    pending_events = [event for event in data["timeline"] if event["status"] == "pending"]
+    if pending_events:
+        figure.text(
+            0.045,
+            0.095,
+            data.get("pending_footer", "Awaiting rerun"),
+            fontsize=10.5,
+            color="#526172",
+        )
     figure.text(
-        0.04,
-        0.015,
-        "Diagnostic only: each method has one measured configuration (n=3); unmatched revisions remain unconnected until matched reruns land.",
-        fontsize=8.5,
-        color="#7f1d1d",
+        0.045,
+        0.045,
+        data.get(
+            "comparison_caveat",
+            "Observed sequence; flags and cache conditions differ, so lines describe history rather than causal changes.",
+        ),
+        fontsize=9.5,
+        color="#657386",
     )
-    figure.legend(
-        handles=[
-            Patch(facecolor=SERIES["cabal"]["color"], label="Cabal"),
-            Patch(facecolor=SERIES["nix-unsplit"]["color"], label="Nix unsplit"),
-            Patch(facecolor=SERIES["extracted-pilot"]["color"], label="Extracted pilot"),
-            Line2D([0], [0], marker="D", color="#111827", markerfacecolor="#ffffff", label="median", linestyle="None", markersize=5.5),
-        ],
-        loc="upper right",
-        bbox_to_anchor=(0.98, 0.995),
-        frameon=False,
-        ncol=2,
-        fontsize=8.4,
-    )
-    figure.subplots_adjust(left=0.11, right=0.98, top=0.88, bottom=0.22, hspace=0.52)
     output.parent.mkdir(parents=True, exist_ok=True)
-    figure.savefig(output, dpi=100, facecolor="white")
+    figure.savefig(output, dpi=150, facecolor="white")
     plt.close(figure)
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(description="compact performance JSON")
     parser.add_argument("--data", type=Path, required=True, help="compact performance JSON")
     parser.add_argument("--output", type=Path, required=True, help="PNG output path")
     args = parser.parse_args()
@@ -230,12 +266,19 @@ def main() -> None:
     render(data, args.output)
     print(f"rendered {args.output}")
     for event in data["timeline"]:
-        if event["status"] == "measured":
-            values = []
-            for route_name, _, _, divisor in METRICS:
-                observations = timeline_observations(data, event, route_name)
-                values.append(f"{route_name}={statistics.median(observations) / divisor:.3f}{'m' if divisor == 60.0 else 's'}")
-            print(f"{event['id']} {event['label']}: {', '.join(values)}")
+        if event["status"] != "measured":
+            continue
+        values = []
+        for route_name, _, _ in METRICS:
+            observations = timeline_observations(data, event, route_name)
+            if observations is None:
+                values.append(f"{route_name}=unknown")
+                continue
+            values.append(
+                f"{route_name}={summary_duration(statistics.median(observations), route_name)}"
+            )
+        label = " ".join(event["label"].split())
+        print(f"{event['id']} {label}: {', '.join(values)}")
 
 
 if __name__ == "__main__":

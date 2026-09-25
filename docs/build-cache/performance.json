@@ -18,51 +18,43 @@
   "timeline": [
     {
       "id": "A",
-      "label": "Cabal baseline",
+      "label": "Cabal\nOriginal setup",
       "commit": "e94a6c5",
-      "series": "cabal",
       "status": "measured",
-      "workload": "baseline",
-      "line_group": null
+      "workload": "baseline"
     },
     {
       "id": "B",
-      "label": "Nix unsplit candidate",
+      "label": "Nix components\nUnsplit setup",
       "commit": "c65700c",
-      "series": "nix-unsplit",
       "status": "measured",
-      "workload": "candidate",
-      "line_group": null
+      "workload": "candidate"
     },
     {
       "id": "C",
-      "label": "Extracted pilot",
+      "label": "Extracted component\nPilot setup",
       "commit": "05c07df",
-      "series": "extracted-pilot",
       "status": "measured",
-      "workload": "pilot",
-      "line_group": null
+      "workload": "pilot"
     },
     {
       "id": "D",
-      "label": "Duplicate upload off",
+      "label": "Duplicate upload disabled",
       "commit": "15eeef1",
-      "series": "nix-unsplit",
       "status": "pending",
-      "workload": null,
-      "line_group": null
+      "workload": null
     },
     {
       "id": "E",
-      "label": "Flags aligned",
+      "label": "Duplicate upload disabled + flags aligned",
       "commit": "1efe92a",
-      "series": "nix-unsplit",
       "status": "pending",
-      "workload": null,
-      "line_group": null
+      "workload": null
     }
   ],
-  "timeline_rule": "Append each future change in chronological order. Plot a colored line only between measured points sharing a line_group (a matched configuration); singleton unmatched points remain points. Pending changes are marked without invented values.",
+  "timeline_rule": "Append each future change in chronological order. Plot each workload metric through measured events in timeline order; pending changes have no values. Connected lines describe the observed experiment history, not causal comparisons.",
+  "pending_footer": "Awaiting rerun: upload + compiler-setting changes",
+  "comparison_caveat": "Observed sequence; build flags and cache conditions differ, so lines describe history rather than isolate causal changes.",
   "workloads": [
     {
       "id": "baseline",
@@ -203,7 +195,7 @@
   "pending": [
     {
       "commit": "1efe92a",
-      "technique": "align candidate local-package flags with baseline (explicit O1, split-sections disabled, HIE enabled)",
+      "technique": "Cumulative: duplicate producer upload disabled + candidate local-package flags aligned (explicit O1, split-sections disabled, HIE enabled)",
       "platform": "Linux + macOS",
       "cache_condition": "dependencies untouched; matched rerun still required",
       "status": "pending measurement",
