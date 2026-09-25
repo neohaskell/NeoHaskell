@@ -1,0 +1,1870 @@
+{
+  "schema": 1,
+  "run": {
+    "databaseId": 36160325157,
+    "headSha": "17f9a149339f2bd1a77cb4c8acd1c9ab17bfc031",
+    "status": "completed",
+    "conclusion": "success",
+    "createdAt": "2026-09-25T16:22:21Z",
+    "startedAt": "2026-09-25T16:22:21Z",
+    "updatedAt": "2026-09-25T16:49:47Z",
+    "headBranch": "snotty-kiwi",
+    "url": "https://github.com/neohaskell/NeoHaskell/actions/runs/36160325157"
+  },
+  "scope": "five component suites + Hurl + cold-start; codemap/doctest excluded; same worker warm pass only",
+  "remote_caches_probed": [
+    "https://cache.iog.io",
+    "https://cache.nixos.org",
+    "https://install.determinate.systems",
+    "https://neohaskell.cachix.org"
+  ],
+  "remote_cache_state_note": "All 10 evaluated outputs were remote absent at every audit in this run; local first-pass absent and warm-pass present. This is the pre-publication remote-absent batch.",
+  "repetitions": [
+    {
+      "repetition": 1,
+      "passes": {
+        "first": {
+          "component_root": "/nix/store/k9haj4aw65cv5h3r9phrh9dn8l30ymn4-neohaskell-ci-components",
+          "build": {
+            "elapsed_s": 327.5233132839203,
+            "evaluation_s": 3.6405895729999997,
+            "realisation_s": 323.75436501499996,
+            "exit_code": 0
+          },
+          "suite_timings": [
+            {
+              "suite": "nhcore-test-core",
+              "elapsed_s": 3.663886547088623,
+              "examples": 1095,
+              "pending": 3,
+              "executed": 1092,
+              "exit_code": 0
+            },
+            {
+              "suite": "nhcore-test-auth",
+              "elapsed_s": 0.5558774471282959,
+              "examples": 189,
+              "pending": 0,
+              "executed": 189,
+              "exit_code": 0
+            },
+            {
+              "suite": "nhcore-test-integration",
+              "elapsed_s": 8.441540241241455,
+              "examples": 70,
+              "pending": 4,
+              "executed": 66,
+              "exit_code": 0
+            },
+            {
+              "suite": "nhcore-test-service",
+              "elapsed_s": 38.30783748626709,
+              "examples": 1128,
+              "pending": 57,
+              "executed": 1071,
+              "exit_code": 0
+            },
+            {
+              "suite": "nhintegrations-test",
+              "elapsed_s": 0.6338915824890137,
+              "examples": 606,
+              "pending": 3,
+              "executed": 603,
+              "exit_code": 0
+            }
+          ],
+          "hurl": {
+            "elapsed_s": 9.260894775390625,
+            "exit_code": 0
+          },
+          "cold_start": {
+            "elapsed_s": 7.44487738609314,
+            "exit_code": 0
+          },
+          "observations": {
+            "build": {
+              "path": "repetition-1/first/build/observation.json",
+              "stage": "evaluate-realize",
+              "elapsed_s": 327.57273925699997,
+              "exit_code": 0,
+              "local_state": "fresh hosted Nix store after installation and cache audit; see store-before.txt",
+              "remote_state": "configured public substituters; exact availability in cache-state audit; no magic cache",
+              "started_unix_s": 1790353405.6183188,
+              "end_unix_s": 1790353733.1910582
+            },
+            "cold-start": {
+              "path": "repetition-1/first/cold-start/observation.json",
+              "stage": "execute-cold-start",
+              "elapsed_s": 7.493015071000002,
+              "exit_code": 0,
+              "local_state": "compiled testbed; actual readiness assertions",
+              "remote_state": "configured public substituters; exact availability in cache-state audit; no magic cache",
+              "started_unix_s": 1790353794.7476625,
+              "end_unix_s": 1790353802.2406776
+            },
+            "hurl": {
+              "path": "repetition-1/first/hurl/observation.json",
+              "stage": "execute-hurl",
+              "elapsed_s": 9.312609398000006,
+              "exit_code": 0,
+              "local_state": "compiled testbed; actual PostgreSQL and Hurl fixtures",
+              "remote_state": "configured public substituters; exact availability in cache-state audit; no magic cache",
+              "started_unix_s": 1790353785.381354,
+              "end_unix_s": 1790353794.6939635
+            },
+            "postgres-ready": {
+              "path": "repetition-1/first/postgres-ready/observation.json",
+              "stage": "fixture-readiness",
+              "elapsed_s": 2.2895276269999982,
+              "exit_code": 0,
+              "local_state": "new PostgreSQL instance; TCP readiness and SQL required",
+              "remote_state": "configured public substituters; exact availability in cache-state audit; no magic cache",
+              "started_unix_s": 1790353362.1568553,
+              "end_unix_s": 1790353364.446383
+            },
+            "postgres-start": {
+              "path": "repetition-1/first/postgres-start/observation.json",
+              "stage": "fixture-start",
+              "elapsed_s": 0.2232237349999977,
+              "exit_code": 0,
+              "local_state": "new disposable database, empty data volume",
+              "remote_state": "configured public substituters; exact availability in cache-state audit; no magic cache",
+              "started_unix_s": 1790353361.877528,
+              "end_unix_s": 1790353362.1007516
+            },
+            "postgres-stop": {
+              "path": "repetition-1/first/postgres-stop/observation.json",
+              "stage": "fixture-stop",
+              "elapsed_s": 0.2989877869999873,
+              "exit_code": 0,
+              "local_state": "discard only this pass disposable database",
+              "remote_state": "configured public substituters; exact availability in cache-state audit; no magic cache",
+              "started_unix_s": 1790353802.3112783,
+              "end_unix_s": 1790353802.6102662
+            },
+            "test-nhcore-test-auth": {
+              "path": "repetition-1/first/test-nhcore-test-auth/observation.json",
+              "stage": "execute-nhcore-test-auth",
+              "elapsed_s": 0.6027785779999704,
+              "exit_code": 0,
+              "local_state": "compiled outputs present; tests actually execute",
+              "remote_state": "configured public substituters; exact availability in cache-state audit; no magic cache",
+              "started_unix_s": 1790353737.0204175,
+              "end_unix_s": 1790353737.6231961
+            },
+            "test-nhcore-test-core": {
+              "path": "repetition-1/first/test-nhcore-test-core/observation.json",
+              "stage": "execute-nhcore-test-core",
+              "elapsed_s": 3.7136482829999977,
+              "exit_code": 0,
+              "local_state": "compiled outputs present; tests actually execute",
+              "remote_state": "configured public substituters; exact availability in cache-state audit; no magic cache",
+              "started_unix_s": 1790353733.2520716,
+              "end_unix_s": 1790353736.96572
+            },
+            "test-nhcore-test-integration": {
+              "path": "repetition-1/first/test-nhcore-test-integration/observation.json",
+              "stage": "execute-nhcore-test-integration",
+              "elapsed_s": 8.489768299000048,
+              "exit_code": 0,
+              "local_state": "compiled outputs present; tests actually execute",
+              "remote_state": "configured public substituters; exact availability in cache-state audit; no magic cache",
+              "started_unix_s": 1790353737.6770668,
+              "end_unix_s": 1790353746.166835
+            },
+            "test-nhcore-test-service": {
+              "path": "repetition-1/first/test-nhcore-test-service/observation.json",
+              "stage": "execute-nhcore-test-service",
+              "elapsed_s": 38.363420338000026,
+              "exit_code": 0,
+              "local_state": "compiled outputs present; tests actually execute",
+              "remote_state": "configured public substituters; exact availability in cache-state audit; no magic cache",
+              "started_unix_s": 1790353746.2237918,
+              "end_unix_s": 1790353784.587212
+            },
+            "test-nhintegrations-test": {
+              "path": "repetition-1/first/test-nhintegrations-test/observation.json",
+              "stage": "execute-nhintegrations-test",
+              "elapsed_s": 0.6814991279999845,
+              "exit_code": 0,
+              "local_state": "compiled outputs present; tests actually execute",
+              "remote_state": "configured public substituters; exact availability in cache-state audit; no magic cache",
+              "started_unix_s": 1790353784.644673,
+              "end_unix_s": 1790353785.3261724
+            }
+          },
+          "cache_audit": {
+            "status": "complete",
+            "comparison_unusable": false,
+            "evaluation": {
+              "eval_s": 34.466473541000006,
+              "exit_code": 0,
+              "stderr_log": "/home/runner/work/_temp/colocated-evidence/first/cache-state.evaluation.log"
+            },
+            "probe_s": 6.514851227999998,
+            "elapsed_s": 41.026307040000006,
+            "outputs": {
+              "ci-components": {
+                "local_state": "absent",
+                "remote": {
+                  "https://cache.iog.io": "absent",
+                  "https://cache.nixos.org": "absent",
+                  "https://install.determinate.systems": "absent",
+                  "https://neohaskell.cachix.org": "absent"
+                }
+              },
+              "nhcore:lib:nhcore": {
+                "local_state": "absent",
+                "remote": {
+                  "https://cache.iog.io": "absent",
+                  "https://cache.nixos.org": "absent",
+                  "https://install.determinate.systems": "absent",
+                  "https://neohaskell.cachix.org": "absent"
+                }
+              },
+              "nhintegrations:lib:nhintegrations": {
+                "local_state": "absent",
+                "remote": {
+                  "https://cache.iog.io": "absent",
+                  "https://cache.nixos.org": "absent",
+                  "https://install.determinate.systems": "absent",
+                  "https://neohaskell.cachix.org": "absent"
+                }
+              },
+              "nhtestbed:lib:nhtestbed": {
+                "local_state": "absent",
+                "remote": {
+                  "https://cache.iog.io": "absent",
+                  "https://cache.nixos.org": "absent",
+                  "https://install.determinate.systems": "absent",
+                  "https://neohaskell.cachix.org": "absent"
+                }
+              },
+              "nhcore:test:nhcore-test-core": {
+                "local_state": "absent",
+                "remote": {
+                  "https://cache.iog.io": "absent",
+                  "https://cache.nixos.org": "absent",
+                  "https://install.determinate.systems": "absent",
+                  "https://neohaskell.cachix.org": "absent"
+                }
+              },
+              "nhcore:test:nhcore-test-auth": {
+                "local_state": "absent",
+                "remote": {
+                  "https://cache.iog.io": "absent",
+                  "https://cache.nixos.org": "absent",
+                  "https://install.determinate.systems": "absent",
+                  "https://neohaskell.cachix.org": "absent"
+                }
+              },
+              "nhcore:test:nhcore-test-integration": {
+                "local_state": "absent",
+                "remote": {
+                  "https://cache.iog.io": "absent",
+                  "https://cache.nixos.org": "absent",
+                  "https://install.determinate.systems": "absent",
+                  "https://neohaskell.cachix.org": "absent"
+                }
+              },
+              "nhcore:test:nhcore-test-service": {
+                "local_state": "absent",
+                "remote": {
+                  "https://cache.iog.io": "absent",
+                  "https://cache.nixos.org": "absent",
+                  "https://install.determinate.systems": "absent",
+                  "https://neohaskell.cachix.org": "absent"
+                }
+              },
+              "nhintegrations:test:nhintegrations-test": {
+                "local_state": "absent",
+                "remote": {
+                  "https://cache.iog.io": "absent",
+                  "https://cache.nixos.org": "absent",
+                  "https://install.determinate.systems": "absent",
+                  "https://neohaskell.cachix.org": "absent"
+                }
+              },
+              "nhtestbed:exe:nhtestbed": {
+                "local_state": "absent",
+                "remote": {
+                  "https://cache.iog.io": "absent",
+                  "https://cache.nixos.org": "absent",
+                  "https://install.determinate.systems": "absent",
+                  "https://neohaskell.cachix.org": "absent"
+                }
+              }
+            }
+          },
+          "hurl_inventory": {
+            "counts": {
+              "commands": 3,
+              "queries": 3,
+              "scenarios": 6,
+              "integrations": 2
+            },
+            "sha256": "1b24ee917578265824314db5f8b854d381a92f8012925fa6775d8fafc2161d3f"
+          },
+          "hurl_completed": true,
+          "cold_start_completed": true,
+          "workload_elapsed_s": 68.30880546569824,
+          "measured_stage_sum_s": 399.041217501,
+          "pass_wall_from_cache_audit_s": 438.100382566452
+        },
+        "warm": {
+          "component_root": "/nix/store/k9haj4aw65cv5h3r9phrh9dn8l30ymn4-neohaskell-ci-components",
+          "build": {
+            "elapsed_s": 3.801669120788574,
+            "evaluation_s": 3.6213745800000083,
+            "realisation_s": 0.044105459999968843,
+            "exit_code": 0
+          },
+          "suite_timings": [
+            {
+              "suite": "nhcore-test-core",
+              "elapsed_s": 3.6702442169189453,
+              "examples": 1095,
+              "pending": 3,
+              "executed": 1092,
+              "exit_code": 0
+            },
+            {
+              "suite": "nhcore-test-auth",
+              "elapsed_s": 0.531527042388916,
+              "examples": 189,
+              "pending": 0,
+              "executed": 189,
+              "exit_code": 0
+            },
+            {
+              "suite": "nhcore-test-integration",
+              "elapsed_s": 8.441678524017334,
+              "examples": 70,
+              "pending": 4,
+              "executed": 66,
+              "exit_code": 0
+            },
+            {
+              "suite": "nhcore-test-service",
+              "elapsed_s": 38.26043081283569,
+              "examples": 1128,
+              "pending": 57,
+              "executed": 1071,
+              "exit_code": 0
+            },
+            {
+              "suite": "nhintegrations-test",
+              "elapsed_s": 0.6366310119628906,
+              "examples": 606,
+              "pending": 3,
+              "executed": 603,
+              "exit_code": 0
+            }
+          ],
+          "hurl": {
+            "elapsed_s": 9.276522159576416,
+            "exit_code": 0
+          },
+          "cold_start": {
+            "elapsed_s": 7.374523639678955,
+            "exit_code": 0
+          },
+          "observations": {
+            "build": {
+              "path": "repetition-1/warm/build/observation.json",
+              "stage": "evaluate-realize",
+              "elapsed_s": 3.8498294169999667,
+              "exit_code": 0,
+              "local_state": "same worker/store and immutable checkout; previous outputs present; fresh database and uploads",
+              "remote_state": "configured public substituters; exact availability in cache-state audit; no magic cache",
+              "started_unix_s": 1790353813.369995,
+              "end_unix_s": 1790353817.2198246
+            },
+            "cold-start": {
+              "path": "repetition-1/warm/cold-start/observation.json",
+              "stage": "execute-cold-start",
+              "elapsed_s": 7.422949761000041,
+              "exit_code": 0,
+              "local_state": "compiled testbed; actual readiness assertions",
+              "remote_state": "configured public substituters; exact availability in cache-state audit; no magic cache",
+              "started_unix_s": 1790353878.7403245,
+              "end_unix_s": 1790353886.1632743
+            },
+            "hurl": {
+              "path": "repetition-1/warm/hurl/observation.json",
+              "stage": "execute-hurl",
+              "elapsed_s": 9.33046965899996,
+              "exit_code": 0,
+              "local_state": "compiled testbed; actual PostgreSQL and Hurl fixtures",
+              "remote_state": "configured public substituters; exact availability in cache-state audit; no magic cache",
+              "started_unix_s": 1790353869.353742,
+              "end_unix_s": 1790353878.6842115
+            },
+            "postgres-ready": {
+              "path": "repetition-1/warm/postgres-ready/observation.json",
+              "stage": "fixture-readiness",
+              "elapsed_s": 2.2943512040000087,
+              "exit_code": 0,
+              "local_state": "new PostgreSQL instance; TCP readiness and SQL required",
+              "remote_state": "configured public substituters; exact availability in cache-state audit; no magic cache",
+              "started_unix_s": 1790353802.922953,
+              "end_unix_s": 1790353805.217304
+            },
+            "postgres-start": {
+              "path": "repetition-1/warm/postgres-start/observation.json",
+              "stage": "fixture-start",
+              "elapsed_s": 0.15084234500000093,
+              "exit_code": 0,
+              "local_state": "new disposable database, empty data volume",
+              "remote_state": "configured public substituters; exact availability in cache-state audit; no magic cache",
+              "started_unix_s": 1790353802.7135022,
+              "end_unix_s": 1790353802.8643446
+            },
+            "postgres-stop": {
+              "path": "repetition-1/warm/postgres-stop/observation.json",
+              "stage": "fixture-stop",
+              "elapsed_s": 0.278901712999982,
+              "exit_code": 0,
+              "local_state": "discard only this pass disposable database",
+              "remote_state": "configured public substituters; exact availability in cache-state audit; no magic cache",
+              "started_unix_s": 1790353886.2333767,
+              "end_unix_s": 1790353886.5122786
+            },
+            "test-nhcore-test-auth": {
+              "path": "repetition-1/warm/test-nhcore-test-auth/observation.json",
+              "stage": "execute-nhcore-test-auth",
+              "elapsed_s": 0.5820348109999713,
+              "exit_code": 0,
+              "local_state": "compiled outputs present; tests actually execute",
+              "remote_state": "configured public substituters; exact availability in cache-state audit; no magic cache",
+              "started_unix_s": 1790353821.0504267,
+              "end_unix_s": 1790353821.6324615
+            },
+            "test-nhcore-test-core": {
+              "path": "repetition-1/warm/test-nhcore-test-core/observation.json",
+              "stage": "execute-nhcore-test-core",
+              "elapsed_s": 3.718620241999986,
+              "exit_code": 0,
+              "local_state": "compiled outputs present; tests actually execute",
+              "remote_state": "configured public substituters; exact availability in cache-state audit; no magic cache",
+              "started_unix_s": 1790353817.2752707,
+              "end_unix_s": 1790353820.993891
+            },
+            "test-nhcore-test-integration": {
+              "path": "repetition-1/warm/test-nhcore-test-integration/observation.json",
+              "stage": "execute-nhcore-test-integration",
+              "elapsed_s": 8.490448068000035,
+              "exit_code": 0,
+              "local_state": "compiled outputs present; tests actually execute",
+              "remote_state": "configured public substituters; exact availability in cache-state audit; no magic cache",
+              "started_unix_s": 1790353821.686901,
+              "end_unix_s": 1790353830.177349
+            },
+            "test-nhcore-test-service": {
+              "path": "repetition-1/warm/test-nhcore-test-service/observation.json",
+              "stage": "execute-nhcore-test-service",
+              "elapsed_s": 38.32409765299997,
+              "exit_code": 0,
+              "local_state": "compiled outputs present; tests actually execute",
+              "remote_state": "configured public substituters; exact availability in cache-state audit; no magic cache",
+              "started_unix_s": 1790353830.2342134,
+              "end_unix_s": 1790353868.558311
+            },
+            "test-nhintegrations-test": {
+              "path": "repetition-1/warm/test-nhintegrations-test/observation.json",
+              "stage": "execute-nhintegrations-test",
+              "elapsed_s": 0.6845740669999714,
+              "exit_code": 0,
+              "local_state": "compiled outputs present; tests actually execute",
+              "remote_state": "configured public substituters; exact availability in cache-state audit; no magic cache",
+              "started_unix_s": 1790353868.6145737,
+              "end_unix_s": 1790353869.2991478
+            }
+          },
+          "cache_audit": {
+            "status": "complete",
+            "comparison_unusable": false,
+            "evaluation": {
+              "eval_s": 4.141660497000032,
+              "exit_code": 0,
+              "stderr_log": "/home/runner/work/_temp/colocated-evidence/warm/cache-state.evaluation.log"
+            },
+            "probe_s": 3.8099855720000164,
+            "elapsed_s": 7.995927838,
+            "outputs": {
+              "ci-components": {
+                "local_state": "present",
+                "remote": {
+                  "https://cache.iog.io": "absent",
+                  "https://cache.nixos.org": "absent",
+                  "https://install.determinate.systems": "absent",
+                  "https://neohaskell.cachix.org": "absent"
+                }
+              },
+              "nhcore:lib:nhcore": {
+                "local_state": "present",
+                "remote": {
+                  "https://cache.iog.io": "absent",
+                  "https://cache.nixos.org": "absent",
+                  "https://install.determinate.systems": "absent",
+                  "https://neohaskell.cachix.org": "absent"
+                }
+              },
+              "nhintegrations:lib:nhintegrations": {
+                "local_state": "present",
+                "remote": {
+                  "https://cache.iog.io": "absent",
+                  "https://cache.nixos.org": "absent",
+                  "https://install.determinate.systems": "absent",
+                  "https://neohaskell.cachix.org": "absent"
+                }
+              },
+              "nhtestbed:lib:nhtestbed": {
+                "local_state": "present",
+                "remote": {
+                  "https://cache.iog.io": "absent",
+                  "https://cache.nixos.org": "absent",
+                  "https://install.determinate.systems": "absent",
+                  "https://neohaskell.cachix.org": "absent"
+                }
+              },
+              "nhcore:test:nhcore-test-core": {
+                "local_state": "present",
+                "remote": {
+                  "https://cache.iog.io": "absent",
+                  "https://cache.nixos.org": "absent",
+                  "https://install.determinate.systems": "absent",
+                  "https://neohaskell.cachix.org": "absent"
+                }
+              },
+              "nhcore:test:nhcore-test-auth": {
+                "local_state": "present",
+                "remote": {
+                  "https://cache.iog.io": "absent",
+                  "https://cache.nixos.org": "absent",
+                  "https://install.determinate.systems": "absent",
+                  "https://neohaskell.cachix.org": "absent"
+                }
+              },
+              "nhcore:test:nhcore-test-integration": {
+                "local_state": "present",
+                "remote": {
+                  "https://cache.iog.io": "absent",
+                  "https://cache.nixos.org": "absent",
+                  "https://install.determinate.systems": "absent",
+                  "https://neohaskell.cachix.org": "absent"
+                }
+              },
+              "nhcore:test:nhcore-test-service": {
+                "local_state": "present",
+                "remote": {
+                  "https://cache.iog.io": "absent",
+                  "https://cache.nixos.org": "absent",
+                  "https://install.determinate.systems": "absent",
+                  "https://neohaskell.cachix.org": "absent"
+                }
+              },
+              "nhintegrations:test:nhintegrations-test": {
+                "local_state": "present",
+                "remote": {
+                  "https://cache.iog.io": "absent",
+                  "https://cache.nixos.org": "absent",
+                  "https://install.determinate.systems": "absent",
+                  "https://neohaskell.cachix.org": "absent"
+                }
+              },
+              "nhtestbed:exe:nhtestbed": {
+                "local_state": "present",
+                "remote": {
+                  "https://cache.iog.io": "absent",
+                  "https://cache.nixos.org": "absent",
+                  "https://install.determinate.systems": "absent",
+                  "https://neohaskell.cachix.org": "absent"
+                }
+              }
+            }
+          },
+          "hurl_inventory": {
+            "counts": {
+              "commands": 3,
+              "queries": 3,
+              "scenarios": 6,
+              "integrations": 2
+            },
+            "sha256": "1b24ee917578265824314db5f8b854d381a92f8012925fa6775d8fafc2161d3f"
+          },
+          "hurl_completed": true,
+          "cold_start_completed": true,
+          "workload_elapsed_s": 68.19155740737915,
+          "measured_stage_sum_s": 75.12711893999989,
+          "pass_wall_from_cache_audit_s": 81.22637486457825
+        }
+      },
+      "same_root": true,
+      "same_suite_counts": true,
+      "same_hurl_inventory": true,
+      "setup": {
+        "postgres_image_pull_elapsed_s": 6.098945679000003,
+        "postgres_image_observation": "repetition-1/postgres-image/observation.json"
+      }
+    },
+    {
+      "repetition": 2,
+      "passes": {
+        "first": {
+          "component_root": "/nix/store/k9haj4aw65cv5h3r9phrh9dn8l30ymn4-neohaskell-ci-components",
+          "build": {
+            "elapsed_s": 286.3732511997223,
+            "evaluation_s": 2.7154017679999924,
+            "realisation_s": 283.552308167,
+            "exit_code": 0
+          },
+          "suite_timings": [
+            {
+              "suite": "nhcore-test-core",
+              "elapsed_s": 3.648890256881714,
+              "examples": 1095,
+              "pending": 3,
+              "executed": 1092,
+              "exit_code": 0
+            },
+            {
+              "suite": "nhcore-test-auth",
+              "elapsed_s": 0.5692954063415527,
+              "examples": 189,
+              "pending": 0,
+              "executed": 189,
+              "exit_code": 0
+            },
+            {
+              "suite": "nhcore-test-integration",
+              "elapsed_s": 8.421885013580322,
+              "examples": 70,
+              "pending": 4,
+              "executed": 66,
+              "exit_code": 0
+            },
+            {
+              "suite": "nhcore-test-service",
+              "elapsed_s": 43.39568758010864,
+              "examples": 1128,
+              "pending": 57,
+              "executed": 1071,
+              "exit_code": 0
+            },
+            {
+              "suite": "nhintegrations-test",
+              "elapsed_s": 0.6006479263305664,
+              "examples": 606,
+              "pending": 3,
+              "executed": 603,
+              "exit_code": 0
+            }
+          ],
+          "hurl": {
+            "elapsed_s": 9.305742025375366,
+            "exit_code": 0
+          },
+          "cold_start": {
+            "elapsed_s": 8.573376417160034,
+            "exit_code": 0
+          },
+          "observations": {
+            "build": {
+              "path": "repetition-2/first/build/observation.json",
+              "stage": "evaluate-realize",
+              "elapsed_s": 286.41557156,
+              "exit_code": 0,
+              "local_state": "fresh hosted Nix store after installation and cache audit; see store-before.txt",
+              "remote_state": "configured public substituters; exact availability in cache-state audit; no magic cache",
+              "started_unix_s": 1790353977.8044248,
+              "end_unix_s": 1790354264.2199962
+            },
+            "cold-start": {
+              "path": "repetition-2/first/cold-start/observation.json",
+              "stage": "execute-cold-start",
+              "elapsed_s": 8.612254388999986,
+              "exit_code": 0,
+              "local_state": "compiled testbed; actual readiness assertions",
+              "remote_state": "configured public substituters; exact availability in cache-state audit; no magic cache",
+              "started_unix_s": 1790354330.904983,
+              "end_unix_s": 1790354339.5172374
+            },
+            "hurl": {
+              "path": "repetition-2/first/hurl/observation.json",
+              "stage": "execute-hurl",
+              "elapsed_s": 9.347823320999964,
+              "exit_code": 0,
+              "local_state": "compiled testbed; actual PostgreSQL and Hurl fixtures",
+              "remote_state": "configured public substituters; exact availability in cache-state audit; no magic cache",
+              "started_unix_s": 1790354321.5130277,
+              "end_unix_s": 1790354330.860851
+            },
+            "postgres-ready": {
+              "path": "repetition-2/first/postgres-ready/observation.json",
+              "stage": "fixture-readiness",
+              "elapsed_s": 2.226855559999997,
+              "exit_code": 0,
+              "local_state": "new PostgreSQL instance; TCP readiness and SQL required",
+              "remote_state": "configured public substituters; exact availability in cache-state audit; no magic cache",
+              "started_unix_s": 1790353922.9374146,
+              "end_unix_s": 1790353925.1642702
+            },
+            "postgres-start": {
+              "path": "repetition-2/first/postgres-start/observation.json",
+              "stage": "fixture-start",
+              "elapsed_s": 0.7081128279999973,
+              "exit_code": 0,
+              "local_state": "new disposable database, empty data volume",
+              "remote_state": "configured public substituters; exact availability in cache-state audit; no magic cache",
+              "started_unix_s": 1790353922.1853201,
+              "end_unix_s": 1790353922.8934329
+            },
+            "postgres-stop": {
+              "path": "repetition-2/first/postgres-stop/observation.json",
+              "stage": "fixture-stop",
+              "elapsed_s": 0.6995242180000218,
+              "exit_code": 0,
+              "local_state": "discard only this pass disposable database",
+              "remote_state": "configured public substituters; exact availability in cache-state audit; no magic cache",
+              "started_unix_s": 1790354339.5726836,
+              "end_unix_s": 1790354340.2722077
+            },
+            "test-nhcore-test-auth": {
+              "path": "repetition-2/first/test-nhcore-test-auth/observation.json",
+              "stage": "execute-nhcore-test-auth",
+              "elapsed_s": 0.6080520650000381,
+              "exit_code": 0,
+              "local_state": "compiled outputs present; tests actually execute",
+              "remote_state": "configured public substituters; exact availability in cache-state audit; no magic cache",
+              "started_unix_s": 1790354268.1882727,
+              "end_unix_s": 1790354268.7963247
+            },
+            "test-nhcore-test-core": {
+              "path": "repetition-2/first/test-nhcore-test-core/observation.json",
+              "stage": "execute-nhcore-test-core",
+              "elapsed_s": 3.688518343999988,
+              "exit_code": 0,
+              "local_state": "compiled outputs present; tests actually execute",
+              "remote_state": "configured public substituters; exact availability in cache-state audit; no magic cache",
+              "started_unix_s": 1790354264.4542487,
+              "end_unix_s": 1790354268.142767
+            },
+            "test-nhcore-test-integration": {
+              "path": "repetition-2/first/test-nhcore-test-integration/observation.json",
+              "stage": "execute-nhcore-test-integration",
+              "elapsed_s": 8.460273891999975,
+              "exit_code": 0,
+              "local_state": "compiled outputs present; tests actually execute",
+              "remote_state": "configured public substituters; exact availability in cache-state audit; no magic cache",
+              "started_unix_s": 1790354268.8406146,
+              "end_unix_s": 1790354277.3008885
+            },
+            "test-nhcore-test-service": {
+              "path": "repetition-2/first/test-nhcore-test-service/observation.json",
+              "stage": "execute-nhcore-test-service",
+              "elapsed_s": 43.439309595,
+              "exit_code": 0,
+              "local_state": "compiled outputs present; tests actually execute",
+              "remote_state": "configured public substituters; exact availability in cache-state audit; no magic cache",
+              "started_unix_s": 1790354277.3447938,
+              "end_unix_s": 1790354320.7841034
+            },
+            "test-nhintegrations-test": {
+              "path": "repetition-2/first/test-nhintegrations-test/observation.json",
+              "stage": "execute-nhintegrations-test",
+              "elapsed_s": 0.6390592170000104,
+              "exit_code": 0,
+              "local_state": "compiled outputs present; tests actually execute",
+              "remote_state": "configured public substituters; exact availability in cache-state audit; no magic cache",
+              "started_unix_s": 1790354320.8302047,
+              "end_unix_s": 1790354321.469264
+            }
+          },
+          "cache_audit": {
+            "status": "complete",
+            "comparison_unusable": false,
+            "evaluation": {
+              "eval_s": 37.412815351999996,
+              "exit_code": 0,
+              "stderr_log": "/home/runner/work/_temp/colocated-evidence/first/cache-state.evaluation.log"
+            },
+            "probe_s": 15.078482562999994,
+            "elapsed_s": 52.52704143799999,
+            "outputs": {
+              "ci-components": {
+                "local_state": "absent",
+                "remote": {
+                  "https://cache.iog.io": "absent",
+                  "https://cache.nixos.org": "absent",
+                  "https://install.determinate.systems": "absent",
+                  "https://neohaskell.cachix.org": "absent"
+                }
+              },
+              "nhcore:lib:nhcore": {
+                "local_state": "absent",
+                "remote": {
+                  "https://cache.iog.io": "absent",
+                  "https://cache.nixos.org": "absent",
+                  "https://install.determinate.systems": "absent",
+                  "https://neohaskell.cachix.org": "absent"
+                }
+              },
+              "nhintegrations:lib:nhintegrations": {
+                "local_state": "absent",
+                "remote": {
+                  "https://cache.iog.io": "absent",
+                  "https://cache.nixos.org": "absent",
+                  "https://install.determinate.systems": "absent",
+                  "https://neohaskell.cachix.org": "absent"
+                }
+              },
+              "nhtestbed:lib:nhtestbed": {
+                "local_state": "absent",
+                "remote": {
+                  "https://cache.iog.io": "absent",
+                  "https://cache.nixos.org": "absent",
+                  "https://install.determinate.systems": "absent",
+                  "https://neohaskell.cachix.org": "absent"
+                }
+              },
+              "nhcore:test:nhcore-test-core": {
+                "local_state": "absent",
+                "remote": {
+                  "https://cache.iog.io": "absent",
+                  "https://cache.nixos.org": "absent",
+                  "https://install.determinate.systems": "absent",
+                  "https://neohaskell.cachix.org": "absent"
+                }
+              },
+              "nhcore:test:nhcore-test-auth": {
+                "local_state": "absent",
+                "remote": {
+                  "https://cache.iog.io": "absent",
+                  "https://cache.nixos.org": "absent",
+                  "https://install.determinate.systems": "absent",
+                  "https://neohaskell.cachix.org": "absent"
+                }
+              },
+              "nhcore:test:nhcore-test-integration": {
+                "local_state": "absent",
+                "remote": {
+                  "https://cache.iog.io": "absent",
+                  "https://cache.nixos.org": "absent",
+                  "https://install.determinate.systems": "absent",
+                  "https://neohaskell.cachix.org": "absent"
+                }
+              },
+              "nhcore:test:nhcore-test-service": {
+                "local_state": "absent",
+                "remote": {
+                  "https://cache.iog.io": "absent",
+                  "https://cache.nixos.org": "absent",
+                  "https://install.determinate.systems": "absent",
+                  "https://neohaskell.cachix.org": "absent"
+                }
+              },
+              "nhintegrations:test:nhintegrations-test": {
+                "local_state": "absent",
+                "remote": {
+                  "https://cache.iog.io": "absent",
+                  "https://cache.nixos.org": "absent",
+                  "https://install.determinate.systems": "absent",
+                  "https://neohaskell.cachix.org": "absent"
+                }
+              },
+              "nhtestbed:exe:nhtestbed": {
+                "local_state": "absent",
+                "remote": {
+                  "https://cache.iog.io": "absent",
+                  "https://cache.nixos.org": "absent",
+                  "https://install.determinate.systems": "absent",
+                  "https://neohaskell.cachix.org": "absent"
+                }
+              }
+            }
+          },
+          "hurl_inventory": {
+            "counts": {
+              "commands": 3,
+              "queries": 3,
+              "scenarios": 6,
+              "integrations": 2
+            },
+            "sha256": "1b24ee917578265824314db5f8b854d381a92f8012925fa6775d8fafc2161d3f"
+          },
+          "hurl_completed": true,
+          "cold_start_completed": true,
+          "workload_elapsed_s": 74.5155246257782,
+          "measured_stage_sum_s": 364.845354989,
+          "pass_wall_from_cache_audit_s": 415.0588698387146
+        },
+        "warm": {
+          "component_root": "/nix/store/k9haj4aw65cv5h3r9phrh9dn8l30ymn4-neohaskell-ci-components",
+          "build": {
+            "elapsed_s": 2.9804906845092773,
+            "evaluation_s": 2.836176623999961,
+            "realisation_s": 0.03985893300000498,
+            "exit_code": 0
+          },
+          "suite_timings": [
+            {
+              "suite": "nhcore-test-core",
+              "elapsed_s": 3.5558178424835205,
+              "examples": 1095,
+              "pending": 3,
+              "executed": 1092,
+              "exit_code": 0
+            },
+            {
+              "suite": "nhcore-test-auth",
+              "elapsed_s": 0.5098035335540771,
+              "examples": 189,
+              "pending": 0,
+              "executed": 189,
+              "exit_code": 0
+            },
+            {
+              "suite": "nhcore-test-integration",
+              "elapsed_s": 8.424925804138184,
+              "examples": 70,
+              "pending": 4,
+              "executed": 66,
+              "exit_code": 0
+            },
+            {
+              "suite": "nhcore-test-service",
+              "elapsed_s": 39.29419660568237,
+              "examples": 1128,
+              "pending": 57,
+              "executed": 1071,
+              "exit_code": 0
+            },
+            {
+              "suite": "nhintegrations-test",
+              "elapsed_s": 0.5807936191558838,
+              "examples": 606,
+              "pending": 3,
+              "executed": 603,
+              "exit_code": 0
+            }
+          ],
+          "hurl": {
+            "elapsed_s": 9.12875771522522,
+            "exit_code": 0
+          },
+          "cold_start": {
+            "elapsed_s": 7.866118907928467,
+            "exit_code": 0
+          },
+          "observations": {
+            "build": {
+              "path": "repetition-2/warm/build/observation.json",
+              "stage": "evaluate-realize",
+              "elapsed_s": 3.018799486999967,
+              "exit_code": 0,
+              "local_state": "same worker/store and immutable checkout; previous outputs present; fresh database and uploads",
+              "remote_state": "configured public substituters; exact availability in cache-state audit; no magic cache",
+              "started_unix_s": 1790354355.1429205,
+              "end_unix_s": 1790354358.16172
+            },
+            "cold-start": {
+              "path": "repetition-2/warm/cold-start/observation.json",
+              "stage": "execute-cold-start",
+              "elapsed_s": 7.905085266000015,
+              "exit_code": 0,
+              "local_state": "compiled testbed; actual readiness assertions",
+              "remote_state": "configured public substituters; exact availability in cache-state audit; no magic cache",
+              "started_unix_s": 1790354420.212267,
+              "end_unix_s": 1790354428.1173522
+            },
+            "hurl": {
+              "path": "repetition-2/warm/hurl/observation.json",
+              "stage": "execute-hurl",
+              "elapsed_s": 9.169515518000026,
+              "exit_code": 0,
+              "local_state": "compiled testbed; actual PostgreSQL and Hurl fixtures",
+              "remote_state": "configured public substituters; exact availability in cache-state audit; no magic cache",
+              "started_unix_s": 1790354410.998807,
+              "end_unix_s": 1790354420.1683226
+            },
+            "postgres-ready": {
+              "path": "repetition-2/warm/postgres-ready/observation.json",
+              "stage": "fixture-readiness",
+              "elapsed_s": 2.22741419700003,
+              "exit_code": 0,
+              "local_state": "new PostgreSQL instance; TCP readiness and SQL required",
+              "remote_state": "configured public substituters; exact availability in cache-state audit; no magic cache",
+              "started_unix_s": 1790354340.8029294,
+              "end_unix_s": 1790354343.0303435
+            },
+            "postgres-start": {
+              "path": "repetition-2/warm/postgres-start/observation.json",
+              "stage": "fixture-start",
+              "elapsed_s": 0.404642688000024,
+              "exit_code": 0,
+              "local_state": "new disposable database, empty data volume",
+              "remote_state": "configured public substituters; exact availability in cache-state audit; no magic cache",
+              "started_unix_s": 1790354340.352916,
+              "end_unix_s": 1790354340.7575586
+            },
+            "postgres-stop": {
+              "path": "repetition-2/warm/postgres-stop/observation.json",
+              "stage": "fixture-stop",
+              "elapsed_s": 0.4047354549999227,
+              "exit_code": 0,
+              "local_state": "discard only this pass disposable database",
+              "remote_state": "configured public substituters; exact availability in cache-state audit; no magic cache",
+              "started_unix_s": 1790354428.1724887,
+              "end_unix_s": 1790354428.5772243
+            },
+            "test-nhcore-test-auth": {
+              "path": "repetition-2/warm/test-nhcore-test-auth/observation.json",
+              "stage": "execute-nhcore-test-auth",
+              "elapsed_s": 0.5484128420000047,
+              "exit_code": 0,
+              "local_state": "compiled outputs present; tests actually execute",
+              "remote_state": "configured public substituters; exact availability in cache-state audit; no magic cache",
+              "started_unix_s": 1790354361.84324,
+              "end_unix_s": 1790354362.3916528
+            },
+            "test-nhcore-test-core": {
+              "path": "repetition-2/warm/test-nhcore-test-core/observation.json",
+              "stage": "execute-nhcore-test-core",
+              "elapsed_s": 3.594862472999978,
+              "exit_code": 0,
+              "local_state": "compiled outputs present; tests actually execute",
+              "remote_state": "configured public substituters; exact availability in cache-state audit; no magic cache",
+              "started_unix_s": 1790354358.2041473,
+              "end_unix_s": 1790354361.7990098
+            },
+            "test-nhcore-test-integration": {
+              "path": "repetition-2/warm/test-nhcore-test-integration/observation.json",
+              "stage": "execute-nhcore-test-integration",
+              "elapsed_s": 8.463265520999983,
+              "exit_code": 0,
+              "local_state": "compiled outputs present; tests actually execute",
+              "remote_state": "configured public substituters; exact availability in cache-state audit; no magic cache",
+              "started_unix_s": 1790354362.435803,
+              "end_unix_s": 1790354370.8990684
+            },
+            "test-nhcore-test-service": {
+              "path": "repetition-2/warm/test-nhcore-test-service/observation.json",
+              "stage": "execute-nhcore-test-service",
+              "elapsed_s": 39.34373329300007,
+              "exit_code": 0,
+              "local_state": "compiled outputs present; tests actually execute",
+              "remote_state": "configured public substituters; exact availability in cache-state audit; no magic cache",
+              "started_unix_s": 1790354370.945119,
+              "end_unix_s": 1790354410.2888522
+            },
+            "test-nhintegrations-test": {
+              "path": "repetition-2/warm/test-nhintegrations-test/observation.json",
+              "stage": "execute-nhintegrations-test",
+              "elapsed_s": 0.6197202569999263,
+              "exit_code": 0,
+              "local_state": "compiled outputs present; tests actually execute",
+              "remote_state": "configured public substituters; exact availability in cache-state audit; no magic cache",
+              "started_unix_s": 1790354410.3343096,
+              "end_unix_s": 1790354410.9540298
+            }
+          },
+          "cache_audit": {
+            "status": "complete",
+            "comparison_unusable": false,
+            "evaluation": {
+              "eval_s": 4.588658260999978,
+              "exit_code": 0,
+              "stderr_log": "/home/runner/work/_temp/colocated-evidence/warm/cache-state.evaluation.log"
+            },
+            "probe_s": 7.363528229999986,
+            "elapsed_s": 11.989967279999973,
+            "outputs": {
+              "ci-components": {
+                "local_state": "present",
+                "remote": {
+                  "https://cache.iog.io": "absent",
+                  "https://cache.nixos.org": "absent",
+                  "https://install.determinate.systems": "absent",
+                  "https://neohaskell.cachix.org": "absent"
+                }
+              },
+              "nhcore:lib:nhcore": {
+                "local_state": "present",
+                "remote": {
+                  "https://cache.iog.io": "absent",
+                  "https://cache.nixos.org": "absent",
+                  "https://install.determinate.systems": "absent",
+                  "https://neohaskell.cachix.org": "absent"
+                }
+              },
+              "nhintegrations:lib:nhintegrations": {
+                "local_state": "present",
+                "remote": {
+                  "https://cache.iog.io": "absent",
+                  "https://cache.nixos.org": "absent",
+                  "https://install.determinate.systems": "absent",
+                  "https://neohaskell.cachix.org": "absent"
+                }
+              },
+              "nhtestbed:lib:nhtestbed": {
+                "local_state": "present",
+                "remote": {
+                  "https://cache.iog.io": "absent",
+                  "https://cache.nixos.org": "absent",
+                  "https://install.determinate.systems": "absent",
+                  "https://neohaskell.cachix.org": "absent"
+                }
+              },
+              "nhcore:test:nhcore-test-core": {
+                "local_state": "present",
+                "remote": {
+                  "https://cache.iog.io": "absent",
+                  "https://cache.nixos.org": "absent",
+                  "https://install.determinate.systems": "absent",
+                  "https://neohaskell.cachix.org": "absent"
+                }
+              },
+              "nhcore:test:nhcore-test-auth": {
+                "local_state": "present",
+                "remote": {
+                  "https://cache.iog.io": "absent",
+                  "https://cache.nixos.org": "absent",
+                  "https://install.determinate.systems": "absent",
+                  "https://neohaskell.cachix.org": "absent"
+                }
+              },
+              "nhcore:test:nhcore-test-integration": {
+                "local_state": "present",
+                "remote": {
+                  "https://cache.iog.io": "absent",
+                  "https://cache.nixos.org": "absent",
+                  "https://install.determinate.systems": "absent",
+                  "https://neohaskell.cachix.org": "absent"
+                }
+              },
+              "nhcore:test:nhcore-test-service": {
+                "local_state": "present",
+                "remote": {
+                  "https://cache.iog.io": "absent",
+                  "https://cache.nixos.org": "absent",
+                  "https://install.determinate.systems": "absent",
+                  "https://neohaskell.cachix.org": "absent"
+                }
+              },
+              "nhintegrations:test:nhintegrations-test": {
+                "local_state": "present",
+                "remote": {
+                  "https://cache.iog.io": "absent",
+                  "https://cache.nixos.org": "absent",
+                  "https://install.determinate.systems": "absent",
+                  "https://neohaskell.cachix.org": "absent"
+                }
+              },
+              "nhtestbed:exe:nhtestbed": {
+                "local_state": "present",
+                "remote": {
+                  "https://cache.iog.io": "absent",
+                  "https://cache.nixos.org": "absent",
+                  "https://install.determinate.systems": "absent",
+                  "https://neohaskell.cachix.org": "absent"
+                }
+              }
+            }
+          },
+          "hurl_inventory": {
+            "counts": {
+              "commands": 3,
+              "queries": 3,
+              "scenarios": 6,
+              "integrations": 2
+            },
+            "sha256": "1b24ee917578265824314db5f8b854d381a92f8012925fa6775d8fafc2161d3f"
+          },
+          "hurl_completed": true,
+          "cold_start_completed": true,
+          "workload_elapsed_s": 69.36041402816772,
+          "measured_stage_sum_s": 75.70018699699995,
+          "pass_wall_from_cache_audit_s": 85.48940300941467
+        }
+      },
+      "same_root": true,
+      "same_suite_counts": true,
+      "same_hurl_inventory": true,
+      "setup": {
+        "postgres_image_pull_elapsed_s": 13.945966073999998,
+        "postgres_image_observation": "repetition-2/postgres-image/observation.json"
+      }
+    },
+    {
+      "repetition": 3,
+      "passes": {
+        "first": {
+          "component_root": "/nix/store/k9haj4aw65cv5h3r9phrh9dn8l30ymn4-neohaskell-ci-components",
+          "build": {
+            "elapsed_s": 331.35195207595825,
+            "evaluation_s": 3.6863437459999915,
+            "realisation_s": 327.532524971,
+            "exit_code": 0
+          },
+          "suite_timings": [
+            {
+              "suite": "nhcore-test-core",
+              "elapsed_s": 3.6382384300231934,
+              "examples": 1095,
+              "pending": 3,
+              "executed": 1092,
+              "exit_code": 0
+            },
+            {
+              "suite": "nhcore-test-auth",
+              "elapsed_s": 0.5584046840667725,
+              "examples": 189,
+              "pending": 0,
+              "executed": 189,
+              "exit_code": 0
+            },
+            {
+              "suite": "nhcore-test-integration",
+              "elapsed_s": 8.437035322189331,
+              "examples": 70,
+              "pending": 4,
+              "executed": 66,
+              "exit_code": 0
+            },
+            {
+              "suite": "nhcore-test-service",
+              "elapsed_s": 37.65348935127258,
+              "examples": 1128,
+              "pending": 57,
+              "executed": 1071,
+              "exit_code": 0
+            },
+            {
+              "suite": "nhintegrations-test",
+              "elapsed_s": 0.6540529727935791,
+              "examples": 606,
+              "pending": 3,
+              "executed": 603,
+              "exit_code": 0
+            }
+          ],
+          "hurl": {
+            "elapsed_s": 9.28637981414795,
+            "exit_code": 0
+          },
+          "cold_start": {
+            "elapsed_s": 7.392663240432739,
+            "exit_code": 0
+          },
+          "observations": {
+            "build": {
+              "path": "repetition-3/first/build/observation.json",
+              "stage": "evaluate-realize",
+              "elapsed_s": 331.400967617,
+              "exit_code": 0,
+              "local_state": "fresh hosted Nix store after installation and cache audit; see store-before.txt",
+              "remote_state": "configured public substituters; exact availability in cache-state audit; no magic cache",
+              "started_unix_s": 1790354498.3430712,
+              "end_unix_s": 1790354829.7440388
+            },
+            "cold-start": {
+              "path": "repetition-3/first/cold-start/observation.json",
+              "stage": "execute-cold-start",
+              "elapsed_s": 7.439372774999981,
+              "exit_code": 0,
+              "local_state": "compiled testbed; actual readiness assertions",
+              "remote_state": "configured public substituters; exact availability in cache-state audit; no magic cache",
+              "started_unix_s": 1790354890.650835,
+              "end_unix_s": 1790354898.0902078
+            },
+            "hurl": {
+              "path": "repetition-3/first/hurl/observation.json",
+              "stage": "execute-hurl",
+              "elapsed_s": 9.336394213999995,
+              "exit_code": 0,
+              "local_state": "compiled testbed; actual PostgreSQL and Hurl fixtures",
+              "remote_state": "configured public substituters; exact availability in cache-state audit; no magic cache",
+              "started_unix_s": 1790354881.2611082,
+              "end_unix_s": 1790354890.5975025
+            },
+            "postgres-ready": {
+              "path": "repetition-3/first/postgres-ready/observation.json",
+              "stage": "fixture-readiness",
+              "elapsed_s": 2.3071738509999946,
+              "exit_code": 0,
+              "local_state": "new PostgreSQL instance; TCP readiness and SQL required",
+              "remote_state": "configured public substituters; exact availability in cache-state audit; no magic cache",
+              "started_unix_s": 1790354454.8783674,
+              "end_unix_s": 1790354457.1855414
+            },
+            "postgres-start": {
+              "path": "repetition-3/first/postgres-start/observation.json",
+              "stage": "fixture-start",
+              "elapsed_s": 0.33150533999999965,
+              "exit_code": 0,
+              "local_state": "new disposable database, empty data volume",
+              "remote_state": "configured public substituters; exact availability in cache-state audit; no magic cache",
+              "started_unix_s": 1790354454.4886315,
+              "end_unix_s": 1790354454.8201368
+            },
+            "postgres-stop": {
+              "path": "repetition-3/first/postgres-stop/observation.json",
+              "stage": "fixture-stop",
+              "elapsed_s": 0.27006648100001485,
+              "exit_code": 0,
+              "local_state": "discard only this pass disposable database",
+              "remote_state": "configured public substituters; exact availability in cache-state audit; no magic cache",
+              "started_unix_s": 1790354898.1570213,
+              "end_unix_s": 1790354898.4270878
+            },
+            "test-nhcore-test-auth": {
+              "path": "repetition-3/first/test-nhcore-test-auth/observation.json",
+              "stage": "execute-nhcore-test-auth",
+              "elapsed_s": 0.6067522019999956,
+              "exit_code": 0,
+              "local_state": "compiled outputs present; tests actually execute",
+              "remote_state": "configured public substituters; exact availability in cache-state audit; no magic cache",
+              "started_unix_s": 1790354833.5469537,
+              "end_unix_s": 1790354834.1537058
+            },
+            "test-nhcore-test-core": {
+              "path": "repetition-3/first/test-nhcore-test-core/observation.json",
+              "stage": "execute-nhcore-test-core",
+              "elapsed_s": 3.6875780930000133,
+              "exit_code": 0,
+              "local_state": "compiled outputs present; tests actually execute",
+              "remote_state": "configured public substituters; exact availability in cache-state audit; no magic cache",
+              "started_unix_s": 1790354829.8018248,
+              "end_unix_s": 1790354833.489403
+            },
+            "test-nhcore-test-integration": {
+              "path": "repetition-3/first/test-nhcore-test-integration/observation.json",
+              "stage": "execute-nhcore-test-integration",
+              "elapsed_s": 8.483597035000003,
+              "exit_code": 0,
+              "local_state": "compiled outputs present; tests actually execute",
+              "remote_state": "configured public substituters; exact availability in cache-state audit; no magic cache",
+              "started_unix_s": 1790354834.2074616,
+              "end_unix_s": 1790354842.6910586
+            },
+            "test-nhcore-test-service": {
+              "path": "repetition-3/first/test-nhcore-test-service/observation.json",
+              "stage": "execute-nhcore-test-service",
+              "elapsed_s": 37.70900968799998,
+              "exit_code": 0,
+              "local_state": "compiled outputs present; tests actually execute",
+              "remote_state": "configured public substituters; exact availability in cache-state audit; no magic cache",
+              "started_unix_s": 1790354842.7437108,
+              "end_unix_s": 1790354880.4527204
+            },
+            "test-nhintegrations-test": {
+              "path": "repetition-3/first/test-nhintegrations-test/observation.json",
+              "stage": "execute-nhintegrations-test",
+              "elapsed_s": 0.70126991799998,
+              "exit_code": 0,
+              "local_state": "compiled outputs present; tests actually execute",
+              "remote_state": "configured public substituters; exact availability in cache-state audit; no magic cache",
+              "started_unix_s": 1790354880.5069973,
+              "end_unix_s": 1790354881.2082672
+            }
+          },
+          "cache_audit": {
+            "status": "complete",
+            "comparison_unusable": false,
+            "evaluation": {
+              "eval_s": 34.354593651,
+              "exit_code": 0,
+              "stderr_log": "/home/runner/work/_temp/colocated-evidence/first/cache-state.evaluation.log"
+            },
+            "probe_s": 6.611909799999992,
+            "elapsed_s": 41.01076205399999,
+            "outputs": {
+              "ci-components": {
+                "local_state": "absent",
+                "remote": {
+                  "https://cache.iog.io": "absent",
+                  "https://cache.nixos.org": "absent",
+                  "https://install.determinate.systems": "absent",
+                  "https://neohaskell.cachix.org": "absent"
+                }
+              },
+              "nhcore:lib:nhcore": {
+                "local_state": "absent",
+                "remote": {
+                  "https://cache.iog.io": "absent",
+                  "https://cache.nixos.org": "absent",
+                  "https://install.determinate.systems": "absent",
+                  "https://neohaskell.cachix.org": "absent"
+                }
+              },
+              "nhintegrations:lib:nhintegrations": {
+                "local_state": "absent",
+                "remote": {
+                  "https://cache.iog.io": "absent",
+                  "https://cache.nixos.org": "absent",
+                  "https://install.determinate.systems": "absent",
+                  "https://neohaskell.cachix.org": "absent"
+                }
+              },
+              "nhtestbed:lib:nhtestbed": {
+                "local_state": "absent",
+                "remote": {
+                  "https://cache.iog.io": "absent",
+                  "https://cache.nixos.org": "absent",
+                  "https://install.determinate.systems": "absent",
+                  "https://neohaskell.cachix.org": "absent"
+                }
+              },
+              "nhcore:test:nhcore-test-core": {
+                "local_state": "absent",
+                "remote": {
+                  "https://cache.iog.io": "absent",
+                  "https://cache.nixos.org": "absent",
+                  "https://install.determinate.systems": "absent",
+                  "https://neohaskell.cachix.org": "absent"
+                }
+              },
+              "nhcore:test:nhcore-test-auth": {
+                "local_state": "absent",
+                "remote": {
+                  "https://cache.iog.io": "absent",
+                  "https://cache.nixos.org": "absent",
+                  "https://install.determinate.systems": "absent",
+                  "https://neohaskell.cachix.org": "absent"
+                }
+              },
+              "nhcore:test:nhcore-test-integration": {
+                "local_state": "absent",
+                "remote": {
+                  "https://cache.iog.io": "absent",
+                  "https://cache.nixos.org": "absent",
+                  "https://install.determinate.systems": "absent",
+                  "https://neohaskell.cachix.org": "absent"
+                }
+              },
+              "nhcore:test:nhcore-test-service": {
+                "local_state": "absent",
+                "remote": {
+                  "https://cache.iog.io": "absent",
+                  "https://cache.nixos.org": "absent",
+                  "https://install.determinate.systems": "absent",
+                  "https://neohaskell.cachix.org": "absent"
+                }
+              },
+              "nhintegrations:test:nhintegrations-test": {
+                "local_state": "absent",
+                "remote": {
+                  "https://cache.iog.io": "absent",
+                  "https://cache.nixos.org": "absent",
+                  "https://install.determinate.systems": "absent",
+                  "https://neohaskell.cachix.org": "absent"
+                }
+              },
+              "nhtestbed:exe:nhtestbed": {
+                "local_state": "absent",
+                "remote": {
+                  "https://cache.iog.io": "absent",
+                  "https://cache.nixos.org": "absent",
+                  "https://install.determinate.systems": "absent",
+                  "https://neohaskell.cachix.org": "absent"
+                }
+              }
+            }
+          },
+          "hurl_inventory": {
+            "counts": {
+              "commands": 3,
+              "queries": 3,
+              "scenarios": 6,
+              "integrations": 2
+            },
+            "sha256": "1b24ee917578265824314db5f8b854d381a92f8012925fa6775d8fafc2161d3f"
+          },
+          "hurl_completed": true,
+          "cold_start_completed": true,
+          "workload_elapsed_s": 67.62026381492615,
+          "measured_stage_sum_s": 402.27368721399995,
+          "pass_wall_from_cache_audit_s": 441.1758108139038
+        },
+        "warm": {
+          "component_root": "/nix/store/k9haj4aw65cv5h3r9phrh9dn8l30ymn4-neohaskell-ci-components",
+          "build": {
+            "elapsed_s": 3.773742198944092,
+            "evaluation_s": 3.5999270650000312,
+            "realisation_s": 0.043064575999949284,
+            "exit_code": 0
+          },
+          "suite_timings": [
+            {
+              "suite": "nhcore-test-core",
+              "elapsed_s": 3.638723611831665,
+              "examples": 1095,
+              "pending": 3,
+              "executed": 1092,
+              "exit_code": 0
+            },
+            {
+              "suite": "nhcore-test-auth",
+              "elapsed_s": 0.5354077816009521,
+              "examples": 189,
+              "pending": 0,
+              "executed": 189,
+              "exit_code": 0
+            },
+            {
+              "suite": "nhcore-test-integration",
+              "elapsed_s": 8.435792446136475,
+              "examples": 70,
+              "pending": 4,
+              "executed": 66,
+              "exit_code": 0
+            },
+            {
+              "suite": "nhcore-test-service",
+              "elapsed_s": 37.605947494506836,
+              "examples": 1128,
+              "pending": 57,
+              "executed": 1071,
+              "exit_code": 0
+            },
+            {
+              "suite": "nhintegrations-test",
+              "elapsed_s": 0.6479918956756592,
+              "examples": 606,
+              "pending": 3,
+              "executed": 603,
+              "exit_code": 0
+            }
+          ],
+          "hurl": {
+            "elapsed_s": 9.267680883407593,
+            "exit_code": 0
+          },
+          "cold_start": {
+            "elapsed_s": 7.291377544403076,
+            "exit_code": 0
+          },
+          "observations": {
+            "build": {
+              "path": "repetition-3/warm/build/observation.json",
+              "stage": "evaluate-realize",
+              "elapsed_s": 3.8204788349999603,
+              "exit_code": 0,
+              "local_state": "same worker/store and immutable checkout; previous outputs present; fresh database and uploads",
+              "remote_state": "configured public substituters; exact availability in cache-state audit; no magic cache",
+              "started_unix_s": 1790354910.6294007,
+              "end_unix_s": 1790354914.4498796
+            },
+            "cold-start": {
+              "path": "repetition-3/warm/cold-start/observation.json",
+              "stage": "execute-cold-start",
+              "elapsed_s": 7.338954958999921,
+              "exit_code": 0,
+              "local_state": "compiled testbed; actual readiness assertions",
+              "remote_state": "configured public substituters; exact availability in cache-state audit; no magic cache",
+              "started_unix_s": 1790354975.2433026,
+              "end_unix_s": 1790354982.5822575
+            },
+            "hurl": {
+              "path": "repetition-3/warm/hurl/observation.json",
+              "stage": "execute-hurl",
+              "elapsed_s": 9.31572088200005,
+              "exit_code": 0,
+              "local_state": "compiled testbed; actual PostgreSQL and Hurl fixtures",
+              "remote_state": "configured public substituters; exact availability in cache-state audit; no magic cache",
+              "started_unix_s": 1790354965.874431,
+              "end_unix_s": 1790354975.1901517
+            },
+            "postgres-ready": {
+              "path": "repetition-3/warm/postgres-ready/observation.json",
+              "stage": "fixture-readiness",
+              "elapsed_s": 2.281857193999997,
+              "exit_code": 0,
+              "local_state": "new PostgreSQL instance; TCP readiness and SQL required",
+              "remote_state": "configured public substituters; exact availability in cache-state audit; no magic cache",
+              "started_unix_s": 1790354898.7229052,
+              "end_unix_s": 1790354901.0047624
+            },
+            "postgres-start": {
+              "path": "repetition-3/warm/postgres-start/observation.json",
+              "stage": "fixture-start",
+              "elapsed_s": 0.14600601299997606,
+              "exit_code": 0,
+              "local_state": "new disposable database, empty data volume",
+              "remote_state": "configured public substituters; exact availability in cache-state audit; no magic cache",
+              "started_unix_s": 1790354898.522454,
+              "end_unix_s": 1790354898.6684601
+            },
+            "postgres-stop": {
+              "path": "repetition-3/warm/postgres-stop/observation.json",
+              "stage": "fixture-stop",
+              "elapsed_s": 0.2895482159999574,
+              "exit_code": 0,
+              "local_state": "discard only this pass disposable database",
+              "remote_state": "configured public substituters; exact availability in cache-state audit; no magic cache",
+              "started_unix_s": 1790354982.6502147,
+              "end_unix_s": 1790354982.9397628
+            },
+            "test-nhcore-test-auth": {
+              "path": "repetition-3/warm/test-nhcore-test-auth/observation.json",
+              "stage": "execute-nhcore-test-auth",
+              "elapsed_s": 0.5821805620000191,
+              "exit_code": 0,
+              "local_state": "compiled outputs present; tests actually execute",
+              "remote_state": "configured public substituters; exact availability in cache-state audit; no magic cache",
+              "started_unix_s": 1790354918.2401912,
+              "end_unix_s": 1790354918.8223717
+            },
+            "test-nhcore-test-core": {
+              "path": "repetition-3/warm/test-nhcore-test-core/observation.json",
+              "stage": "execute-nhcore-test-core",
+              "elapsed_s": 3.6855166590000294,
+              "exit_code": 0,
+              "local_state": "compiled outputs present; tests actually execute",
+              "remote_state": "configured public substituters; exact availability in cache-state audit; no magic cache",
+              "started_unix_s": 1790354914.5016468,
+              "end_unix_s": 1790354918.1871634
+            },
+            "test-nhcore-test-integration": {
+              "path": "repetition-3/warm/test-nhcore-test-integration/observation.json",
+              "stage": "execute-nhcore-test-integration",
+              "elapsed_s": 8.482576164000022,
+              "exit_code": 0,
+              "local_state": "compiled outputs present; tests actually execute",
+              "remote_state": "configured public substituters; exact availability in cache-state audit; no magic cache",
+              "started_unix_s": 1790354918.874945,
+              "end_unix_s": 1790354927.357521
+            },
+            "test-nhcore-test-service": {
+              "path": "repetition-3/warm/test-nhcore-test-service/observation.json",
+              "stage": "execute-nhcore-test-service",
+              "elapsed_s": 37.66146616799995,
+              "exit_code": 0,
+              "local_state": "compiled outputs present; tests actually execute",
+              "remote_state": "configured public substituters; exact availability in cache-state audit; no magic cache",
+              "started_unix_s": 1790354927.4104848,
+              "end_unix_s": 1790354965.071951
+            },
+            "test-nhintegrations-test": {
+              "path": "repetition-3/warm/test-nhintegrations-test/observation.json",
+              "stage": "execute-nhintegrations-test",
+              "elapsed_s": 0.6950575259999141,
+              "exit_code": 0,
+              "local_state": "compiled outputs present; tests actually execute",
+              "remote_state": "configured public substituters; exact availability in cache-state audit; no magic cache",
+              "started_unix_s": 1790354965.1260176,
+              "end_unix_s": 1790354965.8210752
+            }
+          },
+          "cache_audit": {
+            "status": "complete",
+            "comparison_unusable": false,
+            "evaluation": {
+              "eval_s": 4.021210558000007,
+              "exit_code": 0,
+              "stderr_log": "/home/runner/work/_temp/colocated-evidence/warm/cache-state.evaluation.log"
+            },
+            "probe_s": 5.408949882000002,
+            "elapsed_s": 9.471474060000048,
+            "outputs": {
+              "ci-components": {
+                "local_state": "present",
+                "remote": {
+                  "https://cache.iog.io": "absent",
+                  "https://cache.nixos.org": "absent",
+                  "https://install.determinate.systems": "absent",
+                  "https://neohaskell.cachix.org": "absent"
+                }
+              },
+              "nhcore:lib:nhcore": {
+                "local_state": "present",
+                "remote": {
+                  "https://cache.iog.io": "absent",
+                  "https://cache.nixos.org": "absent",
+                  "https://install.determinate.systems": "absent",
+                  "https://neohaskell.cachix.org": "absent"
+                }
+              },
+              "nhintegrations:lib:nhintegrations": {
+                "local_state": "present",
+                "remote": {
+                  "https://cache.iog.io": "absent",
+                  "https://cache.nixos.org": "absent",
+                  "https://install.determinate.systems": "absent",
+                  "https://neohaskell.cachix.org": "absent"
+                }
+              },
+              "nhtestbed:lib:nhtestbed": {
+                "local_state": "present",
+                "remote": {
+                  "https://cache.iog.io": "absent",
+                  "https://cache.nixos.org": "absent",
+                  "https://install.determinate.systems": "absent",
+                  "https://neohaskell.cachix.org": "absent"
+                }
+              },
+              "nhcore:test:nhcore-test-core": {
+                "local_state": "present",
+                "remote": {
+                  "https://cache.iog.io": "absent",
+                  "https://cache.nixos.org": "absent",
+                  "https://install.determinate.systems": "absent",
+                  "https://neohaskell.cachix.org": "absent"
+                }
+              },
+              "nhcore:test:nhcore-test-auth": {
+                "local_state": "present",
+                "remote": {
+                  "https://cache.iog.io": "absent",
+                  "https://cache.nixos.org": "absent",
+                  "https://install.determinate.systems": "absent",
+                  "https://neohaskell.cachix.org": "absent"
+                }
+              },
+              "nhcore:test:nhcore-test-integration": {
+                "local_state": "present",
+                "remote": {
+                  "https://cache.iog.io": "absent",
+                  "https://cache.nixos.org": "absent",
+                  "https://install.determinate.systems": "absent",
+                  "https://neohaskell.cachix.org": "absent"
+                }
+              },
+              "nhcore:test:nhcore-test-service": {
+                "local_state": "present",
+                "remote": {
+                  "https://cache.iog.io": "absent",
+                  "https://cache.nixos.org": "absent",
+                  "https://install.determinate.systems": "absent",
+                  "https://neohaskell.cachix.org": "absent"
+                }
+              },
+              "nhintegrations:test:nhintegrations-test": {
+                "local_state": "present",
+                "remote": {
+                  "https://cache.iog.io": "absent",
+                  "https://cache.nixos.org": "absent",
+                  "https://install.determinate.systems": "absent",
+                  "https://neohaskell.cachix.org": "absent"
+                }
+              },
+              "nhtestbed:exe:nhtestbed": {
+                "local_state": "present",
+                "remote": {
+                  "https://cache.iog.io": "absent",
+                  "https://cache.nixos.org": "absent",
+                  "https://install.determinate.systems": "absent",
+                  "https://neohaskell.cachix.org": "absent"
+                }
+              }
+            }
+          },
+          "hurl_inventory": {
+            "counts": {
+              "commands": 3,
+              "queries": 3,
+              "scenarios": 6,
+              "integrations": 2
+            },
+            "sha256": "1b24ee917578265824314db5f8b854d381a92f8012925fa6775d8fafc2161d3f"
+          },
+          "hurl_completed": true,
+          "cold_start_completed": true,
+          "workload_elapsed_s": 67.42292165756226,
+          "measured_stage_sum_s": 74.2993631779998,
+          "pass_wall_from_cache_audit_s": 81.8591411113739
+        }
+      },
+      "same_root": true,
+      "same_suite_counts": true,
+      "same_hurl_inventory": true,
+      "setup": {
+        "postgres_image_pull_elapsed_s": 5.225070631000001,
+        "postgres_image_observation": "repetition-3/postgres-image/observation.json"
+      }
+    }
+  ],
+  "valid_repetitions": 3,
+  "medians_n3": {
+    "first": {
+      "build_elapsed_s": 327.5233132839203,
+      "build_evaluation_s": 3.6405895729999997,
+      "build_realisation_s": 323.75436501499996,
+      "hurl_elapsed_s": 9.28637981414795,
+      "cold_start_elapsed_s": 7.44487738609314,
+      "cache_eval_s": 34.466473541000006,
+      "cache_probe_s": 6.611909799999992,
+      "cache_audit_elapsed_s": 41.026307040000006,
+      "suite_elapsed_s": {
+        "nhcore-test-core": 3.648890256881714,
+        "nhcore-test-auth": 0.5584046840667725,
+        "nhcore-test-integration": 8.437035322189331,
+        "nhcore-test-service": 38.30783748626709,
+        "nhintegrations-test": 0.6338915824890137
+      },
+      "workload_elapsed_s": 68.30880546569824,
+      "measured_stage_sum_s": 399.041217501,
+      "pass_wall_from_cache_audit_s": 438.100382566452
+    },
+    "warm": {
+      "build_elapsed_s": 3.773742198944092,
+      "build_evaluation_s": 3.5999270650000312,
+      "build_realisation_s": 0.043064575999949284,
+      "hurl_elapsed_s": 9.267680883407593,
+      "cold_start_elapsed_s": 7.374523639678955,
+      "cache_eval_s": 4.141660497000032,
+      "cache_probe_s": 5.408949882000002,
+      "cache_audit_elapsed_s": 9.471474060000048,
+      "suite_elapsed_s": {
+        "nhcore-test-core": 3.638723611831665,
+        "nhcore-test-auth": 0.531527042388916,
+        "nhcore-test-integration": 8.435792446136475,
+        "nhcore-test-service": 38.26043081283569,
+        "nhintegrations-test": 0.6366310119628906
+      },
+      "workload_elapsed_s": 68.19155740737915,
+      "measured_stage_sum_s": 75.12711893999989,
+      "pass_wall_from_cache_audit_s": 81.8591411113739
+    },
+    "setup_postgres_image_pull_elapsed_s": 6.098945679000003
+  },
+  "job_intervals": [
+    {
+      "databaseId": 108155011587,
+      "name": "colocated (1)",
+      "conclusion": "success",
+      "startedAt": "2026-09-25T16:22:24Z",
+      "completedAt": "2026-09-25T16:31:30Z",
+      "wall_s": 546.0
+    },
+    {
+      "databaseId": 108155011349,
+      "name": "colocated (2)",
+      "conclusion": "success",
+      "startedAt": "2026-09-25T16:31:32Z",
+      "completedAt": "2026-09-25T16:40:34Z",
+      "wall_s": 542.0
+    },
+    {
+      "databaseId": 108155011506,
+      "name": "colocated (3)",
+      "conclusion": "success",
+      "startedAt": "2026-09-25T16:40:37Z",
+      "completedAt": "2026-09-25T16:49:46Z",
+      "wall_s": 549.0
+    }
+  ],
+  "serial_experiment_wall": {
+    "start": "2026-09-25T16:22:24Z",
+    "end": "2026-09-25T16:49:46Z",
+    "wall_s": 1642.0,
+    "includes_matrix_repetitions": true,
+    "is_ci_critical_path": false
+  },
+  "workflow_wall": {
+    "start": "2026-09-25T16:22:21Z",
+    "end": "2026-09-25T16:49:47Z",
+    "wall_s": 1646.0
+  }
+}

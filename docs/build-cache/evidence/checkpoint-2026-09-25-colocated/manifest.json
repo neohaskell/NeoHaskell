@@ -1,0 +1,12 @@
+{
+  "run_id": 36160325157,
+  "source_sha": "17f9a149339f2bd1a77cb4c8acd1c9ab17bfc031",
+  "artifact_retention_days": 30,
+  "scope": "five suites plus Hurl and cold-start; same-job warm repeat, not persistent cross-run hosting",
+  "files": {
+    "analysis.md": "a324d201f511c4fa629fcf519f5a417b23fcd967875bd7f16e8ee969cd816959",
+    "analysis.json": "e249c2ee5d6c9abe0ef5e878a4b7782509eed9d8ab0908c60468761bfc599a23",
+    "raw-evidence.tar.gz": "10c9e704daa0649d2ee5d298ef0a7aadf7181d77cae6db0a1f2eaabef1287c70",
+    "run.json": "1bf22616fdf468094a4074ca103c5d1a187574d1527f40759c71f8fb26561be6"
+  }
+}
