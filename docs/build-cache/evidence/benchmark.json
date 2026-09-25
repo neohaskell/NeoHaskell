@@ -1,0 +1,1374 @@
+{
+  "task": "NeoHaskell PR899 measured workload analysis",
+  "runs": {
+    "baseline_candidate": 36143016033,
+    "pilot": 36143308159
+  },
+  "artifact_policy": "measurement-linux-* only; component closures not downloaded",
+  "observations": {
+    "baseline": {
+      "fresh/compile-link": {
+        "observations_s": [
+          337.729967714,
+          337.880224258,
+          339.372993708
+        ],
+        "median_s": 337.880224258,
+        "n": 3,
+        "exit_codes": [
+          0,
+          0,
+          0
+        ],
+        "revision": "e94a6c576b4b92c70ececacf615113eb6608e25f"
+      },
+      "fresh/execute-cold-start": {
+        "observations_s": [
+          17.990237909,
+          18.201060184,
+          17.911648407
+        ],
+        "median_s": 17.990237909,
+        "n": 3,
+        "exit_codes": [
+          0,
+          0,
+          0
+        ],
+        "revision": "e94a6c576b4b92c70ececacf615113eb6608e25f"
+      },
+      "fresh/execute-hurl": {
+        "observations_s": [
+          17.807080189,
+          18.318363953,
+          17.890076834
+        ],
+        "median_s": 17.890076834,
+        "n": 3,
+        "exit_codes": [
+          0,
+          0,
+          0
+        ],
+        "revision": "e94a6c576b4b92c70ececacf615113eb6608e25f"
+      },
+      "fresh/execute-nhcore-test-auth": {
+        "observations_s": [
+          13.960202916,
+          14.200467027,
+          13.795576154
+        ],
+        "median_s": 13.960202916,
+        "n": 3,
+        "exit_codes": [
+          0,
+          0,
+          0
+        ],
+        "revision": "e94a6c576b4b92c70ececacf615113eb6608e25f"
+      },
+      "fresh/execute-nhcore-test-core": {
+        "observations_s": [
+          17.886846566,
+          17.918430022,
+          17.646232657
+        ],
+        "median_s": 17.886846566,
+        "n": 3,
+        "exit_codes": [
+          0,
+          0,
+          0
+        ],
+        "revision": "e94a6c576b4b92c70ececacf615113eb6608e25f"
+      },
+      "fresh/execute-nhcore-test-integration": {
+        "observations_s": [
+          21.598899644,
+          21.763943119,
+          21.46337975
+        ],
+        "median_s": 21.598899644,
+        "n": 3,
+        "exit_codes": [
+          0,
+          0,
+          0
+        ],
+        "revision": "e94a6c576b4b92c70ececacf615113eb6608e25f"
+      },
+      "fresh/execute-nhcore-test-service": {
+        "observations_s": [
+          51.857341607,
+          51.948199997,
+          51.954254889
+        ],
+        "median_s": 51.948199997,
+        "n": 3,
+        "exit_codes": [
+          0,
+          0,
+          0
+        ],
+        "revision": "e94a6c576b4b92c70ececacf615113eb6608e25f"
+      },
+      "fresh/execute-nhintegrations-test": {
+        "observations_s": [
+          14.216956818,
+          14.512303203,
+          13.958167783
+        ],
+        "median_s": 14.216956818,
+        "n": 3,
+        "exit_codes": [
+          0,
+          0,
+          0
+        ],
+        "revision": "e94a6c576b4b92c70ececacf615113eb6608e25f"
+      },
+      "fresh/setup": {
+        "observations_s": [
+          86.373759533,
+          77.204291742,
+          76.355193422
+        ],
+        "median_s": 77.204291742,
+        "n": 3,
+        "exit_codes": [
+          0,
+          0,
+          0
+        ],
+        "revision": "e94a6c576b4b92c70ececacf615113eb6608e25f"
+      },
+      "implementation-edit/compile-link": {
+        "observations_s": [
+          195.880411129,
+          195.658729053,
+          198.422041568
+        ],
+        "median_s": 195.880411129,
+        "n": 3,
+        "exit_codes": [
+          0,
+          0,
+          0
+        ],
+        "revision": "d8f9f95c8df29c468eda5ff26b76486b704a2323"
+      },
+      "implementation-edit/execute-core": {
+        "observations_s": [
+          17.73301007,
+          17.823424546,
+          17.617633427
+        ],
+        "median_s": 17.73301007,
+        "n": 3,
+        "exit_codes": [
+          0,
+          0,
+          0
+        ],
+        "revision": "d8f9f95c8df29c468eda5ff26b76486b704a2323"
+      },
+      "repeat/build": {
+        "observations_s": [
+          10.070696027,
+          9.971822203,
+          9.956249154
+        ],
+        "median_s": 9.971822203,
+        "n": 3,
+        "exit_codes": [
+          0,
+          0,
+          0
+        ],
+        "revision": "e94a6c576b4b92c70ececacf615113eb6608e25f"
+      }
+    },
+    "candidate": {
+      "fresh/evaluate-realize": {
+        "observations_s": [
+          287.567669109,
+          350.483106743,
+          314.763022252
+        ],
+        "median_s": 314.763022252,
+        "n": 3,
+        "exit_codes": [
+          0,
+          0,
+          0
+        ],
+        "revision": "c65700c92bf8e603cde3e7168d68ee8874201cb5"
+      },
+      "fresh/execute-cold-start": {
+        "observations_s": [
+          6.968041399,
+          7.438471985,
+          7.459540989
+        ],
+        "median_s": 7.438471985,
+        "n": 3,
+        "exit_codes": [
+          0,
+          0,
+          0
+        ],
+        "revision": "c65700c92bf8e603cde3e7168d68ee8874201cb5"
+      },
+      "fresh/execute-hurl": {
+        "observations_s": [
+          9.166996748,
+          9.316340844,
+          9.254479335
+        ],
+        "median_s": 9.254479335,
+        "n": 3,
+        "exit_codes": [
+          0,
+          0,
+          0
+        ],
+        "revision": "c65700c92bf8e603cde3e7168d68ee8874201cb5"
+      },
+      "fresh/execute-nhcore-test-auth": {
+        "observations_s": [
+          0.71286826,
+          0.596670488,
+          0.62463239
+        ],
+        "median_s": 0.62463239,
+        "n": 3,
+        "exit_codes": [
+          0,
+          0,
+          0
+        ],
+        "revision": "c65700c92bf8e603cde3e7168d68ee8874201cb5"
+      },
+      "fresh/execute-nhcore-test-core": {
+        "observations_s": [
+          3.517208415,
+          3.692281888,
+          3.595243687
+        ],
+        "median_s": 3.595243687,
+        "n": 3,
+        "exit_codes": [
+          0,
+          0,
+          0
+        ],
+        "revision": "c65700c92bf8e603cde3e7168d68ee8874201cb5"
+      },
+      "fresh/execute-nhcore-test-integration": {
+        "observations_s": [
+          8.464912923,
+          8.488768586,
+          8.458561137
+        ],
+        "median_s": 8.464912923,
+        "n": 3,
+        "exit_codes": [
+          0,
+          0,
+          0
+        ],
+        "revision": "c65700c92bf8e603cde3e7168d68ee8874201cb5"
+      },
+      "fresh/execute-nhcore-test-service": {
+        "observations_s": [
+          36.092870291,
+          38.159343067,
+          37.715455524
+        ],
+        "median_s": 37.715455524,
+        "n": 3,
+        "exit_codes": [
+          0,
+          0,
+          0
+        ],
+        "revision": "c65700c92bf8e603cde3e7168d68ee8874201cb5"
+      },
+      "fresh/execute-nhintegrations-test": {
+        "observations_s": [
+          0.589612957,
+          0.691288805,
+          0.639732481
+        ],
+        "median_s": 0.639732481,
+        "n": 3,
+        "exit_codes": [
+          0,
+          0,
+          0
+        ],
+        "revision": "c65700c92bf8e603cde3e7168d68ee8874201cb5"
+      },
+      "implementation-edit/evaluate-realize": {
+        "observations_s": [
+          245.975238815,
+          291.892452825,
+          255.489407681
+        ],
+        "median_s": 255.489407681,
+        "n": 3,
+        "exit_codes": [
+          0,
+          0,
+          0
+        ],
+        "revision": "eeb6673b98dcd510ab1e6ca1af9a85926aa2f6e8"
+      },
+      "implementation-edit/execute-core": {
+        "observations_s": [
+          3.561712171,
+          3.703865524,
+          3.597012345
+        ],
+        "median_s": 3.597012345,
+        "n": 3,
+        "exit_codes": [
+          0,
+          0,
+          0
+        ],
+        "revision": "eeb6673b98dcd510ab1e6ca1af9a85926aa2f6e8"
+      },
+      "repeat/build": {
+        "observations_s": [
+          2.445400799,
+          4.500444933,
+          3.586073314
+        ],
+        "median_s": 3.586073314,
+        "n": 3,
+        "exit_codes": [
+          0,
+          0,
+          0
+        ],
+        "revision": "c65700c92bf8e603cde3e7168d68ee8874201cb5"
+      },
+      "transfer/encode-cache": {
+        "observations_s": [
+          7.026198932,
+          9.476437862,
+          7.758635996
+        ],
+        "median_s": 7.758635996,
+        "n": 3,
+        "exit_codes": [
+          0,
+          0,
+          0
+        ],
+        "revision": "c65700c92bf8e603cde3e7168d68ee8874201cb5"
+      }
+    },
+    "pilot": {
+      "fresh/evaluate-realize": {
+        "observations_s": [
+          344.239987605,
+          346.185502629,
+          662.893521385
+        ],
+        "median_s": 346.185502629,
+        "n": 3,
+        "exit_codes": [
+          0,
+          0,
+          0
+        ],
+        "revision": "05c07df6979411d1244e0a643bff3d5aca16b4a4"
+      },
+      "fresh/execute-cold-start": {
+        "observations_s": [
+          7.474321516,
+          7.535237158,
+          7.001210154
+        ],
+        "median_s": 7.474321516,
+        "n": 3,
+        "exit_codes": [
+          0,
+          0,
+          0
+        ],
+        "revision": "05c07df6979411d1244e0a643bff3d5aca16b4a4"
+      },
+      "fresh/execute-hurl": {
+        "observations_s": [
+          9.216405243,
+          9.335520635,
+          9.310944097
+        ],
+        "median_s": 9.310944097,
+        "n": 3,
+        "exit_codes": [
+          0,
+          0,
+          0
+        ],
+        "revision": "05c07df6979411d1244e0a643bff3d5aca16b4a4"
+      },
+      "fresh/execute-nhcore-test-auth": {
+        "observations_s": [
+          0.613066581,
+          0.608517019,
+          0.594212483
+        ],
+        "median_s": 0.608517019,
+        "n": 3,
+        "exit_codes": [
+          0,
+          0,
+          0
+        ],
+        "revision": "05c07df6979411d1244e0a643bff3d5aca16b4a4"
+      },
+      "fresh/execute-nhcore-test-core": {
+        "observations_s": [
+          3.682715022,
+          3.66561053,
+          3.624090038
+        ],
+        "median_s": 3.66561053,
+        "n": 3,
+        "exit_codes": [
+          0,
+          0,
+          0
+        ],
+        "revision": "05c07df6979411d1244e0a643bff3d5aca16b4a4"
+      },
+      "fresh/execute-nhcore-test-integration": {
+        "observations_s": [
+          8.478334043,
+          8.480386834,
+          8.473676193
+        ],
+        "median_s": 8.478334043,
+        "n": 3,
+        "exit_codes": [
+          0,
+          0,
+          0
+        ],
+        "revision": "05c07df6979411d1244e0a643bff3d5aca16b4a4"
+      },
+      "fresh/execute-nhcore-test-service": {
+        "observations_s": [
+          37.702908161,
+          37.205633149,
+          36.91646047
+        ],
+        "median_s": 37.205633149,
+        "n": 3,
+        "exit_codes": [
+          0,
+          0,
+          0
+        ],
+        "revision": "05c07df6979411d1244e0a643bff3d5aca16b4a4"
+      },
+      "fresh/execute-nhintegrations-test": {
+        "observations_s": [
+          0.689494211,
+          0.63281101,
+          0.650138495
+        ],
+        "median_s": 0.650138495,
+        "n": 3,
+        "exit_codes": [
+          0,
+          0,
+          0
+        ],
+        "revision": "05c07df6979411d1244e0a643bff3d5aca16b4a4"
+      },
+      "implementation-edit/evaluate-realize": {
+        "observations_s": [
+          287.899986201,
+          278.125081648,
+          270.83723047
+        ],
+        "median_s": 278.125081648,
+        "n": 3,
+        "exit_codes": [
+          0,
+          0,
+          0
+        ],
+        "revision": "9f27e4669613a00296af4f41f4dfa6a832c94e48"
+      },
+      "implementation-edit/execute-core": {
+        "observations_s": [
+          3.703197589,
+          3.647509654,
+          3.609262031
+        ],
+        "median_s": 3.647509654,
+        "n": 3,
+        "exit_codes": [
+          0,
+          0,
+          0
+        ],
+        "revision": "9f27e4669613a00296af4f41f4dfa6a832c94e48"
+      },
+      "pilot-compatibility/build-and-execute": {
+        "observations_s": [
+          11.465031217,
+          10.462793709,
+          10.630113669
+        ],
+        "median_s": 10.630113669,
+        "n": 3,
+        "exit_codes": [
+          0,
+          0,
+          0
+        ],
+        "revision": "9f27e4669613a00296af4f41f4dfa6a832c94e48"
+      },
+      "repeat/build": {
+        "observations_s": [
+          3.741812485,
+          4.430863833,
+          4.32061983
+        ],
+        "median_s": 4.32061983,
+        "n": 3,
+        "exit_codes": [
+          0,
+          0,
+          0
+        ],
+        "revision": "05c07df6979411d1244e0a643bff3d5aca16b4a4"
+      },
+      "transfer/encode-cache": {
+        "observations_s": [
+          9.333105285,
+          10.221308735,
+          11.045009291
+        ],
+        "median_s": 10.221308735,
+        "n": 3,
+        "exit_codes": [
+          0,
+          0,
+          0
+        ],
+        "revision": "05c07df6979411d1244e0a643bff3d5aca16b4a4"
+      }
+    }
+  },
+  "component_timing_breakdown": {
+    "candidate_fresh": {
+      "elapsed_s": {
+        "observations_s": [
+          287.532510042,
+          2.40931654,
+          350.435155153,
+          4.451583862,
+          314.717764378,
+          3.546608448
+        ],
+        "median_s": 145.992046952
+      },
+      "evaluation_s": {
+        "observations_s": [
+          31.633294344,
+          2.279790664,
+          33.39481108,
+          4.278421122,
+          31.237761207,
+          3.401054898
+        ],
+        "median_s": 17.758091165
+      },
+      "realisation_s": {
+        "observations_s": [
+          255.806022728,
+          0.032928851,
+          316.906420559,
+          0.043779194,
+          283.370456951,
+          0.03775308
+        ],
+        "median_s": 127.924900961
+      }
+    },
+    "candidate_implementation_edit": {
+      "elapsed_s": {
+        "observations_s": [
+          245.933843136,
+          291.84450388,
+          255.449634314
+        ],
+        "median_s": 255.449634314
+      },
+      "evaluation_s": {
+        "observations_s": [
+          2.391233788,
+          3.762712168,
+          2.859018141
+        ],
+        "median_s": 2.859018141
+      },
+      "realisation_s": {
+        "observations_s": [
+          243.438910633,
+          287.952810904,
+          252.479930247
+        ],
+        "median_s": 252.479930247
+      }
+    },
+    "pilot_fresh": {
+      "elapsed_s": {
+        "observations_s": [
+          344.193982601,
+          3.695145845,
+          346.138260126,
+          4.3843503,
+          662.848463774,
+          4.275408983
+        ],
+        "median_s": 174.289166451
+      },
+      "evaluation_s": {
+        "observations_s": [
+          32.566381111,
+          3.526136926,
+          31.784778448,
+          4.232157804,
+          35.243574422,
+          3.951106928
+        ],
+        "median_s": 18.008468126
+      },
+      "realisation_s": {
+        "observations_s": [
+          311.498884698,
+          0.041131034,
+          314.231227886,
+          0.038148663,
+          627.478389081,
+          0.035625071
+        ],
+        "median_s": 155.770007866
+      }
+    },
+    "pilot_implementation_edit": {
+      "elapsed_s": {
+        "observations_s": [
+          287.853703976,
+          278.077978611,
+          270.792694092
+        ],
+        "median_s": 278.077978611
+      },
+      "evaluation_s": {
+        "observations_s": [
+          3.69753078,
+          3.698024669,
+          3.795245368
+        ],
+        "median_s": 3.698024669
+      },
+      "realisation_s": {
+        "observations_s": [
+          284.034545267,
+          274.2552217,
+          266.651497482
+        ],
+        "median_s": 274.2552217
+      }
+    }
+  },
+  "stage_totals_s": {
+    "fresh_execution_only_five_suites_hurl_cold_no_repeat_export_compatibility": {
+      "baseline": 155.491420684,
+      "candidate": 67.732928325,
+      "pilot": 67.393498849
+    },
+    "fresh_recorded_route_setup_or_evaluate_realize_plus_execution": {
+      "baseline": 570.575936684,
+      "candidate": 382.495950577,
+      "pilot": 413.579001478
+    },
+    "representative_edit_build_plus_core_test": {
+      "baseline": 213.613421199,
+      "candidate": 259.086420026,
+      "pilot": 281.772591302
+    },
+    "repeat_build_median": {
+      "baseline": 9.971822203,
+      "candidate": 3.586073314,
+      "pilot": 4.32061983
+    },
+    "transfer_encode_median_candidate_pilot_only": {
+      "candidate": 7.758635996,
+      "pilot": 10.221308735
+    },
+    "pilot_compatibility_median_excluded_from_matched_totals": 10.630113669
+  },
+  "correctness": {
+    "all_recorded_observation_exit_codes_zero": true,
+    "suite_counts": {
+      "baseline": {
+        "1": {
+          "nhcore-test-auth": {
+            "examples": 189,
+            "failures": 0,
+            "pending": 0
+          },
+          "nhcore-test-core": {
+            "examples": 1095,
+            "failures": 0,
+            "pending": 3
+          },
+          "nhcore-test-integration": {
+            "examples": 70,
+            "failures": 0,
+            "pending": 4
+          },
+          "nhcore-test-service": {
+            "examples": 1128,
+            "failures": 0,
+            "pending": 57
+          },
+          "nhintegrations-test": {
+            "examples": 606,
+            "failures": 0,
+            "pending": 3
+          }
+        },
+        "2": {
+          "nhcore-test-auth": {
+            "examples": 189,
+            "failures": 0,
+            "pending": 0
+          },
+          "nhcore-test-core": {
+            "examples": 1095,
+            "failures": 0,
+            "pending": 3
+          },
+          "nhcore-test-integration": {
+            "examples": 70,
+            "failures": 0,
+            "pending": 4
+          },
+          "nhcore-test-service": {
+            "examples": 1128,
+            "failures": 0,
+            "pending": 57
+          },
+          "nhintegrations-test": {
+            "examples": 606,
+            "failures": 0,
+            "pending": 3
+          }
+        },
+        "3": {
+          "nhcore-test-auth": {
+            "examples": 189,
+            "failures": 0,
+            "pending": 0
+          },
+          "nhcore-test-core": {
+            "examples": 1095,
+            "failures": 0,
+            "pending": 3
+          },
+          "nhcore-test-integration": {
+            "examples": 70,
+            "failures": 0,
+            "pending": 4
+          },
+          "nhcore-test-service": {
+            "examples": 1128,
+            "failures": 0,
+            "pending": 57
+          },
+          "nhintegrations-test": {
+            "examples": 606,
+            "failures": 0,
+            "pending": 3
+          }
+        }
+      },
+      "candidate": {
+        "1": {
+          "nhcore-test-auth": {
+            "examples": 189,
+            "failures": 0,
+            "pending": 0
+          },
+          "nhcore-test-core": {
+            "examples": 1095,
+            "failures": 0,
+            "pending": 3
+          },
+          "nhcore-test-integration": {
+            "examples": 70,
+            "failures": 0,
+            "pending": 4
+          },
+          "nhcore-test-service": {
+            "examples": 1128,
+            "failures": 0,
+            "pending": 57
+          },
+          "nhintegrations-test": {
+            "examples": 606,
+            "failures": 0,
+            "pending": 3
+          }
+        },
+        "2": {
+          "nhcore-test-auth": {
+            "examples": 189,
+            "failures": 0,
+            "pending": 0
+          },
+          "nhcore-test-core": {
+            "examples": 1095,
+            "failures": 0,
+            "pending": 3
+          },
+          "nhcore-test-integration": {
+            "examples": 70,
+            "failures": 0,
+            "pending": 4
+          },
+          "nhcore-test-service": {
+            "examples": 1128,
+            "failures": 0,
+            "pending": 57
+          },
+          "nhintegrations-test": {
+            "examples": 606,
+            "failures": 0,
+            "pending": 3
+          }
+        },
+        "3": {
+          "nhcore-test-auth": {
+            "examples": 189,
+            "failures": 0,
+            "pending": 0
+          },
+          "nhcore-test-core": {
+            "examples": 1095,
+            "failures": 0,
+            "pending": 3
+          },
+          "nhcore-test-integration": {
+            "examples": 70,
+            "failures": 0,
+            "pending": 4
+          },
+          "nhcore-test-service": {
+            "examples": 1128,
+            "failures": 0,
+            "pending": 57
+          },
+          "nhintegrations-test": {
+            "examples": 606,
+            "failures": 0,
+            "pending": 3
+          }
+        }
+      },
+      "pilot": {
+        "1": {
+          "nhcore-test-auth": {
+            "examples": 189,
+            "failures": 0,
+            "pending": 0
+          },
+          "nhcore-test-core": {
+            "examples": 1095,
+            "failures": 0,
+            "pending": 3
+          },
+          "nhcore-test-integration": {
+            "examples": 70,
+            "failures": 0,
+            "pending": 4
+          },
+          "nhcore-test-service": {
+            "examples": 1128,
+            "failures": 0,
+            "pending": 57
+          },
+          "nhintegrations-test": {
+            "examples": 606,
+            "failures": 0,
+            "pending": 3
+          }
+        },
+        "2": {
+          "nhcore-test-auth": {
+            "examples": 189,
+            "failures": 0,
+            "pending": 0
+          },
+          "nhcore-test-core": {
+            "examples": 1095,
+            "failures": 0,
+            "pending": 3
+          },
+          "nhcore-test-integration": {
+            "examples": 70,
+            "failures": 0,
+            "pending": 4
+          },
+          "nhcore-test-service": {
+            "examples": 1128,
+            "failures": 0,
+            "pending": 57
+          },
+          "nhintegrations-test": {
+            "examples": 606,
+            "failures": 0,
+            "pending": 3
+          }
+        },
+        "3": {
+          "nhcore-test-auth": {
+            "examples": 189,
+            "failures": 0,
+            "pending": 0
+          },
+          "nhcore-test-core": {
+            "examples": 1095,
+            "failures": 0,
+            "pending": 3
+          },
+          "nhcore-test-integration": {
+            "examples": 70,
+            "failures": 0,
+            "pending": 4
+          },
+          "nhcore-test-service": {
+            "examples": 1128,
+            "failures": 0,
+            "pending": 57
+          },
+          "nhintegrations-test": {
+            "examples": 606,
+            "failures": 0,
+            "pending": 3
+          }
+        }
+      }
+    },
+    "hurl": {
+      "baseline": {
+        "1": {
+          "all_tests_completed": true,
+          "failed_files": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "executed_files": [
+            3,
+            3,
+            6,
+            2
+          ],
+          "executed_requests": [
+            10,
+            4,
+            28,
+            8
+          ]
+        },
+        "2": {
+          "all_tests_completed": true,
+          "failed_files": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "executed_files": [
+            3,
+            3,
+            6,
+            2
+          ],
+          "executed_requests": [
+            11,
+            4,
+            27,
+            8
+          ]
+        },
+        "3": {
+          "all_tests_completed": true,
+          "failed_files": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "executed_files": [
+            3,
+            3,
+            6,
+            2
+          ],
+          "executed_requests": [
+            10,
+            5,
+            27,
+            8
+          ]
+        }
+      },
+      "candidate": {
+        "1": {
+          "all_tests_completed": true,
+          "failed_files": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "executed_files": [
+            3,
+            3,
+            6,
+            2
+          ],
+          "executed_requests": [
+            10,
+            4,
+            27,
+            8
+          ]
+        },
+        "2": {
+          "all_tests_completed": true,
+          "failed_files": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "executed_files": [
+            3,
+            3,
+            6,
+            2
+          ],
+          "executed_requests": [
+            11,
+            4,
+            27,
+            8
+          ]
+        },
+        "3": {
+          "all_tests_completed": true,
+          "failed_files": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "executed_files": [
+            3,
+            3,
+            6,
+            2
+          ],
+          "executed_requests": [
+            10,
+            4,
+            28,
+            8
+          ]
+        }
+      },
+      "pilot": {
+        "1": {
+          "all_tests_completed": true,
+          "failed_files": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "executed_files": [
+            3,
+            3,
+            6,
+            2
+          ],
+          "executed_requests": [
+            10,
+            4,
+            26,
+            8
+          ]
+        },
+        "2": {
+          "all_tests_completed": true,
+          "failed_files": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "executed_files": [
+            3,
+            3,
+            6,
+            2
+          ],
+          "executed_requests": [
+            10,
+            5,
+            27,
+            8
+          ]
+        },
+        "3": {
+          "all_tests_completed": true,
+          "failed_files": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "executed_files": [
+            3,
+            3,
+            6,
+            2
+          ],
+          "executed_requests": [
+            10,
+            5,
+            26,
+            8
+          ]
+        }
+      }
+    },
+    "cold_start": {
+      "baseline": {
+        "1": {
+          "health_line": "health latencies 144 143 140ms; spread 4ms"
+        },
+        "2": {
+          "health_line": "health latencies 143 142 144ms; spread 2ms"
+        },
+        "3": {
+          "health_line": "health latencies 144 147 141ms; spread 6ms"
+        }
+      },
+      "candidate": {
+        "1": {
+          "health_line": "health latencies 114 120 122ms; spread 8ms"
+        },
+        "2": {
+          "health_line": "health latencies 141 149 139ms; spread 10ms"
+        },
+        "3": {
+          "health_line": "health latencies 132 121 122ms; spread 11ms"
+        }
+      },
+      "pilot": {
+        "1": {
+          "health_line": "health latencies 135 143 132ms; spread 11ms"
+        },
+        "2": {
+          "health_line": "health latencies 143 139 141ms; spread 4ms"
+        },
+        "3": {
+          "health_line": "health latencies 140 141 136ms; spread 5ms"
+        }
+      }
+    },
+    "pilot_compatibility": {
+      "1": {
+        "exit_code": 0,
+        "foundation_examples_0_failures": true,
+        "consumer_built_and_run": true
+      },
+      "2": {
+        "exit_code": 0,
+        "foundation_examples_0_failures": true,
+        "consumer_built_and_run": true
+      },
+      "3": {
+        "exit_code": 0,
+        "foundation_examples_0_failures": true,
+        "consumer_built_and_run": true
+      }
+    }
+  },
+  "compiler_flags": {
+    "baseline_cabal": {
+      "build_profile_observed": "-w ghc-9.8.4 -O1",
+      "configure_observed": [
+        "--enable-optimization",
+        "--disable-debug-info",
+        "--disable-split-sections",
+        "--ghc-option=-fwrite-ide-info"
+      ],
+      "ghc_response_observed": "-O -static -dynamic-too",
+      "interpretation": "O1 is explicit in the Cabal build profile; the response uses Cabal/GHC -O for that profile."
+    },
+    "candidate_nix": {
+      "configure_observed": [
+        "--enable-static",
+        "--enable-shared",
+        "--enable-split-sections"
+      ],
+      "optimization_flag_observed": null,
+      "compiler_flag_observed": null,
+      "interpretation": "No --enable-optimization/--disable-optimization, -O0..3, or -fwrite-ide-info was present in captured component build logs; exact Nix optimization level is unproven."
+    },
+    "pilot_nix": "same captured Nix flag shape as candidate; no explicit optimization level in logs."
+  },
+  "raw_baseline": {
+    "raw_sha": "cab923c0b098fdb82ece539380719c0757ec9057",
+    "comparable_normalized_sha": "e94a6c576b4b92c70ececacf615113eb6608e25f",
+    "normalization": "only removes mock mkRefreshToken and sets refreshToken=Nothing; assertions unchanged",
+    "known_prior_failure": "raw baseline integration fixture failed before normalization; normalized repetitions all passed"
+  },
+  "runner_job_elapsed": {
+    "36143016033": {
+      "baseline": {
+        "job_elapsed_s": [
+          849.0,
+          835.0,
+          835.0
+        ],
+        "aggregate_s": 2519.0,
+        "aggregate_min": 41.983333
+      },
+      "candidate": {
+        "job_elapsed_s": [
+          655.0,
+          766.0,
+          695.0
+        ],
+        "aggregate_s": 2116.0,
+        "aggregate_min": 35.266667
+      },
+      "runner_cost_rate": null
+    },
+    "36143308159": {
+      "pilot": {
+        "job_elapsed_s": [
+          768.0,
+          766.0,
+          1076.0
+        ],
+        "aggregate_s": 2610.0,
+        "aggregate_min": 43.5
+      },
+      "runner_cost_rate": null
+    }
+  },
+  "threshold_review": {
+    "predeclared": ">=15% and >=60s representative-edit median reduction; <=10% cold/runner regression; >=3 samples",
+    "raw_candidate_edit_vs_baseline": {
+      "baseline_s": 213.613421199,
+      "candidate_s": 259.086420026,
+      "candidate_minus_baseline_s": 45.472998827,
+      "reduction_percent": -21.28752
+    },
+    "sample_count": 3,
+    "decision": "no expansion",
+    "reason": "Nix-vs-Cabal optimization/link flags are not matched/proven; Text pilot edit invalidates all Nix outputs and has no sibling timing; workflow runner cost rate is unavailable."
+  },
+  "known_gaps": [
+    "remote configured != proven availability",
+    "Nix realization combines download/build",
+    "Text pilot edit invalidates everything; no matched sibling timing",
+    "full threshold needs workflow elapsed plus runner cost/rate",
+    "no sequential-vs-parallel CI speedup claim"
+  ],
+  "cache_size_kib": {
+    "candidate": {
+      "observations_kib": [
+        1072324,
+        1072320,
+        1072316
+      ],
+      "median_kib": 1072320
+    },
+    "pilot": {
+      "observations_kib": [
+        1072336,
+        1072312,
+        1072312
+      ],
+      "median_kib": 1072312
+    }
+  },
+  "summary_validation": {
+    "baseline": {
+      "groups": 12,
+      "all_groups_n3": true,
+      "all_exit_codes_zero": true,
+      "all_medians_present": true
+    },
+    "candidate": {
+      "groups": 12,
+      "all_groups_n3": true,
+      "all_exit_codes_zero": true,
+      "all_medians_present": true
+    },
+    "pilot": {
+      "groups": 13,
+      "all_groups_n3": true,
+      "all_exit_codes_zero": true,
+      "all_medians_present": true
+    }
+  },
+  "execution_metadata": {
+    "baseline": {
+      "system": "x86_64-Linux",
+      "lock_sha256": "1effc4277140756e9669e68a4585ae4694e5dabe6bba3d586cf2128a5adf3621",
+      "revisions": [
+        "d8f9f95c8df29c468eda5ff26b76486b704a2323",
+        "e94a6c576b4b92c70ececacf615113eb6608e25f"
+      ]
+    },
+    "candidate": {
+      "system": "x86_64-Linux",
+      "lock_sha256": "1effc4277140756e9669e68a4585ae4694e5dabe6bba3d586cf2128a5adf3621",
+      "revisions": [
+        "c65700c92bf8e603cde3e7168d68ee8874201cb5",
+        "eeb6673b98dcd510ab1e6ca1af9a85926aa2f6e8"
+      ]
+    },
+    "pilot": {
+      "system": "x86_64-Linux",
+      "lock_sha256": "1effc4277140756e9669e68a4585ae4694e5dabe6bba3d586cf2128a5adf3621",
+      "revisions": [
+        "05c07df6979411d1244e0a643bff3d5aca16b4a4",
+        "9f27e4669613a00296af4f41f4dfa6a832c94e48"
+      ]
+    }
+  },
+  "remote_state_interpretation": "All Nix observations label configured substituters; logs show dependency copies and local component derivation builds. This proves neither universal remote availability nor cache-hit rate."
+}
