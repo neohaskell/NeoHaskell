@@ -238,6 +238,72 @@
         "json": "https://github.com/neohaskell/NeoHaskell/blob/0c0c3c0/docs/build-cache/evidence/checkpoint-2026-09-25/macos-1.json",
         "log": "https://github.com/neohaskell/NeoHaskell/blob/0c0c3c0/docs/build-cache/evidence/checkpoint-2026-09-25/macos-1.log.gz"
       }
+    },
+    {
+      "run": "36155654547",
+      "commit": "c0d34a80f1ae99474231715232f28119a6a297fe",
+      "technique": "component CI / flags aligned / duplicate producer upload disabled",
+      "platform": "Linux",
+      "cache_condition": "fresh hosted runners; upstream substituters enabled; same-run file-cache closure; producer magic-cache upload disabled",
+      "n": 1,
+      "critical_span_s": 583,
+      "runner_sum_s": 1446,
+      "artifact_to_consumer_s": null,
+      "artifact_interval": "not extracted; dependency-ready scheduling delays are separate evidence",
+      "suite_counts": {
+        "examples": 3088,
+        "failures": 0,
+        "pending": 67
+      },
+      "status": "green / n=1 / Linux concurrent measurement load; timing is descriptive, not a matched speedup comparison",
+      "evidence": [
+        "https://github.com/neohaskell/NeoHaskell/actions/runs/36155654547",
+        "https://github.com/neohaskell/NeoHaskell/tree/631d9c1/docs/build-cache/evidence/checkpoint-2026-09-25-current"
+      ]
+    },
+    {
+      "run": "36155658355",
+      "commit": "c0d34a80f1ae99474231715232f28119a6a297fe",
+      "technique": "component CI / flags aligned / duplicate producer upload disabled",
+      "platform": "Linux",
+      "cache_condition": "fresh hosted runners; upstream substituters enabled; same-run file-cache closure; producer magic-cache upload disabled",
+      "n": 1,
+      "critical_span_s": 562,
+      "runner_sum_s": 1352,
+      "artifact_to_consumer_s": null,
+      "artifact_interval": "not extracted; dependency-ready scheduling delays are separate evidence",
+      "suite_counts": {
+        "examples": 3088,
+        "failures": 0,
+        "pending": 67
+      },
+      "status": "green / n=1 / Linux concurrent measurement load; timing is descriptive, not a matched speedup comparison",
+      "evidence": [
+        "https://github.com/neohaskell/NeoHaskell/actions/runs/36155658355",
+        "https://github.com/neohaskell/NeoHaskell/tree/631d9c1/docs/build-cache/evidence/checkpoint-2026-09-25-current"
+      ]
+    },
+    {
+      "run": "36155662081",
+      "commit": "c0d34a80f1ae99474231715232f28119a6a297fe",
+      "technique": "component CI / flags aligned / duplicate producer upload disabled",
+      "platform": "macOS",
+      "cache_condition": "fresh hosted runners; upstream substituters enabled; same-run file-cache closure; producer magic-cache upload disabled",
+      "n": 1,
+      "critical_span_s": 861,
+      "runner_sum_s": 1817,
+      "artifact_to_consumer_s": null,
+      "artifact_interval": "not extracted; dependency-ready scheduling delays are separate evidence",
+      "suite_counts": {
+        "examples": 3088,
+        "failures": 0,
+        "pending": 67
+      },
+      "status": "green / n=1 / Linux concurrent measurement load; timing is descriptive, not a matched speedup comparison",
+      "evidence": [
+        "https://github.com/neohaskell/NeoHaskell/actions/runs/36155662081",
+        "https://github.com/neohaskell/NeoHaskell/tree/631d9c1/docs/build-cache/evidence/checkpoint-2026-09-25-current"
+      ]
     }
   ],
   "pending": [
@@ -247,7 +313,9 @@
       "platform": "Linux + macOS",
       "cache_condition": "dependencies untouched; matched rerun still required",
       "status": "pending measurement",
-      "evidence": ["https://github.com/neohaskell/NeoHaskell/commit/1efe92a"]
+      "evidence": [
+        "https://github.com/neohaskell/NeoHaskell/commit/1efe92a"
+      ]
     },
     {
       "commit": "15eeef1348630b6e96a7a9cba472af8cc7deea53",
@@ -260,33 +328,6 @@
         "https://github.com/neohaskell/NeoHaskell/commit/15eeef1348630b6e96a7a9cba472af8cc7deea53",
         "https://github.com/neohaskell/NeoHaskell/commit/f64fe870ec8157ebb9764a143880103717262bd7"
       ]
-    },
-    {
-      "run": "36155654547",
-      "commit": "c0d34a80f1ae99474231715232f28119a6a297fe",
-      "technique": "Linux component CI plus three sequential baseline and three candidate measurements",
-      "platform": "Linux",
-      "cache_condition": "timing, cache-state, and suite-count extraction pending; comparability not yet established",
-      "status": "pending measurement; no timing recorded",
-      "evidence": ["https://github.com/neohaskell/NeoHaskell/actions/runs/36155654547"]
-    },
-    {
-      "run": "36155658355",
-      "commit": "c0d34a80f1ae99474231715232f28119a6a297fe",
-      "technique": "Linux unsplit component CI plus three sequential pilot measurements",
-      "platform": "Linux",
-      "cache_condition": "timing, cache-state, and suite-count extraction pending; comparability not yet established",
-      "status": "pending measurement; no timing recorded",
-      "evidence": ["https://github.com/neohaskell/NeoHaskell/actions/runs/36155658355"]
-    },
-    {
-      "run": "36155662081",
-      "commit": "c0d34a80f1ae99474231715232f28119a6a297fe",
-      "technique": "macOS candidate component CI",
-      "platform": "macOS",
-      "cache_condition": "timing, cache-state, and suite-count extraction pending; comparability not yet established",
-      "status": "pending measurement; no timing recorded",
-      "evidence": ["https://github.com/neohaskell/NeoHaskell/actions/runs/36155662081"]
     }
   ]
 }

@@ -122,20 +122,28 @@ No timing is invented for changes that have not had a matched rerun.
 | [`15eeef1`](https://github.com/neohaskell/NeoHaskell/commit/15eeef1348630b6e96a7a9cba472af8cc7deea53) (same patch as [`f64fe87`](https://github.com/neohaskell/NeoHaskell/commit/f64fe870ec8157ebb9764a143880103717262bd7)) | Disable duplicate producer upload: `use-gha-cache: disabled`, `use-flakehub: disabled` | Linux + macOS | Upstream substituters and same-run artifact path retained | `— / — / —` | Pending measurement | [15eeef1](https://github.com/neohaskell/NeoHaskell/commit/15eeef1348630b6e96a7a9cba472af8cc7deea53) |
 | [`1efe92a`](https://github.com/neohaskell/NeoHaskell/commit/1efe92a) | Cumulative: duplicate producer upload disabled + candidate local-package flags aligned (explicit O1, split-sections disabled, HIE enabled) | Linux + macOS | Dependencies untouched; matched rerun required | `— / — / —` | Pending measurement | [commit](https://github.com/neohaskell/NeoHaskell/commit/1efe92a) |
 
-## Pending verification and measurement runs
+## Latest production verification (aligned flags)
 
-These runs are recorded without timing values until cache state and suite counts
-are extracted from their raw evidence. Optional measurement jobs currently share
-hosted-runner capacity with production jobs; observed queuing can inflate the
-production critical path. Collect production-only runs after this batch for
-uncontended full-CI comparisons; excluding optional job times alone cannot remove
-their scheduling effect.
+All three workflows at `c0d34a8` passed and executed the same five suites:
+**3,088 examples, zero failures, 67 pending**. Linux also passed Hurl,
+cold-start, codemap and doctest. Both platforms fetched exact outputs with
+builders disabled (Linux 659 paths, macOS 646). The dispatch-only runs skipped
+runtime-criterion parsing; that remains an explicit acceptance gap.
 
-| Run | Commit | Platform / technique | Status |
-|---|---|---|---|
-| [36155654547](https://github.com/neohaskell/NeoHaskell/actions/runs/36155654547) | `c0d34a8` | Linux component CI + three baseline/three candidate sequential measurements | Pending measurement; no timing recorded |
-| [36155658355](https://github.com/neohaskell/NeoHaskell/actions/runs/36155658355) | `c0d34a8` | Linux unsplit component CI + three pilot sequential measurements | Pending measurement; no timing recorded |
-| [36155662081](https://github.com/neohaskell/NeoHaskell/actions/runs/36155662081) | `c0d34a8` | macOS candidate component CI | Pending measurement; no timing recorded |
+| Run | Platform | Production critical span | Aggregate runner time | Interpretation |
+|---|---|---:|---:|---|
+| [36155654547](https://github.com/neohaskell/NeoHaskell/actions/runs/36155654547) | Linux | 583s | 1,446s | Optional measurements delayed some consumer starts by50–52s |
+| [36155658355](https://github.com/neohaskell/NeoHaskell/actions/runs/36155658355) | Linux | 562s | 1,352s | Optional pilot measurements shared runner capacity |
+| [36155662081](https://github.com/neohaskell/NeoHaskell/actions/runs/36155662081) | macOS | 861s | 1,817s | Independent platform, n=1 |
+
+These are descriptive per-run observations, not three equivalent repetitions
+or evidence of a speedup. Optional job time is excluded from sums but its effect
+on scheduling remains. Detailed intervals, counts, exact output paths and raw
+logs are retained in the [production archive](https://github.com/neohaskell/NeoHaskell/tree/631d9c1/docs/build-cache/evidence/checkpoint-2026-09-25-current).
+Sequential baseline/candidate/pilot measurement analysis is being collected
+separately. The corrected macOS Cabal baseline is running as
+[36158410770](https://github.com/neohaskell/NeoHaskell/actions/runs/36158410770)
+at `5604e6c`.
 
 ## Updating the log
 

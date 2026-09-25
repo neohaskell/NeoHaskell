@@ -93,6 +93,38 @@ Expansion threshold, chosen before results: all seven invalidation cases pass;
 median fresh-path regression or aggregate runner-time increase; n>=3. Incomplete
 or noisy evidence means no expansion. Cache-hit rate alone is insufficient.
 
+## Co-located build and execution experiment
+
+The next topology experiment runs the component workload on the worker that
+built it. This avoids encoding a closure and downloading/importing it separately
+for every suite. It may lose parallel execution, so measure the complete route
+before changing required CI. The inspiration is NixCI's documented
+[persistent worker stores](https://nix-ci.com/comparison#automatic-binary-caching);
+no service migration or new infrastructure is part of this experiment.
+
+Use three fresh hosted Linux runners, with repetitions serialized to reduce
+measurement-job contention. Each runner builds the immutable checkout and runs
+the five suites, Hurl and cold-start, then repeats the build and **executes all
+tests again** with the same local Nix store. Reset the disposable PostgreSQL
+fixture between passes. Record setup/reset costs, cache audits, output paths,
+per-suite reports/counts, build and execution timings, failures and raw logs.
+Add audit evaluation work to the corresponding route; exclude network probing
+as instrumentation. A warm output alone is never a successful test observation.
+
+Compare identical revisions, flags, suite inventories and audited remote-cache
+conditions. The component-workload sum excludes codemap and doctest; they retain
+their existing required CI routes. Report workflow critical span and aggregate
+runner time separately, including fixture setup and artifact/report handling.
+Do not put a component-only result on the dashboard as full CI latency. A warm
+repeat inside one job proves same-worker reuse, not persistence across hosted
+jobs or runs. Keep the current production/fork route until a replacement passes
+the existing correctness checks and has three comparable observations.
+
+A later persistent-worker trial needs isolated checkouts and fresh runtime
+fixtures while retaining the Nix store. Untrusted forks keep a credential-free
+isolated route. Further extraction follows the predeclared threshold above;
+larger cache hit rates alone do not justify additional package boundaries.
+
 ## Extraction pilot
 
 `foundation-pilot.patch` is a disposable experiment, not a production split.
