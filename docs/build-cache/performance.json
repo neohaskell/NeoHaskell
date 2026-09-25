@@ -190,6 +190,54 @@
       "optional_measurement_runner_sum_s": 2610,
       "status": "single run / cache-rate-limited / noncomparable",
       "evidence": ["hosted_ci", "https://github.com/neohaskell/NeoHaskell/actions/runs/36143308159"]
+    },
+    {
+      "run": "36153813253",
+      "commit": "a5e7cdc00fe448c8612da3472b30dd8405af3b30",
+      "technique": "as-operated full-CI baseline",
+      "platform": "Linux",
+      "cache_condition": "fresh hosted runner; Determinate Nix extra-substituters cache.iog.io and neohaskell.cachix.org; upstream cache.nixos.org; magic-nix-cache@v14 native GitHub cache enabled; FlakeHub initialization unauthenticated and no FlakeHub upload; Cabal dist-newstyle actions/cache restored",
+      "n": 1,
+      "critical_span_s": 617,
+      "runner_sum_s": 2304,
+      "artifact_to_consumer_s": 10,
+      "artifact_interval": "upload-artifact completion 15:27:07Z to first consumer job start 15:27:17Z",
+      "optional_measurement_runner_sum_s": 0,
+      "service_counts": {"examples": 1128, "pending": 57},
+      "status": "green / as-operated baseline / count-mismatch; excluded from matched comparison; cacheworker investigation pending",
+      "evidence": [
+        "hosted_ci",
+        "https://github.com/neohaskell/NeoHaskell/actions/runs/36153813253",
+        "https://github.com/neohaskell/NeoHaskell/tree/0c0c3c0/docs/build-cache/evidence/checkpoint-2026-09-25"
+      ],
+      "raw_source": {
+        "json": "/tmp/nh-full-ci-baseline-899/linux-1.json",
+        "log": "/tmp/nh-full-ci-baseline-899/linux-1.log"
+      }
+    },
+    {
+      "run": "36153817476",
+      "commit": "a5e7cdc00fe448c8612da3472b30dd8405af3b30",
+      "technique": "as-operated full-CI baseline",
+      "platform": "macOS",
+      "cache_condition": "fresh hosted runner; Determinate Nix extra-substituters cache.iog.io and neohaskell.cachix.org; upstream cache.nixos.org; magic-nix-cache@v14 native GitHub cache enabled; FlakeHub initialization unauthenticated and no FlakeHub upload; Cabal dist-newstyle actions/cache restored",
+      "n": 1,
+      "critical_span_s": 677,
+      "runner_sum_s": 3043,
+      "artifact_to_consumer_s": null,
+      "artifact_interval": "unknown: macOS workflow builds in each test matrix job and has no producer upload/download-artifact interval",
+      "optional_measurement_runner_sum_s": 0,
+      "service_counts": {"examples": 1090, "pending": 52},
+      "status": "green / as-operated baseline / count-mismatch; excluded from matched comparison; cacheworker investigation pending",
+      "evidence": [
+        "hosted_ci",
+        "https://github.com/neohaskell/NeoHaskell/actions/runs/36153817476",
+        "https://github.com/neohaskell/NeoHaskell/tree/0c0c3c0/docs/build-cache/evidence/checkpoint-2026-09-25"
+      ],
+      "raw_source": {
+        "json": "/tmp/nh-full-ci-baseline-899/macos-1.json",
+        "log": "/tmp/nh-full-ci-baseline-899/macos-1.log"
+      }
     }
   ],
   "pending": [
@@ -212,6 +260,33 @@
         "https://github.com/neohaskell/NeoHaskell/commit/15eeef1348630b6e96a7a9cba472af8cc7deea53",
         "https://github.com/neohaskell/NeoHaskell/commit/f64fe870ec8157ebb9764a143880103717262bd7"
       ]
+    },
+    {
+      "run": "36155654547",
+      "commit": "c0d34a80f1ae99474231715232f28119a6a297fe",
+      "technique": "matched Linux baseline + candidate full-CI rerun",
+      "platform": "Linux",
+      "cache_condition": "matched run; timing, cache-state, and suite-count extraction pending",
+      "status": "pending measurement; no timing recorded",
+      "evidence": ["https://github.com/neohaskell/NeoHaskell/actions/runs/36155654547"]
+    },
+    {
+      "run": "36155658355",
+      "commit": "c0d34a80f1ae99474231715232f28119a6a297fe",
+      "technique": "matched Linux pilot full-CI rerun",
+      "platform": "Linux",
+      "cache_condition": "matched run; timing, cache-state, and suite-count extraction pending",
+      "status": "pending measurement; no timing recorded",
+      "evidence": ["https://github.com/neohaskell/NeoHaskell/actions/runs/36155658355"]
+    },
+    {
+      "run": "36155662081",
+      "commit": "c0d34a80f1ae99474231715232f28119a6a297fe",
+      "technique": "matched macOS baseline + candidate full-CI rerun",
+      "platform": "macOS",
+      "cache_condition": "matched run; timing, cache-state, and suite-count extraction pending",
+      "status": "pending measurement; no timing recorded",
+      "evidence": ["https://github.com/neohaskell/NeoHaskell/actions/runs/36155662081"]
     }
   ]
 }
