@@ -1,0 +1,51 @@
+name: Build cache co-location experiment
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Exact immutable branch SHA to measure
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  colocated:
+    if: github.repository == 'neohaskell/NeoHaskell' && github.ref == 'refs/heads/snotty-kiwi'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        repetition: [1, 2, 3]
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Verify immutable experiment checkout
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+        run: |
+          set -euo pipefail
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+      - uses: DeterminateSystems/determinate-nix-action@v3.22.2
+        with:
+          extra-conf: |
+            accept-flake-config = true
+            extra-substituters = https://cache.iog.io https://neohaskell.cachix.org
+            extra-trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= neohaskell.cachix.org-1:mo2cLaGbwqbrxs9xhqKK8jeNsn3osi7t6XoAmxSZssc=
+      - name: Build and execute twice on one worker
+        run: bash docs/build-cache/colocated.sh "$RUNNER_TEMP/colocated-evidence"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: colocated-linux-${{ matrix.repetition }}
+          path: ${{ runner.temp }}/colocated-evidence
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 30

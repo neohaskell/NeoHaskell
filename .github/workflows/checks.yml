@@ -40,6 +40,7 @@ jobs:
       - run: python3 scripts/tests/test_nix_components.py
       - run: python3 scripts/tests/test_build_measure.py
       - run: python3 scripts/tests/test_cache_state.py
+      - run: python3 scripts/tests/test_colocated.py
       # ADR-0076: prove `.pipeline` is the sole discoverable change process
       # and superseded queue-backed execution assets remain absent.
       - run: ./dev process-check
