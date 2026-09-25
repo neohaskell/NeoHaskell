@@ -1,0 +1,158 @@
+[
+  {
+    "platform": "ubuntu",
+    "full": {
+      "paths": 659,
+      "nar_bytes": 6311695648
+    },
+    "runtime": [
+      "/nix/store/awj1bdbbp9zikb1hdm2h2kc0fiqzh8xy-neohaskell-ci-runtime"
+    ],
+    "components": [
+      {
+        "root": "/nix/store/42xn29xbv3pz7ldlw1j74dj6zfm3cxqf-nhintegrations-test-nhintegrations-test-0.10.1",
+        "executable_closure": {
+          "paths": 16,
+          "nar_bytes": 109672352
+        },
+        "with_existing_runtime": {
+          "paths": 87,
+          "nar_bytes": 402849752
+        }
+      },
+      {
+        "root": "/nix/store/7r8hj1j0h4j2rpdnd8nadgza41njp3d9-nhcore-test-nhcore-test-core-0.10.1",
+        "executable_closure": {
+          "paths": 16,
+          "nar_bytes": 123576040
+        },
+        "with_existing_runtime": {
+          "paths": 87,
+          "nar_bytes": 416753440
+        }
+      },
+      {
+        "root": "/nix/store/8rq72r3wvcn6j9bnyqm61j0ixwdxw1ba-nhcore-test-nhcore-test-service-0.10.1",
+        "executable_closure": {
+          "paths": 16,
+          "nar_bytes": 123410224
+        },
+        "with_existing_runtime": {
+          "paths": 87,
+          "nar_bytes": 416587624
+        }
+      },
+      {
+        "root": "/nix/store/9dp1jpd0hgwrqc8xsjg3ybw8zf2w2pzm-nhtestbed-exe-nhtestbed-0.10.1",
+        "executable_closure": {
+          "paths": 16,
+          "nar_bytes": 112889992
+        },
+        "with_existing_runtime": {
+          "paths": 87,
+          "nar_bytes": 406067392
+        }
+      },
+      {
+        "root": "/nix/store/jis95pbmad4v4zbc22yv7jb5xcvkk8x5-nhcore-test-nhcore-test-auth-0.10.1",
+        "executable_closure": {
+          "paths": 16,
+          "nar_bytes": 105909296
+        },
+        "with_existing_runtime": {
+          "paths": 87,
+          "nar_bytes": 399086696
+        }
+      },
+      {
+        "root": "/nix/store/xv3al2fkjwp2mnxa4jjhyb28z3ysh8fg-nhcore-test-nhcore-test-integration-0.10.1",
+        "executable_closure": {
+          "paths": 16,
+          "nar_bytes": 111315832
+        },
+        "with_existing_runtime": {
+          "paths": 87,
+          "nar_bytes": 404493232
+        }
+      }
+    ]
+  },
+  {
+    "platform": "macos",
+    "full": {
+      "paths": 646,
+      "nar_bytes": 5863228856
+    },
+    "runtime": [
+      "/nix/store/3fg24z1y6nkn200nblvwrimh67g3vvw5-neohaskell-ci-runtime"
+    ],
+    "components": [
+      {
+        "root": "/nix/store/9ka33m91rzy13j6qbvl91pw20nc2id5w-nhintegrations-test-nhintegrations-test-0.10.1",
+        "executable_closure": {
+          "paths": 6,
+          "nar_bytes": 170973984
+        },
+        "with_existing_runtime": {
+          "paths": 78,
+          "nar_bytes": 772427528
+        }
+      },
+      {
+        "root": "/nix/store/c1kiglfvbz3xyyl1q8v6maixy9zsipil-nhtestbed-exe-nhtestbed-0.10.1",
+        "executable_closure": {
+          "paths": 147,
+          "nar_bytes": 3646895904
+        },
+        "with_existing_runtime": {
+          "paths": 207,
+          "nar_bytes": 4218156912
+        }
+      },
+      {
+        "root": "/nix/store/dk3nq0bnqj09aqj9ipdfw0dli4cn60cz-nhcore-test-nhcore-test-service-0.10.1",
+        "executable_closure": {
+          "paths": 147,
+          "nar_bytes": 3665518496
+        },
+        "with_existing_runtime": {
+          "paths": 207,
+          "nar_bytes": 4236779504
+        }
+      },
+      {
+        "root": "/nix/store/ivgmqml6gli0w688z11pg0xnni4m0y67-nhcore-test-nhcore-test-auth-0.10.1",
+        "executable_closure": {
+          "paths": 145,
+          "nar_bytes": 3616156480
+        },
+        "with_existing_runtime": {
+          "paths": 206,
+          "nar_bytes": 4190091256
+        }
+      },
+      {
+        "root": "/nix/store/sr858h6xn7h8zxj337v8506pbjhzdk5s-nhcore-test-nhcore-test-core-0.10.1",
+        "executable_closure": {
+          "paths": 147,
+          "nar_bytes": 3664893928
+        },
+        "with_existing_runtime": {
+          "paths": 207,
+          "nar_bytes": 4236154936
+        }
+      },
+      {
+        "root": "/nix/store/wss0qiivwxi94kfm90zmdrcc9im12yy2-nhcore-test-nhcore-test-integration-0.10.1",
+        "executable_closure": {
+          "paths": 147,
+          "nar_bytes": 3637622072
+        },
+        "with_existing_runtime": {
+          "paths": 207,
+          "nar_bytes": 4208883080
+        }
+      }
+    ]
+  }
+]
