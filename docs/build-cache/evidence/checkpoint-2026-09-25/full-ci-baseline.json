@@ -1,0 +1,76 @@
+[
+  {
+    "platform": "linux",
+    "run": 36153813253,
+    "revision": "a5e7cdc00fe448c8612da3472b30dd8405af3b30",
+    "n": 1,
+    "conclusion": "success",
+    "critical_span_s": 617.0,
+    "runner_sum_s": 2304.0,
+    "hspec_summaries": [
+      [
+        "1095",
+        "0",
+        "3"
+      ],
+      [
+        "70",
+        "0",
+        "4"
+      ],
+      [
+        "1128",
+        "0",
+        "57"
+      ],
+      [
+        "189",
+        "0",
+        ""
+      ],
+      [
+        "606",
+        "0",
+        "3"
+      ]
+    ],
+    "comparison": "as-operated Cabal full CI, not a matched causal comparison; cache conditions in raw logs"
+  },
+  {
+    "platform": "macos",
+    "run": 36153817476,
+    "revision": "a5e7cdc00fe448c8612da3472b30dd8405af3b30",
+    "n": 1,
+    "conclusion": "success",
+    "critical_span_s": 677.0,
+    "runner_sum_s": 3043.0,
+    "hspec_summaries": [
+      [
+        "606",
+        "0",
+        "3"
+      ],
+      [
+        "1090",
+        "0",
+        "52"
+      ],
+      [
+        "1095",
+        "0",
+        "3"
+      ],
+      [
+        "70",
+        "0",
+        "4"
+      ],
+      [
+        "189",
+        "0",
+        ""
+      ]
+    ],
+    "comparison": "as-operated Cabal full CI, not a matched causal comparison; cache conditions in raw logs"
+  }
+]
