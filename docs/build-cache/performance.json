@@ -2080,7 +2080,7 @@
         "examples": 1090,
         "pending": 52
       },
-      "status": "green workflow / omitted PostgreSQL cases: POSTGRES_AVAILABLE was unset; excluded from equivalent-suite comparison; fix5604e6c awaiting rerun",
+      "status": "green workflow / omitted PostgreSQL cases: POSTGRES_AVAILABLE was unset; superseded for equivalent-suite comparison by failed 36158410770 and successful corrected 36160842540",
       "evidence": [
         "hosted_ci",
         "https://github.com/neohaskell/NeoHaskell/actions/runs/36153817476",
@@ -2156,6 +2156,40 @@
         "https://github.com/neohaskell/NeoHaskell/actions/runs/36155662081",
         "https://github.com/neohaskell/NeoHaskell/tree/631d9c1/docs/build-cache/evidence/checkpoint-2026-09-25-current"
       ]
+    },
+    {
+      "run": "36160842540",
+      "commit": "65b227dde4d81a9c539364cebee3032e552b1de5",
+      "technique": "as-operated full-CI Cabal baseline / corrected PostgreSQL fixture",
+      "platform": "macOS",
+      "cache_condition": "fresh hosted runner; Determinate Nix extra-substituters cache.iog.io and neohaskell.cachix.org; upstream cache.nixos.org; installer, Magic Nix Cache and Cabal dist-newstyle caches hit; Magic Nix Cache local proxy recorded 307 HTTP-418/throttle events and FlakeHub unauthenticated warnings; upstream fallback completed",
+      "n": 1,
+      "critical_span_s": 678,
+      "runner_sum_s": 2828,
+      "artifact_to_consumer_s": null,
+      "artifact_interval": "unknown: macOS workflow builds in each test matrix job and has no producer upload/download-artifact interval",
+      "optional_measurement_runner_sum_s": 0,
+      "suite_counts": {
+        "examples": 3088,
+        "failures": 0,
+        "pending": 67
+      },
+      "fixture": {
+        "postgres_available": true,
+        "invalid_credentials_assertion": "passed"
+      },
+      "status": "green / corrected as-operated baseline / n=1; no matched timing or speedup claim; cache throttle/auth caveats retained",
+      "evidence": [
+        "https://github.com/neohaskell/NeoHaskell/actions/runs/36160842540",
+        "https://github.com/neohaskell/NeoHaskell/tree/0370303/docs/build-cache/evidence/checkpoint-2026-09-25-macos-corrected"
+      ],
+      "raw_source": {
+        "archive": "https://github.com/neohaskell/NeoHaskell/blob/0370303/docs/build-cache/evidence/checkpoint-2026-09-25-macos-corrected/raw-evidence.tar.gz",
+        "report": "https://github.com/neohaskell/NeoHaskell/blob/0370303/docs/build-cache/evidence/checkpoint-2026-09-25-macos-corrected/report.md",
+        "counts": "https://github.com/neohaskell/NeoHaskell/blob/0370303/docs/build-cache/evidence/checkpoint-2026-09-25-macos-corrected/runs/counts.json",
+        "timings": "https://github.com/neohaskell/NeoHaskell/blob/0370303/docs/build-cache/evidence/checkpoint-2026-09-25-macos-corrected/runs/timings.json",
+        "cache_conditions": "https://github.com/neohaskell/NeoHaskell/blob/0370303/docs/build-cache/evidence/checkpoint-2026-09-25-macos-corrected/runs/cache-conditions.json"
+      }
     }
   ],
   "pending": [

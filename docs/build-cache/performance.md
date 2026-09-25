@@ -140,6 +140,7 @@ optional measurement jobs are excluded from the production critical span.
 | [36143308159](https://github.com/neohaskell/NeoHaskell/actions/runs/36143308159) / `987fe3d` | Candidate-unsplit production (pilot run) / Linux | Cache disabled/rate-limited; 13 setup errors, no successful path uploads | 516s (8m36s) | 1,311s | 7s | `n=1`, noncomparable; optional split pilot sum 2,610s excluded |
 | [36153813253](https://github.com/neohaskell/NeoHaskell/actions/runs/36153813253) / `a5e7cdc` | As-operated full-CI baseline / Linux | Fresh runner; Determinate extra substituters (`cache.iog.io`, `neohaskell.cachix.org`), upstream `cache.nixos.org`; magic-nix-cache v14 GHA cache enabled, FlakeHub unauthenticated/no upload; Cabal cache restored | 617s | 2,304s | 10s | `n=1`, green; 1,128 service examples / 57 pending; no matched timing comparison established; [archive](https://github.com/neohaskell/NeoHaskell/tree/0c0c3c0/docs/build-cache/evidence/checkpoint-2026-09-25) |
 | [36153817476](https://github.com/neohaskell/NeoHaskell/actions/runs/36153817476) / `a5e7cdc` | As-operated full-CI baseline / macOS | Fresh runner; Determinate extra substituters (`cache.iog.io`, `neohaskell.cachix.org`), upstream `cache.nixos.org`; magic-nix-cache v14 GHA cache enabled, FlakeHub unauthenticated/no upload; Cabal cache restored | 677s | 3,043s | `—` (unknown) | `n=1`, green; 1,090 service examples / 52 pending; PostgreSQL cases omitted, excluded from equivalent-suite comparison; [archive](https://github.com/neohaskell/NeoHaskell/tree/0c0c3c0/docs/build-cache/evidence/checkpoint-2026-09-25) |
+| [36160842540](https://github.com/neohaskell/NeoHaskell/actions/runs/36160842540) / `65b227d` | Corrected as-operated full-CI Cabal baseline / macOS | Fresh runner; Determinate extra substituters (`cache.iog.io`, `neohaskell.cachix.org`), upstream `cache.nixos.org`; installer, Magic Nix Cache and Cabal caches hit; local Magic Nix Cache proxy recorded 307 HTTP-418/throttle events and FlakeHub unauthenticated warnings; upstream fallback completed | 678s | 2,828s | `—` (unknown) | `n=1`, green; 3,088 examples / 0 failures / 67 pending; PostgreSQL enabled and invalid-credentials assertion passed; no matched timing or speedup claim; [archive](https://github.com/neohaskell/NeoHaskell/tree/0370303/docs/build-cache/evidence/checkpoint-2026-09-25-macos-corrected) |
 
 Run `36143308159`'s main jobs are still the **unsplit candidate**. Only its
 optional pilot measurement jobs apply the split experiment. Its short 8m36s
@@ -150,11 +151,11 @@ the first consumer, not estimates of aggregate upload cost.
 
 The two `a5e7cdc` rows are independent as-operated baselines. Both workflows
 were green, but the service reports differ (`1,128 examples / 57 pending` on
-Linux versus `1,090 / 52` on macOS), because the original macOS command omitted `POSTGRES_AVAILABLE=true` despite
-starting PostgreSQL. Its missing cases exclude it from equivalent-suite
-comparisons. Baseline fix `5604e6c` sets the sentinel only on the service row;
-that corrected run36158410770 executed the missing cases but failed the unchanged bad-credentials assertion because Homebrew trusted connections. The fixture is corrected at65b227d and retry36160842540 is running.
-No cross-platform aggregate or speedup is inferred from these rows.
+Linux versus `1,090 / 52` on macOS), because the original macOS command omitted
+`POSTGRES_AVAILABLE=true` despite starting PostgreSQL. Its missing cases exclude
+it from equivalent-suite comparisons. Baseline fix `5604e6c` set the sentinel
+only on the service row; corrected run [36158410770](https://github.com/neohaskell/NeoHaskell/actions/runs/36158410770) executed the missing cases but failed the unchanged bad-credentials assertion because Homebrew trusted connections ([failure archive](https://github.com/neohaskell/NeoHaskell/tree/0370303/docs/build-cache/evidence/checkpoint-2026-09-25-fixture-failures)). The fixture was corrected at `65b227d`; successful retry [36160842540](https://github.com/neohaskell/NeoHaskell/actions/runs/36160842540) records `3,088 examples / 0 failures / 67 pending`, with the invalid-credentials assertion passing ([corrected archive](https://github.com/neohaskell/NeoHaskell/tree/0370303/docs/build-cache/evidence/checkpoint-2026-09-25-macos-corrected)).
+No cross-platform aggregate or speedup is inferred from these rows; the corrected run is `n=1`, and its cache throttle/auth caveats remain explicit.
 The Linux 10s wait is the measured `upload-artifact` completion to first
 consumer-job start interval. The macOS workflow builds inside each matrix test
 job and has no producer artifact interval, so its value remains explicitly
@@ -200,9 +201,10 @@ or evidence of a speedup. Optional job time is excluded from sums but its effect
 on scheduling remains. Detailed intervals, counts, exact output paths and raw
 logs are retained in the [production archive](https://github.com/neohaskell/NeoHaskell/tree/631d9c1/docs/build-cache/evidence/checkpoint-2026-09-25-current).
 The matched Linux baseline/candidate/pilot reruns and their cache-audit proof
-are recorded in the section above. The corrected macOS Cabal baseline is running as
-[36158410770](https://github.com/neohaskell/NeoHaskell/actions/runs/36158410770)
-at `5604e6c`.
+are recorded in the section above. The corrected macOS Cabal baseline is
+[36160842540](https://github.com/neohaskell/NeoHaskell/actions/runs/36160842540)
+at `65b227d`; it remains a single descriptive observation rather than a matched
+speedup claim.
 
 ## Updating the log
 
