@@ -1,6 +1,13 @@
 name: Build cache co-location experiment
 
 on:
+  # Bootstrap this draft-only experiment without adding it to main. GitHub
+  # cannot dispatch a new workflow until it has been registered by a run.
+  push:
+    branches: [snotty-kiwi]
+    paths:
+      - .github/workflows/build-cache-colocated.yml
+      - docs/build-cache/colocated.sh
   workflow_dispatch:
     inputs:
       source_sha:
@@ -28,7 +35,7 @@ jobs:
           persist-credentials: false
       - name: Verify immutable experiment checkout
         env:
-          SOURCE_SHA: ${{ inputs.source_sha }}
+          SOURCE_SHA: ${{ inputs.source_sha || github.sha }}
         run: |
           set -euo pipefail
           [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
