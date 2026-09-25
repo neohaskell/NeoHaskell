@@ -14,6 +14,13 @@
       "directory": "https://github.com/neohaskell/NeoHaskell/tree/727dd11/docs/build-cache/evidence/checkpoint-2026-09-25-measurements",
       "analysis": "https://github.com/neohaskell/NeoHaskell/tree/727dd11/docs/build-cache/evidence/checkpoint-2026-09-25-measurements/analysis.json",
       "raw_tar": "https://github.com/neohaskell/NeoHaskell/tree/727dd11/docs/build-cache/evidence/checkpoint-2026-09-25-measurements/measurements-raw.tar.gz"
+    },
+    "colocated_measurements": {
+      "commit": "6f507c7",
+      "branch": "evidence/pr-899-build-cache",
+      "directory": "https://github.com/neohaskell/NeoHaskell/tree/6f507c7/docs/build-cache/evidence/checkpoint-2026-09-25-colocated",
+      "analysis": "https://github.com/neohaskell/NeoHaskell/tree/6f507c7/docs/build-cache/evidence/checkpoint-2026-09-25-colocated/analysis.json",
+      "report": "https://github.com/neohaskell/NeoHaskell/tree/6f507c7/docs/build-cache/evidence/checkpoint-2026-09-25-colocated/analysis.md"
     }
   },
   "comparability": {
@@ -22,26 +29,28 @@
     "ci_note": "Run 36143308159 production jobs are still the unsplit candidate. Only its optional measurement jobs apply the split pilot. Its 8m36s production span is cache-rate-limited/disabled and is not evidence that the pilot is faster.",
     "total_rule": "For a multi-stage workload, sum stages within each repetition first, then take the median of those per-repetition totals. Never sum stage medians and call that a total median.",
     "matched_note": "F-H are three n=3 Linux matched-workload points. All fresh, repeat and Text-edit routes have valid samples. The candidate Int-sibling route has one comparison_unusable cache audit and remains diagnostic only. Pilot Text realization is 298.890s versus candidate/unsplit 259.269s (+39.621s, +15.282%), so it fails the preset >=15% and >=60s representative-edit improvement criterion and does not justify expansion. Including the core test, the same route is 302.583s versus 262.835s.",
-    "cache_audit_note": "Candidate audits: 11/12 valid; pilot audits: 12/12 valid. Every audit covers 10 outputs and 40 remote checks. Fresh/Text/sibling outputs are local-absent with remote-absent checks; repeat outputs are local-present with remote-absent checks. The candidate repetition-3 sibling audit retains one neohaskell.cachix.org network error. Add evaluation.eval_s to route stages; exclude probe_s and remaining audit wall time."
+    "cache_audit_note": "Candidate audits: 11/12 valid; pilot audits: 12/12 valid. Every audit covers 10 outputs and 40 remote checks. Fresh/Text/sibling outputs are local-absent with remote-absent checks; repeat outputs are local-present with remote-absent checks. The candidate repetition-3 sibling audit retains one neohaskell.cachix.org network error. Add evaluation.eval_s to route stages; exclude probe_s and remaining audit wall time.",
+    "colocation_note": "I is a completed n=3 same-worker colocation run. Each repetition has a first pass with 10 outputs absent locally and remotely, followed by a warm pass with the same 10 outputs present locally but absent from all four remote caches. It is a local-store reuse observation, not a remote-cache speedup or full-CI comparison.",
+    "signed_cache_run_note": "Run 36163339478 is excluded from timing: both publisher jobs succeeded, but fresh Linux and macOS consumers failed because required dependencies were absent from Cachix while available from upstream substituters. The dependency was not globally missing. It is diagnostic, not a benchmark."
   },
   "timeline": [
     {
       "id": "A",
-      "label": "Cabal\nOriginal setup",
+      "label": "Cabal\nOriginal",
       "commit": "e94a6c5",
       "status": "measured",
       "workload": "baseline"
     },
     {
       "id": "B",
-      "label": "Nix components\nUnsplit setup",
+      "label": "Nix components\nUnsplit",
       "commit": "c65700c",
       "status": "measured",
       "workload": "candidate"
     },
     {
       "id": "C",
-      "label": "Extracted component\nPilot setup",
+      "label": "Text extraction\nPilot",
       "commit": "05c07df",
       "status": "measured",
       "workload": "pilot"
@@ -62,28 +71,35 @@
     },
     {
       "id": "F",
-      "label": "Matched Linux\nBaseline",
+      "label": "Matched\nCabal",
       "commit": "e94a6c5",
       "status": "measured",
       "workload": "baseline-matched"
     },
     {
       "id": "G",
-      "label": "Matched Linux\nCandidate",
+      "label": "Matched\nUnsplit Nix",
       "commit": "c0d34a8",
       "status": "measured",
       "workload": "candidate-matched"
     },
     {
       "id": "H",
-      "label": "Matched Linux\nPilot",
+      "label": "Matched\nText pilot",
       "commit": "a760fc8",
       "status": "measured",
       "workload": "pilot-matched"
+    },
+    {
+      "id": "I",
+      "label": "Same worker\nFresh + warm",
+      "commit": "17f9a14",
+      "status": "measured",
+      "workload": "colocated"
     }
   ],
-  "timeline_rule": "Append each future change in chronological order. Plot each workload metric through measured events in timeline order; pending changes have no values. Connected lines describe measured history. Matched workload points support descriptive route comparison; they do not establish a causal percentage improvement.",
-  "pending_footer": "Next: same-worker warm-store measurements",
+  "timeline_rule": "Append each future change in chronological order. Plot each workload metric through measured events in timeline order; pending changes have no values and routes that were not measured remain unknown. Connected lines describe measured history. Matched workload points support descriptive route comparison; they do not establish a causal percentage improvement.",
+  "pending_footer": "Next experiment: smaller downloads for each test job.",
   "comparison_caveat": "Same workload; cache conditions and execution routes vary. Lines show observations, not isolated effects.",
   "workloads": [
     {
@@ -1940,6 +1956,510 @@
         "invalid": 0,
         "substituter_config_sha256": "3dd5520010a9df893c9d2e847fac7347f1617b97e4981e77785e3f667bbb1740",
         "audit_lock_sha256": "1effc4277140756e9669e68a4585ae4694e5dabe6bba3d586cf2128a5adf3621"
+      }
+    },
+    {
+      "id": "colocated",
+      "commit": "17f9a149339f2bd1a77cb4c8acd1c9ab17bfc031",
+      "technique": "same-worker colocation / fresh build followed by warm build",
+      "platform": "x86_64-Linux",
+      "cache_condition": "fresh hosted worker per repetition; first pass outputs absent locally and remotely; warm pass reuses the same worker store with outputs present locally and absent remotely",
+      "status": "measured / diagnostic; same-job local-store reuse, not remote-cache or full-CI evidence",
+      "evidence": [
+        "https://github.com/neohaskell/NeoHaskell/actions/runs/36160325157",
+        "https://github.com/neohaskell/NeoHaskell/tree/6f507c7/docs/build-cache/evidence/checkpoint-2026-09-25-colocated",
+        "https://github.com/neohaskell/NeoHaskell/tree/6f507c7/docs/build-cache/evidence/checkpoint-2026-09-25-colocated/analysis.json",
+        "https://github.com/neohaskell/NeoHaskell/tree/6f507c7/docs/build-cache/evidence/checkpoint-2026-09-25-colocated/analysis.md"
+      ],
+      "n": 3,
+      "suite_count": 5,
+      "suite_inventory": [
+        "nhcore-test-core",
+        "nhcore-test-auth",
+        "nhcore-test-integration",
+        "nhcore-test-service",
+        "nhintegrations-test"
+      ],
+      "suite_counts": {
+        "examples": 3088,
+        "failures": 0,
+        "pending": 67,
+        "applies_to": "every first and warm pass"
+      },
+      "hurl_and_cold_start": true,
+      "hurl_inventory": {
+        "commands": 3,
+        "queries": 3,
+        "scenarios": 6,
+        "integrations": 2,
+        "sha256": "1b24ee917578265824314db5f8b854d381a92f8012925fa6775d8fafc2161d3f"
+      },
+      "remote_caches_probed": [
+        "https://cache.iog.io",
+        "https://cache.nixos.org",
+        "https://install.determinate.systems",
+        "https://neohaskell.cachix.org"
+      ],
+      "routes": {
+        "fresh_execution": [
+          "fresh_execute_core",
+          "fresh_execute_auth",
+          "fresh_execute_integration",
+          "fresh_execute_service",
+          "fresh_execute_integrations",
+          "fresh_execute_hurl",
+          "fresh_execute_cold"
+        ],
+        "fresh_route": [
+          "fresh_evaluate_realize",
+          "fresh_execute_core",
+          "fresh_execute_auth",
+          "fresh_execute_integration",
+          "fresh_execute_service",
+          "fresh_execute_integrations",
+          "fresh_execute_hurl",
+          "fresh_execute_cold"
+        ],
+        "warm_execution": [
+          "warm_execute_core",
+          "warm_execute_auth",
+          "warm_execute_integration",
+          "warm_execute_service",
+          "warm_execute_integrations",
+          "warm_execute_hurl",
+          "warm_execute_cold"
+        ],
+        "warm_route": [
+          "warm_evaluate_realize",
+          "warm_execute_core",
+          "warm_execute_auth",
+          "warm_execute_integration",
+          "warm_execute_service",
+          "warm_execute_integrations",
+          "warm_execute_hurl",
+          "warm_execute_cold"
+        ],
+        "repeat_build": [
+          "repeat_build"
+        ]
+      },
+      "stages_s": {
+        "fresh_evaluate_realize": [
+          362.039212798,
+          323.828386912,
+          365.755561268
+        ],
+        "fresh_execute_core": [
+          3.713648283,
+          3.688518344,
+          3.687578093
+        ],
+        "fresh_execute_auth": [
+          0.602778578,
+          0.608052065,
+          0.606752202
+        ],
+        "fresh_execute_integration": [
+          8.489768299,
+          8.460273892,
+          8.483597035
+        ],
+        "fresh_execute_service": [
+          38.363420338,
+          43.439309595,
+          37.709009688
+        ],
+        "fresh_execute_integrations": [
+          0.681499128,
+          0.639059217,
+          0.701269918
+        ],
+        "fresh_execute_hurl": [
+          9.312609398,
+          9.347823321,
+          9.336394214
+        ],
+        "fresh_execute_cold": [
+          7.493015071,
+          8.612254389,
+          7.439372775
+        ],
+        "warm_evaluate_realize": [
+          7.991489914,
+          7.607457748,
+          7.841689393
+        ],
+        "warm_execute_core": [
+          3.718620242,
+          3.594862473,
+          3.685516659
+        ],
+        "warm_execute_auth": [
+          0.582034811,
+          0.548412842,
+          0.582180562
+        ],
+        "warm_execute_integration": [
+          8.490448068,
+          8.463265521,
+          8.482576164
+        ],
+        "warm_execute_service": [
+          38.324097653,
+          39.343733293,
+          37.661466168
+        ],
+        "warm_execute_integrations": [
+          0.684574067,
+          0.619720257,
+          0.695057526
+        ],
+        "warm_execute_hurl": [
+          9.330469659,
+          9.169515518,
+          9.315720882
+        ],
+        "warm_execute_cold": [
+          7.422949761,
+          7.905085266,
+          7.338954959
+        ],
+        "repeat_build": [
+          7.991489914,
+          7.607457748,
+          7.841689393
+        ]
+      },
+      "raw_stages_s": {
+        "fresh_evaluate_realize": [
+          327.572739257,
+          286.41557156,
+          331.400967617
+        ],
+        "fresh_execute_core": [
+          3.713648283,
+          3.688518344,
+          3.687578093
+        ],
+        "fresh_execute_auth": [
+          0.602778578,
+          0.608052065,
+          0.606752202
+        ],
+        "fresh_execute_integration": [
+          8.489768299,
+          8.460273892,
+          8.483597035
+        ],
+        "fresh_execute_service": [
+          38.363420338,
+          43.439309595,
+          37.709009688
+        ],
+        "fresh_execute_integrations": [
+          0.681499128,
+          0.639059217,
+          0.701269918
+        ],
+        "fresh_execute_hurl": [
+          9.312609398,
+          9.347823321,
+          9.336394214
+        ],
+        "fresh_execute_cold": [
+          7.493015071,
+          8.612254389,
+          7.439372775
+        ],
+        "warm_evaluate_realize": [
+          3.849829417,
+          3.018799487,
+          3.820478835
+        ],
+        "warm_execute_core": [
+          3.718620242,
+          3.594862473,
+          3.685516659
+        ],
+        "warm_execute_auth": [
+          0.582034811,
+          0.548412842,
+          0.582180562
+        ],
+        "warm_execute_integration": [
+          8.490448068,
+          8.463265521,
+          8.482576164
+        ],
+        "warm_execute_service": [
+          38.324097653,
+          39.343733293,
+          37.661466168
+        ],
+        "warm_execute_integrations": [
+          0.684574067,
+          0.619720257,
+          0.695057526
+        ],
+        "warm_execute_hurl": [
+          9.330469659,
+          9.169515518,
+          9.315720882
+        ],
+        "warm_execute_cold": [
+          7.422949761,
+          7.905085266,
+          7.338954959
+        ],
+        "repeat_build": [
+          3.849829417,
+          3.018799487,
+          3.820478835
+        ]
+      },
+      "helper_build_s": {
+        "first": [
+          327.523313284,
+          286.3732512,
+          331.351952076
+        ],
+        "warm": [
+          3.801669121,
+          2.980490685,
+          3.773742199
+        ],
+        "median_first_s": 327.523313284,
+        "median_warm_s": 3.773742199,
+        "note": "Helper build values exclude cache-audit evaluation; route stages use outer measured command wall."
+      },
+      "route_summary": {
+        "fresh_execution": {
+          "stages": [
+            "fresh_execute_core",
+            "fresh_execute_auth",
+            "fresh_execute_integration",
+            "fresh_execute_service",
+            "fresh_execute_integrations",
+            "fresh_execute_hurl",
+            "fresh_execute_cold"
+          ],
+          "observations_s": [
+            68.656739095,
+            74.795290823,
+            67.963973925
+          ],
+          "median_s": 68.656739095,
+          "n": 3,
+          "validity": "valid"
+        },
+        "fresh_route": {
+          "stages": [
+            "fresh_evaluate_realize",
+            "fresh_execute_core",
+            "fresh_execute_auth",
+            "fresh_execute_integration",
+            "fresh_execute_service",
+            "fresh_execute_integrations",
+            "fresh_execute_hurl",
+            "fresh_execute_cold"
+          ],
+          "observations_s": [
+            430.695951893,
+            398.623677735,
+            433.719535193
+          ],
+          "median_s": 430.695951893,
+          "n": 3,
+          "validity": "valid"
+        },
+        "warm_execution": {
+          "stages": [
+            "warm_execute_core",
+            "warm_execute_auth",
+            "warm_execute_integration",
+            "warm_execute_service",
+            "warm_execute_integrations",
+            "warm_execute_hurl",
+            "warm_execute_cold"
+          ],
+          "observations_s": [
+            68.553194261,
+            69.64459517,
+            67.76147292
+          ],
+          "median_s": 68.553194261,
+          "n": 3,
+          "validity": "valid"
+        },
+        "warm_route": {
+          "stages": [
+            "warm_evaluate_realize",
+            "warm_execute_core",
+            "warm_execute_auth",
+            "warm_execute_integration",
+            "warm_execute_service",
+            "warm_execute_integrations",
+            "warm_execute_hurl",
+            "warm_execute_cold"
+          ],
+          "observations_s": [
+            76.544684175,
+            77.252052918,
+            75.603162313
+          ],
+          "median_s": 76.544684175,
+          "n": 3,
+          "validity": "valid"
+        },
+        "repeat_build": {
+          "stages": [
+            "repeat_build"
+          ],
+          "observations_s": [
+            7.991489914,
+            7.607457748,
+            7.841689393
+          ],
+          "median_s": 7.841689393,
+          "n": 3,
+          "validity": "valid"
+        }
+      },
+      "cache_audits": {
+        "fresh": {
+          "correction_stage": "fresh_evaluate_realize",
+          "evaluation_eval_s": [
+            34.466473541,
+            37.412815352,
+            34.354593651
+          ],
+          "evaluation_median_s": 34.466473541,
+          "probe_s_excluded": [
+            6.514851228,
+            15.078482563,
+            6.6119098
+          ],
+          "probe_median_s_excluded": 6.6119098,
+          "audit_elapsed_s_excluded": [
+            41.02630704,
+            52.527041438,
+            41.010762054
+          ],
+          "valid_count": 3,
+          "count": 3,
+          "flags": [
+            {
+              "rep": 1,
+              "status": "complete",
+              "comparison_unusable": false,
+              "evaluation_exit_code": 0,
+              "errors": [],
+              "substituter_unrecognized_count": 0
+            },
+            {
+              "rep": 2,
+              "status": "complete",
+              "comparison_unusable": false,
+              "evaluation_exit_code": 0,
+              "errors": [],
+              "substituter_unrecognized_count": 0
+            },
+            {
+              "rep": 3,
+              "status": "complete",
+              "comparison_unusable": false,
+              "evaluation_exit_code": 0,
+              "errors": [],
+              "substituter_unrecognized_count": 0
+            }
+          ]
+        },
+        "warm": {
+          "correction_stage": "repeat_build",
+          "evaluation_eval_s": [
+            4.141660497,
+            4.588658261,
+            4.021210558
+          ],
+          "evaluation_median_s": 4.141660497,
+          "probe_s_excluded": [
+            3.809985572,
+            7.363528229,
+            5.408949882
+          ],
+          "probe_median_s_excluded": 5.408949882,
+          "audit_elapsed_s_excluded": [
+            7.995927838,
+            11.98996728,
+            9.47147406
+          ],
+          "valid_count": 3,
+          "count": 3,
+          "flags": [
+            {
+              "rep": 1,
+              "status": "complete",
+              "comparison_unusable": false,
+              "evaluation_exit_code": 0,
+              "errors": [],
+              "substituter_unrecognized_count": 0
+            },
+            {
+              "rep": 2,
+              "status": "complete",
+              "comparison_unusable": false,
+              "evaluation_exit_code": 0,
+              "errors": [],
+              "substituter_unrecognized_count": 0
+            },
+            {
+              "rep": 3,
+              "status": "complete",
+              "comparison_unusable": false,
+              "evaluation_exit_code": 0,
+              "errors": [],
+              "substituter_unrecognized_count": 0
+            }
+          ]
+        }
+      },
+      "cache_state_summary": {
+        "fresh": {
+          "outputs_per_repetition": 10,
+          "outputs_total": 30,
+          "remote_checks_total": 120,
+          "local_present": 0,
+          "local_absent": 30,
+          "remote_present": 0,
+          "remote_absent": 120,
+          "remote_errors": 0,
+          "interpretation": "first-pass outputs absent locally and remotely"
+        },
+        "warm": {
+          "outputs_per_repetition": 10,
+          "outputs_total": 30,
+          "remote_checks_total": 120,
+          "local_present": 30,
+          "local_absent": 0,
+          "remote_present": 0,
+          "remote_absent": 120,
+          "remote_errors": 0,
+          "interpretation": "same-worker local reuse; no remote cache hits"
+        }
+      },
+      "audit_correction_rule": "Add evaluation.eval_s to the first fresh build and warm repeat-build stages. Exclude probe_s, remaining audit elapsed time and PostgreSQL fixture setup.",
+      "observation_integrity": {
+        "observation_exit_codes": [
+          0,
+          0,
+          0
+        ],
+        "all_exit_codes_zero": true,
+        "fresh_workload_complete": true,
+        "warm_workload_complete": true,
+        "warm_build_complete": true,
+        "cache_audits_complete": true,
+        "repetitions_valid": "3/3"
       }
     }
   ],

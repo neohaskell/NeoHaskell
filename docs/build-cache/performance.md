@@ -16,9 +16,14 @@ https://raw.githubusercontent.com/neohaskell/NeoHaskell/<PERFORMANCE_COMMIT>/doc
 
 The figure is a single append-only timeline. Its three lines are **Fresh build +
 suite tests**, **Edit + core tests**, and **Rebuild without edits**. Each measured
-point is the median of three raw repetitions. D and E are pending cumulative
-checkpoints: upload duplication is disabled first, then the candidate compiler
-flags are aligned; neither has an invented value. The lines follow the measured
+point is the median of three raw repetitions. D and E are retained cumulative
+checkpoints in a deferred isolated causal-toggle experiment: upload duplication
+is disabled first, then the candidate compiler flags are aligned. F-H later measured
+the aligned setup without isolating those changes, so D and E have no timing
+values. I adds the completed same-worker
+colocation run. Its fresh route contributes to **Fresh build + suite tests**, and
+its warm build contributes to **Rebuild without edits**; the edit line has no I
+value because no edit workload was measured. The lines follow the measured
 experiment history in x-order.
 
 “Suite tests” means the five component suites (`nhcore` core/auth/integration/
@@ -28,7 +33,11 @@ doctest and codemap jobs are excluded.
 Hosted CI is kept as a separate table below. Its one-run critical elapsed time
 is not mixed with summed runner time, and the 987fe3d production run is labeled
 as the unsplit candidate with rate-limited/disabled cache behavior, not as
-evidence that the pilot is faster.
+evidence that the pilot is faster. Signed-cache run 36163339478 is excluded from
+timing because both publisher jobs succeeded but fresh Linux and macOS consumers
+failed when required dependencies were absent from Cachix while available from
+upstream substituters. The dependency was not globally missing; the run is
+diagnostic, not a benchmark.
 
 ## Comparability guard
 
@@ -38,12 +47,19 @@ F-H support descriptive route comparison. The archived logs confirm GHC 9.8.4,
 remaining package, compiler, linker and codegen default is unconfirmed; cache and
 dependency state differ, so the lines do not isolate causal percentages.
 
+The I colocation point is a same-job local-store observation. Each repetition
+starts with the first pass on a fresh worker store, then runs a warm pass on the
+same worker and immutable checkout. The first pass has ten outputs absent locally
+and remotely; the warm pass has those ten outputs present locally while all four
+remote caches remain absent. This does not measure a remote-cache hit or the
+full-CI path.
+
 The route totals below are calculated from raw observations by summing every
 stage within each repetition and then taking the median of those totals. The
 stage medians are never added together and labelled as a total median. Detailed
 stage arrays remain in [`performance.json`](performance.json). The historical
 archive is [commit `4a913b4`](https://github.com/neohaskell/NeoHaskell/tree/4a913b4/docs/build-cache/evidence);
-the matched F-H raw archive is [checkpoint-2026-09-25-measurements](https://github.com/neohaskell/NeoHaskell/tree/727dd11/docs/build-cache/evidence/checkpoint-2026-09-25-measurements).
+the matched F-H raw archive is [checkpoint-2026-09-25-measurements](https://github.com/neohaskell/NeoHaskell/tree/727dd11/docs/build-cache/evidence/checkpoint-2026-09-25-measurements); the I raw archive is [checkpoint-2026-09-25-colocated](https://github.com/neohaskell/NeoHaskell/tree/6f507c7/docs/build-cache/evidence/checkpoint-2026-09-25-colocated).
 
 ## Sequential running log
 
@@ -95,6 +111,40 @@ Route totals sum corrected stages within each repetition and then take the media
 
 The corrected route medians are: baseline fresh execution `154.022`, full fresh `576.969`, Text edit + core `209.198`, Int sibling + core `219.637`, repeat `9.790`; candidate `71.899`, `419.838`, `262.835`, `261.648` (diagnostic only), `8.407`; pilot `68.308`, `426.227`, `302.583`, `296.484`, `8.033` seconds.
 
+### Same-worker colocation (I)
+
+Run [36160325157](https://github.com/neohaskell/NeoHaskell/actions/runs/36160325157)
+completed all three repetitions on commit `17f9a14`. Every first and warm pass
+ran the five component suites, Hurl and cold-start readiness: 3,088 examples,
+zero failures and 67 pending in each pass. The warm pass follows the first pass
+on the same worker and immutable checkout, so its local reuse is deliberately
+separate from cross-run cache and full-CI observations.
+
+The chart uses the same route rule as F-H: sum outer command-wall observations
+inside each repetition, add that repetition's cache-audit `evaluation.eval_s`,
+exclude `probe_s`, then take the median. The helper build medians were 327.523 s
+for the first pass and 3.774 s for the warm pass before audit evaluation. The
+route uses the outer measured build command wall instead: first-build observations
+were `[327.573, 286.416, 331.401]` s and warm-build observations were
+`[3.850, 3.019, 3.820]` s.
+
+| Route | All observations / median (s) | Chart line |
+|---|---:|---|
+| First fresh route: build + five suites + Hurl + cold-start | `[430.696, 398.624, 433.720] / 430.696` | Fresh build + suite tests |
+| Warm build + cache evaluation | `[7.991, 7.607, 7.842] / 7.842` | Rebuild without edits |
+| Warm suite workload: five suites + Hurl + cold-start | `[68.553, 69.645, 67.761] / 68.553` | Retained in JSON; not the build-only line |
+| Warm route: build + suite workload | `[76.545, 77.252, 75.603] / 76.545` | Retained in JSON; not the build-only line |
+
+The first-pass audit evaluations were `[34.466, 37.413, 34.355] / 34.466` s;
+the warm-pass evaluations were `[4.142, 4.589, 4.021] / 4.142` s. Each of
+the six audits covered ten outputs and 40 remote checks. First-pass outputs were
+local-absent in all 30 observations; warm-pass outputs were local-present in all
+30 observations; all 240 remote checks were absent. The warm result is therefore
+same-worker local-store reuse, not a remote-cache speedup. No edit workload was
+measured, so the edit line intentionally stops at H.
+
+Raw artifacts and the full per-pass stage arrays are in the [colocation archive](https://github.com/neohaskell/NeoHaskell/tree/6f507c7/docs/build-cache/evidence/checkpoint-2026-09-25-colocated).
+
 ### Cache-audit observations
 
 Each audit covers 10 outputs and 40 remote checks. `evaluation.eval_s` is route work. `probe_s` is instrumentation and stays out of route totals.
@@ -141,6 +191,13 @@ optional measurement jobs are excluded from the production critical span.
 | [36153813253](https://github.com/neohaskell/NeoHaskell/actions/runs/36153813253) / `a5e7cdc` | As-operated full-CI baseline / Linux | Fresh runner; Determinate extra substituters (`cache.iog.io`, `neohaskell.cachix.org`), upstream `cache.nixos.org`; magic-nix-cache v14 GHA cache enabled, FlakeHub unauthenticated/no upload; Cabal cache restored | 617s | 2,304s | 10s | `n=1`, green; 1,128 service examples / 57 pending; no matched timing comparison established; [archive](https://github.com/neohaskell/NeoHaskell/tree/0c0c3c0/docs/build-cache/evidence/checkpoint-2026-09-25) |
 | [36153817476](https://github.com/neohaskell/NeoHaskell/actions/runs/36153817476) / `a5e7cdc` | As-operated full-CI baseline / macOS | Fresh runner; Determinate extra substituters (`cache.iog.io`, `neohaskell.cachix.org`), upstream `cache.nixos.org`; magic-nix-cache v14 GHA cache enabled, FlakeHub unauthenticated/no upload; Cabal cache restored | 677s | 3,043s | `—` (unknown) | `n=1`, green; 1,090 service examples / 52 pending; PostgreSQL cases omitted, excluded from equivalent-suite comparison; [archive](https://github.com/neohaskell/NeoHaskell/tree/0c0c3c0/docs/build-cache/evidence/checkpoint-2026-09-25) |
 | [36160842540](https://github.com/neohaskell/NeoHaskell/actions/runs/36160842540) / `65b227d` | Corrected as-operated full-CI Cabal baseline / macOS | Fresh runner; Determinate extra substituters (`cache.iog.io`, `neohaskell.cachix.org`), upstream `cache.nixos.org`; installer, Magic Nix Cache and Cabal caches hit; local Magic Nix Cache proxy recorded 307 HTTP-418/throttle events and FlakeHub unauthenticated warnings; upstream fallback completed | 678s | 2,828s | `—` (unknown) | `n=1`, green; 3,088 examples / 0 failures / 67 pending; PostgreSQL enabled and invalid-credentials assertion passed; no matched timing or speedup claim; [archive](https://github.com/neohaskell/NeoHaskell/tree/0370303/docs/build-cache/evidence/checkpoint-2026-09-25-macos-corrected) |
+
+Signed-cache run [36163339478](https://github.com/neohaskell/NeoHaskell/actions/runs/36163339478)
+is excluded from this table. Both publisher jobs succeeded, but fresh Linux and
+macOS consumers failed when required dependencies were absent from Cachix while
+available from upstream substituters. The dependency was not globally missing;
+the run is diagnostic, not a benchmark, and supplies no timing point for the
+chart.
 
 Run `36143308159`'s main jobs are still the **unsplit candidate**. Only its
 optional pilot measurement jobs apply the split experiment. Its short 8m36s
