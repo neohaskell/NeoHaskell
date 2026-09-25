@@ -1,0 +1,284 @@
+{
+  "revision": "176a5bf7664b732cf22e1fbb40273c272a14f6ba",
+  "method": "Replay unchanged runtime_report_errors against every registered service locator in the actual hosted current-run report; mutation negatives use in-memory copies only. Not a hosted criteria-runtime job invocation.",
+  "results": [
+    {
+      "run": 36155654547,
+      "report_sha256": "3ceeba2a7e2751d135ff7b92f0a0d39960f1022b14137a837ace25caaac41483",
+      "checks": [
+        {
+          "locator": "hspec:nhcore-test-service:core/testlib/Test/Service/CommandHandler/Execute/Spec.hs#records the exact insertion precondition after refetch",
+          "expected_examples": 2,
+          "errors": [],
+          "missing_selector_rejected": true,
+          "missing_fixture_rejected": true
+        },
+        {
+          "locator": "hspec:nhcore-test-service:core/testlib/Test/Service/CommandHandler/Execute/Spec.hs#acceptExisting commands refetch and re-decide with fresh state",
+          "expected_examples": 2,
+          "errors": [],
+          "missing_selector_rejected": true,
+          "missing_fixture_rejected": true
+        },
+        {
+          "locator": "hspec:nhcore-test-service:core/testlib/Test/Service/CommandHandler/Execute/Spec.hs#acceptNew commands preserve StreamCreation under a PostgreSQL race",
+          "expected_examples": 2,
+          "errors": [],
+          "missing_selector_rejected": true,
+          "missing_fixture_rejected": true
+        },
+        {
+          "locator": "hspec:nhcore-test-service:core/testlib/Test/Service/CommandHandler/Execute/Spec.hs#acceptAny commands preserve unconditional appends",
+          "expected_examples": 2,
+          "errors": [],
+          "missing_selector_rejected": true,
+          "missing_fixture_rejected": true
+        },
+        {
+          "locator": "hspec:nhcore-test-service:core/testlib/Test/Service/EventStore/OptimisticConcurrency/Spec.hs#will only allow one event to be appended, when two writers try to append at the same time",
+          "expected_examples": 3,
+          "errors": [],
+          "missing_selector_rejected": true,
+          "missing_fixture_rejected": true
+        },
+        {
+          "locator": "hspec:nhcore-test-service:core/testlib/Test/Service/EventStore/OptimisticConcurrency/Spec.hs#allows only one concurrent StreamCreation and persists one creation fact",
+          "expected_examples": 3,
+          "errors": [],
+          "missing_selector_rejected": true,
+          "missing_fixture_rejected": true
+        },
+        {
+          "locator": "hspec:nhcore-test-service:core/testlib/Test/Service/EventStore/OptimisticConcurrency/Spec.hs#persists both AnyStreamState events in durable order",
+          "expected_examples": 3,
+          "errors": [],
+          "missing_selector_rejected": true,
+          "missing_fixture_rejected": true
+        },
+        {
+          "locator": "hspec:nhcore-test-service:core/testlib/Test/Service/EventStore/Subscriptions/Spec.hs#register-first replay overlap is ordered and gap-free after inbox overflow",
+          "expected_examples": 3,
+          "errors": [],
+          "missing_selector_rejected": true,
+          "missing_fixture_rejected": true
+        },
+        {
+          "locator": "hspec:nhcore-test-service:core/testlib/Test/Service/EventStore/Subscriptions/Spec.hs#inclusive start position is consistent across backends",
+          "expected_examples": 3,
+          "errors": [],
+          "missing_selector_rejected": true,
+          "missing_fixture_rejected": true
+        },
+        {
+          "locator": "hspec:nhcore-test-service:core/test/Service/FileUpload/ContentDedupSpec.hs#dedup self-heals a missing Pending blob on re-upload",
+          "expected_examples": 1,
+          "errors": [],
+          "missing_selector_rejected": true,
+          "missing_fixture_rejected": true
+        },
+        {
+          "locator": "hspec:nhcore-test-service:core/test/Service/FileUpload/ContentDedupSpec.hs#dedup self-heals a missing Confirmed blob on re-upload",
+          "expected_examples": 1,
+          "errors": [],
+          "missing_selector_rejected": true,
+          "missing_fixture_rejected": true
+        },
+        {
+          "locator": "hspec:nhcore-test-service:core/test/Service/FileUpload/ContentDedupSpec.hs#dedup self-heal preserves FileRef/blobKey and restores exact content",
+          "expected_examples": 1,
+          "errors": [],
+          "missing_selector_rejected": true,
+          "missing_fixture_rejected": true
+        },
+        {
+          "locator": "hspec:nhcore-test-service:core/test/Service/FileUpload/ContentDedupSpec.hs#dedup self-heals when the existence check errors",
+          "expected_examples": 1,
+          "errors": [],
+          "missing_selector_rejected": true,
+          "missing_fixture_rejected": true
+        },
+        {
+          "locator": "hspec:nhcore-test-service:core/test/Service/FileUpload/ContentDedupSpec.hs#duplicate upload returns same blobKey as original",
+          "expected_examples": 1,
+          "errors": [],
+          "missing_selector_rejected": true,
+          "missing_fixture_rejected": true
+        },
+        {
+          "locator": "hspec:nhcore-test-service:core/test-service/Service/QueryObjectStore/PostgresSpec.hs#state round-trips under the threaded query name",
+          "expected_examples": 1,
+          "errors": [],
+          "missing_selector_rejected": true,
+          "missing_fixture_rejected": true
+        },
+        {
+          "locator": "hspec:nhcore-test-service:core/test-service/Service/QueryObjectStore/PostgresSpec.hs#distinct query names isolate rows for the same instance uuid (#734)",
+          "expected_examples": 1,
+          "errors": [],
+          "missing_selector_rejected": true,
+          "missing_fixture_rejected": true
+        },
+        {
+          "locator": "hspec:nhcore-test-service:core/test-service/Service/QueryObjectStore/PostgresSpec.hs#getAll is scoped to the store's own query name (#734)",
+          "expected_examples": 1,
+          "errors": [],
+          "missing_selector_rejected": true,
+          "missing_fixture_rejected": true
+        },
+        {
+          "locator": "hspec:nhcore-test-service:core/test-service/Service/QueryObjectStore/PostgresSpec.hs#getAll excludes the reserved nil-uuid checkpoint marker row (#734)",
+          "expected_examples": 1,
+          "errors": [],
+          "missing_selector_rejected": true,
+          "missing_fixture_rejected": true
+        },
+        {
+          "locator": "hspec:nhcore-test-service:core/test-service/Service/QueryObjectStore/PostgresSpec.hs#N concurrent read-modify-write increments on one key all apply (#739)",
+          "expected_examples": 1,
+          "errors": [],
+          "missing_selector_rejected": true,
+          "missing_fixture_rejected": true
+        }
+      ]
+    },
+    {
+      "run": 36155658355,
+      "report_sha256": "84d07e69580762b799b1d44983c2b3b7d4b2c9ae0bfe026c8cd10d5c1309004b",
+      "checks": [
+        {
+          "locator": "hspec:nhcore-test-service:core/testlib/Test/Service/CommandHandler/Execute/Spec.hs#records the exact insertion precondition after refetch",
+          "expected_examples": 2,
+          "errors": [],
+          "missing_selector_rejected": true,
+          "missing_fixture_rejected": true
+        },
+        {
+          "locator": "hspec:nhcore-test-service:core/testlib/Test/Service/CommandHandler/Execute/Spec.hs#acceptExisting commands refetch and re-decide with fresh state",
+          "expected_examples": 2,
+          "errors": [],
+          "missing_selector_rejected": true,
+          "missing_fixture_rejected": true
+        },
+        {
+          "locator": "hspec:nhcore-test-service:core/testlib/Test/Service/CommandHandler/Execute/Spec.hs#acceptNew commands preserve StreamCreation under a PostgreSQL race",
+          "expected_examples": 2,
+          "errors": [],
+          "missing_selector_rejected": true,
+          "missing_fixture_rejected": true
+        },
+        {
+          "locator": "hspec:nhcore-test-service:core/testlib/Test/Service/CommandHandler/Execute/Spec.hs#acceptAny commands preserve unconditional appends",
+          "expected_examples": 2,
+          "errors": [],
+          "missing_selector_rejected": true,
+          "missing_fixture_rejected": true
+        },
+        {
+          "locator": "hspec:nhcore-test-service:core/testlib/Test/Service/EventStore/OptimisticConcurrency/Spec.hs#will only allow one event to be appended, when two writers try to append at the same time",
+          "expected_examples": 3,
+          "errors": [],
+          "missing_selector_rejected": true,
+          "missing_fixture_rejected": true
+        },
+        {
+          "locator": "hspec:nhcore-test-service:core/testlib/Test/Service/EventStore/OptimisticConcurrency/Spec.hs#allows only one concurrent StreamCreation and persists one creation fact",
+          "expected_examples": 3,
+          "errors": [],
+          "missing_selector_rejected": true,
+          "missing_fixture_rejected": true
+        },
+        {
+          "locator": "hspec:nhcore-test-service:core/testlib/Test/Service/EventStore/OptimisticConcurrency/Spec.hs#persists both AnyStreamState events in durable order",
+          "expected_examples": 3,
+          "errors": [],
+          "missing_selector_rejected": true,
+          "missing_fixture_rejected": true
+        },
+        {
+          "locator": "hspec:nhcore-test-service:core/testlib/Test/Service/EventStore/Subscriptions/Spec.hs#register-first replay overlap is ordered and gap-free after inbox overflow",
+          "expected_examples": 3,
+          "errors": [],
+          "missing_selector_rejected": true,
+          "missing_fixture_rejected": true
+        },
+        {
+          "locator": "hspec:nhcore-test-service:core/testlib/Test/Service/EventStore/Subscriptions/Spec.hs#inclusive start position is consistent across backends",
+          "expected_examples": 3,
+          "errors": [],
+          "missing_selector_rejected": true,
+          "missing_fixture_rejected": true
+        },
+        {
+          "locator": "hspec:nhcore-test-service:core/test/Service/FileUpload/ContentDedupSpec.hs#dedup self-heals a missing Pending blob on re-upload",
+          "expected_examples": 1,
+          "errors": [],
+          "missing_selector_rejected": true,
+          "missing_fixture_rejected": true
+        },
+        {
+          "locator": "hspec:nhcore-test-service:core/test/Service/FileUpload/ContentDedupSpec.hs#dedup self-heals a missing Confirmed blob on re-upload",
+          "expected_examples": 1,
+          "errors": [],
+          "missing_selector_rejected": true,
+          "missing_fixture_rejected": true
+        },
+        {
+          "locator": "hspec:nhcore-test-service:core/test/Service/FileUpload/ContentDedupSpec.hs#dedup self-heal preserves FileRef/blobKey and restores exact content",
+          "expected_examples": 1,
+          "errors": [],
+          "missing_selector_rejected": true,
+          "missing_fixture_rejected": true
+        },
+        {
+          "locator": "hspec:nhcore-test-service:core/test/Service/FileUpload/ContentDedupSpec.hs#dedup self-heals when the existence check errors",
+          "expected_examples": 1,
+          "errors": [],
+          "missing_selector_rejected": true,
+          "missing_fixture_rejected": true
+        },
+        {
+          "locator": "hspec:nhcore-test-service:core/test/Service/FileUpload/ContentDedupSpec.hs#duplicate upload returns same blobKey as original",
+          "expected_examples": 1,
+          "errors": [],
+          "missing_selector_rejected": true,
+          "missing_fixture_rejected": true
+        },
+        {
+          "locator": "hspec:nhcore-test-service:core/test-service/Service/QueryObjectStore/PostgresSpec.hs#state round-trips under the threaded query name",
+          "expected_examples": 1,
+          "errors": [],
+          "missing_selector_rejected": true,
+          "missing_fixture_rejected": true
+        },
+        {
+          "locator": "hspec:nhcore-test-service:core/test-service/Service/QueryObjectStore/PostgresSpec.hs#distinct query names isolate rows for the same instance uuid (#734)",
+          "expected_examples": 1,
+          "errors": [],
+          "missing_selector_rejected": true,
+          "missing_fixture_rejected": true
+        },
+        {
+          "locator": "hspec:nhcore-test-service:core/test-service/Service/QueryObjectStore/PostgresSpec.hs#getAll is scoped to the store's own query name (#734)",
+          "expected_examples": 1,
+          "errors": [],
+          "missing_selector_rejected": true,
+          "missing_fixture_rejected": true
+        },
+        {
+          "locator": "hspec:nhcore-test-service:core/test-service/Service/QueryObjectStore/PostgresSpec.hs#getAll excludes the reserved nil-uuid checkpoint marker row (#734)",
+          "expected_examples": 1,
+          "errors": [],
+          "missing_selector_rejected": true,
+          "missing_fixture_rejected": true
+        },
+        {
+          "locator": "hspec:nhcore-test-service:core/test-service/Service/QueryObjectStore/PostgresSpec.hs#N concurrent read-modify-write increments on one key all apply (#739)",
+          "expected_examples": 1,
+          "errors": [],
+          "missing_selector_rejected": true,
+          "missing_fixture_rejected": true
+        }
+      ]
+    }
+  ]
+}
