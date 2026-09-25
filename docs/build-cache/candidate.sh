@@ -91,7 +91,7 @@ p = Path('core/core/Int.hs')
 s = p.read_text()
 old = 'toInt64 = Prelude.fromIntegral\n'
 assert s.count(old) == 1, 'sibling implementation mutation no longer matches candidate'
-p.write_text(s.replace(old, 'toInt64 value = Prelude.fromIntegral value\n'))
+p.write_text(s.replace(old, 'toInt64 value = value |> Prelude.fromIntegral\n'))
 PY
 git add -- core/core/Int.hs
 GIT_AUTHOR_DATE='2026-09-25T12:05:00Z' GIT_COMMITTER_DATE='2026-09-25T12:05:00Z' \
