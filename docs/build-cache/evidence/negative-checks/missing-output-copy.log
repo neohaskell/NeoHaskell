@@ -1,0 +1,4 @@
+don't know how to build these paths:
+  /nix/store/86xv6cmccp57g7yhhhlfqx5kmraj2k1j-neohaskell-ci-components
+❌ /nix/store/86xv6cmccp57g7yhhhlfqx5kmraj2k1j-neohaskell-ci-components
+error: path '/nix/store/86xv6cmccp57g7yhhhlfqx5kmraj2k1j-neohaskell-ci-components' is required, but there is no substituter that can build it

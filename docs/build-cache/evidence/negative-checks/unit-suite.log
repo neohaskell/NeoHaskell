@@ -1,0 +1,14 @@
+.3 examples, 0 failures
+[33m3 examples, 0 failures[0m
+3 examples, 1 failure
+3 examples, 0 failures
+0 examples, 0 failures
+3 examples, 0 failures, 3 pending
+3 examples, 0 failures, 1 pending
+not an Hspec run
+..nix-components: Command '['nix']' returned non-zero exit status 1.
+....
+----------------------------------------------------------------------
+Ran 7 tests in 0.642s
+
+OK

@@ -1,0 +1,4 @@
+Running NeoHaskell Testbed Tests...
+
+[0;31mError: hurl is not installed[0m
+Please install hurl: https://hurl.dev/docs/installation.html

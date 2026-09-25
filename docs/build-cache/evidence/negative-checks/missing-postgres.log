@@ -1,0 +1,6 @@
+manifest_system=aarch64-darwin
+postgres_host=198.51.100.1
+path_prefix=/nix/store/5a94jp6p7f4mmq3kz24qnvmds81j6y2f-neohaskell-ci-runtime/bin
+198.51.100.1:5432 - no response
+expected_preflight_failure_returncode=2
+expected_preflight_failure_command=['pg_isready', '-h', '198.51.100.1', '-U', 'neohaskell', '-d', 'neohaskell']
