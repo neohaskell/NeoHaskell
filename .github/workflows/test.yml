@@ -1,6 +1,7 @@
 name: "Test"
 
 on:
+  workflow_dispatch:
   pull_request:
     branches:
       - main
@@ -59,7 +60,7 @@ jobs:
           BASE_REF: ${{ github.base_ref }}
         run: |
           set -euo pipefail
-          if [ "$EVENT" = "push" ]; then
+          if [ "$EVENT" = "push" ] || [ "$EVENT" = "workflow_dispatch" ]; then
             echo "compiled=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -80,7 +81,7 @@ jobs:
   build:
     needs: changes
     if: >-
-      (github.event_name == 'push' || github.event.pull_request.draft == false)
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event.pull_request.draft == false)
       && needs.changes.outputs.compiled == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -157,7 +158,7 @@ jobs:
   doctest:
     needs: changes
     if: >-
-      (github.event_name == 'push' || github.event.pull_request.draft == false)
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event.pull_request.draft == false)
       && needs.changes.outputs.compiled == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -232,6 +233,26 @@ jobs:
           path: dist-newstyle
       - name: Run nhcore-test-integration
         run: LOG_LEVEL=Warn nix develop --command cabal test nhcore-test-integration
+
+  test-nhintegrations:
+    needs: [build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: DeterminateSystems/determinate-nix-action@v3.22.2
+        with:
+          extra-conf: |
+            accept-flake-config = true
+            extra-substituters = https://cache.iog.io https://neohaskell.cachix.org
+            extra-trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= neohaskell.cachix.org-1:mo2cLaGbwqbrxs9xhqKK8jeNsn3osi7t6XoAmxSZssc=
+      - uses: DeterminateSystems/magic-nix-cache-action@v14
+      - uses: actions/download-artifact@v8
+        with:
+          name: dist-newstyle
+          path: dist-newstyle
+      - name: Run nhintegrations-test
+        run: LOG_LEVEL=Warn nix develop --command cabal test nhintegrations-test
 
   test-service:
     needs: [build]
@@ -359,7 +380,7 @@ jobs:
   # check, and passes cleanly when there is nothing to check.
   ci-gate:
     if: always()
-    needs: [changes, build, doctest, test-core, test-auth, test-integration, test-service, test-hurl, codemap-sync]
+    needs: [changes, build, doctest, test-core, test-auth, test-integration, test-nhintegrations, test-service, test-hurl, codemap-sync]
     runs-on: ubuntu-latest
     steps:
       - name: Check all tests passed
@@ -389,6 +410,7 @@ jobs:
             "test-core=${{ needs.test-core.result }}"
             "test-auth=${{ needs.test-auth.result }}"
             "test-integration=${{ needs.test-integration.result }}"
+            "test-nhintegrations=${{ needs.test-nhintegrations.result }}"
             "test-service=${{ needs.test-service.result }}"
             "test-hurl=${{ needs.test-hurl.result }}"
             "codemap-sync=${{ needs.codemap-sync.result }}"

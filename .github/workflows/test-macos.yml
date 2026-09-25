@@ -1,6 +1,7 @@
 name: "Test macOS"
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - main
@@ -27,6 +28,8 @@ jobs:
             needs-postgres: false
           - test-suite: nhcore-test-service
             needs-postgres: true
+          - test-suite: nhintegrations-test
+            needs-postgres: false
 
     steps:
       - name: Install current Bash and poppler on macOS
