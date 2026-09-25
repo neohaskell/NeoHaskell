@@ -1,0 +1,521 @@
+{
+  "model": "job API started_at to completed_at; critical span is earliest job start to latest job completion; runner aggregate is sum of job wall durations",
+  "critical_start": "2026-09-25T16:27:18Z",
+  "critical_end": "2026-09-25T16:38:36Z",
+  "critical_span_s": 678.0,
+  "runner_aggregate_s": 2828.0,
+  "jobs": [
+    {
+      "job_id": "108156722685",
+      "name": "tests-macos (nhcore-test-auth, false)",
+      "started_at": "2026-09-25T16:27:22Z",
+      "completed_at": "2026-09-25T16:36:00Z",
+      "seconds": 518.0,
+      "conclusion": "success",
+      "steps": [
+        {
+          "name": "Set up job",
+          "started_at": "2026-09-25T16:27:23Z",
+          "completed_at": "2026-09-25T16:27:27Z",
+          "seconds": 4.0,
+          "conclusion": "success"
+        },
+        {
+          "name": "Install current Bash and poppler on macOS",
+          "started_at": "2026-09-25T16:27:27Z",
+          "completed_at": "2026-09-25T16:27:45Z",
+          "seconds": 18.0,
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/checkout@v7.0.1",
+          "started_at": "2026-09-25T16:27:45Z",
+          "completed_at": "2026-09-25T16:27:49Z",
+          "seconds": 4.0,
+          "conclusion": "success"
+        },
+        {
+          "name": "Run DeterminateSystems/determinate-nix-action@v3.22.2",
+          "started_at": "2026-09-25T16:27:49Z",
+          "completed_at": "2026-09-25T16:29:26Z",
+          "seconds": 97.0,
+          "conclusion": "success"
+        },
+        {
+          "name": "Run DeterminateSystems/magic-nix-cache-action@v14",
+          "started_at": "2026-09-25T16:29:26Z",
+          "completed_at": "2026-09-25T16:29:48Z",
+          "seconds": 22.0,
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/cache@v6.1.0",
+          "started_at": "2026-09-25T16:29:48Z",
+          "completed_at": "2026-09-25T16:29:55Z",
+          "seconds": 7.0,
+          "conclusion": "success"
+        },
+        {
+          "name": "Build the project with cabal",
+          "started_at": "2026-09-25T16:29:55Z",
+          "completed_at": "2026-09-25T16:35:12Z",
+          "seconds": 317.0,
+          "conclusion": "success"
+        },
+        {
+          "name": "Run nhcore-test-auth",
+          "started_at": "2026-09-25T16:35:12Z",
+          "completed_at": "2026-09-25T16:35:49Z",
+          "seconds": 37.0,
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/cache@v6.1.0",
+          "started_at": "2026-09-25T16:35:49Z",
+          "completed_at": "2026-09-25T16:35:50Z",
+          "seconds": 1.0,
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run DeterminateSystems/magic-nix-cache-action@v14",
+          "started_at": "2026-09-25T16:35:50Z",
+          "completed_at": "2026-09-25T16:35:52Z",
+          "seconds": 2.0,
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run DeterminateSystems/determinate-nix-action@v3.22.2",
+          "started_at": "2026-09-25T16:35:52Z",
+          "completed_at": "2026-09-25T16:35:55Z",
+          "seconds": 3.0,
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/checkout@v7.0.1",
+          "started_at": "2026-09-25T16:35:55Z",
+          "completed_at": "2026-09-25T16:35:56Z",
+          "seconds": 1.0,
+          "conclusion": "success"
+        },
+        {
+          "name": "Complete job",
+          "started_at": "2026-09-25T16:35:56Z",
+          "completed_at": "2026-09-25T16:35:58Z",
+          "seconds": 2.0,
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "job_id": "108156722543",
+      "name": "tests-macos (nhcore-test-core, false)",
+      "started_at": "2026-09-25T16:27:21Z",
+      "completed_at": "2026-09-25T16:37:24Z",
+      "seconds": 603.0,
+      "conclusion": "success",
+      "steps": [
+        {
+          "name": "Set up job",
+          "started_at": "2026-09-25T16:27:22Z",
+          "completed_at": "2026-09-25T16:27:25Z",
+          "seconds": 3.0,
+          "conclusion": "success"
+        },
+        {
+          "name": "Install current Bash and poppler on macOS",
+          "started_at": "2026-09-25T16:27:25Z",
+          "completed_at": "2026-09-25T16:27:31Z",
+          "seconds": 6.0,
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/checkout@v7.0.1",
+          "started_at": "2026-09-25T16:27:31Z",
+          "completed_at": "2026-09-25T16:27:33Z",
+          "seconds": 2.0,
+          "conclusion": "success"
+        },
+        {
+          "name": "Run DeterminateSystems/determinate-nix-action@v3.22.2",
+          "started_at": "2026-09-25T16:27:33Z",
+          "completed_at": "2026-09-25T16:28:56Z",
+          "seconds": 83.0,
+          "conclusion": "success"
+        },
+        {
+          "name": "Run DeterminateSystems/magic-nix-cache-action@v14",
+          "started_at": "2026-09-25T16:28:56Z",
+          "completed_at": "2026-09-25T16:29:12Z",
+          "seconds": 16.0,
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/cache@v6.1.0",
+          "started_at": "2026-09-25T16:29:12Z",
+          "completed_at": "2026-09-25T16:29:20Z",
+          "seconds": 8.0,
+          "conclusion": "success"
+        },
+        {
+          "name": "Build the project with cabal",
+          "started_at": "2026-09-25T16:29:20Z",
+          "completed_at": "2026-09-25T16:34:42Z",
+          "seconds": 322.0,
+          "conclusion": "success"
+        },
+        {
+          "name": "Run nhcore-test-core",
+          "started_at": "2026-09-25T16:34:42Z",
+          "completed_at": "2026-09-25T16:37:12Z",
+          "seconds": 150.0,
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/cache@v6.1.0",
+          "started_at": "2026-09-25T16:37:12Z",
+          "completed_at": "2026-09-25T16:37:14Z",
+          "seconds": 2.0,
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run DeterminateSystems/magic-nix-cache-action@v14",
+          "started_at": "2026-09-25T16:37:14Z",
+          "completed_at": "2026-09-25T16:37:16Z",
+          "seconds": 2.0,
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run DeterminateSystems/determinate-nix-action@v3.22.2",
+          "started_at": "2026-09-25T16:37:16Z",
+          "completed_at": "2026-09-25T16:37:19Z",
+          "seconds": 3.0,
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/checkout@v7.0.1",
+          "started_at": "2026-09-25T16:37:19Z",
+          "completed_at": "2026-09-25T16:37:19Z",
+          "seconds": 0.0,
+          "conclusion": "success"
+        },
+        {
+          "name": "Complete job",
+          "started_at": "2026-09-25T16:37:19Z",
+          "completed_at": "2026-09-25T16:37:22Z",
+          "seconds": 3.0,
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "job_id": "108156722782",
+      "name": "tests-macos (nhcore-test-integration, false)",
+      "started_at": "2026-09-25T16:27:18Z",
+      "completed_at": "2026-09-25T16:33:57Z",
+      "seconds": 399.0,
+      "conclusion": "success",
+      "steps": [
+        {
+          "name": "Set up job",
+          "started_at": "2026-09-25T16:27:19Z",
+          "completed_at": "2026-09-25T16:27:21Z",
+          "seconds": 2.0,
+          "conclusion": "success"
+        },
+        {
+          "name": "Install current Bash and poppler on macOS",
+          "started_at": "2026-09-25T16:27:21Z",
+          "completed_at": "2026-09-25T16:27:26Z",
+          "seconds": 5.0,
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/checkout@v7.0.1",
+          "started_at": "2026-09-25T16:27:26Z",
+          "completed_at": "2026-09-25T16:27:28Z",
+          "seconds": 2.0,
+          "conclusion": "success"
+        },
+        {
+          "name": "Run DeterminateSystems/determinate-nix-action@v3.22.2",
+          "started_at": "2026-09-25T16:27:28Z",
+          "completed_at": "2026-09-25T16:28:51Z",
+          "seconds": 83.0,
+          "conclusion": "success"
+        },
+        {
+          "name": "Run DeterminateSystems/magic-nix-cache-action@v14",
+          "started_at": "2026-09-25T16:28:51Z",
+          "completed_at": "2026-09-25T16:29:06Z",
+          "seconds": 15.0,
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/cache@v6.1.0",
+          "started_at": "2026-09-25T16:29:06Z",
+          "completed_at": "2026-09-25T16:29:11Z",
+          "seconds": 5.0,
+          "conclusion": "success"
+        },
+        {
+          "name": "Build the project with cabal",
+          "started_at": "2026-09-25T16:29:11Z",
+          "completed_at": "2026-09-25T16:33:08Z",
+          "seconds": 237.0,
+          "conclusion": "success"
+        },
+        {
+          "name": "Run nhcore-test-integration",
+          "started_at": "2026-09-25T16:33:08Z",
+          "completed_at": "2026-09-25T16:33:48Z",
+          "seconds": 40.0,
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/cache@v6.1.0",
+          "started_at": "2026-09-25T16:33:48Z",
+          "completed_at": "2026-09-25T16:33:49Z",
+          "seconds": 1.0,
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run DeterminateSystems/magic-nix-cache-action@v14",
+          "started_at": "2026-09-25T16:33:49Z",
+          "completed_at": "2026-09-25T16:33:50Z",
+          "seconds": 1.0,
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run DeterminateSystems/determinate-nix-action@v3.22.2",
+          "started_at": "2026-09-25T16:33:50Z",
+          "completed_at": "2026-09-25T16:33:52Z",
+          "seconds": 2.0,
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/checkout@v7.0.1",
+          "started_at": "2026-09-25T16:33:52Z",
+          "completed_at": "2026-09-25T16:33:53Z",
+          "seconds": 1.0,
+          "conclusion": "success"
+        },
+        {
+          "name": "Complete job",
+          "started_at": "2026-09-25T16:33:53Z",
+          "completed_at": "2026-09-25T16:33:55Z",
+          "seconds": 2.0,
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "job_id": "108156722712",
+      "name": "tests-macos (nhcore-test-service, true)",
+      "started_at": "2026-09-25T16:27:19Z",
+      "completed_at": "2026-09-25T16:38:36Z",
+      "seconds": 677.0,
+      "conclusion": "success",
+      "steps": [
+        {
+          "name": "Set up job",
+          "started_at": "2026-09-25T16:27:20Z",
+          "completed_at": "2026-09-25T16:27:23Z",
+          "seconds": 3.0,
+          "conclusion": "success"
+        },
+        {
+          "name": "Install current Bash and poppler on macOS",
+          "started_at": "2026-09-25T16:27:23Z",
+          "completed_at": "2026-09-25T16:27:30Z",
+          "seconds": 7.0,
+          "conclusion": "success"
+        },
+        {
+          "name": "Start PostgreSQL fixture with password authentication",
+          "started_at": "2026-09-25T16:27:30Z",
+          "completed_at": "2026-09-25T16:27:37Z",
+          "seconds": 7.0,
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/checkout@v7.0.1",
+          "started_at": "2026-09-25T16:27:37Z",
+          "completed_at": "2026-09-25T16:27:40Z",
+          "seconds": 3.0,
+          "conclusion": "success"
+        },
+        {
+          "name": "Run DeterminateSystems/determinate-nix-action@v3.22.2",
+          "started_at": "2026-09-25T16:27:40Z",
+          "completed_at": "2026-09-25T16:29:06Z",
+          "seconds": 86.0,
+          "conclusion": "success"
+        },
+        {
+          "name": "Run DeterminateSystems/magic-nix-cache-action@v14",
+          "started_at": "2026-09-25T16:29:06Z",
+          "completed_at": "2026-09-25T16:29:23Z",
+          "seconds": 17.0,
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/cache@v6.1.0",
+          "started_at": "2026-09-25T16:29:23Z",
+          "completed_at": "2026-09-25T16:29:30Z",
+          "seconds": 7.0,
+          "conclusion": "success"
+        },
+        {
+          "name": "Build the project with cabal",
+          "started_at": "2026-09-25T16:29:30Z",
+          "completed_at": "2026-09-25T16:35:17Z",
+          "seconds": 347.0,
+          "conclusion": "success"
+        },
+        {
+          "name": "Run nhcore-test-service",
+          "started_at": "2026-09-25T16:35:17Z",
+          "completed_at": "2026-09-25T16:38:23Z",
+          "seconds": 186.0,
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/cache@v6.1.0",
+          "started_at": "2026-09-25T16:38:23Z",
+          "completed_at": "2026-09-25T16:38:25Z",
+          "seconds": 2.0,
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run DeterminateSystems/magic-nix-cache-action@v14",
+          "started_at": "2026-09-25T16:38:25Z",
+          "completed_at": "2026-09-25T16:38:27Z",
+          "seconds": 2.0,
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run DeterminateSystems/determinate-nix-action@v3.22.2",
+          "started_at": "2026-09-25T16:38:27Z",
+          "completed_at": "2026-09-25T16:38:30Z",
+          "seconds": 3.0,
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/checkout@v7.0.1",
+          "started_at": "2026-09-25T16:38:30Z",
+          "completed_at": "2026-09-25T16:38:31Z",
+          "seconds": 1.0,
+          "conclusion": "success"
+        },
+        {
+          "name": "Complete job",
+          "started_at": "2026-09-25T16:38:31Z",
+          "completed_at": "2026-09-25T16:38:34Z",
+          "seconds": 3.0,
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "job_id": "108156722771",
+      "name": "tests-macos (nhintegrations-test, false)",
+      "started_at": "2026-09-25T16:27:22Z",
+      "completed_at": "2026-09-25T16:37:53Z",
+      "seconds": 631.0,
+      "conclusion": "success",
+      "steps": [
+        {
+          "name": "Set up job",
+          "started_at": "2026-09-25T16:27:23Z",
+          "completed_at": "2026-09-25T16:27:25Z",
+          "seconds": 2.0,
+          "conclusion": "success"
+        },
+        {
+          "name": "Install current Bash and poppler on macOS",
+          "started_at": "2026-09-25T16:27:25Z",
+          "completed_at": "2026-09-25T16:27:36Z",
+          "seconds": 11.0,
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/checkout@v7.0.1",
+          "started_at": "2026-09-25T16:27:36Z",
+          "completed_at": "2026-09-25T16:27:39Z",
+          "seconds": 3.0,
+          "conclusion": "success"
+        },
+        {
+          "name": "Run DeterminateSystems/determinate-nix-action@v3.22.2",
+          "started_at": "2026-09-25T16:27:39Z",
+          "completed_at": "2026-09-25T16:29:12Z",
+          "seconds": 93.0,
+          "conclusion": "success"
+        },
+        {
+          "name": "Run DeterminateSystems/magic-nix-cache-action@v14",
+          "started_at": "2026-09-25T16:29:12Z",
+          "completed_at": "2026-09-25T16:29:34Z",
+          "seconds": 22.0,
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/cache@v6.1.0",
+          "started_at": "2026-09-25T16:29:34Z",
+          "completed_at": "2026-09-25T16:29:42Z",
+          "seconds": 8.0,
+          "conclusion": "success"
+        },
+        {
+          "name": "Build the project with cabal",
+          "started_at": "2026-09-25T16:29:42Z",
+          "completed_at": "2026-09-25T16:36:01Z",
+          "seconds": 379.0,
+          "conclusion": "success"
+        },
+        {
+          "name": "Run nhintegrations-test",
+          "started_at": "2026-09-25T16:36:01Z",
+          "completed_at": "2026-09-25T16:37:41Z",
+          "seconds": 100.0,
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/cache@v6.1.0",
+          "started_at": "2026-09-25T16:37:41Z",
+          "completed_at": "2026-09-25T16:37:43Z",
+          "seconds": 2.0,
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run DeterminateSystems/magic-nix-cache-action@v14",
+          "started_at": "2026-09-25T16:37:43Z",
+          "completed_at": "2026-09-25T16:37:44Z",
+          "seconds": 1.0,
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run DeterminateSystems/determinate-nix-action@v3.22.2",
+          "started_at": "2026-09-25T16:37:44Z",
+          "completed_at": "2026-09-25T16:37:47Z",
+          "seconds": 3.0,
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/checkout@v7.0.1",
+          "started_at": "2026-09-25T16:37:47Z",
+          "completed_at": "2026-09-25T16:37:48Z",
+          "seconds": 1.0,
+          "conclusion": "success"
+        },
+        {
+          "name": "Complete job",
+          "started_at": "2026-09-25T16:37:48Z",
+          "completed_at": "2026-09-25T16:37:50Z",
+          "seconds": 2.0,
+          "conclusion": "success"
+        }
+      ]
+    }
+  ]
+}

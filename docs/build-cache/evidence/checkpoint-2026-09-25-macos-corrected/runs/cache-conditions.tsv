@@ -1,0 +1,5 @@
+source	copied_paths
+http://127.0.0.1:37515	509
+https://cache.iog.io	3852
+https://cache.nixos.org	3238
+https://neohaskell.cachix.org	836

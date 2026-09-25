@@ -1,0 +1,97 @@
+Run: 36160842540
+Revision: 65b227dde4d81a9c539364cebee3032e552b1de5
+Job: 108156722712 (nhcore-test-service, true)
+Raw log: logs/108156722712.log
+
+100:tests-macos (nhcore-test-service, true)	Start PostgreSQL fixture with password authentication	﻿2026-09-25T16:27:30.7820560Z ##[group]Run set -euo pipefail
+101:tests-macos (nhcore-test-service, true)	Start PostgreSQL fixture with password authentication	2026-09-25T16:27:30.7820970Z ^[[36;1mset -euo pipefail^[[0m
+102:tests-macos (nhcore-test-service, true)	Start PostgreSQL fixture with password authentication	2026-09-25T16:27:30.7821260Z ^[[36;1mbrew install postgresql@16^[[0m
+103:tests-macos (nhcore-test-service, true)	Start PostgreSQL fixture with password authentication	2026-09-25T16:27:30.7821450Z ^[[36;1m^[[0m
+104:tests-macos (nhcore-test-service, true)	Start PostgreSQL fixture with password authentication	2026-09-25T16:27:30.7821640Z ^[[36;1m# Add PostgreSQL to PATH (keg-only formula)^[[0m
+105:tests-macos (nhcore-test-service, true)	Start PostgreSQL fixture with password authentication	2026-09-25T16:27:30.7822000Z ^[[36;1mecho "/opt/homebrew/opt/postgresql@16/bin" >> $GITHUB_PATH^[[0m
+106:tests-macos (nhcore-test-service, true)	Start PostgreSQL fixture with password authentication	2026-09-25T16:27:30.7822460Z ^[[36;1mexport PATH="/opt/homebrew/opt/postgresql@16/bin:$PATH"^[[0m
+107:tests-macos (nhcore-test-service, true)	Start PostgreSQL fixture with password authentication	2026-09-25T16:27:30.7822860Z ^[[36;1m^[[0m
+108:tests-macos (nhcore-test-service, true)	Start PostgreSQL fixture with password authentication	2026-09-25T16:27:30.7823180Z ^[[36;1mpg_bin="/opt/homebrew/opt/postgresql@16/bin"^[[0m
+109:tests-macos (nhcore-test-service, true)	Start PostgreSQL fixture with password authentication	2026-09-25T16:27:30.7823510Z ^[[36;1m"$pg_bin/initdb" -D "$RUNNER_TEMP/nh-postgres" -U neohaskell \^[[0m
+110:tests-macos (nhcore-test-service, true)	Start PostgreSQL fixture with password authentication	2026-09-25T16:27:30.7824080Z ^[[36;1m  --auth-local=trust --auth-host=scram-sha-256 \^[[0m
+111:tests-macos (nhcore-test-service, true)	Start PostgreSQL fixture with password authentication	2026-09-25T16:27:30.7824530Z ^[[36;1m  --pwfile=<(printf '%s\n' neohaskell)^[[0m
+112:tests-macos (nhcore-test-service, true)	Start PostgreSQL fixture with password authentication	2026-09-25T16:27:30.7825010Z ^[[36;1m"$pg_bin/pg_ctl" -D "$RUNNER_TEMP/nh-postgres" -l "$RUNNER_TEMP/postgres.log" \^[[0m
+113:tests-macos (nhcore-test-service, true)	Start PostgreSQL fixture with password authentication	2026-09-25T16:27:30.7825860Z ^[[36;1m  -o "-h 127.0.0.1 -p 5432 -k $RUNNER_TEMP -c max_connections=200" -w start^[[0m
+114:tests-macos (nhcore-test-service, true)	Start PostgreSQL fixture with password authentication	2026-09-25T16:27:30.7826350Z ^[[36;1m"$pg_bin/createdb" -h 127.0.0.1 -U neohaskell neohaskell^[[0m
+115:tests-macos (nhcore-test-service, true)	Start PostgreSQL fixture with password authentication	2026-09-25T16:27:30.7841100Z shell: /opt/homebrew/bin/bash -e {0}
+116:tests-macos (nhcore-test-service, true)	Start PostgreSQL fixture with password authentication	2026-09-25T16:27:30.7841300Z env:
+117:tests-macos (nhcore-test-service, true)	Start PostgreSQL fixture with password authentication	2026-09-25T16:27:30.7841520Z   PGPASSWORD: neohaskell
+118:tests-macos (nhcore-test-service, true)	Start PostgreSQL fixture with password authentication	2026-09-25T16:27:30.7841760Z ##[endgroup]
+119:tests-macos (nhcore-test-service, true)	Start PostgreSQL fixture with password authentication	2026-09-25T16:27:31.2912960Z ^[[32m==>^[[0m ^[[1mDownloading bottle manifests^[[0m
+120:tests-macos (nhcore-test-service, true)	Start PostgreSQL fixture with password authentication	2026-09-25T16:27:31.5622460Z ✔︎ Bottle Manifest postgresql@16 (16.15)
+121:tests-macos (nhcore-test-service, true)	Start PostgreSQL fixture with password authentication	2026-09-25T16:27:31.5623710Z ^[[34m==>^[[0m ^[[1mWould install 1 formula:^[[0m
+122:tests-macos (nhcore-test-service, true)	Start PostgreSQL fixture with password authentication	2026-09-25T16:27:31.5624250Z postgresql@16
+123:tests-macos (nhcore-test-service, true)	Start PostgreSQL fixture with password authentication	2026-09-25T16:27:31.6404910Z ^[[32m==>^[[0m ^[[1mFetching downloads for: ^[[32mpostgresql@16^[[39m^[[0m
+124:tests-macos (nhcore-test-service, true)	Start PostgreSQL fixture with password authentication	2026-09-25T16:27:32.7623620Z ✔︎ Bottle postgresql@16 (16.15)
+125:tests-macos (nhcore-test-service, true)	Start PostgreSQL fixture with password authentication	2026-09-25T16:27:32.7855160Z ^[[34m==>^[[0m ^[[1mPouring postgresql@16--16.15.arm64_tahoe.bottle.tar.gz^[[0m
+126:tests-macos (nhcore-test-service, true)	Start PostgreSQL fixture with password authentication	2026-09-25T16:27:35.4477050Z The files belonging to this database system will be owned by user "runner".
+127:tests-macos (nhcore-test-service, true)	Start PostgreSQL fixture with password authentication	2026-09-25T16:27:35.4480370Z This user must also own the server process.
+128:tests-macos (nhcore-test-service, true)	Start PostgreSQL fixture with password authentication	2026-09-25T16:27:35.4482950Z 
+129:tests-macos (nhcore-test-service, true)	Start PostgreSQL fixture with password authentication	2026-09-25T16:27:35.4483790Z The database cluster will be initialized with locale "en_US.UTF-8".
+130:tests-macos (nhcore-test-service, true)	Start PostgreSQL fixture with password authentication	2026-09-25T16:27:35.4484440Z The default text search configuration will be set to "english".
+131:tests-macos (nhcore-test-service, true)	Start PostgreSQL fixture with password authentication	2026-09-25T16:27:35.4485340Z 
+132:tests-macos (nhcore-test-service, true)	Start PostgreSQL fixture with password authentication	2026-09-25T16:27:35.4485640Z Data page checksums are disabled.
+133:tests-macos (nhcore-test-service, true)	Start PostgreSQL fixture with password authentication	2026-09-25T16:27:35.4485930Z 
+134:tests-macos (nhcore-test-service, true)	Start PostgreSQL fixture with password authentication	2026-09-25T16:27:35.4486350Z fixing permissions on existing directory /opt/homebrew/var/postgresql@16 ... ok
+135:tests-macos (nhcore-test-service, true)	Start PostgreSQL fixture with password authentication	2026-09-25T16:27:35.4499350Z creating subdirectories ... ok
+136:tests-macos (nhcore-test-service, true)	Start PostgreSQL fixture with password authentication	2026-09-25T16:27:35.4504080Z selecting dynamic shared memory implementation ... posix
+137:tests-macos (nhcore-test-service, true)	Start PostgreSQL fixture with password authentication	2026-09-25T16:27:35.5160570Z selecting default max_connections ... 100
+138:tests-macos (nhcore-test-service, true)	Start PostgreSQL fixture with password authentication	2026-09-25T16:27:35.5415810Z selecting default shared_buffers ... 128MB
+139:tests-macos (nhcore-test-service, true)	Start PostgreSQL fixture with password authentication	2026-09-25T16:27:35.5451010Z selecting default time zone ... UTC
+140:tests-macos (nhcore-test-service, true)	Start PostgreSQL fixture with password authentication	2026-09-25T16:27:35.5465770Z creating configuration files ... ok
+141:tests-macos (nhcore-test-service, true)	Start PostgreSQL fixture with password authentication	2026-09-25T16:27:35.7513600Z running bootstrap script ... ok
+142:tests-macos (nhcore-test-service, true)	Start PostgreSQL fixture with password authentication	2026-09-25T16:27:36.3451710Z performing post-bootstrap initialization ... ok
+143:tests-macos (nhcore-test-service, true)	Start PostgreSQL fixture with password authentication	2026-09-25T16:27:36.3578580Z syncing data to disk ... ok
+144:tests-macos (nhcore-test-service, true)	Start PostgreSQL fixture with password authentication	2026-09-25T16:27:36.3580560Z 
+145:tests-macos (nhcore-test-service, true)	Start PostgreSQL fixture with password authentication	2026-09-25T16:27:36.3581160Z 
+146:tests-macos (nhcore-test-service, true)	Start PostgreSQL fixture with password authentication	2026-09-25T16:27:36.3581770Z Success. You can now start the database server using:
+147:tests-macos (nhcore-test-service, true)	Start PostgreSQL fixture with password authentication	2026-09-25T16:27:36.3582540Z 
+148:tests-macos (nhcore-test-service, true)	Start PostgreSQL fixture with password authentication	2026-09-25T16:27:36.3582960Z     '/opt/homebrew/Cellar/postgresql@16/16.15/bin/pg_ctl' -D '/opt/homebrew/var/postgresql@16' -l logfile start
+149:tests-macos (nhcore-test-service, true)	Start PostgreSQL fixture with password authentication	2026-09-25T16:27:36.3583310Z 
+150:tests-macos (nhcore-test-service, true)	Start PostgreSQL fixture with password authentication	2026-09-25T16:27:36.3583550Z initdb: warning: enabling "trust" authentication for local connections
+151:tests-macos (nhcore-test-service, true)	Start PostgreSQL fixture with password authentication	2026-09-25T16:27:36.3584300Z initdb: hint: You can change this by editing pg_hba.conf or using the option -A, or --auth-local and --auth-host, the next time you run initdb.
+152:tests-macos (nhcore-test-service, true)	Start PostgreSQL fixture with password authentication	2026-09-25T16:27:36.9450030Z 🍺  /opt/homebrew/Cellar/postgresql@16/16.15: 3,818 files, 72MB
+153:tests-macos (nhcore-test-service, true)	Start PostgreSQL fixture with password authentication	2026-09-25T16:27:36.9454720Z ^[[32m==>^[[0m ^[[1mCaveats^[[0m
+154:tests-macos (nhcore-test-service, true)	Start PostgreSQL fixture with password authentication	2026-09-25T16:27:36.9455680Z ^[[34m==>^[[0m ^[[1mpostgresql@16^[[0m
+155:tests-macos (nhcore-test-service, true)	Start PostgreSQL fixture with password authentication	2026-09-25T16:27:36.9456640Z This formula has created a default database cluster with:
+156:tests-macos (nhcore-test-service, true)	Start PostgreSQL fixture with password authentication	2026-09-25T16:27:36.9460520Z   initdb --locale=en_US.UTF-8 -E UTF-8 /opt/homebrew/var/postgresql@16
+157:tests-macos (nhcore-test-service, true)	Start PostgreSQL fixture with password authentication	2026-09-25T16:27:36.9461280Z 
+158:tests-macos (nhcore-test-service, true)	Start PostgreSQL fixture with password authentication	2026-09-25T16:27:36.9461840Z To start postgresql@16 now and restart at login:
+159:tests-macos (nhcore-test-service, true)	Start PostgreSQL fixture with password authentication	2026-09-25T16:27:36.9462610Z   brew services start postgresql@16
+160:tests-macos (nhcore-test-service, true)	Start PostgreSQL fixture with password authentication	2026-09-25T16:27:36.9463570Z Or, if you don't want/need a background service you can just run:
+161:tests-macos (nhcore-test-service, true)	Start PostgreSQL fixture with password authentication	2026-09-25T16:27:36.9464930Z   LC_ALL="en_US.UTF-8" /opt/homebrew/opt/postgresql@16/bin/postgres -D /opt/homebrew/var/postgresql@16
+162:tests-macos (nhcore-test-service, true)	Start PostgreSQL fixture with password authentication	2026-09-25T16:27:36.9860800Z The files belonging to this database system will be owned by user "runner".
+163:tests-macos (nhcore-test-service, true)	Start PostgreSQL fixture with password authentication	2026-09-25T16:27:36.9861490Z This user must also own the server process.
+164:tests-macos (nhcore-test-service, true)	Start PostgreSQL fixture with password authentication	2026-09-25T16:27:36.9861800Z 
+165:tests-macos (nhcore-test-service, true)	Start PostgreSQL fixture with password authentication	2026-09-25T16:27:36.9861990Z The database cluster will be initialized with locale "en_US.UTF-8".
+166:tests-macos (nhcore-test-service, true)	Start PostgreSQL fixture with password authentication	2026-09-25T16:27:36.9862500Z The default database encoding has accordingly been set to "UTF8".
+167:tests-macos (nhcore-test-service, true)	Start PostgreSQL fixture with password authentication	2026-09-25T16:27:36.9871200Z The default text search configuration will be set to "english".
+168:tests-macos (nhcore-test-service, true)	Start PostgreSQL fixture with password authentication	2026-09-25T16:27:36.9871910Z 
+169:tests-macos (nhcore-test-service, true)	Start PostgreSQL fixture with password authentication	2026-09-25T16:27:36.9872250Z Data page checksums are disabled.
+170:tests-macos (nhcore-test-service, true)	Start PostgreSQL fixture with password authentication	2026-09-25T16:27:36.9872810Z 
+171:tests-macos (nhcore-test-service, true)	Start PostgreSQL fixture with password authentication	2026-09-25T16:27:36.9873520Z creating directory /Users/runner/work/_temp/nh-postgres ... ok
+172:tests-macos (nhcore-test-service, true)	Start PostgreSQL fixture with password authentication	2026-09-25T16:27:36.9874350Z creating subdirectories ... ok
+173:tests-macos (nhcore-test-service, true)	Start PostgreSQL fixture with password authentication	2026-09-25T16:27:36.9875650Z selecting dynamic shared memory implementation ... posix
+174:tests-macos (nhcore-test-service, true)	Start PostgreSQL fixture with password authentication	2026-09-25T16:27:37.0096100Z selecting default max_connections ... 100
+175:tests-macos (nhcore-test-service, true)	Start PostgreSQL fixture with password authentication	2026-09-25T16:27:37.0429350Z selecting default shared_buffers ... 128MB
+176:tests-macos (nhcore-test-service, true)	Start PostgreSQL fixture with password authentication	2026-09-25T16:27:37.0451680Z selecting default time zone ... UTC
+177:tests-macos (nhcore-test-service, true)	Start PostgreSQL fixture with password authentication	2026-09-25T16:27:37.0464000Z creating configuration files ... ok
+178:tests-macos (nhcore-test-service, true)	Start PostgreSQL fixture with password authentication	2026-09-25T16:27:37.2335890Z running bootstrap script ... ok
+179:tests-macos (nhcore-test-service, true)	Start PostgreSQL fixture with password authentication	2026-09-25T16:27:37.6608680Z performing post-bootstrap initialization ... ok
+180:tests-macos (nhcore-test-service, true)	Start PostgreSQL fixture with password authentication	2026-09-25T16:27:37.6726500Z syncing data to disk ... ok
+181:tests-macos (nhcore-test-service, true)	Start PostgreSQL fixture with password authentication	2026-09-25T16:27:37.6726990Z 
+182:tests-macos (nhcore-test-service, true)	Start PostgreSQL fixture with password authentication	2026-09-25T16:27:37.6727310Z Success. You can now start the database server using:
+183:tests-macos (nhcore-test-service, true)	Start PostgreSQL fixture with password authentication	2026-09-25T16:27:37.6728560Z 
+184:tests-macos (nhcore-test-service, true)	Start PostgreSQL fixture with password authentication	2026-09-25T16:27:37.6728940Z     '/opt/homebrew/opt/postgresql@16/bin/pg_ctl' -D /Users/runner/work/_temp/nh-postgres -l logfile start
+185:tests-macos (nhcore-test-service, true)	Start PostgreSQL fixture with password authentication	2026-09-25T16:27:37.6729300Z 
+186:tests-macos (nhcore-test-service, true)	Start PostgreSQL fixture with password authentication	2026-09-25T16:27:37.8590410Z waiting for server to start.... done
+187:tests-macos (nhcore-test-service, true)	Start PostgreSQL fixture with password authentication	2026-09-25T16:27:37.8591830Z server started
+2200:tests-macos (nhcore-test-service, true)	Run nhcore-test-service	2026-09-25T16:35:18.0245130Z   POSTGRES_AVAILABLE: true
+4109:tests-macos (nhcore-test-service, true)	Run nhcore-test-service	2026-09-25T16:38:16.9850860Z     fails with ConnectionFailed if credentials are invalid [^[[32m✔^[[0m]
+4333:tests-macos (nhcore-test-service, true)	Run nhcore-test-service	2026-09-25T16:38:23.8491160Z ^[[33m1128 examples, 0 failures, 57 pending^[[0m
+4334:tests-macos (nhcore-test-service, true)	Run nhcore-test-service	2026-09-25T16:38:23.8863710Z Test suite nhcore-test-service: PASS

@@ -1,0 +1,36 @@
+HEAD=65b227dde4d81a9c539364cebee3032e552b1de5
+STATUS:
+## experiment/pr-899-cabal-baseline
+SOURCE core/test-service/Service/QueryObjectStore/PostgresSpec.hs lines 119-138:
+   119	    it "fails with ConnectionFailed if database is unreachable" \_ -> do
+   120	      let badConfig = testConfig { host = "unreachable.invalid", port = 9999 }
+   121	      result <-
+   122	        mkStore badConfig
+   123	          |> Task.asResult
+   124	      case result of
+   125	        Err (ConnectionFailed _) -> pass
+   126	        Err other -> fail [fmt|Expected ConnectionFailed but got: #{toText (show other)}|]
+   127	        Ok _ -> fail "Expected failure but got success"
+   128	
+   129	    it "fails with ConnectionFailed if credentials are invalid" \_ -> do
+   130	      let badConfig = testConfig { password = "wrong_password_xyz" }
+   131	      result <-
+   132	        mkStore badConfig
+   133	          |> Task.asResult
+   134	      case result of
+   135	        Err (ConnectionFailed _) -> pass
+   136	        Err other -> fail [fmt|Expected ConnectionFailed but got: #{toText (show other)}|]
+   137	        Ok _ -> fail "Expected failure but got success"
+   138	
+
+Config source lines 21-30:
+    21	-- | Standard test config pointing at the local Postgres instance.
+    22	testConfig :: PostgresQueryObjectStoreConfig
+    23	testConfig =
+    24	  def
+    25	    { host = "localhost"
+    26	    , databaseName = "neohaskell"
+    27	    , user = "neohaskell"
+    28	    , password = "neohaskell"
+    29	    , port = 5432
+    30	    }

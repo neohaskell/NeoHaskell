@@ -1,0 +1,81 @@
+name: "Test macOS"
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "core/**"
+      - "nix/**"
+
+jobs:
+  tests-macos:
+    runs-on: macos-latest
+    permissions:
+      id-token: write
+      contents: read
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - test-suite: nhcore-test-auth
+            needs-postgres: false
+          - test-suite: nhcore-test-core
+            needs-postgres: false
+          - test-suite: nhcore-test-integration
+            needs-postgres: false
+          - test-suite: nhcore-test-service
+            needs-postgres: true
+          - test-suite: nhintegrations-test
+            needs-postgres: false
+
+    steps:
+      - name: Install current Bash and poppler on macOS
+        run: brew install bash poppler
+
+      - name: Start PostgreSQL fixture with password authentication
+        if: matrix.needs-postgres
+        env:
+          PGPASSWORD: neohaskell
+        run: |
+          set -euo pipefail
+          brew install postgresql@16
+
+          # Add PostgreSQL to PATH (keg-only formula)
+          echo "/opt/homebrew/opt/postgresql@16/bin" >> $GITHUB_PATH
+          export PATH="/opt/homebrew/opt/postgresql@16/bin:$PATH"
+
+          pg_bin="/opt/homebrew/opt/postgresql@16/bin"
+          "$pg_bin/initdb" -D "$RUNNER_TEMP/nh-postgres" -U neohaskell \
+            --auth-local=trust --auth-host=scram-sha-256 \
+            --pwfile=<(printf '%s\n' neohaskell)
+          "$pg_bin/pg_ctl" -D "$RUNNER_TEMP/nh-postgres" -l "$RUNNER_TEMP/postgres.log" \
+            -o "-h 127.0.0.1 -p 5432 -k $RUNNER_TEMP -c max_connections=200" -w start
+          "$pg_bin/createdb" -h 127.0.0.1 -U neohaskell neohaskell
+
+      - uses: actions/checkout@v7.0.1
+
+      - uses: DeterminateSystems/determinate-nix-action@v3.22.2
+        with:
+          extra-conf: |
+            accept-flake-config = true
+            extra-substituters = https://cache.iog.io https://neohaskell.cachix.org
+            extra-trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= neohaskell.cachix.org-1:mo2cLaGbwqbrxs9xhqKK8jeNsn3osi7t6XoAmxSZssc=
+
+      - uses: DeterminateSystems/magic-nix-cache-action@v14
+      - uses: actions/cache@v6.1.0
+        with:
+          path: dist-newstyle
+          key: ${{ runner.os }}-cabal-${{ hashFiles('**/*.cabal', 'cabal.project') }}
+          restore-keys: |
+            ${{ runner.os }}-cabal-
+
+      - name: Build the project with cabal
+        run: nix develop --command cabal build all --disable-documentation
+
+      - name: Run ${{ matrix.test-suite }}
+        env:
+          POSTGRES_AVAILABLE: ${{ matrix.needs-postgres && 'true' || '' }}
+        run: nix develop --command cabal test ${{ matrix.test-suite }}

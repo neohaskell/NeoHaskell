@@ -1,0 +1,33 @@
+{
+  "workflow_source": {
+    "sha256": "d93af2a77ea15c4c9942daa4c6df66f55c0fd4b6921e90256e5d78260a36e6f0",
+    "configured_extra_substituters": [
+      "https://cache.iog.io",
+      "https://neohaskell.cachix.org"
+    ],
+    "nix_builtin_substituter": "https://cache.nixos.org",
+    "cabal_actions_cache_path": "dist-newstyle",
+    "cabal_actions_cache_key": "${{ runner.os }}-cabal-${{ hashFiles('**/*.cabal', 'cabal.project') }}",
+    "cabal_cache_restore": "${{ runner.os }}-cabal-"
+  },
+  "per_job_cache_hit_counts": {
+    "determinatesystem-nix-installer-aarch64-darwin-1942e791b2848fa137c7b96f9f056915": 5,
+    "determinatesystem-magic-nix-cache-ARM64-macOS-580a0a1d2284d0f1bb37d01798d0a1c5": 5,
+    "macOS-cabal-f8d4e222566feb5efe3a93dcdefb1ee6012b76dd73e787dd70f49b6f980d0db3": 5
+  },
+  "cache_restore_counts": {
+    "macOS-cabal-f8d4e222566feb5efe3a93dcdefb1ee6012b76dd73e787dd70f49b6f980d0db3": 5
+  },
+  "copied_paths_by_source": {
+    "http://127.0.0.1:37515": 509,
+    "https://neohaskell.cachix.org": 836,
+    "https://cache.iog.io": 3852,
+    "https://cache.nixos.org": 3238
+  },
+  "http_418_count": 307,
+  "disabled_local_proxy_count": 156,
+  "flakehub_login_failure_count": 5,
+  "flakehub_unauthenticated_count": 5,
+  "interpretation": "Every job hit the Determinate installer cache, Magic Nix Cache runner cache, and macOS-cabal actions/cache key. Build logs also show the local Magic Nix Cache proxy at 127.0.0.1:37515 returning HTTP 418/disabled while GitHub Actions Cache was throttled (recorded below), followed by successful copies from configured upstream substituters. FlakeHub login/auth warnings were present; they did not fail these builds and are recorded as a cache caveat.",
+  "magic_nix_cache_throttled_count": 307
+}

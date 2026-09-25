@@ -1,0 +1,90 @@
+{
+  "run_id": 36160842540,
+  "head_sha": "65b227dde4d81a9c539364cebee3032e552b1de5",
+  "conclusion": "success",
+  "suites": [
+    {
+      "suite": "nhcore-test-auth",
+      "job_id": "108156722685",
+      "job_name": "tests-macos (nhcore-test-auth, false)",
+      "log": "108156722685.log",
+      "summary_line": "189 examples, 0 failures",
+      "examples": 189,
+      "failures": 0,
+      "pending": 0
+    },
+    {
+      "suite": "nhcore-test-core",
+      "job_id": "108156722543",
+      "job_name": "tests-macos (nhcore-test-core, false)",
+      "log": "108156722543.log",
+      "summary_line": "1095 examples, 0 failures, 3 pending",
+      "examples": 1095,
+      "failures": 0,
+      "pending": 3
+    },
+    {
+      "suite": "nhcore-test-integration",
+      "job_id": "108156722782",
+      "job_name": "tests-macos (nhcore-test-integration, false)",
+      "log": "108156722782.log",
+      "summary_line": "70 examples, 0 failures, 4 pending",
+      "examples": 70,
+      "failures": 0,
+      "pending": 4
+    },
+    {
+      "suite": "nhcore-test-service",
+      "job_id": "108156722712",
+      "job_name": "tests-macos (nhcore-test-service, true)",
+      "log": "108156722712.log",
+      "summary_line": "1128 examples, 0 failures, 57 pending",
+      "examples": 1128,
+      "failures": 0,
+      "pending": 57
+    },
+    {
+      "suite": "nhintegrations-test",
+      "job_id": "108156722771",
+      "job_name": "tests-macos (nhintegrations-test, false)",
+      "log": "108156722771.log",
+      "summary_line": "606 examples, 0 failures, 3 pending",
+      "examples": 606,
+      "failures": 0,
+      "pending": 3
+    }
+  ],
+  "totals": {
+    "examples": 3088,
+    "failures": 0,
+    "pending": 67
+  },
+  "expected": {
+    "nhcore-test-auth": [
+      189,
+      0,
+      0
+    ],
+    "nhcore-test-core": [
+      1095,
+      0,
+      3
+    ],
+    "nhcore-test-integration": [
+      70,
+      0,
+      4
+    ],
+    "nhcore-test-service": [
+      1128,
+      0,
+      57
+    ],
+    "nhintegrations-test": [
+      606,
+      0,
+      3
+    ]
+  },
+  "all_expected": true
+}

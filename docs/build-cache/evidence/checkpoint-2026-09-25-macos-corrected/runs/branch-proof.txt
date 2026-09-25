@@ -1,0 +1,7 @@
+branch=experiment/pr-899-cabal-baseline
+head=65b227dde4d81a9c539364cebee3032e552b1de5
+status:
+changed_files_vs_cab923c0b098fdb82ece539380719c0757ec9057:
+.github/workflows/test-macos.yml
+.github/workflows/test.yml
+integrations/test/Integration/Oura/SyncAllSpec.hs
