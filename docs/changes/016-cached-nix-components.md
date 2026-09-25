@@ -10,7 +10,7 @@ existing CI validation and does not initialize skill or pipeline orchestration.
 ```yaml spec
 issue: adhoc:cached-nix-components
 kind: refactor
-touches: [ci-cd, dev-pipeline, testbed]
+touches: [ci-cd, dev-pipeline, testbed, outbound-integrations, governance-docs]
 breaking: false
 new-dependency: false
 new-capability: false

@@ -209,3 +209,45 @@ normalization used by the candidate. It retains `raw-baseline.txt`,
 records the resulting immutable SHA. Production Haskell, compiler, flags and
 Cabal build strategy remain the original baseline. Unmodified-baseline failures
 remain separate evidence, never silently counted as successful comparisons.
+
+## Extraction pilot (disposable experiment; not a shipped boundary)
+
+`foundation-pilot.patch` reproducibly extracts the 16-module dependency closure
+of Text into `nhfoundation`, with its own source tree and explicit dependencies.
+It reexports the 15 previously public modules through nhcore; Bytes.Internal
+remains an implementation dependency. No foundation source imports Core/nhcore,
+and the package does not depend on the umbrella. Dependencies and module sizes
+are recorded in `evidence/module-graph.json` (lexical imports, cross-checked by
+actual compilation; not a claim that regex parsing resolves every TH dependency).
+The connected set is a small, coherent value/collection layer with limited
+outgoing dependencies; its 194 reverse callers make implementation invalidation
+important. Parser/Config closures would require substantially broader moves.
+
+The prototype compiles both libraries, passes three standalone foundation tests
+(happy/error/boundary), and compiles/runs an external consumer whose **only**
+dependency is nhcore, using Core and package-qualified Array/Text/Result imports.
+The patch and logs are durable; original throwaway commits were 736feca and
+727272b. Reproduce without changing this PR branch:
+
+```sh
+git worktree add --detach /tmp/nh-foundation-pilot 59cb5c8
+git -C /tmp/nh-foundation-pilot apply --index "$PWD/docs/build-cache/foundation-pilot.patch"
+git -C /tmp/nh-foundation-pilot commit -m 'experiment: apply recorded foundation pilot'
+python3 docs/build-cache/pilot-mutations.py /tmp/nh-foundation-pilot /path/to/new/evidence
+```
+
+The mutation harness insists on a clean detached checkout, builds actual outputs,
+records paths/build logs for all seven cases, and checks a deliberately failing
+runtime Hurl request with unchanged compiled outputs. It requires a disposable
+real PostgreSQL fixture for execution. It returns to the original commit after
+the committed mutations; never aim it at a developer's working branch.
+
+**No rollout or expansion decision yet.** Initial timestamped output puts the
+foundation build phase at ~3.7s on this Mac (one diagnostic, not a comparison).
+That may be too little saving to justify package/tooling/release complexity.
+Complete invalidation tests and replicated end-to-end comparisons before moving
+modules in the production tree. If the threshold is not met, retain this
+reproducible pilot/evidence and defer the production split. Required follow-up
+before shipping a split includes codemap source/Hoogle discovery, doctest source
+paths, release package inventory, foundation CI test/output registration and full
+required CI. Existing full Cabal development remains the production default.
