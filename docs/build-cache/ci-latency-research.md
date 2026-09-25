@@ -7,6 +7,11 @@ selection. Local save-to-diagnostics is a separate target, not a replacement for
 CI optimization. Root owns research, critical thinking and decisions; Luna only
 executes specific instructions with explicit acceptance checks.
 
+The follow-up [finer-grained design](finer-grained-ci-design.md) examines service
+shards, PostgreSQL issue #843, basics/generic-test/service-helper layering, and
+separate codemap/doctest architectures. The failed Text pilot remains rejected;
+it does not rule out testing a different boundary after compile-cost profiling.
+
 ## What the repository actually does
 
 `test.yml` has one broad `compiled` decision. For qualifying changes it builds the
@@ -76,7 +81,10 @@ suite alone cannot make the entire current workflow finish in a few seconds.
    unrelated PRs, required main/release runs or benchmark repetitions. Reuse signed
    component outputs through Cachix and upstream caches. Corrected retrieval run
    [36170358310](https://github.com/neohaskell/NeoHaskell/actions/runs/36170358310)
-   has succeeded on both platforms; full logs/counts still need final archival.
+   has succeeded on both platforms; exact roots, signed retrieval logs and fresh
+   core execution (1,095 examples, 0 failures, 3 pending each) are archived at
+   [89c2c79](https://github.com/neohaskell/NeoHaskell/tree/89c2c79/docs/build-cache/evidence/checkpoint-2026-09-25-public-cache-success).
+   This is one correctness run per platform, not a matched performance comparison.
 2. **Compare narrow fanout with a hybrid grouping.** Keep service and Hurl/readiness
    on independently isolated workers. Compare four separate non-service jobs with
    one worker running those four binaries sequentially. About13s of sequential
