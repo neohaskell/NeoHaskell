@@ -4,6 +4,28 @@ set -euo pipefail
 recorder="${1:?absolute path to measure.py}"
 evidence="${2:?absolute path to evidence directory}"
 mkdir -p "$evidence"
+git rev-parse HEAD > "$evidence/raw-baseline.txt"
+# Normalize only the network-dependent mock fixture, identically to the candidate.
+# Keep raw-baseline failure logs separately; production/library source is unchanged.
+python3 - <<'PYFIXTURE'
+from pathlib import Path
+p = Path('integrations/test/Integration/Oura/SyncAllSpec.hs')
+s = p.read_text()
+old = '        , refreshToken = Just (mkRefreshToken "mock-refresh-token")'
+assert s.count(old) == 1
+assert s.count('  , mkRefreshToken\n') == 1
+s = s.replace('  , mkRefreshToken\n', '').replace(old,
+    '        -- Fetches are mocked; a refresh token would call the real token endpoint\n'
+    '        -- after the Unauthorized fixtures and make these unit tests network-dependent.\n'
+    '        , refreshToken = Nothing')
+p.write_text(s)
+PYFIXTURE
+git diff > "$evidence/fixture-normalization.patch"
+git add integrations/test/Integration/Oura/SyncAllSpec.hs
+GIT_AUTHOR_DATE='2026-09-25T11:00:00Z' GIT_COMMITTER_DATE='2026-09-25T11:00:00Z' \
+  git -c user.name='Build measurement' -c user.email='build-measurement@neohaskell.org' \
+  commit -m 'test: isolate baseline mocked authorization failures from the network'
+git rev-parse HEAD > "$evidence/comparable-baseline.txt"
 targets=(lib:nhcore lib:nhintegrations lib:nhtestbed
   nhcore:test:nhcore-test-core nhcore:test:nhcore-test-auth
   nhcore:test:nhcore-test-integration nhcore:test:nhcore-test-service

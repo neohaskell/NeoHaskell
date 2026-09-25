@@ -201,3 +201,11 @@ PostgreSQL 16 from the pinned Nix runtime and a disposable SCRAM-authenticated
 cluster. Both platforms populate Cachix on main. macOS hosted verification is
 pending; local runs are not a substitute for a fresh runner. `actionlint` validates
 the changed workflows, in addition to the repository's workflow checker.
+
+For subsequent **comparable** baseline repetitions, the harness makes one fixed,
+reproducible fixture-only commit on cab923c: the identical no-refresh-token
+normalization used by the candidate. It retains `raw-baseline.txt`,
+`fixture-normalization.patch`, and `comparable-baseline.txt`; observation metadata
+records the resulting immutable SHA. Production Haskell, compiler, flags and
+Cabal build strategy remain the original baseline. Unmodified-baseline failures
+remain separate evidence, never silently counted as successful comparisons.
