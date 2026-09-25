@@ -132,7 +132,8 @@ def main():
             if args.action == 'export':
                 # A local binary cache artifact works for forks without cache-write
                 # secrets. Consumers are tied to this workflow run and revision.
-                command(['nix', 'copy', '--to', (directory / 'cache').as_uri(), root])
+                command(['nix', 'copy', '--to', (directory / 'cache').as_uri() +
+                         '?compression=zstd&compression-level=3', root])
             elif args.action == 'fetch':
                 # No flake evaluation/IFD and no compiler on the consuming route.
                 # Only this run's producer artifact is trusted without signatures.

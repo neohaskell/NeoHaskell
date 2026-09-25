@@ -129,3 +129,31 @@ Parser requires 29 / 6,344 lines, Schema 23 / 5,255, Config 108 / 18,034.
 These are candidate boundaries, not a selection: fanout and compile cost still
 need weighing. Config.Builder derives TH names from actual `tyConPackage`; the
 pilot must test identity-sensitive derivation and package-qualified imports.
+
+## Foundation execution results
+
+`evidence/local-foundation.json` records the exact component paths and native
+macOS suite results (1,095 core / 189 auth / 70 integration-runtime / 606
+integration-package / 1,128 service examples, zero failures in corrected runs).
+Existing pending examples are enumerated, not counted as newly executed checks.
+Raw Nix build logs and test reports are committed as deterministic gzip files.
+The first service run correctly rejected a trust-authenticated fixture: invalid
+passwords were accepted. Its failure report is retained; the disposable cluster
+was changed to SCRAM and the unchanged suite rerun successfully.
+
+Linux run [36137923111](https://github.com/neohaskell/NeoHaskell/actions/runs/36137923111)
+has passed doctest and codemap synchronization; component transfer/execution is
+still being verified. The initial replicated baseline run
+[36138728431](https://github.com/neohaskell/NeoHaskell/actions/runs/36138728431)
+failed before measurement because `nix-store --query --all` is unsupported. The
+recorder now uses locally verified `nix path-info --all`; these failed runs are
+not timing samples.
+
+The 5.84 GB macOS closure includes GHC through warp's references (verified with
+`nix why-depends`), so removing a compiler from PATH does not remove it from the
+runtime closure. Preserve the full closure. One contended default-xz export took
+369s / ~668 MiB; this is diagnostic, not a replicated comparison. The artifact
+format now explicitly uses zstd level 3; fresh-consumer round trips and replicated
+transfer comparisons remain required. Three local warm-repeat observations per
+route are also recorded but **excluded from decisions** because compilation and
+export were running concurrently. Do not derive a speedup from these numbers.

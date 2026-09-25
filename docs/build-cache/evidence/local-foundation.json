@@ -1,0 +1,256 @@
+{
+  "component_revision": "eb6a16d",
+  "service_execution_revision": "2b4718e",
+  "platform": "aarch64-darwin",
+  "bundle": "/nix/store/p1qg68a05w1wahqbzj470pgiy8rv8yn3-neohaskell-ci-components",
+  "closure_bytes": 5837745304,
+  "suites": [
+    {
+      "name": "core",
+      "examples": 1095,
+      "failures": 0,
+      "pending": 3
+    },
+    {
+      "name": "auth",
+      "examples": 189,
+      "failures": 0,
+      "pending": 0
+    },
+    {
+      "name": "integration-runtime",
+      "examples": 70,
+      "failures": 0,
+      "pending": 4
+    },
+    {
+      "name": "integrations",
+      "examples": 606,
+      "failures": 0,
+      "pending": 3
+    },
+    {
+      "name": "service",
+      "examples": 1128,
+      "failures": 0,
+      "pending": 57
+    }
+  ],
+  "limitations": [
+    "local prepopulated store; not fresh-runner substitution evidence",
+    "existing pending examples preserved; no claim of executed pending tests",
+    "initial service attempt failed with trust auth; disposable fixture corrected to scram-sha-256, expectations unchanged",
+    "Cabal and Nix warm repeats overlapped local export/compilation; diagnostic only, excluded from performance decisions"
+  ],
+  "export_diagnostic": {
+    "format": "xz default",
+    "n": 1,
+    "elapsed_s": 369.02558302879333,
+    "compressed_bytes_approx": 700448768,
+    "contended": true
+  },
+  "warm_repeat_diagnostics": {
+    "baseline": [
+      {
+        "schema": 1,
+        "revision": "cab923c0b098fdb82ece539380719c0757ec9057",
+        "system": "arm64-Darwin",
+        "platform": "macOS-26.5.1-arm64-arm-64bit-Mach-O",
+        "command": [
+          "nix",
+          "develop",
+          "--accept-flake-config",
+          "--command",
+          "cabal",
+          "build",
+          "lib:nhcore",
+          "lib:nhintegrations",
+          "lib:nhtestbed",
+          "nhcore:test:nhcore-test-core",
+          "nhcore:test:nhcore-test-auth",
+          "nhcore:test:nhcore-test-integration",
+          "nhcore:test:nhcore-test-service",
+          "nhintegrations:test:nhintegrations-test",
+          "exe:nhtestbed",
+          "--disable-documentation"
+        ],
+        "scenario": "repeat",
+        "stage": "build",
+        "local_state": "exact Cabal outputs and development shell present",
+        "remote_state": "not consulted: local hits",
+        "started_unix_s": 1790341419.513624,
+        "elapsed_s": 5.923416916280985,
+        "exit_code": 0,
+        "lock_sha256": "1effc4277140756e9669e68a4585ae4694e5dabe6bba3d586cf2128a5adf3621",
+        "github_run_id": null,
+        "github_job": null,
+        "logs": {
+          "command.log": "215517150aee2d4e7c37e9a89aed453be29626db56807e943248b5085841cc31",
+          "lines.jsonl": "aaf2f6447e766ba34bd163d317e359a25ed1e6fa4858a76426e5a56f5adf9709"
+        }
+      },
+      {
+        "schema": 1,
+        "revision": "cab923c0b098fdb82ece539380719c0757ec9057",
+        "system": "arm64-Darwin",
+        "platform": "macOS-26.5.1-arm64-arm-64bit-Mach-O",
+        "command": [
+          "nix",
+          "develop",
+          "--accept-flake-config",
+          "--command",
+          "cabal",
+          "build",
+          "lib:nhcore",
+          "lib:nhintegrations",
+          "lib:nhtestbed",
+          "nhcore:test:nhcore-test-core",
+          "nhcore:test:nhcore-test-auth",
+          "nhcore:test:nhcore-test-integration",
+          "nhcore:test:nhcore-test-service",
+          "nhintegrations:test:nhintegrations-test",
+          "exe:nhtestbed",
+          "--disable-documentation"
+        ],
+        "scenario": "repeat",
+        "stage": "build",
+        "local_state": "exact Cabal outputs and development shell present",
+        "remote_state": "not consulted: local hits",
+        "started_unix_s": 1790341425.502027,
+        "elapsed_s": 4.969851749017835,
+        "exit_code": 0,
+        "lock_sha256": "1effc4277140756e9669e68a4585ae4694e5dabe6bba3d586cf2128a5adf3621",
+        "github_run_id": null,
+        "github_job": null,
+        "logs": {
+          "command.log": "215517150aee2d4e7c37e9a89aed453be29626db56807e943248b5085841cc31",
+          "lines.jsonl": "78b2b5d6a707144496808343a8e31b1aa1aaeccc8a6711534c2946afbfa2033a"
+        }
+      },
+      {
+        "schema": 1,
+        "revision": "cab923c0b098fdb82ece539380719c0757ec9057",
+        "system": "arm64-Darwin",
+        "platform": "macOS-26.5.1-arm64-arm-64bit-Mach-O",
+        "command": [
+          "nix",
+          "develop",
+          "--accept-flake-config",
+          "--command",
+          "cabal",
+          "build",
+          "lib:nhcore",
+          "lib:nhintegrations",
+          "lib:nhtestbed",
+          "nhcore:test:nhcore-test-core",
+          "nhcore:test:nhcore-test-auth",
+          "nhcore:test:nhcore-test-integration",
+          "nhcore:test:nhcore-test-service",
+          "nhintegrations:test:nhintegrations-test",
+          "exe:nhtestbed",
+          "--disable-documentation"
+        ],
+        "scenario": "repeat",
+        "stage": "build",
+        "local_state": "exact Cabal outputs and development shell present",
+        "remote_state": "not consulted: local hits",
+        "started_unix_s": 1790341430.537974,
+        "elapsed_s": 5.053051000460982,
+        "exit_code": 0,
+        "lock_sha256": "1effc4277140756e9669e68a4585ae4694e5dabe6bba3d586cf2128a5adf3621",
+        "github_run_id": null,
+        "github_job": null,
+        "logs": {
+          "command.log": "215517150aee2d4e7c37e9a89aed453be29626db56807e943248b5085841cc31",
+          "lines.jsonl": "cb4232886f18681ef648edc99017a0033b2c1d7e7064d820f8cc4d70f4d8f2cc"
+        }
+      }
+    ],
+    "candidate": [
+      {
+        "schema": 1,
+        "revision": "afded28a3e7e873d2c2ed9554ab7217d8b232e03",
+        "system": "arm64-Darwin",
+        "platform": "macOS-26.5.1-arm64-arm-64bit-Mach-O",
+        "command": [
+          "nix",
+          "build",
+          "--accept-flake-config",
+          "-L",
+          "--no-link",
+          ".#ci-components"
+        ],
+        "scenario": "repeat",
+        "stage": "build",
+        "local_state": "exact project outputs present",
+        "remote_state": "not consulted: local hits",
+        "started_unix_s": 1790341345.3116622,
+        "elapsed_s": 3.7238612081855536,
+        "exit_code": 0,
+        "lock_sha256": "1effc4277140756e9669e68a4585ae4694e5dabe6bba3d586cf2128a5adf3621",
+        "github_run_id": null,
+        "github_job": null,
+        "logs": {
+          "command.log": "18df34216112664a18dd33f5c6b951e8528c14f63760e49631344f8621901f38",
+          "lines.jsonl": "c733f2f58b9357b358274e3a0eaee7f0a4cc6f0028b89dc2a69cd76897e34955"
+        }
+      },
+      {
+        "schema": 1,
+        "revision": "afded28a3e7e873d2c2ed9554ab7217d8b232e03",
+        "system": "arm64-Darwin",
+        "platform": "macOS-26.5.1-arm64-arm-64bit-Mach-O",
+        "command": [
+          "nix",
+          "build",
+          "--accept-flake-config",
+          "-L",
+          "--no-link",
+          ".#ci-components"
+        ],
+        "scenario": "repeat",
+        "stage": "build",
+        "local_state": "exact project outputs present",
+        "remote_state": "not consulted: local hits",
+        "started_unix_s": 1790341349.111583,
+        "elapsed_s": 2.5196296256035566,
+        "exit_code": 0,
+        "lock_sha256": "1effc4277140756e9669e68a4585ae4694e5dabe6bba3d586cf2128a5adf3621",
+        "github_run_id": null,
+        "github_job": null,
+        "logs": {
+          "command.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "lines.jsonl": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      {
+        "schema": 1,
+        "revision": "afded28a3e7e873d2c2ed9554ab7217d8b232e03",
+        "system": "arm64-Darwin",
+        "platform": "macOS-26.5.1-arm64-arm-64bit-Mach-O",
+        "command": [
+          "nix",
+          "build",
+          "--accept-flake-config",
+          "-L",
+          "--no-link",
+          ".#ci-components"
+        ],
+        "scenario": "repeat",
+        "stage": "build",
+        "local_state": "exact project outputs present",
+        "remote_state": "not consulted: local hits",
+        "started_unix_s": 1790341351.720105,
+        "elapsed_s": 0.29308154061436653,
+        "exit_code": 0,
+        "lock_sha256": "1effc4277140756e9669e68a4585ae4694e5dabe6bba3d586cf2128a5adf3621",
+        "github_run_id": null,
+        "github_job": null,
+        "logs": {
+          "command.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "lines.jsonl": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      }
+    ]
+  }
+}
