@@ -1,5 +1,18 @@
 {
   "artifact_root": "/tmp/pr899-measurement-runs.EkPfRY",
+  "decision": {
+    "candidate_unsplit_text_realization_median_s": 259.268831248,
+    "candidate_unsplit_text_route_with_core_median_s": 262.8352351,
+    "pilot_text_realization_median_s": 298.889760635,
+    "pilot_text_route_with_core_median_s": 302.583427119,
+    "preset_min_improvement_percent": 15.0,
+    "preset_min_improvement_seconds": 60.0,
+    "realization_delta_percent": 15.281794266,
+    "realization_delta_s": 39.620929387,
+    "result": "fails; do_not_expand_pilot_on_this_evidence",
+    "route_with_core_delta_percent": 15.1228552,
+    "route_with_core_delta_s": 39.748192019
+  },
   "runs": {
     "baseline": {
       "artifact_prefix": "measurement-linux-baseline",
@@ -3089,13 +3102,14 @@
           "audit_all_valid": true,
           "audit_eval_added_to": null,
           "count": 3,
-          "median_s": 201.689158983,
+          "median_s": 219.637222861,
           "observations_s": [
-            152.064378213,
-            201.689158983,
-            210.153256607
+            164.244945978,
+            219.637222861,
+            227.95945484
           ],
           "probe_excluded": true,
+          "route_total_rule": "sum per repetition then median",
           "stages": [
             "sibling-edit",
             "sibling-edit-test"
@@ -3105,13 +3119,14 @@
           "audit_all_valid": true,
           "audit_eval_added_to": null,
           "count": 3,
-          "median_s": 191.664026163,
+          "median_s": 209.198102506,
           "observations_s": [
-            139.862530895,
-            191.664026163,
-            199.658893993
+            152.191953644,
+            209.198102506,
+            217.738950181
           ],
           "probe_excluded": true,
+          "route_total_rule": "sum per repetition then median",
           "stages": [
             "edit",
             "edit-test"
@@ -3950,13 +3965,14 @@
           "audit_all_valid": false,
           "audit_eval_added_to": "sibling-edit",
           "count": 3,
-          "median_s": 258.063431486,
+          "median_s": 261.648093911,
           "observations_s": [
-            311.394390134,
-            237.542043882,
-            258.063431486
+            315.098120078,
+            241.167880458,
+            261.648093911
           ],
           "probe_excluded": true,
+          "route_total_rule": "sum per repetition then median",
           "stages": [
             "sibling-edit",
             "sibling-edit-test"
@@ -3966,13 +3982,14 @@
           "audit_all_valid": true,
           "audit_eval_added_to": "edit",
           "count": 3,
-          "median_s": 259.268831248,
+          "median_s": 262.8352351,
           "observations_s": [
-            312.037258051,
-            241.811631534,
-            259.268831248
+            315.760698691,
+            245.563184649,
+            262.8352351
           ],
           "probe_excluded": true,
+          "route_total_rule": "sum per repetition then median",
           "stages": [
             "edit",
             "edit-test"
@@ -4764,13 +4781,14 @@
           "audit_all_valid": true,
           "audit_eval_added_to": "sibling-edit",
           "count": 3,
-          "median_s": 292.816754194,
+          "median_s": 296.483618874,
           "observations_s": [
-            292.816754194,
-            248.994087812,
-            294.474054093
+            296.483618874,
+            252.560751154,
+            298.152524458
           ],
           "probe_excluded": true,
+          "route_total_rule": "sum per repetition then median",
           "stages": [
             "sibling-edit",
             "sibling-edit-test"
@@ -4780,13 +4798,14 @@
           "audit_all_valid": true,
           "audit_eval_added_to": "edit",
           "count": 3,
-          "median_s": 298.889760635,
+          "median_s": 302.583427119,
           "observations_s": [
-            298.889760635,
-            257.744982915,
-            307.736379258
+            302.583427119,
+            261.430843277,
+            311.425711379
           ],
           "probe_excluded": true,
+          "route_total_rule": "sum per repetition then median",
           "stages": [
             "edit",
             "edit-test"

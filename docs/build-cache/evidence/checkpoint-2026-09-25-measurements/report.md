@@ -17,18 +17,18 @@ Read-only analysis of completed workflows; route totals are per-repetition sums 
 | baseline | fresh_execution | 118.336 | 154.022 | 157.784 | 154.022 | 5 suites + Hurl + cold; no audit on execution stages |
 | baseline | fresh_route | 468.171 | 576.969 | 584.845 | 576.969 | valid |
 | baseline | repeat_build | 6.348 | 9.790 | 10.038 | 9.790 | valid |
-| baseline | sibling_edit_route | 152.064 | 201.689 | 210.153 | 201.689 | valid |
-| baseline | text_edit_route | 139.863 | 191.664 | 199.659 | 191.664 | valid |
+| baseline | sibling_edit_route | 164.245 | 219.637 | 227.959 | 219.637 | valid |
+| baseline | text_edit_route | 152.192 | 209.198 | 217.739 | 209.198 | valid |
 | candidate | fresh_execution | 69.069 | 71.899 | 78.286 | 71.899 | 5 suites + Hurl + cold; no audit on execution stages |
 | candidate | fresh_route | 440.142 | 379.915 | 419.838 | 419.838 | valid |
 | candidate | repeat_build | 8.407 | 5.599 | 8.544 | 8.407 | valid |
-| candidate | sibling_edit_route | 311.394 | 237.542 | 258.063 | 258.063 | INVALID audit (1/3) |
-| candidate | text_edit_route | 312.037 | 241.812 | 259.269 | 259.269 | valid |
+| candidate | sibling_edit_route | 315.098 | 241.168 | 261.648 | 261.648 | INVALID audit (1/3) |
+| candidate | text_edit_route | 315.761 | 245.563 | 262.835 | 262.835 | valid |
 | pilot | fresh_execution | 68.308 | 67.384 | 68.781 | 68.308 | 5 suites + Hurl + cold; no audit on execution stages |
 | pilot | fresh_route | 426.227 | 388.829 | 442.127 | 426.227 | valid |
 | pilot | repeat_build | 8.033 | 6.030 | 8.385 | 8.033 | valid |
-| pilot | sibling_edit_route | 292.817 | 248.994 | 294.474 | 292.817 | valid |
-| pilot | text_edit_route | 298.890 | 257.745 | 307.736 | 298.890 | valid |
+| pilot | sibling_edit_route | 296.484 | 252.561 | 298.153 | 296.484 | valid |
+| pilot | text_edit_route | 302.583 | 261.431 | 311.426 | 302.583 | valid |
 
 The pilot `export` and `compatibility` observations are present but excluded from these matched routes. Baseline has no cache audit by design: raw Cabal has no `ci-components` output to probe.
 
