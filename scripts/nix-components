@@ -43,6 +43,8 @@ def load_bundle(directory):
     revision = output(['git', 'rev-parse', 'HEAD'])
     if producer['revision'] != revision:
         raise ValueError('component artifact belongs to a different checkout')
+    if producer['build'][0]['outputs']['out'] != root:
+        raise ValueError('artifact root differs from the producer build result')
     return root
 
 
@@ -94,10 +96,12 @@ def run_suite(manifest, env, suite, report):
         code = process.wait()
     if code:
         raise subprocess.CalledProcessError(code, [binary])
-    summaries = re.findall(r'(?m)^\s*(\d+) examples?, (\d+) failures?', report.read_text())
-    if not summaries or any(int(n) == 0 or int(f) != 0 for n, f in summaries):
+    summaries = re.findall(r'(?m)^\s*(\d+) examples?, (\d+) failures?(?:, (\d+) pending)?\s*$', report.read_text())
+    if not summaries or any(int(n) <= int(p or 0) or int(f) != 0 for n, f, p in summaries):
         raise ValueError('test executable produced no nonempty successful Hspec summary')
-    return {'suite': suite, 'examples': sum(int(n) for n, _ in summaries)}
+    return {'suite': suite, 'examples': sum(int(n) for n, _, _ in summaries),
+            'pending': sum(int(p or 0) for _, _, p in summaries),
+            'executed': sum(int(n) - int(p or 0) for n, _, p in summaries)}
 
 
 def main():

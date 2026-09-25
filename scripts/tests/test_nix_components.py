@@ -31,11 +31,14 @@ class Components(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / 'root.txt').write_text('/nix/store/' + 'a'*32 + '-bundle\n')
-            (root / 'producer.json').write_text(json.dumps({'revision': 'old'}))
+            (root / 'producer.json').write_text(json.dumps({'revision': 'old', 'build': [{'outputs': {'out': '/nix/store/' + 'a'*32 + '-bundle'}}]}))
             with patch.object(c, 'output', return_value='new'), self.assertRaisesRegex(ValueError, 'different checkout'):
                 c.load_bundle(root)
             with patch.object(c, 'output', return_value='old'):
                 self.assertTrue(c.load_bundle(root).endswith('-bundle'))
+            (root / 'root.txt').write_text('/nix/store/' + 'b'*32 + '-bundle\n')
+            with patch.object(c, 'output', return_value='old'), self.assertRaisesRegex(ValueError, 'producer build result'):
+                c.load_bundle(root)
 
     def test_actual_executable_exit_and_nonempty_summary(self):
         with tempfile.TemporaryDirectory() as directory, patch.object(c, 'store_path', side_effect=lambda x: x):
@@ -48,6 +51,8 @@ class Components(unittest.TestCase):
                                              ('3 examples, 1 failure', 1, False),
                                              ('3 examples, 0 failures', 17, False),
                                              ('0 examples, 0 failures', 0, False),
+                                             ('3 examples, 0 failures, 3 pending', 0, False),
+                                             ('3 examples, 0 failures, 1 pending', 0, True),
                                              ('not an Hspec run', 0, False)]:
                 binary.write_text(f'#!/bin/sh\necho "{summary}"\nexit {status}\n')
                 binary.chmod(0o755)
