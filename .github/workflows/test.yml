@@ -103,6 +103,9 @@ jobs:
             extra-substituters = https://cache.iog.io https://neohaskell.cachix.org
             extra-trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= neohaskell.cachix.org-1:mo2cLaGbwqbrxs9xhqKK8jeNsn3osi7t6XoAmxSZssc=
       - uses: DeterminateSystems/magic-nix-cache-action@v14
+        with:
+          use-gha-cache: disabled
+          use-flakehub: disabled
       - name: Build Nix component outputs
         run: ./dev nix-components build
       - name: Publish closure for consuming jobs (no credentials required)
