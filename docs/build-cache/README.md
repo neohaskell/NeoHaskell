@@ -157,3 +157,16 @@ format now explicitly uses zstd level 3; fresh-consumer round trips and replicat
 transfer comparisons remain required. Three local warm-repeat observations per
 route are also recorded but **excluded from decisions** because compilation and
 export were running concurrently. Do not derive a speedup from these numbers.
+
+Local Hurl execution at f02d642 passed from the supplied Nix binary. The native
+cold-start probe failed at its unchanged `1000 events => initial /ready=503`
+expectation: replay had already completed. Running the **unmodified immutable
+baseline** reproduces the same failure on this fast host. Both raw logs are
+retained; do not weaken the expectation or report this check green. Hosted Linux
+cold-start validation remains required.
+
+Two corrected-inventory hosted baseline jobs then exposed a fixture startup race:
+`docker exec pg_isready` observed PostgreSQL's temporary initialization **Unix
+socket** server just before it shut down. Query TCP (`-h 127.0.0.1`) so readiness
+only succeeds for the final server. These failures also precede measurements;
+rerun the three observations with the corrected fixture.

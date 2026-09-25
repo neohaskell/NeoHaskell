@@ -514,9 +514,9 @@ jobs:
             -e POSTGRES_DB=neohaskell -p 5432:5432 postgres:16-alpine \
             postgres -c max_connections=200
           for i in $(seq 1 30); do
-            docker exec baseline-postgres pg_isready -U neohaskell && break || sleep 1
+            docker exec baseline-postgres pg_isready -h 127.0.0.1 -U neohaskell && break || sleep 1
           done
-          docker exec baseline-postgres pg_isready -U neohaskell
+          docker exec baseline-postgres pg_isready -h 127.0.0.1 -U neohaskell
       - name: Measure immutable baseline and controlled implementation edit
         working-directory: baseline
         run: bash ../harness/docs/build-cache/baseline.sh "$GITHUB_WORKSPACE/harness/docs/build-cache/measure.py" "$GITHUB_WORKSPACE/evidence"
