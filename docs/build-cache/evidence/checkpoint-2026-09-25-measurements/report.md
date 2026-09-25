@@ -61,4 +61,4 @@ Audit proof: candidate eval/probe medians (fresh, repeat, Text, Int sibling) are
   - `/tmp/pr899-measurement-runs.EkPfRY/pilot/measurement-linux-pilot-3` — id `10873943978`, archive sha256 `e52453130745152a3d24755c3daa4633f47c77fad8cb5f763bbc1aa05321d61a`
 - Machine-readable analysis: `/tmp/pr899-measurement-runs.EkPfRY/analysis.json` (sha256 `25dff035e85bb72761e9a05b9b792add3cdbf7b2e11b813330013b750a1f26fa`).
 
-No causal speedup claim: baseline is Cabal while candidate/pilot are Nix component routes with different build flags and cache conditions; these are descriptive measurements.
+Cabal and Nix are intended alternatives on the same declared workload. Logs confirm project GHC9.8.4/O1, split sections disabled and HIE enabled; exact equality of every dependency/compiler/linker default remains unconfirmed. Cache and dependency state differ, so report these as descriptive route measurements without causal percentage claims. See CORRECTION.md for the initial edit-total labelling error.
