@@ -79,8 +79,8 @@ optional measurement jobs are excluded from the production critical span.
 | [36141142936](https://github.com/neohaskell/NeoHaskell/actions/runs/36141142936) / `08ecae9` | Candidate production / macOS | Producer magic-cache attempted; post-cache 233s with upload rate-limit evidence | 1,466s | 2,303s | 248s | `n=1`, noncomparable; [hosted CI ledger](https://github.com/neohaskell/NeoHaskell/blob/4a913b4/docs/build-cache/evidence/hosted-ci.md) |
 | [36143016033](https://github.com/neohaskell/NeoHaskell/actions/runs/36143016033) / `c65700c` | Candidate production / Linux | Producer magic-cache attempted; post-cache 635s, upload errors and eventual rate-limit disablement | 1,272s | 2,098s | 644s | `n=1`, noncomparable; optional measurement sum 4,635s excluded |
 | [36143308159](https://github.com/neohaskell/NeoHaskell/actions/runs/36143308159) / `987fe3d` | Candidate-unsplit production (pilot run) / Linux | Cache disabled/rate-limited; 13 setup errors, no successful path uploads | 516s (8m36s) | 1,311s | 7s | `n=1`, noncomparable; optional split pilot sum 2,610s excluded |
-| [36153813253](https://github.com/neohaskell/NeoHaskell/actions/runs/36153813253) / `a5e7cdc` | As-operated full-CI baseline / Linux | Fresh runner; Determinate extra substituters (`cache.iog.io`, `neohaskell.cachix.org`), upstream `cache.nixos.org`; magic-nix-cache v14 GHA cache enabled, FlakeHub unauthenticated/no upload; Cabal cache restored | 617s | 2,304s | 10s | `n=1`, green; 1,128 service examples / 57 pending; count-mismatch, excluded from matched comparison; [archive](https://github.com/neohaskell/NeoHaskell/tree/0c0c3c0/docs/build-cache/evidence/checkpoint-2026-09-25) |
-| [36153817476](https://github.com/neohaskell/NeoHaskell/actions/runs/36153817476) / `a5e7cdc` | As-operated full-CI baseline / macOS | Fresh runner; Determinate extra substituters (`cache.iog.io`, `neohaskell.cachix.org`), upstream `cache.nixos.org`; magic-nix-cache v14 GHA cache enabled, FlakeHub unauthenticated/no upload; Cabal cache restored | 677s | 3,043s | `—` (unknown) | `n=1`, green; 1,090 service examples / 52 pending; count-mismatch, excluded from matched comparison; [archive](https://github.com/neohaskell/NeoHaskell/tree/0c0c3c0/docs/build-cache/evidence/checkpoint-2026-09-25) |
+| [36153813253](https://github.com/neohaskell/NeoHaskell/actions/runs/36153813253) / `a5e7cdc` | As-operated full-CI baseline / Linux | Fresh runner; Determinate extra substituters (`cache.iog.io`, `neohaskell.cachix.org`), upstream `cache.nixos.org`; magic-nix-cache v14 GHA cache enabled, FlakeHub unauthenticated/no upload; Cabal cache restored | 617s | 2,304s | 10s | `n=1`, green; 1,128 service examples / 57 pending; no matched timing comparison established; [archive](https://github.com/neohaskell/NeoHaskell/tree/0c0c3c0/docs/build-cache/evidence/checkpoint-2026-09-25) |
+| [36153817476](https://github.com/neohaskell/NeoHaskell/actions/runs/36153817476) / `a5e7cdc` | As-operated full-CI baseline / macOS | Fresh runner; Determinate extra substituters (`cache.iog.io`, `neohaskell.cachix.org`), upstream `cache.nixos.org`; magic-nix-cache v14 GHA cache enabled, FlakeHub unauthenticated/no upload; Cabal cache restored | 677s | 3,043s | `—` (unknown) | `n=1`, green; 1,090 service examples / 52 pending; PostgreSQL cases omitted, excluded from equivalent-suite comparison; [archive](https://github.com/neohaskell/NeoHaskell/tree/0c0c3c0/docs/build-cache/evidence/checkpoint-2026-09-25) |
 
 Run `36143308159`'s main jobs are still the **unsplit candidate**. Only its
 optional pilot measurement jobs apply the split experiment. Its short 8m36s
@@ -91,8 +91,10 @@ the first consumer, not estimates of aggregate upload cost.
 
 The two `a5e7cdc` rows are independent as-operated baselines. Both workflows
 were green, but the service reports differ (`1,128 examples / 57 pending` on
-Linux versus `1,090 / 52` on macOS), so they are excluded from a matched or
-equivalent-suite comparison while cacheworker investigates the count mismatch.
+Linux versus `1,090 / 52` on macOS), because the original macOS command omitted `POSTGRES_AVAILABLE=true` despite
+starting PostgreSQL. Its missing cases exclude it from equivalent-suite
+comparisons. Baseline fix `5604e6c` sets the sentinel only on the service row;
+that corrected macOS workflow still needs a rerun.
 No cross-platform aggregate or speedup is inferred from these rows.
 The Linux 10s wait is the measured `upload-artifact` completion to first
 consumer-job start interval. The macOS workflow builds inside each matrix test
@@ -120,16 +122,20 @@ No timing is invented for changes that have not had a matched rerun.
 | [`15eeef1`](https://github.com/neohaskell/NeoHaskell/commit/15eeef1348630b6e96a7a9cba472af8cc7deea53) (same patch as [`f64fe87`](https://github.com/neohaskell/NeoHaskell/commit/f64fe870ec8157ebb9764a143880103717262bd7)) | Disable duplicate producer upload: `use-gha-cache: disabled`, `use-flakehub: disabled` | Linux + macOS | Upstream substituters and same-run artifact path retained | `— / — / —` | Pending measurement | [15eeef1](https://github.com/neohaskell/NeoHaskell/commit/15eeef1348630b6e96a7a9cba472af8cc7deea53) |
 | [`1efe92a`](https://github.com/neohaskell/NeoHaskell/commit/1efe92a) | Cumulative: duplicate producer upload disabled + candidate local-package flags aligned (explicit O1, split-sections disabled, HIE enabled) | Linux + macOS | Dependencies untouched; matched rerun required | `— / — / —` | Pending measurement | [commit](https://github.com/neohaskell/NeoHaskell/commit/1efe92a) |
 
-## Pending matched full-CI runs
+## Pending verification and measurement runs
 
 These runs are recorded without timing values until cache state and suite counts
-are extracted from their raw evidence.
+are extracted from their raw evidence. Optional measurement jobs currently share
+hosted-runner capacity with production jobs; observed queuing can inflate the
+production critical path. Collect production-only runs after this batch for
+uncontended full-CI comparisons; excluding optional job times alone cannot remove
+their scheduling effect.
 
 | Run | Commit | Platform / technique | Status |
 |---|---|---|---|
-| [36155654547](https://github.com/neohaskell/NeoHaskell/actions/runs/36155654547) | `c0d34a8` | Linux baseline + candidate | Pending measurement; no timing recorded |
-| [36155658355](https://github.com/neohaskell/NeoHaskell/actions/runs/36155658355) | `c0d34a8` | Linux pilot | Pending measurement; no timing recorded |
-| [36155662081](https://github.com/neohaskell/NeoHaskell/actions/runs/36155662081) | `c0d34a8` | macOS baseline + candidate | Pending measurement; no timing recorded |
+| [36155654547](https://github.com/neohaskell/NeoHaskell/actions/runs/36155654547) | `c0d34a8` | Linux component CI + three baseline/three candidate sequential measurements | Pending measurement; no timing recorded |
+| [36155658355](https://github.com/neohaskell/NeoHaskell/actions/runs/36155658355) | `c0d34a8` | Linux unsplit component CI + three pilot sequential measurements | Pending measurement; no timing recorded |
+| [36155662081](https://github.com/neohaskell/NeoHaskell/actions/runs/36155662081) | `c0d34a8` | macOS candidate component CI | Pending measurement; no timing recorded |
 
 ## Updating the log
 
