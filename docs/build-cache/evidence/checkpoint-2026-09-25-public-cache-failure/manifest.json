@@ -1,0 +1,6 @@
+{
+  "run": 36163339478,
+  "source": "176a5bf7664b732cf22e1fbb40273c272a14f6ba",
+  "raw_sha256": "e03d92c7f2b7687988fdb204b0ae0529d15bdb94700c4a901cfbf324ed556d71",
+  "result": "publishers success; both fresh consumers fail before test execution"
+}
