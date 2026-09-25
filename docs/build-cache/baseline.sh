@@ -46,7 +46,7 @@ PY
 git add core/core/Text.hs
 GIT_AUTHOR_DATE='2026-09-25T12:00:00Z' GIT_COMMITTER_DATE='2026-09-25T12:00:00Z' \
   git -c user.name='Build measurement' -c user.email='build-measurement@neohaskell.org' \
-  -c core.hooksPath=/dev/null commit -m 'test: disposable representative Text implementation mutation'
+  commit -m 'test: disposable representative Text implementation mutation'
 git show --format=fuller HEAD > "$evidence/mutation.patch"
 record edit implementation-edit compile-link 'baseline Cabal outputs retained before one committed implementation edit' \
   nix develop --accept-flake-config --command cabal build "${targets[@]}" --disable-documentation -v2

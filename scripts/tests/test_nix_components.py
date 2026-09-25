@@ -96,6 +96,7 @@ class Components(unittest.TestCase):
 
     def test_actual_aggregate_gate_fails_closed(self):
         source = (ROOT/'.github/workflows/test.yml').read_text().split('  ci-gate:', 1)[1]
+        source = source.split('\n  baseline-measurement:', 1)[0]
         gate = textwrap.dedent(source.split('        run: |\n', 1)[1])
         for draft, compiled, detection, failed, expected in [
             ('false', 'true', 'success', None, 0),
