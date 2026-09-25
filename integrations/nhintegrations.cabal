@@ -116,6 +116,7 @@ library
 
 test-suite nhintegrations-test
   import: common_cfg
+  build-tool-depends: hspec-discover:hspec-discover
   type: exitcode-stdio-1.0
   main-is: Main.hs
   hs-source-dirs: test

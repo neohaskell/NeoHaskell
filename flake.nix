@@ -24,6 +24,7 @@
           inherit (haskellNix) config;
         };
         flake = pkgs.hixProject.flake { };
+        ci = import ./nix/ci-components.nix { inherit pkgs flake; };
 
         # The Rust Neo CLI (neo/) exposed as a first-class monorepo output.
         # Defined in nix/neo-package.nix as the single source of truth; it stays
@@ -34,7 +35,10 @@
         legacyPackages = pkgs;
         # Merge alongside the existing hix outputs; the default NeoHaskell
         # package/app is untouched; `neo` is purely additive.
-        packages = flake.packages // { inherit neo; };
+        packages = flake.packages // {
+          inherit neo;
+          ci-components = ci.bundle;
+        };
         apps = (flake.apps or { }) // {
           neo = {
             type = "app";

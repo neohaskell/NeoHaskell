@@ -407,6 +407,7 @@ library
 
 test-suite nhcore-test
   import: common_cfg
+  build-tool-depends: hspec-discover:hspec-discover
   default-language: GHC2021
   ghc-options:
     -rtsopts

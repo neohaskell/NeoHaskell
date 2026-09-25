@@ -1,10 +1,31 @@
-{ pkgs, ... }: {
+{ pkgs, ... }:
+let
+  # Keep these overrides on project packages only. The last two names are
+  # optional pilot packages and package-keys makes their overrides valid when
+  # a pilot adds them to the Cabal plan.
+  matchedLocalPackages = [
+    "nhcore"
+    "nhintegrations"
+    "nhtestbed"
+    "nhfoundation"
+    "nhcore-consumer"
+  ];
+  matchedFlags = {
+    # Cabal's default optimisation level is O1; make it explicit for Nix.
+    ghcOptions = [ "-O1" ];
+    # Match cabal.project's HIE generation and disable Linux split sections.
+    enableDeadCodeElimination = false;
+    writeHieFiles = true;
+  };
+in {
   name = "neohaskell";
   compiler-nix-name = "ghc98"; # Version of GHC to use
 
   # Disable haddock builds for faster CI
   modules = [{
     doHaddock = false;
+    package-keys = matchedLocalPackages;
+    packages = pkgs.lib.genAttrs matchedLocalPackages (_: matchedFlags);
   }];
 
   # Cross compilation support:

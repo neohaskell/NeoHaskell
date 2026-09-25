@@ -1,6 +1,16 @@
 name: "Test"
 
 on:
+  workflow_dispatch:
+    inputs:
+      baseline_measurements:
+        description: Collect three matched baseline and candidate observations (six additional runners)
+        type: boolean
+        default: false
+      pilot_measurements:
+        description: Measure the disposable extraction pilot instead (three additional runners)
+        type: boolean
+        default: false
   pull_request:
     branches:
       - main
@@ -59,7 +69,7 @@ jobs:
           BASE_REF: ${{ github.base_ref }}
         run: |
           set -euo pipefail
-          if [ "$EVENT" = "push" ]; then
+          if [ "$EVENT" = "push" ] || [ "$EVENT" = "workflow_dispatch" ]; then
             echo "compiled=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -70,7 +80,7 @@ jobs:
           # whole Haskell suite. `installer/` is absent for the same reason
           # (installer-ci.yml). `flake.nix` stays: the Haskell hix outputs are
           # defined there, so a flake change still rebuilds them.
-          PATTERN='^(core/|testbed/|integrations/|nix/|\.github/workflows/|cabal\.project|flake\.nix|flake\.lock)'
+          PATTERN='^(core/|testbed/|integrations/|nix/|\.github/workflows/|cabal\.project|flake\.nix|flake\.lock|scripts/nix-components)'
           if git diff --name-only "origin/${BASE_REF}...HEAD" | grep -qE "$PATTERN"; then
             echo "compiled=true" >> "$GITHUB_OUTPUT"
           else
@@ -80,7 +90,7 @@ jobs:
   build:
     needs: changes
     if: >-
-      (github.event_name == 'push' || github.event.pull_request.draft == false)
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event.pull_request.draft == false)
       && needs.changes.outputs.compiled == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -93,28 +103,28 @@ jobs:
             extra-substituters = https://cache.iog.io https://neohaskell.cachix.org
             extra-trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= neohaskell.cachix.org-1:mo2cLaGbwqbrxs9xhqKK8jeNsn3osi7t6XoAmxSZssc=
       - uses: DeterminateSystems/magic-nix-cache-action@v14
-      - uses: actions/cache@v6.1.0
         with:
-          path: dist-newstyle
-          key: ${{ runner.os }}-cabal-${{ hashFiles('**/*.cabal', 'cabal.project') }}
-          restore-keys: |
-            ${{ runner.os }}-cabal-
-      - name: Build the project with cabal
-        run: nix develop --command cabal build all --disable-documentation
+          use-gha-cache: disabled
+          use-flakehub: disabled
+      - name: Build Nix component outputs
+        run: ./dev nix-components build
+      - name: Publish closure for consuming jobs (no credentials required)
+        run: ./dev nix-components export
       - uses: actions/upload-artifact@v7
         with:
-          name: dist-newstyle
-          path: dist-newstyle
+          name: haskell-components
+          path: component-artifact
           compression-level: 0
-          retention-days: 1
+          retention-days: 14
           if-no-files-found: error
 
   codemap-sync:
-    # Runs in PARALLEL with the test suites (needs only build's artifact) so it
-    # adds no wall-clock, and is ENFORCED as a merge gate via ci-gate below — a
-    # separate runner, so parallelism is free. (If a test fails the regen was
-    # spent for nothing, but that costs a runner-minute, not PR latency.)
-    needs: build
+    # Documentation/index generation retains its Cabal route until equivalent
+    # Nix artifacts are validated. Run alongside the component build and tests.
+    needs: changes
+    if: >-
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event.pull_request.draft == false)
+      && needs.changes.outputs.compiled == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -128,10 +138,13 @@ jobs:
             extra-substituters = https://cache.iog.io https://neohaskell.cachix.org
             extra-trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= neohaskell.cachix.org-1:mo2cLaGbwqbrxs9xhqKK8jeNsn3osi7t6XoAmxSZssc=
       - uses: DeterminateSystems/magic-nix-cache-action@v14
-      - uses: actions/download-artifact@v8
+      # Haddock/hoogle and .hie tooling still use the full Cabal workspace.
+      - uses: actions/cache@v6.1.0
         with:
-          name: dist-newstyle
           path: dist-newstyle
+          key: ${{ runner.os }}-codemap-${{ hashFiles('**/*.cabal', 'cabal.project', 'flake.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-codemap-
       # Hackage hoogle txts for the ./dev api vanilla DB (dep-closure mined;
       # see ADR-0066) — cached so the fetch is a no-op on warm runs.
       - uses: actions/cache@v6.1.0
@@ -157,7 +170,7 @@ jobs:
   doctest:
     needs: changes
     if: >-
-      (github.event_name == 'push' || github.event.pull_request.draft == false)
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event.pull_request.draft == false)
       && needs.changes.outputs.compiled == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -185,13 +198,25 @@ jobs:
             accept-flake-config = true
             extra-substituters = https://cache.iog.io https://neohaskell.cachix.org
             extra-trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= neohaskell.cachix.org-1:mo2cLaGbwqbrxs9xhqKK8jeNsn3osi7t6XoAmxSZssc=
-      - uses: DeterminateSystems/magic-nix-cache-action@v14
       - uses: actions/download-artifact@v8
         with:
-          name: dist-newstyle
-          path: dist-newstyle
+          name: haskell-components
+          path: component-artifact
+      - name: Fetch exact outputs without compilation
+        run: ./dev nix-components fetch
       - name: Run nhcore-test-core
-        run: LOG_LEVEL=Warn nix develop --command cabal test nhcore-test-core
+        run: ./dev nix-components run --suite nhcore-test-core
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: test-core-evidence
+          path: |
+            component-report.log
+            .nhcore-test-service.report
+            component-artifact/timings.jsonl
+          include-hidden-files: true
+          retention-days: 14
 
   test-auth:
     needs: [build]
@@ -205,13 +230,25 @@ jobs:
             accept-flake-config = true
             extra-substituters = https://cache.iog.io https://neohaskell.cachix.org
             extra-trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= neohaskell.cachix.org-1:mo2cLaGbwqbrxs9xhqKK8jeNsn3osi7t6XoAmxSZssc=
-      - uses: DeterminateSystems/magic-nix-cache-action@v14
       - uses: actions/download-artifact@v8
         with:
-          name: dist-newstyle
-          path: dist-newstyle
+          name: haskell-components
+          path: component-artifact
+      - name: Fetch exact outputs without compilation
+        run: ./dev nix-components fetch
       - name: Run nhcore-test-auth
-        run: LOG_LEVEL=Warn nix develop --command cabal test nhcore-test-auth
+        run: ./dev nix-components run --suite nhcore-test-auth
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: test-auth-evidence
+          path: |
+            component-report.log
+            .nhcore-test-service.report
+            component-artifact/timings.jsonl
+          include-hidden-files: true
+          retention-days: 14
 
   test-integration:
     needs: [build]
@@ -225,13 +262,57 @@ jobs:
             accept-flake-config = true
             extra-substituters = https://cache.iog.io https://neohaskell.cachix.org
             extra-trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= neohaskell.cachix.org-1:mo2cLaGbwqbrxs9xhqKK8jeNsn3osi7t6XoAmxSZssc=
-      - uses: DeterminateSystems/magic-nix-cache-action@v14
       - uses: actions/download-artifact@v8
         with:
-          name: dist-newstyle
-          path: dist-newstyle
+          name: haskell-components
+          path: component-artifact
+      - name: Fetch exact outputs without compilation
+        run: ./dev nix-components fetch
       - name: Run nhcore-test-integration
-        run: LOG_LEVEL=Warn nix develop --command cabal test nhcore-test-integration
+        run: ./dev nix-components run --suite nhcore-test-integration
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: test-integration-evidence
+          path: |
+            component-report.log
+            .nhcore-test-service.report
+            component-artifact/timings.jsonl
+          include-hidden-files: true
+          retention-days: 14
+
+  test-integrations:
+    needs: [build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: DeterminateSystems/determinate-nix-action@v3.22.2
+        with:
+          extra-conf: |
+            accept-flake-config = true
+            extra-substituters = https://cache.iog.io https://neohaskell.cachix.org
+            extra-trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= neohaskell.cachix.org-1:mo2cLaGbwqbrxs9xhqKK8jeNsn3osi7t6XoAmxSZssc=
+      - uses: actions/download-artifact@v8
+        with:
+          name: haskell-components
+          path: component-artifact
+      - name: Fetch exact outputs without compilation
+        run: ./dev nix-components fetch
+      - name: Run nhintegrations-test
+        run: ./dev nix-components run --suite nhintegrations-test
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: test-integrations-evidence
+          path: |
+            component-report.log
+            .nhcore-test-service.report
+            component-artifact/timings.jsonl
+          include-hidden-files: true
+          retention-days: 14
 
   test-service:
     needs: [build]
@@ -247,11 +328,12 @@ jobs:
             accept-flake-config = true
             extra-substituters = https://cache.iog.io https://neohaskell.cachix.org
             extra-trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= neohaskell.cachix.org-1:mo2cLaGbwqbrxs9xhqKK8jeNsn3osi7t6XoAmxSZssc=
-      - uses: DeterminateSystems/magic-nix-cache-action@v14
       - uses: actions/download-artifact@v8
         with:
-          name: dist-newstyle
-          path: dist-newstyle
+          name: haskell-components
+          path: component-artifact
+      - name: Fetch exact outputs without compilation
+        run: ./dev nix-components fetch
       - name: Start PostgreSQL
         run: |
           docker run -d --name neohaskell_postgres \
@@ -261,8 +343,9 @@ jobs:
             -p 5432:5432 \
             postgres:16-alpine \
             postgres -c max_connections=200
-          for i in $(seq 1 30); do
-            pg_isready -h 127.0.0.1 -U neohaskell && break || sleep 1
+          for _ in $(seq 1 30); do
+            if pg_isready -h 127.0.0.1 -U neohaskell; then break; fi
+            sleep 1
           done
           if ! pg_isready -h 127.0.0.1 -U neohaskell; then
             echo "::error::PostgreSQL failed to start within 30 seconds"
@@ -275,8 +358,8 @@ jobs:
           POSTGRES_AVAILABLE: "true"
         run: |
           set -o pipefail
-          LOG_LEVEL=Warn nix develop --command cabal test nhcore-test-service \
-            --test-show-details=direct | tee .nhcore-test-service.report
+          ./dev nix-components run --suite nhcore-test-service \
+            --report .nhcore-test-service.report
       - name: Prove integration criterion selectors and real fixtures
         if: github.event_name == 'pull_request'
         env:
@@ -284,15 +367,21 @@ jobs:
           POSTGRES_AVAILABLE: "true"
         run: ./dev spec-check --criteria-runtime "origin/${BASE_REF}" --report .nhcore-test-service.report
 
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: test-service-evidence
+          path: |
+            component-report.log
+            .nhcore-test-service.report
+            component-artifact/timings.jsonl
+          include-hidden-files: true
+          retention-days: 14
+
   test-hurl:
     needs: [build]
     runs-on: ubuntu-latest
-    # 60m: the dev-shell entry pulls HLS / fourmolu / hlint / ormolu /
-    # stylish-haskell / floskell on cold magic-nix-cache, and the post-job
-    # cache upload step pushes those same paths back to GHA cache (~12m).
-    # Tests themselves run in ~8.5m, dev-shell pull ~5m, post-cache upload
-    # ~12m worst case, and the bounded cold-start acceptance runs separately.
-    # 60m absorbs the cold-cache one-time cost; warm-cache runs are much faster.
+    # Retain the existing budget until closure-transfer measurements justify it.
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7.0.1
@@ -302,13 +391,12 @@ jobs:
             accept-flake-config = true
             extra-substituters = https://cache.iog.io https://neohaskell.cachix.org
             extra-trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= neohaskell.cachix.org-1:mo2cLaGbwqbrxs9xhqKK8jeNsn3osi7t6XoAmxSZssc=
-      - uses: DeterminateSystems/magic-nix-cache-action@v14
       - uses: actions/download-artifact@v8
         with:
-          name: dist-newstyle
-          path: dist-newstyle
-      - name: Restore executable permissions
-        run: find dist-newstyle/build -type f -name 'nhtestbed' -exec chmod +x {} +
+          name: haskell-components
+          path: component-artifact
+      - name: Fetch exact outputs without compilation
+        run: ./dev nix-components fetch
       - name: Start PostgreSQL
         run: |
           docker run -d --name neohaskell_postgres \
@@ -318,8 +406,9 @@ jobs:
             -p 5432:5432 \
             postgres:16-alpine \
             postgres -c max_connections=200
-          for i in $(seq 1 30); do
-            pg_isready -h 127.0.0.1 -U neohaskell && break || sleep 1
+          for _ in $(seq 1 30); do
+            if pg_isready -h 127.0.0.1 -U neohaskell; then break; fi
+            sleep 1
           done
           if ! pg_isready -h 127.0.0.1 -U neohaskell; then
             echo "::error::PostgreSQL failed to start within 30 seconds"
@@ -327,30 +416,22 @@ jobs:
           fi
         env:
           PGPASSWORD: neohaskell
-      - name: Install hurl (pinned binary + checksum)
-        run: |
-          # A bare `curl -LO` here is what turned the acceptance job — and with
-          # it `main` — red on 2026-08-12 (run 31644435957: "curl: (56)
-          # Connection died, tried 5 times"). The release CDN drops connections
-          # often enough that an unretried, unverified fetch is a coin flip on
-          # every run of the required gate. Retry the transfer, then verify the
-          # bytes: same pinned-binary discipline as hlint in checks.yml.
-          # --connect-timeout bounds only the handshake; --max-time bounds each
-          # attempt and --retry-max-time the whole retry window, so a stalled
-          # response cannot quietly eat this job's 60-minute budget (a 2 MB file
-          # has no business taking two minutes).
-          curl -fsSL --retry 5 --retry-delay 5 --retry-all-errors \
-            --connect-timeout 20 --max-time 120 --retry-max-time 300 \
-            -o hurl.deb \
-            https://github.com/Orange-OpenSource/hurl/releases/download/6.0.0/hurl_6.0.0_amd64.deb
-          echo "2686f605adfdceca18579a941b317262a4185915e6fda1f8deaab201da22e9cf  hurl.deb" | sha256sum -c -
-          sudo dpkg -i hurl.deb
-      - name: Install poppler-utils (for PDF extraction tests)
-        run: sudo apt-get update && sudo apt-get install -y poppler-utils
       - name: Run integration tests
-        run: nix develop --command ./testbed/scripts/run-tests.sh
+        run: ./dev nix-components hurl
       - name: Prove cold-start health stays flat through 100k events
-        run: nix develop --command ./testbed/scripts/cold-start-readiness.sh
+        run: ./dev nix-components cold-start
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: test-hurl-evidence
+          path: |
+            /tmp/neohaskell-cold-start
+            component-report.log
+            .nhcore-test-service.report
+            component-artifact/timings.jsonl
+          include-hidden-files: true
+          retention-days: 14
 
   # THE REQUIRED CHECK. `if: always()` + no workflow paths filter ⇒ this always
   # runs and reports a real conclusion on every PR, so it is safe to require in
@@ -359,7 +440,7 @@ jobs:
   # check, and passes cleanly when there is nothing to check.
   ci-gate:
     if: always()
-    needs: [changes, build, doctest, test-core, test-auth, test-integration, test-service, test-hurl, codemap-sync]
+    needs: [changes, build, doctest, test-core, test-auth, test-integration, test-integrations, test-service, test-hurl, codemap-sync]
     runs-on: ubuntu-latest
     steps:
       - name: Check all tests passed
@@ -389,6 +470,7 @@ jobs:
             "test-core=${{ needs.test-core.result }}"
             "test-auth=${{ needs.test-auth.result }}"
             "test-integration=${{ needs.test-integration.result }}"
+            "test-integrations=${{ needs.test-integrations.result }}"
             "test-service=${{ needs.test-service.result }}"
             "test-hurl=${{ needs.test-hurl.result }}"
             "codemap-sync=${{ needs.codemap-sync.result }}"
@@ -404,3 +486,52 @@ jobs:
             fi
           done
           echo "ci-gate: all build/test jobs passed (or correctly skipped — nothing to test)"
+
+  baseline-measurement:
+    if: github.event_name == 'workflow_dispatch' && (inputs.baseline_measurements || inputs.pilot_measurements)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        repetition: [1, 2, 3]
+        route: ${{ fromJSON(inputs.pilot_measurements && '["pilot"]' || '["baseline", "candidate"]') }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          path: harness
+          persist-credentials: false
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ matrix.route == 'baseline' && 'cab923c0b098fdb82ece539380719c0757ec9057' || github.sha }}
+          path: baseline
+          persist-credentials: false
+      - uses: DeterminateSystems/determinate-nix-action@v3.22.2
+        with:
+          extra-conf: |
+            accept-flake-config = true
+            extra-substituters = https://cache.iog.io https://neohaskell.cachix.org
+            extra-trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= neohaskell.cachix.org-1:mo2cLaGbwqbrxs9xhqKK8jeNsn3osi7t6XoAmxSZssc=
+      - name: Start real PostgreSQL fixture
+        run: |
+          docker run -d --name baseline-postgres \
+            -e POSTGRES_USER=neohaskell -e POSTGRES_PASSWORD=neohaskell \
+            -e POSTGRES_DB=neohaskell -p 5432:5432 postgres:16-alpine \
+            postgres -c max_connections=200
+          for _ in $(seq 1 30); do
+            if docker exec baseline-postgres pg_isready -h 127.0.0.1 -U neohaskell; then break; fi
+            sleep 1
+          done
+          docker exec baseline-postgres pg_isready -h 127.0.0.1 -U neohaskell
+      - name: Measure immutable checkout and controlled implementation edit
+        working-directory: baseline
+        env:
+          ROUTE: ${{ matrix.route }}
+        run: bash "../harness/docs/build-cache/$ROUTE.sh" "$GITHUB_WORKSPACE/harness/docs/build-cache/measure.py" "$GITHUB_WORKSPACE/evidence"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: measurement-linux-${{ matrix.route }}-${{ matrix.repetition }}
+          path: evidence
+          retention-days: 30
+          if-no-files-found: error

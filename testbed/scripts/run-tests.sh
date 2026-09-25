@@ -30,6 +30,17 @@ is_testbed_ready() {
 	curl -sf http://localhost:8080/health >/dev/null 2>&1
 }
 
+if [ -n "${NHTESTBED_BINARY+x}" ]; then
+	if [ ! -x "$NHTESTBED_BINARY" ] || [ ! -f "$NHTESTBED_BINARY" ]; then
+		echo "Error: NHTESTBED_BINARY is not an executable file" >&2
+		exit 1
+	fi
+	if is_testbed_ready; then
+		echo "Error: stop the existing testbed before testing the supplied binary" >&2
+		exit 1
+	fi
+fi
+
 # Check if hurl is installed
 if ! command -v hurl &>/dev/null; then
 	echo -e "${RED}Error: hurl is not installed${NC}"
@@ -47,7 +58,11 @@ elif curl -s http://localhost:8080 >/dev/null 2>&1; then
 	exit 1
 else
 	echo -e "${YELLOW}Starting testbed...${NC}"
-	cabal run nhtestbed &
+	if [ -n "${NHTESTBED_BINARY+x}" ]; then
+		"$NHTESTBED_BINARY" &
+	else
+		cabal run nhtestbed &
+	fi
 	TESTBED_PID=$!
 
 	echo "Waiting for testbed to start (PID: $TESTBED_PID)..."

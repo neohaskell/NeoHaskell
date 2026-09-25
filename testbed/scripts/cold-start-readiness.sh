@@ -8,8 +8,16 @@ readonly ready_budget_ms=120000
 readonly bootstrap_budget_ms=120000
 readonly port=8080
 readonly base_url="${COLD_START_BASE_URL:-http://127.0.0.1:${port}}"
-cabal build exe:nhtestbed >/dev/null
-app_binary="$(cabal list-bin exe:nhtestbed)"
+if [[ -n "${NHTESTBED_BINARY+x}" ]]; then
+  if [[ ! -f "$NHTESTBED_BINARY" || ! -x "$NHTESTBED_BINARY" ]]; then
+    echo "NHTESTBED_BINARY is not an executable file" >&2
+    exit 1
+  fi
+  app_binary="$NHTESTBED_BINARY"
+else
+  cabal build exe:nhtestbed >/dev/null
+  app_binary="$(cabal list-bin exe:nhtestbed)"
+fi
 readonly app_binary
 readonly sizes=(1000 10000 100000)
 readonly log_dir="${TMPDIR:-/tmp}/neohaskell-cold-start"

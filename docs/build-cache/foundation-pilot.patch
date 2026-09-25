@@ -1,0 +1,554 @@
+diff --git a/cabal.project b/cabal.project
+index 91eacd4..613b0d1 100644
+--- a/cabal.project
++++ b/cabal.project
+@@ -1,4 +1,5 @@
+ packages:
++  foundation/*.cabal
+   core/*.cabal
+   testbed/*.cabal
+   integrations/nhintegrations.cabal
+@@ -6,3 +7,5 @@ packages:
+ -- Pipeline Phase 3: emit .hie files for the symbol reference DB (hiedb).
+ program-options
+   ghc-options: -fwrite-ide-info
++
++packages: consumer/*.cabal
+diff --git a/consumer/Main.hs b/consumer/Main.hs
+new file mode 100644
+index 0000000..f6329be
+--- /dev/null
++++ b/consumer/Main.hs
+@@ -0,0 +1,21 @@
++module Main where
++
++import Core
++import "nhcore" Array qualified
++import "nhcore" Result qualified
++import "nhcore" Text qualified
++import Task qualified
++
++main :: IO ()
++main = verify |> Task.runOrPanic
++
++verify :: Task Text ()
++verify = do
++  let values = Array.fromLinkedList [Text.toLower "NEOHASKELL"]
++  let result = Result.Ok values :: Result Text (Array Text)
++  case result of
++    Err error -> Task.throw error
++    Ok actual -> do
++      if Array.get 0 actual == Just "neohaskell"
++        then Task.yield ()
++        else Task.throw "public nhcore reexports changed"
+diff --git a/consumer/nhcore-consumer.cabal b/consumer/nhcore-consumer.cabal
+new file mode 100644
+index 0000000..ac87b77
+--- /dev/null
++++ b/consumer/nhcore-consumer.cabal
+@@ -0,0 +1,11 @@
++cabal-version: 3.4
++name: nhcore-consumer
++version: 0.1.0
++build-type: Simple
++
++executable nhcore-consumer
++  main-is: Main.hs
++  hs-source-dirs: .
++  build-depends: nhcore
++  default-language: GHC2021
++  default-extensions: NoImplicitPrelude, OverloadedStrings, PackageImports, ImportQualifiedPost, BlockArguments
+diff --git a/core/nhcore.cabal b/core/nhcore.cabal
+index b81064a..c1cf7cf 100644
+--- a/core/nhcore.cabal
++++ b/core/nhcore.cabal
+@@ -125,11 +125,26 @@ common common_cfg
+ 
+ library
+   import: common_cfg
++  build-depends: nhfoundation
++  reexported-modules:
++    nhfoundation:Applicable,
++    nhfoundation:Array,
++    nhfoundation:Basics,
++    nhfoundation:Char,
++    nhfoundation:Collection,
++    nhfoundation:Function,
++    nhfoundation:IO,
++    nhfoundation:LinkedList,
++    nhfoundation:Mappable,
++    nhfoundation:Maybe,
++    nhfoundation:Result,
++    nhfoundation:Text,
++    nhfoundation:Thenable,
++    nhfoundation:Tuple,
++    nhfoundation:Unit
+   exposed-modules:
+     Accumulator
+     Appendable
+-    Applicable
+-    Array
+     AtomicVar
+     AsyncTask
+     Auth
+@@ -156,11 +171,8 @@ library
+     Auth.SecretStore
+     Auth.SecretStore.InMemory
+     Auth.UrlValidation
+-    Basics
+     Bytes
+     Channel
+-    Char
+-    Collection
+     Combinable
+     Command
+     Config
+@@ -184,7 +196,6 @@ library
+     EventVariantOf
+     File
+     Float
+-    Function
+     Http
+     Http.Client
+     Http.Client.Internal
+@@ -200,11 +211,9 @@ library
+     Service.Integration.Selection
+     Service.Integration.ShimEmit
+     Service.Integration.Types
+-    IO
+     Int
+     Json
+     Layout
+-    LinkedList
+     NeoQL
+     NeoQL.Execute
+     NeoQL.Parser
+@@ -212,13 +221,10 @@ library
+     Lock
+     Log
+     Map
+-    Mappable
+-    Maybe
+     Parser
+     Path
+     Record
+     Redacted
+-    Result
+     Service
+     Service.Auth
+     Service.Command
+@@ -360,21 +366,16 @@ library
+     Test.Service.SnapshotCache.InMemory.Spec
+     Test.Service.FileUpload.FileStateStore
+     Test.Spec
+-    Text
+-    Thenable
+     Time
+     ToText
+     Trigger
+-    Tuple
+     TypeName
+-    Unit
+     Unknown
+     Uuid
+     Var
+     Version
+ 
+   other-modules:
+-    Bytes.Internal
+     Parser.Internal
+     Parser.Internal.Error
+     Parser.Internal.Types
+diff --git a/foundation/LICENSE b/foundation/LICENSE
+new file mode 100644
+index 0000000..261eeb9
+--- /dev/null
++++ b/foundation/LICENSE
+@@ -0,0 +1,201 @@
++                                 Apache License
++                           Version 2.0, January 2004
++                        http://www.apache.org/licenses/
++
++   TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION
++
++   1. Definitions.
++
++      "License" shall mean the terms and conditions for use, reproduction,
++      and distribution as defined by Sections 1 through 9 of this document.
++
++      "Licensor" shall mean the copyright owner or entity authorized by
++      the copyright owner that is granting the License.
++
++      "Legal Entity" shall mean the union of the acting entity and all
++      other entities that control, are controlled by, or are under common
++      control with that entity. For the purposes of this definition,
++      "control" means (i) the power, direct or indirect, to cause the
++      direction or management of such entity, whether by contract or
++      otherwise, or (ii) ownership of fifty percent (50%) or more of the
++      outstanding shares, or (iii) beneficial ownership of such entity.
++
++      "You" (or "Your") shall mean an individual or Legal Entity
++      exercising permissions granted by this License.
++
++      "Source" form shall mean the preferred form for making modifications,
++      including but not limited to software source code, documentation
++      source, and configuration files.
++
++      "Object" form shall mean any form resulting from mechanical
++      transformation or translation of a Source form, including but
++      not limited to compiled object code, generated documentation,
++      and conversions to other media types.
++
++      "Work" shall mean the work of authorship, whether in Source or
++      Object form, made available under the License, as indicated by a
++      copyright notice that is included in or attached to the work
++      (an example is provided in the Appendix below).
++
++      "Derivative Works" shall mean any work, whether in Source or Object
++      form, that is based on (or derived from) the Work and for which the
++      editorial revisions, annotations, elaborations, or other modifications
++      represent, as a whole, an original work of authorship. For the purposes
++      of this License, Derivative Works shall not include works that remain
++      separable from, or merely link (or bind by name) to the interfaces of,
++      the Work and Derivative Works thereof.
++
++      "Contribution" shall mean any work of authorship, including
++      the original version of the Work and any modifications or additions
++      to that Work or Derivative Works thereof, that is intentionally
++      submitted to Licensor for inclusion in the Work by the copyright owner
++      or by an individual or Legal Entity authorized to submit on behalf of
++      the copyright owner. For the purposes of this definition, "submitted"
++      means any form of electronic, verbal, or written communication sent
++      to the Licensor or its representatives, including but not limited to
++      communication on electronic mailing lists, source code control systems,
++      and issue tracking systems that are managed by, or on behalf of, the
++      Licensor for the purpose of discussing and improving the Work, but
++      excluding communication that is conspicuously marked or otherwise
++      designated in writing by the copyright owner as "Not a Contribution."
++
++      "Contributor" shall mean Licensor and any individual or Legal Entity
++      on behalf of whom a Contribution has been received by Licensor and
++      subsequently incorporated within the Work.
++
++   2. Grant of Copyright License. Subject to the terms and conditions of
++      this License, each Contributor hereby grants to You a perpetual,
++      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
++      copyright license to reproduce, prepare Derivative Works of,
++      publicly display, publicly perform, sublicense, and distribute the
++      Work and such Derivative Works in Source or Object form.
++
++   3. Grant of Patent License. Subject to the terms and conditions of
++      this License, each Contributor hereby grants to You a perpetual,
++      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
++      (except as stated in this section) patent license to make, have made,
++      use, offer to sell, sell, import, and otherwise transfer the Work,
++      where such license applies only to those patent claims licensable
++      by such Contributor that are necessarily infringed by their
++      Contribution(s) alone or by combination of their Contribution(s)
++      with the Work to which such Contribution(s) was submitted. If You
++      institute patent litigation against any entity (including a
++      cross-claim or counterclaim in a lawsuit) alleging that the Work
++      or a Contribution incorporated within the Work constitutes direct
++      or contributory patent infringement, then any patent licenses
++      granted to You under this License for that Work shall terminate
++      as of the date such litigation is filed.
++
++   4. Redistribution. You may reproduce and distribute copies of the
++      Work or Derivative Works thereof in any medium, with or without
++      modifications, and in Source or Object form, provided that You
++      meet the following conditions:
++
++      (a) You must give any other recipients of the Work or
++          Derivative Works a copy of this License; and
++
++      (b) You must cause any modified files to carry prominent notices
++          stating that You changed the files; and
++
++      (c) You must retain, in the Source form of any Derivative Works
++          that You distribute, all copyright, patent, trademark, and
++          attribution notices from the Source form of the Work,
++          excluding those notices that do not pertain to any part of
++          the Derivative Works; and
++
++      (d) If the Work includes a "NOTICE" text file as part of its
++          distribution, then any Derivative Works that You distribute must
++          include a readable copy of the attribution notices contained
++          within such NOTICE file, excluding those notices that do not
++          pertain to any part of the Derivative Works, in at least one
++          of the following places: within a NOTICE text file distributed
++          as part of the Derivative Works; within the Source form or
++          documentation, if provided along with the Derivative Works; or,
++          within a display generated by the Derivative Works, if and
++          wherever such third-party notices normally appear. The contents
++          of the NOTICE file are for informational purposes only and
++          do not modify the License. You may add Your own attribution
++          notices within Derivative Works that You distribute, alongside
++          or as an addendum to the NOTICE text from the Work, provided
++          that such additional attribution notices cannot be construed
++          as modifying the License.
++
++      You may add Your own copyright statement to Your modifications and
++      may provide additional or different license terms and conditions
++      for use, reproduction, or distribution of Your modifications, or
++      for any such Derivative Works as a whole, provided Your use,
++      reproduction, and distribution of the Work otherwise complies with
++      the conditions stated in this License.
++
++   5. Submission of Contributions. Unless You explicitly state otherwise,
++      any Contribution intentionally submitted for inclusion in the Work
++      by You to the Licensor shall be under the terms and conditions of
++      this License, without any additional terms or conditions.
++      Notwithstanding the above, nothing herein shall supersede or modify
++      the terms of any separate license agreement you may have executed
++      with Licensor regarding such Contributions.
++
++   6. Trademarks. This License does not grant permission to use the trade
++      names, trademarks, service marks, or product names of the Licensor,
++      except as required for reasonable and customary use in describing the
++      origin of the Work and reproducing the content of the NOTICE file.
++
++   7. Disclaimer of Warranty. Unless required by applicable law or
++      agreed to in writing, Licensor provides the Work (and each
++      Contributor provides its Contributions) on an "AS IS" BASIS,
++      WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
++      implied, including, without limitation, any warranties or conditions
++      of TITLE, NON-INFRINGEMENT, MERCHANTABILITY, or FITNESS FOR A
++      PARTICULAR PURPOSE. You are solely responsible for determining the
++      appropriateness of using or redistributing the Work and assume any
++      risks associated with Your exercise of permissions under this License.
++
++   8. Limitation of Liability. In no event and under no legal theory,
++      whether in tort (including negligence), contract, or otherwise,
++      unless required by applicable law (such as deliberate and grossly
++      negligent acts) or agreed to in writing, shall any Contributor be
++      liable to You for damages, including any direct, indirect, special,
++      incidental, or consequential damages of any character arising as a
++      result of this License or out of the use or inability to use the
++      Work (including but not limited to damages for loss of goodwill,
++      work stoppage, computer failure or malfunction, or any and all
++      other commercial damages or losses), even if such Contributor
++      has been advised of the possibility of such damages.
++
++   9. Accepting Warranty or Additional Liability. While redistributing
++      the Work or Derivative Works thereof, You may choose to offer,
++      and charge a fee for, acceptance of support, warranty, indemnity,
++      or other liability obligations and/or rights consistent with this
++      License. However, in accepting such obligations, You may act only
++      on Your own behalf and on Your sole responsibility, not on behalf
++      of any other Contributor, and only if You agree to indemnify,
++      defend, and hold each Contributor harmless for any liability
++      incurred by, or claims asserted against, such Contributor by reason
++      of your accepting any such warranty or additional liability.
++
++   END OF TERMS AND CONDITIONS
++
++   APPENDIX: How to apply the Apache License to your work.
++
++      To apply the Apache License to your work, attach the following
++      boilerplate notice, with the fields enclosed by brackets "[]"
++      replaced with your own identifying information. (Don't include
++      the brackets!)  The text should be enclosed in the appropriate
++      comment syntax for the file format. We also recommend that a
++      file or class name and description of purpose be included on the
++      same "printed page" as the copyright notice for easier
++      identification within third-party archives.
++
++   Copyright [yyyy] [name of copyright owner]
++
++   Licensed under the Apache License, Version 2.0 (the "License");
++   you may not use this file except in compliance with the License.
++   You may obtain a copy of the License at
++
++       http://www.apache.org/licenses/LICENSE-2.0
++
++   Unless required by applicable law or agreed to in writing, software
++   distributed under the License is distributed on an "AS IS" BASIS,
++   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++   See the License for the specific language governing permissions and
++   limitations under the License.
+diff --git a/core/core/Array.hs b/foundation/core/Array.hs
+similarity index 100%
+rename from core/core/Array.hs
+rename to foundation/core/Array.hs
+diff --git a/core/core/Basics.hs b/foundation/core/Basics.hs
+similarity index 100%
+rename from core/core/Basics.hs
+rename to foundation/core/Basics.hs
+diff --git a/core/core/Bytes/Internal.hs b/foundation/core/Bytes/Internal.hs
+similarity index 100%
+rename from core/core/Bytes/Internal.hs
+rename to foundation/core/Bytes/Internal.hs
+diff --git a/core/core/Char.hs b/foundation/core/Char.hs
+similarity index 100%
+rename from core/core/Char.hs
+rename to foundation/core/Char.hs
+diff --git a/core/core/Function.hs b/foundation/core/Function.hs
+similarity index 100%
+rename from core/core/Function.hs
+rename to foundation/core/Function.hs
+diff --git a/core/core/IO.hs b/foundation/core/IO.hs
+similarity index 100%
+rename from core/core/IO.hs
+rename to foundation/core/IO.hs
+diff --git a/core/core/LinkedList.hs b/foundation/core/LinkedList.hs
+similarity index 100%
+rename from core/core/LinkedList.hs
+rename to foundation/core/LinkedList.hs
+diff --git a/core/core/Maybe.hs b/foundation/core/Maybe.hs
+similarity index 100%
+rename from core/core/Maybe.hs
+rename to foundation/core/Maybe.hs
+diff --git a/core/core/Result.hs b/foundation/core/Result.hs
+similarity index 100%
+rename from core/core/Result.hs
+rename to foundation/core/Result.hs
+diff --git a/core/core/Text.hs b/foundation/core/Text.hs
+similarity index 100%
+rename from core/core/Text.hs
+rename to foundation/core/Text.hs
+diff --git a/core/core/Tuple.hs b/foundation/core/Tuple.hs
+similarity index 100%
+rename from core/core/Tuple.hs
+rename to foundation/core/Tuple.hs
+diff --git a/core/core/Unit.hs b/foundation/core/Unit.hs
+similarity index 100%
+rename from core/core/Unit.hs
+rename to foundation/core/Unit.hs
+diff --git a/foundation/nhfoundation.cabal b/foundation/nhfoundation.cabal
+new file mode 100644
+index 0000000..92120fa
+--- /dev/null
++++ b/foundation/nhfoundation.cabal
+@@ -0,0 +1,88 @@
++cabal-version: 3.4
++name: nhfoundation
++version: 0.10.1
++synopsis: Foundational values and collections for NeoHaskell
++license: Apache-2.0
++license-file: LICENSE
++build-type: Simple
++
++common common_cfg
++  ghc-options:
++    -Wall
++    -Wno-orphans
++    -fno-warn-partial-type-signatures
++    -fno-warn-name-shadowing
++    -Werror
++    -threaded
++
++  build-depends:
++    base,
++    aeson,
++    bytestring,
++    data-default,
++    file-embed,
++    ghc-prim,
++    QuickCheck,
++    string-interpolate,
++    template-haskell,
++    text,
++    text-manipulate,
++    vector,
++
++  default-extensions:
++    ApplicativeDo
++    BlockArguments
++    DataKinds
++    DeriveDataTypeable
++    DerivingStrategies
++    DuplicateRecordFields
++    ImportQualifiedPost
++    ImplicitParams
++    ImpredicativeTypes
++    NamedFieldPuns
++    NoFieldSelectors
++    NoImplicitPrelude
++    OverloadedLabels
++    OverloadedLists
++    OverloadedRecordDot
++    OverloadedStrings
++    PackageImports
++    PartialTypeSignatures
++    QualifiedDo
++    QuasiQuotes
++    StandaloneDeriving
++    Strict
++    TemplateHaskell
++    TypeApplications
++    TypeFamilies
++    TypeOperators
++
++library
++  import: common_cfg
++  default-language: GHC2021
++  hs-source-dirs: core, traits
++  exposed-modules:
++    Applicable
++    Array
++    Basics
++    Bytes.Internal
++    Char
++    Collection
++    Function
++    IO
++    LinkedList
++    Mappable
++    Maybe
++    Result
++    Text
++    Thenable
++    Tuple
++    Unit
++
++test-suite nhfoundation-test
++  import: common_cfg
++  type: exitcode-stdio-1.0
++  main-is: Main.hs
++  hs-source-dirs: test
++  build-depends: nhfoundation, hspec
++  default-language: GHC2021
+diff --git a/foundation/test/Main.hs b/foundation/test/Main.hs
+new file mode 100644
+index 0000000..bad4c6a
+--- /dev/null
++++ b/foundation/test/Main.hs
+@@ -0,0 +1,22 @@
++module Main where
++
++import Array qualified
++import Basics
++import IO (IO)
++import Maybe (Maybe (..))
++import Result (Result (..))
++import Result qualified
++import Test.Hspec qualified as Hspec
++import Text qualified
++
++main :: IO ()
++main = Hspec.hspec do
++  Hspec.describe "independent foundation" do
++    Hspec.it "maps text without the umbrella" do
++      Text.toLower "NEOHASKELL" |> Hspec.shouldBe "neohaskell"
++    Hspec.it "preserves error values when mapping" do
++      let result = Err "failure" :: Result Text.Text Int
++      Result.map (+ 1) result |> Hspec.shouldBe (Err "failure")
++    Hspec.it "returns Nothing at the empty-array boundary" do
++      let values = Array.empty :: Array.Array Int
++      Array.get 0 values |> Hspec.shouldBe Nothing
+diff --git a/core/traits/Applicable.hs b/foundation/traits/Applicable.hs
+similarity index 100%
+rename from core/traits/Applicable.hs
+rename to foundation/traits/Applicable.hs
+diff --git a/core/traits/Collection.hs b/foundation/traits/Collection.hs
+similarity index 100%
+rename from core/traits/Collection.hs
+rename to foundation/traits/Collection.hs
+diff --git a/core/traits/Mappable.hs b/foundation/traits/Mappable.hs
+similarity index 100%
+rename from core/traits/Mappable.hs
+rename to foundation/traits/Mappable.hs
+diff --git a/core/traits/Thenable.hs b/foundation/traits/Thenable.hs
+similarity index 100%
+rename from core/traits/Thenable.hs
+rename to foundation/traits/Thenable.hs

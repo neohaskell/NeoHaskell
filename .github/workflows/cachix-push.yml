@@ -1,6 +1,12 @@
 name: "Populate Cachix"
 
 on:
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Full 40-character commit SHA to publish
+        required: true
+        type: string
   push:
     branches:
       - main
@@ -9,13 +15,61 @@ on:
       - "testbed/**"
       - "integrations/**"
       - "nix/**"
+      - "flake.nix"
+      - "flake.lock"
+      - "cabal.project"
       - ".github/workflows/**"
+
+permissions:
+  contents: read
 
 jobs:
   cachix-push:
-    runs-on: ubuntu-latest
+    if: >-
+      github.repository == 'neohaskell/NeoHaskell'
+      && (
+        (github.event_name == 'push' && github.ref == 'refs/heads/main')
+        || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/snotty-kiwi')
+      )
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Verify immutable publisher source
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          GITHUB_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if ! [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "github.sha is not a 40-character hexadecimal commit" >&2
+            exit 1
+          fi
+          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            if [[ -z "$SOURCE_SHA" ]]; then
+              echo "source_sha is required for workflow_dispatch" >&2
+              exit 1
+            fi
+            if ! [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+              echo "source_sha is not a 40-character hexadecimal commit" >&2
+              exit 1
+            fi
+            if [[ "$SOURCE_SHA" != "$GITHUB_SHA" ]]; then
+              echo "source_sha does not match github.sha" >&2
+              exit 1
+            fi
+          fi
+          if [[ "$(git rev-parse HEAD)" != "$GITHUB_SHA" ]]; then
+            echo "checkout does not match github.sha" >&2
+            exit 1
+          fi
       - uses: DeterminateSystems/determinate-nix-action@v3.22.2
         with:
           extra-conf: |
@@ -26,5 +80,61 @@ jobs:
         with:
           name: neohaskell
           authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
+          skipPush: true
       - name: Build to populate cache
-        run: nix develop --command cabal build all --disable-documentation
+        run: ./dev nix-components build
+      - name: Push complete ci-components closure
+        run: |
+          set -euo pipefail
+          nix path-info --recursive "$(cat component-artifact/root.txt)" | cachix push neohaskell
+      - uses: actions/upload-artifact@v7
+        if: github.event_name == 'workflow_dispatch'
+        with:
+          name: published-component-metadata-${{ matrix.os }}
+          path: |
+            component-artifact/root.txt
+            component-artifact/producer.json
+            component-artifact/closure.json
+            component-artifact/timings.jsonl
+          if-no-files-found: error
+          retention-days: 30
+
+  verify-published:
+    needs: cachix-push
+    if: github.event_name == 'workflow_dispatch'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: DeterminateSystems/determinate-nix-action@v3.22.2
+        with:
+          extra-conf: |
+            accept-flake-config = true
+            extra-substituters = https://cache.iog.io https://neohaskell.cachix.org
+            extra-trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= neohaskell.cachix.org-1:mo2cLaGbwqbrxs9xhqKK8jeNsn3osi7t6XoAmxSZssc=
+      - uses: actions/download-artifact@v8
+        with:
+          name: published-component-metadata-${{ matrix.os }}
+          path: component-artifact
+      - name: Fetch signed closure from Cachix and upstream caches with all builders disabled
+        run: ./dev nix-components fetch --from-public-caches
+      - name: Execute the fetched core test binary
+        run: ./dev nix-components run --suite nhcore-test-core
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: public-cache-verification-${{ matrix.os }}
+          path: |
+            component-artifact/root.txt
+            component-artifact/producer.json
+            component-artifact/timings.jsonl
+            component-report.log
+          if-no-files-found: error
+          retention-days: 30
