@@ -46,6 +46,16 @@ exit codes and timestamped raw logs. It validates log digests when summarizing;
 medians require at least three successful comparable observations. Unknown cache
 state is not a cache miss. Never purge a shared local store for this experiment.
 
+The candidate component routes run `cache-state.py` immediately before each
+fresh, repeat, Text-edit and sibling-edit realization. Each audit has its own
+`cache-state-*.json` and sibling `.evaluation.log`; `comparison_unusable=true`
+is retained and printed conspicuously. Add that audit's `evaluation.eval_s` to
+the matching route's evaluation work because it warms Nix before the build;
+exclude `probe_s` and the rest of the audit wall time as instrumentation, while
+keeping `observation.json.elapsed_s` as the raw command wall time. The probe is
+not run against `baseline.sh`: the raw Cabal baseline has no `ci-components`
+flake output to evaluate.
+
 `baseline.sh` and `candidate.sh` run matched sequential targets and suites on
 fresh hosted runners, then repeat the build and apply a deterministic Text edit.
 The baseline retains both its raw SHA and the exact fixture-only normalization

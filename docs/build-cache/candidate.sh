@@ -3,6 +3,8 @@
 set -euo pipefail
 recorder="${1:?absolute path to measure.py}"
 evidence="${2:?absolute path to evidence directory}"
+harness="$(cd -- "$(dirname -- "$recorder")" && pwd)"
+cache_state="$harness/cache-state.py"
 initial_revision="$(git rev-parse HEAD)"
 assert_clean_tracked() {
   local changes
@@ -15,6 +17,10 @@ assert_clean_tracked() {
 }
 assert_clean_tracked
 mkdir -p "$evidence"
+if [[ ! -f "$cache_state" ]]; then
+  echo "cache-state probe not found beside recorder: $cache_state" >&2
+  exit 1
+fi
 printf '%s\n' "$initial_revision" > "$evidence/initial-revision.txt"
 restore_initial_revision() {
   local original_exit="$1"
@@ -33,6 +39,19 @@ restore_initial_revision() {
   return "$original_exit"
 }
 trap 'restore_initial_revision "$?"' EXIT
+cache_audit() {
+  local name="$1"
+  local output="$evidence/cache-state-$name.json"
+  local log="$evidence/cache-state-$name.evaluation.log"
+  if [[ -e "$output" || -e "$log" ]]; then
+    echo "refusing to overwrite cache-state audit: $output" >&2
+    return 1
+  fi
+  python3 "$cache_state" --output "$output"
+  if grep -q '"comparison_unusable": true' "$output"; then
+    echo "cache-state: comparison_unusable; retained audit $output" >&2
+  fi
+}
 record() {
   local name="$1" scenario="$2" stage="$3" state="$4"
   shift 4
@@ -44,8 +63,10 @@ record() {
 nix path-info --all > "$evidence/store-before.txt"
 nix --version > "$evidence/nix-version.txt"
 uname -a > "$evidence/platform.txt"
+cache_audit fresh
 record build fresh evaluate-realize 'fresh hosted runner after Nix installation; see store-before.txt' \
   ./dev nix-components build --directory "$evidence/components"
+cache_audit repeat
 record repeat repeat build 'exact component outputs and evaluation inputs present' \
   ./dev nix-components build --directory "$evidence/components"
 for suite in nhcore-test-core nhcore-test-auth nhcore-test-integration nhcore-test-service nhintegrations-test; do
@@ -78,6 +99,7 @@ GIT_AUTHOR_DATE='2026-09-25T12:00:00Z' GIT_COMMITTER_DATE='2026-09-25T12:00:00Z'
   git -c user.name='Build measurement' -c user.email='build-measurement@neohaskell.org' \
   commit -m 'test: disposable representative Text implementation mutation'
 git show --format=fuller HEAD > "$evidence/mutation.patch"
+cache_audit text-edit
 record edit implementation-edit evaluate-realize 'baseline Nix outputs retained before one committed implementation edit' \
   ./dev nix-components build --directory "$evidence/edited-components"
 record edit-test implementation-edit execute-core 'edited core executable and runtime present' \
@@ -98,6 +120,7 @@ GIT_AUTHOR_DATE='2026-09-25T12:05:00Z' GIT_COMMITTER_DATE='2026-09-25T12:05:00Z'
   git -c user.name='Build measurement' -c user.email='build-measurement@neohaskell.org' \
   commit -m 'test: disposable sibling Int implementation mutation'
 git show --format=fuller HEAD > "$evidence/sibling-mutation.patch"
+cache_audit sibling-edit
 record sibling-edit sibling-implementation-edit evaluate-realize 'baseline Nix outputs retained before one committed sibling implementation edit' \
   ./dev nix-components build --directory "$evidence/sibling-components"
 record sibling-edit-test sibling-implementation-edit execute-core 'edited sibling core executable and runtime present' \
