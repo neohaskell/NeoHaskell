@@ -82,8 +82,59 @@ jobs:
           authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
           skipPush: true
       - name: Build to populate cache
-        run: nix build --accept-flake-config -L .#ci-components
+        run: ./dev nix-components build
       - name: Push complete ci-components closure
         run: |
           set -euo pipefail
-          nix path-info --recursive .#ci-components | cachix push neohaskell
+          nix path-info --recursive "$(cat component-artifact/root.txt)" | cachix push neohaskell
+      - uses: actions/upload-artifact@v7
+        if: github.event_name == 'workflow_dispatch'
+        with:
+          name: published-component-metadata-${{ matrix.os }}
+          path: |
+            component-artifact/root.txt
+            component-artifact/producer.json
+            component-artifact/closure.json
+            component-artifact/timings.jsonl
+          if-no-files-found: error
+          retention-days: 30
+
+  verify-published:
+    needs: cachix-push
+    if: github.event_name == 'workflow_dispatch'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: DeterminateSystems/determinate-nix-action@v3.22.2
+        with:
+          extra-conf: |
+            accept-flake-config = true
+            extra-substituters = https://cache.iog.io https://neohaskell.cachix.org
+            extra-trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= neohaskell.cachix.org-1:mo2cLaGbwqbrxs9xhqKK8jeNsn3osi7t6XoAmxSZssc=
+      - uses: actions/download-artifact@v8
+        with:
+          name: published-component-metadata-${{ matrix.os }}
+          path: component-artifact
+      - name: Fetch signed exact outputs with all builders disabled
+        run: ./dev nix-components fetch --from-cachix
+      - name: Execute the fetched core test binary
+        run: ./dev nix-components run --suite nhcore-test-core
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: public-cache-verification-${{ matrix.os }}
+          path: |
+            component-artifact/root.txt
+            component-artifact/producer.json
+            component-artifact/timings.jsonl
+            component-report.log
+          if-no-files-found: error
+          retention-days: 30

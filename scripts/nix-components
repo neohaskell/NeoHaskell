@@ -110,7 +110,11 @@ def main():
     parser.add_argument('--directory', type=Path, default=Path('component-artifact'))
     parser.add_argument('--suite', choices=SUITES)
     parser.add_argument('--report', type=Path, default=Path('component-report.log'))
+    parser.add_argument('--from-cachix', action='store_true',
+                        help='fetch exact producer outputs from the signed public cache')
     args = parser.parse_args()
+    if args.from_cachix and args.action != 'fetch':
+        parser.error('--from-cachix requires fetch')
     os.chdir(ROOT)
     directory = args.directory.resolve()
     directory.mkdir(parents=True, exist_ok=True)
@@ -155,8 +159,10 @@ def main():
             elif args.action == 'fetch':
                 # No flake evaluation/IFD and no compiler on the consuming route.
                 # Only this run's producer artifact is trusted without signatures.
-                command(['nix', 'copy', '--from', (directory / 'cache').as_uri(),
-                         '--no-check-sigs', '--option', 'max-jobs', '0',
+                source = 'https://neohaskell.cachix.org' if args.from_cachix else (directory / 'cache').as_uri()
+                signature_options = [] if args.from_cachix else ['--no-check-sigs']
+                command(['nix', 'copy', '--from', source,
+                         *signature_options, '--option', 'max-jobs', '0',
                          '--option', 'builders', '', root])
                 command(['nix', 'path-info', '--recursive', root])
                 environment(root)

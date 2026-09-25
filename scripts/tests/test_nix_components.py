@@ -100,6 +100,22 @@ class Components(unittest.TestCase):
                  patch.object(c, 'command', side_effect=subprocess.CalledProcessError(1, ['nix'])):
                 self.assertEqual(c.main(), 1)
 
+    def test_public_cache_fetch_checks_signatures_and_never_builds_on_miss(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = '/nix/store/' + 'a'*32 + '-bundle'
+            args = ['nix-components', 'fetch', '--from-cachix', '--directory', directory]
+            with patch.object(sys, 'argv', args), \
+                 patch.object(c, 'load_bundle', return_value=root), \
+                 patch.object(c, 'environment'), patch.object(c, 'command') as command:
+                self.assertEqual(c.main(), 0)
+                self.assertEqual(command.call_args_list[0].args[0], [
+                    'nix', 'copy', '--from', 'https://neohaskell.cachix.org',
+                    '--option', 'max-jobs', '0', '--option', 'builders', '', root])
+            with patch.object(sys, 'argv', args), \
+                 patch.object(c, 'load_bundle', return_value=root), \
+                 patch.object(c, 'command', side_effect=subprocess.CalledProcessError(1, ['nix'])):
+                self.assertEqual(c.main(), 1)
+
     def test_actual_aggregate_gate_fails_closed(self):
         source = (ROOT/'.github/workflows/test.yml').read_text().split('  ci-gate:', 1)[1]
         source = source.split('\n  baseline-measurement:', 1)[0]
