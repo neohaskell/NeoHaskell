@@ -20,6 +20,15 @@ builders disabled, without flake evaluation. Trust unsigned artifacts only from
 the same workflow run. Fork jobs need no cache-write credentials; main's Cachix
 workflow publishes actual component outputs for later reuse.
 
+For a pre-merge cache fill, a maintainer dispatches the trusted two-platform
+publisher with the immutable checkout SHA:
+`SHA="$(git rev-parse HEAD)"; gh workflow run cachix-push.yml --repo neohaskell/NeoHaskell --ref snotty-kiwi -f source_sha="$SHA"`.
+The action configures the public cache and the job explicitly pushes the complete
+`ci-components` closure, including substituted paths. After both matrix jobs pass,
+verify the bundle and nine component paths with exact public `narinfo`/`StorePath`
+checks on each platform; complete remote-absent observations before this dispatch,
+and treat the publisher run as setup rather than a timing observation.
+
 | Consumer | Working route |
 |---|---|
 | Five test suites | Execute fetched binaries; retain fresh reports/counts |
