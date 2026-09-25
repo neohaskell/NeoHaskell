@@ -15,6 +15,54 @@
     "ci_note": "Run 36143308159 production jobs are still the unsplit candidate. Only its optional measurement jobs apply the split pilot. Its 8m36s production span is cache-rate-limited/disabled and is not evidence that the pilot is faster.",
     "total_rule": "For a multi-stage workload, sum stages within each repetition first, then take the median of those per-repetition totals. Never sum stage medians and call that a total median."
   },
+  "timeline": [
+    {
+      "id": "A",
+      "label": "Cabal baseline",
+      "commit": "e94a6c5",
+      "series": "cabal",
+      "status": "measured",
+      "workload": "baseline",
+      "line_group": null
+    },
+    {
+      "id": "B",
+      "label": "Nix unsplit candidate",
+      "commit": "c65700c",
+      "series": "nix-unsplit",
+      "status": "measured",
+      "workload": "candidate",
+      "line_group": null
+    },
+    {
+      "id": "C",
+      "label": "Extracted pilot",
+      "commit": "05c07df",
+      "series": "extracted-pilot",
+      "status": "measured",
+      "workload": "pilot",
+      "line_group": null
+    },
+    {
+      "id": "D",
+      "label": "Flags aligned",
+      "commit": "1efe92a",
+      "series": "nix-unsplit",
+      "status": "pending",
+      "workload": null,
+      "line_group": null
+    },
+    {
+      "id": "E",
+      "label": "Duplicate upload off",
+      "commit": "15eeef1",
+      "series": "nix-unsplit",
+      "status": "pending",
+      "workload": null,
+      "line_group": null
+    }
+  ],
+  "timeline_rule": "Append each future change in chronological order. Plot a colored line only between measured points sharing a line_group (a matched configuration); singleton unmatched points remain points. Pending changes are marked without invented values.",
   "workloads": [
     {
       "id": "baseline",

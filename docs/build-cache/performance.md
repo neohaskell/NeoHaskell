@@ -14,14 +14,26 @@ URL so the image is stable outside the checkout:
 https://raw.githubusercontent.com/neohaskell/NeoHaskell/<PERFORMANCE_COMMIT>/docs/build-cache/performance.png
 ```
 
+The figure is an append-only timeline. A, B, and C are the one measured
+configuration currently available for Cabal, the Nix unsplit candidate, and the
+extracted pilot. D and E are pending flag-alignment and duplicate-upload
+changes, so they have no values. Each measured point is the median of three
+observations; the small dots show those observations. A colored line is drawn
+only when later points share an explicitly matched configuration group. The
+timeline will fill in as those reruns land.
+
+Hosted CI is kept as a separate table below. Its one-run critical elapsed time
+is not mixed with summed runner time, and the 987fe3d production run is labeled
+as the unsplit candidate with rate-limited/disabled cache behavior, not as
+evidence that the pilot is faster.
+
 ## Comparability guard
 
 The current baseline, candidate, and pilot measurements all confirm O1, but
 their split-sections and HIE settings differ. The baseline is the Cabal route;
 the candidate and pilot use the Nix component route, and the pilot also changes
 the component graph. These are unmatched diagnostic observations. The chart
-uses separate points and does not connect variants or compute a percentage
-improvement.
+keeps those points separate and does not compute a percentage improvement.
 
 The route totals below are calculated from raw observations by summing every
 stage within each repetition and then taking the median of those totals. The
@@ -96,13 +108,17 @@ No timing is invented for changes that have not had a matched rerun.
 
 ## Updating the log
 
-1. Add raw stage observations to [`performance.json`](performance.json), with
-   equal-length arrays for stages that form one route. Record the exact commit,
-   platform, local/remote cache state, and an evidence URL.
-2. For a new hosted run, append critical span, runner sum, and artifact-ready
+1. Append the next change to `timeline` in [`performance.json`](performance.json)
+   with its plain-language label, short commit, series, and status. Use
+   `pending` until it has a real measurement; do not reuse an earlier point.
+2. For a measured point, add raw stage observations with equal-length arrays
+   for stages in each route. Record the exact commit, platform, local/remote
+   cache state, and an evidence URL. Set `line_group` only when the point is a
+   genuinely matched configuration; otherwise leave it `null`.
+3. For a new hosted run, append critical span, runner sum, and artifact-ready
    wait as separate fields. Keep `n=1` rows visibly noncomparable until matched
    repetitions exist.
-3. Render the deterministic chart and print its recomputed route medians:
+4. Render the deterministic chart and print its recomputed route medians:
 
    ```sh
    uv run --with matplotlib python3 docs/build-cache/performance.py \
@@ -110,7 +126,7 @@ No timing is invented for changes that have not had a matched rerun.
      --output docs/build-cache/performance.png
    ```
 
-4. Inspect `performance.png` at roughly PR width, update the table if a new
+5. Inspect `performance.png` at roughly PR width, update the table if a new
    row was added, then run `git diff --check`. Keep this directory limited to
    the `performance*` log, data, renderer, and PNG files.
 
