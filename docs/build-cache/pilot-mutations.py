@@ -76,15 +76,23 @@ def mutate(repo, case):
         'flag': 'foundation/nhfoundation.cabal',
         'runtime-fixture': 'testbed/tests/integrations/openapi.hurl',
     }
+    # The parity configuration passes -O1 after Cabal options. Mutate that
+    # effective setting when present, rather than an overridden Cabal flag.
+    if case == 'flag' and 'ghcOptions = [ "-O1" ];' in (repo/'nix/hix.nix').read_text():
+        files['flag'] = 'nix/hix.nix'
     path = repo/files[case]
     before = path.read_text()
     if case == 'implementation':
         assert before.count('isEmpty = Data.Text.null\n') == 1
         after = before.replace('isEmpty = Data.Text.null\n','isEmpty text = text |> Data.Text.null\n')
     elif case == 'flag':
-        assert before.count('\nlibrary\n  import: common_cfg\n') == 1
-        after = before.replace('\nlibrary\n  import: common_cfg\n',
-                               '\nlibrary\n  import: common_cfg\n  ghc-options: -O0\n')
+        if files['flag'] == 'nix/hix.nix':
+            assert before.count('ghcOptions = [ "-O1" ];') == 1
+            after = before.replace('ghcOptions = [ "-O1" ];', 'ghcOptions = [ "-O0" ];')
+        else:
+            assert before.count('\nlibrary\n  import: common_cfg\n') == 1
+            after = before.replace('\nlibrary\n  import: common_cfg\n',
+                                   '\nlibrary\n  import: common_cfg\n  ghc-options: -O0\n')
     elif case == 'runtime-fixture':
         after = before + '\nGET http://localhost:8080/cache-fixture-must-fail\nHTTP 200\n'
     elif case == 'markdown':
