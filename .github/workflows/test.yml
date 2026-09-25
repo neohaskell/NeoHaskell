@@ -4,7 +4,11 @@ on:
   workflow_dispatch:
     inputs:
       baseline_measurements:
-        description: Also collect three isolated baseline observations (additional runner time)
+        description: Collect three matched baseline and candidate observations (six additional runners)
+        type: boolean
+        default: false
+      pilot_measurements:
+        description: Measure the disposable extraction pilot instead (three additional runners)
         type: boolean
         default: false
   pull_request:
@@ -481,14 +485,14 @@ jobs:
           echo "ci-gate: all build/test jobs passed (or correctly skipped — nothing to test)"
 
   baseline-measurement:
-    if: github.event_name == 'workflow_dispatch' && inputs.baseline_measurements
+    if: github.event_name == 'workflow_dispatch' && (inputs.baseline_measurements || inputs.pilot_measurements)
     runs-on: ubuntu-latest
     timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
         repetition: [1, 2, 3]
-        route: [baseline, candidate]
+        route: ${{ fromJSON(inputs.pilot_measurements && '["pilot"]' || '["baseline", "candidate"]') }}
     steps:
       - uses: actions/checkout@v7.0.1
         with:

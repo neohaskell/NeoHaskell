@@ -35,12 +35,12 @@ du -sk "$evidence/components/cache" > "$evidence/cache-size-kib.txt"
 rm -rf "$evidence/components/cache"
 python3 - <<'PY'
 from pathlib import Path
-p=Path('core/core/Text.hs');s=p.read_text()
+p=Path('foundation/core/Text.hs' if Path('foundation/nhfoundation.cabal').exists() else 'core/core/Text.hs');s=p.read_text()
 old='isEmpty = Data.Text.null\n'
 assert s.count(old)==1, 'representative mutation no longer matches candidate'
 p.write_text(s.replace(old, 'isEmpty text = text |> Data.Text.null\n'))
 PY
-git add core/core/Text.hs
+git add --update
 GIT_AUTHOR_DATE='2026-09-25T12:00:00Z' GIT_COMMITTER_DATE='2026-09-25T12:00:00Z' \
   git -c user.name='Build measurement' -c user.email='build-measurement@neohaskell.org' \
   commit -m 'test: disposable representative Text implementation mutation'
