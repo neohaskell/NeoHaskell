@@ -1,0 +1,16 @@
+run	suite	examples	failures	pending	log	line
+Linux 36155654547	auth	189	0	0	/tmp/nh-full-ci-evidence-899-36155662081-c0d34a8/logs/linux-36155654547/108142220348-test-auth.log	1836
+Linux 36155654547	core	1095	0	3	/tmp/nh-full-ci-evidence-899-36155662081-c0d34a8/logs/linux-36155654547/108142220333-test-core.log	3038
+Linux 36155654547	integration	70	0	4	/tmp/nh-full-ci-evidence-899-36155662081-c0d34a8/logs/linux-36155654547/108142220257-test-integration.log	1697
+Linux 36155654547	service	1128	0	57	/tmp/nh-full-ci-evidence-899-36155662081-c0d34a8/logs/linux-36155654547/108142220239-test-service.log	3401
+Linux 36155654547	nhintegrations	606	0	3	/tmp/nh-full-ci-evidence-899-36155662081-c0d34a8/logs/linux-36155654547/108142220472-test-integrations.log	2399
+Linux 36155658355	auth	189	0	0	/tmp/nh-full-ci-evidence-899-36155662081-c0d34a8/logs/linux-36155658355/108142136857-test-auth.log	1836
+Linux 36155658355	core	1095	0	3	/tmp/nh-full-ci-evidence-899-36155662081-c0d34a8/logs/linux-36155658355/108142136897-test-core.log	3038
+Linux 36155658355	integration	70	0	4	/tmp/nh-full-ci-evidence-899-36155662081-c0d34a8/logs/linux-36155658355/108142136917-test-integration.log	1696
+Linux 36155658355	service	1128	0	57	/tmp/nh-full-ci-evidence-899-36155662081-c0d34a8/logs/linux-36155658355/108142136838-test-service.log	3402
+Linux 36155658355	nhintegrations	606	0	3	/tmp/nh-full-ci-evidence-899-36155662081-c0d34a8/logs/linux-36155658355/108142136984-test-integrations.log	2398
+macOS 36155662081	auth	189	0	0	/tmp/nh-full-ci-evidence-899-36155662081-c0d34a8/logs/mac/108142962699-tests-macos-nhcore-test-auth.log	1821
+macOS 36155662081	core	1095	0	3	/tmp/nh-full-ci-evidence-899-36155662081-c0d34a8/logs/mac/108142962906-tests-macos-nhcore-test-core.log	3012
+macOS 36155662081	integration	70	0	4	/tmp/nh-full-ci-evidence-899-36155662081-c0d34a8/logs/mac/108142962771-tests-macos-nhcore-test-integration.log	1679
+macOS 36155662081	service	1128	0	57	/tmp/nh-full-ci-evidence-899-36155662081-c0d34a8/logs/mac/108142962835-tests-macos-nhcore-test-service.log	3272
+macOS 36155662081	nhintegrations	606	0	3	/tmp/nh-full-ci-evidence-899-36155662081-c0d34a8/logs/mac/108142962766-tests-macos-nhintegrations-test.log	2377

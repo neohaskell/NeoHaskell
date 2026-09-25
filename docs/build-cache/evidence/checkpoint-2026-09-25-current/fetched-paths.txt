@@ -1,0 +1,39 @@
+linux54547: copying_paths=659 path_info_lines=659 distinct_path_info=659
+  bundle=/nix/store/k9haj4aw65cv5h3r9phrh9dn8l30ymn4-neohaskell-ci-components
+  nhcore-lib-nhcore-0.10.1=/nix/store/dmpmj6qq3gxh1iz5d6nzc0314lhjxjdr-nhcore-lib-nhcore-0.10.1
+  nhintegrations-lib-nhintegrations-0.10.1=/nix/store/cvzp34yvm29vz0b38z1z6b3js4l2lnmj-nhintegrations-lib-nhintegrations-0.10.1
+  nhtestbed-lib-nhtestbed-0.10.1=/nix/store/nn4r8lfki54rfsfv2d8inkcqwb23clmm-nhtestbed-lib-nhtestbed-0.10.1
+  nhcore-test-nhcore-test-core-0.10.1=/nix/store/7r8hj1j0h4j2rpdnd8nadgza41njp3d9-nhcore-test-nhcore-test-core-0.10.1
+  nhcore-test-nhcore-test-auth-0.10.1=/nix/store/jis95pbmad4v4zbc22yv7jb5xcvkk8x5-nhcore-test-nhcore-test-auth-0.10.1
+  nhcore-test-nhcore-test-integration-0.10.1=/nix/store/xv3al2fkjwp2mnxa4jjhyb28z3ysh8fg-nhcore-test-nhcore-test-integration-0.10.1
+  nhcore-test-nhcore-test-service-0.10.1=/nix/store/8rq72r3wvcn6j9bnyqm61j0ixwdxw1ba-nhcore-test-nhcore-test-service-0.10.1
+  nhintegrations-test-nhintegrations-test-0.10.1=/nix/store/42xn29xbv3pz7ldlw1j74dj6zfm3cxqf-nhintegrations-test-nhintegrations-test-0.10.1
+  nhtestbed-exe-nhtestbed-0.10.1=/nix/store/9dp1jpd0hgwrqc8xsjg3ybw8zf2w2pzm-nhtestbed-exe-nhtestbed-0.10.1
+  first_copy=test-auth	Fetch exact outputs without compilation	2026-09-25T15:48:41.7058213Z copying path '/nix/store/0ja5daq2yay3svg6f48spyfby7pgy5bm-xgcc-14.3.0-libgcc' from 'file:///home/runner/work/NeoHaskell/NeoHaskell/component-artifact/cache'...
+  final_copy=test-auth	Fetch exact outputs without compilation	2026-09-25T15:49:09.0042324Z copying path '/nix/store/k9haj4aw65cv5h3r9phrh9dn8l30ymn4-neohaskell-ci-components' from 'file:///home/runner/work/NeoHaskell/NeoHaskell/component-artifact/cache'...
+linux58355: copying_paths=659 path_info_lines=659 distinct_path_info=659
+  bundle=/nix/store/k9haj4aw65cv5h3r9phrh9dn8l30ymn4-neohaskell-ci-components
+  nhcore-lib-nhcore-0.10.1=/nix/store/dmpmj6qq3gxh1iz5d6nzc0314lhjxjdr-nhcore-lib-nhcore-0.10.1
+  nhintegrations-lib-nhintegrations-0.10.1=/nix/store/cvzp34yvm29vz0b38z1z6b3js4l2lnmj-nhintegrations-lib-nhintegrations-0.10.1
+  nhtestbed-lib-nhtestbed-0.10.1=/nix/store/nn4r8lfki54rfsfv2d8inkcqwb23clmm-nhtestbed-lib-nhtestbed-0.10.1
+  nhcore-test-nhcore-test-core-0.10.1=/nix/store/7r8hj1j0h4j2rpdnd8nadgza41njp3d9-nhcore-test-nhcore-test-core-0.10.1
+  nhcore-test-nhcore-test-auth-0.10.1=/nix/store/jis95pbmad4v4zbc22yv7jb5xcvkk8x5-nhcore-test-nhcore-test-auth-0.10.1
+  nhcore-test-nhcore-test-integration-0.10.1=/nix/store/xv3al2fkjwp2mnxa4jjhyb28z3ysh8fg-nhcore-test-nhcore-test-integration-0.10.1
+  nhcore-test-nhcore-test-service-0.10.1=/nix/store/8rq72r3wvcn6j9bnyqm61j0ixwdxw1ba-nhcore-test-nhcore-test-service-0.10.1
+  nhintegrations-test-nhintegrations-test-0.10.1=/nix/store/42xn29xbv3pz7ldlw1j74dj6zfm3cxqf-nhintegrations-test-nhintegrations-test-0.10.1
+  nhtestbed-exe-nhtestbed-0.10.1=/nix/store/9dp1jpd0hgwrqc8xsjg3ybw8zf2w2pzm-nhtestbed-exe-nhtestbed-0.10.1
+  first_copy=test-auth	Fetch exact outputs without compilation	2026-09-25T15:47:32.3758101Z copying path '/nix/store/0ja5daq2yay3svg6f48spyfby7pgy5bm-xgcc-14.3.0-libgcc' from 'file:///home/runner/work/NeoHaskell/NeoHaskell/component-artifact/cache'...
+  final_copy=test-auth	Fetch exact outputs without compilation	2026-09-25T15:47:46.4572764Z copying path '/nix/store/k9haj4aw65cv5h3r9phrh9dn8l30ymn4-neohaskell-ci-components' from 'file:///home/runner/work/NeoHaskell/NeoHaskell/component-artifact/cache'...
+mac: copying_paths=646 path_info_lines=646 distinct_path_info=646
+  bundle=/nix/store/866avk4nzlyb99vzzavbh36lmgqx1x0z-neohaskell-ci-components
+  nhcore-lib-nhcore-0.10.1=/nix/store/ja0ifq35aij4qlar85ywmggn95cqmjcd-nhcore-lib-nhcore-0.10.1
+  nhintegrations-lib-nhintegrations-0.10.1=/nix/store/k5x4srk1aiqi5z607vhl3nw97f1qz8wp-nhintegrations-lib-nhintegrations-0.10.1
+  nhtestbed-lib-nhtestbed-0.10.1=/nix/store/b1zkiqg9h80xnp3p58zmp36vswzrvdi1-nhtestbed-lib-nhtestbed-0.10.1
+  nhcore-test-nhcore-test-core-0.10.1=/nix/store/sr858h6xn7h8zxj337v8506pbjhzdk5s-nhcore-test-nhcore-test-core-0.10.1
+  nhcore-test-nhcore-test-auth-0.10.1=/nix/store/ivgmqml6gli0w688z11pg0xnni4m0y67-nhcore-test-nhcore-test-auth-0.10.1
+  nhcore-test-nhcore-test-integration-0.10.1=/nix/store/wss0qiivwxi94kfm90zmdrcc9im12yy2-nhcore-test-nhcore-test-integration-0.10.1
+  nhcore-test-nhcore-test-service-0.10.1=/nix/store/dk3nq0bnqj09aqj9ipdfw0dli4cn60cz-nhcore-test-nhcore-test-service-0.10.1
+  nhintegrations-test-nhintegrations-test-0.10.1=/nix/store/9ka33m91rzy13j6qbvl91pw20nc2id5w-nhintegrations-test-nhintegrations-test-0.10.1
+  nhtestbed-exe-nhtestbed-0.10.1=/nix/store/c1kiglfvbz3xyyl1q8v6maixy9zsipil-nhtestbed-exe-nhtestbed-0.10.1
+  first_copy=tests-macos (nhcore-test-auth)	Fetch exact outputs without compilation	2026-09-25T15:52:30.2692270Z copying path '/nix/store/8mnkb36119jswzapy8a7dva78242l9yk-data-default-lib-data-default-0.8.0.1-data' from 'file:///Users/runner/work/NeoHaskell/NeoHaskell/component-artifact/cache'...
+  final_copy=tests-macos (nhcore-test-auth)	Fetch exact outputs without compilation	2026-09-25T15:53:53.3561560Z copying path '/nix/store/866avk4nzlyb99vzzavbh36lmgqx1x0z-neohaskell-ci-components' from 'file:///Users/runner/work/NeoHaskell/NeoHaskell/component-artifact/cache'...

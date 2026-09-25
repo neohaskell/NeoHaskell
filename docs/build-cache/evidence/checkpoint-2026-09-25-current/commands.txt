@@ -1,0 +1,7 @@
+gh run view RUN --repo neohaskell/NeoHaskell --json databaseId,headSha,status,conclusion,createdAt,updatedAt,workflowName,event,jobs,url
+gh api repos/neohaskell/NeoHaskell/actions/jobs/JOB
+gh run view RUN --job JOB --log
+gh api repos/neohaskell/NeoHaskell/actions/runs/RUN/artifacts?per_page=100
+gh api repos/neohaskell/NeoHaskell/actions/artifacts/ARTIFACT_ID/zip > artifact.zip
+unzip -q artifact.zip -d files
+jq/python3/rg used to parse immutable revision, job intervals, suite summaries, Hurl/cold-start/codemap/doctest lines, and fetched paths

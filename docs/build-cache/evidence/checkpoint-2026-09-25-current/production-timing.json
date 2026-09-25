@@ -1,0 +1,473 @@
+[
+  {
+    "platform": "macOS",
+    "run": 36155662081,
+    "url": "https://github.com/neohaskell/NeoHaskell/actions/runs/36155662081",
+    "revision": "c0d34a80f1ae99474231715232f28119a6a297fe",
+    "status": "completed",
+    "conclusion": "success",
+    "createdAt": "2026-09-25T15:39:38Z",
+    "updatedAt": "2026-09-25T15:54:15Z",
+    "production_job_count": 7,
+    "production_all_success": true,
+    "production_earliest_start": "2026-09-25T15:39:53Z",
+    "production_latest_end": "2026-09-25T15:54:14Z",
+    "production_critical_span_s": 861.0,
+    "production_runner_aggregate_s": 1817.0,
+    "gate_startedAt": "2026-09-25T15:54:10Z",
+    "gate_completedAt": "2026-09-25T15:54:14Z",
+    "jobs": [
+      {
+        "databaseId": 108139463651,
+        "name": "build-macos",
+        "status": "completed",
+        "conclusion": "success",
+        "startedAt": "2026-09-25T15:39:53Z",
+        "completedAt": "2026-09-25T15:49:08Z",
+        "url": "https://github.com/neohaskell/NeoHaskell/actions/runs/36155662081/job/108139463651",
+        "duration_s": 555.0
+      },
+      {
+        "databaseId": 108142962699,
+        "name": "tests-macos (nhcore-test-auth)",
+        "status": "completed",
+        "conclusion": "success",
+        "startedAt": "2026-09-25T15:49:18Z",
+        "completedAt": "2026-09-25T15:54:07Z",
+        "url": "https://github.com/neohaskell/NeoHaskell/actions/runs/36155662081/job/108142962699",
+        "duration_s": 289.0
+      },
+      {
+        "databaseId": 108142962766,
+        "name": "tests-macos (nhintegrations-test)",
+        "status": "completed",
+        "conclusion": "success",
+        "startedAt": "2026-09-25T15:49:18Z",
+        "completedAt": "2026-09-25T15:52:57Z",
+        "url": "https://github.com/neohaskell/NeoHaskell/actions/runs/36155662081/job/108142962766",
+        "duration_s": 219.0
+      },
+      {
+        "databaseId": 108142962771,
+        "name": "tests-macos (nhcore-test-integration)",
+        "status": "completed",
+        "conclusion": "success",
+        "startedAt": "2026-09-25T15:49:18Z",
+        "completedAt": "2026-09-25T15:53:55Z",
+        "url": "https://github.com/neohaskell/NeoHaskell/actions/runs/36155662081/job/108142962771",
+        "duration_s": 277.0
+      },
+      {
+        "databaseId": 108142962835,
+        "name": "tests-macos (nhcore-test-service)",
+        "status": "completed",
+        "conclusion": "success",
+        "startedAt": "2026-09-25T15:49:14Z",
+        "completedAt": "2026-09-25T15:53:16Z",
+        "url": "https://github.com/neohaskell/NeoHaskell/actions/runs/36155662081/job/108142962835",
+        "duration_s": 242.0
+      },
+      {
+        "databaseId": 108142962906,
+        "name": "tests-macos (nhcore-test-core)",
+        "status": "completed",
+        "conclusion": "success",
+        "startedAt": "2026-09-25T15:49:16Z",
+        "completedAt": "2026-09-25T15:53:07Z",
+        "url": "https://github.com/neohaskell/NeoHaskell/actions/runs/36155662081/job/108142962906",
+        "duration_s": 231.0
+      },
+      {
+        "databaseId": 108144770002,
+        "name": "ci-gate-macos",
+        "status": "completed",
+        "conclusion": "success",
+        "startedAt": "2026-09-25T15:54:10Z",
+        "completedAt": "2026-09-25T15:54:14Z",
+        "url": "https://github.com/neohaskell/NeoHaskell/actions/runs/36155662081/job/108144770002",
+        "duration_s": 4.0
+      }
+    ],
+    "optional_jobs": [],
+    "build_completedAt": "2026-09-25T15:49:08Z",
+    "test_ready_gaps_s": {
+      "tests-macos (nhcore-test-auth)": 10.0,
+      "tests-macos (nhintegrations-test)": 10.0,
+      "tests-macos (nhcore-test-integration)": 10.0,
+      "tests-macos (nhcore-test-service)": 6.0,
+      "tests-macos (nhcore-test-core)": 8.0
+    }
+  },
+  {
+    "platform": "Linux candidate/benchmark",
+    "run": 36155654547,
+    "url": "https://github.com/neohaskell/NeoHaskell/actions/runs/36155654547",
+    "revision": "c0d34a80f1ae99474231715232f28119a6a297fe",
+    "status": "completed",
+    "conclusion": "success",
+    "createdAt": "2026-09-25T15:39:34Z",
+    "updatedAt": "2026-09-25T15:58:54Z",
+    "production_job_count": 11,
+    "production_all_success": true,
+    "production_earliest_start": "2026-09-25T15:39:38Z",
+    "production_latest_end": "2026-09-25T15:49:21Z",
+    "production_critical_span_s": 583.0,
+    "production_runner_aggregate_s": 1446.0,
+    "gate_startedAt": "2026-09-25T15:49:18Z",
+    "gate_completedAt": "2026-09-25T15:49:21Z",
+    "jobs": [
+      {
+        "databaseId": 108139437513,
+        "name": "changes",
+        "status": "completed",
+        "conclusion": "success",
+        "startedAt": "2026-09-25T15:39:38Z",
+        "completedAt": "2026-09-25T15:39:44Z",
+        "url": "https://github.com/neohaskell/NeoHaskell/actions/runs/36155654547/job/108139437513",
+        "duration_s": 6.0
+      },
+      {
+        "databaseId": 108139491937,
+        "name": "codemap-sync",
+        "status": "completed",
+        "conclusion": "success",
+        "startedAt": "2026-09-25T15:39:51Z",
+        "completedAt": "2026-09-25T15:44:30Z",
+        "url": "https://github.com/neohaskell/NeoHaskell/actions/runs/36155654547/job/108139491937",
+        "duration_s": 279.0
+      },
+      {
+        "databaseId": 108139491989,
+        "name": "doctest",
+        "status": "completed",
+        "conclusion": "success",
+        "startedAt": "2026-09-25T15:39:51Z",
+        "completedAt": "2026-09-25T15:43:14Z",
+        "url": "https://github.com/neohaskell/NeoHaskell/actions/runs/36155654547/job/108139491989",
+        "duration_s": 203.0
+      },
+      {
+        "databaseId": 108139492104,
+        "name": "build",
+        "status": "completed",
+        "conclusion": "success",
+        "startedAt": "2026-09-25T15:39:52Z",
+        "completedAt": "2026-09-25T15:47:05Z",
+        "url": "https://github.com/neohaskell/NeoHaskell/actions/runs/36155654547/job/108139492104",
+        "duration_s": 433.0
+      },
+      {
+        "databaseId": 108142220239,
+        "name": "test-service",
+        "status": "completed",
+        "conclusion": "success",
+        "startedAt": "2026-09-25T15:47:08Z",
+        "completedAt": "2026-09-25T15:48:55Z",
+        "url": "https://github.com/neohaskell/NeoHaskell/actions/runs/36155654547/job/108142220239",
+        "duration_s": 107.0
+      },
+      {
+        "databaseId": 108142220257,
+        "name": "test-integration",
+        "status": "completed",
+        "conclusion": "success",
+        "startedAt": "2026-09-25T15:47:08Z",
+        "completedAt": "2026-09-25T15:48:51Z",
+        "url": "https://github.com/neohaskell/NeoHaskell/actions/runs/36155654547/job/108142220257",
+        "duration_s": 103.0
+      },
+      {
+        "databaseId": 108142220279,
+        "name": "test-hurl",
+        "status": "completed",
+        "conclusion": "success",
+        "startedAt": "2026-09-25T15:47:09Z",
+        "completedAt": "2026-09-25T15:48:40Z",
+        "url": "https://github.com/neohaskell/NeoHaskell/actions/runs/36155654547/job/108142220279",
+        "duration_s": 91.0
+      },
+      {
+        "databaseId": 108142220333,
+        "name": "test-core",
+        "status": "completed",
+        "conclusion": "success",
+        "startedAt": "2026-09-25T15:47:08Z",
+        "completedAt": "2026-09-25T15:48:17Z",
+        "url": "https://github.com/neohaskell/NeoHaskell/actions/runs/36155654547/job/108142220333",
+        "duration_s": 69.0
+      },
+      {
+        "databaseId": 108142220348,
+        "name": "test-auth",
+        "status": "completed",
+        "conclusion": "success",
+        "startedAt": "2026-09-25T15:47:55Z",
+        "completedAt": "2026-09-25T15:49:15Z",
+        "url": "https://github.com/neohaskell/NeoHaskell/actions/runs/36155654547/job/108142220348",
+        "duration_s": 80.0
+      },
+      {
+        "databaseId": 108142220472,
+        "name": "test-integrations",
+        "status": "completed",
+        "conclusion": "success",
+        "startedAt": "2026-09-25T15:47:57Z",
+        "completedAt": "2026-09-25T15:49:09Z",
+        "url": "https://github.com/neohaskell/NeoHaskell/actions/runs/36155654547/job/108142220472",
+        "duration_s": 72.0
+      },
+      {
+        "databaseId": 108143007281,
+        "name": "ci-gate",
+        "status": "completed",
+        "conclusion": "success",
+        "startedAt": "2026-09-25T15:49:18Z",
+        "completedAt": "2026-09-25T15:49:21Z",
+        "url": "https://github.com/neohaskell/NeoHaskell/actions/runs/36155654547/job/108143007281",
+        "duration_s": 3.0
+      }
+    ],
+    "optional_jobs": [
+      {
+        "databaseId": 108139437761,
+        "name": "baseline-measurement (1, baseline)",
+        "status": "completed",
+        "conclusion": "success",
+        "startedAt": "2026-09-25T15:39:38Z",
+        "completedAt": "2026-09-25T15:53:34Z",
+        "url": "https://github.com/neohaskell/NeoHaskell/actions/runs/36155654547/job/108139437761",
+        "duration_s": 836.0
+      },
+      {
+        "databaseId": 108139437795,
+        "name": "baseline-measurement (2, baseline)",
+        "status": "completed",
+        "conclusion": "success",
+        "startedAt": "2026-09-25T15:39:40Z",
+        "completedAt": "2026-09-25T15:57:22Z",
+        "url": "https://github.com/neohaskell/NeoHaskell/actions/runs/36155654547/job/108139437795",
+        "duration_s": 1062.0
+      },
+      {
+        "databaseId": 108139437810,
+        "name": "baseline-measurement (3, candidate)",
+        "status": "completed",
+        "conclusion": "success",
+        "startedAt": "2026-09-25T15:39:39Z",
+        "completedAt": "2026-09-25T15:57:33Z",
+        "url": "https://github.com/neohaskell/NeoHaskell/actions/runs/36155654547/job/108139437810",
+        "duration_s": 1074.0
+      },
+      {
+        "databaseId": 108139437832,
+        "name": "baseline-measurement (2, candidate)",
+        "status": "completed",
+        "conclusion": "success",
+        "startedAt": "2026-09-25T15:39:39Z",
+        "completedAt": "2026-09-25T15:55:54Z",
+        "url": "https://github.com/neohaskell/NeoHaskell/actions/runs/36155654547/job/108139437832",
+        "duration_s": 975.0
+      },
+      {
+        "databaseId": 108139437838,
+        "name": "baseline-measurement (3, baseline)",
+        "status": "completed",
+        "conclusion": "success",
+        "startedAt": "2026-09-25T15:39:38Z",
+        "completedAt": "2026-09-25T15:57:40Z",
+        "url": "https://github.com/neohaskell/NeoHaskell/actions/runs/36155654547/job/108139437838",
+        "duration_s": 1082.0
+      },
+      {
+        "databaseId": 108139437865,
+        "name": "baseline-measurement (1, candidate)",
+        "status": "completed",
+        "conclusion": "success",
+        "startedAt": "2026-09-25T15:39:38Z",
+        "completedAt": "2026-09-25T15:58:53Z",
+        "url": "https://github.com/neohaskell/NeoHaskell/actions/runs/36155654547/job/108139437865",
+        "duration_s": 1155.0
+      }
+    ],
+    "build_completedAt": "2026-09-25T15:47:05Z",
+    "test_ready_gaps_s": {
+      "test-service": 3.0,
+      "test-integration": 3.0,
+      "test-hurl": 4.0,
+      "test-core": 3.0,
+      "test-auth": 50.0,
+      "test-integrations": 52.0
+    }
+  },
+  {
+    "platform": "Linux pilot",
+    "run": 36155658355,
+    "url": "https://github.com/neohaskell/NeoHaskell/actions/runs/36155658355",
+    "revision": "c0d34a80f1ae99474231715232f28119a6a297fe",
+    "status": "completed",
+    "conclusion": "success",
+    "createdAt": "2026-09-25T15:39:36Z",
+    "updatedAt": "2026-09-25T15:59:14Z",
+    "production_job_count": 11,
+    "production_all_success": true,
+    "production_earliest_start": "2026-09-25T15:39:41Z",
+    "production_latest_end": "2026-09-25T15:49:03Z",
+    "production_critical_span_s": 562.0,
+    "production_runner_aggregate_s": 1352.0,
+    "gate_startedAt": "2026-09-25T15:49:00Z",
+    "gate_completedAt": "2026-09-25T15:49:03Z",
+    "jobs": [
+      {
+        "databaseId": 108139449827,
+        "name": "changes",
+        "status": "completed",
+        "conclusion": "success",
+        "startedAt": "2026-09-25T15:39:41Z",
+        "completedAt": "2026-09-25T15:39:49Z",
+        "url": "https://github.com/neohaskell/NeoHaskell/actions/runs/36155658355/job/108139449827",
+        "duration_s": 8.0
+      },
+      {
+        "databaseId": 108139526677,
+        "name": "build",
+        "status": "completed",
+        "conclusion": "success",
+        "startedAt": "2026-09-25T15:39:57Z",
+        "completedAt": "2026-09-25T15:46:51Z",
+        "url": "https://github.com/neohaskell/NeoHaskell/actions/runs/36155658355/job/108139526677",
+        "duration_s": 414.0
+      },
+      {
+        "databaseId": 108139526821,
+        "name": "doctest",
+        "status": "completed",
+        "conclusion": "success",
+        "startedAt": "2026-09-25T15:39:57Z",
+        "completedAt": "2026-09-25T15:43:20Z",
+        "url": "https://github.com/neohaskell/NeoHaskell/actions/runs/36155658355/job/108139526821",
+        "duration_s": 203.0
+      },
+      {
+        "databaseId": 108139526834,
+        "name": "codemap-sync",
+        "status": "completed",
+        "conclusion": "success",
+        "startedAt": "2026-09-25T15:39:58Z",
+        "completedAt": "2026-09-25T15:44:11Z",
+        "url": "https://github.com/neohaskell/NeoHaskell/actions/runs/36155658355/job/108139526834",
+        "duration_s": 253.0
+      },
+      {
+        "databaseId": 108142136838,
+        "name": "test-service",
+        "status": "completed",
+        "conclusion": "success",
+        "startedAt": "2026-09-25T15:46:55Z",
+        "completedAt": "2026-09-25T15:48:56Z",
+        "url": "https://github.com/neohaskell/NeoHaskell/actions/runs/36155658355/job/108142136838",
+        "duration_s": 121.0
+      },
+      {
+        "databaseId": 108142136857,
+        "name": "test-auth",
+        "status": "completed",
+        "conclusion": "success",
+        "startedAt": "2026-09-25T15:46:54Z",
+        "completedAt": "2026-09-25T15:47:52Z",
+        "url": "https://github.com/neohaskell/NeoHaskell/actions/runs/36155658355/job/108142136857",
+        "duration_s": 58.0
+      },
+      {
+        "databaseId": 108142136897,
+        "name": "test-core",
+        "status": "completed",
+        "conclusion": "success",
+        "startedAt": "2026-09-25T15:46:54Z",
+        "completedAt": "2026-09-25T15:47:54Z",
+        "url": "https://github.com/neohaskell/NeoHaskell/actions/runs/36155658355/job/108142136897",
+        "duration_s": 60.0
+      },
+      {
+        "databaseId": 108142136917,
+        "name": "test-integration",
+        "status": "completed",
+        "conclusion": "success",
+        "startedAt": "2026-09-25T15:46:54Z",
+        "completedAt": "2026-09-25T15:48:00Z",
+        "url": "https://github.com/neohaskell/NeoHaskell/actions/runs/36155658355/job/108142136917",
+        "duration_s": 66.0
+      },
+      {
+        "databaseId": 108142136984,
+        "name": "test-integrations",
+        "status": "completed",
+        "conclusion": "success",
+        "startedAt": "2026-09-25T15:46:55Z",
+        "completedAt": "2026-09-25T15:48:17Z",
+        "url": "https://github.com/neohaskell/NeoHaskell/actions/runs/36155658355/job/108142136984",
+        "duration_s": 82.0
+      },
+      {
+        "databaseId": 108142137059,
+        "name": "test-hurl",
+        "status": "completed",
+        "conclusion": "success",
+        "startedAt": "2026-09-25T15:46:54Z",
+        "completedAt": "2026-09-25T15:48:18Z",
+        "url": "https://github.com/neohaskell/NeoHaskell/actions/runs/36155658355/job/108142137059",
+        "duration_s": 84.0
+      },
+      {
+        "databaseId": 108142896142,
+        "name": "ci-gate",
+        "status": "completed",
+        "conclusion": "success",
+        "startedAt": "2026-09-25T15:49:00Z",
+        "completedAt": "2026-09-25T15:49:03Z",
+        "url": "https://github.com/neohaskell/NeoHaskell/actions/runs/36155658355/job/108142896142",
+        "duration_s": 3.0
+      }
+    ],
+    "optional_jobs": [
+      {
+        "databaseId": 108139450046,
+        "name": "baseline-measurement (3, pilot)",
+        "status": "completed",
+        "conclusion": "success",
+        "startedAt": "2026-09-25T15:39:42Z",
+        "completedAt": "2026-09-25T15:59:14Z",
+        "url": "https://github.com/neohaskell/NeoHaskell/actions/runs/36155658355/job/108139450046",
+        "duration_s": 1172.0
+      },
+      {
+        "databaseId": 108139450241,
+        "name": "baseline-measurement (1, pilot)",
+        "status": "completed",
+        "conclusion": "success",
+        "startedAt": "2026-09-25T15:39:40Z",
+        "completedAt": "2026-09-25T15:58:25Z",
+        "url": "https://github.com/neohaskell/NeoHaskell/actions/runs/36155658355/job/108139450241",
+        "duration_s": 1125.0
+      },
+      {
+        "databaseId": 108139450289,
+        "name": "baseline-measurement (2, pilot)",
+        "status": "completed",
+        "conclusion": "success",
+        "startedAt": "2026-09-25T15:39:49Z",
+        "completedAt": "2026-09-25T15:56:22Z",
+        "url": "https://github.com/neohaskell/NeoHaskell/actions/runs/36155658355/job/108139450289",
+        "duration_s": 993.0
+      }
+    ],
+    "build_completedAt": "2026-09-25T15:46:51Z",
+    "test_ready_gaps_s": {
+      "test-service": 4.0,
+      "test-auth": 3.0,
+      "test-core": 3.0,
+      "test-integration": 3.0,
+      "test-integrations": 4.0,
+      "test-hurl": 3.0
+    }
+  }
+]
