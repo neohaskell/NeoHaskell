@@ -44,6 +44,12 @@ sandbox/*.nix
 example.cabal
 result
 
+# Generated component closures/reports and local benchmark evidence. Authored
+# docs/build-cache scripts, the pilot patch and protocol remain reviewable.
+/component-artifact/
+/component-report.log
+/docs/build-cache/evidence/
+
 .opencode/*
 !.opencode/agents/
 !.opencode/skills/
