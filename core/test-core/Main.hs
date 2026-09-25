@@ -51,6 +51,8 @@ import Test.Hspec qualified as Hspec
 
 main :: IO ()
 main = Hspec.hspec do
+  Hspec.it "[DISPOSABLE_CI_GATE_FAILURE_PROBE]" do
+    Hspec.expectationFailure "DISPOSABLE_CI_GATE_FAILURE_PROBE"
   Hspec.describe "AsyncTask.Race" AsyncTask.RaceSpec.spec
   Hspec.describe "Array" ArraySpec.spec
   Hspec.describe "Bytes" BytesSpec.spec
