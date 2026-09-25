@@ -2,6 +2,11 @@ name: "Test"
 
 on:
   workflow_dispatch:
+    inputs:
+      baseline_measurements:
+        description: Also collect three isolated baseline observations (additional runner time)
+        type: boolean
+        default: false
   pull_request:
     branches:
       - main
@@ -477,3 +482,48 @@ jobs:
             fi
           done
           echo "ci-gate: all build/test jobs passed (or correctly skipped — nothing to test)"
+
+  baseline-measurement:
+    if: github.event_name == 'workflow_dispatch' && inputs.baseline_measurements
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        repetition: [1, 2, 3]
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          path: harness
+          persist-credentials: false
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: cab923c0b098fdb82ece539380719c0757ec9057
+          path: baseline
+          persist-credentials: false
+      - uses: DeterminateSystems/determinate-nix-action@v3.22.2
+        with:
+          extra-conf: |
+            accept-flake-config = true
+            extra-substituters = https://cache.iog.io https://neohaskell.cachix.org
+            extra-trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= neohaskell.cachix.org-1:mo2cLaGbwqbrxs9xhqKK8jeNsn3osi7t6XoAmxSZssc=
+      - name: Start real PostgreSQL fixture
+        run: |
+          docker run -d --name baseline-postgres \
+            -e POSTGRES_USER=neohaskell -e POSTGRES_PASSWORD=neohaskell \
+            -e POSTGRES_DB=neohaskell -p 5432:5432 postgres:16-alpine \
+            postgres -c max_connections=200
+          for i in $(seq 1 30); do
+            docker exec baseline-postgres pg_isready -U neohaskell && break || sleep 1
+          done
+          docker exec baseline-postgres pg_isready -U neohaskell
+      - name: Measure immutable baseline and controlled implementation edit
+        working-directory: baseline
+        run: bash ../harness/docs/build-cache/baseline.sh "$GITHUB_WORKSPACE/harness/docs/build-cache/measure.py" "$GITHUB_WORKSPACE/evidence"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: baseline-linux-${{ matrix.repetition }}
+          path: evidence
+          retention-days: 30
+          if-no-files-found: error
