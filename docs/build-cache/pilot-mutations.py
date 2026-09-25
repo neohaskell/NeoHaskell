@@ -138,7 +138,7 @@ def main():
                 manifest=json.loads((Path(bundle)/'manifest.json').read_text())
                 env={**os.environ,'NHTESTBED_BINARY':current['testbed']['out']+'/bin/nhtestbed',
                      'PATH':manifest['runtime']+'/bin:'+os.environ['PATH']}
-                capture(['bash','testbed/scripts/run-tests.sh'],repo,folder,'fixture-execution',expected=1,env=env)
+                capture(['bash','testbed/scripts/run-tests.sh'],repo,folder,'fixture-execution',expected=4,env=env)
                 log=(folder/'fixture-execution.log').read_text()
                 if 'cache-fixture-must-fail' not in log:
                     raise ValueError('runtime failure did not execute the mutated fixture')

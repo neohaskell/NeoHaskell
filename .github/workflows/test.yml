@@ -488,6 +488,7 @@ jobs:
       fail-fast: false
       matrix:
         repetition: [1, 2, 3]
+        route: [baseline, candidate]
     steps:
       - uses: actions/checkout@v7.0.1
         with:
@@ -495,7 +496,7 @@ jobs:
           persist-credentials: false
       - uses: actions/checkout@v7.0.1
         with:
-          ref: cab923c0b098fdb82ece539380719c0757ec9057
+          ref: ${{ matrix.route == 'baseline' && 'cab923c0b098fdb82ece539380719c0757ec9057' || github.sha }}
           path: baseline
           persist-credentials: false
       - uses: DeterminateSystems/determinate-nix-action@v3.22.2
@@ -515,13 +516,15 @@ jobs:
             sleep 1
           done
           docker exec baseline-postgres pg_isready -h 127.0.0.1 -U neohaskell
-      - name: Measure immutable baseline and controlled implementation edit
+      - name: Measure immutable checkout and controlled implementation edit
         working-directory: baseline
-        run: bash ../harness/docs/build-cache/baseline.sh "$GITHUB_WORKSPACE/harness/docs/build-cache/measure.py" "$GITHUB_WORKSPACE/evidence"
+        env:
+          ROUTE: ${{ matrix.route }}
+        run: bash "../harness/docs/build-cache/$ROUTE.sh" "$GITHUB_WORKSPACE/harness/docs/build-cache/measure.py" "$GITHUB_WORKSPACE/evidence"
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: baseline-linux-${{ matrix.repetition }}
+          name: measurement-linux-${{ matrix.route }}-${{ matrix.repetition }}
           path: evidence
           retention-days: 30
           if-no-files-found: error
