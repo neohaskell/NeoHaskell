@@ -32,16 +32,18 @@ evidence that the pilot is faster.
 
 ## Comparability guard
 
-These are descriptive sequential observations: the baseline uses Cabal, the
-candidate and pilot use Nix components, and build flags/cache conditions differ,
-so the lines do not isolate a causal speedup.
+Cabal and Nix are intentional alternatives on the same declared workload, so
+F-H support descriptive route comparison. The archived logs confirm GHC 9.8.4,
+`-O1` and disabled split sections for all three routes. Exact equality of every
+remaining package, compiler, linker and codegen default is unconfirmed; cache and
+dependency state differ, so the lines do not isolate causal percentages.
 
 The route totals below are calculated from raw observations by summing every
 stage within each repetition and then taking the median of those totals. The
 stage medians are never added together and labelled as a total median. Detailed
-stage arrays remain in [`performance.json`](performance.json); the permanent
-raw archive is [commit `4a913b4`](https://github.com/neohaskell/NeoHaskell/tree/4a913b4/docs/build-cache/evidence)
-on `evidence/pr-899-build-cache`.
+stage arrays remain in [`performance.json`](performance.json). The historical
+archive is [commit `4a913b4`](https://github.com/neohaskell/NeoHaskell/tree/4a913b4/docs/build-cache/evidence);
+the matched F-H raw archive is [checkpoint-2026-09-25-measurements](https://github.com/neohaskell/NeoHaskell/tree/727dd11/docs/build-cache/evidence/checkpoint-2026-09-25-measurements).
 
 ## Sequential running log
 
@@ -66,6 +68,63 @@ route totals. The source benchmark has exit code 0 for every observation.
 | `05c07df` | Pilot repeat build | x86_64-Linux | Exact component outputs and inputs present | 3 | `[3.742, 4.431, 4.321] / 4.321` | Diagnostic / unmatched | [benchmark JSON](https://github.com/neohaskell/NeoHaskell/blob/4a913b4/docs/build-cache/evidence/benchmark.json) |
 | `05c07df` | Pilot cache export / transfer encoding | x86_64-Linux | Complete component closure present | 3 | `[9.333, 10.221, 11.045] / 10.221` | Diagnostic / unmatched | [benchmark JSON](https://github.com/neohaskell/NeoHaskell/blob/4a913b4/docs/build-cache/evidence/benchmark.json) |
 | `9f27e46` | Pilot compatibility build + execute | x86_64-Linux | Pilot outputs present; configured flake substituters | 3 | `[11.465, 10.463, 10.630] / 10.630` | Separate compatibility check | [benchmark report](https://github.com/neohaskell/NeoHaskell/blob/4a913b4/docs/build-cache/evidence/benchmark.md) |
+
+## Matched Linux reruns (F-H)
+
+Runs F-H hold the five component suites, Hurl, cold-start, repeat build, deterministic Text edit + core test, and Int sibling edit + core test constant across three fresh Linux repetitions. Cabal and Nix are intentional alternatives on this workload, so these rows support descriptive route comparison. Remaining dependency, cache, and compiler/runtime differences keep causal percentage claims out of scope.
+
+Route totals sum corrected stages within each repetition and then take the median. Candidate and pilot add each matching cache audit `evaluation.eval_s`; `probe_s` and remaining audit wall time are excluded. The pilot `export` and `compatibility` stages are retained in `performance.json` and excluded from these matched routes.
+
+| Event / workload | Route | All observations / median (s) | Status | Evidence |
+|---|---|---:|---|---|
+| `F / matched baseline` | Fresh execution: five suites + Hurl + cold start | `[118.336, 154.022, 157.784] / 154.022` | Valid n=3 | `https://github.com/neohaskell/NeoHaskell/actions/runs/36155654547`, `https://github.com/neohaskell/NeoHaskell/tree/727dd11/docs/build-cache/evidence/checkpoint-2026-09-25-measurements` |
+| `F / matched baseline` | Fresh route: setup/evaluate + execution | `[468.171, 576.969, 584.845] / 576.969` | Valid n=3 | `https://github.com/neohaskell/NeoHaskell/actions/runs/36155654547`, `https://github.com/neohaskell/NeoHaskell/tree/727dd11/docs/build-cache/evidence/checkpoint-2026-09-25-measurements` |
+| `F / matched baseline` | Text edit + core test | `[152.192, 209.198, 217.739] / 209.198` | Valid n=3 | `https://github.com/neohaskell/NeoHaskell/actions/runs/36155654547`, `https://github.com/neohaskell/NeoHaskell/tree/727dd11/docs/build-cache/evidence/checkpoint-2026-09-25-measurements` |
+| `F / matched baseline` | Int sibling edit + core test | `[164.245, 219.637, 227.959] / 219.637` | Valid n=3 | `https://github.com/neohaskell/NeoHaskell/actions/runs/36155654547`, `https://github.com/neohaskell/NeoHaskell/tree/727dd11/docs/build-cache/evidence/checkpoint-2026-09-25-measurements` |
+| `F / matched baseline` | Repeat build (including evaluation work) | `[6.348, 9.790, 10.038] / 9.790` | Valid n=3 | `https://github.com/neohaskell/NeoHaskell/actions/runs/36155654547`, `https://github.com/neohaskell/NeoHaskell/tree/727dd11/docs/build-cache/evidence/checkpoint-2026-09-25-measurements` |
+| `G / matched candidate` | Fresh execution: five suites + Hurl + cold start | `[69.069, 71.899, 78.286] / 71.899` | Valid n=3 | `https://github.com/neohaskell/NeoHaskell/actions/runs/36155654547`, `https://github.com/neohaskell/NeoHaskell/tree/727dd11/docs/build-cache/evidence/checkpoint-2026-09-25-measurements` |
+| `G / matched candidate` | Fresh route: setup/evaluate + execution | `[440.142, 379.915, 419.838] / 419.838` | Valid n=3 | `https://github.com/neohaskell/NeoHaskell/actions/runs/36155654547`, `https://github.com/neohaskell/NeoHaskell/tree/727dd11/docs/build-cache/evidence/checkpoint-2026-09-25-measurements` |
+| `G / matched candidate` | Text edit + core test | `[315.761, 245.563, 262.835] / 262.835` | Valid n=3 | `https://github.com/neohaskell/NeoHaskell/actions/runs/36155654547`, `https://github.com/neohaskell/NeoHaskell/tree/727dd11/docs/build-cache/evidence/checkpoint-2026-09-25-measurements` |
+| `G / matched candidate` | Int sibling edit + core test | `[315.098, 241.168, 261.648] / 261.648` | Diagnostic only: one invalid cache audit | `https://github.com/neohaskell/NeoHaskell/actions/runs/36155654547`, `https://github.com/neohaskell/NeoHaskell/tree/727dd11/docs/build-cache/evidence/checkpoint-2026-09-25-measurements` |
+| `G / matched candidate` | Repeat build (including evaluation work) | `[8.407, 5.599, 8.544] / 8.407` | Valid n=3 | `https://github.com/neohaskell/NeoHaskell/actions/runs/36155654547`, `https://github.com/neohaskell/NeoHaskell/tree/727dd11/docs/build-cache/evidence/checkpoint-2026-09-25-measurements` |
+| `H / matched pilot` | Fresh execution: five suites + Hurl + cold start | `[68.308, 67.384, 68.781] / 68.308` | Valid n=3 | `https://github.com/neohaskell/NeoHaskell/actions/runs/36155658355`, `https://github.com/neohaskell/NeoHaskell/tree/727dd11/docs/build-cache/evidence/checkpoint-2026-09-25-measurements` |
+| `H / matched pilot` | Fresh route: setup/evaluate + execution | `[426.227, 388.829, 442.127] / 426.227` | Valid n=3 | `https://github.com/neohaskell/NeoHaskell/actions/runs/36155658355`, `https://github.com/neohaskell/NeoHaskell/tree/727dd11/docs/build-cache/evidence/checkpoint-2026-09-25-measurements` |
+| `H / matched pilot` | Text edit + core test | `[302.583, 261.431, 311.426] / 302.583` | Valid n=3 | `https://github.com/neohaskell/NeoHaskell/actions/runs/36155658355`, `https://github.com/neohaskell/NeoHaskell/tree/727dd11/docs/build-cache/evidence/checkpoint-2026-09-25-measurements` |
+| `H / matched pilot` | Int sibling edit + core test | `[296.484, 252.561, 298.153] / 296.484` | Valid n=3 | `https://github.com/neohaskell/NeoHaskell/actions/runs/36155658355`, `https://github.com/neohaskell/NeoHaskell/tree/727dd11/docs/build-cache/evidence/checkpoint-2026-09-25-measurements` |
+| `H / matched pilot` | Repeat build (including evaluation work) | `[8.033, 6.030, 8.385] / 8.033` | Valid n=3 | `https://github.com/neohaskell/NeoHaskell/actions/runs/36155658355`, `https://github.com/neohaskell/NeoHaskell/tree/727dd11/docs/build-cache/evidence/checkpoint-2026-09-25-measurements` |
+
+The corrected route medians are: baseline fresh execution `154.022`, full fresh `576.969`, Text edit + core `209.198`, Int sibling + core `219.637`, repeat `9.790`; candidate `71.899`, `419.838`, `262.835`, `261.648` (diagnostic only), `8.407`; pilot `68.308`, `426.227`, `302.583`, `296.484`, `8.033` seconds.
+
+### Cache-audit observations
+
+Each audit covers 10 outputs and 40 remote checks. `evaluation.eval_s` is route work. `probe_s` is instrumentation and stays out of route totals.
+
+| Workload | Audit route | `evaluation.eval_s` observations / median (s) | `probe_s` observations / median (s), excluded | Audit flags | Output state |
+|---|---|---:|---:|---|---|
+| `candidate-matched` | `fresh` | `[36.098, 30.738, 51.532] / 36.098` | `[8.801, 11.482, 16.407] / 11.482` | 3/3 usable; status complete; eval exit 0; unrecognized substituters 0 | local present 0/30; remote present 0/120; remote absent 120/120 |
+| `candidate-matched` | `repeat` | `[4.352, 2.645, 5.304] / 4.352` | `[3.877, 6.487, 9.390] / 6.487` | 3/3 usable; status complete; eval exit 0; unrecognized substituters 0 | local present 30/30; remote present 0/120; remote absent 120/120 |
+| `candidate-matched` | `text-edit` | `[4.011, 2.988, 3.413] / 3.413` | `[6.231, 12.322, 16.950] / 12.322` | 3/3 usable; status complete; eval exit 0; unrecognized substituters 0 | local present 0/30; remote present 0/120; remote absent 120/120 |
+| `candidate-matched` | `sibling-edit` | `[3.971, 2.777, 2.872] / 2.872` | `[7.002, 12.680, 20.639] / 12.680` | 2/3 usable; rep 3 `comparison_unusable`; status complete; eval exit 0; unrecognized substituters 0 | local present 0/30; remote present 0/120; remote errors 1 |
+| `pilot-matched` | `fresh` | `[34.920, 32.010, 37.544] / 34.920` | `[9.281, 6.628, 12.596] / 9.281` | 3/3 usable; status complete; eval exit 0; unrecognized substituters 0 | local present 0/30; remote present 0/120; remote absent 120/120 |
+| `pilot-matched` | `repeat` | `[4.200, 2.790, 4.283] / 4.200` | `[4.054, 3.808, 6.837] / 4.054` | 3/3 usable; status complete; eval exit 0; unrecognized substituters 0 | local present 30/30; remote present 0/120; remote absent 120/120 |
+| `pilot-matched` | `text-edit` | `[3.726, 2.944, 3.844] / 3.726` | `[7.809, 7.642, 12.608] / 7.809` | 3/3 usable; status complete; eval exit 0; unrecognized substituters 0 | local present 0/30; remote present 0/120; remote absent 120/120 |
+| `pilot-matched` | `sibling-edit` | `[3.968, 3.011, 3.709] / 3.709` | `[7.679, 8.300, 12.627] / 8.300` | 3/3 usable; status complete; eval exit 0; unrecognized substituters 0 | local present 0/30; remote present 0/120; remote absent 120/120 |
+
+The single invalid audit is candidate repetition 3, `cache-state-sibling-edit.json`: `nhcore:test:nhcore-test-core` received a `neohaskell.cachix.org` network error. Its sibling route remains diagnostic and is excluded from comparative decisions. Baseline has no audit because raw Cabal has no `ci-components` output to probe. All observation exit codes are zero, all matched routes have `n=3`, and the observation log digests pass `docs/build-cache/measure.py summarize`.
+
+### Compiler-flag proof
+
+| Workload | Confirmed in archived logs | Remaining gap |
+|---|---|---|
+| Baseline F | GHC 9.8.4 and `-O1` (`measurement-linux-baseline-3/build/command.log:992`); Cabal `--disable-split-sections` (`:1050`); `--ghc-option=-fwrite-ide-info` (`:1131`). | Full equality of package, compiler, linker and codegen defaults with Nix remains unconfirmed. |
+| Candidate G | Nix configure output contains `--disable-split-sections --ghc-options=-O1`, `--ghc-option=-fwrite-ide-info`, and generated `--ghc-option=-hiedir/...-hie` (`measurement-linux-candidate-1/build/command.log`). | Full equality of remaining package/compiler/linker defaults remains unconfirmed. |
+| Pilot H | Same explicit `--disable-split-sections --ghc-options=-O1`, `-fwrite-ide-info`, and generated HIE directory in `measurement-linux-pilot-1/build/command.log`. | Full equality of remaining package/compiler/linker defaults remains unconfirmed. |
+
+### Expansion decision
+
+Pilot Text realization is `298.890s` versus the candidate/unsplit `259.269s`: `+39.621s` (`+15.282%`); including the core test, the route is `302.583s` versus `262.835s`. The preset criterion requires at least 15% **and** 60s median representative-edit improvement. Both readings are slower and below the 60s absolute threshold, so the pilot does not justify expansion on this evidence.
+
+Raw artifacts, `analysis.json`, and the measurement report are archived at [checkpoint-2026-09-25-measurements](https://github.com/neohaskell/NeoHaskell/tree/727dd11/docs/build-cache/evidence/checkpoint-2026-09-25-measurements).
 
 ## Hosted CI single-run breakdown
 
@@ -94,7 +153,7 @@ were green, but the service reports differ (`1,128 examples / 57 pending` on
 Linux versus `1,090 / 52` on macOS), because the original macOS command omitted `POSTGRES_AVAILABLE=true` despite
 starting PostgreSQL. Its missing cases exclude it from equivalent-suite
 comparisons. Baseline fix `5604e6c` sets the sentinel only on the service row;
-that corrected macOS workflow still needs a rerun.
+that corrected run36158410770 executed the missing cases but failed the unchanged bad-credentials assertion because Homebrew trusted connections. The fixture is corrected at65b227d and retry36160842540 is running.
 No cross-platform aggregate or speedup is inferred from these rows.
 The Linux 10s wait is the measured `upload-artifact` completion to first
 consumer-job start interval. The macOS workflow builds inside each matrix test
@@ -140,8 +199,8 @@ These are descriptive per-run observations, not three equivalent repetitions
 or evidence of a speedup. Optional job time is excluded from sums but its effect
 on scheduling remains. Detailed intervals, counts, exact output paths and raw
 logs are retained in the [production archive](https://github.com/neohaskell/NeoHaskell/tree/631d9c1/docs/build-cache/evidence/checkpoint-2026-09-25-current).
-Sequential baseline/candidate/pilot measurement analysis is being collected
-separately. The corrected macOS Cabal baseline is running as
+The matched Linux baseline/candidate/pilot reruns and their cache-audit proof
+are recorded in the section above. The corrected macOS Cabal baseline is running as
 [36158410770](https://github.com/neohaskell/NeoHaskell/actions/runs/36158410770)
 at `5604e6c`.
 

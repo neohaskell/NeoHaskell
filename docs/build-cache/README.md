@@ -28,6 +28,12 @@ The action configures the public cache and the job explicitly pushes the complet
 verify the bundle and nine component paths with exact public `narinfo`/`StorePath`
 checks on each platform; complete remote-absent observations before this dispatch,
 and treat the publisher run as setup rather than a timing observation.
+The manual publisher also starts fresh Linux/macOS consumers after publication.
+They download only producer metadata, run `./dev nix-components fetch --from-cachix`
+with signature checks enabled and all builders disabled, then execute the core
+suite. Missing public outputs fail this verification; there is no build fallback.
+This checks the signed public-cache route separately from the credential-free
+same-run file-cache route used by required CI.
 
 | Consumer | Working route |
 |---|---|
@@ -101,6 +107,19 @@ for every suite. It may lose parallel execution, so measure the complete route
 before changing required CI. The inspiration is NixCI's documented
 [persistent worker stores](https://nix-ci.com/comparison#automatic-binary-caching);
 no service migration or new infrastructure is part of this experiment.
+
+The branch-only `build-cache-colocated.yml` workflow runs `colocated.sh`:
+
+```sh
+gh workflow run build-cache-colocated.yml --ref snotty-kiwi \
+  -f source_sha="$(git rev-parse HEAD)"
+```
+
+The checkout must equal the dispatch SHA. A narrow push trigger on this
+experiment branch bootstraps new workflow/runner revisions before the workflow
+exists on main. Reports retain30 days. `scripts/tests/test_colocated.py` exercises
+the wrapper without Nix or Docker, including failure propagation, fixture cleanup,
+changed output rejection and the workflow's required repetition label.
 
 Use three fresh hosted Linux runners, with repetitions serialized to reduce
 measurement-job contention. Each runner builds the immutable checkout and runs
