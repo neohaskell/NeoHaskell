@@ -16,7 +16,7 @@ https://raw.githubusercontent.com/neohaskell/NeoHaskell/<PERFORMANCE_COMMIT>/doc
 
 The figure is an append-only timeline. A, B, and C are the one measured
 configuration currently available for Cabal, the Nix unsplit candidate, and the
-extracted pilot. D and E are pending flag-alignment and duplicate-upload
+extracted pilot. D and E are pending duplicate-upload and flag-alignment
 changes, so they have no values. Each measured point is the median of three
 observations; the small dots show those observations. A colored line is drawn
 only when later points share an explicitly matched configuration group. The
@@ -103,8 +103,8 @@ No timing is invented for changes that have not had a matched rerun.
 
 | Commit | Technique | Platform | Cache condition | n / observations / median | Status | Evidence |
 |---|---|---|---|---|---|---|
-| [`1efe92a`](https://github.com/neohaskell/NeoHaskell/commit/1efe92a) | Align candidate local-package flags with baseline: explicit O1, split-sections disabled, HIE enabled | Linux + macOS | Dependencies untouched; matched rerun required | `— / — / —` | Pending measurement | [commit](https://github.com/neohaskell/NeoHaskell/commit/1efe92a) |
 | [`15eeef1`](https://github.com/neohaskell/NeoHaskell/commit/15eeef1348630b6e96a7a9cba472af8cc7deea53) (same patch as [`f64fe87`](https://github.com/neohaskell/NeoHaskell/commit/f64fe870ec8157ebb9764a143880103717262bd7)) | Disable duplicate producer upload: `use-gha-cache: disabled`, `use-flakehub: disabled` | Linux + macOS | Upstream substituters and same-run artifact path retained | `— / — / —` | Pending measurement | [15eeef1](https://github.com/neohaskell/NeoHaskell/commit/15eeef1348630b6e96a7a9cba472af8cc7deea53) |
+| [`1efe92a`](https://github.com/neohaskell/NeoHaskell/commit/1efe92a) | Align candidate local-package flags with baseline: explicit O1, split-sections disabled, HIE enabled | Linux + macOS | Dependencies untouched; matched rerun required | `— / — / —` | Pending measurement | [commit](https://github.com/neohaskell/NeoHaskell/commit/1efe92a) |
 
 ## Updating the log
 

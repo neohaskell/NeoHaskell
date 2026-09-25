@@ -45,8 +45,8 @@
     },
     {
       "id": "D",
-      "label": "Flags aligned",
-      "commit": "1efe92a",
+      "label": "Duplicate upload off",
+      "commit": "15eeef1",
       "series": "nix-unsplit",
       "status": "pending",
       "workload": null,
@@ -54,8 +54,8 @@
     },
     {
       "id": "E",
-      "label": "Duplicate upload off",
-      "commit": "15eeef1",
+      "label": "Flags aligned",
+      "commit": "1efe92a",
       "series": "nix-unsplit",
       "status": "pending",
       "workload": null,

@@ -25,9 +25,9 @@ import numpy as np
 
 
 METRICS = (
-    ("fresh_route", "Fresh build + test", "Fresh build + test route total"),
-    ("edit_route", "Implementation edit + core test", "Implementation edit + core test"),
-    ("repeat_build", "Repeat build", "Repeat build"),
+    ("fresh_route", "Fresh build + test", "minutes", 60.0),
+    ("edit_route", "Implementation edit + core test", "minutes", 60.0),
+    ("repeat_build", "Repeat build", "seconds", 1.0),
 )
 
 SERIES = {
@@ -103,7 +103,7 @@ def render(data: dict, output: Path) -> None:
     )
     figure.patch.set_facecolor("#ffffff")
 
-    for axis, (route_name, title, _) in zip(axes, METRICS):
+    for axis, (route_name, title, unit, divisor) in zip(axes, METRICS):
         measured_by_group: dict[tuple[str, str], list[tuple[float, float]]] = defaultdict(list)
         all_values: list[float] = []
         for event_index, event in enumerate(events):
@@ -111,16 +111,16 @@ def render(data: dict, output: Path) -> None:
             if observations is None:
                 axis.axvline(event_index, color="#d1d5db", linestyle=":", linewidth=0.8, zorder=0)
                 continue
-            observations_minutes = [value / 60.0 for value in observations]
-            median_minutes = statistics.median(observations_minutes)
-            all_values.extend(observations_minutes)
+            display_observations = [value / divisor for value in observations]
+            display_median = statistics.median(display_observations)
+            all_values.extend(display_observations)
             color = SERIES[event["series"]]["color"]
             # Three small dots preserve replicated observations without
             # suggesting that unmatched configurations form a trend.
-            jitter = np.linspace(-0.055, 0.055, len(observations_minutes))
+            jitter = np.linspace(-0.055, 0.055, len(display_observations))
             axis.scatter(
                 [event_index + value for value in jitter],
-                observations_minutes,
+                display_observations,
                 s=24,
                 color=color,
                 alpha=0.72,
@@ -130,7 +130,7 @@ def render(data: dict, output: Path) -> None:
             )
             axis.plot(
                 event_index,
-                median_minutes,
+                display_median,
                 marker="D",
                 markersize=6.0,
                 color=color,
@@ -140,11 +140,11 @@ def render(data: dict, output: Path) -> None:
             )
             if event.get("line_group"):
                 measured_by_group[(event["series"], event["line_group"])].append(
-                    (event_index, median_minutes)
+                    (event_index, display_median)
                 )
             axis.annotate(
-                f"{median_minutes:.1f}m",
-                xy=(event_index, median_minutes),
+                f"{display_median:.1f}{unit[0]}",
+                xy=(event_index, display_median),
                 xytext=(0, 8),
                 textcoords="offset points",
                 ha="center",
@@ -165,7 +165,7 @@ def render(data: dict, output: Path) -> None:
                     zorder=2,
                 )
 
-        axis.set_ylabel("minutes")
+        axis.set_ylabel(unit)
         axis.set_title(f"{title} · lower is better", loc="left", fontsize=11, pad=8)
         axis.grid(axis="y", color="#d1d5db", linewidth=0.7, alpha=0.75)
         axis.set_axisbelow(True)
@@ -176,17 +176,19 @@ def render(data: dict, output: Path) -> None:
             axis.set_ylim(bottom=0, top=max(all_values) * 1.28)
 
     axes[-1].set_xticks(x_values)
-    axes[-1].set_xticklabels(
-        [
-            f"{event['id']}\n{event['label']}\n{event['commit']}"
-            for event in events
-        ],
-        fontsize=8.4,
-    )
+    tick_labels = [
+        f"{event['id']}\n{event['label']}\n{event['commit']}"
+        + ("\nawaiting measurements" if event["status"] == "pending" else "")
+        for event in events
+    ]
+    axes[-1].set_xticklabels(tick_labels, fontsize=8.4)
+    for tick, event in zip(axes[-1].get_xticklabels(), events):
+        if event["status"] == "pending":
+            tick.set_color("#6b7280")
     axes[-1].set_xlabel("Chronological experiment changes; pending entries have no invented value")
 
     figure.suptitle(
-        "PR #899 build-cache timeline — points now, matched lines later",
+        "Build performance over experiment revisions",
         fontsize=14,
         fontweight="bold",
         x=0.04,
@@ -196,7 +198,7 @@ def render(data: dict, output: Path) -> None:
     figure.text(
         0.04,
         0.015,
-        "Each method has one measured configuration (n=3). Colored lines appear only after matched reruns share a line group; current points are diagnostic.",
+        "Diagnostic only: each method has one measured configuration (n=3); unmatched revisions remain unconnected until matched reruns land.",
         fontsize=8.5,
         color="#7f1d1d",
     )
@@ -213,7 +215,7 @@ def render(data: dict, output: Path) -> None:
         ncol=2,
         fontsize=8.4,
     )
-    figure.subplots_adjust(left=0.11, right=0.98, top=0.88, bottom=0.17, hspace=0.52)
+    figure.subplots_adjust(left=0.11, right=0.98, top=0.88, bottom=0.22, hspace=0.52)
     output.parent.mkdir(parents=True, exist_ok=True)
     figure.savefig(output, dpi=100, facecolor="white")
     plt.close(figure)
@@ -230,9 +232,9 @@ def main() -> None:
     for event in data["timeline"]:
         if event["status"] == "measured":
             values = []
-            for route_name, _, _ in METRICS:
+            for route_name, _, _, divisor in METRICS:
                 observations = timeline_observations(data, event, route_name)
-                values.append(f"{route_name}={statistics.median(observations) / 60:.3f}m")
+                values.append(f"{route_name}={statistics.median(observations) / divisor:.3f}{'m' if divisor == 60.0 else 's'}")
             print(f"{event['id']} {event['label']}: {', '.join(values)}")
 
 
