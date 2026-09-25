@@ -1,0 +1,9 @@
+gh run view 36170358310 --json databaseId,headBranch,headSha,event,conclusion,status,startedAt,updatedAt,url,workflowName,jobs	exit=0
+gh run view 36170358310 --log	exit=0
+gh run download 36170358310 --name published-component-metadata-ubuntu-latest --dir /tmp/nh-public-cache-success-36170358310/producer-ubuntu	exit=0
+gh run download 36170358310 --name published-component-metadata-macos-latest --dir /tmp/nh-public-cache-success-36170358310/producer-macos	exit=0
+gh run download 36170358310 --name public-cache-verification-ubuntu-latest --dir /tmp/nh-public-cache-success-36170358310/verification-ubuntu	exit=0
+gh run download 36170358310 --name public-cache-verification-macos-latest --dir /tmp/nh-public-cache-success-36170358310/verification-macos	exit=0
+python3 /tmp/nh-public-cache-success-36170358310/extract_summary.py	exit=0
+awk verify logs | rg consumer build/eval patterns	pipeline_exit=1 (zero matches expected); wrapper_exit=0
+jq compact platform fact table from summary.json	exit=0

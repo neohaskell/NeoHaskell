@@ -1,0 +1,30 @@
+[
+  {
+    "platform": "ubuntu-latest",
+    "producer_root": "/nix/store/k9haj4aw65cv5h3r9phrh9dn8l30ymn4-neohaskell-ci-components",
+    "consumer_root": "/nix/store/k9haj4aw65cv5h3r9phrh9dn8l30ymn4-neohaskell-ci-components",
+    "roots_match": true,
+    "closure_paths": 659,
+    "core_hspec": "1095 examples, 0 failures, 3 pending",
+    "publisher_build_s": 74.0,
+    "consumer_nix_install_s": 7.0,
+    "consumer_fetch_s": 31.0,
+    "consumer_core_test_s": 3.0,
+    "project_cachix_copy_count": 9,
+    "upstream_pg_config_copy_count": 2
+  },
+  {
+    "platform": "macos-latest",
+    "producer_root": "/nix/store/866avk4nzlyb99vzzavbh36lmgqx1x0z-neohaskell-ci-components",
+    "consumer_root": "/nix/store/866avk4nzlyb99vzzavbh36lmgqx1x0z-neohaskell-ci-components",
+    "roots_match": true,
+    "closure_paths": 646,
+    "core_hspec": "1095 examples, 0 failures, 3 pending",
+    "publisher_build_s": 111.0,
+    "consumer_nix_install_s": 71.0,
+    "consumer_fetch_s": 52.0,
+    "consumer_core_test_s": 4.0,
+    "project_cachix_copy_count": 9,
+    "upstream_pg_config_copy_count": 2
+  }
+]

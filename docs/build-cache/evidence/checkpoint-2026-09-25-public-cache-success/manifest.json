@@ -1,0 +1,7 @@
+{
+  "run": 36170358310,
+  "source": "21f102c5d25c711af2b09e61e65b6d59113efc05",
+  "result": "publishers and public-cache consumers succeeded on Ubuntu and macOS",
+  "evidence_kind": "n1 correctness; not a performance comparison",
+  "raw_source": "/tmp/nh-public-cache-success-36170358310"
+}

@@ -1,0 +1,13 @@
+{
+  "revision": "21f102c5d25c711af2b09e61e65b6d59113efc05",
+  "build": [
+    {
+      "drvPath": "/nix/store/r4vdhiahmsvzdsb0ikh5bl86cbb6yfr0-neohaskell-ci-components.drv",
+      "outputs": {
+        "out": "/nix/store/k9haj4aw65cv5h3r9phrh9dn8l30ymn4-neohaskell-ci-components"
+      }
+    }
+  ],
+  "derivation": "/nix/store/r4vdhiahmsvzdsb0ikh5bl86cbb6yfr0-neohaskell-ci-components.drv",
+  "lock_sha256": "1effc4277140756e9669e68a4585ae4694e5dabe6bba3d586cf2128a5adf3621"
+}

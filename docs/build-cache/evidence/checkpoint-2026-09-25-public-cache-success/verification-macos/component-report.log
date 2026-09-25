@@ -1,0 +1,1471 @@
+
+AsyncTask.Race
+  AsyncTask.race
+    left task wins when it finishes first [✔]
+    right task wins when it finishes first [✔]
+    loser is cancelled before its deferred effect occurs [✔]
+    error in the winning task propagates [✔]
+    error in the losing task is ignored when winner succeeds [✔]
+Array
+  Array
+    dropLast
+      removes the final element [✔]
+      returns the same empty array [✔]
+      returns an empty array for a single-element array [✔]
+    dropRight
+      drops the last n elements [✔]
+      returns the original array when n is non-positive [✔]
+      returns an empty array when n is at least the length [✔]
+Bytes
+  Bytes
+    getRandom
+      generates the requested number of bytes [✔]
+      generates empty bytes for size zero [✔]
+      generates empty bytes for negative sizes [✔]
+      generates independent values [✔]
+    unpack
+      unpack round-trips with pack [✔]
+Command.FromSchema
+  Command.fromSchema
+    constructs parser for SText [✔]
+    constructs parser for SInt [✔]
+    constructs parser for SNumber [✔]
+    constructs parser for SBool [✔]
+    constructs parser for empty object [✔]
+    constructs parser for object with multiple fields [✔]
+    constructs parser for catch-all schema variants [✔]
+  Command.fromFieldSchema
+    constructs parser for text field [✔]
+    constructs parser for int field [✔]
+    constructs parser for number field [✔]
+    constructs parser for bool field [✔]
+    constructs parser for optional field [✔]
+    constructs parser for enum field [✔]
+    constructs parser for array field [✔]
+    constructs parser for fallback field schema [✔]
+ConcurrentMap
+  ConcurrentMap
+    Basic Operations
+      new creates an empty map [✔]
+      set and get work for single entry [✔]
+      get returns Nothing for non-existent key [✔]
+      set overwrites existing value [✔]
+      remove deletes a key [✔]
+      remove on non-existent key does not fail [✔]
+      contains returns True for existing key [✔]
+      contains returns False for non-existent key [✔]
+      clear removes all entries [✔]
+      length returns correct count [✔]
+    Collection Operations
+      keys returns all keys [✔]
+      values returns all values [✔]
+      entries returns all key-value pairs [✔]
+      keys returns empty array for empty map [✔]
+      values returns empty array for empty map [✔]
+      entries returns empty array for empty map [✔]
+    Multiple Keys
+      stores and retrieves multiple keys independently [✔]
+      removing one key does not affect others [✔]
+    Edge Cases
+      handles integer keys [✔]
+      handles empty string key [✔]
+      handles large number of entries [✔]
+    Concurrent Access
+      handles concurrent reads safely [✔]
+      handles concurrent writes to different keys safely [✔]
+      handles concurrent writes to same key safely [✔]
+      handles concurrent reads and writes safely [✔]
+      handles concurrent removes safely [✔]
+      handles mixed concurrent operations safely [✔]
+Crypto
+  Crypto
+    hmacKeyFromText
+      can be created from a 32+ byte secret [✔]
+      rejects secrets shorter than 32 bytes [✔]
+      Show instance does not reveal the key [✔]
+    hmacKeyFromBytes
+      accepts 32 raw bytes [✔]
+      rejects 31 raw bytes [✔]
+    signWith
+      matches the HMAC-SHA256 known answer [✔]
+      matches the known answer for an empty message [✔]
+      is deterministic [✔]
+      produces 64 lowercase hex characters [✔]
+    verifyWith
+      accepts a signature produced by signWith [✔]
+      accepts an uppercase hex signature [✔]
+      rejects a signature for a different message [✔]
+      rejects a signature made with a different key [✔]
+      rejects a truncated signature [✔]
+      rejects garbage that is not hex at all [✔]
+    generateHmacKey
+      generates a key that round-trips sign and verify [✔]
+      generates independent keys [✔]
+Decider
+  Decider
+    generateDeterministicUuid
+      generateDeterministicUuid agrees with Uuid.generateV5 and repeats [✔]
+      generateDeterministicUuid does not draw from the random uuid source [✔]
+Decimal
+  Decimal
+    construction
+      decimal 12.50 creates correct internal value [✔]
+      fromCents 1250 equals decimal 12.50 [✔]
+      toCents (decimal 12.50) equals 1250 [✔]
+      zero is zero [✔]
+      fromInteger creates correct value [✔]
+    arithmetic
+      addition: 10.50 + 2.25 = 12.75 [✔]
+      subtraction: 10.50 - 2.25 = 8.25 [✔]
+      multiplication: 10.00 * 1.21 = 12.10 [✔]
+      division: 100.00 / 4.00 = 25.00 [✔]
+      division by zero returns Nothing [✔]
+      negate works [✔]
+      abs of negative [✔]
+    edge cases
+      zero + zero = zero [✔]
+      negative + positive = zero [✔]
+      small multiplication preserves precision [✔]
+      large multiplication uses safe intermediate arithmetic [✔]
+      fromCents and toCents round-trip [✔]
+    JSON
+      encodes as string [✔]
+      decodes from string [✔]
+      round-trips correctly [✔]
+      rejects invalid JSON [✔]
+    formatting
+      formats with 4 decimal places [✔]
+      formats zero correctly [✔]
+      formats negative correctly [✔]
+      formats large numbers [✔]
+    parsing
+      parses valid decimal [✔]
+      parses negative [✔]
+      parses integer [✔]
+      rejects invalid input [✔]
+      rejects empty string [✔]
+    rounding
+      roundTo2 rounds correctly [✔]
+    edge cases (overflow and limits)
+      large value addition works [✔]
+      signum of positive is 1 [✔]
+      signum of negative is -1 [✔]
+      signum of zero is 0 [✔]
+      default is zero [✔]
+      toFloat round-trips approximately [✔]
+Uuid
+  Uuid
+    generateV5
+      generateV5 is deterministic and matches the RFC 4122 v5 test vector [✔]
+      generateV5 distinguishes names and namespaces [✔]
+      generateV5 sets the RFC 4122 version and variant bits [✔]
+      generateV5 handles unicode and empty names [✔]
+EventVariantOf
+  EventVariantOf
+    identity instance
+      fromVariant returns the same value for the ADT type [✔]
+      fromVariant preserves TestEventB constructor [✔]
+      fromVariant preserves zero boundary value [✔]
+      fromVariant preserves empty text [✔]
+    custom variant instance
+      fromVariant converts StandaloneCreated to TestEventA [✔]
+      fromVariant converts StandaloneLabeled to TestEventB [✔]
+      fromVariant converts variant with zero value [✔]
+      fromVariant converts variant with negative value [✔]
+    event helper
+      event is an alias for fromVariant (identity) [✔]
+      event converts standalone type to ADT [✔]
+      event converts second standalone type [✔]
+    Decider smart constructors with identity instance
+      acceptNew works with ADT constructors directly [✔]
+      acceptExisting works with ADT constructors directly [✔]
+      acceptAny handles multiple identity events [✔]
+    Decider smart constructors with custom variant
+      acceptNew converts standalone variant to ADT [✔]
+      acceptExisting converts standalone variant to ADT [✔]
+      acceptAfter handles variant events with position [✔]
+    mixed event types via event helper
+      event helper enables heterogeneous event arrays [✔]
+      acceptNew with mixed identity and variant via event [✔]
+    toVariant
+      identity instance
+        toVariant returns Just for identity instance [✔]
+        toVariant returns Just for second constructor [✔]
+        toVariant preserves zero boundary value [✔]
+        toVariant preserves empty text [✔]
+      custom variant extraction
+        toVariant extracts StandaloneCreated from matching TestEventA [✔]
+        toVariant extracts StandaloneLabeled from matching TestEventB [✔]
+        toVariant returns Nothing for non-matching constructor (Created vs EventB) [✔]
+        toVariant returns Nothing for non-matching constructor (Labeled vs EventA) [✔]
+        toVariant extracts variant with zero value [✔]
+        toVariant extracts variant with negative value [✔]
+        toVariant extracts variant with empty text [✔]
+      round-trip (fromVariant . toVariant)
+        fromVariant after toVariant round-trips StandaloneCreated [✔]
+        fromVariant after toVariant round-trips StandaloneLabeled [✔]
+        round-trip preserves empty text [✔]
+        round-trip works for identity instance [✔]
+Config.Application
+  Application.withConfig
+    hasConfig
+      returns False for new Application [✔]
+      returns True after withConfig is called [✔]
+    builder pattern
+      new creates an empty Application [✔]
+      hasConfig is False for empty Application [✔]
+      hasEventStore is False for empty Application [✔]
+      hasQueryRegistry is False for empty Application [✔]
+      hasServiceRunners is False for empty Application [✔]
+      hasTransports is False for empty Application [✔]
+    inspection functions
+      serviceRunnerCount is 0 for empty Application [✔]
+      transportCount is 0 for empty Application [✔]
+      queryEndpointCount is 0 for empty Application [✔]
+      queryDefinitionCount is 0 for empty Application [✔]
+Config.ConfigDependent
+  Application.withEventStore (unified API)
+    stores factory and sets hasEventStore to True [✔]
+    works with static config using @() pattern [✔]
+  Application.withFileUpload (unified API)
+    stores factory and sets hasFileUpload to True [✔]
+    works with static config using @() pattern [✔]
+  Application.withAuth (unified API)
+    stores factory and sets hasAuth to True [✔]
+    works with static config using @() pattern [✔]
+  last-write-wins semantics
+    second withEventStore call overwrites first [✔]
+    static config overwrites dynamic factory [✔]
+    second withFileUpload call overwrites first [✔]
+    static config overwrites dynamic factory for FileUpload [✔]
+    second withAuth call overwrites first [✔]
+    static config overwrites dynamic factory for Auth [✔]
+  type safety
+    documents that config type mismatch is a compile error [‐]
+      # PENDING: compile-time guarantee - see ADR-0021
+  withConfig requirement
+    DeferredEventStore requires withConfig [✔]
+    DeferredFileUpload requires withConfig [‐]
+      # PENDING: requires Postgres - tested in nhcore-test-service and testbed
+    runWith rejects DeferredFileUpload [✔]
+    DeferredWebAuth requires withConfig [‐]
+      # PENDING: requires Postgres - tested in nhcore-test-service and testbed
+    runWith rejects DeferredWebAuth [✔]
+  Application.withCors (config-dependent)
+    works with static config using @() pattern [✔]
+    stores factory with dynamic config [✔]
+    runWith rejects DeferredCors [✔]
+  Application.withApiInfo (config-dependent)
+    works with static config using @() pattern [✔]
+    stores factory with dynamic config [✔]
+    runWith rejects DeferredApiInfo [✔]
+  Application.withHealthCheck (config-dependent)
+    works with static config using @() pattern [✔]
+    stores factory with dynamic config [✔]
+    runWith rejects DeferredHealthCheck [✔]
+  Application.withDispatcherConfig (config-dependent)
+    works with static config using @() pattern [✔]
+    stores factory with dynamic config [✔]
+    runWith rejects DeferredDispatcherConfig [✔]
+  Application.withSecretStore (config-dependent)
+    works with static config using @() pattern [✔]
+    stores factory with dynamic config [✔]
+    runWith rejects DeferredSecretStore [✔]
+  Application.withOutbound (typed handler)
+    registers typed handler without error [✔]
+    typed handler builds application correctly [✔]
+    runWith accepts typed outbound handler [✔]
+  Application.withOutboundLifecycle (config-dependent)
+    works with static config using @() pattern [✔]
+    stores factory with dynamic config [✔]
+    runWith rejects deferred outbound lifecycle integrations [✔]
+  Application.withInbound (config-dependent)
+    works with static config using @() pattern [✔]
+    stores factory with dynamic config [✔]
+    runWith rejects deferred inbound integrations [✔]
+  withoutHealthCheck interaction with factory
+    withoutHealthCheck after withHealthCheck fully disables health check [✔]
+  runWith accepts evaluated factories
+    runWith accepts EvaluatedCors [✔]
+    runWith accepts EvaluatedApiInfo [✔]
+    runWith accepts EvaluatedHealthCheck [✔]
+    runWith accepts EvaluatedDispatcherConfig [✔]
+    runWith accepts EvaluatedSecretStore [✔]
+    runWith accepts typed outbound handler [✔]
+    runWith accepts evaluated outbound lifecycle (static @() pattern) [✔]
+{"file":"service/Service/Application.hs","level":"Warn","line":1357,"message":"Inbound worker shutdown: AsyncCancelled","time":"2026-09-25T18:03:10+0000"}
+    runWith accepts evaluated inbound (static @() pattern) [✔]
+  withHealthCheck empty path normalization
+    empty path with @() falls back to 'health' [✔]
+  withDispatcherConfig validation
+    accepts valid config via @() pattern [✔]
+Config.OAuth2ConfigDependent
+  Application.withOAuth2Provider (config-dependent API)
+    stores factory with config-dependent provider [✔]
+    works with static config using @() pattern [✔]
+    supports multiple providers (additive) [✔]
+    supports mixing static and config-dependent providers [✔]
+  runWith rejects deferred OAuth2 providers
+    rejects config-dependent OAuth2 provider in runWith [✔]
+Config.Builder
+  Config.Builder
+    field
+      creates a FieldDef with the given name [✔]
+      creates a FieldDef with empty modifiers [✔]
+      captures the type as TH.Type [✔]
+    doc
+      adds ModDoc modifier [✔]
+      preserves the documentation text [✔]
+    envVar
+      adds ModEnvVar modifier [✔]
+      preserves the env var name [✔]
+    defaultsTo
+      adds ModDefault modifier [✔]
+    required
+      adds ModRequired modifier [✔]
+    secret
+      adds ModSecret modifier [✔]
+    cliLong
+      adds ModCliLong modifier [✔]
+      preserves the long option name [✔]
+    cliShort
+      adds ModCliShort modifier [✔]
+      preserves the short option character [✔]
+    envPrefix
+      adds ModEnvPrefix modifier [✔]
+      preserves the prefix [✔]
+    pipe composition
+      allows chaining multiple modifiers [✔]
+      preserves all modifiers in chain [✔]
+      field name is preserved through chain [✔]
+Config.Core
+  Config.Core
+    validateFieldDef
+      returns MissingDoc when doc is missing [✔]
+      returns MissingDefaultOrRequired when neither is present [✔]
+      returns BothDefaultAndRequired when both are present [✔]
+      returns empty list for valid field with default [✔]
+      returns empty list for valid field with required [✔]
+      can return multiple errors at once [✔]
+    ConfigError
+      MissingDoc contains field name [✔]
+      MissingDefaultOrRequired contains field name [✔]
+      BothDefaultAndRequired contains field name [✔]
+      ConfigError has Eq instance [✔]
+Config.ErrorSafety
+  Config.ErrorSafety
+    ConfigError message safety
+      MissingDoc error contains only field name, no values [✔]
+      MissingDefaultOrRequired error contains only field name [✔]
+      BothDefaultAndRequired error contains only field name [✔]
+    validation error aggregation
+      reports all errors at once for fail-fast debugging [✔]
+      error messages identify which field has the problem [✔]
+    error message format consistency
+      all error types follow consistent format [✔]
+      error messages are safe for logging [✔]
+    secret field error handling
+      errors about secret fields do not reveal ModSecret is set [✔]
+    field name safety
+      field names with special characters are handled safely [✔]
+      very long field names are handled [✔]
+      empty field name is handled safely [✔]
+Config.InputValidation
+  Config.InputValidation
+    toEnvVarName conversion
+      converts simple camelCase to SCREAMING_SNAKE_CASE [✔]
+      handles multiple capital letters correctly [✔]
+      handles single character names [✔]
+      handles already uppercase names [✔]
+      handles empty string safely [✔]
+      auto-generated env var names do not contain shell metacharacters [✔]
+      handles names with numbers [✔]
+    envVar modifier validation
+      explicit envVar is stored correctly [✔]
+      envVar with standard characters is accepted [✔]
+    cliLong modifier validation
+      cliLong stores the option name [✔]
+      cliLong with valid characters is accepted [✔]
+    cliShort modifier validation
+      cliShort stores the option character [✔]
+      cliShort with alphabetic character is valid [✔]
+    field name validation
+      standard camelCase names are valid [✔]
+      single word names are valid [✔]
+      names with numbers are preserved [✔]
+    doc modifier safety
+      doc text is stored as-is [✔]
+      doc text with newlines is preserved [✔]
+    environment variable name patterns
+      result contains only uppercase letters, digits, and underscores [✔]
+      does not produce names starting with digit [✔]
+      underscores separate word boundaries correctly [✔]
+Config.RuntimeSafety
+  Config.RuntimeSafety
+    fail-fast validation
+      reports all validation errors at once [✔]
+      does not stop at first error [✔]
+    config immutability
+      config fields are accessible as expected [✔]
+      config record is strict in all fields [✔]
+      implicit parameter provides read-only access [✔]
+    type safety
+      generated config has correct field types [✔]
+      HasXxxConfig type alias works correctly [✔]
+    default value behavior
+      default values are applied when constructing config [✔]
+      defaults are documented in the defineConfig macro [✔]
+    required field semantics
+      required fields must be provided explicitly [✔]
+      required fields can have any non-bottom value [✔]
+      optional field defaults are preserved alongside required fields [✔]
+    Show instance format
+      Show instance includes type name [✔]
+      Show instance includes field values [✔]
+    edge cases
+      handles config with all default values [✔]
+      handles numeric boundaries [✔]
+      handles empty text values [✔]
+      handles text with special characters [✔]
+      handles unicode in text fields [✔]
+Config.Secret
+  Config.Secret
+    ModSecret modifier presence
+      secret adds ModSecret to field modifiers [✔]
+      non-secret fields do not have ModSecret [✔]
+    Show instance security (CRITICAL)
+      does NOT reveal secret value when config is shown [✔]
+      does NOT reveal database password when config is shown [✔]
+      shows placeholder for secret fields instead of actual value [✔]
+      shows non-secret fields normally [✔]
+      all secret fields are redacted independently [✔]
+    implicit parameter access with secrets
+      HasSecretTestConfig type alias provides access [✔]
+    secret modifier code generation (CRITICAL)
+      ModSecret should affect generated Show instance [✔]
+    default value security
+      secret field default should not appear in Show of default config [✔]
+Config.TH
+  Config.TH
+    defineConfig
+      generates a data type with correct field names [✔]
+      generates a data type with correct field types [✔]
+      generates HasTestConfig type alias for implicit params [✔]
+      generated type has Show instance [✔]
+    field validation
+      accepts field with doc and defaultsTo [✔]
+      accepts field with doc and required [✔]
+    env var naming
+      uses explicit envVar when provided [✔]
+      auto-generates env var from field name [✔]
+    Default instance
+      generates Default instance with defaultsTo values [✔]
+      allows creating modified config from default [✔]
+    FromJSON instance
+      parses valid JSON [✔]
+      fails on missing required fields [✔]
+    ToJSON instance
+      encodes config to JSON [✔]
+    testWithConfig
+      allows testing with custom config [✔]
+      isolates config changes [✔]
+    secret field redaction
+      redacts secret fields in Show output [✔]
+      redacts secret fields in ToJSON output [✔]
+Http.Client
+  Http.Client
+    Error Handling (security/reliability)
+      get
+        returns Error for invalid URL (does not crash) [✔]
+        returns Error for unreachable host (does not crash) [✔]
+      post
+        returns Error for invalid URL (does not crash) [✔]
+      postForm
+        returns Error for invalid URL (does not crash) [✔]
+        returns Error for connection refused (does not crash) [✔]
+    Default Timeout (reliability)
+      request has default timeout (not infinite) [✔]
+    Error Sanitization (security)
+      error messages do not contain request details [✔]
+    getSecure
+      secure TLS manager allows TLS 1.3 and TLS 1.2 only [✔]
+      pre-check rejects oversized Content-Length before body read [✔]
+      pre-check skips when Content-Length header is missing [✔]
+      pre-check skips when Content-Length header is invalid [✔]
+      pre-check skips when Content-Length header is negative [✔]
+      pre-check skips when maxResponseBytes is Nothing [✔]
+      rejects http:// URL with InvalidUrl error [✔]
+      rejects HTTP:// URL (uppercase not recognized as https://) [✔]
+      error message strips query parameters (sanitizeUrlText applied) [✔]
+      https:// URL passes scheme check (does not return InvalidUrl) [✔]
+    TLS Enforcement (security)
+      secureTlsSupportedVersions allows only TLS 1.3 and TLS 1.2 [✔]
+      secureTlsSupportedVersions has exactly 2 entries (no accidental additions) [✔]
+      secureTlsSupportedVersions prefers TLS 1.3 (listed first) [✔]
+    Response Size Limits (security)
+      default request has 10MB size limit [✔]
+      withMaxResponseSize sets maxResponseBytes field [✔]
+      withMaxResponseSize 1 causes ResponseTooLarge for any real response [✔]
+      ResponseTooLarge error contains the configured limit [✔]
+      default 10MB limit allows normal responses through [✔]
+Http.ClientRaw
+  Http.Client.Internal.getRaw
+    returns Ok with statusCode 401 on 401 response [✔]
+    returns Ok with statusCode 429 on 429 response [✔]
+    returns Ok with statusCode 200 on 200 response [✔]
+    response body is accessible and decodable [✔]
+    returns Err on network error [✔]
+Int
+  Int
+    powerOf
+      2^0 = 1 [✔]
+      2^1 = 2 [✔]
+      2^2 = 4 [✔]
+      2^3 = 8 [✔]
+      2^10 = 1024 [✔]
+      3^4 = 81 [✔]
+      5^3 = 125 [✔]
+      10^0 = 1 [✔]
+      handles negative exponent as 0 [✔]
+      any base to power 0 is 1 [✔]
+      1 to any power is 1 [✔]
+Layout
+  Layout.Construction
+    empty renders as empty string [✔]
+    empty is left identity for append [✔]
+    empty is right identity for append [✔]
+    text renders ascii verbatim [✔]
+    text renders empty input [✔]
+    text renders unicode verbatim [✔]
+    value converts Text through ToBlueprint [✔]
+    value converts Int through ToBlueprint [✔]
+    value converts Bool through ToBlueprint [✔]
+    space renders one space [✔]
+    space composes between words [✔]
+    space is preserved in compact mode [✔]
+    line renders as space in flat group [✔]
+    line renders as newline when broken [✔]
+    line standalone renders newline [✔]
+    lineTight renders empty in flat group [✔]
+    lineTight renders newline when broken [✔]
+    lineTight standalone renders newline [✔]
+    softLine renders space when fit [✔]
+    softLine renders newline when too wide [✔]
+    softLine standalone renders space [✔]
+    softLineTight renders empty when fit [✔]
+    softLineTight renders newline when too wide [✔]
+    softLineTight standalone renders empty [✔]
+    hardLine always renders newline [✔]
+    hardLine is not flattened by trySingleLine [✔]
+    hardLine preserved in renderCompact [✔]
+    blankLine renders two newlines [✔]
+    blankLine inserts visual blank line [✔]
+    blankLine preserved in renderCompact [✔]
+  Layout.Composition
+    append preserves pipe-first argument order [✔]
+    append handles empty right argument [✔]
+    append handles empty left argument [✔]
+    appendWithSpace inserts one space [✔]
+    appendWithSpace with empty right keeps trailing separator space [✔]
+    appendWithSpace with empty left keeps leading separator space [✔]
+    joinWith empty array returns empty output [✔]
+    joinWith single-element array returns element [✔]
+    joinWith multi-element array inserts separators [✔]
+    joinWords empty array returns empty output [✔]
+    joinWords single-element array returns element [✔]
+    joinWords multi-element array uses single spaces [✔]
+    stack empty array returns empty output [✔]
+    stack single-element array returns element [✔]
+    stack multi-element array renders one per line [✔]
+    joinParagraph empty array returns empty output [✔]
+    joinParagraph single-element array returns element [✔]
+    joinParagraph multi-element array fills then wraps [✔]
+    joinAdaptive empty array returns empty output [✔]
+    joinAdaptive single-element array returns element [✔]
+    joinAdaptive multi-element array breaks when width is narrow [✔]
+    joinTight empty array returns empty output [✔]
+    joinTight single-element array returns element [✔]
+    joinTight multi-element array concatenates without separators [✔]
+    stackTight empty array returns empty output [✔]
+    stackTight single-element array returns element [✔]
+    stackTight multi-element array renders one per line [✔]
+    joinDenseParagraph empty array returns empty output [✔]
+    joinDenseParagraph single-element array returns element [✔]
+    joinDenseParagraph multi-element array packs without spaces [✔]
+    joinAdaptiveTight empty array returns empty output [✔]
+    joinAdaptiveTight single-element array returns element [✔]
+    joinAdaptiveTight multi-element array breaks when narrow [✔]
+    addBetween empty array returns empty array [✔]
+    addBetween single-element array adds nothing [✔]
+    addBetween multi-element array inserts separator between neighbors [✔]
+    commaSeparated empty array returns empty output [✔]
+    commaSeparated single-element array returns element [✔]
+    commaSeparated multi-element array uses comma-space [✔]
+    semicolonSeparated empty array returns empty output [✔]
+    semicolonSeparated single-element array returns element [✔]
+    semicolonSeparated multi-element array uses semicolon-space [✔]
+    pipeSeparated empty array returns empty output [✔]
+    pipeSeparated single-element array returns element [✔]
+    pipeSeparated multi-element array uses pipe-space [✔]
+  Layout.Delimiters
+    wrapBetween handles empty content [✔]
+    wrapBetween handles single content [✔]
+    wrapBetween handles nested delimiters [✔]
+    asList handles empty array [✔]
+    asList handles single element [✔]
+    asList handles nested values [✔]
+    asTuple handles empty array [✔]
+    asTuple handles single element [✔]
+    asTuple handles nested values [✔]
+    inParens handles empty content [✔]
+    inParens handles single content [✔]
+    inParens handles nested delimiter content [✔]
+    inBrackets handles empty content [✔]
+    inBrackets handles single content [✔]
+    inBrackets handles nested delimiter content [✔]
+    inBraces handles empty content [✔]
+    inBraces handles single content [✔]
+    inBraces handles nested delimiter content [✔]
+    inAngles handles empty content [✔]
+    inAngles handles single content [✔]
+    inAngles handles nested delimiter content [✔]
+    inSingleQuotes handles empty content [✔]
+    inSingleQuotes handles single content [✔]
+    inSingleQuotes handles nested delimiter content [✔]
+    inDoubleQuotes handles empty content [✔]
+    inDoubleQuotes handles single content [✔]
+    inDoubleQuotes handles nested delimiter content [✔]
+  Layout.Control
+    trySingleLine keeps short doc on one line [✔]
+    trySingleLine breaks long doc when width exceeded [✔]
+    trySingleLine is identity for short docs [✔]
+    chooseWhenSingleLine uses flat branch in single-line mode [✔]
+    chooseWhenSingleLine uses broken branch when layout breaks [✔]
+    chooseWhenSingleLine remains deterministic in compact mode [✔]
+    indent 0 is identity [✔]
+    indent clamps upper bound at 10000 [✔]
+    indent clamps negative values to 0 [✔]
+    indentRelative 0 is identity [✔]
+    indentRelative clamps upper bound at 10000 [✔]
+    indentRelative clamps negative values to 0 [✔]
+    alignToCurrentColumn aligns wrapped lines to current column [✔]
+    alignToCurrentColumn is no-op for single-line docs [✔]
+    alignToCurrentColumn handles empty docs [✔]
+    hangingIndent indents all lines except first [✔]
+    hangingIndent clamps upper bound at 10000 [✔]
+    hangingIndent clamps negative values to 0 [✔]
+    padToWidth pads shorter content with trailing spaces [✔]
+    padToWidth clamps upper bound at 10000 [✔]
+    padToWidth clamps negative values to 0 [✔]
+    padOrBreakAt pads when content shorter than width [✔]
+    padOrBreakAt breaks when content exceeds width [✔]
+    padOrBreakAt clamps negative values to 0 [✔]
+    mergeAdjacentBreaks keeps simple docs unchanged [✔]
+    mergeAdjacentBreaks clamps negative depth to 0 [✔]
+    mergeAdjacentBreaks clamps large depth to 10000 [✔]
+  Layout.Annotations
+    withAnnotation does not change rendering [✔]
+    withAnnotation and withoutAnnotations round-trip [✔]
+    nested withAnnotation preserves rendering [✔]
+    withoutAnnotations preserves rendering [✔]
+    withoutAnnotations is idempotent [✔]
+    withoutAnnotations handles plain unannotated docs [✔]
+    mapAnnotations identity preserves rendering [✔]
+    mapAnnotations one-to-one transform preserves rendering [✔]
+    mapAnnotations composes over nested annotations [✔]
+    editAnnotations one-to-many transform preserves rendering [✔]
+    editAnnotations can remove annotations [✔]
+    editAnnotations works on nested annotated docs [✔]
+  Layout.Traits
+    appendable concatenates like append [✔]
+    appendable is associative [✔]
+    appendable handles empty identity operand [✔]
+    mempty renders as empty [✔]
+    mempty left identity [✔]
+    mempty right identity [✔]
+    map identity preserves render [✔]
+    map changes annotation type only [✔]
+    map works for nested annotations [✔]
+    string literal builds blueprint [✔]
+    empty string literal builds empty blueprint [✔]
+    string literal preserves punctuation [✔]
+    toBlueprint Text renders verbatim [✔]
+    toBlueprint Int renders decimal [✔]
+    toBlueprint Float renders decimal [✔]
+    toBlueprint Bool renders constructor name [✔]
+    toBlueprint Maybe renders Nothing and Just [✔]
+    toBlueprint Result renders Err and Ok [✔]
+Layout.Render
+  Layout.Rendering
+    defaultRenderOptions matches render behavior [✔]
+    defaultRenderOptions uses Balanced mode [✔]
+    defaultRenderOptions uses width 80 [✔]
+    withMaxWidth changes wrapping width [✔]
+    withMaxWidth clamps negative values to 0 [✔]
+    withMaxWidth clamps values above 10000 [✔]
+    withRibbonFraction clamps 0.0 to 1.0 [✔]
+    withRibbonFraction clamps values greater than 1.0 [✔]
+    withRibbonFraction clamps NaN and Infinity to 1.0 [✔]
+    withWrapMode sets Balanced mode [✔]
+    withWrapMode sets Fast mode [✔]
+    withWrapMode sets Compact mode and modes differ on same probe [✔]
+    render uses default options [✔]
+    render treats line as space in flat fit [✔]
+    render breaks when grouped content exceeds width [✔]
+    renderWithWidth applies custom width [✔]
+    renderWithWidth clamps negative width to 0 [✔]
+    renderWithWidth clamps above 10000 [✔]
+    renderWith respects all options fields [✔]
+    renderWith supports integration diagnostic example [✔]
+    renderWith mode comparison on same trySingleLine+line document [✔]
+    renderBalanced equals renderWith Balanced [✔]
+    renderBalanced differs from renderCompact on break-sensitive doc [✔]
+    renderBalanced integration type-signature output [✔]
+    renderFast equals renderWith Fast [✔]
+    renderFast differs from renderBalanced on probe [✔]
+    renderFast preserves token order [✔]
+    renderCompact equals renderWith Compact [✔]
+    renderCompact suppresses soft and normal line breaks [✔]
+    renderCompact only includes newlines from hardLine or blankLine [✔]
+NeoQL.Parser
+  NeoQL.Parser
+    valid field access
+      parses .status [✔]
+      parses .createdAt [✔]
+      parses .customer_name [✔]
+    valid equality (string)
+      parses .status == "pending" [✔]
+      parses .name == "Alice" [✔]
+    valid equality (number)
+      parses .count == 42 [✔]
+      parses .price == 99.99 [✔]
+      parses .balance == -10 [✔]
+    invalid syntax rejection
+      rejects 'status' (no dot) [✔]
+      rejects '.123' (digit start) [✔]
+      rejects '.status =' (single equals) [✔]
+      rejects '.status == ' (trailing operator) [✔]
+      rejects empty string [✔]
+    out-of-scope syntax rejection
+      rejects '.a and .b' [✔]
+      rejects '.x > 5' [✔]
+      rejects '.a.b' (nested) [✔]
+      rejects '.status != "x"' [✔]
+    whitespace handling
+      allows spaces around == [✔]
+    edge cases
+      handles very long identifiers [✔]
+      handles unicode in string values [✔]
+      handles empty string value [✔]
+NeoQL.Execute
+  NeoQL.Execute
+    string equality
+      matches when field equals string value [✔]
+      does not match when field differs [✔]
+    number equality
+      matches when field equals number value [✔]
+      does not match when field differs [✔]
+    unknown field
+      returns False for unknown field (silent non-match) [✔]
+    type mismatch
+      returns False when field is string but expr expects number [✔]
+    field access (no filter)
+      returns True for FieldAccess (projection, no filtering) [✔]
+    non-object values
+      returns False for non-object Aeson.Value [✔]
+    filterValues
+      filters array keeping only matching objects [✔]
+      returns empty array for empty input [✔]
+      returns empty array when nothing matches [✔]
+OutboundIntegration
+  OutboundIntegration
+    outboundIntegration TH macro
+      instance generation
+        generates a compilable OutboundIntegration instance [✔]
+        generates a NameOf type instance with the handler's type name [✔]
+        generates a KnownHash instance for the handler name [✔]
+      handleEventImpl dispatch
+        delegates to handleEvent for a matching event constructor [✔]
+        delegates to handleEvent for a non-matching event (wildcard) [✔]
+        delegates to handleEvent for a third event constructor [✔]
+      handleEventImpl edge cases
+        handles event with zero field values [✔]
+        handles event with negative field values [✔]
+        handles event with maxBound Int field values [✔]
+        handles entity with empty text and zero fields [✔]
+        handles default entity state from Default instance [✔]
+      HandledEvent associated type
+        resolves HandledEvent to the full event ADT type [✔]
+        accepts all constructors of the event ADT [✔]
+    NameOf type instance
+      reflects the exact handler type name as a Symbol [✔]
+      is usable with KnownSymbol constraint via helper [✔]
+    KnownHash instance
+      produces a hash matching Hashable.hash of the handler name [✔]
+      produces a non-zero hash value [✔]
+    createTypedOutboundRunner
+      entityTypeName
+        sets entityTypeName to the entity's reflected type name [✔]
+        produces a non-empty entityTypeName [✔]
+        entityTypeName contains the entity type name [✔]
+      processEvent
+        decodes valid event JSON and dispatches to handler [✔]
+{"component":"Integration","entityName":"TestEntity","file":"service/Service/Application/Integrations.hs","level":"Warn","line":87,"message":"Failed to decode event: parsing OutboundIntegrationSpec.TestEvent failed, expected Object, but encountered Null","streamId":"StreamId \"stream-002\"","time":"2026-09-25T18:03:13+0000"}
+        returns empty array for undecodable event JSON [✔]
+        handles entity with no prior events using initial state [✔]
+    Integration.Outbound via handleEventImpl
+      returns zero actions when handler returns Integration.none [✔]
+      returns exactly one action when handler returns single-item batch [✔]
+      returns zero actions for all non-matching event constructors [✔]
+    type constraint verification
+      createTypedOutboundRunner compiles with all constraints satisfied [✔]
+      HandledEvent ~ EventOf (EntityOf handler) constraint holds [✔]
+Redacted
+  Redacted
+    wrap and unwrap
+      wraps and unwraps a value [✔]
+      preserves the wrapped value type [✔]
+    Show instance
+      shows <redacted> for wrapped values [✔]
+      does not reveal the actual value in Show output [✔]
+    labeled
+      wraps with a label [✔]
+      shows <redacted: label> for labeled values [✔]
+      does not reveal the actual value in labeled Show output [✔]
+    empty
+      creates an empty Redacted Text [✔]
+    FromJSON instance
+      parses JSON values into Redacted [✔]
+      parses JSON numbers into Redacted [✔]
+    security properties
+      prevents accidental exposure in string interpolation [✔]
+      prevents exposure when converting to list of chars [✔]
+Schema
+  ToSchema primitive instances
+    generates SBool for Bool [✔]
+    generates SInt for Int [✔]
+    generates SNumber for Float [✔]
+    generates SText for Text [✔]
+  ToSchema container instances
+    generates SArray for Array [✔]
+    generates SArray for list [✔]
+    generates SOptional for Maybe [✔]
+    generates nested SArray SOptional [✔]
+  ToSchema for records
+    generates SObject for simple record [✔]
+    marks Maybe fields as non-required [✔]
+  ToSchema for sum types
+    generates SEnum for nullary sum type [✔]
+    generates SUnion for sum type with fields [✔]
+  ToSchema for nested types
+    generates schema for nested record with array and sum type [✔]
+Schema.OpenApi
+  toOpenApiSchema - Primitive Types
+    converts SNull to OpenApiNull [✔]
+    converts SBool to OpenApiBoolean [✔]
+    converts SInt to OpenApiInteger [✔]
+    converts SNumber to OpenApiNumber [✔]
+    converts SText to OpenApiString [✔]
+  toOpenApiSchema - Container Types
+    converts SArray to OpenApiArray with items [✔]
+    converts SOptional by unwrapping inner schema [✔]
+  toOpenApiSchema - Object Types
+    converts SObject with required fields [✔]
+    converts SObject with optional fields correctly [✔]
+  toOpenApiSchema - Enum Types
+    converts SEnum to string with enum values [✔]
+  toOpenApiSchema - Union Types
+    converts SUnion to oneOf [✔]
+  toOpenApiSchema - Reference Types
+    converts SRef to schema with title as reference [✔]
+  toOpenApiSpec - Full Spec Generation
+    generates valid OpenAPI spec with info section [✔]
+    generates paths for commands [✔]
+    generates paths for queries [✔]
+    query endpoint response schema is paginated object [✔]
+    query endpoint response has all four required properties [✔]
+    query endpoint response requires all four properties [✔]
+    query items property is array of item schema [✔]
+    query total property is integer [✔]
+    query hasMore property is boolean [✔]
+    query effectiveLimit property is integer [✔]
+    command endpoint response schema is singular (not array) [✔]
+    combines command and query paths [✔]
+  toOpenApiSpec - Tag Generation
+    generates tags for unique entity names from commands [✔]
+    generates tags for multiple different entities [✔]
+    generates Queries tag when query schemas present [✔]
+    generates Authentication tag when oauth2 schemas present [✔]
+    generates Files tag when file schemas present [✔]
+    generates all tags when all schema types present [✔]
+  toOpenApiSpec - Query Parameters
+    query endpoint has three query parameters [✔]
+    query endpoint has limit parameter [✔]
+    query endpoint has offset parameter [✔]
+    query endpoint has q parameter [✔]
+  toOpenApiSpec - Query Edge Cases
+    query with complex object item schema wraps correctly in envelope [✔]
+    multiple query endpoints each get paginated schema [✔]
+Schema.JsonSchema
+  Schema.JsonSchema
+    toJsonSchema
+      converts SNull to null type [✔]
+      converts SBool to boolean type [✔]
+      converts SInt to integer type [✔]
+      converts SNumber to number type [✔]
+      converts SText to string type [✔]
+      converts SArray SText to array with string items [✔]
+      SOptional unwrap is transparent - matches inner schema [✔]
+      empty object has empty properties and required [✔]
+      single required field appears in both properties and required [✔]
+      single optional field appears in properties but not required [✔]
+      mixed required and optional: required has only required fields [✔]
+      fieldRequired=False without SOptional omits from required [✔]
+      nested array-of-object has items with object schema [✔]
+      nested object with optional field: child required is empty [✔]
+      SEnum preserves original casing [✔]
+      empty SEnum preserves empty array [✔]
+      SUnion emits oneOf with discriminated entries in input order [✔]
+      empty SUnion emits oneOf with empty array [✔]
+      SRef CartEntity emits correct ref path [✔]
+      empty SRef name produces ref with empty definition [✔]
+      field with non-empty description adds description to property schema [✔]
+      field with empty description omits description from property schema [✔]
+      mixed fields: described and undescribed [✔]
+      field with SRef and description wraps in allOf (Draft-07 compliance) [✔]
+      field with SRef and empty description emits bare ref [✔]
+Service.Transport.Web.SwaggerUI
+  SwaggerUI Security
+    XSS Prevention
+      escapes script tags in API title [✔]
+      escapes HTML entities in API title [✔]
+      escapes quotes in API title [✔]
+      handles img onerror XSS attempt [✔]
+    CDN Security
+      includes SRI integrity hash [✔]
+      includes crossorigin attribute [✔]
+      pins specific version of Scalar [✔]
+    HTML Structure
+      generates valid HTML document [✔]
+      includes proper meta tags [✔]
+      configures Scalar to fetch from /openapi.json [✔]
+    Edge Cases
+      handles empty title [✔]
+      handles very long title [✔]
+      handles unicode in title [✔]
+Set
+  Set creation
+    creates an empty set [✔]
+    wraps a single element [✔]
+    creates a singleton set [✔]
+    creates a set from a LinkedList [✔]
+    creates a set from a LinkedList removing duplicates [✔]
+    creates a set from an Array [✔]
+    creates an empty set from an empty LinkedList [✔]
+  Set query operations
+    checks if set is empty [✔]
+    returns the correct size [✔]
+    checks if element is contained (contains) [✔]
+    checks if element is a member (member) [✔]
+    contains and member are equivalent [✔]
+  Set manipulation operations
+    inserts an element into a set [✔]
+    inserting an existing element doesn't change size [✔]
+    inserts element into empty set [✔]
+    removes an element from a set [✔]
+    removing non-existent element doesn't change set [✔]
+    removes element from singleton set [✔]
+    unions two sets [✔]
+    union with empty set returns the original set [✔]
+    finds intersection of two sets [✔]
+    intersection with empty set returns empty set [✔]
+    finds difference of two sets [✔]
+    difference with empty set returns the original set [✔]
+  Set conversion operations
+    converts set to LinkedList in sorted order [✔]
+    converts empty set to empty LinkedList [✔]
+    converts set to Array in sorted order [✔]
+    converts empty set to empty Array [✔]
+    round-trip LinkedList -> Set -> LinkedList removes duplicates and sorts [✔]
+    round-trip Array -> Set -> Array removes duplicates and sorts [✔]
+  Set transform operations
+    maps a function over a set [✔]
+    mapping can reduce set size if function produces duplicates [✔]
+    maps over empty set returns empty set [✔]
+    keeps elements that pass the test (takeIf) [✔]
+    takeIf with always False returns empty set [✔]
+    takeIf with always True returns same set [✔]
+    drops elements that pass the test (dropIf) [✔]
+    dropIf with always False returns same set [✔]
+    dropIf with always True returns empty set [✔]
+    reduces a set from the right [✔]
+    reduces with string concatenation [✔]
+    reduces empty set returns initial value [✔]
+    folds a set from the left [✔]
+    foldl empty set returns initial value [✔]
+  Set set operations properties
+    union is commutative [✔]
+    union is associative [✔]
+    intersection is commutative [✔]
+    intersection is associative [✔]
+    difference is NOT commutative [✔]
+    union with itself returns same set [✔]
+    intersection with itself returns same set [✔]
+    difference with itself returns empty set [✔]
+  Set edge cases
+    handles single element operations [✔]
+    handles large sets [✔]
+    handles inserting and removing multiple times [✔]
+    handles Text elements [✔]
+  Set compatibility operations
+    unwraps to Data.Set [✔]
+    converts from legacy Data.Set [✔]
+Stream
+  Stream
+    new
+      creates a new stream [✔]
+    writeItem and readNext
+      writes and reads a single item [✔]
+      writes and reads multiple items in order [✔]
+      writes and reads different data types [✔]
+    end
+      signals end of stream [✔]
+      returns nothing when stream is empty and ended [✔]
+    pushError
+      throws error when error is written to stream [✔]
+      throws error after reading normal items [✔]
+    fromArray
+      creates stream from empty array [✔]
+      creates stream from array with single item [✔]
+      creates stream from array with multiple items [✔]
+      creates stream from large array [✔]
+      can read items one by one from array stream [✔]
+    toArray
+      converts empty stream to empty array [✔]
+      converts stream with single item to array [✔]
+      converts stream with multiple items to array [✔]
+      converts stream with many items to array [✔]
+      throws error when stream errors during conversion [✔]
+    consume
+      consumes empty stream [✔]
+      sums numbers from stream [✔]
+      concatenates strings from stream [✔]
+      builds array from stream [✔]
+      handles error during fold operation [✔]
+    concurrent operations
+      handles concurrent writes and reads [✔]
+      handles multiple concurrent readers on different streams [✔]
+      handles slow producer with fast consumer [✔]
+    StreamMessage
+      Item message wraps a value [✔]
+      EndOfStream message signals completion [✔]
+      StreamError message contains error text [✔]
+      StreamMessage supports equality [✔]
+    edge cases
+      handles empty stream followed by writes after read [✔]
+      handles stream with only errors [✔]
+      handles large number of items [✔]
+Test.AppSpec.AppSpec
+  specification for
+    can build an empty app spec [✔]
+    can build an app spec with one scenario [✔]
+    can build an app spec with two scenarios [✔]
+Test.AppSpec.Verify
+  verification
+    does not verify any scenario if there aren't any [✔]
+    does verify a single scenario [✔]
+Parser
+  Parser.run
+    succeeds on full consumption [✔]
+    fails when trailing input remains [✔]
+    reports correct multiline position [✔]
+    sets sourceName to "<input>" [✔]
+  Parser.runNamed
+    stores custom source name in error [✔]
+    enforces EOF after parser [✔]
+    handles unicode source line text [✔]
+  Parser.runMaybe
+    returns Just on success [✔]
+    returns Nothing on parse failure [✔]
+    returns Nothing when trailing input exists [✔]
+  Parser.yield
+    always succeeds with given value [✔]
+    consumes no input [✔]
+    supports unicode payload [✔]
+  Parser.map
+    transforms parsed value [✔]
+    propagates failure [✔]
+    maps boundary value [✔]
+  Parser.apply
+    applies parsed function to parsed value [✔]
+    fails when function parser fails [✔]
+    fails when argument parser fails [✔]
+  Parser.andThen
+    chains dependent parser [✔]
+    short-circuits when first parser fails [✔]
+    uses first result to set repetition count [✔]
+  Parser.expecting
+    replaces raw expected token with label [✔]
+    preserves success behavior [✔]
+    label appears on EOF failure [✔]
+  Parser.problem
+    always fails with provided message [✔]
+    can be bypassed by later choice branch [✔]
+    works with recover [✔]
+  Parser.backtrack
+    restores input so fallback branch succeeds [✔]
+    allows fallback after partial consumption mismatch [✔]
+    does not alter successful parse [✔]
+  Parser.choice
+    returns first successful alternative [✔]
+    tries second alternative when first fails without consuming [✔]
+    fails when all alternatives fail [✔]
+    internally backtracks each alternative (choice wraps each with try) [✔]
+  Parser.optional
+    returns Just on success [✔]
+    returns Nothing without consuming input [✔]
+    returns Nothing at EOF [✔]
+  Parser.withDefault
+    returns parsed value on success [✔]
+    returns default on mismatch [✔]
+    returns default on empty input [✔]
+  Parser.zeroOrMore
+    returns empty Array on no match [✔]
+    collects all matches [✔]
+    stops at first non-match [✔]
+  Parser.oneOrMore
+    fails on zero matches [✔]
+    collects all matches [✔]
+    parses single match [✔]
+  Parser.exactly
+    count=0 returns empty array [✔]
+    succeeds with exact count [✔]
+    fails with fewer than requested count [✔]
+  Parser.between
+    parses content between delimiters [✔]
+    fails if open delimiter missing [✔]
+    fails if close delimiter missing [✔]
+  Parser.keepLeft
+    returns left (first) result, discards right [✔]
+    fails when trailing parser fails [✔]
+    fails when trailing parser missing at EOF [✔]
+  Parser.keepRight
+    returns right (second) result, discards left [✔]
+    fails when leading parser fails [✔]
+    fails when right parser fails after successful lead [✔]
+  Parser.pair
+    returns tuple of both results [✔]
+    fails if left parser fails [✔]
+    fails if right parser fails [✔]
+  Parser.separatedBy
+    returns empty Array on no values [✔]
+    parses single element without separator [✔]
+    collects values discarding separator [✔]
+  Parser.oneOrMoreSeparatedBy
+    fails on empty input [✔]
+    collects single value [✔]
+    collects multiple values [✔]
+  Parser.separatedOrTerminatedBy
+    accepts trailing separator [✔]
+    accepts no trailing separator [✔]
+    returns empty list on empty input [✔]
+  Parser.collectUntil
+    stops when ending matches [✔]
+    returns empty Array if ending matches immediately [✔]
+    fails when ending parser never appears [✔]
+  Parser.collectUntilOneOrMore
+    fails if ending matches immediately [✔]
+    parses one element then terminator [✔]
+    parses multiple elements then terminator [✔]
+  Parser.peek
+    does not consume input on success [✔]
+    fails if parser would fail [✔]
+    supports multi-char lookahead [✔]
+  Parser.notFollowedBy
+    succeeds when parser would fail [✔]
+    fails when parser would succeed [✔]
+    succeeds at EOF [✔]
+  Parser.recover
+    returns fallback value after failure [✔]
+    does not invoke handler on success [✔]
+    handler receives ParseError [✔]
+  Parser.asResult
+    wraps success as Result.Ok inside parser [✔]
+    wraps failure as Result.Err with empty context fields [✔]
+    enables non-fatal branch in composition [✔]
+  Parser.end
+    succeeds at end of input [✔]
+    succeeds after full prior consumption [✔]
+    fails if input remains [✔]
+  Parser.debug
+char-a> IN: 'a'
+char-a> MATCH (COK): 'a'
+char-a> VALUE: 'a'
+char-a> HINTS: []
+
+    preserves success result [✔]
+char-a> IN: 'b'
+char-a> MATCH (EERR): <EMPTY>
+char-a> ERROR:
+char-a> offset=0:
+char-a> unexpected 'b'
+char-a> expecting 'a'
+
+    preserves failure behavior [✔]
+etiqueta-ñ> IN: "ok"
+etiqueta-ñ> MATCH (COK): "ok"
+etiqueta-ñ> VALUE: "ok"
+etiqueta-ñ> HINTS: []
+
+    accepts unicode label [✔]
+  Parser.text
+    matches exact string [✔]
+    fails on mismatch [✔]
+    matches unicode literal exactly [✔]
+  Parser.textIgnoringCase
+    matches uppercase input [✔]
+    matches mixed-case input [✔]
+    fails on different token [✔]
+  Parser.char
+    matches exact character [✔]
+    fails on mismatch [✔]
+    fails on empty input [✔]
+  Parser.charIgnoringCase
+    matches uppercase when given lowercase [✔]
+    matches lowercase when given uppercase [✔]
+    keeps non-letter behavior exact [✔]
+  Parser.anyChar
+    matches any character [✔]
+    parses single unicode char [✔]
+    fails on empty input [✔]
+  Parser.anyCharExcept
+    matches any character except the given one [✔]
+    fails on the given character [✔]
+    fails on empty input [✔]
+  Parser.charWhere
+    matches when predicate returns True [✔]
+    fails when predicate returns False [✔]
+    supports newline predicate [✔]
+  Parser.oneOfChars
+    matches any character in the array [✔]
+    fails on character not in the array [✔]
+    fails when set is empty [✔]
+  Parser.noneOfChars
+    matches character not in array [✔]
+    fails on character in array [✔]
+    accepts any char when blocked set empty [✔]
+  Parser.letter / digit / alphaNum / upper / lower
+    each matches its category [✔]
+    each fails outside its category [✔]
+  Parser.space
+    accepts single space only [✔]
+    rejects tab [✔]
+    rejects empty input [✔]
+  Parser.whitespace
+    accepts mixed whitespace sequence [✔]
+    fails on empty input [✔]
+    fails when first char is non-whitespace [✔]
+  Parser.newline
+    accepts newline char [✔]
+    rejects carriage return [✔]
+    rejects empty input [✔]
+  Parser.tab
+    accepts tab char [✔]
+    rejects regular space [✔]
+    rejects empty input [✔]
+  Parser.hexadecimalDigit
+    accepts lowercase hex digit [✔]
+    accepts uppercase hex digit [✔]
+    rejects non-hex character [✔]
+  Parser.decimal
+    parses unsigned integer [✔]
+    consumes trailing spaces [✔]
+    rejects signed input [✔]
+  Parser.int
+    parses positive integer [✔]
+    parses negative integer [✔]
+    consumes trailing spaces [✔]
+  Parser.float
+    parses positive float [✔]
+    parses negative float [✔]
+    parses scientific notation [✔]
+  Parser.hexadecimal
+    parses hex integer [✔]
+    fails on non-hex characters [✔]
+    parses zero boundary value [✔]
+  Parser.parenthesized / bracketed / braced
+    each parses content between its delimiters [✔]
+    consumes spaces around delimiters [✔]
+    fails when closing delimiter missing [✔]
+  Integration: CSV parser
+    parses a CSV row with quoted and plain cells (ADR §8 example) [✔]
+    parses a multi-row document [✔]
+  Integration: config file parser
+    parses key=value pairs (ADR section 8 example) [✔]
+  Integration: arithmetic expression
+    parses and evaluates simple addition (ADR example) [✔]
+    parses multiplication [✔]
+Parser.Error
+  formatError
+    first line is 'Parse error in <sourceName> at line <N>, column <M>' [✔]
+    third line is contextLine (the source line) [✔]
+    fourth line is pointerLine with ^ at correct column offset [✔]
+    Expected: section lists sorted deduplicated tokens [✔]
+    Found: section shows unexpected token [✔]
+    Found: shows 'end of input' when unexpected is Nothing [✔]
+    Hint: line appears for each hint [✔]
+  formatErrorCompact
+    is a single line [✔]
+    contains source name, line number, column number [✔]
+    handles fromSingleError shape [✔]
+  ParseError.position
+    line is 1-based [✔]
+    column is 1-based [✔]
+    offset is 0-based [✔]
+    sourceName matches argument passed to runNamed [✔]
+  ParseError.expected
+    is deduplicated [✔]
+    is sorted alphabetically [✔]
+    labels from Parser.expecting appear instead of raw token representations [✔]
+  ParseError.unexpected
+    stores unexpected token text [✔]
+    is Nothing at EOF [✔]
+    stores fancy error message from problem [✔]
+  ParseError.contextLine
+    captures failing source line [✔]
+    captures second line for multiline failure [✔]
+    empty when produced by fromSingleError path [✔]
+  ParseError.pointerLine
+    has (column - 1) spaces followed by '^' [✔]
+    pointer at column 1 has no leading spaces [✔]
+    empty when produced by fromSingleError path [✔]
+  ParseError.hints
+    suggests missing opening delimiter for unexpected ')' [✔]
+    suggests missing opening delimiter for unexpected ']' [✔]
+    suggests missing opening delimiter for unexpected '}' [✔]
+    suggests missing closing delimiter for unexpected EOF [✔]
+    suggests removing unexpected token for other cases [✔]
+  ParseError.rawMessage
+    is non-empty on parse failure [✔]
+    matches errorBundlePretty output from megaparsec [✔]
+    non-empty for single-error path [✔]
+Parser.Whitespace
+  Parser.spaces
+    succeeds on empty input (zero or more — does not fail) [✔]
+    consumes space characters [✔]
+    consumes tab characters [✔]
+    consumes newline characters [✔]
+    consumes mixed whitespace [✔]
+    does not consume non-whitespace [✔]
+  Parser.whitespace
+    consumes one or more whitespace characters [✔]
+    fails on empty input [✔]
+    fails if first character is not whitespace [✔]
+  Parser.token
+    runs parser and consumes trailing spaces [✔]
+    does not consume leading spaces [✔]
+    returns the parser's result [✔]
+  Parser.tokenWith
+    uses custom space consumer after the parser [✔]
+    example: skip # comments as whitespace [✔]
+    custom consumer can enforce at least one whitespace [✔]
+    propagates parser failure [✔]
+  Parser.symbol
+    matches text and consumes trailing spaces [✔]
+    fails on mismatch [✔]
+    is case-sensitive [✔]
+    does not consume leading spaces [✔]
+  Parser.symbolIgnoringCase
+    matches text ignoring case [✔]
+    consumes trailing spaces [✔]
+    fails on non-matching token [✔]
+  Parser.symbolWith
+    uses custom space consumer after the matched text [✔]
+    uses custom consumer (whitespace) [✔]
+    fails on text mismatch [✔]
+  Parser.lineComment
+    skips content from prefix to end of line [✔]
+    skips comment up to EOF [✔]
+    fails when prefix not present [✔]
+  Parser.blockComment
+    skips content between open and close markers [✔]
+    fails if close marker is missing [✔]
+    does NOT support nesting (inner markers are ignored) [✔]
+  Parser.blockCommentNested
+    supports nested block comments [✔]
+    supports deeper nesting [✔]
+    fails if matching close marker is missing [✔]
+  whitespace mode side-by-side comparison
+    Parser.char 'a' does NOT consume trailing spaces [✔]
+    Parser.token (Parser.char 'a') DOES consume trailing spaces [✔]
+    Parser.text "let" does NOT consume trailing spaces [✔]
+    Parser.symbol "let" DOES consume trailing spaces [✔]
+Parser.File
+  Parser.runOnFile
+    returns Err (FileReadError ...) when file does not exist [✔]
+Syntax.Comment
+  lineComment
+    captures content after // [✔]
+    strips one leading space after // [✔]
+    handles no space after // [✔]
+    captures empty comment [✔]
+    stops before newline [✔]
+    captures source position [✔]
+  blockComment
+    captures flat block comment [✔]
+    captures nested block comment [✔]
+    captures deeply nested block comment [✔]
+    captures empty block comment [✔]
+    captures source position [✔]
+  docComment
+    captures single-line doc comment [✔]
+    strips leading * decoration from multi-line doc comment [✔]
+    handles doc comment without star decoration [✔]
+    captures source position [✔]
+  comment
+    parses line comment [✔]
+    parses block comment [✔]
+    parses doc comment before block comment (/** vs /*) [✔]
+  toHaskell
+    transpiles line comment to -- [✔]
+    transpiles flat block comment to {- -} [✔]
+    transpiles nested block comment with marker substitution [✔]
+    transpiles single-line doc comment to -- | [✔]
+    transpiles multi-line doc comment to multiple -- | lines [✔]
+Syntax.Function
+  functionDef
+    parses a pure expression function [✔]
+    parses a block function [✔]
+    parses an effectful block with let! [✔]
+    parses a generic function [✔]
+    parses a constrained function [✔]
+    parses a zero-argument function [✔]
+    parses a field constraint [✔]
+    parses a multi-parameter constraint [✔]
+    parses field constraints before trait constraints (ordering regression guard) [✔]
+  constantDef
+    parses a simple constant [✔]
+  functionDef (error cases)
+    fails when return type is missing [✔]
+    fails when expression body is empty [✔]
+    fails when block body is empty [✔]
+    fails when constant value is empty [✔]
+  topLevelDecl
+    dispatches to function declarations [✔]
+    dispatches to constant declarations [✔]
+  toHaskell
+    transpiles expression functions [✔]
+    transpiles block functions [✔]
+    transpiles effectful blocks and strips return markers [✔]
+    transpiles constrained functions [✔]
+    transpiles constants [✔]
+Task
+  Task
+    asResultSafe
+      catches synchronous IO exceptions as Err [✔]
+      catches Task.throw errors as Err [✔]
+      propagates AsyncCancelled (does not catch it) [✔]
+      propagates ThreadKilled (does not catch it) [✔]
+
+Finished in 3.8143 seconds
+1095 examples, 0 failures, 3 pending

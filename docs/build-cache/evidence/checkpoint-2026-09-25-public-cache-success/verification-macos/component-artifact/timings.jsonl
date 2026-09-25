@@ -1,0 +1,3 @@
+{"action": "build", "started_unix_s": 1790359128.8860831, "elapsed_s": 110.33995795249939, "exit_code": 0, "evaluation_s": 67.199200542, "realisation_s": 42.303416833}
+{"action": "fetch", "started_unix_s": 1790359338.410929, "elapsed_s": 50.833317041397095, "exit_code": 0}
+{"action": "run", "started_unix_s": 1790359389.664105, "elapsed_s": 3.97613525390625, "exit_code": 0, "suite": "nhcore-test-core", "examples": 1095, "pending": 3, "executed": 1092}

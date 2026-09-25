@@ -1,0 +1,269 @@
+{
+  "run": {
+    "id": 36170358310,
+    "head_sha": "21f102c5d25c711af2b09e61e65b6d59113efc05",
+    "head_branch": "snotty-kiwi",
+    "event": "workflow_dispatch",
+    "workflow": "Populate Cachix",
+    "status": "completed",
+    "conclusion": "success",
+    "startedAt": "2026-09-25T17:57:25Z",
+    "updatedAt": "2026-09-25T18:03:25Z",
+    "url": "https://github.com/neohaskell/NeoHaskell/actions/runs/36170358310"
+  },
+  "timing_context": "single-run correctness workflow timing from job metadata; not a matched benchmark",
+  "consumer_build_or_evaluation_log_matches": [],
+  "platforms": {
+    "ubuntu": {
+      "jobs": {
+        "publisher": {
+          "name": "cachix-push (ubuntu-latest)",
+          "id": 108188114719,
+          "status": "completed",
+          "conclusion": "success"
+        },
+        "consumer": {
+          "name": "verify-published (ubuntu-latest)",
+          "id": 108189286920,
+          "status": "completed",
+          "conclusion": "success"
+        }
+      },
+      "producer": {
+        "root": "/nix/store/k9haj4aw65cv5h3r9phrh9dn8l30ymn4-neohaskell-ci-components",
+        "closure_paths": 659,
+        "revision": "21f102c5d25c711af2b09e61e65b6d59113efc05",
+        "derivation": "/nix/store/r4vdhiahmsvzdsb0ikh5bl86cbb6yfr0-neohaskell-ci-components.drv"
+      },
+      "consumer": {
+        "root": "/nix/store/k9haj4aw65cv5h3r9phrh9dn8l30ymn4-neohaskell-ci-components",
+        "root_matches_producer": true,
+        "fetch_mode": "--from-public-caches",
+        "core_hspec": {
+          "literal": "1095 examples, 0 failures, 3 pending",
+          "examples": 1095,
+          "failures": 0,
+          "pending": 3
+        },
+        "workflow_commands": []
+      },
+      "cache_copy_evidence": {
+        "project_outputs_from_cachix": [
+          {
+            "timestamp": "2026-09-25T18:01:09.8201441Z",
+            "path": "/nix/store/irmp8px32gqp372n0i6z10p590dczgy0-nhcore-lib-nhcore-0.10.1-data",
+            "source": "https://neohaskell.cachix.org"
+          },
+          {
+            "timestamp": "2026-09-25T18:01:09.8203473Z",
+            "path": "/nix/store/vm4859a2swi1krml3r4ik1vc7dz2x6mv-nhintegrations-lib-nhintegrations-0.10.1-data",
+            "source": "https://neohaskell.cachix.org"
+          },
+          {
+            "timestamp": "2026-09-25T18:01:13.4597350Z",
+            "path": "/nix/store/8rq72r3wvcn6j9bnyqm61j0ixwdxw1ba-nhcore-test-nhcore-test-service-0.10.1",
+            "source": "https://neohaskell.cachix.org"
+          },
+          {
+            "timestamp": "2026-09-25T18:01:13.5085249Z",
+            "path": "/nix/store/7r8hj1j0h4j2rpdnd8nadgza41njp3d9-nhcore-test-nhcore-test-core-0.10.1",
+            "source": "https://neohaskell.cachix.org"
+          },
+          {
+            "timestamp": "2026-09-25T18:01:13.5091994Z",
+            "path": "/nix/store/9dp1jpd0hgwrqc8xsjg3ybw8zf2w2pzm-nhtestbed-exe-nhtestbed-0.10.1",
+            "source": "https://neohaskell.cachix.org"
+          },
+          {
+            "timestamp": "2026-09-25T18:01:34.7233304Z",
+            "path": "/nix/store/dmpmj6qq3gxh1iz5d6nzc0314lhjxjdr-nhcore-lib-nhcore-0.10.1",
+            "source": "https://neohaskell.cachix.org"
+          },
+          {
+            "timestamp": "2026-09-25T18:01:35.2673160Z",
+            "path": "/nix/store/cvzp34yvm29vz0b38z1z6b3js4l2lnmj-nhintegrations-lib-nhintegrations-0.10.1",
+            "source": "https://neohaskell.cachix.org"
+          },
+          {
+            "timestamp": "2026-09-25T18:01:36.0857866Z",
+            "path": "/nix/store/nyg979pvsnf7wl2mspm5224jhxvv7r8a-neohaskell-components.json",
+            "source": "https://neohaskell.cachix.org"
+          },
+          {
+            "timestamp": "2026-09-25T18:01:36.3961976Z",
+            "path": "/nix/store/k9haj4aw65cv5h3r9phrh9dn8l30ymn4-neohaskell-ci-components",
+            "source": "https://neohaskell.cachix.org"
+          }
+        ],
+        "pg_config_from_cache_nixos": [
+          {
+            "timestamp": "2026-09-25T18:01:34.3292646Z",
+            "path": "/nix/store/831a0nbgsrhm8dlvx1rkkn1l66mv6fmr-pg_config.env",
+            "source": "https://cache.nixos.org"
+          },
+          {
+            "timestamp": "2026-09-25T18:01:34.3361224Z",
+            "path": "/nix/store/4043yq19p13aabhi8a370cdrh44r2mf9-pg_config",
+            "source": "https://cache.nixos.org"
+          }
+        ]
+      },
+      "timings_from_job_metadata": {
+        "publisher_build": {
+          "step": "Build to populate cache",
+          "startedAt": "2026-09-25T17:57:48Z",
+          "completedAt": "2026-09-25T17:59:02Z",
+          "duration_s": 74.0
+        },
+        "consumer_nix_install": {
+          "step": "Run DeterminateSystems/determinate-nix-action@v3.22.2",
+          "startedAt": "2026-09-25T18:00:58Z",
+          "completedAt": "2026-09-25T18:01:05Z",
+          "duration_s": 7.0
+        },
+        "consumer_fetch": {
+          "step": "Fetch signed closure from Cachix and upstream caches with all builders disabled",
+          "startedAt": "2026-09-25T18:01:06Z",
+          "completedAt": "2026-09-25T18:01:37Z",
+          "duration_s": 31.0
+        },
+        "consumer_core_test": {
+          "step": "Execute the fetched core test binary",
+          "startedAt": "2026-09-25T18:01:37Z",
+          "completedAt": "2026-09-25T18:01:40Z",
+          "duration_s": 3.0
+        }
+      }
+    },
+    "macos": {
+      "jobs": {
+        "publisher": {
+          "name": "cachix-push (macos-latest)",
+          "id": 108188115129,
+          "status": "completed",
+          "conclusion": "success"
+        },
+        "consumer": {
+          "name": "verify-published (macos-latest)",
+          "id": 108189286888,
+          "status": "completed",
+          "conclusion": "success"
+        }
+      },
+      "producer": {
+        "root": "/nix/store/866avk4nzlyb99vzzavbh36lmgqx1x0z-neohaskell-ci-components",
+        "closure_paths": 646,
+        "revision": "21f102c5d25c711af2b09e61e65b6d59113efc05",
+        "derivation": "/nix/store/cha4aqkcir77wagrjkrssbwv64bj4mms-neohaskell-ci-components.drv"
+      },
+      "consumer": {
+        "root": "/nix/store/866avk4nzlyb99vzzavbh36lmgqx1x0z-neohaskell-ci-components",
+        "root_matches_producer": true,
+        "fetch_mode": "--from-public-caches",
+        "core_hspec": {
+          "literal": "1095 examples, 0 failures, 3 pending",
+          "examples": 1095,
+          "failures": 0,
+          "pending": 3
+        },
+        "workflow_commands": []
+      },
+      "cache_copy_evidence": {
+        "project_outputs_from_cachix": [
+          {
+            "timestamp": "2026-09-25T18:02:23.7267010Z",
+            "path": "/nix/store/q8qy5wg963qlrpa7kg5dngbjm3qwbvd3-nhcore-lib-nhcore-0.10.1-data",
+            "source": "https://neohaskell.cachix.org"
+          },
+          {
+            "timestamp": "2026-09-25T18:02:23.7270370Z",
+            "path": "/nix/store/y9h99x7n4k9qd81a3m2j1xszdk91ckcs-nhintegrations-lib-nhintegrations-0.10.1-data",
+            "source": "https://neohaskell.cachix.org"
+          },
+          {
+            "timestamp": "2026-09-25T18:03:05.3739960Z",
+            "path": "/nix/store/sr858h6xn7h8zxj337v8506pbjhzdk5s-nhcore-test-nhcore-test-core-0.10.1",
+            "source": "https://neohaskell.cachix.org"
+          },
+          {
+            "timestamp": "2026-09-25T18:03:05.3745830Z",
+            "path": "/nix/store/dk3nq0bnqj09aqj9ipdfw0dli4cn60cz-nhcore-test-nhcore-test-service-0.10.1",
+            "source": "https://neohaskell.cachix.org"
+          },
+          {
+            "timestamp": "2026-09-25T18:03:05.3747040Z",
+            "path": "/nix/store/c1kiglfvbz3xyyl1q8v6maixy9zsipil-nhtestbed-exe-nhtestbed-0.10.1",
+            "source": "https://neohaskell.cachix.org"
+          },
+          {
+            "timestamp": "2026-09-25T18:03:06.8939250Z",
+            "path": "/nix/store/ja0ifq35aij4qlar85ywmggn95cqmjcd-nhcore-lib-nhcore-0.10.1",
+            "source": "https://neohaskell.cachix.org"
+          },
+          {
+            "timestamp": "2026-09-25T18:03:08.3986250Z",
+            "path": "/nix/store/k5x4srk1aiqi5z607vhl3nw97f1qz8wp-nhintegrations-lib-nhintegrations-0.10.1",
+            "source": "https://neohaskell.cachix.org"
+          },
+          {
+            "timestamp": "2026-09-25T18:03:08.8363340Z",
+            "path": "/nix/store/vj408694m3k1fdlp3as2vjc2jzjkndnw-neohaskell-components.json",
+            "source": "https://neohaskell.cachix.org"
+          },
+          {
+            "timestamp": "2026-09-25T18:03:08.8707110Z",
+            "path": "/nix/store/866avk4nzlyb99vzzavbh36lmgqx1x0z-neohaskell-ci-components",
+            "source": "https://neohaskell.cachix.org"
+          }
+        ],
+        "pg_config_from_cache_nixos": [
+          {
+            "timestamp": "2026-09-25T18:02:52.1669810Z",
+            "path": "/nix/store/99pd7lyx3mwa414vnlf0rzppqzpazjjm-pg_config.env",
+            "source": "https://cache.nixos.org"
+          },
+          {
+            "timestamp": "2026-09-25T18:02:52.1722140Z",
+            "path": "/nix/store/ha0192b1ax8llz1am0idbda8q3j9fr5q-pg_config",
+            "source": "https://cache.nixos.org"
+          }
+        ]
+      },
+      "timings_from_job_metadata": {
+        "publisher_build": {
+          "step": "Build to populate cache",
+          "startedAt": "2026-09-25T17:58:48Z",
+          "completedAt": "2026-09-25T18:00:39Z",
+          "duration_s": 111.0
+        },
+        "consumer_nix_install": {
+          "step": "Run DeterminateSystems/determinate-nix-action@v3.22.2",
+          "startedAt": "2026-09-25T18:01:05Z",
+          "completedAt": "2026-09-25T18:02:16Z",
+          "duration_s": 71.0
+        },
+        "consumer_fetch": {
+          "step": "Fetch signed closure from Cachix and upstream caches with all builders disabled",
+          "startedAt": "2026-09-25T18:02:17Z",
+          "completedAt": "2026-09-25T18:03:09Z",
+          "duration_s": 52.0
+        },
+        "consumer_core_test": {
+          "step": "Execute the fetched core test binary",
+          "startedAt": "2026-09-25T18:03:09Z",
+          "completedAt": "2026-09-25T18:03:13Z",
+          "duration_s": 4.0
+        }
+      }
+    }
+  },
+  "evidence_files": {
+    "run_metadata_jobs": "/tmp/nh-public-cache-success-36170358310/run.json",
+    "full_log": "/tmp/nh-public-cache-success-36170358310/full.log",
+    "commands_and_exit_codes": "/tmp/nh-public-cache-success-36170358310/commands.txt",
+    "producer_ubuntu": "/tmp/nh-public-cache-success-36170358310/producer-ubuntu",
+    "producer_macos": "/tmp/nh-public-cache-success-36170358310/producer-macos",
+    "verification_ubuntu": "/tmp/nh-public-cache-success-36170358310/verification-ubuntu",
+    "verification_macos": "/tmp/nh-public-cache-success-36170358310/verification-macos"
+  }
+}
