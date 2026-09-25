@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Build, transfer and execute pinned Haskell components without a Cabal rebuild."""
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -87,7 +88,9 @@ def run_suite(manifest, env, suite, report):
         with process.stdout:
             for line in process.stdout:
                 print(line, end='', flush=True)
-                log.write(line)
+                # Hspec enables ANSI colors in GitHub Actions even on a pipe.
+                # Reports are also input to the runtime-criterion parser.
+                log.write(re.sub(r'\x1b\[[0-?]*[ -/]*[@-~]', '', line))
         code = process.wait()
     if code:
         raise subprocess.CalledProcessError(code, [binary])
@@ -115,15 +118,26 @@ def main():
             if output(['git', 'status', '--porcelain', '--untracked-files=no']):
                 raise ValueError('commit tracked changes before producing a revision-bound artifact')
             revision = output(['git', 'rev-parse', 'HEAD'])
-            # --json records resolved output paths; -L retains compilation logs.
+            # Isolate evaluation (including any IFD) from output realisation.
+            evaluation_started = time.monotonic()
+            derivation = store_path(output(['nix', 'eval', '--accept-flake-config',
+                                             '--raw', '.#ci-components.drvPath']))
+            detail['evaluation_s'] = time.monotonic() - evaluation_started
+            realisation_started = time.monotonic()
+            # No flake evaluation occurs in this command; logs show builds/copies.
             result = json.loads(output(['nix', 'build', '--accept-flake-config', '-L',
-                                        '--no-link', '--json', '.#ci-components']))
+                                        '--no-link', '--json', derivation + '^*']))
+            detail['realisation_s'] = time.monotonic() - realisation_started
+            if revision != output(['git', 'rev-parse', 'HEAD']) or output(
+                    ['git', 'status', '--porcelain', '--untracked-files=no']):
+                raise ValueError('checkout changed while building; artifact not published')
             if len(result) != 1:
                 raise ValueError('expected exactly one CI bundle')
             root = store_path(result[0]['outputs']['out'])
             (directory / 'root.txt').write_text(root + '\n')
             (directory / 'producer.json').write_text(json.dumps({
-                'revision': revision, 'build': result,
+                'revision': revision, 'build': result, 'derivation': derivation,
+                'lock_sha256': hashlib.sha256((ROOT / 'flake.lock').read_bytes()).hexdigest(),
             }, indent=2) + '\n')
             command(['nix', 'path-info', '--json', '--recursive', root],
                     stdout=(directory / 'closure.json').open('w'))

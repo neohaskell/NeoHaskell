@@ -170,3 +170,19 @@ Two corrected-inventory hosted baseline jobs then exposed a fixture startup race
 socket** server just before it shut down. Query TCP (`-h 127.0.0.1`) so readiness
 only succeeds for the final server. These failures also precede measurements;
 rerun the three observations with the corrected fixture.
+
+The first Linux consumer copied the exact test-core output
+`/nix/store/ff9pc0q9bw6qjhj59pv8prnq1ak1ymrw-nhcore-test-nhcore-test-core-0.10.1`
+and bundle `n90cdc6rbjqwf6hfby887749mnsvslx2-neohaskell-ci-components` from the
+producer's file cache with builders disabled, then executed 1,095 examples with
+zero failures. The **job still failed correctly** because our summary parser
+rejected GitHub's ANSI-colored summary. Reports now strip terminal escapes;
+a colored real-executable fixture guards the fix. This run is substitution and
+execution evidence, not a passing workflow claim.
+
+Consumer jobs no longer install magic-nix-cache: their full closure is explicitly
+transferred, so another store upload would duplicate work. Producers, codemap and
+doctest retain their existing dependency-cache route. Build timing now explicitly
+separates flake evaluation (including IFD) from realisation of the resolved `.drv`;
+realisation logs distinguish copying from compiling. Detailed GHC linking and
+transfer comparisons remain owed.

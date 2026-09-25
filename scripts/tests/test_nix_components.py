@@ -44,6 +44,7 @@ class Components(unittest.TestCase):
             binary = root / 'bin/nhcore-test-core'
             manifest = {'components': {c.SUITES['nhcore-test-core']: {'path': str(root)}}}
             for summary, status, passes in [('3 examples, 0 failures', 0, True),
+                                             ('\x1b[33m3 examples, 0 failures\x1b[0m', 0, True),
                                              ('3 examples, 1 failure', 1, False),
                                              ('3 examples, 0 failures', 17, False),
                                              ('0 examples, 0 failures', 0, False),
