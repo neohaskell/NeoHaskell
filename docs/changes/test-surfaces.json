@@ -213,6 +213,15 @@
       "boundary": "postgres:real",
       "expected_examples": 1,
       "fixture": "Service.QueryObjectStore.Postgres"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-core",
+      "path": "core/test/SubprocessSpec.hs",
+      "match": "drains real stderr before waiting for process exit",
+      "boundary": "subprocess:real",
+      "expected_examples": 1,
+      "fixture": "Subprocess.runWithTimeout with local Python pipe writer"
     }
   ]
 }

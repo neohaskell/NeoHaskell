@@ -735,6 +735,7 @@ test-suite nhcore-test-core
     Service.Transport.Web.SwaggerUISpec
     SetSpec
     StreamSpec
+    SubprocessSpec
     TaskSpec
     Test.AppSpec.AppSpecSpec
     Test.AppSpec.VerifySpec
