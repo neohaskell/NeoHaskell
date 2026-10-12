@@ -155,7 +155,16 @@
       "kind": "hspec",
       "suite": "nhcore-test-service",
       "path": "core/test/Service/FileUpload/ContentDedupSpec.hs",
-      "match": "dedup self-heals when the existence check errors",
+      "match": "dedup fails closed when the existence check errors",
+      "boundary": "filesystem:real",
+      "expected_examples": 1,
+      "fixture": "Service.FileUpload.ContentDedup"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-service",
+      "path": "core/test/Service/FileUpload/ContentDedupSpec.hs",
+      "match": "dedup conflict retry cleans only its provisional blob when winner check errors",
       "boundary": "filesystem:real",
       "expected_examples": 1,
       "fixture": "Service.FileUpload.ContentDedup"
@@ -165,6 +174,15 @@
       "suite": "nhcore-test-service",
       "path": "core/test/Service/FileUpload/ContentDedupSpec.hs",
       "match": "duplicate upload returns same blobKey as original",
+      "boundary": "filesystem:real",
+      "expected_examples": 1,
+      "fixture": "Service.FileUpload.ContentDedup"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-service",
+      "path": "core/test/Service/FileUpload/ContentDedupSpec.hs",
+      "match": "duplicate upload of a present blob makes no store call",
       "boundary": "filesystem:real",
       "expected_examples": 1,
       "fixture": "Service.FileUpload.ContentDedup"

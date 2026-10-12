@@ -1,6 +1,8 @@
 module Service.FileUpload.ContentDedupSpec where
 
+import Array qualified
 import Bytes qualified
+import ConcurrentVar qualified
 import Core
 import Data.Char (isDigit)
 import Directory qualified
@@ -228,6 +230,24 @@ spec = do
             response2 <- uploadFile env "owner1" "file.txt" "text/plain" content
             response2.blobKey |> shouldBe response1.blobKey
 
+        it "duplicate upload of a present blob makes no store call" \_ -> do
+          withTestDedupEnv \env -> do
+            let content = "duplicate no-store content" |> Text.toBytes
+            response1 <- uploadFile env "owner1" "file.txt" "text/plain" content
+            storeCalls <- ConcurrentVar.containing (0 :: Int)
+            let observedBlobStore =
+                  (env.blobStore)
+                    { store = \key bytes -> do
+                        ConcurrentVar.modify (\n -> n + 1) storeCalls
+                        env.blobStore.store key bytes
+                    }
+            response2 <-
+              handleUploadImpl env.config observedBlobStore env.stateStore "owner1" "file.txt" "text/plain" content
+            response2.fileRef |> shouldBe response1.fileRef
+            response2.blobKey |> shouldBe response1.blobKey
+            writes <- ConcurrentVar.peek storeCalls
+            writes |> shouldBe 0
+
         it "duplicate upload returns original metadata (filename from first upload)" \_ -> do
           withTestDedupEnv \env -> do
             let content = "duplicate filename content" |> Text.toBytes
@@ -338,10 +358,12 @@ spec = do
       -- Blob Loss Self-Heal (issue #713)
       --
       -- Dedup must never return a FileRef whose blob has been lost. Before
-      -- returning a match, the blob's presence is verified; if it is missing
-      -- (or its presence cannot be confirmed), the content is re-stored under
-      -- the SAME blob key so the reference is healed in place — no new FileRef,
-      -- no state mutation, robust for both in-memory and Postgres backends.
+      -- returning a match, the blob's presence is verified; only if the store
+      -- confirms it is missing is the content re-stored under the SAME blob key
+      -- so the reference is healed in place — no new FileRef, no state
+      -- mutation, robust for both in-memory and Postgres backends. When the
+      -- existence check itself errors, presence is unknown: the upload fails
+      -- closed and nothing is re-stored.
       -- ==========================================================================
       describe "Blob Loss Self-Heal (issue #713)" do
         it "dedup self-heals a missing Pending blob on re-upload" \_ -> do
@@ -387,21 +409,82 @@ spec = do
               |> Task.mapError (\e -> [fmt|retrieve failed: #{show e}|])
             computeContentHash restored |> shouldBe (computeContentHash content)
 
-        it "dedup self-heals when the existence check errors" \_ -> do
+        it "dedup fails closed when the existence check errors" \_ -> do
           withTestDedupEnv \env -> do
-            let content = "self-heal on exists-error content" |> Text.toBytes
+            let content = "fail-closed on exists-error content" |> Text.toBytes
             response1 <- uploadFile env "owner1" "file.txt" "text/plain" content
-            env.blobStore.delete response1.blobKey
-              |> Task.mapError (\e -> [fmt|delete failed: #{show e}|])
-            -- Make the existence check itself fail; heal must still occur
+            -- Presence is unknown, not known-missing: the blob is still there,
+            -- only the check fails. The upload must not rewrite it blindly.
+            storeCalls <- ConcurrentVar.containing (0 :: Int)
             let faultingBlobStore =
                   (env.blobStore)
-                    { exists = \_ -> Task.throw (StorageError "injected exists failure") }
-            response2 <-
+                    { exists = \_ -> Task.throw (StorageError "injected exists failure")
+                    , store = \_ _ -> ConcurrentVar.modify (\n -> n + 1) storeCalls
+                    }
+            result <-
               handleUploadImpl env.config faultingBlobStore env.stateStore "owner1" "file.txt" "text/plain" content
-            blobPresent <- env.blobStore.exists response2.blobKey
-              |> Task.mapError (\e -> [fmt|exists failed: #{show e}|])
-            blobPresent |> shouldBe True
+                |> Task.asResult
+            case result of
+              Ok _ -> fail "expected the upload to fail when blob presence is unknown"
+              Err msg -> do
+                msg |> shouldBe "Failed to verify stored file content. Please retry."
+                (Text.contains "injected" msg) |> shouldBe False
+            rewrites <- ConcurrentVar.peek storeCalls
+            rewrites |> shouldBe 0
+            -- The original blob is untouched and still served.
+            restored <- env.blobStore.retrieve response1.blobKey
+              |> Task.mapError (\e -> [fmt|retrieve failed: #{show e}|])
+            restored |> shouldBe content
+
+        it "dedup conflict retry cleans only its provisional blob when winner check errors" \_ -> do
+          withTestDedupEnv \env -> do
+            let content = "conflict retry winner content" |> Text.toBytes
+            winner <- uploadFile env "owner1" "file.txt" "text/plain" content
+            lookups <- ConcurrentVar.containing (0 :: Int)
+            storedKeys <- ConcurrentVar.containing (Array.empty :: Array BlobKey)
+            deletedKeys <- ConcurrentVar.containing (Array.empty :: Array BlobKey)
+            let racingStateStore =
+                  (env.stateStore)
+                    { findByContentHash = \owner contentHash -> do
+                        count <- ConcurrentVar.peek lookups
+                        ConcurrentVar.modify (\value -> value + 1) lookups
+                        if count == 0
+                          then Task.yield Nothing
+                          else env.stateStore.findByContentHash owner contentHash
+                    , updateState = \_ _ -> Task.throw "injected unique constraint violation (23505)"
+                    }
+            let observedBlobStore =
+                  (env.blobStore)
+                    { exists = \_ -> Task.throw (StorageError "injected winner exists failure")
+                    , store = \key bytes -> do
+                        ConcurrentVar.modify (Array.push key) storedKeys
+                        env.blobStore.store key bytes
+                    , delete = \key -> do
+                        env.blobStore.delete key
+                        ConcurrentVar.modify (Array.push key) deletedKeys
+                    }
+            result <-
+              handleUploadImpl env.config observedBlobStore racingStateStore "owner1" "file.txt" "text/plain" content
+                |> Task.asResult
+            case result of
+              Ok _ -> fail "expected the conflict retry to fail when the winner check errors"
+              Err message -> message |> shouldBe "Failed to verify stored file content. Please retry."
+            lookupCount <- ConcurrentVar.peek lookups
+            lookupCount |> shouldBe 2
+            writes <- ConcurrentVar.peek storedKeys
+            deletes <- ConcurrentVar.peek deletedKeys
+            Array.length writes |> shouldBe 1
+            deletes |> shouldBe writes
+            case Array.first writes of
+              Nothing -> fail "expected a provisional blob key"
+              Just provisionalKey -> do
+                provisionalKey |> shouldNotBe winner.blobKey
+                provisionalPresent <- env.blobStore.exists provisionalKey
+                  |> Task.mapError (\err -> [fmt|exists failed: #{show err}|])
+                provisionalPresent |> shouldBe False
+            winnerContent <- env.blobStore.retrieve winner.blobKey
+              |> Task.mapError (\err -> [fmt|retrieve failed: #{show err}|])
+            winnerContent |> shouldBe content
 
         it "dedup surfaces a generic error (no dangling ref) when re-store fails" \_ -> do
           withTestDedupEnv \env -> do
