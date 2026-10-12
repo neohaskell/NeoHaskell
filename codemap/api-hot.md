@@ -10,10 +10,10 @@ codemap/signatures/ · type-directed search: ./dev api "<type>"
 
 ## Task
 
-- `yield :: value -> Task w value`  <!-- 602 call sites -->
+- `yield :: value -> Task w value`  <!-- 601 call sites -->
 - `ignoreError :: Task err Unit -> Task w Unit`  <!-- 242 call sites -->
 - `mapError :: (err1 -> err2) -> Task err1 value -> Task err2 value`  <!-- 229 call sites -->
-- `throw :: err -> Task err w`  <!-- 216 call sites -->
+- `throw :: err -> Task err w`  <!-- 217 call sites -->
 - `fromIO :: IO value -> Task w value`  <!-- 131 call sites -->
 - `asResult :: Task err value -> Task err2 (Result err value)`  <!-- 89 call sites -->
 - `when :: Bool -> Task err Unit -> Task err Unit`  <!-- 31 call sites -->
@@ -72,10 +72,10 @@ codemap/signatures/ · type-directed search: ./dev api "<type>"
 ## Log
 
 - `debug :: HasCallStack => Text -> Task w Unit`  <!-- 114 call sites -->
-- `warn :: HasCallStack => Text -> Task w Unit`  <!-- 72 call sites -->
+- `warn :: HasCallStack => Text -> Task w Unit`  <!-- 71 call sites -->
 - `withScope :: Array (Text, Text) -> Task err value -> Task err value`  <!-- 57 call sites -->
 - `info :: HasCallStack => Text -> Task w Unit`  <!-- 35 call sites -->
-- `critical :: HasCallStack => Text -> Task w Unit`  <!-- 11 call sites -->
+- `critical :: HasCallStack => Text -> Task w Unit`  <!-- 12 call sites -->
 
 ## Map
 
@@ -294,19 +294,19 @@ when WRITING TESTS; they are not feature-code frequency signal.
 
 ## Task
 
-- `mapError :: (err1 -> err2) -> Task err1 value -> Task err2 value`  <!-- 828 test call sites -->
-- `yield :: value -> Task w value`  <!-- 483 test call sites -->
-- `asResult :: Task err value -> Task err2 (Result err value)`  <!-- 286 test call sites -->
+- `mapError :: (err1 -> err2) -> Task err1 value -> Task err2 value`  <!-- 829 test call sites -->
+- `yield :: value -> Task w value`  <!-- 484 test call sites -->
+- `asResult :: Task err value -> Task err2 (Result err value)`  <!-- 288 test call sites -->
 - `mapArray :: (element -> Task err output) -> Array element -> Task err (Array output)`  <!-- 127 test call sites -->
-- `throw :: err -> Task err w`  <!-- 124 test call sites -->
+- `throw :: err -> Task err w`  <!-- 126 test call sites -->
 - `andThen :: (input -> Task err output) -> Task err input -> Task err output`  <!-- 92 test call sites -->
 - `fromIO :: IO value -> Task w value`  <!-- 90 test call sites -->
 - `map :: (input -> output) -> Task err input -> Task err output`  <!-- 84 test call sites -->
 
 ## Array
 
-- `length :: Array a -> Int`  <!-- 276 test call sites -->
-- `empty :: Array a`  <!-- 231 test call sites -->
+- `length :: Array a -> Int`  <!-- 277 test call sites -->
+- `empty :: Array a`  <!-- 233 test call sites -->
 - `fromLinkedList :: LinkedList a -> Array a`  <!-- 221 test call sites -->
 - `map :: (a -> b) -> Array a -> Array b`  <!-- 138 test call sites -->
 - `get :: Int -> Array a -> Maybe a`  <!-- 89 test call sites -->
@@ -316,8 +316,8 @@ when WRITING TESTS; they are not feature-code frequency signal.
 
 ## Text
 
-- `contains :: Text -> Text -> Bool`  <!-- 450 test call sites -->
-- `toBytes :: Text -> Bytes`  <!-- 98 test call sites -->
+- `contains :: Text -> Text -> Bool`  <!-- 451 test call sites -->
+- `toBytes :: Text -> Bytes`  <!-- 100 test call sites -->
 - `fromLinkedList :: LinkedList Char -> Text`  <!-- 58 test call sites -->
 - `length :: Text -> Int`  <!-- 41 test call sites -->
 - `repeat :: Int -> Text -> Text`  <!-- 35 test call sites -->
@@ -360,9 +360,9 @@ when WRITING TESTS; they are not feature-code frequency signal.
 
 ## ConcurrentVar
 
-- `containing :: value -> Task w (ConcurrentVar value)`  <!-- 126 test call sites -->
-- `modify :: (value -> value) -> ConcurrentVar value -> Task w Unit`  <!-- 121 test call sites -->
-- `peek :: ConcurrentVar value -> Task w value`  <!-- 104 test call sites -->
+- `containing :: value -> Task w (ConcurrentVar value)`  <!-- 131 test call sites -->
+- `modify :: (value -> value) -> ConcurrentVar value -> Task w Unit`  <!-- 126 test call sites -->
+- `peek :: ConcurrentVar value -> Task w value`  <!-- 110 test call sites -->
 - `get :: ConcurrentVar value -> Task w value`  <!-- 39 test call sites -->
 - `set :: value -> ConcurrentVar value -> Task w ()`  <!-- 15 test call sites -->
 - `new :: forall value w. Task w (ConcurrentVar value)`  <!-- 14 test call sites -->

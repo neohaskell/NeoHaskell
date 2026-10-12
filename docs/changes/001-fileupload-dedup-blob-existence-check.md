@@ -76,8 +76,9 @@ missing-blob guard (`ensureBlobPresent`) is applied at **all four** sites that
 return a pre-existing `FileRef` — the two dedup branches (Pending/Confirmed) and
 the two 23505 concurrent-race retry branches in `normalUploadFlow` — since the
 race-retry path returns a stored `blobKey` with the same absent check and is the
-same defect class. The race branches only fire under the Postgres unique
-constraint, so they are covered structurally by the shared helper (proven by
-C1–C4 on the in-memory store) rather than by a separate, non-deterministic
-concurrency criterion. `handleDownloadImpl`'s `File blob is missing from storage`
+same defect class. The real race branches use the Postgres unique
+constraint. Change 020 C4 additionally tests the retry path with an injected
+`23505` result and real filesystem cleanup; it is a deterministic regression,
+not a PostgreSQL concurrency test. The shared helper also provides structural
+coverage across Pending and Confirmed retry states. `handleDownloadImpl`'s `File blob is missing from storage`
 remains a detect-only backstop, unchanged.
