@@ -22,4 +22,4 @@ Expected retained payload is at most 2 MiB plus fixed read/decode buffers, not u
 
 ## Verification
 
-Change 023 owns real pipe, overflow, lifecycle, cancellation, reader-failure, and PDF-impact checks. Its C1 must be committed red with a current pipeline receipt. Security and performance review are required explicitly for this resource-owning boundary, even though the current `system` capability lacks risk tags. Review records do not substitute for executable checks.
+Change 023 C1–C8 provide executable real pipe, proposed overflow, and direct-child timeout/cancellation checks. Reader failure, reader-task/handle cleanup and PDF-impact checks remain explicit incomplete coverage, not inferred from PID disappearance. Its C1 must be committed red with a current pipeline receipt. Security and performance review are required explicitly for this resource-owning boundary, even though the current `system` capability lacks risk tags. Review records do not substitute for executable checks.

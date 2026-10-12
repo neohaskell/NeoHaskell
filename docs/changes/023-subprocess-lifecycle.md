@@ -2,7 +2,7 @@
 
 This proposal prevents a noisy child process from timing out merely because its output pipe fills, and prevents cancellation from leaving that child running. It changes only `Subprocess.runWithTimeout`; `run`, `open`, and `openInherit` remain outside this slice.
 
-**Pre-approval draft:** no implementation or approval. C1 is the minimal executable repro. The additional verification obligations below remain mandatory. Each needs an executable proving-test locator and boundary attestation before final spec approval; the C1-only table is a preliminary draft, not complete Gate 1 readiness or proof of the broader contract. No historical approval is claimed.
+**Pre-approval draft:** no implementation or approval. C1 is the minimal executable repro. The additional verification obligations below remain mandatory. Each needs an executable proving-test locator and boundary attestation before final spec approval; the executable table covers real pipes, capture-policy boundaries and direct-child lifecycle, but is not complete Gate 1 readiness or proof of reader-task cleanup. No historical approval is claimed.
 
 ```yaml spec
 issue: adhoc:subprocess-lifecycle
@@ -28,23 +28,27 @@ Timeout includes pipe draining as well as process wait. The child and readers ar
 | ID | Behavior | Proving test | Level | Boundary |
 |----|----------|--------------|-------|----------|
 | C1 | Real stderr exceeding pipe capacity completes with exit 7, not timeout | `hspec:nhcore-test-core:core/test/SubprocessSpec.hs#drains real stderr before waiting for process exit` | integration | subprocess:real |
+| C2 | Normal and nonzero exits return complete output on both streams | `hspec:nhcore-test-core:core/test/SubprocessSpec.hs#captures complete normal and nonzero child output` | integration | subprocess:real |
+| C3 | Simultaneous pipe writers exceed pipe capacity without timeout | `hspec:nhcore-test-core:core/test/SubprocessSpec.hs#drains simultaneous real pipes beyond pipe capacity` | integration | subprocess:real |
+| C4 | Proposed one-MiB policy: exact-cap output remains complete (awaiting policy choice) | `hspec:nhcore-test-core:core/test/SubprocessSpec.hs#captures exactly the proposed one MiB per stream` | integration | subprocess:real |
+| C5 | Proposed one-MiB policy: over-cap output returns ProcessError, not timeout or partial success (awaiting policy choice) | `hspec:nhcore-test-core:core/test/SubprocessSpec.hs#rejects output above the proposed one MiB capture cap` | integration | subprocess:real |
+| C6 | Timeout leaves the readiness-observed direct child absent from process table | `hspec:nhcore-test-core:core/test/SubprocessSpec.hs#reaps an observed direct child after timeout` | integration | subprocess:real |
+| C7 | TERM-resistant direct child is absent after bounded timeout cleanup | `hspec:nhcore-test-core:core/test/SubprocessSpec.hs#reaps an observed TERM-resistant child after timeout` | integration | subprocess:real |
+| C8 | Cancellation propagates and leaves readiness-observed direct child absent | `hspec:nhcore-test-core:core/test/SubprocessSpec.hs#propagates cancellation and reaps the observed direct child` | integration | subprocess:real |
 
-### Required regression coverage before final spec approval
+### Fixture controls and remaining coverage boundary
 
-Before final spec approval, add executable proving-test locators and real subprocess boundary attestations for these checks; establish honest pre-fix outcomes and require all approved checks green before implementation acceptance:
+C1 remains the exact original red reproduction. C2–C5 run two simultaneous Python pipe writers with full-write loops. C4/C5 are executable proposed-policy tests, not evidence that the one-MiB default has been approved. They must change only with the recorded policy decision, not merely to turn green.
 
-- Both pipes write concurrently beyond pipe capacity; below/exact capture cap returns full bytes and exit status.
-- Above-cap output is discarded while draining and returns the approved typed error, never partial successful output.
-- Normal completion, nonzero exit, timeout, cancellation and reader failure close owned handles and join readers.
-- Timeout and cancellation terminate/reap the recorded direct child, including a TERM-resistant fixture; cancellation still propagates.
-- A descendant-held pipe cannot block direct-child timeout cleanup forever; no descendant termination is promised.
-- Creation/reader failure produces the specified typed error without resource leaks; PDF callers receive explicit impact coverage.
+C6–C8 create a private synthetic workspace. The child writes its own PID only after installing its TERM policy; a separate control requires that PID to be live and its command to contain this workspace before the lifecycle action. After completion/cancellation the observer requires no process-table entry, rejecting zombies as well as live survivors. This is direct-child observation, not process-tree cleanup. A finally cleanup sends SIGKILL only after PID identity validation, waits until the child is absent or a non-executing zombie, and removes only its own workspace; its own failure is red, never ignored. That separate controller cannot reap the Haskell parent's child. Cleanup records zombie versus absent; the test assertion still requires absence and rejects zombies. A post-REPL observation verifies no executing fixture remains. The TERM-resistant test has a four-second test budget (one-second process timeout plus proposed one-second grace and observation margin), not a new production deadline.
 
-Review principle: draining and retained-output limits are separate obligations. Ownership lasts through cancellation. Tests observe real pipes and recorded owned PIDs; result values alone do not prove cleanup. Reader cleanup needs direct thread/lifecycle observation in a narrow internal test seam if the public API cannot expose it; do not add a public lifecycle framework just for tests. These are mandatory regression obligations, not substitutes for C1 or invented passing locators.
+Reader-task join/handle-close observation, deterministic reader I/O failure and a descendant-held pipe are **not proved** by PID disappearance. The public API exposes neither reader handles nor threads; a narrow approved internal test seam or separate lifecycle observation method remains necessary before approving/accepting those claims. Do not substitute a fake reader or infer thread cleanup from a returned result. PDF impact coverage also remains mandatory after policy choice.
+
+Review principle: draining and retained-output limits are separate obligations (C1–C5). Ownership lasts through cancellation (C6–C8). Real process controls distinguish failure from absent/malformed fixtures. A passing structural locator check does not make the still-unobserved reader guarantees complete.
 
 ## User impact
 
-Breaking behavioral limit, no signature change. Applications collecting over 1 MiB on either stream now receive `ProcessError`; PDF text extraction uses this API and is explicitly affected. Approve this policy or choose an additive bounded API first. Migration/release notes must identify the real caller behavior and must not invent a replacement API. Existing extraction timeout defaults do not change. Limits of 1,048,576 bytes and 1 second are proposed new constants. No constants have changed yet.
+Breaking behavioral limit, no signature change. Under the proposed policy, applications collecting over 1 MiB on either stream would receive `ProcessError`; PDF text extraction uses this API and is explicitly affected. Approve this policy or choose an additive bounded API first. Migration/release notes must identify the real caller behavior and must not invent a replacement API. Existing extraction timeout defaults do not change. Limits of 1,048,576 bytes and 1 second are proposed new constants. No constants have changed yet.
 
 ## ADR
 
