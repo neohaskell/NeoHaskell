@@ -39,6 +39,13 @@
   },
   "boundaries": [
     {
+      "kind": "script",
+      "path": "core/test/Http/transport_fixture.py",
+      "boundary": "http:real",
+      "expected_examples": 1,
+      "fixture": "Http.Client.syntheticTransport"
+    },
+    {
       "kind": "hspec",
       "suite": "nhcore-test-core",
       "path": "core/test/Http/ClientRawSpec.hs",

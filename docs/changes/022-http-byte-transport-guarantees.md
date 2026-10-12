@@ -45,11 +45,24 @@ red identity. Formal red evidence requires the exact assertion below.
 | C2 | Preserve method, body, headers and raw non-2xx behavior | `hspec:nhcore-test-core:core/test/Http/ClientRawSpec.hs#sendRaw PUT delivers method, raw body and custom header`<br>`hspec:nhcore-test-core:core/test/Http/ClientRawSpec.hs#sendRaw DELETE surfaces a 404 as a status code, not an error` | integration | http:real |
 | C3 | Preserve independent public Crypto compatibility vectors | `hspec:nhcore-test-core:core/test/CryptoSpec.hs#matches the HMAC-SHA256 known answer`<br>`hspec:nhcore-test-core:core/test/CryptoSpec.hs#matches the known answer for an empty message` | unit | none |
 | C4 | Preserve combined Core/service report wiring and its missing-report controls | `script:scripts/workflow-check#--self-test` | unit | none |
+| C5 | Test-manager trusted TLS succeeds, untrusted CA/wrong hostname fail, public untrusted TLS fails (not public trusted success) | `script:core/test/Http/transport_fixture.py#tls` | integration | http:real |
+| C6 | Fresh-process lower/uppercase env proxy traps work, actual raw request reaches origin and actual secure CONNECT avoids trap | `script:core/test/Http/transport_fixture.py#proxy` | integration | http:real |
+| C7 | Raw exact/empty/HEAD and existing zero-builder rejection controls pass; chunked and unknown-length reads reject before EOF | `script:core/test/Http/transport_fixture.py#body` | integration | http:real |
 
 ### Required additional criteria before implementation
 
-This bounded draft is NOT final Gate 1-ready. The following exact proposed
-selector names must become real tests and typed criteria before formal approval;
+The script uses Python stdlib loopback fixtures and invokes `./dev exec cabal
+repl` for the actual Haskell request path. It checks clean compilation and
+explicit output markers rather than trusting GHCi exit0. Temporary synthetic
+keys are deleted and listeners close in `finally`; no system trust is changed.
+
+C5–C7 now provide executable audit-derived transport controls without any
+production test seam. C5 deliberately injects trust only into a test manager;
+it does not prove public trusted success. C6 isolates traversal while secure
+origin success is still blocked by trust. C7 covers raw reads only.
+
+This bounded draft is NOT final Gate 1-ready. The following remaining promises
+must become real tests and typed criteria before formal approval;
 no placeholder, skipped test, helper-only proof, or existing suite count can
 stand in for them. Add to `core/test/Http/ClientRawSpec.hs`, suite
 `nhcore-test-core`, attest `integration / http:real` in `test-surfaces.json`.
@@ -68,7 +81,9 @@ stand in for them. Add to `core/test/Http/ClientRawSpec.hs`, suite
   through real trusted TLS, plus socket-close observation. Raw C1 alone is not
   proof of the secure path.
 - `byte paths preserve exact zero unknown length and HEAD limits`: both paths;
-  zero/empty succeeds, zero/nonempty fails, exactly N succeeds, N+1 fails,
+  zero is currently rejected by the builder (C7 preserves that behavior);
+  any future zero-byte reader contract needs explicit approval, exactly N
+  succeeds, N+1 fails,
   chunked and close-delimited unknown lengths stop early, oversized advertised
   length rejects without a full body, HEAD succeeds with empty body despite
   large advertised length. Count delivered/decompressed body bytes. A finite
