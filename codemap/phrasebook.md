@@ -89,6 +89,16 @@ Array [0]
 []
 ```
 
+```haskell
+>>> "aGVsbG8=" |> Text.toBytes |> Bytes.fromBase64 |> Result.map Text.fromBytes
+Ok "hello"
+```
+
+```haskell
+>>> "aGVsbG8" |> Text.toBytes |> Bytes.fromBase64 |> Result.isErr
+True
+```
+
 ### Float
 
 ```haskell
@@ -194,6 +204,29 @@ Set (fromList [1,2,3])
 "Cart"
 ```
 
+## outbound-integrations
+
+### Integration.Video.ExtractAudio
+
+```haskell
+>>> defaultConfig.timeoutSeconds
+180
+```
+
+```haskell
+>>> defaultConfig.sampleRateHz
+16000
+```
+
+### Integration.Video.ExtractAudio.Internal
+
+```haskell
+>>> import Array qualified
+>>> import Integration.Video.ExtractAudio (defaultConfig)
+>>> Array.toLinkedList (buildFfmpegArgs defaultConfig "in.mp4" "out.wav")
+["-nostdin","-v","error","-i","in.mp4","-vn","-ac","1","-ar","16000","-fs","25000000","out.wav"]
+```
+
 ## postgres-infra
 
 ### Service.Infra.Postgres.SslMode
@@ -237,4 +270,4 @@ True
 
 ---
 
-*32 example sessions · modules with ZERO doctests: 315 (the documentation backlog — see codemap/.doc-ratchet)*
+*37 example sessions · modules with ZERO doctests: 315 (the documentation backlog — see codemap/.doc-ratchet)*

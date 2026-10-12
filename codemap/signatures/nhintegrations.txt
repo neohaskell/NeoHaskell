@@ -1881,3 +1881,42 @@ buildPdftotextArgs :: Config -> Path -> Array Text
 extractPageCount :: Text -> Int
 instance (Data.Aeson.Types.ToJSON.ToJSON command, GHC.TypeLits.KnownSymbol (Service.Command.Core.NameOf command)) => Integration.ToAction (Integration.Pdf.ExtractText.Request command)
 parsePdfInfo :: Text -> PdfMetadata
+
+module Integration.Video.ExtractAudio
+Config :: Int -> Int -> Int -> Int -> Maybe Text -> Config
+ExtractionResult :: Bytes -> Text -> ExtractionResult
+Request :: FileRef -> Config -> (ExtractionResult -> command) -> (Text -> command) -> Request command
+[audio] :: ExtractionResult -> Bytes
+[channels] :: Config -> Int
+[config] :: Request command -> Config
+[ffmpegPath] :: Config -> Maybe Text
+[fileRef] :: Request command -> FileRef
+[maxOutputBytes] :: Config -> Int
+[mimeType] :: ExtractionResult -> Text
+[onError] :: Request command -> Text -> command
+[onSuccess] :: Request command -> ExtractionResult -> command
+[sampleRateHz] :: Config -> Int
+[timeoutSeconds] :: Config -> Int
+data Config
+data ExtractionResult
+data Request command
+defaultConfig :: Config
+instance GHC.Classes.Eq Integration.Video.ExtractAudio.Config
+instance GHC.Classes.Eq Integration.Video.ExtractAudio.ExtractionResult
+instance GHC.Generics.Generic (Integration.Video.ExtractAudio.Request command)
+instance GHC.Generics.Generic Integration.Video.ExtractAudio.Config
+instance GHC.Generics.Generic Integration.Video.ExtractAudio.ExtractionResult
+instance GHC.Show.Show Integration.Video.ExtractAudio.Config
+instance GHC.Show.Show Integration.Video.ExtractAudio.ExtractionResult
+
+module Integration.Video.ExtractAudio.Internal
+Runner :: (Text -> Task Error (Maybe Text)) -> (Int -> Text -> Array Text -> Path -> Task Error Completion) -> Runner
+[run] :: Runner -> Int -> Text -> Array Text -> Path -> Task Error Completion
+[which] :: Runner -> Text -> Task Error (Maybe Text)
+buildFfmpegArgs :: Config -> Path -> Path -> Array Text
+data Runner
+executeExtraction :: (ToJSON command, KnownSymbol (NameOf command)) => Runner -> ActionContext -> Request command -> Task IntegrationError (Maybe CommandPayload)
+extractAudio :: Runner -> Text -> FileAccessContext -> FileRef -> Config -> Task IntegrationError ExtractionResult
+instance (Data.Aeson.Types.ToJSON.ToJSON command, GHC.TypeLits.KnownSymbol (Service.Command.Core.NameOf command)) => Integration.ToAction (Integration.Video.ExtractAudio.Request command)
+realRunner :: Runner
+resolveFfmpeg :: Runner -> Config -> Task IntegrationError Text
