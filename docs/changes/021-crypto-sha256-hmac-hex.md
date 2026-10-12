@@ -42,7 +42,7 @@ secret.
 | C1 | `sha256` matches the FIPS 180-4 vectors for `""` and `"abc"` | `hspec:nhcore-test-core:core/test/CryptoSpec.hs#hashes the empty input to the FIPS 180-4 vector`<br>`hspec:nhcore-test-core:core/test/CryptoSpec.hs#hashes abc to the FIPS 180-4 vector` | unit | none |
 | C2 | `hmacSha256` matches RFC 4231 test case 2 | `hspec:nhcore-test-core:core/test/CryptoSpec.hs#matches RFC 4231 test case 2 (key Jefe)` | unit | none |
 | C3 | `hmacSha256` accepts keys shorter than 32 bytes | `hspec:nhcore-test-core:core/test/CryptoSpec.hs#accepts keys shorter than 32 bytes, unlike signWith` | unit | none |
-| C4 | `signWith` is unchanged: it equals `hmacSha256` + `toHex` for a valid key | `hspec:nhcore-test-core:core/test/CryptoSpec.hs#agrees with signWith for a valid HmacKey` | unit | none |
+| C4 | `signWith` preserves the independent known answers for nonempty and empty messages | `hspec:nhcore-test-core:core/test/CryptoSpec.hs#matches the HMAC-SHA256 known answer`<br>`hspec:nhcore-test-core:core/test/CryptoSpec.hs#matches the known answer for an empty message` | unit | none |
 | C5 | `toHex` is lowercase, two characters per byte, empty for empty | `hspec:nhcore-test-core:core/test/CryptoSpec.hs#encodes two lowercase characters per byte`<br>`hspec:nhcore-test-core:core/test/CryptoSpec.hs#encodes the empty input to the empty text` | unit | none |
 
 ## User impact
