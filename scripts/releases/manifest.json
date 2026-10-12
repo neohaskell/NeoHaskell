@@ -202,6 +202,47 @@
       ],
       "source_sha": "4ba756552d2b5ba20c734ba9ae29fa31dab3a11e",
       "version": "0.10.1"
+    },
+    {
+      "base_sha": "f4dbf25d9213f7ab339467b8327dcc655c3278f0",
+      "base_tag": "neo-v0.10.1",
+      "base_version": "0.10.1",
+      "bootstrap": false,
+      "date": "2026-10-12",
+      "group": "platform",
+      "id": "f68a751826f7b2881c12714e4f1c42c244b1bbc82471738f2b48388a291bc70f",
+      "impact": "compatible",
+      "kind": "release",
+      "notes": [
+        {
+          "category": "Fixed",
+          "commit": "cab923c0b098fdb82ece539380719c0757ec9057",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "e2710356e0c6ba6265ccbcfd9f46184e10d49a0c98fa35c4ce8f091749dac0cf",
+          "impact": "compatible",
+          "path": ".changes/858-command-executor-revisions.md",
+          "sections": {
+            "Summary": "Concurrent commands that update the same entity now use the entity revision they actually read. If another command writes first, the stale command retries with fresh state instead of appending an outdated event. New-entity commands also prevent duplicate stream creation, while unconditional appends keep their existing behavior.\n\nExisting applications do not need code or data migrations. To verify the fix locally, run `./dev test 'Retry Logic' nhcore-test-service` and confirm the command-handler retry examples pass for the in-memory and PostgreSQL backends."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: compatible\ncategory: Fixed\n---\n\n## Summary\n\nConcurrent commands that update the same entity now use the entity revision they actually read. If another command writes first, the stale command retries with fresh state instead of appending an outdated event. New-entity commands also prevent duplicate stream creation, while unconditional appends keep their existing behavior.\n\nExisting applications do not need code or data migrations. To verify the fix locally, run `./dev test 'Retry Logic' nhcore-test-service` and confirm the command-handler retry examples pass for the in-memory and PostgreSQL backends.\n"
+        },
+        {
+          "category": "Added",
+          "commit": "7bd77c0fd88a4b56091fc015388df85837e97d96",
+          "component": "Integrations",
+          "group": "platform",
+          "hash": "955f2539b3bbdf551e4ba28b84e3ab287961bfc952775131c645dde3171e30e5",
+          "impact": "compatible",
+          "path": ".changes/018-video-extract-audio.md",
+          "sections": {
+            "Summary": "You can now pull the audio out of an uploaded video with the new\n`Integration.Video.ExtractAudio` integration. Give it the video's file\nreference and it returns the audio as a mono 16 kHz WAV (`audio/wav`), ready\nto pass to `Integration.Audio.Transcribe` with `mimeType = \"audio/wav\"`. By\ndefault it allows 180 seconds and stops at 25 MB; both limits are in the\nconfig. It needs `ffmpeg` on the machine that runs your app (for example\n`brew install ffmpeg`). If `ffmpeg` is missing, the action fails with a\nmessage that tells you to install it. If the video itself cannot be\nconverted, your `onError` command receives the reason.\n\nRaise the dispatcher's `eventProcessingTimeoutMs` above the extraction\ntimeout, for example to `Just 200000`. Its 30-second default would otherwise\nstop a slow extraction before your `onSuccess` or `onError` command is sent.\nTo keep the audio in a command, store it as Base64 text\n(`result.audio |> Bytes.toBase64 |> Text.fromBytes`). The new\n`Bytes.fromBase64` turns it back into the exact audio bytes\n(`audioBase64 |> Text.toBytes |> Bytes.fromBase64`) and returns an error\ninstead of different bytes if the text is not valid Base64.\n\nExisting applications do not need any changes. To verify locally, run\n`./dev test 'Integration.Video' nhintegrations-test` and confirm the\nextraction examples pass. They use a stand-in for `ffmpeg`, so you do not\nneed it installed to run them."
+          },
+          "text": "---\ngroup: platform\ncomponent: Integrations\nimpact: compatible\ncategory: Added\n---\n\n## Summary\n\nYou can now pull the audio out of an uploaded video with the new\n`Integration.Video.ExtractAudio` integration. Give it the video's file\nreference and it returns the audio as a mono 16 kHz WAV (`audio/wav`), ready\nto pass to `Integration.Audio.Transcribe` with `mimeType = \"audio/wav\"`. By\ndefault it allows 180 seconds and stops at 25 MB; both limits are in the\nconfig. It needs `ffmpeg` on the machine that runs your app (for example\n`brew install ffmpeg`). If `ffmpeg` is missing, the action fails with a\nmessage that tells you to install it. If the video itself cannot be\nconverted, your `onError` command receives the reason.\n\nRaise the dispatcher's `eventProcessingTimeoutMs` above the extraction\ntimeout, for example to `Just 200000`. Its 30-second default would otherwise\nstop a slow extraction before your `onSuccess` or `onError` command is sent.\nTo keep the audio in a command, store it as Base64 text\n(`result.audio |> Bytes.toBase64 |> Text.fromBytes`). The new\n`Bytes.fromBase64` turns it back into the exact audio bytes\n(`audioBase64 |> Text.toBytes |> Bytes.fromBase64`) and returns an error\ninstead of different bytes if the text is not valid Base64.\n\nExisting applications do not need any changes. To verify locally, run\n`./dev test 'Integration.Video' nhintegrations-test` and confirm the\nextraction examples pass. They use a stand-in for `ffmpeg`, so you do not\nneed it installed to run them.\n"
+        }
+      ],
+      "source_sha": "7bd77c0fd88a4b56091fc015388df85837e97d96",
+      "version": "0.10.2"
     }
   ],
   "recoveries": [],
