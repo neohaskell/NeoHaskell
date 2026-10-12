@@ -138,6 +138,7 @@ import Http.Client qualified as H
 import Http.Client.Internal qualified as R
 import Network.HTTP.Client qualified as HC
 import Network.HTTP.Client.TLS qualified as HT
+import Network.HTTP.Types.Status qualified as Status
 import Network.Connection qualified as C
 import Network.TLS qualified as TLS
 import Data.X509.CertificateStore qualified as CA
@@ -176,7 +177,7 @@ wrongName <- HC.parseRequest "https://127.0.0.1:{port}/tls"
 positive <- E.try @HC.HttpException (HC.httpLbs rightName trusted)
 negativeCa <- E.try @HC.HttpException (HC.httpLbs rightName untrusted)
 negativeHost <- E.try @HC.HttpException (HC.httpLbs wrongName trusted)
-P.print ("TLS_TRUSTED" :: P.String, P.either (P.const P.False) (P.const P.True) positive)
+P.print ("TLS_TRUSTED" :: P.String, P.either (P.const P.False) (\\response -> HC.responseStatus response P.== Status.status200 P.&& P.lookup "X-Fixture" (HC.responseHeaders response) P.== P.Just "tls" P.&& HC.responseBody response P.== "1234") positive)
 P.print ("TLS_UNTRUSTED" :: P.String, P.either (P.const P.True) (P.const P.False) negativeCa)
 P.print ("TLS_WRONG_HOST" :: P.String, P.either (P.const P.True) (P.const P.False) negativeHost)
 public <- Task.runResult (H.sendSecure H.Get (H.withUrl "https://localhost:{port}/public-untrusted" H.request) B.empty)
