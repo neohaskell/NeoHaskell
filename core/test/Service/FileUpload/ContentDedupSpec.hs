@@ -1,5 +1,6 @@
 module Service.FileUpload.ContentDedupSpec where
 
+import Array qualified
 import Bytes qualified
 import ConcurrentVar qualified
 import Core
@@ -434,6 +435,56 @@ spec = do
             restored <- env.blobStore.retrieve response1.blobKey
               |> Task.mapError (\e -> [fmt|retrieve failed: #{show e}|])
             restored |> shouldBe content
+
+        it "dedup conflict retry cleans only its provisional blob when winner check errors" \_ -> do
+          withTestDedupEnv \env -> do
+            let content = "conflict retry winner content" |> Text.toBytes
+            winner <- uploadFile env "owner1" "file.txt" "text/plain" content
+            lookups <- ConcurrentVar.containing (0 :: Int)
+            storedKeys <- ConcurrentVar.containing (Array.empty :: Array BlobKey)
+            deletedKeys <- ConcurrentVar.containing (Array.empty :: Array BlobKey)
+            let racingStateStore =
+                  (env.stateStore)
+                    { findByContentHash = \owner contentHash -> do
+                        count <- ConcurrentVar.peek lookups
+                        ConcurrentVar.modify (\value -> value + 1) lookups
+                        if count == 0
+                          then Task.yield Nothing
+                          else env.stateStore.findByContentHash owner contentHash
+                    , updateState = \_ _ -> Task.throw "injected unique constraint violation (23505)"
+                    }
+            let observedBlobStore =
+                  (env.blobStore)
+                    { exists = \_ -> Task.throw (StorageError "injected winner exists failure")
+                    , store = \key bytes -> do
+                        ConcurrentVar.modify (Array.push key) storedKeys
+                        env.blobStore.store key bytes
+                    , delete = \key -> do
+                        env.blobStore.delete key
+                        ConcurrentVar.modify (Array.push key) deletedKeys
+                    }
+            result <-
+              handleUploadImpl env.config observedBlobStore racingStateStore "owner1" "file.txt" "text/plain" content
+                |> Task.asResult
+            case result of
+              Ok _ -> fail "expected the conflict retry to fail when the winner check errors"
+              Err message -> message |> shouldBe "Failed to verify stored file content. Please retry."
+            lookupCount <- ConcurrentVar.peek lookups
+            lookupCount |> shouldBe 2
+            writes <- ConcurrentVar.peek storedKeys
+            deletes <- ConcurrentVar.peek deletedKeys
+            Array.length writes |> shouldBe 1
+            deletes |> shouldBe writes
+            case Array.first writes of
+              Nothing -> fail "expected a provisional blob key"
+              Just provisionalKey -> do
+                provisionalKey |> shouldNotBe winner.blobKey
+                provisionalPresent <- env.blobStore.exists provisionalKey
+                  |> Task.mapError (\err -> [fmt|exists failed: #{show err}|])
+                provisionalPresent |> shouldBe False
+            winnerContent <- env.blobStore.retrieve winner.blobKey
+              |> Task.mapError (\err -> [fmt|retrieve failed: #{show err}|])
+            winnerContent |> shouldBe content
 
         it "dedup surfaces a generic error (no dangling ref) when re-store fails" \_ -> do
           withTestDedupEnv \env -> do

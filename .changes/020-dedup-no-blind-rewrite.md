@@ -7,6 +7,8 @@ category: Fixed
 
 ## Summary
 
-A duplicate file upload no longer rewrites the stored blob when the blob store cannot say whether the blob exists. Before, a failed existence check was treated as "missing" and the content was re-stored blindly; on a remote object store that overwrote data nobody had looked at. Now the upload fails with "Failed to verify stored file content. Please retry.", the real backend error is logged at `critical`, and the existing stored blob is not rewritten. Uploads whose blob is present, or confirmed missing, behave exactly as before (the confirmed-missing case still self-heals).
+A duplicate file upload no longer rewrites the existing stored blob when the blob store's existence check returns an error. The upload instead fails with "Failed to verify stored file content. Please retry." Backend details are logged at error level via `Log.critical`. A check that reports the blob present still reuses it; a check that reports it missing still restores the uploaded content. This does not change how the Local backend reports existence-check results.
+
+A concurrent upload that loses a state-store conflict may already have written its own provisional blob. It attempts to delete that provisional blob; it does not rewrite the winner's existing blob when the winner's existence check returns an error. This check does not prevent another actor from removing a blob later.
 
 No code or data changes are needed in applications. To verify locally, run `./dev test "ContentDedup" nhcore-test-service` and confirm `dedup fails closed when the existence check errors` passes.

@@ -8,7 +8,9 @@ content keeps short-circuiting to a `FileRef` whose blob is gone, and every
 downstream read fails permanently with `File blob is missing from storage`.
 This change makes dedup self-healing: before returning a match, verify the blob
 exists and, if it does not, re-store the content under the same blob key so the
-returned reference is never dangling.
+matched blob is restored when the backend reports it missing. This is a
+check-time guarantee, not a promise that no other actor can later remove the
+blob; change 020 separately defines the returned-error boundary.
 
 ```yaml spec
 issue: issue#713                # issue#NNN or adhoc:<slug>
