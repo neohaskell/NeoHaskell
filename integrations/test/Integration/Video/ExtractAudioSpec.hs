@@ -19,6 +19,7 @@ import Integration qualified
 import Integration.Video.ExtractAudio (Config (..), ExtractionResult (..), Request (..))
 import Integration.Video.ExtractAudio qualified as VideoAudio
 import Integration.Video.ExtractAudio.Internal (Runner (..), executeExtraction)
+import Integration.Video.ExtractAudio.Internal qualified as Real
 import Json qualified
 import Lock (Lock)
 import Map qualified
@@ -209,6 +210,31 @@ spec = do
       (commands, calls) <- Task.runOrPanic (runThroughDispatcher timingOut (Just shortDispatcherTimeoutMs))
       commands `shouldBe` Array.empty
       Array.length calls `shouldBe` 1
+
+
+
+  describe "Integration.Video.ExtractAudio real ffmpeg" do
+    it "keeps the promised exact default audio byte cap with real ffmpeg" do
+      audio <- Task.runOrPanic (withRealMedia "long" requireRealAudio)
+      Bytes.length audio `shouldSatisfy` (\size -> size <= 25000000)
+
+    it "returns nonempty independently decodable audio from real short media" do
+      audio <- Task.runOrPanic (withRealMedia "short" requireRealAudio)
+      Bytes.length audio `shouldSatisfy` (\size -> size > 44)
+
+    it "rejects a real empty audio track instead of reporting success" do
+      outcome <- Task.runOrPanic (withRealMedia "empty" runRealMedia)
+      case outcome of
+        Err _ -> Task.runOrPanic (textTask (Task.yield ()))
+        Ok bytes -> do
+          let size = Bytes.length bytes
+          expectationFailure [fmt|Expected empty audio rejection, got #{size} bytes|]
+
+    it "rejects nonmedia input through the real ffmpeg boundary" do
+      outcome <- Task.runOrPanic (withRealMedia "junk" runRealMedia)
+      case outcome of
+        Err _ -> Task.runOrPanic (textTask (Task.yield ()))
+        Ok _ -> expectationFailure "Expected malformed media rejection"
 
 
 -- | How the fake ffmpeg behaves.
@@ -537,3 +563,109 @@ instance Json.FromJSON TestCommand
 
 
 type instance NameOf TestCommand = "TestCommand"
+
+
+-- Real ffmpeg is required: missing tools fail these tests rather than skip them.
+withRealMedia :: Text -> (Text -> Task Text value) -> Task Text value
+withRealMedia mode test = do
+  workspace <- mediaControl ["create", mode]
+  test workspace |> Task.finally (mediaControl ["cleanup", workspace] |> Task.map (\_ -> ()))
+
+
+mediaPath :: Text -> Text -> Task Text Path.Path
+mediaPath workspace name = case Path.fromText [fmt|#{workspace}/#{name}|] of
+  Just path -> Task.yield path
+  Nothing -> Task.throw "Invalid synthetic media path"
+
+
+runRealMedia :: Text -> Task Text (Result Text Bytes)
+runRealMedia workspace = do
+  inputPath <- mediaPath workspace "input"
+  bytes <- File.readBytes inputPath |> Task.mapError (\err -> [fmt|#{err}|])
+  let access = videoAccess {retrieveFile = \_ -> Task.yield bytes}
+  ctx <- makeContext (Just access)
+  result <- executeExtraction Real.realRunner ctx (makeRequest VideoAudio.defaultConfig)
+    |> Task.asResult
+  case result of
+    Ok (Just payload) -> Task.yield (decodedAudio payload)
+    other -> Task.throw [fmt|Real extraction setup/action failed: #{other}|]
+
+
+requireRealAudio :: Text -> Task Text Bytes
+requireRealAudio workspace = do
+  result <- runRealMedia workspace
+  case result of
+    Err message -> Task.throw message
+    Ok bytes -> do
+      outputPath <- mediaPath workspace "output.wav"
+      File.writeBytes outputPath bytes |> Task.mapError (\err -> [fmt|#{err}|])
+      report <- mediaControl ["validate", workspace]
+      Task.unless (Text.startsWith "valid nonempty PCM16" report) do
+        Task.throw [fmt|Unexpected independent decoder result: #{report}|]
+      Task.yield bytes
+
+
+mediaControl :: Array Text -> Task Text Text
+mediaControl arguments = do
+  completion <- Subprocess.runWithTimeout 10 "python3"
+    (["-c", mediaFixture] |> Array.append arguments) "."
+    |> Task.mapError (\err -> [fmt|#{err}|])
+  Task.unless (completion.exitCode == 0) do
+    let message = completion.stderr
+    Task.throw [fmt|Synthetic media control failed: #{message}|]
+  Task.yield completion.stdout
+
+
+mediaFixture :: Text
+mediaFixture = [fmt|
+import os
+from pathlib import Path
+import shutil
+import struct
+import subprocess
+import sys
+import tempfile
+import wave
+
+
+def write_wav(path, frames):
+    with wave.open(str(path), "wb") as output:
+        output.setnchannels(1)
+        output.setsampwidth(2)
+        output.setframerate(16000)
+        output.writeframes(bytes([0, 16]) * frames)
+
+
+mode = sys.argv[1]
+if mode == "create":
+    workspace = Path(tempfile.mkdtemp(prefix="nh-real-media-"))
+    try:
+        kind = sys.argv[2]
+        if kind in ("long", "short", "empty"):
+            write_wav(workspace / "input", {"long": 14400000, "short": 48000, "empty": 0}[kind])
+        elif kind == "junk":
+            (workspace / "input").write_bytes(b"not a media container")
+        else:
+            raise RuntimeError("Unknown synthetic media kind")
+        print(str(workspace), end="")
+    except BaseException:
+        shutil.rmtree(workspace)
+        raise
+elif mode == "validate":
+    path = Path(sys.argv[2]) / "output.wav"
+    content = path.read_bytes()
+    assert content[:4] == b"RIFF" and content[8:12] == b"WAVE"
+    assert struct.unpack_from("<I", content, 4)[0] + 8 == len(content)
+    with wave.open(str(path), "rb") as audio:
+        assert audio.getnchannels() == 1 and audio.getsampwidth() == 2 and audio.getframerate() == 16000
+        frames = audio.getnframes()
+        assert frames > 0
+        assert len(audio.readframes(frames)) == frames * 2
+    decoder = subprocess.run(["ffmpeg", "-nostdin", "-v", "error", "-i", str(path), "-f", "null", "-"], capture_output=True, timeout=5)
+    assert decoder.returncode == 0, decoder.stderr.decode(errors="replace")
+    print("valid nonempty PCM16", frames, len(content), end="")
+elif mode == "cleanup":
+    shutil.rmtree(Path(sys.argv[2]))
+else:
+    raise RuntimeError("Unknown synthetic media operation")
+|]
