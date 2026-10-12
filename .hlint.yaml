@@ -62,8 +62,10 @@
        within: [Command, Config, Console, Environment, Log, Main, Service.Integration.Selection],
        message: "Use Core `Environment`. New exceptions need a justification + belongs-in note here."}
     # Directory/Path
+    # Integration.Video.ExtractAudio.Internal: needs the OS temp directory for
+    # the video/WAV temp files; belongs-in: Core `Directory` (getTemporary).
     - {name: [System.Directory],
-       within: [Directory, Environment, File, Integration.Pdf.ExtractText.Internal, Subprocess],
+       within: [Directory, Environment, File, Integration.Pdf.ExtractText.Internal, Integration.Video.ExtractAudio.Internal, Subprocess],
        message: "Use Core `Directory`/`Path`. New exceptions need a justification + belongs-in note here."}
     # Json
     - {name: [Data.Aeson, Data.Aeson.Key, Data.Aeson.KeyMap, Data.Aeson.Types, Data.Aeson.Encoding],

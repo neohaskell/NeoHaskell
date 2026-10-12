@@ -275,6 +275,7 @@ drop :: Int -> Bytes -> Bytes
 dropEnd :: Int -> Bytes -> Bytes
 empty :: Bytes
 findSubstring :: Bytes -> Bytes -> Maybe Int
+fromBase64 :: Bytes -> Result Text Bytes
 fromLazyLegacy :: LazyByteString -> Bytes
 fromLegacy :: ByteString -> Bytes
 getRandom :: Int -> Task w Bytes

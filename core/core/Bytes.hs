@@ -28,6 +28,7 @@ module Bytes (
   concat,
   -- * Encoding
   toBase64,
+  fromBase64,
 ) where
 
 import Basics
@@ -38,8 +39,12 @@ import Data.ByteString.Base64 qualified as Base64
 import Data.ByteString.Lazy (LazyByteString)
 import Data.ByteString.Search qualified as ByteStringSearch
 import Data.Word (Word8)
+import Result (Result)
+import Result qualified
 import Task (Task)
 import Task qualified
+import Text (Text)
+import Text qualified
 import Prelude qualified as GhcPrelude
 
 
@@ -224,3 +229,21 @@ toBase64 :: Bytes -> Bytes
 toBase64 (INTERNAL_CORE_BYTES_CONSTRUCTOR bs) =
   Base64.encode bs
     |> INTERNAL_CORE_BYTES_CONSTRUCTOR
+
+
+-- | Decode Base64 back to the original bytes; the inverse of 'toBase64'.
+--
+-- Decoding is strict: input must be padded standard Base64 with no
+-- whitespace, so corrupted or truncated text is an 'Err', never a guess.
+--
+-- >>> "aGVsbG8=" |> Text.toBytes |> Bytes.fromBase64 |> Result.map Text.fromBytes
+-- Ok "hello"
+--
+-- >>> "aGVsbG8" |> Text.toBytes |> Bytes.fromBase64 |> Result.isErr
+-- True
+fromBase64 :: Bytes -> Result Text Bytes
+fromBase64 (INTERNAL_CORE_BYTES_CONSTRUCTOR bs) =
+  Base64.decode bs
+    |> Result.fromEither
+    |> Result.mapError Text.fromLinkedList
+    |> Result.map INTERNAL_CORE_BYTES_CONSTRUCTOR
