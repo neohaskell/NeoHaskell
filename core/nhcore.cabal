@@ -125,6 +125,8 @@ common common_cfg
 
 library
   import: common_cfg
+  if !os(windows)
+    build-depends: unix
   exposed-modules:
     Accumulator
     Appendable

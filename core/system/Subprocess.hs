@@ -1,3 +1,5 @@
+{-# LANGUAGE CPP #-}
+
 module Subprocess (
   -- * Types
   OpenOptions (..),
@@ -18,16 +20,24 @@ module Subprocess (
 import Array (Array)
 import Array qualified
 import Basics
+import Char (Char)
 import Control.Concurrent.Async qualified as GhcAsync
+import Control.Exception qualified as GhcException
+import Data.Foldable qualified as GhcFoldable
+import IO qualified
 import GHC.IO.Exception qualified as Exception
 import GHC.IO.Handle qualified as GhcHandle
 import Maybe (Maybe (..))
 import Path (Path)
 import Path qualified
 import Result (Result (..))
+import Result qualified
 import System.Directory qualified as GhcDir
 import System.Exit qualified
 import System.Process qualified
+#ifndef mingw32_HOST_OS
+import System.Posix.Signals qualified as Posix
+#endif
 import System.Timeout qualified as GhcTimeout
 import Task (Task)
 import Task qualified
@@ -104,58 +114,128 @@ runWithTimeout timeoutSeconds executable arguments directory = do
           , System.Process.std_err = System.Process.CreatePipe
           }
 
-  -- Run with timeout
-  result <-
-    ( do
-        (_, mStdout, mStderr, ph) <-
-          System.Process.createProcess processToExecute
-            |> Task.fromFailableIO @Exception.IOError
-            |> Task.mapError (\err -> ProcessError [fmt|#{err}|])
-
-        -- Use async to read both streams and wait for process
-        completionResult <- Task.fromIO do
-          -- Start reading streams in background
-          stdoutAsync <- case mStdout of
-            Nothing -> GhcAsync.async (pure "")
-            Just h -> GhcAsync.async (GhcHandle.hGetContents h)
-
-          stderrAsync <- case mStderr of
-            Nothing -> GhcAsync.async (pure "")
-            Just h -> GhcAsync.async (GhcHandle.hGetContents h)
-
-          -- Wait for process with timeout
-          maybeResult <- GhcTimeout.timeout timeoutMicros do
-            stdoutContent <- GhcAsync.wait stdoutAsync
-            stderrContent <- GhcAsync.wait stderrAsync
-            exitCode <- System.Process.waitForProcess ph
-            pure (exitCode, stdoutContent, stderrContent)
-
-          case maybeResult of
-            Nothing -> do
-              -- Timeout - terminate the process
-              System.Process.terminateProcess ph
-              _ <- System.Process.waitForProcess ph
-              pure Nothing
-            Just (ec, stdoutContent, stderrContent) -> do
-              let code = case ec of
-                    System.Exit.ExitSuccess -> 0
-                    System.Exit.ExitFailure c -> c
-              pure (Just (code, Text.fromLinkedList stdoutContent, Text.fromLinkedList stderrContent))
-
-        Task.yield completionResult
-    )
-      |> Task.asResult
-
+  result <- captureProcess timeoutMicros processToExecute
+    |> Task.fromFailableIO @Exception.IOError
+    |> Task.mapError (\err -> ProcessError [fmt|#{err}|])
   case result of
-    Err err -> Task.throw err
-    Ok Nothing -> Task.throw (TimeoutError [fmt|Process timed out after #{timeoutSeconds} seconds|])
-    Ok (Just (code, stdoutText, stderrText)) ->
-      Task.yield
-        Completion
-          { exitCode = code
-          , stdout = stdoutText
-          , stderr = stderrText
-          }
+    Nothing -> Task.throw (TimeoutError [fmt|Process timed out after #{timeoutSeconds} seconds|])
+    Just completion -> Task.yield completion
+
+
+captureProcess :: Int -> System.Process.CreateProcess -> IO.IO (Maybe Completion)
+captureProcess timeoutMicros processToExecute = GhcException.mask \restore -> do
+  resources <- System.Process.createProcess processToExecute
+  outcome <- IO.try (restore (GhcTimeout.timeout timeoutMicros (collectProcess resources)))
+  -- Cleanup must not replace the original asynchronous or reader exception.
+  cleanup <- GhcAsync.withAsync (releaseProcess resources) awaitProcessCleanup
+  case outcome of
+    Err original -> preserveProcessException original cleanup
+    Ok result -> case cleanup of
+      Err failure -> GhcException.throwIO failure
+      Ok () -> pure result
+
+
+-- Keep cleanup owned until it finishes, even if cancellation is repeated while
+-- waiting. The worker remains interruptible; no OS wait is masked uninterruptibly.
+awaitProcessCleanup :: GhcAsync.Async Unit -> IO.IO (Result GhcException.SomeException Unit)
+awaitProcessCleanup worker =
+  GhcException.catch
+    (GhcAsync.waitCatch worker |> IO.map Result.fromEither)
+    (finishProcessCleanup worker)
+
+
+finishProcessCleanup ::
+  GhcAsync.Async Unit -> GhcException.SomeAsyncException -> IO.IO (Result GhcException.SomeException Unit)
+finishProcessCleanup worker cancellation = do
+  _ <- awaitProcessCleanup worker
+  pure (Err (GhcException.toException cancellation))
+
+
+preserveProcessException :: GhcException.SomeException -> Result GhcException.SomeException Unit -> IO.IO value
+preserveProcessException original cleanup =
+  case GhcException.fromException @GhcException.SomeAsyncException original of
+    Just _ -> GhcException.throwIO original
+    Nothing -> case cleanup of
+      Ok () -> GhcException.throwIO original
+      Err failure -> case GhcException.fromException @GhcException.SomeAsyncException failure of
+        Just _ -> GhcException.throwIO failure
+        Nothing -> GhcException.throwIO original
+
+
+collectProcess ::
+  (Maybe GhcHandle.Handle, Maybe GhcHandle.Handle, Maybe GhcHandle.Handle, System.Process.ProcessHandle) ->
+  IO.IO Completion
+collectProcess resources = do
+  let (_, stdoutHandle, stderrHandle, child) = resources
+  (stdoutContent, stderrContent) <- GhcAsync.concurrently
+    (readProcessPipe stdoutHandle) (readProcessPipe stderrHandle)
+  status <- System.Process.waitForProcess child
+  let code = case status of
+        System.Exit.ExitSuccess -> 0
+        System.Exit.ExitFailure value -> value
+  pure Completion
+    { exitCode = code
+    , stdout = Text.fromLinkedList stdoutContent
+    , stderr = Text.fromLinkedList stderrContent
+    }
+
+
+readProcessPipe :: Maybe GhcHandle.Handle -> IO.IO [Char]
+readProcessPipe handle = case handle of
+  Nothing -> pure ""
+  Just stream -> GhcHandle.hGetContents' stream
+
+
+releaseProcess ::
+  (Maybe GhcHandle.Handle, Maybe GhcHandle.Handle, Maybe GhcHandle.Handle, System.Process.ProcessHandle) ->
+  IO.IO Unit
+releaseProcess resources = do
+  let (stdinHandle, stdoutHandle, stderrHandle, child) = resources
+  stopProcess child `GhcException.finally`
+    (closeProcessPipe stdinHandle `GhcException.finally`
+      (closeProcessPipe stdoutHandle `GhcException.finally` closeProcessPipe stderrHandle))
+
+
+closeProcessPipe :: Maybe GhcHandle.Handle -> IO.IO Unit
+closeProcessPipe handle = GhcFoldable.for_ handle GhcHandle.hClose
+
+
+stopProcess :: System.Process.ProcessHandle -> IO.IO Unit
+stopProcess child = do
+  status <- System.Process.getProcessExitCode child
+  case status of
+    Just _ -> pure ()
+    Nothing -> do
+      signalOwnedProcess child (System.Process.terminateProcess child)
+      exited <- GhcTimeout.timeout 1000000 (System.Process.waitForProcess child)
+      case exited of
+        Just _ -> pure ()
+        Nothing -> do
+          signalOwnedProcess child (forceProcess child)
+          _ <- System.Process.waitForProcess child
+          pure ()
+
+
+signalOwnedProcess :: System.Process.ProcessHandle -> IO.IO Unit -> IO.IO Unit
+signalOwnedProcess child signal = GhcException.catch signal (handleProcessSignalError child)
+
+
+handleProcessSignalError :: System.Process.ProcessHandle -> Exception.IOError -> IO.IO Unit
+handleProcessSignalError child failure = do
+  status <- System.Process.getProcessExitCode child
+  case status of
+    Just _ -> pure ()
+    Nothing -> GhcException.throwIO failure
+
+
+forceProcess :: System.Process.ProcessHandle -> IO.IO Unit
+forceProcess child = do
+#ifdef mingw32_HOST_OS
+  System.Process.terminateProcess child
+#else
+  pid <- System.Process.getPid child
+  GhcFoldable.for_ pid (Posix.signalProcess Posix.sigKILL)
+#endif
 
 
 -- | Check if a tool is available in PATH.

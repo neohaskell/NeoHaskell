@@ -4,6 +4,8 @@ import Core
 import Array qualified
 import AsyncTask qualified
 import Console qualified
+import GHC.Conc qualified as GhcConc
+import LinkedList qualified
 import Subprocess qualified
 import Task qualified
 import Test
@@ -65,6 +67,68 @@ spec = do
         case outcome of
           Err message -> message |> shouldSatisfy (Text.contains "AsyncCancelled")
           Ok completion -> Test.fail [fmt|Expected cancellation, got #{completion}|]
+        requireAbsent workspace
+
+    it "times out when a descendant retains the output pipes" \_ -> do
+      baselineThreads <- Task.fromIO GhcConc.listThreads
+      withRunningChild 1 "descendant" \workspace worker -> do
+        outcome <- AsyncTask.waitFor worker |> Task.asResult
+        case outcome of
+          Err message -> message |> shouldSatisfy (Text.contains "TimeoutError")
+          other -> Test.fail [fmt|Expected inherited-pipe timeout, got #{other}|]
+        requireAbsent workspace
+        fixtureControl ["descendant-alive", workspace] |> Task.andThen (shouldBe "alive")
+        fixtureControl ["readers-closed", workspace] |> Task.andThen (shouldBe "closed")
+      remainingThreads <- Task.fromIO GhcConc.listThreads
+      let leakedThreads = remainingThreads |> LinkedList.filter (\thread -> not (LinkedList.member thread baselineThreads))
+      leakedThreads |> Array.fromLinkedList |> Task.forEach (\thread -> do
+        status <- Task.fromIO (GhcConc.threadStatus thread)
+        case status of
+          GhcConc.ThreadFinished -> Task.yield ()
+          GhcConc.ThreadDied -> Task.yield ()
+          other -> Test.fail [fmt|Subprocess left a live thread: #{thread} #{other}|])
+
+    it "reaps the direct child after a real UTF8 pipe decoding failure" \_ -> do
+      withRunningChild 3 "invalid-text" \workspace worker -> do
+        outcome <- AsyncTask.waitFor worker |> Task.asResult
+        case outcome of
+          Err message -> message |> shouldSatisfy (Text.contains "ProcessError")
+          other -> Test.fail [fmt|Expected real pipe decoding error, got #{other}|]
+        requireAbsent workspace
+
+    it "times out after pipe EOF while the child still runs" \_ -> do
+      withRunningChild 1 "closed-pipes" \workspace worker -> do
+        outcome <- AsyncTask.waitFor worker |> Task.asResult
+        case outcome of
+          Err message -> message |> shouldSatisfy (Text.contains "TimeoutError")
+          other -> Test.fail [fmt|Expected process wait timeout, got #{other}|]
+        requireAbsent workspace
+
+    it "propagates cancellation while both pipes are backpressured" \_ -> do
+      withRunningChild 10 "noisy" \workspace worker -> do
+        AsyncTask.cancel worker
+        outcome <- AsyncTask.waitCatch worker
+        case outcome of
+          Err message -> message |> shouldSatisfy (Text.contains "AsyncCancelled")
+          Ok completion -> Test.fail [fmt|Expected noisy child cancellation, got #{completion}|]
+        requireAbsent workspace
+
+    it "returns a typed error when process creation fails" \_ -> do
+      outcome <- Subprocess.runWithTimeout 1 "/nonexistent/nh-subprocess-test-executable" [] "." |> Task.asResult
+      case outcome of
+        Err (Subprocess.ProcessError _) -> Task.yield ()
+        other -> Test.fail [fmt|Expected creation ProcessError, got #{other}|]
+
+    it "reaps a TERM-resistant child despite repeated cancellation during cleanup" \_ -> do
+      withRunningChild 10 "record-term" \workspace worker -> do
+        AsyncTask.process (AsyncTask.cancel worker) \firstCancel -> do
+          fixtureControl ["term-seen", workspace] |> Task.map (\_ -> ())
+          AsyncTask.cancel worker
+          AsyncTask.waitFor firstCancel
+        outcome <- AsyncTask.waitCatch worker
+        case outcome of
+          Err message -> message |> shouldSatisfy (Text.contains "AsyncCancelled")
+          Ok completion -> Test.fail [fmt|Expected repeated cancellation, got #{completion}|]
         requireAbsent workspace
 
 
@@ -181,7 +245,28 @@ def main():
         workspace = Path(sys.argv[2])
         if sys.argv[3] == "ignore-term":
             signal.signal(signal.SIGTERM, signal.SIG_IGN)
-        (workspace / "pid").write_text(str(os.getpid()))
+        if sys.argv[3] == "record-term":
+            signal.signal(signal.SIGTERM, lambda *_: (workspace / "term-seen").touch())
+        (workspace / "pid.pending").write_text(str(os.getpid()))
+        (workspace / "pid.pending").replace(workspace / "pid")
+        if sys.argv[3] in ("descendant", "invalid-text", "closed-pipes", "noisy"):
+            while not (workspace / "go").exists():
+                time.sleep(0.005)
+        if sys.argv[3] == "descendant":
+            descendant_script = "import os, sys, time; from pathlib import Path\\nworkspace = Path(sys.argv[1])\\nfor fd in (1, 2):\\n while True:\\n  try:\\n   os.write(fd, b'x')\\n   time.sleep(0.01)\\n  except BrokenPipeError:\\n   (workspace / ('closed-' + str(fd))).touch()\\n   break\\ntime.sleep(20)"
+            descendant = subprocess.Popen([sys.executable, "-c", descendant_script, str(workspace)])
+            (workspace / "descendant").write_text(str(descendant.pid))
+            raise SystemExit(0)
+        if sys.argv[3] == "invalid-text":
+            os.write(1, bytes([255]))
+            os.close(1)
+        if sys.argv[3] == "closed-pipes":
+            os.close(1)
+            os.close(2)
+        if sys.argv[3] == "noisy":
+            threads = [threading.Thread(target=emit, args=(fd, 100000000)) for fd in (1, 2)]
+            for thread in threads:
+                thread.start()
         time.sleep(20)
     elif mode == "ready":
         workspace = Path(sys.argv[2])
@@ -193,6 +278,29 @@ def main():
         _, state = owned_pid(workspace)
         if not state or "Z" in state.split()[0]:
             raise RuntimeError("fixture child was not alive at readiness")
+        (workspace / "go").touch()
+        print("alive", end="")
+    elif mode == "readers-closed":
+        workspace = Path(sys.argv[2])
+        deadline = time.monotonic() + 3
+        while not all((workspace / ("closed-" + str(fd))).exists() for fd in (1, 2)):
+            if time.monotonic() >= deadline:
+                raise RuntimeError("descendant still has an open parent pipe reader")
+            time.sleep(0.005)
+        print("closed", end="")
+    elif mode == "term-seen":
+        workspace = Path(sys.argv[2])
+        deadline = time.monotonic() + 3
+        while not (workspace / "term-seen").exists():
+            if time.monotonic() >= deadline:
+                raise RuntimeError("child never observed TERM during cleanup")
+            time.sleep(0.005)
+        print("term-seen", end="")
+    elif mode == "descendant-alive":
+        workspace = Path(sys.argv[2])
+        pid = int((workspace / "descendant").read_text())
+        state = process_state(pid)
+        assert state and "Z" not in state.split()[0] and str(workspace) in state
         print("alive", end="")
     elif mode == "observe":
         _, state = owned_pid(Path(sys.argv[2]))
@@ -211,6 +319,20 @@ def main():
                     break
                 if time.monotonic() >= deadline:
                     raise RuntimeError("fixture child still executing after cleanup")
+                time.sleep(0.01)
+        if (workspace / "descendant").exists():
+            pid = int((workspace / "descendant").read_text())
+            state = process_state(pid)
+            if state and "Z" not in state.split()[0]:
+                assert str(workspace) in state
+                os.kill(pid, signal.SIGKILL)
+            deadline = time.monotonic() + 3
+            while True:
+                state = process_state(pid)
+                if not state or "Z" in state.split()[0]:
+                    break
+                if time.monotonic() >= deadline:
+                    raise RuntimeError("owned descendant still executing")
                 time.sleep(0.01)
         shutil.rmtree(workspace)
     else:
