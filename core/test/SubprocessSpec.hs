@@ -72,6 +72,7 @@ spec = do
     it "times out when a descendant retains the output pipes" \_ -> do
       baselineThreads <- Task.fromIO GhcConc.listThreads
       withRunningChild 1 "descendant" \workspace worker -> do
+        fixtureControl ["readers-open", workspace] |> Task.andThen (shouldBe "open")
         outcome <- AsyncTask.waitFor worker |> Task.asResult
         case outcome of
           Err message -> message |> shouldSatisfy (Text.contains "TimeoutError")
@@ -253,7 +254,7 @@ def main():
             while not (workspace / "go").exists():
                 time.sleep(0.005)
         if sys.argv[3] == "descendant":
-            descendant_script = "import os, sys, time; from pathlib import Path\\nworkspace = Path(sys.argv[1])\\nfor fd in (1, 2):\\n while True:\\n  try:\\n   os.write(fd, b'x')\\n   time.sleep(0.01)\\n  except BrokenPipeError:\\n   (workspace / ('closed-' + str(fd))).touch()\\n   break\\ntime.sleep(20)"
+            descendant_script = "import os, sys, time; from pathlib import Path\\nworkspace = Path(sys.argv[1])\\nfor fd in (1, 2):\\n os.write(fd, b'x')\\n (workspace / ('open-' + str(fd))).touch()\\nfor fd in (1, 2):\\n while True:\\n  try:\\n   os.write(fd, b'x')\\n   time.sleep(0.01)\\n  except BrokenPipeError:\\n   (workspace / ('closed-' + str(fd))).touch()\\n   break\\ntime.sleep(20)"
             descendant = subprocess.Popen([sys.executable, "-c", descendant_script, str(workspace)])
             (workspace / "descendant").write_text(str(descendant.pid))
             raise SystemExit(0)
@@ -280,6 +281,15 @@ def main():
             raise RuntimeError("fixture child was not alive at readiness")
         (workspace / "go").touch()
         print("alive", end="")
+    elif mode == "readers-open":
+        workspace = Path(sys.argv[2])
+        deadline = time.monotonic() + 3
+        while not all((workspace / ("open-" + str(fd))).exists() for fd in (1, 2)):
+            if time.monotonic() >= deadline:
+                raise RuntimeError("descendant did not write successfully to both open pipes")
+            time.sleep(0.005)
+        assert not any((workspace / ("closed-" + str(fd))).exists() for fd in (1, 2))
+        print("open", end="")
     elif mode == "readers-closed":
         workspace = Path(sys.argv[2])
         deadline = time.monotonic() + 3
