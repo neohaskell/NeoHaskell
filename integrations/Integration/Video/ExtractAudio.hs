@@ -57,8 +57,8 @@
 -- @Text.fromBytes result.audio@ directly; WAV audio is not UTF-8 text.
 --
 -- Your command handler decodes the text back to the exact WAV bytes before
--- uploading it, with 'Bytes.fromBase64'. Malformed text is an 'Err', so a
--- corrupted command never turns into silently wrong audio:
+-- uploading it, with 'Bytes.fromBase64'. Malformed Base64 is an 'Err'.
+-- Base64 is lossless encoding, not an integrity check for modified commands:
 --
 -- @
 -- import Bytes qualified
@@ -129,8 +129,9 @@
 -- == Output
 --
 -- WAV, mono, 16 kHz by default ('mimeType' is @audio/wav@). The result is
--- capped at 'maxOutputBytes' (default 25 MB); ffmpeg stops writing at that
--- size, so a very long video yields only its first part.
+-- capped at 'maxOutputBytes' (default 25,000,000 binary bytes). A long video
+-- yields its earliest complete PCM16 frames with a valid WAV header.
+-- A budget too small for a header and one frame reaches 'onError'.
 --
 -- == Requirements
 --
@@ -193,7 +194,7 @@ data Config = Config
   , channels :: Int
   -- ^ Output channel count (default: 1, mono)
   , maxOutputBytes :: Int
-  -- ^ Stop writing audio after this many bytes (default: 25000000)
+  -- ^ Maximum returned WAV size in binary bytes (default: 25000000)
   , ffmpegPath :: Maybe Text
   -- ^ Explicit ffmpeg executable. Nothing means look up @ffmpeg@ on the PATH.
   }

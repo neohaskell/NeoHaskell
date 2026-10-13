@@ -468,13 +468,18 @@ fakeVideoBytes =
     (Bytes.pack [0 .. 255])
 
 
--- | A RIFF/WAVE header followed by every byte value in descending order, so
--- the audio cannot survive a UTF-8 text round trip.
+-- | A valid 268-byte PCM16 WAV with NUL and non-UTF8 payload bytes.
+-- Exact byte-equality tests remain independent of WAV validation.
 fakeWavBytes :: Bytes
 fakeWavBytes =
   Bytes.append
-    (Bytes.pack [0x52, 0x49, 0x46, 0x46, 0x24, 0x00, 0x00, 0x00, 0x57, 0x41, 0x56, 0x45])
-    (Bytes.pack [255, 254 .. 0])
+    (Bytes.pack
+      [ 82,73,70,70,4,1,0,0,87,65,86,69
+      , 102,109,116,32,16,0,0,0,1,0,1,0
+      , 128,62,0,0,0,125,0,0,2,0,16,0
+      , 100,97,116,97,224,0,0,0
+      ])
+    (Bytes.append (Bytes.pack [0,255]) (Bytes.pack [254,253 .. 33]))
 
 
 -- | A runner that never starts a process. It records the bytes of the input
