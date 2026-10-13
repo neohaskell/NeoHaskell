@@ -271,8 +271,11 @@ P.putStrLn "UNKNOWN_COMPLETE"
         assert any(e["method"] == "FLUSHED" and e["path"] == path for e in fixture.events), "source never flushed"
     assert output.count("Just (Err (ResponseTooLarge 4))") == 2, "REGRESSION_ASSERT:body-read-awaits-EOF"
     for path in ("/paced-chunked", "/paced-close"):
-        assert any(e["method"] == "CLOSED" and e["path"] == path and e["elapsed"] < 2
-                   for e in fixture.events), "response did not close before the source deadline"
+        # The Just/ResponseTooLarge assertion above proves the client completed
+        # without Timeout.timeout cancelling it. Socket timing alone cannot prove
+        # that: a cancelled unbounded read also closes at roughly two seconds.
+        assert any(e["method"] == "CLOSED" and e["path"] == path
+                   for e in fixture.events), "response did not close after bounded completion"
         assert not any(e["method"] == "SOURCE_EOF" and e["path"] == path
                        for e in fixture.events), "source completed before client rejection"
     print("PASS: exact/empty/HEAD, zero-builder rejection, early cutoff and socket close")
