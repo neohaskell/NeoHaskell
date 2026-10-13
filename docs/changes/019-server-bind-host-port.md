@@ -9,15 +9,20 @@ exactly what `Warp.run` bound before, so behaviour is unchanged) and `Applicatio
 builders next to the other `with*` builders. `runTransport` now starts Warp with
 `runSettings` built from that host and port, and logs `<host>:<port>`.
 
-Input contract: the host is a Warp wildcard (`"*"`, `"*4"`, `"*6"`) or a bare
+The default `"*4"` prefers IPv4 but may fall back to IPv6; `"*6"` prefers IPv6
+with fallback. `"!4"` and `"!6"` require their respective family. A wildcard
+preference is not a strict family-isolation guarantee.
+
+Input contract: the host is a Warp wildcard (`"*"`, `"*4"`, `"*6"`, `"!4"`, `"!6"`) or a bare
 literal address / hostname; the port is `1..65535`. An empty host, a URL or path
 in the host field, a `host:port` pair, whitespace, port `0` or an out-of-range
-port is rejected before any socket is opened, with an error that names the
+port is rejected before listener startup, with an error that names the
 builder (`Application.withHost: …` / `Application.withPort: …`). A bind the OS
 refuses (port in use, address not owned) fails with
 `WebTransport could not bind <host>:<port>: …` instead of an uncaught
-`IOException`; the `Task.finally` cleanup in `Application.run` still releases
-the resources the run owns (JWKS manager, dispatcher, file upload).
+`IOException`. Change027 separately proves the returned-bind-error cleanup of
+an already-started owned inbound socket. It does not establish cleanup for every
+resource or asynchronous startup phase.
 
 ```yaml spec
 issue: adhoc:server-bind-host-port
@@ -37,7 +42,8 @@ the two optional overrides that carry `withHost` / `withPort` to the transport.
 `hostPreference` and `warpSettings` are the small, testable conversion from the
 transport's host and port to Warp settings. `applyBindOverrides` is the pure
 override rule; `validateBindHost` / `validateBindPort` are the pure input checks
-that `runWebTransport` runs before starting Warp.
+that `runWebTransport` runs before starting Warp. Present static overrides are
+also validated at `run`/`runWith` entry before avoidable startup effects.
 
 ```diff signatures
 - Service.Application: Application :: Maybe ConfigSpec -> Maybe EventStoreFactory -> Maybe QueryObjectStoreConfigValue -> Array QueryDefinition -> QueryRegistry -> Array ServiceRunner -> Map Text TransportValue -> Map Text QueryEndpointHandler -> Array OutboundRunner -> Array OutboundLifecycleRunner -> Array Inbound -> Maybe WebAuthFactory -> Maybe OAuth2Setup -> Maybe FileUploadFactory -> Maybe SecretStore -> Maybe ApiInfo -> Maybe CorsConfig -> Maybe HealthCheckConfig -> Maybe DispatcherConfig -> Maybe CorsFactory -> Maybe ApiInfoFactory -> Maybe HealthCheckFactory -> Maybe DispatcherConfigFactory -> Maybe SecretStoreFactory -> Array DeferredOutboundLifecycleReg -> Array DeferredInboundReg -> Array IntegrationRegistrationEntry -> Maybe ReadinessConfig -> Application
@@ -80,8 +86,10 @@ by BindSpec.
 
 ## User impact
 
-Breaking only for code that builds the records positionally or with every field
-named; nothing else changes. Apps that use `WebTransport.server` and apps built with `Application.new`
+Breaking for code that builds the records positionally or with every field
+named, and for prior custom transports using port `0`: they must select a fixed
+port in `1..65535`. The validation introduced by this feature rejects ephemeral
+ports; this remediation preserves that existing decision. Apps that use `WebTransport.server` and apps built with `Application.new`
 and the `with*` builders are unaffected and keep binding all IPv4 interfaces
 on port 8080 unless they opt in; an app that already sets `server { port = ... }`
 keeps that port, because an absent `withPort` preserves the transport's own
@@ -102,4 +110,4 @@ unintended or dying with a raw `IOException`.
 ## ADR
 
 [ADR-0079](../decisions/0079-configurable-web-bind-host-and-port.md): why the
-default stays `"*4"` (no new IPv6 surface) and why the overrides live on `Application`.
+default stays `"*4"` (the existing family preference) and why the overrides live on `Application`.

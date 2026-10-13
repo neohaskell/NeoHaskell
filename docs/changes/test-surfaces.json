@@ -42,10 +42,28 @@
       "kind": "hspec",
       "suite": "nhcore-test-service",
       "path": "core/test/Service/Transport/Web/BindSpec.hs",
+      "match": "the same worker stays live until explicitly released without Application cleanup",
+      "boundary": "http:real",
+      "expected_examples": 1,
+      "fixture": "WebTransport bind host and port"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-service",
+      "path": "core/test/Service/Transport/Web/BindSpec.hs",
+      "match": "closes a started inbound socket before returning the bind error",
+      "boundary": "http:real",
+      "expected_examples": 1,
+      "fixture": "WebTransport bind host and port"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-service",
+      "path": "core/test/Service/Transport/Web/BindSpec.hs",
       "match": "rejects an unrelated catch-all 200 after the intended Application bind fails",
       "boundary": "http:real",
       "expected_examples": 1,
-      "fixture": "Actual Application.runWith WebTransport, per-instance query-handler acknowledgment and nonce, owned local sockets and explicit interface preflight"
+      "fixture": "WebTransport bind host and port"
     },
     {
       "kind": "hspec",
@@ -54,7 +72,7 @@
       "match": "a wildcard listener defeats the owned-interface bind probe",
       "boundary": "http:real",
       "expected_examples": 1,
-      "fixture": "Actual Application.runWith WebTransport, per-instance query-handler acknowledgment and nonce, owned local sockets and explicit interface preflight"
+      "fixture": "WebTransport bind host and port"
     },
     {
       "kind": "hspec",
@@ -63,7 +81,7 @@
       "match": "accepts the intended Application and excludes another owned interface",
       "boundary": "http:real",
       "expected_examples": 1,
-      "fixture": "Actual Application.runWith WebTransport, per-instance query-handler acknowledgment and nonce, owned local sockets and explicit interface preflight"
+      "fixture": "WebTransport bind host and port"
     },
     {
       "kind": "hspec",
@@ -72,7 +90,7 @@
       "match": "preserves a custom registered host with a port-only override at runtime",
       "boundary": "http:real",
       "expected_examples": 1,
-      "fixture": "Actual Application.runWith WebTransport, per-instance query-handler acknowledgment and nonce, owned local sockets and explicit interface preflight"
+      "fixture": "WebTransport bind host and port"
     },
     {
       "kind": "hspec",
@@ -81,7 +99,7 @@
       "match": "preserves a custom registered port with a host-only override at runtime",
       "boundary": "http:real",
       "expected_examples": 1,
-      "fixture": "Actual Application.runWith WebTransport, per-instance query-handler acknowledgment and nonce, owned local sockets and explicit interface preflight"
+      "fixture": "WebTransport bind host and port"
     },
     {
       "kind": "hspec",
@@ -90,7 +108,7 @@
       "match": "preserves a custom registered host and port with absent overrides at runtime",
       "boundary": "http:real",
       "expected_examples": 1,
-      "fixture": "Actual Application.runWith WebTransport, per-instance query-handler acknowledgment and nonce, owned local sockets and explicit interface preflight"
+      "fixture": "WebTransport bind host and port"
     },
     {
       "kind": "hspec",
@@ -99,7 +117,7 @@
       "match": "applies host and port set after withTransport at runtime",
       "boundary": "http:real",
       "expected_examples": 1,
-      "fixture": "Actual Application.runWith WebTransport, per-instance query-handler acknowledgment and nonce, owned local sockets and explicit interface preflight"
+      "fixture": "WebTransport bind host and port"
     },
     {
       "kind": "hspec",
@@ -108,7 +126,7 @@
       "match": "applies host and port set before withTransport at runtime",
       "boundary": "http:real",
       "expected_examples": 1,
-      "fixture": "Actual Application.runWith WebTransport, per-instance query-handler acknowledgment and nonce, owned local sockets and explicit interface preflight"
+      "fixture": "WebTransport bind host and port"
     },
     {
       "kind": "hspec",
@@ -117,7 +135,7 @@
       "match": "rejects invalid static bind before owned auth discovery",
       "boundary": "http:real",
       "expected_examples": 1,
-      "fixture": "Owned Warp loopback discovery server with request counter, positive HTTP200 control before reset; Application.runWith actual WebTransport and invalid static host"
+      "fixture": "WebTransport bind host and port"
     },
     {
       "kind": "script",

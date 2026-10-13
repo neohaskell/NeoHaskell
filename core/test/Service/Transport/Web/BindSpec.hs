@@ -1,9 +1,13 @@
 module Service.Transport.Web.BindSpec where
 
 import Array qualified
+import Control.Concurrent.MVar qualified as GhcMVar
+import Integration qualified
+import Service.CommandExecutor.TH (deriveKnownHash)
+import Service.Transport (Transport (..))
+import System.Timeout qualified as GhcTimeout
 import Bytes qualified
 import Json qualified
-import Data.Either qualified as GhcEither
 import Service.EventStore (EventStore (..))
 import AsyncTask qualified
 import Core
@@ -25,6 +29,33 @@ import Task qualified
 import Test
 import Text qualified
 import Uuid qualified
+
+
+data CleanupProbeCommand = CleanupProbeCommand
+  deriving (Generic)
+
+
+instance Json.ToJSON CleanupProbeCommand
+
+
+type instance NameOf CleanupProbeCommand = "CleanupProbeCommand"
+
+
+data WorkerFixture = WorkerFixture
+  { started :: GhcMVar.MVar Int
+  , release :: GhcMVar.MVar Unit
+  , stopped :: GhcMVar.MVar Unit
+  , barrierPassed :: GhcMVar.MVar Unit
+  }
+
+
+data ABindCleanupBarrier = ABindCleanupBarrier WorkerFixture
+
+
+type instance NameOf ABindCleanupBarrier = "ABindCleanupBarrier"
+
+
+deriveKnownHash "ABindCleanupBarrier"
 
 
 spec :: Spec Unit
@@ -122,6 +153,11 @@ spec = do
         case validateBindHost "[::1]:8080" of
           Nothing -> fail "REGRESSION_ASSERT:bracketed-host-port-accepted"
           Just reason -> reason |> shouldSatisfy (Text.contains "withPort")
+
+      it "preserves balanced bracket hosts and strict-family wildcard validation" \_ -> do
+        validateBindHost "[::1]" |> shouldBe Nothing
+        validateBindHost "!4" |> shouldBe Nothing
+        validateBindHost "!6" |> shouldBe Nothing
 
       it "rejects malformed brackets and preserves bare IPv6" \_ -> do
         validateBindHost "fe80::1" |> shouldBe Nothing
@@ -271,6 +307,50 @@ spec = do
                 Err err -> Task.throw err
                 Ok _ -> pass
         exercise |> Task.finally eventStore.close
+
+    describe "Application returned bind failure owns inbound shutdown" do
+      it "closes a started inbound socket before returning the bind error" \_ -> do
+        eventStore <- InMemory.new |> Task.mapError toText
+        closeCalled <- GhcIORef.newIORef False |> Task.fromIO
+        let callerStore = eventStore
+              { close = do
+                  GhcIORef.writeIORef closeCalled True |> Task.fromIO
+                  eventStore.close
+              }
+        let exercise = withWorkerFixture \fixture -> do
+              withHeldLoopbackPort loopback \occupiedPort -> do
+                let app = Application.new
+                      |> Application.withInbound @() (\_ -> ownedInbound fixture)
+                      |> Application.withTransport (ABindCleanupBarrier fixture)
+                      |> Application.withTransport server
+                      |> Application.withHost "127.0.0.1"
+                      |> Application.withPort occupiedPort
+                result <-
+                  Application.runWith callerStore app
+                    |> Task.asResult
+                    |> bounded "Application bind failure"
+                case result of
+                  Ok _ -> fail "Application unexpectedly bound the held port"
+                  Err err -> err |> shouldSatisfy
+                    (Text.contains [fmt|could not bind 127.0.0.1:#{occupiedPort}|])
+                passed <- GhcMVar.tryReadMVar fixture.barrierPassed |> Task.fromIO
+                passed |> shouldBe (Just unit)
+                -- Caller-owned EventStore closure is not the shutdown evidence.
+                closed <- GhcIORef.readIORef closeCalled |> Task.fromIO
+                closed |> shouldBe False
+                assertWorkerStopped fixture
+        exercise |> Task.finally callerStore.close
+
+      it "the same worker stays live until explicitly released without Application cleanup" \_ -> do
+        withWorkerFixture \fixture -> do
+          let worker = Integration.runInbound (ownedInbound fixture) (\_ -> Task.yield unit)
+                |> Task.mapError toText
+          AsyncTask.process worker \running -> do
+            _ <- assertWorkerLive fixture
+            GhcMVar.putMVar fixture.release unit |> Task.fromIO
+            -- Normal successful completion, not intentional cancellation.
+            AsyncTask.waitFor running |> bounded "control worker completion"
+            assertWorkerStopped fixture
 
     describe "running" do
       it "serves /health on loopback when bound to 127.0.0.1" \_ -> do
@@ -484,11 +564,11 @@ canBindAddress address port = Task.fromIO do
     (GhcSocket.socket GhcSocket.AF_INET GhcSocket.Stream GhcSocket.defaultProtocol)
     GhcSocket.close
     \sock -> do
-      outcome <- GhcException.try @GhcException.IOException
-        (GhcSocket.bind sock (GhcSocket.SockAddrInet (fromIntegral port) address))
-      case outcome of
-        GhcEither.Left _ -> pure False
-        GhcEither.Right _ -> pure True
+      GhcException.catch @GhcException.IOException
+        (do
+          GhcSocket.bind sock (GhcSocket.SockAddrInet (fromIntegral port) address)
+          pure True)
+        (\_ -> pure False)
 
 
 -- The loopback port reservation is held throughout action.
@@ -517,6 +597,93 @@ getDifferentFreePort :: Int -> Task Text Int
 getDifferentFreePort excluded = do
   port <- getOwnedFreePort
   if port == excluded then getDifferentFreePort excluded else Task.yield port
+
+instance Transport ABindCleanupBarrier where
+  type Request ABindCleanupBarrier = Unit
+  type Response ABindCleanupBarrier = Unit
+  type RunnableTransport ABindCleanupBarrier = Unit
+
+  assembleTransport _ = unit
+
+  runTransport (ABindCleanupBarrier fixture) _ = do
+    _ <- assertWorkerLive fixture
+    GhcMVar.putMVar fixture.barrierPassed unit |> Task.fromIO
+
+  buildHandler _ _ _ _ _ _ =
+    Task.throw "ABindCleanupBarrier has no command endpoints"
+
+
+loopback :: GhcSocket.HostAddress
+loopback = GhcSocket.tupleToHostAddress (127, 0, 0, 1)
+
+
+-- Limits failure duration, never substitutes elapsed time for an acknowledgment.
+bounded :: Text -> Task Text value -> Task Text value
+bounded label task = do
+  outcome <- GhcTimeout.timeout 5000000 (Task.runResult task) |> Task.fromIO
+  case outcome of
+    Nothing -> Task.throw [fmt|#{label}: watchdog expired|]
+    Just (Err err) -> Task.throw err
+    Just (Ok value) -> Task.yield value
+
+
+ownedInbound :: WorkerFixture -> Integration.Inbound
+ownedInbound fixture =
+  Integration.inbound @CleanupProbeCommand Integration.InboundConfig
+    { run = \_emit -> Task.fromIO do
+        GhcException.bracket
+          (GhcSocket.socket GhcSocket.AF_INET GhcSocket.Stream GhcSocket.defaultProtocol)
+          (\sock -> do
+            GhcSocket.close sock
+            GhcMVar.putMVar fixture.stopped unit)
+          \sock -> do
+            GhcSocket.bind sock (GhcSocket.SockAddrInet 0 loopback)
+            GhcSocket.listen sock 1
+            port <- GhcSocket.socketPort sock
+            GhcMVar.putMVar fixture.started (fromIntegral port)
+            GhcMVar.readMVar fixture.release
+    }
+
+
+assertWorkerLive :: WorkerFixture -> Task Text Int
+assertWorkerLive fixture = do
+  port <- GhcMVar.readMVar fixture.started |> Task.fromIO |> bounded "inbound start"
+  stopped <- GhcMVar.tryReadMVar fixture.stopped |> Task.fromIO
+  stopped |> shouldBe Nothing
+  available <- canBindAddress loopback port
+  available |> shouldBe False
+  Task.yield port
+
+
+assertWorkerStopped :: WorkerFixture -> Task Text Unit
+assertWorkerStopped fixture = do
+  -- Do not wait here: completion must already be observable at runWith return.
+  stopped <- GhcMVar.tryReadMVar fixture.stopped |> Task.fromIO
+  stopped |> shouldBe (Just unit)
+  port <- GhcMVar.readMVar fixture.started |> Task.fromIO
+  available <- canBindAddress loopback port
+  available |> shouldBe True
+
+
+withWorkerFixture :: (WorkerFixture -> Task Text value) -> Task Text value
+withWorkerFixture action = do
+  started <- GhcMVar.newEmptyMVar |> Task.fromIO
+  release <- GhcMVar.newEmptyMVar |> Task.fromIO
+  stopped <- GhcMVar.newEmptyMVar |> Task.fromIO
+  barrierPassed <- GhcMVar.newEmptyMVar |> Task.fromIO
+  let fixture = WorkerFixture {started, release, stopped, barrierPassed}
+  let fallback = do
+        -- Only runs AFTER assertions. A missing product cancellation must fail
+        -- before this rescue releases the blocked worker.
+        _ <- GhcMVar.tryPutMVar release unit |> Task.fromIO
+        didStart <- GhcMVar.tryReadMVar started |> Task.fromIO
+        case didStart of
+          Nothing -> pass
+          Just _ ->
+            GhcMVar.readMVar stopped |> Task.fromIO |> bounded "fixture rescue"
+  action fixture |> Task.finally fallback
+
+
 
 -- | Does 'validateBindHost' reject this host because of whitespace?
 isWhitespaceRejection :: Text -> Bool

@@ -1,6 +1,6 @@
 # Change 027: Enforce the existing bind validation and runtime proof contract
 
-Continuation of change019 and [NickSeagull’s maintainer-reviewed authorized follow-up](https://github.com/neohaskell/NeoHaskell/pull/909#issuecomment-6040979623), source identity `NickSeagull`, comment `6040979623`. It requests earliest-practical checks, owned cleanup, instance identity/isolation and single-setting preservation; it does not approve a new config API or a new machine receipt. Keep the existing static builders, `*4` default, custom transport settings and port range1..65535. Fix early validation and representative bracket misuse; prove owned-instance identity and real assembly behavior without a configuration API redesign. Preliminary regression draft, not final approval/readiness.
+Continuation of change019 and [NickSeagull’s maintainer-reviewed authorized follow-up](https://github.com/neohaskell/NeoHaskell/pull/909#issuecomment-6040979623), source identity `NickSeagull`, comment `6040979623`. It requests earliest-practical checks, owned cleanup, instance identity/isolation and single-setting preservation; it does not approve a new config API or a new machine receipt. Keep the existing static builders, `*4` default, custom transport settings and port range1..65535. Fix early validation and representative bracket misuse; prove owned-instance identity and real assembly behavior without a configuration API redesign. Scoped continuation; final review and full verification remain required.
 
 ```yaml spec
 issue: adhoc:bind-validation-runtime-proof
@@ -36,14 +36,24 @@ No public signatures or new production constants. Present static overrides for a
 | C11 | a wildcard listener defeats the owned-interface bind probe | `hspec:nhcore-test-service:core/test/Service/Transport/Web/BindSpec.hs#a wildcard listener defeats the owned-interface bind probe` | integration | http:real |
 | C12 | rejects an unrelated catch-all 200 after the intended Application bind fails | `hspec:nhcore-test-service:core/test/Service/Transport/Web/BindSpec.hs#rejects an unrelated catch-all 200 after the intended Application bind fails` | integration | http:real |
 
-### Remaining executable criteria before implementation
+| C13 | Returned bind failure stops and closes an already-started owned inbound socket before returning; live/release control makes the cleanup oracle falsifiable | `hspec:nhcore-test-service:core/test/Service/Transport/Web/BindSpec.hs#closes a started inbound socket before returning the bind error`<br>`hspec:nhcore-test-service:core/test/Service/Transport/Web/BindSpec.hs#the same worker stays live until explicitly released without Application cleanup` | integration | http:real |
 
-- Invalid present override with a real registered WebTransport and owned local auth fixture yields the intended validation error and zero discovery requests; fixture positive control proves it is listening. Cover run/runWith at their real effect boundary.
-- Both builder orders, absent overrides, host-only/custom-port and port-only/custom-host consume the registered transport via real Application.runWith. Reset-to-default call-site mutant fails; original implementation currently preserves these settings.
-- Intended application lifecycle is tied to readiness. A competing catch-all200 with failed intended bind cannot satisfy the success oracle. Preserve loopback exclusion and wildcard negative control.
-- A bind-failure fixture with an observable owned worker proves its shutdown, not just the returned error. Wider inherited lifecycle defects require separate exact scope if discovered.
+### Verification scope
 
-These are mandatory unfinished tests, not passing locators. Native committed-red C1 and current verified receipt precede new product edits; final exact criteria and authentic continuation approval/review records remain required. Existing explicit maintainer requests are scoped authority, not fabricated receipt or final Gate2.
+C1–C4 cover bracket mistakes and early static validation. C5–C12 use real
+Application assembly and owned handler acknowledgments, including wildcard and
+competing-server negative controls. C13 uses an explicit inbound-start barrier,
+then checks cleanup before fixture rescue or caller-owned EventStore closure.
+The test-only watchdog is five seconds; elapsed time is never the evidence.
+No new product constants are introduced.
+
+Fresh native C1 receipt `a31fd74ad8e86d6f4546a9b3cad3ee314dee490a0322d64522471d197c079057`
+was recorded at clean successor head `e9aa116e8bc99c40a561d068a951a1e295173688`,
+PR914, before implementation. NickSeagull's confirmed Gate1 continuation source
+is https://github.com/neohaskell/NeoHaskell/pull/909#issuecomment-6150731207 .
+Local native approval and security reviews are separate records. This is not a
+claim of historical red-first compliance, current green, final review or release
+permission. PR914 is a no-force successor of909 with the same initial source tree.
 
 ## User impact
 
