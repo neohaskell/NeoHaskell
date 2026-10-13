@@ -228,7 +228,7 @@ isExtendedPcm16 formatTag format =
     && slice 24 16 format == Bytes.pack [1,0,0,0,0,0,16,0,128,0,0,170,0,56,155,113]
 
 
--- Unknown optional chunks are accepted, but their lengths must be consistent.
+-- | Accept optional chunks only when their padded lengths fit the container.
 readWavChunks ::
   Bytes -> Int -> Maybe Bytes -> Maybe Bytes ->
   Task Integration.IntegrationError (Bytes, Bytes)

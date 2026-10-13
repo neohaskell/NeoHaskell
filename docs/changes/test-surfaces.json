@@ -303,6 +303,132 @@
       "boundary": "subprocess:real",
       "expected_examples": 1,
       "fixture": "Real ffmpeg with ffconcat and a synthetic shared-directory sibling; no network"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-core",
+      "path": "core/test/SubprocessSpec.hs",
+      "match": "drains real stderr before waiting for process exit",
+      "boundary": "subprocess:real",
+      "expected_examples": 1,
+      "fixture": "Subprocess.runWithTimeout with local Python pipe writer"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-core",
+      "path": "core/test/SubprocessSpec.hs",
+      "match": "captures complete normal and nonzero child output",
+      "boundary": "subprocess:real",
+      "expected_examples": 1,
+      "fixture": "Subprocess.runWithTimeout with inline synthetic Python and owned PID control"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-core",
+      "path": "core/test/SubprocessSpec.hs",
+      "match": "drains simultaneous real pipes beyond pipe capacity",
+      "boundary": "subprocess:real",
+      "expected_examples": 1,
+      "fixture": "Subprocess.runWithTimeout with inline synthetic Python and owned PID control"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-core",
+      "path": "core/test/SubprocessSpec.hs",
+      "match": "captures complete one MiB output per stream",
+      "boundary": "subprocess:real",
+      "expected_examples": 1,
+      "fixture": "Subprocess.runWithTimeout with inline synthetic Python and owned PID control"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-core",
+      "path": "core/test/SubprocessSpec.hs",
+      "match": "preserves complete output above one MiB without a new capture cap",
+      "boundary": "subprocess:real",
+      "expected_examples": 1,
+      "fixture": "Subprocess.runWithTimeout with inline synthetic Python and owned PID control"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-core",
+      "path": "core/test/SubprocessSpec.hs",
+      "match": "reaps an observed direct child after timeout",
+      "boundary": "subprocess:real",
+      "expected_examples": 1,
+      "fixture": "Subprocess.runWithTimeout with inline synthetic Python and owned PID control"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-core",
+      "path": "core/test/SubprocessSpec.hs",
+      "match": "reaps an observed TERM-resistant child after timeout",
+      "boundary": "subprocess:real",
+      "expected_examples": 1,
+      "fixture": "Subprocess.runWithTimeout with inline synthetic Python and owned PID control"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-core",
+      "path": "core/test/SubprocessSpec.hs",
+      "match": "propagates cancellation and reaps the observed direct child",
+      "boundary": "subprocess:real",
+      "expected_examples": 1,
+      "fixture": "Subprocess.runWithTimeout with inline synthetic Python and owned PID control"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-core",
+      "path": "core/test/SubprocessSpec.hs",
+      "match": "times out when a descendant retains the output pipes",
+      "boundary": "subprocess:real",
+      "expected_examples": 1,
+      "fixture": "Synthetic owned Python process; real pipes, independently observed PID and cleanup"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-core",
+      "path": "core/test/SubprocessSpec.hs",
+      "match": "reaps the direct child after a real UTF8 pipe decoding failure",
+      "boundary": "subprocess:real",
+      "expected_examples": 1,
+      "fixture": "Synthetic owned Python process; real pipes, independently observed PID and cleanup"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-core",
+      "path": "core/test/SubprocessSpec.hs",
+      "match": "times out after pipe EOF while the child still runs",
+      "boundary": "subprocess:real",
+      "expected_examples": 1,
+      "fixture": "Synthetic owned Python process; real pipes, independently observed PID and cleanup"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-core",
+      "path": "core/test/SubprocessSpec.hs",
+      "match": "propagates cancellation while both pipes are backpressured",
+      "boundary": "subprocess:real",
+      "expected_examples": 1,
+      "fixture": "Synthetic owned Python process; real pipes, independently observed PID and cleanup"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-core",
+      "path": "core/test/SubprocessSpec.hs",
+      "match": "returns a typed error when process creation fails",
+      "boundary": "subprocess:real",
+      "expected_examples": 1,
+      "fixture": "Synthetic owned Python process; real pipes, independently observed PID and cleanup"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-core",
+      "path": "core/test/SubprocessSpec.hs",
+      "match": "reaps a TERM-resistant child despite repeated cancellation during cleanup",
+      "boundary": "subprocess:real",
+      "expected_examples": 1,
+      "fixture": "Real direct child records TERM; second cancellation during cleanup; PID absence and async propagation required"
     }
   ]
 }
