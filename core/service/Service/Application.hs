@@ -47,6 +47,8 @@ module Service.Application (
   withCors,
   withHealthCheck,
   withoutHealthCheck,
+  withHost,
+  withPort,
   withDispatcherConfig,
   useQueryObjectStore,
   useReadinessEndpoint,
@@ -409,7 +411,11 @@ data Application = Application
     integrationRegistrations :: Array IntegrationRegistrationEntry,
     -- | Readiness endpoint configuration. Enabled by default at /ready.
     -- Use useReadinessEndpoint to customize.
-    readinessConfig :: Maybe ReadinessConfig
+    readinessConfig :: Maybe ReadinessConfig,
+    -- | Interface the WebTransport binds. Set via withHost; Nothing keeps the transport's own host.
+    bindHost :: Maybe Text,
+    -- | Port the WebTransport binds. Set via withPort; Nothing keeps the transport's own port.
+    bindPort :: Maybe Int
   }
 
 
@@ -447,7 +453,9 @@ new =
       deferredOutboundLifecycleRegs = Array.empty,
       deferredInboundRegs = Array.empty,
       integrationRegistrations = Array.empty,
-      readinessConfig = Just ReadinessConfig {readinessPath = "ready", includeQueryStatus = True}
+      readinessConfig = Just ReadinessConfig {readinessPath = "ready", includeQueryStatus = True},
+      bindHost = Nothing,
+      bindPort = Nothing
     }
 
 
@@ -1354,7 +1362,7 @@ runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup maybeWebAuthSe
   -- When transports complete (or fail), cancel inbound workers for clean shutdown
   -- Use Task.finally to ensure cleanup always runs even if runTransports fails
   result <-
-    Transports.runTransports app.transports combinedEndpointsByTransport combinedSchemasByTransport combinedQueryEndpoints combinedQuerySchemas maybeAuthEnabled maybeOAuth2Config maybeFileUploadEnabled app.apiInfo app.corsConfig app.healthCheckConfig maybeIntegrationStatus app.readinessConfig subscriber
+    Transports.runTransports app.transports combinedEndpointsByTransport combinedSchemasByTransport combinedQueryEndpoints combinedQuerySchemas maybeAuthEnabled maybeOAuth2Config maybeFileUploadEnabled app.apiInfo app.corsConfig app.healthCheckConfig maybeIntegrationStatus app.readinessConfig app.bindHost app.bindPort subscriber
       |> Task.finally cleanupAll
       |> Task.asResult
 
@@ -1838,6 +1846,69 @@ withoutHealthCheck app =
   app {healthCheckConfig = Nothing, healthCheckFactory = Nothing}
 
 
+-- | Set the interface the WebTransport binds.
+--
+-- Overrides the host of the registered 'Web.server', whatever the order of
+-- 'withTransport' and 'withHost'. Without it the transport keeps the
+-- registered transport's host; 'Web.server' defaults to all IPv4 interfaces
+-- (@"*4"@, unchanged from the previous @Warp.run@).
+--
+-- * @"127.0.0.1"@ (or any literal address such as @"::1"@): that address only.
+--   Loopback-only suits a reverse proxy in the same network namespace (same
+--   host or container, shared pod network). A proxy in a separate namespace
+--   cannot reach a loopback listener; keep a non-loopback bind there.
+-- * @"*"@: all interfaces, IPv4 and IPv6.
+-- * @"*4"@ / @"*6"@: all IPv4 / all IPv6 interfaces.
+--
+-- The value is checked when the server starts ('Web.validateBindHost'): an
+-- empty host, a URL such as @"http://127.0.0.1"@, a @host:port@ pair or
+-- whitespace fails 'run' with @Application.withHost: ...@ before any socket is
+-- opened. An address this machine does not own fails at bind time with
+-- @WebTransport could not bind <host>:<port>@.
+--
+-- Example:
+--
+-- @
+-- app = Application.new
+--   |> Application.withTransport WebTransport.server
+--   |> Application.withHost "127.0.0.1"
+--   |> Application.withService myService
+-- @
+withHost ::
+  Text ->
+  Application ->
+  Application
+withHost host app =
+  app {bindHost = Just host}
+
+
+-- | Set the port the WebTransport binds.
+--
+-- Overrides the port of the registered 'Web.server' (default 8080), whatever
+-- the order of 'withTransport' and 'withPort'.
+--
+-- Accepted range is 1..65535 ('Web.validateBindPort'). Port 0 is rejected:
+-- the OS would pick a port that nothing reports back. A port already in use
+-- fails at bind time with @WebTransport could not bind <host>:<port>@.
+--
+-- Example:
+--
+-- @
+-- app = Application.new
+--   |> Application.withTransport WebTransport.server
+--   |> Application.withPort 9090
+--   |> Application.withService myService
+-- @
+withPort ::
+  Int ->
+  Application ->
+  Application
+withPort port app =
+  app {bindPort = Just port}
+
+
+-- | Validate dispatcher configuration fields are positive.
+-- Returns 'Just errorMessage' if validation fails, 'Nothing' if valid.
 validateDispatcherConfig :: Dispatcher.DispatcherConfig -> Maybe Text
 validateDispatcherConfig config = do
   if config.workerChannelCapacity <= 0
