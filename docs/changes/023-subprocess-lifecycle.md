@@ -9,7 +9,7 @@ issue: adhoc:subprocess-lifecycle
 kind: bug
 touches: [system]
 breaking: false
-new-dependency: false
+new-dependency: true
 new-capability: false
 new-extension-point: false
 ```
@@ -47,7 +47,7 @@ Review principle: draining and retained-output limits are separate obligations (
 
 ## User impact
 
-No API or capture-limit change; PDF callers keep full extracted text. The private one-second TERM grace allows escalation for an unresponsive direct child; it is cleanup time, not a changed extraction deadline. POSIX uses forced direct-child termination after grace; Windows uses the process library's native forced termination. No process-tree or sandbox guarantee. Full captured output is not memory-bounded; an opt-in retention policy is a separate future decision.
+No API or capture-limit change; PDF callers keep full extracted text. Declare conditional direct `unix` dependency on non-Windows platforms for the existing resolved POSIX signal API; no new package version or lockfile change. Windows retains the native process termination API. The private one-second TERM grace allows escalation for an unresponsive direct child; it is cleanup time, not a changed extraction deadline. POSIX uses forced direct-child termination after grace; Windows uses the process library's native forced termination. No process-tree or sandbox guarantee. Full captured output is not memory-bounded; an opt-in retention policy is a separate future decision.
 
 ## ADR
 
