@@ -27,6 +27,14 @@ No public signatures or new production constants. Present static overrides for a
 | C2 | Malformed bracketed IPv6 is rejected, bare IPv6 retained | `hspec:nhcore-test-service:core/test/Service/Transport/Web/BindSpec.hs#rejects malformed brackets and preserves bare IPv6` | unit | none |
 | C3 | Invalid present static bind override with a registered WebTransport fails before auth discovery; a positive control proves the owned auth HTTP fixture is reachable | `hspec:nhcore-test-service:core/test/Service/Transport/Web/BindSpec.hs#rejects invalid static bind before owned auth discovery` | integration | http:real |
 | C4 | run rejects an invalid known static override before attempting event-store setup | `hspec:nhcore-test-service:core/test/Service/Transport/Web/BindSpec.hs#rejects invalid static bind before run acquires an event store` | unit | none |
+| C5 | applies host and port set before withTransport at runtime | `hspec:nhcore-test-service:core/test/Service/Transport/Web/BindSpec.hs#applies host and port set before withTransport at runtime` | integration | http:real |
+| C6 | applies host and port set after withTransport at runtime | `hspec:nhcore-test-service:core/test/Service/Transport/Web/BindSpec.hs#applies host and port set after withTransport at runtime` | integration | http:real |
+| C7 | preserves a custom registered host and port with absent overrides at runtime | `hspec:nhcore-test-service:core/test/Service/Transport/Web/BindSpec.hs#preserves a custom registered host and port with absent overrides at runtime` | integration | http:real |
+| C8 | preserves a custom registered port with a host-only override at runtime | `hspec:nhcore-test-service:core/test/Service/Transport/Web/BindSpec.hs#preserves a custom registered port with a host-only override at runtime` | integration | http:real |
+| C9 | preserves a custom registered host with a port-only override at runtime | `hspec:nhcore-test-service:core/test/Service/Transport/Web/BindSpec.hs#preserves a custom registered host with a port-only override at runtime` | integration | http:real |
+| C10 | accepts the intended Application and excludes another owned interface | `hspec:nhcore-test-service:core/test/Service/Transport/Web/BindSpec.hs#accepts the intended Application and excludes another owned interface` | integration | http:real |
+| C11 | a wildcard listener defeats the owned-interface bind probe | `hspec:nhcore-test-service:core/test/Service/Transport/Web/BindSpec.hs#a wildcard listener defeats the owned-interface bind probe` | integration | http:real |
+| C12 | rejects an unrelated catch-all 200 after the intended Application bind fails | `hspec:nhcore-test-service:core/test/Service/Transport/Web/BindSpec.hs#rejects an unrelated catch-all 200 after the intended Application bind fails` | integration | http:real |
 
 ### Remaining executable criteria before implementation
 

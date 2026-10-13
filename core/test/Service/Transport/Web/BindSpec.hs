@@ -1,6 +1,10 @@
 module Service.Transport.Web.BindSpec where
 
 import Array qualified
+import Bytes qualified
+import Json qualified
+import Data.Either qualified as GhcEither
+import Service.EventStore (EventStore (..))
 import AsyncTask qualified
 import Core
 import Http.Client qualified as Http
@@ -159,10 +163,118 @@ spec = do
         show (GhcWarp.getHost settings) |> shouldBe "Host \"127.0.0.1\""
         GhcWarp.getPort settings |> shouldBe 9191
 
+    describe "Application.runWith registered bind settings" do
+      it "applies host and port set before withTransport at runtime" \_ -> do
+        withHeldLoopbackPort (GhcSocket.tupleToHostAddress (127, 0, 0, 1)) \occupiedPort -> do
+          freePort <- getDifferentFreePort occupiedPort
+          let custom = server {host = "*4", port = occupiedPort}
+          let app = Application.new
+                |> Application.withHost "127.0.0.1"
+                |> Application.withPort freePort
+                |> Application.withTransport custom
+          withOwnedBindAt freePort app
+
+      it "applies host and port set after withTransport at runtime" \_ -> do
+        withHeldLoopbackPort (GhcSocket.tupleToHostAddress (127, 0, 0, 1)) \occupiedPort -> do
+          freePort <- getDifferentFreePort occupiedPort
+          let custom = server {host = "*4", port = occupiedPort}
+          let app = Application.new
+                |> Application.withTransport custom
+                |> Application.withHost "127.0.0.1"
+                |> Application.withPort freePort
+          withOwnedBindAt freePort app
+
+      it "preserves a custom registered host and port with absent overrides at runtime" \_ -> do
+        freePort <- getOwnedFreePort
+        let custom = server {host = "127.0.0.1", port = freePort}
+        let app = Application.new |> Application.withTransport custom
+        withOwnedBindAt freePort app
+
+      it "preserves a custom registered port with a host-only override at runtime" \_ -> do
+        freePort <- getOwnedFreePort
+        let custom = server {host = "*4", port = freePort}
+        let app = Application.new
+              |> Application.withTransport custom
+              |> Application.withHost "127.0.0.1"
+        withOwnedBindAt freePort app
+
+      it "preserves a custom registered host with a port-only override at runtime" \_ -> do
+        withHeldLoopbackPort (GhcSocket.tupleToHostAddress (127, 0, 0, 1)) \occupiedPort -> do
+          freePort <- getDifferentFreePort occupiedPort
+          let custom = server {host = "127.0.0.1", port = occupiedPort}
+          let app = Application.new
+                |> Application.withTransport custom
+                |> Application.withPort freePort
+          withOwnedBindAt freePort app
+
+    describe "owned runtime probe controls" do
+      it "accepts the intended Application and excludes another owned interface" \_ -> do
+        _ <- ownedNonLoopbackAddress
+        freePort <- getOwnedFreePort
+        let app = Application.new
+              |> Application.withTransport server
+              |> Application.withHost "127.0.0.1"
+              |> Application.withPort freePort
+        withOwnedBindAt freePort app
+
+      it "a wildcard listener defeats the owned-interface bind probe" \_ -> do
+        otherAddress <- ownedNonLoopbackAddress
+        eventStore <- InMemory.new |> Task.mapError toText
+        freePort <- getOwnedFreePort
+        (app, hits, body) <- newIdentityApplication
+          (Application.new
+            |> Application.withTransport server
+            |> Application.withPort freePort)
+        let probe = do
+              owned <- probeOwnedInstance hits body freePort 50
+              owned |> shouldBe True
+              available <- canBindAddress otherAddress freePort
+              available |> shouldBe False
+        let run = AsyncTask.process (Application.runWith eventStore app) \running -> do
+              outcome <- AsyncTask.race (AsyncTask.waitCatch running) probe
+              case outcome of
+                AsyncTask.LeftWon result -> Task.throw [fmt|wildcard Application ended early: #{show result}|]
+                AsyncTask.RightWon _ -> pass
+        run |> Task.finally eventStore.close
+
+      it "rejects an unrelated catch-all 200 after the intended Application bind fails" \_ -> do
+        eventStore <- InMemory.new |> Task.mapError toText
+        (identified, hits, body) <- newIdentityApplication Application.new
+        -- Even copying the expected body is insufficient to impersonate the
+        -- owned query handler. The control must actually receive a request.
+        competitorHits <- GhcIORef.newIORef (0 :: Int) |> Task.fromIO
+        let competitor _ respond = do
+              GhcIORef.atomicModifyIORef' competitorHits (\n -> (n + 1, ()))
+              respond (GhcWai.responseLBS GhcHttp.status200 []
+                (body |> Text.toBytes |> Bytes.toLazyLegacy))
+        let exercise = do
+              outcome <- Task.fromIO do
+                GhcWarp.testWithApplication (pure competitor) \port -> Task.runResult do
+                  let app = identified
+                        |> Application.withTransport server
+                        |> Application.withHost "127.0.0.1"
+                        |> Application.withPort port
+                  -- First prove the intended Application cannot bind. Do not
+                  -- assume task failure merely because a probe rejected it.
+                  result <- Application.runWith eventStore app |> Task.asResult
+                  case result of
+                    Ok _ -> fail "intended Application unexpectedly took the competitor's port"
+                    Err err -> err |> shouldSatisfy
+                      (Text.contains [fmt|could not bind 127.0.0.1:#{port}|])
+                  owned <- probeOwnedInstance hits body port 0
+                  owned |> shouldBe False
+                  count <- GhcIORef.readIORef hits |> Task.fromIO
+                  count |> shouldBe 0
+                  received <- GhcIORef.readIORef competitorHits |> Task.fromIO
+                  received |> shouldSatisfy (\n -> n > 0)
+              case outcome of
+                Err err -> Task.throw err
+                Ok _ -> pass
+        exercise |> Task.finally eventStore.close
+
     describe "running" do
       it "serves /health on loopback when bound to 127.0.0.1" \_ -> do
-        -- Instance identity: the health path is unique to this test, so a
-        -- 200 can only come from the application started here.
+        -- A unique path alone is not identity; the owned handler must also run.
         eventStore <- InMemory.new |> Task.mapError toText
         freePort <- getFreePort
         healthPath <- uniqueHealthPath
@@ -172,9 +284,12 @@ spec = do
                 |> Application.withHost "127.0.0.1"
                 |> Application.withPort freePort
                 |> Application.withHealthCheck @() (\_ -> healthPath)
-        running <- AsyncTask.run (Application.runWith eventStore app)
+        (ownedApp, hits, body) <- newIdentityApplication app
+        running <- AsyncTask.run (Application.runWith eventStore ownedApp)
         let cancelApp = AsyncTask.cancel running |> Task.ignoreError
         let probe = do
+              owned <- probeOwnedInstance hits body freePort 50
+              owned |> shouldBe True
               status <- getHealthStatus healthPath freePort 50
               status |> shouldBe 200
               -- Loopback isolation: the port is still free on a non-loopback
@@ -193,9 +308,12 @@ spec = do
                 |> Application.withTransport server
                 |> Application.withPort freePort
                 |> Application.withHealthCheck @() (\_ -> healthPath)
-        running <- AsyncTask.run (Application.runWith eventStore app)
+        (ownedApp, hits, body) <- newIdentityApplication app
+        running <- AsyncTask.run (Application.runWith eventStore ownedApp)
         let cancelApp = AsyncTask.cancel running |> Task.ignoreError
         let probe = do
+              owned <- probeOwnedInstance hits body freePort 50
+              owned |> shouldBe True
               status <- getHealthStatus healthPath freePort 50
               status |> shouldBe 200
               nonLoopback <- nonLoopbackAddress
@@ -284,6 +402,121 @@ spec = do
                 Err err -> err |> shouldSatisfy (Text.contains [fmt|could not bind 127.0.0.1:#{occupiedPort}|])
         attempt |> Task.finally (GhcSocket.close occupied |> Task.fromIO)
 
+
+-- A successful response must have run this instance's handler. The body alone
+-- is not sufficient: the catch-all negative control deliberately copies it.
+newIdentityApplication :: Application -> Task Text (Application, GhcIORef.IORef Int, Text)
+newIdentityApplication app = do
+  nonce <- uniqueHealthPath
+  hits <- GhcIORef.newIORef (0 :: Int) |> Task.fromIO
+  let body = Json.encodeText nonce
+  let handler _ _ _ = do
+        GhcIORef.atomicModifyIORef' hits (\n -> (n + 1, ())) |> Task.fromIO
+        Task.yield body
+  Task.yield (app |> Application.withQueryEndpoint "BindProbe" handler, hits, body)
+
+
+probeOwnedInstance :: GhcIORef.IORef Int -> Text -> Int -> Int -> Task Text Bool
+probeOwnedInstance hits expectedBody port attemptsLeft = do
+  result <-
+    Http.request
+      |> Http.withUrl [fmt|http://127.0.0.1:#{port}/queries/bind-probe|]
+      |> Http.withTimeout 2
+      |> HttpInternal.getRaw
+      |> Task.asResult
+  case result of
+    Ok response -> do
+      count <- GhcIORef.readIORef hits |> Task.fromIO
+      Task.yield
+        ( response.statusCode == 200
+            && Text.fromBytes response.body == expectedBody
+            && count > 0
+        )
+    Err _ ->
+      if attemptsLeft <= 0 then
+        Task.throw "owned Application listener never answered"
+      else do
+        AsyncTask.sleep 100
+        probeOwnedInstance hits expectedBody port (attemptsLeft - 1)
+
+
+-- Never treat nonLoopbackAddress's fallback as a distinct-interface proof.
+ownedNonLoopbackAddress :: Task Text GhcSocket.HostAddress
+ownedNonLoopbackAddress = do
+  address <- nonLoopbackAddress
+  let (firstOctet, _, _, _) = GhcSocket.hostAddressToTuple address
+  firstOctet |> shouldSatisfy (\octet -> octet != 127 && octet != 0)
+  preflight <- canBindAddress address 0
+  preflight |> shouldBe True
+  Task.yield address
+
+
+assertLiteralLoopbackBind :: Int -> Task Text Unit
+assertLiteralLoopbackBind port = do
+  address <- ownedNonLoopbackAddress
+  available <- canBindAddress address port
+  available |> shouldBe True
+
+
+withOwnedBindAt :: Int -> Application -> Task Text Unit
+withOwnedBindAt port configured = do
+  eventStore <- InMemory.new |> Task.mapError toText
+  (app, hits, body) <- newIdentityApplication configured
+  let probe = do
+        owned <- probeOwnedInstance hits body port 50
+        owned |> shouldBe True
+        assertLiteralLoopbackBind port
+  let run =
+        AsyncTask.process (Application.runWith eventStore app) \running -> do
+          outcome <- AsyncTask.race (AsyncTask.waitCatch running) probe
+          case outcome of
+            AsyncTask.LeftWon result ->
+              Task.throw [fmt|Application ended before the owned bind probe: #{show result}|]
+            AsyncTask.RightWon _ -> pass
+  run |> Task.finally eventStore.close
+
+
+-- Use this rather than broad IO.try for NEW socket probes. Catch only IOException;
+-- asynchronous cancellation must propagate through bracket, not become False.
+canBindAddress :: GhcSocket.HostAddress -> Int -> Task Text Bool
+canBindAddress address port = Task.fromIO do
+  GhcException.bracket
+    (GhcSocket.socket GhcSocket.AF_INET GhcSocket.Stream GhcSocket.defaultProtocol)
+    GhcSocket.close
+    \sock -> do
+      outcome <- GhcException.try @GhcException.IOException
+        (GhcSocket.bind sock (GhcSocket.SockAddrInet (fromIntegral port) address))
+      case outcome of
+        GhcEither.Left _ -> pure False
+        GhcEither.Right _ -> pure True
+
+
+-- The loopback port reservation is held throughout action.
+withHeldLoopbackPort :: GhcSocket.HostAddress -> (Int -> Task Text value) -> Task Text value
+withHeldLoopbackPort address action = do
+  result <- Task.fromIO do
+    GhcException.bracket
+      (GhcSocket.socket GhcSocket.AF_INET GhcSocket.Stream GhcSocket.defaultProtocol)
+      GhcSocket.close
+      \sock -> do
+        GhcSocket.bind sock (GhcSocket.SockAddrInet 0 address)
+        GhcSocket.listen sock 1
+        port <- GhcSocket.socketPort sock
+        Task.runResult (action (fromIntegral port))
+  case result of
+    Ok value -> Task.yield value
+    Err err -> Task.throw err
+
+
+getOwnedFreePort :: Task Text Int
+getOwnedFreePort =
+  withHeldLoopbackPort (GhcSocket.tupleToHostAddress (127, 0, 0, 1)) Task.yield
+
+
+getDifferentFreePort :: Int -> Task Text Int
+getDifferentFreePort excluded = do
+  port <- getOwnedFreePort
+  if port == excluded then getDifferentFreePort excluded else Task.yield port
 
 -- | Does 'validateBindHost' reject this host because of whitespace?
 isWhitespaceRejection :: Text -> Bool
