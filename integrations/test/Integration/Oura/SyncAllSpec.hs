@@ -1,6 +1,11 @@
 module Integration.Oura.SyncAllSpec (spec) where
 
 import Basics
+import Bytes qualified
+import Network.HTTP.Types qualified as GhcHTTP
+import Network.Wai qualified as GhcWai
+import Network.Wai.Handler.Warp qualified as GhcWarp
+import System.IO qualified as GhcIO
 import Data.Maybe qualified as GhcMaybe
 import Test.Hspec
 import Integration.Oura.SyncAll (SyncAll (..), SyncResult (..), executeSyncAll)
@@ -41,144 +46,183 @@ import ToText (toText)
 spec :: Spec
 spec = do
   describe "Integration.Oura.SyncAll" do
-    describe "executeSyncAll" do
-      it "fetches all seventeen data types and returns command payload" do
-        ctx <- Task.runOrPanic setupMockContext
+    around withLocalTokenFailure do
+      describe "executeSyncAll" do
+        it "fetches all seventeen data types and returns command payload" \(ctx, refreshCount) -> do
 
-        -- Mock fetch that returns empty data for all paginated endpoints
-        let mockFetch :: forall a. Json.FromJSON a => HttpFetch a
-            mockFetch _token _url = do
-              Task.yield PaginatedResponse { data_ = [], nextToken = Nothing }
+          -- Mock fetch that returns empty data for all paginated endpoints
+          let mockFetch :: forall a. Json.FromJSON a => HttpFetch a
+              mockFetch _token _url = do
+                Task.yield PaginatedResponse { data_ = [], nextToken = Nothing }
 
-        -- Mock fetch for non-paginated PersonalInfo endpoint
-        let mockFetchSingle :: HttpFetchSingle PersonalInfoData
-            mockFetchSingle _token _url = Task.yield mockPersonalInfo
+          -- Mock fetch for non-paginated PersonalInfo endpoint
+          let mockFetchSingle :: HttpFetchSingle PersonalInfoData
+              mockFetchSingle _token _url = Task.yield mockPersonalInfo
 
-        let config = testSyncAllConfig
+          let config = testSyncAllConfig
 
-        result <- Task.runOrPanic do
-          executeSyncAll mockFetch mockFetchSingle ctx config
+          result <- Task.runOrPanic do
+            executeSyncAll mockFetch mockFetchSingle ctx config
 
-        -- Should return Just with command payload (meaning onComplete was called)
-        result `shouldSatisfy` isJust
+          -- Should return Just with command payload (meaning onComplete was called)
+          result `shouldSatisfy` isJust
+          observed <- Task.runOrPanic (ConcurrentVar.peek refreshCount :: Task Text Int)
+          observed `shouldBe` 0
 
-      it "runs requests in parallel (max concurrent >= 2)" do
-        let mkVar :: Int -> Task Text (ConcurrentVar Int)
-            mkVar = ConcurrentVar.containing
-        maxConcurrent <- Task.runOrPanic (mkVar 0)
-        currentCount <- Task.runOrPanic (mkVar 0)
-        ctx <- Task.runOrPanic setupMockContext
+        it "runs requests in parallel (max concurrent >= 2)" \(ctx, refreshCount) -> do
+          let mkVar :: Int -> Task Text (ConcurrentVar Int)
+              mkVar = ConcurrentVar.containing
+          maxConcurrent <- Task.runOrPanic (mkVar 0)
+          currentCount <- Task.runOrPanic (mkVar 0)
 
-        -- Mock fetch that tracks concurrency
-        let mockFetch :: forall a. Json.FromJSON a => HttpFetch a
-            mockFetch _token _url = do
-              -- Increment concurrent counter (function first, then var)
-              ConcurrentVar.modify (+ 1) currentCount
-              current <- ConcurrentVar.peek currentCount
-              -- Track max concurrent (function first, then var)
-              ConcurrentVar.modify (\m -> max m current) maxConcurrent
-              -- Simulate work
-              AsyncTask.sleep 50
-              -- Decrement (function first, then var)
-              ConcurrentVar.modify (\n -> n - 1) currentCount
-              -- Return mock PaginatedResponse
-              Task.yield PaginatedResponse { data_ = [], nextToken = Nothing }
+          -- Mock fetch that tracks concurrency
+          let mockFetch :: forall a. Json.FromJSON a => HttpFetch a
+              mockFetch _token _url = do
+                -- Increment concurrent counter (function first, then var)
+                ConcurrentVar.modify (+ 1) currentCount
+                current <- ConcurrentVar.peek currentCount
+                -- Track max concurrent (function first, then var)
+                ConcurrentVar.modify (\m -> max m current) maxConcurrent
+                -- Simulate work
+                AsyncTask.sleep 50
+                -- Decrement (function first, then var)
+                ConcurrentVar.modify (\n -> n - 1) currentCount
+                -- Return mock PaginatedResponse
+                Task.yield PaginatedResponse { data_ = [], nextToken = Nothing }
 
-        -- Mock single fetch also tracks concurrency
-        let mockFetchSingle :: HttpFetchSingle PersonalInfoData
-            mockFetchSingle _token _url = do
-              ConcurrentVar.modify (+ 1) currentCount
-              current <- ConcurrentVar.peek currentCount
-              ConcurrentVar.modify (\m -> max m current) maxConcurrent
-              AsyncTask.sleep 50
-              ConcurrentVar.modify (\n -> n - 1) currentCount
-              Task.yield mockPersonalInfo
+          -- Mock single fetch also tracks concurrency
+          let mockFetchSingle :: HttpFetchSingle PersonalInfoData
+              mockFetchSingle _token _url = do
+                ConcurrentVar.modify (+ 1) currentCount
+                current <- ConcurrentVar.peek currentCount
+                ConcurrentVar.modify (\m -> max m current) maxConcurrent
+                AsyncTask.sleep 50
+                ConcurrentVar.modify (\n -> n - 1) currentCount
+                Task.yield mockPersonalInfo
 
-        let config = testSyncAllConfig
+          let config = testSyncAllConfig
 
-        _ <- Task.runOrPanic do
-          executeSyncAll mockFetch mockFetchSingle ctx config
+          _ <- Task.runOrPanic do
+            executeSyncAll mockFetch mockFetchSingle ctx config
 
-        -- If parallel, max should be >= 2
-        let peekVar :: ConcurrentVar Int -> Task Text Int
-            peekVar = ConcurrentVar.peek
-        maxVal <- Task.runOrPanic (peekVar maxConcurrent)
-        maxVal `shouldSatisfy` (>= 2)
+          -- If parallel, max should be >= 2
+          let peekVar :: ConcurrentVar Int -> Task Text Int
+              peekVar = ConcurrentVar.peek
+          maxVal <- Task.runOrPanic (peekVar maxConcurrent)
+          maxVal `shouldSatisfy` (>= 2)
+          observed <- Task.runOrPanic (ConcurrentVar.peek refreshCount :: Task Text Int)
+          observed `shouldBe` 0
 
-      it "aggregates results into SyncResult (calls onComplete)" do
-        ctx <- Task.runOrPanic setupMockContext
+        it "aggregates results into SyncResult (calls onComplete)" \(ctx, refreshCount) -> do
 
-        -- Mock fetch returning empty data - verifies structure, not content
-        let mockFetch :: forall a. Json.FromJSON a => HttpFetch a
-            mockFetch _token _url =
-              Task.yield PaginatedResponse { data_ = [], nextToken = Nothing }
+          -- Mock fetch returning empty data - verifies structure, not content
+          let mockFetch :: forall a. Json.FromJSON a => HttpFetch a
+              mockFetch _token _url =
+                Task.yield PaginatedResponse { data_ = [], nextToken = Nothing }
 
-        let mockFetchSingle :: HttpFetchSingle PersonalInfoData
-            mockFetchSingle _token _url = Task.yield mockPersonalInfo
+          let mockFetchSingle :: HttpFetchSingle PersonalInfoData
+              mockFetchSingle _token _url = Task.yield mockPersonalInfo
 
-        let config = testSyncAllConfig
+          let config = testSyncAllConfig
 
-        result <- Task.runOrPanic do
-          executeSyncAll mockFetch mockFetchSingle ctx config
+          result <- Task.runOrPanic do
+            executeSyncAll mockFetch mockFetchSingle ctx config
 
-        -- The test passes if executeSyncAll completes without error
-        -- and returns a payload (meaning onComplete was called with SyncResult)
-        result `shouldSatisfy` isJust
+          -- The test passes if executeSyncAll completes without error
+          -- and returns a payload (meaning onComplete was called with SyncResult)
+          result `shouldSatisfy` isJust
+          observed <- Task.runOrPanic (ConcurrentVar.peek refreshCount :: Task Text Int)
+          observed `shouldBe` 0
 
-      it "invokes onError callback when fetch fails and onError is Just" do
-        ctx <- Task.runOrPanic setupMockContext
+        it "invokes onError callback when fetch fails and onError is Just" \(ctx, refreshCount) -> do
 
-        -- Mock fetch that throws error
-        let mockFetch :: forall a. Json.FromJSON a => HttpFetch a
-            mockFetch _token _url = Task.throw Unauthorized
+          -- Mock fetch that throws error
+          let mockFetch :: forall a. Json.FromJSON a => HttpFetch a
+              mockFetch _token _url = Task.throw Unauthorized
 
-        -- Mock single fetch that also throws (both fail on Unauthorized)
-        let mockFetchSingle :: HttpFetchSingle PersonalInfoData
-            mockFetchSingle _token _url = Task.throw Unauthorized
+          -- Mock single fetch that also throws (both fail on Unauthorized)
+          let mockFetchSingle :: HttpFetchSingle PersonalInfoData
+              mockFetchSingle _token _url = Task.throw Unauthorized
 
-        let config = SyncAll
-              { userId = "test-user"
-              , startDate = "2024-01-01"
-              , endDate = "2024-01-07"
-              , onComplete = \_ -> TestCommand { capturedResult = Nothing, errorMessage = Nothing }
-              , onError = Just (\errMsg -> TestCommand { capturedResult = Nothing, errorMessage = Just errMsg })
-              }
+          let config = SyncAll
+                { userId = "test-user"
+                , startDate = "2024-01-01"
+                , endDate = "2024-01-07"
+                , onComplete = \_ -> TestCommand { capturedResult = Nothing, errorMessage = Nothing }
+                , onError = Just (\errMsg -> TestCommand { capturedResult = Nothing, errorMessage = Just errMsg })
+                }
 
-        -- Should NOT throw - onError handler catches the error
-        result <- Task.runOrPanic do
-          executeSyncAll mockFetch mockFetchSingle ctx config
+          -- Should NOT throw - onError handler catches the error
+          result <- Task.runOrPanic do
+            executeSyncAll mockFetch mockFetchSingle ctx config
 
-        -- Should return Just (the error command payload)
-        result `shouldSatisfy` isJust
+          -- Should return Just (the error command payload)
+          result `shouldSatisfy` isJust
+          observed <- Task.runOrPanic (ConcurrentVar.peek refreshCount :: Task Text Int)
+          observed `shouldBe` 1
 
-      it "throws error when fetch fails and onError is Nothing" do
-        ctx <- Task.runOrPanic setupMockContext
+        it "throws error when fetch fails and onError is Nothing" \(ctx, refreshCount) -> do
 
-        -- Mock fetch that throws error
-        let mockFetch :: forall a. Json.FromJSON a => HttpFetch a
-            mockFetch _token _url = Task.throw Unauthorized
+          -- Mock fetch that throws error
+          let mockFetch :: forall a. Json.FromJSON a => HttpFetch a
+              mockFetch _token _url = Task.throw Unauthorized
 
-        -- Mock single fetch that also throws
-        let mockFetchSingle :: HttpFetchSingle PersonalInfoData
-            mockFetchSingle _token _url = Task.throw Unauthorized
+          -- Mock single fetch that also throws
+          let mockFetchSingle :: HttpFetchSingle PersonalInfoData
+              mockFetchSingle _token _url = Task.throw Unauthorized
 
-        let config = SyncAll
-              { userId = "test-user"
-              , startDate = "2024-01-01"
-              , endDate = "2024-01-07"
-              , onComplete = \_ -> TestCommand { capturedResult = Nothing, errorMessage = Nothing }
-              , onError = Nothing  -- No error handler
-              }
+          let config = SyncAll
+                { userId = "test-user"
+                , startDate = "2024-01-01"
+                , endDate = "2024-01-07"
+                , onComplete = \_ -> TestCommand { capturedResult = Nothing, errorMessage = Nothing }
+                , onError = Nothing  -- No error handler
+                }
 
-        -- Should throw - no error handler
-        let task :: Task Text (Result IntegrationError (Maybe CommandPayload))
-            task = executeSyncAll mockFetch mockFetchSingle ctx config |> Task.asResult
-        result <- Task.runOrPanic task
+          -- Should throw - no error handler
+          let task :: Task Text (Result IntegrationError (Maybe CommandPayload))
+              task = executeSyncAll mockFetch mockFetchSingle ctx config |> Task.asResult
+          result <- Task.runOrPanic task
 
-        case result of
-          Err (AuthenticationError _) -> pure ()
-          Err other -> expectationFailure [fmt|Expected AuthenticationError, got: #{toText other}|]
-          Ok _ -> expectationFailure "Expected error to be thrown"
+          case result of
+            Err (AuthenticationError _) -> pure ()
+            Err other -> expectationFailure [fmt|Expected AuthenticationError, got: #{toText other}|]
+            Ok _ -> expectationFailure "Expected error to be thrown"
+          observed <- Task.runOrPanic (ConcurrentVar.peek refreshCount :: Task Text Int)
+          observed `shouldBe` 1
+
+
+withLocalTokenFailure :: ActionWith (ActionContext, ConcurrentVar Int) -> GhcIO.IO ()
+withLocalTokenFailure runExample = do
+  refreshCount <- Task.runOrPanic (ConcurrentVar.containing 0 :: Task Text (ConcurrentVar Int))
+  malformed <- Task.runOrPanic (ConcurrentVar.containing False :: Task Text (ConcurrentVar Bool))
+  let settings = GhcWarp.defaultSettings |> GhcWarp.setHost "127.0.0.1"
+  let application = localTokenFailure refreshCount malformed
+  GhcWarp.testWithApplicationSettings settings (Task.runOrPanic (Task.yield application :: Task Text GhcWai.Application)) \port -> do
+    ctx <- Task.runOrPanic (setupMockContext [fmt|http://127.0.0.1:#{port}/oauth/token|])
+    runExample (ctx, refreshCount)
+    badRequest <- Task.runOrPanic (ConcurrentVar.peek malformed :: Task Text Bool)
+    badRequest `shouldBe` False
+
+
+localTokenFailure :: ConcurrentVar Int -> ConcurrentVar Bool -> GhcWai.Application
+localTokenFailure refreshCount malformed request respond = do
+  body <- GhcWai.strictRequestBody request
+  let form = body |> Bytes.fromLazyLegacy |> Bytes.unwrap |> GhcHTTP.parseQuery
+  let expectedForm =
+        [ ("grant_type", Just "refresh_token")
+        , ("refresh_token", Just "mock-refresh-token")
+        , ("client_id", Just "mock-client-id")
+        , ("client_secret", Just "mock-client-secret")
+        ]
+  let validRequest = GhcWai.requestMethod request == "POST"
+        && GhcWai.pathInfo request == ["oauth", "token"]
+        && form == expectedForm
+  Task.runOrPanic (ConcurrentVar.modify (+ 1) refreshCount :: Task Text ())
+  Task.runOrPanic (ConcurrentVar.modify (\bad -> bad || not validRequest) malformed :: Task Text ())
+  let status = if validRequest then GhcHTTP.status400 else GhcHTTP.status404
+  respond (GhcWai.responseLBS status [(GhcHTTP.hContentType, "application/json")]
+    "{\"error\":\"invalid_grant\",\"error_description\":\"owned fixture rejected refresh token\"}")
 
 
 -- | Test command type for capturing SyncResult or error
@@ -194,8 +238,8 @@ type instance NameOf TestCommand = "TestCommand"
 
 
 -- | Setup mock ActionContext with SecretStore and provider registry
-setupMockContext :: Task Text ActionContext
-setupMockContext = do
+setupMockContext :: Text -> Task Text ActionContext
+setupMockContext tokenEndpoint = do
   secretStore <- InMemorySecretStore.new
   -- Store a valid token for the test user
   let tokenKey = TokenKey "oauth:oura:test-user"
@@ -209,7 +253,7 @@ setupMockContext = do
   let mockProvider = Provider
         { name = "oura"
         , authorizeEndpoint = "https://example.com/authorize"
-        , tokenEndpoint = "https://example.com/token"
+        , tokenEndpoint = tokenEndpoint
         }
   let validatedProvider = unsafeValidatedProvider mockProvider
   -- Create ValidatedOAuth2ProviderConfig

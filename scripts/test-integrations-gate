@@ -76,9 +76,9 @@ class AllTestsRunner(unittest.TestCase):
 
 
 class IntegrationWorkflows(unittest.TestCase):
-    def test_linux_suite_is_required(self):
+    def assert_linux_suite_required(self, source):
         workflow = runpy.run_path(str(ROOT / "scripts/workflow-check"))
-        text = workflow["strip_comments"]((ROOT / ".github/workflows/test.yml").read_text())
+        text = workflow["strip_comments"](source)
         jobs = workflow["job_blocks"](text)
         suite = jobs.get("test-integrations", "")
         self.assertRegex(suite, r"cabal test nhintegrations-test(?:\s|$)")
@@ -91,6 +91,34 @@ class IntegrationWorkflows(unittest.TestCase):
         gate = jobs["ci-gate"]
         self.assertRegex(gate, r"(?m)^    needs:.*\btest-integrations\b")
         self.assertIn("needs.test-integrations.result", gate)
+        runtime = jobs.get("criteria-runtime", "")
+        self.assertRegex(runtime, r"(?m)^    needs:.*\btest-service\b.*\btest-integrations\b")
+        self.assertIn(".nhcore-test-service.report .nhintegrations-test.report", runtime)
+        self.assertIn("--criteria-runtime", runtime)
+        self.assertIn("--report .criteria-runtime.report", runtime)
+        self.assertIn("needs.criteria-runtime.result", gate)
+
+    def test_linux_suite_is_required(self):
+        self.assert_linux_suite_required((ROOT / ".github/workflows/test.yml").read_text())
+
+    def test_linux_gate_negative_controls(self):
+        source = (ROOT / ".github/workflows/test.yml").read_text()
+        self.assert_linux_suite_required(source)
+        changes = {
+            "missing job": ("  test-integrations:", "  removed-integrations:"),
+            "missing needs": ("test-integration, test-integrations, test-service", "test-integration, test-service"),
+            "missing result": ("needs.test-integrations.result", "needs.test-integration.result"),
+            "wrong suite": ("cabal test nhintegrations-test", "cabal test nhcore-test-integration"),
+            "narrowed suite": ("cabal test nhintegrations-test", "cabal test nhintegrations-test --test-options=--match=Video"),
+            "missing detailed report": ("--test-show-details=direct | tee .nhintegrations-test.report", ""),
+            "missing combined evidence": (".nhcore-test-service.report .nhintegrations-test.report", ".nhcore-test-service.report"),
+            "empty hidden report": ("include-hidden-files: true", "include-hidden-files: false"),
+        }
+        for name, (old, new) in changes.items():
+            with self.subTest(name=name):
+                self.assertIn(old, source)
+                with self.assertRaises(AssertionError):
+                    self.assert_linux_suite_required(source.replace(old, new))
 
     def test_macos_matrix_runs_whole_suite(self):
         workflow = runpy.run_path(str(ROOT / "scripts/workflow-check"))

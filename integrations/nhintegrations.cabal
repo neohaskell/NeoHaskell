@@ -155,6 +155,9 @@ test-suite nhintegrations-test
     Integration.Video.ExtractAudioSpec
   build-depends:
     hspec,
+    http-types,
+    wai,
+    warp,
     nhintegrations
   default-language: GHC2021
   ghc-options:

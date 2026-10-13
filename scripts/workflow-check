@@ -49,6 +49,7 @@ Run:  ./dev workflow-check          CI: .github/workflows/checks.yml
 """
 
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -1672,6 +1673,11 @@ def self_test():
             good_slo.replace("      - uses: actions/checkout@v7.0.1\n",
                              "      - uses: actions/checkout@v7.0.1\n      - uses: DeterminateSystems/determinate-nix-action@v3.21.7\n"))
 
+    integrations = subprocess.run(
+        [sys.executable, str(REPO_ROOT / "scripts/test-integrations-gate")],
+        cwd=REPO_ROOT, check=False,
+    )
+    check("complete integrations suite gates", integrations.returncode == 0)
     print("workflow-check: self-test", "OK" if ok else "FAILED")
     return 0 if ok else 1
 
