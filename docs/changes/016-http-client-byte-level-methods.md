@@ -13,7 +13,7 @@ maintainer requested ("extend `Http.Client`" rather than adding a transport).
 ```yaml spec
 issue: adhoc:http-client-byte-level-methods
 kind: feature
-touches: [http-client]
+touches: [http-client, ci-cd, dev-pipeline]
 breaking: false
 new-dependency: false
 new-capability: false
@@ -24,10 +24,24 @@ new-extension-point: false
 
 `getSecure` and `getRaw` keep their signatures and become `Get` specializations
 of the new functions. `sendSecure` enforces `https://` exactly like
-`getSecure`; `sendRaw` is the loopback-only twin exported from
-`Http.Client.Internal`, mirroring the existing `getRaw` split. Both reuse the
-existing request options (headers, timeout, `maxRedirects = 0` default, proxy
-disabled, `maxResponseBytes` limit) and the pinned TLS 1.2+ manager.
+`getSecure`; `sendRaw` is the trusted-caller twin exported from
+`Http.Client.Internal`, mirroring the existing `getRaw` split. It does not
+validate that a host is loopback. Only the secure path uses the pinned TLS
+1.2+ manager. Both accept request options for headers, response timeout,
+redirect count (`maxRedirects = 0` by default), and `maxResponseBytes`.
+Change 022 proposes executable proof and repair of the intended direct-only
+transport and incremental byte-limit guarantees; the current implementation
+does not yet establish them. The timeout is not a promised total-body deadline.
+
+Supporting CI changes capture the Core suite report, make the service job wait
+for Core, and combine both reports for runtime-criterion validation. Missing
+reports must fail, not silently remove the HTTP examples. `./dev workflow-check`
+contains the positive and negative report-wiring controls.
+
+The existing public plumbing helper remains supported with its actual raw type:
+`applyMethodAndBody :: Method -> Bytes -> Network.HTTP.Client.Request ->
+Network.HTTP.Client.Request`. It is retained, not removed or redesigned.
+The generated signature vocabulary abbreviates that external request type.
 
 ```diff signatures
 + Http.Client: data Method
@@ -38,6 +52,7 @@ disabled, `maxResponseBytes` limit) and the pinned TLS 1.2+ manager.
 + Http.Client: Patch :: Method
 + Http.Client: Delete :: Method
 + Http.Client: methodName :: Method -> Text
++ Http.Client: applyMethodAndBody :: Method -> Bytes -> Request -> Request
 + Http.Client: sendSecure :: Method -> Request -> Bytes -> Task Error (Response Bytes)
 + Http.Client.Internal: sendRaw :: Method -> Request -> Bytes -> Task Error (Response Bytes)
 ```

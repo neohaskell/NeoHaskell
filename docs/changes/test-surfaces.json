@@ -40,6 +40,22 @@
   "boundaries": [
     {
       "kind": "script",
+      "path": "core/test/Http/transport_fixture.py",
+      "boundary": "http:real",
+      "expected_examples": 1,
+      "fixture": "Http.Client.syntheticTransport"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-core",
+      "path": "core/test/Http/ClientRawSpec.hs",
+      "match": "sendRaw rejects an oversized chunk before source EOF",
+      "boundary": "http:real",
+      "expected_examples": 1,
+      "fixture": "Http.Client.Internal.sendRaw"
+    },
+    {
+      "kind": "script",
       "path": "testbed/scripts/cold-start-readiness.sh",
       "boundary": "http:real"
     },

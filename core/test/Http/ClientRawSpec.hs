@@ -116,6 +116,56 @@ spec = do
         Ok _ -> fail "Expected error for unreachable host"
 
   describe "Http.Client.Internal.sendRaw" do
+    it "sendRaw rejects an oversized chunk before source EOF" \_ -> do
+      sourceRelease <- GhcConcurrent.newEmptyMVar |> Task.fromIO
+      sourceFlushed <- GhcConcurrent.newEmptyMVar |> Task.fromIO
+      clientResult <- GhcConcurrent.newEmptyMVar |> Task.fromIO
+      let streamingApp request respond =
+            if GhcWai.rawPathInfo request == "/control"
+              then mock200App request respond
+              else respond (GhcWai.responseStream GhcHTTP.status200 [] \write flush -> do
+                write "12345"
+                flush
+                GhcConcurrent.putMVar sourceFlushed ()
+                GhcConcurrent.takeMVar sourceRelease)
+      withMockServer streamingApp \testPort -> do
+        control <-
+          Http.request
+            |> Http.withUrl [fmt|http://127.0.0.1:#{testPort}/control|]
+            |> Http.withTimeout 10
+            |> HttpInternal.getRaw
+            |> Task.asResult
+        case control of
+          Ok response -> response.statusCode |> shouldBe 200
+          Err err -> fail [fmt|Fixture positive control failed: #{show err}|]
+        let requestTask :: Task Text (Result Http.Error (Http.Response Bytes))
+            requestTask =
+              Http.request
+                |> Http.withUrl [fmt|http://127.0.0.1:#{testPort}/paced|]
+                |> Http.withMaxResponseSize 4
+                |> Http.withTimeout 10
+                |> (\req -> HttpInternal.sendRaw Http.Get req Bytes.empty)
+                |> Task.asResult
+        clientThread <- GhcConcurrent.forkIO (do
+          result <- Task.runOrPanic requestTask
+          GhcConcurrent.putMVar clientResult result) |> Task.fromIO
+        let checkBeforeEof = do
+              GhcConcurrent.threadDelay 2000000 |> Task.fromIO
+              flushed <- GhcConcurrent.tryTakeMVar sourceFlushed |> Task.fromIO
+              case flushed of
+                Nothing -> fail "Fixture did not flush its oversized chunk"
+                Just () -> Task.yield ()
+              GhcConcurrent.threadDelay 2000000 |> Task.fromIO
+              observed <- GhcConcurrent.tryTakeMVar clientResult |> Task.fromIO
+              case observed of
+                Just (Err (Http.ResponseTooLarge limit)) -> limit |> shouldBe 4
+                Just other -> fail [fmt|Expected ResponseTooLarge before EOF, got: #{show other}|]
+                Nothing -> fail "REGRESSION_ASSERT:sendRaw-awaits-source-EOF"
+        let cleanup = do
+              _ <- GhcConcurrent.tryPutMVar sourceRelease () |> Task.fromIO
+              GhcConcurrent.killThread clientThread |> Task.fromIO
+        checkBeforeEof |> Task.finally cleanup
+
     it "sendRaw PUT delivers method, raw body and custom header" \_ -> do
       withMockServer mockEchoApp \testPort -> do
         response <-

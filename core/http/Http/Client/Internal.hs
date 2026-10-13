@@ -1,30 +1,36 @@
-module Http.Client.Internal
-  ( -- * Internal HTTP access
-    -- | WARNING: Does NOT enforce HTTPS. Use 'Http.Client.getSecure' for external APIs.
-    -- This module is for internal use only (e.g., localhost OAuth2 discovery per ADR-0018).
-    getRaw,
-    sendRaw,
-  )
-where
+module Http.Client.Internal (
+  -- * Internal HTTP access
+
+  -- | WARNING: Does NOT enforce HTTPS. Use 'Http.Client.getSecure' for external APIs.
+  -- This module is for internal use only (e.g., localhost OAuth2 discovery per ADR-0018).
+  getRaw,
+  sendRaw,
+) where
 
 import Array (Array)
 import Array qualified
 import Basics
 import Bytes (Bytes)
 import Bytes qualified
+import Control.Exception qualified as GhcException
 import Data.ByteString (ByteString)
+import Data.ByteString qualified as GhcBS
 import Data.CaseInsensitive qualified as CI
 import Data.Either qualified as GhcEither
 import Http.Client (Method, Request (..), Response (..))
 import Http.Client qualified as Http
+import LinkedList qualified
 import Log qualified
 import Map qualified
 import Maybe (Maybe (..))
 import Maybe qualified
 import Network.HTTP.Client qualified as HttpClient
-import Network.HTTP.Simple qualified as HttpSimple
+import Network.HTTP.Client.TLS qualified as HttpTls
 import Network.HTTP.Simple (setRequestIgnoreStatus)
+import Network.HTTP.Simple qualified as HttpSimple
+import Result (Result (..))
 import System.IO qualified as GhcIO
+import System.IO.Unsafe qualified as GhcUnsafe
 import Task (Task)
 import Task qualified
 import Text (Text)
@@ -59,23 +65,24 @@ sendRaw ::
 sendRaw method options body = do
   let verb = Http.methodName method
   Log.debug [fmt|HTTP #{verb} (raw/internal)|] |> Task.ignoreError
-  response <- sendRawInternalIO method options body
-    |> Task.fromFailableIO @HttpClient.HttpException
-    |> Task.mapError sanitizeInternalHttpError
-  case options.maxResponseBytes of
-    Nothing -> Task.yield response
-    Just maxBytes ->
-      case response.body |> Bytes.length |> (\len -> len > maxBytes) of
-        True -> Task.throw (Http.ResponseTooLarge maxBytes)
-        False -> Task.yield response
+  result <-
+    sendRawInternalIO method options body
+      |> Task.fromFailableIO @HttpClient.HttpException
+      |> Task.mapError sanitizeInternalHttpError
+  case result of
+    Err error -> Task.throw error
+    Ok response -> Task.yield response
 
 
--- | Internal IO action for a raw byte-level request
-sendRawInternalIO ::
-  Method ->
-  Http.Request ->
-  Bytes ->
-  GhcIO.IO (Http.Response Bytes)
+{-# NOINLINE rawManager #-}
+-- | Isolate direct byte requests from the library global proxy-aware manager.
+rawManager :: HttpClient.Manager
+rawManager = GhcUnsafe.unsafePerformIO do
+  HttpClient.newManager (HttpClient.managerSetProxy HttpClient.noProxy HttpTls.tlsManagerSettings)
+
+
+-- | Own the response until its bounded body has been read or rejected.
+sendRawInternalIO :: Method -> Http.Request -> Bytes -> GhcIO.IO (Result Http.Error (Http.Response Bytes))
 sendRawInternalIO method options body = do
   baseReq <- parseRequestUrl options
   let req =
@@ -83,8 +90,40 @@ sendRawInternalIO method options body = do
           |> applyRequestOptions options
           |> Http.applyMethodAndBody method body
           |> setRequestIgnoreStatus
-  httpResponse <- HttpSimple.httpBS req
-  pure (extractResponseBytes httpResponse)
+  GhcException.bracket
+    (HttpClient.responseOpen req rawManager)
+    HttpClient.responseClose
+    (readLimitedResponse method options)
+
+
+-- | HEAD bypasses advertised length; delivered chunks still obey the byte cap.
+readLimitedResponse ::
+  Method ->
+  Http.Request ->
+  HttpClient.Response HttpClient.BodyReader ->
+  GhcIO.IO (Result Http.Error (Http.Response Bytes))
+readLimitedResponse method options response = do
+  let declaredLimit = case method of
+        Http.Head -> Nothing
+        _ -> Http.checkContentLengthHeaderLimit options.maxResponseBytes (HttpClient.responseHeaders response)
+  case declaredLimit of
+    Just maxBytes -> pure (Err (Http.ResponseTooLarge maxBytes))
+    Nothing -> do
+      bodyResult <- readBodyChunks options.maxResponseBytes (HttpClient.responseBody response) 0 []
+      pure (bodyResult |> fmap (\body -> extractResponseBytes (response {HttpClient.responseBody = body})))
+
+
+-- Kept private here to avoid widening the public Http.Client API for plumbing.
+readBodyChunks :: Maybe Int -> HttpClient.BodyReader -> Int -> [ByteString] -> GhcIO.IO (Result Http.Error ByteString)
+readBodyChunks limit reader received chunks = do
+  chunk <- HttpClient.brRead reader
+  if GhcBS.null chunk
+    then pure (Ok (GhcBS.concat (LinkedList.reverse chunks)))
+    else do
+      let chunkBytes = GhcBS.length chunk
+      case limit of
+        Just maxBytes | chunkBytes > maxBytes - received -> pure (Err (Http.ResponseTooLarge maxBytes))
+        _ -> readBodyChunks limit reader (received + chunkBytes) (chunk : chunks)
 
 
 -- | Parse the URL from request options into an http-client Request.
@@ -100,8 +139,11 @@ applyRequestOptions :: Http.Request -> HttpClient.Request -> HttpClient.Request
 applyRequestOptions options baseReq = do
   let withHeaders =
         options.headers
-          |> Map.reduce baseReq (\key value acc ->
-            HttpSimple.addRequestHeader (Text.convert key) (Text.convert value) acc)
+          |> Map.reduce
+            baseReq
+            ( \key value acc ->
+                HttpSimple.addRequestHeader (Text.convert key) (Text.convert value) acc
+            )
   let withTimeout = case options.timeoutSeconds of
         Nothing -> withHeaders
         Just seconds -> do
@@ -119,9 +161,9 @@ applyRequestOptions options baseReq = do
 extractResponseBytes :: HttpSimple.Response ByteString -> Http.Response Bytes
 extractResponseBytes httpResponse =
   Http.Response
-    { statusCode = HttpSimple.getResponseStatusCode httpResponse
-    , headers = extractHeaders httpResponse
-    , body = Bytes.fromLegacy (HttpSimple.getResponseBody httpResponse)
+    { statusCode = HttpSimple.getResponseStatusCode httpResponse,
+      headers = extractHeaders httpResponse,
+      body = Bytes.fromLegacy (HttpSimple.getResponseBody httpResponse)
     }
 
 
@@ -129,10 +171,12 @@ extractResponseBytes httpResponse =
 extractHeaders :: HttpSimple.Response body -> Array (Text, Text)
 extractHeaders httpResponse =
   HttpSimple.getResponseHeaders httpResponse
-    |> fmap (\(name, value) ->
-        ( name |> CI.original |> Bytes.fromLegacy |> Text.fromBytes
-        , value |> Bytes.fromLegacy |> Text.fromBytes
-        ))
+    |> fmap
+      ( \(name, value) ->
+          ( name |> CI.original |> Bytes.fromLegacy |> Text.fromBytes,
+            value |> Bytes.fromLegacy |> Text.fromBytes
+          )
+      )
     |> Array.fromLinkedList
 
 

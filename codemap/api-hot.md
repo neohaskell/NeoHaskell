@@ -10,7 +10,7 @@ codemap/signatures/ · type-directed search: ./dev api "<type>"
 
 ## Task
 
-- `yield :: value -> Task w value`  <!-- 614 call sites -->
+- `yield :: value -> Task w value`  <!-- 613 call sites -->
 - `ignoreError :: Task err Unit -> Task w Unit`  <!-- 242 call sites -->
 - `throw :: err -> Task err w`  <!-- 236 call sites -->
 - `mapError :: (err1 -> err2) -> Task err1 value -> Task err2 value`  <!-- 230 call sites -->
@@ -117,10 +117,10 @@ codemap/signatures/ · type-directed search: ./dev api "<type>"
 ## Bytes
 
 - `unwrap :: Bytes -> ByteString`  <!-- 50 call sites -->
-- `fromLegacy :: ByteString -> Bytes`  <!-- 33 call sites -->
+- `fromLegacy :: ByteString -> Bytes`  <!-- 32 call sites -->
 - `toLazyLegacy :: Bytes -> LazyByteString`  <!-- 17 call sites -->
 - `empty :: Bytes`  <!-- 5 call sites -->
-- `length :: Bytes -> Int`  <!-- 5 call sites -->
+- `length :: Bytes -> Int`  <!-- 4 call sites -->
   - `>>> [1, 2, 3] |> Bytes.pack |> Bytes.length` → `3`
 - `pack :: [Word8] -> Bytes`  <!-- 3 call sites -->
 - `toBase64 :: Bytes -> Bytes`  <!-- 3 call sites -->
@@ -170,9 +170,9 @@ codemap/signatures/ · type-directed search: ./dev api "<type>"
 ## LinkedList
 
 - `map :: (a -> b) -> LinkedList a -> LinkedList b`  <!-- 16 call sites -->
+- `reverse :: LinkedList a -> LinkedList a`  <!-- 7 call sites -->
 - `any :: (a -> Bool) -> LinkedList a -> Bool`  <!-- 6 call sites -->
 - `filter :: (a -> Bool) -> LinkedList a -> LinkedList a`  <!-- 5 call sites -->
-- `reverse :: LinkedList a -> LinkedList a`  <!-- 5 call sites -->
 - `length :: LinkedList a -> Int`  <!-- 3 call sites -->
 - `find :: (a -> Bool) -> LinkedList a -> Maybe a`  <!-- 2 call sites -->
 - `get :: Int -> LinkedList a -> Maybe a`  <!-- 2 call sites -->
@@ -295,11 +295,11 @@ when WRITING TESTS; they are not feature-code frequency signal.
 ## Task
 
 - `mapError :: (err1 -> err2) -> Task err1 value -> Task err2 value`  <!-- 831 test call sites -->
-- `yield :: value -> Task w value`  <!-- 496 test call sites -->
-- `asResult :: Task err value -> Task err2 (Result err value)`  <!-- 312 test call sites -->
+- `yield :: value -> Task w value`  <!-- 497 test call sites -->
+- `asResult :: Task err value -> Task err2 (Result err value)`  <!-- 314 test call sites -->
 - `mapArray :: (element -> Task err output) -> Array element -> Task err (Array output)`  <!-- 134 test call sites -->
 - `throw :: err -> Task err w`  <!-- 124 test call sites -->
-- `fromIO :: IO value -> Task w value`  <!-- 93 test call sites -->
+- `fromIO :: IO value -> Task w value`  <!-- 103 test call sites -->
 - `andThen :: (input -> Task err output) -> Task err input -> Task err output`  <!-- 92 test call sites -->
 - `map :: (input -> output) -> Task err input -> Task err output`  <!-- 84 test call sites -->
 
