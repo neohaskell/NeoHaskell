@@ -249,6 +249,19 @@ spec = do
 
 
   describe "Integration.Video.ExtractAudio real ffmpeg" do
+    it "real MP4 video with AAC audio returns independently decodable WAV audio" do
+      audio <- Task.runOrPanic (withRealMedia "mp4" requireRealAudio)
+      Bytes.length audio `shouldSatisfy` (\size -> size > 44)
+
+    it "real MP4 video with AAC audio returns a usable portion within the configured cap" do
+      let config = VideoAudio.defaultConfig {maxOutputBytes = 32044}
+      (complete, capped) <- Task.runOrPanic (withRealMedia "mp4" \workspace -> do
+        complete <- requireRealAudio workspace
+        capped <- requireConfiguredAudio config workspace
+        Task.yield (complete, capped))
+      Bytes.length capped `shouldSatisfy` (\size -> size > 44 && size <= 32044)
+      Bytes.length capped `shouldSatisfy` (\size -> size < Bytes.length complete)
+
     it "keeps the promised exact default audio byte cap with real ffmpeg" do
       audio <- Task.runOrPanic (withRealMedia "long" requireRealAudio)
       Bytes.length audio `shouldSatisfy` (\size -> size <= 25000000)
@@ -836,6 +849,7 @@ mediaControl arguments = do
 
 mediaFixture :: Text
 mediaFixture = [fmt|
+import json
 import os
 from pathlib import Path
 import shutil
@@ -866,6 +880,29 @@ if mode == "create":
                 output.setparams((1, 2, 16000, 0, "NONE", "not compressed"))
                 cycle = b"".join(struct.pack("<h", (i % 60001) - 30000) for i in range(16000))
                 output.writeframes(cycle * 900)
+        elif kind == "mp4":
+            source = workspace / "input"
+            generated = subprocess.run([
+                "ffmpeg", "-nostdin", "-v", "error",
+                "-f", "lavfi", "-i", "color=c=blue:s=160x120:r=10:d=3",
+                "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000:duration=3",
+                "-map", "0:v:0", "-map", "1:a:0", "-t", "3",
+                "-c:v", "mpeg4", "-pix_fmt", "yuv420p", "-c:a", "aac",
+                "-f", "mp4", str(source)
+            ], capture_output=True, timeout=5)
+            assert generated.returncode == 0, generated.stderr.decode(errors="replace")
+            probe = subprocess.run([
+                "ffprobe", "-v", "error", "-show_streams", "-show_format",
+                "-of", "json", str(source)
+            ], capture_output=True, timeout=5)
+            assert probe.returncode == 0, probe.stderr.decode(errors="replace")
+            metadata = json.loads(probe.stdout)
+            streams = metadata["streams"]
+            assert len(streams) == 2
+            assert any(stream["codec_type"] == "video" and stream["codec_name"] == "mpeg4" for stream in streams)
+            assert any(stream["codec_type"] == "audio" and stream["codec_name"] == "aac" for stream in streams)
+            assert "mp4" in metadata["format"]["format_name"].split(",")
+            assert 2.9 <= float(metadata["format"]["duration"]) <= 3.1
         elif kind == "junk":
             (workspace / "input").write_bytes(b"not a media container")
         else:

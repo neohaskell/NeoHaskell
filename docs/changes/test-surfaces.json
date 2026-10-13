@@ -429,6 +429,24 @@
       "boundary": "subprocess:real",
       "expected_examples": 1,
       "fixture": "Real direct child records TERM; second cancellation during cleanup; PID absence and async propagation required"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhintegrations-test",
+      "path": "integrations/test/Integration/Video/ExtractAudioSpec.hs",
+      "match": "real MP4 video with AAC audio returns independently decodable WAV audio",
+      "boundary": "subprocess:real",
+      "expected_examples": 1,
+      "fixture": "Real ffmpeg extraction of generated 3-second MPEG-4 video plus AAC audio in MP4; ffprobe stream verification and independent WAV decode"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhintegrations-test",
+      "path": "integrations/test/Integration/Video/ExtractAudioSpec.hs",
+      "match": "real MP4 video with AAC audio returns a usable portion within the configured cap",
+      "boundary": "subprocess:real",
+      "expected_examples": 1,
+      "fixture": "Real ffmpeg extraction of generated 3-second MPEG-4 video plus AAC audio in MP4; ffprobe stream verification and independent WAV decode"
     }
   ]
 }
