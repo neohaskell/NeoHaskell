@@ -10,13 +10,13 @@ codemap/signatures/ · type-directed search: ./dev api "<type>"
 
 ## Task
 
-- `yield :: value -> Task w value`  <!-- 611 call sites -->
+- `yield :: value -> Task w value`  <!-- 614 call sites -->
 - `ignoreError :: Task err Unit -> Task w Unit`  <!-- 242 call sites -->
+- `throw :: err -> Task err w`  <!-- 236 call sites -->
 - `mapError :: (err1 -> err2) -> Task err1 value -> Task err2 value`  <!-- 230 call sites -->
-- `throw :: err -> Task err w`  <!-- 227 call sites -->
 - `fromIO :: IO value -> Task w value`  <!-- 131 call sites -->
 - `asResult :: Task err value -> Task err2 (Result err value)`  <!-- 89 call sites -->
-- `when :: Bool -> Task err Unit -> Task err Unit`  <!-- 33 call sites -->
+- `when :: Bool -> Task err Unit -> Task err Unit`  <!-- 40 call sites -->
 - `forEach :: (element -> Task err Unit) -> Array element -> Task err Unit`  <!-- 30 call sites -->
 - `fromFailableIO :: Exception exception => IO result -> Task exception result`  <!-- 24 call sites -->
 - `map :: (input -> output) -> Task err input -> Task err output`  <!-- 23 call sites -->
@@ -45,11 +45,11 @@ codemap/signatures/ · type-directed search: ./dev api "<type>"
 
 ## Text
 
-- `fromLinkedList :: LinkedList Char -> Text`  <!-- 91 call sites -->
-- `toLinkedList :: Text -> LinkedList Char`  <!-- 78 call sites -->
+- `fromLinkedList :: LinkedList Char -> Text`  <!-- 93 call sites -->
+- `toLinkedList :: Text -> LinkedList Char`  <!-- 79 call sites -->
 - `toBytes :: Text -> Bytes`  <!-- 75 call sites -->
+- `isEmpty :: Text -> Bool`  <!-- 35 call sites -->
 - `replace :: Text -> Text -> Text -> Text`  <!-- 33 call sites -->
-- `isEmpty :: Text -> Bool`  <!-- 32 call sites -->
 - `joinWith :: Text -> Array Text -> Text`  <!-- 30 call sites -->
 - `trim :: Text -> Text`  <!-- 29 call sites -->
 - `fromBytes :: Bytes -> Text`  <!-- 27 call sites -->
@@ -130,7 +130,7 @@ codemap/signatures/ · type-directed search: ./dev api "<type>"
 
 ## Maybe
 
-- `withDefault :: a -> Maybe a -> a`  <!-- 60 call sites -->
+- `withDefault :: a -> Maybe a -> a`  <!-- 58 call sites -->
 - `map :: (a -> b) -> Maybe a -> Maybe b`  <!-- 14 call sites -->
 - `getOrDie :: HasCallStack => Maybe a -> a`  <!-- 9 call sites -->
 - `andThen :: (a -> Maybe b) -> Maybe a -> Maybe b`  <!-- 4 call sites -->
@@ -295,9 +295,9 @@ when WRITING TESTS; they are not feature-code frequency signal.
 ## Task
 
 - `mapError :: (err1 -> err2) -> Task err1 value -> Task err2 value`  <!-- 831 test call sites -->
-- `yield :: value -> Task w value`  <!-- 495 test call sites -->
-- `asResult :: Task err value -> Task err2 (Result err value)`  <!-- 311 test call sites -->
-- `mapArray :: (element -> Task err output) -> Array element -> Task err (Array output)`  <!-- 132 test call sites -->
+- `yield :: value -> Task w value`  <!-- 496 test call sites -->
+- `asResult :: Task err value -> Task err2 (Result err value)`  <!-- 312 test call sites -->
+- `mapArray :: (element -> Task err output) -> Array element -> Task err (Array output)`  <!-- 134 test call sites -->
 - `throw :: err -> Task err w`  <!-- 124 test call sites -->
 - `fromIO :: IO value -> Task w value`  <!-- 93 test call sites -->
 - `andThen :: (input -> Task err output) -> Task err input -> Task err output`  <!-- 92 test call sites -->
@@ -308,7 +308,7 @@ when WRITING TESTS; they are not feature-code frequency signal.
 - `length :: Array a -> Int`  <!-- 276 test call sites -->
 - `empty :: Array a`  <!-- 232 test call sites -->
 - `fromLinkedList :: LinkedList a -> Array a`  <!-- 223 test call sites -->
-- `map :: (a -> b) -> Array a -> Array b`  <!-- 147 test call sites -->
+- `map :: (a -> b) -> Array a -> Array b`  <!-- 149 test call sites -->
 - `get :: Int -> Array a -> Maybe a`  <!-- 92 test call sites -->
 - `wrap :: a -> Array a`  <!-- 60 test call sites -->
 - `initialize :: Int -> (Int -> a) -> Array a`  <!-- 47 test call sites -->

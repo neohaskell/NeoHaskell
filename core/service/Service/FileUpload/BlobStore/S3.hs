@@ -203,6 +203,7 @@ validateAuthority endpoint = do
   Task.yield host
 
 
+-- | Validate a decimal TCP port before bounded integer conversion.
 validatePort :: Text -> Task Text Unit
 validatePort port = do
   Task.when (not (Text.isEmpty port)) do
