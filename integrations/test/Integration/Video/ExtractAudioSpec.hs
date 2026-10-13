@@ -294,6 +294,30 @@ spec = do
         Err _ -> Task.runOrPanic (textTask (Task.yield ()))
         Ok _ -> expectationFailure "Expected insufficient complete-frame budget rejection"
 
+    it "rejects a PCM format extension whose declared bytes are missing" do
+      outcome <- Task.runOrPanic do
+        calls <- Var.new Array.empty
+        let original = fakeRunner calls succeedingFfmpeg
+        let malformed = Bytes.concat
+              [ Bytes.take 4 fakeWavBytes, Bytes.pack [6,1,0,0]
+              , Bytes.take 8 (Bytes.drop 8 fakeWavBytes), Bytes.pack [18,0,0,0]
+              , Bytes.take 16 (Bytes.drop 20 fakeWavBytes), Bytes.pack [22,0]
+              , Bytes.drop 36 fakeWavBytes
+              ]
+        let runner = original {run = \timeout executable arguments directory -> do
+              completion <- original.run timeout executable arguments directory
+              case Array.last arguments |> andThenPath of
+                Nothing -> Task.throw (Subprocess.ProcessError "missing fixture output path")
+                Just output -> File.writeBytes output malformed
+                  |> Task.mapError (\_ -> Subprocess.ProcessError "malformed fixture write failed")
+              Task.yield completion}
+        ctx <- makeContext (Just videoAccess)
+        textTask (executeExtraction runner ctx (makeRequest VideoAudio.defaultConfig) |> Task.asResult)
+      case outcome of
+        Ok (Just payload) -> do
+          Text.contains "ExtractionFailed" (Json.encodeText payload.commandData) `shouldBe` True
+        other -> expectationFailure [fmt|Expected malformed-format callback, got #{other}|]
+
     it "rejects malformed output even when the process reports success" do
       outcome <- Task.runOrPanic do
         calls <- Var.new Array.empty

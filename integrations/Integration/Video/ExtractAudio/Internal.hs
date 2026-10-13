@@ -6,7 +6,7 @@
 -- execution, and temp file handling.
 --
 -- The process boundary is an explicit 'Runner' record. The 'ToAction'
--- instance uses 'realRunner'; tests pass a fake, so they never need ffmpeg.
+-- instance uses 'realRunner'; unit tests pass a fake and boundary tests run ffmpeg.
 --
 -- __This module is not exported to Jess.__
 module Integration.Video.ExtractAudio.Internal
@@ -202,9 +202,12 @@ validateAndBoundWav config audio = do
 
 
 -- ffmpeg emits PCM16, including WAVE_FORMAT_EXTENSIBLE for multichannel audio.
+-- | Check frame representation against the requested channel count and rate.
 validatePcmFormat :: Config -> Bytes -> Task Integration.IntegrationError Int
 validatePcmFormat config format = do
   requireWav (Bytes.length format >= 16 && modBy 2 (Bytes.length format) == 0)
+  Task.when (Bytes.length format > 16) do
+    requireWav (readLittleEndian (slice 16 2 format) == Bytes.length format - 18)
   let channels = readLittleEndian (slice 2 2 format)
   let rate = readLittleEndian (slice 4 4 format)
   let frameBytes = readLittleEndian (slice 12 2 format)
@@ -216,6 +219,7 @@ validatePcmFormat config format = do
   Task.yield frameBytes
 
 
+-- | Recognize PCM16 extensible format without accepting other sample encodings.
 isExtendedPcm16 :: Int -> Bytes -> Bool
 isExtendedPcm16 formatTag format =
   formatTag == 65534 && Bytes.length format >= 40
@@ -243,6 +247,7 @@ readWavChunks audio offset format samples = do
       readWavChunks audio (offset + 8 + paddedSize) nextFormat nextSamples
 
 
+-- | Reject duplicate required chunks instead of choosing an ambiguous payload.
 selectWavChunk :: Text -> Bytes -> Maybe Bytes -> Bytes -> Task Integration.IntegrationError (Maybe Bytes)
 selectWavChunk expected name previous payload = do
   if name == Text.toBytes expected
@@ -253,26 +258,31 @@ selectWavChunk expected name previous payload = do
     else Task.yield previous
 
 
+-- | Require both the format description and the complete sample payload.
 requireWavChunks :: Maybe Bytes -> Maybe Bytes -> Task Integration.IntegrationError (Bytes, Bytes)
 requireWavChunks format samples = case (format, samples) of
   (Just actualFormat, Just actualSamples) -> Task.yield (actualFormat, actualSamples)
   _ -> Task.throw (Integration.PermanentFailure "ffmpeg produced invalid or empty audio")
 
 
+-- | Map unusable output to one fixed callback-safe error.
 requireWav :: Bool -> Task Integration.IntegrationError Unit
 requireWav valid =
   Task.unless valid (Task.throw (Integration.PermanentFailure "ffmpeg produced invalid or empty audio"))
 
 
+-- | Read a bounded byte range after its surrounding chunk has been validated.
 slice :: Int -> Int -> Bytes -> Bytes
 slice offset count bytes = bytes |> Bytes.drop offset |> Bytes.take count
 
 
+-- | Decode a validated RIFF integer field into the native size representation.
 readLittleEndian :: Bytes -> Int
 readLittleEndian bytes =
   bytes |> Bytes.unpack |> LinkedList.foldr (\byte total -> fromIntegral byte + 256 * total) 0
 
 
+-- | Encode a nonnegative RIFF size field at its fixed width.
 littleEndian :: Int -> Int -> Bytes
 littleEndian width value =
   if width == 0
@@ -280,6 +290,7 @@ littleEndian width value =
     else Bytes.append (Bytes.pack [fromIntegral (modBy 256 value)]) (littleEndian (width - 1) (value // 256))
 
 
+-- | Finalize the retained format and sample payload with consistent RIFF sizes.
 assembleWav :: Bytes -> Bytes -> Bytes
 assembleWav format samples = do
   let dataSize = Bytes.length samples
@@ -291,6 +302,7 @@ assembleWav format samples = do
     ]
 
 
+-- | Classify diagnostics without copying any subprocess-controlled text.
 conversionFailure :: Text -> Text
 conversionFailure diagnostic =
   if Text.contains "Invalid data found" diagnostic
@@ -349,6 +361,7 @@ withWorkspace use = do
       Ok value -> Task.yield value
 
 
+-- | Place fixed input and output filenames inside the acquired private directory.
 workspaceFromDirectory :: LinkedList.LinkedList Char -> Task Integration.IntegrationError Workspace
 workspaceFromDirectory directory = do
   workDir <- case Path.fromLinkedList directory of
