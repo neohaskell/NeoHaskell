@@ -213,6 +213,60 @@
       "boundary": "postgres:real",
       "expected_examples": 1,
       "fixture": "Service.QueryObjectStore.Postgres"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-auth",
+      "path": "core/test/Auth/OAuth2/TokenRefreshSpec.hs",
+      "match": "returns InvalidGrant for a real OAuth error after a valid token control",
+      "boundary": "http:real",
+      "expected_examples": 1,
+      "fixture": "Network.Wai.Handler.Warp.testWithApplicationSettings"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-auth",
+      "path": "core/test/Auth/OAuth2/TokenRefreshSpec.hs",
+      "match": "returns InvalidClient for a real OAuth client error",
+      "boundary": "http:real",
+      "expected_examples": 1,
+      "fixture": "Network.Wai.Handler.Warp.testWithApplicationSettings"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-auth",
+      "path": "core/test/Auth/OAuth2/TokenRefreshSpec.hs",
+      "match": "returns MalformedResponse for invalid JSON on token success",
+      "boundary": "http:real",
+      "expected_examples": 1,
+      "fixture": "Network.Wai.Handler.Warp.testWithApplicationSettings"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-auth",
+      "path": "core/test/Auth/OAuth2/TokenRefreshSpec.hs",
+      "match": "returns MalformedResponse when token success lacks access_token",
+      "boundary": "http:real",
+      "expected_examples": 1,
+      "fixture": "Network.Wai.Handler.Warp.testWithApplicationSettings"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-auth",
+      "path": "core/test/Auth/OAuth2/TokenRefreshSpec.hs",
+      "match": "returns TokenRequestFailed for a non-JSON error response",
+      "boundary": "http:real",
+      "expected_examples": 1,
+      "fixture": "Network.Wai.Handler.Warp.testWithApplicationSettings"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-auth",
+      "path": "core/test/Auth/OAuth2/TokenRefreshSpec.hs",
+      "match": "decodes valid tokens and preserves their optional fields",
+      "boundary": "http:real",
+      "expected_examples": 1,
+      "fixture": "Network.Wai.Handler.Warp.testWithApplicationSettings"
     }
   ]
 }
