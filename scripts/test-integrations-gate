@@ -1,0 +1,100 @@
+#!/usr/bin/env python3
+"""Execute the real all-tests runner with owned, offline command fixtures."""
+
+import json
+import os
+import runpy
+from pathlib import Path
+import shutil
+import subprocess
+import sys
+import tempfile
+import unittest
+
+ROOT = Path(__file__).resolve().parent.parent
+
+
+class AllTestsRunner(unittest.TestCase):
+    def run_all(self, integrations_status):
+        with tempfile.TemporaryDirectory(prefix="nh-test-all-") as directory:
+            work = Path(directory)
+            binaries = work / "bin"
+            binaries.mkdir()
+            log = work / "commands.jsonl"
+            command_fixture = binaries / "fixture"
+            command_fixture.write_text(
+                "#!" + sys.executable + "\n"
+                "import json, os, pathlib, sys\n"
+                "name = pathlib.Path(sys.argv[0]).name\n"
+                "with open(os.environ['FIXTURE_LOG'], 'a') as output:\n"
+                "    output.write(json.dumps([name, *sys.argv[1:]]) + '\\n')\n"
+                "if name == 'cabal' and sys.argv[1:3] == ['test', 'nhintegrations-test']:\n"
+                "    raise SystemExit(int(os.environ['INTEGRATIONS_STATUS']))\n"
+            )
+            command_fixture.chmod(0o755)
+            for name in ("cabal", "pg_isready", "hurl", "hlint", "ffmpeg", "python3"):
+                (binaries / name).symlink_to(command_fixture.name)
+            testbed = work / "testbed" / "scripts"
+            testbed.mkdir(parents=True)
+            shutil.copy2(command_fixture, testbed / "run-tests.sh")
+            environment = dict(os.environ)
+            environment.update(
+                PATH=str(binaries) + os.pathsep + os.defpath,
+                FIXTURE_LOG=str(log),
+                INTEGRATIONS_STATUS=str(integrations_status),
+            )
+            result = subprocess.run(
+                ["bash", str(ROOT / "scripts/run-all-tests.sh"), "--require-all"],
+                cwd=work, env=environment, text=True, capture_output=True, check=False,
+            )
+            calls = [json.loads(line) for line in log.read_text().splitlines()]
+            return result, calls
+
+    def test_whole_integrations_suite_is_executed(self):
+        result, calls = self.run_all(0)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(calls.count(["cabal", "test", "nhintegrations-test"]), 1,
+                         "the complete nhintegrations-test suite was not executed exactly once")
+        self.assertIn(["cabal", "test", "nhcore-test-integration"], calls)
+        self.assertIn(["cabal", "test", "nhcore-test-service"], calls)
+        self.assertIn(["run-tests.sh"], calls)
+
+    def test_integrations_failure_is_not_skipped(self):
+        result, calls = self.run_all(37)
+        self.assertEqual(result.returncode, 1,
+                         "nhintegrations-test failed but test-all reported success\n" + result.stdout)
+        self.assertIn(["cabal", "test", "nhintegrations-test"], calls)
+        self.assertIn(["cabal", "test", "nhcore-test-service"], calls)
+        self.assertIn(["run-tests.sh"], calls)
+
+
+class IntegrationWorkflows(unittest.TestCase):
+    def test_linux_suite_is_required(self):
+        workflow = runpy.run_path(str(ROOT / "scripts/workflow-check"))
+        text = workflow["strip_comments"]((ROOT / ".github/workflows/test.yml").read_text())
+        jobs = workflow["job_blocks"](text)
+        suite = jobs.get("test-integrations", "")
+        self.assertRegex(suite, r"cabal test nhintegrations-test(?:\s|$)")
+        self.assertNotIn("--match", suite)
+        self.assertNotIn("continue-on-error:", suite)
+        self.assertIn("--test-show-details=direct", suite)
+        self.assertIn("pipefail", suite)
+        self.assertIn("upload-artifact", suite)
+        self.assertIn("include-hidden-files: true", suite)
+        gate = jobs["ci-gate"]
+        self.assertRegex(gate, r"(?m)^    needs:.*\btest-integrations\b")
+        self.assertIn("needs.test-integrations.result", gate)
+
+    def test_macos_matrix_runs_whole_suite(self):
+        workflow = runpy.run_path(str(ROOT / "scripts/workflow-check"))
+        text = workflow["strip_comments"]((ROOT / ".github/workflows/test-macos.yml").read_text())
+        jobs = workflow["job_blocks"](text)
+        job = jobs["tests-macos"]
+        self.assertRegex(job, r"(?m)^\s+- test-suite: nhintegrations-test\s*$")
+        self.assertIn("cabal test ${{ matrix.test-suite }}", job)
+        self.assertIn('"integrations/**"', workflow["_on_block"](text))
+        self.assertIn('".github/workflows/**"', workflow["_on_block"](text))
+
+
+if __name__ == "__main__":
+    unittest.main()
