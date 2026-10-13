@@ -13,10 +13,10 @@ codemap/signatures/ · type-directed search: ./dev api "<type>"
 - `yield :: value -> Task w value`  <!-- 602 call sites -->
 - `ignoreError :: Task err Unit -> Task w Unit`  <!-- 242 call sites -->
 - `mapError :: (err1 -> err2) -> Task err1 value -> Task err2 value`  <!-- 230 call sites -->
-- `throw :: err -> Task err w`  <!-- 218 call sites -->
+- `throw :: err -> Task err w`  <!-- 220 call sites -->
 - `fromIO :: IO value -> Task w value`  <!-- 130 call sites -->
 - `asResult :: Task err value -> Task err2 (Result err value)`  <!-- 89 call sites -->
-- `when :: Bool -> Task err Unit -> Task err Unit`  <!-- 31 call sites -->
+- `when :: Bool -> Task err Unit -> Task err Unit`  <!-- 32 call sites -->
 - `forEach :: (element -> Task err Unit) -> Array element -> Task err Unit`  <!-- 30 call sites -->
 - `fromFailableIO :: Exception exception => IO result -> Task exception result`  <!-- 25 call sites -->
 - `map :: (input -> output) -> Task err input -> Task err output`  <!-- 23 call sites -->
@@ -34,10 +34,10 @@ codemap/signatures/ · type-directed search: ./dev api "<type>"
   - `>>> isEmpty empty` → `True` …
 - `push :: a -> Array a -> Array a`  <!-- 35 call sites -->
   - `>>> push 3 (fromLinkedList [1,2] :: Array Int)` → `Array [1,2,3]`
+- `length :: Array a -> Int`  <!-- 32 call sites -->
+  - `>>> length ([1,2,3] :: Array Int)` → `3` …
 - `takeIf :: (a -> Bool) -> Array a -> Array a`  <!-- 31 call sites -->
   - `>>> takeIf Basics.isEven (fromLinkedList [1,2,3,4,5,6] :: Array Int)` → `Array [2,4,6]`
-- `length :: Array a -> Int`  <!-- 30 call sites -->
-  - `>>> length ([1,2,3] :: Array Int)` → `3` …
 - `append :: Array a -> Array a -> Array a`  <!-- 24 call sites -->
   - `>>> (repeat 2 42) |> append (repeat 3 81) :: Array Int` → `Array [42,42,81,81,81]`
 - `reduce :: (a -> b -> b) -> b -> Array a -> b`  <!-- 24 call sites -->
@@ -133,7 +133,7 @@ codemap/signatures/ · type-directed search: ./dev api "<type>"
 - `withDefault :: a -> Maybe a -> a`  <!-- 59 call sites -->
 - `map :: (a -> b) -> Maybe a -> Maybe b`  <!-- 14 call sites -->
 - `getOrDie :: HasCallStack => Maybe a -> a`  <!-- 9 call sites -->
-- `andThen :: (a -> Maybe b) -> Maybe a -> Maybe b`  <!-- 4 call sites -->
+- `andThen :: (a -> Maybe b) -> Maybe a -> Maybe b`  <!-- 6 call sites -->
 
 ## Integration
 
@@ -294,12 +294,12 @@ when WRITING TESTS; they are not feature-code frequency signal.
 
 ## Task
 
-- `mapError :: (err1 -> err2) -> Task err1 value -> Task err2 value`  <!-- 834 test call sites -->
-- `yield :: value -> Task w value`  <!-- 487 test call sites -->
-- `asResult :: Task err value -> Task err2 (Result err value)`  <!-- 292 test call sites -->
+- `mapError :: (err1 -> err2) -> Task err1 value -> Task err2 value`  <!-- 839 test call sites -->
+- `yield :: value -> Task w value`  <!-- 497 test call sites -->
+- `asResult :: Task err value -> Task err2 (Result err value)`  <!-- 295 test call sites -->
+- `throw :: err -> Task err w`  <!-- 135 test call sites -->
+- `fromIO :: IO value -> Task w value`  <!-- 134 test call sites -->
 - `mapArray :: (element -> Task err output) -> Array element -> Task err (Array output)`  <!-- 127 test call sites -->
-- `throw :: err -> Task err w`  <!-- 127 test call sites -->
-- `fromIO :: IO value -> Task w value`  <!-- 106 test call sites -->
 - `andThen :: (input -> Task err output) -> Task err input -> Task err output`  <!-- 92 test call sites -->
 - `map :: (input -> output) -> Task err input -> Task err output`  <!-- 84 test call sites -->
 
@@ -316,8 +316,8 @@ when WRITING TESTS; they are not feature-code frequency signal.
 
 ## Text
 
-- `contains :: Text -> Text -> Bool`  <!-- 456 test call sites -->
-- `toBytes :: Text -> Bytes`  <!-- 98 test call sites -->
+- `contains :: Text -> Text -> Bool`  <!-- 458 test call sites -->
+- `toBytes :: Text -> Bytes`  <!-- 99 test call sites -->
 - `fromLinkedList :: LinkedList Char -> Text`  <!-- 58 test call sites -->
 - `length :: Text -> Int`  <!-- 41 test call sites -->
 - `repeat :: Int -> Text -> Text`  <!-- 35 test call sites -->
@@ -340,7 +340,7 @@ when WRITING TESTS; they are not feature-code frequency signal.
 
 - `toJSON :: ToJSON a => a -> Value`  <!-- 146 test call sites -->
 - `decodeText :: FromJSON value => Text -> Result Text value`  <!-- 137 test call sites -->
-- `encodeText :: ToJSON value => value -> Text`  <!-- 120 test call sites -->
+- `encodeText :: ToJSON value => value -> Text`  <!-- 121 test call sites -->
 - `object :: [(Text, Value)] -> Value`  <!-- 105 test call sites -->
 - `null :: Value`  <!-- 58 test call sites -->
 - `encode :: ToJSON value => value -> Value`  <!-- 56 test call sites -->
@@ -377,4 +377,4 @@ when WRITING TESTS; they are not feature-code frequency signal.
 - `generateV5 :: Uuid -> Text -> Uuid`  <!-- 19 test call sites -->
 - `fromText :: Text -> Maybe Uuid`  <!-- 3 test call sites -->
 
-*cut: 141 more modules (Service.Application (297), Map (260), Set (233), AsyncTask (230), Stream (212), …) — full surface: codemap/signatures/*
+*cut: 141 more modules (Service.Application (335), Map (260), AsyncTask (239), Set (233), Stream (212), …) — full surface: codemap/signatures/*

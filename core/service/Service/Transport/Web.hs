@@ -284,6 +284,7 @@ validateBindHost hostText
   | otherwise = Nothing
 
 
+-- | Keep balanced bracket input intact while rejecting broken bracket structure.
 hasMalformedBindBrackets :: Text -> Bool
 hasMalformedBindBrackets hostText = do
   let opening = hostText |> Text.indexes "[" |> Array.length
