@@ -270,21 +270,27 @@ applyBindOverrides maybeHost maybePort transport =
 --
 -- Returns the reason the host is rejected, or 'Nothing' when it is usable.
 validateBindHost :: Text -> Maybe Text
-validateBindHost hostText = do
-  let colonCount = hostText |> Text.indexes ":" |> Array.length
-  let containsWhitespace = Text.words hostText != Array.wrap hostText
-  if Text.isEmpty (Text.trim hostText)
-    then Just "bind host must not be empty; use \"*4\" for all IPv4 interfaces or \"127.0.0.1\" for loopback only"
-    else
-      if containsWhitespace
-        then Just [fmt|bind host "#{hostText}" must not contain whitespace|]
-        else
-          if Text.contains "/" hostText
-            then Just [fmt|bind host "#{hostText}" looks like a URL or path; use a bare address such as "127.0.0.1", not "http://127.0.0.1"|]
-            else
-              if colonCount == 1
-                then Just [fmt|bind host "#{hostText}" carries a port; set the port with Application.withPort instead|]
-                else Nothing
+validateBindHost hostText
+  | Text.isEmpty (Text.trim hostText) =
+      Just "bind host must not be empty; use \"*4\" for all IPv4 interfaces or \"127.0.0.1\" for loopback only"
+  | Text.words hostText != Array.wrap hostText =
+      Just [fmt|bind host "#{hostText}" must not contain whitespace|]
+  | Text.contains "/" hostText =
+      Just [fmt|bind host "#{hostText}" looks like a URL or path; use a bare address such as "127.0.0.1", not "http://127.0.0.1"|]
+  | Text.contains "]:" hostText || (hostText |> Text.indexes ":" |> Array.length) == 1 =
+      Just [fmt|bind host "#{hostText}" carries a port; set the port with Application.withPort instead|]
+  | hasMalformedBindBrackets hostText =
+      Just [fmt|bind host "#{hostText}" has malformed brackets; use a bare address and set the port with Application.withPort|]
+  | otherwise = Nothing
+
+
+hasMalformedBindBrackets :: Text -> Bool
+hasMalformedBindBrackets hostText = do
+  let opening = hostText |> Text.indexes "[" |> Array.length
+  let closing = hostText |> Text.indexes "]" |> Array.length
+  let hasBrackets = opening > 0 || closing > 0
+  let balanced = opening == 1 && closing == 1 && Text.startsWith "[" hostText && Text.endsWith "]" hostText
+  hasBrackets && not balanced
 
 
 -- | Check a bind port before the server starts. Only 1..65535 is accepted.

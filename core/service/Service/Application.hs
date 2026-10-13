@@ -122,6 +122,7 @@ import Record qualified
 import Schema qualified
 import LinkedList (LinkedList)
 import Maybe (Maybe (..))
+import Maybe qualified
 import Result (Result (..))
 import Service.Command.Core (NameOf)
 import Service.Entity.Core (Entity (..), EntityOf, EventOf)
@@ -788,6 +789,7 @@ initAndWrapFileUpload fileConfig = do
 run :: Application -> Task Text Unit
 run app =
    Log.withScope [("component", "Application")] do
+     validateStaticBindOverrides app
      -- 0. Set line buffering for stdout/stderr (container visibility)
      -- GHC defaults to block buffering when isatty() returns false (always in containers),
      -- which makes Console.print output invisible. LineBuffering ensures immediate visibility.
@@ -951,6 +953,18 @@ run app =
      runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup maybeWebAuthSetup maybeIntegrationStatus registry resolvedApp
 
 
+-- | Reject present static web overrides before acquiring startup resources.
+validateStaticBindOverrides :: Application -> Task Text Unit
+validateStaticBindOverrides app =
+  Task.when (app.transports |> Map.contains "WebTransport") do
+    case app.bindHost |> Maybe.andThen Web.validateBindHost of
+      Just reason -> Task.throw [fmt|Application.withHost: #{reason}|]
+      Nothing -> pass
+    case app.bindPort |> Maybe.andThen Web.validateBindPort of
+      Just reason -> Task.throw [fmt|Application.withPort: #{reason}|]
+      Nothing -> pass
+
+
 -- | Run application with a provided EventStore.
 --
 -- Use this when you need to provide your own EventStore instance.
@@ -969,6 +983,7 @@ run app =
 -- 6. Runs each transport once with combined endpoints
 runWith :: EventStore Json.Value -> Application -> Task Text Unit
 runWith eventStore app = do
+  validateStaticBindOverrides app
   -- Resolve file upload (only EvaluatedFileUpload supported - DeferredFileUpload requires run)
   (maybeFileUploadSetup, fileUploadCleanup) <- case app.fileUploadFactory of
     Nothing -> Task.yield (Nothing, Task.yield ())
