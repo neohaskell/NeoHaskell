@@ -10,7 +10,7 @@ codemap/signatures/ · type-directed search: ./dev api "<type>"
 
 ## Task
 
-- `yield :: value -> Task w value`  <!-- 602 call sites -->
+- `yield :: value -> Task w value`  <!-- 601 call sites -->
 - `ignoreError :: Task err Unit -> Task w Unit`  <!-- 242 call sites -->
 - `mapError :: (err1 -> err2) -> Task err1 value -> Task err2 value`  <!-- 229 call sites -->
 - `throw :: err -> Task err w`  <!-- 216 call sites -->
@@ -117,9 +117,9 @@ codemap/signatures/ · type-directed search: ./dev api "<type>"
 ## Bytes
 
 - `unwrap :: Bytes -> ByteString`  <!-- 50 call sites -->
-- `fromLegacy :: ByteString -> Bytes`  <!-- 33 call sites -->
+- `fromLegacy :: ByteString -> Bytes`  <!-- 32 call sites -->
 - `toLazyLegacy :: Bytes -> LazyByteString`  <!-- 17 call sites -->
-- `length :: Bytes -> Int`  <!-- 4 call sites -->
+- `length :: Bytes -> Int`  <!-- 3 call sites -->
   - `>>> [1, 2, 3] |> Bytes.pack |> Bytes.length` → `3`
 - `pack :: [Word8] -> Bytes`  <!-- 3 call sites -->
 - `toBase64 :: Bytes -> Bytes`  <!-- 3 call sites -->
@@ -167,6 +167,19 @@ codemap/signatures/ · type-directed search: ./dev api "<type>"
 - `load :: HasParser config => Task Text config`  <!-- 1 call sites -->
 - `secret :: FieldDef -> FieldDef`  <!-- 1 call sites -->
 
+## LinkedList
+
+- `map :: (a -> b) -> LinkedList a -> LinkedList b`  <!-- 15 call sites -->
+- `reverse :: LinkedList a -> LinkedList a`  <!-- 7 call sites -->
+- `any :: (a -> Bool) -> LinkedList a -> Bool`  <!-- 6 call sites -->
+- `filter :: (a -> Bool) -> LinkedList a -> LinkedList a`  <!-- 5 call sites -->
+- `length :: LinkedList a -> Int`  <!-- 3 call sites -->
+- `find :: (a -> Bool) -> LinkedList a -> Maybe a`  <!-- 2 call sites -->
+- `get :: Int -> LinkedList a -> Maybe a`  <!-- 2 call sites -->
+- `head :: LinkedList a -> Maybe a`  <!-- 2 call sites -->
+- `all :: (a -> Bool) -> LinkedList a -> Bool`  <!-- 1 call sites -->
+- `concat :: LinkedList (LinkedList a) -> LinkedList a`  <!-- 1 call sites -->
+
 ## Uuid
 
 - `generate :: Task w Uuid`  <!-- 22 call sites -->
@@ -177,19 +190,6 @@ codemap/signatures/ · type-directed search: ./dev api "<type>"
 - `generateV5 :: Uuid -> Text -> Uuid`  <!-- 3 call sites -->
   - `>>> Uuid.fromText "6ba7b810-9dad-11d1-80b4-00c04fd430c8" |> Maybe.getOrDie |> (\ns -> Uuid.generateV5 ns "python.org") |> Uuid.toText` → `"886313e1-3b8a-5372-9b90-0c9aee199e5d"`
 - `fromLegacy :: UUID -> Uuid`  <!-- 2 call sites -->
-
-## LinkedList
-
-- `map :: (a -> b) -> LinkedList a -> LinkedList b`  <!-- 15 call sites -->
-- `any :: (a -> Bool) -> LinkedList a -> Bool`  <!-- 6 call sites -->
-- `filter :: (a -> Bool) -> LinkedList a -> LinkedList a`  <!-- 5 call sites -->
-- `reverse :: LinkedList a -> LinkedList a`  <!-- 5 call sites -->
-- `length :: LinkedList a -> Int`  <!-- 3 call sites -->
-- `find :: (a -> Bool) -> LinkedList a -> Maybe a`  <!-- 2 call sites -->
-- `get :: Int -> LinkedList a -> Maybe a`  <!-- 2 call sites -->
-- `head :: LinkedList a -> Maybe a`  <!-- 2 call sites -->
-- `all :: (a -> Bool) -> LinkedList a -> Bool`  <!-- 1 call sites -->
-- `concat :: LinkedList (LinkedList a) -> LinkedList a`  <!-- 1 call sites -->
 
 ## AsyncTask
 

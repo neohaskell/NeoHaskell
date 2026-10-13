@@ -75,6 +75,7 @@ sendRaw method options body = do
 
 
 {-# NOINLINE rawManager #-}
+-- | Isolate direct byte requests from the library global proxy-aware manager.
 rawManager :: HttpClient.Manager
 rawManager = GhcUnsafe.unsafePerformIO do
   HttpClient.newManager (HttpClient.managerSetProxy HttpClient.noProxy HttpTls.tlsManagerSettings)
@@ -95,6 +96,7 @@ sendRawInternalIO method options body = do
     (readLimitedResponse method options)
 
 
+-- | HEAD bypasses advertised length; delivered chunks still obey the byte cap.
 readLimitedResponse ::
   Method ->
   Http.Request ->

@@ -432,6 +432,7 @@ sendSecureRawIO method options body = do
     GhcEither.Right responseResult -> pure responseResult
 
 
+-- | HEAD advertises an unsent body; other methods retain the early header guard.
 readLimitedResponse ::
   Method -> Request -> HttpClient.Response HttpClient.BodyReader -> GhcIO.IO (Result Error (Response Bytes))
 readLimitedResponse method options rawResponse = do
@@ -458,6 +459,7 @@ readBodyFully :: Maybe GhcInt.Int -> HttpClient.BodyReader -> GhcIO.IO (Result E
 readBodyFully limit reader = readBodyChunks limit reader 0 []
 
 
+-- | Check remaining capacity before retaining a chunk; concatenate once at EOF.
 readBodyChunks ::
   Maybe GhcInt.Int -> HttpClient.BodyReader -> GhcInt.Int -> [ByteString] -> GhcIO.IO (Result Error ByteString)
 readBodyChunks limit reader received chunks = do
