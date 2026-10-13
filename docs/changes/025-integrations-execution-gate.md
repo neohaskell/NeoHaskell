@@ -25,7 +25,7 @@ Oura SyncAll tests retain a stored refresh token and resource Unauthorized failu
 
 | ID | Behavior | Proving test | Level | Boundary |
 |----|----------|--------------|-------|----------|
-| C1 | Actual local runner fails when the integration suite fails | `script:scripts/test-integrations-gate#AllTestsRunner.test_integrations_failure_is_not_skipped` | unit | none |
+| C1 | Actual local runner fails when the integration suite fails | `script:scripts/test-integrations-gate-red#` | unit | none |
 | C2 | Actual local runner executes exactly one whole integration suite and preserves service/Hurl execution | `script:scripts/test-integrations-gate#AllTestsRunner.test_whole_integrations_suite_is_executed` | unit | none |
 | C3 | Linux gate requires the complete integration job and retains its execution report | `script:scripts/test-integrations-gate#IntegrationWorkflows.test_linux_suite_is_required` | unit | none |
 | C4 | macOS matrix and change triggers include integrations | `script:scripts/test-integrations-gate#IntegrationWorkflows.test_macos_matrix_runs_whole_suite` | unit | none |

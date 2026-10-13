@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$(dirname "$0")/.."
+exec scripts/with-toolchain runghc -package=hspec -package=process scripts/IntegrationsGateSpec.hs
