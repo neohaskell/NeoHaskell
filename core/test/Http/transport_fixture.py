@@ -12,6 +12,8 @@ import json
 import os
 from pathlib import Path
 import ssl
+import socket
+import sys
 import subprocess
 import tempfile
 import threading
@@ -71,7 +73,18 @@ class Fixture:
                     self.wfile.write(data)
                     self.wfile.flush()
                     owner.event(kind=kind, method="FLUSHED", path=self.path)
-                    owner.release.wait(15)
+                    started = time.monotonic()
+                    self.connection.settimeout(0.1)
+                    while not owner.release.is_set() and time.monotonic() - started < 15:
+                        try:
+                            data = self.connection.recv(1)
+                        except socket.timeout:
+                            continue
+                        if not data:
+                            owner.event(kind=kind, method="CLOSED", path=self.path,
+                                        elapsed=time.monotonic() - started)
+                            return
+                    owner.event(kind=kind, method="SOURCE_EOF", path=self.path)
                     return
                 body = b"proxy" if kind == "proxy" else b"1234"
                 if self.path == "/empty":
@@ -229,7 +242,7 @@ P.putStrLn "SECURE_COMPLETE"
     print("NOT PROVED: secure trusted-origin success; TLS trust is a separate prerequisite")
 
 
-def body_case(fixture, directory):
+def body_case(fixture, directory, secure_internal=False):
     port = fixture.start("origin")
     text = f"""
 let raw method path cap = Task.runResult (R.sendRaw method (H.withMaxResponseSize cap (H.withUrl (T.fromLinkedList ("http://127.0.0.1:{port}" P.++ path)) H.request)) B.empty)
@@ -247,18 +260,51 @@ P.putStrLn "CHUNKED_COMPLETE"
 Timeout.timeout 2000000 (raw H.Get "/paced-close" 4) P.>>= P.print
 P.putStrLn "UNKNOWN_COMPLETE"
 """
-    output = repl(directory, "body", text, clean_env())
+    if secure_internal:
+        text = ":module + *Http.Client\n" + text.replace(
+            "Task.runResult (R.sendRaw method", "sendSecureRawIO method").replace(
+            ")) B.empty)", ")) B.empty")
+    output = repl(directory, "secure-internal-body" if secure_internal else "body", text, clean_env())
     control_output = output.split("BODY_CONTROLS_COMPLETE")[0]
     assert all(f'("{name}",True)' in control_output for name in ("EXACT", "ZERO", "HEAD", "ZERO_REJECTED")), "exact/empty/HEAD/zero-builder control failed"
     for path in ("/paced-chunked", "/paced-close"):
         assert any(e["method"] == "FLUSHED" and e["path"] == path for e in fixture.events), "source never flushed"
     assert output.count("Just (Err (ResponseTooLarge 4))") == 2, "REGRESSION_ASSERT:body-read-awaits-EOF"
-    print("PASS: raw exact/empty/HEAD, zero-builder rejection and unknown/chunked early cutoff")
+    for path in ("/paced-chunked", "/paced-close"):
+        assert any(e["method"] == "CLOSED" and e["path"] == path and e["elapsed"] < 2
+                   for e in fixture.events), "response did not close before the source deadline"
+        assert not any(e["method"] == "SOURCE_EOF" and e["path"] == path
+                       for e in fixture.events), "source completed before client rejection"
+    print("PASS: exact/empty/HEAD, zero-builder rejection, early cutoff and socket close")
+    if secure_internal:
+        print("DIAGNOSTIC ONLY: real secure reader over plaintext; public HTTPS trust not exercised")
+
+
+def public_trust_case(fixture, directory):
+    if sys.platform == "darwin" or sys.platform == "win32":
+        print("UNSUPPORTED: pinned native trust loader has no isolated environment bundle override")
+        raise SystemExit(77)
+    context, cert = certificate(directory)
+    port = fixture.start("tls", context)
+    env = clean_env()
+    env["SYSTEM_CERTIFICATE_PATH"] = str(cert)
+    text = f"""
+controlManager <- HC.newManager (HC.managerSetProxy HC.noProxy HT.tlsManagerSettings)
+controlRequest <- HC.parseRequest "https://localhost:{port}/library-control"
+control <- E.try @HC.HttpException (HC.httpLbs controlRequest controlManager)
+P.print ("SYSTEM_BUNDLE_CONTROL" :: P.String, P.either (P.const P.False) (\\response -> HC.responseStatus response P.== Status.status200 P.&& HC.responseBody response P.== "1234") control)
+public <- Task.runResult (H.sendSecure H.Get (H.withUrl "https://localhost:{port}/public-trusted" H.request) B.empty)
+P.print ("PUBLIC_TRUSTED" :: P.String, case public of Result.Ok response -> response.statusCode P.== 200 P.&& response.body P.== T.toBytes "1234"; Result.Err _ -> P.False)
+"""
+    output = repl(directory, "public-trust", text, env)
+    assert '("SYSTEM_BUNDLE_CONTROL",True)' in output, "isolated system bundle positive control failed"
+    assert '("PUBLIC_TRUSTED",True)' in output, "REGRESSION_ASSERT:public-trust-store-not-loaded"
+    print("PASS: actual public manager accepts the isolated native system bundle")
 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("mode", choices=("tls", "proxy", "body"))
+    parser.add_argument("mode", choices=("tls", "proxy", "body", "secure-internal-body", "public-trust"))
     parser.add_argument("--evidence-dir", type=Path)
     args = parser.parse_args()
     with tempfile.TemporaryDirectory(prefix="nh-http-fixture-") as temp:
@@ -266,7 +312,11 @@ def main():
         directory.mkdir(parents=True, exist_ok=True)
         fixture = Fixture(directory)
         try:
-            {"tls": tls_case, "proxy": proxy_case, "body": body_case}[args.mode](fixture, directory)
+            if args.mode == "secure-internal-body":
+                body_case(fixture, directory, secure_internal=True)
+            else:
+                {"tls": tls_case, "proxy": proxy_case, "body": body_case,
+                 "public-trust": public_trust_case}[args.mode](fixture, directory)
         finally:
             fixture.close()
             (directory / "server-events.json").write_text(json.dumps(fixture.events, indent=2))

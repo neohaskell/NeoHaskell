@@ -48,8 +48,19 @@ red identity. Formal red evidence requires the exact assertion below.
 | C5 | Test-manager trusted TLS succeeds, untrusted CA/wrong hostname fail, public untrusted TLS fails (not public trusted success) | `script:core/test/Http/transport_fixture.py#tls` | integration | http:real |
 | C6 | Fresh-process lower/uppercase env proxy traps work, actual raw request reaches origin and actual secure CONNECT avoids trap | `script:core/test/Http/transport_fixture.py#proxy` | integration | http:real |
 | C7 | Raw exact/empty/HEAD and existing zero-builder rejection controls pass; chunked and unknown-length reads reject before EOF | `script:core/test/Http/transport_fixture.py#body` | integration | http:real |
+| C8 | On a supported Unix trust loader, the real public HTTPS manager accepts an isolated system bundle after a library positive control | `script:core/test/Http/transport_fixture.py#public-trust` | integration | http:real |
+| C9 | The internal secure reader rejects chunked/unknown-length bodies before EOF and closes the actual socket (plaintext diagnostic, not public TLS) | `script:core/test/Http/transport_fixture.py#secure-internal-body` | integration | http:real |
 
 ### Required additional criteria before implementation
+
+C8 requires the pinned Unix trust-loader capability: `SYSTEM_CERTIFICATE_PATH`
+selects the fixture bundle in a fresh process. The pinned macOS loader uses
+Keychains and has no environment-bundle override; macOS/Windows return exit77,
+which is unsupported evidence, never a passing or skipped-green criterion.
+`SSL_CERT_FILE` is not this dependency's override. C9 invokes the actual private
+secure reader over a plaintext loopback socket to isolate read/close behavior;
+it cannot stand in for public secure request success. Both body modes observe
+peer closure and require it before the source EOF latch/deadline.
 
 The script uses Python stdlib loopback fixtures and invokes `./dev exec cabal
 repl` for the actual Haskell request path. It checks clean compilation and
