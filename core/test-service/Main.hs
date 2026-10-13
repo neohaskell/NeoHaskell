@@ -44,6 +44,7 @@ import Service.Transport.Mcp.JsonRpcSpec qualified
 import Service.Transport.Mcp.ProtocolSpec qualified
 import Service.Transport.Mcp.ResponseSpec qualified
 import Service.Transport.WebSpec qualified
+import Service.Transport.Web.BindSpec qualified
 import Service.Transport.Web.HealthCheckSpec qualified
 import Service.Transport.Web.ReadinessRouteSpec qualified
 import Service.Command.AuthSpec qualified
@@ -99,6 +100,7 @@ main = Hspec.hspec do
   Hspec.describe "Service.Transport.Mcp.Protocol" Service.Transport.Mcp.ProtocolSpec.spec
   Hspec.describe "Service.Transport.Mcp.Response" Service.Transport.Mcp.ResponseSpec.spec
   Hspec.describe "Service.Transport.Web" Service.Transport.WebSpec.spec
+  Hspec.describe "Service.Transport.Web.Bind" Service.Transport.Web.BindSpec.spec
   Hspec.describe "Health Check" Service.Transport.Web.HealthCheckSpec.spec
   Hspec.describe "Service.Transport.Web.ReadinessRoute" Service.Transport.Web.ReadinessRouteSpec.spec
   Hspec.describe "Service.Command.Auth" Service.Command.AuthSpec.spec

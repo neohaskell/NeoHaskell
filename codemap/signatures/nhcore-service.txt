@@ -123,7 +123,7 @@ tenantOnly :: (query -> Text) -> Maybe UserClaims -> query -> Maybe AccessError
 
 module Service.Application
 ApiInfo :: Text -> Text -> Text -> ApiInfo
-Application :: Maybe ConfigSpec -> Maybe EventStoreFactory -> Maybe QueryObjectStoreConfigValue -> Array QueryDefinition -> QueryRegistry -> Array ServiceRunner -> Map Text TransportValue -> Map Text QueryEndpointHandler -> Array OutboundRunner -> Array OutboundLifecycleRunner -> Array Inbound -> Maybe WebAuthFactory -> Maybe OAuth2Setup -> Maybe FileUploadFactory -> Maybe SecretStore -> Maybe ApiInfo -> Maybe CorsConfig -> Maybe HealthCheckConfig -> Maybe DispatcherConfig -> Maybe CorsFactory -> Maybe ApiInfoFactory -> Maybe HealthCheckFactory -> Maybe DispatcherConfigFactory -> Maybe SecretStoreFactory -> Array DeferredOutboundLifecycleReg -> Array DeferredInboundReg -> Array IntegrationRegistrationEntry -> Maybe ReadinessConfig -> Application
+Application :: Maybe ConfigSpec -> Maybe EventStoreFactory -> Maybe QueryObjectStoreConfigValue -> Array QueryDefinition -> QueryRegistry -> Array ServiceRunner -> Map Text TransportValue -> Map Text QueryEndpointHandler -> Array OutboundRunner -> Array OutboundLifecycleRunner -> Array Inbound -> Maybe WebAuthFactory -> Maybe OAuth2Setup -> Maybe FileUploadFactory -> Maybe SecretStore -> Maybe ApiInfo -> Maybe CorsConfig -> Maybe HealthCheckConfig -> Maybe DispatcherConfig -> Maybe CorsFactory -> Maybe ApiInfoFactory -> Maybe HealthCheckFactory -> Maybe DispatcherConfigFactory -> Maybe SecretStoreFactory -> Array DeferredOutboundLifecycleReg -> Array DeferredInboundReg -> Array IntegrationRegistrationEntry -> Maybe ReadinessConfig -> Maybe Text -> Maybe Int -> Application
 DispatcherConfig :: Int -> Int -> Bool -> Int -> Int -> Maybe Int -> Int -> Int -> DispatcherConfig
 FileUploadSetup :: InternalFileUploadConfig -> BlobStore -> FileStateStore -> FileUploadSetup
 HealthCheckConfig :: Text -> HealthCheckConfig
@@ -140,6 +140,8 @@ WebAuthSetup :: Text -> AuthOverrides -> WebAuthSetup
 [apiVersion] :: ApiInfo -> Text
 [authOverrides] :: WebAuthSetup -> AuthOverrides
 [authServerUrl] :: WebAuthSetup -> Text
+[bindHost] :: Application -> Maybe Text
+[bindPort] :: Application -> Maybe Int
 [blobStore] :: FileUploadSetup -> BlobStore
 [channelWriteTimeoutMs] :: DispatcherConfig -> Int
 [configSpec] :: Application -> Maybe ConfigSpec
@@ -224,12 +226,14 @@ withDispatcherConfig :: Typeable config => (config -> DispatcherConfig) -> Appli
 withEventStore :: (Typeable config, EventStoreConfig eventStoreConfig) => (config -> eventStoreConfig) -> Application -> Application
 withFileUpload :: Typeable config => (config -> FileUploadConfig) -> Application -> Application
 withHealthCheck :: Typeable config => (config -> Text) -> Application -> Application
+withHost :: Text -> Application -> Application
 withInbound :: Typeable config => (config -> Inbound) -> Application -> Application
 withIntegration :: (Integration request, Typeable request, Typeable (Response request), Inspectable request) => Application -> Application
 withOAuth2Provider :: Typeable config => (config -> OAuth2ProviderConfig) -> Application -> Application
 withOAuth2StateKey :: Text -> Application -> Application
 withOutbound :: (OutboundIntegration handler, entity ~ EntityOf handler, event ~ EventOf entity, event ~ HandledEvent handler, FromJSON entity, FromJSON event, FromJSON (EventOf entity), Inspectable entity, Default entity, Entity entity) => Application -> Application
 withOutboundLifecycle :: (Typeable config, Inspectable entity) => (config -> OutboundConfig state) -> Application -> Application
+withPort :: Int -> Application -> Application
 withQuery :: forall query (queryName :: Symbol) (entities :: [Type]). (Query query, ToSchema query, ToJSON query, FromJSON query, queryName ~ NameOf query, entities ~ EntitiesOf query, KnownSymbol queryName, WireEntities entities query) => Application -> Application
 withQueryEndpoint :: Text -> QueryEndpointHandler -> Application -> Application
 withQueryObjectStore :: QueryObjectStoreConfig config => config -> Application -> Application
@@ -248,7 +252,7 @@ withInbound :: Inbound -> (Array OutboundRunner, Array OutboundLifecycleRunner, 
 withOutboundLifecycle :: Inspectable entity => OutboundConfig state -> (Array OutboundRunner, Array OutboundLifecycleRunner, Array Inbound) -> (Array OutboundRunner, Array OutboundLifecycleRunner, Array Inbound)
 
 module Service.Application.Transports
-runTransports :: Map Text TransportValue -> Map Text (Map Text EndpointHandler) -> Map Text (Map Text EndpointSchema) -> Map Text QueryEndpointHandler -> Map Text EndpointSchema -> Maybe AuthEnabled -> Maybe OAuth2Config -> Maybe FileUploadEnabled -> Maybe ApiInfo -> Maybe CorsConfig -> Maybe HealthCheckConfig -> Maybe IntegrationStatus -> Maybe ReadinessConfig -> QuerySubscriber -> Task Text Unit
+runTransports :: Map Text TransportValue -> Map Text (Map Text EndpointHandler) -> Map Text (Map Text EndpointSchema) -> Map Text QueryEndpointHandler -> Map Text EndpointSchema -> Maybe AuthEnabled -> Maybe OAuth2Config -> Maybe FileUploadEnabled -> Maybe ApiInfo -> Maybe CorsConfig -> Maybe HealthCheckConfig -> Maybe IntegrationStatus -> Maybe ReadinessConfig -> Maybe Text -> Maybe Int -> QuerySubscriber -> Task Text Unit
 
 module Service.Application.Types
 ApiInfo :: Text -> Text -> Text -> ApiInfo
@@ -1778,7 +1782,7 @@ FileUploadEnabled :: FileUploadRoutes -> Int64 -> FileUploadEnabled
 HealthCheckConfig :: Text -> HealthCheckConfig
 IntegrationStatus :: !Text -> !Array Text -> IntegrationStatus
 OAuth2Config :: OAuth2Routes -> (Text -> Task Text Unit) -> OAuth2Config
-WebTransport :: Int -> Int -> Maybe AuthEnabled -> Maybe OAuth2Config -> Maybe FileUploadEnabled -> Maybe ApiInfo -> Maybe CorsConfig -> Maybe HealthCheckConfig -> Maybe IntegrationStatus -> Maybe ReadinessConfig -> Maybe (Task Text Readiness) -> WebTransport
+WebTransport :: Int -> Text -> Int -> Maybe AuthEnabled -> Maybe OAuth2Config -> Maybe FileUploadEnabled -> Maybe ApiInfo -> Maybe CorsConfig -> Maybe HealthCheckConfig -> Maybe IntegrationStatus -> Maybe ReadinessConfig -> Maybe (Task Text Readiness) -> WebTransport
 [allowedHeaders] :: CorsConfig -> Array Text
 [allowedMethods] :: CorsConfig -> Array Text
 [allowedOrigins] :: CorsConfig -> Array Text
@@ -1792,6 +1796,7 @@ WebTransport :: Int -> Int -> Maybe AuthEnabled -> Maybe OAuth2Config -> Maybe F
 [fileUploadRoutes] :: FileUploadEnabled -> FileUploadRoutes
 [healthCheck] :: WebTransport -> Maybe HealthCheckConfig
 [healthPath] :: HealthCheckConfig -> Text
+[host] :: WebTransport -> Text
 [integrationStatus] :: WebTransport -> Maybe IntegrationStatus
 [jwksManager] :: AuthEnabled -> JwksManager
 [maxAge] :: CorsConfig -> Maybe Int
@@ -1803,6 +1808,7 @@ WebTransport :: Int -> Int -> Maybe AuthEnabled -> Maybe OAuth2Config -> Maybe F
 [readinessConfig] :: WebTransport -> Maybe ReadinessConfig
 [readinessProbe] :: WebTransport -> Maybe (Task Text Readiness)
 [routes] :: OAuth2Config -> OAuth2Routes
+applyBindOverrides :: Maybe Text -> Maybe Int -> WebTransport -> WebTransport
 buildHealthResponse :: WebTransport -> ByteString
 data AuthEnabled
 data CorsConfig
@@ -1811,6 +1817,7 @@ data HealthCheckConfig
 data IntegrationStatus
 data OAuth2Config
 data WebTransport
+hostPreference :: Text -> HostPreference
 instance Data.Record.Anon.Plugin.Internal.Runtime.KnownHash "WebTransport"
 instance Service.Transport.Transport Service.Transport.Web.WebTransport
 isHealthCheckPath :: Text -> WebTransport -> Bool
@@ -1820,6 +1827,9 @@ respondReadiness :: WebTransport -> (Response -> Task Text ResponseReceived) -> 
 server :: WebTransport
 unauthorizedResponse :: AccessError -> (Status, Text)
 unauthorizedResponseBody :: Text -> Text
+validateBindHost :: Text -> Maybe Text
+validateBindPort :: Int -> Maybe Text
+warpSettings :: WebTransport -> Settings
 
 module Service.Transport.Web.BuiltinSchemas
 fileUploadEndpointSchemas :: Bool -> Map Text EndpointSchema
