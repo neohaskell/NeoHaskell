@@ -40,6 +40,7 @@ import Text (Text)
 import Maybe (Maybe (..))
 import Map qualified
 import Json qualified
+import LinkedList qualified
 import ToText (toText)
 
 
@@ -217,7 +218,7 @@ localTokenFailure refreshCount malformed request respond = do
         ]
   let validRequest = GhcWai.requestMethod request == "POST"
         && GhcWai.pathInfo request == ["oauth", "token"]
-        && form == expectedForm
+        && LinkedList.sort form == LinkedList.sort expectedForm
   Task.runOrPanic (ConcurrentVar.modify (+ 1) refreshCount :: Task Text ())
   Task.runOrPanic (ConcurrentVar.modify (\bad -> bad || not validRequest) malformed :: Task Text ())
   let status = if validRequest then GhcHTTP.status400 else GhcHTTP.status404
