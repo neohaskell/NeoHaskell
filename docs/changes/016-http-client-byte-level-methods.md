@@ -38,12 +38,10 @@ for Core, and combine both reports for runtime-criterion validation. Missing
 reports must fail, not silently remove the HTTP examples. `./dev workflow-check`
 contains the positive and negative report-wiring controls.
 
-Pending explicit API decision: the existing public plumbing helper
+The existing public plumbing helper remains supported with its actual raw type:
 `applyMethodAndBody :: Method -> Bytes -> Network.HTTP.Client.Request ->
-Network.HTTP.Client.Request` is omitted from the original signature promise.
-The smallest non-breaking choice is to declare it accurately here; hiding it
-requires a separately approved removal/breaking declaration. No decision has
-been recorded, so the signatures block below is not yet amended for the helper.
+Network.HTTP.Client.Request`. It is retained, not removed or redesigned.
+The generated signature vocabulary abbreviates that external request type.
 
 ```diff signatures
 + Http.Client: data Method
@@ -54,6 +52,7 @@ been recorded, so the signatures block below is not yet amended for the helper.
 + Http.Client: Patch :: Method
 + Http.Client: Delete :: Method
 + Http.Client: methodName :: Method -> Text
++ Http.Client: applyMethodAndBody :: Method -> Bytes -> Request -> Request
 + Http.Client: sendSecure :: Method -> Request -> Bytes -> Task Error (Response Bytes)
 + Http.Client.Internal: sendRaw :: Method -> Request -> Bytes -> Task Error (Response Bytes)
 ```

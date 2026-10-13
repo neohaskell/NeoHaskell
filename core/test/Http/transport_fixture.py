@@ -7,6 +7,7 @@ The TLS control injects trust into a test manager, not the public cached manager
 """
 import argparse
 import contextlib
+import gzip
 import http.server
 import json
 import os
@@ -89,8 +90,17 @@ class Fixture:
                 body = b"proxy" if kind == "proxy" else b"1234"
                 if self.path == "/empty":
                     body = b""
+                if self.path == "/over":
+                    body = b"12345"
+                if self.path == "/compressed":
+                    body = gzip.compress(b"x" * 128)
                 self.send_response(200)
-                length = 10000 if self.path == "/head" else len(body)
+                length = 10000 if self.path in ("/head", "/advertised") else len(body)
+                if self.path == "/compressed":
+                    self.send_header("Content-Encoding", "gzip")
+                if self.path == "/advertised":
+                    self.send_header("Connection", "close")
+                    self.close_connection = True
                 self.send_header("Content-Length", str(length))
                 self.send_header("X-Fixture", kind)
                 self.end_headers()
@@ -249,6 +259,12 @@ let raw method path cap = Task.runResult (R.sendRaw method (H.withMaxResponseSiz
 exact <- raw H.Get "/exact" 4
 empty <- raw H.Get "/empty" 1
 headOnly <- raw H.Head "/head" 1
+oversized <- raw H.Get "/over" 4
+advertised <- raw H.Get "/advertised" 4
+decoded <- raw H.Get "/compressed" 64
+P.print ("OVER" :: P.String, case oversized of Result.Err (H.ResponseTooLarge 4) -> P.True; _ -> P.False)
+P.print ("ADVERTISED" :: P.String, case advertised of Result.Err (H.ResponseTooLarge 4) -> P.True; _ -> P.False)
+P.print ("DECOMPRESSED" :: P.String, case decoded of Result.Err (H.ResponseTooLarge 64) -> P.True; _ -> P.False)
 zeroBuilder <- E.try @E.ErrorCall (E.evaluate (H.withMaxResponseSize 0 H.request))
 P.print ("ZERO_REJECTED" :: P.String, P.either (P.const P.True) (P.const P.False) zeroBuilder)
 P.print ("EXACT" :: P.String, case exact of Result.Ok response -> B.length response.body P.== 4; Result.Err _ -> P.False)
@@ -266,7 +282,7 @@ P.putStrLn "UNKNOWN_COMPLETE"
             ")) B.empty)", ")) B.empty")
     output = repl(directory, "secure-internal-body" if secure_internal else "body", text, clean_env())
     control_output = output.split("BODY_CONTROLS_COMPLETE")[0]
-    assert all(f'("{name}",True)' in control_output for name in ("EXACT", "ZERO", "HEAD", "ZERO_REJECTED")), "exact/empty/HEAD/zero-builder control failed"
+    assert all(f'("{name}",True)' in control_output for name in ("EXACT", "ZERO", "HEAD", "ZERO_REJECTED", "OVER", "ADVERTISED", "DECOMPRESSED")), "exact/empty/HEAD/zero-builder control failed"
     for path in ("/paced-chunked", "/paced-close"):
         assert any(e["method"] == "FLUSHED" and e["path"] == path for e in fixture.events), "source never flushed"
     assert output.count("Just (Err (ResponseTooLarge 4))") == 2, "REGRESSION_ASSERT:body-read-awaits-EOF"

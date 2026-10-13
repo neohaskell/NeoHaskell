@@ -1,6 +1,7 @@
 # Change 022: Enforce the byte-level HTTP transport guarantees
 
-Proposed remediation for #905, not an approved implementation. Byte-level
+Approved existing-guarantee remediation for #905 (NickSeagull,
+[Gate 1](https://github.com/neohaskell/NeoHaskell/pull/905#issuecomment-6150721779)). Byte-level
 clients must verify HTTPS peers, stop reading oversized bodies before EOF,
 and bypass environment proxies. Existing JSON APIs are outside this change.
 
@@ -17,9 +18,9 @@ new-extension-point: false
 ## Contract delta
 
 No new public HTTP type or method. Preserve the signatures and default values
-of `sendSecure`, `getSecure`, `sendRaw` and `getRaw`. The helper export decision
-is recorded in Change 016 and requires explicit maintainer choice; this draft
-does not authorize removing it. Existing timeout semantics remain response
+of `sendSecure`, `getSecure`, `sendRaw` and `getRaw`. The existing helper export
+is retained and accurately declared in Change 016; no public API removal or
+redesign is part of this repair. Existing timeout semantics remain response
 inactivity timeout, not a total-body deadline. Limits apply to byte-level
 responses, not every JSON request.
 
@@ -47,7 +48,7 @@ red identity. Formal red evidence requires the exact assertion below.
 | C4 | Preserve combined Core/service report wiring and its missing-report controls | `script:scripts/workflow-check#--self-test` | unit | none |
 | C5 | Test-manager trusted TLS succeeds, untrusted CA/wrong hostname fail, public untrusted TLS fails (not public trusted success) | `script:core/test/Http/transport_fixture.py#tls` | integration | http:real |
 | C6 | Fresh-process lower/uppercase env proxy traps work, actual raw request reaches origin and actual secure CONNECT avoids trap | `script:core/test/Http/transport_fixture.py#proxy` | integration | http:real |
-| C7 | Raw exact/empty/HEAD and existing zero-builder rejection controls pass; chunked and unknown-length reads reject before EOF | `script:core/test/Http/transport_fixture.py#body` | integration | http:real |
+| C7 | Raw exact/empty/HEAD, finite overflow, advertised/decompressed size and existing zero-builder rejection controls pass; chunked/unknown-length reads reject before EOF and close | `script:core/test/Http/transport_fixture.py#body` | integration | http:real |
 | C8 | On a supported Unix trust loader, the real public HTTPS manager accepts an isolated system bundle after a library positive control | `script:core/test/Http/transport_fixture.py#public-trust` | integration | http:real |
 | C9 | The internal secure reader rejects chunked/unknown-length bodies before EOF and closes the actual socket (plaintext diagnostic, not public TLS) | `script:core/test/Http/transport_fixture.py#secure-internal-body` | integration | http:real |
 
@@ -72,8 +73,8 @@ production test seam. C5 deliberately injects trust only into a test manager;
 it does not prove public trusted success. C6 isolates traversal while secure
 origin success is still blocked by trust. C7 covers raw reads only.
 
-This bounded draft is NOT final Gate 1-ready. The following remaining promises
-must become real tests and typed criteria before formal approval;
+Gate 1 authorizes repair of existing guarantees, not readiness or merge. The
+following remaining validation promises must be proved before final review;
 no placeholder, skipped test, helper-only proof, or existing suite count can
 stand in for them. Add to `core/test/Http/ClientRawSpec.hs`, suite
 `nhcore-test-core`, attest `integration / http:real` in `test-surfaces.json`.
@@ -142,7 +143,8 @@ Apps using byte-level HTTP should receive valid HTTPS responses, avoid proxy
 environment routing, and reject oversized responses without downloading the
 whole source. No app edits are proposed for existing intended APIs. `sendRaw`
 remains a trusted-caller API: loopback is guidance, not an enforced host policy.
-The undocumented public helper choice remains open. No release is claimed.
+The existing public helper is retained and declared without changing its
+signature. No release is claimed.
 
 ## ADR
 
