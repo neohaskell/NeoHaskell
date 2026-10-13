@@ -192,7 +192,7 @@ jobs:
           path: dist-newstyle
       # Tee the direct per-example output: integration criteria whose locators
       # live in nhcore-test-core are proven from this report by the criteria
-      # gate in test-service. Non-hidden filename: upload-artifact skips
+      # gate in criteria-runtime. Non-hidden filename: upload-artifact skips
       # dotfiles by default.
       - name: Run nhcore-test-core
         run: |
