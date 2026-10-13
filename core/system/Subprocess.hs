@@ -122,6 +122,7 @@ runWithTimeout timeoutSeconds executable arguments directory = do
     Just completion -> Task.yield completion
 
 
+-- | Acquire the child under masking, run the deadline, and preserve the primary exception.
 captureProcess :: Int -> System.Process.CreateProcess -> IO.IO (Maybe Completion)
 captureProcess timeoutMicros processToExecute = GhcException.mask \restore -> do
   resources <- System.Process.createProcess processToExecute
@@ -137,6 +138,7 @@ captureProcess timeoutMicros processToExecute = GhcException.mask \restore -> do
 
 -- Keep cleanup owned until it finishes, even if cancellation is repeated while
 -- waiting. The worker remains interruptible; no OS wait is masked uninterruptibly.
+-- | Wait for the owned cleanup worker without abandoning it on repeated cancellation.
 awaitProcessCleanup :: GhcAsync.Async Unit -> IO.IO (Result GhcException.SomeException Unit)
 awaitProcessCleanup worker =
   GhcException.catch
@@ -144,6 +146,7 @@ awaitProcessCleanup worker =
     (finishProcessCleanup worker)
 
 
+-- | Finish releasing resources before propagating a cancellation received during cleanup.
 finishProcessCleanup ::
   GhcAsync.Async Unit -> GhcException.SomeAsyncException -> IO.IO (Result GhcException.SomeException Unit)
 finishProcessCleanup worker cancellation = do
@@ -151,6 +154,7 @@ finishProcessCleanup worker cancellation = do
   pure (Err (GhcException.toException cancellation))
 
 
+-- | Give asynchronous cancellation precedence over synchronous cleanup failures.
 preserveProcessException :: GhcException.SomeException -> Result GhcException.SomeException Unit -> IO.IO value
 preserveProcessException original cleanup =
   case GhcException.fromException @GhcException.SomeAsyncException original of
@@ -162,6 +166,7 @@ preserveProcessException original cleanup =
         Nothing -> GhcException.throwIO original
 
 
+-- | Drain both captured streams strictly before collecting the child exit status.
 collectProcess ::
   (Maybe GhcHandle.Handle, Maybe GhcHandle.Handle, Maybe GhcHandle.Handle, System.Process.ProcessHandle) ->
   IO.IO Completion
@@ -180,12 +185,14 @@ collectProcess resources = do
     }
 
 
+-- | Finish reading a captured stream in its scoped reader thread.
 readProcessPipe :: Maybe GhcHandle.Handle -> IO.IO [Char]
 readProcessPipe handle = case handle of
   Nothing -> pure ""
   Just stream -> GhcHandle.hGetContents' stream
 
 
+-- | Stop and reap the direct child, then attempt every owned handle close.
 releaseProcess ::
   (Maybe GhcHandle.Handle, Maybe GhcHandle.Handle, Maybe GhcHandle.Handle, System.Process.ProcessHandle) ->
   IO.IO Unit
@@ -196,10 +203,12 @@ releaseProcess resources = do
       (closeProcessPipe stdoutHandle `GhcException.finally` closeProcessPipe stderrHandle))
 
 
+-- | Close a created pipe; inherited streams are represented by Nothing.
 closeProcessPipe :: Maybe GhcHandle.Handle -> IO.IO Unit
 closeProcessPipe handle = GhcFoldable.for_ handle GhcHandle.hClose
 
 
+-- | Give a live direct child one second to terminate before forced termination and reap.
 stopProcess :: System.Process.ProcessHandle -> IO.IO Unit
 stopProcess child = do
   status <- System.Process.getProcessExitCode child
@@ -216,10 +225,12 @@ stopProcess child = do
           pure ()
 
 
+-- | Recheck child completion if a termination signal races with exit.
 signalOwnedProcess :: System.Process.ProcessHandle -> IO.IO Unit -> IO.IO Unit
 signalOwnedProcess child signal = GhcException.catch signal (handleProcessSignalError child)
 
 
+-- | Accept an already reaped child, but propagate a genuine signalling failure.
 handleProcessSignalError :: System.Process.ProcessHandle -> Exception.IOError -> IO.IO Unit
 handleProcessSignalError child failure = do
   status <- System.Process.getProcessExitCode child
@@ -228,6 +239,7 @@ handleProcessSignalError child failure = do
     Nothing -> GhcException.throwIO failure
 
 
+-- | Force only the owned direct child using the platform termination API.
 forceProcess :: System.Process.ProcessHandle -> IO.IO Unit
 forceProcess child = do
 #ifdef mingw32_HOST_OS

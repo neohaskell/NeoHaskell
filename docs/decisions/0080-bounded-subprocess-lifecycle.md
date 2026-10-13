@@ -16,4 +16,4 @@ Own the direct child and readers across timeout, synchronous failure and asynchr
 
 ## Consequences
 
-Full output uses memory proportional to output. Bounded retention requires a separate explicit future contract. Security and resource review precedes implementation; local security records never enter the PR. Change023 owns executable real-pipe and PID-lifecycle regression coverage; missing reader/handle observations are not implied by PID disappearance.
+Full output uses memory proportional to output. Bounded retention requires a separate explicit future contract. Security and resource review precedes implementation; local security records never enter the PR. Change023 owns executable real-pipe and PID-lifecycle regression coverage; the held-descendant timeout test separately observes both pipe read ends closed and created threads finished/died, rather than inferring those facts from PID disappearance. Repeated cancellation is handled by an owned cleanup worker whose completion is awaited before the original asynchronous exception propagates. Kernel-uninterruptible waits remain outside a universal wall-clock guarantee.
