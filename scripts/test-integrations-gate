@@ -15,7 +15,7 @@ ROOT = Path(__file__).resolve().parent.parent
 
 
 class AllTestsRunner(unittest.TestCase):
-    def run_all(self, integrations_status):
+    def run_all(self, integrations_status, failing_suite="nhintegrations-test"):
         with tempfile.TemporaryDirectory(prefix="nh-test-all-") as directory:
             work = Path(directory)
             binaries = work / "bin"
@@ -28,7 +28,7 @@ class AllTestsRunner(unittest.TestCase):
                 "name = pathlib.Path(sys.argv[0]).name\n"
                 "with open(os.environ['FIXTURE_LOG'], 'a') as output:\n"
                 "    output.write(json.dumps([name, *sys.argv[1:]]) + '\\n')\n"
-                "if name == 'cabal' and sys.argv[1:3] == ['test', 'nhintegrations-test']:\n"
+                "if name == 'cabal' and sys.argv[1:3] == ['test', os.environ['FAILING_SUITE']]:\n"
                 "    raise SystemExit(int(os.environ['INTEGRATIONS_STATUS']))\n"
             )
             command_fixture.chmod(0o755)
@@ -42,6 +42,7 @@ class AllTestsRunner(unittest.TestCase):
                 PATH=str(binaries) + os.pathsep + os.defpath,
                 FIXTURE_LOG=str(log),
                 INTEGRATIONS_STATUS=str(integrations_status),
+                FAILING_SUITE=failing_suite,
             )
             result = subprocess.run(
                 ["bash", str(ROOT / "scripts/run-all-tests.sh"), "--require-all"],
@@ -49,6 +50,12 @@ class AllTestsRunner(unittest.TestCase):
             )
             calls = [json.loads(line) for line in log.read_text().splitlines()]
             return result, calls
+
+    def test_existing_core_failure_control(self):
+        result, calls = self.run_all(37, "nhcore-test-core")
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn(["cabal", "test", "nhcore-test-core"], calls)
+        self.assertIn(["run-tests.sh"], calls)
 
     def test_whole_integrations_suite_is_executed(self):
         result, calls = self.run_all(0)
