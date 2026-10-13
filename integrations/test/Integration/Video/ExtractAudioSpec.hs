@@ -236,6 +236,48 @@ spec = do
         Err _ -> Task.runOrPanic (textTask (Task.yield ()))
         Ok _ -> expectationFailure "Expected malformed media rejection"
 
+    it "preserves the first complete source frames in capped real audio" do
+      matched <- Task.runOrPanic (withRealMedia "ramp" \workspace -> do
+        _ <- requireConfiguredAudio VideoAudio.defaultConfig workspace
+        mediaControl ["prefix", workspace])
+      matched `shouldBe` "source-prefix matches"
+
+    it "enforces a configured exact cap on usable real audio" do
+      let config = VideoAudio.defaultConfig {maxOutputBytes = 32044}
+      audio <- Task.runOrPanic (withRealMedia "ramp" (requireConfiguredAudio config))
+      Bytes.length audio `shouldSatisfy` (\size -> size <= 32044)
+
+    it "returns a usable first frame when the cap permits only one PCM frame" do
+      let config = VideoAudio.defaultConfig {maxOutputBytes = 46}
+      audio <- Task.runOrPanic (withRealMedia "short" (requireConfiguredAudio config))
+      Bytes.length audio `shouldBe` 46
+
+    it "rejects a cap smaller than a WAV header and one complete PCM frame" do
+      let config = VideoAudio.defaultConfig {maxOutputBytes = 45}
+      outcome <- Task.runOrPanic (withRealMedia "short" (runConfiguredMedia config))
+      case outcome of
+        Err _ -> Task.runOrPanic (textTask (Task.yield ()))
+        Ok _ -> expectationFailure "Expected insufficient complete-frame budget rejection"
+
+    it "rejects malformed output even when the process reports success" do
+      outcome <- Task.runOrPanic do
+        calls <- Var.new Array.empty
+        let original = fakeRunner calls succeedingFfmpeg
+        let runner = original {run = \timeout executable arguments directory -> do
+              completion <- original.run timeout executable arguments directory
+              case Array.last arguments |> andThenPath of
+                Nothing -> Task.throw (Subprocess.ProcessError "missing fixture output path")
+                Just output -> File.writeBytes output (Bytes.pack [0x52, 0x49, 0x46, 0x46])
+                  |> Task.mapError (\_ -> Subprocess.ProcessError "malformed fixture write failed")
+              Task.yield completion}
+        ctx <- makeContext (Just videoAccess)
+        textTask (executeExtraction runner ctx (makeRequest VideoAudio.defaultConfig) |> Task.asResult)
+      case outcome of
+        Ok (Just payload) -> do
+          let encoded = Json.encodeText payload.commandData
+          Text.contains "ExtractionFailed" encoded `shouldBe` True
+        other -> expectationFailure [fmt|Expected malformed-output error command, got #{other}|]
+
 
 -- | How the fake ffmpeg behaves.
 data Scenario = Scenario
@@ -579,12 +621,16 @@ mediaPath workspace name = case Path.fromText [fmt|#{workspace}/#{name}|] of
 
 
 runRealMedia :: Text -> Task Text (Result Text Bytes)
-runRealMedia workspace = do
+runRealMedia = runConfiguredMedia VideoAudio.defaultConfig
+
+
+runConfiguredMedia :: Config -> Text -> Task Text (Result Text Bytes)
+runConfiguredMedia config workspace = do
   inputPath <- mediaPath workspace "input"
   bytes <- File.readBytes inputPath |> Task.mapError (\err -> [fmt|#{err}|])
   let access = videoAccess {retrieveFile = \_ -> Task.yield bytes}
   ctx <- makeContext (Just access)
-  result <- executeExtraction Real.realRunner ctx (makeRequest VideoAudio.defaultConfig)
+  result <- executeExtraction Real.realRunner ctx (makeRequest config)
     |> Task.asResult
   case result of
     Ok (Just payload) -> Task.yield (decodedAudio payload)
@@ -592,8 +638,12 @@ runRealMedia workspace = do
 
 
 requireRealAudio :: Text -> Task Text Bytes
-requireRealAudio workspace = do
-  result <- runRealMedia workspace
+requireRealAudio = requireConfiguredAudio VideoAudio.defaultConfig
+
+
+requireConfiguredAudio :: Config -> Text -> Task Text Bytes
+requireConfiguredAudio config workspace = do
+  result <- runConfiguredMedia config workspace
   case result of
     Err message -> Task.throw message
     Ok bytes -> do
@@ -643,6 +693,11 @@ if mode == "create":
         kind = sys.argv[2]
         if kind in ("long", "short", "empty"):
             write_wav(workspace / "input", {"long": 14400000, "short": 48000, "empty": 0}[kind])
+        elif kind == "ramp":
+            with wave.open(str(workspace / "input"), "wb") as output:
+                output.setparams((1, 2, 16000, 0, "NONE", "not compressed"))
+                cycle = b"".join(struct.pack("<h", (i % 60001) - 30000) for i in range(16000))
+                output.writeframes(cycle * 900)
         elif kind == "junk":
             (workspace / "input").write_bytes(b"not a media container")
         else:
@@ -664,6 +719,13 @@ elif mode == "validate":
     decoder = subprocess.run(["ffmpeg", "-nostdin", "-v", "error", "-i", str(path), "-f", "null", "-"], capture_output=True, timeout=5)
     assert decoder.returncode == 0, decoder.stderr.decode(errors="replace")
     print("valid nonempty PCM16", frames, len(content), end="")
+elif mode == "prefix":
+    workspace = Path(sys.argv[2])
+    with wave.open(str(workspace / "input"), "rb") as source, wave.open(str(workspace / "output.wav"), "rb") as output:
+        frames = output.getnframes()
+        assert 0 < frames < source.getnframes()
+        assert output.readframes(frames) == source.readframes(frames)
+    print("source-prefix matches", end="")
 elif mode == "cleanup":
     shutil.rmtree(Path(sys.argv[2]))
 else:

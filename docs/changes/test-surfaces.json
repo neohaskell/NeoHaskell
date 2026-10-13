@@ -249,6 +249,42 @@
       "boundary": "subprocess:real",
       "expected_examples": 1,
       "fixture": "Real ffmpeg with synthetic local PCM WAV and independent frame/decode validation"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhintegrations-test",
+      "path": "integrations/test/Integration/Video/ExtractAudioSpec.hs",
+      "match": "preserves the first complete source frames in capped real audio",
+      "boundary": "subprocess:real",
+      "expected_examples": 1,
+      "fixture": "Real ffmpeg with generated PCM source prefix and exact frame-budget validation"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhintegrations-test",
+      "path": "integrations/test/Integration/Video/ExtractAudioSpec.hs",
+      "match": "enforces a configured exact cap on usable real audio",
+      "boundary": "subprocess:real",
+      "expected_examples": 1,
+      "fixture": "Real ffmpeg with generated PCM source prefix and exact frame-budget validation"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhintegrations-test",
+      "path": "integrations/test/Integration/Video/ExtractAudioSpec.hs",
+      "match": "returns a usable first frame when the cap permits only one PCM frame",
+      "boundary": "subprocess:real",
+      "expected_examples": 1,
+      "fixture": "Real ffmpeg with generated PCM source prefix and exact frame-budget validation"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhintegrations-test",
+      "path": "integrations/test/Integration/Video/ExtractAudioSpec.hs",
+      "match": "rejects a cap smaller than a WAV header and one complete PCM frame",
+      "boundary": "subprocess:real",
+      "expected_examples": 1,
+      "fixture": "Real ffmpeg with generated PCM source prefix and exact frame-budget validation"
     }
   ]
 }
