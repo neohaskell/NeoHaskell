@@ -30,6 +30,11 @@
         "core/test-integration",
         "core/test"
       ]
+    },
+    "nhintegrations-test": {
+      "roots": [
+        "integrations/test"
+      ]
     }
   },
   "boundaries": [

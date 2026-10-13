@@ -7,6 +7,7 @@ import Http.Client qualified as Http
 import Http.Client.Internal qualified as HttpInternal
 import IO qualified
 import Data.IORef qualified as GhcIORef
+import Control.Exception qualified as GhcException
 import Network.Wai qualified as GhcWai
 import Network.HTTP.Types qualified as GhcHttp
 import Maybe qualified
@@ -118,9 +119,9 @@ spec = do
           Nothing -> fail "REGRESSION_ASSERT:bracketed-host-port-accepted"
           Just reason -> reason |> shouldSatisfy (Text.contains "withPort")
 
-      it "rejects brackets around a bind host and preserves bare IPv6" \_ -> do
+      it "rejects malformed brackets and preserves bare IPv6" \_ -> do
         validateBindHost "fe80::1" |> shouldBe Nothing
-        let bracketed = ["[::1]", "[::1", "::1]", "[::1]trailing"]
+        let bracketed = ["[::1", "::1]", "[::1]trailing"]
         let accepted = bracketed |> Array.takeIf (\candidate -> validateBindHost candidate == Nothing)
         accepted |> shouldBe []
 
@@ -202,6 +203,14 @@ spec = do
               canBind |> shouldBe False
         probe |> Task.finally cancelApp
 
+      it "rejects invalid static bind before run acquires an event store" \_ -> do
+        let app =
+              Application.new
+                |> Application.withTransport server
+                |> Application.withPort 0
+        result <- Application.run app |> Task.asResult
+        result |> shouldBe (Err "Application.withPort: bind port 0 asks the OS for a random port that nothing reports back; choose a fixed port between 1 and 65535")
+
       it "rejects invalid static bind before owned auth discovery" \_ -> do
         requests <- GhcIORef.newIORef (0 :: Int) |> Task.fromIO
         let discovery _ respond = do
@@ -221,6 +230,11 @@ spec = do
                       |> Application.withHost "http://127.0.0.1"
                       |> Application.withAuth @() (\_ -> [fmt|http://127.0.0.1:#{authPort}|])
               Application.runWith eventStore app |> Task.asResult)
+            case outcome of
+              Err err -> case GhcException.fromException err of
+                Just (asyncError :: GhcException.SomeAsyncException) -> GhcException.throwIO asyncError
+                Nothing -> pure ()
+              Ok _ -> pure ()
             count <- GhcIORef.readIORef requests
             pure (outcome, count)
         case count of

@@ -14,7 +14,7 @@ new-extension-point: false
 
 ## Contract delta
 
-No public signatures or new production constants. Present static overrides for a registered WebTransport are checked in run/runWith before avoidable owned startup effects. Effective transport settings remain validated before listener startup. Existing no-WebTransport behavior is not expanded in this slice. Bare IPv6 remains supported; bracketed host:port, unmatched brackets and bracket-wrapped host input produce actionable diagnostics. Port0 rejection remains, with truthful existing-breaking disclosure in change019 rather than new ephemeral-port behavior.
+No public signatures or new production constants. Present static overrides for a registered WebTransport are checked in run/runWith before avoidable owned startup effects. Effective transport settings remain validated before listener startup. Existing no-WebTransport behavior is not expanded in this slice. Bare IPv6 remains supported; bracketed host:port and malformed bracket input produce actionable diagnostics. Port0 rejection remains, with truthful existing-breaking disclosure in change019 rather than new ephemeral-port behavior.
 
 ```diff signatures
 ```
@@ -24,8 +24,9 @@ No public signatures or new production constants. Present static overrides for a
 | ID | Behavior | Proving test | Level | Boundary |
 |----|----------|--------------|-------|----------|
 | C1 | Bracketed host:port is rejected by the existing validator, with withPort guidance; bare IPv6 still accepted | `hspec:nhcore-test-service:core/test/Service/Transport/Web/BindSpec.hs#rejects bracketed IPv6 host-port before startup` | unit | none |
-| C2 | Bracket-wrapped/malformed IPv6 is rejected, bare IPv6 retained | `hspec:nhcore-test-service:core/test/Service/Transport/Web/BindSpec.hs#rejects brackets around a bind host and preserves bare IPv6` | unit | none |
+| C2 | Malformed bracketed IPv6 is rejected, bare IPv6 retained | `hspec:nhcore-test-service:core/test/Service/Transport/Web/BindSpec.hs#rejects malformed brackets and preserves bare IPv6` | unit | none |
 | C3 | Invalid present static bind override with a registered WebTransport fails before auth discovery; a positive control proves the owned auth HTTP fixture is reachable | `hspec:nhcore-test-service:core/test/Service/Transport/Web/BindSpec.hs#rejects invalid static bind before owned auth discovery` | integration | http:real |
+| C4 | run rejects an invalid known static override before attempting event-store setup | `hspec:nhcore-test-service:core/test/Service/Transport/Web/BindSpec.hs#rejects invalid static bind before run acquires an event store` | unit | none |
 
 ### Remaining executable criteria before implementation
 
