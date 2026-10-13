@@ -343,6 +343,33 @@
       "boundary": "http:real",
       "expected_examples": 1,
       "fixture": "Service.FileUpload.BlobStore.S3"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-service",
+      "path": "core/test/Service/FileUpload/BlobStore/S3Spec.hs",
+      "match": "rejects header-bound controls before any HTTP request",
+      "boundary": "http:real",
+      "expected_examples": 1,
+      "fixture": "Service.FileUpload.BlobStore.S3"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-service",
+      "path": "core/test/Service/FileUpload/BlobStore/S3Spec.hs",
+      "match": "rejects a wrong signing secret without storing bytes",
+      "boundary": "http:real",
+      "expected_examples": 1,
+      "fixture": "Service.FileUpload.BlobStore.S3"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-service",
+      "path": "core/test/Service/FileUpload/BlobStore/S3Spec.hs",
+      "match": "serves immediately on each owned socket without a startup delay",
+      "boundary": "http:real",
+      "expected_examples": 1,
+      "fixture": "Service.FileUpload.BlobStore.S3"
     }
   ]
 }

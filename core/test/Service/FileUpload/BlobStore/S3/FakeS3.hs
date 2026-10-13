@@ -8,15 +8,15 @@
 -- other test infrastructure, and only the S3 specs import it, so it can move
 -- with the S3 backend if the package is split.
 --
--- The signature is not verified cryptographically here (SigV4Spec covers the
--- algorithm against the AWS vectors); the fake checks that every request
--- carries the SigV4 headers and the configured access key, and can be
--- switched to reject everything with 403.
+-- Authentication is verified from the received method, path, headers and body
+-- using Core hashes/HMAC, independently of the production SigV4 module.
+-- An AWS published vector and tamper controls calibrate the verifier.
 module Service.FileUpload.BlobStore.S3.FakeS3 (
   FakeS3 (..),
   Mode (..),
   withFakeS3,
   objects,
+  verifyRequest,
 ) where
 
 import Array (Array)
@@ -28,6 +28,8 @@ import ConcurrentMap (ConcurrentMap)
 import ConcurrentMap qualified
 import ConcurrentVar (ConcurrentVar)
 import ConcurrentVar qualified
+import Crypto qualified
+import IO (IO)
 import Maybe (Maybe (..))
 import Maybe qualified
 import Task (Task)
@@ -37,6 +39,8 @@ import Text qualified
 
 -- Transport only: WAI/Warp are the HTTP server core already depends on.
 import Control.Concurrent qualified as GhcConcurrent
+import Control.Concurrent.Async qualified as GhcAsync
+import Control.Exception qualified as GhcException
 import Data.ByteString.Lazy qualified as GhcLBS
 import Data.CaseInsensitive qualified as GhcCI
 import Network.HTTP.Types qualified as GhcHTTP
@@ -60,6 +64,7 @@ data FakeS3 = FakeS3
   -- ^ @http://127.0.0.1:PORT@
   , bucket :: Text
   , accessKeyId :: Text
+  , expectedSecret :: Text
   , mode :: ConcurrentVar Mode
   , store :: ConcurrentMap Text Bytes
   -- ^ Objects by full path (@/bucket/key@) as received on the wire.
@@ -68,27 +73,32 @@ data FakeS3 = FakeS3
   }
 
 
--- | Run a fake S3 on a free loopback port for the duration of the action.
-withFakeS3 :: Text -> Text -> (FakeS3 -> Task Text Unit) -> Task Text Unit
-withFakeS3 bucket accessKeyId action = do
-  port <- getFreePort
+-- | Keep one bound loopback socket from allocation through server shutdown.
+withFakeS3 :: Text -> Text -> Text -> (FakeS3 -> Task Text Unit) -> Task Text Unit
+withFakeS3 bucket accessKeyId expectedSecret action = do
   mode <- ConcurrentVar.containing Accept
   store <- ConcurrentMap.new
   requests <- ConcurrentVar.containing Array.empty
-  let fake =
-        FakeS3
-          { port
-          , endpoint = [fmt|http://127.0.0.1:#{port}|]
-          , bucket
-          , accessKeyId
-          , mode
-          , store
-          , requests
-          }
-  serverThread <- GhcConcurrent.forkIO (GhcWarp.run port (application fake)) |> Task.fromIO
-  GhcConcurrent.threadDelay 50000 |> Task.fromIO
-  let cleanup = GhcConcurrent.killThread serverThread |> Task.fromIO
-  action fake |> Task.finally cleanup
+  Task.fromIOResult do
+    GhcException.bracket openLoopbackSocket GhcSocket.close \socket -> do
+      assignedPort <- GhcSocket.socketPort socket
+      let port = fromIntegral assignedPort
+      ready <- GhcConcurrent.newEmptyMVar
+      let fake = FakeS3
+            { port
+            , endpoint = [fmt|http://127.0.0.1:#{port}|]
+            , bucket
+            , accessKeyId
+            , expectedSecret
+            , mode
+            , store
+            , requests
+            }
+      let settings = GhcWarp.defaultSettings |> GhcWarp.setBeforeMainLoop (GhcConcurrent.putMVar ready ())
+      GhcAsync.withAsync (GhcWarp.runSettingsSocket settings socket (application fake)) \server -> do
+        GhcAsync.link server
+        GhcConcurrent.takeMVar ready
+        action fake |> Task.runResult
 
 
 -- | Current object paths, for assertions.
@@ -125,31 +135,70 @@ handle fake method path headers body = do
   mode <- ConcurrentVar.peek fake.mode
   let bucket = fake.bucket
   let bucketPrefix = [fmt|/#{bucket}/|] :: Text
-  if not (isSigned fake headers)
+  let authorized = verifyRequest fake.accessKeyId fake.expectedSecret method path headers body
+  if not authorized || mode == Forbid
     then Task.yield (xmlError GhcHTTP.status403 "AccessDenied")
-    else
-      if mode == Forbid
-        then Task.yield (xmlError GhcHTTP.status403 "AccessDenied")
-        else
-          if not (Text.startsWith bucketPrefix path)
-            then Task.yield (xmlError GhcHTTP.status404 "NoSuchBucket")
-            else dispatch fake method path body
+    else serveBucket fake bucketPrefix method path body
 
 
--- | SigV4 header-based auth always carries these three; the Credential must
--- name the configured access key.
-isSigned :: FakeS3 -> Array (Text, Text) -> Bool
-isSigned fake headers = do
-  let header name = headers |> Array.find (\(key, _) -> key == name) |> Maybe.map (\(_, value) -> value)
-  let accessKey = fake.accessKeyId
-  let expectedCredential = [fmt|AWS4-HMAC-SHA256 Credential=#{accessKey}/|] :: Text
-  let present name = case header name of
-        Nothing -> False
-        Just _ -> True
-  let authorized = case header "authorization" of
-        Nothing -> False
-        Just value -> Text.startsWith expectedCredential value && Text.contains ", Signature=" value
-  authorized && present "x-amz-date" && present "x-amz-content-sha256"
+serveBucket :: FakeS3 -> Text -> Text -> Text -> Bytes -> Task Text GhcWai.Response
+serveBucket fake bucketPrefix method path body =
+  if Text.startsWith bucketPrefix path
+    then dispatch fake method path body
+    else Task.yield (xmlError GhcHTTP.status404 "NoSuchBucket")
+
+
+-- | Independent wire verifier. This deliberately does not import the production
+-- SigV4 module; the AWS GET reference vector calibrates the canonicalization.
+verifyRequest :: Text -> Text -> Text -> Text -> Array (Text, Text) -> Bytes -> Bool
+verifyRequest accessKey secret method path headers body = do
+  let authorization = headerValue "authorization" headers
+  let attributes = authorization |> Text.dropLeft 17 |> Text.split ", "
+  let credential = attributeValue "Credential=" attributes
+  let scopeParts = credential |> Text.split "/"
+  let date = scopeParts |> Array.get 1 |> Maybe.withDefault ""
+  let region = scopeParts |> Array.get 2 |> Maybe.withDefault ""
+  let scope = [fmt|#{date}/#{region}/s3/aws4_request|]
+  let signedNames = attributeValue "SignedHeaders=" attributes
+  let names = Text.split ";" signedNames
+  let payloadHash = body |> Crypto.sha256 |> Crypto.toHex
+  let expected = wireSignature secret method path headers scope signedNames date region
+  Text.startsWith "AWS4-HMAC-SHA256 " authorization
+    && credential == [fmt|#{accessKey}/#{scope}|]
+    && not (Text.isEmpty date || Text.isEmpty region)
+    && Text.startsWith date (headerValue "x-amz-date" headers)
+    && not (Array.any (\name -> Text.isEmpty (headerValue name headers)) names)
+    && not (Array.any (\name -> not (Array.any (\signed -> name == signed) names)) ["host", "x-amz-content-sha256", "x-amz-date"])
+    && headerValue "x-amz-content-sha256" headers == payloadHash
+    && attributeValue "Signature=" attributes == expected
+
+
+headerValue :: Text -> Array (Text, Text) -> Text
+headerValue name headers =
+  headers |> Array.find (\(key, _) -> key == name) |> Maybe.map (\(_, value) -> value) |> Maybe.withDefault ""
+
+
+attributeValue :: Text -> Array Text -> Text
+attributeValue prefix attributes =
+  attributes |> Array.find (Text.startsWith prefix) |> Maybe.map (Text.dropLeft (Text.length prefix)) |> Maybe.withDefault ""
+
+
+wireSignature :: Text -> Text -> Text -> Array (Text, Text) -> Text -> Text -> Text -> Text -> Text
+wireSignature secret method path headers scope signedNames date region = do
+  let canonicalHeaders =
+        signedNames |> Text.split ";" |> Array.map (\name -> do
+          let value = headerValue name headers |> Text.words |> Text.joinWith " "
+          [fmt|#{name}:#{value}\n|]) |> Text.joinWith ""
+  let payloadHash = headerValue "x-amz-content-sha256" headers
+  let canonical = [method, path, "", canonicalHeaders, signedNames, payloadHash] |> Text.joinWith "\n"
+  let requestHash = canonical |> Text.toBytes |> Crypto.sha256 |> Crypto.toHex
+  let timestamp = headerValue "x-amz-date" headers
+  let stringToSign = ["AWS4-HMAC-SHA256", timestamp, scope, requestHash] |> Text.joinWith "\n"
+  let dateKey = Text.toBytes date |> Crypto.hmacSha256 (Text.toBytes [fmt|AWS4#{secret}|])
+  let regionKey = Text.toBytes region |> Crypto.hmacSha256 dateKey
+  let serviceKey = Text.toBytes "s3" |> Crypto.hmacSha256 regionKey
+  let signingKey = Text.toBytes "aws4_request" |> Crypto.hmacSha256 serviceKey
+  stringToSign |> Text.toBytes |> Crypto.hmacSha256 signingKey |> Crypto.toHex
 
 
 dispatch :: FakeS3 -> Text -> Text -> Bytes -> Task Text GhcWai.Response
@@ -198,17 +247,13 @@ xmlError status code =
     (GhcLBS.fromStrict ([fmt|<Error><Code>#{code}</Code></Error>|] |> Text.toBytes |> Bytes.unwrap))
 
 
--- | Bind port 0 on loopback, read the assigned port, release it.
-getFreePort :: Task Text Int
-getFreePort =
-  Task.fromIO do
-    let hints = GhcSocket.defaultHints {GhcSocket.addrSocketType = GhcSocket.Stream}
-    addrInfos <- GhcSocket.getAddrInfo (Just hints) (Just "127.0.0.1") (Just "0")
-    case addrInfos of
-      [] -> pure 19900 -- HOOK-ALLOW: IO boundary of the fake server
-      (addr : _) -> do
-        sock <- GhcSocket.openSocket addr
-        GhcSocket.bind sock (GhcSocket.addrAddress addr)
-        port <- GhcSocket.socketPort sock
-        GhcSocket.close sock
-        pure (fromIntegral port) -- HOOK-ALLOW: IO boundary of the fake server
+-- | The socket stays owned by the surrounding bracket; no release/rebind gap.
+openLoopbackSocket :: IO GhcSocket.Socket
+openLoopbackSocket =
+  GhcException.bracketOnError
+    (GhcSocket.socket GhcSocket.AF_INET GhcSocket.Stream GhcSocket.defaultProtocol)
+    GhcSocket.close
+    (\socket -> do
+      GhcSocket.bind socket (GhcSocket.SockAddrInet 0 (GhcSocket.tupleToHostAddress (127, 0, 0, 1)))
+      GhcSocket.listen socket GhcSocket.maxListenQueue
+      pure socket) -- HOOK-ALLOW: IO boundary of the owned fake server
