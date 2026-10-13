@@ -89,6 +89,16 @@ Array [0]
 []
 ```
 
+```haskell
+>>> "aGVsbG8=" |> Text.toBytes |> Bytes.fromBase64 |> Result.map Text.fromBytes
+Ok "hello"
+```
+
+```haskell
+>>> "aGVsbG8" |> Text.toBytes |> Bytes.fromBase64 |> Result.isErr
+True
+```
+
 ### Crypto
 
 ```haskell
@@ -211,7 +221,7 @@ Set (fromList [1,2,3])
 ### Service.FileUpload.BlobStore.S3
 
 ```haskell
->>> isDnsBucketName "my-bucket"
+>>> isDnsBucketName "my-bucket.v2"
 True
 ```
 
@@ -220,11 +230,39 @@ True
 False
 ```
 
+```haskell
+>>> isDnsBucketName "a..b"
+False
+```
+
 ### Service.FileUpload.BlobStore.S3.SigV4
 
 ```haskell
 >>> Text.toBytes "" |> sha256Hex
 "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+```
+
+## outbound-integrations
+
+### Integration.Video.ExtractAudio
+
+```haskell
+>>> defaultConfig.timeoutSeconds
+180
+```
+
+```haskell
+>>> defaultConfig.sampleRateHz
+16000
+```
+
+### Integration.Video.ExtractAudio.Internal
+
+```haskell
+>>> import Array qualified
+>>> import Integration.Video.ExtractAudio (defaultConfig)
+>>> Array.toLinkedList (buildFfmpegArgs defaultConfig "in.mp4" "out.wav")
+["-nostdin","-v","error","-i","in.mp4","-vn","-ac","1","-ar","16000","-fs","25000000","out.wav"]
 ```
 
 ## postgres-infra
@@ -270,4 +308,4 @@ True
 
 ---
 
-*37 example sessions · modules with ZERO doctests: 314 (the documentation backlog — see codemap/.doc-ratchet)*
+*43 example sessions · modules with ZERO doctests: 314 (the documentation backlog — see codemap/.doc-ratchet)*
