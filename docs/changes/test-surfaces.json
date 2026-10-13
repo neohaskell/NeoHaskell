@@ -40,6 +40,22 @@
   "boundaries": [
     {
       "kind": "script",
+      "path": "core/test/Http/transport_fixture.py",
+      "boundary": "http:real",
+      "expected_examples": 1,
+      "fixture": "Http.Client.syntheticTransport"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-core",
+      "path": "core/test/Http/ClientRawSpec.hs",
+      "match": "sendRaw rejects an oversized chunk before source EOF",
+      "boundary": "http:real",
+      "expected_examples": 1,
+      "fixture": "Http.Client.Internal.sendRaw"
+    },
+    {
+      "kind": "script",
       "path": "testbed/scripts/cold-start-readiness.sh",
       "boundary": "http:real"
     },
@@ -231,6 +247,60 @@
       "boundary": "http:real",
       "expected_examples": 1,
       "fixture": "SyncAllSpec.localTokenFailure"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-core",
+      "path": "core/test/Http/ClientRawSpec.hs",
+      "match": "sendRaw PUT delivers method, raw body and custom header",
+      "boundary": "http:real",
+      "expected_examples": 1,
+      "fixture": "Http.Client.Internal.sendRaw"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-core",
+      "path": "core/test/Http/ClientRawSpec.hs",
+      "match": "sendRaw HEAD returns headers and an empty body without throwing",
+      "boundary": "http:real",
+      "expected_examples": 1,
+      "fixture": "Http.Client.Internal.sendRaw"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-core",
+      "path": "core/test/Http/ClientRawSpec.hs",
+      "match": "sendRaw DELETE surfaces a 404 as a status code, not an error",
+      "boundary": "http:real",
+      "expected_examples": 1,
+      "fixture": "Http.Client.Internal.sendRaw"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-core",
+      "path": "core/test/Http/ClientRawSpec.hs",
+      "match": "sendRaw PUT surfaces a 403 as a status code, not an error",
+      "boundary": "http:real",
+      "expected_examples": 1,
+      "fixture": "Http.Client.Internal.sendRaw"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-core",
+      "path": "core/test/Http/ClientRawSpec.hs",
+      "match": "sendRaw enforces maxResponseBytes on the response body",
+      "boundary": "http:real",
+      "expected_examples": 1,
+      "fixture": "Http.Client.Internal.sendRaw"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-core",
+      "path": "core/test/Http/ClientRawSpec.hs",
+      "match": "returns Ok with statusCode 401 on 401 response",
+      "boundary": "http:real",
+      "expected_examples": 1,
+      "fixture": "Http.Client.Internal.getRaw"
     }
   ]
 }

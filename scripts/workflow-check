@@ -44,6 +44,14 @@ Two contracts, both learned from real breakage:
      regression to a main/integration-only filter, or a dropped neo/** route,
      fails loudly.
 
+  6. Criteria-runtime report (test.yml): integration criteria may name
+     locators in nhcore-test-core OR nhcore-test-service, but the
+     `--criteria-runtime --report` gate runs once, in test-service. test-core
+     must tee its direct output to a NON-hidden report under pipefail and
+     upload it fail-closed; test-service must need test-core, download that
+     artifact, and feed the gate the concatenation of both reports. A
+     service-only report silently fails every core locator.
+
 Run:  ./dev workflow-check          CI: .github/workflows/checks.yml
       ./dev workflow-check --self-test   (doctor/CI)
 """
@@ -427,6 +435,50 @@ def check_required_gate(name, text):
                     f"{name}: changed-path classifier lacks '{surface}' — a "
                     f"'{surface}'-only PR reads compiled=false and ci-gate accepts "
                     "every skip (a green no-op gate that claims it was tested)")
+    return errs
+
+
+CORE_REPORT = "nhcore-test-core.report"
+CORE_REPORT_ARTIFACT = "nhcore-test-core-report"
+SERVICE_REPORT = ".nhcore-test-service.report"
+
+
+def check_criteria_report(name, text):
+    """The criteria gate consumes all three detailed Haskell suite reports."""
+    errs = []
+    jobs = job_blocks(strip_comments(text))
+    runtime = jobs.get("criteria-runtime", "")
+    reports = (
+        ("test-core", "nhcore-test-core", CORE_REPORT, CORE_REPORT_ARTIFACT),
+        ("test-service", "nhcore-test-service", SERVICE_REPORT, "nhcore-test-service-report"),
+        ("test-integrations", "nhintegrations-test", ".nhintegrations-test.report", "nhintegrations-test-report"),
+    )
+    needs = re.search(r"^    needs:\s*\[([^\]]*)\]", runtime, re.M)
+    dependencies = [n.strip() for n in needs.group(1).split(",")] if needs else []
+    for job, suite, report, artifact in reports:
+        steps = _steps_of(jobs.get(job, ""))
+        runs = [step for step in steps if f"cabal test {suite}" in step]
+        if not runs or "set -o pipefail" not in runs[0] \
+                or f"tee {report}" not in runs[0] \
+                or "--test-show-details=direct" not in runs[0]:
+            errs.append(f"{name}: {job} must retain detailed output in `{report}` under pipefail")
+        uploads = [step for step in steps if UPLOAD_RE.search(step)
+                   and f"name: {artifact}" in step]
+        if not uploads or f"path: {report}" not in uploads[0] \
+                or "if-no-files-found: error" not in uploads[0] \
+                or (is_hidden_path(report) and "include-hidden-files: true" not in uploads[0]):
+            errs.append(f"{name}: {job} must upload `{artifact}` and fail if its report is missing")
+        if job not in dependencies:
+            errs.append(f"{name}: criteria-runtime must need {job}")
+        if not any("actions/download-artifact" in step and f"name: {artifact}" in step
+                   for step in _steps_of(runtime)):
+            errs.append(f"{name}: criteria-runtime must download `{artifact}`")
+    gate = [step for step in _steps_of(runtime) if "--criteria-runtime" in step]
+    inputs = " ".join(report for _job, _suite, report, _artifact in reports)
+    combined = re.search(rf"cat {re.escape(inputs)} > (\S+)", gate[0] if gate else "")
+    if not gate or not combined or "set -euo pipefail" not in gate[0] \
+            or f"--report {combined.group(1)}" not in gate[0]:
+        errs.append(f"{name}: criteria-runtime must concatenate all three reports under strict shell errors")
     return errs
 
 
@@ -1020,6 +1072,7 @@ def run(root=WORKFLOWS):
             errs += check_codemap_regen(wf.name, text)
         if wf.name == REQUIRED_GATE:
             errs += check_required_gate(wf.name, text)
+            errs += check_criteria_report(wf.name, text)
         if wf.name == COMPONENT_GATE:
             errs += check_component_gate(wf.name, text)
             errs += check_consumer_contract(wf.name, text)
@@ -1678,6 +1731,53 @@ def self_test():
         cwd=REPO_ROOT, check=False,
     )
     check("complete integrations suite gates", integrations.returncode == 0)
+    good_report = "jobs:\n"
+    report_inputs = (
+        ("test-core", "nhcore-test-core", CORE_REPORT, CORE_REPORT_ARTIFACT),
+        ("test-service", "nhcore-test-service", SERVICE_REPORT, "nhcore-test-service-report"),
+        ("test-integrations", "nhintegrations-test", ".nhintegrations-test.report", "nhintegrations-test-report"),
+    )
+    for job, suite, report, artifact in report_inputs:
+        good_report += (
+            f"  {job}:\n    needs: [build]\n    steps:\n"
+            f"      - run: |\n          set -o pipefail\n"
+            f"          cabal test {suite} --test-show-details=direct | tee {report}\n"
+            f"      - uses: actions/upload-artifact@v7\n        with:\n"
+            f"          name: {artifact}\n          path: {report}\n"
+            f"          include-hidden-files: true\n          if-no-files-found: error\n"
+        )
+    good_report += "  criteria-runtime:\n    needs: [test-core, test-service, test-integrations]\n    steps:\n"
+    for _job, _suite, _report, artifact in report_inputs:
+        good_report += f"      - uses: actions/download-artifact@v8\n        with:\n          name: {artifact}\n"
+    good_report += (
+        "      - run: |\n          set -euo pipefail\n"
+        "          cat nhcore-test-core.report .nhcore-test-service.report .nhintegrations-test.report > all.report\n"
+        "          ./dev spec-check --criteria-runtime base --report all.report\n"
+    )
+
+    def cr_bad(name_, mutated):
+        check(name_, bool(check_criteria_report("test.yml", mutated)))
+
+    check("well-wired three-suite criteria report passes",
+          not check_criteria_report("test.yml", good_report))
+    for job, _suite, report, artifact in report_inputs:
+        cr_bad(f"{job} report omitted from concatenation is flagged",
+               good_report.replace(f"{report} ", ""))
+        cr_bad(f"{job} report download omitted is flagged",
+               good_report.replace(f"      - uses: actions/download-artifact@v8\n        with:\n          name: {artifact}\n", ""))
+        cr_bad(f"{job} report upload omitted is flagged",
+               good_report.replace(f"path: {report}", "path: wrong.report"))
+        cr_bad(f"{job} without detailed output is flagged",
+               good_report.replace(f" | tee {report}", ""))
+    cr_bad("service-only criteria report is flagged",
+           good_report.replace("--report all.report", "--report .nhcore-test-service.report"))
+    cr_bad("report uploads cannot tolerate missing files",
+           good_report.replace("if-no-files-found: error", "if-no-files-found: warn"))
+    cr_bad("report generation without pipefail is flagged",
+           good_report.replace("          set -o pipefail\n", ""))
+    cr_bad("hidden report uploads must opt in",
+           good_report.replace("include-hidden-files: true", "include-hidden-files: false"))
+
     print("workflow-check: self-test", "OK" if ok else "FAILED")
     return 0 if ok else 1
 

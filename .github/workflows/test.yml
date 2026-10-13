@@ -190,8 +190,21 @@ jobs:
         with:
           name: dist-newstyle
           path: dist-newstyle
+      # Tee the direct per-example output: integration criteria whose locators
+      # live in nhcore-test-core are proven from this report by the criteria
+      # gate in test-service. Non-hidden filename: upload-artifact skips
+      # dotfiles by default.
       - name: Run nhcore-test-core
-        run: LOG_LEVEL=Warn nix develop --command cabal test nhcore-test-core
+        run: |
+          set -o pipefail
+          LOG_LEVEL=Warn nix develop --command cabal test nhcore-test-core \
+            --test-show-details=direct | tee nhcore-test-core.report
+      - uses: actions/upload-artifact@v7
+        with:
+          name: nhcore-test-core-report
+          path: nhcore-test-core.report
+          retention-days: 1
+          if-no-files-found: error
 
   test-auth:
     needs: [build]
@@ -316,13 +329,16 @@ jobs:
           if-no-files-found: error
 
   criteria-runtime:
-    needs: [test-service, test-integrations]
+    needs: [test-core, test-service, test-integrations]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v7.0.1
         with:
           fetch-depth: 0
+      - uses: actions/download-artifact@v8
+        with:
+          name: nhcore-test-core-report
       - uses: actions/download-artifact@v8
         with:
           name: nhcore-test-service-report
@@ -335,7 +351,8 @@ jobs:
           BASE_REF: ${{ github.base_ref }}
           POSTGRES_AVAILABLE: "true"
         run: |
-          cat .nhcore-test-service.report .nhintegrations-test.report > .criteria-runtime.report
+          set -euo pipefail
+          cat nhcore-test-core.report .nhcore-test-service.report .nhintegrations-test.report > .criteria-runtime.report
           ./dev spec-check --criteria-runtime "origin/${BASE_REF}" --report .criteria-runtime.report
 
   test-hurl:

@@ -577,9 +577,12 @@ data HmacKey
 generateHmacKey :: Task err HmacKey
 hmacKeyFromBytes :: Bytes -> Result Text HmacKey
 hmacKeyFromText :: Text -> Result Text HmacKey
+hmacSha256 :: Bytes -> Bytes -> Bytes
 instance GHC.Classes.Eq Crypto.HmacKey
 instance GHC.Show.Show Crypto.HmacKey
+sha256 :: Bytes -> Bytes
 signWith :: HmacKey -> Bytes -> Text
+toHex :: Bytes -> Text
 verifyWith :: HmacKey -> Text -> Bytes -> Bool
 
 module DateTime
@@ -726,8 +729,14 @@ unchanged :: value -> value
 module Http
 
 module Http.Client
+Delete :: Method
 Error :: Text -> Error
+Get :: Method
+Head :: Method
 InvalidUrl :: Text -> Error
+Patch :: Method
+Post :: Method
+Put :: Method
 Request :: Maybe Text -> Map Text Text -> Maybe Int -> Int -> !Maybe Int -> Request
 Response :: Int -> Array (Text, Text) -> body -> Response body
 ResponseTooLarge :: Int -> Error
@@ -740,18 +749,23 @@ ResponseTooLarge :: Int -> Error
 [timeoutSeconds] :: Request -> Maybe Int
 [url] :: Request -> Maybe Text
 addHeader :: Text -> Text -> Request -> Request
+applyMethodAndBody :: Method -> Bytes -> Request -> Request
 checkContentLengthHeaderLimit :: Maybe Int -> [(CI ByteString, ByteString)] -> Maybe Int
 data Error
+data Method
 data Request
 data Response body
 delete :: FromJSON response => Request -> Task Error (Response response)
 get :: FromJSON response => Request -> Task Error (Response response)
 getSecure :: Request -> Task Error (Response Bytes)
 instance Data.Default.Internal.Default Http.Client.Request
+instance GHC.Classes.Eq Http.Client.Method
 instance GHC.Generics.Generic (Http.Client.Response body)
 instance GHC.Show.Show Http.Client.Error
+instance GHC.Show.Show Http.Client.Method
 instance GHC.Show.Show Http.Client.Request
 instance GHC.Show.Show body => GHC.Show.Show (Http.Client.Response body)
+methodName :: Method -> Text
 patch :: (FromJSON response, ToJSON requestBody) => Request -> requestBody -> Task Error (Response response)
 post :: (FromJSON response, ToJSON requestBody) => Request -> requestBody -> Task Error (Response response)
 postForm :: FromJSON response => Request -> Array (Text, Text) -> Task Error (Response response)
@@ -759,6 +773,7 @@ postRaw :: FromJSON response => Request -> Text -> Text -> Task Error (Response 
 put :: (FromJSON response, ToJSON requestBody) => Request -> requestBody -> Task Error (Response response)
 request :: Request
 secureTlsSupportedVersions :: [Version]
+sendSecure :: Method -> Request -> Bytes -> Task Error (Response Bytes)
 withMaxResponseSize :: Int -> Request -> Request
 withRedirects :: Int -> Request -> Request
 withTimeout :: Int -> Request -> Request
@@ -766,6 +781,7 @@ withUrl :: Text -> Request -> Request
 
 module Http.Client.Internal
 getRaw :: Request -> Task Error (Response Bytes)
+sendRaw :: Method -> Request -> Bytes -> Task Error (Response Bytes)
 
 module IO
 andThen :: (a -> IO b) -> IO a -> IO b

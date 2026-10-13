@@ -99,6 +99,18 @@ Ok "hello"
 True
 ```
 
+### Crypto
+
+```haskell
+>>> Bytes.pack [0, 15, 255] |> Crypto.toHex
+"000fff"
+```
+
+```haskell
+>>> Text.toBytes "abc" |> Crypto.sha256 |> Crypto.toHex
+"ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+```
+
 ### Float
 
 ```haskell
@@ -270,4 +282,4 @@ True
 
 ---
 
-*37 example sessions · modules with ZERO doctests: 315 (the documentation backlog — see codemap/.doc-ratchet)*
+*39 example sessions · modules with ZERO doctests: 314 (the documentation backlog — see codemap/.doc-ratchet)*

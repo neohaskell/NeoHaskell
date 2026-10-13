@@ -93,7 +93,8 @@ class IntegrationWorkflows(unittest.TestCase):
         self.assertIn("needs.test-integrations.result", gate)
         runtime = jobs.get("criteria-runtime", "")
         self.assertRegex(runtime, r"(?m)^    needs:.*\btest-service\b.*\btest-integrations\b")
-        self.assertIn(".nhcore-test-service.report .nhintegrations-test.report", runtime)
+        self.assertIn("nhcore-test-core.report .nhcore-test-service.report .nhintegrations-test.report", runtime)
+        self.assertEqual(workflow["check_criteria_report"]("test.yml", source), [])
         self.assertIn("--criteria-runtime", runtime)
         self.assertIn("--report .criteria-runtime.report", runtime)
         self.assertIn("needs.criteria-runtime.result", gate)
@@ -119,6 +120,27 @@ class IntegrationWorkflows(unittest.TestCase):
                 self.assertIn(old, source)
                 with self.assertRaises(AssertionError):
                     self.assert_linux_suite_required(source.replace(old, new))
+
+    def test_combined_report_fails_if_any_suite_report_is_missing(self):
+        workflow = runpy.run_path(str(ROOT / "scripts/workflow-check"))
+        source = (ROOT / ".github/workflows/test.yml").read_text()
+        runtime = workflow["job_blocks"](workflow["strip_comments"](source))["criteria-runtime"]
+        concatenate = next(line.strip() for line in runtime.splitlines() if line.strip().startswith("cat "))
+        reports = ("nhcore-test-core.report", ".nhcore-test-service.report", ".nhintegrations-test.report")
+        for missing in (None, *reports):
+            with self.subTest(missing=missing), tempfile.TemporaryDirectory(prefix="nh-reports-") as directory:
+                work = Path(directory)
+                for report in reports:
+                    if report != missing:
+                        (work / report).write_text(report + "\n")
+                result = subprocess.run(["bash", "-euo", "pipefail", "-c", concatenate],
+                                        cwd=work, text=True, capture_output=True, check=False)
+                if missing is None:
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertEqual((work / ".criteria-runtime.report").read_text(),
+                                     "".join(report + "\n" for report in reports))
+                else:
+                    self.assertNotEqual(result.returncode, 0, "missing suite report was silently accepted")
 
     def test_macos_matrix_runs_whole_suite(self):
         workflow = runpy.run_path(str(ROOT / "scripts/workflow-check"))
