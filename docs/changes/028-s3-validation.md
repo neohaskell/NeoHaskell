@@ -37,7 +37,7 @@ exceptions or change the production signer, retries, limits or HTTP layer.
 | C1 | All seven audited malformed authorities return typed errors, with a valid HTTPS control | `hspec:nhcore-test-service:core/test/Service/FileUpload/BlobStore/S3Spec.hs#rejects malformed endpoint authorities before creating a store` | unit | none |
 | C2 | Header-bound controls fail before requests; valid config still performs PUT | `hspec:nhcore-test-service:core/test/Service/FileUpload/BlobStore/S3Spec.hs#rejects header-bound controls before any HTTP request` | integration | http:real |
 | C3 | Nonempty HMAC secret material is not constrained as a header | `hspec:nhcore-test-service:core/test/Service/FileUpload/BlobStore/S3Spec.hs#accepts nonempty secret material that is not an HTTP header` | unit | none |
-| C4 | Existing bracketed IPv6 and IPv4 loopback endpoints remain accepted | `hspec:nhcore-test-service:core/test/Service/FileUpload/BlobStore/S3Spec.hs#accepts loopback over plain http, including bracketed IPv6` | unit | none |
+| C4 | Existing bracketed IPv6 and IPv4 loopback endpoints remain accepted | `hspec:nhcore-test-service:core/test/Service/FileUpload/BlobStore/S3Spec.hs#accepts loopback over plain http, including bracketed IPv6`<br>`hspec:nhcore-test-service:core/test/Service/FileUpload/BlobStore/S3Spec.hs#validates endpoint port bounds and bracket suffixes without network I/O` | unit | none |
 
 ## User impact
 

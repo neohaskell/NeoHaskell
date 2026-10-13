@@ -65,9 +65,9 @@ expected to use only `S3Config` and `createBlobStore`.
 
 - **Shape.** Same as `Local`: a config record and one constructor. No extra
   operations outside the `BlobStore` facade. Conditional writes
-  (`If-None-Match`/`If-Match`) are **not** included: upstream dedup already
-  guarantees "store derived content once" through the content-hash lookup in
-  `Service.FileUpload.Web`, so the use case that motivated them is covered.
+  (`If-None-Match`/`If-Match`) are **not** included. Application dedup uses
+  owner-scoped content-hash lookups, but concurrent uploads may write provisional
+  blobs; direct S3 store calls overwrite unconditionally.
 - **Provider-agnostic.** SigV4 + path-style addressing is the protocol shared
   by AWS S3, Cloudflare R2, Backblaze B2, MinIO and RustFS. Azure Blob Storage
   uses a different protocol (SharedKey REST) and is out of scope; it would be a
@@ -75,8 +75,8 @@ expected to use only `S3Config` and `createBlobStore`.
   shape.
 - **Transport.** `Http.Client.sendSecure` (HTTPS, pinned TLS 1.2+, no
   redirects, no proxy, bounded response) for every endpoint;
-  `Http.Client.Internal.sendRaw` only when the endpoint is a literal loopback
-  address (local fixtures). The module imports nothing from `Network.HTTP.*`.
+  `Http.Client.Internal.sendRaw` only for127.0.0.1, [::1] or localhost
+  (the existing local-fixture exception, unchanged by this repair). The module imports nothing from `Network.HTTP.*`.
 - **Credentials.** Read by the application (its `Config.hs`), passed in
   `S3Config` from `App.hs`. The backend never reads the environment.
   `S3Config` has no `Show` instance; `Http.Client.Request` redacts headers, so
@@ -91,7 +91,8 @@ expected to use only `S3Config` and `createBlobStore`.
   four worked examples of the AWS S3 API reference (GET Object, PUT Object,
   GET Bucket Lifecycle, GET Bucket) step by step. `S3Spec` drives the real
   facade against `FakeS3`, an in-process WAI/Warp fake of the S3 object API on
-  a free loopback port. Verified before writing it: no reusable in-process HTTP
+  a held loopback socket with readiness notification and owned cleanup. The fake
+  independently verifies received signatures and body hashes. Verified before writing it: no reusable in-process HTTP
   stub exists in `core/test*` today (only inline `GhcWarp.run` calls in
   `Http/ClientRawSpec.hs`, `Http/ClientSpec.hs`,
   `Auth/OAuth2/TokenRefreshSpec.hs`). **Boundary of `FakeS3`** (maintainer
@@ -122,8 +123,9 @@ ENDPOINT="http://$(docker port s3-manual 9000/tcp)"
 docker rm -f s3-manual
 ```
 
-The same steps work against MinIO (`minio/minio`), Cloudflare R2, Backblaze
-B2 and AWS S3 with an HTTPS endpoint.
+Other S3-compatible providers require their own endpoint and bucket setup.
+The committed local wire fixture and AWS vectors are protocol evidence, not
+fresh deployment certification for AWS, R2, B2, MinIO or RustFS.
 
 ## Criteria
 
@@ -135,7 +137,7 @@ B2 and AWS S3 with an HTTPS endpoint.
 | C4 | `exists` via HEAD (200 -> True, 404 -> False); `delete` idempotent | `hspec:nhcore-test-service:core/test/Service/FileUpload/BlobStore/S3Spec.hs#exists answers True after store and False for an unknown key`<br>`hspec:nhcore-test-service:core/test/Service/FileUpload/BlobStore/S3Spec.hs#delete removes the blob and is idempotent` | integration | http:real |
 | C5 | Error mapping from fake responses: 404 -> `NotFound`, 403 -> `StorageError` with status only | `hspec:nhcore-test-service:core/test/Service/FileUpload/BlobStore/S3Spec.hs#retrieve of a missing key is NotFound`<br>`hspec:nhcore-test-service:core/test/Service/FileUpload/BlobStore/S3Spec.hs#a 403 from the store is a StorageError carrying only the status` | integration | http:real |
 | C6 | Keys: each segment URI-encoded with slashes kept; empty keys and dot segments rejected before any request | `hspec:nhcore-test-service:core/test/Service/FileUpload/BlobStore/S3Spec.hs#encodes each key segment and keeps slashes as separators`<br>`hspec:nhcore-test-service:core/test/Service/FileUpload/BlobStore/S3Spec.hs#rejects dot segments and empty keys without sending a request` | integration | http:real |
-| C7 | Configuration: HTTPS required except literal loopback (IPv4/IPv6), no path/query/userinfo in the endpoint, non-empty fields, DNS-style bucket of 3 to 63 lowercase letters, digits, hyphens and dots whose dot-separated labels are non-empty and start and end with a letter or digit; an invalid config is rejected by the constructor, so no store exists to send a request; a valid config does not contact the endpoint | `hspec:nhcore-test-service:core/test/Service/FileUpload/BlobStore/S3Spec.hs#rejects an http endpoint that is not loopback`<br>`hspec:nhcore-test-service:core/test/Service/FileUpload/BlobStore/S3Spec.hs#rejects an endpoint carrying a path, query or credentials`<br>`hspec:nhcore-test-service:core/test/Service/FileUpload/BlobStore/S3Spec.hs#rejects empty fields and non-DNS bucket names`<br>`hspec:nhcore-test-service:core/test/Service/FileUpload/BlobStore/S3Spec.hs#rejects bucket names with an empty label or a hyphen at a label edge`<br>`hspec:nhcore-test-service:core/test/Service/FileUpload/BlobStore/S3Spec.hs#accepts dotted and hyphenated bucket names`<br>`hspec:nhcore-test-service:core/test/Service/FileUpload/BlobStore/S3Spec.hs#enforces the 3 to 63 character bucket name bounds`<br>`hspec:nhcore-test-service:core/test/Service/FileUpload/BlobStore/S3Spec.hs#accepts an https endpoint without contacting it`<br>`hspec:nhcore-test-service:core/test/Service/FileUpload/BlobStore/S3Spec.hs#accepts loopback over plain http, including bracketed IPv6` | unit | none |
+| C7 | Configuration: HTTPS required except IPv4/IPv6 loopback or localhost, no path/query/userinfo in the endpoint, non-empty fields, DNS-style bucket of 3 to 63 lowercase letters, digits, hyphens and dots whose dot-separated labels are non-empty and start and end with a letter or digit; an invalid config is rejected by the constructor, so no store exists to send a request; a valid config does not contact the endpoint | `hspec:nhcore-test-service:core/test/Service/FileUpload/BlobStore/S3Spec.hs#rejects an http endpoint that is not loopback`<br>`hspec:nhcore-test-service:core/test/Service/FileUpload/BlobStore/S3Spec.hs#rejects an endpoint carrying a path, query or credentials`<br>`hspec:nhcore-test-service:core/test/Service/FileUpload/BlobStore/S3Spec.hs#rejects empty fields and non-DNS bucket names`<br>`hspec:nhcore-test-service:core/test/Service/FileUpload/BlobStore/S3Spec.hs#rejects bucket names with an empty label or a hyphen at a label edge`<br>`hspec:nhcore-test-service:core/test/Service/FileUpload/BlobStore/S3Spec.hs#accepts dotted and hyphenated bucket names`<br>`hspec:nhcore-test-service:core/test/Service/FileUpload/BlobStore/S3Spec.hs#enforces the 3 to 63 character bucket name bounds`<br>`hspec:nhcore-test-service:core/test/Service/FileUpload/BlobStore/S3Spec.hs#accepts an https endpoint without contacting it`<br>`hspec:nhcore-test-service:core/test/Service/FileUpload/BlobStore/S3Spec.hs#accepts loopback over plain http, including bracketed IPv6` | unit | none |
 | C8 | An unreachable endpoint maps to `StorageError` without the URL | `hspec:nhcore-test-service:core/test/Service/FileUpload/BlobStore/S3Spec.hs#an unreachable endpoint is a StorageError without the URL` | unit | none |
 
 | C9 | Malformed authorities are rejected as typed constructor errors before a store exists; every audited case is checked and a valid HTTPS control succeeds | `hspec:nhcore-test-service:core/test/Service/FileUpload/BlobStore/S3Spec.hs#rejects malformed endpoint authorities before creating a store`<br>`hspec:nhcore-test-service:core/test/Service/FileUpload/BlobStore/S3Spec.hs#accepts nonempty secret material that is not an HTTP header` | unit | none |
@@ -161,14 +163,18 @@ review (ADR-0069) before implementation is finalized.
 
 ## User impact
 
-None breaking. New opt-in backend: in `App.hs` build
-`S3.createBlobStore S3Config {endpoint, bucket, region, accessKeyId, secretAccessKey}`
-from values your own `Config.hs` reads, and pass the resulting `BlobStore` to
-`Application.withFileUpload` exactly as with `Local.createBlobStore`. Existing
-applications on the local backend are unaffected. Limits: single-request
-uploads (no multipart), objects are read fully into memory (bounded at 256 MiB
-per GET), the bucket must already exist, no retries (a failed write may or may
-not have landed; the error says so).
+Existing applications on the local backend are unaffected. The promised public
+Application use case remains **unresolved and release-blocking**: current
+`Application.withFileUpload` accepts a configuration factory, not a BlobStore,
+and always selects Local. Do not pass `S3.createBlobStore` results to that API.
+The proposed config-aware backend factory needs a separate maintainer decision;
+this validation repair neither adds that API nor silently narrows the promise
+to a primitive-only release.
+
+The existing S3 primitive uses application-supplied configuration and supports
+single-request uploads (no multipart). The bucket must already exist. Responses
+have a256MiB cap; this is not an upload cap, and incremental enforcement depends
+on change016/022. No retries: a failed write may or may not have landed.
 
 ## ADR
 

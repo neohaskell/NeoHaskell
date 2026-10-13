@@ -150,6 +150,16 @@ spec = do
         positive <- createBlobStore (validConfig "https://s3.example.com") |> Task.asResult
         positive |> Result.map (\_ -> ()) |> shouldBe (Ok ())
 
+      it "validates endpoint port bounds and bracket suffixes without network I/O" \_ -> do
+        let invalid = ["https://127.0.0.1:0", "https://127.0.0.1:-1", "https://127.0.0.1:65536", "https://[::1]:", "https://[::1]:443junk", "https://[]", "https://[not-ip]", "https://127.0.0.1:18446744073709551617"]
+        rejected <- invalid |> Task.mapArray (\endpoint -> configRejected (validConfig endpoint))
+        rejected |> shouldBe (invalid |> Array.map (\_ -> True))
+        let valid = ["http://localhost:9000", "https://127.0.0.1:1", "https://127.0.0.1:65535", "https://[2001:db8::1]:443", " https://example.com:443/ ", "https://example.com:000443"]
+        accepted <- valid |> Task.mapArray (\endpoint -> do
+          result <- createBlobStore (validConfig endpoint) |> Task.asResult
+          Task.yield (result |> Result.map (\_ -> ())))
+        accepted |> shouldBe (valid |> Array.map (\_ -> Ok ()))
+
       it "rejects header-bound controls before any HTTP request" \_ -> do
         withFakeS3 "test-bucket" "AKIAIOSFODNN7EXAMPLE" "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY" \fake -> do
           let config = validConfig fake.endpoint

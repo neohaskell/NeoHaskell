@@ -5,7 +5,7 @@
 -- Same shape as "Service.FileUpload.BlobStore.Local": the configuration record
 -- owns everything the backend needs, and 'createBlobStore' is the only
 -- constructor. The bucket must already exist. HTTPS is required unless the
--- endpoint is a literal loopback address (local fixtures and tests).
+-- endpoint is 127.0.0.1, [::1] or localhost (local fixtures and tests).
 -- Redirects are never followed; nothing is retried, so a failed write has an
 -- unknown outcome and surfaces as 'StorageError'.
 --
@@ -24,13 +24,15 @@ import Array qualified
 import Basics
 import Bytes (Bytes)
 import Bytes qualified
+import Char (Char)
 import Char qualified
 import DateTime (DateTime)
 import DateTime qualified
 import Http.Client (Method (..), Request, Response)
 import Http.Client qualified as Http
 import Http.Client.Internal qualified as HttpInternal
-import Maybe qualified
+import Maybe (Maybe (..))
+import Network.URI qualified as URI
 import Result (Result (..))
 import Service.FileUpload.BlobStore (BlobStore (..), BlobStoreError (..))
 import Service.FileUpload.BlobStore.S3.SigV4 (CanonicalRequest (..), Credentials (..))
@@ -106,6 +108,9 @@ validateConfig config = do
     (Text.isEmpty config.bucket || Text.isEmpty config.region || Text.isEmpty config.accessKeyId || Text.isEmpty config.secretAccessKey)
     (Task.throw "S3 configuration fields must not be empty")
   Task.unless (isDnsBucketName config.bucket) (Task.throw "S3 bucket must be a DNS-style bucket name")
+  Task.when
+    (Text.any isHeaderControl config.region || Text.any isHeaderControl config.accessKeyId)
+    (Task.throw "S3 header-bound configuration must not contain control characters")
   endpoint <- parseEndpoint config.endpoint
   Task.yield
     S3Store
@@ -151,9 +156,10 @@ data Endpoint = Endpoint
   }
 
 
--- | Accept @scheme://host[:port]@ only. HTTPS everywhere except literal loopback.
+-- | Accept @scheme://host[:port]@ only. Plain HTTP is limited to the existing loopback/localhost exception.
 parseEndpoint :: Text -> Task Text Endpoint
 parseEndpoint raw = do
+  Task.when (Text.any isHeaderControl raw) (Task.throw "S3 endpoint must not contain control characters")
   let trimmed = raw |> Text.trim |> stripTrailingSlash
   (isSecure, authority) <-
     if Text.startsWith "https://" trimmed
@@ -165,7 +171,7 @@ parseEndpoint raw = do
   Task.when
     (Text.isEmpty authority || Text.any (\char -> char == '/' || char == '?' || char == '#' || char == '@' || char == ' ') authority)
     (Task.throw "S3 endpoint must not contain credentials, path, query or fragment")
-  let host = hostOf authority
+  host <- validateAuthority trimmed
   Task.unless (isSecure || isLoopback host) (Task.throw "S3 requires HTTPS outside literal loopback")
   let defaultPort = if isSecure then ":443" else ":80"
   let hostHeader = if Text.endsWith defaultPort authority then host else authority
@@ -177,17 +183,40 @@ stripTrailingSlash :: Text -> Text
 stripTrailingSlash text = if Text.endsWith "/" text then Text.dropRight 1 text else text
 
 
--- | Host without the port; keeps IPv6 brackets ("[::1]:9000" -> "[::1]").
-hostOf :: Text -> Text
-hostOf authority =
-  if Text.startsWith "[" authority
-    then do
-      let inside = Text.split "]" authority |> Array.first |> Maybe.withDefault authority
-      [fmt|#{inside}]|]
-    else Text.split ":" authority |> Array.first |> Maybe.withDefault authority
+-- | Reject controls before values can reach Host or Authorization headers.
+isHeaderControl :: Char -> Bool
+isHeaderControl char = Char.toCode char < 32 || Char.toCode char == 127
 
 
--- | True for literal loopback hosts, the only ones allowed over plain HTTP.
+-- | Use the existing URI parser for bracket/host grammar, then bound the port.
+validateAuthority :: Text -> Task Text Text
+validateAuthority endpoint = do
+  uri <- case URI.parseURI (Text.toLinkedList endpoint) of
+    Nothing -> Task.throw "S3 endpoint authority is malformed"
+    Just parsed -> Task.yield parsed
+  authority <- case URI.uriAuthority uri of
+    Nothing -> Task.throw "S3 endpoint authority is malformed"
+    Just parsed -> Task.yield parsed
+  let host = URI.uriRegName authority |> Text.fromLinkedList
+  Task.when (Text.isEmpty host) (Task.throw "S3 endpoint host must not be empty")
+  validatePort (URI.uriPort authority |> Text.fromLinkedList)
+  Task.yield host
+
+
+validatePort :: Text -> Task Text Unit
+validatePort port = do
+  Task.when (not (Text.isEmpty port)) do
+    let digits = Text.dropLeft 1 port
+    Task.when (Text.isEmpty digits || not (Text.all (\char -> char >= '0' && char <= '9') digits))
+      (Task.throw "S3 endpoint port must be between 1 and 65535")
+    let significantDigits = digits |> Text.toArray |> Array.dropWhile (\char -> char == '0') |> Text.fromArray
+    Task.when (Text.length significantDigits > 5) (Task.throw "S3 endpoint port must be between 1 and 65535")
+    case Text.toInt significantDigits of
+      Just value -> Task.when (value < 1 || value > 65535) (Task.throw "S3 endpoint port must be between 1 and 65535")
+      Nothing -> Task.throw "S3 endpoint port must be between 1 and 65535"
+
+
+-- | Existing plain-HTTP exception: literal IPv4/IPv6 loopback and localhost.
 isLoopback :: Text -> Bool
 isLoopback host = host == "127.0.0.1" || host == "localhost" || host == "[::1]"
 
@@ -196,14 +225,14 @@ isLoopback host = host == "127.0.0.1" || host == "localhost" || host == "[::1]"
 -- Operations
 -- ==========================================================================
 
--- | 'BlobStore.store': PUT the bytes; any non-2xx is a storage error.
+-- | 'BlobStore.store': PUT the bytes; only status 200 succeeds.
 storeImpl :: S3Store -> BlobKey -> Bytes -> Task BlobStoreError Unit
 storeImpl store blobKey bytes = do
   response <- sendObject store Put blobKey bytes
   Task.unless (response.statusCode == 200) (Task.throw (statusError response))
 
 
--- | 'BlobStore.retrieve': GET; 404 is 'BlobNotFound', other non-2xx are errors.
+-- | 'BlobStore.retrieve': GET; 200 succeeds, 404 is 'NotFound', other statuses are errors.
 retrieveImpl :: S3Store -> BlobKey -> Task BlobStoreError Bytes
 retrieveImpl store blobKey = do
   response <- sendObject store Get blobKey Bytes.empty
@@ -298,8 +327,8 @@ signedRequest store method path body now = do
     |> Http.withMaxResponseSize maxObjectBytes
 
 
--- | Hard ceiling on one GET body; matches the upload route's default order of
--- magnitude and protects the process from a hostile endpoint.
+-- | Response-body ceiling; this does not limit bytes uploaded by store.
+-- Incremental consumption enforcement belongs to the Core HTTP client.
 maxObjectBytes :: Int
 maxObjectBytes = 256 * 1024 * 1024
 
