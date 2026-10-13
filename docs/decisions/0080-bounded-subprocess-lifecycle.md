@@ -1,25 +1,19 @@
-# ADR-0080: Bound captured subprocess output and require owned-child cleanup
+# ADR-0080: Preserve subprocess output while owning its lifecycle
 
 ## Status
 
-Proposed. No maintainer approval or implementation is recorded.
+Proposed implementation under NickSeagull's [Gate1 existing-guarantee approval](https://github.com/neohaskell/NeoHaskell/pull/911#issuecomment-6150731937); final review remains pending.
 
 ## Context
 
-`Subprocess.runWithTimeout` is used by PDF and video integrations. Lazy pipe reads can prevent a child from exiting; cancellation can bypass child cleanup. Strict reads alone do not bound retained output.
+Lazy pipe reads can block a noisy child, and cancellation can bypass child cleanup. The full-output API is already used by PDF and video integrations.
 
-## Decision proposed for approval
+## Decision
 
-Keep the existing signature. Concurrently drain both pipes with bounded buffers. Retain at most 1,048,576 raw bytes per stream; after overflow, continue draining without retaining additional data and return `ProcessError` if the child otherwise completes. Timeout returns `TimeoutError`; cancellation remains cancellation after cleanup. No partial completion is reported as success. UTF-8 decoding follows the existing text API for retained bytes; invalid encoding produces a typed process error, not an uncaught synchronous exception.
+Preserve public signatures, complete stdout/stderr and normal/nonzero exit codes. Drain both streams strictly and concurrently. No new output cap, truncation, dependency or breaking API. The earlier one-MiB rejection proposal is withdrawn in favor of explicit above-one-MiB preservation tests, following the maintainer's decision.
 
-Own the direct child, its pipe handles, and readers until cleaned. On timeout, cancellation, or reader failure, request termination, allow one second grace, then force termination if still alive and reap. Close all owned handles and cancel/join remaining readers. Normal completion also joins readers and closes handles. A descendant keeping a pipe open must not make timeout cleanup wait for EOF forever. This does not promise descendant termination or a universal bound on kernel-level uninterruptible waits. Unix force-kill behavior needs supported macOS/Linux implementation and tests; other platform support must not be asserted without evidence.
-
-The 1 MiB per-stream cap and 1 second grace are new proposed constants, not existing behavior. The behavioral limit is breaking even though signatures remain unchanged. Existing PDF callers and downstream applications must be evaluated. Alternative: add an explicit bounded API and migrate video without narrowing the existing API. Maintainer must choose before implementation.
+Own the direct child and readers across timeout, synchronous failure and asynchronous cancellation. Mask resource acquisition, scope readers, apply the deadline to drains plus wait, terminate/reap on abnormal exit, close handles and join readers. POSIX TERM receives one-second cleanup grace before direct SIGKILL; Windows process-library termination is already forced. No descendant termination or universal kernel-uninterruptible bound is promised.
 
 ## Consequences
 
-Expected retained payload is at most 2 MiB plus fixed read/decode buffers, not unbounded child output. UTF-8 decoding can allocate additional bounded Text memory; this is not a total RSS guarantee. Above-cap callers must handle `ProcessError` or adopt a separately approved file/streaming path. No silent truncation, retry, global process group kill, or framework-wide process redesign is included.
-
-## Verification
-
-Change 023 C1–C8 provide executable real pipe, proposed overflow, and direct-child timeout/cancellation checks. Reader failure, reader-task/handle cleanup and PDF-impact checks remain explicit incomplete coverage, not inferred from PID disappearance. Its C1 must be committed red with a current pipeline receipt. Security and performance review are required explicitly for this resource-owning boundary, even though the current `system` capability lacks risk tags. Review records do not substitute for executable checks.
+Full output uses memory proportional to output. Bounded retention requires a separate explicit future contract. Security and resource review precedes implementation; local security records never enter the PR. Change023 owns executable real-pipe and PID-lifecycle regression coverage; missing reader/handle observations are not implied by PID disappearance.

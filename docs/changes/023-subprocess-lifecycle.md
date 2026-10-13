@@ -2,13 +2,13 @@
 
 This proposal prevents a noisy child process from timing out merely because its output pipe fills, and prevents cancellation from leaving that child running. It changes only `Subprocess.runWithTimeout`; `run`, `open`, and `openInherit` remain outside this slice.
 
-**Pre-approval draft:** no implementation or approval. C1 is the minimal executable repro. The additional verification obligations below remain mandatory. Each needs an executable proving-test locator and boundary attestation before final spec approval; the executable table covers real pipes, capture-policy boundaries and direct-child lifecycle, but is not complete Gate 1 readiness or proof of reader-task cleanup. No historical approval is claimed.
+NickSeagull approved repairs to existing guarantees on [October13](https://github.com/neohaskell/NeoHaskell/pull/911#issuecomment-6150731937), explicitly excluding a new output cap or breaking API. This spec reconciles that actual decision; final review/merge/release remain unapproved. The earlier C5 proposed rejection is replaced by complete-output preservation, not by weakening an existing product expectation.
 
 ```yaml spec
 issue: adhoc:subprocess-lifecycle
 kind: bug
 touches: [system]
-breaking: true
+breaking: false
 new-dependency: false
 new-capability: false
 new-extension-point: false
@@ -19,8 +19,7 @@ new-extension-point: false
 ```diff signatures
 ```
 
-Existing signature remains `Subprocess.runWithTimeout :: Int -> Text -> Array Text -> Path -> Task Error Completion`. Behavioral compatibility changes are deliberate and need approval: retain at most 1,048,576 raw bytes separately for stdout and stderr, continue strict concurrent draining past the cap, and return `ProcessError` for overflow rather than a silently truncated completion. Timeout wins if the deadline occurs; cancellation propagates after cleanup. Within-bound output/nonzero exit keep `Completion` semantics. Invalid retained text encoding and synchronous reader failures become typed `ProcessError`, not uncaught exceptions.
-
+Existing signature remains `Subprocess.runWithTimeout :: Int -> Text -> Array Text -> Path -> Task Error Completion`. Preserve full stdout/stderr and normal/nonzero exit codes. Strict concurrent draining repairs the pipe deadlock; there is no capture-size rejection, silent truncation, or bounded-memory claim. Complete output retains memory proportional to output. Timeout stays `TimeoutError`; synchronous create/read failures are `ProcessError`; asynchronous cancellation propagates after cleanup. Preserve existing text decoding semantics.
 Timeout includes pipe draining as well as process wait. The child and readers are owned through every exit. Failure/timeout/cancel requests direct-child termination; after 1 second grace force termination, reap, close handles, and join/cancel readers. Successful completion closes handles and joins readers too. Do not wait forever for EOF held by a descendant. Descendant termination and an OS sandbox are not promised. Uninterruptible kernel waits are not universally time-bounded.
 
 ## Criteria
@@ -30,15 +29,15 @@ Timeout includes pipe draining as well as process wait. The child and readers ar
 | C1 | Real stderr exceeding pipe capacity completes with exit 7, not timeout | `hspec:nhcore-test-core:core/test/SubprocessSpec.hs#drains real stderr before waiting for process exit` | integration | subprocess:real |
 | C2 | Normal and nonzero exits return complete output on both streams | `hspec:nhcore-test-core:core/test/SubprocessSpec.hs#captures complete normal and nonzero child output` | integration | subprocess:real |
 | C3 | Simultaneous pipe writers exceed pipe capacity without timeout | `hspec:nhcore-test-core:core/test/SubprocessSpec.hs#drains simultaneous real pipes beyond pipe capacity` | integration | subprocess:real |
-| C4 | Proposed one-MiB policy: exact-cap output remains complete (awaiting policy choice) | `hspec:nhcore-test-core:core/test/SubprocessSpec.hs#captures exactly the proposed one MiB per stream` | integration | subprocess:real |
-| C5 | Proposed one-MiB policy: over-cap output returns ProcessError, not timeout or partial success (awaiting policy choice) | `hspec:nhcore-test-core:core/test/SubprocessSpec.hs#rejects output above the proposed one MiB capture cap` | integration | subprocess:real |
+| C4 | Complete one-MiB output remains available without truncation | `hspec:nhcore-test-core:core/test/SubprocessSpec.hs#captures complete one MiB output per stream` | integration | subprocess:real |
+| C5 | Output above one MiB remains complete with no new rejection limit | `hspec:nhcore-test-core:core/test/SubprocessSpec.hs#preserves complete output above one MiB without a new capture cap` | integration | subprocess:real |
 | C6 | Timeout leaves the readiness-observed direct child absent from process table | `hspec:nhcore-test-core:core/test/SubprocessSpec.hs#reaps an observed direct child after timeout` | integration | subprocess:real |
 | C7 | TERM-resistant direct child is absent after bounded timeout cleanup | `hspec:nhcore-test-core:core/test/SubprocessSpec.hs#reaps an observed TERM-resistant child after timeout` | integration | subprocess:real |
 | C8 | Cancellation propagates and leaves readiness-observed direct child absent | `hspec:nhcore-test-core:core/test/SubprocessSpec.hs#propagates cancellation and reaps the observed direct child` | integration | subprocess:real |
 
 ### Fixture controls and remaining coverage boundary
 
-C1 remains the exact original red reproduction. C2–C5 run two simultaneous Python pipe writers with full-write loops. C4/C5 are executable proposed-policy tests, not evidence that the one-MiB default has been approved. They must change only with the recorded policy decision, not merely to turn green.
+C1 remains the exact original red reproduction. C2–C5 require full output through simultaneous pipes. The former C5 unapproved cap proposal was reconciled to the maintainer's explicit existing-contract decision; no upstream captured-output guarantee is removed.
 
 C6–C8 create a private synthetic workspace. The child writes its own PID only after installing its TERM policy; a separate control requires that PID to be live and its command to contain this workspace before the lifecycle action. After completion/cancellation the observer requires no process-table entry, rejecting zombies as well as live survivors. This is direct-child observation, not process-tree cleanup. A finally cleanup sends SIGKILL only after PID identity validation, waits until the child is absent or a non-executing zombie, and removes only its own workspace; its own failure is red, never ignored. That separate controller cannot reap the Haskell parent's child. Cleanup records zombie versus absent; the test assertion still requires absence and rejects zombies. A post-REPL observation verifies no executing fixture remains. The TERM-resistant test has a four-second test budget (one-second process timeout plus proposed one-second grace and observation margin), not a new production deadline.
 
@@ -48,7 +47,7 @@ Review principle: draining and retained-output limits are separate obligations (
 
 ## User impact
 
-Breaking behavioral limit, no signature change. Under the proposed policy, applications collecting over 1 MiB on either stream would receive `ProcessError`; PDF text extraction uses this API and is explicitly affected. Approve this policy or choose an additive bounded API first. Migration/release notes must identify the real caller behavior and must not invent a replacement API. Existing extraction timeout defaults do not change. Limits of 1,048,576 bytes and 1 second are proposed new constants. No constants have changed yet.
+No API or capture-limit change; PDF callers keep full extracted text. The private one-second TERM grace allows escalation for an unresponsive direct child; it is cleanup time, not a changed extraction deadline. POSIX uses forced direct-child termination after grace; Windows uses the process library's native forced termination. No process-tree or sandbox guarantee. Full captured output is not memory-bounded; an opt-in retention policy is a separate future decision.
 
 ## ADR
 

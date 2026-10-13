@@ -33,14 +33,11 @@ spec = do
     it "drains simultaneous real pipes beyond pipe capacity" \_ -> do
       assertCaptured 262144 7
 
-    it "captures exactly the proposed one MiB per stream" \_ -> do
+    it "captures complete one MiB output per stream" \_ -> do
       assertCaptured 1048576 0
 
-    it "rejects output above the proposed one MiB capture cap" \_ -> do
-      result <- runFixture 3 ["emit", "1048577", "0"] |> Task.asResult
-      case result of
-        Err (Subprocess.ProcessError _) -> Task.yield ()
-        other -> Test.fail [fmt|Expected proposed capture-limit ProcessError, got #{other}|]
+    it "preserves complete output above one MiB without a new capture cap" \_ -> do
+      assertCaptured 1048577 0
 
     it "reaps an observed direct child after timeout" \_ -> do
       withRunningChild 1 "normal" \workspace worker -> do

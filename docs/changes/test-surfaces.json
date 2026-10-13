@@ -245,7 +245,7 @@
       "kind": "hspec",
       "suite": "nhcore-test-core",
       "path": "core/test/SubprocessSpec.hs",
-      "match": "captures exactly the proposed one MiB per stream",
+      "match": "captures complete one MiB output per stream",
       "boundary": "subprocess:real",
       "expected_examples": 1,
       "fixture": "Subprocess.runWithTimeout with inline synthetic Python and owned PID control"
@@ -254,7 +254,7 @@
       "kind": "hspec",
       "suite": "nhcore-test-core",
       "path": "core/test/SubprocessSpec.hs",
-      "match": "rejects output above the proposed one MiB capture cap",
+      "match": "preserves complete output above one MiB without a new capture cap",
       "boundary": "subprocess:real",
       "expected_examples": 1,
       "fixture": "Subprocess.runWithTimeout with inline synthetic Python and owned PID control"
