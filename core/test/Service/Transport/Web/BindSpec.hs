@@ -6,6 +6,9 @@ import Core
 import Http.Client qualified as Http
 import Http.Client.Internal qualified as HttpInternal
 import IO qualified
+import Data.IORef qualified as GhcIORef
+import Network.Wai qualified as GhcWai
+import Network.HTTP.Types qualified as GhcHttp
 import Maybe qualified
 import Network.Socket qualified as GhcSocket
 import Network.Wai.Handler.Warp qualified as GhcWarp
@@ -109,6 +112,18 @@ spec = do
         let reason = validateBindHost "127.0.0.1:8080" |> Maybe.withDefault ""
         reason |> shouldSatisfy (Text.contains "withPort")
 
+      it "rejects bracketed IPv6 host-port before startup" \_ -> do
+        validateBindHost "::1" |> shouldBe Nothing
+        case validateBindHost "[::1]:8080" of
+          Nothing -> fail "REGRESSION_ASSERT:bracketed-host-port-accepted"
+          Just reason -> reason |> shouldSatisfy (Text.contains "withPort")
+
+      it "rejects brackets around a bind host and preserves bare IPv6" \_ -> do
+        validateBindHost "fe80::1" |> shouldBe Nothing
+        let bracketed = ["[::1]", "[::1", "::1]", "[::1]trailing"]
+        let accepted = bracketed |> Array.takeIf (\candidate -> validateBindHost candidate == Nothing)
+        accepted |> shouldBe []
+
       it "rejects a host with whitespace inside" \_ -> do
         validateBindHost "127.0.0.1 8080" |> shouldSatisfy (\reason -> reason != Nothing)
 
@@ -186,6 +201,37 @@ spec = do
               canBind <- canBindElsewhere nonLoopback freePort
               canBind |> shouldBe False
         probe |> Task.finally cancelApp
+
+      it "rejects invalid static bind before owned auth discovery" \_ -> do
+        requests <- GhcIORef.newIORef (0 :: Int) |> Task.fromIO
+        let discovery _ respond = do
+              GhcIORef.modifyIORef' requests (+ 1)
+              respond (GhcWai.responseLBS GhcHttp.status200 [] "not-json")
+        (result, count) <- Task.fromIO do
+          GhcWarp.testWithApplication (pure discovery) \authPort -> do
+            outcome <- IO.try (Task.runResult do
+              -- The owned fixture is live before the invalid application starts.
+              status <- getHealthStatus "fixture-control" authPort 0
+              status |> shouldBe 200
+              GhcIORef.writeIORef requests 0 |> Task.fromIO
+              eventStore <- InMemory.new |> Task.mapError toText
+              let app =
+                    Application.new
+                      |> Application.withTransport server
+                      |> Application.withHost "http://127.0.0.1"
+                      |> Application.withAuth @() (\_ -> [fmt|http://127.0.0.1:#{authPort}|])
+              Application.runWith eventStore app |> Task.asResult)
+            count <- GhcIORef.readIORef requests
+            pure (outcome, count)
+        case count of
+          0 -> pass
+          _ -> fail "REGRESSION_ASSERT:invalid-bind-contacted-auth"
+        case result of
+          Err err -> fail [fmt|unexpected startup exception: #{toText err}|]
+          Ok (Err err) -> fail [fmt|owned auth fixture failed: #{err}|]
+          Ok (Ok appResult) -> case appResult of
+            Ok _ -> fail "runWith accepted an invalid host"
+            Err err -> err |> shouldBe "Application.withHost: bind host \"http://127.0.0.1\" looks like a URL or path; use a bare address such as \"127.0.0.1\", not \"http://127.0.0.1\""
 
       it "an invalid host fails before any socket is opened" \_ -> do
         eventStore <- InMemory.new |> Task.mapError toText

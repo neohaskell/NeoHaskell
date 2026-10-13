@@ -34,6 +34,15 @@
   },
   "boundaries": [
     {
+      "kind": "hspec",
+      "suite": "nhcore-test-service",
+      "path": "core/test/Service/Transport/Web/BindSpec.hs",
+      "match": "rejects invalid static bind before owned auth discovery",
+      "boundary": "http:real",
+      "expected_examples": 1,
+      "fixture": "Owned Warp loopback discovery server with request counter, positive HTTP200 control before reset; Application.runWith actual WebTransport and invalid static host"
+    },
+    {
       "kind": "script",
       "path": "testbed/scripts/cold-start-readiness.sh",
       "boundary": "http:real"
