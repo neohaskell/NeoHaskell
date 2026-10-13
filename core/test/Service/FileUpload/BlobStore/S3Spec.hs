@@ -7,6 +7,7 @@ import Core
 import Result qualified
 import Service.FileUpload.BlobStore (BlobStore (..), BlobStoreError (..))
 import Service.FileUpload.BlobStore.S3 (S3Config (..), createBlobStore)
+import Service.FileUpload.BlobStore.S3 qualified as S3
 import Service.FileUpload.BlobStore.S3.FakeS3 (FakeS3 (..), Mode (..), withFakeS3)
 import Service.FileUpload.BlobStore.S3.FakeS3 qualified as FakeS3
 import Service.FileUpload.Core (BlobKey (..))
@@ -65,6 +66,15 @@ spec = do
           retrieved |> shouldBe Bytes.empty
 
     describe "Error Mapping" do
+      it "rejects a wrong signing secret without storing bytes" \_ -> do
+        withFakeS3 "test-bucket" "AKIAIOSFODNN7EXAMPLE" \fake -> do
+          let config = (validConfig fake.endpoint) {secretAccessKey = "COMPLETELY-WRONG-SECRET"}
+          blobStore <- createBlobStore config
+          result <- blobStore.store (BlobKey "wrong-secret") (Text.toBytes "stored-with-wrong-secret") |> Task.asResult
+          result |> shouldBe (Err (StorageError "S3 HTTP 403"))
+          remaining <- FakeS3.objects fake
+          remaining |> shouldBe []
+
       it "retrieve of a missing key is NotFound" \_ -> do
         withS3BlobStore \_ blobStore -> do
           result <- blobStore.retrieve (BlobKey "nope") |> Task.asResult
@@ -104,6 +114,36 @@ spec = do
           seen |> shouldBe []
 
     describe "Configuration" do
+      it "rejects malformed endpoint authorities before creating a store" \_ -> do
+        let endpoints =
+              [ "http://[::1]:abc"
+              , "https://127.0.0.1:"
+              , "https://127.0.0.1:99999"
+              , "http://[::1]evil.invalid"
+              , "https://exa\tmple.invalid"
+              , "https://[::1"
+              , "https://127.0.0.1\r\nX-Injected:1"
+              ]
+        outcomes <- endpoints |> Task.mapArray (\endpoint -> configRejected (validConfig endpoint))
+        outcomes |> shouldBe (endpoints |> Array.map (\_ -> True))
+        positive <- createBlobStore (validConfig "https://s3.example.com") |> Task.asResult
+        positive |> Result.map (\_ -> ()) |> shouldBe (Ok ())
+
+      it "rejects header-bound controls before any HTTP request" \_ -> do
+        withFakeS3 "test-bucket" "AKIAIOSFODNN7EXAMPLE" \fake -> do
+          let config = validConfig fake.endpoint
+          outcomes <- [config {region = "us-east-1\n"}, config {S3.accessKeyId = "AKIA\r\nInjected: value"}] |> Task.mapArray configRejected
+          outcomes |> shouldBe [True, True]
+          seen <- ConcurrentVar.peek fake.requests
+          seen |> shouldBe []
+          blobStore <- createBlobStore config
+          blobStore.store (BlobKey "valid-config-control") Bytes.empty |> orFail
+
+      it "accepts nonempty secret material that is not an HTTP header" \_ -> do
+        let config = (validConfig "https://s3.example.com") {secretAccessKey = "secret-\955-\n"}
+        result <- createBlobStore config |> Task.asResult
+        result |> Result.map (\_ -> ()) |> shouldBe (Ok ())
+
       it "rejects an http endpoint that is not loopback" \_ -> do
         result <- createBlobStore (validConfig "http://s3.example.com") |> Task.asResult
         result |> Result.map (\_ -> ()) |> shouldBe (Err "S3 requires HTTPS outside literal loopback")
@@ -189,6 +229,17 @@ withS3BlobStore action =
       createBlobStore (validConfig fake.endpoint)
         |> Task.mapError (\e -> [fmt|createBlobStore failed: #{e}|])
     action fake blobStore
+
+
+configRejected :: S3Config -> Task Text Bool
+configRejected config = do
+  result <- createBlobStore config |> Task.asResult
+  case result of
+    Err message -> do
+      Text.contains config.secretAccessKey message |> shouldBe False
+      Text.contains config.accessKeyId message |> shouldBe False
+      Task.yield True
+    Ok _ -> Task.yield False
 
 
 orFail :: Task BlobStoreError value -> Task Text value
