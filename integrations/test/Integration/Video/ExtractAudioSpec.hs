@@ -213,6 +213,41 @@ spec = do
 
 
 
+  describe "Integration.Video.ExtractAudio workspace security" do
+    it "uses an owner-only workspace and removes it after success failure timeout and cancellation" do
+      Task.runOrPanic do
+        Task.forEach verifyWorkspaceExit
+          [ succeedingFfmpeg
+          , failingFfmpeg "Invalid data found"
+          , succeedingFfmpeg {ffmpegTimesOut = True}
+          ]
+        verifyCancelledWorkspace
+
+    it "keeps shared-directory sibling media outside the extraction workspace" do
+      outcome <- Task.runOrPanic do
+        sibling <- mediaControl ["sibling-create"]
+        testSharedSibling sibling
+          |> Task.finally (mediaControl ["sibling-cleanup", sibling] |> Task.map (\_ -> ()))
+      case outcome of
+        Ok (Just payload) -> do
+          let encoded = Json.encodeText payload.commandData
+          Text.contains "ExtractionFailed" encoded `shouldBe` True
+          Text.contains "AudioExtracted" encoded `shouldBe` False
+        _ -> expectationFailure "Expected isolated relative sibling reference to reach onError"
+
+    it "omits raw subprocess diagnostics from extraction commands" do
+      let privateMarker = "/private/video-secret/00000000-0000-0000-0000-000000000001"
+      let diagnostic = [fmt|Invalid data found #{privateMarker} #{Text.repeat 8192 "x"}|] |> Text.append "\n\ESC[31m"
+      outcomes <- Task.runOrPanic do
+        Task.mapArray runDiagnosticCase
+          [ Nothing
+          , Just (Subprocess.ProcessError diagnostic)
+          , Just (Subprocess.TimeoutError diagnostic)
+          , Just (Subprocess.ToolNotFound diagnostic)
+          ]
+      Task.runOrPanic (Task.forEach (assertSanitizedDiagnostic privateMarker) outcomes)
+
+
   describe "Integration.Video.ExtractAudio real ffmpeg" do
     it "keeps the promised exact default audio byte cap with real ffmpeg" do
       audio <- Task.runOrPanic (withRealMedia "long" requireRealAudio)
@@ -277,6 +312,110 @@ spec = do
           let encoded = Json.encodeText payload.commandData
           Text.contains "ExtractionFailed" encoded `shouldBe` True
         other -> expectationFailure [fmt|Expected malformed-output error command, got #{other}|]
+
+
+-- | Inspect actual OS permissions while the runner still owns the workspace.
+inspectWorkspace :: Path.Path -> Array Text -> Task Text Text
+inspectWorkspace directory arguments = do
+  input <- case Array.get 4 arguments of
+    Nothing -> Task.throw "Missing extraction input argument"
+    Just value -> Task.yield value
+  output <- case Array.last arguments of
+    Nothing -> Task.throw "Missing extraction output argument"
+    Just value -> Task.yield value
+  mediaControl ["workspace-check", Path.toText directory, input, output]
+
+
+verifyWorkspaceExit :: Scenario -> Task Text Unit
+verifyWorkspaceExit scenario = do
+  calls <- Var.new Array.empty
+  observed <- Var.new ""
+  let original = fakeRunner calls scenario
+  let runner = original {run = \timeout executable arguments directory -> do
+        workspace <- inspectWorkspace directory arguments
+          |> Task.mapError Subprocess.ProcessError
+        Var.set workspace observed
+        original.run timeout executable arguments directory}
+  ctx <- makeContext (Just videoAccess)
+  outcome <- executeExtraction runner ctx (makeRequest VideoAudio.defaultConfig) |> Task.asResult
+  workspace <- Var.get observed
+  _ <- mediaControl ["workspace-gone", workspace]
+  case outcome of
+    Ok (Just payload) -> do
+      let expected = if scenario.ffmpegExitCode == 0 && not scenario.ffmpegTimesOut
+            then "AudioExtracted"
+            else "ExtractionFailed"
+      Task.unless (Text.contains expected (Json.encodeText payload.commandData)) do
+        Task.throw [fmt|Expected #{expected} after workspace cleanup|]
+    _ -> Task.throw "Expected an extraction callback after workspace cleanup"
+
+
+-- | A latch proves cancellation happens inside the runner, not before acquisition.
+verifyCancelledWorkspace :: Task Text Unit
+verifyCancelledWorkspace = do
+  started <- ConcurrentVar.new
+  blocked <- ConcurrentVar.new
+  calls <- Var.new Array.empty
+  let original = fakeRunner calls succeedingFfmpeg
+  let runner = original {run = \_ _ arguments directory -> do
+        workspace <- inspectWorkspace directory arguments
+          |> Task.mapError Subprocess.ProcessError
+        ConcurrentVar.set workspace started
+        ConcurrentVar.get blocked}
+  ctx <- makeContext (Just videoAccess)
+  let extraction = executeExtraction runner ctx (makeRequest VideoAudio.defaultConfig)
+        |> Task.mapError (\_ -> "Cancellation fixture extraction failed")
+  AsyncTask.process extraction \worker -> do
+    observed <- AsyncTask.race (ConcurrentVar.get started) do
+      AsyncTask.sleep 3000
+      Task.throw "Cancellation fixture never entered the runner"
+    workspace <- case observed of
+      AsyncTask.LeftWon value -> Task.yield value
+      AsyncTask.RightWon _ -> Task.throw "Cancellation fixture watchdog expired"
+    AsyncTask.cancel worker
+    outcome <- AsyncTask.waitCatch worker
+    case outcome of
+      Err _ -> Task.yield ()
+      Ok _ -> Task.throw "Cancellation unexpectedly emitted an extraction command"
+    _ <- mediaControl ["workspace-gone", workspace]
+    Task.yield ()
+
+
+testSharedSibling :: Text -> Task Text (Result Integration.IntegrationError (Maybe CommandPayload))
+testSharedSibling sibling = do
+  manifest <- mediaControl ["sibling-manifest", sibling]
+  let access = videoAccess {retrieveFile = \_ -> Task.yield (Text.toBytes manifest)}
+  ctx <- makeContext (Just access)
+  outcome <- executeExtraction Real.realRunner ctx (makeRequest VideoAudio.defaultConfig)
+    |> Task.asResult
+  _ <- mediaControl ["sibling-intact", sibling]
+  Task.yield outcome
+
+
+runDiagnosticCase :: Maybe Subprocess.Error -> Task Text (Result Integration.IntegrationError (Maybe CommandPayload))
+runDiagnosticCase injected = do
+  calls <- Var.new Array.empty
+  let diagnostic = [fmt|Invalid data found /private/video-secret/00000000-0000-0000-0000-000000000001 #{Text.repeat 8192 "x"}|] |> Text.append "\n\ESC[31m"
+  let original = fakeRunner calls (failingFfmpeg diagnostic)
+  let runner = original {run = \timeout executable arguments directory -> case injected of
+        Nothing -> original.run timeout executable arguments directory
+        Just err -> Task.throw err}
+  ctx <- makeContext (Just videoAccess)
+  executeExtraction runner ctx (makeRequest VideoAudio.defaultConfig) |> Task.asResult
+
+
+assertSanitizedDiagnostic :: Text -> Result Integration.IntegrationError (Maybe CommandPayload) -> Task Text Unit
+assertSanitizedDiagnostic privateMarker outcome = case outcome of
+  Ok (Just payload) -> case Json.decode payload.commandData of
+    Ok (ExtractionFailed {reason}) -> do
+      Task.when (Text.contains privateMarker reason || Text.contains "00000000-0000-0000-0000-000000000001" reason) do
+        Task.throw "Extraction error exposed a private path or file reference"
+      Task.when (Text.length reason > 256 || Text.contains "xxxxxxxx" reason || Text.contains "\n" reason || Text.contains "\ESC" reason) do
+        Task.throw "Extraction error copied unbounded subprocess diagnostics"
+      Task.when (Text.isEmpty reason) do
+        Task.throw "Extraction error omitted its safe explanation"
+    _ -> Task.throw "Expected a sanitized ExtractionFailed command"
+  _ -> Task.throw "Expected a sanitized extraction callback"
 
 
 -- | How the fake ffmpeg behaves.
@@ -706,6 +845,35 @@ if mode == "create":
     except BaseException:
         shutil.rmtree(workspace)
         raise
+elif mode == "workspace-check":
+    directory, source, output = map(Path, sys.argv[2:5])
+    assert directory.is_dir() and not directory.is_symlink()
+    assert directory.stat().st_mode & 0o777 == 0o700
+    assert directory != Path(tempfile.gettempdir())
+    assert source.parent == directory and output.parent == directory
+    assert source.is_file()
+    print(str(directory), end="")
+elif mode == "workspace-gone":
+    assert sys.argv[2], "runner did not report a workspace"
+    assert not Path(sys.argv[2]).exists(), "workspace survived extraction"
+elif mode == "sibling-create":
+    descriptor, name = tempfile.mkstemp(prefix="nh-sibling-", suffix=".wav")
+    os.close(descriptor)
+    try:
+        write_wav(Path(name), 16000)
+        print(name, end="")
+    except BaseException:
+        Path(name).unlink(missing_ok=True)
+        raise
+elif mode == "sibling-manifest":
+    print("ffconcat version 1.0")
+    print("file '" + Path(sys.argv[2]).name + "'")
+elif mode == "sibling-intact":
+    with wave.open(sys.argv[2], "rb") as sibling:
+        assert sibling.getnframes() == 16000
+        assert sibling.readframes(16000) == bytes([0, 16]) * 16000
+elif mode == "sibling-cleanup":
+    Path(sys.argv[2]).unlink()
 elif mode == "validate":
     path = Path(sys.argv[2]) / "output.wav"
     content = path.read_bytes()

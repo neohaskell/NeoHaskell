@@ -92,6 +92,7 @@ ADRs document significant architectural decisions made during the development of
 | [0076](0076-restore-resumable-change-pipeline.md) | Restore the resumable contract-delta change pipeline | Implemented |
 | [0077](0077-local-release-notes-and-main-publication.md) | Local release notes and coordinated publication from main | Implemented |
 | [0078](0078-documentation-image-zoom.md) | Documentation Image Zoom | Accepted |
+| [0081](0081-private-video-workspaces.md) | Scope temporary video files to a private workspace | Proposed |
 
 <!-- adr-index: this table is validated by scripts/adr-index-check (./dev adr-check,
      CI job `adr-index` in checks.yml) — every NNNN-*.md file must appear exactly

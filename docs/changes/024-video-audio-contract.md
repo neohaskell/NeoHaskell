@@ -7,7 +7,7 @@ issue: adhoc:video-audio-contract
 kind: bug
 touches: [outbound-integrations]
 breaking: false
-new-dependency: false
+new-dependency: true
 new-capability: false
 new-extension-point: false
 ```
@@ -33,6 +33,10 @@ The existing promise is a usable first part no larger than `maxOutputBytes` (def
 | C8 | Budget45 cannot be successful usable monoPCM16 WAV | `hspec:nhintegrations-test:integrations/test/Integration/Video/ExtractAudioSpec.hs#rejects a cap smaller than a WAV header and one complete PCM frame` | integration | subprocess:real |
 | C9 | Malformed output cannot be accepted solely because process exit is0 | `hspec:nhintegrations-test:integrations/test/Integration/Video/ExtractAudioSpec.hs#rejects malformed output even when the process reports success` | unit | none |
 
+| C10 | Workspace is owner-only while used and removed on ordinary exits/cancellation | `hspec:nhintegrations-test:integrations/test/Integration/Video/ExtractAudioSpec.hs#uses an owner-only workspace and removes it after success failure timeout and cancellation` | integration | filesystem:real |
+| C11 | A manifest cannot read a sibling from the shared temporary directory | `hspec:nhintegrations-test:integrations/test/Integration/Video/ExtractAudioSpec.hs#keeps shared-directory sibling media outside the extraction workspace` | integration | subprocess:real |
+| C12 | Commands contain only short safe diagnostic categories, not raw subprocess details | `hspec:nhintegrations-test:integrations/test/Integration/Video/ExtractAudioSpec.hs#omits raw subprocess diagnostics from extraction commands` | unit | none |
+
 Review principle: check complete real output, not merely a fake/header. The fixture validates RIFF length, PCM16 mono16kHz format, positive sample count and payload length, and asks real ffmpeg to decode the returned WAV. Tests generate only synthetic local input in private temporary fixtures. Existing application action/JSON/Base64 path is exercised using realRunner; this is not a full Application/upload/network acceptance test.
 
 ## User impact
@@ -41,7 +45,7 @@ Public input/output types, defaults and accepted media formats stay unchanged. T
 
 ## ADR
 
-Not required: no new public API, dependency or input-format restriction. Proposed ADR0081 and its format allowlist are not part of this repair.
+[ADR-0081](../decisions/0081-private-video-workspaces.md) covers the direct secure-temp dependency. No public API or input-format restriction changes. A direct library dependency on already-resolved temporary1.3 supplies atomic0700 directory creation and bracketed cleanup; it adds no package to the existing pinned toolchain closure. Proposed ADR0081 and its format allowlist are not part of this repair.
 
 ## Baseline and remaining gates
 
@@ -53,4 +57,4 @@ Core911 owns drains/cancel/reap; this draft does not duplicate them. Reference-p
 
 The old268-byte fake WAV has an invalid RIFF size and lacks fmt/data chunks. Replace only its fixture bytes with a valid268-byte PCM16 WAV (44-byte header plus224-byte binary payload). Preserve every existing equality,268-byte count,MIME,argument and cleanup assertion. C9 continues deliberately returning malformed four-byte RIFF data. This corrects the test setup to the existing usable-WAV guarantee; it does not weaken the output test.
 
-Files: existing `Integration/Video/ExtractAudio/Internal.hs` and facade; existing `ExtractAudioSpec.hs`; scoped dependency/HLint declarations only if required by the native secure-temp primitive. Copy-adapt the existing conversion/error/task pipeline and the existing scenario/real-media helpers. Resolve Bytes slices/pack/unpack, Task validation/finally and native secure-temp APIs through codemap/API lookup. No new public symbol or product constant/default is introduced. ffmpeg -fs remains a coarse process stop, never the final byte-bound proof.
+Files: existing `Integration/Video/ExtractAudio/Internal.hs` and facade; existing `ExtractAudioSpec.hs`; scoped dependency/HLint declarations only if required by the native secure-temp primitive. Copy-adapt the existing conversion/error/task pipeline and the existing scenario/real-media helpers. Resolve Bytes slices/pack/unpack, Task validation/finally and native secure-temp APIs through codemap/API lookup. No new public symbol or product default is introduced. System.IO.Temp.withTempDirectory supplies acquisition/release masking; the Directory wrapper lacks this primitive. A scoped HLint exception points to that missing Core capability. POSIX owner-only protection assumes a trusted/sticky temporary parent; it is not same-user isolation or a Windows ACL claim. Deletion can still fail if the OS rejects cleanup. ffmpeg -fs remains a coarse process stop, never the final byte-bound proof.

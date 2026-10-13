@@ -285,6 +285,24 @@
       "boundary": "subprocess:real",
       "expected_examples": 1,
       "fixture": "Real ffmpeg with generated PCM source prefix and exact frame-budget validation"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhintegrations-test",
+      "path": "integrations/test/Integration/Video/ExtractAudioSpec.hs",
+      "match": "uses an owner-only workspace and removes it after success failure timeout and cancellation",
+      "boundary": "filesystem:real",
+      "expected_examples": 1,
+      "fixture": "Python stat of actual workspace permissions and lifecycle; fake process boundary with cancellation latch"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhintegrations-test",
+      "path": "integrations/test/Integration/Video/ExtractAudioSpec.hs",
+      "match": "keeps shared-directory sibling media outside the extraction workspace",
+      "boundary": "subprocess:real",
+      "expected_examples": 1,
+      "fixture": "Real ffmpeg with ffconcat and a synthetic shared-directory sibling; no network"
     }
   ]
 }
