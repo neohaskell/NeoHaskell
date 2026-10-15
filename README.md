@@ -35,13 +35,15 @@ The public Astro website and documentation now live in the separate
 [`neohaskell/website-v2`](https://github.com/neohaskell/website-v2) repository.
 
 This README is the canonical guide for **human contributors**: environment
-setup, the full build/test commands, and Postgres. Two companion guides own the
-rest:
+setup, the full build/test commands, and Postgres. The `dev` entrypoint,
+`scripts/` implementations, and `codemap/` assets are staged under
+`agents-rework/` during their rework; the commands below are unavailable from
+the repository root until they are reconnected. Related guides live here:
 
-- **`AGENTS.md`** — the agent contract: hard rules, dialect style, and the
-  spec-gated change pipeline.
-- **`codemap/README.md`** — localization routing, API discovery, and codemap
-  regeneration.
+- **`agents-rework/`** — former agent instructions, skills, hooks, and
+  configuration, staged for rework.
+- **`agents-rework/codemap/README.md`** — former localization routing, API
+  discovery, and codemap regeneration.
 
 Architecture decisions live in `docs/decisions/` (indexed in
 `docs/decisions/README.md`). The standalone website fetches the latest `main`
