@@ -136,9 +136,10 @@ captureProcess timeoutMicros processToExecute = GhcException.mask \restore -> do
       Ok () -> pure result
 
 
--- Keep cleanup owned until it finishes, even if cancellation is repeated while
--- waiting. The worker remains interruptible; no OS wait is masked uninterruptibly.
--- | Wait for the owned cleanup worker without abandoning it on repeated cancellation.
+-- Keep cleanup owned until it finishes, even if cancellation is repeated or any
+-- other exception is delivered while waiting. The worker remains interruptible;
+-- no OS wait is masked uninterruptibly.
+-- | Wait for the owned cleanup worker without abandoning it on any interruption.
 awaitProcessCleanup :: GhcAsync.Async Unit -> IO.IO (Result GhcException.SomeException Unit)
 awaitProcessCleanup worker =
   GhcException.catch
@@ -146,12 +147,15 @@ awaitProcessCleanup worker =
     (finishProcessCleanup worker)
 
 
--- | Finish releasing resources before propagating a cancellation received during cleanup.
+-- | Finish releasing resources before reporting an exception received during cleanup.
+-- 'throwTo' can deliver any exception type to the waiting thread, while
+-- 'waitCatch' already returns worker failures as values; the handler therefore
+-- does not classify interruption by type.
 finishProcessCleanup ::
-  GhcAsync.Async Unit -> GhcException.SomeAsyncException -> IO.IO (Result GhcException.SomeException Unit)
-finishProcessCleanup worker cancellation = do
+  GhcAsync.Async Unit -> GhcException.SomeException -> IO.IO (Result GhcException.SomeException Unit)
+finishProcessCleanup worker interruption = do
   _ <- awaitProcessCleanup worker
-  pure (Err (GhcException.toException cancellation))
+  pure (Err interruption)
 
 
 -- | Give asynchronous cancellation precedence over synchronous cleanup failures.
