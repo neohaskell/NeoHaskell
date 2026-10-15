@@ -3,7 +3,9 @@ module SubprocessSpec (spec) where
 import Core
 import Array qualified
 import AsyncTask qualified
+import ConcurrentVar qualified
 import Console qualified
+import Control.Exception qualified as GhcException
 import GHC.Conc qualified as GhcConc
 import LinkedList qualified
 import Subprocess qualified
@@ -132,6 +134,24 @@ spec = do
           Ok completion -> Test.fail [fmt|Expected repeated cancellation, got #{completion}|]
         requireAbsent workspace
 
+    it "reaps the owned child when a synchronous exception interrupts cancellation cleanup" \_ -> do
+      workerThread <- ConcurrentVar.new
+      let publishWorkerThread child = do
+            thread <- Task.fromIO GhcConc.myThreadId
+            workerThread |> ConcurrentVar.set thread
+            child
+      withPreparedChild publishWorkerThread 10 "record-term" \workspace worker -> do
+        thread <- ConcurrentVar.peek workerThread
+        AsyncTask.process (AsyncTask.cancel worker) \firstCancel -> do
+          fixtureControl ["term-seen", workspace] |> Task.map (\_ -> ())
+          Task.fromIO (GhcConc.throwTo thread (GhcException.ErrorCall "synchronous interruption"))
+          AsyncTask.waitFor firstCancel
+        outcome <- AsyncTask.waitCatch worker
+        case outcome of
+          Err message -> message |> shouldSatisfy (Text.contains "AsyncCancelled")
+          Ok completion -> Test.fail [fmt|Expected original cancellation, got #{completion}|]
+        requireAbsent workspace
+
 
 runFixture :: Int -> Array Text -> Task Subprocess.Error Subprocess.Completion
 runFixture seconds arguments =
@@ -163,10 +183,21 @@ withRunningChild ::
   Int -> Text ->
   (Text -> AsyncTask.AsyncTask Text Subprocess.Completion -> Task Text Unit) ->
   Task Text Unit
-withRunningChild seconds mode test = do
+withRunningChild seconds mode test =
+  withPreparedChild (\child -> child) seconds mode test
+
+
+-- The prelude runs on the worker thread before the child is created, so a test
+-- can publish worker identity without a production test seam.
+withPreparedChild ::
+  (Task Text Subprocess.Completion -> Task Text Subprocess.Completion) ->
+  Int -> Text ->
+  (Text -> AsyncTask.AsyncTask Text Subprocess.Completion -> Task Text Unit) ->
+  Task Text Unit
+withPreparedChild prelude seconds mode test = do
   workspace <- fixtureControl ["create"]
   let cleanup = fixtureControl ["cleanup", workspace] |> Task.map (\_ -> ())
-  let child = runFixture seconds ["start", workspace, mode] |> Task.mapError (\err -> [fmt|#{err}|])
+  let child = runFixture seconds ["start", workspace, mode] |> Task.mapError (\err -> [fmt|#{err}|]) |> prelude
   AsyncTask.process child (\worker -> do
     let check = do
           requireReady workspace

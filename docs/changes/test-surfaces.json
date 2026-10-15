@@ -339,6 +339,15 @@
       "boundary": "subprocess:real",
       "expected_examples": 1,
       "fixture": "Real direct child records TERM; second cancellation during cleanup; PID absence and async propagation required"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-core",
+      "path": "core/test/SubprocessSpec.hs",
+      "match": "reaps the owned child when a synchronous exception interrupts cancellation cleanup",
+      "boundary": "subprocess:real",
+      "expected_examples": 1,
+      "fixture": "Real direct child records TERM; synchronous ErrorCall thrown to the published worker thread during cancellation cleanup; PID absence and original AsyncCancelled propagation required"
     }
   ]
 }
