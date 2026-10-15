@@ -5,6 +5,7 @@ import json
 import os
 import runpy
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -151,6 +152,39 @@ class IntegrationWorkflows(unittest.TestCase):
         self.assertIn("cabal test ${{ matrix.test-suite }}", job)
         self.assertIn('"integrations/**"', workflow["_on_block"](text))
         self.assertIn('".github/workflows/**"', workflow["_on_block"](text))
+
+
+class GateRegistration(unittest.TestCase):
+    GATE_SCRIPTS = ("IntegrationsGateSpec.hs", "test-integrations-gate", "test-integrations-gate-red")
+
+    def test_gate_scripts_are_doctor_exempted_with_reasons(self):
+        # Parsed statically: doctor runs workflow-check, which runs this suite.
+        doctor = (ROOT / "scripts/doctor").read_text()
+        block = re.search(r"(?ms)^EXEMPT_NAMES=\((.*?)^\)", doctor).group(1)
+        reasons = dict(re.findall(r'^\s*"([^":]+):([^"]+)"\s*$', block, re.M))
+        for name in self.GATE_SCRIPTS:
+            with self.subTest(script=name):
+                self.assertTrue((ROOT / "scripts" / name).is_file())
+                self.assertTrue(reasons.get(name, "").strip(),
+                                f"scripts/{name} has no reasoned doctor exemption")
+
+    def test_checks_workflow_runs_gate_suite_directly(self):
+        workflow = runpy.run_path(str(ROOT / "scripts/workflow-check"))
+        text = workflow["strip_comments"]((ROOT / ".github/workflows/checks.yml").read_text())
+        doctor_job = workflow["job_blocks"](text)["doctor"]
+        self.assertRegex(doctor_job, r"(?m)^\s+- run: python3 scripts/test-integrations-gate\s*$")
+
+    def test_integration_runtime_fixtures_are_printed_by_hspec(self):
+        surfaces = json.loads((ROOT / "docs/changes/test-surfaces.json").read_text())
+        entries = [entry for entry in surfaces["boundaries"]
+                   if entry.get("suite") == "nhintegrations-test" and entry.get("fixture")]
+        self.assertTrue(entries)
+        for entry in entries:
+            with self.subTest(match=entry["match"]):
+                source = (ROOT / entry["path"]).read_text()
+                labels = re.findall(r'\b(?:describe|it)\s+"([^"]*)"', source)
+                self.assertTrue(any(entry["fixture"] in label for label in labels),
+                                f"no describe/it label prints fixture `{entry['fixture']}`")
 
 
 if __name__ == "__main__":

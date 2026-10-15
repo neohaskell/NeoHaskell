@@ -37,6 +37,9 @@ jobs:
       # Static workflow wiring: hidden-artifact upload opt-in + retrospect
       # loop stays deterministic/report-only (pure stdlib, no toolchain).
       - run: ./dev workflow-check
+      # Change 025: the integrations gate regression suite runs as its own
+      # visible step, not only inside the workflow-check self-test.
+      - run: python3 scripts/test-integrations-gate
       # ADR-0076: prove `.pipeline` is the sole discoverable change process
       # and superseded queue-backed execution assets remain absent.
       - run: ./dev process-check

@@ -48,7 +48,7 @@ spec :: Spec
 spec = do
   describe "Integration.Oura.SyncAll" do
     around withLocalTokenFailure do
-      describe "executeSyncAll" do
+      describe "executeSyncAll (SyncAllSpec.localTokenFailure)" do
         it "fetches all seventeen data types and returns command payload" \(ctx, refreshCount) -> do
 
           -- Mock fetch that returns empty data for all paginated endpoints
