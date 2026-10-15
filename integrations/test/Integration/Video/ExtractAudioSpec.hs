@@ -262,6 +262,16 @@ spec = do
       Bytes.length capped `shouldSatisfy` (\size -> size > 44 && size <= 32044)
       Bytes.length capped `shouldSatisfy` (\size -> size < Bytes.length complete)
 
+    it "tagged real MP4 returns exactly one usable PCM frame at the minimum cap" do
+      let config = VideoAudio.defaultConfig {maxOutputBytes = 46}
+      audio <- Task.runOrPanic (withRealMedia "tagged-mp4" (requireConfiguredAudio config))
+      Bytes.length audio `shouldBe` 46
+
+    it "tagged real MP4 returns usable PCM frames within a 2000-byte cap" do
+      let config = VideoAudio.defaultConfig {maxOutputBytes = 2000}
+      audio <- Task.runOrPanic (withRealMedia "tagged-mp4" (requireConfiguredAudio config))
+      Bytes.length audio `shouldSatisfy` (\size -> size > 44 && size <= 2000)
+
     it "keeps the promised exact default audio byte cap with real ffmpeg" do
       audio <- Task.runOrPanic (withRealMedia "long" requireRealAudio)
       Bytes.length audio `shouldSatisfy` (\size -> size <= 25000000)
@@ -903,6 +913,35 @@ if mode == "create":
             assert any(stream["codec_type"] == "audio" and stream["codec_name"] == "aac" for stream in streams)
             assert "mp4" in metadata["format"]["format_name"].split(",")
             assert 2.9 <= float(metadata["format"]["duration"]) <= 3.1
+        elif kind == "tagged-mp4":
+            source = workspace / "input"
+            comment = "c" * 3000
+            generated = subprocess.run([
+                "ffmpeg", "-nostdin", "-v", "error",
+                "-f", "lavfi", "-i", "color=c=blue:s=160x120:r=10:d=3",
+                "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000:duration=3",
+                "-map", "0:v:0", "-map", "1:a:0", "-t", "3",
+                "-c:v", "mpeg4", "-pix_fmt", "yuv420p", "-c:a", "aac",
+                "-metadata", "artist=NeoHaskell regression",
+                "-metadata", "comment=" + comment,
+                "-f", "mp4", str(source)
+            ], capture_output=True, timeout=5)
+            assert generated.returncode == 0, generated.stderr.decode(errors="replace")
+            probe = subprocess.run([
+                "ffprobe", "-v", "error", "-show_streams", "-show_format",
+                "-of", "json", str(source)
+            ], capture_output=True, timeout=5)
+            assert probe.returncode == 0, probe.stderr.decode(errors="replace")
+            metadata = json.loads(probe.stdout)
+            streams = metadata["streams"]
+            assert len(streams) == 2
+            assert any(stream["codec_type"] == "video" and stream["codec_name"] == "mpeg4" for stream in streams)
+            assert any(stream["codec_type"] == "audio" and stream["codec_name"] == "aac" for stream in streams)
+            assert "mp4" in metadata["format"]["format_name"].split(",")
+            assert 2.9 <= float(metadata["format"]["duration"]) <= 3.1
+            tags = metadata["format"]["tags"]
+            assert tags["artist"] == "NeoHaskell regression"
+            assert tags["comment"] == comment
         elif kind == "junk":
             (workspace / "input").write_bytes(b"not a media container")
         else:

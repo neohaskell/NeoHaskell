@@ -447,6 +447,24 @@
       "boundary": "subprocess:real",
       "expected_examples": 1,
       "fixture": "Real ffmpeg extraction of generated 3-second MPEG-4 video plus AAC audio in MP4; ffprobe stream verification and independent WAV decode"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhintegrations-test",
+      "path": "integrations/test/Integration/Video/ExtractAudioSpec.hs",
+      "match": "tagged real MP4 returns exactly one usable PCM frame at the minimum cap",
+      "boundary": "subprocess:real",
+      "expected_examples": 1,
+      "fixture": "Real ffmpeg extraction of generated 3-second MPEG-4 video plus AAC audio in MP4 tagged with artist and a 3000-character comment; ffprobe stream and tag verification and independent WAV decode"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhintegrations-test",
+      "path": "integrations/test/Integration/Video/ExtractAudioSpec.hs",
+      "match": "tagged real MP4 returns usable PCM frames within a 2000-byte cap",
+      "boundary": "subprocess:real",
+      "expected_examples": 1,
+      "fixture": "Real ffmpeg extraction of generated 3-second MPEG-4 video plus AAC audio in MP4 tagged with artist and a 3000-character comment; ffprobe stream and tag verification and independent WAV decode"
     }
   ]
 }
