@@ -314,11 +314,14 @@ conversionFailure diagnostic =
 --
 -- Drops the video stream (@-vn@), converts to the configured channel count
 -- and sample rate, and stops writing at the configured size (@-fs@).
+-- @-map_metadata -1@ keeps source tags out of the WAV: ffmpeg would write them
+-- as a LIST/INFO chunk that consumes the byte budget, and @-bitexact@ alone
+-- does not drop them.
 --
 -- >>> import Array qualified
 -- >>> import Integration.Video.ExtractAudio (defaultConfig)
 -- >>> Array.toLinkedList (buildFfmpegArgs defaultConfig "in.mp4" "out.wav")
--- ["-nostdin","-v","error","-i","in.mp4","-vn","-ac","1","-ar","16000","-fs","25000000","-bitexact","out.wav"]
+-- ["-nostdin","-v","error","-i","in.mp4","-vn","-ac","1","-ar","16000","-fs","25000000","-map_metadata","-1","-bitexact","out.wav"]
 buildFfmpegArgs :: Config -> Path -> Path -> Array Text
 buildFfmpegArgs config inputPath outputPath = do
   let channelsText = Text.fromInt config.channels
@@ -332,6 +335,7 @@ buildFfmpegArgs config inputPath outputPath = do
     , "-ac", channelsText
     , "-ar", sampleRateText
     , "-fs", maxBytesText
+    , "-map_metadata", "-1"
     , "-bitexact"
     , Path.toText outputPath
     ]
