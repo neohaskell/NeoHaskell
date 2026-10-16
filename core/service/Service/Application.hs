@@ -45,6 +45,8 @@ module Service.Application (
   withCors,
   withHealthCheck,
   withoutHealthCheck,
+  withHost,
+  withPort,
   withDispatcherConfig,
   useQueryObjectStore,
   useReadinessEndpoint,
@@ -120,6 +122,7 @@ import Record qualified
 import Schema qualified
 import LinkedList (LinkedList)
 import Maybe (Maybe (..))
+import Maybe qualified
 import Result (Result (..))
 import Service.Command.Core (NameOf)
 import Service.Entity.Core (Entity (..), EntityOf, EventOf)
@@ -405,7 +408,11 @@ data Application = Application
     integrationRegistrations :: Array IntegrationRegistrationEntry,
     -- | Readiness endpoint configuration. Enabled by default at /ready.
     -- Use useReadinessEndpoint to customize.
-    readinessConfig :: Maybe ReadinessConfig
+    readinessConfig :: Maybe ReadinessConfig,
+    -- | Interface the WebTransport binds. Set via withHost; Nothing keeps the transport's own host.
+    bindHost :: Maybe Text,
+    -- | Port the WebTransport binds. Set via withPort; Nothing keeps the transport's own port.
+    bindPort :: Maybe Int
   }
 
 
@@ -443,7 +450,9 @@ new =
       deferredOutboundLifecycleRegs = Array.empty,
       deferredInboundRegs = Array.empty,
       integrationRegistrations = Array.empty,
-      readinessConfig = Just ReadinessConfig {readinessPath = "ready", includeQueryStatus = True}
+      readinessConfig = Just ReadinessConfig {readinessPath = "ready", includeQueryStatus = True},
+      bindHost = Nothing,
+      bindPort = Nothing
     }
 
 
@@ -780,6 +789,7 @@ initAndWrapFileUpload fileConfig = do
 run :: Application -> Task Text Unit
 run app =
    Log.withScope [("component", "Application")] do
+     validateStaticBindOverrides app
      -- 0. Set line buffering for stdout/stderr (container visibility)
      -- GHC defaults to block buffering when isatty() returns false (always in containers),
      -- which makes Console.print output invisible. LineBuffering ensures immediate visibility.
@@ -943,6 +953,18 @@ run app =
      runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup maybeWebAuthSetup maybeIntegrationStatus registry resolvedApp
 
 
+-- | Reject present static web overrides before acquiring startup resources.
+validateStaticBindOverrides :: Application -> Task Text Unit
+validateStaticBindOverrides app =
+  Task.when (app.transports |> Map.contains "WebTransport") do
+    case app.bindHost |> Maybe.andThen Web.validateBindHost of
+      Just reason -> Task.throw [fmt|Application.withHost: #{reason}|]
+      Nothing -> pass
+    case app.bindPort |> Maybe.andThen Web.validateBindPort of
+      Just reason -> Task.throw [fmt|Application.withPort: #{reason}|]
+      Nothing -> pass
+
+
 -- | Run application with a provided EventStore.
 --
 -- Use this when you need to provide your own EventStore instance.
@@ -961,6 +983,7 @@ run app =
 -- 6. Runs each transport once with combined endpoints
 runWith :: EventStore Json.Value -> Application -> Task Text Unit
 runWith eventStore app = do
+  validateStaticBindOverrides app
   -- Resolve file upload (only EvaluatedFileUpload supported - DeferredFileUpload requires run)
   (maybeFileUploadSetup, fileUploadCleanup) <- case app.fileUploadFactory of
     Nothing -> Task.yield (Nothing, Task.yield ())
@@ -1319,7 +1342,7 @@ runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup maybeWebAuthSe
   -- When transports complete (or fail), cancel inbound workers for clean shutdown
   -- Use Task.finally to ensure cleanup always runs even if runTransports fails
   result <-
-    Transports.runTransports app.transports combinedEndpointsByTransport combinedSchemasByTransport combinedQueryEndpoints combinedQuerySchemas maybeAuthEnabled maybeOAuth2Config maybeFileUploadEnabled app.apiInfo app.corsConfig app.healthCheckConfig maybeIntegrationStatus app.readinessConfig subscriber
+    Transports.runTransports app.transports combinedEndpointsByTransport combinedSchemasByTransport combinedQueryEndpoints combinedQuerySchemas maybeAuthEnabled maybeOAuth2Config maybeFileUploadEnabled app.apiInfo app.corsConfig app.healthCheckConfig maybeIntegrationStatus app.readinessConfig app.bindHost app.bindPort subscriber
       |> Task.finally cleanupAll
       |> Task.asResult
 
@@ -1789,6 +1812,68 @@ withoutHealthCheck ::
   Application
 withoutHealthCheck app =
   app {healthCheckConfig = Nothing, healthCheckFactory = Nothing}
+
+
+-- | Set the interface the WebTransport binds.
+--
+-- Overrides the host of the registered 'Web.server', whatever the order of
+-- 'withTransport' and 'withHost'. Without it the transport keeps the
+-- registered transport's host; 'Web.server' defaults to IPv4-preferred binding
+-- (@"*4"@, with IPv6 fallback, unchanged from the previous @Warp.run@).
+--
+-- * @"127.0.0.1"@ (or any literal address such as @"::1"@): that address only.
+--   Loopback-only suits a reverse proxy in the same network namespace (same
+--   host or container, shared pod network). A proxy in a separate namespace
+--   cannot reach a loopback listener; keep a non-loopback bind there.
+-- * @"*"@: any interface; the selected address family is platform-dependent.
+-- * @"*4"@ / @"*6"@: any interface, preferring IPv4 / IPv6 with fallback.
+-- * @"!4"@ / @"!6"@: any interface in IPv4 / IPv6 only.
+--
+-- The value is checked when the server starts ('Web.validateBindHost'): an
+-- empty host, a URL such as @"http://127.0.0.1"@, a @host:port@ pair or
+-- whitespace fails 'run' with @Application.withHost: ...@ before any socket is
+-- opened. An address this machine does not own fails at bind time with
+-- @WebTransport could not bind <host>:<port>@.
+--
+-- Example:
+--
+-- @
+-- app = Application.new
+--   |> Application.withTransport WebTransport.server
+--   |> Application.withHost "127.0.0.1"
+--   |> Application.withService myService
+-- @
+withHost ::
+  Text ->
+  Application ->
+  Application
+withHost host app =
+  app {bindHost = Just host}
+
+
+-- | Set the port the WebTransport binds.
+--
+-- Overrides the port of the registered 'Web.server' (default 8080), whatever
+-- the order of 'withTransport' and 'withPort'.
+--
+-- Accepted range is 1..65535 ('Web.validateBindPort'). Port 0 is rejected:
+-- the OS would pick a port that nothing reports back. A port already in use
+-- fails at bind time with @WebTransport could not bind <host>:<port>@.
+--
+-- Example:
+--
+-- @
+-- app = Application.new
+--   |> Application.withTransport WebTransport.server
+--   |> Application.withPort 9090
+--   |> Application.withService myService
+-- @
+withPort ::
+  Int ->
+  Application ->
+  Application
+withPort port app =
+  app {bindPort = Just port}
 
 
 -- | Validate dispatcher configuration fields are positive.
