@@ -16,7 +16,7 @@ import Text qualified
 
 spec :: Spec Unit
 spec = do
-  describe "Subprocess" do
+  describe "Subprocess.runWithTimeout (real OS process boundary)" do
     it "drains real stderr before waiting for process exit" \_ -> do
       result <- Subprocess.runWithTimeout 3 "python3"
         [ "-c"
