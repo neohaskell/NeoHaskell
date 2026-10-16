@@ -203,8 +203,11 @@ class GateRegistration(unittest.TestCase):
             with self.subTest(match=entry["match"]):
                 source = (ROOT / entry["path"]).read_text()
                 labels = re.findall(r'\b(?:describe|it)\s+"([^"]*)"', source)
-                self.assertTrue(any(entry["fixture"] in label for label in labels),
-                                f"no describe/it label prints fixture `{entry['fixture']}`")
+                prefixes = [prefix.strip() for prefix in re.findall(
+                    r'\[fmt\|fixture: ([^#|]*)', source) if prefix.strip()]
+                self.assertTrue(any(entry["fixture"] in label for label in labels)
+                                or any(entry["fixture"].startswith(prefix) for prefix in prefixes),
+                                f"no describe/it label or fixture print emits `{entry['fixture']}`")
 
 
 if __name__ == "__main__":
