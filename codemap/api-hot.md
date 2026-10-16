@@ -300,8 +300,8 @@ when WRITING TESTS; they are not feature-code frequency signal.
 - `mapArray :: (element -> Task err output) -> Array element -> Task err (Array output)`  <!-- 127 test call sites -->
 - `throw :: err -> Task err w`  <!-- 125 test call sites -->
 - `andThen :: (input -> Task err output) -> Task err input -> Task err output`  <!-- 95 test call sites -->
-- `fromIO :: IO value -> Task w value`  <!-- 93 test call sites -->
-- `map :: (input -> output) -> Task err input -> Task err output`  <!-- 86 test call sites -->
+- `fromIO :: IO value -> Task w value`  <!-- 95 test call sites -->
+- `map :: (input -> output) -> Task err input -> Task err output`  <!-- 87 test call sites -->
 
 ## Array
 
@@ -316,7 +316,7 @@ when WRITING TESTS; they are not feature-code frequency signal.
 
 ## Text
 
-- `contains :: Text -> Text -> Bool`  <!-- 458 test call sites -->
+- `contains :: Text -> Text -> Bool`  <!-- 459 test call sites -->
 - `toBytes :: Text -> Bytes`  <!-- 98 test call sites -->
 - `fromLinkedList :: LinkedList Char -> Text`  <!-- 58 test call sites -->
 - `length :: Text -> Int`  <!-- 42 test call sites -->
@@ -362,10 +362,10 @@ when WRITING TESTS; they are not feature-code frequency signal.
 
 - `containing :: value -> Task w (ConcurrentVar value)`  <!-- 126 test call sites -->
 - `modify :: (value -> value) -> ConcurrentVar value -> Task w Unit`  <!-- 121 test call sites -->
-- `peek :: ConcurrentVar value -> Task w value`  <!-- 104 test call sites -->
+- `peek :: ConcurrentVar value -> Task w value`  <!-- 105 test call sites -->
 - `get :: ConcurrentVar value -> Task w value`  <!-- 39 test call sites -->
-- `set :: value -> ConcurrentVar value -> Task w ()`  <!-- 15 test call sites -->
-- `new :: forall value w. Task w (ConcurrentVar value)`  <!-- 14 test call sites -->
+- `set :: value -> ConcurrentVar value -> Task w ()`  <!-- 16 test call sites -->
+- `new :: forall value w. Task w (ConcurrentVar value)`  <!-- 15 test call sites -->
 - `swap :: value -> ConcurrentVar value -> Task w value`  <!-- 7 test call sites -->
 - `modifyReturning :: (value -> Task Never (value, a)) -> ConcurrentVar value -> Task w a`  <!-- 6 test call sites -->
 
@@ -377,4 +377,4 @@ when WRITING TESTS; they are not feature-code frequency signal.
 - `generateV5 :: Uuid -> Text -> Uuid`  <!-- 19 test call sites -->
 - `fromText :: Text -> Maybe Uuid`  <!-- 3 test call sites -->
 
-*cut: 142 more modules (Map (260), Service.Application (250), AsyncTask (242), Set (233), Stream (212), …) — full surface: codemap/signatures/*
+*cut: 142 more modules (Map (260), Service.Application (250), AsyncTask (246), Set (233), Stream (212), …) — full surface: codemap/signatures/*
