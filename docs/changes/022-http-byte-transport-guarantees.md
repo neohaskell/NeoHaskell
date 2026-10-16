@@ -58,7 +58,9 @@ C8 requires the pinned Unix trust-loader capability: `SYSTEM_CERTIFICATE_PATH`
 selects the fixture bundle in a fresh process. The pinned macOS loader uses
 Keychains and has no environment-bundle override; macOS/Windows return exit77,
 which is unsupported evidence, never a passing or skipped-green criterion.
-`SSL_CERT_FILE` is not this dependency's override. C9 invokes the actual private
+The fixture clears `SSL_CERT_FILE`, `SSL_CERT_DIR` and `NIX_SSL_CERT_FILE` in
+the child environment so only `SYSTEM_CERTIFICATE_PATH` selects its bundle.
+C9 invokes the actual private
 secure reader over a plaintext loopback socket to isolate read/close behavior;
 it cannot stand in for public secure request success. Both body modes observe
 peer closure and require it before the source EOF latch/deadline.
@@ -67,6 +69,16 @@ The script uses Python stdlib loopback fixtures and invokes `./dev exec cabal
 repl` for the actual Haskell request path. It checks clean compilation and
 explicit output markers rather than trusting GHCi exit0. Temporary synthetic
 keys are deleted and listeners close in `finally`; no system trust is changed.
+
+Linux CI runs all five modes in `test-transport` and requires that job in
+`ci-gate`. The criteria report includes its actual output alongside the Core
+and service reports. Each successful mode emits one exact
+`PASS script:core/test/Http/transport_fixture.py#<mode>` receipt and the printed
+`Http.Client.syntheticTransport` fixture identity. Nonzero exit (including 77),
+missing or duplicate receipts, wrong modes, and missing fixture identity fail
+the gate. Scripts do not fabricate Hspec summaries. The local script probe
+allows 1800 seconds for its native-toolchain sessions; HTTP observation
+deadlines and production timeouts are unchanged.
 
 C5–C7 now provide executable audit-derived transport controls without any
 production test seam. C5 deliberately injects trust only into a test manager;
