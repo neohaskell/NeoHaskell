@@ -4,7 +4,7 @@ The web server always bound Warp's default host on a port fixed in code, so an
 app running behind a reverse proxy could not restrict itself to loopback and
 could not choose its port without building a `WebTransport` by hand. The
 maintainer accepted a loopback-bind fix and asked to "make the port configurable
-too". `WebTransport` gains a `host` field (default `"*4"`, all IPv4 interfaces —
+too". `WebTransport` gains a `host` field (default `"*4"`, IPv4 preferred with IPv6 fallback —
 exactly what `Warp.run` bound before, so behaviour is unchanged) and `Application` gains `withHost` and `withPort`
 builders next to the other `with*` builders. `runTransport` now starts Warp with
 `runSettings` built from that host and port, and logs `<host>:<port>`.
@@ -68,7 +68,7 @@ also validated at `run`/`runWith` entry before avoidable startup effects.
 
 | ID | Behavior | Proving test | Level | Boundary |
 |----|----------|--------------|-------|----------|
-| C1 | `WebTransport` binds all IPv4 interfaces on port 8080 by default, exactly as before (`Warp.run`) | `hspec:nhcore-test-service:core/test/Service/Transport/Web/BindSpec.hs#server binds all IPv4 interfaces by default (unchanged from Warp.run)`<br>`hspec:nhcore-test-service:core/test/Service/Transport/Web/BindSpec.hs#server listens on port 8080 by default` | unit | none |
+| C1 | `WebTransport` defaults to Warp's IPv4-preferred `*4` and port 8080, exactly as before (`Warp.run`) | `hspec:nhcore-test-service:core/test/Service/Transport/Web/BindSpec.hs#server binds all IPv4 interfaces by default (unchanged from Warp.run)`<br>`hspec:nhcore-test-service:core/test/Service/Transport/Web/BindSpec.hs#server listens on port 8080 by default` | unit | none |
 | C2 | `Application.withHost` / `Application.withPort` record the bind host and port, and a new `Application` leaves them unset | `hspec:nhcore-test-service:core/test/Service/Transport/Web/BindSpec.hs#withHost records the bind host`<br>`hspec:nhcore-test-service:core/test/Service/Transport/Web/BindSpec.hs#withPort records the bind port`<br>`hspec:nhcore-test-service:core/test/Service/Transport/Web/BindSpec.hs#bind host and port are unset on a new Application` | unit | none |
 | C3 | The host text maps to the right Warp `HostPreference` (`127.0.0.1`, `*`, `*4`, `*6`, `::1`) | `hspec:nhcore-test-service:core/test/Service/Transport/Web/BindSpec.hs#maps a literal IPv4 address to that host`<br>`hspec:nhcore-test-service:core/test/Service/Transport/Web/BindSpec.hs#maps * to all interfaces`<br>`hspec:nhcore-test-service:core/test/Service/Transport/Web/BindSpec.hs#maps *4 to all IPv4 interfaces`<br>`hspec:nhcore-test-service:core/test/Service/Transport/Web/BindSpec.hs#maps *6 to all IPv6 interfaces`<br>`hspec:nhcore-test-service:core/test/Service/Transport/Web/BindSpec.hs#maps a literal IPv6 address to that host` | unit | none |
 | C4 | The Warp settings the transport runs with carry the configured host and port | `hspec:nhcore-test-service:core/test/Service/Transport/Web/BindSpec.hs#carries the configured host and port into Warp` | unit | none |
@@ -90,7 +90,7 @@ Breaking for code that builds the records positionally or with every field
 named, and for prior custom transports using port `0`: they must select a fixed
 port in `1..65535`. The validation introduced by this feature rejects ephemeral
 ports; this remediation preserves that existing decision. Apps that use `WebTransport.server` and apps built with `Application.new`
-and the `with*` builders are unaffected and keep binding all IPv4 interfaces
+and the `with*` builders are unaffected and keep Warp's IPv4-preferred binding
 on port 8080 unless they opt in; an app that already sets `server { port = ... }`
 keeps that port, because an absent `withPort` preserves the transport's own
 setting. Migration: a program that writes `WebTransport { ... }` with all fields

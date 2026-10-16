@@ -161,8 +161,10 @@ data WebTransport = WebTransport
     --   Loopback-only suits a reverse proxy that runs in the same network
     --   namespace (same host, same container, or a shared pod network); a proxy
     --   in a separate namespace cannot reach this listener through its own loopback.
-    -- * @"*4"@: all IPv4 interfaces (the default; what @Warp.run@ bound before).
-    -- * @"*"@: all interfaces, IPv4 and IPv6. @"*6"@: all IPv6 interfaces.
+    -- * @"*4"@: any interface, IPv4 preferred with IPv6 fallback (Warp's default).
+    -- * @"*6"@: any interface, IPv6 preferred with IPv4 fallback.
+    -- * @"*"@: either family, selected by the platform.
+    -- * @"!4"@ / @"!6"@: IPv4 / IPv6 only.
     --
     -- Checked by 'validateBindHost' before the server starts.
     host :: Text,
@@ -199,7 +201,8 @@ deriveKnownHash "WebTransport"
 
 -- | Default WebTransport configuration.
 -- Port defaults to 8080.
--- Host defaults to "*4" (all IPv4 interfaces, unchanged from Warp.run) - use Application.withHost "127.0.0.1" to bind loopback only, or "*" to add IPv6.
+-- Host defaults to "*4" (IPv4 preferred, IPv6 fallback, unchanged from Warp.run).
+-- Use Application.withHost "127.0.0.1" to bind IPv4 loopback only.
 -- Max body size defaults to 1MB (1048576 bytes) to prevent DoS attacks.
 -- Auth is disabled by default - use Application.withAuth to enable.
 -- OAuth2 is disabled by default - use Application.withOAuth2Provider to enable.
@@ -225,8 +228,9 @@ server =
 
 -- | Convert a 'WebTransport' host setting into a Warp 'Warp.HostPreference'.
 --
--- @"*"@ is all interfaces, @"*4"@ and @"*6"@ are all IPv4 / IPv6 interfaces,
--- anything else is a literal address or hostname.
+-- @"*"@ selects either family; @"*4"@ and @"*6"@ prefer IPv4 / IPv6 with fallback.
+-- @"!4"@ and @"!6"@ select only that family. Other text is passed through
+-- as a literal address or hostname.
 hostPreference :: Text -> Warp.HostPreference
 hostPreference hostText =
   hostText
@@ -256,7 +260,7 @@ applyBindOverrides maybeHost maybePort transport =
 
 
 -- | Check a bind host before the server starts. Accepted forms are the Warp
--- wildcards (@"*"@, @"*4"@, @"*6"@) and a bare literal address or hostname
+-- wildcards (@"*"@, @"*4"@, @"*6"@, @"!4"@, @"!6"@) and a bare literal address or hostname
 -- such as @"127.0.0.1"@, @"::1"@ or @"localhost"@.
 --
 -- The checks target the mistakes a hand-written or LLM-written config makes:
@@ -268,7 +272,10 @@ applyBindOverrides maybeHost maybePort transport =
 -- address this machine does not own still fails at bind time with the
 -- @could not bind@ error from 'runTransport'.
 --
--- Returns the reason the host is rejected, or 'Nothing' when it is usable.
+-- Returns the reason the host is rejected, or 'Nothing' when these checks pass.
+-- Balanced bracketed text currently passes but is not unwrapped for Warp:
+-- use bare @"::1"@, not @"[::1]"@. Early rejection of balanced brackets is
+-- pending a separate correction to the published validation expectation.
 validateBindHost :: Text -> Maybe Text
 validateBindHost hostText
   | Text.isEmpty (Text.trim hostText) =

@@ -1818,15 +1818,16 @@ withoutHealthCheck app =
 --
 -- Overrides the host of the registered 'Web.server', whatever the order of
 -- 'withTransport' and 'withHost'. Without it the transport keeps the
--- registered transport's host; 'Web.server' defaults to all IPv4 interfaces
--- (@"*4"@, unchanged from the previous @Warp.run@).
+-- registered transport's host; 'Web.server' defaults to IPv4-preferred binding
+-- (@"*4"@, with IPv6 fallback, unchanged from the previous @Warp.run@).
 --
 -- * @"127.0.0.1"@ (or any literal address such as @"::1"@): that address only.
 --   Loopback-only suits a reverse proxy in the same network namespace (same
 --   host or container, shared pod network). A proxy in a separate namespace
 --   cannot reach a loopback listener; keep a non-loopback bind there.
--- * @"*"@: all interfaces, IPv4 and IPv6.
--- * @"*4"@ / @"*6"@: all IPv4 / all IPv6 interfaces.
+-- * @"*"@: any interface; the selected address family is platform-dependent.
+-- * @"*4"@ / @"*6"@: any interface, preferring IPv4 / IPv6 with fallback.
+-- * @"!4"@ / @"!6"@: any interface in IPv4 / IPv6 only.
 --
 -- The value is checked when the server starts ('Web.validateBindHost'): an
 -- empty host, a URL such as @"http://127.0.0.1"@, a @host:port@ pair or
