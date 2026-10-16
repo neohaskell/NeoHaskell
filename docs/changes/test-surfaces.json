@@ -221,7 +221,7 @@
       "match": "keeps the promised exact default audio byte cap with real ffmpeg",
       "boundary": "subprocess:real",
       "expected_examples": 1,
-      "fixture": "Real ffmpeg with synthetic local PCM WAV and independent frame/decode validation"
+      "fixture": "ExtractAudioSpec.mediaControl validate"
     },
     {
       "kind": "hspec",
@@ -230,7 +230,7 @@
       "match": "returns nonempty independently decodable audio from real short media",
       "boundary": "subprocess:real",
       "expected_examples": 1,
-      "fixture": "Real ffmpeg with synthetic local PCM WAV and independent frame/decode validation"
+      "fixture": "ExtractAudioSpec.mediaControl validate"
     },
     {
       "kind": "hspec",
@@ -239,7 +239,7 @@
       "match": "rejects a real empty audio track instead of reporting success",
       "boundary": "subprocess:real",
       "expected_examples": 1,
-      "fixture": "Real ffmpeg with synthetic local PCM WAV and independent frame/decode validation"
+      "fixture": "ExtractAudioSpec.mediaControl create"
     },
     {
       "kind": "hspec",
@@ -248,7 +248,7 @@
       "match": "rejects nonmedia input through the real ffmpeg boundary",
       "boundary": "subprocess:real",
       "expected_examples": 1,
-      "fixture": "Real ffmpeg with synthetic local PCM WAV and independent frame/decode validation"
+      "fixture": "ExtractAudioSpec.mediaControl create"
     },
     {
       "kind": "hspec",
@@ -257,7 +257,7 @@
       "match": "preserves the first complete source frames in capped real audio",
       "boundary": "subprocess:real",
       "expected_examples": 1,
-      "fixture": "Real ffmpeg with generated PCM source prefix and exact frame-budget validation"
+      "fixture": "ExtractAudioSpec.mediaControl validate"
     },
     {
       "kind": "hspec",
@@ -266,7 +266,7 @@
       "match": "enforces a configured exact cap on usable real audio",
       "boundary": "subprocess:real",
       "expected_examples": 1,
-      "fixture": "Real ffmpeg with generated PCM source prefix and exact frame-budget validation"
+      "fixture": "ExtractAudioSpec.mediaControl validate"
     },
     {
       "kind": "hspec",
@@ -275,7 +275,7 @@
       "match": "returns a usable first frame when the cap permits only one PCM frame",
       "boundary": "subprocess:real",
       "expected_examples": 1,
-      "fixture": "Real ffmpeg with generated PCM source prefix and exact frame-budget validation"
+      "fixture": "ExtractAudioSpec.mediaControl validate"
     },
     {
       "kind": "hspec",
@@ -284,7 +284,7 @@
       "match": "rejects a cap smaller than a WAV header and one complete PCM frame",
       "boundary": "subprocess:real",
       "expected_examples": 1,
-      "fixture": "Real ffmpeg with generated PCM source prefix and exact frame-budget validation"
+      "fixture": "ExtractAudioSpec.mediaControl create"
     },
     {
       "kind": "hspec",
@@ -293,7 +293,7 @@
       "match": "uses an owner-only workspace and removes it after success failure timeout and cancellation",
       "boundary": "filesystem:real",
       "expected_examples": 1,
-      "fixture": "Python stat of actual workspace permissions and lifecycle; fake process boundary with cancellation latch"
+      "fixture": "ExtractAudioSpec.mediaControl workspace-check"
     },
     {
       "kind": "hspec",
@@ -302,7 +302,7 @@
       "match": "keeps shared-directory sibling media outside the extraction workspace",
       "boundary": "subprocess:real",
       "expected_examples": 1,
-      "fixture": "Real ffmpeg with ffconcat and a synthetic shared-directory sibling; no network"
+      "fixture": "ExtractAudioSpec.mediaControl sibling-intact"
     },
     {
       "kind": "hspec",
@@ -437,7 +437,7 @@
       "match": "real MP4 video with AAC audio returns independently decodable WAV audio",
       "boundary": "subprocess:real",
       "expected_examples": 1,
-      "fixture": "Real ffmpeg extraction of generated 3-second MPEG-4 video plus AAC audio in MP4; ffprobe stream verification and independent WAV decode"
+      "fixture": "ExtractAudioSpec.mediaControl validate"
     },
     {
       "kind": "hspec",
@@ -446,7 +446,7 @@
       "match": "real MP4 video with AAC audio returns a usable portion within the configured cap",
       "boundary": "subprocess:real",
       "expected_examples": 1,
-      "fixture": "Real ffmpeg extraction of generated 3-second MPEG-4 video plus AAC audio in MP4; ffprobe stream verification and independent WAV decode"
+      "fixture": "ExtractAudioSpec.mediaControl validate"
     },
     {
       "kind": "hspec",
@@ -455,7 +455,7 @@
       "match": "tagged real MP4 returns exactly one usable PCM frame at the minimum cap",
       "boundary": "subprocess:real",
       "expected_examples": 1,
-      "fixture": "Real ffmpeg extraction of generated 3-second MPEG-4 video plus AAC audio in MP4 tagged with artist and a 3000-character comment; ffprobe stream and tag verification and independent WAV decode"
+      "fixture": "ExtractAudioSpec.mediaControl validate"
     },
     {
       "kind": "hspec",
@@ -464,7 +464,7 @@
       "match": "tagged real MP4 returns usable PCM frames within a 2000-byte cap",
       "boundary": "subprocess:real",
       "expected_examples": 1,
-      "fixture": "Real ffmpeg extraction of generated 3-second MPEG-4 video plus AAC audio in MP4 tagged with artist and a 3000-character comment; ffprobe stream and tag verification and independent WAV decode"
+      "fixture": "ExtractAudioSpec.mediaControl validate"
     }
   ]
 }

@@ -11,6 +11,7 @@ import ConcurrentMap (ConcurrentMap)
 import ConcurrentMap qualified
 import ConcurrentVar (ConcurrentVar)
 import ConcurrentVar qualified
+import Console qualified
 import DateTime qualified
 import File qualified
 import Integration (ActionContext (..), CommandPayload (..))
@@ -854,6 +855,7 @@ mediaControl arguments = do
   Task.unless (completion.exitCode == 0) do
     let message = completion.stderr
     Task.throw [fmt|Synthetic media control failed: #{message}|]
+  Console.print [fmt|fixture: ExtractAudioSpec.mediaControl #{Text.joinWith " " arguments}|]
   Task.yield completion.stdout
 
 
@@ -880,6 +882,8 @@ def write_wav(path, frames):
 
 mode = sys.argv[1]
 if mode == "create":
+    assert shutil.which('ffmpeg'), "ffmpeg is required on PATH"
+    assert shutil.which('ffprobe'), "ffprobe is required on PATH"
     workspace = Path(tempfile.mkdtemp(prefix="nh-real-media-"))
     try:
         kind = sys.argv[2]
@@ -962,6 +966,8 @@ elif mode == "workspace-gone":
     assert sys.argv[2], "runner did not report a workspace"
     assert not Path(sys.argv[2]).exists(), "workspace survived extraction"
 elif mode == "sibling-create":
+    assert shutil.which('ffmpeg'), "ffmpeg is required on PATH"
+    assert shutil.which('ffprobe'), "ffprobe is required on PATH"
     descriptor, name = tempfile.mkstemp(prefix="nh-sibling-", suffix=".wav")
     os.close(descriptor)
     try:
