@@ -18,7 +18,7 @@ new-extension-point: false
 ## Contract delta
 
 No public signature changes. Parse endpoint authority once before constructing
-S3Store: require a valid DNS/IPv4 host or bracketed IPv6, and an optional decimal
+S3Store: require a URI reg-name or bracketed IPv6, and an optional decimal
 port in1–65535. Reject controls, malformed brackets, empty ports and trailing
 junk. Keep existing HTTPS and loopback/localhost policy, trailing slash and
 surrounding whitespace normalization. Reject ASCII controls in header-bound
