@@ -224,7 +224,7 @@ Set (fromList [1,2,3])
 >>> import Array qualified
 >>> import Integration.Video.ExtractAudio (defaultConfig)
 >>> Array.toLinkedList (buildFfmpegArgs defaultConfig "in.mp4" "out.wav")
-["-nostdin","-v","error","-i","in.mp4","-vn","-ac","1","-ar","16000","-fs","25000000","out.wav"]
+["-nostdin","-v","error","-i","in.mp4","-vn","-ac","1","-ar","16000","-fs","25000000","-map_metadata","-1","-bitexact","out.wav"]
 ```
 
 ## postgres-infra

@@ -67,6 +67,11 @@
     - {name: [System.Directory],
        within: [Directory, Environment, File, Integration.Pdf.ExtractText.Internal, Integration.Video.ExtractAudio.Internal, Subprocess],
        message: "Use Core `Directory`/`Path`. New exceptions need a justification + belongs-in note here."}
+    # Atomic private workspace acquisition/release; ADR-0081.
+    # belongs-in: Core `Directory` (withTemporary).
+    - {name: [System.IO.Temp],
+       within: [Integration.Video.ExtractAudio.Internal],
+       message: "Use Core Directory when a scoped private-workspace primitive exists."}
     # Json
     - {name: [Data.Aeson, Data.Aeson.Key, Data.Aeson.KeyMap, Data.Aeson.Types, Data.Aeson.Encoding],
        within: [Auth.Config, Auth.Jwt, Auth.OAuth2.Types, Basics, Command, Config.TH, Config.THSpec, Decimal, DecimalSpec, Integration, Json, NeoQL.Execute, Redacted, RedactedSpec, Schema.JsonSchema, Schema.OpenApi, Service.FileUpload.Core, Service.FileUpload.Routes, Service.Query.PaginationSpec, Service.TH.Boilerplate, Service.Transport.Mcp.JsonRpc, Service.Transport.Mcp.Protocol, Service.Transport.Web, Service.Transport.Web.HealthCheckSpec, Service.Transport.Web.ReadinessRouteSpec, Set, Test.Auth.Jwt.Core],

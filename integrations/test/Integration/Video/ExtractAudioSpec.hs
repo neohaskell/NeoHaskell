@@ -11,6 +11,7 @@ import ConcurrentMap (ConcurrentMap)
 import ConcurrentMap qualified
 import ConcurrentVar (ConcurrentVar)
 import ConcurrentVar qualified
+import Console qualified
 import DateTime qualified
 import File qualified
 import Integration (ActionContext (..), CommandPayload (..))
@@ -19,6 +20,7 @@ import Integration qualified
 import Integration.Video.ExtractAudio (Config (..), ExtractionResult (..), Request (..))
 import Integration.Video.ExtractAudio qualified as VideoAudio
 import Integration.Video.ExtractAudio.Internal (Runner (..), executeExtraction)
+import Integration.Video.ExtractAudio.Internal qualified as Real
 import Json qualified
 import Lock (Lock)
 import Map qualified
@@ -211,6 +213,259 @@ spec = do
       Array.length calls `shouldBe` 1
 
 
+
+  describe "Integration.Video.ExtractAudio workspace security" do
+    it "uses an owner-only workspace and removes it after success failure timeout and cancellation" do
+      Task.runOrPanic do
+        Task.forEach verifyWorkspaceExit
+          [ succeedingFfmpeg
+          , failingFfmpeg "Invalid data found"
+          , succeedingFfmpeg {ffmpegTimesOut = True}
+          ]
+        verifyCancelledWorkspace
+
+    it "keeps shared-directory sibling media outside the extraction workspace" do
+      outcome <- Task.runOrPanic do
+        sibling <- mediaControl ["sibling-create"]
+        testSharedSibling sibling
+          |> Task.finally (mediaControl ["sibling-cleanup", sibling] |> Task.map (\_ -> ()))
+      case outcome of
+        Ok (Just payload) -> do
+          let encoded = Json.encodeText payload.commandData
+          Text.contains "ExtractionFailed" encoded `shouldBe` True
+          Text.contains "AudioExtracted" encoded `shouldBe` False
+        _ -> expectationFailure "Expected isolated relative sibling reference to reach onError"
+
+    it "omits raw subprocess diagnostics from extraction commands" do
+      let privateMarker = "/private/video-secret/00000000-0000-0000-0000-000000000001"
+      let diagnostic = [fmt|Invalid data found #{privateMarker} #{Text.repeat 8192 "x"}|] |> Text.append "\n\ESC[31m"
+      outcomes <- Task.runOrPanic do
+        Task.mapArray runDiagnosticCase
+          [ Nothing
+          , Just (Subprocess.ProcessError diagnostic)
+          , Just (Subprocess.TimeoutError diagnostic)
+          , Just (Subprocess.ToolNotFound diagnostic)
+          ]
+      Task.runOrPanic (Task.forEach (assertSanitizedDiagnostic privateMarker) outcomes)
+
+
+  describe "Integration.Video.ExtractAudio real ffmpeg" do
+    it "real MP4 video with AAC audio returns independently decodable WAV audio" do
+      audio <- Task.runOrPanic (withRealMedia "mp4" requireRealAudio)
+      Bytes.length audio `shouldSatisfy` (\size -> size > 44)
+
+    it "real MP4 video with AAC audio returns a usable portion within the configured cap" do
+      let config = VideoAudio.defaultConfig {maxOutputBytes = 32044}
+      (complete, capped) <- Task.runOrPanic (withRealMedia "mp4" \workspace -> do
+        complete <- requireRealAudio workspace
+        capped <- requireConfiguredAudio config workspace
+        Task.yield (complete, capped))
+      Bytes.length capped `shouldSatisfy` (\size -> size > 44 && size <= 32044)
+      Bytes.length capped `shouldSatisfy` (\size -> size < Bytes.length complete)
+
+    it "tagged real MP4 returns exactly one usable PCM frame at the minimum cap" do
+      let config = VideoAudio.defaultConfig {maxOutputBytes = 46}
+      audio <- Task.runOrPanic (withRealMedia "tagged-mp4" (requireConfiguredAudio config))
+      Bytes.length audio `shouldBe` 46
+
+    it "tagged real MP4 returns usable PCM frames within a 2000-byte cap" do
+      let config = VideoAudio.defaultConfig {maxOutputBytes = 2000}
+      audio <- Task.runOrPanic (withRealMedia "tagged-mp4" (requireConfiguredAudio config))
+      Bytes.length audio `shouldSatisfy` (\size -> size > 44 && size <= 2000)
+
+    it "keeps the promised exact default audio byte cap with real ffmpeg" do
+      audio <- Task.runOrPanic (withRealMedia "long" requireRealAudio)
+      Bytes.length audio `shouldSatisfy` (\size -> size <= 25000000)
+
+    it "returns nonempty independently decodable audio from real short media" do
+      audio <- Task.runOrPanic (withRealMedia "short" requireRealAudio)
+      Bytes.length audio `shouldSatisfy` (\size -> size > 44)
+
+    it "rejects a real empty audio track instead of reporting success" do
+      outcome <- Task.runOrPanic (withRealMedia "empty" runRealMedia)
+      case outcome of
+        Err _ -> Task.runOrPanic (textTask (Task.yield ()))
+        Ok bytes -> do
+          let size = Bytes.length bytes
+          expectationFailure [fmt|Expected empty audio rejection, got #{size} bytes|]
+
+    it "rejects nonmedia input through the real ffmpeg boundary" do
+      outcome <- Task.runOrPanic (withRealMedia "junk" runRealMedia)
+      case outcome of
+        Err _ -> Task.runOrPanic (textTask (Task.yield ()))
+        Ok _ -> expectationFailure "Expected malformed media rejection"
+
+    it "preserves the first complete source frames in capped real audio" do
+      matched <- Task.runOrPanic (withRealMedia "ramp" \workspace -> do
+        _ <- requireConfiguredAudio VideoAudio.defaultConfig workspace
+        mediaControl ["prefix", workspace])
+      matched `shouldBe` "source-prefix matches"
+
+    it "enforces a configured exact cap on usable real audio" do
+      let config = VideoAudio.defaultConfig {maxOutputBytes = 32044}
+      audio <- Task.runOrPanic (withRealMedia "ramp" (requireConfiguredAudio config))
+      Bytes.length audio `shouldSatisfy` (\size -> size <= 32044)
+
+    it "returns a usable first frame when the cap permits only one PCM frame" do
+      let config = VideoAudio.defaultConfig {maxOutputBytes = 46}
+      audio <- Task.runOrPanic (withRealMedia "short" (requireConfiguredAudio config))
+      Bytes.length audio `shouldBe` 46
+
+    it "rejects a cap smaller than a WAV header and one complete PCM frame" do
+      let config = VideoAudio.defaultConfig {maxOutputBytes = 45}
+      outcome <- Task.runOrPanic (withRealMedia "short" (runConfiguredMedia config))
+      case outcome of
+        Err _ -> Task.runOrPanic (textTask (Task.yield ()))
+        Ok _ -> expectationFailure "Expected insufficient complete-frame budget rejection"
+
+    it "rejects a PCM format extension whose declared bytes are missing" do
+      outcome <- Task.runOrPanic do
+        calls <- Var.new Array.empty
+        let original = fakeRunner calls succeedingFfmpeg
+        let malformed = Bytes.concat
+              [ Bytes.take 4 fakeWavBytes, Bytes.pack [6,1,0,0]
+              , Bytes.take 8 (Bytes.drop 8 fakeWavBytes), Bytes.pack [18,0,0,0]
+              , Bytes.take 16 (Bytes.drop 20 fakeWavBytes), Bytes.pack [22,0]
+              , Bytes.drop 36 fakeWavBytes
+              ]
+        let runner = original {run = \timeout executable arguments directory -> do
+              completion <- original.run timeout executable arguments directory
+              case Array.last arguments |> andThenPath of
+                Nothing -> Task.throw (Subprocess.ProcessError "missing fixture output path")
+                Just output -> File.writeBytes output malformed
+                  |> Task.mapError (\_ -> Subprocess.ProcessError "malformed fixture write failed")
+              Task.yield completion}
+        ctx <- makeContext (Just videoAccess)
+        textTask (executeExtraction runner ctx (makeRequest VideoAudio.defaultConfig) |> Task.asResult)
+      case outcome of
+        Ok (Just payload) -> do
+          Text.contains "ExtractionFailed" (Json.encodeText payload.commandData) `shouldBe` True
+        other -> expectationFailure [fmt|Expected malformed-format callback, got #{other}|]
+
+    it "rejects malformed output even when the process reports success" do
+      outcome <- Task.runOrPanic do
+        calls <- Var.new Array.empty
+        let original = fakeRunner calls succeedingFfmpeg
+        let runner = original {run = \timeout executable arguments directory -> do
+              completion <- original.run timeout executable arguments directory
+              case Array.last arguments |> andThenPath of
+                Nothing -> Task.throw (Subprocess.ProcessError "missing fixture output path")
+                Just output -> File.writeBytes output (Bytes.pack [0x52, 0x49, 0x46, 0x46])
+                  |> Task.mapError (\_ -> Subprocess.ProcessError "malformed fixture write failed")
+              Task.yield completion}
+        ctx <- makeContext (Just videoAccess)
+        textTask (executeExtraction runner ctx (makeRequest VideoAudio.defaultConfig) |> Task.asResult)
+      case outcome of
+        Ok (Just payload) -> do
+          let encoded = Json.encodeText payload.commandData
+          Text.contains "ExtractionFailed" encoded `shouldBe` True
+        other -> expectationFailure [fmt|Expected malformed-output error command, got #{other}|]
+
+
+-- | Inspect actual OS permissions while the runner still owns the workspace.
+inspectWorkspace :: Path.Path -> Array Text -> Task Text Text
+inspectWorkspace directory arguments = do
+  input <- case Array.get 4 arguments of
+    Nothing -> Task.throw "Missing extraction input argument"
+    Just value -> Task.yield value
+  output <- case Array.last arguments of
+    Nothing -> Task.throw "Missing extraction output argument"
+    Just value -> Task.yield value
+  mediaControl ["workspace-check", Path.toText directory, input, output]
+
+
+verifyWorkspaceExit :: Scenario -> Task Text Unit
+verifyWorkspaceExit scenario = do
+  calls <- Var.new Array.empty
+  observed <- Var.new ""
+  let original = fakeRunner calls scenario
+  let runner = original {run = \timeout executable arguments directory -> do
+        workspace <- inspectWorkspace directory arguments
+          |> Task.mapError Subprocess.ProcessError
+        Var.set workspace observed
+        original.run timeout executable arguments directory}
+  ctx <- makeContext (Just videoAccess)
+  outcome <- executeExtraction runner ctx (makeRequest VideoAudio.defaultConfig) |> Task.asResult
+  workspace <- Var.get observed
+  _ <- mediaControl ["workspace-gone", workspace]
+  case outcome of
+    Ok (Just payload) -> do
+      let expected = if scenario.ffmpegExitCode == 0 && not scenario.ffmpegTimesOut
+            then "AudioExtracted"
+            else "ExtractionFailed"
+      Task.unless (Text.contains expected (Json.encodeText payload.commandData)) do
+        Task.throw [fmt|Expected #{expected} after workspace cleanup|]
+    _ -> Task.throw "Expected an extraction callback after workspace cleanup"
+
+
+-- | A latch proves cancellation happens inside the runner, not before acquisition.
+verifyCancelledWorkspace :: Task Text Unit
+verifyCancelledWorkspace = do
+  started <- ConcurrentVar.new
+  blocked <- ConcurrentVar.new
+  calls <- Var.new Array.empty
+  let original = fakeRunner calls succeedingFfmpeg
+  let runner = original {run = \_ _ arguments directory -> do
+        workspace <- inspectWorkspace directory arguments
+          |> Task.mapError Subprocess.ProcessError
+        ConcurrentVar.set workspace started
+        ConcurrentVar.get blocked}
+  ctx <- makeContext (Just videoAccess)
+  let extraction = executeExtraction runner ctx (makeRequest VideoAudio.defaultConfig)
+        |> Task.mapError (\_ -> "Cancellation fixture extraction failed")
+  AsyncTask.process extraction \worker -> do
+    observed <- AsyncTask.race (ConcurrentVar.get started) do
+      AsyncTask.sleep 3000
+      Task.throw "Cancellation fixture never entered the runner"
+    workspace <- case observed of
+      AsyncTask.LeftWon value -> Task.yield value
+      AsyncTask.RightWon _ -> Task.throw "Cancellation fixture watchdog expired"
+    AsyncTask.cancel worker
+    outcome <- AsyncTask.waitCatch worker
+    case outcome of
+      Err _ -> Task.yield ()
+      Ok _ -> Task.throw "Cancellation unexpectedly emitted an extraction command"
+    _ <- mediaControl ["workspace-gone", workspace]
+    Task.yield ()
+
+
+testSharedSibling :: Text -> Task Text (Result Integration.IntegrationError (Maybe CommandPayload))
+testSharedSibling sibling = do
+  manifest <- mediaControl ["sibling-manifest", sibling]
+  let access = videoAccess {retrieveFile = \_ -> Task.yield (Text.toBytes manifest)}
+  ctx <- makeContext (Just access)
+  outcome <- executeExtraction Real.realRunner ctx (makeRequest VideoAudio.defaultConfig)
+    |> Task.asResult
+  _ <- mediaControl ["sibling-intact", sibling]
+  Task.yield outcome
+
+
+runDiagnosticCase :: Maybe Subprocess.Error -> Task Text (Result Integration.IntegrationError (Maybe CommandPayload))
+runDiagnosticCase injected = do
+  calls <- Var.new Array.empty
+  let diagnostic = [fmt|Invalid data found /private/video-secret/00000000-0000-0000-0000-000000000001 #{Text.repeat 8192 "x"}|] |> Text.append "\n\ESC[31m"
+  let original = fakeRunner calls (failingFfmpeg diagnostic)
+  let runner = original {run = \timeout executable arguments directory -> case injected of
+        Nothing -> original.run timeout executable arguments directory
+        Just err -> Task.throw err}
+  ctx <- makeContext (Just videoAccess)
+  executeExtraction runner ctx (makeRequest VideoAudio.defaultConfig) |> Task.asResult
+
+
+assertSanitizedDiagnostic :: Text -> Result Integration.IntegrationError (Maybe CommandPayload) -> Task Text Unit
+assertSanitizedDiagnostic privateMarker outcome = case outcome of
+  Ok (Just payload) -> case Json.decode payload.commandData of
+    Ok (ExtractionFailed {reason}) -> do
+      Task.when (Text.contains privateMarker reason || Text.contains "00000000-0000-0000-0000-000000000001" reason) do
+        Task.throw "Extraction error exposed a private path or file reference"
+      Task.when (Text.length reason > 256 || Text.contains "xxxxxxxx" reason || Text.contains "\n" reason || Text.contains "\ESC" reason) do
+        Task.throw "Extraction error copied unbounded subprocess diagnostics"
+      Task.when (Text.isEmpty reason) do
+        Task.throw "Extraction error omitted its safe explanation"
+    _ -> Task.throw "Expected a sanitized ExtractionFailed command"
+  _ -> Task.throw "Expected a sanitized extraction callback"
+
+
 -- | How the fake ffmpeg behaves.
 data Scenario = Scenario
   { ffmpegInstalled :: Bool
@@ -261,13 +516,18 @@ fakeVideoBytes =
     (Bytes.pack [0 .. 255])
 
 
--- | A RIFF/WAVE header followed by every byte value in descending order, so
--- the audio cannot survive a UTF-8 text round trip.
+-- | A valid 268-byte PCM16 WAV with NUL and non-UTF8 payload bytes.
+-- Exact byte-equality tests remain independent of WAV validation.
 fakeWavBytes :: Bytes
 fakeWavBytes =
   Bytes.append
-    (Bytes.pack [0x52, 0x49, 0x46, 0x46, 0x24, 0x00, 0x00, 0x00, 0x57, 0x41, 0x56, 0x45])
-    (Bytes.pack [255, 254 .. 0])
+    (Bytes.pack
+      [ 82,73,70,70,4,1,0,0,87,65,86,69
+      , 102,109,116,32,16,0,0,0,1,0,1,0
+      , 128,62,0,0,0,125,0,0,2,0,16,0
+      , 100,97,116,97,224,0,0,0
+      ])
+    (Bytes.append (Bytes.pack [0,255]) (Bytes.pack [254,253 .. 33]))
 
 
 -- | A runner that never starts a process. It records the bytes of the input
@@ -537,3 +797,216 @@ instance Json.FromJSON TestCommand
 
 
 type instance NameOf TestCommand = "TestCommand"
+
+
+-- Real ffmpeg is required: missing tools fail these tests rather than skip them.
+withRealMedia :: Text -> (Text -> Task Text value) -> Task Text value
+withRealMedia mode test = do
+  workspace <- mediaControl ["create", mode]
+  test workspace |> Task.finally (mediaControl ["cleanup", workspace] |> Task.map (\_ -> ()))
+
+
+mediaPath :: Text -> Text -> Task Text Path.Path
+mediaPath workspace name = case Path.fromText [fmt|#{workspace}/#{name}|] of
+  Just path -> Task.yield path
+  Nothing -> Task.throw "Invalid synthetic media path"
+
+
+runRealMedia :: Text -> Task Text (Result Text Bytes)
+runRealMedia = runConfiguredMedia VideoAudio.defaultConfig
+
+
+runConfiguredMedia :: Config -> Text -> Task Text (Result Text Bytes)
+runConfiguredMedia config workspace = do
+  inputPath <- mediaPath workspace "input"
+  bytes <- File.readBytes inputPath |> Task.mapError (\err -> [fmt|#{err}|])
+  let access = videoAccess {retrieveFile = \_ -> Task.yield bytes}
+  ctx <- makeContext (Just access)
+  result <- executeExtraction Real.realRunner ctx (makeRequest config)
+    |> Task.asResult
+  case result of
+    Ok (Just payload) -> Task.yield (decodedAudio payload)
+    other -> Task.throw [fmt|Real extraction setup/action failed: #{other}|]
+
+
+requireRealAudio :: Text -> Task Text Bytes
+requireRealAudio = requireConfiguredAudio VideoAudio.defaultConfig
+
+
+requireConfiguredAudio :: Config -> Text -> Task Text Bytes
+requireConfiguredAudio config workspace = do
+  result <- runConfiguredMedia config workspace
+  case result of
+    Err message -> Task.throw message
+    Ok bytes -> do
+      outputPath <- mediaPath workspace "output.wav"
+      File.writeBytes outputPath bytes |> Task.mapError (\err -> [fmt|#{err}|])
+      report <- mediaControl ["validate", workspace]
+      Task.unless (Text.startsWith "valid nonempty PCM16" report) do
+        Task.throw [fmt|Unexpected independent decoder result: #{report}|]
+      Task.yield bytes
+
+
+mediaControl :: Array Text -> Task Text Text
+mediaControl arguments = do
+  completion <- Subprocess.runWithTimeout 10 "python3"
+    (["-c", mediaFixture] |> Array.append arguments) "."
+    |> Task.mapError (\err -> [fmt|#{err}|])
+  Task.unless (completion.exitCode == 0) do
+    let message = completion.stderr
+    Task.throw [fmt|Synthetic media control failed: #{message}|]
+  Console.print [fmt|fixture: ExtractAudioSpec.mediaControl #{Text.joinWith " " arguments}|]
+  Task.yield completion.stdout
+
+
+mediaFixture :: Text
+mediaFixture = [fmt|
+import json
+import os
+from pathlib import Path
+import shutil
+import struct
+import subprocess
+import sys
+import tempfile
+import wave
+
+
+def write_wav(path, frames):
+    with wave.open(str(path), "wb") as output:
+        output.setnchannels(1)
+        output.setsampwidth(2)
+        output.setframerate(16000)
+        output.writeframes(bytes([0, 16]) * frames)
+
+
+mode = sys.argv[1]
+if mode == "create":
+    assert shutil.which('ffmpeg'), "ffmpeg is required on PATH"
+    assert shutil.which('ffprobe'), "ffprobe is required on PATH"
+    workspace = Path(tempfile.mkdtemp(prefix="nh-real-media-"))
+    try:
+        kind = sys.argv[2]
+        if kind in ("long", "short", "empty"):
+            write_wav(workspace / "input", {"long": 14400000, "short": 48000, "empty": 0}[kind])
+        elif kind == "ramp":
+            with wave.open(str(workspace / "input"), "wb") as output:
+                output.setparams((1, 2, 16000, 0, "NONE", "not compressed"))
+                cycle = b"".join(struct.pack("<h", (i % 60001) - 30000) for i in range(16000))
+                output.writeframes(cycle * 900)
+        elif kind == "mp4":
+            source = workspace / "input"
+            generated = subprocess.run([
+                "ffmpeg", "-nostdin", "-v", "error",
+                "-f", "lavfi", "-i", "color=c=blue:s=160x120:r=10:d=3",
+                "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000:duration=3",
+                "-map", "0:v:0", "-map", "1:a:0", "-t", "3",
+                "-c:v", "mpeg4", "-pix_fmt", "yuv420p", "-c:a", "aac",
+                "-f", "mp4", str(source)
+            ], capture_output=True, timeout=5)
+            assert generated.returncode == 0, generated.stderr.decode(errors="replace")
+            probe = subprocess.run([
+                "ffprobe", "-v", "error", "-show_streams", "-show_format",
+                "-of", "json", str(source)
+            ], capture_output=True, timeout=5)
+            assert probe.returncode == 0, probe.stderr.decode(errors="replace")
+            metadata = json.loads(probe.stdout)
+            streams = metadata["streams"]
+            assert len(streams) == 2
+            assert any(stream["codec_type"] == "video" and stream["codec_name"] == "mpeg4" for stream in streams)
+            assert any(stream["codec_type"] == "audio" and stream["codec_name"] == "aac" for stream in streams)
+            assert "mp4" in metadata["format"]["format_name"].split(",")
+            assert 2.9 <= float(metadata["format"]["duration"]) <= 3.1
+        elif kind == "tagged-mp4":
+            source = workspace / "input"
+            comment = "c" * 3000
+            generated = subprocess.run([
+                "ffmpeg", "-nostdin", "-v", "error",
+                "-f", "lavfi", "-i", "color=c=blue:s=160x120:r=10:d=3",
+                "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000:duration=3",
+                "-map", "0:v:0", "-map", "1:a:0", "-t", "3",
+                "-c:v", "mpeg4", "-pix_fmt", "yuv420p", "-c:a", "aac",
+                "-metadata", "artist=NeoHaskell regression",
+                "-metadata", "comment=" + comment,
+                "-f", "mp4", str(source)
+            ], capture_output=True, timeout=5)
+            assert generated.returncode == 0, generated.stderr.decode(errors="replace")
+            probe = subprocess.run([
+                "ffprobe", "-v", "error", "-show_streams", "-show_format",
+                "-of", "json", str(source)
+            ], capture_output=True, timeout=5)
+            assert probe.returncode == 0, probe.stderr.decode(errors="replace")
+            metadata = json.loads(probe.stdout)
+            streams = metadata["streams"]
+            assert len(streams) == 2
+            assert any(stream["codec_type"] == "video" and stream["codec_name"] == "mpeg4" for stream in streams)
+            assert any(stream["codec_type"] == "audio" and stream["codec_name"] == "aac" for stream in streams)
+            assert "mp4" in metadata["format"]["format_name"].split(",")
+            assert 2.9 <= float(metadata["format"]["duration"]) <= 3.1
+            tags = metadata["format"]["tags"]
+            assert tags["artist"] == "NeoHaskell regression"
+            assert tags["comment"] == comment
+        elif kind == "junk":
+            (workspace / "input").write_bytes(b"not a media container")
+        else:
+            raise RuntimeError("Unknown synthetic media kind")
+        print(str(workspace), end="")
+    except BaseException:
+        shutil.rmtree(workspace)
+        raise
+elif mode == "workspace-check":
+    directory, source, output = map(Path, sys.argv[2:5])
+    assert directory.is_dir() and not directory.is_symlink()
+    assert directory.stat().st_mode & 0o777 == 0o700
+    assert directory != Path(tempfile.gettempdir())
+    assert source.parent == directory and output.parent == directory
+    assert source.is_file()
+    print(str(directory), end="")
+elif mode == "workspace-gone":
+    assert sys.argv[2], "runner did not report a workspace"
+    assert not Path(sys.argv[2]).exists(), "workspace survived extraction"
+elif mode == "sibling-create":
+    assert shutil.which('ffmpeg'), "ffmpeg is required on PATH"
+    assert shutil.which('ffprobe'), "ffprobe is required on PATH"
+    descriptor, name = tempfile.mkstemp(prefix="nh-sibling-", suffix=".wav")
+    os.close(descriptor)
+    try:
+        write_wav(Path(name), 16000)
+        print(name, end="")
+    except BaseException:
+        Path(name).unlink(missing_ok=True)
+        raise
+elif mode == "sibling-manifest":
+    print("ffconcat version 1.0")
+    print("file '" + Path(sys.argv[2]).name + "'")
+elif mode == "sibling-intact":
+    with wave.open(sys.argv[2], "rb") as sibling:
+        assert sibling.getnframes() == 16000
+        assert sibling.readframes(16000) == bytes([0, 16]) * 16000
+elif mode == "sibling-cleanup":
+    Path(sys.argv[2]).unlink()
+elif mode == "validate":
+    path = Path(sys.argv[2]) / "output.wav"
+    content = path.read_bytes()
+    assert content[:4] == b"RIFF" and content[8:12] == b"WAVE"
+    assert struct.unpack_from("<I", content, 4)[0] + 8 == len(content)
+    with wave.open(str(path), "rb") as audio:
+        assert audio.getnchannels() == 1 and audio.getsampwidth() == 2 and audio.getframerate() == 16000
+        frames = audio.getnframes()
+        assert frames > 0
+        assert len(audio.readframes(frames)) == frames * 2
+    decoder = subprocess.run(["ffmpeg", "-nostdin", "-v", "error", "-i", str(path), "-f", "null", "-"], capture_output=True, timeout=5)
+    assert decoder.returncode == 0, decoder.stderr.decode(errors="replace")
+    print("valid nonempty PCM16", frames, len(content), end="")
+elif mode == "prefix":
+    workspace = Path(sys.argv[2])
+    with wave.open(str(workspace / "input"), "rb") as source, wave.open(str(workspace / "output.wav"), "rb") as output:
+        frames = output.getnframes()
+        assert 0 < frames < source.getnframes()
+        assert output.readframes(frames) == source.readframes(frames)
+    print("source-prefix matches", end="")
+elif mode == "cleanup":
+    shutil.rmtree(Path(sys.argv[2]))
+else:
+    raise RuntimeError("Unknown synthetic media operation")
+|]

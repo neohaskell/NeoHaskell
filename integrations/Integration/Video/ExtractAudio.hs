@@ -57,8 +57,8 @@
 -- @Text.fromBytes result.audio@ directly; WAV audio is not UTF-8 text.
 --
 -- Your command handler decodes the text back to the exact WAV bytes before
--- uploading it, with 'Bytes.fromBase64'. Malformed text is an 'Err', so a
--- corrupted command never turns into silently wrong audio:
+-- uploading it, with 'Bytes.fromBase64'. Malformed Base64 is an 'Err'.
+-- Base64 is lossless encoding, not an integrity check for modified commands:
 --
 -- @
 -- import Bytes qualified
@@ -79,9 +79,13 @@
 -- The default 'timeoutSeconds' is 180 (3 minutes). The integration
 -- dispatcher's @eventProcessingTimeoutMs@ defaults to 30000 (30 seconds).
 -- __You MUST configure the dispatcher timeout to more than
--- @timeoutSeconds * 1000@ plus the time to fetch the video (or 'Nothing' to
--- disable it)__. Otherwise the dispatcher cancels the worker first: a slow
--- extraction never finishes, and an ffmpeg timeout never reaches 'onError'.
+-- @timeoutSeconds * 1000@ plus the time to fetch the video and write it to
+-- the temporary workspace, the 1-second grace ffmpeg gets after a TERM
+-- signal, process reaping and workspace cleanup, plus a margin of several
+-- seconds (or 'Nothing' to disable it)__. Otherwise the dispatcher cancels
+-- the worker first: a slow extraction never finishes, and an ffmpeg timeout
+-- never reaches 'onError'. Reaping and cleanup have no universal
+-- operating-system time bound, so size that margin for your host.
 --
 -- @
 -- import Core
@@ -129,8 +133,9 @@
 -- == Output
 --
 -- WAV, mono, 16 kHz by default ('mimeType' is @audio/wav@). The result is
--- capped at 'maxOutputBytes' (default 25 MB); ffmpeg stops writing at that
--- size, so a very long video yields only its first part.
+-- capped at 'maxOutputBytes' (default 25,000,000 bytes). A long video
+-- yields its earliest complete PCM16 frames with a valid WAV header.
+-- A budget too small for a header and one frame reaches 'onError'.
 --
 -- == Requirements
 --
@@ -193,7 +198,7 @@ data Config = Config
   , channels :: Int
   -- ^ Output channel count (default: 1, mono)
   , maxOutputBytes :: Int
-  -- ^ Stop writing audio after this many bytes (default: 25000000)
+  -- ^ Maximum returned WAV size in bytes (default: 25,000,000)
   , ffmpegPath :: Maybe Text
   -- ^ Explicit ffmpeg executable. Nothing means look up @ffmpeg@ on the PATH.
   }
@@ -205,7 +210,7 @@ data Config = Config
 -- * Timeout: 180 seconds
 -- * Sample rate: 16000 Hz
 -- * Channels: 1 (mono)
--- * Maximum output: 25 MB
+-- * Maximum output: 25,000,000 bytes
 -- * ffmpeg: found on the PATH
 --
 -- >>> defaultConfig.timeoutSeconds

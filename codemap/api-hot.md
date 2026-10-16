@@ -10,13 +10,13 @@ codemap/signatures/ · type-directed search: ./dev api "<type>"
 
 ## Task
 
-- `yield :: value -> Task w value`  <!-- 602 call sites -->
-- `ignoreError :: Task err Unit -> Task w Unit`  <!-- 242 call sites -->
+- `yield :: value -> Task w value`  <!-- 608 call sites -->
+- `ignoreError :: Task err Unit -> Task w Unit`  <!-- 240 call sites -->
 - `mapError :: (err1 -> err2) -> Task err1 value -> Task err2 value`  <!-- 229 call sites -->
-- `throw :: err -> Task err w`  <!-- 216 call sites -->
+- `throw :: err -> Task err w`  <!-- 220 call sites -->
 - `fromIO :: IO value -> Task w value`  <!-- 131 call sites -->
-- `asResult :: Task err value -> Task err2 (Result err value)`  <!-- 89 call sites -->
-- `when :: Bool -> Task err Unit -> Task err Unit`  <!-- 31 call sites -->
+- `asResult :: Task err value -> Task err2 (Result err value)`  <!-- 88 call sites -->
+- `when :: Bool -> Task err Unit -> Task err Unit`  <!-- 32 call sites -->
 - `forEach :: (element -> Task err Unit) -> Array element -> Task err Unit`  <!-- 30 call sites -->
 - `fromFailableIO :: Exception exception => IO result -> Task exception result`  <!-- 24 call sites -->
 - `map :: (input -> output) -> Task err input -> Task err output`  <!-- 23 call sites -->
@@ -47,10 +47,10 @@ codemap/signatures/ · type-directed search: ./dev api "<type>"
 
 - `fromLinkedList :: LinkedList Char -> Text`  <!-- 91 call sites -->
 - `toLinkedList :: Text -> LinkedList Char`  <!-- 78 call sites -->
-- `toBytes :: Text -> Bytes`  <!-- 66 call sites -->
+- `toBytes :: Text -> Bytes`  <!-- 72 call sites -->
 - `replace :: Text -> Text -> Text -> Text`  <!-- 33 call sites -->
-- `trim :: Text -> Text`  <!-- 28 call sites -->
 - `fromBytes :: Bytes -> Text`  <!-- 27 call sites -->
+- `trim :: Text -> Text`  <!-- 27 call sites -->
 - `joinWith :: Text -> Array Text -> Text`  <!-- 26 call sites -->
 - `isEmpty :: Text -> Bool`  <!-- 25 call sites -->
 - `append :: Text -> Text -> Text`  <!-- 22 call sites -->
@@ -118,15 +118,15 @@ codemap/signatures/ · type-directed search: ./dev api "<type>"
 
 - `unwrap :: Bytes -> ByteString`  <!-- 47 call sites -->
 - `fromLegacy :: ByteString -> Bytes`  <!-- 30 call sites -->
-- `toLazyLegacy :: Bytes -> LazyByteString`  <!-- 16 call sites -->
-- `length :: Bytes -> Int`  <!-- 4 call sites -->
+- `length :: Bytes -> Int`  <!-- 19 call sites -->
   - `>>> [1, 2, 3] |> Bytes.pack |> Bytes.length` → `3`
-- `pack :: [Word8] -> Bytes`  <!-- 3 call sites -->
+- `toLazyLegacy :: Bytes -> LazyByteString`  <!-- 16 call sites -->
+- `pack :: [Word8] -> Bytes`  <!-- 5 call sites -->
 - `toBase64 :: Bytes -> Bytes`  <!-- 3 call sites -->
 - `dropEnd :: Int -> Bytes -> Bytes`  <!-- 2 call sites -->
 - `isSuffixOf :: Bytes -> Bytes -> Bool`  <!-- 2 call sites -->
 - `splitOnce :: Bytes -> Bytes -> Maybe (Bytes, Bytes)`  <!-- 2 call sites -->
-- `fromLazyLegacy :: LazyByteString -> Bytes`  <!-- 1 call sites -->
+- `take :: Int -> Bytes -> Bytes`  <!-- 2 call sites -->
 
 ## Maybe
 
@@ -167,17 +167,6 @@ codemap/signatures/ · type-directed search: ./dev api "<type>"
 - `load :: HasParser config => Task Text config`  <!-- 1 call sites -->
 - `secret :: FieldDef -> FieldDef`  <!-- 1 call sites -->
 
-## Uuid
-
-- `generate :: Task w Uuid`  <!-- 22 call sites -->
-- `toText :: Uuid -> Text`  <!-- 10 call sites -->
-- `nil :: Uuid`  <!-- 6 call sites -->
-- `toLegacy :: Uuid -> UUID`  <!-- 5 call sites -->
-- `fromText :: Text -> Maybe Uuid`  <!-- 3 call sites -->
-- `generateV5 :: Uuid -> Text -> Uuid`  <!-- 3 call sites -->
-  - `>>> Uuid.fromText "6ba7b810-9dad-11d1-80b4-00c04fd430c8" |> Maybe.getOrDie |> (\ns -> Uuid.generateV5 ns "python.org") |> Uuid.toText` → `"886313e1-3b8a-5372-9b90-0c9aee199e5d"`
-- `fromLegacy :: UUID -> Uuid`  <!-- 2 call sites -->
-
 ## LinkedList
 
 - `map :: (a -> b) -> LinkedList a -> LinkedList b`  <!-- 15 call sites -->
@@ -190,6 +179,17 @@ codemap/signatures/ · type-directed search: ./dev api "<type>"
 - `head :: LinkedList a -> Maybe a`  <!-- 2 call sites -->
 - `all :: (a -> Bool) -> LinkedList a -> Bool`  <!-- 1 call sites -->
 - `concat :: LinkedList (LinkedList a) -> LinkedList a`  <!-- 1 call sites -->
+
+## Uuid
+
+- `generate :: Task w Uuid`  <!-- 21 call sites -->
+- `toText :: Uuid -> Text`  <!-- 9 call sites -->
+- `nil :: Uuid`  <!-- 6 call sites -->
+- `toLegacy :: Uuid -> UUID`  <!-- 5 call sites -->
+- `fromText :: Text -> Maybe Uuid`  <!-- 3 call sites -->
+- `generateV5 :: Uuid -> Text -> Uuid`  <!-- 3 call sites -->
+  - `>>> Uuid.fromText "6ba7b810-9dad-11d1-80b4-00c04fd430c8" |> Maybe.getOrDie |> (\ns -> Uuid.generateV5 ns "python.org") |> Uuid.toText` → `"886313e1-3b8a-5372-9b90-0c9aee199e5d"`
+- `fromLegacy :: UUID -> Uuid`  <!-- 2 call sites -->
 
 ## AsyncTask
 
@@ -283,7 +283,7 @@ codemap/signatures/ · type-directed search: ./dev api "<type>"
 - `fmap :: Functor f => (a -> b) -> f a -> f b`  <!-- 17 call sites -->
 - `map :: Mappable mappable => (typeA -> typeB) -> mappable typeA -> mappable typeB`  <!-- 16 call sites -->
 
-*cut: 103 more modules (AtomicVar (26), Integration.Http (26), Result (24), Decider (21), Lock (20), …) — full surface: codemap/signatures/*
+*cut: 103 more modules (AtomicVar (26), Integration.Http (26), Result (25), Decider (21), Lock (20), …) — full surface: codemap/signatures/*
 
 ---
 
@@ -294,35 +294,35 @@ when WRITING TESTS; they are not feature-code frequency signal.
 
 ## Task
 
-- `mapError :: (err1 -> err2) -> Task err1 value -> Task err2 value`  <!-- 828 test call sites -->
-- `yield :: value -> Task w value`  <!-- 483 test call sites -->
-- `asResult :: Task err value -> Task err2 (Result err value)`  <!-- 286 test call sites -->
-- `mapArray :: (element -> Task err output) -> Array element -> Task err (Array output)`  <!-- 127 test call sites -->
-- `throw :: err -> Task err w`  <!-- 124 test call sites -->
-- `andThen :: (input -> Task err output) -> Task err input -> Task err output`  <!-- 92 test call sites -->
-- `fromIO :: IO value -> Task w value`  <!-- 90 test call sites -->
-- `map :: (input -> output) -> Task err input -> Task err output`  <!-- 84 test call sites -->
+- `mapError :: (err1 -> err2) -> Task err1 value -> Task err2 value`  <!-- 839 test call sites -->
+- `yield :: value -> Task w value`  <!-- 505 test call sites -->
+- `asResult :: Task err value -> Task err2 (Result err value)`  <!-- 299 test call sites -->
+- `throw :: err -> Task err w`  <!-- 145 test call sites -->
+- `mapArray :: (element -> Task err output) -> Array element -> Task err (Array output)`  <!-- 128 test call sites -->
+- `andThen :: (input -> Task err output) -> Task err input -> Task err output`  <!-- 95 test call sites -->
+- `fromIO :: IO value -> Task w value`  <!-- 95 test call sites -->
+- `map :: (input -> output) -> Task err input -> Task err output`  <!-- 89 test call sites -->
 
 ## Array
 
 - `length :: Array a -> Int`  <!-- 276 test call sites -->
-- `empty :: Array a`  <!-- 231 test call sites -->
-- `fromLinkedList :: LinkedList a -> Array a`  <!-- 221 test call sites -->
+- `empty :: Array a`  <!-- 236 test call sites -->
+- `fromLinkedList :: LinkedList a -> Array a`  <!-- 222 test call sites -->
 - `map :: (a -> b) -> Array a -> Array b`  <!-- 138 test call sites -->
-- `get :: Int -> Array a -> Maybe a`  <!-- 89 test call sites -->
+- `get :: Int -> Array a -> Maybe a`  <!-- 90 test call sites -->
 - `wrap :: a -> Array a`  <!-- 60 test call sites -->
 - `initialize :: Int -> (Int -> a) -> Array a`  <!-- 47 test call sites -->
 - `contains :: Eq value => value -> Array value -> Bool`  <!-- 41 test call sites -->
 
 ## Text
 
-- `contains :: Text -> Text -> Bool`  <!-- 450 test call sites -->
-- `toBytes :: Text -> Bytes`  <!-- 98 test call sites -->
+- `contains :: Text -> Text -> Bool`  <!-- 469 test call sites -->
+- `toBytes :: Text -> Bytes`  <!-- 99 test call sites -->
 - `fromLinkedList :: LinkedList Char -> Text`  <!-- 58 test call sites -->
-- `length :: Text -> Int`  <!-- 41 test call sites -->
-- `repeat :: Int -> Text -> Text`  <!-- 35 test call sites -->
+- `length :: Text -> Int`  <!-- 43 test call sites -->
+- `repeat :: Int -> Text -> Text`  <!-- 39 test call sites -->
 - `toLinkedList :: Text -> LinkedList Char`  <!-- 29 test call sites -->
-- `startsWith :: Text -> Text -> Bool`  <!-- 19 test call sites -->
+- `startsWith :: Text -> Text -> Bool`  <!-- 20 test call sites -->
 - `all :: (Char -> Bool) -> Text -> Bool`  <!-- 10 test call sites -->
 
 ## Parser
@@ -340,11 +340,11 @@ when WRITING TESTS; they are not feature-code frequency signal.
 
 - `toJSON :: ToJSON a => a -> Value`  <!-- 146 test call sites -->
 - `decodeText :: FromJSON value => Text -> Result Text value`  <!-- 137 test call sites -->
-- `encodeText :: ToJSON value => value -> Text`  <!-- 120 test call sites -->
+- `encodeText :: ToJSON value => value -> Text`  <!-- 124 test call sites -->
 - `object :: [(Text, Value)] -> Value`  <!-- 105 test call sites -->
 - `null :: Value`  <!-- 58 test call sites -->
 - `encode :: ToJSON value => value -> Value`  <!-- 56 test call sites -->
-- `decode :: FromJSON value => Value -> Result Text value`  <!-- 30 test call sites -->
+- `decode :: FromJSON value => Value -> Result Text value`  <!-- 31 test call sites -->
 - `yield :: value -> Parser value`  <!-- 4 test call sites -->
 
 ## Layout
@@ -362,10 +362,10 @@ when WRITING TESTS; they are not feature-code frequency signal.
 
 - `containing :: value -> Task w (ConcurrentVar value)`  <!-- 126 test call sites -->
 - `modify :: (value -> value) -> ConcurrentVar value -> Task w Unit`  <!-- 121 test call sites -->
-- `peek :: ConcurrentVar value -> Task w value`  <!-- 104 test call sites -->
-- `get :: ConcurrentVar value -> Task w value`  <!-- 39 test call sites -->
-- `set :: value -> ConcurrentVar value -> Task w ()`  <!-- 15 test call sites -->
-- `new :: forall value w. Task w (ConcurrentVar value)`  <!-- 14 test call sites -->
+- `peek :: ConcurrentVar value -> Task w value`  <!-- 105 test call sites -->
+- `get :: ConcurrentVar value -> Task w value`  <!-- 41 test call sites -->
+- `new :: forall value w. Task w (ConcurrentVar value)`  <!-- 17 test call sites -->
+- `set :: value -> ConcurrentVar value -> Task w ()`  <!-- 17 test call sites -->
 - `swap :: value -> ConcurrentVar value -> Task w value`  <!-- 7 test call sites -->
 - `modifyReturning :: (value -> Task Never (value, a)) -> ConcurrentVar value -> Task w a`  <!-- 6 test call sites -->
 
@@ -377,4 +377,4 @@ when WRITING TESTS; they are not feature-code frequency signal.
 - `generateV5 :: Uuid -> Text -> Uuid`  <!-- 19 test call sites -->
 - `fromText :: Text -> Maybe Uuid`  <!-- 3 test call sites -->
 
-*cut: 140 more modules (Map (260), Service.Application (250), Set (233), AsyncTask (225), Stream (212), …) — full surface: codemap/signatures/*
+*cut: 143 more modules (Map (260), AsyncTask (251), Service.Application (250), Set (233), Stream (212), …) — full surface: codemap/signatures/*
