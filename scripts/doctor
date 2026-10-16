@@ -24,6 +24,9 @@ EXEMPT_NAMES=(
   "speclib.py:shared parsing module imported by spec-check and spec-drift — never executed"
   "test-codemap-empty-changes:regression suite invoked by the codemap CI job, not a developer command"
   "pr-comment-allowlist.txt:data file consumed by scripts/pr-comments-allowlisted (./dev pr-comments) — never itself executed"
+  "IntegrationsGateSpec.hs:Hspec source run via runghc by scripts/test-integrations-gate-red — never itself executed"
+  "test-integrations-gate:regression suite invoked by checks.yml and ./dev workflow-check, not a developer command"
+  "test-integrations-gate-red:Change 025 C1 red-evidence driver named by the spec locator, not a developer command"
 )
 
 fail=0

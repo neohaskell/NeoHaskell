@@ -6,6 +6,8 @@ on:
       - main
     paths:
       - "core/**"
+      - "integrations/**"
+      - ".github/workflows/**"
       - "nix/**"
 
 jobs:
@@ -24,6 +26,8 @@ jobs:
           - test-suite: nhcore-test-core
             needs-postgres: false
           - test-suite: nhcore-test-integration
+            needs-postgres: false
+          - test-suite: nhintegrations-test
             needs-postgres: false
           - test-suite: nhcore-test-service
             needs-postgres: true

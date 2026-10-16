@@ -55,8 +55,9 @@
        message: "Use Core `Array`. New exceptions need a justification + belongs-in note here."}
     # Core IO/Console/File
     - {name: [System.IO],
-       within: [Auth.OAuth2.Client, Auth.UrlValidation, Http.Client, Http.Client.Internal, Main, Service.Application, Service.ApplicationSpec, Service.Transport.Mcp],
+       within: [Auth.OAuth2.Client, Auth.UrlValidation, Http.Client, Http.Client.Internal, Integration.Oura.SyncAllSpec, Main, Service.Application, Service.ApplicationSpec, Service.Transport.Mcp],
        message: "Use Core `IO`/`Console`/`File`. New exceptions need a justification + belongs-in note here."}
+    # Integration.Oura.SyncAllSpec: bracketed WAI test fixture IO signature; belongs-in: Test HTTP fixture helpers.
     # Environment
     - {name: [System.Environment],
        within: [Command, Config, Console, Environment, Log, Main, Service.Integration.Selection],

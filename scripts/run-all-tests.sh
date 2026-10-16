@@ -55,6 +55,7 @@ echo ""
 run_suite "nhcore-test-core" "LOG_LEVEL=Warn cabal test nhcore-test-core"
 run_suite "nhcore-test-auth" "LOG_LEVEL=Warn cabal test nhcore-test-auth"
 run_suite "nhcore-test-integration" "LOG_LEVEL=Warn cabal test nhcore-test-integration"
+run_suite "nhintegrations-test" "LOG_LEVEL=Warn cabal test nhintegrations-test"
 
 # Phase 3: Service tests (needs Postgres)
 echo -e "${YELLOW}▸ Service tests (requires Postgres on localhost:5432)${NC}"
