@@ -145,18 +145,20 @@ def repl(directory, name, expressions, env):
     with source.open() as stream:
         result = subprocess.run(command, cwd=ROOT, env=env, stdin=stream,
                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                text=True, timeout=120)
+                                text=True, timeout=600)
     (directory / (name + ".stdout")).write_text(result.stdout)
     (directory / (name + ".stderr")).write_text(result.stderr)
     print(result.stdout, end="")
     print(result.stderr, end="")
     if result.returncode != 0 or "error:" in result.stderr or "*** Exception" in result.stdout:
         raise AssertionError("native REPL compilation/execution failed, not a transport regression")
+    print("fixture: Http.Client.syntheticTransport")
     return result.stdout
 
 
 COMMON = """:set -XOverloadedStrings -XTypeApplications -XOverloadedRecordDot
 import Prelude qualified as P
+import Control.Concurrent qualified as Conc
 import Http.Client qualified as H
 import Http.Client.Internal qualified as R
 import Network.HTTP.Client qualified as HC
@@ -275,6 +277,7 @@ Timeout.timeout 2000000 (raw H.Get "/paced-chunked" 4) P.>>= P.print
 P.putStrLn "CHUNKED_COMPLETE"
 Timeout.timeout 2000000 (raw H.Get "/paced-close" 4) P.>>= P.print
 P.putStrLn "UNKNOWN_COMPLETE"
+Conc.threadDelay 3000000
 """
     if secure_internal:
         text = ":module + *Http.Client\n" + text.replace(
@@ -290,8 +293,9 @@ P.putStrLn "UNKNOWN_COMPLETE"
         # The Just/ResponseTooLarge assertion above proves the client completed
         # without Timeout.timeout cancelling it. Socket timing alone cannot prove
         # that: a cancelled unbounded read also closes at roughly two seconds.
-        assert any(e["method"] == "CLOSED" and e["path"] == path
-                   for e in fixture.events), "response did not close after bounded completion"
+        # Keep GHCi alive above so process exit cannot hide a leaked response.
+        assert any(e["method"] == "CLOSED" and e["path"] == path and e["elapsed"] < 2.5
+                   for e in fixture.events), "response did not close on bounded rejection"
         assert not any(e["method"] == "SOURCE_EOF" and e["path"] == path
                        for e in fixture.events), "source completed before client rejection"
     print("PASS: exact/empty/HEAD, zero-builder rejection, early cutoff and socket close")
@@ -306,6 +310,8 @@ def public_trust_case(fixture, directory):
     context, cert = certificate(directory)
     port = fixture.start("tls", context)
     env = clean_env()
+    for name in ("SSL_CERT_FILE", "SSL_CERT_DIR", "NIX_SSL_CERT_FILE"):
+        env.pop(name, None)
     env["SYSTEM_CERTIFICATE_PATH"] = str(cert)
     text = f"""
 controlManager <- HC.newManager (HC.managerSetProxy HC.noProxy HT.tlsManagerSettings)
@@ -341,6 +347,9 @@ def main():
             (directory / "server-events.json").write_text(json.dumps(fixture.events, indent=2))
             with contextlib.suppress(FileNotFoundError):
                 (directory / "key.pem").unlink()
+
+    relative_path = Path(__file__).resolve().relative_to(ROOT).as_posix()
+    print(f"PASS script:{relative_path}#{args.mode}")
 
 
 if __name__ == "__main__":

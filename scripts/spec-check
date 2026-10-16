@@ -565,7 +565,9 @@ def unresolved_criteria_tests(spec_name, spec_text, root=ROOT, surfaces=None):
     return errs
 
 
-def run_locator_probe(locator, timeout_seconds=120):
+def run_locator_probe(locator, timeout_seconds=None):
+    if timeout_seconds is None:
+        timeout_seconds = 1800 if locator["kind"] == "script" else 120
     command = locator_command(locator, ROOT)
     environment = os.environ.copy()
     environment["POSTGRES_AVAILABLE"] = "true"
@@ -585,6 +587,11 @@ def runtime_probe_errors(locator, boundary_entry, runner=run_locator_probe):
     code, output, timed_out = runner(locator)
     if timed_out:
         return [f"runtime locator probe timed out `{locator['raw']}`"]
+    if locator["kind"] == "script":
+        errors = script_evidence_errors(locator, boundary_entry, output)
+        if code != 0:
+            errors.append(f"runtime script exited {code} `{locator['raw']}`")
+        return errors
     summaries = re.findall(r"^(\d+) examples?, (\d+) failures?$", output, re.MULTILINE)
     if code != 0 or len(summaries) != 1:
         return [f"runtime locator probe did not pass cleanly `{locator['raw']}`"]
@@ -599,7 +606,21 @@ def runtime_probe_errors(locator, boundary_entry, runner=run_locator_probe):
     return errors
 
 
+def script_evidence_errors(locator, boundary_entry, output):
+    """Script success is an exact locator receipt, not an invented Hspec summary."""
+    selected = output.splitlines().count(f"PASS {locator['raw']}")
+    errors = []
+    if selected != boundary_entry["expected_examples"]:
+        errors.append(f"runtime script emitted {selected} receipts; expected "
+                      f"{boundary_entry['expected_examples']} `{locator['raw']}`")
+    if boundary_entry["fixture"] not in output:
+        errors.append(f"runtime script omitted fixture `{boundary_entry['fixture']}`")
+    return errors
+
+
 def runtime_report_errors(locator, boundary_entry, report_text):
+    if locator["kind"] == "script":
+        return script_evidence_errors(locator, boundary_entry, report_text)
     selected = report_text.count(locator["match"])
     errors = []
     if selected != boundary_entry["expected_examples"]:
@@ -890,6 +911,24 @@ def self_test():
         if not runtime_report_errors(valid_locator, fixture_entry,
                                      "fixture-postgres\n"):
             print("self-test FAIL runtime report zero-match accepted"); fails += 1
+
+        script_locator, _ = parse_locator("script:scripts/example#tls")
+        script_entry = {"fixture": "fixture-transport", "expected_examples": 1}
+        script_output = "fixture-transport\nPASS script:scripts/example#tls\n"
+        for label, output, valid in (
+                ("valid", script_output, True),
+                ("unsupported", "UNSUPPORTED: trust loader\n", False),
+                ("missing fixture", "PASS script:scripts/example#tls\n", False),
+                ("wrong mode", script_output.replace("#tls", "#proxy"), False),
+                ("duplicate", script_output + script_output, False),
+                ("substring", script_output.replace("PASS ", "not PASS "), False)):
+            if bool(runtime_report_errors(script_locator, script_entry, output)) == valid:
+                print(f"self-test FAIL script report {label}"); fails += 1
+        for code in (0, 1, 77):
+            errors = runtime_probe_errors(script_locator, script_entry,
+                runner=lambda _locator, code=code: (code, script_output, False))
+            if bool(errors) != (code != 0):
+                print(f"self-test FAIL script probe exit {code}"); fails += 1
 
     joins = plan_joins(
         VALID_FIXTURE.replace("[core-primitives]", "[auth, concurrency]"), caps)
