@@ -99,6 +99,18 @@ Ok "hello"
 True
 ```
 
+### Crypto
+
+```haskell
+>>> Bytes.pack [0, 15, 255] |> Crypto.toHex
+"000fff"
+```
+
+```haskell
+>>> Text.toBytes "abc" |> Crypto.sha256 |> Crypto.toHex
+"ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+```
+
 ### Float
 
 ```haskell
@@ -204,6 +216,32 @@ Set (fromList [1,2,3])
 "Cart"
 ```
 
+## file-upload
+
+### Service.FileUpload.BlobStore.S3
+
+```haskell
+>>> isDnsBucketName "my-bucket.v2"
+True
+```
+
+```haskell
+>>> isDnsBucketName "My_Bucket"
+False
+```
+
+```haskell
+>>> isDnsBucketName "a..b"
+False
+```
+
+### Service.FileUpload.BlobStore.S3.SigV4
+
+```haskell
+>>> Text.toBytes "" |> sha256Hex
+"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+```
+
 ## outbound-integrations
 
 ### Integration.Video.ExtractAudio
@@ -270,4 +308,4 @@ True
 
 ---
 
-*37 example sessions · modules with ZERO doctests: 315 (the documentation backlog — see codemap/.doc-ratchet)*
+*43 example sessions · modules with ZERO doctests: 314 (the documentation backlog — see codemap/.doc-ratchet)*

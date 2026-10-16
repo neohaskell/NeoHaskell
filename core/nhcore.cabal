@@ -280,6 +280,8 @@ library
     Service.FileUpload.Lifecycle
     Service.FileUpload.BlobStore
     Service.FileUpload.BlobStore.Local
+    Service.FileUpload.BlobStore.S3
+    Service.FileUpload.BlobStore.S3.SigV4
     Service.FileUpload.FileStateStore.Postgres
     Service.FileUpload.Routes
     Service.FileUpload.Resolver
@@ -491,6 +493,9 @@ test-suite nhcore-test
     Service.FileUpload.CoreSpec
     Service.FileUpload.LifecycleSpec
     Service.FileUpload.BlobStore.LocalSpec
+    Service.FileUpload.BlobStore.S3Spec
+    Service.FileUpload.BlobStore.S3.FakeS3
+    Service.FileUpload.BlobStore.S3.SigV4Spec
     Service.FileUpload.RoutesSpec
     Service.FileUpload.ResolverSpec
     Service.FileUpload.DownloadSpec
@@ -597,6 +602,9 @@ test-suite nhcore-test-service
     Service.EventStore.Postgres.NotificationsSpec
     Service.EventStore.PostgresSpec
     Service.FileUpload.BlobStore.LocalSpec
+    Service.FileUpload.BlobStore.S3Spec
+    Service.FileUpload.BlobStore.S3.FakeS3
+    Service.FileUpload.BlobStore.S3.SigV4Spec
     Service.FileUpload.ContentDedupSpec
     Service.FileUpload.CoreSpec
     Service.FileUpload.DownloadSpec

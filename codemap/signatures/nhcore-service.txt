@@ -884,6 +884,38 @@ instance GHC.Classes.Eq Service.FileUpload.BlobStore.Local.LocalBlobStoreConfig
 instance GHC.Generics.Generic Service.FileUpload.BlobStore.Local.LocalBlobStoreConfig
 instance GHC.Show.Show Service.FileUpload.BlobStore.Local.LocalBlobStoreConfig
 
+module Service.FileUpload.BlobStore.S3
+S3Config :: Text -> Text -> Text -> Text -> Text -> S3Config
+[accessKeyId] :: S3Config -> Text
+[bucket] :: S3Config -> Text
+[endpoint] :: S3Config -> Text
+[region] :: S3Config -> Text
+[secretAccessKey] :: S3Config -> Text
+createBlobStore :: S3Config -> Task Text BlobStore
+data S3Config
+
+module Service.FileUpload.BlobStore.S3.SigV4
+CanonicalRequest :: Text -> Text -> Array (Text, Text) -> Array (Text, Text) -> Text -> CanonicalRequest
+Credentials :: Text -> Text -> Text -> Credentials
+[accessKeyId] :: Credentials -> Text
+[headers] :: CanonicalRequest -> Array (Text, Text)
+[method] :: CanonicalRequest -> Text
+[path] :: CanonicalRequest -> Text
+[payloadHash] :: CanonicalRequest -> Text
+[query] :: CanonicalRequest -> Array (Text, Text)
+[region] :: Credentials -> Text
+[secretAccessKey] :: Credentials -> Text
+authorizationHeader :: Credentials -> DateTime -> CanonicalRequest -> Text
+canonicalRequest :: CanonicalRequest -> Text
+data CanonicalRequest
+data Credentials
+formatAmzDate :: DateTime -> Text
+sha256Hex :: Bytes -> Text
+signature :: Credentials -> DateTime -> CanonicalRequest -> Text
+signedHeaders :: Array (Text, Text) -> Text
+stringToSign :: Credentials -> DateTime -> CanonicalRequest -> Text
+uriEncode :: Text -> Text
+
 module Service.FileUpload.Core
 AdminPurge :: FileDeletionReason
 BlobKey :: Text -> BlobKey
