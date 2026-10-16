@@ -152,6 +152,7 @@ def repl(directory, name, expressions, env):
     print(result.stderr, end="")
     if result.returncode != 0 or "error:" in result.stderr or "*** Exception" in result.stdout:
         raise AssertionError("native REPL compilation/execution failed, not a transport regression")
+    print("fixture: Http.Client.syntheticTransport")
     return result.stdout
 
 
@@ -306,6 +307,8 @@ def public_trust_case(fixture, directory):
     context, cert = certificate(directory)
     port = fixture.start("tls", context)
     env = clean_env()
+    for name in ("SSL_CERT_FILE", "SSL_CERT_DIR", "NIX_SSL_CERT_FILE"):
+        env.pop(name, None)
     env["SYSTEM_CERTIFICATE_PATH"] = str(cert)
     text = f"""
 controlManager <- HC.newManager (HC.managerSetProxy HC.noProxy HT.tlsManagerSettings)
@@ -341,6 +344,9 @@ def main():
             (directory / "server-events.json").write_text(json.dumps(fixture.events, indent=2))
             with contextlib.suppress(FileNotFoundError):
                 (directory / "key.pem").unlink()
+
+    relative_path = Path(__file__).resolve().relative_to(ROOT).as_posix()
+    print(f"PASS script:{relative_path}#{args.mode}")
 
 
 if __name__ == "__main__":

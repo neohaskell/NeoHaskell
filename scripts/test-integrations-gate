@@ -13,6 +13,9 @@ import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parent.parent
+# criteria-runtime evidence, in concatenation order.
+REPORTS = ("nhcore-test-core.report", "transport-fixture.report",
+           ".nhcore-test-service.report", ".nhintegrations-test.report")
 
 
 class AllTestsRunner(unittest.TestCase):
@@ -93,8 +96,13 @@ class IntegrationWorkflows(unittest.TestCase):
         self.assertRegex(gate, r"(?m)^    needs:.*\btest-integrations\b")
         self.assertIn("needs.test-integrations.result", gate)
         runtime = jobs.get("criteria-runtime", "")
-        self.assertRegex(runtime, r"(?m)^    needs:.*\btest-service\b.*\btest-integrations\b")
-        self.assertIn("nhcore-test-core.report .nhcore-test-service.report .nhintegrations-test.report", runtime)
+        self.assertRegex(runtime, r"(?m)^    needs:.*\btest-core\b.*\btest-transport\b"
+                                  r".*\btest-service\b.*\btest-integrations\b")
+        self.assertIn("cat " + " ".join(REPORTS) + " > .criteria-runtime.report", runtime)
+        # Producers stay independent: test-service never waits on test-core.
+        self.assertRegex(jobs.get("test-service", ""), r"(?m)^    needs: \[build\]$")
+        self.assertRegex(gate, r"(?m)^    needs:.*\btest-transport\b")
+        self.assertIn("needs.test-transport.result", gate)
         self.assertEqual(workflow["check_criteria_report"]("test.yml", source), [])
         self.assertIn("--criteria-runtime", runtime)
         self.assertIn("--report .criteria-runtime.report", runtime)
@@ -114,6 +122,17 @@ class IntegrationWorkflows(unittest.TestCase):
             "narrowed suite": ("cabal test nhintegrations-test", "cabal test nhintegrations-test --test-options=--match=Video"),
             "missing detailed report": ("--test-show-details=direct | tee .nhintegrations-test.report", ""),
             "missing combined evidence": (".nhcore-test-service.report .nhintegrations-test.report", ".nhcore-test-service.report"),
+            "missing transport evidence": ("transport-fixture.report .nhcore-test-service.report", ".nhcore-test-service.report"),
+            "missing core evidence": ("cat nhcore-test-core.report ", "cat "),
+            "missing transport needs": ("needs: [test-core, test-transport, test-service", "needs: [test-core, test-service"),
+            "missing transport download": ("          name: transport-fixture-report\n      - uses: actions/download-artifact@v8\n        with:\n          name: nhcore-test-service-report",
+                                           "          name: nhcore-test-service-report"),
+            "transport gate result": ("needs.test-transport.result", "needs.test-core.result"),
+            "transport mode missing": ("tls proxy body secure-internal-body public-trust", "tls proxy body public-trust"),
+            "transport without pipefail": ("          set -euo pipefail\n          : > transport-fixture.report", "          : > transport-fixture.report"),
+            "transport report missing upload": ("          path: transport-fixture.report\n          retention-days: 1\n          if-no-files-found: error",
+                                                "          path: transport-fixture.report\n          retention-days: 1\n          if-no-files-found: warn"),
+            "service coupled to core": ("  test-service:\n    needs: [build]", "  test-service:\n    needs: [build, test-core]"),
             "empty hidden report": ("include-hidden-files: true", "include-hidden-files: false"),
         }
         for name, (old, new) in changes.items():
@@ -127,7 +146,8 @@ class IntegrationWorkflows(unittest.TestCase):
         source = (ROOT / ".github/workflows/test.yml").read_text()
         runtime = workflow["job_blocks"](workflow["strip_comments"](source))["criteria-runtime"]
         concatenate = next(line.strip() for line in runtime.splitlines() if line.strip().startswith("cat "))
-        reports = ("nhcore-test-core.report", ".nhcore-test-service.report", ".nhintegrations-test.report")
+        self.assertEqual(concatenate, "cat " + " ".join(REPORTS) + " > .criteria-runtime.report")
+        reports = REPORTS
         for missing in (None, *reports):
             with self.subTest(missing=missing), tempfile.TemporaryDirectory(prefix="nh-reports-") as directory:
                 work = Path(directory)

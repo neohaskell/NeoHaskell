@@ -441,27 +441,73 @@ def check_required_gate(name, text):
 CORE_REPORT = "nhcore-test-core.report"
 CORE_REPORT_ARTIFACT = "nhcore-test-core-report"
 SERVICE_REPORT = ".nhcore-test-service.report"
+TRANSPORT_REPORT = "transport-fixture.report"
+TRANSPORT_ARTIFACT = "transport-fixture-report"
+
+
+def check_transport_report(name, text, consumer):
+    """Require actual Linux transport execution, its report, and gate ownership."""
+    jobs = job_blocks(strip_comments(text))
+    transport = jobs.get("test-transport", "")
+    errors = []
+    runs = [step for step in _steps_of(transport) if "transport_fixture.py" in step]
+    modes = "tls proxy body secure-internal-body public-trust"
+    if not runs or "set -euo pipefail" not in runs[0] \
+            or f"for mode in {modes}; do" not in runs[0] \
+            or 'transport_fixture.py "$mode"' not in runs[0] \
+            or f"tee -a {TRANSPORT_REPORT}" not in runs[0]:
+        errors.append(f"{name}: test-transport must run every mode and tee under pipefail")
+    if "runs-on: ubuntu-latest" not in transport:
+        errors.append(f"{name}: test-transport needs the supported Linux trust loader")
+    uploads = [step for step in _steps_of(transport) if UPLOAD_RE.search(step)
+               and f"name: {TRANSPORT_ARTIFACT}" in step]
+    if not uploads or f"path: {TRANSPORT_REPORT}" not in uploads[0] \
+            or "if-no-files-found: error" not in uploads[0]:
+        errors.append(f"{name}: test-transport must require its report artifact")
+    owner = jobs.get(consumer, "")
+    needs = re.search(r"^    needs:\s*\[([^\]]*)\]", owner, re.M)
+    if not needs or "test-transport" not in [n.strip() for n in needs.group(1).split(",")]:
+        errors.append(f"{name}: {consumer} must need test-transport")
+    if not any("actions/download-artifact" in step and f"name: {TRANSPORT_ARTIFACT}" in step
+               for step in _steps_of(owner)):
+        errors.append(f"{name}: {consumer} must download {TRANSPORT_ARTIFACT}")
+    gate = jobs.get("ci-gate", "")
+    needs = re.search(r"^    needs:\s*\[([^\]]*)\]", gate, re.M)
+    if not needs or "test-transport" not in [n.strip() for n in needs.group(1).split(",")] \
+            or "needs.test-transport.result" not in gate:
+        errors.append(f"{name}: ci-gate must require the transport job result")
+    return errors
+
+
+INTEGRATIONS_REPORT = ".nhintegrations-test.report"
+INTEGRATIONS_ARTIFACT = "nhintegrations-test-report"
+SERVICE_REPORT_ARTIFACT = "nhcore-test-service-report"
+CRITERIA_CONSUMER = "criteria-runtime"
+# (producer job, run-substring, report, artifact, Hspec detailed output),
+# in the order criteria-runtime concatenates them.
+CRITERIA_REPORTS = (
+    ("test-core", "cabal test nhcore-test-core", CORE_REPORT, CORE_REPORT_ARTIFACT, True),
+    ("test-transport", "transport_fixture.py", TRANSPORT_REPORT, TRANSPORT_ARTIFACT, False),
+    ("test-service", "cabal test nhcore-test-service", SERVICE_REPORT, SERVICE_REPORT_ARTIFACT, True),
+    ("test-integrations", "cabal test nhintegrations-test", INTEGRATIONS_REPORT, INTEGRATIONS_ARTIFACT, True),
+)
 
 
 def check_criteria_report(name, text):
-    """The criteria gate consumes all three detailed Haskell suite reports."""
+    """Contract 6: criteria-runtime consumes Core, real transport, service and
+    integrations reports; each producer must retain and upload its evidence."""
     errs = []
     jobs = job_blocks(strip_comments(text))
-    runtime = jobs.get("criteria-runtime", "")
-    reports = (
-        ("test-core", "nhcore-test-core", CORE_REPORT, CORE_REPORT_ARTIFACT),
-        ("test-service", "nhcore-test-service", SERVICE_REPORT, "nhcore-test-service-report"),
-        ("test-integrations", "nhintegrations-test", ".nhintegrations-test.report", "nhintegrations-test-report"),
-    )
+    runtime = jobs.get(CRITERIA_CONSUMER, "")
     needs = re.search(r"^    needs:\s*\[([^\]]*)\]", runtime, re.M)
     dependencies = [n.strip() for n in needs.group(1).split(",")] if needs else []
-    for job, suite, report, artifact in reports:
+    for job, run, report, artifact, detailed in CRITERIA_REPORTS:
         steps = _steps_of(jobs.get(job, ""))
-        runs = [step for step in steps if f"cabal test {suite}" in step]
-        if not runs or "set -o pipefail" not in runs[0] \
-                or f"tee {report}" not in runs[0] \
-                or "--test-show-details=direct" not in runs[0]:
-            errs.append(f"{name}: {job} must retain detailed output in `{report}` under pipefail")
+        runs = [step for step in steps if run in step]
+        if not runs or not re.search(r"set -[a-z]*o pipefail", runs[0]) \
+                or not re.search(rf"tee (?:-a )?{re.escape(report)}(?:\s|$)", runs[0]) \
+                or (detailed and "--test-show-details=direct" not in runs[0]):
+            errs.append(f"{name}: {job} must retain its output in `{report}` under pipefail")
         uploads = [step for step in steps if UPLOAD_RE.search(step)
                    and f"name: {artifact}" in step]
         if not uploads or f"path: {report}" not in uploads[0] \
@@ -469,16 +515,18 @@ def check_criteria_report(name, text):
                 or (is_hidden_path(report) and "include-hidden-files: true" not in uploads[0]):
             errs.append(f"{name}: {job} must upload `{artifact}` and fail if its report is missing")
         if job not in dependencies:
-            errs.append(f"{name}: criteria-runtime must need {job}")
+            errs.append(f"{name}: {CRITERIA_CONSUMER} must need {job}")
         if not any("actions/download-artifact" in step and f"name: {artifact}" in step
                    for step in _steps_of(runtime)):
-            errs.append(f"{name}: criteria-runtime must download `{artifact}`")
+            errs.append(f"{name}: {CRITERIA_CONSUMER} must download `{artifact}`")
     gate = [step for step in _steps_of(runtime) if "--criteria-runtime" in step]
-    inputs = " ".join(report for _job, _suite, report, _artifact in reports)
+    inputs = " ".join(row[2] for row in CRITERIA_REPORTS)
     combined = re.search(rf"cat {re.escape(inputs)} > (\S+)", gate[0] if gate else "")
     if not gate or not combined or "set -euo pipefail" not in gate[0] \
             or f"--report {combined.group(1)}" not in gate[0]:
-        errs.append(f"{name}: criteria-runtime must concatenate all three reports under strict shell errors")
+        errs.append(f"{name}: {CRITERIA_CONSUMER} must concatenate all four reports "
+                    f"(`{inputs}`) under `set -euo pipefail`")
+    errs += check_transport_report(name, text, CRITERIA_CONSUMER)
     return errs
 
 
@@ -1732,52 +1780,83 @@ def self_test():
     )
     check("complete integrations suite gates", integrations.returncode == 0)
     good_report = "jobs:\n"
-    report_inputs = (
-        ("test-core", "nhcore-test-core", CORE_REPORT, CORE_REPORT_ARTIFACT),
-        ("test-service", "nhcore-test-service", SERVICE_REPORT, "nhcore-test-service-report"),
-        ("test-integrations", "nhintegrations-test", ".nhintegrations-test.report", "nhintegrations-test-report"),
-    )
-    for job, suite, report, artifact in report_inputs:
+    for job, run, report, artifact, detailed in CRITERIA_REPORTS:
+        if detailed:
+            good_report += (
+                f"  {job}:\n    needs: [build]\n    steps:\n"
+                f"      - run: |\n          set -o pipefail\n"
+                f"          {run} --test-show-details=direct | tee {report}\n")
+        else:
+            good_report += (
+                f"  {job}:\n    needs: [build]\n    runs-on: ubuntu-latest\n    steps:\n"
+                "      - name: transport\n        run: |\n"
+                "          set -euo pipefail\n"
+                "          for mode in tls proxy body secure-internal-body public-trust; do\n"
+                '            nix develop --command core/test/Http/transport_fixture.py "$mode"'
+                f" | tee -a {report}\n          done\n")
         good_report += (
-            f"  {job}:\n    needs: [build]\n    steps:\n"
-            f"      - run: |\n          set -o pipefail\n"
-            f"          cabal test {suite} --test-show-details=direct | tee {report}\n"
             f"      - uses: actions/upload-artifact@v7\n        with:\n"
             f"          name: {artifact}\n          path: {report}\n"
-            f"          include-hidden-files: true\n          if-no-files-found: error\n"
-        )
-    good_report += "  criteria-runtime:\n    needs: [test-core, test-service, test-integrations]\n    steps:\n"
-    for _job, _suite, _report, artifact in report_inputs:
+            + ("          include-hidden-files: true\n" if is_hidden_path(report) else "")
+            + "          if-no-files-found: error\n")
+    good_report += ("  criteria-runtime:\n"
+                    "    needs: [test-core, test-transport, test-service, test-integrations]\n"
+                    "    steps:\n")
+    for _job, _run, _report, artifact, _detailed in CRITERIA_REPORTS:
         good_report += f"      - uses: actions/download-artifact@v8\n        with:\n          name: {artifact}\n"
     good_report += (
         "      - run: |\n          set -euo pipefail\n"
-        "          cat nhcore-test-core.report .nhcore-test-service.report .nhintegrations-test.report > all.report\n"
+        "          cat nhcore-test-core.report transport-fixture.report"
+        " .nhcore-test-service.report .nhintegrations-test.report > all.report\n"
         "          ./dev spec-check --criteria-runtime base --report all.report\n"
+        "  ci-gate:\n    needs: [test-core, test-transport, test-service, test-integrations, criteria-runtime]\n"
+        "    steps:\n"
+        "      - run: echo '${{ needs.test-transport.result }}'\n"
     )
 
     def cr_bad(name_, mutated):
-        check(name_, bool(check_criteria_report("test.yml", mutated)))
+        check(name_, mutated != good_report and bool(check_criteria_report("test.yml", mutated)))
 
-    check("well-wired three-suite criteria report passes",
+    check("well-wired four-report criteria gate passes",
           not check_criteria_report("test.yml", good_report))
-    for job, _suite, report, artifact in report_inputs:
+    for job, _run, report, artifact, _detailed in CRITERIA_REPORTS:
         cr_bad(f"{job} report omitted from concatenation is flagged",
-               good_report.replace(f"{report} ", ""))
+               good_report.replace(f"{report} ", "", 1) if job != "test-integrations"
+               else good_report.replace(f" {report} >", " >"))
         cr_bad(f"{job} report download omitted is flagged",
                good_report.replace(f"      - uses: actions/download-artifact@v8\n        with:\n          name: {artifact}\n", ""))
+        cr_bad(f"{job} commented-out report download is flagged",
+               good_report.replace(f"      - uses: actions/download-artifact@v8\n        with:\n          name: {artifact}\n",
+                                   f"      # - uses: actions/download-artifact@v8\n      - uses: actions/cache@v6\n        with:\n          name: {artifact}\n"))
         cr_bad(f"{job} report upload omitted is flagged",
                good_report.replace(f"path: {report}", "path: wrong.report"))
-        cr_bad(f"{job} without detailed output is flagged",
-               good_report.replace(f" | tee {report}", ""))
+        cr_bad(f"{job} without retained output is flagged",
+               re.sub(rf" \| tee (?:-a )?{re.escape(report)}", "", good_report))
+        cr_bad(f"criteria-runtime not needing {job} is flagged",
+               good_report.replace(f"needs: [test-core, test-transport, test-service, test-integrations]",
+                                   "needs: [" + ", ".join(r[0] for r in CRITERIA_REPORTS if r[0] != job) + "]"))
     cr_bad("service-only criteria report is flagged",
            good_report.replace("--report all.report", "--report .nhcore-test-service.report"))
     cr_bad("report uploads cannot tolerate missing files",
            good_report.replace("if-no-files-found: error", "if-no-files-found: warn"))
-    cr_bad("report generation without pipefail is flagged",
+    cr_bad("Haskell report generation without pipefail is flagged",
            good_report.replace("          set -o pipefail\n", ""))
     cr_bad("hidden report uploads must opt in",
            good_report.replace("include-hidden-files: true", "include-hidden-files: false"))
-
+    cr_bad("transport execution without pipefail is flagged",
+           good_report.replace("          set -euo pipefail\n", "", 1))
+    cr_bad("transport upload tolerating a missing report is flagged",
+           good_report.replace("path: transport-fixture.report\n          if-no-files-found: error",
+                               "path: transport-fixture.report\n          if-no-files-found: warn"))
+    cr_bad("transport mode missing from actual execution is flagged",
+           good_report.replace("body secure-internal-body public-trust;", "body public-trust;"))
+    cr_bad("transport off the Linux trust loader is flagged",
+           good_report.replace("    runs-on: ubuntu-latest\n", "    runs-on: macos-latest\n"))
+    cr_bad("transport result missing from ci-gate is flagged",
+           good_report.replace("needs.test-transport.result", "needs.test-core.result"))
+    cr_bad("ci-gate not needing test-transport is flagged",
+           good_report.replace("needs: [test-core, test-transport, test-service, test-integrations, criteria-runtime]",
+                               "needs: [test-core, test-service, test-integrations, criteria-runtime]"))
     print("workflow-check: self-test", "OK" if ok else "FAILED")
     return 0 if ok else 1
 
