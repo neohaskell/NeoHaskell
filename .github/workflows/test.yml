@@ -190,8 +190,53 @@ jobs:
         with:
           name: dist-newstyle
           path: dist-newstyle
+      # Tee the direct per-example output: integration criteria whose locators
+      # live in nhcore-test-core are proven from this report by the criteria
+      # gate in test-service. Non-hidden filename: upload-artifact skips
+      # dotfiles by default.
       - name: Run nhcore-test-core
-        run: LOG_LEVEL=Warn nix develop --command cabal test nhcore-test-core
+        run: |
+          set -o pipefail
+          LOG_LEVEL=Warn nix develop --command cabal test nhcore-test-core \
+            --test-show-details=direct | tee nhcore-test-core.report
+      - uses: actions/upload-artifact@v7
+        with:
+          name: nhcore-test-core-report
+          path: nhcore-test-core.report
+          retention-days: 1
+          if-no-files-found: error
+
+  test-transport:
+    needs: [build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: DeterminateSystems/determinate-nix-action@v3.22.2
+        with:
+          extra-conf: |
+            accept-flake-config = true
+            extra-substituters = https://cache.iog.io https://neohaskell.cachix.org
+            extra-trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= neohaskell.cachix.org-1:mo2cLaGbwqbrxs9xhqKK8jeNsn3osi7t6XoAmxSZssc=
+      - uses: DeterminateSystems/magic-nix-cache-action@v14
+      - uses: actions/download-artifact@v8
+        with:
+          name: dist-newstyle
+          path: dist-newstyle
+      - name: Run byte transport fixtures
+        run: |
+          set -euo pipefail
+          : > transport-fixture.report
+          for mode in tls proxy body secure-internal-body public-trust; do
+            nix develop --command core/test/Http/transport_fixture.py "$mode" | tee -a transport-fixture.report
+          done
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: transport-fixture-report
+          path: transport-fixture.report
+          retention-days: 1
+          if-no-files-found: error
 
   test-auth:
     needs: [build]
@@ -234,7 +279,8 @@ jobs:
         run: LOG_LEVEL=Warn nix develop --command cabal test nhcore-test-integration
 
   test-service:
-    needs: [build]
+    # Both producers must finish before their evidence is consumed below.
+    needs: [build, test-core, test-transport]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -277,12 +323,24 @@ jobs:
           set -o pipefail
           LOG_LEVEL=Warn nix develop --command cabal test nhcore-test-service \
             --test-show-details=direct | tee .nhcore-test-service.report
+      - uses: actions/download-artifact@v8
+        if: github.event_name == 'pull_request'
+        with:
+          name: nhcore-test-core-report
+      - uses: actions/download-artifact@v8
+        if: github.event_name == 'pull_request'
+        with:
+          name: transport-fixture-report
+      # Missing evidence fails `cat`; a partial report cannot pass the gate.
       - name: Prove integration criterion selectors and real fixtures
         if: github.event_name == 'pull_request'
         env:
           BASE_REF: ${{ github.base_ref }}
           POSTGRES_AVAILABLE: "true"
-        run: ./dev spec-check --criteria-runtime "origin/${BASE_REF}" --report .nhcore-test-service.report
+        run: |
+          set -euo pipefail
+          cat nhcore-test-core.report transport-fixture.report .nhcore-test-service.report > nhcore-criteria.report
+          ./dev spec-check --criteria-runtime "origin/${BASE_REF}" --report nhcore-criteria.report
 
   test-hurl:
     needs: [build]
@@ -359,7 +417,7 @@ jobs:
   # check, and passes cleanly when there is nothing to check.
   ci-gate:
     if: always()
-    needs: [changes, build, doctest, test-core, test-auth, test-integration, test-service, test-hurl, codemap-sync]
+    needs: [changes, build, doctest, test-core, test-transport, test-auth, test-integration, test-service, test-hurl, codemap-sync]
     runs-on: ubuntu-latest
     steps:
       - name: Check all tests passed
@@ -387,6 +445,7 @@ jobs:
             "build=${{ needs.build.result }}"
             "doctest=${{ needs.doctest.result }}"
             "test-core=${{ needs.test-core.result }}"
+            "test-transport=${{ needs.test-transport.result }}"
             "test-auth=${{ needs.test-auth.result }}"
             "test-integration=${{ needs.test-integration.result }}"
             "test-service=${{ needs.test-service.result }}"
