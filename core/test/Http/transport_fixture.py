@@ -145,7 +145,7 @@ def repl(directory, name, expressions, env):
     with source.open() as stream:
         result = subprocess.run(command, cwd=ROOT, env=env, stdin=stream,
                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                text=True, timeout=120)
+                                text=True, timeout=600)
     (directory / (name + ".stdout")).write_text(result.stdout)
     (directory / (name + ".stderr")).write_text(result.stderr)
     print(result.stdout, end="")
@@ -158,6 +158,7 @@ def repl(directory, name, expressions, env):
 
 COMMON = """:set -XOverloadedStrings -XTypeApplications -XOverloadedRecordDot
 import Prelude qualified as P
+import Control.Concurrent qualified as Conc
 import Http.Client qualified as H
 import Http.Client.Internal qualified as R
 import Network.HTTP.Client qualified as HC
@@ -276,6 +277,7 @@ Timeout.timeout 2000000 (raw H.Get "/paced-chunked" 4) P.>>= P.print
 P.putStrLn "CHUNKED_COMPLETE"
 Timeout.timeout 2000000 (raw H.Get "/paced-close" 4) P.>>= P.print
 P.putStrLn "UNKNOWN_COMPLETE"
+Conc.threadDelay 3000000
 """
     if secure_internal:
         text = ":module + *Http.Client\n" + text.replace(
@@ -291,8 +293,9 @@ P.putStrLn "UNKNOWN_COMPLETE"
         # The Just/ResponseTooLarge assertion above proves the client completed
         # without Timeout.timeout cancelling it. Socket timing alone cannot prove
         # that: a cancelled unbounded read also closes at roughly two seconds.
-        assert any(e["method"] == "CLOSED" and e["path"] == path
-                   for e in fixture.events), "response did not close after bounded completion"
+        # Keep GHCi alive above so process exit cannot hide a leaked response.
+        assert any(e["method"] == "CLOSED" and e["path"] == path and e["elapsed"] < 2.5
+                   for e in fixture.events), "response did not close on bounded rejection"
         assert not any(e["method"] == "SOURCE_EOF" and e["path"] == path
                        for e in fixture.events), "source completed before client rejection"
     print("PASS: exact/empty/HEAD, zero-builder rejection, early cutoff and socket close")

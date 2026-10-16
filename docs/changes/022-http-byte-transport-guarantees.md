@@ -74,11 +74,14 @@ Linux CI runs all five modes in `test-transport` and requires that job in
 `ci-gate`. The criteria report includes its actual output alongside the Core
 and service reports. Each successful mode emits one exact
 `PASS script:core/test/Http/transport_fixture.py#<mode>` receipt and the printed
-`Http.Client.syntheticTransport` fixture identity. Nonzero exit (including 77),
-missing or duplicate receipts, wrong modes, and missing fixture identity fail
+`Http.Client.syntheticTransport` fixture marker. Nonzero exit (including 77),
+missing or duplicate receipts, wrong modes, and missing fixture markers fail
 the gate. Scripts do not fabricate Hspec summaries. The local script probe
-allows 1800 seconds for its native-toolchain sessions; HTTP observation
-deadlines and production timeouts are unchanged.
+allows 1800 seconds overall and 600 seconds per native-toolchain session.
+Body probes keep the client process alive for three seconds after rejection
+and require socket closure before 2.5 seconds, so process exit cannot stand in
+for response cleanup. The typed result also excludes closure by the two-second
+read watchdog. Production timeouts are unchanged.
 
 C5–C7 now provide executable audit-derived transport controls without any
 production test seam. C5 deliberately injects trust only into a test manager;
