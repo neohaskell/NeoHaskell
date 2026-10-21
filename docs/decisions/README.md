@@ -56,10 +56,10 @@ ADRs document significant architectural decisions made during the development of
 | [0040](0040-neoql-mvp.md) | NeoQL MVP — Field Access and Equality Filtering | Accepted |
 | [0041](0041-audio-transcription-integration.md) | Audio Transcription Integration via Multimodal Models | Accepted |
 | [0042](0042-parser-library.md) | Parser Library — Beginner-Friendly megaparsec Wrapper | Accepted |
-| [0043](0043-neohaskell-comment-syntax-parsing.md) | NeoHaskell Comment Syntax Parsing | Accepted |
+| [0043](0043-neohaskell-comment-syntax-parsing.md) | NeoHaskell Comment Syntax Parsing | Historical |
 | [0044](0044-layout-library.md) | Layout Library — Beginner-Friendly prettyprinter Wrapper | Accepted |
 | [0045](0045-integration-agent.md) | Integration.Agent — Provider-Agnostic AI Agent via Tool Calling | Accepted |
-| [0046](0046-function-syntax-fun-keyword.md) | Function Syntax — `fun` Keyword Parsing and Transpilation | Accepted |
+| [0046](0046-function-syntax-fun-keyword.md) | Function Syntax — `fun` Keyword Parsing and Transpilation | Historical |
 | [0047](0047-eventvariantof-typeclass.md) | EventVariantOf Typeclass for Type-Safe Event Variant Wrapping | Accepted |
 | [0048](0048-file-upload-content-deduplication.md) | File Upload Content Deduplication via SHA-256 | Accepted |
 | [0049](0049-outboundintegration-typeclass-dispatch-generation.md) | OutboundIntegration Typeclass with Typed Event Dispatch | Accepted |

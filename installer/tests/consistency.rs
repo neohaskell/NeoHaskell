@@ -332,17 +332,15 @@ fn read_repo(rel: &str) -> String {
     fs::read_to_string(&p).unwrap_or_else(|e| panic!("failed to read {}: {e}", p.display()))
 }
 
-/// Run `scripts/neo-release <args...>` and return trimmed stdout (the shared
-/// naming contract, executable). Panics on non-zero exit.
 fn neo_release(args: &[&str]) -> String {
-    let script = repo_root().join("scripts/neo-release");
+    let script = repo_root().join(".agents/skills/neohaskell-release/scripts/neo-release");
     let out = Command::new(&script)
         .args(args)
         .output()
         .unwrap_or_else(|e| panic!("spawn {}: {e}", script.display()));
     assert!(
         out.status.success(),
-        "scripts/neo-release {args:?} failed: {}",
+        ".agents/skills/neohaskell-release/scripts/neo-release {args:?} failed: {}",
         String::from_utf8_lossy(&out.stderr)
     );
     String::from_utf8_lossy(&out.stdout).trim().to_string()
@@ -350,13 +348,11 @@ fn neo_release(args: &[&str]) -> String {
 
 #[test]
 fn installer_asset_names_match_the_shared_release_script() {
-    // The installer downloads `neo_asset_name(target)`; the workflow packages via
-    // `scripts/neo-release asset-name`. They must be byte-identical per target.
     for target in release::NEO_TARGETS {
         assert_eq!(
             release::neo_asset_name(target),
             neo_release(&["asset-name", target]),
-            "installer asset name and scripts/neo-release disagree for {target}"
+            "installer asset name and .agents/skills/neohaskell-release/scripts/neo-release disagree for {target}"
         );
     }
 }
@@ -373,13 +369,13 @@ fn installer_targets_match_the_shared_release_script() {
     installer_targets.sort();
     assert_eq!(
         script_targets, installer_targets,
-        "the installer's supported targets and scripts/neo-release have drifted"
+        "the installer's supported targets and .agents/skills/neohaskell-release/scripts/neo-release have drifted"
     );
 }
 
 #[test]
 fn platform_release_builds_every_installer_target() {
-    let wf = read_repo("scripts/releases/engine.py");
+    let wf = read_repo(".agents/skills/neohaskell-release/scripts/releases/engine.py");
     for target in release::NEO_TARGETS {
         assert!(
             wf.contains(target),
@@ -392,7 +388,7 @@ fn platform_release_builds_every_installer_target() {
 #[test]
 fn platform_release_uses_the_neo_v_tag_prefix() {
     let config: serde_json::Value =
-        serde_json::from_str(&read_repo("scripts/releases/config.json")).unwrap();
+        serde_json::from_str(&read_repo(".agents/skills/neohaskell-release/references/config.json")).unwrap();
     assert_eq!(
         config["groups"]["platform"]["tag"].as_str(),
         Some(release::NEO_TAG_PREFIX),
@@ -402,10 +398,10 @@ fn platform_release_uses_the_neo_v_tag_prefix() {
 
 #[test]
 fn platform_release_routes_naming_through_the_shared_script() {
-    let wf = read_repo("scripts/semantic-release");
+    let wf = read_repo(".agents/skills/neohaskell-release/scripts/semantic-release");
     assert!(
-        wf.contains("scripts/neo-release"),
-        "platform release must package/checksum via scripts/neo-release so its asset \
+        wf.contains("SKILL_ROOT / \"scripts/neo-release\""),
+        "platform release must package/checksum via .agents/skills/neohaskell-release/scripts/neo-release so its asset \
          names cannot drift from what the installer downloads"
     );
 }
@@ -415,7 +411,7 @@ fn checksum_manifest_name_matches_platform_publication() {
     // Existing installers must keep resolving the platform checksum manifest.
     assert_eq!(release::SHA256SUMS, "SHA256SUMS");
     let txt = format!("{}.txt", release::SHA256SUMS);
-    for wf in ["scripts/neo-release", "scripts/releases/github.py"] {
+    for wf in [".agents/skills/neohaskell-release/scripts/neo-release", ".agents/skills/neohaskell-release/scripts/releases/github.py"] {
         let text = read_repo(wf);
         assert!(
             text.contains(release::SHA256SUMS),

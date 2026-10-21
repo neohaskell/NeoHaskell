@@ -1,11 +1,9 @@
-# Portable native build rehearsal; no tag triggers or publication permissions.
 name: Neo Release
 
 on:
   workflow_call: {}
   workflow_dispatch: {}
 
-# Read-only build rehearsal. semantic-release.yml is the only publisher.
 permissions:
   contents: read
 
@@ -34,8 +32,6 @@ jobs:
       - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
-      # Pinned, reproducible toolchain (matches the neo dev shell's Rust). A
-      # rustup cargo build links the SYSTEM C libraries → portable native binary.
       - uses: dtolnay/rust-toolchain@1.94.0
         with:
           targets: ${{ matrix.target }}
@@ -43,32 +39,25 @@ jobs:
         with:
           workspaces: neo
           key: ${{ matrix.target }}
-      # The committed IDE bundle (assets/ide/dist) is embedded via rust-embed, so
-      # no frontend build is needed here; neo-dist-check (neo-ci.yml) proves it a
-      # faithful rebuild. The sealed unit tests run separately (nix-package job).
       - name: Build the portable native binary
         env:
           TARGET: ${{ matrix.target }}
         run: cargo build --release --locked --manifest-path neo/Cargo.toml --target "$TARGET"
-      # Blocking portability gate: refuse a binary that references the Nix store.
       - name: Portability gate (no /nix/store references)
         env:
           TARGET: ${{ matrix.target }}
-        run: ./scripts/neo-release inspect "neo/target/${TARGET}/release/neo" "$TARGET"
-      # Package + checksum through the shared naming contract (scripts/neo-release).
+        run: ./.agents/skills/neohaskell-release/scripts/neo-release inspect "neo/target/${TARGET}/release/neo" "$TARGET"
       - name: Package + checksum the native asset
         env:
           TARGET: ${{ matrix.target }}
         run: |
-          ./scripts/neo-release package "$TARGET" "neo/target/${TARGET}/release/neo" artifacts
-          ./scripts/neo-release checksums artifacts
-      # Native install + smoke on THIS target's native runner: prove the exact
-      # published, checksum-verified asset installs and runs before publication.
+          ./.agents/skills/neohaskell-release/scripts/neo-release package "$TARGET" "neo/target/${TARGET}/release/neo" artifacts
+          ./.agents/skills/neohaskell-release/scripts/neo-release checksums artifacts
       - name: Native install + smoke
         env:
           TARGET: ${{ matrix.target }}
         run: |
-          ./scripts/neo-release install artifacts "$TARGET" "$RUNNER_TEMP/neo-smoke/neo"
+          ./.agents/skills/neohaskell-release/scripts/neo-release install artifacts "$TARGET" "$RUNNER_TEMP/neo-smoke/neo"
           "$RUNNER_TEMP/neo-smoke/neo" --version
       - uses: actions/upload-artifact@v7
         with:

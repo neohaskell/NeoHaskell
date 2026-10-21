@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Historical. The unused implementation and its dedicated tests were removed on 2026-10-15. This ADR describes retired code. Do not use it as evidence of current framework architecture or as a skill example.
 
 ## Context
 
