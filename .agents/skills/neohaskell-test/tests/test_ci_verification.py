@@ -51,8 +51,9 @@ ADMISSION_CASES = (
     AdmissionCase("unlabelled draft", "opened", True, False, False, ("core/core/Task.hs",), False, True),
     AdmissionCase("labelled draft", "labeled", True, True, True, ("core/core/Task.hs",), True, True),
     AdmissionCase("held label on draft update", "synchronize", True, False, True, ("core/core/Task.hs",), True, True),
-    AdmissionCase("unrelated label on ready PR", "labeled", False, False, False, ("core/core/Task.hs",), False, True),
-    AdmissionCase("unrelated label while request label remains", "labeled", True, False, True, ("core/core/Task.hs",), False, True),
+    AdmissionCase("unrelated label on ready PR", "labeled", False, False, False, ("core/core/Task.hs",), True, True),
+    AdmissionCase("unrelated label while request label remains", "labeled", True, False, True, ("core/core/Task.hs",), True, True),
+    AdmissionCase("unrelated label on ordinary draft", "labeled", True, False, False, ("core/core/Task.hs",), False, True),
     AdmissionCase("unrelated source on ready PR", "opened", False, False, False, ("docs/guide.md",), True, False),
     AdmissionCase("labelled draft with unrelated source", "labeled", True, True, True, ("docs/guide.md",), True, False),
 )

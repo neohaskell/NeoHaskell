@@ -39,20 +39,14 @@ jobs:
         env:
           EVENT: ${{ github.event_name }}
           BASE_REF: ${{ github.base_ref }}
-          ACTION: ${{ github.event.action }}
           IS_DRAFT: ${{ github.event.pull_request.draft }}
-          FULL_CI_LABEL_EVENT: ${{ github.event_name == 'pull_request' && github.event.action == 'labeled' && github.event.label.name == 'run-full-ci' }}
           FULL_CI_LABEL_PRESENT: ${{ github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'run-full-ci') }}
         run: |
           set -euo pipefail
           run_expensive=true
           if [ "$EVENT" = "pull_request" ]; then
             run_expensive=false
-            if [ "$ACTION" = "labeled" ]; then
-              if [ "$FULL_CI_LABEL_EVENT" = "true" ]; then
-                run_expensive=true
-              fi
-            elif [ "$IS_DRAFT" != "true" ] || [ "$FULL_CI_LABEL_PRESENT" = "true" ]; then
+            if [ "$IS_DRAFT" != "true" ] || [ "$FULL_CI_LABEL_PRESENT" = "true" ]; then
               run_expensive=true
             fi
           fi
