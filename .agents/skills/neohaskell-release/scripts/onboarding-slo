@@ -512,8 +512,23 @@ def self_test() -> None:
 
     augmented = nix_login_env({"PATH": "/usr/bin"})
     assert "/nix/var/nix/profiles/default/bin" in augmented["PATH"].split(os.pathsep)
-    assert "neohaskell.cachix.org" in augmented["NIX_CONFIG"]
-    assert "accept-flake-config" in augmented["NIX_CONFIG"]
+    config_lines = augmented["NIX_CONFIG"].splitlines()
+    config = {}
+    for line in config_lines:
+        key, value = line.split("=", maxsplit=1)
+        config[key.strip()] = value.split()
+    assert len(config_lines) == len(config) == 3
+    assert config == {
+        "accept-flake-config": ["true"],
+        "extra-substituters": [
+            "https://neohaskell.cachix.org",
+            "https://cache.iog.io",
+        ],
+        "extra-trusted-public-keys": [
+            "neohaskell.cachix.org-1:mo2cLaGbwqbrxs9xhqKK8jeNsn3osi7t6XoAmxSZssc=",
+            "hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ=",
+        ],
+    }
     assert "CACHIX_AUTH_TOKEN" not in augmented.get("NIX_CONFIG", "")
 
     source = Path(__file__).read_text()
@@ -523,8 +538,6 @@ def self_test() -> None:
     assert "ls-remote" in source, "tag resolution must use immutable `git ls-remote`"
     assert "/nix/var/nix/profiles/default" in source, \
         "the driver must put the installer-provisioned Nix on PATH for measured commands"
-    assert "NIX_CONFIG" in source and "neohaskell.cachix.org" in source and "accept-flake-config" in source, \
-        "the driver must configure the public Cachix substituter tokenlessly (accept-flake-config)"
     print("onboarding-slo self-test: OK - strict refs, pass/failure evidence, checksum rejection, monotonic deadline (same-host start), tokenless git tag resolution, descendant cleanup, non-publication")
 
 

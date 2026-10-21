@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
+    types: [opened, synchronize, reopened, ready_for_review, labeled]
 
 permissions:
   contents: read
@@ -22,6 +22,7 @@ jobs:
     timeout-minutes: 5
     outputs:
       touched: ${{ steps.detect.outputs.touched }}
+      run_expensive: ${{ steps.detect.outputs.run_expensive }}
     steps:
       - uses: actions/checkout@v7.0.1
         with:
@@ -31,8 +32,24 @@ jobs:
         env:
           EVENT: ${{ github.event_name }}
           BASE_REF: ${{ github.base_ref }}
+          ACTION: ${{ github.event.action }}
+          IS_DRAFT: ${{ github.event.pull_request.draft }}
+          FULL_CI_LABEL_EVENT: ${{ github.event_name == 'pull_request' && github.event.action == 'labeled' && github.event.label.name == 'run-full-ci' }}
+          FULL_CI_LABEL_PRESENT: ${{ github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'run-full-ci') }}
         run: |
           set -euo pipefail
+          run_expensive=true
+          if [ "$EVENT" = "pull_request" ]; then
+            run_expensive=false
+            if [ "$ACTION" = "labeled" ]; then
+              if [ "$FULL_CI_LABEL_EVENT" = "true" ]; then
+                run_expensive=true
+              fi
+            elif [ "$IS_DRAFT" != "true" ] || [ "$FULL_CI_LABEL_PRESENT" = "true" ]; then
+              run_expensive=true
+            fi
+          fi
+          echo "run_expensive=$run_expensive" >> "$GITHUB_OUTPUT"
           if [ "$EVENT" != "pull_request" ]; then
             echo "touched=true" >> "$GITHUB_OUTPUT"
             exit 0
@@ -48,7 +65,7 @@ jobs:
   lint:
     needs: changes
     if: >-
-      (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
+      needs.changes.outputs.run_expensive == 'true'
       && needs.changes.outputs.touched == 'true'
     name: Lint
     runs-on: ubuntu-latest
@@ -72,7 +89,7 @@ jobs:
   test:
     needs: changes
     if: >-
-      (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
+      needs.changes.outputs.run_expensive == 'true'
       && needs.changes.outputs.touched == 'true'
     name: Test
     runs-on: ubuntu-latest
@@ -93,7 +110,7 @@ jobs:
   build:
     needs: changes
     if: >-
-      (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
+      needs.changes.outputs.run_expensive == 'true'
       && needs.changes.outputs.touched == 'true'
     name: Build (${{ matrix.target }})
     runs-on: ${{ matrix.runner }}
@@ -161,7 +178,7 @@ jobs:
     steps:
       - name: Check all installer jobs passed (or correctly skipped)
         env:
-          IS_DRAFT: ${{ github.event_name == 'pull_request' && github.event.pull_request.draft }}
+          RUN_EXPENSIVE: ${{ needs.changes.outputs.run_expensive }}
           TOUCHED: ${{ needs.changes.outputs.touched }}
           CHANGES_RESULT: ${{ needs.changes.result }}
         run: |
@@ -170,7 +187,7 @@ jobs:
             exit 1
           fi
           allow_skip=false
-          if [[ "$IS_DRAFT" == "true" || "$TOUCHED" != "true" ]]; then
+          if [[ "$RUN_EXPENSIVE" != "true" || "$TOUCHED" != "true" ]]; then
             allow_skip=true
           fi
           results=(
@@ -188,4 +205,4 @@ jobs:
               exit 1
             fi
           done
-          echo "installer-ci-gate: all installer jobs passed (or correctly skipped)"
+          echo "installer-ci-gate: all installer jobs passed (or correctly skipped by event and path selection)"

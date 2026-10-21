@@ -38,7 +38,7 @@ file or mode change.
 
 The [required-check configuration](references/required-checks.json) records the intended main-branch checks for these workflows. Compare it with fresh repository protection settings before activation. Preserve the security and compiled-product gates. Retire the old process and codemap requirements when the replacement tooling and release checks pass on the exact reviewed candidate.
 
-Installing these skills does not change live repository protection. Activate the configuration with the reviewed workflow migration. Contributors use the automatically maintained local codemap without committing generated output.
+Coordinate the protection update with landing the workflow migration. Requiring the new check names before main produces them blocks other pull requests. Capture the prior required-check configuration and compare fresh settings immediately before an authorized landing. If landing cannot proceed after the update, restore that captured configuration. Contributors use the automatically maintained local codemap without committing generated output.
 
 ## During a change PR
 

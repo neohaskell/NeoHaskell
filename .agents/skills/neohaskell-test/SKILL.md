@@ -13,3 +13,5 @@ Use the owned scripts for broad runtime checks. They enter the shared project to
 - Run a focused Hspec selection with the [TDD runner](../tdd/scripts/test-match). It rejects empty selections, setup errors, failed assertions, and missing or ambiguous summaries.
 
 These commands exercise the local development build. Use optimized-build, generated-consumer, cross-platform, or CI checks when those contracts matter. The owned scripts run no lint or formatter checks.
+
+For workflow path selection and draft full-CI opt-in, see [CI verification](references/ci-verification.md).

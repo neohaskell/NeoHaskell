@@ -2,7 +2,7 @@ name: "Neo CLI"
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
+    types: [opened, synchronize, reopened, ready_for_review, labeled]
   push:
     branches: [main, integration/neo-monorepo]
     paths:
@@ -28,6 +28,7 @@ jobs:
     timeout-minutes: 5
     outputs:
       touched: ${{ steps.detect.outputs.touched }}
+      run_expensive: ${{ steps.detect.outputs.run_expensive }}
       contract: ${{ steps.detect.outputs.contract }}
     steps:
       - uses: actions/checkout@v7.0.1
@@ -38,8 +39,24 @@ jobs:
         env:
           EVENT: ${{ github.event_name }}
           BASE_REF: ${{ github.base_ref }}
+          ACTION: ${{ github.event.action }}
+          IS_DRAFT: ${{ github.event.pull_request.draft }}
+          FULL_CI_LABEL_EVENT: ${{ github.event_name == 'pull_request' && github.event.action == 'labeled' && github.event.label.name == 'run-full-ci' }}
+          FULL_CI_LABEL_PRESENT: ${{ github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'run-full-ci') }}
         run: |
           set -euo pipefail
+          run_expensive=true
+          if [ "$EVENT" = "pull_request" ]; then
+            run_expensive=false
+            if [ "$ACTION" = "labeled" ]; then
+              if [ "$FULL_CI_LABEL_EVENT" = "true" ]; then
+                run_expensive=true
+              fi
+            elif [ "$IS_DRAFT" != "true" ] || [ "$FULL_CI_LABEL_PRESENT" = "true" ]; then
+              run_expensive=true
+            fi
+          fi
+          echo "run_expensive=$run_expensive" >> "$GITHUB_OUTPUT"
           if [ "$EVENT" = "push" ]; then
             echo "touched=true" >> "$GITHUB_OUTPUT"
             echo "contract=true" >> "$GITHUB_OUTPUT"
@@ -62,7 +79,7 @@ jobs:
   rust:
     needs: changes
     if: >-
-      (github.event_name == 'push' || github.event.pull_request.draft == false)
+      needs.changes.outputs.run_expensive == 'true'
       && needs.changes.outputs.touched == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 40
@@ -92,7 +109,7 @@ jobs:
   ide:
     needs: changes
     if: >-
-      (github.event_name == 'push' || github.event.pull_request.draft == false)
+      needs.changes.outputs.run_expensive == 'true'
       && needs.changes.outputs.touched == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -128,7 +145,7 @@ jobs:
   nix-package:
     needs: changes
     if: >-
-      (github.event_name == 'push' || github.event.pull_request.draft == false)
+      needs.changes.outputs.run_expensive == 'true'
       && needs.changes.outputs.touched == 'true'
     strategy:
       fail-fast: false
@@ -159,7 +176,7 @@ jobs:
   consumer-contract:
     needs: changes
     if: >-
-      (github.event_name == 'push' || github.event.pull_request.draft == false)
+      needs.changes.outputs.run_expensive == 'true'
       && needs.changes.outputs.contract == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 150
@@ -269,7 +286,7 @@ jobs:
     steps:
       - name: Check all neo jobs passed (or correctly skipped)
         env:
-          IS_DRAFT: ${{ github.event_name == 'pull_request' && github.event.pull_request.draft }}
+          RUN_EXPENSIVE: ${{ needs.changes.outputs.run_expensive }}
           TOUCHED: ${{ needs.changes.outputs.touched }}
           CONTRACT: ${{ needs.changes.outputs.contract }}
           CHANGES_RESULT: ${{ needs.changes.result }}
@@ -279,11 +296,11 @@ jobs:
             exit 1
           fi
           allow_skip_component=false
-          if [[ "$IS_DRAFT" == "true" || "$TOUCHED" != "true" ]]; then
+          if [[ "$RUN_EXPENSIVE" != "true" || "$TOUCHED" != "true" ]]; then
             allow_skip_component=true
           fi
           allow_skip_contract=false
-          if [[ "$IS_DRAFT" == "true" || "$CONTRACT" != "true" ]]; then
+          if [[ "$RUN_EXPENSIVE" != "true" || "$CONTRACT" != "true" ]]; then
             allow_skip_contract=true
           fi
           results=(
@@ -303,4 +320,4 @@ jobs:
               exit 1
             fi
           done
-          echo "neo-ci-gate: all neo jobs passed (or correctly skipped - nothing to test)"
+          echo "neo-ci-gate: all neo jobs passed (or correctly skipped by event and path selection)"
