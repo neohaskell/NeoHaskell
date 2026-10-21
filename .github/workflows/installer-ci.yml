@@ -38,7 +38,7 @@ jobs:
             exit 0
           fi
           CHANGED="$(git diff --name-only "origin/${BASE_REF}...HEAD")"
-          PATTERN='^(installer/|scripts/releases/|agents-rework/scripts/releases/manifest\.json$|\.agents/skills/neohaskell-release/(references/(config|manifest)\.json|scripts/releases/|scripts/(semantic-release|neo-release)$)|\.github/workflows/(installer-ci|semantic-release|neo-release)\.yml$)'
+          PATTERN='^(installer/|scripts/releases/|\.agents/skills/neohaskell-release/(references/(config|manifest)\.json|scripts/releases/|scripts/(semantic-release|neo-release)$)|\.github/workflows/(installer-ci|semantic-release|neo-release)\.yml$)'
           if echo "$CHANGED" | grep -qE "$PATTERN"; then
             echo "touched=true" >> "$GITHUB_OUTPUT"
           else

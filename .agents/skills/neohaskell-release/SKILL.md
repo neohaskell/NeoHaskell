@@ -71,11 +71,9 @@ The canonical release ledger is
 `references/manifest.json`. Its initial contents preserve the existing records
 byte for byte. When reading a historical revision, the engine falls back to the
 live root `scripts/releases/manifest.json` path if the canonical path is absent.
-The archived `agents-rework/scripts/releases/manifest.json` snapshot is the last
-fallback. That archive remains frozen. If both canonical and live root ledgers
-exist, they must contain the same records or validation stops with an
-inconsistency error. The archived snapshot is not compared against newer live
-history.
+If both canonical and live root ledgers exist, they must contain the same
+records or validation stops with an inconsistency error. Release history is
+versioned with the owning skill and remains available without local archives.
 
 Never replace an existing ledger with an empty bootstrap ledger. Bootstrap is
 reserved for a repository with no release history. This checkout already has

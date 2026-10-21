@@ -34,16 +34,13 @@ different parts of NeoHaskell:
 The public Astro website and documentation now live in the separate
 [`neohaskell/website-v2`](https://github.com/neohaskell/website-v2) repository.
 
-This README is the canonical guide for **human contributors**: environment
-setup, the full build/test commands, and Postgres. The `dev` entrypoint,
-`scripts/` implementations, and `codemap/` assets are staged under
-`agents-rework/` during their rework; the commands below are unavailable from
-the repository root until they are reconnected. Related guides live here:
+This README covers the contributor environment, build commands, and Postgres.
+Repository agent instructions live in [AGENTS.md](AGENTS.md). Development skills
+keep their scripts, references, and tests under `.agents/skills/`.
 
-- **`agents-rework/`** — former agent instructions, skills, hooks, and
-  configuration, staged for rework.
-- **`agents-rework/codemap/README.md`** — former localization routing, API
-  discovery, and codemap regeneration.
+- [NeoHaskell tests](.agents/skills/neohaskell-test/SKILL.md) runs maintained test targets.
+- [How](.agents/skills/how/SKILL.md) provides automatically refreshed local source navigation.
+- [NeoHaskell release](.agents/skills/neohaskell-release/SKILL.md) owns release validation and history.
 
 Architecture decisions live in `docs/decisions/` (indexed in
 `docs/decisions/README.md`). The standalone website fetches the latest `main`

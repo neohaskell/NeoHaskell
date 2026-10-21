@@ -29,7 +29,6 @@ SKILL_ROOT = Path(__file__).resolve().parents[2]
 CONFIG_PATH = ".agents/skills/neohaskell-release/references/config.json"
 LEDGER_PATH = ".agents/skills/neohaskell-release/references/manifest.json"
 LIVE_LEGACY_LEDGER_PATH = "scripts/releases/manifest.json"
-ARCHIVED_LEDGER_PATH = "agents-rework/scripts/releases/manifest.json"
 CONFIG = json.loads((SKILL_ROOT / "references/config.json").read_text())
 REPOSITORY = CONFIG["repository"]
 TARGETS = (
@@ -272,7 +271,6 @@ class Repo:
     def ledger(self, rev):
         canonical_text = self.read(rev, LEDGER_PATH)
         live_legacy_text = self.read(rev, LIVE_LEGACY_LEDGER_PATH)
-        archived_text = self.read(rev, ARCHIVED_LEDGER_PATH)
         if canonical_text is not None and live_legacy_text is not None:
             if json.loads(canonical_text) != json.loads(live_legacy_text):
                 raise ValueError("Inconsistent canonical and live release ledgers")
@@ -280,8 +278,6 @@ class Repo:
             text = canonical_text
         elif live_legacy_text is not None:
             text = live_legacy_text
-        elif archived_text is not None:
-            text = archived_text
         else:
             text = canonical({"schema": 1, "attempts": [], "recoveries": []})
         data = json.loads(text)

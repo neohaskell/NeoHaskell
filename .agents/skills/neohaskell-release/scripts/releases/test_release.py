@@ -54,11 +54,10 @@ class LedgerLocations(unittest.TestCase):
         repo.read = lambda _revision, path: values.get(path)
         return repo
 
-    def test_canonical_later_history_ignores_frozen_archive(self):
-        archive_path = ROOT / release.ARCHIVED_LEDGER_PATH
-        archived_bytes = archive_path.read_bytes()
-        archived = json.loads(archived_bytes)
-        newer = copy.deepcopy(archived)
+    def test_canonical_history_can_advance(self):
+        canonical_path = ROOT / release.LEDGER_PATH
+        before = canonical_path.read_bytes()
+        newer = json.loads(before)
         newer["attempts"].append(
             release.identify(
                 {
@@ -73,25 +72,23 @@ class LedgerLocations(unittest.TestCase):
         repo = self.ledger_repo(
             {
                 release.LEDGER_PATH: release.canonical(newer),
-                release.ARCHIVED_LEDGER_PATH: archived_bytes.decode(),
             }
         )
         self.assertEqual(repo.ledger("new"), newer)
-        self.assertEqual(archive_path.read_bytes(), archived_bytes)
+        self.assertEqual(canonical_path.read_bytes(), before)
 
     def test_live_old_root_ledger_is_fallback(self):
-        old = json.loads((ROOT / release.ARCHIVED_LEDGER_PATH).read_text())
+        old = json.loads((ROOT / release.LEDGER_PATH).read_text())
         repo = self.ledger_repo(
             {release.LIVE_LEGACY_LEDGER_PATH: json.dumps(old)}
         )
         self.assertEqual(repo.ledger("old"), old)
 
-    def test_archived_snapshot_is_last_fallback(self):
-        archived = json.loads((ROOT / release.ARCHIVED_LEDGER_PATH).read_text())
-        repo = self.ledger_repo(
-            {release.ARCHIVED_LEDGER_PATH: release.canonical(archived)}
+    def test_missing_ledger_has_no_release_history(self):
+        self.assertEqual(
+            self.ledger_repo({}).ledger("initial"),
+            {"schema": 1, "attempts": [], "recoveries": []},
         )
-        self.assertEqual(repo.ledger("archive-only"), archived)
 
     def test_competing_live_ledgers_must_agree(self):
         canonical_data = {"schema": 1, "attempts": [], "recoveries": []}
@@ -114,7 +111,6 @@ class LedgerLocations(unittest.TestCase):
             {
                 release.LEDGER_PATH: release.canonical(canonical_data),
                 release.LIVE_LEGACY_LEDGER_PATH: release.canonical(old_data),
-                release.ARCHIVED_LEDGER_PATH: release.canonical(old_data),
             }
         )
         with self.assertRaisesRegex(ValueError, "Inconsistent canonical and live"):
@@ -128,12 +124,12 @@ class LedgerLocations(unittest.TestCase):
             subprocess.run(["git", "init", "-q", "-b", "main"], cwd=root, check=True)
             subprocess.run(["git", "config", "user.email", "fixture@example.invalid"], cwd=root, check=True)
             subprocess.run(["git", "config", "user.name", "Fixture"], cwd=root, check=True)
-            archive = (ROOT / release.ARCHIVED_LEDGER_PATH).read_text()
-            old_path = root / release.ARCHIVED_LEDGER_PATH
+            historical = (ROOT / release.LEDGER_PATH).read_text()
+            old_path = root / release.LIVE_LEGACY_LEDGER_PATH
             old_path.parent.mkdir(parents=True)
-            old_path.write_text(archive)
+            old_path.write_text(historical)
             subprocess.run(["git", "add", "."], cwd=root, check=True)
-            subprocess.run(["git", "commit", "-q", "-m", "archive snapshot"], cwd=root, check=True)
+            subprocess.run(["git", "commit", "-q", "-m", "historical release history"], cwd=root, check=True)
             old_revision = repo.git("rev-parse", "HEAD")
             before = repo.ledger(old_revision)
             later = copy.deepcopy(before)
@@ -151,6 +147,7 @@ class LedgerLocations(unittest.TestCase):
             current_path = root / release.LEDGER_PATH
             current_path.parent.mkdir(parents=True)
             current_path.write_text(release.canonical(later))
+            old_path.unlink()
             subprocess.run(["git", "add", "."], cwd=root, check=True)
             subprocess.run(["git", "commit", "-q", "-m", "canonical release history"], cwd=root, check=True)
             new_revision = repo.git("rev-parse", "HEAD")
@@ -1303,7 +1300,6 @@ class Workflow(unittest.TestCase):
             "installer/tests/consistency.rs",
             release.CONFIG_PATH,
             release.LEDGER_PATH,
-            "agents-rework/scripts/releases/manifest.json",
             ".agents/skills/neohaskell-release/scripts/releases/engine.py",
             ".agents/skills/neohaskell-release/scripts/releases/github.py",
             ".agents/skills/neohaskell-release/scripts/semantic-release",
@@ -1327,12 +1323,10 @@ class Workflow(unittest.TestCase):
             with self.subTest(path=path):
                 self.assertRegex(path, match[1])
 
-    def test_canonical_ledger_copy_preserves_nonempty_history_bytes(self):
-        canonical_bytes = (ROOT / release.LEDGER_PATH).read_bytes()
-        archived_bytes = (ROOT / release.ARCHIVED_LEDGER_PATH).read_bytes()
-        self.assertEqual(canonical_bytes, archived_bytes)
-        ledger = json.loads(canonical_bytes)
-        self.assertGreater(len(ledger["attempts"]), 0)
+    def test_canonical_ledger_retains_recorded_release_history(self):
+        ledger = json.loads((ROOT / release.LEDGER_PATH).read_text())
+        recorded = {(plan["group"], plan["version"]) for plan in ledger["attempts"]}
+        self.assertTrue({("platform", "0.10.0"), ("platform", "0.10.1")} <= recorded)
         for plan in ledger["attempts"] + ledger["recoveries"]:
             release.check_identity(plan)
 

@@ -1,3 +1,7 @@
+# Project context
+
+This repository develops NeoHaskell's framework, language, and toolchain for event-sourced applications. It contains reusable Haskell libraries, service implementations, integrations, and the `neo` CLI with its bundled IDE and project starter. Work here maintains the platform's APIs and guarantees for application developers. This is not an application repository or the repository for the public website. Interpret tasks and examples as work on framework internals unless the task explicitly targets a generated consumer project.
+
 # Development workflow
 
 Use this workflow as the default for work on NeoHaskell's framework, language and tooling. Skills live at `.agents/skills/<name>/SKILL.md` relative to the repository root. When a routed step names a skill, read its `SKILL.md` explicitly at that path and follow it within the caller's scope. Give delegates the repository-root `AGENTS.md` path and the specific skill and evidence paths their work needs.
