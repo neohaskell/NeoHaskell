@@ -387,8 +387,10 @@ fn platform_release_builds_every_installer_target() {
 
 #[test]
 fn platform_release_uses_the_neo_v_tag_prefix() {
-    let config: serde_json::Value =
-        serde_json::from_str(&read_repo(".agents/skills/neohaskell-release/references/config.json")).unwrap();
+    let config: serde_json::Value = serde_json::from_str(&read_repo(
+        ".agents/skills/neohaskell-release/references/config.json",
+    ))
+    .unwrap();
     assert_eq!(
         config["groups"]["platform"]["tag"].as_str(),
         Some(release::NEO_TAG_PREFIX),
@@ -411,7 +413,10 @@ fn checksum_manifest_name_matches_platform_publication() {
     // Existing installers must keep resolving the platform checksum manifest.
     assert_eq!(release::SHA256SUMS, "SHA256SUMS");
     let txt = format!("{}.txt", release::SHA256SUMS);
-    for wf in [".agents/skills/neohaskell-release/scripts/neo-release", ".agents/skills/neohaskell-release/scripts/releases/github.py"] {
+    for wf in [
+        ".agents/skills/neohaskell-release/scripts/neo-release",
+        ".agents/skills/neohaskell-release/scripts/releases/github.py",
+    ] {
         let text = read_repo(wf);
         assert!(
             text.contains(release::SHA256SUMS),
