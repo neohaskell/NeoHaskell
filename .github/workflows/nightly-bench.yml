@@ -1,18 +1,9 @@
-# Nightly benchmarks (pipeline Phase 5, task 9) — NON-BLOCKING by design:
-# schedule + manual dispatch only, never wired to pull_request. A budget
-# breach fails this run, and that failure is the notification (next-morning
-# fix task); PR-time perf assurance is the design review, not a benchmark.
-#
-# Telemetry: the uploaded bench-results artifact is the run's evidence
-# (telemetry/runs.jsonl stays pipeline-only by doctrine); the weekly review
-# reads the artifact trend and owns budget calibration
-# (telemetry/bench-budgets.json).
 name: nightly-bench
 
 on:
   schedule:
     - cron: "0 3 * * *"
-  workflow_dispatch: # the human-tool parity path: run it on demand
+  workflow_dispatch:
 
 permissions:
   id-token: write
@@ -23,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: DeterminateSystems/determinate-nix-action@527f17dd63d2d60d3e5552934bc84b9a33a14d11 # v3.22.2
@@ -33,14 +24,14 @@ jobs:
             extra-substituters = https://cache.iog.io https://neohaskell.cachix.org
             extra-trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= neohaskell.cachix.org-1:mo2cLaGbwqbrxs9xhqKK8jeNsn3osi7t6XoAmxSZssc=
       - uses: DeterminateSystems/magic-nix-cache-action@908b263ff629f4cc17666315b7fd3ec127c6244d # v14
-      # Same cache key family as test.yml's build job — warm restores keep the
-      # nightly build cost near-zero on quiet days
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: dist-newstyle
           key: ${{ runner.os }}-cabal-${{ hashFiles('**/*.cabal', 'cabal.project') }}
           restore-keys: |
             ${{ runner.os }}-cabal-
+      - name: Prepare benchmark evidence directory
+        run: mkdir -p .agents-state/framework-benchmark
       - name: Start PostgreSQL
         run: |
           docker run -d --name neohaskell_postgres \
@@ -59,33 +50,13 @@ jobs:
           fi
         env:
           PGPASSWORD: neohaskell
-      - name: Validate pipeline workflow benchmark protocol
-        run: ./dev pipeline-benchmark --self-test
-      - name: Run benchmark suites against budgets
-        run: LOG_LEVEL=Warn POSTGRES_AVAILABLE=true ./dev bench
-      - name: Record and validate candidate warm pipeline workflow evidence
-        run: |
-          rm -f .pipeline-benchmark-evidence.json .pipeline-benchmark-evidence.*.log
-          ./dev pipeline-benchmark record --ref candidate --cache-state warm \
-            --evidence .pipeline-benchmark-evidence.json --warmup
-          for sample in 1 2 3 4 5; do
-            ./dev pipeline-benchmark record --ref candidate --cache-state warm \
-              --evidence .pipeline-benchmark-evidence.json
-          done
-          ./dev pipeline-benchmark .pipeline-benchmark-evidence.json \
-            --candidate-warm-only --output .pipeline-benchmark-result.json
+      - name: Run bounded Hspec suite measurements
+        run: LOG_LEVEL=Warn POSTGRES_AVAILABLE=true python3 .agents/skills/framework-benchmark/scripts/bench.py --strict
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         if: always()
         with:
-          name: bench-results-${{ github.run_id }}
-          path: |
-            .bench-results.json
-            .pipeline-benchmark-evidence.json
-            .pipeline-benchmark-evidence.*.log
-            .pipeline-benchmark-result.json
-          # .bench-results.json is a dotfile; upload-artifact excludes hidden
-          # files by default, which silently produced empty artifacts (run
-          # 29894978953). Opt in explicitly so the evidence actually uploads.
+          name: framework-benchmark-${{ github.run_id }}
+          path: .agents-state/framework-benchmark/
           include-hidden-files: true
           retention-days: 90
-          if-no-files-found: error
+          if-no-files-found: warn

@@ -1,0 +1,3 @@
+interface:
+  display_name: "NeoHaskell Consumer Verification"
+  short_description: "Verify generated apps and the embedded IDE bundle"

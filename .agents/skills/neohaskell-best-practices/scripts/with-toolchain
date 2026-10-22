@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd -P)"
+
+if [ "$#" -eq 0 ]; then
+  echo "usage: with-toolchain <command> [args...]" >&2
+  exit 2
+fi
+
+ROOT="$("$SCRIPT_DIR/repo-root")"
+export NEOHASKELL_ROOT="$ROOT"
+cd "$ROOT"
+
+CURRENT_FP="$("$SCRIPT_DIR/toolchain-fp" 2>/dev/null || true)"
+if [ -n "${NEOHASKELL_SHELL_FP:-}" ] \
+   && [ -n "$CURRENT_FP" ] \
+   && [ "$NEOHASKELL_SHELL_FP" = "$CURRENT_FP" ] \
+   && [ -n "${NEOHASKELL_SHELL_PATH:-}" ] \
+   && PATH="$NEOHASKELL_SHELL_PATH" command -v "$1" >/dev/null 2>&1; then
+  export NEOHASKELL_TOOLCHAIN_MODE=pinned
+  PATH="$NEOHASKELL_SHELL_PATH" exec "$@"
+fi
+
+NIX_PROFILE_BIN="/nix/var/nix/profiles/default/bin"
+if ! command -v nix >/dev/null 2>&1 && [ -x "$NIX_PROFILE_BIN/nix" ]; then
+  PATH="$NIX_PROFILE_BIN:$PATH"
+  export PATH
+fi
+
+if command -v nix >/dev/null 2>&1; then
+  export NEOHASKELL_TOOLCHAIN_MODE=nix-develop
+  exec nix develop --command "$@"
+fi
+
+export NEOHASKELL_TOOLCHAIN_MODE=host
+echo "with-toolchain: nix not found; using unpinned host tools" >&2
+exec "$@"
