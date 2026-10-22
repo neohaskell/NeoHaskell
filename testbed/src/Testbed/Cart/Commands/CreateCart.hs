@@ -15,7 +15,6 @@ import Uuid qualified
 
 
 data CreateCart = CreateCart
-  deriving (Typeable)
 
 
 getEntityId :: CreateCart -> Maybe Uuid

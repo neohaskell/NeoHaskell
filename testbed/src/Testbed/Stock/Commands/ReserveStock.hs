@@ -20,7 +20,6 @@ data ReserveStock = ReserveStock
   , quantity :: Int
   , cartId :: Uuid
   }
-  deriving (Typeable)
 
 
 getEntityId :: ReserveStock -> Maybe Uuid

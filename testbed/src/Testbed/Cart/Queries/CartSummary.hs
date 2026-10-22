@@ -26,7 +26,6 @@ data CartSummary = CartSummary
     itemCount :: Int,
     isEmpty :: Bool
   }
-  deriving (Eq)
 
 
 -- | Authorization: Public access for demo/testing purposes

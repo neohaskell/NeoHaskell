@@ -18,7 +18,6 @@ data StockLevel = StockLevel
   , available :: Int
   , reserved :: Int
   }
-  deriving (Eq)
 
 
 -- | Authorization: Anyone can access stock levels (public catalog data)

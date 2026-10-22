@@ -17,7 +17,6 @@ data InitializeStock = InitializeStock
   { productId :: Uuid
   , available :: Int
   }
-  deriving (Typeable)
 
 
 getEntityId :: InitializeStock -> Maybe Uuid

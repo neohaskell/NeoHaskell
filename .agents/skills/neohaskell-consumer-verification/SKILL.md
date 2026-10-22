@@ -15,10 +15,13 @@ self-test checks only its orchestration or comparison logic.
 For framework export, marker or generated-API changes, inventory affected uses in
 `neo/starter/` and `testbed/` before implementation. Migrate those consumers in
 the same PR. Compare every affected example with the resulting public API and
-marker output during review. Remove redundant generated defaults and stale
-imports. Preserve custom instances, business logic and derivations the marker
-does not own. Update the marker's public documentation when its generated
-contract changes.
+marker output during review. Remove redundant generated defaults, unused
+derivations and stale imports. Retain each capability only when an actual
+framework constraint or example operation needs it under the
+[application example rules](../neohaskell-code-guidelines/SKILL.md#application-examples).
+Trace registration and execution constraints as well as the type's own class.
+Preserve custom instances and business logic. Update the marker's public
+documentation when its generated contract changes.
 
 Keep the starter, testbed and consumer fixtures in the
 [NeoHaskell application dialect](../neohaskell-code-guidelines/SKILL.md#application-examples).

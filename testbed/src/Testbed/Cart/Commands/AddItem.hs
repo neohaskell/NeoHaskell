@@ -18,7 +18,6 @@ data AddItem = AddItem
   , stockId :: Uuid
   , quantity :: Int
   }
-  deriving (Typeable)
 
 
 getEntityId :: AddItem -> Maybe Uuid

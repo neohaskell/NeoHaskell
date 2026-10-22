@@ -28,6 +28,14 @@ framework markers for the instances they generate. Use `newtype` when it models
 the domain. Never use explicit `stock` or `via` deriving strategies in these
 application examples.
 
+Keep each deriving clause only for a concrete framework constraint or an
+operation the example actually performs. Remove unused `Eq`, `Ord` and `Show`
+instances. GHC supplies `Typeable` automatically, so omit explicit `Typeable`
+deriving. Keep `Generic` and serialization instances when an actual codec needs
+them and a framework marker does not supply them. Apply
+[Minimize Reader Load](../principle-minimize-reader-load/SKILL.md) to declarations,
+imports and annotations as well as control flow.
+
 Framework implementation and compiler fixtures that test GHC integration can
 use the GHC machinery their internal contracts require. Keep that machinery
 inside the owning framework boundary.

@@ -19,7 +19,6 @@ data IncrementCounter = IncrementCounter
   { entityId :: Uuid
   , amount :: Int
   }
-  deriving (Typeable)
 
 
 -- | Returning `Just` tells the framework to load this entity before calling `decide`.

@@ -18,7 +18,6 @@ import Starter.Counter.Events.CounterCreated qualified as CounterCreated
 data CreateCounter = CreateCounter
   { label :: Text
   }
-  deriving (Typeable)
 
 
 -- | `Nothing` means "creation" — no existing entity should be loaded.

@@ -18,7 +18,6 @@ data CounterView = CounterView
   , label :: Text
   , value :: Int
   }
-  deriving (Eq)
 
 
 canAccess :: Maybe UserClaims -> Maybe AccessError

@@ -24,7 +24,6 @@ data CreateDocument = CreateDocument
   , attachment :: FileRef
   -- ^ Reference to previously uploaded file (validated by framework)
   }
-  deriving (Typeable)
 
 
 getEntityId :: CreateDocument -> Maybe Uuid

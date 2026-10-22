@@ -12,6 +12,7 @@ Maintainability is the work a reader must do to understand code. Track two axes:
 - **Demand interface compression.** A broad interface that hides little complexity makes readers learn both the surface and the implementation. Prefer boundaries that hide meaningful decisions.
 - **Shrink state scope:** prefer pure functions (returns over mutations), locals over fields, fields over module state, and module state over globals. Derive instead of sync.
 - **Name the invariant at the boundary,** not in every consumer, so the reader learns it once.
+- **Remove unnecessary noise.** Keep a declaration, annotation, derived capability or option only when an actual contract or operation needs it. Inspect owning framework constraints and real uses before deleting it. Automatically supplied capabilities and hypothetical future uses do not justify explicit boilerplate.
 - Before adding a layer or a piece of state, ask: does it reduce reader load elsewhere by at least as much?
 
 **The test:** can a new reader answer "where does X come from?" and "what can change X?" in under 30 seconds? If not, cut layers or cut state.

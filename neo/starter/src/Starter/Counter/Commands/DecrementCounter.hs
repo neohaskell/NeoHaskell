@@ -19,7 +19,6 @@ data DecrementCounter = DecrementCounter
   { entityId :: Uuid
   , amount :: Int
   }
-  deriving (Typeable)
 
 
 getEntityId :: DecrementCounter -> Maybe Uuid

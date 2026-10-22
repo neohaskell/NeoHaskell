@@ -14,7 +14,6 @@ import Testbed.Cart.Core
 
 
 data CreateCartInternal = CreateCartInternal
-  deriving (Typeable)
 
 
 getEntityId :: CreateCartInternal -> Maybe Uuid
