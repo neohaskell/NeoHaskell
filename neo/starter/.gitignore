@@ -6,6 +6,7 @@ result-*
 
 # Nix/direnv
 .direnv/
+.neo/
 
 # Environment files with secrets
 .env

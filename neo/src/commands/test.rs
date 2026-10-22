@@ -1,6 +1,5 @@
 use crate::output::OutputMode;
 use crate::prereqs;
-use crate::config::NeoConfig;
 use crate::commands::watch_common;
 use crate::subprocess::hurl;
 use crate::subprocess::nix;
@@ -59,12 +58,10 @@ pub async fn run(watch: bool, output_mode: &mut OutputMode) -> miette::Result<()
     prereqs::require_git().await?;
     prereqs::warn_direnv(output_mode).await;
     
-    let config = NeoConfig::load("neo.json")?;
-    
     if output_mode.is_ci() {
         println!("[info] Reconciling project artifacts...");
     }
-    crate::reconcile::run(".", &config).await?;
+    crate::reconcile::run_project(".").await?;
     
     if watch {
         watch_common::run_watch("test", output_mode).await?;

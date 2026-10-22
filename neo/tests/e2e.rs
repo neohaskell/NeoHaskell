@@ -1287,12 +1287,11 @@ async fn ide_initialize_against_release_binary() {
 
 #[test]
 #[ignore]
-fn skills_setup_real_clone_installs_skills_and_primer() {
+fn skills_setup_real_clone_installs_skills_without_mutable_primer() {
     // The shipped binary must really clone github.com/neohaskell/skills into the
     // per-user cache (under the sandbox HOME) and install what it finds. Upstream
-    // now ships a populated `skills/` tree plus a top-level `neohaskell.md` primer,
-    // so a real install is the correct outcome.
-    let sb = Sandbox::new("skills_setup_real_clone_installs_skills_and_primer");
+    // now ships a populated `skills/` tree; mutable API primers are not installed.
+    let sb = Sandbox::new("skills_setup_real_clone_installs_skills_without_primer");
     sb.neo("proj")
         .args(["skills", "setup", "--ci", "--all-tools"])
         .timeout(Duration::from_secs(120))
@@ -1307,12 +1306,8 @@ fn skills_setup_real_clone_installs_skills_and_primer() {
     // At least one skill folder was installed for Claude.
     assert!(sb.path("proj/.claude/skills").is_dir(), "skills installed for claude");
 
-    // The primer shipped upstream → installed next to the skills and wired into
-    // CLAUDE.md via an `@`-import inside the managed block.
-    assert!(sb.path("proj/.claude/neohaskell.md").exists(), "primer file installed");
-    let claude_md = std::fs::read_to_string(sb.path("proj/CLAUDE.md")).unwrap();
-    assert!(claude_md.contains("<!-- BEGIN neohaskell-skills -->"), "primer block in CLAUDE.md");
-    assert!(claude_md.contains("@.claude/neohaskell.md"), "primer @import wired");
+    assert!(!sb.path("proj/.claude/neohaskell.md").exists(), "mutable primer must not be installed");
+    assert!(!sb.path("proj/CLAUDE.md").exists(), "setup must not create instruction files");
 }
 
 // =====================================================

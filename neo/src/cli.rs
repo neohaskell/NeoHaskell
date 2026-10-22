@@ -106,19 +106,28 @@ pub enum Commands {
     },
     /// Install shared NeoHaskell skills into your AI coding tools
     #[command(long_about = "Fetch the shared skill library from github.com/neohaskell/skills and \
-                            install the skills into the right project-root folders for the AI coding \
-                            agents you use (Claude Code, OpenAI Codex, Kiro, Cursor). Run \
-                            `neo skills setup` for an interactive tool picker; in --ci \
-                            mode it installs for every supported tool unless you pass `--tool <id>`. \
-                            If the library ships a primer (neohaskell.md), it is also installed next to \
-                            each tool's skills and wired in: Claude imports it from CLAUDE.md via an \
-                            `@`-import, Cursor gets a self-activating `.cursor/rules` rule, and Codex \
-                            and Kiro inline it into a managed block in AGENTS.md; pass `--no-primer` \
-                            to skip that.")]
+                            install skills into the project-root folders for the AI coding agents you \
+                            use (Claude Code, OpenAI Codex, Kiro, Cursor). Run `neo skills setup` for \
+                            an interactive tool picker; in --ci mode it installs for every supported \
+                            tool unless you pass `--tool <id>`. Setup preserves existing developer-owned \
+                            skills and instruction files. Framework API guidance is synchronized by \
+                            `neo build`, `neo run`, and `neo test` from the exact framework source.")]
     Skills {
         #[command(subcommand)]
         subcommand: Option<SkillsSubcommand>,
     },
+    /// Retry synchronization of source-matched agent guidance
+    Guidance {
+        #[command(subcommand)]
+        subcommand: GuidanceSubcommand,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum GuidanceSubcommand {
+    /// Retry guidance retrieval for the current effective framework source
+    #[command(long_about = "Retry retrieval and validation of the exact-commit guidance corpus for the current project. The active guidance index is `.neo/agent-guidance/active.md`; if it remains unavailable, fix the reported source or network issue and run `neo guidance retry` again.")]
+    Retry,
 }
 
 /// Per-section views of the inspected project. `None` = dump the whole project.
@@ -166,8 +175,8 @@ pub enum SkillsSubcommand {
         /// Re-clone the skills library instead of reusing the cached copy
         #[arg(long)]
         refresh: bool,
-        /// Skip the always-on primer (neohaskell.md) and its instructions-file wiring
-        #[arg(long)]
+        /// Compatibility option. Setup no longer installs a mutable primer.
+        #[arg(long, hide = true)]
         no_primer: bool,
     },
 }
@@ -353,6 +362,15 @@ mod tests {
             Some(Commands::Skills { subcommand: None }) => {}
             _ => panic!("Expected bare Skills command"),
         }
+    }
+
+    #[test]
+    fn test_parse_guidance_retry() {
+        let cli = Cli::try_parse_from(["neo", "guidance", "retry"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Guidance { subcommand: GuidanceSubcommand::Retry })
+        ));
     }
 
     #[test]
