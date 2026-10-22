@@ -3,7 +3,7 @@
 #                          (NEO_BIN=<path> required; reuses the already-built neo)
 #   cache-prime --self-test  freeze the orchestration seam (no network/build)
 #
-# Env: NEO_BIN (required), PRIME_BUILD_TIMEOUT (default 5400),
+# Env: NEO_BIN and PRIME_EXPECTED_REVISION (required), PRIME_BUILD_TIMEOUT (default 5400),
 #      PRIME_TEST_TIMEOUT (default 2400), PRIME_RUN_TIMEOUT (default 30 — a brief
 #      liveness bound; the app must stay alive that long, then is torn down),
 #      NEO_APP_PORT (default 8080).
@@ -16,6 +16,7 @@ die() { printf 'cache-prime: FAIL — %s\n' "$*" >&2; exit 1; }
 BUILD_TIMEOUT="${PRIME_BUILD_TIMEOUT:-5400}"
 TEST_TIMEOUT="${PRIME_TEST_TIMEOUT:-2400}"
 RUN_TIMEOUT="${PRIME_RUN_TIMEOUT:-30}"
+EXPECTED_REVISION="${PRIME_EXPECTED_REVISION:-}"
 APP_PORT="${NEO_APP_PORT:-8080}"
 APP_NAME="prime-app"
 CACHE_PRIME_WORK=""
@@ -98,6 +99,7 @@ prime() {
   local neo_bin="${NEO_BIN:-}"
   [ -n "$neo_bin" ] || die "NEO_BIN must point at the neo binary to prime with"
   [ -x "$neo_bin" ] || die "NEO_BIN is not executable: $neo_bin"
+  [[ "$EXPECTED_REVISION" =~ ^[0-9a-f]{40}$ ]] || die "PRIME_EXPECTED_REVISION must be a 40-character lowercase Git revision"
 
   mkdir -p "$STATE_ROOT"
   CACHE_PRIME_WORK="$(mktemp -d "$STATE_ROOT/cache-prime.XXXXXX")"
@@ -111,6 +113,7 @@ prime() {
   local pinned
   pinned="$(sed -nE 's/.*neohaskellCommit = "([0-9a-fA-F]+)".*/\1/p' "$proj/flake.nix" | head -1)"
   info "generated project pins NeoHaskell revision: ${pinned:-<none>}"
+  [ "$pinned" = "$EXPECTED_REVISION" ] || die "generated project pins ${pinned:-<none>}, expected $EXPECTED_REVISION"
 
   phase "build — realize the default build closure"
   ( cd "$proj" && bounded "$BUILD_TIMEOUT" "$neo_bin" --ci build ) \

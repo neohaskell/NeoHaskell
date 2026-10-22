@@ -5,15 +5,6 @@ on:
     types: [opened, synchronize, reopened, ready_for_review, labeled]
   push:
     branches: [main, integration/neo-monorepo]
-    paths:
-      - "neo/**"
-      - "nix/neo-package.nix"
-      - "flake.nix"
-      - "flake.lock"
-      - ".agents/skills/neohaskell-release/scripts/neo-release"
-      - ".agents/skills/neohaskell-release/scripts/cache-prime"
-      - ".agents/skills/neohaskell-consumer-verification/**"
-      - ".github/workflows/neo-ci.yml"
 
 permissions:
   contents: read
@@ -41,6 +32,7 @@ jobs:
           BASE_REF: ${{ github.base_ref }}
           IS_DRAFT: ${{ github.event.pull_request.draft }}
           FULL_CI_LABEL_PRESENT: ${{ github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'run-full-ci') }}
+          PUSH_BEFORE: ${{ github.event.before }}
         run: |
           set -euo pipefail
           run_expensive=true
@@ -52,11 +44,16 @@ jobs:
           fi
           echo "run_expensive=$run_expensive" >> "$GITHUB_OUTPUT"
           if [ "$EVENT" = "push" ]; then
-            echo "touched=true" >> "$GITHUB_OUTPUT"
-            echo "contract=true" >> "$GITHUB_OUTPUT"
-            exit 0
+            PUSH_BEFORE="${PUSH_BEFORE:-}"
+            if [ -z "$PUSH_BEFORE" ] || [[ "$PUSH_BEFORE" =~ ^0+$ ]] || ! git cat-file -e "${PUSH_BEFORE}^{commit}" 2>/dev/null; then
+              echo "touched=true" >> "$GITHUB_OUTPUT"
+              echo "contract=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            CHANGED="$(git diff --name-only "${PUSH_BEFORE}..HEAD")"
+          else
+            CHANGED="$(git diff --name-only "origin/${BASE_REF}...HEAD")"
           fi
-          CHANGED="$(git diff --name-only "origin/${BASE_REF}...HEAD")"
           PATTERN='^(neo/|nix/neo-package\.nix|flake\.nix|flake\.lock|\.agents/skills/neohaskell-release/scripts/(neo-release|cache-prime)$|\.agents/skills/neohaskell-consumer-verification/|\.github/workflows/neo-ci\.yml)'
           CONTRACT='^(neo/|core/|integrations/|nix/neo-package\.nix|flake\.nix|flake\.lock|\.agents/skills/neohaskell-release/scripts/(neo-release|cache-prime)$|\.agents/skills/neohaskell-consumer-verification/|\.github/workflows/neo-ci\.yml)'
           if echo "$CHANGED" | grep -qE "$PATTERN"; then
@@ -169,9 +166,6 @@ jobs:
 
   consumer-contract:
     needs: changes
-    if: >-
-      needs.changes.outputs.run_expensive == 'true'
-      && needs.changes.outputs.contract == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 150
     env:
@@ -254,15 +248,12 @@ jobs:
         with:
           name: neohaskell
           authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
-      - name: Populate the cache from the EXACT consumer path + the default released closure
+      - name: Populate the cache from the exact consumer path
         if: ${{ env.CACHIX_AUTH_TOKEN != '' }}
         env:
           CONTRACT_BUILD_TIMEOUT: "5400"
           CONTRACT_TEST_TIMEOUT: "2400"
           CONTRACT_READY_DEADLINE: "300"
-          PRIME_BUILD_TIMEOUT: "5400"
-          PRIME_TEST_TIMEOUT: "2400"
-          PRIME_RUN_TIMEOUT: "30"
         run: |
           set -euo pipefail
           cargo build --release --locked --manifest-path neo/Cargo.toml --target "$REHEARSAL_TARGET"
@@ -271,7 +262,6 @@ jobs:
           ./.agents/skills/neohaskell-release/scripts/neo-release checksums "$RUNNER_TEMP/neo-artifacts"
           ./.agents/skills/neohaskell-release/scripts/neo-release install "$RUNNER_TEMP/neo-artifacts" "$REHEARSAL_TARGET" "$RUNNER_TEMP/neo-bin/neo"
           NEO_BIN="$RUNNER_TEMP/neo-bin/neo" ./.agents/skills/neohaskell-consumer-verification/scripts/neo-consumer-contract
-          NEO_BIN="$RUNNER_TEMP/neo-bin/neo" ./.agents/skills/neohaskell-release/scripts/cache-prime
 
   neo-ci-gate:
     if: always()
@@ -282,7 +272,6 @@ jobs:
         env:
           RUN_EXPENSIVE: ${{ needs.changes.outputs.run_expensive }}
           TOUCHED: ${{ needs.changes.outputs.touched }}
-          CONTRACT: ${{ needs.changes.outputs.contract }}
           CHANGES_RESULT: ${{ needs.changes.result }}
         run: |
           if [[ "$CHANGES_RESULT" != "success" ]]; then
@@ -293,15 +282,11 @@ jobs:
           if [[ "$RUN_EXPENSIVE" != "true" || "$TOUCHED" != "true" ]]; then
             allow_skip_component=true
           fi
-          allow_skip_contract=false
-          if [[ "$RUN_EXPENSIVE" != "true" || "$CONTRACT" != "true" ]]; then
-            allow_skip_contract=true
-          fi
           results=(
             "rust=${{ needs.rust.result }}=$allow_skip_component"
             "ide=${{ needs.ide.result }}=$allow_skip_component"
             "nix-package=${{ needs.nix-package.result }}=$allow_skip_component"
-            "consumer-contract=${{ needs.consumer-contract.result }}=$allow_skip_contract"
+            "consumer-contract=${{ needs.consumer-contract.result }}=false"
           )
           for entry in "${results[@]}"; do
             job="${entry%%=*}"; rest="${entry#*=}"

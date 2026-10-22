@@ -21,6 +21,7 @@ Apply [NeoHaskell code guidelines](../neohaskell-code-guidelines/SKILL.md) for t
 | Constructive, total representations | Prefer a shape that carries the required guarantee, such as a head plus rest or pairs. Keep ordinary collections when the contract is total; `Array.first` and `LinkedList.head` already represent absence with `Maybe`. A start plus duration still needs a nonnegative-duration invariant. |
 | Boundary parsing and errors | Decode external `Text`, `Bytes`, or `Json.Value` into the owning type, then establish semantic constraints the decoder does not check. Use `Result` for explained pure failure and `Task` for effects; preserve typed errors until an adapter owns their presentation. Follow [Boundary Discipline](../principle-boundary-discipline/SKILL.md). |
 | Authoritative shapes | Reuse owning types, type families, and existing Generic/Template Haskell derivation. `ToSchema` derives a schema from a Haskell type; it is not an input validator. Keep custom decoding when the contract requires it, and check what a marker already generates before adding instances. |
+| Necessary declarations | Follow [Minimize Reader Load](../principle-minimize-reader-load/SKILL.md). Keep derived capabilities, imports and annotations for demonstrated constraints or operations. Remove automatically supplied and unused boilerplate from consumer examples. |
 | Checked conversions | Establish the semantic precondition as well as representation compatibility. Read conversion behavior: `Int.fromInt64` clamps, so it does not prove an exact conversion. Do not replace an unexplained partial path with `panic` or an unsafe conversion. |
 | Records and service ownership | Use named records for coherent configuration or easily confused arguments; retain simple positional and pipeline APIs where clear. Services are records of functions. Their constructors own captured dependencies, mutable state, and resource lifetimes; pure callers should not carry synchronization machinery. |
 | Pure logic and deferred effects | Keep transformations and decision construction separate from effect execution. Constructing or showing a `Task` does not run it; constructing a `Decision` does not execute its capabilities. Compose with the existing interpreters and runners at their owning boundaries. |
@@ -32,5 +33,11 @@ Apply [NeoHaskell code guidelines](../neohaskell-code-guidelines/SKILL.md) for t
 Run compiler and test commands through `scripts/with-toolchain <command> <arguments...>`. The wrapper uses the checked shell witness, enters the project Nix shell when needed, and labels an unpinned host fallback. It preserves argument boundaries and command exit status.
 
 Use [NeoHaskell tests](../neohaskell-test/SKILL.md) for current suite, doctest and testbed entrypoints. Capture runtime or compiler contracts with [Regression evidence](../regression-evidence/SKILL.md). For event-store behavior, select relevant [controlled-fault regression recipes](../event-store-regression/SKILL.md) alongside the broader maintained tests.
+
+For framework export, TH marker or generated-API changes, follow
+[NeoHaskell consumer verification](../neohaskell-consumer-verification/SKILL.md)
+before implementation and verification. It owns the starter and testbed migration
+contract. Apply the [application example rules](../neohaskell-code-guidelines/SKILL.md#application-examples)
+to consumer code, including fixtures that represent an app.
 
 Read [patterns](references/patterns.md) when designing module APIs, functions, and pipelines or working on boundary invariants, service ownership, deferred execution, concurrency, generated consumers, or diagnostics.

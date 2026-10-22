@@ -76,7 +76,7 @@ data TranscriptionOutcome
       { documentId :: Text
       , errorMessage :: Text
       }
-  deriving (Generic, Show, Typeable)
+  deriving (Generic)
 
 instance Json.ToJSON TranscriptionOutcome
 instance Json.FromJSON TranscriptionOutcome
