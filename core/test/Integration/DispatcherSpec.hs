@@ -1335,6 +1335,54 @@ spec = do
         count <- ConcurrentVar.peek processedCount
         count |> shouldBe 10
 
+    describe "callback masking" do
+      it "runs stateless callbacks in an unmasked child" \_ -> do
+        callbackMaskingStates <- Channel.new
+        let runner =
+              Dispatcher.OutboundRunner
+                { entityTypeName = "TestEntity",
+                  processEvent = \_maybeContext _eventStore _event -> do
+                    maskingState <- GhcException.getMaskingState |> Task.fromIO
+                    Channel.write maskingState callbackMaskingStates
+                    Task.yield Array.empty
+                }
+
+        eventStore <- InMemory.new |> Task.mapError toText
+        dispatcher <- Dispatcher.new eventStore [runner] Map.empty
+        event <- makeTestEvent "stateless-unmasked-callback" 1 1
+
+        Dispatcher.dispatch dispatcher event
+        callbackMaskingState <- Channel.read callbackMaskingStates
+        Dispatcher.shutdown dispatcher
+
+        callbackMaskingState |> shouldBe GhcException.Unmasked
+
+      it "runs lifecycle callbacks in an unmasked child" \_ -> do
+        callbackMaskingStates <- Channel.new
+        let runner =
+              Dispatcher.OutboundLifecycleRunner
+                { entityTypeName = "TestEntity",
+                  spawnWorkerState = \_streamId ->
+                    Task.yield
+                      Dispatcher.WorkerState
+                        { processEvent = \_event -> do
+                            maskingState <- GhcException.getMaskingState |> Task.fromIO
+                            Channel.write maskingState callbackMaskingStates
+                            Task.yield Array.empty,
+                          cleanup = Task.yield unit
+                        }
+                }
+
+        eventStore <- InMemory.new |> Task.mapError toText
+        dispatcher <- Dispatcher.newWithLifecycle eventStore [] [runner] Map.empty
+        event <- makeTestEvent "lifecycle-unmasked-callback" 1 1
+
+        Dispatcher.dispatch dispatcher event
+        callbackMaskingState <- Channel.read callbackMaskingStates
+        Dispatcher.shutdown dispatcher
+
+        callbackMaskingState |> shouldBe GhcException.Unmasked
+
     describe "concurrent dispatch to multiple entities" do
       it "handles concurrent dispatch to multiple entities correctly" \_ -> do
         -- Test that concurrent dispatch to multiple different entities works correctly
