@@ -50,6 +50,7 @@ import Service.Command.AuthSpec qualified
 import Service.Command.CanAccessSpec qualified
 import Service.Transport.Web.CommandAuthSpec qualified
 import Service.CommandExecutor.AuditLoggingSpec qualified
+import Service.CommandExecutor.MetadataSpec qualified
 import Service.QueryObjectStore.PostgresSpec qualified
 import Service.Query.Subscriber.ReadinessSpec qualified
 import Test.Hspec qualified as Hspec
@@ -105,5 +106,6 @@ main = Hspec.hspec do
   Hspec.describe "Service.Command.CanAccess" Service.Command.CanAccessSpec.spec
   Hspec.describe "Service.Transport.Web.CommandAuth" Service.Transport.Web.CommandAuthSpec.spec
   Hspec.describe "Service.CommandExecutor.AuditLogging" Service.CommandExecutor.AuditLoggingSpec.spec
+  Hspec.describe "Service.CommandExecutor.Metadata" Service.CommandExecutor.MetadataSpec.spec
   Hspec.describe "Service.QueryObjectStore.Postgres" Service.QueryObjectStore.PostgresSpec.spec
   Hspec.describe "Service.Query.Subscriber.Readiness" Service.Query.Subscriber.ReadinessSpec.spec

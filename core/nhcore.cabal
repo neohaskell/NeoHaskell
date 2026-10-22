@@ -636,6 +636,7 @@ test-suite nhcore-test-service
     Service.Command.CanAccess.PermissionFixture
     Service.Transport.Web.CommandAuthSpec
     Service.CommandExecutor.AuditLoggingSpec
+    Service.CommandExecutor.MetadataSpec
     Service.QueryObjectStore.PostgresSpec
     Service.Query.Subscriber.ReadinessSpec
 
