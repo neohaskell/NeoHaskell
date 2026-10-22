@@ -4,6 +4,7 @@ module AsyncTask (
   AsyncTask,
   RaceWinner (..),
   run,
+  runUnmasked,
   waitFor,
   waitCatch,
   cancel,
@@ -37,6 +38,14 @@ run :: (Show err) => Task err result -> Task err (AsyncTask err result)
 run task =
   Task.runResult task
     |> GhcAsync.async
+    |> Task.fromIO
+    |> Task.map AsyncTask
+
+
+-- | Run a task in a child that starts unmasked, even when the caller is masked.
+runUnmasked :: (Show err) => Task err result -> Task err (AsyncTask err result)
+runUnmasked task =
+  GhcAsync.asyncWithUnmask (\unmask -> unmask (Task.runResult task))
     |> Task.fromIO
     |> Task.map AsyncTask
 
