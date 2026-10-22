@@ -298,12 +298,10 @@ def main():
     parser.add_argument("--base", default="origin/main")
     parser.add_argument(
         "--operation",
-        choices=["auto", "bootstrap", "recover", "resume"],
+        choices=["auto", "recover", "resume"],
         default="auto",
     )
     parser.add_argument("--group", choices=list(release.COMPONENTS), default="platform")
-    parser.add_argument("--baseline")
-    parser.add_argument("--version")
     parser.add_argument("--date")
     parser.add_argument("--attempt")
     parser.add_argument("--reason")
@@ -331,7 +329,6 @@ def main():
             args.group,
             public,
             args.date or __import__("datetime").date.today().isoformat(),
-            (args.baseline, args.version) if args.operation == "bootstrap" else None,
         )
         print(release.canonical(plan))
         return 0
@@ -342,13 +339,13 @@ def main():
             and os.environ.get("GITHUB_EVENT_NAME") != "workflow_dispatch"
         ):
             raise ValueError(
-                "Bootstrap/recovery/resume require an explicit maintainer dispatch"
+                "Recovery/resume require an explicit maintainer dispatch"
             )
         source = repo.revision("HEAD")
         ledger = repo.ledger(source)
         if args.operation == "auto" and not ledger["attempts"]:
             result = {
-                "status": "inactive — first manual release required",
+                "status": "inactive — no release attempts in history",
                 "items": [],
                 "prs": [],
             }
@@ -367,8 +364,6 @@ def main():
                     source,
                     args.operation,
                     args.group,
-                    args.baseline,
-                    args.version,
                     args.date,
                     args.attempt,
                     args.reason,
