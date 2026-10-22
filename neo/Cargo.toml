@@ -63,7 +63,7 @@ minijinja = "2"
 tempfile = "3"
 
 # Git
-gix = { version = "0.70", default-features = false, features = ["basic", "index"] }
+gix = { version = "0.83", default-features = false, features = ["basic", "index"] }
 
 # JSON Schema validation (used by `neo ide` to validate `event-model.json`)
 jsonschema = { version = "0.30", default-features = false }
