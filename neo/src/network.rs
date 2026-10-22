@@ -40,9 +40,10 @@ pub async fn fetch_neo_sha(version: &str) -> miette::Result<String> {
         version
     };
 
+    let peeled_target = format!("{target}^{{}}");
     let mut command = tokio::process::Command::new("git");
     command
-        .args(["ls-remote", "https://github.com/NeoHaskell/neohaskell", target])
+        .args(["ls-remote", "https://github.com/NeoHaskell/neohaskell", target, &peeled_target])
         .kill_on_drop(true);
     let output = tokio::time::timeout(std::time::Duration::from_secs(30), command.output())
         .await
@@ -74,16 +75,43 @@ pub async fn fetch_neo_sha(version: &str) -> miette::Result<String> {
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    let sha = stdout
-        .split_whitespace()
-        .next()
+    let sha = resolve_neo_ref(&stdout, target)
         .ok_or_else(|| NeoError::SubprocessFailed {
             operation: format!("resolving NeoHaskell version `{}` against https://github.com/NeoHaskell/neohaskell", version),
             cause: format!("`git ls-remote` returned no SHA for ref `{}`", target),
             fix: format!("Edit `neo.json` or your `neo` invocation: the NeoHaskell version `{}` does not resolve to any branch, tag, or SHA on https://github.com/NeoHaskell/neohaskell. Use `main`, `latest`, or a published tag (list them with `git ls-remote https://github.com/NeoHaskell/neohaskell`).", version),
         })?;
 
-    Ok(sha.to_string())
+    Ok(sha)
+}
+
+fn resolve_neo_ref(stdout: &str, target: &str) -> Option<String> {
+    let branch = format!("refs/heads/{target}");
+    let tag = format!("refs/tags/{target}");
+    let peeled_tag = format!("{tag}^{{}}");
+    let mut branch_sha = None;
+    let mut tag_sha = None;
+    let mut peeled_sha = None;
+    for line in stdout.lines() {
+        let Some((sha, reference)) = line.split_once('\t') else {
+            continue;
+        };
+        if !is_commit_sha(sha) {
+            continue;
+        }
+        if reference == branch {
+            branch_sha = Some(sha.to_string());
+        } else if reference == peeled_tag {
+            peeled_sha = Some(sha.to_string());
+        } else if reference == tag {
+            tag_sha = Some(sha.to_string());
+        }
+    }
+    if target == "main" {
+        branch_sha.or(peeled_sha).or(tag_sha)
+    } else {
+        peeled_sha.or(tag_sha).or(branch_sha)
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -477,8 +505,6 @@ pub async fn fetch_skills_repo(refresh: bool) -> miette::Result<std::path::PathB
     Ok(checkout)
 }
 
-/// Write a deterministic offline stub `neohaskell/skills` checkout so
-/// `neo skills setup` can run without network. Used under `NEO_SKIP_NETWORK`.
 fn write_skills_stub(checkout: &Path) -> miette::Result<()> {
     let skill_dir = checkout.join("skills").join("sample-skill");
     std::fs::create_dir_all(&skill_dir)
@@ -497,6 +523,20 @@ fn write_skills_stub(checkout: &Path) -> miette::Result<()> {
 mod tests {
     use super::*;
     use tempfile::tempdir;
+
+    #[test]
+    fn annotated_framework_tag_resolves_to_peeled_commit() {
+        let tag_object = "1111111111111111111111111111111111111111";
+        let commit = "2222222222222222222222222222222222222222";
+        let stdout = format!(
+            "{tag_object}\trefs/tags/neo-v1.2.3\n{commit}\trefs/tags/neo-v1.2.3^{{}}\n"
+        );
+        assert_eq!(resolve_neo_ref(&stdout, "neo-v1.2.3"), Some(commit.to_string()));
+        assert_eq!(
+            resolve_neo_ref(&format!("{commit}\trefs/heads/main\n"), "main"),
+            Some(commit.to_string())
+        );
+    }
 
     #[tokio::test]
     async fn test_fetch_skills_repo_skip_network_stub() {

@@ -152,6 +152,103 @@ async fn a_different_sha_cache_is_never_used_as_fallback() {
 }
 
 #[tokio::test]
+async fn active_index_is_repaired_when_its_link_changes() {
+    let (repo, sha) = repository();
+    let project = tempdir().unwrap();
+    let source = local_source(repo.path(), sha.clone());
+    let plan = begin(project.path(), &source, false).unwrap();
+    assert!(finish(project.path(), &source, plan, false).await.is_none());
+
+    let active = active_path(project.path());
+    let stale = ready_contents(&sha).replace(
+        &format!("cache/{}/index.md", sha.as_str()),
+        "cache/0000000000000000000000000000000000000000/index.md",
+    );
+    std::fs::write(&active, stale).unwrap();
+
+    let plan = begin(project.path(), &source, false).unwrap();
+    assert!(matches!(plan, GuidancePlan::Retrieve));
+    assert!(finish(project.path(), &source, plan, false).await.is_none());
+    assert_eq!(
+        std::fs::read_to_string(active).unwrap(),
+        ready_contents(&sha)
+    );
+}
+
+#[tokio::test]
+async fn concurrent_retrievals_converge_on_one_ready_cache() {
+    let (repo, sha) = repository();
+    let project = tempdir().unwrap();
+    let source = local_source(repo.path(), sha.clone());
+    let first_plan = begin(project.path(), &source, false).unwrap();
+    let second_plan = begin(project.path(), &source, false).unwrap();
+    let (first, second) = tokio::join!(
+        finish(project.path(), &source, first_plan, false),
+        finish(project.path(), &source, second_plan, false),
+    );
+
+    assert!(first.is_none(), "first retrieval failed: {first:?}");
+    assert!(second.is_none(), "second retrieval failed: {second:?}");
+    assert!(validate_cache(&cache_path(project.path(), &sha), &sha).is_ok());
+    assert_eq!(
+        std::fs::read_to_string(active_path(project.path())).unwrap(),
+        ready_contents(&sha)
+    );
+}
+
+#[tokio::test]
+async fn copied_cache_cannot_activate_for_another_commit() {
+    let (repo, first_sha) = repository();
+    let root = repo.path();
+    let project = tempdir().unwrap();
+    let first_source = local_source(root, first_sha.clone());
+    let plan = begin(project.path(), &first_source, false).unwrap();
+    assert!(
+        finish(project.path(), &first_source, plan, false)
+            .await
+            .is_none()
+    );
+
+    std::fs::write(root.join("README.md"), "another framework commit\n").unwrap();
+    git(root, &["add", "README.md"]);
+    git(root, &["commit", "-qm", "new framework commit"]);
+    let second_sha = FullSha::parse(&git(root, &["rev-parse", "HEAD"])).unwrap();
+    let copied_cache = cache_path(project.path(), &second_sha);
+    let first_cache = cache_path(project.path(), &first_sha);
+    for entry in walkdir::WalkDir::new(&first_cache).min_depth(1) {
+        let entry = entry.unwrap();
+        let destination = copied_cache.join(entry.path().strip_prefix(&first_cache).unwrap());
+        if entry.file_type().is_dir() {
+            std::fs::create_dir_all(destination).unwrap();
+        } else {
+            std::fs::create_dir_all(destination.parent().unwrap()).unwrap();
+            std::fs::copy(entry.path(), destination).unwrap();
+        }
+    }
+    assert!(validate_cache(&first_cache, &first_sha).is_ok());
+    let second_source = local_source(root, second_sha.clone());
+
+    assert!(validate_cache(&copied_cache, &second_sha).is_err());
+    let plan = begin(project.path(), &second_source, false).unwrap();
+    assert!(matches!(plan, GuidancePlan::Failed(_)));
+    let active = std::fs::read_to_string(active_path(project.path())).unwrap();
+    assert!(active.contains("status: unavailable"));
+    assert!(active.contains(second_sha.as_str()));
+    assert!(!active.contains(&format!("cache/{}/index.md", second_sha.as_str())));
+
+    let plan = begin(project.path(), &second_source, true).unwrap();
+    assert!(
+        finish(project.path(), &second_source, plan, true)
+            .await
+            .is_none()
+    );
+    assert!(validate_cache(&copied_cache, &second_sha).is_ok());
+    let active = std::fs::read_to_string(active_path(project.path())).unwrap();
+    assert!(active.contains("status: ready"));
+    assert!(active.contains(second_sha.as_str()));
+}
+
+#[tokio::test]
 async fn missing_corpus_failure_is_persisted_until_explicit_retry() {
     let temp = tempdir().unwrap();
     let root = temp.path();

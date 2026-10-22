@@ -29,6 +29,7 @@ struct Capability {
 #[serde(deny_unknown_fields)]
 pub(super) struct CachedObjects {
     pub(super) schema: u32,
+    pub(super) source_sha: String,
     pub(super) objects: BTreeMap<String, String>,
 }
 
@@ -68,10 +69,16 @@ pub(super) fn validate_cache(cache: &Path, sha: &FullSha) -> miette::Result<()> 
         .map_err(|error| {
             miette::miette!("parsing cache object map `{}`: {error}", index.display())
         })?;
-    if objects.schema != 1 {
+    if objects.schema != 2 {
         return Err(miette::miette!(
             "unsupported guidance cache object map schema {}",
             objects.schema
+        ));
+    }
+    if objects.source_sha != sha.as_str() {
+        return Err(miette::miette!(
+            "guidance cache source `{}` does not match requested framework commit `{sha}`",
+            objects.source_sha
         ));
     }
     let manifest_metadata = std::fs::symlink_metadata(cache.join("manifest.json"))

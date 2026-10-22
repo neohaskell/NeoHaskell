@@ -175,7 +175,6 @@ pub enum SkillsSubcommand {
         /// Re-clone the skills library instead of reusing the cached copy
         #[arg(long)]
         refresh: bool,
-        /// Compatibility option. Setup no longer installs a mutable primer.
         #[arg(long, hide = true)]
         no_primer: bool,
     },

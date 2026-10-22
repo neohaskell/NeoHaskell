@@ -19,6 +19,7 @@ const MAX_BLOB_BYTES: usize = 2 * 1024 * 1024;
 const MAX_CORPUS_BYTES: usize = 8 * 1024 * 1024;
 const MAX_CORPUS_FILES: usize = 128;
 const GIT_TIMEOUT: Duration = Duration::from_secs(60);
+const STALE_STAGE_AGE: Duration = Duration::from_secs(60 * 60);
 const CORPUS_PREFIX: &str = "docs/agent/";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -231,13 +232,7 @@ fn write_unavailable(path: &Path, source_sha: &str, reason: Option<&str>) -> mie
 }
 
 fn write_ready(path: &Path, sha: &FullSha) -> miette::Result<()> {
-    let content = format!(
-        "---\nstatus: ready\nsource-sha: {}\n---\n\nFramework API guidance is synchronized to the exact framework commit `{}`.\n\n[Open the guidance index](cache/{}/index.md).\n",
-        sha.as_str(),
-        sha.as_str(),
-        sha.as_str(),
-    );
-    super::atomic_write(path, content.as_bytes()).map_err(|error| {
+    super::atomic_write(path, ready_contents(sha).as_bytes()).map_err(|error| {
         miette::miette!(
             "writing the ready framework guidance index at `{}`: {error}",
             path.display()
@@ -245,14 +240,17 @@ fn write_ready(path: &Path, sha: &FullSha) -> miette::Result<()> {
     })
 }
 
+fn ready_contents(sha: &FullSha) -> String {
+    format!(
+        "---\nstatus: ready\nsource-sha: {}\n---\n\nFramework API guidance is synchronized to the exact framework commit `{}`.\n\n[Open the guidance index](cache/{}/index.md).\n",
+        sha.as_str(),
+        sha.as_str(),
+        sha.as_str(),
+    )
+}
+
 fn active_matches_sha(path: &Path, sha: &FullSha) -> bool {
-    let Ok(contents) = std::fs::read_to_string(path) else {
-        return false;
-    };
-    contents.starts_with("---\nstatus: ready\n")
-        && contents
-            .lines()
-            .any(|line| line == format!("source-sha: {}", sha.as_str()))
+    std::fs::read_to_string(path).is_ok_and(|contents| contents == ready_contents(sha))
 }
 
 async fn retrieve_and_promote(
@@ -348,7 +346,11 @@ async fn retrieve_and_promote(
             )
         })?;
     }
-    let object_map = CachedObjects { schema: 1, objects };
+    let object_map = CachedObjects {
+        schema: 2,
+        source_sha: sha.as_str().to_string(),
+        objects,
+    };
     let object_map_path = staging.path().join(".neo-source-objects.json");
     let object_map_bytes = serde_json::to_vec_pretty(&object_map)
         .map_err(|error| miette::miette!("serializing guidance cache object map: {error}"))?;
@@ -358,12 +360,15 @@ async fn retrieve_and_promote(
     if target.exists() {
         return validate_cache(&target, sha);
     }
-    std::fs::rename(staging.path(), &target).map_err(|error| {
-        miette::miette!(
+    if let Err(error) = std::fs::rename(staging.path(), &target) {
+        if validate_cache(&target, sha).is_ok() {
+            return Ok(());
+        }
+        return Err(miette::miette!(
             "promoting guidance cache for `{sha}` to `{}`: {error}",
             target.display()
-        )
-    })?;
+        ));
+    }
     validate_cache(&target, sha)
 }
 
@@ -390,6 +395,14 @@ fn cleanup_staging(cache_root: &Path) -> miette::Result<()> {
                 path.display()
             )
         })?;
+        if !metadata
+            .modified()
+            .ok()
+            .and_then(|modified| modified.elapsed().ok())
+            .is_some_and(|age| age >= STALE_STAGE_AGE)
+        {
+            continue;
+        }
         if metadata.file_type().is_dir() && !metadata.file_type().is_symlink() {
             std::fs::remove_dir_all(&path).map_err(|error| {
                 miette::miette!(
