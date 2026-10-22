@@ -14,20 +14,18 @@ self-test checks only its orchestration or comparison logic.
 
 For framework export, marker or generated-API changes, inventory affected uses in
 `neo/starter/` and `testbed/` before implementation. Migrate those consumers in
-the same PR. Update the marker's public documentation when its generated
-contract changes. A framework suite passing does not establish starter freshness.
+the same PR. Compare every affected example with the resulting public API and
+marker output during review. Remove redundant generated defaults and stale
+imports. Preserve custom instances, business logic and derivations the marker
+does not own. Update the marker's public documentation when its generated
+contract changes.
 
-Run the owned freshness check before the generated-project contract:
-
-```sh
-python3 .agents/skills/neohaskell-consumer-verification/scripts/check-consumer-freshness.py
-```
-
-The check rejects manual defaults already supplied by a type's TH marker.
-Keep custom instances, business logic and derivations the marker does not own.
-When changing marker output, update the check's ownership model and fixtures
-with the implementation. Compilation alone cannot detect redundant defaults
-because the markers preserve existing instances.
+Keep the starter, testbed and consumer fixtures in the
+[NeoHaskell application dialect](../neohaskell-code-guidelines/SKILL.md#application-examples).
+Maintain their freshness through this implementation and review work. Use real
+builds and runtime tests to verify them. Do not add source-parsing checks solely
+to police example freshness. Compilation alone cannot establish idiomatic
+examples because the markers preserve existing instances.
 
 Verify the generated starter and the affected testbed behavior against the
 same PR source. Use [NeoHaskell tests](../neohaskell-test/SKILL.md) for testbed

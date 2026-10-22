@@ -36,6 +36,7 @@ Use [NeoHaskell tests](../neohaskell-test/SKILL.md) for current suite, doctest a
 For framework export, TH marker or generated-API changes, follow
 [NeoHaskell consumer verification](../neohaskell-consumer-verification/SKILL.md)
 before implementation and verification. It owns the starter and testbed migration
-contract and the check for redundant generated defaults.
+contract. Apply the [application example rules](../neohaskell-code-guidelines/SKILL.md#application-examples)
+to consumer code, including fixtures that represent an app.
 
 Read [patterns](references/patterns.md) when designing module APIs, functions, and pipelines or working on boundary invariants, service ownership, deferred execution, concurrency, generated consumers, or diagnostics.

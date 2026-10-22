@@ -19,3 +19,15 @@ description: NeoHaskell code style guidelines for writing and reviewing .hs code
 | `forall element result.` | single-letter type params |
 | `import Foo (Foo); import Foo qualified` | unqualified imports |
 | nhcore Core modules (`Text`, `Array`, `Char`, `File`, `Path`…) | raw `Data.*` / `System.*` / `Ghc*` imports |
+
+## Application examples
+
+Write generated starters, testbed modules, documentation examples and fixtures
+that represent user applications in NeoHaskell's application dialect. Use the
+framework markers for the instances they generate. Use `newtype` when it models
+the domain. Never use explicit `stock` or `via` deriving strategies in these
+application examples.
+
+Framework implementation and compiler fixtures that test GHC integration can
+use the GHC machinery their internal contracts require. Keep that machinery
+inside the owning framework boundary.

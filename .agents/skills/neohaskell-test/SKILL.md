@@ -16,7 +16,8 @@ These commands exercise the local development build. Use optimized-build, genera
 
 Framework export, TH marker and generated-API changes also require
 [NeoHaskell consumer verification](../neohaskell-consumer-verification/SKILL.md).
-Run its freshness and generated-project checks alongside the affected testbed
-checks. A passing framework suite does not replace those consumer checks.
+Review its starter and testbed migration requirements and run the generated-project
+contract alongside the affected testbed checks. A passing framework suite does
+not replace those consumer checks.
 
 For workflow path selection and draft full-CI opt-in, see [CI verification](references/ci-verification.md).
