@@ -29,7 +29,7 @@ Apply [NeoHaskell code guidelines](../neohaskell-code-guidelines/SKILL.md) for t
 | Behavioral and compiler evidence | Exercise real service operations and assert observable results. Use meaningful QuickCheck properties in the owning Hspec suite. Compile consumer fixtures for generated APIs and type guarantees; run generated behavior when the claim is behavioral. Follow [Test Behavior](../principle-test-behavior-not-implementation/SKILL.md) and [Prove It Works](../principle-prove-it-works/SKILL.md). |
 | Framework diagnostics | Use `Log.debug`, `Log.info`, `Log.warn`, or `Log.critical` for runtime diagnostics. Framework internals can use `Log.withScope` for structured context. Include useful operation identifiers, preserve redaction, and make compiler/generator failures explain the expected contract and repair. |
 
-Run compiler and test commands through `scripts/with-toolchain <command> <arguments...>`. The wrapper uses the checked shell witness, enters the project Nix shell when needed, and labels an unpinned host fallback. It preserves argument boundaries and command exit status.
+Run Haskell tool commands through `nix develop --command` as specified by [Nix Haskell tools](../nix-haskell-tools/SKILL.md).
 
 Use [NeoHaskell tests](../neohaskell-test/SKILL.md) for current suite, doctest and testbed entrypoints. Capture runtime or compiler contracts with [Regression evidence](../regression-evidence/SKILL.md). For event-store behavior, select relevant [controlled-fault regression recipes](../event-store-regression/SKILL.md) alongside the broader maintained tests.
 
