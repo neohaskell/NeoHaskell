@@ -19,11 +19,6 @@
       "exclude_files": ["Cargo.lock", "flake.lock", "package-lock.json"]
     },
     {
-      "path": "installer",
-      "extensions": [".rs", ".toml", ".sh"],
-      "exclude_files": ["Cargo.lock"]
-    },
-    {
       "path": "nix",
       "extensions": [".nix"]
     },
@@ -77,8 +72,8 @@
       "id": "toolchain",
       "name": "Cabal and Nix toolchain",
       "aliases": ["Cabal", "Nix", "compiler", "development shell"],
-      "paths": ["cabal.project", "flake.nix", "nix/hix.nix", "neo/src/commands/build.rs", "installer/src/install.rs"],
-      "summary": "The root project selects Cabal packages, while Nix defines the compiler shell and local tooling."
+      "paths": ["cabal.project", "flake.nix", "nix/hix.nix", "neo/src/commands/build.rs", ".agents/skills/neohaskell-release/scripts/neo-release"],
+      "summary": "The root project selects Cabal packages, Nix defines the compiler shell and local tooling, and the Neo release helper verifies and installs direct native assets."
     }
   ],
   "extension_points": [

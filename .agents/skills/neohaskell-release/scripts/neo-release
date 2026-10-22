@@ -4,19 +4,17 @@
 # is NAMED, PACKAGED, CHECKSUMMED, VERIFIED, and INSTALLED for a rehearsal.
 #
 # Both the release workflow (.github/workflows/neo-release.yml) and the CI
-# release rehearsal call THIS script, so the asset-naming contract and the
-# checksum manifest can never drift between "how the release is published" and
-# "how the rehearsal consumes it". The installer's own native-download path
-# (installer/src/release.rs) shares the same contract; the installer consistency
-# tests and release-owned workflow fixtures freeze all three together.
+# release rehearsal call THIS script, so the asset-naming contract and checksum
+# manifest cannot drift between publication and rehearsal. Release-owned
+# fixtures cover those entrypoints together.
 #
-# Naming contract (shared with installer/src/release.rs::neo_asset_name):
+# Naming contract:
 #   asset  = neo-<target>
 #   digest = SHA256SUMS  (sha256sum format: "<hex>␠␠neo-<target>")
 #
-# Supported targets (shared with release_target / NEO_TARGETS):
-#   x86_64-unknown-linux-gnu  aarch64-unknown-linux-gnu
-#   x86_64-apple-darwin       aarch64-apple-darwin
+# Current targets:
+#   x86_64-unknown-linux-gnu  aarch64-apple-darwin
+# Inspect, verify and install also accept the four-target historical format.
 #
 # Subcommands:
 #   targets                         print the supported target triples (one/line)
@@ -38,6 +36,10 @@ set -euo pipefail
 
 SHA256SUMS="SHA256SUMS"
 TARGETS=(
+  "x86_64-unknown-linux-gnu"
+  "aarch64-apple-darwin"
+)
+LEGACY_TARGETS=(
   "x86_64-unknown-linux-gnu"
   "aarch64-unknown-linux-gnu"
   "x86_64-apple-darwin"
@@ -71,9 +73,15 @@ REPO_ROOT="$(find_repo_root)"
 
 asset_name() { printf 'neo-%s\n' "$1"; }
 
-is_supported_target() {
+is_current_target() {
   local t
   for t in "${TARGETS[@]}"; do [ "$t" = "$1" ] && return 0; done
+  return 1
+}
+
+is_installable_target() {
+  local t
+  for t in "${LEGACY_TARGETS[@]}"; do [ "$t" = "$1" ] && return 0; done
   return 1
 }
 
@@ -94,14 +102,14 @@ cmd_targets() { printf '%s\n' "${TARGETS[@]}"; }
 
 cmd_asset_name() {
   [ $# -eq 1 ] || die "usage: neo-release asset-name <target>"
-  is_supported_target "$1" || die "unsupported target: $1"
+  is_installable_target "$1" || die "unsupported target: $1"
   asset_name "$1"
 }
 
 cmd_package() {
   [ $# -eq 3 ] || die "usage: neo-release package <target> <binary> <outdir>"
   local target="$1" bin="$2" out="$3"
-  is_supported_target "$target" || die "unsupported target: $target"
+  is_current_target "$target" || die "unsupported current target: $target"
   [ -f "$bin" ] || die "built binary not found: $bin"
   mkdir -p "$out"
   local dest="$out/$(asset_name "$target")"
@@ -131,7 +139,7 @@ cmd_checksums() {
 cmd_verify() {
   [ $# -eq 2 ] || die "usage: neo-release verify <dir> <target>"
   local dir="$1" target="$2"
-  is_supported_target "$target" || die "unsupported target: $target"
+  is_installable_target "$target" || die "unsupported target: $target"
   local name; name="$(asset_name "$target")"
   local asset="$dir/$name" manifest="$dir/$SHA256SUMS"
   [ -f "$asset" ] || die "asset not found: $asset"
@@ -154,7 +162,7 @@ manifest_expected() {
 cmd_install() {
   [ $# -eq 3 ] || die "usage: neo-release install <dir> <target> <dest>"
   local dir="$1" target="$2" dest="$3"
-  is_supported_target "$target" || die "unsupported target: $target"
+  is_installable_target "$target" || die "unsupported target: $target"
   local name; name="$(asset_name "$target")"
   local asset="$dir/$name" manifest="$dir/$SHA256SUMS"
   [ -f "$asset" ] || die "asset not found: $asset"
@@ -200,7 +208,7 @@ nix_store_refs() {
 cmd_inspect() {
   [ $# -eq 2 ] || die "usage: neo-release inspect <binary> <target>"
   local binary="$1" target="$2"
-  is_supported_target "$target" || die "unsupported target: $target"
+  is_installable_target "$target" || die "unsupported target: $target"
   [ -f "$binary" ] || die "binary not found: $binary"
   local offenders; offenders="$(nix_store_refs "$binary" "$target")"
   if [ -n "$offenders" ]; then
@@ -293,8 +301,11 @@ self_test() {
     && ok "asset-name is neo-<target>" || bad "asset-name wrong"
 
   [ "$(cmd_targets | sort | tr '\n' ' ')" = \
-    "aarch64-apple-darwin aarch64-unknown-linux-gnu x86_64-apple-darwin x86_64-unknown-linux-gnu " ] \
-    && ok "targets are the four supported triples" || bad "targets drifted"
+    "aarch64-apple-darwin x86_64-unknown-linux-gnu " ] \
+    && ok "targets lists the two current triples" || bad "current targets drifted"
+
+  [ "$(cmd_asset_name aarch64-unknown-linux-gnu)" = "neo-aarch64-unknown-linux-gnu" ] \
+    && ok "historical asset names remain addressable" || bad "historical asset name rejected"
 
   ( cmd_asset_name totally-made-up ) >/dev/null 2>&1 && bad "unsupported target accepted" \
     || ok "unsupported target rejected"
@@ -307,6 +318,11 @@ self_test() {
   cmd_package "$t" "$tmp/built" "$tmp/out" >/dev/null
   [ -f "$tmp/out/$(asset_name "$t")" ] && ok "package copies to neo-<target>" \
     || bad "package did not produce the asset"
+  if ( cmd_package aarch64-unknown-linux-gnu "$tmp/built" "$tmp/retired" ) >/dev/null 2>&1; then
+    bad "package accepted a retired target"
+  else
+    ok "package rejects retired targets"
+  fi
   cmd_checksums "$tmp/out" >/dev/null
   grep -q "  neo-$t\$" "$tmp/out/$SHA256SUMS" && ok "checksums lists the asset" \
     || bad "checksums missing the asset line"
@@ -338,6 +354,25 @@ self_test() {
   [ -n "$installed_hash" ] && [ "$installed_hash" = "$manifest_hash" ] \
     && ok "install verifies the exact bytes it places (TOCTOU-closed)" \
     || bad "installed file hash != manifest (TOCTOU window / wrong bytes installed)"
+
+  local legacy_target legacy_dir
+  for legacy_target in "${LEGACY_TARGETS[@]}"; do
+    is_current_target "$legacy_target" && continue
+    legacy_dir="$tmp/legacy/$legacy_target"
+    mkdir -p "$legacy_dir"
+    if ( cmd_inspect "$legacy_dir/missing" "$legacy_target" ) >"$tmp/inspect.log" 2>&1; then
+      bad "inspect accepted a missing historical binary"
+    elif grep -q "binary not found" "$tmp/inspect.log"; then
+      ok "historical inspect accepts $legacy_target"
+    else
+      bad "historical inspect rejected $legacy_target"
+    fi
+    printf 'historical neo binary\n' > "$legacy_dir/$(asset_name "$legacy_target")"
+    cmd_checksums "$legacy_dir" >/dev/null
+    cmd_install "$legacy_dir" "$legacy_target" "$tmp/legacy-install/$legacy_target/neo" >/dev/null \
+      && ok "historical install accepts $legacy_target" \
+      || bad "historical install rejected $legacy_target"
+  done
 
   [ -n "$(printf '/nix/store/abc/lib.so\n/usr/lib/x\n' | filter_nix_store)" ] \
     && ok "portability: /nix/store reference is flagged" \

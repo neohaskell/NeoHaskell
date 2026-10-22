@@ -25,12 +25,10 @@ DOCTEST_DEPENDENCIES = (
 CI_GATES = {
     "test.yml": ("ci-gate", ("build", "doctest", "test-core", "test-auth", "test-integration", "test-service", "test-hurl")),
     "neo-ci.yml": ("neo-ci-gate", ("rust", "ide", "nix-package", "consumer-contract")),
-    "installer-ci.yml": ("installer-ci-gate", ("lint", "test", "build")),
 }
 EXPENSIVE_JOB_SELECTORS = {
     "test.yml": {"build": "compiled", "doctest": "compiled"},
     "neo-ci.yml": {"rust": "touched", "ide": "touched", "nix-package": "touched", "consumer-contract": "contract"},
-    "installer-ci.yml": {"lint": "touched", "test": "touched", "build": "touched"},
 }
 
 
@@ -202,7 +200,6 @@ class CiVerificationTests(unittest.TestCase):
         selected_paths = {
             "test.yml": ("core/core/Task.hs", "compiled"),
             "neo-ci.yml": ("neo/src/main.rs", "touched"),
-            "installer-ci.yml": ("installer/src/main.rs", "touched"),
         }
         for name, (selected_path, selector) in selected_paths.items():
             for case in ADMISSION_CASES:
@@ -241,7 +238,7 @@ class CiVerificationTests(unittest.TestCase):
             self.assertFalse(job_runs("neo-ci.yml", job, outputs))
 
     def test_push_event_keeps_existing_full_run_behavior(self) -> None:
-        for name, selector in (("test.yml", "compiled"), ("neo-ci.yml", "touched"), ("installer-ci.yml", "touched")):
+        for name, selector in (("test.yml", "compiled"), ("neo-ci.yml", "touched")):
             result, outputs = run_change_detection(
                 name,
                 event="push",

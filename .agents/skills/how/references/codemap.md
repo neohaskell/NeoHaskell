@@ -10,7 +10,7 @@ Run the owner command from the repository root:
     python3 .agents/skills/how/scripts/codemap.py refresh
     python3 .agents/skills/how/scripts/codemap.py status
 
-Every command hashes eligible current source content and refreshes the worktree-local SQLite index before answering. The inventory includes tracked files and nonignored untracked files under the Cabal, Nix, language, installer, and maintained toolchain roots in codemap-catalog.json. It checks the inventory again before committing an index update. A source race, locked or corrupt cache, missing Git, or unwritable state directory produces a bounded current-source fallback with visible coverage limits.
+Every command hashes eligible current source content and refreshes the worktree-local SQLite index before answering. The inventory includes tracked files and nonignored untracked files under the Cabal, Nix, language, and maintained toolchain roots in codemap-catalog.json. It checks the inventory again before committing an index update. A source race, locked or corrupt cache, missing Git, or unwritable state directory produces a bounded current-source fallback with visible coverage limits.
 
 The source index lives at .agents-state/how/codemap.sqlite3. Corrupt databases are moved to a timestamped file in the same directory before the current lookup rebuilds the index. Lookups do not run Cabal, Haddock, Nix, compiler builds, installation, or network requests.
 

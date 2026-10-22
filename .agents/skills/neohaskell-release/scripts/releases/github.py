@@ -245,6 +245,7 @@ def checksum_map(data):
 
 
 def verify_remote(api, repo, plan, item):
+    release.validate_source_policy(repo, plan)
     if item.get("draft") or item.get("prerelease"):
         raise ValueError("Release is not a completed stable publication")
     assets = api.assets(item)
@@ -285,6 +286,7 @@ def verify_remote(api, repo, plan, item):
 def completed_releases(api, repo, ledger):
     result = {}
     for plan in ledger["attempts"]:
+        release.validate_source_policy(repo, plan)
         if plan["id"] in release.abandoned(ledger):
             item = api.get_release(release.release_tag(plan))
             if item and not item["draft"]:
@@ -300,8 +302,9 @@ def completed_releases(api, repo, ledger):
 
 def required_assets(plan):
     prefix = release.group_config(plan["group"])["asset_prefix"]
-    names = {prefix + t for t in release.TARGETS} | {
-        "receipt-" + t + ".json" for t in release.TARGETS
+    targets = release.targets_for(plan)
+    names = {prefix + t for t in targets} | {
+        "receipt-" + t + ".json" for t in targets
     }
     names |= {
         "neo-starter-flake.nix",
@@ -341,7 +344,8 @@ def unpack_bundle(plan, revision, content):
     return files
 
 
-def restore_bundle(api, plan, revision, directory):
+def restore_bundle(api, repo, plan, revision, directory):
+    release.validate_source_policy(repo, plan)
     item = api.get_release(release.release_tag(plan))
     if not item:
         return False
@@ -364,7 +368,8 @@ def restore_bundle(api, plan, revision, directory):
     return True
 
 
-def seal_artifacts(plan, revision, directory):
+def seal_artifacts(repo, plan, revision, directory):
+    release.validate_source_policy(repo, plan)
     directory = Path(directory)
     names = required_assets(plan)
     actual = {p.name for p in directory.iterdir()}
@@ -377,7 +382,7 @@ def seal_artifacts(plan, revision, directory):
             raise ValueError("Release asset is not a regular file")
         hashes[name] = release.digest(path.read_bytes())
     prefix = release.group_config(plan["group"])["asset_prefix"]
-    for target in release.TARGETS:
+    for target in release.targets_for(plan):
         receipt = json.loads((directory / ("receipt-" + target + ".json")).read_text())
         expected = {
             "attempt": plan["id"],
@@ -431,6 +436,7 @@ def seal_artifacts(plan, revision, directory):
 
 
 def publish(api, repo, plan, revision, files, guard):
+    release.validate_source_policy(repo, plan)
     release.verify_generated(repo, revision, plan)
     guard()
     if api.paused(plan["id"]):
@@ -452,8 +458,7 @@ def publish(api, repo, plan, revision, files, guard):
         item = api.create_release(
             release.release_tag(plan),
             revision,
-            ("NeoHaskell " if plan["group"] == "platform" else "Installer ")
-            + plan["version"],
+            "NeoHaskell " + plan["version"],
             release.render(plan),
         )
     if item["body"] != release.render(plan):
@@ -575,6 +580,11 @@ def select_work(
                     "attempt": plan["id"],
                     "revision": revision,
                     "reuse": reuse,
+                    **(
+                        {"target_policy": plan["target_policy"]}
+                        if "target_policy" in plan
+                        else {}
+                    ),
                 }
             )
         else:

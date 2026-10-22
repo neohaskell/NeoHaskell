@@ -31,12 +31,18 @@ LEDGER_PATH = ".agents/skills/neohaskell-release/references/manifest.json"
 LIVE_LEGACY_LEDGER_PATH = "scripts/releases/manifest.json"
 CONFIG = json.loads((SKILL_ROOT / "references/config.json").read_text())
 REPOSITORY = CONFIG["repository"]
+TARGET_POLICY = "native-v2"
 TARGETS = (
+    "x86_64-unknown-linux-gnu",
+    "aarch64-apple-darwin",
+)
+LEGACY_TARGETS = (
     "x86_64-unknown-linux-gnu",
     "aarch64-unknown-linux-gnu",
     "x86_64-apple-darwin",
     "aarch64-apple-darwin",
 )
+RAW_TARGET_FIELDS = {"target", "targets", "native_targets", "supported_targets"}
 CATEGORIES = ("Breaking changes", "Added", "Improved", "Fixed", "Deprecated", "Removed")
 IMPACTS = {"none": 0, "compatible": 1, "breaking": 2}
 COMPONENTS = {
@@ -331,6 +337,64 @@ def check_identity(plan):
         raise ValueError("Invalid manifest group/source")
 
 
+def source_target_policy(repo, source):
+    text = repo.read(source, CONFIG_PATH)
+    if text is None:
+        return None
+    try:
+        config = json.loads(text)
+    except (TypeError, json.JSONDecodeError) as error:
+        raise ValueError("Malformed release configuration") from error
+    if not isinstance(config, dict):
+        raise ValueError("Malformed release configuration")
+    if RAW_TARGET_FIELDS & config.keys() or "target_policy" in config:
+        raise ValueError("Release configuration must use the closed native policy")
+    if "native_policy" not in config:
+        return None
+    policy = config["native_policy"]
+    if type(policy) is not str or policy != TARGET_POLICY:
+        raise ValueError("Unknown native release target policy")
+    return policy
+
+
+def record_target_policy(record):
+    if RAW_TARGET_FIELDS & record.keys():
+        raise ValueError("Release record cannot contain raw target lists")
+    if "target_policy" not in record:
+        return None
+    policy = record["target_policy"]
+    if type(policy) is not str or policy != TARGET_POLICY:
+        raise ValueError("Unknown native release target policy")
+    return policy
+
+
+def targets_for(record):
+    policy = record_target_policy(record)
+    return TARGETS if policy == TARGET_POLICY else LEGACY_TARGETS
+
+
+def validate_source_policy(repo, record):
+    check_identity(record)
+    policy = record_target_policy(record)
+    if record["kind"] == "recovery":
+        if policy is not None:
+            raise ValueError("Recovery records inherit the release target policy")
+        ledger = repo.ledger(record["source_sha"])
+        original = next(
+            (plan for plan in ledger["attempts"] if plan["id"] == record["attempt"]),
+            None,
+        )
+        if original is None:
+            raise ValueError("Recovery release attempt is missing")
+        return validate_source_policy(repo, original)
+    if record["kind"] != "release":
+        raise ValueError("Unknown release manifest kind")
+    source_policy = source_target_policy(repo, record["source_sha"])
+    if policy != source_policy:
+        raise ValueError("Release target policy does not match its source")
+    return targets_for(record)
+
+
 def abandoned(ledger):
     return {r["attempt"] for r in ledger["recoveries"]}
 
@@ -365,6 +429,7 @@ def note_origins(repo, source, notes, ledger):
 
 def plan_release(repo, source, group, completed, date, bootstrap=None, check_tags=True):
     source = repo.revision(source)
+    target_policy = source_target_policy(repo, source)
     if group not in COMPONENTS:
         raise ValueError("Unknown release group")
     if not re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}", date):
@@ -433,21 +498,23 @@ def plan_release(repo, source, group, completed, date, bootstrap=None, check_tag
         target = bump(reserved, impact)
     elif version(target) <= version(reserved):
         raise ValueError("Bootstrap version was already reserved")
-    plan = identify(
-        {
-            "kind": "release",
-            "group": group,
-            "source_sha": source,
-            "base_sha": base_sha,
-            "base_version": base_version,
-            "base_tag": base_tag,
-            "version": target,
-            "date": date,
-            "bootstrap": bool(bootstrap),
-            "impact": impact,
-            "notes": notes,
-        }
-    )
+    data = {
+        "kind": "release",
+        "group": group,
+        "source_sha": source,
+        "base_sha": base_sha,
+        "base_version": base_version,
+        "base_tag": base_tag,
+        "version": target,
+        "date": date,
+        "bootstrap": bool(bootstrap),
+        "impact": impact,
+        "notes": notes,
+    }
+    if target_policy is not None:
+        data["target_policy"] = target_policy
+    plan = identify(data)
+    validate_source_policy(repo, plan)
     for tag in [release_tag(plan)] + (
         [group_config(group)["alias"] + target]
         if "alias" in group_config(group)
@@ -503,7 +570,7 @@ def append_changelog(old, section, first):
 
 
 def expected_edits(repo, plan, *, ledger_path=LEDGER_PATH):
-    check_identity(plan)
+    validate_source_policy(repo, plan)
     source, group = plan["source_sha"], plan["group"]
     ledger = repo.ledger(source)
     profile = group_config(group)
@@ -633,6 +700,7 @@ def write_edits(root, edits):
 
 
 def verify_plan(repo, plan, completed):
+    validate_source_policy(repo, plan)
     before = repo.ledger(plan["source_sha"])
     known = {p["id"] for p in before["attempts"]}
     previous = {k: v for k, v in completed.items() if k in known}
@@ -709,7 +777,7 @@ def check_checkout(repo, base, pr_message=None):
         )
     if needs == "breaking" and not any(n["impact"] == "breaking" for n in pending):
         raise ValueError("Breaking PR needs migration instructions and an agent prompt")
-    if any(p in changed for p in ("CHANGELOG.md", "installer/CHANGELOG.md")):
+    if "CHANGELOG.md" in changed:
         raise ValueError(
             "Feature PRs write .changes fragments; only derived release/recovery PRs edit changelogs"
         )

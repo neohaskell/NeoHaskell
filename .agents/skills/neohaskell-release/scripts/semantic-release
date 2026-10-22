@@ -32,8 +32,8 @@ def work_outputs(items):
         "x86_64-apple-darwin": "macos-15-intel",
         "aarch64-apple-darwin": "macos-latest",
     }
-    if set(runners) != set(release.TARGETS):
-        raise ValueError("Release targets and CI runners disagree")
+    if set(runners) != set(release.LEGACY_TARGETS):
+        raise ValueError("Release target policies and CI runners disagree")
     outputs = {}
     for item in items:
         release.group_config(item["group"])
@@ -43,7 +43,7 @@ def work_outputs(items):
             "include": [
                 {**item, "target": target, "runner": runners[target]}
                 for item in selected
-                for target in release.TARGETS
+                for target in release.targets_for(item)
             ]
         }
         outputs[f"{group}_has_work"] = str(bool(selected)).lower()
@@ -79,6 +79,7 @@ def get_plan(repo, revision, identity):
 
 
 def seed(repo, plan, revision, out):
+    release.validate_source_policy(repo, plan)
     release.group_config(plan["group"])
     out = Path(out)
     out.mkdir(parents=True, exist_ok=True)
@@ -163,7 +164,8 @@ def apply_seed(repo, plan, revision, inputs):
 
 
 def build_native(repo, plan, revision, target, inputs, out):
-    if target not in release.TARGETS:
+    release.validate_source_policy(repo, plan)
+    if target not in release.targets_for(plan):
         raise ValueError("Unknown target")
     apply_seed(repo, plan, revision, inputs)
     out = Path(out)
@@ -251,6 +253,7 @@ def build_native(repo, plan, revision, target, inputs, out):
 
 
 def consumer(repo, plan, revision, inputs, out):
+    release.validate_source_policy(repo, plan)
     apply_seed(repo, plan, revision, inputs)
     out = Path(out)
     binary = out / (
@@ -411,8 +414,8 @@ def main():
         guard()
         public = remote.completed_releases(api, repo, repo.ledger(plan["source_sha"]))
         release.verify_plan(repo, plan, public)
-        remote.restore_bundle(api, plan, revision, args.out)
-        files = remote.seal_artifacts(plan, revision, args.out)
+        remote.restore_bundle(api, repo, plan, revision, args.out)
+        files = remote.seal_artifacts(repo, plan, revision, args.out)
         changed = remote.publish(api, repo, plan, revision, files, guard)
         print(
             "Published verified release"

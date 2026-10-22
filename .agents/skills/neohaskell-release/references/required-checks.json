@@ -19,10 +19,6 @@
     },
     {
       "app_id": 15368,
-      "context": "installer-ci-gate"
-    },
-    {
-      "app_id": 15368,
       "context": "secret scan (gitleaks, deterministic)"
     },
     {

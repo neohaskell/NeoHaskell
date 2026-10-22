@@ -1,6 +1,7 @@
 {
   "schema": 1,
   "repository": "neohaskell/NeoHaskell",
+  "native_policy": "native-v2",
   "groups": {
     "platform": {
       "tag": "neo-v",

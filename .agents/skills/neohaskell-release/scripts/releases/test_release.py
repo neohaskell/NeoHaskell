@@ -351,6 +351,7 @@ class History(unittest.TestCase):
             release.LEDGER_PATH,
             release.canonical({"schema": 1, "attempts": [], "recoveries": []}),
         )
+        self.write(release.CONFIG_PATH, release.canonical(release.CONFIG))
         for profile in release.CONFIG["groups"].values():
             for path, name in profile["packages"].items():
                 self.write(
@@ -369,14 +370,8 @@ class History(unittest.TestCase):
                 profile["changelog"],
                 "# Old history\n\n## [Unreleased]\n\nExisting published words stay intact.\n",
             )
-        self.write(
-            "installer/Cargo.toml",
-            '[package]\nname = "neo-install"\nversion = "0.4.1"\n',
-        )
-        self.write("installer/CHANGELOG.md", "# Historical installer releases\n")
         self.base = self.commit("ci: install inactive automation")
         self.git("tag", "neo-v0.4.1")
-        self.git("tag", "installer-v0.4.1")
         self.api = FakeAPI()
 
     def git(self, *args):
@@ -415,7 +410,7 @@ class History(unittest.TestCase):
         for name in remote.required_assets(plan):
             (directory / name).write_bytes(("fixture " + name).encode())
         prefix = release.CONFIG["groups"][plan["group"]]["asset_prefix"]
-        for target in release.TARGETS:
+        for target in release.targets_for(plan):
             receipt = {
                 "attempt": plan["id"],
                 "revision": revision,
@@ -457,7 +452,7 @@ class History(unittest.TestCase):
                     }
                 )
             )
-        return remote.seal_artifacts(plan, revision, directory)
+        return remote.seal_artifacts(self.repo, plan, revision, directory)
 
     def publish_bootstrap(self):
         plan, revision = self.bootstrap()
@@ -549,17 +544,268 @@ class FakeAPI:
         return "https://example.invalid/pr/1"
 
 
+def artifact_files(repo, plan, revision, directory):
+    directory.mkdir(parents=True, exist_ok=True)
+    for name in remote.required_assets(plan):
+        (directory / name).write_bytes(("fixture " + name).encode())
+    prefix = release.CONFIG["groups"][plan["group"]]["asset_prefix"]
+    for target in release.targets_for(plan):
+        receipt = {
+            "attempt": plan["id"],
+            "revision": revision,
+            "target": target,
+            "binary_hash": release.digest((directory / (prefix + target)).read_bytes()),
+            "group": plan["group"],
+            "native_verified": True,
+            "starter_hashes": {
+                name: release.digest((directory / ("neo-starter-" + name)).read_bytes())
+                for name in ("flake.nix", "flake.lock", "cabal.project")
+            },
+        }
+        (directory / ("receipt-" + target + ".json")).write_text(
+            release.canonical(receipt)
+        )
+    (directory / "neo-compatibility.json").write_text(
+        release.canonical(
+            {"neo_version": plan["version"], "neohaskell": {"source_revision": revision}}
+        )
+    )
+    (directory / "consumer.json").write_text(
+        release.canonical(
+            {
+                "attempt": plan["id"],
+                "revision": revision,
+                "binary_hash": release.digest(
+                    (directory / (prefix + "x86_64-unknown-linux-gnu")).read_bytes()
+                ),
+                "verified": True,
+            }
+        )
+    )
+    return remote.seal_artifacts(repo, plan, revision, directory)
+
+
+class TargetPolicies(History):
+    def test_native_policy_is_included_before_plan_identity(self):
+        plan, _revision = self.bootstrap()
+        self.assertEqual(plan["target_policy"], release.TARGET_POLICY)
+        self.assertEqual(
+            plan["id"],
+            release.digest(
+                release.canonical(
+                    {key: value for key, value in plan.items() if key != "id"}
+                )
+            ),
+        )
+        self.assertEqual(release.targets_for(plan), release.TARGETS)
+
+    def test_stripped_and_rehashed_native_plan_fails_generated_validation(self):
+        import runpy
+
+        plan, revision = self.bootstrap()
+        stripped = {key: value for key, value in plan.items() if key not in {"id", "target_policy"}}
+        stripped["id"] = release.digest(release.canonical(stripped))
+        with self.assertRaisesRegex(ValueError, "does not match its source"):
+            release.expected_edits(self.repo, stripped)
+        with self.assertRaisesRegex(ValueError, "does not match its source"):
+            release.verify_plan(self.repo, stripped, {})
+        with self.assertRaisesRegex(ValueError, "does not match its source"):
+            release.verify_generated(self.repo, revision, stripped)
+        cli = runpy.run_path(str(SKILL_ROOT / "scripts/semantic-release"))
+        seed_output = self.root / "invalid-seed"
+        with self.assertRaisesRegex(ValueError, "does not match its source"):
+            cli["seed"](self.repo, stripped, revision, seed_output)
+        self.assertFalse(seed_output.exists())
+        build_output = self.root / "invalid-build"
+        with self.assertRaisesRegex(ValueError, "does not match its source"):
+            cli["build_native"](
+                self.repo, stripped, revision, release.TARGETS[0], "unused", build_output
+            )
+        self.assertFalse(build_output.exists())
+        consumer_output = self.root / "invalid-consumer"
+        with self.assertRaisesRegex(ValueError, "does not match its source"):
+            cli["consumer"](
+                self.repo, stripped, revision, "unused", consumer_output
+            )
+        self.assertFalse(consumer_output.exists())
+        restore_output = self.root / "invalid-restore"
+        with self.assertRaisesRegex(ValueError, "does not match its source"):
+            remote.restore_bundle(self.api, self.repo, stripped, revision, restore_output)
+        self.assertFalse(restore_output.exists())
+        seal_output = self.root / "invalid-seal"
+        with self.assertRaisesRegex(ValueError, "does not match its source"):
+            remote.seal_artifacts(self.repo, stripped, revision, seal_output)
+        self.assertFalse(seal_output.exists())
+        with self.assertRaisesRegex(ValueError, "does not match its source"):
+            remote.publish(self.api, self.repo, stripped, revision, {}, lambda: None)
+        self.assertEqual(self.api.writes, [])
+
+    def test_source_validator_rejects_invalid_plan_and_recovery_markers(self):
+        plan, revision = self.bootstrap()
+        for field, value in (
+            ("target_policy", None),
+            ("target_policy", True),
+            ("target_policy", "future"),
+            ("targets", list(release.TARGETS)),
+        ):
+            with self.subTest(field=field, value=value):
+                invalid = {key: item for key, item in plan.items() if key != "id"}
+                invalid[field] = value
+                invalid["id"] = release.digest(release.canonical(invalid))
+                with self.assertRaises(ValueError):
+                    release.validate_source_policy(self.repo, invalid)
+        recovery = release.recovery_plan(
+            self.repo, revision, plan["id"], "The release needs a source correction."
+        )
+        invalid_recovery = {key: value for key, value in recovery.items() if key != "id"}
+        invalid_recovery["target_policy"] = release.TARGET_POLICY
+        invalid_recovery["id"] = release.digest(release.canonical(invalid_recovery))
+        with self.assertRaisesRegex(ValueError, "inherit"):
+            release.validate_source_policy(self.repo, invalid_recovery)
+
+    def test_current_source_policy_rejects_malformed_and_raw_target_metadata(self):
+        for metadata in (
+            {"native_policy": None},
+            {"native_policy": True},
+            {"native_policy": "future"},
+            {"targets": list(release.TARGETS)},
+        ):
+            with self.subTest(metadata=metadata):
+                config = dict(release.CONFIG)
+                config.update(metadata)
+                self.write(release.CONFIG_PATH, release.canonical(config))
+                source = self.commit("ci: validate release target metadata")
+                with self.assertRaises(ValueError):
+                    release.source_target_policy(self.repo, source)
+                self.assertEqual(self.api.writes, [])
+
+    def test_record_target_policy_rejects_open_target_shapes(self):
+        for metadata in (
+            {"target_policy": None},
+            {"target_policy": True},
+            {"target_policy": "future"},
+            {"targets": list(release.TARGETS)},
+        ):
+            with self.subTest(metadata=metadata), self.assertRaises(ValueError):
+                release.record_target_policy(metadata)
+
+    def test_legacy_source_without_marker_keeps_four_targets(self):
+        config = json.loads(self.repo.read("HEAD", release.CONFIG_PATH))
+        del config["native_policy"]
+        self.write(release.CONFIG_PATH, release.canonical(config))
+        self.commit("chore(release): preserve legacy target policy")
+        self.note()
+        plan = release.plan_release(
+            self.repo, "HEAD", "platform", {}, "2026-09-15", ("neo-v0.4.1", "0.4.2")
+        )
+        self.assertNotIn("target_policy", plan)
+        self.assertEqual(release.targets_for(plan), release.LEGACY_TARGETS)
+        self.assertEqual(
+            release.validate_source_policy(self.repo, plan), release.LEGACY_TARGETS
+        )
+
+
+class ArchivedTargetCompatibility(unittest.TestCase):
+    def test_published_and_frozen_retry_keep_historical_four_target_assets(self):
+        STATE.mkdir(parents=True, exist_ok=True)
+        repo = release.Repo(ROOT)
+        main = repo.revision("HEAD")
+        ledger = repo.ledger(main)
+        plans = {
+            plan["version"]: plan
+            for plan in ledger["attempts"]
+            if plan["version"] in {"0.10.0", "0.10.1"}
+        }
+        self.assertEqual(set(plans), {"0.10.0", "0.10.1"})
+        self.assertEqual(
+            plans["0.10.0"]["id"],
+            "a23ecfb94187b2f638db5d92d6b496a5d62b13be51c9434e4f0a218f2e692764",
+        )
+        self.assertEqual(
+            plans["0.10.1"]["id"],
+            "6c5252580ac71f70477f0794cf00ae0d8da23cab2dfd50a46450c9e1a5ca5b2e",
+        )
+        for plan in plans.values():
+            self.assertNotIn("target_policy", plan)
+            self.assertEqual(release.validate_source_policy(repo, plan), release.LEGACY_TARGETS)
+            self.assertEqual(release.targets_for(plan), release.LEGACY_TARGETS)
+            self.assertIsNone(repo.read(plan["source_sha"], release.LEDGER_PATH))
+            self.assertIsNotNone(repo.read(plan["source_sha"], release.LIVE_LEGACY_LEDGER_PATH))
+            self.assertNotIn(
+                plan["id"],
+                {record["id"] for record in repo.ledger(plan["source_sha"])["attempts"]},
+            )
+
+        with tempfile.TemporaryDirectory(dir=STATE) as temporary:
+            root = Path(temporary)
+            api = FakeAPI()
+            published = plans["0.10.0"]
+            published_revision = release.revision_for(repo, main, published)
+            published_files = artifact_files(
+                repo, published, published_revision, root / "published"
+            )
+            remote.publish(
+                api, repo, published, published_revision, published_files, lambda: None
+            )
+
+            pending = plans["0.10.1"]
+            pending_revision = release.revision_for(repo, main, pending)
+            pending_files = artifact_files(
+                repo, pending, pending_revision, root / "pending"
+            )
+            item = api.create_release(
+                release.release_tag(pending),
+                pending_revision,
+                "NeoHaskell " + pending["version"],
+                release.render(pending),
+            )
+            api.upload(item, "release-bundle.zip", pending_files["release-bundle.zip"])
+
+            result = remote.select_work(api, repo, main)
+            self.assertEqual(
+                result["items"],
+                [{
+                    "group": "platform",
+                    "attempt": pending["id"],
+                    "revision": pending_revision,
+                    "reuse": True,
+                }],
+            )
+            import runpy
+
+            cli = runpy.run_path(str(SKILL_ROOT / "scripts/semantic-release"))
+            matrix = json.loads(
+                cli["work_outputs"](result["items"])["platform_matrix"]
+            )["include"]
+            self.assertEqual({row["target"] for row in matrix}, set(release.LEGACY_TARGETS))
+
+            restored = root / "restored"
+            self.assertTrue(
+                remote.restore_bundle(api, repo, pending, pending_revision, restored)
+            )
+            self.assertEqual(
+                remote.seal_artifacts(repo, pending, pending_revision, restored),
+                pending_files,
+            )
+            remote.publish(api, repo, pending, pending_revision, pending_files, lambda: None)
+            self.assertEqual(
+                remote.completed_releases(api, repo, ledger),
+                {published["id"]: published_revision, pending["id"]: pending_revision},
+            )
+
+            recovery = release.recovery_plan(
+                repo, main, pending["id"], "The frozen release needs a source correction."
+            )
+            self.assertNotIn("target_policy", recovery)
+            self.assertEqual(release.validate_source_policy(repo, recovery), release.LEGACY_TARGETS)
+
+
 class Prepare(History):
-    def test_lockstep_excludes_retired_installer(self):
+    def test_lockstep_updates_platform_inputs(self):
         plan, revision = self.bootstrap()
         self.assertTrue(release.verify_generated(self.repo, revision, plan))
         for path in release.CONFIG["groups"]["platform"]["packages"]:
             self.assertIn("0.4.2", self.repo.read(revision, path))
-        self.assertIn("0.4.1", self.repo.read(revision, "installer/Cargo.toml"))
-        self.assertEqual(
-            self.repo.read(revision, "installer/CHANGELOG.md"),
-            "# Historical installer releases\n",
-        )
         self.assertIsNone(self.repo.read(revision, ".changes/save.md"))
         changelog = self.repo.read(revision, "CHANGELOG.md")
         self.assertIn(release.render(plan), changelog)
@@ -716,6 +962,7 @@ class Prepare(History):
     def test_tag_collision_and_foreign_baseline(self):
         self.note()
         self.git("tag", "neo-v0.4.2")
+        self.git("tag", "installer-v0.4.1")
         with self.assertRaisesRegex(ValueError, "exists"):
             release.plan_release(
                 self.repo, "HEAD", "platform", {}, "2026-09-15", ("neo-v0.4.1", "0.4.2")
@@ -884,8 +1131,10 @@ class Recovery(History):
         import shutil
 
         shutil.rmtree(self.root / "assets")
-        self.assertTrue(remote.restore_bundle(self.api, plan, r, self.root / "assets"))
-        restored = remote.seal_artifacts(plan, r, self.root / "assets")
+        self.assertTrue(
+            remote.restore_bundle(self.api, self.repo, plan, r, self.root / "assets")
+        )
+        restored = remote.seal_artifacts(self.repo, plan, r, self.root / "assets")
         self.assertEqual(restored, files)
         remote.publish(self.api, self.repo, plan, r, restored, lambda: None)
         self.assertEqual(
@@ -933,15 +1182,15 @@ class Artifacts(History):
         plan, r = self.bootstrap()
         self.files(plan, r)
         directory = self.root / "assets"
-        receipt = directory / ("receipt-" + release.TARGETS[0] + ".json")
+        receipt = directory / ("receipt-" + release.targets_for(plan)[0] + ".json")
         data = json.loads(receipt.read_text())
         data["revision"] = "0" * 40
         receipt.write_text(release.canonical(data))
         with self.assertRaisesRegex(ValueError, "receipt"):
-            remote.seal_artifacts(plan, r, directory)
+            remote.seal_artifacts(self.repo, plan, r, directory)
         receipt.unlink()
         with self.assertRaisesRegex(ValueError, "Missing"):
-            remote.seal_artifacts(plan, r, directory)
+            remote.seal_artifacts(self.repo, plan, r, directory)
 
     def test_starter_and_consumer_provenance(self):
         plan, r = self.bootstrap()
@@ -949,11 +1198,11 @@ class Artifacts(History):
         directory = self.root / "assets"
         (directory / "neo-starter-flake.lock").write_text("different seed")
         with self.assertRaisesRegex(ValueError, "receipt"):
-            remote.seal_artifacts(plan, r, directory)
+            remote.seal_artifacts(self.repo, plan, r, directory)
         self.files(plan, r)
         (directory / "consumer.json").write_text("{}")
         with self.assertRaisesRegex(ValueError, "consumer"):
-            remote.seal_artifacts(plan, r, directory)
+            remote.seal_artifacts(self.repo, plan, r, directory)
 
     def test_artifact_sealing_uses_configured_prefix(self):
         from unittest.mock import patch
@@ -983,6 +1232,7 @@ class Bootstrap(History):
         self.assertEqual(result["items"], [{
             "group": "platform", "attempt": plan["id"],
             "revision": revision, "reuse": False,
+            "target_policy": release.TARGET_POLICY,
         }])
         self.assertEqual(result["prs"], [])
         self.assertEqual(self.repo.ledger(current), ledger)
@@ -1015,6 +1265,7 @@ class Bootstrap(History):
                     "attempt": plan["id"],
                     "revision": r,
                     "reuse": False,
+                    "target_policy": release.TARGET_POLICY,
                 }
             ],
         )
@@ -1202,7 +1453,13 @@ class Workflow(unittest.TestCase):
         import runpy
 
         cli = runpy.run_path(str(SKILL_ROOT / "scripts/semantic-release"))
-        item = {"group": "platform", "attempt": "platform", "revision": "a" * 40, "reuse": True}
+        item = {
+            "group": "platform",
+            "attempt": "platform",
+            "revision": "a" * 40,
+            "reuse": True,
+            "target_policy": release.TARGET_POLICY,
+        }
         for selected in ([], [item]):
             outputs = cli["work_outputs"](selected)
             self.assertEqual(set(outputs), {"platform_has_work", "platform_items", "platform_matrix"})
@@ -1211,6 +1468,11 @@ class Workflow(unittest.TestCase):
             matrix = json.loads(outputs["platform_matrix"])["include"]
             self.assertEqual({row["target"] for row in matrix}, set(release.TARGETS) if selected else set())
             self.assertTrue(all(row["reuse"] and row["group"] == "platform" for row in matrix))
+        historical = {key: value for key, value in item.items() if key != "target_policy"}
+        legacy_matrix = json.loads(
+            cli["work_outputs"]([historical])["platform_matrix"]
+        )["include"]
+        self.assertEqual({row["target"] for row in legacy_matrix}, set(release.LEGACY_TARGETS))
         with self.assertRaisesRegex(ValueError, "release group"):
             cli["work_outputs"]([{**item, "group": "installer"}])
 
@@ -1220,8 +1482,8 @@ class Workflow(unittest.TestCase):
 
         cli = runpy.run_path(str(SKILL_ROOT / "scripts/semantic-release"))
         items = [
-            {"group": "platform", "attempt": "a" * 64, "revision": "c" * 40, "reuse": False},
-            {"group": "platform", "attempt": "b" * 64, "revision": "d" * 40, "reuse": True},
+            {"group": "platform", "attempt": "a" * 64, "revision": "c" * 40, "reuse": False, "target_policy": release.TARGET_POLICY},
+            {"group": "platform", "attempt": "b" * 64, "revision": "d" * 40, "reuse": True, "target_policy": release.TARGET_POLICY},
         ]
         outputs = cli["work_outputs"](items)
         rows = json.loads(outputs["platform_matrix"])["include"]
@@ -1230,14 +1492,16 @@ class Workflow(unittest.TestCase):
                          {(item["attempt"], target): item["reuse"] for item in items for target in release.TARGETS})
         expected = {
             "x86_64-unknown-linux-gnu": "ubuntu-latest",
-            "aarch64-unknown-linux-gnu": "ubuntu-24.04-arm",
-            "x86_64-apple-darwin": "macos-15-intel",
             "aarch64-apple-darwin": "macos-latest",
         }
         with patch.object(release, "TARGETS", tuple(reversed(release.TARGETS))):
-            output = cli["work_outputs"]([{"group": "platform"}])
+            output = cli["work_outputs"]([{"group": "platform", "target_policy": release.TARGET_POLICY}])
             rows = json.loads(output["platform_matrix"])["include"]
             self.assertEqual({row["target"]: row["runner"] for row in rows}, expected)
+        legacy_rows = json.loads(
+            cli["work_outputs"]([{"group": "platform"}])["platform_matrix"]
+        )["include"]
+        self.assertEqual({row["target"] for row in legacy_rows}, set(release.LEGACY_TARGETS))
 
     def test_release_asset_and_consumer_jobs_use_owned_entrypoints(self):
         read_only = self.workflow("neo-release.yml")
@@ -1280,35 +1544,45 @@ class Workflow(unittest.TestCase):
         self.assertIn("cache-prime", cache)
         self.assertIn("NEO_BIN=", cache)
 
-    def test_onboarding_is_dispatch_only_for_live_measurement(self):
-        text = self.workflow("neo-onboarding-slo.yml")
-        self.assertIn("permissions:\n  contents: read", text)
-        self.assertIn("semantic-release --self-test workflow", text)
-        self.assertIn("run: ./.agents/skills/neohaskell-release/scripts/onboarding-slo --self-test", text)
-        self.assertIn("if: github.event_name == 'workflow_dispatch'", self.job_block(text, "slo"))
-        self.assertIn("run: ./.agents/skills/neohaskell-release/scripts/onboarding-slo run", self.job_block(text, "slo"))
-        self.assertNotIn("secrets.", text)
-        self.assertNotIn("cargo build", self.job_block(text, "slo"))
-        self.assertNotIn("nix build", self.job_block(text, "slo"))
+    def test_native_asset_contract_covers_current_and_historical_targets(self):
+        script = SKILL_ROOT / "scripts/neo-release"
+        current = subprocess.check_output([str(script), "targets"], text=True).splitlines()
+        self.assertEqual(set(current), set(release.TARGETS))
+        self.assertEqual(release.CONFIG["native_policy"], release.TARGET_POLICY)
+        for target in release.LEGACY_TARGETS:
+            asset = subprocess.check_output(
+                [str(script), "asset-name", target], text=True
+            ).strip()
+            self.assertEqual(asset, "neo-" + target)
+        for target in release.TARGETS:
+            self.assertIn(target, self.workflow("neo-release.yml"))
+        for target in {"aarch64-unknown-linux-gnu", "x86_64-apple-darwin"}:
+            self.assertNotIn(target, self.workflow("neo-release.yml"))
+        profile = release.CONFIG["groups"]["platform"]
+        self.assertEqual(profile["tag"], "neo-v")
+        self.assertEqual(profile["asset_prefix"], "neo-")
+        self.assertEqual(release.CONFIG["repository"], "neohaskell/NeoHaskell")
+        self.assertIn("scripts/neo-release", (SKILL_ROOT / "scripts/semantic-release").read_text())
+        for path in (
+            SKILL_ROOT / "scripts/neo-release",
+            SKILL_ROOT / "scripts/releases/github.py",
+        ):
+            text = path.read_text()
+            self.assertIn("SHA256SUMS", text)
+            self.assertNotIn("SHA256SUMS.txt", text)
 
-    def test_changed_path_classifiers_cover_owned_contracts(self):
+    def test_release_pipeline_executes_owned_contract_checks(self):
         import re
 
-        installer = self.workflow("installer-ci.yml")
-        installer_pattern = re.search(r"PATTERN='([^']+)'", installer)[1]
-        for path in (
-            "installer/tests/consistency.rs",
-            release.CONFIG_PATH,
-            release.LEDGER_PATH,
-            ".agents/skills/neohaskell-release/scripts/releases/engine.py",
-            ".agents/skills/neohaskell-release/scripts/releases/github.py",
-            ".agents/skills/neohaskell-release/scripts/semantic-release",
-            ".agents/skills/neohaskell-release/scripts/neo-release",
-            ".github/workflows/semantic-release.yml",
-            ".github/workflows/installer-ci.yml",
-        ):
-            with self.subTest(path=path):
-                self.assertRegex(path, installer_pattern)
+        release_workflow = self.workflow("semantic-release.yml")
+        self.assertIn(
+            "run: ./.agents/skills/neohaskell-release/scripts/semantic-release --self-test",
+            release_workflow,
+        )
+        self.assertTrue((SKILL_ROOT / "scripts/releases/test_release.py").is_file())
+        release_script = (SKILL_ROOT / "scripts/semantic-release").read_text()
+        self.assertIn("scripts/releases/test_release.py", release_script)
+        self.assertIn("fetch-depth: 0", self.job_block(self.workflow("checks.yml"), "tooling"))
         ci = self.workflow("neo-ci.yml")
         match = re.search(r"CONTRACT='([^']+)'", ci)
         self.assertIsNotNone(match)
@@ -1330,6 +1604,24 @@ class Workflow(unittest.TestCase):
         for plan in ledger["attempts"] + ledger["recoveries"]:
             release.check_identity(plan)
 
+    def test_prepared_required_checks_match_source_policy(self):
+        config = json.loads((SKILL_ROOT / "references/required-checks.json").read_text())
+        self.assertIs(config["strict"], False)
+        self.assertEqual(
+            {check["context"] for check in config["checks"]},
+            {
+                "hlint (dialect gate)",
+                "ci-gate",
+                "adr index (decisions README faithful)",
+                "neo-ci-gate",
+                "secret scan (gitleaks, deterministic)",
+                "owned tooling checks",
+                "release fragment check",
+            },
+        )
+        self.assertEqual(len(config["checks"]), 7)
+        self.assertEqual({check["app_id"] for check in config["checks"]}, {15368})
+
 
 GROUPS = {
     "tooling": TrustedTooling,
@@ -1340,6 +1632,8 @@ GROUPS = {
     "provenance": Provenance,
     "recovery": Recovery,
     "artifacts": Artifacts,
+    "target-policies": TargetPolicies,
+    "archived-targets": ArchivedTargetCompatibility,
     "workflow": Workflow,
     "ledger": LedgerLocations,
     "bootstrap": Bootstrap,

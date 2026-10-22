@@ -25,18 +25,18 @@ history. No root `./dev` dispatcher is required.
 ./.agents/skills/neohaskell-release/scripts/semantic-release --self-test
 ./.agents/skills/neohaskell-release/scripts/neo-release --self-test
 ./.agents/skills/neohaskell-release/scripts/cache-prime --self-test
-./.agents/skills/neohaskell-release/scripts/onboarding-slo --self-test
 ```
 
 `semantic-release --self-test` runs the release engine's local fixture suite. It
 uses an in-memory GitHub API double and makes no GitHub calls. The full generated
 bookkeeping exception remains in the release check. It reconstructs the complete
 expected diff from the immutable source revision and rejects any unaccounted
-file or mode change.
+file or mode change. Archived release retries load immutable source and
+preparation commits, so CI must fetch complete Git history before running it.
 
 ## Activate the CI migration
 
-The [required-check configuration](references/required-checks.json) records the intended main-branch checks for these workflows. Compare it with fresh repository protection settings before activation. Preserve the security and compiled-product gates. Retire the old process and codemap requirements when the replacement tooling and release checks pass on the exact reviewed candidate.
+The [required-check configuration](references/required-checks.json) prepares seven main-branch contexts: `hlint (dialect gate)`, `ci-gate`, `adr index (decisions README faithful)`, `neo-ci-gate`, `secret scan (gitleaks, deterministic)`, `owned tooling checks`, and `release fragment check`. Every entry uses Actions app ID 15368, and `strict` remains false. This is source configuration only; it does not alter live protection settings.
 
 Coordinate the protection update with landing the workflow migration. Requiring the new check names before main produces them blocks other pull requests. Capture the prior required-check configuration and compare fresh settings immediately before an authorized landing. If landing cannot proceed after the update, restore that captured configuration. Contributors use the automatically maintained local codemap without committing generated output.
 
@@ -90,11 +90,18 @@ fragment in every implementation commit.
 
 A preparation freezes the source revision, version, date and rendered notes.
 The merged preparation builds from that exact revision. The starter input is
-frozen with a Nix content hash and embedded in every CLI target. Four native
-builds, portability and install checks, and the generated-app contract must pass
-before publication. The release body must equal the committed changelog section.
-Platform tags `neo-vX` and `vX` share the same commit. Retries reuse verified
-inputs and assets; any mismatch stops publication.
+frozen with a Nix content hash and embedded in each current CLI target. The
+source configuration declares `native_policy: native-v2`, and each new plan
+records `target_policy: native-v2` before its identity is calculated. This
+policy selects Linux x86-64 and Apple silicon macOS. Historical plans without
+that field keep their frozen four-target contract so a pending attempt can
+resume unchanged. `neo-release targets` lists current build targets; its
+inspect, verify and install commands also accept the historical target
+formats. Two native builds, portability and install checks,
+and the generated-app contract must pass before publication. The release body
+must equal the committed changelog section. Platform tags `neo-vX` and `vX`
+share the same commit. Retries reuse verified inputs and assets; any mismatch
+stops publication.
 
 If main advances before a preparation merges, its provenance check fails.
 Dispatch `auto` on main to prepare a fresh PR, then close the stale PR after
@@ -135,6 +142,6 @@ baseline from an unrelated tag that happens to sort highest.
 - To cancel a recovery before merging, close its PR and explicitly dispatch
   resume with the attempt ID, then auto. Never delete the pause branch manually.
 
-Validation fixtures do not claim a live four-target build or production
+Validation fixtures do not claim a live two-target build or production
 publication. The complete generated-app result is reported only by the
 consumer-verification contract.
