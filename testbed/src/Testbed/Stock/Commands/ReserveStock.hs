@@ -6,7 +6,6 @@ module Testbed.Stock.Commands.ReserveStock (
 
 import Core
 import Decider qualified
-import Json qualified
 import Service.Auth (RequestContext)
 import Service.Command.Core (TransportsOf)
 import Service.CommandExecutor.TH (command)
@@ -21,13 +20,7 @@ data ReserveStock = ReserveStock
   , quantity :: Int
   , cartId :: Uuid
   }
-  deriving (Generic, Typeable, Show)
-
-
-instance Json.FromJSON ReserveStock
-
-
-instance Json.ToJSON ReserveStock
+  deriving (Typeable)
 
 
 getEntityId :: ReserveStock -> Maybe Uuid

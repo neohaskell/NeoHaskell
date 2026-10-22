@@ -193,7 +193,7 @@ class TrustedTooling(unittest.TestCase):
                 "#!" + sys.executable + "\n"
                 "import json,os,sys,time\nfrom pathlib import Path\n"
                 "with open(os.environ['CALL_LOG'],'a') as log: log.write(json.dumps({'verb':sys.argv[2],'override':os.getenv('NEO_NEOHASKELL_SOURCE')})+'\\n')\n"
-                "if sys.argv[2]=='new':\n p=Path(sys.argv[3]);p.mkdir();(p/'flake.nix').write_text('{}')\n"
+                "if sys.argv[2]=='new':\n p=Path(sys.argv[3]);p.mkdir();(p/'flake.nix').write_text('neohaskellCommit = \\\"'+os.environ['PINNED_REVISION']+'\\\";\\n')\n"
                 "if sys.argv[2]=='run': time.sleep(10)\n"
             )
             neo.chmod(0o755)
@@ -201,17 +201,35 @@ class TrustedTooling(unittest.TestCase):
             nix.write_text("#!/bin/sh\nexit 0\n")
             nix.chmod(0o755)
             log = root / "calls.jsonl"
+            expected_revision = "a" * 40
             result = subprocess.run(
                 [str(SKILL_ROOT / "scripts/cache-prime")],
                 env={**os.environ, "NEOHASKELL_ROOT": str(root), "NEO_BIN": str(neo),
                      "CALL_LOG": str(log), "PATH": str(bins) + os.pathsep + os.environ['PATH'],
-                     "NEO_NEOHASKELL_SOURCE": "/must-not-reach-released-build", "PRIME_RUN_TIMEOUT": "0.2"},
+                     "NEO_NEOHASKELL_SOURCE": "/must-not-reach-released-build",
+                     "PRIME_EXPECTED_REVISION": expected_revision,
+                     "PINNED_REVISION": expected_revision, "PRIME_RUN_TIMEOUT": "0.2"},
                 capture_output=True, text=True, timeout=20,
             )
             self.assertEqual(result.returncode, 0, result.stderr)
             calls = [json.loads(line) for line in log.read_text().splitlines()]
             self.assertEqual([call['verb'] for call in calls], ['new', 'build', 'test', 'run'])
             self.assertEqual([call['override'] for call in calls], [None] * 4)
+
+            log.write_text("")
+            mismatch = subprocess.run(
+                [str(SKILL_ROOT / "scripts/cache-prime")],
+                env={**os.environ, "NEOHASKELL_ROOT": str(root), "NEO_BIN": str(neo),
+                     "CALL_LOG": str(log), "PATH": str(bins) + os.pathsep + os.environ['PATH'],
+                     "NEO_NEOHASKELL_SOURCE": "/must-not-reach-released-build",
+                     "PRIME_EXPECTED_REVISION": expected_revision,
+                     "PINNED_REVISION": "b" * 40, "PRIME_RUN_TIMEOUT": "0.2"},
+                capture_output=True, text=True, timeout=20,
+            )
+            self.assertNotEqual(mismatch.returncode, 0)
+            self.assertIn(f"expected {expected_revision}", mismatch.stderr)
+            mismatch_calls = [json.loads(line) for line in log.read_text().splitlines()]
+            self.assertEqual([call['verb'] for call in mismatch_calls], ['new'])
 
 
 class Fragments(unittest.TestCase):
@@ -1431,7 +1449,7 @@ class Workflow(unittest.TestCase):
         }
         self.assertEqual(
             jobs,
-            {"prepare", "platform_seed", "platform_native", "platform_consumer", "platform_publish", "reconcile"},
+            {"prepare", "platform_seed", "platform_native", "platform_consumer", "platform_cache", "platform_publish", "reconcile"},
         )
         self.assertIn("push:\n    branches: [main]", text)
         self.assertIn("workflow_dispatch:", text)
@@ -1446,7 +1464,7 @@ class Workflow(unittest.TestCase):
             self.assertIn("github.ref == 'refs/heads/main'", block)
             self.assertIn("needs.prepare.outputs.platform_has_work == 'true'", block)
             self.assertNotIn("permissions:", block)
-        self.assertEqual(text.count("persist-credentials: false"), 11)
+        self.assertEqual(text.count("persist-credentials: false"), 12)
         self.assertIn("Release engine self-tests (offline)", text)
         self.assertIn("run: ./.agents/skills/neohaskell-release/scripts/semantic-release --self-test", text)
         for name in ("prepare", "platform_seed", "platform_native", "platform_consumer", "platform_publish", "reconcile"):
@@ -1472,6 +1490,16 @@ class Workflow(unittest.TestCase):
         self.assertIn("github.ref == 'refs/heads/main'", publish)
         self.assertIn("needs.prepare.outputs.platform_has_work == 'true'", publish)
         self.assertIn("contents: write", publish)
+        cache = self.job_block(text, "platform_cache")
+        self.assertIn("needs: [prepare, platform_native, platform_consumer]", cache)
+        self.assertIn("continue-on-error: true", cache)
+        self.assertIn("PRIME_EXPECTED_REVISION: ${{ matrix.revision }}", cache)
+        self.assertIn("release-${{ matrix.attempt }}-x86_64-unknown-linux-gnu", cache)
+        self.assertIn(".agents-state/release-tooling/.agents/skills/neohaskell-release/scripts/cache-prime", cache)
+        self.assertIn("CACHIX_AUTH_TOKEN", cache)
+        self.assertNotIn("platform_cache", publish)
+        self.assertNotIn("CACHIX_AUTH_TOKEN", publish)
+        self.assertNotIn("contents: write", cache)
         reconcile = self.job_block(text, "reconcile")
         self.assertIn("needs.platform_publish.result == 'success'", reconcile)
         self.assertIn("contents: write", reconcile)
@@ -1568,8 +1596,10 @@ class Workflow(unittest.TestCase):
             r"- name: Configure Cachix push\n\s+if: \$\{\{ env\.CACHIX_AUTH_TOKEN != '' \}\}\n\s+uses: cachix/cachix-action@v17",
         )
         self.assertIn("neo-consumer-contract", cache)
-        self.assertIn("cache-prime", cache)
+        self.assertNotIn("cache-prime", cache)
         self.assertIn("NEO_BIN=", cache)
+        release_cache = self.job_block(self.workflow("semantic-release.yml"), "platform_cache")
+        self.assertIn("cache-prime", release_cache)
 
     def test_native_asset_contract_covers_current_and_historical_targets(self):
         script = SKILL_ROOT / "scripts/neo-release"

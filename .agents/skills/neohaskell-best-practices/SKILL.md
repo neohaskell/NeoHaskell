@@ -33,4 +33,9 @@ Run compiler and test commands through `scripts/with-toolchain <command> <argume
 
 Use [NeoHaskell tests](../neohaskell-test/SKILL.md) for current suite, doctest and testbed entrypoints. Capture runtime or compiler contracts with [Regression evidence](../regression-evidence/SKILL.md). For event-store behavior, select relevant [controlled-fault regression recipes](../event-store-regression/SKILL.md) alongside the broader maintained tests.
 
+For framework export, TH marker or generated-API changes, follow
+[NeoHaskell consumer verification](../neohaskell-consumer-verification/SKILL.md)
+before implementation and verification. It owns the starter and testbed migration
+contract and the check for redundant generated defaults.
+
 Read [patterns](references/patterns.md) when designing module APIs, functions, and pipelines or working on boundary invariants, service ownership, deferred execution, concurrency, generated consumers, or diagnostics.

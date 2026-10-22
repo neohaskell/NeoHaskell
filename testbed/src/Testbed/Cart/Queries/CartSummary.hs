@@ -8,7 +8,6 @@ module Testbed.Cart.Queries.CartSummary (
 
 import Array qualified
 import Core
-import Json qualified
 import Service.AccessControl (AccessError, UserClaims)
 import Service.AccessControl qualified as AccessControl
 import Testbed.Cart.Core (CartEntity (..))
@@ -27,16 +26,7 @@ data CartSummary = CartSummary
     itemCount :: Int,
     isEmpty :: Bool
   }
-  deriving (Eq, Show, Generic)
-
-
-instance Json.ToJSON CartSummary
-
-
-instance Json.FromJSON CartSummary
-
-
-instance ToSchema CartSummary
+  deriving (Eq)
 
 
 -- | Authorization: Public access for demo/testing purposes

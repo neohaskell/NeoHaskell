@@ -7,7 +7,6 @@ module Testbed.Stock.Queries.StockLevel (
 ) where
 
 import Core
-import Json qualified
 import Service.AccessControl (AccessError, UserClaims)
 import Service.AccessControl qualified as AccessControl
 import Testbed.Stock.Core (StockEntity (..))
@@ -19,16 +18,7 @@ data StockLevel = StockLevel
   , available :: Int
   , reserved :: Int
   }
-  deriving (Generic, Eq, Show)
-
-
-instance Json.FromJSON StockLevel
-
-
-instance Json.ToJSON StockLevel
-
-
-instance ToSchema StockLevel
+  deriving (Eq)
 
 
 -- | Authorization: Anyone can access stock levels (public catalog data)

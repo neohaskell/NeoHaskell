@@ -2,6 +2,10 @@
 
 **You own the design. Plan, review, verify.** Delegate implementation. Stay in the lead.
 
+Framework export, TH marker and generated-API changes also follow
+[NeoHaskell consumer verification](../../skills/neohaskell-consumer-verification/SKILL.md)
+for the same-PR starter and testbed migration contract.
+
 1. `how` over the affected subsystem.
 2. `architect` for parallel design exploration only; pass the chosen design to the implementation owner below. Apply [NeoHaskell best practices](../../skills/neohaskell-best-practices/SKILL.md) and [code guidelines](../../skills/neohaskell-code-guidelines/SKILL.md) as design constraints.
 3. Write the throughput checkpoint as four todo items. A dimension that genuinely does not apply (single file, no fan-out) keeps its item with `n/a: <reason>` rather than being dropped:

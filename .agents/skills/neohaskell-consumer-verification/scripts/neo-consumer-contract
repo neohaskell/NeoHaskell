@@ -231,6 +231,8 @@ run_contract() {
   local repo_root="$REPO_ROOT"
   [ -f "$repo_root/flake.nix" ] || die "not at the monorepo root (no flake.nix at $repo_root)"
   info "checkout under test: $repo_root"
+  python3 "$SCRIPT_DIR/check-consumer-freshness.py" --repo "$repo_root" \
+    || die "starter or testbed generated defaults are stale"
 
   mkdir -p "$STATE_ROOT"
   WORK="$(mktemp -d "$STATE_ROOT/run.XXXXXX")"

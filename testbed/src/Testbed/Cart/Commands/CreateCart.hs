@@ -6,7 +6,6 @@ module Testbed.Cart.Commands.CreateCart (
 
 import Core
 import Decider qualified
-import Json qualified
 import Service.Auth (RequestContext (..), UserClaims (..))
 import Service.Command.Core (TransportsOf)
 import Service.CommandExecutor.TH (command)
@@ -16,13 +15,7 @@ import Uuid qualified
 
 
 data CreateCart = CreateCart
-  deriving (Generic, Typeable, Show)
-
-
-instance Json.FromJSON CreateCart
-
-
-instance Json.ToJSON CreateCart
+  deriving (Typeable)
 
 
 getEntityId :: CreateCart -> Maybe Uuid

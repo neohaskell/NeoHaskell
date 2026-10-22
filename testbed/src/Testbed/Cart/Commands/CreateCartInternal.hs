@@ -5,7 +5,6 @@ module Testbed.Cart.Commands.CreateCartInternal (
 ) where
 
 import Core
-import Json qualified
 import Service.Auth (RequestContext)
 import Service.Command.Core (TransportsOf)
 import Service.CommandExecutor.TH (command)
@@ -15,13 +14,7 @@ import Testbed.Cart.Core
 
 
 data CreateCartInternal = CreateCartInternal
-  deriving (Generic, Typeable, Show)
-
-
-instance Json.FromJSON CreateCartInternal
-
-
-instance Json.ToJSON CreateCartInternal
+  deriving (Typeable)
 
 
 getEntityId :: CreateCartInternal -> Maybe Uuid

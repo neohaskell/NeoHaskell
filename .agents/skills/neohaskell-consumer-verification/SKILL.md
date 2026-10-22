@@ -1,6 +1,6 @@
 ---
 name: neohaskell-consumer-verification
-description: Verify the generated project produced by NeoHaskell's `neo new` command or prove that the committed embedded Neo IDE bundle matches its source build. Use for CLI consumer contracts, starter compatibility, or IDE bundle freshness.
+description: Verify generated projects, starter and testbed freshness, or the embedded IDE bundle. Use when framework exports, Template Haskell markers, generated APIs, starter dependencies, CLI generation or IDE sources change.
 ---
 
 # NeoHaskell consumer verification
@@ -9,6 +9,30 @@ Use this skill when a change can affect a project created by `neo new`, the
 embedded starter, the generated build and runtime path, or the bundled IDE
 frontend. The full contract tests a consumer-visible result. A script
 self-test checks only its orchestration or comparison logic.
+
+## Framework changes include their consumers
+
+For framework export, marker or generated-API changes, inventory affected uses in
+`neo/starter/` and `testbed/` before implementation. Migrate those consumers in
+the same PR. Update the marker's public documentation when its generated
+contract changes. A framework suite passing does not establish starter freshness.
+
+Run the owned freshness check before the generated-project contract:
+
+```sh
+python3 .agents/skills/neohaskell-consumer-verification/scripts/check-consumer-freshness.py
+```
+
+The check rejects manual defaults already supplied by a type's TH marker.
+Keep custom instances, business logic and derivations the marker does not own.
+When changing marker output, update the check's ownership model and fixtures
+with the implementation. Compilation alone cannot detect redundant defaults
+because the markers preserve existing instances.
+
+Verify the generated starter and the affected testbed behavior against the
+same PR source. Use [NeoHaskell tests](../neohaskell-test/SKILL.md) for testbed
+entrypoints and focused framework suites. Record the tested source revision,
+checks run and any unavailable coverage. A skipped required check is incomplete.
 
 ## Generated project contract
 
@@ -50,11 +74,10 @@ contract requires Nix, Git, curl, Python and a working Haskell build environment
 Offline `neo new` generation does not make the build, test or runtime phases
 offline.
 
-The exact-checkout contract and released closure have different purposes.
-`neo-consumer-contract` tests the current checkout. The release-owned
-`cache-prime` script realizes the default released-source closure without
-`NEO_NEOHASKELL_SOURCE`. Keep that distinction when reviewing or changing
-workflow wiring.
+`neo-consumer-contract` tests the current checkout. PR verification uses that
+revision for the CLI, starter and framework. Release preparation freezes the
+starter pins to its candidate framework revision before packaging the CLI.
+Cache population must use the corresponding tested source and binary.
 
 ## Embedded IDE bundle
 
@@ -74,6 +97,7 @@ compares every relative file path and byte sequence against
 them because they are untracked. A full pass proves the committed bundle matches
 that rebuild; it does not replace frontend behavior tests.
 
-The CI workflow runs both owner self-tests and the applicable full check. The
-generated-project contract is a separate blocking gate for source changes that
-can affect the starter or compiled application.
+The CI workflow runs both owner self-tests and the applicable full check. Every
+PR runs the generated-project contract, including drafts and documentation
+changes. The aggregate gate requires its success. Component-specific draft and
+path selection does not permit skipping the generated-project contract.

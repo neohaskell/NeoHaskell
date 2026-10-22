@@ -6,7 +6,6 @@ module Starter.Counter.Commands.DecrementCounter (
 
 import Core
 import Decider qualified
-import Json qualified
 import Service.Auth (RequestContext)
 import Service.Command.Core (TransportsOf)
 import Service.CommandExecutor.TH (command)
@@ -20,10 +19,7 @@ data DecrementCounter = DecrementCounter
   { entityId :: Uuid
   , amount :: Int
   }
-  deriving (Generic, Typeable, Show)
-
-
-instance Json.FromJSON DecrementCounter
+  deriving (Typeable)
 
 
 getEntityId :: DecrementCounter -> Maybe Uuid

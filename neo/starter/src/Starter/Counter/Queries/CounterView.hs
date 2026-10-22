@@ -7,7 +7,6 @@ module Starter.Counter.Queries.CounterView (
 ) where
 
 import Core
-import Json qualified
 import Service.AccessControl (AccessError, UserClaims, publicAccess, publicView)
 import Starter.Counter.Core (CounterEntity (..))
 
@@ -19,16 +18,7 @@ data CounterView = CounterView
   , label :: Text
   , value :: Int
   }
-  deriving (Eq, Show, Generic)
-
-
-instance Json.ToJSON CounterView
-
-
-instance Json.FromJSON CounterView
-
-
-instance ToSchema CounterView
+  deriving (Eq)
 
 
 canAccess :: Maybe UserClaims -> Maybe AccessError

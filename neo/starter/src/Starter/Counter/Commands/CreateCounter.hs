@@ -6,7 +6,6 @@ module Starter.Counter.Commands.CreateCounter (
 
 import Core
 import Decider qualified
-import Json qualified
 import Service.Auth (RequestContext)
 import Service.Command.Core (TransportsOf)
 import Service.CommandExecutor.TH (command)
@@ -19,10 +18,7 @@ import Starter.Counter.Events.CounterCreated qualified as CounterCreated
 data CreateCounter = CreateCounter
   { label :: Text
   }
-  deriving (Generic, Typeable, Show)
-
-
-instance Json.FromJSON CreateCounter
+  deriving (Typeable)
 
 
 -- | `Nothing` means "creation" — no existing entity should be loaded.

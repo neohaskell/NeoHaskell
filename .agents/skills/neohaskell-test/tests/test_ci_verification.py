@@ -28,7 +28,7 @@ CI_GATES = {
 }
 EXPENSIVE_JOB_SELECTORS = {
     "test.yml": {"build": "compiled", "doctest": "compiled"},
-    "neo-ci.yml": {"rust": "touched", "ide": "touched", "nix-package": "touched", "consumer-contract": "contract"},
+    "neo-ci.yml": {"rust": "touched", "ide": "touched", "nix-package": "touched"},
 }
 
 
@@ -124,7 +124,9 @@ def run_change_detection(name: str, *, event: str = "pull_request", action: str,
 
 def job_runs(name: str, job: str, outputs: dict[str, str]) -> bool:
     lines = job_block(workflow(name), job).splitlines()
-    start = next(index for index, line in enumerate(lines) if line.strip() == "if: >-")
+    start = next((index for index, line in enumerate(lines) if line.strip() == "if: >-"), None)
+    if start is None:
+        return True
     guard_lines = []
     for line in lines[start + 1 :]:
         if line.strip() and len(line) - len(line.lstrip()) < 6:
@@ -237,6 +239,20 @@ class CiVerificationTests(unittest.TestCase):
         for job in ("rust", "ide", "nix-package"):
             self.assertFalse(job_runs("neo-ci.yml", job, outputs))
 
+    def test_neo_consumer_runs_for_every_pr_admission_case(self) -> None:
+        for case in ADMISSION_CASES:
+            result, outputs = run_change_detection(
+                "neo-ci.yml",
+                action=case.action,
+                draft=case.draft,
+                label_event=case.label_event,
+                label_present=case.label_present,
+                changed_paths=case.changed_paths,
+            )
+            with self.subTest(case=case.name):
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertTrue(job_runs("neo-ci.yml", "consumer-contract", outputs))
+
     def test_push_event_keeps_existing_full_run_behavior(self) -> None:
         for name, selector in (("test.yml", "compiled"), ("neo-ci.yml", "touched")):
             result, outputs = run_change_detection(
@@ -252,6 +268,8 @@ class CiVerificationTests(unittest.TestCase):
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 self.assertEqual(outputs.get("run_expensive"), "true")
                 self.assertEqual(outputs.get(selector), "true")
+        neo_push = re.search(r"(?ms)^  push:\n(.*?)(?=^permissions:)", workflow("neo-ci.yml"))[1]
+        self.assertNotRegex(neo_push, r"(?m)^\s+paths:")
 
     def test_aggregates_enforce_selected_jobs_for_ready_and_labelled_prs(self) -> None:
         for name, (gate, jobs) in CI_GATES.items():
@@ -262,13 +280,19 @@ class CiVerificationTests(unittest.TestCase):
                 skipped = run_gate(name, run_expensive=True, selected=selected_values(name, True), changes_result="success", job_results={job: "skipped" for job in jobs})
                 self.assertNotEqual(skipped.returncode, 0)
             with self.subTest(workflow=name, state="unlabelled draft"):
-                draft = run_gate(name, run_expensive=False, selected=selected_values(name, True), changes_result="success", job_results={job: "skipped" for job in jobs})
+                draft_results = {job: "skipped" for job in jobs}
+                if name == "neo-ci.yml":
+                    draft_results["consumer-contract"] = "success"
+                draft = run_gate(name, run_expensive=False, selected=selected_values(name, True), changes_result="success", job_results=draft_results)
                 self.assertEqual(draft.returncode, 0, draft.stdout + draft.stderr)
             with self.subTest(workflow=name, state="labelled draft skipped jobs"):
                 labelled = run_gate(name, run_expensive=True, selected=selected_values(name, True), changes_result="success", job_results={job: "skipped" for job in jobs})
                 self.assertNotEqual(labelled.returncode, 0)
             with self.subTest(workflow=name, state="source unrelated"):
-                unrelated = run_gate(name, run_expensive=True, selected=selected_values(name, False), changes_result="success", job_results={job: "skipped" for job in jobs})
+                unrelated_results = {job: "skipped" for job in jobs}
+                if name == "neo-ci.yml":
+                    unrelated_results["consumer-contract"] = "success"
+                unrelated = run_gate(name, run_expensive=True, selected=selected_values(name, False), changes_result="success", job_results=unrelated_results)
                 self.assertEqual(unrelated.returncode, 0, unrelated.stdout + unrelated.stderr)
             with self.subTest(workflow=name, state="selected job failure"):
                 failed = run_gate(name, run_expensive=True, selected=selected_values(name, True), changes_result="success", job_results={job: "failure" for job in jobs})
@@ -292,6 +316,36 @@ class CiVerificationTests(unittest.TestCase):
             job_results={**all_skipped, "consumer-contract": "success"},
         )
         self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+
+    def test_neo_gate_requires_consumer_success_independent_of_selectors_or_cache(self) -> None:
+        gate = job_block(workflow("neo-ci.yml"), "neo-ci-gate")
+        needs = re.search(r"(?m)^    needs: \[(.*?)\]$", gate)[1]
+        self.assertIn("consumer-contract", needs)
+        self.assertNotIn("cache-populate", needs)
+
+        for run_expensive in (False, True):
+            for contract in ("false", "true"):
+                for consumer_result in ("skipped", "failure", "cancelled"):
+                    with self.subTest(
+                        run_expensive=run_expensive,
+                        contract=contract,
+                        consumer_result=consumer_result,
+                    ):
+                        result = run_gate(
+                            "neo-ci.yml",
+                            run_expensive=run_expensive,
+                            selected={"TOUCHED": "false", "CONTRACT": contract},
+                            changes_result="success",
+                            job_results={
+                                "rust": "skipped",
+                                "ide": "skipped",
+                                "nix-package": "skipped",
+                                "consumer-contract": consumer_result,
+                                "cache-populate": "success",
+                            },
+                        )
+                        self.assertNotEqual(result.returncode, 0)
+                        self.assertIn("consumer-contract did not pass", result.stdout + result.stderr)
 
 
 if __name__ == "__main__":
