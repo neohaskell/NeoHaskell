@@ -345,6 +345,102 @@ class SweepDecisionTests(unittest.TestCase):
         )
         self.assertEqual(decision.kind, DecisionKind.RESCAN)
 
+    def test_later_main_commit_requires_rescan_before_linking_or_closing_stale_pr(self):
+        attempt = PendingAttempt(PLAN, OLD_MAIN, PublicationStatus.IN_PROGRESS)
+        for linked in (False, True):
+            stale = make_pr(
+                number=927,
+                source_sha="1" * 40,
+                stale_source_is_ancestor_of_replacement=True,
+                replacement_link_recorded=linked,
+            )
+            with self.subTest(linked=linked):
+                decision = decide(
+                    make_snapshot(
+                        records=(stale,),
+                        verified_merge=make_merged(),
+                        pending_attempt=attempt,
+                        selection_main_sha=OLD_MAIN,
+                        main_sha=MAIN,
+                    )
+                )
+                self.assertEqual(decision.kind, DecisionKind.RESCAN)
+
+    def assert_stale_action_requires_write_preconditions(self, linked):
+        stale = make_pr(
+            number=927,
+            source_sha="1" * 40,
+            stale_source_is_ancestor_of_replacement=True,
+            replacement_link_recorded=linked,
+        )
+        attempt = PendingAttempt(PLAN, OLD_MAIN, PublicationStatus.IN_PROGRESS)
+        snapshot = make_snapshot(
+            records=(stale,),
+            verified_merge=make_merged(),
+            pending_attempt=attempt,
+        )
+        cases = {
+            "missing rules": (
+                replace(snapshot, rules=None),
+                DecisionKind.BLOCKED,
+            ),
+            "incomplete rules": (
+                replace(snapshot, rules=replace(make_rules(), complete=False)),
+                DecisionKind.BLOCKED,
+            ),
+            "incomplete workflow mapping": (
+                replace(
+                    snapshot,
+                    rules=replace(make_rules(), workflow_mapping_complete=False),
+                ),
+                DecisionKind.BLOCKED,
+            ),
+            "stale rules": (
+                replace(snapshot, rules=make_rules(OLD_MAIN)),
+                DecisionKind.RESCAN,
+            ),
+            "unknown workflow run": (
+                replace(
+                    snapshot,
+                    active_runs=(
+                        ActiveRun(
+                            700,
+                            RunEvent.PUSH,
+                            RunStatus.UNKNOWN,
+                            HEAD,
+                        ),
+                    ),
+                ),
+                DecisionKind.BLOCKED,
+            ),
+        }
+        for publication in (
+            PublicationStatus.PAUSED,
+            PublicationStatus.CORRUPT,
+            PublicationStatus.NEEDS_SOURCE_FIX,
+            PublicationStatus.UNKNOWN,
+        ):
+            cases[f"{publication.value} publication"] = (
+                replace(
+                    snapshot,
+                    pending_attempt=PendingAttempt(PLAN, OLD_MAIN, publication),
+                ),
+                DecisionKind.BLOCKED,
+            )
+
+        stale_action = DecisionKind.CLOSE_STALE if linked else DecisionKind.LINK_STALE
+        for label, (unsafe_snapshot, expected) in cases.items():
+            with self.subTest(linked=linked, condition=label):
+                decision = decide(unsafe_snapshot)
+                self.assertEqual(decision.kind, expected)
+                self.assertNotEqual(decision.kind, stale_action)
+
+    def test_stale_link_waits_for_write_preconditions(self):
+        self.assert_stale_action_requires_write_preconditions(linked=False)
+
+    def test_stale_close_waits_for_write_preconditions(self):
+        self.assert_stale_action_requires_write_preconditions(linked=True)
+
     def test_later_main_commit_requires_rescan_before_retry(self):
         decision = decide(
             make_snapshot(

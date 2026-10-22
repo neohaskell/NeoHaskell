@@ -447,6 +447,23 @@ def _check_decision(
     return None
 
 
+def _branch_rules_decision(snapshot: SweepSnapshot) -> Decision | None:
+    rules = snapshot.rules
+    if rules is None or not rules.complete or not rules.workflow_mapping_complete:
+        return _decision(
+            snapshot,
+            DecisionKind.BLOCKED,
+            "Live effective branch rules or required-workflow mapping are unavailable or incomplete",
+        )
+    if rules.observed_main_sha != snapshot.main_sha:
+        return _decision(
+            snapshot,
+            DecisionKind.RESCAN,
+            "Branch rules were not read with the current main snapshot",
+        )
+    return None
+
+
 def decide(snapshot: SweepSnapshot) -> Decision:
     if not snapshot.inventory_complete:
         return _decision(
@@ -471,8 +488,9 @@ def decide(snapshot: SweepSnapshot) -> Decision:
             "Main changed during selection; refresh the inventory and all affected evidence",
         )
 
-    if snapshot.verified_merge is not None:
-        merged = snapshot.verified_merge
+    stale = []
+    merged = snapshot.verified_merge
+    if merged is not None:
         if (
             merged.ownership is not Ownership.VERIFIED
             or merged.disposition is not Disposition.MERGED
@@ -512,28 +530,11 @@ def decide(snapshot: SweepSnapshot) -> Decision:
             ),
             key=lambda record: record.key,
         )
-        if stale:
-            if main_changed:
-                return _decision(
-                    snapshot,
-                    DecisionKind.RESCAN,
-                    "Main changed before stale PR closure; refresh the inventory",
-                )
-            record = stale[0]
-            if not record.replacement_link_recorded:
-                return _decision(
-                    snapshot,
-                    DecisionKind.LINK_STALE,
-                    "Link this proven stale preparation to the verified replacement before closing it",
-                    record,
-                    (("replacement", merged.url),),
-                )
+        if stale and main_changed:
             return _decision(
                 snapshot,
-                DecisionKind.CLOSE_STALE,
-                "Close one independently proven stale preparation after replacement merge readback",
-                record,
-                (("replacement", merged.url),),
+                DecisionKind.RESCAN,
+                "Main changed before stale PR closure; refresh the inventory",
             )
 
     if any(run.status is RunStatus.UNKNOWN for run in snapshot.active_runs):
@@ -543,21 +544,44 @@ def decide(snapshot: SweepSnapshot) -> Decision:
             "A relevant workflow run has unknown status; reconcile it before acting",
         )
 
-    if snapshot.pending_attempt is not None:
+    if snapshot.pending_attempt is not None and snapshot.pending_attempt.publication in {
+        PublicationStatus.PAUSED,
+        PublicationStatus.CORRUPT,
+        PublicationStatus.NEEDS_SOURCE_FIX,
+        PublicationStatus.UNKNOWN,
+    }:
         attempt = snapshot.pending_attempt
-        if attempt.publication in {
-            PublicationStatus.PAUSED,
-            PublicationStatus.CORRUPT,
-            PublicationStatus.NEEDS_SOURCE_FIX,
-            PublicationStatus.UNKNOWN,
-        }:
+        return _decision(
+            snapshot,
+            DecisionKind.BLOCKED,
+            "The frozen release attempt needs recovery or investigation",
+            details=(("attempt", attempt.plan_id), ("state", attempt.publication.value)),
+            plan_id=attempt.plan_id,
+        )
+
+    if stale and merged is not None:
+        rules_decision = _branch_rules_decision(snapshot)
+        if rules_decision is not None:
+            return rules_decision
+        record = stale[0]
+        if not record.replacement_link_recorded:
             return _decision(
                 snapshot,
-                DecisionKind.BLOCKED,
-                "The frozen release attempt needs recovery or investigation",
-                details=(("attempt", attempt.plan_id), ("state", attempt.publication.value)),
-                plan_id=attempt.plan_id,
+                DecisionKind.LINK_STALE,
+                "Link this proven stale preparation to the verified replacement before closing it",
+                record,
+                (("replacement", merged.url),),
             )
+        return _decision(
+            snapshot,
+            DecisionKind.CLOSE_STALE,
+            "Close one independently proven stale preparation after replacement merge readback",
+            record,
+            (("replacement", merged.url),),
+        )
+
+    if snapshot.pending_attempt is not None:
+        attempt = snapshot.pending_attempt
         active = _active_runs(snapshot)
         if active:
             return _decision(
@@ -614,19 +638,10 @@ def decide(snapshot: SweepSnapshot) -> Decision:
             plan_id=attempt.plan_id,
         )
 
+    rules_decision = _branch_rules_decision(snapshot)
+    if rules_decision is not None:
+        return rules_decision
     rules = snapshot.rules
-    if rules is None or not rules.complete or not rules.workflow_mapping_complete:
-        return _decision(
-            snapshot,
-            DecisionKind.BLOCKED,
-            "Live effective branch rules or required-workflow mapping are unavailable or incomplete",
-        )
-    if rules.observed_main_sha != snapshot.main_sha:
-        return _decision(
-            snapshot,
-            DecisionKind.RESCAN,
-            "Branch rules were not read with the current main snapshot",
-        )
 
     suspicious = sorted(
         (
