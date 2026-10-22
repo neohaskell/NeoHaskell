@@ -14,4 +14,10 @@ Use the owned scripts for broad runtime checks. They enter the shared project to
 
 These commands exercise the local development build. Use optimized-build, generated-consumer, cross-platform, or CI checks when those contracts matter. The owned scripts run no lint or formatter checks.
 
+Framework export, TH marker and generated-API changes also require
+[NeoHaskell consumer verification](../neohaskell-consumer-verification/SKILL.md).
+Review its starter and testbed migration requirements and run the generated-project
+contract alongside the affected testbed checks. A passing framework suite does
+not replace those consumer checks.
+
 For workflow path selection and draft full-CI opt-in, see [CI verification](references/ci-verification.md).

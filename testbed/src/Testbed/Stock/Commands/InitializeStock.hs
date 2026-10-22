@@ -6,7 +6,6 @@ module Testbed.Stock.Commands.InitializeStock (
 
 import Core
 import Decider qualified
-import Json qualified
 import Service.Auth (RequestContext)
 import Service.Command.Core (TransportsOf)
 import Service.CommandExecutor.TH (command)
@@ -18,10 +17,6 @@ data InitializeStock = InitializeStock
   { productId :: Uuid
   , available :: Int
   }
-  deriving (Generic, Typeable, Show)
-
-
-instance Json.FromJSON InitializeStock
 
 
 getEntityId :: InitializeStock -> Maybe Uuid

@@ -192,6 +192,67 @@ jobs:
           name: release-${{ matrix.attempt }}-consumer
           path: artifacts/consumer.json
           if-no-files-found: error
+  platform_cache:
+    needs: [prepare, platform_native, platform_consumer]
+    if: github.ref == 'refs/heads/main' && needs.prepare.outputs.platform_has_work == 'true'
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.prepare.outputs.platform_items) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    steps:
+      - id: cache-auth
+        if: matrix.reuse != true
+        name: Check optional cache credentials
+        env:
+          CACHE_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
+        run: |
+          if [ -n "$CACHE_TOKEN" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "No CACHIX_AUTH_TOKEN configured; skipping optional cache population."
+          fi
+      - uses: actions/checkout@v7.0.1
+        if: steps.cache-auth.outputs.enabled == 'true'
+        with:
+          ref: ${{ needs.prepare.outputs.tooling_revision }}
+          path: .agents-state/release-tooling
+          persist-credentials: false
+      - uses: DeterminateSystems/determinate-nix-action@v3.23.3
+        if: steps.cache-auth.outputs.enabled == 'true'
+        with:
+          extra-conf: |
+            accept-flake-config = true
+      - uses: DeterminateSystems/magic-nix-cache-action@v14
+        if: steps.cache-auth.outputs.enabled == 'true'
+      - uses: actions/download-artifact@v8
+        if: steps.cache-auth.outputs.enabled == 'true'
+        with:
+          name: release-${{ matrix.attempt }}-x86_64-unknown-linux-gnu
+          path: artifacts
+      - name: Make the seeded release binary executable
+        if: steps.cache-auth.outputs.enabled == 'true'
+        run: chmod +x artifacts/neo-x86_64-unknown-linux-gnu
+      - id: push-cache
+        if: steps.cache-auth.outputs.enabled == 'true'
+        continue-on-error: true
+        uses: cachix/cachix-action@v17
+        with:
+          name: neohaskell
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+      - name: Prime the default closure from the seeded release binary
+        if: steps.cache-auth.outputs.enabled == 'true' && steps.push-cache.outcome == 'success'
+        env:
+          NEOHASKELL_ROOT: ${{ github.workspace }}/.agents-state/release-tooling
+          NEO_BIN: ${{ github.workspace }}/artifacts/neo-x86_64-unknown-linux-gnu
+          PRIME_EXPECTED_REVISION: ${{ matrix.revision }}
+          PRIME_BUILD_TIMEOUT: "5400"
+          PRIME_TEST_TIMEOUT: "2400"
+          PRIME_RUN_TIMEOUT: "30"
+        run: ./.agents-state/release-tooling/.agents/skills/neohaskell-release/scripts/cache-prime
   platform_publish:
     needs: [prepare, platform_native, platform_consumer]
     if: github.ref == 'refs/heads/main' && needs.prepare.outputs.platform_has_work == 'true'
