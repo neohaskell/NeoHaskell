@@ -98,7 +98,6 @@ toOpenApiSchema schema = case schema of
   
   SEnum variants -> do
     let enumValues = variants
-          |> Array.map (\name -> Text.toLower name)
           |> Array.toLinkedList
     GhcMonoid.mempty
       |> Lens.set OpenApiLens.type_ (Just OpenApi.OpenApiString)
