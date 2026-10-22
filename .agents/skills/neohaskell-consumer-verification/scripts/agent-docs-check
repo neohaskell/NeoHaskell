@@ -1,0 +1,250 @@
+#!/usr/bin/env python3
+"""Validate the source-owned agent corpus and compile its runnable examples."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+from urllib.parse import unquote
+
+
+REQUIRED_CAPABILITIES = {
+    "project-and-cli",
+    "syntax-and-core",
+    "events-and-entities",
+    "commands",
+    "queries",
+    "application-configuration",
+    "transports",
+    "storage",
+    "authorization",
+    "testing",
+    "template-haskell",
+    "generic-side-effect-integration",
+    "external-oauth2-account",
+}
+PAGE_NAME = re.compile(r"[a-z0-9][a-z0-9/-]*\.md\Z")
+LINK = re.compile(r"(?<!!)\[[^\]]+\]\(([^)]+)\)")
+HEADING = re.compile(r"^#{1,6}\s+(.+?)\s*#*\s*$")
+FENCE = re.compile(r"^\s*```([^\r\n]*)$")
+
+
+class CorpusError(Exception):
+    pass
+
+
+def load_manifest(root: Path) -> dict:
+    path = root / "docs/agent/manifest.json"
+    try:
+        manifest = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as error:
+        raise CorpusError(f"{path}: cannot read a valid JSON manifest: {error}") from error
+    if not isinstance(manifest, dict) or manifest.get("schema") != 1:
+        raise CorpusError(f"{path}: expected schema 1")
+    pages = manifest.get("pages")
+    capabilities = manifest.get("capabilities")
+    if not isinstance(pages, list) or not pages or not isinstance(capabilities, list):
+        raise CorpusError(f"{path}: pages and capabilities must be nonempty arrays")
+    if "index.md" not in pages or len(pages) != len(set(pages)):
+        raise CorpusError(f"{path}: pages must contain index.md once and have no duplicates")
+    for page in pages:
+        if not isinstance(page, str) or not PAGE_NAME.fullmatch(page) or ".." in Path(page).parts:
+            raise CorpusError(f"{path}: invalid page path {page!r}")
+    return manifest
+
+
+def heading_ids(markdown: str) -> set[str]:
+    ids: set[str] = set()
+    counts: dict[str, int] = {}
+    for line in markdown.splitlines():
+        match = HEADING.match(line)
+        if match is None:
+            continue
+        title = match.group(1).lower()
+        slug = re.sub(r"[^\w -]", "", title).replace(" ", "-")
+        number = counts.get(slug, 0)
+        counts[slug] = number + 1
+        ids.add(f"{slug}-{number}" if number else slug)
+    return ids
+
+
+def page_links(page: str, markdown: str, pages: set[str]) -> set[str]:
+    linked: set[str] = set()
+    for raw_target in LINK.findall(markdown):
+        target = unquote(raw_target.strip().split(maxsplit=1)[0])
+        if "://" in target or target.startswith(("mailto:", "/", "~")):
+            raise CorpusError(f"docs/agent/{page}: external or absolute link {raw_target!r}")
+        relative, separator, fragment = target.partition("#")
+        if relative:
+            target_path = Path(page).parent.joinpath(relative)
+            if ".." in target_path.parts or not PAGE_NAME.fullmatch(target_path.as_posix()):
+                raise CorpusError(f"docs/agent/{page}: link leaves the corpus: {raw_target!r}")
+            target_page = target_path.as_posix()
+        else:
+            target_page = page
+        if target_page not in pages:
+            raise CorpusError(f"docs/agent/{page}: missing linked page {target_page!r}")
+        if separator and not fragment:
+            raise CorpusError(f"docs/agent/{page}: empty heading anchor in {raw_target!r}")
+        linked.add(target_page)
+    return linked
+
+
+def fence_counts(page: str, markdown: str) -> tuple[int, int]:
+    runnable = ignored = 0
+    opened: tuple[int, str] | None = None
+    for number, line in enumerate(markdown.splitlines(), start=1):
+        match = FENCE.match(line)
+        if match is None:
+            continue
+        label = match.group(1).strip()
+        if opened is None:
+            opened = (number, label)
+            if label == "haskell" or label == "haskell top":
+                runnable += 1
+            elif label == "haskell ignore":
+                ignored += 1
+            elif label.startswith("haskell"):
+                raise CorpusError(f"docs/agent/{page}:{number}: unsupported Haskell fence label {label!r}")
+        else:
+            if label:
+                raise CorpusError(f"docs/agent/{page}:{number}: closing fence has a label")
+            opened = None
+    if opened is not None:
+        raise CorpusError(f"docs/agent/{page}:{opened[0]}: unclosed fence")
+    return runnable, ignored
+
+
+def validate(root: Path) -> tuple[list[str], list[str]]:
+    manifest = load_manifest(root)
+    corpus = root / "docs/agent"
+    pages = manifest["pages"]
+    page_set = set(pages)
+    actual_pages = {path.relative_to(corpus).as_posix() for path in corpus.rglob("*.md")}
+    if actual_pages != page_set:
+        missing = sorted(page_set - actual_pages)
+        unlisted = sorted(actual_pages - page_set)
+        raise CorpusError(f"docs/agent/manifest.json: missing pages {missing}; unlisted pages {unlisted}")
+
+    runnable_pages: list[str] = []
+    index_links: set[str] = set()
+    for page in pages:
+        path = corpus / page
+        if path.is_symlink() or not path.is_file():
+            raise CorpusError(f"{path}: expected a regular page")
+        markdown = path.read_text(encoding="utf-8")
+        if not markdown.startswith("# "):
+            raise CorpusError(f"{path}: expected one top-level heading")
+        linked = page_links(page, markdown, page_set)
+        for raw_target in LINK.findall(markdown):
+            target = unquote(raw_target.strip().split(maxsplit=1)[0])
+            relative, separator, fragment = target.partition("#")
+            if separator:
+                target_page = Path(page).parent.joinpath(relative).as_posix() if relative else page
+                target_text = (corpus / target_page).read_text(encoding="utf-8")
+                if fragment not in heading_ids(target_text):
+                    raise CorpusError(f"{path}: broken heading anchor {raw_target!r}")
+        runnable, _ = fence_counts(page, markdown)
+        if runnable:
+            runnable_pages.append(page)
+        if page == "index.md":
+            index_links = linked
+    if not runnable_pages:
+        raise CorpusError("docs/agent/: at least one runnable Haskell fence is required")
+    if index_links != page_set - {"index.md"}:
+        raise CorpusError(
+            f"docs/agent/index.md: link each corpus page once; missing {sorted(page_set - index_links - {'index.md'})}"
+        )
+
+    capabilities = manifest["capabilities"]
+    names: set[str] = set()
+    scenarios: list[str] = []
+    for capability in capabilities:
+        if not isinstance(capability, dict):
+            raise CorpusError("docs/agent/manifest.json: each capability must be an object")
+        name = capability.get("name")
+        page = capability.get("page")
+        source = capability.get("source")
+        scenario = capability.get("scenario")
+        if not all(isinstance(value, str) for value in (name, page, source, scenario)):
+            raise CorpusError(f"docs/agent/manifest.json: incomplete capability {capability!r}")
+        if name in names or page not in page_set or page == "index.md":
+            raise CorpusError(f"docs/agent/manifest.json: duplicate name or invalid page for {name!r}")
+        names.add(name)
+        for field, value in (("source", source), ("scenario", scenario)):
+            path = root / value
+            if Path(value).is_absolute() or ".." in Path(value).parts or not path.is_file():
+                raise CorpusError(f"docs/agent/manifest.json: {name} has missing or unsafe {field} {value!r}")
+        if not scenario.startswith("testbed/tests/") or not scenario.endswith(".hurl"):
+            raise CorpusError(f"docs/agent/manifest.json: {name} needs a maintained Hurl testbed scenario")
+        scenarios.append(scenario)
+    if names != REQUIRED_CAPABILITIES:
+        raise CorpusError(
+            f"docs/agent/manifest.json: missing capabilities {sorted(REQUIRED_CAPABILITIES - names)}; "
+            f"unknown capabilities {sorted(names - REQUIRED_CAPABILITIES)}"
+        )
+    return runnable_pages, scenarios
+
+
+def compile_pages(root: Path, runnable_pages: list[str]) -> None:
+    if not os.environ.get("NEOHASKELL_SHELL_FP"):
+        raise CorpusError("run this gate through nix develop --command from the repository root")
+    build = subprocess.run(
+        ["cabal", "build", "nhcore", "nhintegrations", "--disable-documentation"],
+        cwd=root,
+        text=True,
+        capture_output=True,
+        timeout=1200,
+    )
+    if build.returncode:
+        raise CorpusError(f"cabal build failed:\n{build.stdout[-3000:]}\n{build.stderr[-3000:]}")
+    with tempfile.TemporaryDirectory(prefix="agent-docs-") as temporary:
+        temp = Path(temporary)
+        for page in runnable_pages:
+            source = root / "docs/agent" / page
+            literate = temp / (Path(page).stem + ".lhs")
+            literate.symlink_to(source)
+            command = [
+                "cabal", "exec", "--", "ghc", "-fno-code", "-fforce-recomp", "-v0",
+                "-pgmL", "markdown-unlit", "-package", "nhcore",
+                "-package", "nhintegrations", str(literate),
+            ]
+            result = subprocess.run(command, cwd=root, text=True, capture_output=True, timeout=300)
+            if result.returncode:
+                raise CorpusError(
+                    f"docs/agent/{page}: runnable Haskell fences failed to compile:\n"
+                    f"{result.stdout[-3000:]}\n{result.stderr[-3000:]}"
+                )
+            print(f"agent docs: compiled {page}")
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--root", type=Path, default=Path.cwd())
+    parser.add_argument("--structure-only", action="store_true")
+    arguments = parser.parse_args()
+    root = arguments.root.resolve()
+    try:
+        runnable_pages, scenarios = validate(root)
+        if not arguments.structure_only:
+            compile_pages(root, runnable_pages)
+    except (CorpusError, OSError, subprocess.TimeoutExpired) as error:
+        print(f"agent docs: FAIL: {error}", file=sys.stderr)
+        return 1
+    print(
+        f"agent docs: PASS: {len(REQUIRED_CAPABILITIES)} capabilities, "
+        f"{len(scenarios)} scenario mappings, {len(runnable_pages)} compiled page(s)"
+        if not arguments.structure_only
+        else f"agent docs: PASS: structure, {len(REQUIRED_CAPABILITIES)} capabilities"
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

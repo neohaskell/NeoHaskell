@@ -1,0 +1,99 @@
+{
+  "schema": 1,
+  "pages": [
+    "index.md",
+    "project-and-cli.md",
+    "syntax-and-core.md",
+    "events-and-entities.md",
+    "commands.md",
+    "queries.md",
+    "configuration-and-wiring.md",
+    "transports.md",
+    "storage.md",
+    "authorization.md",
+    "testing.md",
+    "template-haskell-order.md",
+    "advanced-side-effects.md",
+    "advanced-oauth2.md"
+  ],
+  "capabilities": [
+    {
+      "name": "project-and-cli",
+      "page": "project-and-cli.md",
+      "source": "neo/src/reconcile/mod.rs",
+      "scenario": "testbed/tests/scenarios/cold-start-readiness.hurl"
+    },
+    {
+      "name": "syntax-and-core",
+      "page": "syntax-and-core.md",
+      "source": "core/core/Core.hs",
+      "scenario": "testbed/tests/scenarios/stock-reservation.hurl"
+    },
+    {
+      "name": "events-and-entities",
+      "page": "events-and-entities.md",
+      "source": "core/service/Service/Entity/Core.hs",
+      "scenario": "testbed/tests/scenarios/stock-reservation.hurl"
+    },
+    {
+      "name": "commands",
+      "page": "commands.md",
+      "source": "core/service/Service/Command/Core.hs",
+      "scenario": "testbed/tests/commands/register-cart-by-key.hurl"
+    },
+    {
+      "name": "queries",
+      "page": "queries.md",
+      "source": "core/service/Service/Query/Core.hs",
+      "scenario": "testbed/tests/queries/cart-summary-after-create.hurl"
+    },
+    {
+      "name": "application-configuration",
+      "page": "configuration-and-wiring.md",
+      "source": "core/service/Service/Application.hs",
+      "scenario": "testbed/tests/scenarios/cold-start-readiness.hurl"
+    },
+    {
+      "name": "transports",
+      "page": "transports.md",
+      "source": "core/service/Service/Transport/Web.hs",
+      "scenario": "testbed/tests/integrations/openapi.hurl"
+    },
+    {
+      "name": "storage",
+      "page": "storage.md",
+      "source": "core/service/Service/EventStore/Core.hs",
+      "scenario": "testbed/tests/scenarios/query-idempotency.hurl"
+    },
+    {
+      "name": "authorization",
+      "page": "authorization.md",
+      "source": "core/auth/Auth/Discovery.hs",
+      "scenario": "testbed/tests/integrations/oauth2-account-connection.hurl"
+    },
+    {
+      "name": "testing",
+      "page": "testing.md",
+      "source": "neo/src/commands/test.rs",
+      "scenario": "testbed/tests/scenarios/query-idempotency.hurl"
+    },
+    {
+      "name": "template-haskell",
+      "page": "template-haskell-order.md",
+      "source": "core/service/Service/Entity/TH.hs",
+      "scenario": "testbed/tests/scenarios/stock-reservation.hurl"
+    },
+    {
+      "name": "generic-side-effect-integration",
+      "page": "advanced-side-effects.md",
+      "source": "integrations/Integration/Http/Request.hs",
+      "scenario": "testbed/tests/integrations/generic-http-side-effect.hurl"
+    },
+    {
+      "name": "external-oauth2-account",
+      "page": "advanced-oauth2.md",
+      "source": "core/auth/Auth/OAuth2/Provider.hs",
+      "scenario": "testbed/tests/integrations/oauth2-account-connection.hurl"
+    }
+  ]
+}

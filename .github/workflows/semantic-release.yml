@@ -214,6 +214,9 @@ jobs:
           ref: ${{ needs.prepare.outputs.tooling_revision }}
           path: .agents-state/release-tooling
           persist-credentials: false
+      - uses: DeterminateSystems/determinate-nix-action@v3.23.3
+      - name: Validate exact source agent guidance before publication
+        run: nix develop --command .agents/skills/neohaskell-consumer-verification/scripts/agent-docs-check
       - uses: actions/download-artifact@v8
         if: matrix.reuse != true
         with:

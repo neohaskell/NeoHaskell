@@ -77,3 +77,21 @@ that rebuild; it does not replace frontend behavior tests.
 The CI workflow runs both owner self-tests and the applicable full check. The
 generated-project contract is a separate blocking gate for source changes that
 can affect the starter or compiled application.
+
+## Source-owned agent guidance
+
+Run the corpus gate from the repository root inside the pinned Nix shell:
+
+```sh
+nix develop --command .agents/skills/neohaskell-consumer-verification/scripts/agent-docs-check
+```
+
+The gate validates `docs/agent/manifest.json` against the complete page set,
+local links, and a source file and maintained Hurl scenario for each required
+capability. It compiles every runnable Haskell fence with `markdown-unlit`
+against the checkout's `nhcore` and `nhintegrations` packages. Use `haskell
+ignore` only for fragments that need surrounding application definitions.
+
+`--structure-only` provides a quick local check. It does not prove the
+examples compile. The full gate runs in CI and before Neo publication,
+including artifact reuse.

@@ -73,6 +73,8 @@ jobs:
             extra-trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= neohaskell.cachix.org-1:mo2cLaGbwqbrxs9xhqKK8jeNsn3osi7t6XoAmxSZssc=
       - name: Validate skill metadata and owned links
         run: python3 .agents/skills/validate-skills/scripts/check.py --repo .
+      - name: Validate source-owned agent guidance
+        run: nix develop --command .agents/skills/neohaskell-consumer-verification/scripts/agent-docs-check
       - name: Run owned Python fixtures
         run: |
           set -euo pipefail
