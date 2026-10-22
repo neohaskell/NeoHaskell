@@ -105,7 +105,7 @@ runDecision ctx = go
     Log.debug [fmt|Decision: accepted with #{toText eventCount} event(s)|] |> Task.ignoreError
     AcceptCommand s events |> Task.yield
   go (Reject reason) = do
-    Log.debug [fmt|Decision: rejected - #{reason}|] |> Task.ignoreError
+    Log.debug "Decision: rejected" |> Task.ignoreError
     RejectCommand reason |> Task.yield
 
 

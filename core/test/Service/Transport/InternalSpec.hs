@@ -4,6 +4,7 @@ import Array qualified
 import ConcurrentVar qualified
 import Core
 import Decider qualified
+import DateTime qualified
 import Integration qualified
 import Json qualified
 import Map qualified
@@ -17,12 +18,16 @@ import Service.Command.Core (Event (..), TransportsOf)
 import Service.CommandExecutor.TH (command)
 import Service.EntityFetcher.Core qualified as EntityFetcher
 import Service.Event.EntityName (EntityName (..))
+import Service.Event.EventMetadata (EventMetadata (..))
+import Service.Event.EventMetadata qualified as EventMetadata
+import Service.Event qualified as StoredEvent
 import Service.Event.StreamId qualified as StreamId
 import Service.EventStore.Core qualified as EventStore
 import Service.EventStore.InMemory qualified as InMemory
 import Service.Integration.Dispatcher qualified as Dispatcher
 import Service.Response (CommandResponse (..))
 import Service.Transport.Internal (InternalTransport (..))
+import Stream qualified
 import Task qualified
 import Test
 import Text qualified
@@ -183,7 +188,7 @@ spec = do
         recordId <- Uuid.generate
         let payload = Integration.makeCommandPayload CreateInternalRecord {recordId = recordId}
 
-        Dispatcher.dispatchCommand dispatchMap payload
+        Dispatcher.dispatchCommandWithSource dispatchMap Nothing payload
 
         let typedEventStore = rawEventStore |> EventStore.castEventStore @InternalEvent
         fetcher <-
@@ -201,6 +206,118 @@ spec = do
             fetched.state.entityId |> shouldBe recordId
             fetched.state.wasCreated |> shouldBe True
 
+      it "persists source attribution through an internal command dispatch" \_ -> do
+        rawEventStore <- InMemory.new |> Task.mapError toText
+        let runner =
+              Service.new
+                |> Service.command @CreateInternalRecord
+                |> Service.toServiceRunner
+
+        (_, _, dispatchMap) <- runner.getEndpointsByTransport rawEventStore Map.empty
+
+        sourceMetadataBase <- EventMetadata.new
+        let sourceMetadata =
+              sourceMetadataBase
+                { relatedUserSub = Just "source-actor",
+                  correlationId = Just "root-chain",
+                  causationId = Just "earlier-event",
+                  createdAt = DateTime.fromEpochSeconds 0,
+                  localPosition = Just (StoredEvent.StreamPosition 18),
+                  globalPosition = Just (StoredEvent.StreamPosition 74)
+                }
+        recordId <- Uuid.generate
+        let payload = Integration.makeCommandPayload CreateInternalRecord {recordId = recordId}
+
+        Dispatcher.dispatchCommandWithSource dispatchMap (Just sourceMetadata) payload
+
+        let typedEventStore = rawEventStore |> EventStore.castEventStore @InternalEvent
+        messages <- typedEventStore.readAllStreamEvents (EntityName "InternalEntity") (StreamId.toStreamId recordId) |> Task.mapError toText
+        events <- messages |> Stream.toArray |> Task.map EventStore.collectStreamEvents
+        case events |> Array.last of
+          Nothing -> fail "Expected a saved callback event"
+          Just saved -> do
+            let savedMetadata = case saved of
+                  StoredEvent.Event {metadata = metadata} -> metadata
+            savedMetadata.relatedUserSub |> shouldBe (Just "source-actor")
+            savedMetadata.correlationId |> shouldBe (Just "root-chain")
+            savedMetadata.causationId |> shouldBe (Just (Uuid.toText sourceMetadata.eventId))
+            savedMetadata.eventId |> shouldNotBe sourceMetadata.eventId
+            savedMetadata.createdAt |> shouldNotBe sourceMetadata.createdAt
+            savedMetadata.localPosition |> shouldBe (Just (StoredEvent.StreamPosition 0))
+            savedMetadata.globalPosition |> shouldSatisfy (\position -> case position of { Just _ -> True; Nothing -> False })
+
+      it "uses the source event id when callback correlation is absent" \_ -> do
+        rawEventStore <- InMemory.new |> Task.mapError toText
+        let runner =
+              Service.new
+                |> Service.command @CreateInternalRecord
+                |> Service.toServiceRunner
+
+        (_, _, dispatchMap) <- runner.getEndpointsByTransport rawEventStore Map.empty
+
+        sourceMetadataBase <- EventMetadata.new
+        let sourceMetadata =
+              sourceMetadataBase
+                { relatedUserSub = Just "source-actor",
+                  correlationId = Nothing
+                }
+        recordId <- Uuid.generate
+        let payload = Integration.makeCommandPayload CreateInternalRecord {recordId = recordId}
+
+        Dispatcher.dispatchCommandWithSource dispatchMap (Just sourceMetadata) payload
+
+        let typedEventStore = rawEventStore |> EventStore.castEventStore @InternalEvent
+        messages <- typedEventStore.readAllStreamEvents (EntityName "InternalEntity") (StreamId.toStreamId recordId) |> Task.mapError toText
+        events <- messages |> Stream.toArray |> Task.map EventStore.collectStreamEvents
+        case events |> Array.last of
+          Nothing -> fail "Expected a saved callback event"
+          Just saved -> do
+            let savedMetadata = case saved of
+                  StoredEvent.Event {metadata = metadata} -> metadata
+            savedMetadata.relatedUserSub |> shouldBe (Just "source-actor")
+            savedMetadata.correlationId |> shouldBe (Just (Uuid.toText sourceMetadata.eventId))
+            savedMetadata.causationId |> shouldBe (Just (Uuid.toText sourceMetadata.eventId))
+
+      it "keeps the original correlation and immediate cause through two callback hops" \_ -> do
+        rawEventStore <- InMemory.new |> Task.mapError toText
+        let runner =
+              Service.new
+                |> Service.command @CreateInternalRecord
+                |> Service.toServiceRunner
+        (_, _, dispatchMap) <- runner.getEndpointsByTransport rawEventStore Map.empty
+        sourceMetadataBase <- EventMetadata.new
+        let sourceMetadata =
+              sourceMetadataBase
+                { relatedUserSub = Just "chain-actor",
+                  correlationId = Just "opaque-root-correlation"
+                }
+        firstId <- Uuid.generate
+        Dispatcher.dispatchCommandWithSource
+          dispatchMap
+          (Just sourceMetadata)
+          (Integration.makeCommandPayload CreateInternalRecord {recordId = firstId})
+        let typedEventStore = rawEventStore |> EventStore.castEventStore @InternalEvent
+        firstMessages <- typedEventStore.readAllStreamEvents (EntityName "InternalEntity") (StreamId.toStreamId firstId) |> Task.mapError toText
+        firstEvents <- firstMessages |> Stream.toArray |> Task.map EventStore.collectStreamEvents
+        firstMetadata <- case Array.last firstEvents of
+          Just (StoredEvent.Event {metadata}) -> Task.yield metadata
+          Nothing -> Task.throw "Expected first callback event"
+        secondId <- Uuid.generate
+        Dispatcher.dispatchCommandWithSource
+          dispatchMap
+          (Just firstMetadata)
+          (Integration.makeCommandPayload CreateInternalRecord {recordId = secondId})
+        secondMessages <- typedEventStore.readAllStreamEvents (EntityName "InternalEntity") (StreamId.toStreamId secondId) |> Task.mapError toText
+        secondEvents <- secondMessages |> Stream.toArray |> Task.map EventStore.collectStreamEvents
+        case Array.last secondEvents of
+          Just (StoredEvent.Event {metadata}) -> do
+            metadata.relatedUserSub |> shouldBe (Just "chain-actor")
+            metadata.correlationId |> shouldBe (Just "opaque-root-correlation")
+            metadata.causationId |> shouldBe (Just (Uuid.toText firstMetadata.eventId))
+            metadata.causationId |> shouldNotBe (Just (Uuid.toText sourceMetadata.eventId))
+            metadata.eventId |> shouldNotBe firstMetadata.eventId
+          Nothing -> fail "Expected second callback event"
+
       it "returns Failed response for invalid JSON input" \_ -> do
         rawEventStore <- InMemory.new |> Task.mapError toText
         let runner =
@@ -217,7 +334,7 @@ spec = do
             let invalidBody = "not-valid-json" |> Text.toBytes
             resultVar <- ConcurrentVar.new
 
-            handler requestContext invalidBody (\(response, _responseBytes) ->
+            handler Nothing requestContext invalidBody (\(response, _responseBytes) ->
               ConcurrentVar.set response resultVar
               )
 
@@ -242,7 +359,7 @@ spec = do
             let emptyBody = "" |> Text.toBytes
             resultVar <- ConcurrentVar.new
 
-            handler requestContext emptyBody (\(response, _responseBytes) ->
+            handler Nothing requestContext emptyBody (\(response, _responseBytes) ->
               ConcurrentVar.set response resultVar
               )
 
@@ -267,7 +384,7 @@ spec = do
             let invalidBody = "{}" |> Text.toBytes
             resultVar <- ConcurrentVar.new
 
-            handler requestContext invalidBody (\(response, _responseBytes) ->
+            handler Nothing requestContext invalidBody (\(response, _responseBytes) ->
               ConcurrentVar.set response resultVar
               )
 
@@ -296,7 +413,7 @@ spec = do
             let body = Json.encodeText cmd |> Text.toBytes
             resultVar <- ConcurrentVar.new
 
-            handler requestContext body (\(response, _responseBytes) ->
+            handler Nothing requestContext body (\(response, _responseBytes) ->
               ConcurrentVar.set response resultVar
               )
 

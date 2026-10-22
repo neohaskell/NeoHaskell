@@ -44,7 +44,7 @@ import Service.EntityFetcher.Core qualified as EntityFetcher
 import Service.Integration.Dispatcher qualified as Dispatcher
 import Service.Integration.Types (OutboundRunner (..), OutboundLifecycleRunner (..), WorkerState (..))
 import Service.OutboundIntegration.Core (OutboundIntegration (..))
-import Service.Transport (EndpointHandler)
+import Service.Transport (DispatchHandler)
 import Task (Task)
 import Task qualified
 import Text (Text)
@@ -224,7 +224,7 @@ startIntegrationSubscriber ::
   EventStore Json.Value ->
   Array OutboundRunner ->
   Array OutboundLifecycleRunner ->
-  Map Text EndpointHandler ->
+  Map Text DispatchHandler ->
   Integration.ActionContext ->
   Task Text (Maybe Dispatcher.IntegrationDispatcher)
 startIntegrationSubscriber maybeDispatcherConfig eventStore runners lifecycleRunners commandEndpoints ctx = do
@@ -235,7 +235,7 @@ startIntegrationSubscriber maybeDispatcherConfig eventStore runners lifecycleRun
     then Task.yield Nothing
     else do
       let config = Maybe.withDefault Dispatcher.defaultConfig maybeDispatcherConfig
-      dispatcher <- Dispatcher.newWithLifecycleConfig config eventStore runners lifecycleRunners commandEndpoints ctx
+      dispatcher <- Dispatcher.newWithLifecycleConfigWithSource config eventStore runners lifecycleRunners commandEndpoints ctx
 
       let processIntegrationEvent :: Event Json.Value -> Task Text Unit
           processIntegrationEvent rawEvent = do
@@ -262,7 +262,7 @@ startIntegrationSubscriber maybeDispatcherConfig eventStore runners lifecycleRun
 -- Returns the spawned AsyncTasks so they can be cancelled on shutdown.
 startInboundWorkers ::
   Array Integration.Inbound ->
-  Map Text EndpointHandler ->
+  Map Text DispatchHandler ->
   Task Text (Array (AsyncTask Text Unit))
 startInboundWorkers inbounds commandEndpoints = do
   if Array.isEmpty inbounds
@@ -277,7 +277,7 @@ startInboundWorkers inbounds commandEndpoints = do
             let workerWithRestartLoop :: Int -> Task Text Unit
                 workerWithRestartLoop backoffMs = do
                   let emitCommand payload = do
-                        Dispatcher.dispatchCommand commandEndpoints payload
+                        Dispatcher.dispatchCommandWithSource commandEndpoints Nothing payload
                           |> Task.mapError (\err -> Integration.PermanentFailure err)
                   result <- Integration.runInbound inboundIntegration emitCommand
                     |> Task.mapError toText

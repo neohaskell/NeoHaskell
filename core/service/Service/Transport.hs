@@ -1,6 +1,7 @@
 module Service.Transport (
   Transport (..),
   EndpointHandler,
+  DispatchHandler,
   QueryEndpointHandler,
   Endpoints (..),
   EndpointSchema (..),
@@ -15,6 +16,7 @@ import Record qualified
 import Schema (Schema)
 import Service.Auth (RequestContext, UserClaims)
 import Service.Command.Core (Command, NameOf)
+import Service.Event.EventMetadata (EventMetadata)
 import Service.AccessControl (QueryEndpointError)
 import Service.Query.Pagination (QueryPageRequest)
 import Service.Response (CommandResponse)
@@ -28,6 +30,9 @@ import NeoQL (Expr)
 -- Takes RequestContext, request bytes, and a callback to send the response.
 -- The RequestContext provides authentication context for authorization decisions.
 type EndpointHandler = RequestContext -> Bytes -> ((CommandResponse, Bytes) -> Task Text Unit) -> Task Text Unit
+
+
+type DispatchHandler = Maybe EventMetadata -> EndpointHandler
 
 
 -- | Handler for a single query endpoint.

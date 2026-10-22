@@ -1,6 +1,9 @@
 module Main (main) where
 
 import Prelude (IO)
+import Control.Exception qualified as GhcException
+import Log qualified
+import Task qualified
 
 import Service.ApplicationSpec qualified
 import Service.CommandExecutor.THSpec qualified
@@ -49,15 +52,22 @@ import Service.Transport.Web.ReadinessRouteSpec qualified
 import Service.Command.AuthSpec qualified
 import Service.Command.CanAccessSpec qualified
 import Service.Transport.Web.CommandAuthSpec qualified
+import Service.Transport.Web.InvalidTokenSpec qualified
+import Service.Transport.Web.RequestBodyFailureSpec qualified
 import Service.CommandExecutor.AuditLoggingSpec qualified
 import Service.CommandExecutor.MetadataSpec qualified
+import Service.CommandExecutor.StorageMetadataSpec qualified
 import Service.QueryObjectStore.PostgresSpec qualified
 import Service.Query.Subscriber.ReadinessSpec qualified
 import Test.Hspec qualified as Hspec
 
 
 main :: IO ()
-main = Hspec.hspec do
+main = Hspec.hspec serviceSpecs `GhcException.finally` Task.runOrPanic Log.finish
+
+
+serviceSpecs :: Hspec.Spec
+serviceSpecs = do
   Hspec.describe "Service.Application" Service.ApplicationSpec.spec
   Hspec.describe "Service.CommandExecutor.TH" Service.CommandExecutor.THSpec.spec
   Hspec.describe "Service.CommandHandler" Service.CommandHandlerSpec.spec
@@ -105,7 +115,10 @@ main = Hspec.hspec do
   Hspec.describe "Service.Command.Auth" Service.Command.AuthSpec.spec
   Hspec.describe "Service.Command.CanAccess" Service.Command.CanAccessSpec.spec
   Hspec.describe "Service.Transport.Web.CommandAuth" Service.Transport.Web.CommandAuthSpec.spec
+  Hspec.describe "Service.Transport.Web.InvalidToken" Service.Transport.Web.InvalidTokenSpec.spec
+  Hspec.describe "Service.Transport.Web.RequestBodyFailure" Service.Transport.Web.RequestBodyFailureSpec.spec
   Hspec.describe "Service.CommandExecutor.AuditLogging" Service.CommandExecutor.AuditLoggingSpec.spec
   Hspec.describe "Service.CommandExecutor.Metadata" Service.CommandExecutor.MetadataSpec.spec
+  Hspec.describe "Service.CommandExecutor.StorageMetadata" Service.CommandExecutor.StorageMetadataSpec.spec
   Hspec.describe "Service.QueryObjectStore.Postgres" Service.QueryObjectStore.PostgresSpec.spec
   Hspec.describe "Service.Query.Subscriber.Readiness" Service.Query.Subscriber.ReadinessSpec.spec

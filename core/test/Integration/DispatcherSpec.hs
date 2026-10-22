@@ -4,6 +4,7 @@ module Integration.DispatcherSpec where
 
 import Array qualified
 import AsyncTask qualified
+import Channel qualified
 import Auth.SecretStore.InMemory qualified as InMemorySecretStore
 import ConcurrentVar qualified
 import ConcurrentMap qualified
@@ -23,10 +24,15 @@ import Service.Event.EntityName (EntityName (..))
 import Service.Event.EventMetadata (EventMetadata (..))
 import Service.Event.StreamId (StreamId)
 import Service.Event.StreamId qualified as StreamId
+import Service.EventStore.Core qualified as EventStore
 import Service.EventStore.InMemory qualified as InMemory
 import Service.Application.Integrations qualified as Integrations
 import Service.Integration.Dispatcher qualified as Dispatcher
 import Service.Integration.DispatchRegistry qualified as DispatchRegistry
+import Service qualified
+import Service.Transport (DispatchHandler, EndpointHandler)
+import Service.Transport.InternalSpec qualified as InternalCommand
+import Stream qualified
 import Task qualified
 import Test
 import Text qualified
@@ -82,6 +88,7 @@ makeTestEventForEntity entityTypeName entityIdText seqNum globalPos = do
   -- Use fromTextUnsafe: test inputs are controlled and known to be valid
   let streamId = StreamId.fromTextUnsafe entityIdText
   now <- DateTime.now
+  eventId <- Uuid.generate
   Task.yield
     Event
       { entityName = EntityName entityTypeName,
@@ -89,7 +96,7 @@ makeTestEventForEntity entityTypeName entityIdText seqNum globalPos = do
         event = Json.encode (OrderingEvent {sequenceNum = seqNum}),
         metadata =
           EventMetadata
-            { eventId = Uuid.nil,
+            { eventId,
               relatedUserSub = Nothing,
               correlationId = Nothing,
               causationId = Nothing,
@@ -114,6 +121,19 @@ makeContext = do
       }
 
 
+waitForDispatchCount :: Int -> Int -> ConcurrentVar.ConcurrentVar Int -> Task Text Unit
+waitForDispatchCount attemptsLeft expectedCount dispatchCount = do
+  currentCount <- dispatchCount |> ConcurrentVar.peek
+  if currentCount >= expectedCount
+    then Task.yield unit
+    else
+      if attemptsLeft <= 0
+        then Task.throw "Timed out waiting for command dispatch"
+        else do
+          AsyncTask.sleep 20 |> Task.mapError (\_ -> "dispatch completion wait failed" :: Text)
+          waitForDispatchCount (attemptsLeft - 1) expectedCount dispatchCount
+
+
 -- ============================================================================
 -- Tests
 -- ============================================================================
@@ -122,6 +142,169 @@ spec :: Spec Unit
 spec = do
   describe "Integration.Dispatcher" do
     describe "basic functionality" do
+      it "passes source metadata to commands emitted by an outbound runner" \_ -> do
+        capturedSources <- Channel.new
+        let payload =
+              Integration.CommandPayload
+                { commandType = "CaptureSource",
+                  commandData = Json.encode ("ignored" :: Text.Text)
+                }
+        let runner =
+              Dispatcher.OutboundRunner
+                { entityTypeName = "TestEntity",
+                  processEvent = \_maybeContext _eventStore _event -> Task.yield [payload]
+                }
+        let captureSource :: DispatchHandler
+            captureSource sourceEventMetadata _requestContext _commandBytes _respond =
+              Channel.write sourceEventMetadata capturedSources
+
+        eventStore <- InMemory.new |> Task.mapError toText
+        context <- makeContext
+        dispatcher <-
+          Dispatcher.newWithLifecycleConfigWithSource
+            Dispatcher.defaultConfig
+            eventStore
+            [runner]
+            []
+            (Map.empty |> Map.set "CaptureSource" captureSource)
+            context
+        event <- makeTestEvent "entity-source" 1 1
+
+        Dispatcher.dispatch dispatcher event
+        capturedSource <- Channel.read capturedSources
+        capturedSource |> shouldBe (Just event.metadata)
+
+      it "persists a command emitted by an outbound runner with its source event metadata" \_ -> do
+        rawEventStore <- InMemory.new |> Task.mapError toText
+        let typedEventStore = rawEventStore |> EventStore.castEventStore @InternalCommand.InternalEvent
+        recordId <- Uuid.generate
+        let entityName = EntityName "InternalEntity"
+        let streamId = StreamId.toStreamId recordId
+        let commandRunner =
+              Service.new
+                |> Service.command @InternalCommand.CreateInternalRecord
+                |> Service.toServiceRunner
+        (_, _, commandEndpoints) <- commandRunner.getEndpointsByTransport rawEventStore Map.empty
+        dispatchCount <- ConcurrentVar.containing (0 :: Int)
+        let observeDispatchHandler handler source request bytes respond = do
+              handler source request bytes respond
+              dispatchCount |> ConcurrentVar.modify (+ 1)
+        let observedCommandEndpoints = commandEndpoints |> Map.mapValues observeDispatchHandler
+
+        let payload =
+              Integration.makeCommandPayload
+                InternalCommand.CreateInternalRecord {recordId}
+        let outboundRunner =
+              Dispatcher.OutboundRunner
+                { entityTypeName = "TestEntity",
+                  processEvent = \_context _store _event -> Task.yield [payload]
+                }
+        actionContext <- makeContext
+        dispatcher <-
+          Dispatcher.newWithLifecycleConfigWithSource
+            Dispatcher.defaultConfig
+            rawEventStore
+            [outboundRunner]
+            []
+            observedCommandEndpoints
+            actionContext
+        sourceEventBase <- makeTestEvent "outbound-source-stream" 1 1
+        let sourceEvent =
+              sourceEventBase
+                { metadata =
+                    sourceEventBase.metadata
+                      { relatedUserSub = Just "source-actor",
+                        correlationId = Just "root-chain"
+                      }
+                }
+        Dispatcher.dispatch dispatcher sourceEvent
+        waitForDispatchCount 250 1 dispatchCount
+        Dispatcher.shutdown dispatcher
+
+        messages <- typedEventStore.readAllStreamEvents entityName streamId |> Task.mapError toText
+        events <- messages |> Stream.toArray |> Task.map EventStore.collectStreamEvents
+        Array.length events |> shouldBe 1
+        case Array.last events of
+          Nothing -> fail "Expected a saved command event from the outbound callback"
+          Just saved -> do
+            saved.metadata.relatedUserSub |> shouldBe (Just "source-actor")
+            saved.metadata.correlationId |> shouldBe (Just "root-chain")
+            saved.metadata.causationId |> shouldBe (Just (Uuid.toText sourceEvent.metadata.eventId))
+        rawEventStore.close |> Task.mapError toText
+
+      it "allocates distinct request correlations for repeated autonomous command dispatches" \_ -> do
+        rawEventStore <- InMemory.new |> Task.mapError toText
+        let typedEventStore = rawEventStore |> EventStore.castEventStore @InternalCommand.InternalEvent
+        let entityName = EntityName "InternalEntity"
+        firstRecordId <- Uuid.generate
+        secondRecordId <- Uuid.generate
+        let commandRunner =
+              Service.new
+                |> Service.command @InternalCommand.CreateInternalRecord
+                |> Service.toServiceRunner
+        (_, _, commandEndpoints) <- commandRunner.getEndpointsByTransport rawEventStore Map.empty
+        let firstPayload = Integration.makeCommandPayload InternalCommand.CreateInternalRecord {recordId = firstRecordId}
+        let secondPayload = Integration.makeCommandPayload InternalCommand.CreateInternalRecord {recordId = secondRecordId}
+
+        Dispatcher.dispatchCommandWithSource commandEndpoints Nothing firstPayload
+        Dispatcher.dispatchCommandWithSource commandEndpoints Nothing secondPayload
+
+        firstMessages <- typedEventStore.readAllStreamEvents entityName (StreamId.toStreamId firstRecordId) |> Task.mapError toText
+        firstEvents <- firstMessages |> Stream.toArray |> Task.map EventStore.collectStreamEvents
+        secondMessages <- typedEventStore.readAllStreamEvents entityName (StreamId.toStreamId secondRecordId) |> Task.mapError toText
+        secondEvents <- secondMessages |> Stream.toArray |> Task.map EventStore.collectStreamEvents
+        case (Array.last firstEvents, Array.last secondEvents) of
+          (Just firstSaved, Just secondSaved) -> do
+            firstSaved.metadata.relatedUserSub |> shouldBe Nothing
+            secondSaved.metadata.relatedUserSub |> shouldBe Nothing
+            firstSaved.metadata.causationId |> shouldBe Nothing
+            secondSaved.metadata.causationId |> shouldBe Nothing
+            let firstCorrelation = firstSaved.metadata.correlationId
+            let secondCorrelation = secondSaved.metadata.correlationId
+            firstCorrelation |> shouldSatisfy (\value -> value != Nothing && value != Just (Uuid.toText Uuid.nil))
+            secondCorrelation |> shouldSatisfy (\value -> value != Nothing && value != firstCorrelation)
+          _ -> fail "Expected both autonomous commands to append events"
+        rawEventStore.close |> Task.mapError toText
+
+      it "keeps the legacy Map Text EndpointHandler dispatcher and dispatch APIs" \_ -> do
+        dispatchCount <- ConcurrentVar.containing (0 :: Int)
+        let payload =
+              Integration.CommandPayload
+                { commandType = "LegacyCommand",
+                  commandData = Json.encode ("ignored" :: Text.Text)
+                }
+        let legacyHandler :: EndpointHandler
+            legacyHandler _requestContext _commandBytes _respond =
+              dispatchCount |> ConcurrentVar.modify (+ 1)
+        let legacyEndpoints :: Map.Map Text EndpointHandler
+            legacyEndpoints = Map.empty |> Map.set "LegacyCommand" legacyHandler
+        let runner =
+              Dispatcher.OutboundRunner
+                { entityTypeName = "TestEntity",
+                  processEvent = \_maybeContext _eventStore _event -> Task.yield [payload]
+                }
+
+        Dispatcher.dispatchCommand legacyEndpoints payload
+        directDispatchCount <- ConcurrentVar.peek dispatchCount
+        directDispatchCount |> shouldBe 1
+
+        eventStore <- InMemory.new |> Task.mapError toText
+        context <- makeContext
+        dispatcher <-
+          Dispatcher.newWithLifecycleConfig
+            Dispatcher.defaultConfig
+            eventStore
+            [runner]
+            []
+            legacyEndpoints
+            context
+        event <- makeTestEvent "legacy-stream" 1 1
+        Dispatcher.dispatch dispatcher event
+        waitForDispatchCount 250 2 dispatchCount
+
+        workerDispatchCount <- ConcurrentVar.peek dispatchCount
+        workerDispatchCount |> shouldBe 2
+
       it "creates a dispatcher and processes a single event" \_ -> do
         -- Minimal test to verify basic dispatcher functionality
         processedCount <- ConcurrentVar.containing (0 :: Int)
@@ -166,7 +349,7 @@ spec = do
                         if currentCount == 0
                           then do
                             -- First call: throw a raw IO exception (bypasses ExceptT)
-                            Task.fromIO (GhcException.throwIO (GhcException.ErrorCall "simulated IO crash"))
+                            Task.fromIO (GhcException.throwIO (GhcException.ErrorCall "private-runner-error-sentinel"))
                           else do
                             -- Subsequent calls: process normally
                             processedEvents
@@ -213,6 +396,95 @@ spec = do
         processed <- ConcurrentVar.peek processedEvents
         let processedArray = processed |> Array.fromLinkedList
         processedArray |> shouldBe [2]
+
+      it "reports a timed out event runner without emitting a command" \_ -> do
+        completed <- ConcurrentVar.containing False
+        laterRunnerStarted <- ConcurrentVar.containing False
+        let slowRunner =
+              Dispatcher.OutboundRunner
+                { entityTypeName = "TestEntity",
+                  processEvent = \_context _store _event -> do
+                    AsyncTask.sleep 100 |> Task.mapError (\_ -> "sleep error" :: Text)
+                    completed |> ConcurrentVar.modify (\_ -> True)
+                    Task.yield Array.empty
+                }
+        let laterRunner =
+              Dispatcher.OutboundRunner
+                { entityTypeName = "TestEntity",
+                  processEvent = \_context _store _event -> do
+                    laterRunnerStarted |> ConcurrentVar.modify (\_ -> True)
+                    Task.yield Array.empty
+                }
+        eventStore <- InMemory.new |> Task.mapError toText
+        context <- makeContext
+        dispatcher <-
+          Dispatcher.newWithLifecycleConfig
+            Dispatcher.DispatcherConfig
+              { idleTimeoutMs = 60000,
+                reaperIntervalMs = 10000,
+                enableReaper = False,
+                workerChannelCapacity = 10,
+                channelWriteTimeoutMs = 5000,
+                eventProcessingTimeoutMs = Just 20,
+                maxEventRetries = 0,
+                retryBaseDelayMs = 50
+              }
+            eventStore
+            [slowRunner, laterRunner]
+            []
+            Map.empty
+            context
+        event <- makeTestEvent "timeout-stream" 1 1
+        Dispatcher.dispatch dispatcher event
+        AsyncTask.sleep 150 |> Task.mapError (\_ -> "sleep error" :: Text)
+        wasCompleted <- ConcurrentVar.peek completed
+        wasCompleted |> shouldBe False
+        wasLaterRunnerStarted <- ConcurrentVar.peek laterRunnerStarted
+        wasLaterRunnerStarted |> shouldBe False
+
+      it "reports every matching runner when callback dispatch fails" \_ -> do
+        dispatchCount <- ConcurrentVar.containing (0 :: Int)
+        laterRunnerStarted <- ConcurrentVar.containing False
+        let payload =
+              Integration.CommandPayload
+                { commandType = "FailCommand",
+                  commandData = Json.encode ("ignored" :: Text.Text)
+                }
+        let failingRunner =
+              Dispatcher.OutboundRunner
+                { entityTypeName = "TestEntity",
+                  processEvent = \_context _store _event -> Task.yield [payload]
+                }
+        let laterRunner =
+              Dispatcher.OutboundRunner
+                { entityTypeName = "TestEntity",
+                  processEvent = \_context _store _event -> do
+                    laterRunnerStarted |> ConcurrentVar.modify (\_ -> True)
+                    Task.yield Array.empty
+                }
+        let failDispatch :: DispatchHandler
+            failDispatch _sourceEventMetadata _requestContext _commandBytes _respond = do
+              dispatchCount |> ConcurrentVar.modify (+ 1)
+              Task.throw "private-dispatch-error-sentinel"
+
+        eventStore <- InMemory.new |> Task.mapError toText
+        context <- makeContext
+        dispatcher <-
+          Dispatcher.newWithLifecycleConfigWithSource
+            Dispatcher.defaultConfig
+            eventStore
+            [failingRunner, laterRunner]
+            []
+            (Map.empty |> Map.set "FailCommand" failDispatch)
+            context
+        event <- makeTestEvent "dispatch-failure-stream" 1 1
+        Dispatcher.dispatch dispatcher event
+        AsyncTask.sleep 100 |> Task.mapError (\_ -> "sleep error" :: Text)
+
+        dispatchAttempts <- ConcurrentVar.peek dispatchCount
+        dispatchAttempts |> shouldBe 1
+        wasLaterRunnerStarted <- ConcurrentVar.peek laterRunnerStarted
+        wasLaterRunnerStarted |> shouldBe False
 
     describe "per-entity ordering" do
       it "processes events for the same entity in order" \_ -> do

@@ -410,6 +410,7 @@ test-suite nhcore-test
     -with-rtsopts=-N
 
   other-modules:
+    ArraySpec
     Auth.HostnameSpec
     Auth.InMemorySecretStoreSpec
     Auth.JwtSpec
@@ -518,7 +519,11 @@ test-suite nhcore-test
     Service.Command.CanAccess.PublicAccessFixture
     Service.Command.CanAccess.PermissionFixture
     Service.Transport.Web.CommandAuthSpec
+    Service.Transport.Web.InvalidTokenSpec
+    Service.Transport.Web.RequestBodyFailureSpec
     Service.CommandExecutor.AuditLoggingSpec
+    Service.CommandExecutor.MetadataSpec
+    Service.CommandExecutor.StorageMetadataSpec
 
   -- other-extensions:
   type: exitcode-stdio-1.0
@@ -635,8 +640,11 @@ test-suite nhcore-test-service
     Service.Command.CanAccess.PublicAccessFixture
     Service.Command.CanAccess.PermissionFixture
     Service.Transport.Web.CommandAuthSpec
+    Service.Transport.Web.InvalidTokenSpec
+    Service.Transport.Web.RequestBodyFailureSpec
     Service.CommandExecutor.AuditLoggingSpec
     Service.CommandExecutor.MetadataSpec
+    Service.CommandExecutor.StorageMetadataSpec
     Service.QueryObjectStore.PostgresSpec
     Service.Query.Subscriber.ReadinessSpec
 
