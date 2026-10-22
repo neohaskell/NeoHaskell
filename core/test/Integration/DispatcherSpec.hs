@@ -175,12 +175,12 @@ cancelShutdownWhileWriterIsAdmitted dispatcher activeEvent queuedEvent waitingEv
 
   Ghc.throwTo (GhcAsync.asyncThreadId shutdownTask) GhcException.ThreadKilled
     |> Task.fromIO
+  GhcAsync.cancel writerTask |> Task.fromIO
   workerStopRace <-
     AsyncTask.race
       (Channel.read workerStopped)
       (AsyncTask.sleep 500 |> Task.mapError (\_ -> "worker cancellation wait failed" :: Text))
 
-  GhcAsync.cancel writerTask |> Task.fromIO
   _ <- GhcAsync.waitCatch shutdownTask |> Task.fromIO
   Dispatcher.shutdown dispatcher
 
@@ -1154,7 +1154,7 @@ spec = do
                   reaperIntervalMs = 10000,
                   enableReaper = False,
                   workerChannelCapacity = 1,
-                  channelWriteTimeoutMs = 2000,
+                  channelWriteTimeoutMs = 100,
                   eventProcessingTimeoutMs = Nothing,
                   maxEventRetries = 3,
                   retryBaseDelayMs = 50

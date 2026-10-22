@@ -5,12 +5,11 @@ import Bytes qualified
 import Control.Concurrent qualified as GhcConcurrent
 import Control.Concurrent.MVar qualified as GhcMVar
 import Control.Exception qualified as GhcException
-import Data.Aeson qualified as GhcAeson
 import Data.ByteString.Base64.URL qualified as GhcBase64Url
 import Data.ByteString.Lazy qualified as GhcLBS
-import Data.Text.Encoding qualified as GhcTextEncoding
 import Auth.Config (AuthConfig (..))
 import Auth.Jwks (JwksManager (..))
+import Json qualified
 import Map qualified
 import Maybe (Maybe (..))
 import Network.HTTP.Types.Header qualified as HTTP
@@ -185,16 +184,18 @@ requestWithUnknownKid =
 tokenWithUnknownKid :: Text
 tokenWithUnknownKid = do
   let header =
-        GhcAeson.object
-          [ "alg" GhcAeson..= GhcAeson.String "ES256"
-          , "kid" GhcAeson..= GhcAeson.String "missing-key-for-refresh"
-          , "typ" GhcAeson..= GhcAeson.String "JWT"
+        Json.object
+          [ "alg" Json..= ("ES256" :: Text)
+          , "kid" Json..= ("missing-key-for-refresh" :: Text)
+          , "typ" Json..= ("JWT" :: Text)
           ]
   let encodedHeader =
-        GhcAeson.encode header
-          |> GhcLBS.toStrict
+        Json.encodeText header
+          |> Text.toBytes
+          |> Bytes.unwrap
           |> GhcBase64Url.encodeUnpadded
-          |> GhcTextEncoding.decodeUtf8
+          |> Bytes.fromLegacy
+          |> Text.fromBytes
   [fmt|#{encodedHeader}.e30.signature|]
 
 

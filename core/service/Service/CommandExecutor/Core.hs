@@ -28,6 +28,7 @@ import Service.AccessControl (AccessError)
 import Service.AccessControl (AccessError (..))
 import Service.Command (Event (..))
 import Service.Command.Core (Command (..), Entity (..), EntityOf, EventOf, KnownMultiTenant (..), NameOf, SBool (..))
+import Service.CommandResultReceipt.Internal qualified as CommandResultReceipt
 import Service.EntityFetcher.Core (EntityFetchResult (..), EntityFetcher, FetchedEntity (..))
 import Service.EntityFetcher.Core qualified
 import Service.Event (EntityName, InsertionPayload (..), InsertionType (..))
@@ -417,27 +418,35 @@ execute eventStore entityFetcher entityName sourceEventMetadata requestContext c
   let reportCommandResult context outcome =
         Task.fromIO do
           GhcException.mask_ do
-            (emitCommandResult commandNameText entityNameText context sourceEventMetadata outcome :: Task Text Unit)
-              |> Task.runOrPanic
+            let report = emitCommandResult commandNameText entityNameText context sourceEventMetadata outcome :: Task Text Unit
+            maybeReported <-
+              CommandResultReceipt.reportIfRegistered context.requestId report
+                |> Task.runOrPanic
+            case maybeReported of
+              Nothing -> report |> Task.runOrPanic
+              Just _ -> pure ()
             GhcIORef.writeIORef commandResultReported True
   let reportInterruptedCommand = do
         wasReported <- GhcIORef.readIORef commandResultReported |> Task.fromIO
-        if wasReported
-          then pass
-          else do
-            context <- GhcIORef.readIORef currentRequestContext |> Task.fromIO
-            emitCommandResult
-              commandNameText
-              entityNameText
-              context
-              sourceEventMetadata
-              ( ExecutionFailedCommandLog
-                  (CommandExecutionFailure
-                    { failureMessage = "Command execution was interrupted",
-                      failureStage = "execution",
-                      failureClass = "ExecutionInterrupted"
-                    })
-              )
+        Task.unless wasReported do
+          context <- GhcIORef.readIORef currentRequestContext |> Task.fromIO
+          let report =
+                emitCommandResult
+                  commandNameText
+                  entityNameText
+                  context
+                  sourceEventMetadata
+                  ( ExecutionFailedCommandLog
+                      (CommandExecutionFailure
+                        { failureMessage = "Command execution was interrupted",
+                          failureStage = "execution",
+                          failureClass = "ExecutionInterrupted"
+                        })
+                  )
+          maybeReported <- CommandResultReceipt.reportIfRegistered context.requestId report
+          case maybeReported of
+            Nothing -> report
+            Just _ -> Task.yield ()
   Task.finally reportInterruptedCommand do
     normalizedContextResult <- normalizeRequestContext requestContext |> Task.asResultSafe
     case normalizedContextResult of

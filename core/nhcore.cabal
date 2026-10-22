@@ -379,6 +379,7 @@ library
     Parser.Internal.Whitespace
     Layout.Internal
     Layout.Internal.Render
+    Service.CommandResultReceipt.Internal
   -- other-extensions:
   hs-source-dirs:
     auth

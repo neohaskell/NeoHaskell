@@ -42,6 +42,7 @@ import Json qualified
 import LinkedList qualified
 import Map qualified
 import Maybe (Maybe (..))
+import Maybe qualified
 import Network.HTTP.Types.Header qualified as HTTP
 import Network.HTTP.Types.Method qualified as GhcMethod
 import Network.HTTP.Types.Status qualified as HTTP
@@ -60,6 +61,7 @@ import Service.FileUpload.Core (FileRef (..))
 import Service.FileUpload.Core qualified as FileUpload
 import Service.FileUpload.Web (FileUploadRoutes (..))
 import Service.CommandExecutor.TH (deriveKnownHash)
+import Service.CommandResultReceipt.Internal qualified as CommandResultReceipt
 import Service.AccessControl (AccessError (..), QueryEndpointError (..))
 import Service.Query.Pagination qualified as Pagination
 import Service.Response (CommandResponse)
@@ -224,7 +226,7 @@ data CommandRouteResultState
   | CommandRouteAuthenticationFailed
   | CommandRouteRequestContextFailed
   | CommandRouteBodyRequest RequestContext CommandRequestBodyState
-  | CommandRouteHandlerOwnsResult
+  | CommandRouteHandlerOwnsResult RequestContext
 
 
 -- | Read request body with a size limit to prevent DoS attacks.
@@ -290,15 +292,49 @@ reportCommandRequestBodyState commandName requestContext bodyState = do
           message
           |> Task.ignoreError
 
+  let reportResultOnce level result failureStage errorClass message = do
+        let report = emitResult level result failureStage errorClass message
+        maybeReported <- CommandResultReceipt.reportIfRegistered requestContext.requestId report
+        case maybeReported of
+          Maybe.Nothing -> report
+          Maybe.Just _ -> Task.yield ()
+
   case bodyState of
     CommandRequestBodyInProgress ->
-      emitResult Log.Error "execution_failed" "request_body" "ExecutionInterrupted" "Command request body read interrupted"
+      reportResultOnce Log.Error "execution_failed" "request_body" "ExecutionInterrupted" "Command request body read interrupted"
     CommandRequestBodySucceeded ->
-      emitResult Log.Error "execution_failed" "dispatch" "ExecutionInterrupted" "Command handoff was interrupted"
+      reportResultOnce Log.Error "execution_failed" "dispatch" "ExecutionInterrupted" "Command handoff was interrupted"
     CommandRequestBodyTooLarge ->
-      emitResult Log.Warn "rejected" "request_body" "PayloadTooLarge" "Command request body rejected"
+      reportResultOnce Log.Warn "rejected" "request_body" "PayloadTooLarge" "Command request body rejected"
     CommandRequestBodyFailed ->
-      emitResult Log.Error "execution_failed" "request_body" "SynchronousException" "Command request body read failed"
+      reportResultOnce Log.Error "execution_failed" "request_body" "SynchronousException" "Command request body read failed"
+
+
+reportUnclaimedCommandResult :: Text -> Uuid.Uuid -> Maybe Text -> CommandResultReceipt.ReceiptExit -> Task Text Unit
+reportUnclaimedCommandResult commandName requestId maybeActor exit = do
+  let (errorClass, message) = case exit of
+        CommandResultReceipt.HandlerFailed -> ("SynchronousException" :: Text, "Command handler failed before reporting a result")
+        CommandResultReceipt.HandlerInterrupted -> ("ExecutionInterrupted", "Command handler was interrupted before reporting a result")
+        CommandResultReceipt.HandlerReturnedWithoutResult -> ("MissingCommandResult", "Command handler returned without reporting a result")
+      requestIdText = Uuid.toText requestId
+      actorFields = case maybeActor of
+        Maybe.Nothing -> Array.empty
+        Maybe.Just actor -> ["relatedUserSub" Json..= actor]
+  Log.recordIsolated Log.Error
+    ( [ "component" Json..= ("WebTransport" :: Text)
+      , "commandName" Json..= commandName
+      , "requestId" Json..= requestIdText
+      , "correlationId" Json..= requestIdText
+      , "kind" Json..= ("command_result" :: Text)
+      , "result" Json..= ("execution_failed" :: Text)
+      , "failureStage" Json..= ("execution" :: Text)
+      , "errorClass" Json..= errorClass
+      , "eventsAppended" Json..= (0 :: Int)
+      ]
+        |> Array.append actorFields
+    )
+    message
+    |> Task.ignoreError
 
 
 -- | Parse multipart form data to extract file upload.
@@ -619,156 +655,163 @@ instance Transport WebTransport where
         -- Look up the command handler in the endpoints map
         case Map.get commandName endpoints.commandEndpoints of
           Maybe.Just handler -> do
-            Log.withScope [("component", "WebTransport"), ("command", commandName)] do
-              Log.debug "Command received"
-                |> Task.ignoreError
-            requestId <- Uuid.generate
-            routeResultState <- Task.fromIO (GhcIORef.newIORef CommandRouteAuthenticationPending)
-            -- Helper to process command with a RequestContext
-            let processCommandWithContext :: RequestContext -> Task Text Wai.ResponseReceived
-                processCommandWithContext requestContext = do
-                  GhcIORef.writeIORef routeResultState (CommandRouteBodyRequest requestContext CommandRequestBodyInProgress)
-                    |> Task.fromIO
-                  safeBodyResult <- readBodyWithLimit maxBodySize request |> Task.asResultSafe @Text
-                  bodyResult <- case safeBodyResult of
-                    Result.Err _ -> do
-                      GhcIORef.writeIORef routeResultState (CommandRouteBodyRequest requestContext CommandRequestBodyFailed)
-                        |> Task.fromIO
-                      Task.yield CommandRequestBodyReadFailed
-                    Result.Ok (Result.Err errorMessage) -> do
-                      GhcIORef.writeIORef routeResultState (CommandRouteBodyRequest requestContext CommandRequestBodyTooLarge)
-                        |> Task.fromIO
-                      Task.yield (CommandRequestBodyRejected errorMessage)
-                    Result.Ok (Result.Ok bodyBytes) -> do
-                      GhcIORef.writeIORef routeResultState (CommandRouteBodyRequest requestContext CommandRequestBodySucceeded)
-                        |> Task.fromIO
-                      Task.yield (CommandRequestBodyBytes bodyBytes)
-                  case bodyResult of
-                    CommandRequestBodyRejected errorMessage -> do
-                      payloadTooLarge errorMessage
-                    CommandRequestBodyReadFailed ->
-                      internalError "Internal server error"
-                    CommandRequestBodyBytes bodyBytes -> do
-                      respondVar <- ConcurrentVar.new
-                      -- We need to capture the ResponseReceived from the handler's callback
-                      -- Since handler returns Unit, we'll use andThen to chain the result
-                      GhcIORef.writeIORef routeResultState CommandRouteHandlerOwnsResult
-                        |> Task.fromIO
-                      handler
-                        requestContext
-                        bodyBytes
-                        ( \(commandResponse, responseBytes) -> do
-                            -- Map CommandUnauthorized to 401/403 with a clean message body.
-                            -- Mirror the query-side AuthorizationError mapping (lines ~655-659).
-                            let httpStatus = commandResponseToHttpStatus commandResponse
-                            let (statusOverride, bodyOverride :: Maybe Text) = case commandResponse of
-                                  Response.Unauthorized {authError} ->
-                                    case unauthorizedResponse authError of
-                                      (statusCode, message) -> (statusCode, Just message)
-                                  _ -> (httpStatus, Nothing)
-                            let finalBodyBytes = case bodyOverride of
-                                  Maybe.Just msg ->
-                                    -- Wrap the message in a JSON envelope so the
-                                    -- application/json content-type is honoured.
-                                    unauthorizedResponseBody msg
-                                      |> Text.toBytes
-                                      |> Bytes.toLazyLegacy
-                                  Maybe.Nothing ->
-                                    responseBytes
-                                      |> Bytes.toLazyLegacy
-                            let responseBody =
-                                  finalBodyBytes
-                                    |> Wai.responseLBS statusOverride [(HTTP.hContentType, "application/json")]
-                            respondValue <- respond responseBody
-                            respondVar |> ConcurrentVar.set respondValue
-                            Task.yield ()
-                        )
-                        |> Task.andThen
-                          ( \_ -> do
-                              ConcurrentVar.get respondVar
-                          )
-
-            let requestIdText = Uuid.toText requestId
-            let setRouteResultState state =
-                  GhcIORef.writeIORef routeResultState state
-                    |> Task.fromIO
-            let reportRouteResult :: Log.Level -> Text -> Text -> Text -> Text -> Task Text Unit
-                reportRouteResult level result failureStage errorClass message =
-                  Log.recordIsolated level
-                    [ "component" Json..= ("WebTransport" :: Text)
-                    , "commandName" Json..= commandName
-                    , "requestId" Json..= requestIdText
-                    , "correlationId" Json..= requestIdText
-                    , "kind" Json..= ("command_result" :: Text)
-                    , "result" Json..= (result :: Text)
-                    , "failureStage" Json..= failureStage
-                    , "errorClass" Json..= (errorClass :: Text)
-                    , "eventsAppended" Json..= (0 :: Int)
-                    ]
-                    message
+            CommandResultReceipt.withFreshReceipt
+              (reportUnclaimedCommandResult commandName)
+              (\requestId -> do
+                Log.withScope [("component", "WebTransport"), ("command", commandName)] do
+                  Log.debug "Command received"
                     |> Task.ignoreError
-            let processWithClaims :: Maybe UserClaims -> Task Text Wai.ResponseReceived
-                processWithClaims claims = do
-                  safeContext <-
-                    (case claims of
-                      Maybe.Just userClaims -> Auth.authenticatedContext userClaims
-                      Maybe.Nothing -> Auth.anonymousContext
-                    )
-                      |> Task.asResultSafe @Text
-                  case safeContext of
-                    Result.Err _ -> do
-                      setRouteResultState CommandRouteRequestContextFailed
-                      internalError "Internal server error"
-                    Result.Ok requestContext ->
-                      processCommandWithContext requestContext {Auth.requestId = requestId}
-            let finalizeCommandResult = do
-                  state <- GhcIORef.readIORef routeResultState |> Task.fromIO
-                  case state of
-                    CommandRouteAuthenticationPending ->
-                      reportRouteResult Log.Error "execution_failed" "authentication" "ExecutionInterrupted" "Command authentication was interrupted"
-                    CommandRouteRequestContextPending ->
-                      reportRouteResult Log.Error "execution_failed" "request_context" "ExecutionInterrupted" "Command request context was interrupted"
-                    CommandRouteAuthenticationRejected authError -> do
-                      let errorClass = case authError of
-                            AuthInfraUnavailable _ -> "AuthenticationUnavailable"
-                            _ -> "InvalidToken"
-                      reportRouteResult Log.Warn "unauthorized" "authentication" errorClass "Command authentication failed"
-                    CommandRouteAuthenticationFailed ->
-                      reportRouteResult Log.Error "execution_failed" "authentication" "SynchronousException" "Command authentication failed"
-                    CommandRouteRequestContextFailed ->
-                      reportRouteResult Log.Error "execution_failed" "request_context" "SynchronousException" "Command request context failed"
-                    CommandRouteBodyRequest requestContext bodyState ->
-                      reportCommandRequestBodyState commandName requestContext bodyState
-                    CommandRouteHandlerOwnsResult -> Task.yield ()
+                routeResultState <- Task.fromIO (GhcIORef.newIORef CommandRouteAuthenticationPending)
+                let processCommandWithContext :: RequestContext -> Task Text Wai.ResponseReceived
+                    processCommandWithContext requestContext = do
+                      GhcIORef.writeIORef routeResultState (CommandRouteBodyRequest requestContext CommandRequestBodyInProgress)
+                        |> Task.fromIO
+                      CommandResultReceipt.setRelatedUserSub
+                        requestId
+                        (requestContext.user |> Maybe.map (\claims -> claims.sub))
+                      safeBodyResult <- readBodyWithLimit maxBodySize request |> Task.asResultSafe @Text
+                      bodyResult <- case safeBodyResult of
+                        Result.Err _ -> do
+                          GhcIORef.writeIORef routeResultState (CommandRouteBodyRequest requestContext CommandRequestBodyFailed)
+                            |> Task.fromIO
+                          Task.yield CommandRequestBodyReadFailed
+                        Result.Ok (Result.Err errorMessage) -> do
+                          GhcIORef.writeIORef routeResultState (CommandRouteBodyRequest requestContext CommandRequestBodyTooLarge)
+                            |> Task.fromIO
+                          Task.yield (CommandRequestBodyRejected errorMessage)
+                        Result.Ok (Result.Ok bodyBytes) -> do
+                          GhcIORef.writeIORef routeResultState (CommandRouteBodyRequest requestContext CommandRequestBodySucceeded)
+                            |> Task.fromIO
+                          Task.yield (CommandRequestBodyBytes bodyBytes)
+                      case bodyResult of
+                        CommandRequestBodyRejected errorMessage -> do
+                          payloadTooLarge errorMessage
+                        CommandRequestBodyReadFailed ->
+                          internalError "Internal server error"
+                        CommandRequestBodyBytes bodyBytes -> do
+                          respondVar <- ConcurrentVar.new
+                          GhcIORef.writeIORef routeResultState (CommandRouteHandlerOwnsResult requestContext)
+                            |> Task.fromIO
+                          handler
+                            requestContext
+                            bodyBytes
+                            ( \(commandResponse, responseBytes) -> do
+                                let httpStatus = commandResponseToHttpStatus commandResponse
+                                let (statusOverride, bodyOverride :: Maybe Text) = case commandResponse of
+                                      Response.Unauthorized {authError} ->
+                                        case unauthorizedResponse authError of
+                                          (statusCode, message) -> (statusCode, Just message)
+                                      _ -> (httpStatus, Nothing)
+                                let finalBodyBytes = case bodyOverride of
+                                      Maybe.Just msg ->
+                                        unauthorizedResponseBody msg
+                                          |> Text.toBytes
+                                          |> Bytes.toLazyLegacy
+                                      Maybe.Nothing ->
+                                        responseBytes
+                                          |> Bytes.toLazyLegacy
+                                let responseBody =
+                                      finalBodyBytes
+                                        |> Wai.responseLBS statusOverride [(HTTP.hContentType, "application/json")]
+                                respondValue <- respond responseBody
+                                respondVar |> ConcurrentVar.set respondValue
+                                Task.yield ()
+                            )
+                            |> Task.andThen
+                              ( \_ -> do
+                                  ConcurrentVar.get respondVar
+                              )
 
-            Task.finally finalizeCommandResult do
-              Log.withScope [("component", "WebTransport"), ("commandName", commandName), ("requestId", requestIdText)] do
-                case webTransport.authEnabled of
-                  Maybe.Nothing -> do
-                    setRouteResultState CommandRouteRequestContextPending
-                    safeContext <- Auth.trustedContext |> Task.asResultSafe @Text
-                    case safeContext of
-                      Result.Err _ -> do
-                        setRouteResultState CommandRouteRequestContextFailed
-                        internalError "Internal server error"
-                      Result.Ok requestContext ->
-                        processCommandWithContext requestContext {Auth.requestId = requestId}
-                  Maybe.Just auth -> do
-                    safeAuthResult <-
-                      Middleware.checkAuth (Maybe.Just auth.jwksManager) auth.authConfig Authenticated request
-                        |> Task.asResultSafe @Text
-                    case safeAuthResult of
-                      Result.Err _ -> do
-                        setRouteResultState CommandRouteAuthenticationFailed
-                        internalError "Internal server error"
-                      Result.Ok authResult -> do
+                let requestIdText = Uuid.toText requestId
+                let setRouteResultState state =
+                      GhcIORef.writeIORef routeResultState state
+                        |> Task.fromIO
+                let reportRouteResult :: Log.Level -> Text -> Text -> Text -> Text -> Task Text Unit
+                    reportRouteResult level result failureStage errorClass message = do
+                      let report =
+                            Log.recordIsolated level
+                              [ "component" Json..= ("WebTransport" :: Text)
+                              , "commandName" Json..= commandName
+                              , "requestId" Json..= requestIdText
+                              , "correlationId" Json..= requestIdText
+                              , "kind" Json..= ("command_result" :: Text)
+                              , "result" Json..= (result :: Text)
+                              , "failureStage" Json..= failureStage
+                              , "errorClass" Json..= errorClass
+                              , "eventsAppended" Json..= (0 :: Int)
+                              ]
+                              message
+                              |> Task.ignoreError
+                      maybeReported <- CommandResultReceipt.reportIfRegistered requestId report
+                      case maybeReported of
+                        Maybe.Nothing -> report
+                        Maybe.Just _ -> Task.yield ()
+                let processWithClaims :: Maybe UserClaims -> Task Text Wai.ResponseReceived
+                    processWithClaims claims = do
+                      safeContext <-
+                        (case claims of
+                          Maybe.Just userClaims -> Auth.authenticatedContext userClaims
+                          Maybe.Nothing -> Auth.anonymousContext
+                        )
+                          |> Task.asResultSafe @Text
+                      case safeContext of
+                        Result.Err _ -> do
+                          setRouteResultState CommandRouteRequestContextFailed
+                          internalError "Internal server error"
+                        Result.Ok requestContext ->
+                          processCommandWithContext requestContext {Auth.requestId = requestId}
+                let finalizeCommandResult = do
+                      state <- GhcIORef.readIORef routeResultState |> Task.fromIO
+                      case state of
+                        CommandRouteAuthenticationPending ->
+                          reportRouteResult Log.Error "execution_failed" "authentication" "ExecutionInterrupted" "Command authentication was interrupted"
+                        CommandRouteRequestContextPending ->
+                          reportRouteResult Log.Error "execution_failed" "request_context" "ExecutionInterrupted" "Command request context was interrupted"
+                        CommandRouteAuthenticationRejected authError -> do
+                          let errorClass = case authError of
+                                AuthInfraUnavailable _ -> "AuthenticationUnavailable"
+                                _ -> "InvalidToken"
+                          reportRouteResult Log.Warn "unauthorized" "authentication" errorClass "Command authentication failed"
+                        CommandRouteAuthenticationFailed ->
+                          reportRouteResult Log.Error "execution_failed" "authentication" "SynchronousException" "Command authentication failed"
+                        CommandRouteRequestContextFailed ->
+                          reportRouteResult Log.Error "execution_failed" "request_context" "SynchronousException" "Command request context failed"
+                        CommandRouteBodyRequest requestContext bodyState ->
+                          reportCommandRequestBodyState commandName requestContext bodyState
+                        CommandRouteHandlerOwnsResult requestContext ->
+                          CommandResultReceipt.setRelatedUserSub
+                            requestId
+                            (requestContext.user |> Maybe.map (\claims -> claims.sub))
+
+                Task.finally finalizeCommandResult do
+                  Log.withScope [("component", "WebTransport"), ("commandName", commandName), ("requestId", requestIdText)] do
+                    case webTransport.authEnabled of
+                      Maybe.Nothing -> do
                         setRouteResultState CommandRouteRequestContextPending
-                        case authResult of
-                          Result.Err TokenMissing -> processWithClaims Maybe.Nothing
-                          Result.Err authError -> do
-                            setRouteResultState (CommandRouteAuthenticationRejected authError)
-                            Middleware.respondWithAuthError authError respond
-                          Result.Ok authContext -> processWithClaims authContext.claims
+                        safeContext <- Auth.trustedContext |> Task.asResultSafe @Text
+                        case safeContext of
+                          Result.Err _ -> do
+                            setRouteResultState CommandRouteRequestContextFailed
+                            internalError "Internal server error"
+                          Result.Ok requestContext ->
+                            processCommandWithContext requestContext {Auth.requestId = requestId}
+                      Maybe.Just auth -> do
+                        safeAuthResult <-
+                          Middleware.checkAuth (Maybe.Just auth.jwksManager) auth.authConfig Authenticated request
+                            |> Task.asResultSafe @Text
+                        case safeAuthResult of
+                          Result.Err _ -> do
+                            setRouteResultState CommandRouteAuthenticationFailed
+                            internalError "Internal server error"
+                          Result.Ok authResult -> do
+                            setRouteResultState CommandRouteRequestContextPending
+                            case authResult of
+                              Result.Err TokenMissing -> processWithClaims Maybe.Nothing
+                              Result.Err authError -> do
+                                setRouteResultState (CommandRouteAuthenticationRejected authError)
+                                Middleware.respondWithAuthError authError respond
+                              Result.Ok authContext -> processWithClaims authContext.claims
+              )
           Maybe.Nothing ->
             notFound [fmt|Command not found: #{commandName}|]
       ["queries", queryNameKebab] -> do
@@ -1226,21 +1269,26 @@ instance Transport WebTransport where
         let actorFields = case requestContext.user of
               Maybe.Just claims -> ["relatedUserSub" Json..= claims.sub]
               Maybe.Nothing -> []
-        Log.recordIsolated Log.Warn
-          ( [ "component" Json..= ("WebTransport" :: Text)
-            , "commandName" Json..= n
-            , "requestId" Json..= requestIdText
-            , "correlationId" Json..= requestIdText
-            , "kind" Json..= ("command_result" :: Text)
-            , "result" Json..= ("rejected" :: Text)
-            , "failureStage" Json..= ("decoding" :: Text)
-            , "errorClass" Json..= ("InvalidCommand" :: Text)
-            , "eventsAppended" Json..= (0 :: Int)
-            ]
-            |> Array.append actorFields
-          )
-          "Command payload could not be decoded"
-          |> Task.ignoreError
+        let report =
+              Log.recordIsolated Log.Warn
+                ( [ "component" Json..= ("WebTransport" :: Text)
+                  , "commandName" Json..= n
+                  , "requestId" Json..= requestIdText
+                  , "correlationId" Json..= requestIdText
+                  , "kind" Json..= ("command_result" :: Text)
+                  , "result" Json..= ("rejected" :: Text)
+                  , "failureStage" Json..= ("decoding" :: Text)
+                  , "errorClass" Json..= ("InvalidCommand" :: Text)
+                  , "eventsAppended" Json..= (0 :: Int)
+                  ]
+                  |> Array.append actorFields
+                )
+                "Command payload could not be decoded"
+                |> Task.ignoreError
+        maybeReported <- CommandResultReceipt.reportIfRegistered requestContext.requestId report
+        case maybeReported of
+          Maybe.Nothing -> report
+          Maybe.Just _ -> Task.yield ()
         let errorResponse =
               Response.Failed
                 { error = [fmt|Invalid JSON format for command #{n}|]
