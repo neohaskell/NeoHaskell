@@ -1347,13 +1347,30 @@ class Bootstrap(History):
         self.assertEqual(result["items"], [])
         self.assertEqual(result["prs"], [])
 
-    def test_bootstrap_needs_notes_and_explicit_version(self):
+    def test_historical_bootstrap_validation_remains_and_new_creation_is_retired(self):
         with self.assertRaisesRegex(ValueError, "notes"):
             release.plan_release(
                 self.repo, "HEAD", "platform", {}, "2026-09-15", ("neo-v0.4.1", "0.4.2")
             )
-        with self.assertRaisesRegex(ValueError, "explicit"):
+        plan, _revision = self.bootstrap()
+        self.assertTrue(plan["bootstrap"])
+        self.assertTrue(release.verify_plan(self.repo, plan, {}))
+        with self.assertRaisesRegex(ValueError, "retired"):
             remote.select_work(self.api, self.repo, self.base, "bootstrap")
+        self.assertEqual(self.api.writes, [])
+
+    def test_github_writer_rejects_new_bootstrap_pr_before_remote_writes(self):
+        from unittest.mock import patch
+
+        api = object.__new__(remote.GitHub)
+        plan = {"kind": "release", "bootstrap": True}
+        with patch.object(remote.GitHub, "request") as request, patch.object(
+            remote.GitHub, "ref"
+        ) as ref:
+            with self.assertRaisesRegex(ValueError, "retired"):
+                remote.GitHub.make_pr(api, self.repo, plan, {})
+        request.assert_not_called()
+        ref.assert_not_called()
 
 
 class GitHubReads(unittest.TestCase):
@@ -1453,6 +1470,9 @@ class Workflow(unittest.TestCase):
         )
         self.assertIn("push:\n    branches: [main]", text)
         self.assertIn("workflow_dispatch:", text)
+        self.assertIn("options: [auto, recover, resume]", text)
+        self.assertNotIn("baseline:", text)
+        self.assertNotIn("version:", text)
         self.assertNotIn("pull_request:", text)
         self.assertNotIn("tags:", text)
         self.assertIn("permissions:\n  contents: read", text)
@@ -1503,6 +1523,57 @@ class Workflow(unittest.TestCase):
         reconcile = self.job_block(text, "reconcile")
         self.assertIn("needs.platform_publish.result == 'success'", reconcile)
         self.assertIn("contents: write", reconcile)
+
+    def test_cli_rejects_bootstrap_for_preview_and_orchestrate(self):
+        script = SKILL_ROOT / "scripts/semantic-release"
+        help_result = subprocess.run(
+            [sys.executable, str(script), "--help"],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(help_result.returncode, 0, help_result.stderr)
+        self.assertNotIn("bootstrap", help_result.stdout)
+        self.assertNotIn("--baseline", help_result.stdout)
+        self.assertNotIn("--version", help_result.stdout)
+        for command in ("preview", "orchestrate"):
+            result = subprocess.run(
+                [sys.executable, str(script), command, "--operation", "bootstrap"],
+                cwd=ROOT,
+                capture_output=True,
+                text=True,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("invalid choice: 'bootstrap'", result.stderr)
+
+    def test_workflow_plan_command_matches_the_cli_parser(self):
+        import os
+
+        text = self.workflow("semantic-release.yml")
+        start = text.index("      - id: plan")
+        run_start = text.index("        run: >-\n", start) + len("        run: >-\n")
+        command_lines = []
+        for line in text[run_start:].splitlines():
+            if not line.startswith("          "):
+                break
+            command_lines.append(line[10:].strip())
+        command = " ".join(command_lines)
+        self.assertNotIn("--baseline", command)
+        self.assertNotIn("--version", command)
+        result = subprocess.run(
+            ["bash", "-euc", command + " --help"],
+            cwd=ROOT,
+            env={
+                **os.environ,
+                "OPERATION": "auto",
+                "ATTEMPT": "",
+                "REASON": "",
+            },
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Prepare reviewed release PRs", result.stdout)
 
     def test_workflow_outputs_are_platform_only_and_preserve_reuse(self):
         import runpy

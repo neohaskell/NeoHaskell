@@ -146,6 +146,8 @@ class GitHub:
         )
 
     def make_pr(self, repo, plan, edits):
+        if plan.get("kind") == "release" and plan.get("bootstrap") is not False:
+            raise ValueError("New bootstrap release preparation PRs are retired")
         branch = "release/" + plan["group"] + "-" + plan["id"][:16]
         expected_tree = []
         for path, text in edits.items():
@@ -492,14 +494,16 @@ def select_work(
     main,
     operation="auto",
     group="platform",
-    baseline=None,
-    target=None,
     date=None,
     attempt=None,
     reason=None,
 ):
     import datetime
 
+    if operation == "bootstrap":
+        raise ValueError("New bootstrap preparation is retired")
+    if operation not in {"auto", "recover", "resume"}:
+        raise ValueError("Unknown release operation")
     date = (
         date
         or datetime.datetime.fromtimestamp(
@@ -511,7 +515,7 @@ def select_work(
     ledger = repo.ledger(main)
     if operation == "auto" and not ledger["attempts"]:
         return {
-            "status": "inactive — first manual release required",
+            "status": "inactive — no release attempts in history",
             "items": [],
             "prs": [],
         }
@@ -537,19 +541,6 @@ def select_work(
         api.pause(attempt, main)
         return {
             "status": "recovery paused and prepared",
-            "items": [],
-            "prs": [api.make_pr(repo, plan, release.expected_edits(repo, plan))],
-        }
-    if operation == "bootstrap":
-        if not baseline or not target:
-            raise ValueError(
-                "Manual bootstrap requires explicit baseline tag and target version"
-            )
-        plan = release.plan_release(
-            repo, main, group, completed, date, (baseline, target)
-        )
-        return {
-            "status": "manual bootstrap preparation",
             "items": [],
             "prs": [api.make_pr(repo, plan, release.expected_edits(repo, plan))],
         }

@@ -6,14 +6,8 @@ on:
     inputs:
       operation:
         type: choice
-        options: [auto, bootstrap, recover, resume]
+        options: [auto, recover, resume]
         default: auto
-      baseline:
-        description: Existing baseline tag (manual bootstrap only)
-        type: string
-      version:
-        description: Reviewed first version, 0.Y.Z (manual bootstrap only)
-        type: string
       attempt:
         description: Full failed attempt ID (recover/resume only)
         type: string
@@ -54,13 +48,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           OPERATION: ${{ inputs.operation || 'auto' }}
-          BASELINE: ${{ inputs.baseline }}
-          VERSION: ${{ inputs.version }}
           ATTEMPT: ${{ inputs.attempt }}
           REASON: ${{ inputs.reason }}
         run: >-
           ./.agents/skills/neohaskell-release/scripts/semantic-release orchestrate --operation "$OPERATION"
-          --baseline "$BASELINE" --version "$VERSION"
           --attempt "$ATTEMPT" --reason "$REASON"
   platform_seed:
     needs: prepare
