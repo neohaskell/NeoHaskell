@@ -2,6 +2,10 @@
 
 **You own the contract. The structure changes. The behavior does not.** Distinct from Feature, which adds behavior, and Bug fix, which corrects it.
 
+Framework export, TH marker and generated-API refactors also follow
+[NeoHaskell consumer verification](../../skills/neohaskell-consumer-verification/SKILL.md)
+for the same-PR starter and testbed migration contract.
+
 If the cleanup reveals a missing feature or a real bug, split it out and ship the structural change first against the pinned contract. A redesign is allowed, but name it and route to Feature. Large or cross-cutting structural work belongs to the **figure-it-out** skill. This playbook is the focused-to-medium change.
 
 1. Pin the behavior contract first. Run the **how** skill over the affected subsystem to learn the contract, then write a characterization test, snapshot, or equivalence harness that captures current behavior before any structure moves. If the area has no coverage, write the pin before touching structure. Use meaningful Hspec examples or QuickCheck properties with independently specified expectations or a genuinely preserved baseline. For public/generated compiler/API contracts, compile representative consumer fixtures, including rejected uses where relevant. Ordinary typecheck and lint alone do not pin runtime behavior; demand pure results and execute Tasks/service effects for runtime equivalence.

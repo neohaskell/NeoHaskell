@@ -6,7 +6,6 @@ module Testbed.Document.Commands.CreateDocument (
 
 import Core
 import Decider qualified
-import Json qualified
 import Map qualified
 import Service.Auth (RequestContext (..))
 import Service.Command.Core (TransportsOf)
@@ -25,10 +24,6 @@ data CreateDocument = CreateDocument
   , attachment :: FileRef
   -- ^ Reference to previously uploaded file (validated by framework)
   }
-  deriving (Generic, Typeable, Show)
-
-
-instance Json.FromJSON CreateDocument
 
 
 getEntityId :: CreateDocument -> Maybe Uuid

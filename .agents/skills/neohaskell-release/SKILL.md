@@ -13,6 +13,8 @@ before drafting notes.
 Generated application behavior and the embedded IDE bundle are owned by
 [NeoHaskell consumer verification](../neohaskell-consumer-verification/SKILL.md).
 Use that skill for `neo new` outcome checks or committed IDE bundle fidelity.
+Framework export, TH marker and generated-API changes carry their starter and
+testbed migrations in the same PR under that skill's verification contract.
 
 ## Local entrypoints
 
