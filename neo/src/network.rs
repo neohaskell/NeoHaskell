@@ -199,13 +199,6 @@ fn parse_ls_remote_tags(stdout: &str) -> Vec<PackageTag> {
         .collect()
 }
 
-/// The newest `neo-v*` release version from a GitHub releases list, or None if
-/// no entry carries a parseable `neo-v*` tag. Pure (offline unit-tested). The
-/// `neo-v` prefix is the release train's disambiguator: `neo` ships from the
-/// NeoHaskell monorepo on its own `neo-v*` tags, independent of the library and
-/// `installer-v*` trains, so the repo-wide `releases/latest` must never be used
-/// here (it could surface some OTHER train's newest release). Historical
-/// `installer-v*` tags belong to a separate retired release train.
 fn newest_neo_release(releases: &[GitHubRelease]) -> Option<Version> {
     releases
         .iter()

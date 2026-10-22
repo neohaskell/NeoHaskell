@@ -707,6 +707,30 @@ class TargetPolicies(History):
 
 class ArchivedTargetCompatibility(unittest.TestCase):
     def test_published_and_frozen_retry_keep_historical_four_target_assets(self):
+        historical_targets = {
+            "x86_64-unknown-linux-gnu",
+            "aarch64-unknown-linux-gnu",
+            "x86_64-apple-darwin",
+            "aarch64-apple-darwin",
+        }
+        historical_assets = {
+            "neo-x86_64-unknown-linux-gnu",
+            "neo-aarch64-unknown-linux-gnu",
+            "neo-x86_64-apple-darwin",
+            "neo-aarch64-apple-darwin",
+            "receipt-x86_64-unknown-linux-gnu.json",
+            "receipt-aarch64-unknown-linux-gnu.json",
+            "receipt-x86_64-apple-darwin.json",
+            "receipt-aarch64-apple-darwin.json",
+            "neo-starter-flake.nix",
+            "neo-starter-flake.lock",
+            "neo-starter-cabal.project",
+            "neo-compatibility.json",
+            "consumer.json",
+        }
+        sealed_assets = historical_assets | {
+            "release-manifest.json", "release-bundle.zip", "SHA256SUMS"
+        }
         STATE.mkdir(parents=True, exist_ok=True)
         repo = release.Repo(ROOT)
         main = repo.revision("HEAD")
@@ -727,8 +751,9 @@ class ArchivedTargetCompatibility(unittest.TestCase):
         )
         for plan in plans.values():
             self.assertNotIn("target_policy", plan)
-            self.assertEqual(release.validate_source_policy(repo, plan), release.LEGACY_TARGETS)
-            self.assertEqual(release.targets_for(plan), release.LEGACY_TARGETS)
+            self.assertEqual(set(release.validate_source_policy(repo, plan)), historical_targets)
+            self.assertEqual(set(release.targets_for(plan)), historical_targets)
+            self.assertEqual(remote.required_assets(plan), historical_assets)
             self.assertIsNone(repo.read(plan["source_sha"], release.LEDGER_PATH))
             self.assertIsNotNone(repo.read(plan["source_sha"], release.LIVE_LEGACY_LEDGER_PATH))
             self.assertNotIn(
@@ -744,6 +769,7 @@ class ArchivedTargetCompatibility(unittest.TestCase):
             published_files = artifact_files(
                 repo, published, published_revision, root / "published"
             )
+            self.assertEqual(set(published_files), sealed_assets)
             remote.publish(
                 api, repo, published, published_revision, published_files, lambda: None
             )
@@ -753,6 +779,7 @@ class ArchivedTargetCompatibility(unittest.TestCase):
             pending_files = artifact_files(
                 repo, pending, pending_revision, root / "pending"
             )
+            self.assertEqual(set(pending_files), sealed_assets)
             item = api.create_release(
                 release.release_tag(pending),
                 pending_revision,
@@ -777,7 +804,7 @@ class ArchivedTargetCompatibility(unittest.TestCase):
             matrix = json.loads(
                 cli["work_outputs"](result["items"])["platform_matrix"]
             )["include"]
-            self.assertEqual({row["target"] for row in matrix}, set(release.LEGACY_TARGETS))
+            self.assertEqual({row["target"] for row in matrix}, historical_targets)
 
             restored = root / "restored"
             self.assertTrue(
@@ -797,7 +824,7 @@ class ArchivedTargetCompatibility(unittest.TestCase):
                 repo, main, pending["id"], "The frozen release needs a source correction."
             )
             self.assertNotIn("target_policy", recovery)
-            self.assertEqual(release.validate_source_policy(repo, recovery), release.LEGACY_TARGETS)
+            self.assertEqual(set(release.validate_source_policy(repo, recovery)), historical_targets)
 
 
 class Prepare(History):

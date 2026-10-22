@@ -3,11 +3,6 @@
 # neo-release — the single source of truth for how a native `neo` release asset
 # is NAMED, PACKAGED, CHECKSUMMED, VERIFIED, and INSTALLED for a rehearsal.
 #
-# Both the release workflow (.github/workflows/neo-release.yml) and the CI
-# release rehearsal call THIS script, so the asset-naming contract and checksum
-# manifest cannot drift between publication and rehearsal. Release-owned
-# fixtures cover those entrypoints together.
-#
 # Naming contract:
 #   asset  = neo-<target>
 #   digest = SHA256SUMS  (sha256sum format: "<hex>␠␠neo-<target>")
