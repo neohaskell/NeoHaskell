@@ -112,23 +112,10 @@ The workflow does not merge PRs or change branch protection.
 
 ## First release for a repository without history
 
-Use manual bootstrap only when the canonical and historical ledger paths contain
-no release history and the user explicitly asks to prepare the first release.
-Installing or validating the workflow does not request a bootstrap.
-
-1. Check the repository's workflow permissions. Preparation PRs require the
-   built-in workflow token to create PRs. Keep default token access read-only and
-   retain main protection.
-2. Merge reviewed fragments for the initial release. Do not synthesize the
-   entire historical backlog.
-3. Inspect immutable tags and agree on an existing baseline tag and a target
-   version that exceeds the baseline and all reserved attempts.
-4. Dispatch bootstrap on main with those reviewed values.
-5. Review the preparation PR, checks, release notes and migration prompt. Verify
-   the public release and assets after its authorized merge.
-
-Never run bootstrap merely to test or install automation. Do not infer a
-baseline from an unrelated tag that happens to sort highest.
+The workflow and CLI do not create new bootstrap preparations. Automatic
+preparation remains inactive when the release ledger has no attempts. Preserve
+that state and coordinate a separately reviewed release-history migration; do
+not infer a baseline from tags or reset the ledger.
 
 ## Retry or recover a failed release
 
