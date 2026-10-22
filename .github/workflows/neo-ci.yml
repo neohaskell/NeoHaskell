@@ -32,6 +32,7 @@ jobs:
           BASE_REF: ${{ github.base_ref }}
           IS_DRAFT: ${{ github.event.pull_request.draft }}
           FULL_CI_LABEL_PRESENT: ${{ github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'run-full-ci') }}
+          PUSH_BEFORE: ${{ github.event.before }}
         run: |
           set -euo pipefail
           run_expensive=true
@@ -43,11 +44,16 @@ jobs:
           fi
           echo "run_expensive=$run_expensive" >> "$GITHUB_OUTPUT"
           if [ "$EVENT" = "push" ]; then
-            echo "touched=true" >> "$GITHUB_OUTPUT"
-            echo "contract=true" >> "$GITHUB_OUTPUT"
-            exit 0
+            PUSH_BEFORE="${PUSH_BEFORE:-}"
+            if [ -z "$PUSH_BEFORE" ] || [[ "$PUSH_BEFORE" =~ ^0+$ ]] || ! git cat-file -e "${PUSH_BEFORE}^{commit}" 2>/dev/null; then
+              echo "touched=true" >> "$GITHUB_OUTPUT"
+              echo "contract=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            CHANGED="$(git diff --name-only "${PUSH_BEFORE}..HEAD")"
+          else
+            CHANGED="$(git diff --name-only "origin/${BASE_REF}...HEAD")"
           fi
-          CHANGED="$(git diff --name-only "origin/${BASE_REF}...HEAD")"
           PATTERN='^(neo/|nix/neo-package\.nix|flake\.nix|flake\.lock|\.agents/skills/neohaskell-release/scripts/(neo-release|cache-prime)$|\.agents/skills/neohaskell-consumer-verification/|\.github/workflows/neo-ci\.yml)'
           CONTRACT='^(neo/|core/|integrations/|nix/neo-package\.nix|flake\.nix|flake\.lock|\.agents/skills/neohaskell-release/scripts/(neo-release|cache-prime)$|\.agents/skills/neohaskell-consumer-verification/|\.github/workflows/neo-ci\.yml)'
           if echo "$CHANGED" | grep -qE "$PATTERN"; then

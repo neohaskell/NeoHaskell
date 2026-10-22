@@ -89,16 +89,37 @@ def temp_root() -> Path:
     return path
 
 
-def run_change_detection(name: str, *, event: str = "pull_request", action: str, draft: bool, label_event: bool, label_present: bool, changed_paths: tuple[str, ...]) -> tuple[subprocess.CompletedProcess[str], dict[str, str]]:
+def run_change_detection(
+    name: str,
+    *,
+    event: str = "pull_request",
+    action: str,
+    draft: bool,
+    label_event: bool,
+    label_present: bool,
+    changed_paths: tuple[str, ...],
+    push_before: str = "1" * 40,
+    before_commit_exists: bool = True,
+) -> tuple[subprocess.CompletedProcess[str], dict[str, str]]:
     script = shell_script(workflow(name), "changes")
     with tempfile.TemporaryDirectory(dir=temp_root()) as directory:
         temporary = Path(directory)
         bin_dir = temporary / "bin"
         bin_dir.mkdir()
         fake_git = bin_dir / "git"
-        fake_git.write_text("#!/bin/sh\n[ \"$1\" = diff ] || exit 2\nprintf '%s\\n' \"$TEST_CHANGED_PATHS\"\n", encoding="utf-8")
+        fake_git.write_text(
+            "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$TEST_GIT_LOG\"\n"
+            "if [ \"$1\" = cat-file ]; then\n"
+            "  [ \"$TEST_GIT_BEFORE_EXISTS\" = true ] || exit 1\n"
+            "  exit 0\n"
+            "fi\n"
+            "[ \"$1\" = diff ] || exit 2\n"
+            "printf '%s\\n' \"$TEST_CHANGED_PATHS\"\n",
+            encoding="utf-8",
+        )
         fake_git.chmod(0o755)
         output = temporary / "github-output"
+        git_log = temporary / "git-log"
         environment = os.environ.copy()
         environment.update(
             {
@@ -110,6 +131,9 @@ def run_change_detection(name: str, *, event: str = "pull_request", action: str,
                 "GITHUB_OUTPUT": str(output),
                 "IS_DRAFT": str(draft).lower(),
                 "PATH": f"{bin_dir}:{environment.get('PATH', '')}",
+                "PUSH_BEFORE": push_before,
+                "TEST_GIT_BEFORE_EXISTS": str(before_commit_exists).lower(),
+                "TEST_GIT_LOG": str(git_log),
                 "TEST_CHANGED_PATHS": "\n".join(changed_paths),
             }
         )
@@ -119,6 +143,7 @@ def run_change_detection(name: str, *, event: str = "pull_request", action: str,
             for line in output.read_text(encoding="utf-8").splitlines():
                 key, value = line.split("=", 1)
                 values[key] = value
+        values["_git_calls"] = git_log.read_text(encoding="utf-8").splitlines() if git_log.exists() else []
         return result, values
 
 
@@ -253,21 +278,80 @@ class CiVerificationTests(unittest.TestCase):
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 self.assertTrue(job_runs("neo-ci.yml", "consumer-contract", outputs))
 
-    def test_push_event_keeps_existing_full_run_behavior(self) -> None:
-        for name, selector in (("test.yml", "compiled"), ("neo-ci.yml", "touched")):
+    def test_push_event_keeps_existing_test_workflow_full_run_behavior(self) -> None:
+        result, outputs = run_change_detection(
+            "test.yml",
+            event="push",
+            action="",
+            draft=False,
+            label_event=False,
+            label_present=False,
+            changed_paths=(),
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(outputs.get("run_expensive"), "true")
+        self.assertEqual(outputs.get("compiled"), "true")
+
+    def test_neo_push_selects_components_from_the_full_before_to_head_range(self) -> None:
+        before = "1" * 40
+        cases = (
+            ("documentation-only push", ("docs/guide.md",), "false", "false"),
+            ("framework-only push", ("core/core/Task.hs",), "false", "true"),
+            ("neo source push", ("neo/src/main.rs",), "true", "true"),
+        )
+        for name, changed_paths, touched, contract in cases:
             result, outputs = run_change_detection(
-                name,
+                "neo-ci.yml",
                 event="push",
                 action="",
                 draft=False,
                 label_event=False,
                 label_present=False,
-                changed_paths=(),
+                changed_paths=changed_paths,
+                push_before=before,
             )
-            with self.subTest(workflow=name):
+            with self.subTest(case=name):
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 self.assertEqual(outputs.get("run_expensive"), "true")
-                self.assertEqual(outputs.get(selector), "true")
+                self.assertEqual(outputs.get("touched"), touched)
+                self.assertEqual(outputs.get("contract"), contract)
+                self.assertTrue(job_runs("neo-ci.yml", "consumer-contract", outputs))
+                for job in ("rust", "ide", "nix-package"):
+                    self.assertEqual(job_runs("neo-ci.yml", job, outputs), touched == "true", job)
+                self.assertEqual(
+                    outputs["_git_calls"],
+                    [f"cat-file -e {before}^{{commit}}", f"diff --name-only {before}..HEAD"],
+                )
+
+        cache_condition = job_block(workflow("neo-ci.yml"), "cache-populate")
+        self.assertIn("needs.changes.outputs.contract == 'true'", cache_condition)
+
+    def test_neo_push_with_missing_or_invalid_before_selects_all_components(self) -> None:
+        for name, before, before_exists in (
+            ("missing before", "", True),
+            ("all-zero before", "0" * 40, True),
+            ("unavailable before commit", "2" * 40, False),
+        ):
+            result, outputs = run_change_detection(
+                "neo-ci.yml",
+                event="push",
+                action="",
+                draft=False,
+                label_event=False,
+                label_present=False,
+                changed_paths=("docs/guide.md",),
+                push_before=before,
+                before_commit_exists=before_exists,
+            )
+            with self.subTest(case=name):
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertEqual(outputs.get("touched"), "true")
+                self.assertEqual(outputs.get("contract"), "true")
+                self.assertTrue(job_runs("neo-ci.yml", "consumer-contract", outputs))
+                for job in ("rust", "ide", "nix-package"):
+                    self.assertTrue(job_runs("neo-ci.yml", job, outputs), job)
+                expected_git_calls = [] if not before or set(before) == {"0"} else [f"cat-file -e {before}^{{commit}}"]
+                self.assertEqual(outputs["_git_calls"], expected_git_calls)
         neo_push = re.search(r"(?ms)^  push:\n(.*?)(?=^permissions:)", workflow("neo-ci.yml"))[1]
         self.assertNotRegex(neo_push, r"(?m)^\s+paths:")
 

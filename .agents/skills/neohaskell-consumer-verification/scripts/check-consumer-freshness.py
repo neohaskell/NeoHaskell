@@ -4,7 +4,9 @@
 This is a bounded source checker, not a Haskell parser. It reads ordinary
 top-level data declarations, attached deriving clauses, empty instance
 declarations, and calls that pass an unqualified local type to a known service
-marker. It ignores comments and string literals. Template Haskell source
+marker. It reports marker-owned default, stock, and anyclass derivations while
+preserving custom newtype and via derivations. It ignores comments and string
+literals. Template Haskell source
 shapes that define marker ownership are checked explicitly and fail closed if
 they change, so this inventory cannot quietly drift from the generators.
 
@@ -279,36 +281,51 @@ def _top_level_end(source: str, offset: int) -> int:
     return line_end + 1 + next_declaration.start()
 
 
-def _deriving_classes(chunk: str) -> list[tuple[int, str]]:
-    results: list[tuple[int, str]] = []
+def _deriving_classes(chunk: str) -> list[tuple[int, str, str]]:
+    results: list[tuple[int, str, str]] = []
     pattern = re.compile(
-        r"\bderiving\s*(?:(?:stock|newtype|anyclass)\s*)?\(([^)]*)\)"
-        r"|\bderiving\s+(?:(?:stock|newtype|anyclass)\s+)?([A-Z][A-Za-z0-9_.]*)"
+        r"\bderiving\s*(?:(?P<list_strategy>stock|newtype|anyclass)\s*)?\((?P<classes>[^)]*)\)"
+        r"|\bderiving\s+(?:(?P<single_strategy>stock|newtype|anyclass)\s+)?(?P<single_class>[A-Z][A-Za-z0-9_.]*)"
     )
     for match in pattern.finditer(chunk):
-        classes = match.group(1)
+        classes = match.group("classes")
+        via = re.match(r"\s+via\b", chunk[match.end() :]) is not None
         if classes is None:
-            results.append((match.start(2), match.group(2)))
+            results.append(
+                (
+                    match.start("single_class"),
+                    match.group("single_class"),
+                    "via" if via else match.group("single_strategy") or "default",
+                )
+            )
             continue
         for class_match in re.finditer(r"[A-Z][A-Za-z0-9_.]*", classes):
             results.append(
-                (match.start(1) + class_match.start(), class_match.group(0))
+                (
+                    match.start("classes") + class_match.start(),
+                    class_match.group(0),
+                    "via" if via else match.group("list_strategy") or "default",
+                )
             )
     return results
 
 
-def _type_derivings(source: str, aliases: dict[str, str], classes: set[str]) -> dict[str, list[tuple[int, str]]]:
+def _type_derivings(
+    source: str, aliases: dict[str, str], classes: set[str]
+) -> dict[str, list[tuple[int, str, str]]]:
     code = _mask_haskell(source)
-    result: dict[str, list[tuple[int, str]]] = {}
+    result: dict[str, list[tuple[int, str, str]]] = {}
     starts = list(re.finditer(r"(?m)^[ \t]*(?:data|newtype)\s+([A-Z][A-Za-z0-9_']*)\b", code))
     for match in starts:
         type_name = match.group(1)
         chunk_end = _top_level_end(code, match.start())
         chunk = code[match.start() : chunk_end]
-        for offset, spelling in _deriving_classes(chunk):
+        for offset, spelling, strategy in _deriving_classes(chunk):
             class_name = _canonical_class(spelling, aliases, classes)
             if class_name is not None:
-                result.setdefault(type_name, []).append((match.start() + offset, class_name))
+                result.setdefault(type_name, []).append(
+                    (match.start() + offset, class_name, strategy)
+                )
     return result
 
 
@@ -367,7 +384,9 @@ def scan_source(
 
     for type_name, markers in targets.items():
         for marker in markers:
-            for offset, class_name in declarations.get(type_name, []):
+            for offset, class_name, strategy in declarations.get(type_name, []):
+                if strategy in {"newtype", "via"}:
+                    continue
                 if class_name in defaults[marker]:
                     finding = Finding(
                         path,

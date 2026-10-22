@@ -79,6 +79,35 @@ deriveEvent ''CartEvent
 """
         self.assertEqual(FRESHNESS.scan_source("Fixture.hs", source, self.defaults), [])
 
+    def test_preserves_newtype_and_via_json_deriving(self) -> None:
+        source = """
+{-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE DerivingVia #-}
+
+import Json qualified
+
+data EventPayload = EventPayload
+event ''EventPayload
+
+newtype WrappedEvent = WrappedEvent { getWrappedEvent :: EventPayload }
+  deriving newtype (Json.FromJSON, Json.ToJSON)
+event ''WrappedEvent
+
+newtype ViaWrappedEvent = ViaWrappedEvent { getViaWrappedEvent :: EventPayload }
+  deriving (Json.FromJSON, Json.ToJSON) via EventPayload
+event ''ViaWrappedEvent
+
+data AnyclassDefault = AnyclassDefault
+  deriving anyclass (Json.ToJSON)
+event ''AnyclassDefault
+"""
+        findings = FRESHNESS.scan_source("Fixture.hs", source, self.defaults)
+        self.assertEqual(
+            {(item.type_name, item.class_name, item.declaration) for item in findings},
+            {("AnyclassDefault", "ToJSON", "deriving clause")},
+        )
+
     def test_finds_bare_deriving_and_empty_where_instances_through_core_alias(self) -> None:
         source = """
 import Core qualified as Framework
