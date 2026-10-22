@@ -16,11 +16,13 @@ the second number and resets the third; a compatible feature or fix increments
 only the third. Reaching version 1 is a separate explicit decision.
 
 Framework, integrations, CLI, and starter form one user-facing platform. The
-installer release flow is unused and is being retired. Existing
-release tags are heterogeneous: framework `v0.*` and bare `0.*`, plus `neo-v*`
-and `installer-v*`. Current manifests also differ. Matching numbers alone would
-not prove compatibility: the CLI embeds an immutable framework revision in its
-starter, verified by the executable compatibility contract.
+standalone installer release flow is retired. Preserve its existing tags and
+releases as historical records, but make no promise that old installers work
+with future Neo releases. Existing release tags are heterogeneous: framework
+`v0.*` and bare `0.*`, plus `neo-v*` and `installer-v*`. Current manifests also
+differ. Matching numbers alone would not prove compatibility: the CLI embeds an
+immutable framework revision in its starter, verified by the executable
+compatibility contract.
 
 Main requires pull requests and required checks, with no ruleset bypass actors.
 A workflow cannot simply commit a changelog/version bump straight to main.
@@ -34,15 +36,17 @@ contain engineering detail; they are not the desired user-facing release notes.
 - **Platform:** `nhcore`, `nhintegrations`, the reference application's package
   metadata, Neo CLI, and bundled starter share the platform release version.
   `CHANGELOG.md` is the public platform history.
-- **Installer publication is retired.** Keep existing tags/releases, source, and
-  build/download compatibility tests. Do not generate installer versions,
-  changelog entries, native release assets, or publication jobs.
+- **Installer publication is retired.** Preserve historical tags, releases and
+  provenance records. Do not retain installer source or promise compatibility
+  with future Neo releases. Do not generate installer versions, changelog
+  entries, native release assets, or publication jobs.
 
 Use the existing `neo-vX.Y.Z` downloadable release namespace, with the public
 release title `NeoHaskell X.Y.Z`. The corresponding `vX.Y.Z` framework tag is an
 alias at the same main commit; there is one platform GitHub Release with the
-native assets and complete notes. This preserves the installer's existing
-`neo-v*` resolution contract. Never move old tags or rewrite old releases.
+native assets and complete notes. This preserves the verified Neo release
+helper's existing `neo-v*` resolution contract. Never move old tags or rewrite
+old releases.
 
 The platform's highest impact determines its next version. A breaking
 change in either a fragment or its merged Conventional Commit (`!`,

@@ -29,7 +29,7 @@ Lower layers never know about higher ones.
 ## Horizon (6–18 months)
 
 - 0.10.0 shipped: automated releases (version bump, release notes, migration prompt, blog post from merged PRs) and book-style docs including generated ADRs.
-- A newcomer builds and ships a real app unaided; clean-machine onboarding within the 600s SLO.
+- A newcomer builds and ships a real app unaided.
 - First external contributor merges a PR unaided.
 - Nightly benchmarks green for 30 consecutive days.
 - A real production application built on NeoHaskell ships and stays up.

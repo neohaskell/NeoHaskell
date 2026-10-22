@@ -30,6 +30,11 @@
         "core/test-integration",
         "core/test"
       ]
+    },
+    "nhintegrations-test": {
+      "roots": [
+        "integrations/test"
+      ]
     }
   },
   "boundaries": [
@@ -43,6 +48,33 @@
       "suite": "nhcore-test-service",
       "path": "core/testlib/Test/Service/CommandHandler/Execute/Spec.hs",
       "match": "records the exact insertion precondition after refetch",
+      "boundary": "postgres:real",
+      "expected_examples": 2,
+      "fixture": "Service.EventStore.Postgres"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-service",
+      "path": "core/testlib/Test/Service/CommandHandler/Execute/Spec.hs",
+      "match": "acceptExisting commands refetch and re-decide with fresh state",
+      "boundary": "postgres:real",
+      "expected_examples": 2,
+      "fixture": "Service.EventStore.Postgres"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-service",
+      "path": "core/testlib/Test/Service/CommandHandler/Execute/Spec.hs",
+      "match": "acceptNew commands preserve StreamCreation under a PostgreSQL race",
+      "boundary": "postgres:real",
+      "expected_examples": 2,
+      "fixture": "Service.EventStore.Postgres"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-service",
+      "path": "core/testlib/Test/Service/CommandHandler/Execute/Spec.hs",
+      "match": "acceptAny commands preserve unconditional appends",
       "boundary": "postgres:real",
       "expected_examples": 2,
       "fixture": "Service.EventStore.Postgres"

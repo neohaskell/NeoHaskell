@@ -138,6 +138,22 @@ positionInsertions insertionType insertions = do
     _ -> insertions
 
 
+-- | Bind an existing-stream decision to the revision observed by the fetcher.
+insertionTypeForEntity :: InsertionType -> Maybe (FetchedEntity entity) -> InsertionType
+insertionTypeForEntity insertionType maybeFetchedEntity = case insertionType of
+  ExistingStream -> existingInsertionType maybeFetchedEntity
+  _ -> insertionType
+
+
+-- | Preserve the legacy precondition when a fetcher cannot report a revision.
+existingInsertionType :: Maybe (FetchedEntity entity) -> InsertionType
+existingInsertionType maybeFetchedEntity =
+  maybeFetchedEntity
+    |> Maybe.andThen (\fetchedEntity -> fetchedEntity.lastPosition)
+    |> Maybe.map InsertAfter
+    |> Maybe.withDefault ExistingStream
+
+
 -- | Execute a command through fetch, decision, append, and bounded conflict retry.
 execute ::
   forall command commandEntity commandEvent.
@@ -255,14 +271,14 @@ executeInner eventStore entityFetcher entityName requestContext command maybeEnt
 
         case result of
           Ok (EntityFound fetchedEntity) -> do
-            Task.yield (Just fetchedEntity.state, Just streamId)
+            Task.yield (Just fetchedEntity, Just streamId)
           Ok EntityNotFound -> do
             Task.yield (Nothing, Just streamId)
           Err error -> do
             Task.throw (toText error)
 
   -- Resolve the entity state based on whether we have an entity ID
-  (maybeEntity, maybeStreamId) <- case maybeEntityId of
+  (maybeFetchedEntity, maybeStreamId) <- case maybeEntityId of
     Just entityId -> do
       let streamId = toStreamId entityId |> scopeStreamId
       fetchEntity streamId
@@ -273,7 +289,8 @@ executeInner eventStore entityFetcher entityName requestContext command maybeEnt
 
   let commandNameText = GHC.symbolVal (Record.Proxy @(NameOf command)) |> Text.fromLinkedList
 
-  let retryLoop retryCount currentEntity currentStreamId = do
+  let retryLoop retryCount maybeCurrentFetchedEntity currentStreamId = do
+        let currentEntity = maybeCurrentFetchedEntity |> Maybe.map (\fetchedEntity -> fetchedEntity.state)
         let streamIdText = case currentStreamId of
               Just sid -> StreamId.toText sid
               Nothing -> "new-stream"
@@ -339,14 +356,12 @@ executeInner eventStore entityFetcher entityName requestContext command maybeEnt
                   payload <-
                     Event.payloadFromEvents entityName finalStreamId events
 
-                  let finalInsertionType = case insertionType of
-                        InsertAfter pos -> InsertAfter pos
-                        _ -> AnyStreamState
+                  let finalInsertionType = insertionTypeForEntity insertionType maybeCurrentFetchedEntity
 
                   let payloadWithType =
                         payload
                           { insertionType = finalInsertionType,
-                            insertions = positionInsertions insertionType payload.insertions
+                            insertions = positionInsertions finalInsertionType payload.insertions
                           }
 
                   insertResult <-
@@ -377,7 +392,7 @@ executeInner eventStore entityFetcher entityName requestContext command maybeEnt
 
                           case refetchResult of
                             Ok (EntityFound freshFetchedEntity) -> do
-                              retryLoop (retryCount + 1) (Just freshFetchedEntity.state) (Just finalStreamId)
+                              retryLoop (retryCount + 1) (Just freshFetchedEntity) (Just finalStreamId)
                             Ok EntityNotFound -> do
                               retryLoop (retryCount + 1) Nothing (Just finalStreamId)
                             Err refetchError -> do
@@ -398,4 +413,4 @@ executeInner eventStore entityFetcher entityName requestContext command maybeEnt
                             retriesAttempted = retryCount
                           }
 
-  retryLoop 0 maybeEntity maybeStreamId
+  retryLoop 0 maybeFetchedEntity maybeStreamId

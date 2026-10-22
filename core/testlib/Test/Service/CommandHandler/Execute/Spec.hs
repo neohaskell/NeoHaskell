@@ -1,13 +1,21 @@
-module Test.Service.CommandHandler.Execute.Spec where
+{-# LANGUAGE TemplateHaskell #-}
+
+module Test.Service.CommandHandler.Execute.Spec (spec) where
 
 import Array qualified
 import AsyncTask qualified
+import Auth.Claims (UserClaims)
 import ConcurrentVar qualified
 import Core
+import Decider qualified
 import Maybe qualified
+import Service.AccessControl (AccessError)
+import Service.AccessControl qualified as AccessControl
+import Service.Auth (RequestContext)
 import Service.Auth qualified as Auth
 import Service.CommandExecutor.Core (ExecutionResult (..))
 import Service.CommandExecutor qualified as CommandExecutor
+import Service.CommandExecutor.TH (command)
 import Service.EntityFetcher.Core (EntityFetcher (..), EntityFetchResult (..), FetchedEntity (..))
 import Service.Event qualified as Event
 import Service.Event.EventMetadata qualified as EventMetadata
@@ -26,6 +34,60 @@ import Test.Service.EventStore.Regression qualified as Regression
 import Test.Service.CommandHandler.Execute.Context qualified as Context
 import Text qualified
 import Uuid qualified
+
+
+-- | Test-only commands that isolate each event-store insertion contract.
+data CommandExecutorConcurrency
+  = AcceptExistingByItemCount Uuid Uuid
+  | AcceptNewCart Uuid
+  | AcceptAnyItem Uuid Uuid Int
+  deriving (Typeable)
+
+
+-- | Keeps authorization orthogonal to the concurrency behavior under test.
+canAccess :: Maybe UserClaims -> Maybe AccessError
+canAccess = AccessControl.publicAccess
+
+
+-- | Routes every fixture command to its selected cart stream.
+getEntityId :: CommandExecutorConcurrency -> Maybe Uuid
+getEntityId commandValue =
+  case commandValue of
+    AcceptExistingByItemCount cartId _itemId -> Just cartId
+    AcceptNewCart cartId -> Just cartId
+    AcceptAnyItem cartId _itemId _amount -> Just cartId
+
+
+-- | Selects the insertion policy while deciding from the observed cart state.
+decide :: CommandExecutorConcurrency -> Maybe CartEntity -> RequestContext -> Decision CartEvent
+decide commandValue maybeEntity _context =
+  case commandValue of
+    AcceptExistingByItemCount cartId itemId ->
+      case maybeEntity of
+        Nothing -> Decider.reject "Cart does not exist"
+        Just cart -> do
+          let amount = Array.length cart.cartItems + 1
+          ItemAdded {entityId = cartId, itemId, amount}
+            |> Array.wrap
+            |> Decider.acceptExisting
+    AcceptNewCart cartId ->
+      case maybeEntity of
+        Just _ -> Decider.reject "Cart already exists"
+        Nothing ->
+          [CartCreated {entityId = cartId}]
+            |> Decider.acceptNew
+    AcceptAnyItem cartId itemId amount ->
+      case maybeEntity of
+        Nothing -> Decider.reject "Cart does not exist"
+        Just _ ->
+          [ItemAdded {entityId = cartId, itemId, amount}]
+            |> Decider.acceptAny
+
+
+type instance EntityOf CommandExecutorConcurrency = CartEntity
+
+
+command ''CommandExecutorConcurrency
 
 
 spec ::
@@ -243,6 +305,23 @@ retryLogicSpecs backend newCartStoreAndFetcher = do
         (insertionPayloads == [positionedPayload]
           && fetchedRevisions == [Just (Event.StreamPosition 0)])
 
+    it "binds acceptExisting to the fetched stream revision" \context -> do
+      Task.unless (backend == "postgres") do
+        let streamId = context.cartId |> Uuid.toText |> StreamId.fromTextUnsafe
+        Regression.seedStream context.cartStore context.cartEntityName streamId
+          [CartCreated {entityId = context.cartId}]
+        (recordingStore, readInsertions) <- Regression.recordInsertions context.cartStore
+        let command = AddItemToCart
+              {cartId = context.cartId, itemId = context.itemId1, amount = 1}
+        result <- CommandExecutor.execute recordingStore context.cartFetcher
+          context.cartEntityName Auth.emptyContext command
+        insertionPayloads <- readInsertions
+        let insertionTypes = insertionPayloads |> Array.map (\payload -> payload.insertionType)
+        case result of
+          CommandAccepted {} -> pass
+          other -> fail [fmt|Expected CommandAccepted, got #{toText other}|]
+        insertionTypes |> shouldBe [Event.InsertAfter (Event.StreamPosition 0)]
+
     it "records the exact insertion precondition after refetch" \context -> do
       let streamId = context.cartId |> Uuid.toText |> StreamId.fromTextUnsafe
       Regression.seedStream context.cartStore context.cartEntityName streamId
@@ -323,6 +402,156 @@ retryLogicSpecs backend newCartStoreAndFetcher = do
             [Event.InsertAfter (Event.StreamPosition 0), Event.InsertAfter (Event.StreamPosition 1)]
           && attemptedEvents == [[expectedEvent], [expectedEvent]]
           && finalStateIsFresh)
+
+    it "acceptExisting commands refetch and re-decide with fresh state" \context -> do
+      Task.when (backend == "postgres") do
+        let streamId = context.cartId |> Uuid.toText |> StreamId.fromTextUnsafe
+        Regression.seedStream context.cartStore context.cartEntityName streamId
+          [ CartCreated {entityId = context.cartId},
+            ItemAdded {entityId = context.cartId, itemId = def, amount = 1}
+          ]
+        (recordingStore, readInsertions) <- Regression.recordInsertions context.cartStore
+        (recordingFetcher, readRevisions) <- Regression.recordFetchedRevisions context.cartFetcher
+        barrier <- Regression.newInsertBarrier
+        attemptCount <- ConcurrentVar.containing (0 :: Int)
+        let barrierStore = Regression.barrierBeforeInsert barrier recordingStore
+        let insert payload = do
+              attemptNumber <-
+                ConcurrentVar.modifyReturning
+                  (\count -> Task.yield (count + 1, count))
+                  attemptCount
+              if attemptNumber < 2
+                then barrierStore.insert payload
+                else recordingStore.insert payload
+        let controlledStore = context.cartStore {EventStore.insert = insert}
+        let run command =
+              CommandExecutor.execute controlledStore recordingFetcher
+                context.cartEntityName Auth.emptyContext command
+        firstAsync <-
+          AsyncTask.run
+            (run (AcceptExistingByItemCount context.cartId context.itemId1))
+        secondAsync <-
+          AsyncTask.run
+            (run (AcceptExistingByItemCount context.cartId context.itemId2))
+        Regression.awaitInsertions 2 barrier
+        Regression.releaseInsertions 2 barrier
+        firstResult <- AsyncTask.waitFor firstAsync
+        secondResult <- AsyncTask.waitFor secondAsync
+        insertionPayloads <- readInsertions
+        fetchedRevisions <- readRevisions
+        finalFetch <- context.cartFetcher.fetch context.cartEntityName streamId |> Task.mapError toText
+        let acceptedResults =
+              [firstResult, secondResult]
+                |> Array.map (\result -> case result of
+                    CommandAccepted {} -> True
+                    _ -> False)
+        let insertionTypes = insertionPayloads |> Array.map (\payload -> payload.insertionType)
+        let finalAmounts = case finalFetch of
+              EntityFound fetched -> fetched.state.cartItems |> Array.map (\(_, amount) -> amount)
+              EntityNotFound -> Array.empty
+        acceptedResults |> shouldBe [True, True]
+        fetchedRevisions
+          |> shouldBe
+            [ Just (Event.StreamPosition 1),
+              Just (Event.StreamPosition 1),
+              Just (Event.StreamPosition 2)
+            ]
+        insertionTypes
+          |> shouldBe
+            [ Event.InsertAfter (Event.StreamPosition 1),
+              Event.InsertAfter (Event.StreamPosition 1),
+              Event.InsertAfter (Event.StreamPosition 2)
+            ]
+        finalAmounts |> shouldBe [3, 2, 1]
+
+    it "acceptNew commands preserve StreamCreation under a PostgreSQL race" \context -> do
+      Task.when (backend == "postgres") do
+        (recordingStore, readInsertions) <- Regression.recordInsertions context.cartStore
+        barrier <- Regression.newInsertBarrier
+        attemptCount <- ConcurrentVar.containing (0 :: Int)
+        let barrierStore = Regression.barrierBeforeInsert barrier recordingStore
+        let insert payload = do
+              attemptNumber <-
+                ConcurrentVar.modifyReturning
+                  (\count -> Task.yield (count + 1, count))
+                  attemptCount
+              if attemptNumber < 2
+                then barrierStore.insert payload
+                else recordingStore.insert payload
+        let controlledStore = context.cartStore {EventStore.insert = insert}
+        let run command =
+              CommandExecutor.execute controlledStore context.cartFetcher
+                context.cartEntityName Auth.emptyContext command
+        firstAsync <- AsyncTask.run (run (AcceptNewCart context.cartId))
+        secondAsync <- AsyncTask.run (run (AcceptNewCart context.cartId))
+        Regression.awaitInsertions 2 barrier
+        Regression.releaseInsertions 2 barrier
+        firstResult <- AsyncTask.waitFor firstAsync
+        secondResult <- AsyncTask.waitFor secondAsync
+        insertionPayloads <- readInsertions
+        let streamId = context.cartId |> Uuid.toText |> StreamId.fromTextUnsafe
+        finalFetch <-
+          context.cartFetcher.fetch context.cartEntityName streamId
+            |> Task.mapError toText
+        let acceptedCount =
+              [firstResult, secondResult]
+                |> Array.map (\result -> case result of
+                    CommandAccepted {} -> 1
+                    _ -> 0)
+                |> Array.sumIntegers
+        let insertionTypes = insertionPayloads |> Array.map (\payload -> payload.insertionType)
+        acceptedCount |> shouldBe 1
+        insertionTypes |> shouldBe [Event.StreamCreation, Event.StreamCreation]
+        case finalFetch of
+          EntityFound fetched -> fetched.lastPosition |> shouldBe (Just (Event.StreamPosition 0))
+          EntityNotFound -> fail "Expected the raced acceptNew command to create a cart"
+
+    it "acceptAny commands preserve unconditional appends" \context -> do
+      Task.when (backend == "postgres") do
+        let streamId = context.cartId |> Uuid.toText |> StreamId.fromTextUnsafe
+        Regression.seedStream context.cartStore context.cartEntityName streamId
+          [CartCreated {entityId = context.cartId}]
+        (recordingStore, readInsertions) <- Regression.recordInsertions context.cartStore
+        barrier <- Regression.newInsertBarrier
+        attemptCount <- ConcurrentVar.containing (0 :: Int)
+        let barrierStore = Regression.barrierBeforeInsert barrier recordingStore
+        let insert payload = do
+              attemptNumber <-
+                ConcurrentVar.modifyReturning
+                  (\count -> Task.yield (count + 1, count))
+                  attemptCount
+              if attemptNumber < 2
+                then barrierStore.insert payload
+                else recordingStore.insert payload
+        let controlledStore = context.cartStore {EventStore.insert = insert}
+        let run command =
+              CommandExecutor.execute controlledStore context.cartFetcher
+                context.cartEntityName Auth.emptyContext command
+        firstAsync <-
+          AsyncTask.run
+            (run (AcceptAnyItem context.cartId context.itemId1 1))
+        secondAsync <-
+          AsyncTask.run
+            (run (AcceptAnyItem context.cartId context.itemId2 1))
+        Regression.awaitInsertions 2 barrier
+        Regression.releaseInsertions 2 barrier
+        firstResult <- AsyncTask.waitFor firstAsync
+        secondResult <- AsyncTask.waitFor secondAsync
+        insertionPayloads <- readInsertions
+        finalFetch <- context.cartFetcher.fetch context.cartEntityName streamId |> Task.mapError toText
+        let acceptedResults =
+              [firstResult, secondResult]
+                |> Array.map (\result -> case result of
+                    CommandAccepted {} -> True
+                    _ -> False)
+        let insertionTypes = insertionPayloads |> Array.map (\payload -> payload.insertionType)
+        acceptedResults |> shouldBe [True, True]
+        insertionTypes |> shouldBe [Event.AnyStreamState, Event.AnyStreamState]
+        case finalFetch of
+          EntityFound fetched -> do
+            fetched.lastPosition |> shouldBe (Just (Event.StreamPosition 2))
+            fetched.state.cartItems |> Array.length |> shouldBe 2
+          EntityNotFound -> fail "Expected the concurrent acceptAny commands to keep the cart"
 
     it "retries on consistency check failure (ExistingStream)" \context -> do
       -- Create initial cart

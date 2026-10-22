@@ -1,6 +1,6 @@
 cabal-version: 3.4
 name: nhcore
-version: 0.10.0
+version: 0.10.1
 synopsis: Core Library for NeoHaskell
 description: NeoHaskell is a dialect of Haskell that is focused on newcomer-friendliness and productivity.
 homepage: https://neohaskell.org
@@ -306,8 +306,6 @@ library
     Set
     Stream
     Subprocess
-    Syntax.Comment
-    Syntax.Function
     Task
     Test
     Test.AppSpec
@@ -400,7 +398,6 @@ library
     neoql
     parser
     layout
-    syntax
 
   default-language: GHC2021
 
@@ -738,8 +735,6 @@ test-suite nhcore-test-core
     TaskSpec
     Test.AppSpec.AppSpecSpec
     Test.AppSpec.VerifySpec
-    Syntax.CommentSpec
-    Syntax.FunctionSpec
     TextSpec
 
   type: exitcode-stdio-1.0

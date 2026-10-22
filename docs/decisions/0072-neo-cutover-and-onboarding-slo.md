@@ -1,4 +1,4 @@
-# ADR-0072: Neo CLI cutover — archive-as-human-gate and the clean-machine onboarding SLO
+# ADR-0072: Historical Neo CLI cutover and clean-machine onboarding SLO
 
 > Closes the neo → NeoHaskell-monorepo migration (PR 7 in the project plan). The
 > earlier PRs internalized the CLI, its starter, packaging, the consumer
@@ -8,7 +8,9 @@
 
 ## Status
 
-Accepted
+Historical
+
+The repository retired the installer and timed onboarding requirement on 2026-10-22. No duration target replaces the old requirement. The text below documents historical rationale and does not define current release policy.
 
 <!-- The GATE infrastructure (the onboarding SLO workflow + driver + wiring
      freeze, the doc/link re-routing, this ADR and the cutover checklist) is
