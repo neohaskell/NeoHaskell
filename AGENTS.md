@@ -25,6 +25,7 @@ Remaining triggers:
 - Nontrivial multi-step → write the throughput checkpoint (Feature step 3).
 - Any prose surface, your reply to the user included → the **prose-cleanup** skill. Write the reply per **Writing the reply**. For agent-facing skill authoring, use whichever skill-authoring skill or built-in is available in the current environment.
 - Haskell implementation → [NeoHaskell code guidelines](.agents/skills/neohaskell-code-guidelines/SKILL.md) and [NeoHaskell best practices](.agents/skills/neohaskell-best-practices/SKILL.md).
+- Haskell tool commands, including compilation, tests, doctests, formatting, and generated-consumer checks → [Nix Haskell tools](.agents/skills/nix-haskell-tools/SKILL.md). Run them through `nix develop --command`.
 - Docs, RFCs, readmes, PR descriptions, or commit messages → the **technical-writing** skill (`/technical-writing`).
 - Before commit → the **deslop** skill (`/deslop`).
 - Before review → the **no-comments** skill (`/no-comments`).
