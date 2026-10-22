@@ -10,15 +10,16 @@ NC='\033[0m' # No Color
 
 # Track testbed PID for cleanup
 TESTBED_PID=""
+OAUTH_TESTBED_PID=""
+FAKE_SERVICES_PID=""
 
 cleanup() {
-	if [ -n "$TESTBED_PID" ]; then
-		echo ""
-		echo "Stopping testbed (PID: $TESTBED_PID)..."
-		kill "$TESTBED_PID" 2>/dev/null || true
-		wait "$TESTBED_PID" 2>/dev/null || true
-		echo "Testbed stopped."
-	fi
+	for pid in "$OAUTH_TESTBED_PID" "$TESTBED_PID" "$FAKE_SERVICES_PID"; do
+		if [ -n "$pid" ]; then
+			kill "$pid" 2>/dev/null || true
+			wait "$pid" 2>/dev/null || true
+		fi
+	done
 }
 
 trap cleanup EXIT
@@ -27,7 +28,34 @@ echo "Running NeoHaskell Testbed Tests..."
 echo ""
 
 is_testbed_ready() {
-	curl -sf http://localhost:8080/health >/dev/null 2>&1
+	curl -sf http://127.0.0.1:8080/health >/dev/null 2>&1
+}
+
+is_oauth_testbed_ready() {
+	curl -sf http://127.0.0.1:8081/health >/dev/null 2>&1
+}
+
+is_fake_services_ready() {
+	curl -sf http://127.0.0.1:8181/health 2>/dev/null | grep -q '"fixture":"neohaskell-testbed"'
+}
+
+wait_for_service() {
+	endpoint="$1"
+	label="$2"
+	pid="$3"
+	for i in {1..30}; do
+		if curl -sf "$endpoint" >/dev/null 2>&1; then
+			echo -e "${GREEN}${label} is ready${NC}"
+			return 0
+		fi
+		if ! kill -0 "$pid" 2>/dev/null; then
+			echo -e "${RED}Error: ${label} exited before becoming ready${NC}"
+			return 1
+		fi
+		sleep 1
+	done
+	echo -e "${RED}Error: ${label} failed to start within 30 seconds${NC}"
+	return 1
 }
 
 # Check if hurl is installed
@@ -37,32 +65,48 @@ if ! command -v hurl &>/dev/null; then
 	exit 1
 fi
 
+# The local provider and external service share one deterministic fixture server.
+if is_fake_services_ready; then
+	echo -e "${GREEN}Fake services already running on http://127.0.0.1:8181${NC}"
+elif curl -s http://127.0.0.1:8181 >/dev/null 2>&1; then
+	echo -e "${RED}Error: Port 8181 is in use, but the testbed fake services are unavailable${NC}"
+	exit 1
+else
+	echo -e "${YELLOW}Starting fake external services...${NC}"
+	python3 testbed/scripts/fake_external_services.py &
+	FAKE_SERVICES_PID=$!
+	wait_for_service http://127.0.0.1:8181/health "Fake services" "$FAKE_SERVICES_PID"
+fi
+
+# OAuth state tokens require a stable local HMAC key for the process lifetime.
+export OAUTH2_TESTBED_STATE_KEY="${OAUTH2_TESTBED_STATE_KEY:-testbed-oauth-state-key-that-is-at-least-32-bytes}"
+
 # Start the testbed if not already running
 if is_testbed_ready; then
-	echo -e "${GREEN}Testbed already running on http://localhost:8080${NC}"
+	echo -e "${GREEN}Testbed already running on http://127.0.0.1:8080${NC}"
 	echo ""
-elif curl -s http://localhost:8080 >/dev/null 2>&1; then
+elif curl -s http://127.0.0.1:8080 >/dev/null 2>&1; then
 	echo -e "${RED}Error: Port 8080 is in use, but NeoHaskell testbed endpoints are not available${NC}"
 	echo "Please stop the process using port 8080 and run again."
 	exit 1
 else
 	echo -e "${YELLOW}Starting testbed...${NC}"
-	cabal run nhtestbed &
+	cabal run exe:nhtestbed &
 	TESTBED_PID=$!
-
-	echo "Waiting for testbed to start (PID: $TESTBED_PID)..."
-	for i in {1..30}; do
-		if is_testbed_ready; then
-			echo -e "${GREEN}Testbed is ready${NC}"
-			break
-		fi
-		if [ $i -eq 30 ]; then
-			echo -e "${RED}Error: Testbed failed to start within 30 seconds${NC}"
-			exit 1
-		fi
-		sleep 1
-	done
+	wait_for_service http://127.0.0.1:8080/health "Testbed" "$TESTBED_PID"
 	echo ""
+fi
+
+if is_oauth_testbed_ready; then
+	echo -e "${GREEN}OAuth testbed already running on http://127.0.0.1:8081${NC}"
+elif curl -s http://127.0.0.1:8081 >/dev/null 2>&1; then
+	echo -e "${RED}Error: Port 8081 is in use, but NeoHaskell OAuth testbed endpoints are not available${NC}"
+	exit 1
+else
+	echo -e "${YELLOW}Starting OAuth testbed...${NC}"
+	cabal run exe:nhoauthtestbed &
+	OAUTH_TESTBED_PID=$!
+	wait_for_service http://127.0.0.1:8081/health "OAuth testbed" "$OAUTH_TESTBED_PID"
 fi
 
 # Run command tests
