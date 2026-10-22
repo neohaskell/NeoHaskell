@@ -10,9 +10,10 @@ import Version qualified
 import Console qualified
 import GHC.TypeLits qualified as GHC
 import Json qualified
+import Log qualified
 import Map qualified
 import Record qualified
-import Service.Auth (RequestContext)
+import Service.Auth (RequestContext (..))
 import Service.Auth qualified as Auth
 import Service.CommandExecutor.TH (deriveKnownHash)
 import Service.Response (CommandResponse)
@@ -21,6 +22,7 @@ import Service.Transport (EndpointHandler, EndpointSchema (..), Endpoints (..), 
 import Service.Transport.Cli.Output qualified as Output
 import Task qualified
 import Text qualified
+import Uuid qualified
 
 
 data CliTransport = CliTransport
@@ -73,6 +75,23 @@ instance Transport CliTransport where
         let responseJson = Json.encodeText response |> Text.toBytes
         respond (response, responseJson)
       Err _err -> do
+        requestId <- if requestContext.requestId == Uuid.nil
+          then Uuid.generate
+          else Task.yield requestContext.requestId
+        let requestIdText = Uuid.toText requestId
+        Log.recordIsolated Log.Warn
+          [ "component" Json..= ("CliTransport" :: Text)
+          , "commandName" Json..= commandName
+          , "requestId" Json..= requestIdText
+          , "correlationId" Json..= requestIdText
+          , "kind" Json..= ("command_result" :: Text)
+          , "result" Json..= ("rejected" :: Text)
+          , "failureStage" Json..= ("decoding" :: Text)
+          , "errorClass" Json..= ("InvalidCommand" :: Text)
+          , "eventsAppended" Json..= (0 :: Int)
+          ]
+          "Command payload could not be decoded"
+          |> Task.ignoreError
         let errorResponse =
               Response.Failed
                 { error = [fmt|Invalid input for command #{commandName}|]

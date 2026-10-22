@@ -167,7 +167,7 @@ singleTenantRegressionSpecs = do
     cartId <- Uuid.generate
     createCart store cartId
     let cmd = AddItemToCart {cartId = cartId, itemId = Uuid.nil, amount = 5}
-    result <- CommandExecutor.execute store fetcher cartEntityName Auth.emptyContext cmd
+    result <- CommandExecutor.execute store fetcher cartEntityName Nothing Auth.emptyContext cmd
     case result of
       CommandAccepted {} -> pass
       other -> fail [fmt|Expected CommandAccepted, got #{toText other}|]
@@ -178,7 +178,7 @@ singleTenantRegressionSpecs = do
     createCart store cartId
     ctx <- Auth.authenticatedContext testClaims
     let cmd = AddItemToCart {cartId = cartId, itemId = Uuid.nil, amount = 5}
-    result <- CommandExecutor.execute store fetcher cartEntityName ctx cmd
+    result <- CommandExecutor.execute store fetcher cartEntityName Nothing ctx cmd
     case result of
       CommandAccepted {} -> pass
       other -> fail [fmt|Expected CommandAccepted, got #{toText other}|]
@@ -186,7 +186,7 @@ singleTenantRegressionSpecs = do
   it "single-tenant reject still works" \_ -> do
     (store, fetcher) <- newCartStoreAndFetcher
     let cmd = AddItemToCart {cartId = Uuid.nil, itemId = Uuid.nil, amount = 5}
-    result <- CommandExecutor.execute store fetcher cartEntityName Auth.emptyContext cmd
+    result <- CommandExecutor.execute store fetcher cartEntityName Nothing Auth.emptyContext cmd
     case result of
       CommandRejected {reason} -> reason |> shouldBe "Cart does not exist"
       other -> fail [fmt|Expected CommandRejected, got #{toText other}|]
@@ -205,7 +205,7 @@ multiTenantExecutionSpecs = do
     createTenantCart store tenantUuid cartId
     ctx <- tenantContext tenantUuid
     let cmd = TenantAddItem {cartId = cartId, itemId = Uuid.nil, amount = 5}
-    result <- CommandExecutor.execute store fetcher tenantCartEntityName ctx cmd
+    result <- CommandExecutor.execute store fetcher tenantCartEntityName Nothing ctx cmd
     case result of
       CommandAccepted {} -> pass
       other -> fail [fmt|Expected CommandAccepted, got #{toText other}|]
@@ -217,7 +217,7 @@ multiTenantExecutionSpecs = do
     createTenantCart store tenantUuid cartId
     ctx <- tenantContext tenantUuid
     let cmd = TenantAddItem {cartId = cartId, itemId = Uuid.nil, amount = 3}
-    result <- CommandExecutor.execute store fetcher tenantCartEntityName ctx cmd
+    result <- CommandExecutor.execute store fetcher tenantCartEntityName Nothing ctx cmd
     case result of
       CommandAccepted {streamId} -> do
         let streamText = StreamId.toText streamId
@@ -230,7 +230,7 @@ multiTenantExecutionSpecs = do
     tenantUuid <- Uuid.generate
     ctx <- tenantContext tenantUuid
     let cmd = TenantCreateCart
-    result <- CommandExecutor.execute store fetcher tenantCartEntityName ctx cmd
+    result <- CommandExecutor.execute store fetcher tenantCartEntityName Nothing ctx cmd
     case result of
       CommandAccepted {streamId} -> do
         -- Verify the stream ID is tenant-prefixed
@@ -242,7 +242,7 @@ multiTenantExecutionSpecs = do
   it "rejects when no user (unauthenticated)" \_ -> do
     (store, fetcher) <- newTenantStoreAndFetcher
     let cmd = TenantAddItem {cartId = Uuid.nil, itemId = Uuid.nil, amount = 5}
-    result <- CommandExecutor.execute store fetcher tenantCartEntityName Auth.emptyContext cmd
+    result <- CommandExecutor.execute store fetcher tenantCartEntityName Nothing Auth.emptyContext cmd
     case result of
       CommandUnauthorized {authError} -> authError |> shouldBe Unauthenticated
       other -> fail [fmt|Expected CommandUnauthorized Unauthenticated, got #{toText other}|]
@@ -251,7 +251,7 @@ multiTenantExecutionSpecs = do
     (store, fetcher) <- newTenantStoreAndFetcher
     ctx <- Auth.authenticatedContext (claimsWithTenant Nothing)
     let cmd = TenantAddItem {cartId = Uuid.nil, itemId = Uuid.nil, amount = 5}
-    result <- CommandExecutor.execute store fetcher tenantCartEntityName ctx cmd
+    result <- CommandExecutor.execute store fetcher tenantCartEntityName Nothing ctx cmd
     case result of
       CommandUnauthorized {authError} -> authError |> shouldBe Forbidden
       other -> fail [fmt|Expected CommandUnauthorized Forbidden, got #{toText other}|]
@@ -260,7 +260,7 @@ multiTenantExecutionSpecs = do
     (store, fetcher) <- newTenantStoreAndFetcher
     ctx <- Auth.authenticatedContext (claimsWithTenant (Just "not-a-uuid"))
     let cmd = TenantAddItem {cartId = Uuid.nil, itemId = Uuid.nil, amount = 5}
-    result <- CommandExecutor.execute store fetcher tenantCartEntityName ctx cmd
+    result <- CommandExecutor.execute store fetcher tenantCartEntityName Nothing ctx cmd
     case result of
       CommandUnauthorized {authError} -> authError |> shouldBe Forbidden
       other -> fail [fmt|Expected CommandUnauthorized Forbidden, got #{toText other}|]
@@ -269,7 +269,7 @@ multiTenantExecutionSpecs = do
     (store, fetcher) <- newTenantStoreAndFetcher
     ctx <- Auth.authenticatedContext (claimsWithTenant (Just ""))
     let cmd = TenantAddItem {cartId = Uuid.nil, itemId = Uuid.nil, amount = 5}
-    result <- CommandExecutor.execute store fetcher tenantCartEntityName ctx cmd
+    result <- CommandExecutor.execute store fetcher tenantCartEntityName Nothing ctx cmd
     case result of
       CommandUnauthorized {authError} -> authError |> shouldBe Forbidden
       other -> fail [fmt|Expected CommandUnauthorized Forbidden, got #{toText other}|]
@@ -303,7 +303,7 @@ streamIsolationSpecs = do
     createTenantCart store tenantUuid cartId
     ctx <- tenantContext tenantUuid
     let cmd = TenantAddItem {cartId = cartId, itemId = Uuid.nil, amount = 7}
-    result <- CommandExecutor.execute store fetcher tenantCartEntityName ctx cmd
+    result <- CommandExecutor.execute store fetcher tenantCartEntityName Nothing ctx cmd
     case result of
       CommandAccepted {streamId} -> do
         -- Fetch the entity from the tenant-scoped stream
@@ -327,7 +327,7 @@ streamIsolationSpecs = do
     -- Try to add item as tenant B (same cartId)
     ctxB <- tenantContext tenantB
     let cmd = TenantAddItem {cartId = cartId, itemId = Uuid.nil, amount = 5}
-    result <- CommandExecutor.execute store fetcher tenantCartEntityName ctxB cmd
+    result <- CommandExecutor.execute store fetcher tenantCartEntityName Nothing ctxB cmd
     -- Tenant B should not see tenant A's cart (different stream)
     case result of
       CommandRejected {reason} -> reason |> shouldBe "Cart does not exist"
