@@ -1,0 +1,11 @@
+Using saved setting for 'allow-import-from-derivation = true' from ~/.local/share/nix/trusted-settings.json.
+Using saved setting for 'extra-substituters = https://cache.iog.io https://neohaskell.cachix.org' from ~/.local/share/nix/trusted-settings.json.
+Using saved setting for 'extra-trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= neohaskell.cachix.org-1:mo2cLaGbwqbrxs9xhqKK8jeNsn3osi7t6XoAmxSZssc=' from ~/.local/share/nix/trusted-settings.json.
+
+Baseline characterization
+{"commandName":"AuthenticatedAddItem","component":"CommandExecutor","entityName":"CartEntity","file":"service/Service/CommandExecutor/Core.hs","level":"Info","line":299,"message":"Executing command","streamId":"a67b9ef3-b1ae-4b2a-ba24-952d414f9461","time":"2026-10-22T15:20:25+0100"}
+{"causationId":null,"correlationId":null,"createdAt":"2026-10-22T14:20:25.982116Z","eventId":"c97ff1e6-71ec-4aab-ba94-ce4d0ef30ea5","globalPosition":1,"localPosition":1,"relatedUserSub":null}
+  accepted authenticated command persists empty lineage [✔]
+
+Finished in 0.0031 seconds
+1 example, 0 failures

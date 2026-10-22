@@ -1,0 +1,26 @@
+Using saved setting for 'allow-import-from-derivation = true' from ~/.local/share/nix/trusted-settings.json.
+Using saved setting for 'extra-substituters = https://cache.iog.io https://neohaskell.cachix.org' from ~/.local/share/nix/trusted-settings.json.
+Using saved setting for 'extra-trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= neohaskell.cachix.org-1:mo2cLaGbwqbrxs9xhqKK8jeNsn3osi7t6XoAmxSZssc=' from ~/.local/share/nix/trusted-settings.json.
+
+Required behavior
+{"commandName":"AuthenticatedAddItem","component":"CommandExecutor","entityName":"CartEntity","file":"service/Service/CommandExecutor/Core.hs","level":"Info","line":299,"message":"Executing command","streamId":"0c023d93-e0f1-452c-8755-9461aaead7f0","time":"2026-10-22T15:16:29+0100"}
+{"causationId":null,"correlationId":null,"createdAt":"2026-10-22T14:16:29.780578Z","eventId":"fd39a3aa-7548-4916-b0e8-adcf28b39c39","globalPosition":1,"localPosition":1,"relatedUserSub":null}
+  accepted authenticated command retains actor and root correlation [✘]
+
+Failures:
+
+  /Users/nick/Work/.workspaces/NeoHaskell/fix-eventmetadata-null-and-logs/.agents-state/prototypes/metadata-lineage/Baseline.hs:68:34: 
+  1) Required behavior accepted authenticated command retains actor and root correlation
+       expected: Just "lineage-prototype-user"
+        but got: Nothing
+
+  To rerun use: --match "/Required behavior/accepted authenticated command retains actor and root correlation/" --seed 282580236
+
+Randomized with seed 282580236
+
+Finished in 0.0079 seconds
+1 example, 1 failure
+*** Exception: ExitFailure 1
+
+Transcript /Users/nick/Work/.workspaces/NeoHaskell/fix-eventmetadata-null-and-logs/.agents-state/prototypes/metadata-lineage/Baseline-pass.log
+UNEXPECTED ASSERTION RESULT

@@ -1,0 +1,20 @@
+Using saved setting for 'allow-import-from-derivation = true' from ~/.local/share/nix/trusted-settings.json.
+Using saved setting for 'extra-substituters = https://cache.iog.io https://neohaskell.cachix.org' from ~/.local/share/nix/trusted-settings.json.
+Using saved setting for 'extra-trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= neohaskell.cachix.org-1:mo2cLaGbwqbrxs9xhqKK8jeNsn3osi7t6XoAmxSZssc=' from ~/.local/share/nix/trusted-settings.json.
+
+Populate existing EventMetadata directly
+  root records verified subject and normalized request correlation [✔]
+  event callbacks preserve tracing while retaining fresh event identity and timestamps [✔]
+  missing historical correlation falls back to the source event identity [✔]
+  present historical correlation remains opaque [✔]
+  autonomous commands get fresh correlations without actor or event cause [✔]
+  sibling events and rebuilt payloads share tracing but have distinct event IDs [✔]
+  directly populated metadata survives real in-memory persistence [✔]
+  direct metadata propagation retains root correlation and immediate parent across callback depth [✔]
+    +++ OK, passed 100 tests.
+
+Finished in 0.0064 seconds
+8 examples, 0 failures
+
+Transcript /Users/nick/Work/.workspaces/NeoHaskell/fix-eventmetadata-null-and-logs/.agents-state/prototypes/metadata-lineage/DirectMetadata-all-pass.log
+PASS

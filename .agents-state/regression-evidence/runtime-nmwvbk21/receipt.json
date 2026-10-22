@@ -1,0 +1,37 @@
+{
+  "schema": 1,
+  "root": "/Users/nick/Work/.workspaces/NeoHaskell/fix-eventmetadata-null-and-logs",
+  "head": "cbdc45f1bb89c9c7bb8da9fbdb25343771d924ca",
+  "status": "observed",
+  "source_inputs": {
+    ".agents-state/prototypes/metadata-lineage/DirectMetadata.hs": "5edfffb6540af14da04e9e57df729a3977021ca0b7c090c4c9cc2ae05dfd029c",
+    "core/service/Service/Event.hs": "878662d3202bbefa89cf9f5b3463e5f23a055f531fccd9ff1344cc86c26ef07f",
+    "core/service/Service/Event/EventMetadata.hs": "411f23dfad45ead63d92765f3d8bad6a8c6d901a3a8becd686f21b2e9c80a2d0",
+    "core/service/Service/EventStore/Simple.hs": "f8d6c7095e6bfdff6ddf13e23b3c09116f1267344b7122d0962d6ae445b6830f"
+  },
+  "commands": [
+    {
+      "argv": [
+        "python3",
+        ".agents-state/prototypes/metadata-lineage/run_haskell.py",
+        ".agents-state/prototypes/metadata-lineage/DirectMetadata.hs"
+      ],
+      "exit": 0,
+      "process_outcome": "exited",
+      "runner_outcome": null,
+      "elapsed_seconds": 11.790963750000001,
+      "runner_receipt": null,
+      "runner_receipt_sha256": null,
+      "log": "runtime.log"
+    }
+  ],
+  "observation": {
+    "kind": "runtime-assertion",
+    "expected": "pass",
+    "selected_examples": 8,
+    "failures": 0
+  },
+  "log_hashes": {
+    "runtime.log": "2046255b27f4ab517f00d7a2785cf04de005cf1e8a7a2807049cf535ccd172d8"
+  }
+}

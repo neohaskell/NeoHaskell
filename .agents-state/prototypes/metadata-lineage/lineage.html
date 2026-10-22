@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Choose metadata lineage and context ownership</title>
+<style>
+*{box-sizing:border-box}select{max-width:100%;min-width:0}body{margin:0;padding:24px;font:15px/1.5 system-ui,sans-serif;color:var(--foreground,#202833);background:var(--background,#f7f8fa)}main{max-width:1080px;margin:auto}h1{font-size:25px;line-height:1.2;margin:8px 0}h2{font-size:17px;margin:0 0 12px}.muted{color:var(--muted-foreground,#606b7a)}.tag{font-size:12px;letter-spacing:.05em;text-transform:uppercase;color:#296da8}p{max-width:85ch}button,select{font:inherit;padding:9px 12px;border:1px solid var(--border,#c9d2dc);border-radius:6px;color:inherit;background:var(--background,#fff);cursor:pointer}button:hover{border-color:#3a82bb}button:disabled{opacity:.45;cursor:default}button[aria-selected=true]{background:#296da8;color:white;border-color:#296da8}.row{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0}.panel{border:1px solid var(--border,#d9dfe7);border-radius:8px;padding:18px;margin:18px 0}.fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(165px,1fr));gap:16px}dt{font-size:12px;color:var(--muted-foreground,#606b7a)}dd{font:600 15px ui-monospace,monospace;margin:3px 0;overflow-wrap:anywhere}.authority{background:rgba(41,109,168,.07);padding:12px;border-radius:6px}.authority p{margin:0}table{border-collapse:collapse;width:100%;text-align:left;font-size:14px}th,td{padding:9px 7px;border-bottom:1px solid var(--border,#d9dfe7)}th{font-size:12px;color:var(--muted-foreground,#606b7a)}code{font-family:ui-monospace,monospace}.scroll{overflow-x:auto}.notice{border-left:3px solid #296da8;padding-left:12px}#message{min-height:24px}label{display:block;margin:10px 0}small{font-size:12px}
+</style>
+<main>
+<span class="tag">Throwaway planning prototype</span>
+<h1>One actor and correlation across a command chain.</h1>
+<p class="muted">Explore who owns the context and which event caused the next command. IDs here are readable examples. This page models the proposed contract. It does not run production command code.</p>
+<div class="panel">
+<h2>Compare the context owners</h2>
+<label for="owner">Architecture variant</label>
+<select id="owner"><option value="request">A. Carry source EventMetadata in RequestContext</option><option value="envelope">B. Pass source EventMetadata explicitly</option></select>
+<p id="ownerDetail"></p>
+<small class="muted">Both variants must preserve the same event lineage. Their difference is the API boundary that carries it.</small>
+</div>
+<h2>Choose a guided walkthrough</h2>
+<div class="row" role="tablist" aria-label="Lineage scenarios">
+<button role="tab" data-scenario="chain">Command chain</button><button role="tab" data-scenario="fanout">Fan-out</button><button role="tab" data-scenario="historical">Old source event</button><button role="tab" data-scenario="timer">Scheduled job</button><button role="tab" data-scenario="retry">Conflict retry</button>
+</div>
+<p id="scenarioDetail"></p>
+<button id="next">Run next step</button>
+<p id="message" role="status" aria-live="polite"></p>
+<section class="panel" aria-label="Current command context">
+<h2>Current command context</h2>
+<dl class="fields" id="context"></dl>
+<div class="authority" id="authority"></div>
+</section>
+<h2>Try your own steps</h2>
+<div class="row"><button id="root">New authenticated root</button><button id="emit">Emit an event</button><button id="follow">Follow the selected event</button><button id="retry">Retry this command</button><button id="timer">New timer tick</button></div>
+<label for="source">Source event for the next callback</label><select id="source" aria-label="Source event"></select>
+<section class="panel">
+<h2>Events emitted so far</h2><div class="scroll"><table><thead><tr><th>Event</th><th>Actor attribution</th><th>Correlation</th><th>Immediate cause</th><th>Command request</th></tr></thead><tbody id="events"></tbody></table></div>
+</section>
+<p class="notice">Proposed old-event fallback uses the source event's own ID as the missing correlation. This joins its callback branches without changing the stored source event.</p>
+<p class="muted">A stored actor never becomes verified claims. Existing framework authority, permission checks, and tenant checks remain separate. Retrying a command retains its lineage. A new callback invocation has a new request ID.</p>
+</main>
+<script>
+const model=(()=>{
+  let state;
+  const root=(actor)=>{const request='R'+(++state.requests);state.command={request,actor,correlation:request,cause:null,verified:actor,bypass:actor===null};};
+  const reset=()=>{state={requests:0,eventCount:0,command:null,events:[],selected:null};root('user-42');return state;};
+  const act=(action)=>{
+    if(action==='root')root('user-42');
+    if(action==='timer')root(null);
+    if(action==='emit'&&state.command){const event={id:'E'+(++state.eventCount),actor:state.command.actor,correlation:state.command.correlation,cause:state.command.cause,request:state.command.request};state.events.push(event);state.selected=event.id;}
+    if(action==='historical'){const event={id:'E-old',actor:'user-7',correlation:null,cause:null,request:'historical'};state.events.push(event);state.selected=event.id;}
+    if(action==='follow'&&state.selected){const event=state.events.find(e=>e.id===state.selected);state.command={request:'R'+(++state.requests),actor:event.actor,correlation:event.correlation??event.id,cause:event.id,verified:null,bypass:true};}
+    return state;
+  };
+  return{reset,act,select:(id)=>{state.selected=id;},get:()=>state};
+})();
+const scenarios={
+  chain:{detail:'Emit E1 from an authenticated root. Follow E1 and emit E2. Follow E2 and emit E3. Correlation stays R1. The immediate cause advances at each hop.',steps:['emit','follow','emit','follow','emit']},
+  fanout:{detail:'Emit E1, then start two independent callbacks from E1. Both branches keep R1 and name E1 as their cause. Their request IDs differ.',steps:['emit','follow','emit','select-first','follow','emit']},
+  historical:{detail:'Load an old event without correlation. Its callback uses E-old as correlation and cause. The historical row remains unchanged.',steps:['historical','follow','emit','select-old','follow','emit']},
+  timer:{detail:'Each timer tick starts a fresh correlation. Its events have no actor and no triggering-event cause.',steps:['timer','emit','timer','emit']},
+  retry:{detail:'A conflict retry keeps the current request, actor, correlation and cause. Emitting after retry shows the same lineage.',steps:['emit','follow','retry','emit']}
+};
+let scenario='chain',step=0;
+const text=(value)=>value??'Absent';
+const field=(name,value)=>{const div=document.createElement('div'),dt=document.createElement('dt'),dd=document.createElement('dd');dt.textContent=name;dd.textContent=text(value);div.append(dt,dd);return div;};
+function render(){
+ const state=model.get(),cmd=state.command,context=document.querySelector('#context');context.replaceChildren(field('Request ID',cmd.request),field('Correlation ID',cmd.correlation),field('Actor attribution',cmd.actor),field('Immediate cause',cmd.cause));
+ document.querySelector('#authority').replaceChildren(field('Verified user claims',cmd.verified),field('Existing framework bypass',cmd.bypass?'Enabled':'Disabled'));
+ document.querySelector('#events').replaceChildren(...state.events.map(e=>{const row=document.createElement('tr');for(const value of[e.id,e.actor,e.correlation,e.cause,e.request]){const cell=document.createElement('td');cell.textContent=text(value);row.append(cell);}return row;}));
+ document.querySelector('#source').replaceChildren(...state.events.map(e=>{const option=document.createElement('option');option.value=e.id;option.textContent=e.id;option.selected=e.id===state.selected;return option;}));
+ document.querySelector('#follow').disabled=!state.selected;
+ document.querySelector('#next').disabled=step>=scenarios[scenario].steps.length;
+ document.querySelector('#next').textContent=step>=scenarios[scenario].steps.length?'Walkthrough complete':'Run step '+(step+1)+' of '+scenarios[scenario].steps.length;
+}
+function choose(name){scenario=name;step=0;model.reset();document.querySelector('#scenarioDetail').textContent=scenarios[name].detail;document.querySelector('#message').textContent='Ready. The authenticated root starts with correlation R1.';document.querySelectorAll('[data-scenario]').forEach(b=>b.setAttribute('aria-selected',String(b.dataset.scenario===name)));render();}
+document.querySelectorAll('[data-scenario]').forEach(b=>b.onclick=()=>choose(b.dataset.scenario));
+document.querySelector('#next').onclick=()=>{const action=scenarios[scenario].steps[step++];if(action==='select-first')model.select('E1');else if(action==='select-old')model.select('E-old');else model.act(action);document.querySelector('#message').textContent=action==='retry'?'Retry keeps the current command context.':action.startsWith('select')?'Selected the original triggering event.':'Completed '+action+'.';render();};
+for(const action of['root','emit','follow','retry','timer'])document.getElementById(action).onclick=()=>{model.act(action);document.querySelector('#message').textContent=action==='retry'?'Retry keeps the current command context.':'Completed '+action+'.';render();};
+document.querySelector('#source').onchange=e=>{model.select(e.target.value);render();};
+document.querySelector('#owner').onchange=e=>{document.querySelector('#ownerDetail').textContent=e.target.value==='request'?'A carries existing EventMetadata from the triggering event in RequestContext. New events keep their fresh IDs and timestamps. The executor copies only tracing fields. No separate lineage model is introduced.':'B passes the triggering EventMetadata as an explicit argument through internal dispatch and command execution. RequestContext stays unchanged. No separate lineage model is introduced.';};
+document.querySelector('#owner').dispatchEvent(new Event('change'));choose('chain');
+</script>
+</html>
