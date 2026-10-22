@@ -36,10 +36,12 @@ Two things make blanket auto-merge wrong, though:
    be reverted. Breaking changes are, by construction, the ones the existing
    tests were never written to catch.
 2. **Required checks are the definition of "everything passed", and that
-   definition drifts.** At the time of writing, `neo-ci-gate`,
-   `installer-ci-gate` and `adr index` run on every PR but are *not* required —
-   so a Rust or installer regression could not block a merge. Any automation
-   that trusts "CI is green" inherits whatever that set happens to be.
+   definition drifts.** At the time of the original decision,
+   `neo-ci-gate`, `installer-ci-gate` and `adr index` ran on every PR but were
+   not required. The prepared source configuration now lists seven required
+   contexts in `.agents/skills/neohaskell-release/references/required-checks.json`.
+   Any automation that trusts "CI is green" inherits whatever that set happens
+   to be.
 
 ## Decision
 

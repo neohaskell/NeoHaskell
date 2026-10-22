@@ -1,3 +1,0 @@
-# Project sandbox defaults. Model choice remains with the user.
-approval_policy = "on-request"
-sandbox_mode = "workspace-write"

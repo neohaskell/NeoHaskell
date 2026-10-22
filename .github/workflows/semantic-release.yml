@@ -1,4 +1,3 @@
-# Installing this workflow is inert. Only a verified manual bootstrap activates platform releases.
 name: Semantic Release
 on:
   push:
@@ -21,6 +20,8 @@ on:
       reason:
         description: Why this unpublished release needs a source fix
         type: string
+env:
+  NEOHASKELL_ROOT: ${{ github.workspace }}
 permissions:
   contents: read
 concurrency:
@@ -35,15 +36,20 @@ jobs:
       contents: write
       pull-requests: write
     outputs:
+      tooling_revision: ${{ steps.tooling.outputs.revision }}
       platform_has_work: ${{ steps.plan.outputs.platform_has_work }}
       platform_items: ${{ steps.plan.outputs.platform_items }}
       platform_matrix: ${{ steps.plan.outputs.platform_matrix }}
     steps:
       - uses: actions/checkout@v7.0.1
         with:
-          ref: main
+          ref: ${{ github.sha }}
           fetch-depth: 0
           persist-credentials: false
+      - id: tooling
+        run: echo "revision=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - name: Release engine self-tests (offline)
+        run: ./.agents/skills/neohaskell-release/scripts/semantic-release --self-test
       - id: plan
         env:
           GH_TOKEN: ${{ github.token }}
@@ -53,7 +59,7 @@ jobs:
           ATTEMPT: ${{ inputs.attempt }}
           REASON: ${{ inputs.reason }}
         run: >-
-          ./scripts/semantic-release orchestrate --operation "$OPERATION"
+          ./.agents/skills/neohaskell-release/scripts/semantic-release orchestrate --operation "$OPERATION"
           --baseline "$BASELINE" --version "$VERSION"
           --attempt "$ATTEMPT" --reason "$REASON"
   platform_seed:
@@ -72,14 +78,19 @@ jobs:
           ref: ${{ matrix.revision }}
           fetch-depth: 0
           persist-credentials: false
-      - uses: DeterminateSystems/determinate-nix-action@v3.22.2
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ needs.prepare.outputs.tooling_revision }}
+          path: .agents-state/release-tooling
+          persist-credentials: false
+      - uses: DeterminateSystems/determinate-nix-action@v3.23.3
         if: matrix.reuse != true
       - name: Freeze the starter at the merged release revision
         if: matrix.reuse != true
         env:
           ATTEMPT: ${{ matrix.attempt }}
           REVISION: ${{ matrix.revision }}
-        run: ./scripts/semantic-release seed --attempt "$ATTEMPT" --revision "$REVISION" --out inputs
+        run: ./.agents-state/release-tooling/.agents/skills/neohaskell-release/scripts/semantic-release seed --attempt "$ATTEMPT" --revision "$REVISION" --out inputs
       - uses: actions/upload-artifact@v7
         if: matrix.reuse != true
         with:
@@ -101,9 +112,14 @@ jobs:
           ref: ${{ matrix.revision }}
           fetch-depth: 0
           persist-credentials: false
-      - uses: DeterminateSystems/determinate-nix-action@v3.22.2
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ needs.prepare.outputs.tooling_revision }}
+          path: .agents-state/release-tooling
+          persist-credentials: false
+      - uses: DeterminateSystems/determinate-nix-action@v3.23.3
         if: matrix.reuse != true && matrix.target != 'x86_64-apple-darwin'
-      - uses: cachix/install-nix-action@448cde739abec1eaf0646249e3d25bb8d9bc7702 # v31.11.1; supports Intel macOS
+      - uses: cachix/install-nix-action@448cde739abec1eaf0646249e3d25bb8d9bc7702 # v31.11.2; supports Intel macOS
         if: matrix.reuse != true && matrix.target == 'x86_64-apple-darwin'
       - uses: dtolnay/rust-toolchain@1.94.0
         if: matrix.reuse != true
@@ -120,7 +136,7 @@ jobs:
           ATTEMPT: ${{ matrix.attempt }}
           REVISION: ${{ matrix.revision }}
           TARGET: ${{ matrix.target }}
-        run: ./scripts/semantic-release build-native --attempt "$ATTEMPT" --revision "$REVISION" --target "$TARGET" --inputs inputs --out artifacts
+        run: ./.agents-state/release-tooling/.agents/skills/neohaskell-release/scripts/semantic-release build-native --attempt "$ATTEMPT" --revision "$REVISION" --target "$TARGET" --inputs inputs --out artifacts
       - uses: actions/upload-artifact@v7
         if: matrix.reuse != true
         with:
@@ -142,7 +158,12 @@ jobs:
           ref: ${{ matrix.revision }}
           fetch-depth: 0
           persist-credentials: false
-      - uses: DeterminateSystems/determinate-nix-action@v3.22.2
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ needs.prepare.outputs.tooling_revision }}
+          path: .agents-state/release-tooling
+          persist-credentials: false
+      - uses: DeterminateSystems/determinate-nix-action@v3.23.3
         if: matrix.reuse != true
         with:
           extra-conf: |
@@ -164,7 +185,7 @@ jobs:
         env:
           ATTEMPT: ${{ matrix.attempt }}
           REVISION: ${{ matrix.revision }}
-        run: ./scripts/semantic-release consumer --attempt "$ATTEMPT" --revision "$REVISION" --inputs inputs --out artifacts
+        run: ./.agents-state/release-tooling/.agents/skills/neohaskell-release/scripts/semantic-release consumer --attempt "$ATTEMPT" --revision "$REVISION" --inputs inputs --out artifacts
       - uses: actions/upload-artifact@v7
         if: matrix.reuse != true
         with:
@@ -188,6 +209,11 @@ jobs:
           ref: ${{ matrix.revision }}
           fetch-depth: 0
           persist-credentials: false
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ needs.prepare.outputs.tooling_revision }}
+          path: .agents-state/release-tooling
+          persist-credentials: false
       - uses: actions/download-artifact@v8
         if: matrix.reuse != true
         with:
@@ -199,9 +225,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           ATTEMPT: ${{ matrix.attempt }}
           REVISION: ${{ matrix.revision }}
-        run: ./scripts/semantic-release publish --attempt "$ATTEMPT" --revision "$REVISION" --out artifacts
+        run: ./.agents-state/release-tooling/.agents/skills/neohaskell-release/scripts/semantic-release publish --attempt "$ATTEMPT" --revision "$REVISION" --out artifacts
   reconcile:
-    needs: platform_publish
+    needs: [prepare, platform_publish]
     if: >-
       !cancelled() && github.ref == 'refs/heads/main' &&
       needs.platform_publish.result == 'success'
@@ -216,7 +242,12 @@ jobs:
           ref: main
           fetch-depth: 0
           persist-credentials: false
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ needs.prepare.outputs.tooling_revision }}
+          path: .agents-state/release-tooling
+          persist-credentials: false
       - name: Prepare notes that accumulated while the release was building
         env:
           GH_TOKEN: ${{ github.token }}
-        run: ./scripts/semantic-release orchestrate
+        run: ./.agents-state/release-tooling/.agents/skills/neohaskell-release/scripts/semantic-release orchestrate
