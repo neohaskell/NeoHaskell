@@ -480,6 +480,134 @@ class SweepDecisionTests(unittest.TestCase):
         self.assertEqual(retry.kind, DecisionKind.RETRY_FROZEN)
         self.assertEqual(retry.plan_id, PLAN)
 
+    def test_every_mutation_requires_shared_write_preconditions(self):
+        candidate = make_pr(checks=())
+        action_run = ActiveRun(
+            500,
+            RunEvent.PULL_REQUEST,
+            RunStatus.COMPLETED,
+            HEAD,
+            pull_request=candidate.key,
+            workflow_path=sorted(WORKFLOW_PATHS)[0],
+            actor_id=candidate.author_id,
+            conclusion=RunConclusion.ACTION_REQUIRED,
+            authoritative=True,
+        )
+        stale = make_pr(
+            number=927,
+            source_sha="1" * 40,
+            stale_source_is_ancestor_of_replacement=True,
+        )
+        stale_snapshot = make_snapshot(
+            records=(stale,),
+            verified_merge=make_merged(),
+            pending_attempt=PendingAttempt(
+                PLAN, OLD_MAIN, PublicationStatus.IN_PROGRESS
+            ),
+        )
+        mutations = {
+            DecisionKind.DISPATCH_AUTO: make_snapshot(),
+            DecisionKind.APPROVE_ACTIONS: make_snapshot(
+                records=(candidate,), active_runs=(action_run,)
+            ),
+            DecisionKind.MERGE: make_snapshot(records=(make_pr(),)),
+            DecisionKind.LINK_STALE: stale_snapshot,
+            DecisionKind.CLOSE_STALE: replace(
+                stale_snapshot,
+                records={
+                    stale.key: replace(stale, replacement_link_recorded=True)
+                },
+            ),
+            DecisionKind.RETRY_FROZEN: make_snapshot(
+                pending_attempt=PendingAttempt(
+                    PLAN,
+                    OLD_MAIN,
+                    PublicationStatus.TRANSIENT_FAILURE,
+                    assets_verified=True,
+                )
+            ),
+        }
+        conditions = {
+            "incomplete inventory": lambda snapshot: replace(
+                snapshot, inventory_complete=False
+            ),
+            "explicit blocker": lambda snapshot: replace(
+                snapshot, blockers=("unresolved discovery",)
+            ),
+            "unknown run": lambda snapshot: replace(
+                snapshot,
+                active_runs=(
+                    *snapshot.active_runs,
+                    ActiveRun(999, RunEvent.PUSH, RunStatus.UNKNOWN, MAIN),
+                ),
+            ),
+            "missing rules": lambda snapshot: replace(snapshot, rules=None),
+            "incomplete rules": lambda snapshot: replace(
+                snapshot, rules=replace(snapshot.rules, complete=False)
+            ),
+            "incomplete workflow mapping": lambda snapshot: replace(
+                snapshot,
+                rules=replace(snapshot.rules, workflow_mapping_complete=False),
+            ),
+            "stale rules": lambda snapshot: replace(
+                snapshot, rules=make_rules(OLD_MAIN)
+            ),
+            "main changed": lambda snapshot: replace(
+                snapshot, selection_main_sha=OLD_MAIN
+            ),
+            "paused attempt": lambda snapshot: replace(
+                snapshot,
+                pending_attempt=PendingAttempt(
+                    PLAN, OLD_MAIN, PublicationStatus.PAUSED
+                ),
+            ),
+            "corrupt attempt": lambda snapshot: replace(
+                snapshot,
+                pending_attempt=PendingAttempt(
+                    PLAN, OLD_MAIN, PublicationStatus.CORRUPT
+                ),
+            ),
+            "source fix needed": lambda snapshot: replace(
+                snapshot,
+                pending_attempt=PendingAttempt(
+                    PLAN, OLD_MAIN, PublicationStatus.NEEDS_SOURCE_FIX
+                ),
+            ),
+            "unknown publication": lambda snapshot: replace(
+                snapshot,
+                pending_attempt=PendingAttempt(
+                    PLAN, OLD_MAIN, PublicationStatus.UNKNOWN
+                ),
+            ),
+        }
+        mutation_kinds = frozenset(mutations)
+
+        for expected, snapshot in mutations.items():
+            with self.subTest(mutation=expected.value, condition="baseline"):
+                self.assertEqual(decide(snapshot).kind, expected)
+            for condition, change in conditions.items():
+                with self.subTest(mutation=expected.value, condition=condition):
+                    decision = decide(change(snapshot))
+                    self.assertNotIn(decision.kind, mutation_kinds)
+                    expected_safe = (
+                        DecisionKind.RESCAN
+                        if condition in {"stale rules", "main changed"}
+                        else DecisionKind.BLOCKED
+                    )
+                    self.assertEqual(decision.kind, expected_safe)
+
+    def test_frozen_publication_tracking_survives_later_main_without_rules(self):
+        snapshot = make_snapshot(
+            verified_merge=make_merged(),
+            pending_attempt=PendingAttempt(
+                PLAN, OLD_MAIN, PublicationStatus.IN_PROGRESS
+            ),
+            selection_main_sha=OLD_MAIN,
+            main_sha=MAIN,
+        )
+        decision = decide(replace(snapshot, rules=None))
+        self.assertEqual(decision.kind, DecisionKind.TRACK_PUBLICATION)
+
     def test_stale_merge_parent_mismatch_blocks_before_closing_old_pr(self):
         stale = make_pr(
             number=927,

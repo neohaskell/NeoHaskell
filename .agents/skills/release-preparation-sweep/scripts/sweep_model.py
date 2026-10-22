@@ -144,6 +144,18 @@ class DecisionKind(str, Enum):
     CLOSE_STALE = "close_stale"
 
 
+MUTATING_DECISIONS = frozenset(
+    {
+        DecisionKind.DISPATCH_AUTO,
+        DecisionKind.APPROVE_ACTIONS,
+        DecisionKind.MERGE,
+        DecisionKind.LINK_STALE,
+        DecisionKind.CLOSE_STALE,
+        DecisionKind.RETRY_FROZEN,
+    }
+)
+
+
 @dataclass(frozen=True, order=True)
 class PRKey:
     host: str
@@ -464,7 +476,9 @@ def _branch_rules_decision(snapshot: SweepSnapshot) -> Decision | None:
     return None
 
 
-def decide(snapshot: SweepSnapshot) -> Decision:
+def _mutation_safety_decision(
+    snapshot: SweepSnapshot, decision: Decision
+) -> Decision | None:
     if not snapshot.inventory_complete:
         return _decision(
             snapshot,
@@ -477,17 +491,59 @@ def decide(snapshot: SweepSnapshot) -> Decision:
             DecisionKind.BLOCKED,
             "; ".join(snapshot.blockers),
         )
+    if any(run.status is RunStatus.UNKNOWN for run in snapshot.active_runs):
+        return _decision(
+            snapshot,
+            DecisionKind.BLOCKED,
+            "A relevant workflow run has unknown status; reconcile it before acting",
+        )
+
+    if snapshot.pending_attempt is not None and snapshot.pending_attempt.publication in {
+        PublicationStatus.PAUSED,
+        PublicationStatus.CORRUPT,
+        PublicationStatus.NEEDS_SOURCE_FIX,
+        PublicationStatus.UNKNOWN,
+    }:
+        attempt = snapshot.pending_attempt
+        return _decision(
+            snapshot,
+            DecisionKind.BLOCKED,
+            "The frozen release attempt needs recovery or investigation",
+            details=(("attempt", attempt.plan_id), ("state", attempt.publication.value)),
+            plan_id=attempt.plan_id,
+        )
+
     main_changed = (
         snapshot.selection_main_sha is not None
         and snapshot.selection_main_sha != snapshot.main_sha
     )
-    if main_changed and snapshot.pending_attempt is None:
-        return _decision(
-            snapshot,
+    if main_changed and (
+        snapshot.pending_attempt is None or decision.kind in MUTATING_DECISIONS
+    ):
+        reason = "Main changed during selection; refresh the inventory and all affected evidence"
+        if snapshot.pending_attempt is not None:
+            if decision.kind is DecisionKind.RETRY_FROZEN:
+                reason = "Main changed before retry; refresh the frozen attempt and assets"
+            elif decision.kind in {DecisionKind.LINK_STALE, DecisionKind.CLOSE_STALE}:
+                reason = "Main changed before stale PR closure; refresh the inventory"
+            else:
+                reason = "Main changed before this write; refresh the live evidence"
+        return Decision(
             DecisionKind.RESCAN,
-            "Main changed during selection; refresh the inventory and all affected evidence",
+            reason,
+            pr=decision.pr,
+            plan_id=decision.plan_id,
+            expected_main_sha=snapshot.main_sha,
+            expected_head_sha=decision.expected_head_sha,
+            details=decision.details,
         )
 
+    if decision.kind not in MUTATING_DECISIONS:
+        return None
+    return _branch_rules_decision(snapshot)
+
+
+def _reduce(snapshot: SweepSnapshot) -> Decision:
     stale = []
     merged = snapshot.verified_merge
     if merged is not None:
@@ -530,39 +586,8 @@ def decide(snapshot: SweepSnapshot) -> Decision:
             ),
             key=lambda record: record.key,
         )
-        if stale and main_changed:
-            return _decision(
-                snapshot,
-                DecisionKind.RESCAN,
-                "Main changed before stale PR closure; refresh the inventory",
-            )
-
-    if any(run.status is RunStatus.UNKNOWN for run in snapshot.active_runs):
-        return _decision(
-            snapshot,
-            DecisionKind.BLOCKED,
-            "A relevant workflow run has unknown status; reconcile it before acting",
-        )
-
-    if snapshot.pending_attempt is not None and snapshot.pending_attempt.publication in {
-        PublicationStatus.PAUSED,
-        PublicationStatus.CORRUPT,
-        PublicationStatus.NEEDS_SOURCE_FIX,
-        PublicationStatus.UNKNOWN,
-    }:
-        attempt = snapshot.pending_attempt
-        return _decision(
-            snapshot,
-            DecisionKind.BLOCKED,
-            "The frozen release attempt needs recovery or investigation",
-            details=(("attempt", attempt.plan_id), ("state", attempt.publication.value)),
-            plan_id=attempt.plan_id,
-        )
 
     if stale and merged is not None:
-        rules_decision = _branch_rules_decision(snapshot)
-        if rules_decision is not None:
-            return rules_decision
         record = stale[0]
         if not record.replacement_link_recorded:
             return _decision(
@@ -608,13 +633,6 @@ def decide(snapshot: SweepSnapshot) -> Decision:
                 plan_id=attempt.plan_id,
             )
         if attempt.publication is PublicationStatus.TRANSIENT_FAILURE:
-            if main_changed:
-                return _decision(
-                    snapshot,
-                    DecisionKind.RESCAN,
-                    "Main changed before retry; refresh the frozen attempt and assets",
-                    plan_id=attempt.plan_id,
-                )
             if not attempt.assets_verified:
                 return _decision(
                     snapshot,
@@ -638,9 +656,6 @@ def decide(snapshot: SweepSnapshot) -> Decision:
             plan_id=attempt.plan_id,
         )
 
-    rules_decision = _branch_rules_decision(snapshot)
-    if rules_decision is not None:
-        return rules_decision
     rules = snapshot.rules
 
     suspicious = sorted(
@@ -737,7 +752,21 @@ def decide(snapshot: SweepSnapshot) -> Decision:
                 "The current review decision could not be established",
                 record,
             )
-        if rules.required_approvals is None:
+        if record.verdict.status is VerdictStatus.FAIL:
+            return _decision(
+                snapshot,
+                DecisionKind.BLOCKED,
+                "The independent verifier returned FAIL",
+                record,
+            )
+        if not _current_verdict(record, snapshot.main_sha):
+            return _decision(
+                snapshot,
+                DecisionKind.NEED_VERDICT,
+                "An independent PASS or PASS+NOTES must bind this head and current main",
+                record,
+            )
+        if rules is None or rules.required_approvals is None:
             return _decision(
                 snapshot,
                 DecisionKind.BLOCKED,
@@ -777,21 +806,6 @@ def decide(snapshot: SweepSnapshot) -> Decision:
         check_decision = _check_decision(snapshot, record, rules)
         if check_decision is not None:
             return check_decision
-
-        if record.verdict.status is VerdictStatus.FAIL:
-            return _decision(
-                snapshot,
-                DecisionKind.BLOCKED,
-                "The independent verifier returned FAIL",
-                record,
-            )
-        if not _current_verdict(record, snapshot.main_sha):
-            return _decision(
-                snapshot,
-                DecisionKind.NEED_VERDICT,
-                "An independent PASS or PASS+NOTES must bind this head and current main",
-                record,
-            )
         if record.mergeable_head_sha != record.head_sha or record.mergeable is None:
             return _decision(
                 snapshot,
@@ -838,3 +852,8 @@ def decide(snapshot: SweepSnapshot) -> Decision:
         DecisionKind.DISPATCH_AUTO,
         "No verified current preparation, pending attempt, or relevant workflow run exists",
     )
+
+
+def decide(snapshot: SweepSnapshot) -> Decision:
+    decision = _reduce(snapshot)
+    return _mutation_safety_decision(snapshot, decision) or decision
