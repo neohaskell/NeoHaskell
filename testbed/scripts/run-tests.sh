@@ -65,7 +65,6 @@ if ! command -v hurl &>/dev/null; then
 	exit 1
 fi
 
-# The local provider and external service share one deterministic fixture server.
 if is_fake_services_ready; then
 	echo -e "${GREEN}Fake services already running on http://127.0.0.1:8181${NC}"
 elif curl -s http://127.0.0.1:8181 >/dev/null 2>&1; then
@@ -78,7 +77,6 @@ else
 	wait_for_service http://127.0.0.1:8181/health "Fake services" "$FAKE_SERVICES_PID"
 fi
 
-# OAuth state tokens require a stable local HMAC key for the process lifetime.
 export OAUTH2_TESTBED_STATE_KEY="${OAUTH2_TESTBED_STATE_KEY:-testbed-oauth-state-key-that-is-at-least-32-bytes}"
 
 # Start the testbed if not already running

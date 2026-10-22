@@ -1,6 +1,6 @@
 ---
 name: neohaskell-consumer-verification
-description: Verify the generated project produced by NeoHaskell's `neo new` command or prove that the committed embedded Neo IDE bundle matches its source build. Use for CLI consumer contracts, starter compatibility, or IDE bundle freshness.
+description: Verify generated projects, source-owned agent guidance, or the embedded Neo IDE bundle. Use for CLI consumer contracts, starter compatibility, guidance publication, or IDE bundle freshness.
 ---
 
 # NeoHaskell consumer verification
@@ -84,6 +84,7 @@ Run the corpus gate from the repository root inside the pinned Nix shell:
 
 ```sh
 nix develop --command .agents/skills/neohaskell-consumer-verification/scripts/agent-docs-check
+nix develop --command .agents/skills/neohaskell-consumer-verification/scripts/agent-docs-check --verify-evidence
 ```
 
 The gate validates `docs/agent/manifest.json` against the complete page set,
@@ -91,7 +92,13 @@ local links, and a source file and maintained Hurl scenario for each required
 capability. It compiles every runnable Haskell fence with `markdown-unlit`
 against the checkout's `nhcore` and `nhintegrations` packages. Use `haskell
 ignore` only for fragments that need surrounding application definitions.
+Record each such fragment and its owning source in `docs/agent/evidence.json`.
 
 `--structure-only` provides a quick local check. It does not prove the
-examples compile. The full gate runs in CI and before Neo publication,
-including artifact reuse.
+examples compile. `--verify-evidence` also runs the service and auth specs,
+the maintained Hurl testbed, and the generated-project contract. CI and both
+release workflows run that check through `scripts/agent-docs-ci` before
+publication, including artifact reuse. A pass requires all evidence commands
+to finish successfully. Use a fresh PostgreSQL database for a repeated local
+evidence run. The testbed retains events across runs and uses in-memory query
+projections.

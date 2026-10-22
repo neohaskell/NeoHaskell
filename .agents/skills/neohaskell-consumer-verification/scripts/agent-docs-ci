@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+temp_dir="$(mktemp -d "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/agent-docs-ci.XXXXXX")"
+container="neohaskell_agent_docs_postgres_${GITHUB_RUN_ID:-local}_$$"
+cleanup() {
+  docker rm -f "$container" >/dev/null 2>&1 || true
+  rm -rf "$temp_dir"
+}
+trap cleanup EXIT
+
+docker run -d --name "$container" \
+  -e POSTGRES_USER=neohaskell \
+  -e POSTGRES_PASSWORD=neohaskell \
+  -e POSTGRES_DB=neohaskell \
+  -p 5432:5432 \
+  postgres:16-alpine \
+  postgres -c max_connections=200 >/dev/null
+
+ready=false
+for _ in $(seq 1 30); do
+  if docker exec "$container" pg_isready -U neohaskell >/dev/null 2>&1; then
+    ready=true
+    break
+  fi
+  sleep 1
+done
+if [ "$ready" != true ]; then
+  echo "agent docs: PostgreSQL did not become ready" >&2
+  exit 1
+fi
+
+curl -fsSL --retry 5 --retry-delay 5 --retry-all-errors \
+  --connect-timeout 20 --max-time 120 --retry-max-time 300 \
+  -o "$temp_dir/hurl.deb" \
+  https://github.com/Orange-OpenSource/hurl/releases/download/6.0.0/hurl_6.0.0_amd64.deb
+echo "2686f605adfdceca18579a941b317262a4185915e6fda1f8deaab201da22e9cf  $temp_dir/hurl.deb" | sha256sum -c -
+sudo dpkg -i "$temp_dir/hurl.deb"
+sudo apt-get update
+sudo apt-get install -y poppler-utils
+
+nix develop --command .agents/skills/neohaskell-consumer-verification/scripts/agent-docs-check --verify-evidence

@@ -12,7 +12,19 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  guidance:
+    name: Verify source-owned agent guidance
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: DeterminateSystems/determinate-nix-action@v3.23.3
+      - run: .agents/skills/neohaskell-consumer-verification/scripts/agent-docs-ci
+
   build:
+    needs: guidance
     name: Build ${{ matrix.target }}
     strategy:
       fail-fast: false

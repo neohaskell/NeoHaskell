@@ -1288,9 +1288,6 @@ async fn ide_initialize_against_release_binary() {
 #[test]
 #[ignore]
 fn skills_setup_real_clone_installs_skills_without_mutable_primer() {
-    // The shipped binary must really clone github.com/neohaskell/skills into the
-    // per-user cache (under the sandbox HOME) and install what it finds. Upstream
-    // now ships a populated `skills/` tree; mutable API primers are not installed.
     let sb = Sandbox::new("skills_setup_real_clone_installs_skills_without_primer");
     sb.neo("proj")
         .args(["skills", "setup", "--ci", "--all-tools"])

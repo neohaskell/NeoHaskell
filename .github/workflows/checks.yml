@@ -58,9 +58,15 @@ jobs:
 
   tooling:
     name: owned tooling checks
+    needs: agent-guidance-evidence
+    if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
+      - name: Require agent guidance evidence
+        env:
+          EVIDENCE_RESULT: ${{ needs.agent-guidance-evidence.result }}
+        run: test "$EVIDENCE_RESULT" = success
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -75,6 +81,7 @@ jobs:
         run: python3 .agents/skills/validate-skills/scripts/check.py --repo .
       - name: Validate source-owned agent guidance
         run: nix develop --command .agents/skills/neohaskell-consumer-verification/scripts/agent-docs-check
+
       - name: Run owned Python fixtures
         run: |
           set -euo pipefail
@@ -101,6 +108,16 @@ jobs:
             npm --prefix .agents/skills/orchestrate/scripts run typecheck
             node --test .agents/skills/multi-phase-plan/scripts/check-plan.test.mjs
           '
+
+  agent-guidance-evidence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: DeterminateSystems/determinate-nix-action@v3.23.3
+      - run: .agents/skills/neohaskell-consumer-verification/scripts/agent-docs-ci
 
   lint:
     name: hlint (dialect gate)

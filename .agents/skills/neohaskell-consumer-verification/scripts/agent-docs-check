@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -33,6 +34,23 @@ PAGE_NAME = re.compile(r"[a-z0-9][a-z0-9/-]*\.md\Z")
 LINK = re.compile(r"(?<!!)\[[^\]]+\]\(([^)]+)\)")
 HEADING = re.compile(r"^#{1,6}\s+(.+?)\s*#*\s*$")
 FENCE = re.compile(r"^\s*```([^\r\n]*)$")
+HURL_REQUEST = re.compile(r"(?m)^(?:GET|POST|PUT|PATCH|DELETE|OPTIONS|HEAD)\s+\S+")
+EVIDENCE_RUNNERS = {
+    "hurl": "testbed/scripts/run-tests.sh",
+    "service-spec": "core/test-service/Main.hs",
+    "auth-spec": "core/test-auth/Main.hs",
+    "consumer-contract": ".agents/skills/neohaskell-consumer-verification/scripts/neo-consumer-contract",
+}
+REQUIRED_CHECKS = {
+    "project-and-cli": {("consumer-contract", EVIDENCE_RUNNERS["consumer-contract"])},
+    "testing": {("consumer-contract", EVIDENCE_RUNNERS["consumer-contract"])},
+    "transports": {
+        ("service-spec", "core/test/Service/Transport/CliSpec.hs"),
+        ("service-spec", "core/test/Service/Transport/McpSpec.hs"),
+    },
+    "authorization": {("service-spec", "core/test/Service/Command/CanAccessSpec.hs")},
+    "external-oauth2-account": {("auth-spec", "core/test/Auth/OAuth2/RoutesSpec.hs")},
+}
 
 
 class CorpusError(Exception):
@@ -57,6 +75,20 @@ def load_manifest(root: Path) -> dict:
         if not isinstance(page, str) or not PAGE_NAME.fullmatch(page) or ".." in Path(page).parts:
             raise CorpusError(f"{path}: invalid page path {page!r}")
     return manifest
+
+
+def load_evidence(root: Path) -> dict:
+    path = root / "docs/agent/evidence.json"
+    try:
+        evidence = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as error:
+        raise CorpusError(f"{path}: cannot read valid evidence: {error}") from error
+    if not isinstance(evidence, dict) or evidence.get("schema") != 1:
+        raise CorpusError(f"{path}: expected schema 1")
+    capabilities = evidence.get("capabilities")
+    if not isinstance(capabilities, list):
+        raise CorpusError(f"{path}: capabilities must be an array")
+    return evidence
 
 
 def heading_ids(markdown: str) -> set[str]:
@@ -96,33 +128,66 @@ def page_links(page: str, markdown: str, pages: set[str]) -> set[str]:
     return linked
 
 
-def fence_counts(page: str, markdown: str) -> tuple[int, int]:
-    runnable = ignored = 0
+def fence_counts(page: str, markdown: str) -> tuple[int, list[str]]:
+    runnable = 0
+    ignored: list[str] = []
     opened: tuple[int, str] | None = None
+    body: list[str] = []
     for number, line in enumerate(markdown.splitlines(), start=1):
         match = FENCE.match(line)
         if match is None:
+            if opened is not None:
+                body.append(line)
             continue
         label = match.group(1).strip()
         if opened is None:
             opened = (number, label)
+            body = []
             if label == "haskell" or label == "haskell top":
                 runnable += 1
-            elif label == "haskell ignore":
-                ignored += 1
-            elif label.startswith("haskell"):
+            elif label.startswith("haskell") and label != "haskell ignore":
                 raise CorpusError(f"docs/agent/{page}:{number}: unsupported Haskell fence label {label!r}")
         else:
             if label:
                 raise CorpusError(f"docs/agent/{page}:{number}: closing fence has a label")
+            if opened[1] == "haskell ignore":
+                ignored.append(hashlib.sha256("\n".join(body).encode("utf-8")).hexdigest())
             opened = None
     if opened is not None:
         raise CorpusError(f"docs/agent/{page}:{opened[0]}: unclosed fence")
     return runnable, ignored
 
 
-def validate(root: Path) -> tuple[list[str], list[str]]:
+def safe_file(root: Path, value: str, field: str) -> Path:
+    relative = Path(value)
+    path = root / relative
+    if (
+        relative.is_absolute()
+        or ".." in relative.parts
+        or not path.is_file()
+        or path.is_symlink()
+        or not path.resolve().is_relative_to(root.resolve())
+    ):
+        raise CorpusError(f"docs/agent/: missing or unsafe {field} {value!r}")
+    return path
+
+
+def has_hurl_assertions(content: str) -> bool:
+    in_assertions = False
+    for line in content.splitlines():
+        stripped = line.strip()
+        if stripped == "[Asserts]":
+            in_assertions = True
+        elif in_assertions and (HURL_REQUEST.match(line) or stripped.startswith(("[", "HTTP/"))):
+            in_assertions = False
+        elif in_assertions and stripped and not stripped.startswith("#"):
+            return True
+    return False
+
+
+def validate(root: Path) -> tuple[list[str], dict[str, set[str]]]:
     manifest = load_manifest(root)
+    evidence_manifest = load_evidence(root)
     corpus = root / "docs/agent"
     pages = manifest["pages"]
     page_set = set(pages)
@@ -133,6 +198,7 @@ def validate(root: Path) -> tuple[list[str], list[str]]:
         raise CorpusError(f"docs/agent/manifest.json: missing pages {missing}; unlisted pages {unlisted}")
 
     runnable_pages: list[str] = []
+    ignored_hashes: dict[str, list[str]] = {}
     index_links: set[str] = set()
     for page in pages:
         path = corpus / page
@@ -150,7 +216,8 @@ def validate(root: Path) -> tuple[list[str], list[str]]:
                 target_text = (corpus / target_page).read_text(encoding="utf-8")
                 if fragment not in heading_ids(target_text):
                     raise CorpusError(f"{path}: broken heading anchor {raw_target!r}")
-        runnable, _ = fence_counts(page, markdown)
+        runnable, ignored = fence_counts(page, markdown)
+        ignored_hashes[page] = ignored
         if runnable:
             runnable_pages.append(page)
         if page == "index.md":
@@ -163,8 +230,13 @@ def validate(root: Path) -> tuple[list[str], list[str]]:
         )
 
     capabilities = manifest["capabilities"]
+    named_evidence: dict[str, list] = {}
+    for item in evidence_manifest["capabilities"]:
+        if not isinstance(item, dict) or set(item) != {"name", "evidence"} or not isinstance(item["name"], str) or item["name"] in named_evidence:
+            raise CorpusError("docs/agent/evidence.json: duplicate or invalid capability evidence")
+        named_evidence[item["name"]] = item["evidence"]
     names: set[str] = set()
-    scenarios: list[str] = []
+    evidence: dict[str, set[str]] = {runner: set() for runner in EVIDENCE_RUNNERS}
     for capability in capabilities:
         if not isinstance(capability, dict):
             raise CorpusError("docs/agent/manifest.json: each capability must be an object")
@@ -172,24 +244,72 @@ def validate(root: Path) -> tuple[list[str], list[str]]:
         page = capability.get("page")
         source = capability.get("source")
         scenario = capability.get("scenario")
-        if not all(isinstance(value, str) for value in (name, page, source, scenario)):
+        checks = named_evidence.get(name)
+        if not all(isinstance(value, str) for value in (name, page, source, scenario)) or not isinstance(checks, list):
             raise CorpusError(f"docs/agent/manifest.json: incomplete capability {capability!r}")
         if name in names or page not in page_set or page == "index.md":
             raise CorpusError(f"docs/agent/manifest.json: duplicate name or invalid page for {name!r}")
         names.add(name)
-        for field, value in (("source", source), ("scenario", scenario)):
-            path = root / value
-            if Path(value).is_absolute() or ".." in Path(value).parts or not path.is_file():
-                raise CorpusError(f"docs/agent/manifest.json: {name} has missing or unsafe {field} {value!r}")
+        safe_file(root, source, f"source for {name}")
+        scenario_path = safe_file(root, scenario, f"scenario for {name}")
         if not scenario.startswith("testbed/tests/") or not scenario.endswith(".hurl"):
-            raise CorpusError(f"docs/agent/manifest.json: {name} needs a maintained Hurl testbed scenario")
-        scenarios.append(scenario)
+            raise CorpusError(f"docs/agent/manifest.json: {name} needs a maintained Hurl scenario")
+        scenario_text = scenario_path.read_text(encoding="utf-8")
+        if not HURL_REQUEST.search(scenario_text) or not has_hurl_assertions(scenario_text):
+            raise CorpusError(f"docs/agent/manifest.json: {name} scenario needs a request and assertions")
+        evidence["hurl"].add(scenario)
+        named_checks: set[tuple[str, str]] = set()
+        for check in checks:
+            if not isinstance(check, dict) or set(check) != {"kind", "path"}:
+                raise CorpusError(f"docs/agent/evidence.json: invalid evidence for {name}")
+            kind, path = check["kind"], check["path"]
+            if kind not in EVIDENCE_RUNNERS or not isinstance(path, str):
+                raise CorpusError(f"docs/agent/evidence.json: unknown evidence for {name}")
+            safe_file(root, path, f"evidence for {name}")
+            if kind == "hurl":
+                raise CorpusError(f"docs/agent/evidence.json: {name} has redundant Hurl evidence")
+            if kind == "consumer-contract" and path != EVIDENCE_RUNNERS[kind]:
+                raise CorpusError(f"docs/agent/evidence.json: {name} needs the owned consumer contract")
+            if kind in ("service-spec", "auth-spec"):
+                suite = EVIDENCE_RUNNERS[kind]
+                module = Path(path).stem
+                if not path.endswith("Spec.hs") or module not in (root / suite).read_text(encoding="utf-8"):
+                    raise CorpusError(f"docs/agent/evidence.json: {name} spec is not registered in {suite}")
+            evidence[kind].add(path)
+            named_checks.add((kind, path))
+        if not REQUIRED_CHECKS.get(name, set()) <= named_checks:
+            raise CorpusError(f"docs/agent/evidence.json: {name} lacks required executable evidence")
     if names != REQUIRED_CAPABILITIES:
         raise CorpusError(
             f"docs/agent/manifest.json: missing capabilities {sorted(REQUIRED_CAPABILITIES - names)}; "
             f"unknown capabilities {sorted(names - REQUIRED_CAPABILITIES)}"
         )
-    return runnable_pages, scenarios
+    if set(named_evidence) != names:
+        raise CorpusError("docs/agent/evidence.json: capability evidence must match the manifest")
+    receipts = evidence_manifest.get("ignored_fragments")
+    if not isinstance(receipts, list):
+        raise CorpusError("docs/agent/evidence.json: ignored_fragments must be an array")
+    received: set[tuple[str, int]] = set()
+    for receipt in receipts:
+        if not isinstance(receipt, dict) or set(receipt) != {"page", "ordinal", "fragment_sha256", "source", "source_sha256", "reason"}:
+            raise CorpusError("docs/agent/evidence.json: invalid ignored fragment receipt")
+        page, ordinal = receipt["page"], receipt["ordinal"]
+        if not isinstance(page, str) or not isinstance(ordinal, int) or ordinal < 1 or ordinal > len(ignored_hashes.get(page, [])):
+            raise CorpusError("docs/agent/evidence.json: receipt does not identify an ignored Haskell fence")
+        key = (page, ordinal)
+        if key in received or not isinstance(receipt["reason"], str) or not receipt["reason"].strip():
+            raise CorpusError(f"docs/agent/evidence.json: duplicate or empty receipt for {key}")
+        received.add(key)
+        if receipt["fragment_sha256"] != ignored_hashes[page][ordinal - 1]:
+            raise CorpusError(f"docs/agent/evidence.json: stale fragment review for {key}")
+        path = safe_file(root, receipt["source"], f"review source for {key}")
+        actual = hashlib.sha256(path.read_bytes()).hexdigest()
+        if receipt["source_sha256"] != actual:
+            raise CorpusError(f"docs/agent/evidence.json: stale source review for {key}")
+    expected = {(page, ordinal) for page, hashes in ignored_hashes.items() for ordinal in range(1, len(hashes) + 1)}
+    if received != expected:
+        raise CorpusError(f"docs/agent/evidence.json: missing ignored fragment receipts {sorted(expected - received)}")
+    return runnable_pages, evidence
 
 
 def compile_pages(root: Path, runnable_pages: list[str]) -> None:
@@ -224,22 +344,44 @@ def compile_pages(root: Path, runnable_pages: list[str]) -> None:
             print(f"agent docs: compiled {page}")
 
 
+def verify_evidence(root: Path, evidence: dict[str, set[str]]) -> None:
+    commands = []
+    if evidence["service-spec"]:
+        commands.append(["cabal", "test", "nhcore-test-service", "--test-show-details=direct"])
+    if evidence["auth-spec"]:
+        commands.append(["cabal", "test", "nhcore-test-auth", "--test-show-details=direct"])
+    if evidence["hurl"]:
+        commands.append([str(root / EVIDENCE_RUNNERS["hurl"])])
+    if evidence["consumer-contract"]:
+        commands.append([str(root / EVIDENCE_RUNNERS["consumer-contract"])])
+    for command in commands:
+        result = subprocess.run(command, cwd=root, text=True, capture_output=True, timeout=10800)
+        if result.returncode:
+            raise CorpusError(f"evidence command failed {command!r}:\n{result.stdout[-3000:]}\n{result.stderr[-3000:]}")
+        print(f"agent docs: verified {command[0]} {command[1:]}")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=Path.cwd())
     parser.add_argument("--structure-only", action="store_true")
+    parser.add_argument("--verify-evidence", action="store_true")
     arguments = parser.parse_args()
+    if arguments.structure_only and arguments.verify_evidence:
+        parser.error("--structure-only and --verify-evidence cannot be combined")
     root = arguments.root.resolve()
     try:
-        runnable_pages, scenarios = validate(root)
+        runnable_pages, evidence = validate(root)
         if not arguments.structure_only:
             compile_pages(root, runnable_pages)
+            if arguments.verify_evidence:
+                verify_evidence(root, evidence)
     except (CorpusError, OSError, subprocess.TimeoutExpired) as error:
         print(f"agent docs: FAIL: {error}", file=sys.stderr)
         return 1
     print(
         f"agent docs: PASS: {len(REQUIRED_CAPABILITIES)} capabilities, "
-        f"{len(scenarios)} scenario mappings, {len(runnable_pages)} compiled page(s)"
+        f"{sum(map(len, evidence.values()))} evidence files, {len(runnable_pages)} compiled page(s)"
         if not arguments.structure_only
         else f"agent docs: PASS: structure, {len(REQUIRED_CAPABILITIES)} capabilities"
     )

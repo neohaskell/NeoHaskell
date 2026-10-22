@@ -1,4 +1,5 @@
 import json
+import os
 import shutil
 import subprocess
 import tempfile
@@ -17,11 +18,20 @@ class AgentDocsCheckTests(unittest.TestCase):
         self.root = Path(self.temporary.name)
         shutil.copytree(REPO / "docs/agent", self.root / "docs/agent")
         manifest = json.loads((self.root / "docs/agent/manifest.json").read_text())
+        evidence = json.loads((self.root / "docs/agent/evidence.json").read_text())
+        paths = {
+            "core/test-service/Main.hs",
+            "core/test-auth/Main.hs",
+        }
         for capability in manifest["capabilities"]:
-            for key in ("source", "scenario"):
-                path = self.root / capability[key]
-                path.parent.mkdir(parents=True, exist_ok=True)
-                path.touch()
+            paths.update((capability["source"], capability["scenario"]))
+        for capability in evidence["capabilities"]:
+            paths.update(check["path"] for check in capability["evidence"])
+        paths.update(receipt["source"] for receipt in evidence["ignored_fragments"])
+        for relative in paths:
+            path = self.root / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(REPO / relative, path)
 
     def check(self, expected_status, expected_text):
         result = subprocess.run(
@@ -49,10 +59,78 @@ class AgentDocsCheckTests(unittest.TestCase):
         (self.root / "testbed/tests/integrations/oauth2-account-connection.hurl").unlink()
         self.check(1, "missing or unsafe scenario")
 
+    def test_empty_scenario(self):
+        (self.root / "testbed/tests/integrations/oauth2-account-connection.hurl").write_text("")
+        self.check(1, "scenario needs a request and assertions")
+
     def test_unknown_haskell_fence(self):
         syntax = self.root / "docs/agent/syntax-and-core.md"
         syntax.write_text(syntax.read_text().replace("```haskell\n", "```haskell unchecked\n"))
         self.check(1, "unsupported Haskell fence label")
+
+    def test_missing_consumer_evidence(self):
+        path = self.root / "docs/agent/evidence.json"
+        evidence = json.loads(path.read_text())
+        next(item for item in evidence["capabilities"] if item["name"] == "project-and-cli")["evidence"] = []
+        path.write_text(json.dumps(evidence))
+        self.check(1, "project-and-cli lacks required executable evidence")
+
+    def test_missing_evidence_file(self):
+        (self.root / "docs/agent/evidence.json").unlink()
+        self.check(1, "cannot read valid evidence")
+
+    def test_missing_mcp_spec(self):
+        path = self.root / "docs/agent/evidence.json"
+        evidence = json.loads(path.read_text())
+        transports = next(item for item in evidence["capabilities"] if item["name"] == "transports")
+        transports["evidence"] = transports["evidence"][:1]
+        path.write_text(json.dumps(evidence))
+        self.check(1, "transports lacks required executable evidence")
+
+    def test_missing_fragment_receipt(self):
+        path = self.root / "docs/agent/evidence.json"
+        evidence = json.loads(path.read_text())
+        evidence["ignored_fragments"].pop()
+        path.write_text(json.dumps(evidence))
+        self.check(1, "missing ignored fragment receipts")
+
+    def test_stale_fragment_review(self):
+        path = self.root / "docs/agent/commands.md"
+        path.write_text(path.read_text().replace("getEntityId cmd = Just cmd.entityId", "getEntityId cmd = Nothing"))
+        self.check(1, "stale fragment review")
+
+    def test_stale_source_review(self):
+        path = self.root / "neo/starter/src/Starter/Counter/Commands/IncrementCounter.hs"
+        path.write_text(path.read_text() + "\n")
+        self.check(1, "stale source review")
+
+    def test_unregistered_spec(self):
+        path = self.root / "core/test-service/Main.hs"
+        path.write_text(path.read_text().replace("McpSpec", "RemovedSpec"))
+        self.check(1, "spec is not registered")
+
+    def test_failed_evidence_command_blocks_publication(self):
+        bin_dir = self.root / "bin"
+        bin_dir.mkdir()
+        cabal = bin_dir / "cabal"
+        cabal.write_text("#!/bin/sh\nexit 0\n")
+        cabal.chmod(0o755)
+        runner = self.root / "testbed/scripts/run-tests.sh"
+        runner.parent.mkdir(parents=True, exist_ok=True)
+        runner.write_text("#!/bin/sh\necho fixture-scenario-failed >&2\nexit 1\n")
+        runner.chmod(0o755)
+        env = os.environ.copy()
+        env["PATH"] = f"{bin_dir}{os.pathsep}{env['PATH']}"
+        env["NEOHASKELL_SHELL_FP"] = "fixture"
+        result = subprocess.run(
+            [str(CHECK), "--root", str(self.root), "--verify-evidence"],
+            capture_output=True,
+            text=True,
+            check=False,
+            env=env,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("fixture-scenario-failed", result.stderr)
 
 
 if __name__ == "__main__":

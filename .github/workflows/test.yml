@@ -235,7 +235,7 @@ jobs:
           name: dist-newstyle
           path: dist-newstyle
       - name: Restore executable permissions
-        run: find dist-newstyle/build -type f -name 'nhtestbed' -exec chmod +x {} +
+        run: find dist-newstyle/build -type f \( -name 'nhtestbed' -o -name 'nhoauthtestbed' \) -exec chmod +x {} +
       - name: Start PostgreSQL
         run: |
           docker run -d --name neohaskell_postgres \
