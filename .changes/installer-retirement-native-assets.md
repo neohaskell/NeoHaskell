@@ -75,7 +75,7 @@ Use the following standalone example from a shell with `curl`, `awk`, and
 either `sha256sum` or `shasum` installed. It downloads both files from the
 same release, checks the selected asset, installs it, and prints its version.
 
-```sh
+~~~sh
 set -eu
 version=0.11.0
 target=x86_64-unknown-linux-gnu
@@ -96,7 +96,7 @@ test "$actual" = "$expected"
 install -m 0755 "$download_dir/neo-$target" "$destination"
 export PATH="$HOME/.local/bin:$PATH"
 "$destination" --version
-```
+~~~
 
 Use `aarch64-apple-darwin` for an Apple silicon Mac. Add `$HOME/.local/bin`
 to your shell configuration to keep `neo` on `PATH` in new sessions. If a
