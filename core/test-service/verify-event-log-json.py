@@ -40,6 +40,41 @@ def one(records: list[dict], kind: str) -> dict:
     return matches[0]
 
 
+def check_forced_cancelled_worker(
+    records: list[dict],
+    runner_kind: str,
+) -> None:
+    active = [
+        record
+        for record in records
+        if record.get("runnerKind") == runner_kind
+        and record.get("result") == "cancelled"
+    ]
+    if len(active) != 1:
+        raise AssertionError(f"Expected one cancelled {runner_kind} event, got {len(active)}")
+    active_result = active[0]
+    if active_result.get("commandsEmitted") != 0:
+        raise AssertionError(f"Cancelled {runner_kind} event emitted a command")
+    if active_result.get("failureStage") != "cancellation" or active_result.get("errorClass") != "ExecutionInterrupted":
+        raise AssertionError(f"Cancelled {runner_kind} event classification is wrong")
+
+    stream_results = [
+        record for record in records if record.get("streamId") == active_result.get("streamId")
+    ]
+    dropped = [record for record in stream_results if record.get("result") == "dropped"]
+    if len(dropped) != 1 or len(stream_results) != 2:
+        raise AssertionError(f"Queued {runner_kind} event was not dropped exactly once")
+    dropped_result = dropped[0]
+    if dropped_result.get("commandsEmitted") != 0:
+        raise AssertionError(f"Dropped {runner_kind} event emitted a command")
+    if "runnerKind" in dropped_result:
+        raise AssertionError(f"Dropped {runner_kind} event ran an integration callback")
+    if dropped_result.get("eventId") == active_result.get("eventId"):
+        raise AssertionError(f"Queued {runner_kind} event reused the active event ID")
+    uuid.UUID(active_result["eventId"])
+    uuid.UUID(dropped_result["eventId"])
+
+
 def check_pair(records: list[dict], actor: str | None, cause: bool, expected: int = 1) -> None:
     results = [record for record in records if record.get("kind") == "command_result"]
     events = [record for record in records if record.get("kind") == "event_appended"]
@@ -72,6 +107,25 @@ def check_one_pair(result: dict, event: dict, actor: str | None, cause: bool) ->
         raise AssertionError("Cause presence is wrong")
     if not cause and result["correlationId"] != result["requestId"]:
         raise AssertionError("Root correlation does not match its request ID")
+
+
+def check_web_failure(records: list[dict], error_class: str, sentinels: tuple[str, ...]) -> None:
+    result = one(records, "command_result")
+    uuid.UUID(result["requestId"])
+    if result.get("result") != "execution_failed" or result.get("eventsAppended") != 0:
+        raise AssertionError("Recognized Web command failure outcome or count is wrong")
+    if type(result["eventsAppended"]) is not int:
+        raise AssertionError("Web command eventsAppended must be a JSON number")
+    if result.get("failureStage") != "execution" or result.get("errorClass") != error_class:
+        raise AssertionError("Recognized Web command failure classification is wrong")
+    if result.get("correlationId") != result["requestId"]:
+        raise AssertionError("Recognized Web command failure correlation is wrong")
+    if any(key in result for key in ("eventId", "streamId", "causationId")):
+        raise AssertionError("Recognized Web command failure leaked unrelated metadata")
+    if [record for record in records if record.get("kind") == "event_appended"]:
+        raise AssertionError("Failed Web command reported a saved event")
+    if any(sentinel in json.dumps(records) for sentinel in sentinels):
+        raise AssertionError("Web command failure details leaked into JSON logs")
 
 
 def main() -> int:
@@ -137,6 +191,15 @@ def main() -> int:
             raise AssertionError("Cancelled request body outcome or count is wrong")
         if body_read_cancelled_result.get("failureStage") != "request_body" or body_read_cancelled_result.get("errorClass") != "ExecutionInterrupted":
             raise AssertionError("Cancelled request body classification is wrong")
+
+        decoder_failure = records_for("reports one safe result when a recognized command decoder throws")
+        check_web_failure(decoder_failure, "SynchronousException", ("private-command-decoder-sentinel",))
+
+        decoder_cancelled = records_for("reports one safe result when a recognized command decoder is cancelled")
+        check_web_failure(decoder_cancelled, "ExecutionInterrupted", ("ThreadKilled",))
+
+        web_execution_failure = records_for("keeps one result when a recognized Web command fails during execution")
+        check_web_failure(web_execution_failure, "SynchronousException", ("private-web-fetch-sentinel",))
 
         retried = records_for("records the exact insertion precondition after refetch")
         retry_records = [record for record in retried if record.get("kind") == "retry"]
@@ -257,11 +320,55 @@ def main() -> int:
         if "private-dispatch-error-sentinel" in json.dumps(dispatch_failure):
             raise AssertionError("Callback dispatch error text leaked into JSON logs")
 
-        cancelled = one(records_for("force-cancels workers when Stop message cannot be delivered", "nhcore-test-integration"), "integration_result")
-        if cancelled.get("result") != "cancelled" or cancelled.get("commandsEmitted") != 0:
-            raise AssertionError("Cancelled runner outcome is wrong")
-        if cancelled.get("failureStage") != "cancellation" or cancelled.get("errorClass") != "ExecutionInterrupted":
-            raise AssertionError("Cancelled runner classification is wrong")
+        forced_cancel = records_for(
+            "force-cancels workers when Stop message cannot be delivered and reports queued events",
+            "nhcore-test-integration",
+        )
+        forced_cancel_results = [
+            record for record in forced_cancel if record.get("kind") == "integration_result"
+        ]
+        if len(forced_cancel_results) != 4:
+            raise AssertionError(f"Expected four forced-cancellation results, got {len(forced_cancel_results)}")
+        check_forced_cancelled_worker(forced_cancel_results, "outbound")
+        check_forced_cancelled_worker(forced_cancel_results, "lifecycle")
+
+        interrupted_stop = records_for(
+            "completes an interrupted stop after admitted writers leave and reports queued events",
+            "nhcore-test-integration",
+        )
+        interrupted_stop_results = [
+            record for record in interrupted_stop if record.get("kind") == "integration_result"
+        ]
+        if len(interrupted_stop_results) != 4:
+            raise AssertionError(f"Expected four interrupted-stop results, got {len(interrupted_stop_results)}")
+        outbound_interrupted_stop = [
+            record
+            for record in interrupted_stop_results
+            if record.get("streamId") == "outbound-interrupted-stop"
+        ]
+        lifecycle_interrupted_stop = [
+            record
+            for record in interrupted_stop_results
+            if record.get("streamId") == "lifecycle-interrupted-stop"
+        ]
+        check_forced_cancelled_worker(outbound_interrupted_stop, "outbound")
+        check_forced_cancelled_worker(lifecycle_interrupted_stop, "lifecycle")
+
+        creation_race = records_for(
+            "drops events when lifecycle worker creation races with shutdown",
+            "nhcore-test-integration",
+        )
+        creation_race_results = [
+            record for record in creation_race if record.get("kind") == "integration_result"
+        ]
+        if len(creation_race_results) != 1:
+            raise AssertionError(f"Expected one shutdown-race result, got {len(creation_race_results)}")
+        creation_race_drop = creation_race_results[0]
+        if creation_race_drop.get("result") != "dropped" or creation_race_drop.get("commandsEmitted") != 0:
+            raise AssertionError("Worker created after shutdown was not reported as dropped")
+        if "runnerKind" in creation_race_drop:
+            raise AssertionError("Worker created after shutdown ran an integration callback")
+        uuid.UUID(creation_race_drop["eventId"])
 
         overloaded = records_for("drops events and continues when channel is full and timeout expires", "nhcore-test-integration")
         overloaded_results = [record for record in overloaded if record.get("kind") == "integration_result"]

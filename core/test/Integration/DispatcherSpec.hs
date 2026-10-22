@@ -6,11 +6,14 @@ import Array qualified
 import AsyncTask qualified
 import Channel qualified
 import Auth.SecretStore.InMemory qualified as InMemorySecretStore
+import Control.Concurrent qualified as Ghc
+import Control.Concurrent.Async qualified as GhcAsync
 import ConcurrentVar qualified
 import ConcurrentMap qualified
 import Control.Exception qualified as GhcException
 import Core
 import DateTime qualified
+import GHC.Conc qualified as GhcConc
 import Integration qualified
 import Integration.Command qualified as Command
 import Integration.Lifecycle qualified as Lifecycle
@@ -132,6 +135,64 @@ waitForDispatchCount attemptsLeft expectedCount dispatchCount = do
         else do
           AsyncTask.sleep 20 |> Task.mapError (\_ -> "dispatch completion wait failed" :: Text)
           waitForDispatchCount (attemptsLeft - 1) expectedCount dispatchCount
+
+
+waitForBlockedOnSTM :: Int -> GhcConc.ThreadId -> Task Text Unit
+waitForBlockedOnSTM attemptsLeft threadId = do
+  threadStatus <- GhcConc.threadStatus threadId |> Task.fromIO
+  case threadStatus of
+    GhcConc.ThreadBlocked GhcConc.BlockedOnSTM -> Task.yield unit
+    _ ->
+      if attemptsLeft <= 0
+        then Task.throw "Timed out waiting for a thread blocked on STM"
+        else do
+          AsyncTask.sleep 5 |> Task.mapError (\_ -> "thread status wait failed" :: Text)
+          waitForBlockedOnSTM (attemptsLeft - 1) threadId
+
+
+cancelShutdownWhileWriterIsAdmitted ::
+  Dispatcher.IntegrationDispatcher ->
+  Event Json.Value ->
+  Event Json.Value ->
+  Event Json.Value ->
+  Channel.Channel Unit ->
+  Channel.Channel Unit ->
+  Task Text Bool
+cancelShutdownWhileWriterIsAdmitted dispatcher activeEvent queuedEvent waitingEvent workerStarted workerStopped = do
+  Dispatcher.dispatch dispatcher activeEvent
+  Channel.read workerStarted
+  Dispatcher.dispatch dispatcher queuedEvent
+
+  writerTask <-
+    GhcAsync.async (Task.runResult (Dispatcher.dispatch dispatcher waitingEvent))
+      |> Task.fromIO
+  waitForBlockedOnSTM 200 (GhcAsync.asyncThreadId writerTask)
+
+  shutdownTask <-
+    GhcAsync.async (Task.runResult (Dispatcher.shutdown dispatcher))
+      |> Task.fromIO
+  waitForBlockedOnSTM 200 (GhcAsync.asyncThreadId shutdownTask)
+
+  Ghc.throwTo (GhcAsync.asyncThreadId shutdownTask) GhcException.ThreadKilled
+    |> Task.fromIO
+  workerStopRace <-
+    AsyncTask.race
+      (Channel.read workerStopped)
+      (AsyncTask.sleep 500 |> Task.mapError (\_ -> "worker cancellation wait failed" :: Text))
+
+  GhcAsync.cancel writerTask |> Task.fromIO
+  _ <- GhcAsync.waitCatch shutdownTask |> Task.fromIO
+  Dispatcher.shutdown dispatcher
+
+  case workerStopRace of
+    AsyncTask.LeftWon _ -> Task.yield True
+    AsyncTask.RightWon _ -> Task.yield False
+
+
+blockWorkerForever :: forall result. Task Text result
+blockWorkerForever = do
+  AsyncTask.sleep 100000 |> Task.mapError (\_ -> "sleep error" :: Text)
+  blockWorkerForever
 
 
 -- ============================================================================
@@ -1010,88 +1071,222 @@ spec = do
         count |> shouldBe 3
         seqArray |> shouldBe [1, 2, 3]
 
-      it "force-cancels workers when Stop message cannot be delivered (channel full)" \_ -> do
-        -- Test that workers are force-cancelled when their channel is full and Stop can't be delivered.
-        -- This verifies the fix for the memory leak where workers would never be cleaned up if
-        -- the Stop message couldn't be delivered due to a full channel.
-        --
-        -- Setup:
-        -- 1. Create a dispatcher with capacity=1 and very short timeout (10ms)
-        -- 2. Worker blocks forever on first event (simulating a stuck worker)
-        -- 3. Fill the channel so Stop can't be delivered
-        -- 4. Call shutdown - this should force-cancel the worker via AsyncTask.cancel
-        -- 5. Verify shutdown completes without hanging (the test itself is the verification)
-        workerStarted <- ConcurrentVar.containing False
-        workerCancelled <- ConcurrentVar.containing False
-
-        let blockingRunner =
+      it "force-cancels workers when Stop message cannot be delivered and reports queued events" \_ -> do
+        let forcedStopConfig =
+              Dispatcher.DispatcherConfig
+                { idleTimeoutMs = 60000,
+                  reaperIntervalMs = 10000,
+                  enableReaper = False,
+                  workerChannelCapacity = 1,
+                  channelWriteTimeoutMs = 10,
+                  eventProcessingTimeoutMs = Nothing,
+                  maxEventRetries = 3,
+                  retryBaseDelayMs = 50
+                }
+        outboundStarted <- Channel.new
+        outboundCalls <- ConcurrentVar.containing (0 :: Int)
+        let blockingOutboundRunner =
               Dispatcher.OutboundRunner
                 { entityTypeName = "TestEntity",
                   processEvent = \_maybeContext _eventStore _event -> do
-                    workerStarted |> ConcurrentVar.modify (\_ -> True)
-                    -- Block forever (simulating a stuck worker)
-                    -- This will be force-cancelled by AsyncTask.cancel
-                    let blockForever :: Task Text Unit
-                        blockForever = do
-                          AsyncTask.sleep 100000 |> Task.mapError (\_ -> "sleep error" :: Text)
-                          blockForever
-                    blockForever |> Task.asResult |> Task.map (\_ -> ())
-                    -- If we get here, we were cancelled
-                    workerCancelled |> ConcurrentVar.modify (\_ -> True)
-                    Task.yield Array.empty
+                    outboundCalls |> ConcurrentVar.modify (+ 1)
+                    Channel.write unit outboundStarted
+                    blockWorkerForever
                 }
+        outboundEventStore <- InMemory.new |> Task.mapError toText
+        outboundContext <- makeContext
+        outboundDispatcher <-
+          Dispatcher.newWithLifecycleConfig
+            forcedStopConfig
+            outboundEventStore
+            [blockingOutboundRunner]
+            []
+            Map.empty
+            outboundContext
+        outboundActiveEvent <- makeTestEvent "outbound-cancelled-stream" 1 1
+        outboundQueuedEvent <- makeTestEvent "outbound-cancelled-stream" 2 2
+        Dispatcher.dispatch outboundDispatcher outboundActiveEvent
+        Channel.read outboundStarted
+        Dispatcher.dispatch outboundDispatcher outboundQueuedEvent
+        Dispatcher.shutdown outboundDispatcher
+        outboundCallCount <- outboundCalls |> ConcurrentVar.peek
+        outboundCallCount |> shouldBe 1
 
-        -- Create dispatcher with tiny channel (capacity=1) and very short timeout
+        lifecycleStarted <- Channel.new
+        lifecycleCalls <- ConcurrentVar.containing (0 :: Int)
+        let blockingLifecycleRunner =
+              Dispatcher.OutboundLifecycleRunner
+                { entityTypeName = "TestEntity",
+                  spawnWorkerState = \_streamId -> do
+                    let processEvent = \_event -> do
+                          lifecycleCalls |> ConcurrentVar.modify (+ 1)
+                          Channel.write unit lifecycleStarted
+                          blockWorkerForever
+                    Task.yield
+                      Dispatcher.WorkerState
+                        { processEvent = processEvent,
+                          cleanup = Task.yield unit
+                        }
+                }
+        lifecycleEventStore <- InMemory.new |> Task.mapError toText
+        lifecycleContext <- makeContext
+        lifecycleDispatcher <-
+          Dispatcher.newWithLifecycleConfig
+            forcedStopConfig
+            lifecycleEventStore
+            []
+            [blockingLifecycleRunner]
+            Map.empty
+            lifecycleContext
+        lifecycleActiveEvent <- makeTestEvent "lifecycle-cancelled-stream" 1 1
+        lifecycleQueuedEvent <- makeTestEvent "lifecycle-cancelled-stream" 2 2
+        Dispatcher.dispatch lifecycleDispatcher lifecycleActiveEvent
+        Channel.read lifecycleStarted
+        Dispatcher.dispatch lifecycleDispatcher lifecycleQueuedEvent
+        Dispatcher.shutdown lifecycleDispatcher
+        lifecycleCallCount <- lifecycleCalls |> ConcurrentVar.peek
+        lifecycleCallCount |> shouldBe 1
+
+      it "completes an interrupted stop after admitted writers leave and reports queued events" \_ -> do
+        let interruptedStopConfig =
+              Dispatcher.DispatcherConfig
+                { idleTimeoutMs = 60000,
+                  reaperIntervalMs = 10000,
+                  enableReaper = False,
+                  workerChannelCapacity = 1,
+                  channelWriteTimeoutMs = 2000,
+                  eventProcessingTimeoutMs = Nothing,
+                  maxEventRetries = 3,
+                  retryBaseDelayMs = 50
+                }
+        outboundStarted <- Channel.new
+        outboundStopped <- Channel.new
+        outboundCalls <- ConcurrentVar.containing (0 :: Int)
+        let blockingOutboundRunner =
+              Dispatcher.OutboundRunner
+                { entityTypeName = "TestEntity",
+                  processEvent = \_maybeContext _eventStore _event -> do
+                    outboundCalls |> ConcurrentVar.modify (+ 1)
+                    Channel.write unit outboundStarted
+                    Task.finally (Channel.write unit outboundStopped) blockWorkerForever
+                }
+        outboundEventStore <- InMemory.new |> Task.mapError toText
+        outboundContext <- makeContext
+        outboundDispatcher <-
+          Dispatcher.newWithLifecycleConfig
+            interruptedStopConfig
+            outboundEventStore
+            [blockingOutboundRunner]
+            []
+            Map.empty
+            outboundContext
+        outboundActiveEvent <- makeTestEvent "outbound-interrupted-stop" 1 1
+        outboundQueuedEvent <- makeTestEvent "outbound-interrupted-stop" 2 2
+        outboundWaitingEvent <- makeTestEvent "outbound-interrupted-stop" 3 3
+        outboundStoppedDuringShutdown <-
+          cancelShutdownWhileWriterIsAdmitted
+            outboundDispatcher
+            outboundActiveEvent
+            outboundQueuedEvent
+            outboundWaitingEvent
+            outboundStarted
+            outboundStopped
+        outboundCallCount <- outboundCalls |> ConcurrentVar.peek
+        outboundCallCount |> shouldBe 1
+        outboundStoppedDuringShutdown |> shouldBe True
+
+        lifecycleStarted <- Channel.new
+        lifecycleStopped <- Channel.new
+        lifecycleCalls <- ConcurrentVar.containing (0 :: Int)
+        let blockingLifecycleRunner =
+              Dispatcher.OutboundLifecycleRunner
+                { entityTypeName = "TestEntity",
+                  spawnWorkerState = \_streamId -> do
+                    let processEvent = \_event -> do
+                          lifecycleCalls |> ConcurrentVar.modify (+ 1)
+                          Channel.write unit lifecycleStarted
+                          Task.finally (Channel.write unit lifecycleStopped) blockWorkerForever
+                    Task.yield
+                      Dispatcher.WorkerState
+                        { processEvent,
+                          cleanup = Task.yield unit
+                        }
+                }
+        lifecycleEventStore <- InMemory.new |> Task.mapError toText
+        lifecycleContext <- makeContext
+        lifecycleDispatcher <-
+          Dispatcher.newWithLifecycleConfig
+            interruptedStopConfig
+            lifecycleEventStore
+            []
+            [blockingLifecycleRunner]
+            Map.empty
+            lifecycleContext
+        lifecycleActiveEvent <- makeTestEvent "lifecycle-interrupted-stop" 1 1
+        lifecycleQueuedEvent <- makeTestEvent "lifecycle-interrupted-stop" 2 2
+        lifecycleWaitingEvent <- makeTestEvent "lifecycle-interrupted-stop" 3 3
+        lifecycleStoppedDuringShutdown <-
+          cancelShutdownWhileWriterIsAdmitted
+            lifecycleDispatcher
+            lifecycleActiveEvent
+            lifecycleQueuedEvent
+            lifecycleWaitingEvent
+            lifecycleStarted
+            lifecycleStopped
+        lifecycleCallCount <- lifecycleCalls |> ConcurrentVar.peek
+        lifecycleCallCount |> shouldBe 1
+        lifecycleStoppedDuringShutdown |> shouldBe True
+
+      it "drops events when lifecycle worker creation races with shutdown" \_ -> do
+        spawnStarted <- Channel.new
+        releaseSpawn <- Channel.new
+        callbackStarted <- Channel.new
+        cleanupFinished <- Channel.new
+        let creationRaceConfig =
+              Dispatcher.DispatcherConfig
+                { idleTimeoutMs = 60000,
+                  reaperIntervalMs = 10000,
+                  enableReaper = False,
+                  workerChannelCapacity = 1,
+                  channelWriteTimeoutMs = 100,
+                  eventProcessingTimeoutMs = Nothing,
+                  maxEventRetries = 3,
+                  retryBaseDelayMs = 50
+                }
+        let lifecycleRunner =
+              Dispatcher.OutboundLifecycleRunner
+                { entityTypeName = "TestEntity",
+                  spawnWorkerState = \_ -> do
+                    Channel.write unit spawnStarted
+                    Channel.read releaseSpawn
+                    Task.yield
+                      Dispatcher.WorkerState
+                        { processEvent = \_ -> do
+                            Channel.write unit callbackStarted
+                            Task.yield Array.empty,
+                          cleanup = Channel.write unit cleanupFinished
+                        }
+                }
         eventStore <- InMemory.new |> Task.mapError toText
         context <- makeContext
         dispatcher <-
           Dispatcher.newWithLifecycleConfig
-            Dispatcher.DispatcherConfig
-              { idleTimeoutMs = 60000,
-                reaperIntervalMs = 10000,
-                enableReaper = False,
-                workerChannelCapacity = 1,
-                channelWriteTimeoutMs = 10,  -- Very short timeout
-                eventProcessingTimeoutMs = Nothing,
-                maxEventRetries = 3,
-                retryBaseDelayMs = 50
-              }
+            creationRaceConfig
             eventStore
-            [blockingRunner]
             []
+            [lifecycleRunner]
             Map.empty
             context
-
-        -- Dispatch first event - worker will pick it up and block forever
-        event1 <- makeTestEvent "entity-A" 1 1
-        Dispatcher.dispatch dispatcher event1
-
-        -- Wait for worker to start processing
-        AsyncTask.sleep 50 |> Task.mapError (\_ -> "sleep error" :: Text)
-
-        -- Verify worker started
-        started <- ConcurrentVar.peek workerStarted
-        started |> shouldBe True
-
-        -- Fill the channel so Stop can't be delivered
-        event2 <- makeTestEvent "entity-A" 2 2
-        Dispatcher.dispatch dispatcher event2
-
-        -- Now the channel has capacity=1, and we've written one message to it.
-        -- The worker is blocked processing event1, so it won't read from the channel.
-        -- When we call shutdown, the Stop message will timeout trying to write to the full channel.
-        -- The fix ensures AsyncTask.cancel is called as fallback.
-
-        -- Call shutdown - this should force-cancel the stuck worker
-        -- If the fix isn't working, this would hang forever waiting for Stop to be delivered
+        event <- makeTestEvent "lifecycle-create-shutdown-race" 1 1
+        dispatchTask <- AsyncTask.run (Dispatcher.dispatch dispatcher event)
+        Channel.read spawnStarted
         Dispatcher.shutdown dispatcher
-
-        -- Give a moment for the cancellation to propagate
-        AsyncTask.sleep 50 |> Task.mapError (\_ -> "sleep error" :: Text)
-
-        -- Test passes if we get here without hanging
-        -- (The act of shutdown completing is the verification)
-        pass
+        Channel.write unit releaseSpawn
+        AsyncTask.waitFor dispatchTask
+        raceResult <- AsyncTask.race (Channel.read callbackStarted) (Channel.read cleanupFinished)
+        raceResult |> shouldBe (AsyncTask.RightWon unit)
+        queuedCallback <- Channel.tryRead callbackStarted
+        queuedCallback |> shouldBe Maybe.Nothing
 
       it "does not drop events when channel has capacity" \_ -> do
         -- Verify that events are NOT dropped when channel has space
