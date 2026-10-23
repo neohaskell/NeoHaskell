@@ -458,19 +458,15 @@ runIntegrationRunner execution runnerTask dispatchPayload = do
                       IntegrationRunnerProcessing commandCount -> IntegrationRunnerProcessing (commandCount + 1)
                       completed -> completed
                     )
-            dispatchResult <- Task.fromIO do
-              GhcException.try @GhcException.SomeException
-                (commands |> Task.forEach dispatchCommandPayload |> Task.runResult)
-            case dispatchResult of
-              Left exception -> case GhcException.fromException @GhcException.SomeAsyncException exception of
-                Just asyncException -> Task.fromIO (GhcException.throwIO asyncException)
-                Nothing -> do
-                  completeRunner (IntegrationFailure IntegrationCallbackDispatchFailure)
-                  Task.fromIO (GhcException.throwIO exception)
-              Right (Ok _) -> completeRunner IntegrationProcessed
-              Right (Err errorText) -> do
-                completeRunner (IntegrationFailure IntegrationCallbackDispatchFailure)
-                Task.throw errorText
+            let reportDispatchFailure failure = case failure of
+                  Task.Interrupted -> Task.yield unit
+                  Task.TypedFailure _ -> completeRunner (IntegrationFailure IntegrationCallbackDispatchFailure)
+                  Task.RuntimeFailure -> completeRunner (IntegrationFailure IntegrationCallbackDispatchFailure)
+            let dispatchCommands =
+                  Task.evaluate (commands |> Task.forEach dispatchCommandPayload)
+                    |> Task.andThen identity
+            dispatchCommands |> Task.onFailure reportDispatchFailure
+            completeRunner IntegrationProcessed
         Task.yield unit
   processRunner
 
@@ -838,40 +834,29 @@ queueWorkerEventWithTimeout ::
   WorkerQueueControl ->
   Channel (WorkerMessage (Event Json.Value)) ->
   Task Text WorkerEnqueueResult
-queueWorkerEventWithTimeout dispatcher streamId event queueStatus workerChannel = Task.fromIOResult do
-  GhcException.mask \restore -> do
-    shutdownResult <- Task.runResult (dispatcher.shutdownSignal |> ConcurrentVar.peek)
-    case shutdownResult of
-      Err err -> pure (Err err)
-      Ok True -> pure (Ok WorkerQueueClosed)
-      Ok False -> do
-        admissionResult <- Task.runResult (acquireWorkerWrite queueStatus)
-        case admissionResult of
-          Err err -> pure (Err err)
-          Ok False -> pure (Ok WorkerQueueClosed)
-          Ok True -> do
-            writeResult <-
-              GhcException.finally
-                ( restore
-                    ( Task.runResult
-                        ( Channel.tryWriteWithTimeout
-                            dispatcher.config.channelWriteTimeoutMs
-                            (ProcessEvent event)
-                            workerChannel
-                        )
-                    )
+queueWorkerEventWithTimeout dispatcher streamId event queueStatus workerChannel = Task.mask \restore -> do
+  isShuttingDown <- dispatcher.shutdownSignal |> ConcurrentVar.peek
+  if isShuttingDown
+    then Task.yield WorkerQueueClosed
+    else do
+      admitted <- acquireWorkerWrite queueStatus
+      if not admitted
+        then Task.yield WorkerQueueClosed
+        else do
+          writeResult <-
+            Task.finally (releaseWorkerWrite queueStatus) do
+              restore
+                ( Channel.tryWriteWithTimeout
+                    dispatcher.config.channelWriteTimeoutMs
+                    (ProcessEvent event)
+                    workerChannel
                 )
-                (Task.runOrPanic (releaseWorkerWrite queueStatus))
-            case writeResult of
-              Err err -> pure (Err err)
-              Ok (Ok _) -> pure (Ok WorkerEventEnqueued)
-              Ok (Err _) -> do
-                _ <-
-                  Task.runResult
-                    ( Log.warn [fmt|Dropped event for stream #{toText streamId} (channel write timeout)|]
-                        |> Task.ignoreError
-                    )
-                pure (Ok WorkerEventWriteTimedOut)
+          case writeResult of
+            Ok _ -> Task.yield WorkerEventEnqueued
+            Err _ -> do
+              Log.warn [fmt|Dropped event for stream #{toText streamId} (channel write timeout)|]
+                |> Task.ignoreError
+              Task.yield WorkerEventWriteTimedOut
 
 
 queueStatelessEvent ::
