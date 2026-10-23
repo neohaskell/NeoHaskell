@@ -13,11 +13,19 @@ The `NeoHaskell ownership.` prefix in restriction messages marks ownership rules
 
 Store captured output under `.agents-state/<task>/`. Put concrete cleanup work in the issue tracker. Fix code through the owning APIs and rerun the checks. Skills retain reusable policy and fixtures.
 
+## Preserve evaluation timing when resolving lint findings
+
+Inspect the module's effective compiler extensions before changing a lazy pattern. Include Cabal defaults, component overrides, source pragmas, and compiler flags. When compilation already enables `Strict`, make that extension explicit in the source so HLint sees the same mode. HLint 3.10 can still report `Redundant irrefutable pattern` when `Strict` is supplied only through its command line.
+
+Keep a necessary `~value` pattern and the tests that distinguish construction from execution. Removing the pattern under `Strict` can demand the value before a deferred action runs. Never enable `Strict` in a lazy module merely to silence lint. For a real evaluation change, test both construction and demanded execution at the supported optimization settings.
+
+For an illustrative deferred calculation, `data Deferred value = Deferred (() -> value)` stores a callback. Under `Strict`, `defer ~value = Deferred (\_ -> value)` can construct the wrapper before demanding `value`. A timing test constructs a wrapper around a failing calculation, then checks that only invoking its callback raises the failure. The lazy pattern preserves that contract.
+
 ## Understand the coverage limits
 
 The scanner reads tracked and unignored new source files with extensions declared in `SOURCE_SUFFIXES` in [check.py](../scripts/check.py). This includes Haskell, Python, JavaScript, TypeScript, shell, C, Rust, and Go sources across the repository. `.agents` contains the checker, its negative fixtures, and evidence tools. `.github` contains CI tooling. Those two directories are outside runtime-source coverage. Documentation is outside the extension set.
 
-The workspace rule counts literal text even in source comments. It does not evaluate dynamically constructed paths or inspect binary files. HLint checks syntax and imported names, not Haskell types or cancellation semantics. The function list covers the named exception, IORef, and thread-inspection operations in `.hlint.yaml`. An unlisted operation still needs review.
+The workspace rule counts literal text even in source comments. It does not evaluate dynamically constructed paths or inspect binary files. HLint checks syntax and imported names, not Haskell types or cancellation semantics. The function list covers the named exception, IORef, and thread-inspection operations in `.hlint.yaml`. An unlisted operation still needs review. The exact `GHC.IO.Exception` allowance permits imports in its listed core owners. Separate finite function restrictions reject the listed throwing operations in system owners. The `System.Directory.Internal.Prelude` import is rejected in every module. The exact `DirectorySpec` allowance for `System.Directory` permits an independent filesystem oracle.
 
 HLint owner exceptions use module names. They do not prove that a file claiming `module Task` is the maintained Task owner. Review module ownership and Cabal registration together. HLint uses simple CPP processing, so this gate does not validate every preprocessor branch.
 

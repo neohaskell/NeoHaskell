@@ -1,4 +1,5 @@
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE Strict #-}
 
 module Task (
   Task (..),
