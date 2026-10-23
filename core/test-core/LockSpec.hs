@@ -1,6 +1,7 @@
 module LockSpec (spec) where
 
 import Core
+import IO qualified
 import Lock qualified
 import Task qualified
 import Test
@@ -36,3 +37,17 @@ spec = do
 
       acquired <- Lock.withTimeout 1 lock (Task.yield (3 :: Int))
       acquired |> shouldBe (Ok 3)
+
+    it "releases the lock when its task throws at runtime" \_ -> do
+      lock <- Lock.new
+      let failing =
+            Task.fromIO (IO.andThen (\_ -> panic "lock-action-sentinel") (IO.yield ()))
+              :: Task.Task Text Int
+
+      outcome <- Lock.withTimeout 1 lock failing |> Task.asResultSafe
+      case outcome of
+        Err _ -> pass
+        Ok _ -> fail "Expected the runtime exception to escape"
+
+      acquired <- Lock.withTimeout 1 lock (Task.yield (4 :: Int))
+      acquired |> shouldBe (Ok 4)
