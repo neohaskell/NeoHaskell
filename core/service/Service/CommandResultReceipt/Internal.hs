@@ -6,9 +6,10 @@ module Service.CommandResultReceipt.Internal (
 ) where
 
 import Basics
+import AtomicVar (AtomicVar)
+import AtomicVar qualified
 import ConcurrentMap qualified
 import Control.Exception qualified as GhcException
-import Data.IORef qualified as GhcIORef
 import Maybe (Maybe (..))
 import Prelude qualified as GhcPrelude
 import Result qualified
@@ -18,6 +19,8 @@ import Task qualified
 import Text (Text)
 import Uuid (Uuid)
 import Uuid qualified
+import Var (Var)
+import Var qualified
 
 
 data ReceiptExit
@@ -27,8 +30,8 @@ data ReceiptExit
 
 
 data ResultReceipt = ResultReceipt
-  { wasReported :: GhcIORef.IORef Bool,
-    relatedUserSub :: GhcIORef.IORef (Maybe Text)
+  { wasReported :: AtomicVar Bool,
+    relatedUserSub :: Var (Maybe Text)
   }
 
 
@@ -44,7 +47,9 @@ reportIfRegistered requestId report = Task.fromIO do
     case maybeReceipt of
       Maybe.Nothing -> pure Maybe.Nothing
       Maybe.Just receipt -> do
-        wasClaimed <- GhcIORef.atomicModifyIORef' receipt.wasReported (\claimed -> (True, claimed))
+        wasClaimed <-
+          AtomicVar.modifyWithResult receipt.wasReported (\claimed -> (True, claimed))
+            |> Task.runNoErrors
         if wasClaimed
           then pure (Maybe.Just False)
           else do
@@ -64,7 +69,7 @@ setRelatedUserSub requestId actor = Task.fromIO do
     maybeReceipt <- Task.runOrPanic (ConcurrentMap.get (Uuid.toText requestId) receipts :: Task Text (Maybe ResultReceipt))
     case maybeReceipt of
       Maybe.Nothing -> pure ()
-      Maybe.Just receipt -> GhcIORef.writeIORef receipt.relatedUserSub actor
+      Maybe.Just receipt -> Var.set actor receipt.relatedUserSub |> Task.runNoErrors
 
 
 withFreshReceipt :: (Uuid -> Maybe Text -> ReceiptExit -> Task Text Unit) -> (Uuid -> Task Text value) -> Task Text value
@@ -74,13 +79,13 @@ withFreshReceipt reportFallback action = Task.fromIOResult do
     case uuidResult of
       Result.Err error -> pure (Result.Err error)
       Result.Ok requestId -> do
-        wasReported <- GhcIORef.newIORef False
-        relatedUserSub <- GhcIORef.newIORef Maybe.Nothing
+        wasReported <- AtomicVar.containing False |> Task.runNoErrors
+        relatedUserSub <- Var.new Maybe.Nothing |> Task.runNoErrors
         let receipt = ResultReceipt {wasReported, relatedUserSub}
         Task.runOrPanic (ConcurrentMap.set (Uuid.toText requestId) receipt receipts :: Task Text Unit)
         let cleanup = Task.runOrPanic (ConcurrentMap.remove (Uuid.toText requestId) receipts :: Task Text Unit)
             finish exit = do
-              actor <- GhcIORef.readIORef relatedUserSub
+              actor <- Var.get relatedUserSub |> Task.runNoErrors
               _ <- Task.runResult (reportIfRegistered requestId (reportFallback requestId actor exit))
               pure ()
             runHandler = do

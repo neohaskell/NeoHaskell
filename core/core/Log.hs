@@ -21,7 +21,6 @@ import Char (Char)
 import ConcurrentMap (ConcurrentMap)
 import ConcurrentMap qualified
 import Control.Concurrent qualified as GhcThread
-import Data.IORef qualified as GhcIORef
 import Data.Text.Encoding qualified as GhcTextEncoding
 import GHC.Stack qualified as Stack
 import IO (IO)
@@ -39,6 +38,8 @@ import Task qualified
 import Text (Text)
 import Text qualified
 import ToText (toText)
+import Var (Var)
+import Var qualified
 
 
 data Level = Debug | Info | Warn | Error
@@ -58,7 +59,7 @@ globalContext = GhcUnsafe.unsafePerformIO do
 {-# NOINLINE globalContext #-}
 
 
-globalMinLevel :: GhcIORef.IORef Level
+globalMinLevel :: Var Level
 globalMinLevel = GhcUnsafe.unsafePerformIO do
   envLevel <- GhcEnv.lookupEnv "LOG_LEVEL"
   let level = case envLevel of
@@ -78,7 +79,7 @@ globalMinLevel = GhcUnsafe.unsafePerformIO do
         Just "critical" -> Error
         Just "CRITICAL" -> Error
         _ -> Info
-  GhcIORef.newIORef level
+  Var.new level |> Task.runNoErrors
 {-# NOINLINE globalMinLevel #-}
 
 
@@ -137,7 +138,7 @@ finish = do
 
 writeLog :: (Stack.HasCallStack) => Bool -> Level -> Array (Text, Json.Value) -> Text -> Task _ Unit
 writeLog includeScope level fields message = do
-  minLevel <- GhcIORef.readIORef globalMinLevel |> Task.fromIO
+  minLevel <- Var.get globalMinLevel
   Task.when (level >= minLevel) do
     Task.fromIO do
       let (timedLogger, _) = globalLogger

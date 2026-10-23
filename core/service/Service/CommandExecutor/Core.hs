@@ -11,7 +11,6 @@ import Array qualified
 import AsyncTask qualified
 import Basics
 import Control.Exception qualified as GhcException
-import Data.IORef qualified as GhcIORef
 import Decider (CommandResult (..), DecisionContext (..), runDecision)
 import Float qualified
 import GHC.TypeLits qualified as GHC
@@ -42,6 +41,7 @@ import Service.EventStore.Core (EventStore)
 import Service.EventStore.Core qualified as EventStore
 import Task (Task)
 import Task qualified
+import Var qualified
 import Text (Text)
 import Text qualified
 import ToText (toText)
@@ -413,8 +413,8 @@ execute ::
 execute eventStore entityFetcher entityName sourceEventMetadata requestContext command = do
   let commandNameText = GHC.symbolVal (Record.Proxy @(NameOf command)) |> Text.fromLinkedList
   let entityNameText = EntityName.toText entityName
-  commandResultReported <- Task.fromIO (GhcIORef.newIORef False)
-  currentRequestContext <- Task.fromIO (GhcIORef.newIORef requestContext)
+  commandResultReported <- Var.new False
+  currentRequestContext <- Var.new requestContext
   let reportCommandResult context outcome =
         Task.fromIO do
           GhcException.mask_ do
@@ -425,11 +425,11 @@ execute eventStore entityFetcher entityName sourceEventMetadata requestContext c
             case maybeReported of
               Nothing -> report |> Task.runOrPanic
               Just _ -> pure ()
-            GhcIORef.writeIORef commandResultReported True
+            Var.set True commandResultReported |> Task.runNoErrors
   let reportInterruptedCommand = do
-        wasReported <- GhcIORef.readIORef commandResultReported |> Task.fromIO
+        wasReported <- Var.get commandResultReported
         Task.unless wasReported do
-          context <- GhcIORef.readIORef currentRequestContext |> Task.fromIO
+          context <- Var.get currentRequestContext
           let report =
                 emitCommandResult
                   commandNameText
@@ -462,7 +462,7 @@ execute eventStore entityFetcher entityName sourceEventMetadata requestContext c
           )
         Task.throw failureMessage
       Ok normalizedContext -> do
-        GhcIORef.writeIORef currentRequestContext normalizedContext |> Task.fromIO
+        Var.set normalizedContext currentRequestContext
         let executionTask =
               executeNormalized eventStore entityFetcher entityName sourceEventMetadata normalizedContext command
                 |> Task.map CommandExecutionSucceeded

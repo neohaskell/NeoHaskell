@@ -4,11 +4,12 @@
 module Service.Transport.Web.RequestBodyFailureSpec where
 
 import Basics
+import AtomicVar (AtomicVar)
+import AtomicVar qualified
 import Control.Concurrent qualified as GhcConcurrent
 import Control.Concurrent.MVar qualified as GhcMVar
 import Control.Exception qualified as GhcException
 import Data.ByteString qualified as GhcBS
-import Data.IORef qualified as GhcIORef
 import Data.ByteString.Lazy qualified as GhcLBS
 import System.IO.Unsafe qualified as GhcUnsafe
 import Bytes qualified
@@ -37,20 +38,21 @@ import Test
 import Text qualified
 import Prelude qualified as GhcPrelude
 import Uuid qualified
+import Var qualified
 
 
 type DecodeGate = (GhcMVar.MVar (), GhcMVar.MVar ())
 
 
-decodeGate :: GhcIORef.IORef (Maybe DecodeGate)
-decodeGate = GhcUnsafe.unsafePerformIO (GhcIORef.newIORef Nothing)
+decodeGate :: Var (Maybe DecodeGate)
+decodeGate = GhcUnsafe.unsafePerformIO (Task.runNoErrors (Var.new Nothing))
 {-# NOINLINE decodeGate #-}
 
 
 waitForDecoderRelease :: ()
 waitForDecoderRelease =
   GhcUnsafe.unsafePerformIO do
-    maybeGate <- GhcIORef.readIORef decodeGate
+    maybeGate <- Var.get decodeGate |> Task.runNoErrors
     case maybeGate of
       GhcPrelude.Nothing -> GhcException.throwIO (GhcException.ErrorCall "decoder gate was not installed")
       GhcPrelude.Just (decodeStarted, decodeRelease) -> do
@@ -137,7 +139,7 @@ spec :: Spec Unit
 spec = do
   describe "Service.Transport.Web command request body failures" do
     it "returns a generic 500 when requestBody throws" \_ -> do
-      handlerCalled <- Task.fromIO (GhcIORef.newIORef False)
+      handlerCalled <- Var.new False
       let endpoints = requestBodyEndpoints (recordHandlerCall handlerCalled)
       let app = webApplication endpoints
       responseResult <-
@@ -154,7 +156,7 @@ spec = do
           responseBody |> shouldBe "Internal server error"
           Text.contains "private-body-read-details" responseBody |> shouldBe False
 
-      wasHandlerCalled <- GhcIORef.readIORef handlerCalled |> Task.fromIO
+      wasHandlerCalled <- Var.get handlerCalled
       wasHandlerCalled |> shouldBe False
 
     it "preserves cancellation while requestBody is blocked" \_ -> do
@@ -205,7 +207,7 @@ spec = do
           Text.contains "private-command-decoder-sentinel" exceptionText |> shouldBe True
         GhcPrelude.Right _ -> fail "Expected the command decoder exception to escape the WAI request"
 
-      appendCountValue <- GhcIORef.readIORef appendCount |> Task.fromIO
+      appendCountValue <- AtomicVar.peek appendCount
       appendCountValue |> shouldBe 0
       eventStore.close
 
@@ -214,11 +216,11 @@ spec = do
       decodeStarted <- Task.fromIO GhcMVar.newEmptyMVar
       decodeRelease <- Task.fromIO GhcMVar.newEmptyMVar
       requestOutcome <- Task.fromIO GhcMVar.newEmptyMVar
-      GhcIORef.writeIORef decodeGate (Just (decodeStarted, decodeRelease)) |> Task.fromIO
+      Var.set (Just (decodeStarted, decodeRelease)) decodeGate
 
       let cleanup = do
             _ <- GhcMVar.tryPutMVar decodeRelease () |> Task.fromIO
-            GhcIORef.writeIORef decodeGate Nothing |> Task.fromIO
+            Var.set Nothing decodeGate
             eventStore.close
       Task.finally cleanup do
         requestThread <- Task.fromIO do
@@ -246,7 +248,7 @@ spec = do
               GhcPrelude.Nothing -> fail "Expected command cancellation to escape the WAI request"
           GhcPrelude.Just (GhcPrelude.Right _) -> fail "Expected cancellation to escape the WAI request"
 
-        appendCountValue <- GhcIORef.readIORef appendCount |> Task.fromIO
+        appendCountValue <- AtomicVar.peek appendCount
         appendCountValue |> shouldBe 0
 
     it "keeps one result when a recognized Web command fails during execution" \_ -> do
@@ -267,7 +269,7 @@ spec = do
           Text.contains "private-web-fetch-sentinel" exceptionText |> shouldBe True
         GhcPrelude.Right _ -> fail "Expected the Web command execution exception to escape the request"
 
-      appendCountValue <- GhcIORef.readIORef appendCount |> Task.fromIO
+      appendCountValue <- AtomicVar.peek appendCount
       appendCountValue |> shouldBe 0
       eventStore.close
 
@@ -283,9 +285,9 @@ requestBodyEndpoints handler =
     }
 
 
-recordHandlerCall :: GhcIORef.IORef Bool -> EndpointHandler
+recordHandlerCall :: Var Bool -> EndpointHandler
 recordHandlerCall wasCalled _requestContext _body _respond =
-  GhcIORef.writeIORef wasCalled True |> Task.fromIO
+  Var.set True wasCalled
 
 
 neverCalledHandler :: EndpointHandler
@@ -325,14 +327,14 @@ webApplication endpoints request respond = do
     |> Task.runOrPanic
 
 
-newCountedEventStore :: Task Text (EventStore.EventStore Json.Value, GhcIORef.IORef Int)
+newCountedEventStore :: Task Text (EventStore.EventStore Json.Value, AtomicVar Int)
 newCountedEventStore = do
   eventStore <- InMemory.new |> Task.mapError toText
-  appendCount <- Task.fromIO (GhcIORef.newIORef 0)
+  appendCount <- AtomicVar.containing 0
   let countedEventStore =
         eventStore
           { EventStore.insert = \payload -> do
-              GhcIORef.modifyIORef' appendCount (+ 1) |> Task.fromIO
+              AtomicVar.modify (\count -> count + 1) appendCount
               eventStore.insert payload
           }
   Task.yield (countedEventStore, appendCount)
