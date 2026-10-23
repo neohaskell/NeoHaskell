@@ -181,6 +181,103 @@ class StaticChecks(unittest.TestCase):
         self.source("module Example where\nimport GHC.Conc qualified as Runtime\nstatus thread = Runtime.threadStatus thread\n")
         self.assertIn("Avoid restricted function", self.check(1))
 
+    def test_raw_async_and_stm_operations_fail_in_services(self):
+        cases = [
+            ("Control.Concurrent.Async", "qualified as Raw", "spawn task = Raw.async task"),
+            ("Control.Concurrent.Async", "(async)", "spawn task = async task"),
+            ("Control.Concurrent.STM", "qualified as Raw", "readValue value = Raw.readTVar value\ncommit value = Raw.atomically value"),
+            ("Control.Concurrent.STM", "(atomically, readTVar)", "readValue value = readTVar value\ncommit value = atomically value"),
+        ]
+        for module in ["Service.Example", "Auth.Example"]:
+            for imported, names, operation in cases:
+                with self.subTest(module=module, imported=imported, names=names):
+                    self.source(f"module {module} where\nimport {imported} {names}\n{operation}\n")
+                    self.assertIn("Avoid restricted module", self.check(1))
+
+    def test_raw_concurrency_type_imports_and_reexports_fail(self):
+        cases = [
+            "module Service.Example where\nimport Control.Concurrent.Async (Async)\ntype Worker = Async ()\n",
+            "module Auth.Example where\nimport Control.Concurrent.STM (STM)\ntype Transaction = STM ()\n",
+            "module Service.Example (module Control.Concurrent.Async) where\nimport Control.Concurrent.Async\n",
+            "module Auth.Example (module Control.Concurrent.STM) where\nimport Control.Concurrent.STM\n",
+        ]
+        for source in cases:
+            with self.subTest(source=source):
+                self.source(source)
+                self.assertIn("Avoid restricted module", self.check(1))
+
+    def test_alternate_raw_concurrency_modules_fail(self):
+        cases = [
+            ("Control.Concurrent.Async.Internal", "use value = Raw.async value"),
+            ("Control.Monad.STM", "use value = Raw.atomically value"),
+            ("Control.Concurrent.STM.TVar", "use value = Raw.readTVar value"),
+            ("Control.Concurrent.STM.TMVar", "use value = Raw.readTMVar value"),
+            ("Control.Concurrent.STM.TChan", "use value = Raw.readTChan value"),
+            ("Control.Concurrent.STM.TQueue", "use value = Raw.readTQueue value"),
+            ("Control.Concurrent.STM.TArray", "array :: Raw.TArray Int Int -> Int\narray _ = 0"),
+        ]
+        for imported, declaration in cases:
+            with self.subTest(imported=imported):
+                self.source(f"module Service.Example where\nimport {imported} qualified as Raw\n{declaration}\n")
+                self.assertIn("Avoid restricted module", self.check(1))
+
+    def test_all_six_concurrency_owner_pairs_pass(self):
+        cases = [
+            ("AsyncTask", "Control.Concurrent.Async", "Raw.async value"),
+            ("Subprocess", "Control.Concurrent.Async", "Raw.async value"),
+            ("AtomicVar", "Control.Concurrent.STM", "Raw.readTVar value"),
+            ("Channel", "Control.Concurrent.STM", "Raw.atomically value"),
+            ("ConcurrentMap", "Control.Concurrent.STM", "Raw.atomically value"),
+            ("Channel", "Control.Concurrent.STM.TBQueue", "Raw.readTBQueue value"),
+        ]
+        for module, imported, operation in cases:
+            with self.subTest(module=module, imported=imported):
+                self.source(f"module {module} where\nimport {imported} qualified as Raw\nrun value = {operation}\n")
+                self.check(0)
+
+    def test_cross_owner_near_name_dispatcher_and_task_spec_imports_fail(self):
+        cases = [
+            ("AtomicVar", "Control.Concurrent.Async", "Raw.async value"),
+            ("AsyncTask", "Control.Concurrent.STM", "Raw.atomically value"),
+            ("ConcurrentMap", "Control.Concurrent.STM.TBQueue", "Raw.readTBQueue value"),
+            ("AsyncTask.Extra", "Control.Concurrent.Async", "Raw.async value"),
+            ("Channel.Extra", "Control.Concurrent.STM.TBQueue", "Raw.readTBQueue value"),
+            ("Service.Integration.Dispatcher", "Control.Concurrent.STM", "Raw.atomically value"),
+            ("TaskSpec", "Control.Concurrent.Async", "Raw.async value"),
+        ]
+        for module, imported, operation in cases:
+            with self.subTest(module=module, imported=imported):
+                self.source(f"module {module} where\nimport {imported} qualified as Raw\nrun value = {operation}\n")
+                self.assertIn("Avoid restricted module", self.check(1))
+        self.source("module Service.Example where\nimport Control.Concurrent.STM.TBQueue qualified as Raw\nrun value = Raw.readTBQueue value\n")
+        self.assertIn("Avoid restricted module", self.check(1))
+
+    def test_concurrency_ownership_suppressions_remain_rejected(self):
+        cases = [
+            ("Service.Example", "Control.Concurrent.Async", "run value = Raw.async value"),
+            ("Auth.Example", "Control.Concurrent.STM", "readValue value = Raw.readTVar value\ncommit value = Raw.atomically value"),
+        ]
+        suppressions = [
+            '{-# ANN module ("HLint: ignore Avoid restricted module" :: String) #-}',
+            '{- HLINT ignore "Avoid restricted module" -}',
+        ]
+        for module, imported, operations in cases:
+            for suppression in suppressions:
+                with self.subTest(module=module, suppression=suppression):
+                    self.source(f"module {module} where\nimport {imported} qualified as Raw\n{suppression}\n{operations}\n")
+                    self.assertIn("Avoid restricted module", self.check(1))
+
+    def test_core_concurrency_apis_pass(self):
+        self.source("module Service.Example where\nimport AsyncTask qualified\nimport AtomicVar qualified\nimport Channel qualified\nimport ConcurrentMap qualified\nspawn task = AsyncTask.run task\nnewVariable value = AtomicVar.containing value\nnewChannel = Channel.new\nnewMap = ConcurrentMap.new\n")
+        self.check(0)
+
+    def test_hlint_concurrency_ownership_limits_are_explicit(self):
+        spoof = self.source("module AsyncTask where\nimport Control.Concurrent.Async qualified as Raw\nspawn action = Raw.async action\n", "services/Billing.hs")
+        self.check(0)
+        spoof.unlink()
+        self.source("module Service.Example where\nimport StmContainers.Map qualified as STMMap\nnewMap = STMMap.newIO\n")
+        self.check(0)
+
     def test_error_translation_uses_task_combinator(self):
         for expression in [
             "Task.recover (\\error -> Task.throw (explain error)) task",
