@@ -1,3 +1,5 @@
+{-# LANGUAGE Strict #-}
+
 -- | # Integration Dispatcher
 --
 -- Routes events to per-entity workers to ensure sequential processing
@@ -69,7 +71,6 @@ import Channel (Channel)
 import Channel qualified
 import Control.Concurrent.Async qualified as GhcAsync
 import Control.Concurrent.STM qualified as GhcSTM
-import Control.Exception qualified as GhcException
 import ConcurrentMap (ConcurrentMap)
 import ConcurrentMap qualified
 import ConcurrentVar (ConcurrentVar)
@@ -81,7 +82,6 @@ import Data.Time.Clock.POSIX qualified as GhcPosix
 import Float qualified
 import GHC.Float (Double)
 import GHC.Real qualified as GhcReal
-import GHC.IO qualified as GhcIO
 import Int qualified
 import Integration qualified
 import Json qualified
@@ -1018,25 +1018,16 @@ withWorkerCleanupHandoff ::
   (worker -> Task Text Unit) ->
   (worker -> Task Text Unit) ->
   Task Text Unit
-withWorkerCleanupHandoff removeWorker afterRemoval cleanupWorker =
-  Task.fromIOResult do
-  GhcException.mask \restore -> do
-    removeResult <- Task.runResult removeWorker
-    case removeResult of
-      Err err -> pure (Err err)
-      Ok Nothing -> pure (Ok unit)
-      Ok (Just worker) -> do
-        actionResult <-
-          GhcException.try @GhcException.SomeException
-            (restore (Task.runResult (afterRemoval worker)))
-        case actionResult of
-          Left exception -> do
-            _ <- Task.runResult (cleanupWorker worker)
-            GhcException.throwIO exception
-          Right (Err err) -> do
-            _ <- Task.runResult (cleanupWorker worker)
-            pure (Err err)
-          Right (Ok _) -> pure (Ok unit)
+withWorkerCleanupHandoff removeWorker ~afterRemoval ~cleanupWorker = Task.mask \restore -> do
+  maybeWorker <- removeWorker
+  case maybeWorker of
+    Nothing -> Task.yield unit
+    Just worker -> do
+      let cleanup = Task.evaluate (cleanupWorker worker) |> Task.andThen identity
+      let runAfterRemoval = do
+            callback <- Task.evaluate (afterRemoval worker)
+            restore callback
+      Task.onFailure (\_ -> cleanup) runAfterRemoval
 
 
 withWorkerCandidateHandoff ::
@@ -1044,45 +1035,30 @@ withWorkerCandidateHandoff ::
   (worker -> Task Text (worker, Maybe worker)) ->
   (worker -> Task Text Unit) ->
   Task Text worker
-withWorkerCandidateHandoff createCandidate publishCandidate cleanupWorker =
-  Task.fromIOResult do
-  GhcException.mask \restore -> do
-    candidateResult <- GhcException.try @GhcException.SomeException (Task.runResult createCandidate)
-    case candidateResult of
-      Left exception -> GhcException.throwIO exception
-      Right (Err err) -> pure (Err err)
-      Right (Ok candidate) -> do
-        publishResult <- Task.runResult (publishCandidate candidate)
-        case publishResult of
-          Err err -> do
-            _ <- Task.runResult (cleanupOwnedWorker restore candidate cleanupWorker)
-            pure (Err err)
-          Ok (actualWorker, maybeDiscarded) -> case maybeDiscarded of
-            Nothing -> pure (Ok actualWorker)
-            Just discardedWorker -> do
-              cleanupResult <- Task.runResult (cleanupOwnedWorker restore discardedWorker cleanupWorker)
-              case cleanupResult of
-                Err err -> pure (Err err)
-                Ok _ -> pure (Ok actualWorker)
+withWorkerCandidateHandoff ~createCandidate ~publishCandidate ~cleanupWorker = Task.mask \restore -> do
+  candidate <- createCandidate
+  let publish = Task.evaluate (publishCandidate candidate) |> Task.andThen identity
+  (actualWorker, maybeDiscarded) <-
+    publish
+      |> Task.onFailure (\_ -> cleanupOwnedWorker restore candidate cleanupWorker)
+  case maybeDiscarded of
+    Nothing -> Task.yield actualWorker
+    Just discardedWorker -> do
+      cleanupOwnedWorker restore discardedWorker cleanupWorker
+      Task.yield actualWorker
 
 
 cleanupOwnedWorker ::
-  (GhcIO.IO (Result Text Unit) -> GhcIO.IO (Result Text Unit)) ->
+  (Task Text Unit -> Task Text Unit) ->
   worker ->
   (worker -> Task Text Unit) ->
   Task Text Unit
-cleanupOwnedWorker restore worker cleanupWorker = Task.fromIOResult do
-  cleanupResult <-
-    GhcException.try @GhcException.SomeException
-      (restore (Task.runResult (cleanupWorker worker)))
-  case cleanupResult of
-    Left exception -> do
-      _ <- Task.runResult (cleanupWorker worker)
-      GhcException.throwIO exception
-    Right (Err err) -> do
-      _ <- Task.runResult (cleanupWorker worker)
-      pure (Err err)
-    Right (Ok _) -> pure (Ok unit)
+cleanupOwnedWorker restore worker ~cleanupWorker = do
+  let attempt = do
+        callback <- Task.evaluate (cleanupWorker worker)
+        restore callback
+  let retry _ = Task.evaluate (cleanupWorker worker) |> Task.andThen identity
+  Task.onFailure retry attempt
 
 
 drainAbandonedWorkerQueue ::
