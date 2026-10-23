@@ -17,12 +17,15 @@
 -- * Use 'ConcurrentVar' for simple producer/consumer patterns with blocking semantics
 module AtomicVar (
   AtomicVar,
+  Transaction,
   containing,
   peek,
   peekSTM,
   set,
   modify,
   modifyWithResult,
+  modifyWithResultSTM,
+  waitUntil,
 ) where
 
 import Basics
@@ -34,6 +37,9 @@ import Task qualified
 
 -- | A transactional variable that supports atomic composition.
 newtype AtomicVar value = AtomicVar (GhcSTM.TVar value)
+
+
+type Transaction result = GhcSTM.STM result
 
 
 -- | Create an AtomicVar containing an initial value.
@@ -116,12 +122,31 @@ modifyWithResult ::
   (value -> (value, result)) ->
   Task _ result
 modifyWithResult atomicVar f =
-  case atomicVar of
-    AtomicVar tvar -> do
-      let stmAction = do
-            oldValue <- GhcSTM.readTVar tvar
-            let (newValue, result) = f oldValue
-            GhcSTM.writeTVar tvar newValue
-            Prelude.pure result
-      GhcSTM.atomically stmAction
-        |> Task.fromIO
+  GhcSTM.atomically (modifyWithResultSTM f atomicVar)
+    |> Task.fromIO
+
+
+-- | Update a value inside a caller-owned transaction, such as a map predicate.
+modifyWithResultSTM ::
+  forall value result.
+  (value -> (value, result)) ->
+  AtomicVar value ->
+  Transaction result
+modifyWithResultSTM f (AtomicVar tvar) = do
+  oldValue <- GhcSTM.readTVar tvar
+  let (newValue, result) = f oldValue
+  GhcSTM.writeTVar tvar newValue
+  Prelude.pure result
+
+
+-- | Wait until a value satisfies a predicate without polling.
+waitUntil ::
+  forall value err.
+  (value -> Bool) ->
+  AtomicVar value ->
+  Task err Unit
+waitUntil predicate (AtomicVar tvar) =
+  GhcSTM.atomically do
+    value <- GhcSTM.readTVar tvar
+    if predicate value then Prelude.pure unit else GhcSTM.retry
+  |> Task.fromIO

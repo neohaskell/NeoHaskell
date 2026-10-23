@@ -2,6 +2,7 @@ module Main (main) where
 
 import Prelude (IO)
 
+import AtomicVarSpec qualified
 import AsyncTask.RaceSpec qualified
 import ArraySpec qualified
 import BytesSpec qualified
@@ -51,6 +52,7 @@ import Test.Hspec qualified as Hspec
 
 main :: IO ()
 main = Hspec.hspec do
+  Hspec.describe "AtomicVar" AtomicVarSpec.spec
   Hspec.describe "AsyncTask.Race" AsyncTask.RaceSpec.spec
   Hspec.describe "Array" ArraySpec.spec
   Hspec.describe "Bytes" BytesSpec.spec
