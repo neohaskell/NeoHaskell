@@ -10,10 +10,10 @@ import AtomicVar (AtomicVar)
 import AtomicVar qualified
 import ConcurrentMap qualified
 import Control.Exception qualified as GhcException
+import IO qualified
 import Maybe (Maybe (..))
 import Prelude qualified as GhcPrelude
 import Result qualified
-import System.IO.Unsafe qualified as GhcUnsafe
 import Task (Task)
 import Task qualified
 import Text (Text)
@@ -36,7 +36,7 @@ data ResultReceipt = ResultReceipt
 
 
 receipts :: ConcurrentMap.ConcurrentMap Text ResultReceipt
-receipts = GhcUnsafe.unsafePerformIO (Task.runOrPanic (ConcurrentMap.new :: Task Text (ConcurrentMap.ConcurrentMap Text ResultReceipt)))
+receipts = IO.dangerouslyRun (Task.runOrPanic (ConcurrentMap.new :: Task Text (ConcurrentMap.ConcurrentMap Text ResultReceipt)))
 {-# NOINLINE receipts #-}
 
 
