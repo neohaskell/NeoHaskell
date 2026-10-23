@@ -138,6 +138,24 @@ command ''WebDecodeProbeCommand
 spec :: Spec Unit
 spec = do
   describe "Service.Transport.Web command request body failures" do
+    it "rejects an oversized body and drains the remaining chunks" \_ -> do
+      bodyChunks <- Task.fromIO (GhcMVar.newMVar ["abc", "def", ""])
+      let nextChunk = GhcMVar.modifyMVar bodyChunks \chunks ->
+            case chunks of
+              [] -> GhcPrelude.pure ([], GhcBS.empty)
+              chunk : remaining -> GhcPrelude.pure (remaining, chunk)
+      let request = commandRequest {Wai.requestBody = nextChunk}
+      let endpoints =
+            (requestBodyEndpoints neverCalledHandler)
+              { Transport.transport = Web.server {Web.maxBodySize = 5}
+              }
+      response <-
+        WaiTest.runSession (WaiTest.request request) (webApplication endpoints)
+          |> Task.fromIO
+      response.simpleStatus |> HTTPStatus.statusCode |> shouldBe 413
+      remainingChunks <- Task.fromIO (GhcMVar.readMVar bodyChunks)
+      remainingChunks |> shouldBe []
+
     it "returns a generic 500 when requestBody throws" \_ -> do
       handlerCalled <- Var.new False
       let endpoints = requestBodyEndpoints (recordHandlerCall handlerCalled)
