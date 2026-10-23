@@ -11,6 +11,7 @@ import Control.Concurrent.MVar qualified as GhcMVar
 import Control.DeepSeq qualified as DeepSeq
 import Control.Exception qualified as GhcException
 import Data.Either qualified as Either
+import GHC.Conc qualified as GhcConc
 import Core
 import Maybe qualified
 import Prelude qualified as GhcPrelude
@@ -81,7 +82,7 @@ spec = do
         entered <- Channel.new
         release <- Channel.newBounded 1 :: Task Text (Channel Unit)
         finishedWait <- Channel.new
-        requestStarted <- Channel.new
+        requestThreadChannel <- Channel.new
         let action :: Task Text Unit
             action = Task.withCancellationBlocked do
               Channel.write unit entered
@@ -101,9 +102,21 @@ spec = do
                       waitForBlock (attempts - 1)
         waitForBlock (100000 :: Int)
         requester <- AsyncTask.run do
-          Channel.write unit requestStarted
+          requestThread <- Task.fromIO GhcConcurrent.myThreadId
+          Channel.write requestThread requestThreadChannel
           AsyncTask.requestThreadTermination child
-        Channel.read requestStarted
+        requestThread <- Channel.read requestThreadChannel
+        let waitForRequest attempts = do
+              status <- Task.fromIO (GhcConc.threadStatus requestThread)
+              case status of
+                GhcConc.ThreadBlocked GhcConc.BlockedOnException -> Task.yield unit
+                _ ->
+                  if attempts <= 0
+                    then Test.fail "the cancellation request did not reach its wait"
+                    else do
+                      AsyncTask.sleep 0
+                      waitForRequest (attempts - 1)
+        waitForRequest (100000 :: Int)
         Channel.write unit release
         requestOutcome <- AsyncTask.waitOutcome requester
         case requestOutcome of
