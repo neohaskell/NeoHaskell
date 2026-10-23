@@ -84,6 +84,7 @@ common common_cfg
     transformers,
     tls,
     unagi-chan,
+    unix,
     uuid,
     vector,
     wai,
@@ -720,6 +721,7 @@ test-suite nhcore-test-core
     CryptoSpec
     DeciderSpec
     DecimalSpec
+    DirectorySpec
     UuidSpec
     EventVariantOfSpec
     Http.ClientRawSpec
