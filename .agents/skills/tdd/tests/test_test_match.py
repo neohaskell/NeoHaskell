@@ -141,6 +141,14 @@ class TestMatchTests(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn("failure and pending counts exceed the example count", result.stdout)
 
+    def test_oversized_summary_count_is_rejected_and_transcribed(self) -> None:
+        self.set_scenario(output=f"1 example, 0 failures, {'9' * 5000} pending\n", exit=0)
+        transcript = self.base / "oversized-summary.log"
+        result = self.run_match("--transcript", str(transcript), "Cart")
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertTrue(transcript.is_file(), result.stderr)
+        self.assertIn("outcome: invalid-summary", transcript.read_text())
+
     def test_compile_setup_error_is_rejected_even_with_a_success_summary(self) -> None:
         self.set_scenario(output="Main.hs:9:1: error: Could not find module X\n1 example, 0 failures\n", exit=0)
         result = self.run_match("Cart")
