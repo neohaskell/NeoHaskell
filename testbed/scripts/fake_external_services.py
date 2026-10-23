@@ -15,7 +15,13 @@ CLIENT_ID = "testbed-client"
 CLIENT_SECRET = "testbed-fake-client-secret"
 REDIRECT_URI = "http://localhost:8081/callback/test-provider"
 AUTHORIZATION_CODE = "fixture-authorization-code"
-FIXTURE_JWT = "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6InRlc3RiZWQtcnMyNTYifQ.eyJpc3MiOiJodHRwOi8vMTI3LjAuMC4xOjgxODEvb2lkYyIsInN1YiI6ImZpeHR1cmUtdXNlciIsImlhdCI6MTc2NzIyNTYwMCwiZXhwIjo0MTAyNDQ0ODAwfQ.H08QidefVv5zqF69ZvJUzNsTyJuhzvh6ATmQMyYEtSvChwnn_s-GDvb_z7Sl20muQGTNHI7PEil2s7VED9zaG-KnDau02Yoy35t-AvQT7YNDaQZn5qj321Kr-CSXGrkA1SXeyGLcwzXwH4RMz8UuQt9gzNYNQaSxW0C1XNNmP5ccPxEMuW-1mf34bEl-GzHLjPgqZrMcQTjl59Tf0_GtyCpxn7VEm5XNIAVmKef-Y5-mehSJKtJTrdvKpjbVBf4fYQ90VpWhCJxkGuMIga3JIgH86NJ5ZQ7cO3BOasp4IdlRA1RE9Jrp5HJ6d41Bt0w6L5scmsnRd549khbitIRDng"
+FIXTURE_JWT = ".".join(
+    (
+        "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6InRlc3RiZWQtcnMyNTYifQ",
+        "eyJpc3MiOiJodHRwOi8vMTI3LjAuMC4xOjgxODEvb2lkYyIsInN1YiI6ImZpeHR1cmUtdXNlciIsImlhdCI6MTc2NzIyNTYwMCwiZXhwIjo0MTAyNDQ0ODAwfQ",
+        "H08QidefVv5zqF69ZvJUzNsTyJuhzvh6ATmQMyYEtSvChwnn_s-GDvb_z7Sl20muQGTNHI7PEil2s7VED9zaG-KnDau02Yoy35t-AvQT7YNDaQZn5qj321Kr-CSXGrkA1SXeyGLcwzXwH4RMz8UuQt9gzNYNQaSxW0C1XNNmP5ccPxEMuW-1mf34bEl-GzHLjPgqZrMcQTjl59Tf0_GtyCpxn7VEm5XNIAVmKef-Y5-mehSJKtJTrdvKpjbVBf4fYQ90VpWhCJxkGuMIga3JIgH86NJ5ZQ7cO3BOasp4IdlRA1RE9Jrp5HJ6d41Bt0w6L5scmsnRd549khbitIRDng",
+    )
+)
 JWKS = {
     "keys": [
         {
