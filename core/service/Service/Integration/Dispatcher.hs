@@ -1256,7 +1256,7 @@ spawnStatelessWorker dispatcher streamId = do
     Log.debug [fmt|Starting worker for stream #{toText streamId}|]
       |> Task.ignoreError
 
-  workerTask <- AsyncTask.runUnmasked safeWorkerLoop
+  workerTask <- AsyncTask.runWithCancellationEnabled safeWorkerLoop
   Task.yield
     EntityWorker
       { workerId = uniqueId,
@@ -1350,7 +1350,7 @@ spawnLifecycleWorker dispatcher streamId entityTypeName = do
     Log.debug [fmt|Starting lifecycle worker for stream #{toText streamId}|]
       |> Task.ignoreError
 
-  workerTask <- AsyncTask.runUnmasked safeWorkerLoop
+  workerTask <- AsyncTask.runWithCancellationEnabled safeWorkerLoop
   Task.yield
     LifecycleEntityWorker
       { workerId = uniqueId,
