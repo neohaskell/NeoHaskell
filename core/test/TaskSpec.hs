@@ -55,6 +55,67 @@ spec = do
         protectedState |> shouldBe Task.CancellationDeferred
         restoredState |> shouldBe callerState
 
+    describe "withCancellationBlocked" do
+      it "blocks cancellation in its body and restores the caller's state" \_ -> do
+        callerState <- Task.cancellationState
+        protectedState <- Task.withCancellationBlocked Task.cancellationState
+        restoredState <- Task.cancellationState
+        protectedState |> shouldBe Task.CancellationBlocked
+        restoredState |> shouldBe callerState
+
+      it "returns success and typed failure without changing their values" \_ -> do
+        success <- Task.withCancellationBlocked (Task.yield (37 :: Int))
+        success |> shouldBe 37
+        failure <- Task.withCancellationBlocked (Task.throw ("original" :: Text) :: Task Text Unit) |> Task.asResult
+        failure |> shouldBe (Err "original")
+
+      it "preserves a synchronous runtime failure" \_ -> do
+        outcome <-
+          Task.withCancellationBlocked (Task.evaluate (GhcPrelude.error "original synchronous exception" :: Unit))
+            |> Task.asResultSafe @Text
+        case outcome of
+          Err message -> message |> shouldSatisfy (Text.contains "original synchronous exception")
+          Ok _ -> Test.fail "expected the original runtime failure"
+
+      it "finishes a blocking operation before delivering cancellation" \_ -> do
+        entered <- Channel.new
+        release <- Channel.newBounded 1 :: Task Text (Channel Unit)
+        finishedWait <- Channel.new
+        requestStarted <- Channel.new
+        let action :: Task Text Unit
+            action = Task.withCancellationBlocked do
+              Channel.write unit entered
+              Channel.read release
+              Channel.write unit finishedWait
+        child <- AsyncTask.run action
+        Channel.read entered
+        let waitForBlock attempts = do
+              waiting <- AsyncTask.isWaitingForStateChange child
+              if waiting
+                then Task.yield unit
+                else
+                  if attempts <= 0
+                    then Test.fail "the protected task did not reach its wait"
+                    else do
+                      AsyncTask.sleep 0
+                      waitForBlock (attempts - 1)
+        waitForBlock (100000 :: Int)
+        requester <- AsyncTask.run do
+          Channel.write unit requestStarted
+          AsyncTask.requestThreadTermination child
+        Channel.read requestStarted
+        Channel.write unit release
+        requestOutcome <- AsyncTask.waitOutcome requester
+        case requestOutcome of
+          AsyncTask.Completed _ -> Task.yield unit
+          _ -> Test.fail "cancellation request did not finish"
+        outcome <- AsyncTask.waitOutcome child
+        case outcome of
+          AsyncTask.Interrupted -> Task.yield unit
+          _ -> Test.fail "expected cancellation after the wait ended"
+        completedWait <- Channel.tryRead finishedWait
+        completedWait |> shouldBe (Just unit)
+
     describe "asResultSafe" do
       it "catches synchronous IO exceptions as Err" \_ -> do
         let action = Task.fromIO (GhcException.throwIO (GhcException.ErrorCall "sync error"))
