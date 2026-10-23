@@ -1,14 +1,14 @@
 # Configuration and wiring
 
-`Application` is a declarative assembly of configuration, stores, services, queries, transports, and integrations. `Application.run` loads configuration and creates the runtime resources. The starter application in `neo/starter/src/App.hs` is the basic assembly. The Application implementation in `core/service/Service/Application.hs` owns startup and cleanup.
+`Application` is a declarative assembly of configuration, stores, services, queries, transports, and integrations. `Application.run` loads configuration, creates runtime resources, and cleans them up when the application stops.
 
 ## Typed configuration
 
-`Config.defineConfig` generates a record, its parser, and its `Has...` constraint. `Config.field @Type` declares a field. Field modifiers add defaults, environment names, command line flags, documentation, and secret handling. See Config in `core/config/Config.hs`, the generator in `core/config/Config/TH.hs`, and StarterConfig in `neo/starter/src/Starter/Config.hs`.
+`Config.defineConfig` generates a record, its parser, and its `Has...` constraint. `Config.field @Type` declares a field. Field modifiers add defaults, environment names, command line flags, documentation, and secret handling.
 
-`Application.run` loads `.env` before parsing configuration. The starter describes precedence as command line, environment, `.env`, then default. Inspect the config parser in `core/config/Config.hs` and environment loader in `core/system/Environment.hs` when changing precedence or overrides.
+`Application.run` loads `.env` before parsing configuration. Values take precedence in this order: command line, process environment, `.env`, then default.
 
-Use `Config.secret` for credential fields. The configuration implementation in `core/config/Config.hs` owns secret display behavior. Secret marking does not choose persistent credential storage. OAuth2 tokens belong in a [SecretStore](advanced-oauth2.md).
+Use `Config.secret` for credential fields so their display is redacted. Secret marking does not choose persistent credential storage. OAuth2 tokens belong in a [SecretStore](advanced-oauth2.md).
 
 ## Factories and registration order
 
@@ -25,10 +25,10 @@ app =
 		|> Application.withQuery @CounterView
 ```
 
-`withEventStore` takes a `config -> eventStoreConfig` factory. For static configuration, use `withEventStore @() (\_ -> storeConfig)`. For application configuration, register `withConfig @AppConfig` and use a factory whose argument is `AppConfig`. The builder in `core/service/Service/Application.hs` defers that factory until startup has loaded configuration.
+`withEventStore` takes a `config -> eventStoreConfig` factory. For static configuration, use `withEventStore @() (\_ -> storeConfig)`. For application configuration, register `withConfig @AppConfig` and use a factory whose argument is `AppConfig`. The factory runs after startup loads configuration.
 
-Other factory builders include `withAuth`, `withSecretStore`, `withOAuth2Provider`, and `withFileUpload`. Read their signatures individually. `withQueryObjectStore` takes a concrete configuration value and captures the choice when `withQuery` runs. See Application in `core/service/Service/Application.hs`.
+`withAuth`, `withSecretStore`, `withOAuth2Provider`, and `withFileUpload` also take configuration-dependent factories. `withQueryObjectStore` takes a concrete configuration value and captures the choice when `withQuery` runs. Read [authorization](authorization.md) and [external OAuth2](advanced-oauth2.md) for those features.
 
-Configure stores before queries. Configure `withOAuth2StateKey` before `withOAuth2Provider`. Only one `withConfig` registration is supported. The builder checks in `core/service/Service/Application.hs` enforce these contracts.
+Configure stores before queries. Configure `withOAuth2StateKey` before `withOAuth2Provider`. Only one `withConfig` registration is supported.
 
-The testbed application in `testbed/src/App.hs` demonstrates config-dependent Postgres and upload factories. Use its current record fields when configuring Postgres. The starter's commented Postgres block is not the complete current Postgres record.
+For Postgres, supply the record fields listed in [storage](storage.md). A generated project's older commented Postgres example may omit current fields.

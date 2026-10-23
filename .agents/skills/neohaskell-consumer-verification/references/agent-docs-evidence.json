@@ -1,8 +1,10 @@
 {
-  "schema": 1,
-  "capabilities": [
-    {
-      "name": "project-and-cli",
+  "schema": 2,
+  "capabilities": {
+    "project-and-cli": {
+      "page": "project-and-cli.md",
+      "source": "neo/src/reconcile/mod.rs",
+      "scenario": "testbed/tests/scenarios/cold-start-readiness.hurl",
       "evidence": [
         {
           "kind": "consumer-contract",
@@ -10,28 +12,40 @@
         }
       ]
     },
-    {
-      "name": "syntax-and-core",
+    "syntax-and-core": {
+      "page": "syntax-and-core.md",
+      "source": "core/core/Core.hs",
+      "scenario": "testbed/tests/scenarios/stock-reservation.hurl",
       "evidence": []
     },
-    {
-      "name": "events-and-entities",
+    "events-and-entities": {
+      "page": "events-and-entities.md",
+      "source": "core/service/Service/Entity/Core.hs",
+      "scenario": "testbed/tests/scenarios/stock-reservation.hurl",
       "evidence": []
     },
-    {
-      "name": "commands",
+    "commands": {
+      "page": "commands.md",
+      "source": "core/service/Service/Command/Core.hs",
+      "scenario": "testbed/tests/commands/register-cart-by-key.hurl",
       "evidence": []
     },
-    {
-      "name": "queries",
+    "queries": {
+      "page": "queries.md",
+      "source": "core/service/Service/Query/Core.hs",
+      "scenario": "testbed/tests/queries/cart-summary-after-create.hurl",
       "evidence": []
     },
-    {
-      "name": "application-configuration",
+    "application-configuration": {
+      "page": "configuration-and-wiring.md",
+      "source": "core/service/Service/Application.hs",
+      "scenario": "testbed/tests/scenarios/cold-start-readiness.hurl",
       "evidence": []
     },
-    {
-      "name": "transports",
+    "transports": {
+      "page": "transports.md",
+      "source": "core/service/Service/Transport/Web.hs",
+      "scenario": "testbed/tests/integrations/openapi.hurl",
       "evidence": [
         {
           "kind": "service-spec",
@@ -43,12 +57,16 @@
         }
       ]
     },
-    {
-      "name": "storage",
+    "storage": {
+      "page": "storage.md",
+      "source": "core/service/Service/EventStore/Core.hs",
+      "scenario": "testbed/tests/scenarios/query-idempotency.hurl",
       "evidence": []
     },
-    {
-      "name": "authorization",
+    "authorization": {
+      "page": "authorization.md",
+      "source": "core/auth/Auth/Discovery.hs",
+      "scenario": "testbed/tests/integrations/oauth2-account-connection.hurl",
       "evidence": [
         {
           "kind": "service-spec",
@@ -56,8 +74,10 @@
         }
       ]
     },
-    {
-      "name": "testing",
+    "testing": {
+      "page": "testing.md",
+      "source": "neo/src/commands/test.rs",
+      "scenario": "testbed/tests/scenarios/query-idempotency.hurl",
       "evidence": [
         {
           "kind": "consumer-contract",
@@ -65,16 +85,22 @@
         }
       ]
     },
-    {
-      "name": "template-haskell",
+    "template-haskell": {
+      "page": "template-haskell-order.md",
+      "source": "core/service/Service/Entity/TH.hs",
+      "scenario": "testbed/tests/scenarios/stock-reservation.hurl",
       "evidence": []
     },
-    {
-      "name": "generic-side-effect-integration",
+    "generic-side-effect-integration": {
+      "page": "advanced-side-effects.md",
+      "source": "integrations/Integration/Http/Request.hs",
+      "scenario": "testbed/tests/integrations/generic-http-side-effect.hurl",
       "evidence": []
     },
-    {
-      "name": "external-oauth2-account",
+    "external-oauth2-account": {
+      "page": "advanced-oauth2.md",
+      "source": "core/auth/Auth/OAuth2/Provider.hs",
+      "scenario": "testbed/tests/integrations/oauth2-account-connection.hurl",
       "evidence": [
         {
           "kind": "auth-spec",
@@ -82,7 +108,7 @@
         }
       ]
     }
-  ],
+  },
   "ignored_fragments": [
     {
       "page": "events-and-entities.md",

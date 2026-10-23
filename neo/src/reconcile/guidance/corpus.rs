@@ -13,16 +13,6 @@ use super::{MAX_BLOB_BYTES, MAX_CORPUS_BYTES, MAX_CORPUS_FILES};
 pub(super) struct CorpusManifest {
     pub(super) schema: u32,
     pub(super) pages: Vec<String>,
-    capabilities: Vec<Capability>,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-struct Capability {
-    name: String,
-    page: String,
-    source: String,
-    scenario: String,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -193,9 +183,9 @@ fn read_cached_file(
 pub(super) fn parse_manifest(bytes: &[u8]) -> miette::Result<CorpusManifest> {
     let manifest: CorpusManifest = serde_json::from_slice(bytes)
         .map_err(|error| miette::miette!("parsing `docs/agent/manifest.json`: {error}"))?;
-    if manifest.schema != 1 {
+    if manifest.schema != 2 {
         return Err(miette::miette!(
-            "unsupported guidance manifest schema {}; expected 1",
+            "unsupported guidance manifest schema {}; expected 2",
             manifest.schema
         ));
     }
@@ -222,30 +212,6 @@ pub(super) fn parse_manifest(bytes: &[u8]) -> miette::Result<CorpusManifest> {
         return Err(miette::miette!(
             "guidance manifest must list required `index.md`"
         ));
-    }
-    let mut capabilities: BTreeSet<String> = BTreeSet::new();
-    for capability in &manifest.capabilities {
-        if capability.name.trim().is_empty()
-            || capability.source.trim().is_empty()
-            || capability.scenario.trim().is_empty()
-        {
-            return Err(miette::miette!(
-                "guidance capability fields must be nonempty"
-            ));
-        }
-        if !pages.contains(&capability.page) {
-            return Err(miette::miette!(
-                "capability `{}` points to unlisted page `{}`",
-                capability.name,
-                capability.page
-            ));
-        }
-        if !capabilities.insert(capability.name.clone()) {
-            return Err(miette::miette!(
-                "guidance manifest repeats capability `{}`",
-                capability.name
-            ));
-        }
     }
     Ok(manifest)
 }

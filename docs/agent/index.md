@@ -1,6 +1,6 @@
 # NeoHaskell consumer guidance
 
-Use these pages when building an application with NeoHaskell. Read the guidance published for the framework revision your project pins. Source paths identify the implementation that owns each contract in the matching NeoHaskell checkout.
+Use these pages when building an application with NeoHaskell. Read the guidance published for the framework revision your project pins. The pages describe the APIs, required order, and observable behavior without requiring a framework checkout.
 
 Start with [project and CLI](project-and-cli.md), then [syntax and Core](syntax-and-core.md). Follow the topic that matches the change.
 
@@ -16,9 +16,9 @@ Start with [project and CLI](project-and-cli.md), then [syntax and Core](syntax-
 | Verify a change | [Testing](testing.md) |
 | Place derivation markers | [Template Haskell order](template-haskell-order.md) |
 
-The generated Counter application in `neo/starter/src/App.hs` is the basic reference. Its commands, reducer, and query form one working example. Advanced integrations belong in applications that need external effects.
+The generated Counter application is a working example of a command, reducer, and query. Advanced integrations belong in applications that need external effects.
 
 - [Reusable side effects](advanced-side-effects.md) covers `ToAction`, HTTP requests, callbacks, and the separate adapter API.
 - [External OAuth2](advanced-oauth2.md) covers account connections, persistent token storage, and callback commands.
 
-A `haskell` code fence is a complete module for compilation. A `haskell ignore` fence is an explanatory fragment that needs the surrounding application definitions. Cited tests describe maintained evidence. A source citation alone does not mean that a runtime scenario ran.
+A `haskell` code fence is a complete module. A `haskell ignore` fence is a fragment that needs the surrounding application definitions.

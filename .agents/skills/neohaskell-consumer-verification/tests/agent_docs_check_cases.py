@@ -9,6 +9,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[4]
 CHECK = REPO / ".agents/skills/neohaskell-consumer-verification/scripts/agent-docs-check"
+REGISTRY = Path(".agents/skills/neohaskell-consumer-verification/references/agent-docs-evidence.json")
 
 
 class AgentDocsCheckTests(unittest.TestCase):
@@ -17,15 +18,16 @@ class AgentDocsCheckTests(unittest.TestCase):
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name)
         shutil.copytree(REPO / "docs/agent", self.root / "docs/agent")
-        manifest = json.loads((self.root / "docs/agent/manifest.json").read_text())
-        evidence = json.loads((self.root / "docs/agent/evidence.json").read_text())
+        (self.root / REGISTRY).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(REPO / REGISTRY, self.root / REGISTRY)
+        evidence = json.loads((self.root / REGISTRY).read_text())
         paths = {
             "core/test-service/Main.hs",
             "core/test-auth/Main.hs",
         }
-        for capability in manifest["capabilities"]:
+        for capability in evidence["capabilities"].values():
             paths.update((capability["source"], capability["scenario"]))
-        for capability in evidence["capabilities"]:
+        for capability in evidence["capabilities"].values():
             paths.update(check["path"] for check in capability["evidence"])
         paths.update(receipt["source"] for receipt in evidence["ignored_fragments"])
         for relative in paths:
@@ -50,6 +52,45 @@ class AgentDocsCheckTests(unittest.TestCase):
         (self.root / "docs/agent/commands.md").unlink()
         self.check(1, "missing pages ['commands.md']")
 
+    def test_internal_source_path(self):
+        page = self.root / "docs/agent/project-and-cli.md"
+        page.write_text(page.read_text() + "\nSee `neo/src/reconcile/mod.rs`.\n")
+        self.check(1, "internal framework path 'neo/src/reconcile/mod.rs'")
+
+    def test_encoded_internal_source_path(self):
+        page = self.root / "docs/agent/project-and-cli.md"
+        page.write_text(page.read_text() + "\nSee `core%2Fservice%2FService%2FApplication.hs`.\n")
+        self.check(1, "internal framework path 'core/service/Service/Application.hs'")
+
+    def test_generated_project_path_is_allowed(self):
+        page = self.root / "docs/agent/project-and-cli.md"
+        page.write_text(page.read_text() + "\nEdit `src/App.hs` and `tests/Spec.hs`.\n")
+        self.check(0, "PASS: structure")
+
+    def test_private_evidence_cannot_be_published(self):
+        shutil.copyfile(self.root / REGISTRY, self.root / "docs/agent/evidence.json")
+        self.check(1, "unlisted files ['evidence.json']")
+
+    def test_old_manifest_is_rejected(self):
+        path = self.root / "docs/agent/manifest.json"
+        manifest = json.loads(path.read_text())
+        manifest["schema"] = 1
+        path.write_text(json.dumps(manifest))
+        self.check(1, "expected schema 2")
+
+    def test_public_manifest_rejects_private_metadata(self):
+        path = self.root / "docs/agent/manifest.json"
+        manifest = json.loads(path.read_text())
+        manifest["source"] = "core/service/Service/Application.hs"
+        path.write_text(json.dumps(manifest))
+        self.check(1, "expected schema 2 with only pages")
+
+    def test_duplicate_private_capability_is_rejected(self):
+        path = self.root / REGISTRY
+        content = path.read_text()
+        path.write_text(content.replace('"capabilities": {', '"capabilities": {"commands": {},', 1))
+        self.check(1, "duplicate JSON key 'commands'")
+
     def test_broken_link(self):
         index = self.root / "docs/agent/index.md"
         index.write_text(index.read_text().replace("commands.md", "missing.md"))
@@ -69,26 +110,26 @@ class AgentDocsCheckTests(unittest.TestCase):
         self.check(1, "unsupported Haskell fence label")
 
     def test_missing_consumer_evidence(self):
-        path = self.root / "docs/agent/evidence.json"
+        path = self.root / REGISTRY
         evidence = json.loads(path.read_text())
-        next(item for item in evidence["capabilities"] if item["name"] == "project-and-cli")["evidence"] = []
+        evidence["capabilities"]["project-and-cli"]["evidence"] = []
         path.write_text(json.dumps(evidence))
         self.check(1, "project-and-cli lacks required executable evidence")
 
     def test_missing_evidence_file(self):
-        (self.root / "docs/agent/evidence.json").unlink()
+        (self.root / REGISTRY).unlink()
         self.check(1, "cannot read valid evidence")
 
     def test_missing_mcp_spec(self):
-        path = self.root / "docs/agent/evidence.json"
+        path = self.root / REGISTRY
         evidence = json.loads(path.read_text())
-        transports = next(item for item in evidence["capabilities"] if item["name"] == "transports")
+        transports = evidence["capabilities"]["transports"]
         transports["evidence"] = transports["evidence"][:1]
         path.write_text(json.dumps(evidence))
         self.check(1, "transports lacks required executable evidence")
 
     def test_missing_fragment_receipt(self):
-        path = self.root / "docs/agent/evidence.json"
+        path = self.root / REGISTRY
         evidence = json.loads(path.read_text())
         evidence["ignored_fragments"].pop()
         path.write_text(json.dumps(evidence))

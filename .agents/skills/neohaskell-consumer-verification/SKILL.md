@@ -81,12 +81,16 @@ can affect the starter or compiled application.
 ## Source-owned agent guidance
 
 Before opening a PR that changes a consumer-facing framework contract, generated
-CLI behavior, or `docs/agent/`, compare the changed source with the guide's
-capability list and topic pages. Read the maintained implementation behind each
+CLI behavior, or `docs/agent/`, compare the changed source with the private
+capability registry and published topic pages. Read the maintained implementation behind each
 affected claim. Update stale pages, examples, scenarios, and evidence records.
 For each affected capability, report the updated page or explain why its guide
 still matches the source. Review explanatory fragments against their cited
 source; compilation cannot prove prose claims.
+
+Follow [Agent guide authoring](../agent-guide-authoring/SKILL.md) for the
+published pages. Keep implementation paths and evidence in this skill's private
+registry so generated applications receive only consumer guidance.
 
 Run the local corpus check from the repository root inside the pinned Nix shell:
 
@@ -95,12 +99,15 @@ nix develop --command .agents/skills/neohaskell-consumer-verification/scripts/ag
 nix develop --command .agents/skills/neohaskell-consumer-verification/scripts/agent-docs-check --verify-evidence
 ```
 
-The gate validates `docs/agent/manifest.json` against the complete page set,
-local links, and a source file and maintained Hurl scenario for each required
-capability. It compiles every runnable Haskell fence with `markdown-unlit`
+The gate validates the published `docs/agent/manifest.json` page inventory,
+local links, and the private capability registry at
+`references/agent-docs-evidence.json`. Each required capability retains a
+source file and maintained Hurl scenario in that registry. The gate rejects
+framework repository paths in published guidance. It compiles every runnable
+Haskell fence with `markdown-unlit`
 against the checkout's `nhcore` and `nhintegrations` packages. Use `haskell
 ignore` only for fragments that need surrounding application definitions.
-Record each such fragment and its owning source in `docs/agent/evidence.json`.
+Record each such fragment and its owning source in `references/agent-docs-evidence.json`.
 
 `--structure-only` provides quick feedback but does not compile examples.
 Run the default check for each affected PR. For a corpus-wide change or a

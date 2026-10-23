@@ -1,6 +1,6 @@
 # Reusable side effects
 
-Use an outbound integration to react to an accepted domain event. The application handler constructs an `Integration.Outbound`. An integration package converts a configuration record into an executable `Integration.Action` through `ToAction`. The runtime executes that action and dispatches any resulting command. See `core/service/Integration.hs` and `core/service/Service/Integration/Dispatcher.hs`.
+Use an outbound integration to react to an accepted domain event. The application handler constructs an `Integration.Outbound`. An integration package converts a configuration record into an executable `Integration.Action` through `ToAction`. The runtime executes that action and dispatches any resulting command.
 
 ## A reusable HTTP operation
 
@@ -32,30 +32,30 @@ instance
 			}
 ```
 
-`Http` here names `Integration.Http`. Its `Request command` record supports a method, URL, headers, body, success callback, optional error callback, authentication, retry settings, and timeout. `onSuccess` and `onError` return the same command type. A sum type can represent both outcomes. See `integrations/Integration/Http/Request.hs` and `integrations/Integration/Http/Internal.hs`.
+`Http` here names `Integration.Http`. Its `Request command` record supports a method, URL, headers, body, success callback, optional error callback, authentication, retry settings, and timeout. `onSuccess` and `onError` return the same command type. A sum type can represent both outcomes.
 
-Use `Http.json`, `Http.form`, `Http.raw`, or `Http.noBody` for the body. Authentication supports `NoAuth`, `Bearer`, `Basic`, and `ApiKey`. URL, header values, and authentication values support runtime `${VARIABLE}` expansion. See `integrations/Integration/Http/Request.hs`, `integrations/Integration/Http/Auth.hs`, and `integrations/Integration/Http/Internal.hs`.
+Use `Http.json`, `Http.form`, `Http.raw`, or `Http.noBody` for the body. Authentication supports `NoAuth`, `Bearer`, `Basic`, and `ApiKey`. URL, header values, and authentication values support runtime `${VARIABLE}` expansion.
 
-For operations beyond HTTP configuration, implement `toAction` with `Integration.action`. The action receives `ActionContext` and returns a `Task IntegrationError (Maybe CommandPayload)`. Use `Integration.emitCommand` for a result command and `Integration.noCommand` for no command. See `core/service/Integration.hs`.
+For operations beyond HTTP configuration, implement `toAction` with `Integration.action`. The action receives `ActionContext` and returns a `Task IntegrationError (Maybe CommandPayload)`. Use `Integration.emitCommand` for a result command and `Integration.noCommand` for no command.
 
 ## Application wiring
 
-Define a handler type and its `EntityOf` equation. Write `handleEvent :: Entity -> Event -> Integration.Outbound` before `outboundIntegration ''Handler`. Match the event that triggers delivery. Return `Integration.batch [Integration.outbound delivery]` for that event and `Integration.none` for unrelated events. See `core/service/Service/OutboundIntegration/TH.hs` and `testbed/src/Testbed/Cart/Integrations/ReserveStockOnItemAdded.hs`.
+Define a handler type and its `EntityOf` equation. Write `handleEvent :: Entity -> Event -> Integration.Outbound` before `outboundIntegration ''Handler`. Match the event that triggers delivery. Return `Integration.batch [Integration.outbound delivery]` for that event and `Integration.none` for unrelated events.
 
-Register the handler with `Application.withOutbound @Handler`. Register the callback commands in their owning services. The callbacks need `Json.ToJSON` and `NameOf` to form command payloads. Their handlers still need valid routing and decisions. See `core/service/Service/Application.hs`, `core/service/Integration.hs`, and [commands](commands.md).
+Register the handler with `Application.withOutbound @Handler`. Register the callback commands in their owning services. The callbacks need `Json.ToJSON` and `NameOf` to form command payloads. Their handlers still need valid routing and decisions.
 
-Keep networking outside `decide` and `update`. The command decision describes domain changes. The outbound action performs the remote effect after an event. See `core/service/Service/Command/Core.hs`, `core/service/Service/Entity/Core.hs`, and `core/service/Service/Integration/Dispatcher.hs`.
+Keep networking outside `decide` and `update`. The command decision describes domain changes. The outbound action performs the remote effect after an event.
 
 ## Retries and result validation
 
-Treat a retried remote operation as repeatable work. Use a provider-supported idempotency key when duplicate requests would cause duplicate effects. The HTTP executor has retry behavior and the dispatcher separately owns action execution. Neither establishes a transaction with the remote service. See `integrations/Integration/Http/Internal.hs` and `core/service/Service/Integration/Dispatcher.hs`.
+Treat a retried remote operation as repeatable work. Use a provider-supported idempotency key when duplicate requests would cause duplicate effects. The HTTP executor has retry behavior and the dispatcher separately owns action execution. Neither establishes a transaction with the remote service.
 
-Validate response status and payload before treating an HTTP response as a domain success. The current executor sends an `Ok response` to `onSuccess`; that callback name alone is not a domain guarantee. A malformed payload must become an explicit domain failure rather than a fabricated identifier. See `integrations/Integration/Http/Internal.hs` and `integrations/Integration/Http/Response.hs`.
+Validate response status and payload before treating an HTTP response as a domain success. The current executor sends an `Ok response` to `onSuccess`; that callback name alone is not a domain guarantee. A malformed payload must become an explicit domain failure rather than a fabricated identifier.
 
 ## The separate adapter API
 
-`Service.Integration.Adapter.Integration request` defines associated `Response request`, `runReal`, and `runFake`. `Application.withIntegration @Request` registers this API for typed dispatch. Real, fake, and hybrid selection use application arguments such as `--integrations=fake`. Hybrid mode names fakes with `--fake=TypeName`. See `core/service/Service/Integration/Adapter.hs`, `core/service/Service/Integration/Selection.hs`, and `core/service/Service/Application.hs`.
+`Service.Integration.Adapter.Integration request` defines associated `Response request`, `runReal`, and `runFake`. `Application.withIntegration @Request` registers this API for typed dispatch. Real, fake, and hybrid selection use application arguments such as `--integrations=fake`. Hybrid mode names fakes with `--fake=TypeName`.
 
-Registering `withIntegration` does not replace the `ToAction` implementation for `Http.Request`. The built-in HTTP `ToAction` executes its HTTP path directly. Choose the owning API when designing a reusable package. See `integrations/Integration/Http/Internal.hs` and `core/test/Service/Integration/WireupSpec.hs`.
+Registering `withIntegration` does not replace the `ToAction` implementation for `Http.Request`. The built-in HTTP `ToAction` executes its HTTP path directly. Choose the owning API when designing a reusable package.
 
-The stock reservation Hurl scenario proves local command dispatch between Cart and Stock. The generic HTTP side effect scenario exercises a consumer-owned `ToAction` mapping against a deterministic fake endpoint. It asserts the outbound payload and idempotency key, a duplicate request, the callback's domain result, and a rejected response that becomes a domain failure. See `testbed/tests/scenarios/stock-reservation.hurl`, `testbed/tests/integrations/generic-http-side-effect.hurl`, and `testbed/src/Testbed/ExternalEffect/`. Use that scenario as the pattern for a new remote integration.
+To test a reusable HTTP effect, send requests to a deterministic fake endpoint. Assert the outbound payload and idempotency key, repeat the request, and check the resulting command and domain state. Test a rejected response as a domain failure.

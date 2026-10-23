@@ -33,7 +33,7 @@ fn repository() -> (tempfile::TempDir, FullSha) {
 }
 
 fn write_corpus(root: &Path, text: &str) {
-    let manifest = r#"{"schema":1,"pages":["index.md","topic.md"],"capabilities":[{"name":"topic","page":"topic.md","source":"core/Api.hs","scenario":"testbed/topic.hurl"}]}"#;
+    let manifest = r#"{"schema":2,"pages":["index.md","topic.md"]}"#;
     std::fs::write(root.join("docs/agent/manifest.json"), manifest).unwrap();
     std::fs::write(
         root.join("docs/agent/index.md"),
@@ -378,15 +378,26 @@ fn offline_full_sha_keeps_source_identity_and_actionable_index() {
 
 #[test]
 fn manifest_rejects_missing_index_and_escaping_pages() {
-    let missing_index = br#"{"schema":1,"pages":["topic.md"],"capabilities":[]}"#;
+    let missing_index = br#"{"schema":2,"pages":["topic.md"]}"#;
     assert!(
         parse_manifest(missing_index)
             .unwrap_err()
             .to_string()
             .contains("index.md")
     );
-    let escaping = br#"{"schema":1,"pages":["index.md","../secret.md"],"capabilities":[]}"#;
+    let escaping = br#"{"schema":2,"pages":["index.md","../secret.md"]}"#;
     assert!(parse_manifest(escaping).is_err());
+}
+
+#[test]
+fn manifest_rejects_private_metadata_and_old_schema() {
+    let private_metadata = br#"{"schema":2,"pages":["index.md"],"capabilities":[]}"#;
+    assert!(parse_manifest(private_metadata).is_err());
+    let old_schema = br#"{"schema":1,"pages":["index.md"]}"#;
+    assert!(parse_manifest(old_schema)
+        .unwrap_err()
+        .to_string()
+        .contains("expected 2"));
 }
 
 #[test]
