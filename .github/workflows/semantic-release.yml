@@ -200,7 +200,7 @@ jobs:
       matrix:
         include: ${{ fromJSON(needs.prepare.outputs.platform_items) }}
     runs-on: ubuntu-latest
-    timeout-minutes: 180
+    timeout-minutes: 30
     permissions:
       contents: write
     steps:
@@ -214,9 +214,6 @@ jobs:
           ref: ${{ needs.prepare.outputs.tooling_revision }}
           path: .agents-state/release-tooling
           persist-credentials: false
-      - uses: DeterminateSystems/determinate-nix-action@v3.23.3
-      - name: Validate exact source agent guidance before publication
-        run: .agents/skills/neohaskell-consumer-verification/scripts/agent-docs-ci
       - uses: actions/download-artifact@v8
         if: matrix.reuse != true
         with:

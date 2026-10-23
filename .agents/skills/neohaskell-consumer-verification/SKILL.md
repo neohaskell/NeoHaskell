@@ -1,6 +1,6 @@
 ---
 name: neohaskell-consumer-verification
-description: Verify generated projects, source-owned agent guidance, or the embedded Neo IDE bundle. Use for CLI consumer contracts, starter compatibility, guidance publication, or IDE bundle freshness.
+description: Verify generated projects, review source-owned agent guidance for consumer-facing PRs, or check the embedded Neo IDE bundle. Use for CLI consumer contracts, starter compatibility, guidance accuracy, or IDE bundle freshness.
 ---
 
 # NeoHaskell consumer verification
@@ -80,7 +80,15 @@ can affect the starter or compiled application.
 
 ## Source-owned agent guidance
 
-Run the corpus gate from the repository root inside the pinned Nix shell:
+Before opening a PR that changes a consumer-facing framework contract, generated
+CLI behavior, or `docs/agent/`, compare the changed source with the guide's
+capability list and topic pages. Read the maintained implementation behind each
+affected claim. Update stale pages, examples, scenarios, and evidence records.
+For each affected capability, report the updated page or explain why its guide
+still matches the source. Review explanatory fragments against their cited
+source; compilation cannot prove prose claims.
+
+Run the local corpus check from the repository root inside the pinned Nix shell:
 
 ```sh
 nix develop --command .agents/skills/neohaskell-consumer-verification/scripts/agent-docs-check
@@ -94,11 +102,14 @@ against the checkout's `nhcore` and `nhintegrations` packages. Use `haskell
 ignore` only for fragments that need surrounding application definitions.
 Record each such fragment and its owning source in `docs/agent/evidence.json`.
 
-`--structure-only` provides a quick local check. It does not prove the
-examples compile. `--verify-evidence` also runs the service and auth specs,
-the maintained Hurl testbed, and the generated-project contract. CI and both
-release workflows run that check through `scripts/agent-docs-ci` before
-publication, including artifact reuse. A pass requires all evidence commands
-to finish successfully. Use a fresh PostgreSQL database for a repeated local
-evidence run. The testbed retains events across runs and uses in-memory query
-projections.
+`--structure-only` provides quick feedback but does not compile examples.
+Run the default check for each affected PR. For a corpus-wide change or a
+change to the capability evidence, run `--verify-evidence`. It also runs the
+service and auth specs, the maintained Hurl testbed, and the generated-project
+contract. For a narrower runtime change, run the affected maintained scenario
+or suite and record the command and result in the PR. Use a fresh PostgreSQL
+database for repeated local evidence runs. The testbed retains events across
+runs and uses in-memory query projections.
+
+If you change the corpus validator, run its local cases with
+`python3 .agents/skills/neohaskell-consumer-verification/tests/agent_docs_check_cases.py`.

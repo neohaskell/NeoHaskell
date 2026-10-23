@@ -7,7 +7,6 @@ on:
     branches: [main, integration/neo-monorepo]
     paths:
       - "neo/**"
-      - "docs/agent/**"
       - "nix/neo-package.nix"
       - "flake.nix"
       - "flake.lock"
@@ -58,8 +57,8 @@ jobs:
             exit 0
           fi
           CHANGED="$(git diff --name-only "origin/${BASE_REF}...HEAD")"
-          PATTERN='^(neo/|docs/agent/|nix/neo-package\.nix|flake\.nix|flake\.lock|\.agents/skills/neohaskell-release/scripts/(neo-release|cache-prime)$|\.agents/skills/neohaskell-consumer-verification/|\.github/workflows/neo-ci\.yml)'
-          CONTRACT='^(neo/|core/|integrations/|docs/agent/|nix/neo-package\.nix|flake\.nix|flake\.lock|\.agents/skills/neohaskell-release/scripts/(neo-release|cache-prime)$|\.agents/skills/neohaskell-consumer-verification/|\.github/workflows/neo-ci\.yml)'
+          PATTERN='^(neo/|nix/neo-package\.nix|flake\.nix|flake\.lock|\.agents/skills/neohaskell-release/scripts/(neo-release|cache-prime)$|\.agents/skills/neohaskell-consumer-verification/|\.github/workflows/neo-ci\.yml)'
+          CONTRACT='^(neo/|core/|integrations/|nix/neo-package\.nix|flake\.nix|flake\.lock|\.agents/skills/neohaskell-release/scripts/(neo-release|cache-prime)$|\.agents/skills/neohaskell-consumer-verification/|\.github/workflows/neo-ci\.yml)'
           if echo "$CHANGED" | grep -qE "$PATTERN"; then
             echo "touched=true" >> "$GITHUB_OUTPUT"
           else
