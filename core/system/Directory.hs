@@ -174,7 +174,9 @@ removeRecursive dirPath = do
 withTemporaryFolder :: (Error -> err) -> (Path -> Task err value) -> Task err value
 withTemporaryFolder mapError use = Task.mask \restore -> do
   folder <- newTemporaryFolder |> Task.mapError mapError
-  Task.finally (removeRecursive folder) (restore (use folder))
+  Task.finally (removeRecursive folder) do
+    callback <- Task.evaluate (use folder)
+    restore callback
 
 
 newTemporaryFolder :: Task Error Path
@@ -183,7 +185,11 @@ newTemporaryFolder = do
     System.Directory.getTemporaryDirectory
       |> Task.fromFailableIO @Exception.IOError
       |> Task.mapError (\_ -> NotReadable)
-  reserveTemporaryFolder 3 temporaryRoot
+  absoluteRoot <-
+    System.Directory.makeAbsolute temporaryRoot
+      |> Task.fromFailableIO @Exception.IOError
+      |> Task.mapError (\_ -> NotReadable)
+  reserveTemporaryFolder 3 absoluteRoot
 
 
 reserveTemporaryFolder :: Int -> LinkedList Char -> Task Error Path

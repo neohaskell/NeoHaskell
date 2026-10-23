@@ -1,6 +1,7 @@
 module DirectorySpec (spec) where
 
 import AsyncTask qualified
+import Array qualified
 import Basics
 import Channel (Channel)
 import Channel qualified
@@ -11,6 +12,7 @@ import "nhcore" Path qualified
 import Prelude qualified as GhcPrelude
 import Result (Result (..))
 import System.Directory qualified as GhcDirectory
+import System.FilePath qualified as GhcFilePath
 import System.Posix.Files qualified as PosixFiles
 import Task (Task)
 import Task qualified
@@ -26,6 +28,7 @@ spec = do
   describe "withTemporaryFolder" do
     it "creates a private folder and removes it after success" \_ -> do
       folder <- Directory.withTemporaryFolder toText \folder -> do
+        GhcFilePath.isAbsolute (Path.toLinkedList folder) |> shouldBe True
         exists <- folderExists folder
         exists |> shouldBe True
         mode <-
@@ -63,6 +66,20 @@ spec = do
         Ok _ -> Test.fail "expected the runtime exception"
       folder <- capturedFolder captured
       assertRemoved folder
+
+    it "removes the folder when the callback throws while building its task" \_ -> do
+      outcome <-
+        Directory.withTemporaryFolder toText (\folder -> GhcPrelude.error (Path.toLinkedList folder))
+          |> Task.asResultSafe @Text
+      case outcome of
+        Err message ->
+          case Array.first (Text.lines message) of
+            Just pathText ->
+              case Path.fromText pathText of
+                Just folder -> assertRemoved folder
+                Nothing -> Test.fail "the callback error did not contain a folder path"
+            Nothing -> Test.fail "the callback error was empty"
+        Ok _ -> Test.fail "expected the runtime exception"
 
     it "removes the folder after cancellation" \_ -> do
       ready <- Channel.new
