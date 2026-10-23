@@ -8,7 +8,6 @@ import Channel qualified
 import Auth.SecretStore.InMemory qualified as InMemorySecretStore
 import ConcurrentVar qualified
 import ConcurrentMap qualified
-import Control.Exception qualified as GhcException
 import Core
 import DateTime qualified
 import Integration qualified
@@ -404,8 +403,7 @@ spec = do
                         callCount |> ConcurrentVar.modify (+ 1)
                         if currentCount == 0
                           then do
-                            -- First call: throw a raw IO exception (bypasses ExceptT)
-                            Task.fromIO (GhcException.throwIO (GhcException.ErrorCall "private-runner-error-sentinel"))
+                            Task.evaluate (panic "private-runner-error-sentinel")
                           else do
                             -- Subsequent calls: process normally
                             processedEvents
@@ -1630,7 +1628,7 @@ spec = do
                         attemptCount |> ConcurrentVar.modify (+ 1)
                         if currentAttempt == 0
                           then
-                            Task.fromIO (GhcException.throwIO (GhcException.ErrorCall "transient network error"))
+                            Task.evaluate (panic "transient network error")
                           else do
                             processedEvents
                               |> ConcurrentVar.modify (\evts -> evts ++ [decoded.sequenceNum])
@@ -1687,7 +1685,7 @@ spec = do
                         attemptCount |> ConcurrentVar.modify (+ 1)
                         if decoded.sequenceNum == 1
                           then
-                            Task.fromIO (GhcException.throwIO (GhcException.ErrorCall "persistent network error"))
+                            Task.evaluate (panic "persistent network error")
                           else do
                             processedEvents
                               |> ConcurrentVar.modify (\evts -> evts ++ [decoded.sequenceNum])
