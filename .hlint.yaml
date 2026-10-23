@@ -64,6 +64,11 @@
     - {name: [Control.Exception, Control.Exception.Base], within: [Task, AsyncTask, IO], message: "NeoHaskell ownership. Exception mechanisms belong in Task, AsyncTask, or IO."}
     - {name: [Data.IORef], within: [Var], message: "NeoHaskell ownership. Use Var or an atomic concurrency API according to the invariant."}
     - {name: [GHC.Conc, GHC.Conc.Sync], within: [AsyncTask], message: "NeoHaskell ownership. Thread inspection belongs in the owning concurrency API."}
+    - {name: [Control.Concurrent.Async], within: [AsyncTask, Subprocess], message: "NeoHaskell ownership. Use AsyncTask for task concurrency. Raw Async belongs to AsyncTask or subprocess IO coordination."}
+    - {name: [Control.Concurrent.STM], within: [AtomicVar, Channel, ConcurrentMap], message: "NeoHaskell ownership. STM coordination belongs in the owning core concurrency API. Add missing operations in a core prerequisite PR."}
+    - {name: [Control.Concurrent.STM.TBQueue], within: [Channel], message: "NeoHaskell ownership. Bounded queue operations belong in Channel. Add missing operations in a core prerequisite PR."}
+    - {name: [Control.Concurrent.Async.Internal], within: [], message: "NeoHaskell ownership. Use the public Async API only in its named owners."}
+    - {name: [Control.Monad.STM, Control.Concurrent.STM.TVar, Control.Concurrent.STM.TMVar, Control.Concurrent.STM.TChan, Control.Concurrent.STM.TQueue, Control.Concurrent.STM.TArray], within: [], message: "NeoHaskell ownership. Use owning core concurrency APIs. Existing STM owners use the public umbrella module."}
 
 - functions:
     - name:

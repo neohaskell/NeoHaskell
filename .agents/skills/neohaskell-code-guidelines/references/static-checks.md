@@ -27,6 +27,8 @@ The scanner reads tracked and unignored new source files with extensions declare
 
 The workspace rule counts literal text even in source comments. It does not evaluate dynamically constructed paths or inspect binary files. HLint checks syntax and imported names, not Haskell types or cancellation semantics. The function list covers the named exception, IORef, and thread-inspection operations in `.hlint.yaml`. An unlisted operation still needs review. The exact `GHC.IO.Exception` allowance permits imports in its listed core owners. Separate finite function restrictions reject the listed throwing operations in system owners. The `System.Directory.Internal.Prelude` import is rejected in every module. The exact `DirectorySpec` allowance for `System.Directory` permits an independent filesystem oracle.
 
+The exact concurrency import restrictions live in [.hlint.yaml](../../../../.hlint.yaml). They do not catch indirect reexports, unlisted packages such as `StmContainers.Map`, or raw MVar modules. Public core APIs that return STM transactions remain allowed.
+
 HLint owner exceptions use module names. They do not prove that a file claiming `module Task` is the maintained Task owner. Review module ownership and Cabal registration together. HLint uses simple CPP processing, so this gate does not validate every preprocessor branch.
 
 Review the exact module and function restrictions in [.hlint.yaml](../../../../.hlint.yaml) before changing ownership coverage. Existing exceptions for dialect rules are not a precedent for broad ownership exceptions.
