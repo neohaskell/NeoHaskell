@@ -30,6 +30,7 @@ import Network.HTTP.Types.Status qualified as HTTP
 import Service.Auth qualified as Auth
 import Service.AccessControl (AccessError (..))
 import Service.Command.Core (Command (..), UserClaims (..))
+import Service.CommandExecutor.CommandExecutionFailure qualified as CommandExecutionFailure
 import Service.CommandExecutor qualified as CommandExecutor
 import Service.CommandExecutor.Core (ExecutionResult (..))
 import Service.EntityFetcher.Core (EntityFetcher)
@@ -224,7 +225,12 @@ dispatcherParitySpecs = do
       (store, fetcher) <- newCartStoreAndFetcher
       cartId <- Uuid.generate
       let cmd = AuthenticatedAddItem {cartId = cartId, itemId = Uuid.nil, amount = 1}
-      result <- CommandExecutor.execute store fetcher cartEntityName Nothing Auth.emptyContext cmd
+      result <-
+        CommandExecutor.execute
+          (executionDependencies store fetcher cartEntityName)
+          (CommandExecutor.FromRequest Auth.emptyContext)
+          cmd
+          |> Task.mapError CommandExecutionFailure.message
       case result of
         CommandUnauthorized {authError} -> authError |> shouldBe Unauthenticated
         other -> fail [fmt|Expected CommandUnauthorized Unauthenticated from dispatcher gate, got #{toText other}|]
@@ -241,7 +247,12 @@ dispatcherParitySpecs = do
       (store, fetcher) <- newCartStoreAndFetcher
       cartId <- Uuid.generate
       let cmd = AddItemToCart {cartId = cartId, itemId = Uuid.nil, amount = 1}
-      result <- CommandExecutor.execute store fetcher cartEntityName Nothing Auth.emptyContext cmd
+      result <-
+        CommandExecutor.execute
+          (executionDependencies store fetcher cartEntityName)
+          (CommandExecutor.FromRequest Auth.emptyContext)
+          cmd
+          |> Task.mapError CommandExecutionFailure.message
       case result of
         CommandRejected {reason} -> reason |> shouldBe "Cart does not exist"
         other -> fail [fmt|Expected CommandRejected "Cart does not exist" from decideImpl, got #{toText other}|]
@@ -256,7 +267,25 @@ dispatcherParitySpecs = do
       cartId <- Uuid.generate
       ctx <- Auth.authenticatedContext (mkClaims Array.empty)
       let cmd = AuthenticatedAddItem {cartId = cartId, itemId = Uuid.nil, amount = 1}
-      result <- CommandExecutor.execute store fetcher cartEntityName Nothing ctx cmd
+      result <-
+        CommandExecutor.execute
+          (executionDependencies store fetcher cartEntityName)
+          (CommandExecutor.FromRequest ctx)
+          cmd
+          |> Task.mapError CommandExecutionFailure.message
       case result of
         CommandRejected {reason} -> reason |> shouldBe "Cart does not exist"
         other -> fail [fmt|Expected CommandRejected "Cart does not exist" from decideImpl, got #{toText other}|]
+
+
+executionDependencies ::
+  EventStore.EventStore event ->
+  EntityFetcher entity event ->
+  Event.EntityName ->
+  CommandExecutor.ExecutionDependencies entity event
+executionDependencies eventStore entityFetcher entityName =
+  CommandExecutor.ExecutionDependencies
+    { CommandExecutor.eventStore = eventStore,
+      CommandExecutor.entityFetcher = entityFetcher,
+      CommandExecutor.entityName = entityName
+    }

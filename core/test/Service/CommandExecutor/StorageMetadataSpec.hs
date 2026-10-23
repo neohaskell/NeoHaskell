@@ -10,6 +10,7 @@ import Directory qualified
 import Maybe (Maybe (..))
 import Maybe qualified
 import Service.Auth qualified as Auth
+import Service.CommandExecutor.CommandExecutionFailure qualified as CommandExecutionFailure
 import Service.CommandExecutor.Core qualified as Executor
 import Service.EntityFetcher.Core qualified as Fetcher
 import Service.Event (Event)
@@ -172,12 +173,14 @@ executeAddItem :: EventStore CartEvent -> EntityName -> Uuid.Uuid -> EventMetada
 executeAddItem eventStore entityName cartId sourceMetadata = do
   fetcher <- Fetcher.new eventStore initialCartState applyCartEvent |> Task.mapError toText
   Executor.execute
-    eventStore
-    fetcher
-    entityName
-    (Just sourceMetadata)
-    Auth.emptyContext
+    (Executor.ExecutionDependencies
+      { Executor.eventStore = eventStore,
+        Executor.entityFetcher = fetcher,
+        Executor.entityName = entityName
+      })
+    (Executor.FromEvent Auth.emptyContext sourceMetadata)
     AddItemToCart {cartId, itemId = Uuid.nil, amount = 1}
+    |> Task.mapError CommandExecutionFailure.message
 
 
 assertAccepted :: Executor.ExecutionResult -> Task Text Unit
