@@ -56,6 +56,35 @@ class StaticChecks(unittest.TestCase):
         self.source("module Example where\nimport Task qualified\nraise error = Task.throw error\n")
         self.check(0)
 
+    def test_io_exception_owner_passes(self):
+        for imported in ["Control.Exception", "Control.Exception.Base"]:
+            for qualified in [True, False]:
+                with self.subTest(imported=imported, qualified=qualified):
+                    import_names = "qualified as Runtime" if qualified else "(finally, onException, catch, try)"
+                    prefix = "Runtime." if qualified else ""
+                    self.source(f"module IO where\nimport {imported} {import_names}\nfinish action cleanup = {prefix}finally action cleanup\ncleanFailed action cleanup = {prefix}onException action cleanup\nrecover action handler = {prefix}catch action handler\nattempt action = {prefix}try action\n", "core/core/IO.hs")
+                    self.check(0)
+
+    def test_application_exception_operations_fail(self):
+        for imported in ["Control.Exception", "Control.Exception.Base"]:
+            with self.subTest(imported=imported):
+                self.source(f"module Example where\nimport {imported} qualified as Runtime\nfinish action cleanup = Runtime.finally action cleanup\n")
+                output = self.check(1)
+                self.assertIn("Avoid restricted module", output)
+                self.assertIn("Avoid restricted function", output)
+
+    def test_io_does_not_own_mutable_state_or_thread_inspection(self):
+        for imported, expression in [
+            ("Data.IORef", "Runtime.readIORef value"),
+            ("GHC.Conc", "Runtime.threadStatus value"),
+            ("GHC.Conc.Sync", "Runtime.threadStatus value"),
+        ]:
+            with self.subTest(imported=imported):
+                self.source(f"module IO where\nimport {imported} qualified as Runtime\noperation value = {expression}\n", "core/core/IO.hs")
+                output = self.check(1)
+                self.assertIn("Avoid restricted module", output)
+                self.assertIn("Avoid restricted function", output)
+
     def test_tracked_repeated_io_ref_use_fails(self):
         self.source("module Example where\nimport Data.IORef qualified as Raw\nreadBoth ref = do\n  Raw.readIORef ref\n  Raw.readIORef ref\n")
         subprocess.run(["git", "add", "core/Example.hs"], cwd=self.root, check=True)

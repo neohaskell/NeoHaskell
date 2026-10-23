@@ -12,7 +12,7 @@ For an illustrative mail service, `MailDependencies` holds the queue and sender 
 
 Inspect maintained NeoHaskell APIs before importing a GHC or IO equivalent. Choose the core state API by its contract. Local mutation, an atomic claim, and blocking coordination need different guarantees. A separate read and write does not become atomic because each call uses a wrapper.
 
-Keep raw exception manipulation in the owning core task and concurrency modules. Service code composes their operations. If a necessary mask, restoration, or exception-preserving cleanup operation is absent, implement and verify that operation in a separate core prerequisite PR. Then migrate the service. A task-to-IO adapter that runs tasks internally is evidence of a missing task operation or a misplaced runner. Keep legitimate foreign IO adapters at their explicit boundaries.
+Keep raw exception manipulation in the owning core task, concurrency, and IO modules. Service code composes their operations. If a necessary mask, restoration, or exception-preserving cleanup operation is absent, implement and verify that operation in a separate core prerequisite PR. Then migrate the service. A task-to-IO adapter that runs tasks internally is evidence of a missing task operation or a misplaced runner. Keep legitimate foreign IO adapters at their explicit boundaries.
 
 Distinguish typed failures, synchronous exceptions, and asynchronous cancellation in the core contract. Converting an exception into text cannot preserve its original identity for rethrowing. Define whether cleanup failures replace, accompany, or leave the original failure intact. Verify success, typed failure, runtime exception, and cancellation paths before using a cleanup operation.
 

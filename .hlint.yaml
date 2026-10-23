@@ -61,7 +61,7 @@
        message: "Use the owning Core or Basics API. Add missing operations in a core prerequisite PR."}
 
 - modules:
-    - {name: [Control.Exception, Control.Exception.Base], within: [Task, AsyncTask], message: "NeoHaskell ownership. Exception mechanisms belong in Task or AsyncTask."}
+    - {name: [Control.Exception, Control.Exception.Base], within: [Task, AsyncTask, IO], message: "NeoHaskell ownership. Exception mechanisms belong in Task, AsyncTask, or IO."}
     - {name: [Data.IORef], within: [Var], message: "NeoHaskell ownership. Use Var or an atomic concurrency API according to the invariant."}
     - {name: [GHC.Conc, GHC.Conc.Sync], within: [AsyncTask], message: "NeoHaskell ownership. Thread inspection belongs in the owning concurrency API."}
 
@@ -101,8 +101,8 @@
         - Control.Exception.addExceptionContext
         - Control.Exception.someExceptionContext
         - Control.Exception.annotateIO
-      within: [Task, AsyncTask]
-      message: "NeoHaskell ownership. Exception mechanisms belong in Task or AsyncTask."
+      within: [Task, AsyncTask, IO]
+      message: "NeoHaskell ownership. Exception mechanisms belong in Task, AsyncTask, or IO."
     - name:
         - Control.Exception.Base.mask
         - Control.Exception.Base.mask_
@@ -138,8 +138,8 @@
         - Control.Exception.Base.addExceptionContext
         - Control.Exception.Base.someExceptionContext
         - Control.Exception.Base.annotateIO
-      within: [Task, AsyncTask]
-      message: "NeoHaskell ownership. Exception mechanisms belong in Task or AsyncTask."
+      within: [Task, AsyncTask, IO]
+      message: "NeoHaskell ownership. Exception mechanisms belong in Task, AsyncTask, or IO."
     - name:
         - Data.IORef.newIORef
         - Data.IORef.readIORef
