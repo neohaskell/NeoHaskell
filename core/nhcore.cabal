@@ -714,6 +714,7 @@ test-suite nhcore-test-core
 
   other-modules:
     AsyncTask.RaceSpec
+    AtomicVarSpec
     ArraySpec
     Command.FromSchemaSpec
     ConcurrentMapSpec
