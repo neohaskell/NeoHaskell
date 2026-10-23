@@ -38,7 +38,7 @@ receipts = IO.dangerouslyRun (Task.runOrPanic (ConcurrentMap.new :: Task Text (C
 
 
 reportIfRegistered :: Uuid -> Task Text Unit -> Task Text (Maybe Bool)
-reportIfRegistered requestId report = Task.mask \_ -> do
+reportIfRegistered requestId ~report = Task.mask \_ -> do
   maybeReceipt <- ConcurrentMap.get (Uuid.toText requestId) receipts
   case maybeReceipt of
     Maybe.Nothing -> Task.yield Maybe.Nothing
@@ -62,7 +62,7 @@ setRelatedUserSub requestId actor = Task.mask \_ -> do
 
 
 withFreshReceipt :: (Uuid -> Maybe Text -> ReceiptExit -> Task Text Unit) -> (Uuid -> Task Text value) -> Task Text value
-withFreshReceipt reportFallback action = Task.mask \restore -> do
+withFreshReceipt ~reportFallback ~action = Task.mask \restore -> do
   requestId <- Uuid.generate
   wasReported <- AtomicVar.containing False
   relatedUserSub <- Var.new Maybe.Nothing
