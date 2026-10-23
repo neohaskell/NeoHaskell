@@ -27,7 +27,12 @@ data RunnerKind
 data IntegrationResult
   = Skipped
   | Dropped
-  | RunnerResult RunnerKind Int IntegrationOutcome Int
+  | RunnerResult
+      { runnerKind :: RunnerKind,
+        runnerOrdinal :: Int,
+        runnerOutcome :: IntegrationOutcome,
+        commandsEmitted :: Int
+      }
 
 
 logFields :: IntegrationResult -> Array (Text, Json.Value)
@@ -44,7 +49,7 @@ logLevel :: IntegrationResult -> Log.Level
 logLevel result = case result of
   Skipped -> Log.Info
   Dropped -> Log.Warn
-  RunnerResult _ _ outcome _ -> case outcome of
+  RunnerResult { runnerOutcome } -> case runnerOutcome of
     Processed -> Log.Info
     Failed _ -> Log.Warn
 
@@ -53,30 +58,30 @@ logMessage :: IntegrationResult -> Text
 logMessage result = case result of
   Skipped -> "No integration runner matched the event"
   Dropped -> "Integration event was not delivered"
-  RunnerResult _ _ outcome _ -> IntegrationOutcome.message outcome
+  RunnerResult { runnerOutcome } -> IntegrationOutcome.message runnerOutcome
 
 
 resultLabel :: IntegrationResult -> Text
 resultLabel result = case result of
   Skipped -> "skipped"
   Dropped -> "dropped"
-  RunnerResult _ _ outcome _ -> IntegrationOutcome.resultLabel outcome
+  RunnerResult { runnerOutcome } -> IntegrationOutcome.resultLabel runnerOutcome
 
 
 commandCount :: IntegrationResult -> Int
 commandCount result = case result of
-  RunnerResult _ _ _ count -> count
+  RunnerResult { commandsEmitted } -> commandsEmitted
   _ -> 0
 
 
 runnerFields :: IntegrationResult -> Array (Text, Json.Value)
 runnerFields result = case result of
-  RunnerResult kind ordinal outcome _ ->
+  RunnerResult { runnerKind, runnerOrdinal, runnerOutcome } ->
     Array.fromLinkedList
-      [ ("runnerKind" Json..= kindLabel kind),
-        ("runnerOrdinal" Json..= ordinal)
+      [ ("runnerKind" Json..= kindLabel runnerKind),
+        ("runnerOrdinal" Json..= runnerOrdinal)
       ]
-      |> Array.append (IntegrationOutcome.failureFields outcome)
+      |> Array.append (IntegrationOutcome.failureFields runnerOutcome)
   _ -> Array.empty
 
 

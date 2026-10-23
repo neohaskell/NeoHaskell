@@ -56,25 +56,24 @@ withAdmission (WorkerQueueControl status) write = Task.mask \restore -> do
 
 
 release :: AtomicVar QueueStatus -> Task err Unit
-release status = AtomicVar.modify decrement status
-  where
-    decrement current = case current of
-      Accepting writers -> Accepting (writers - 1)
-      Draining writers -> Draining (writers - 1)
-      Stopping writers -> Stopping (writers - 1)
-      Stopped -> Stopped
+release status = do
+  let decrement current = case current of
+        Accepting writers -> Accepting (writers - 1)
+        Draining writers -> Draining (writers - 1)
+        Stopping writers -> Stopping (writers - 1)
+        Stopped -> Stopped
+  AtomicVar.modify decrement status
 
 
 markDraining :: WorkerQueueControl -> AtomicVar.Transaction Bool
 markDraining (WorkerQueueControl status) = do
+  let transition current = case current of
+        Accepting writers -> (Draining writers, True)
+        _ -> (current, False)
   current <- AtomicVar.peekSTM status
   case current of
     Accepting _ -> AtomicVar.modifyWithResultSTM transition status
     _ -> pure False
-  where
-    transition current = case current of
-      Accepting writers -> (Draining writers, True)
-      _ -> (current, False)
 
 
 shouldReplace :: WorkerQueueControl -> AtomicVar.Transaction Bool
@@ -94,18 +93,16 @@ claimStop (WorkerQueueControl status) =
 
 
 waitForWriters :: WorkerQueueControl -> Task err Unit
-waitForWriters (WorkerQueueControl status) =
+waitForWriters (WorkerQueueControl status) = do
+  let ready current = case current of
+        Stopping writers -> writers == 0
+        _ -> True
   AtomicVar.waitUntil ready status
-  where
-    ready current = case current of
-      Stopping writers -> writers == 0
-      _ -> True
 
 
 finishStop :: WorkerQueueControl -> Task err Unit
-finishStop (WorkerQueueControl status) =
+finishStop (WorkerQueueControl status) = do
+  let finish current = case current of
+        Stopping 0 -> Stopped
+        _ -> current
   AtomicVar.modify finish status
-  where
-    finish current = case current of
-      Stopping 0 -> Stopped
-      _ -> current

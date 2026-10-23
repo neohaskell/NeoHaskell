@@ -19,7 +19,7 @@ import Service.Integration.Dispatcher.EventLogContext (EventLogContext)
 import Service.Integration.Dispatcher.EventLogContext qualified as EventLogContext
 import Service.Integration.Dispatcher.IntegrationOutcome (RunnerFailure (..), IntegrationOutcome (Processed))
 import Service.Integration.Dispatcher.IntegrationOutcome qualified as IntegrationOutcome
-import Service.Integration.Dispatcher.IntegrationResult (IntegrationResult (RunnerResult), RunnerKind)
+import Service.Integration.Dispatcher.IntegrationResult (IntegrationResult (..), RunnerKind)
 import Service.Integration.Dispatcher.RunnerLogState (RunnerLogState (..))
 import Service.Integration.Dispatcher.RunnerLogState qualified as RunnerLogState
 import Task (Task)
@@ -52,15 +52,30 @@ logOne context timeoutReached execution = do
   case state of
     Pending ->
       EventLogContext.logResult context
-        (RunnerResult execution.kind execution.ordinal (IntegrationOutcome.Failed NotStarted) 0)
+        RunnerResult
+          { runnerKind = execution.kind,
+            runnerOrdinal = execution.ordinal,
+            runnerOutcome = IntegrationOutcome.Failed NotStarted,
+            commandsEmitted = 0
+          }
     Processing commandCount -> do
       didTimeout <- timeoutReached |> ConcurrentVar.peek
       let failure = if didTimeout then TimedOut else Cancelled
       EventLogContext.logResult context
-        (RunnerResult execution.kind execution.ordinal (IntegrationOutcome.Failed failure) commandCount)
+        RunnerResult
+          { runnerKind = execution.kind,
+            runnerOrdinal = execution.ordinal,
+            runnerOutcome = IntegrationOutcome.Failed failure,
+            commandsEmitted = commandCount
+          }
     Completed outcome commandCount ->
       EventLogContext.logResult context
-        (RunnerResult execution.kind execution.ordinal outcome commandCount)
+        RunnerResult
+          { runnerKind = execution.kind,
+            runnerOrdinal = execution.ordinal,
+            runnerOutcome = outcome,
+            commandsEmitted = commandCount
+          }
 
 
 run ::

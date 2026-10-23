@@ -42,6 +42,7 @@ module Service.Integration.Dispatcher (
   IntegrationDispatcher,
   DispatcherConfig (..),
   defaultConfig,
+  Setup (..),
 
   -- * Re-exports from Types
   OutboundRunner (..),
@@ -94,6 +95,9 @@ import Service.Event.EntityName qualified as EntityName
 import Service.Event.StreamId (StreamId)
 import Service.EventStore.Core (EventStore)
 import Service.Integration.DispatchRegistry qualified as DispatchRegistry
+import Service.Integration.Dispatcher.Config (DispatcherConfig (..), defaultConfig)
+import Service.Integration.Dispatcher.Setup (Setup (..))
+import Service.Integration.Dispatcher.Setup qualified as Setup
 import Service.Integration.Dispatcher.EventLogContext (EventLogContext)
 import Service.Integration.Dispatcher.EventLogContext qualified as EventLogContext
 import Service.Integration.Dispatcher.IntegrationResult (IntegrationResult (..), RunnerKind (..))
@@ -157,56 +161,6 @@ data LifecycleRunnerWorkerState = LifecycleRunnerWorkerState
     lifecycleRunnerEntityTypeName :: Text,
     lifecycleRunnerState :: WorkerState
   }
-
-
--- | Configuration for the dispatcher.
-data DispatcherConfig = DispatcherConfig
-  { -- | How long a worker can be idle before being reaped (milliseconds).
-    -- Default: 60000 (60 seconds)
-    idleTimeoutMs :: Int,
-    -- | How often the reaper checks for idle workers (milliseconds).
-    -- Default: 10000 (10 seconds)
-    reaperIntervalMs :: Int,
-    -- | Whether to enable the reaper. Set to False for testing.
-    -- Default: True
-    enableReaper :: Bool,
-    -- | Capacity of worker channels (bounded). Events queue up to this limit
-    -- before backpressure is applied. Default: 100
-    -- Sizing rule of thumb: capacity = processing_rate * acceptable_latency
-    workerChannelCapacity :: Int,
-    -- | Timeout in milliseconds for writing to a full channel.
-    -- If exceeded, event is logged as dropped. Default: 5000 (5 seconds)
-    channelWriteTimeoutMs :: Int,
-    -- | Timeout in milliseconds for processing a single event.
-    -- If exceeded, the event processing is cancelled and the worker continues
-    -- with the next event. Default: Nothing (no timeout).
-    -- This prevents slow integrations from blocking a worker indefinitely.
-    eventProcessingTimeoutMs :: Maybe Int,
-    -- | Maximum number of retry attempts for transient IO failures in outbound
-    -- event processing. Only IO exceptions (e.g., network errors) are retried;
-    -- application-level errors (e.g., JSON decode failures) are not.
-    -- Default: 3 (total attempts = initial + 3 retries)
-    maxEventRetries :: Int,
-    -- | Base delay in milliseconds for exponential backoff between retries.
-    -- Actual delays: baseDelay * 2^attempt (e.g., 500ms, 1000ms, 2000ms).
-    -- Default: 500
-    retryBaseDelayMs :: Int
-  }
-
-
--- | Default dispatcher configuration.
-defaultConfig :: DispatcherConfig
-defaultConfig =
-  DispatcherConfig
-    { idleTimeoutMs = 60000,
-      reaperIntervalMs = 10000,
-      enableReaper = True,
-      workerChannelCapacity = 100,
-      channelWriteTimeoutMs = 5000,
-      eventProcessingTimeoutMs = Just 30000,
-      maxEventRetries = 3,
-      retryBaseDelayMs = 500
-    }
 
 
 -- | Worker for a specific entity (stateless).
@@ -274,7 +228,15 @@ new store runners endpoints = do
         , Integration.fileAccess = Nothing
         , Integration.outboundDispatch = DispatchRegistry.empty
         }
-  newWithLifecycleConfig defaultConfig store runners [] endpoints emptyContext
+  newWithLifecycleConfig
+    Setup
+      { settings = defaultConfig,
+        eventStore = store,
+        outboundRunners = runners,
+        lifecycleRunners = [],
+        commandEndpoints = endpoints,
+        actionContext = emptyContext
+      }
 
 
 -- | Create a new integration dispatcher with lifecycle runners.
@@ -296,37 +258,32 @@ newWithLifecycle store runners lifecycleRunners endpoints = do
         , Integration.fileAccess = Nothing
         , Integration.outboundDispatch = DispatchRegistry.empty
         }
-  newWithLifecycleConfig defaultConfig store runners lifecycleRunners endpoints emptyContext
+  newWithLifecycleConfig
+    Setup
+      { settings = defaultConfig,
+        eventStore = store,
+        outboundRunners = runners,
+        lifecycleRunners,
+        commandEndpoints = endpoints,
+        actionContext = emptyContext
+      }
 
 
 -- | Create a new integration dispatcher with custom configuration.
 newWithLifecycleConfig ::
-  DispatcherConfig ->
-  EventStore Json.Value ->
-  Array OutboundRunner ->
-  Array OutboundLifecycleRunner ->
-  Map Text EndpointHandler ->
-  Integration.ActionContext ->
+  Setup EndpointHandler ->
   Task Text IntegrationDispatcher
-newWithLifecycleConfig dispatcherConfig store runners lifecycleRunners endpoints actionContext =
+newWithLifecycleConfig setup =
   newWithLifecycleConfigWithSource
-    dispatcherConfig
-    store
-    runners
-    lifecycleRunners
-    (endpoints |> Map.mapValues (\handler _sourceEventMetadata -> handler))
-    actionContext
+    setup
+      { Setup.commandEndpoints = setup.commandEndpoints |> Map.mapValues (\handler _sourceEventMetadata -> handler)
+      }
 
 
 newWithLifecycleConfigWithSource ::
-  DispatcherConfig ->
-  EventStore Json.Value ->
-  Array OutboundRunner ->
-  Array OutboundLifecycleRunner ->
-  Map Text DispatchHandler ->
-  Integration.ActionContext ->
+  Setup DispatchHandler ->
   Task Text IntegrationDispatcher
-newWithLifecycleConfigWithSource dispatcherConfig store runners lifecycleRunners endpoints actionContext = do
+newWithLifecycleConfigWithSource setup = do
   workers <- ConcurrentMap.new
   lifecycleWorkers <- ConcurrentMap.new
   shutdownSignal <- ConcurrentVar.containing False
@@ -336,18 +293,17 @@ newWithLifecycleConfigWithSource dispatcherConfig store runners lifecycleRunners
         IntegrationDispatcher
           { entityWorkers = workers,
             lifecycleEntityWorkers = lifecycleWorkers,
-            eventStore = store,
-            outboundRunners = runners,
-            lifecycleRunners = lifecycleRunners,
-            commandEndpoints = endpoints,
+            eventStore = setup.eventStore,
+            outboundRunners = setup.outboundRunners,
+            lifecycleRunners = setup.lifecycleRunners,
+            commandEndpoints = setup.commandEndpoints,
             shutdownSignal = shutdownSignal,
-            config = dispatcherConfig,
+            config = setup.settings,
             reaperTask = reaperTaskVar,
-            context = actionContext
+            context = setup.actionContext
           }
 
-  -- Start reaper if we have lifecycle runners and reaper is enabled
-  Task.unless (not dispatcherConfig.enableReaper) do
+  Task.unless (not setup.settings.enableReaper) do
       reaper <- startReaper dispatcher
       reaperTaskVar |> ConcurrentVar.modify (\_ -> Just reaper)
 
@@ -739,7 +695,6 @@ createLifecycleWorkerCandidate dispatcher streamId entityTypeName =
     (stopLifecycleWorkerOrCancel dispatcher streamId)
 
 
--- | Get current time in milliseconds.
 getCurrentTimeMs :: Task Text Int
 getCurrentTimeMs = DateTime.now |> Task.map DateTime.toEpochMilliseconds
 
@@ -761,7 +716,6 @@ data LifecycleRunContext = LifecycleRunContext
   }
 
 
--- | Spawn a stateless worker with a bounded channel.
 spawnStatelessWorker :: IntegrationDispatcher -> StreamId -> Task Text EntityWorker
 spawnStatelessWorker dispatcher streamId = do
   uniqueId <- Uuid.generate
@@ -833,7 +787,6 @@ processStatelessWorkerEvent context event = do
         |> Task.ignoreError
 
 
--- | Spawn a lifecycle worker after initializing only runners for its entity type.
 spawnLifecycleWorker :: IntegrationDispatcher -> StreamId -> Text -> Task Text LifecycleEntityWorker
 spawnLifecycleWorker dispatcher streamId entityTypeName = do
   uniqueId <- Uuid.generate
@@ -951,22 +904,8 @@ data RetryRequest = RetryRequest
   }
 
 
--- | Execute an action with retry for transient IO failures, returning the
--- result on success or 'Nothing' on failure.
---
--- Uses a two-layer error catching strategy:
---
--- 1. Inner layer ('Task.asResult'): catches 'Task.throw' errors (e.g., JSON decode
---    failures). These are non-retryable application errors — logged and returned as
---    'Nothing' immediately (no retry).
--- 2. Outer layer ('Task.asResultSafe'): catches raw IO exceptions (e.g., network
---    errors). These are transient and retried with exponential backoff.
---
--- The caller receives 'Just value' on success and dispatches side effects (e.g.,
--- command sends) outside the retry boundary. This prevents duplicate side effects
--- when retries occur.
---
--- Retry delays follow: @baseDelay * 2^attempt@ (e.g., 500ms, 1000ms, 2000ms).
+-- Only IO exceptions retry. Task errors stop, and the caller dispatches commands
+-- after this boundary so a retried runner cannot dispatch a command twice.
 executeWithRetry ::
   forall result.
   Task Text result ->
@@ -978,7 +917,6 @@ executeWithRetry action request = do
   let streamIdText = toText request.retryStreamId
   let entityType = request.retryEntityType
   let retryLoop attempt = do
-        -- Inner layer: catch Task.throw errors (non-retryable)
         let innerAction :: Task Text (Maybe result)
             innerAction = do
               innerResult <- action |> Task.asResult
@@ -988,7 +926,6 @@ executeWithRetry action request = do
                   Log.warn [fmt|[Integration] Failed to process event for #{entityType} (stream: #{streamIdText})|]
                     |> Task.ignoreError
                   Task.yield Nothing
-        -- Outer layer: catch IO exceptions (retryable)
         outerResult <- innerAction |> Task.asResultSafe
         case outerResult of
           Ok maybeValue -> Task.yield maybeValue
@@ -1207,76 +1144,70 @@ dispatchCommandWithSource endpoints sourceEventMetadata payload = do
         |> Task.ignoreError
 
 
--- | Start the reaper task that cleans up idle lifecycle workers.
 startReaper ::
   IntegrationDispatcher ->
   Task Text (AsyncTask Text Unit)
-startReaper dispatcher = do
-  let reaperLoop :: Task Text Unit
-      reaperLoop = do
-        -- Sleep for the reaper interval
-        AsyncTask.sleep dispatcher.config.reaperIntervalMs
+startReaper dispatcher = AsyncTask.run (reaperLoop dispatcher)
 
-        -- Check shutdown
-        shouldShutdown <- dispatcher.shutdownSignal |> ConcurrentVar.peek
-        if shouldShutdown
-          then Task.yield unit
-          else do
-            -- Check for idle workers
-            currentTime <- getCurrentTimeMs
-            
-            -- Use chunked iteration to reduce STM contention.
-            -- Process 50 workers per batch to allow other operations to interleave.
-            let reaperChunkSize = 50
-            
-            -- Reap idle LIFECYCLE workers
-            dispatcher.lifecycleEntityWorkers
-              |> ConcurrentMap.forEachChunked reaperChunkSize \streamId worker -> do
-                -- Find and clean up idle workers
-                lastActivity <- worker.lastActivityTime |> ConcurrentVar.peek
-                let idleTime = currentTime - lastActivity
-                Task.when (idleTime > dispatcher.config.idleTimeoutMs) do
-                    let capturedWorkerId = worker.workerId
-                    let markSameWorkerDraining currentWorker = do
-                          if currentWorker.workerId == capturedWorkerId
-                            then WorkerQueueControl.markDraining currentWorker.queueStatus
-                            else pure False
-                    withWorkerCleanupHandoff
-                      (dispatcher.lifecycleEntityWorkers
-                        |> ConcurrentMap.removeIfM streamId markSameWorkerDraining
-                      )
-                      (\removedWorker -> do
-                        Log.debug [fmt|Reaped idle lifecycle worker for stream #{toText streamId}|]
-                          |> Task.ignoreError
-                        stopLifecycleWorkerOrCancel dispatcher streamId removedWorker
-                      )
-                      (stopLifecycleWorkerOrCancel dispatcher streamId)
 
-            dispatcher.entityWorkers
-              |> ConcurrentMap.forEachChunked reaperChunkSize \streamId worker -> do
-                lastActivity <- worker.lastActivityTime |> ConcurrentVar.peek
-                let idleTime = currentTime - lastActivity
-                Task.when (idleTime > dispatcher.config.idleTimeoutMs) do
-                    let capturedWorkerId = worker.workerId
-                    let markSameWorkerDraining currentWorker = do
-                          if currentWorker.workerId == capturedWorkerId
-                            then WorkerQueueControl.markDraining currentWorker.queueStatus
-                            else pure False
-                    withWorkerCleanupHandoff
-                      (dispatcher.entityWorkers
-                        |> ConcurrentMap.removeIfM streamId markSameWorkerDraining
-                      )
-                      (\removedWorker -> do
-                        Log.debug [fmt|Reaped idle worker for stream #{toText streamId}|]
-                          |> Task.ignoreError
-                        stopStatelessWorkerOrCancel dispatcher streamId removedWorker
-                      )
-                      (stopStatelessWorkerOrCancel dispatcher streamId)
+reaperLoop :: IntegrationDispatcher -> Task Text Unit
+reaperLoop dispatcher = do
+  AsyncTask.sleep dispatcher.config.reaperIntervalMs
+  shouldShutdown <- dispatcher.shutdownSignal |> ConcurrentVar.peek
+  if shouldShutdown
+    then Task.yield unit
+    else do
+      currentTime <- getCurrentTimeMs
+      let reaperChunkSize = 50
+      dispatcher.lifecycleEntityWorkers
+        |> ConcurrentMap.forEachChunked reaperChunkSize (reapIdleLifecycleWorker dispatcher currentTime)
+      dispatcher.entityWorkers
+        |> ConcurrentMap.forEachChunked reaperChunkSize (reapIdleStatelessWorker dispatcher currentTime)
+      reaperLoop dispatcher
 
-            -- Continue reaping
-            reaperLoop
 
-  AsyncTask.run reaperLoop
+reapIdleLifecycleWorker ::
+  IntegrationDispatcher -> Int -> StreamId -> LifecycleEntityWorker -> Task Text Unit
+reapIdleLifecycleWorker dispatcher currentTime streamId worker = do
+  lastActivity <- worker.lastActivityTime |> ConcurrentVar.peek
+  Task.when (currentTime - lastActivity > dispatcher.config.idleTimeoutMs) do
+    let capturedWorkerId = worker.workerId
+    let markSameWorkerDraining currentWorker = do
+          if currentWorker.workerId == capturedWorkerId
+            then WorkerQueueControl.markDraining currentWorker.queueStatus
+            else pure False
+    withWorkerCleanupHandoff
+      (dispatcher.lifecycleEntityWorkers
+        |> ConcurrentMap.removeIfM streamId markSameWorkerDraining
+      )
+      (\removedWorker -> do
+        Log.debug [fmt|Reaped idle lifecycle worker for stream #{toText streamId}|]
+          |> Task.ignoreError
+        stopLifecycleWorkerOrCancel dispatcher streamId removedWorker
+      )
+      (stopLifecycleWorkerOrCancel dispatcher streamId)
+
+
+reapIdleStatelessWorker ::
+  IntegrationDispatcher -> Int -> StreamId -> EntityWorker -> Task Text Unit
+reapIdleStatelessWorker dispatcher currentTime streamId worker = do
+  lastActivity <- worker.lastActivityTime |> ConcurrentVar.peek
+  Task.when (currentTime - lastActivity > dispatcher.config.idleTimeoutMs) do
+    let capturedWorkerId = worker.workerId
+    let markSameWorkerDraining currentWorker = do
+          if currentWorker.workerId == capturedWorkerId
+            then WorkerQueueControl.markDraining currentWorker.queueStatus
+            else pure False
+    withWorkerCleanupHandoff
+      (dispatcher.entityWorkers
+        |> ConcurrentMap.removeIfM streamId markSameWorkerDraining
+      )
+      (\removedWorker -> do
+        Log.debug [fmt|Reaped idle worker for stream #{toText streamId}|]
+          |> Task.ignoreError
+        stopStatelessWorkerOrCancel dispatcher streamId removedWorker
+      )
+      (stopStatelessWorkerOrCancel dispatcher streamId)
 
 
 -- | Gracefully shutdown the dispatcher.

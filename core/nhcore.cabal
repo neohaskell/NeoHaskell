@@ -392,6 +392,8 @@ library
     Service.CommandResultReceipt.Internal
     Service.Integration.Dispatcher.IntegrationOutcome
     Service.Integration.Dispatcher.IntegrationResult
+    Service.Integration.Dispatcher.Config
+    Service.Integration.Dispatcher.Setup
     Service.Integration.Dispatcher.EventLogContext
     Service.Integration.Dispatcher.RunnerExecution
     Service.Integration.Dispatcher.RunnerLogState
