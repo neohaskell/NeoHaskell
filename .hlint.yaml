@@ -49,7 +49,7 @@
     # Integration.Video.ExtractAudio.Internal: needs the OS temp directory for
     # the video/WAV temp files; belongs-in: Core `Directory` (getTemporary).
     - {name: [System.Directory],
-       within: [Directory, Environment, File, Integration.Pdf.ExtractText.Internal, Integration.Video.ExtractAudio.Internal, Subprocess],
+       within: [Directory, DirectorySpec, Environment, File, Integration.Pdf.ExtractText.Internal, Integration.Video.ExtractAudio.Internal, Subprocess],
        message: "Use Core `Directory`/`Path`. Use the owning core API. Add missing operations in a core prerequisite PR."}
     # Json
     - {name: [Data.Aeson, Data.Aeson.Key, Data.Aeson.KeyMap, Data.Aeson.Types, Data.Aeson.Encoding],
@@ -168,6 +168,21 @@
         - GHC.Conc.Sync.setNumCapabilities
       within: [AsyncTask]
       message: "NeoHaskell ownership. Thread inspection belongs in the owning concurrency API."
+
+- modules:
+    - name: [GHC.IO.Exception]
+      within: [Task, AsyncTask, IO, Directory, File, Subprocess]
+      message: "NeoHaskell ownership. Internal exception imports belong in the owning core modules. Services use owning Task operations."
+
+- modules:
+    - {name: [System.Directory.Internal.Prelude], within: [], message: "NeoHaskell ownership. Use public system APIs at system boundaries and owning Task operations for exception control."}
+- functions:
+    - name: [GHC.IO.Exception.ioException, GHC.IO.Exception.ioError, GHC.IO.Exception.assertError]
+      within: [Task, AsyncTask, IO]
+      message: "NeoHaskell ownership. Exception control belongs in Task, AsyncTask, or IO. System boundary types remain allowed."
+    - name: [System.IO.Error.ioError, System.IO.Error.catchIOError, System.IO.Error.tryIOError, System.IO.Error.modifyIOError]
+      within: [Task, AsyncTask, IO]
+      message: "NeoHaskell ownership. Exception control belongs in Task, AsyncTask, or IO. System boundary types and classifiers remain allowed."
 
 # --- 2. Function restrictions ------------------------------------------------
 - functions:

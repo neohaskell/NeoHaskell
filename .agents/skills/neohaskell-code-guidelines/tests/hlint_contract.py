@@ -85,6 +85,81 @@ class StaticChecks(unittest.TestCase):
                 self.assertIn("Avoid restricted module", output)
                 self.assertIn("Avoid restricted function", output)
 
+    def test_internal_exception_type_import_ownership(self):
+        for module in ["Service.Example", "Task", "AsyncTask", "IO", "Directory", "File", "Subprocess"]:
+            for qualified in [True, False]:
+                with self.subTest(module=module, qualified=qualified):
+                    imported = "qualified as Runtime" if qualified else "(IOError)"
+                    value = "Runtime.IOError" if qualified else "IOError"
+                    self.source(f"module {module} where\nimport GHC.IO.Exception {imported}\ntype Failure = {value}\n")
+                    output = self.check(1 if module == "Service.Example" else 0)
+                    if module == "Service.Example":
+                        self.assertIn("Avoid restricted module", output)
+        self.source("module Service.Example where\nimport GHC.TypeLits (Nat)\ntype Size = Nat\n")
+        self.check(0)
+
+    def test_internal_and_public_exception_operation_ownership(self):
+        operations = {
+            "GHC.IO.Exception": ["ioException", "ioError", "assertError"],
+            "System.IO.Error": ["ioError", "catchIOError", "tryIOError", "modifyIOError"],
+        }
+        for module in ["Service.Example", "Directory", "File", "Subprocess", "Task", "AsyncTask", "IO"]:
+            for imported, names in operations.items():
+                for operation in names:
+                    for qualified in [True, False]:
+                        with self.subTest(module=module, imported=imported, operation=operation, qualified=qualified):
+                            import_names = "qualified as Runtime" if qualified else f"({operation})"
+                            prefix = "Runtime." if qualified else ""
+                            self.source(f"module {module} where\nimport {imported} {import_names}\noperation value = {prefix}{operation} value\n")
+                            expected = 0 if module in {"Task", "AsyncTask", "IO"} else 1
+                            output = self.check(expected)
+                            if expected:
+                                self.assertIn("Avoid restricted function", output)
+
+    def test_internal_prelude_has_no_owner_exception(self):
+        for module in ["Service.Example", "Task", "AsyncTask", "IO", "Directory", "File", "Subprocess", "DirectorySpec"]:
+            with self.subTest(module=module):
+                self.source(f"module {module} where\nimport System.Directory.Internal.Prelude qualified as Runtime\noperation value = Runtime.try value\n")
+                self.assertIn("Avoid restricted module", self.check(1))
+
+    def test_suppression_does_not_hide_internal_exception_rules(self):
+        cases = [
+            ("Service.Example", "GHC.IO.Exception", "type Failure = Runtime.IOError", "Avoid restricted module"),
+            ("Directory", "GHC.IO.Exception", "operation value = Runtime.ioException value", "Avoid restricted function"),
+            ("Directory", "System.IO.Error", "operation value = Runtime.tryIOError value", "Avoid restricted function"),
+            ("Directory", "System.Directory.Internal.Prelude", "operation value = Runtime.try value", "Avoid restricted module"),
+        ]
+        for module, imported, declaration, rule in cases:
+            for suppression in [f'{{-# ANN module ("HLint: ignore {rule}" :: String) #-}}', f'{{- HLINT ignore "{rule}" -}}']:
+                with self.subTest(imported=imported, suppression=suppression):
+                    self.source(f"module {module} where\nimport {imported} qualified as Runtime\n{suppression}\n{declaration}\n")
+                    self.assertIn(rule, self.check(1))
+
+    def test_public_error_classifiers_pass(self):
+        for module in ["Directory", "File", "Subprocess"]:
+            with self.subTest(module=module):
+                self.source(f"module {module} where\nimport System.IO.Error qualified as Runtime\ntype Failure = Runtime.IOError\nmissing value = Runtime.isDoesNotExistError value\nclassify value = Runtime.ioeGetErrorType value\n")
+                self.check(0)
+
+    def test_filesystem_oracle_allowance_is_exact(self):
+        for module in ["DirectorySpec", "DirectorySpec.Extra", "OtherSpec", "Service.Example"]:
+            with self.subTest(module=module):
+                self.source(f"module {module} where\nimport System.Directory qualified as Filesystem\nexists path = Filesystem.doesPathExist path\n")
+                output = self.check(0 if module == "DirectorySpec" else 1)
+                if module != "DirectorySpec":
+                    self.assertIn("Avoid restricted module", output)
+
+    def test_explicit_strict_preserves_lazy_pattern_without_hiding_other_hints(self):
+        source = "module Example where\ndata Deferred value = Deferred (() -> value)\ndefer ~value = Deferred (\\_ -> value)\n"
+        self.source(source)
+        self.assertIn("Redundant irrefutable pattern", self.check(1))
+        self.source("{-# LANGUAGE Strict #-}\n" + source)
+        self.check(0)
+        self.source("{-# LANGUAGE Strict #-}\n" + source + "first values = values !! 0\n")
+        output = self.check(1)
+        self.assertIn("Use head", output)
+        self.assertNotIn("Redundant irrefutable pattern", output)
+
     def test_tracked_repeated_io_ref_use_fails(self):
         self.source("module Example where\nimport Data.IORef qualified as Raw\nreadBoth ref = do\n  Raw.readIORef ref\n  Raw.readIORef ref\n")
         subprocess.run(["git", "add", "core/Example.hs"], cwd=self.root, check=True)
