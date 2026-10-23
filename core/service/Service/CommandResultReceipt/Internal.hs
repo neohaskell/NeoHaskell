@@ -1,3 +1,5 @@
+{-# LANGUAGE Strict #-}
+
 module Service.CommandResultReceipt.Internal (
   ReceiptExit (..),
   reportIfRegistered,
