@@ -10,6 +10,7 @@ module AsyncTask (
   waitCatch,
   waitOutcome,
   isWaitingForStateChange,
+  isWaitingForExceptionDelivery,
   requestThreadTermination,
   cancel,
   sleep,
@@ -110,6 +111,16 @@ isWaitingForStateChange (AsyncTask child) = do
   status <- GhcConc.threadStatus (GhcAsync.asyncThreadId child) |> Task.fromIO
   case status of
     GhcConc.ThreadBlocked GhcConc.BlockedOnSTM -> Task.yield True
+    _ -> Task.yield False
+
+
+-- | Observe whether this task is blocked while delivering an exception.
+-- This is a momentary status snapshot for coordinating cancellation tests.
+isWaitingForExceptionDelivery :: AsyncTask err result -> Task otherErr Bool
+isWaitingForExceptionDelivery (AsyncTask child) = do
+  status <- GhcConc.threadStatus (GhcAsync.asyncThreadId child) |> Task.fromIO
+  case status of
+    GhcConc.ThreadBlocked GhcConc.BlockedOnException -> Task.yield True
     _ -> Task.yield False
 
 
