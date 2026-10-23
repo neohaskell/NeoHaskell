@@ -9,6 +9,7 @@ import BytesSpec qualified
 import Command.FromSchemaSpec qualified
 import ConcurrentMapSpec qualified
 import CryptoSpec qualified
+import DateTimeSpec qualified
 import DeciderSpec qualified
 import DecimalSpec qualified
 import DirectorySpec qualified
@@ -59,6 +60,7 @@ main = Hspec.hspec do
   Hspec.describe "Command.FromSchema" Command.FromSchemaSpec.spec
   Hspec.describe "ConcurrentMap" ConcurrentMapSpec.spec
   Hspec.describe "Crypto" CryptoSpec.spec
+  Hspec.describe "DateTime" DateTimeSpec.spec
   Hspec.describe "Decider" DeciderSpec.spec
   Hspec.describe "Decimal" DecimalSpec.spec
   Hspec.describe "Directory" DirectorySpec.spec

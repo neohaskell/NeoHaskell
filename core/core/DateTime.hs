@@ -3,12 +3,14 @@ module DateTime (
   now,
   addSeconds,
   toEpochSeconds,
+  toEpochMilliseconds,
   fromEpochSeconds,
 ) where
 
 import Basics
 import Data.Time.Clock qualified as Clock
 import Data.Time.Clock.POSIX qualified as Posix
+import GHC.Float (Double)
 import GHC.Real qualified as GhcReal
 import Json (FromJSON, ToJSON)
 import Task (Task)
@@ -47,6 +49,13 @@ toEpochSeconds :: DateTime -> Int64
 toEpochSeconds (DateTime utc) = do
   let posixTime = Posix.utcTimeToPOSIXSeconds utc
   GhcReal.truncate posixTime
+
+
+-- | Convert to rounded Unix epoch milliseconds.
+toEpochMilliseconds :: DateTime -> Int
+toEpochMilliseconds (DateTime utc) = do
+  let posixTime = Posix.utcTimeToPOSIXSeconds utc
+  GhcReal.round (GhcReal.realToFrac posixTime * 1000 :: Double)
 
 
 -- | Create DateTime from Unix epoch seconds
