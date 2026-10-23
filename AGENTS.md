@@ -6,7 +6,7 @@ This repository develops NeoHaskell's framework, language, and toolchain for eve
 
 Use this workflow as the default for work on NeoHaskell's framework, language and tooling. Skills live at `.agents/skills/<name>/SKILL.md` relative to the repository root. When a routed step names a skill, read its `SKILL.md` explicitly at that path and follow it within the caller's scope. Give delegates the repository-root `AGENTS.md` path and the specific skill and evidence paths their work needs.
 
-Keep intermediate work and research under `.agents-state/`. Ground framework and language guidance in maintained implementation code. Follow current entrypoints and verify examples against the source.
+Keep intermediate work and research under `.agents-state/`. Verify implementation decisions against current code and entrypoints. When authoring reusable skills, apply [self-contained skills](.agents/skills/self-contained-skills/SKILL.md).
 
 Skill-specific scripts, references, templates, tests and dependency configuration belong inside the owning `.agents/skills/<name>/` folder. Use `scripts/`, `references/` and `assets/` for their respective resources. Invoke helpers through their skill-owned paths. When several skills need a resource, keep one copy in its owning skill and link callers to it.
 
@@ -51,6 +51,7 @@ Read the leaf skill in full for any principle you apply. Each entry names when i
 - **Subtract Before You Add.** Sequencing an addition, refactor, or rewrite. Remove dead weight first, then build on the simpler base.
 - **Minimize Reader Load.** Reviewing or shaping code that's hard to trace. Count layers and hidden state, remove indirection that adds no useful contract, and shrink mutable scope. Check useful framework facades, type boundaries and class adapters before inlining them.
 - **Outcome-Oriented Execution.** Planned rewrites and migrations with explicit phase boundaries. Converge on the target architecture with declared, scoped, reversible intermediate breakage and verification at completion.
+- **Name for the reader.** Choosing module, type, or operation names. Read [the naming principle](.agents/skills/principle-name-for-the-reader/SKILL.md).
 - **Experience First.** Framework API, language, tooling, UX or feature-scope tradeoffs. Prioritize Jess's experience and explain the impact on framework consumers and maintainers.
 - **Exhaust the Design Space.** A novel interaction or architectural decision with no precedent. Build 2-3 competing prototypes and compare before committing.
 - **Build the Lever.** Any non-trivial work. Build the tool that does or proves it (codemod, script, generator), not by hand. The tool is the artifact a reviewer reruns.

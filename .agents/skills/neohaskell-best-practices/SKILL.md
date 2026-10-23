@@ -40,4 +40,6 @@ before implementation and verification. It owns the starter and testbed migratio
 contract. Apply the [application example rules](../neohaskell-code-guidelines/SKILL.md#application-examples)
 to consumer code, including fixtures that represent an app.
 
+Read [readable services](references/readable-services.md) when changing service orchestration, internal outcomes, exception ownership, JSON codecs, or temporary test resources.
+
 Read [patterns](references/patterns.md) when designing module APIs, functions, and pipelines or working on boundary invariants, service ownership, deferred execution, concurrency, generated consumers, or diagnostics.

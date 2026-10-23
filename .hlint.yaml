@@ -1,21 +1,5 @@
-# HLint configuration — NeoHaskell dialect-first (pipeline Phase 2)
-#
-# Inverted 2026-07-07: this config ENCODES the dialect instead of merely muting
-# default hints. Three layers:
-#   1. modules: restrictions — vanilla modules allowed only in their Core
-#      wrapper / grandfathered boundary modules. `within:` lists were GENERATED
-#      from actual imports on 2026-07-07 (current usage grandfathered; NEW
-#      vanilla imports fail). Escape hatch: no Core wrapper for what you need?
-#      Add your module to `within:` WITH a justification comment and a
-#      `belongs-in:` note (the Core module the wrapper would live in).
-#      Rule of three: 3 exceptions for the same symbol = promote a primitive.
-#   2. functions: restrictions — banned partials/operators, grandfathered.
-#   3. ignores — default hlint hints that push TOWARD vanilla idioms
-#      (anti-dialect); each carries its triage verdict.
-#
-# Gate: ./dev lint (local) and .github/workflows/checks.yml (CI).
-# pure/return are NOT restricted here — instance definitions must define them;
-# the edit-time hook (scripts/guards/dialect-guard.py) covers new-code usage.
+# NeoHaskell dialect checks. Run the owned gate documented in
+# .agents/skills/neohaskell-code-guidelines/references/static-checks.md.
 
 - arguments: [--color, --cpp-simple, -XQuasiQuotes]
 
@@ -24,57 +8,166 @@
     # Core Text
     - {name: [Data.Text, Data.Text.IO, Data.Text.Encoding, Data.Text.Lazy, Data.Text.Lazy.Encoding, Data.Text.Internal.Search],
        within: [Auth.Jwt, Auth.MiddlewareSpec, Basics, Config.TH, Console, Decimal, File, Json, Log, Service.Transport.Mcp.Protocol, Service.Transport.WebSpec, Task, Test.Auth.Jwt.Core, Text, ToText, Uuid],
-       message: "Use Core `Text` (import Text qualified). New exceptions need a justification + belongs-in note here."}
+       message: "Use Core `Text` (import Text qualified). Use the owning core API. Add missing operations in a core prerequisite PR."}
     # Core Char
     - {name: [Data.Char],
        within: [Auth.UrlValidation, Char, Config.TH, Decimal, Layout.Internal.Render, NeoQL.Parser, Service.FileUpload.ContentDedupSpec, Service.Integration.Selection],
-       message: "Use Core `Char`. New exceptions need a justification + belongs-in note here."}
+       message: "Use Core `Char`. Use the owning core API. Add missing operations in a core prerequisite PR."}
     # Array/LinkedList
     - {name: [Data.List],
        within: [Auth.Hostname, ConcurrentMap, Http.ClientSpec, LinkedList, Parser.Internal.Error, Service.CommandExecutor.TH, Service.Integration.AdapterSpec, Service.Integration.Selection, Service.Integration.TestFixtures, Service.Query.TH, Service.Transport.Web, Test.Service.EventStore.Subscriptions.Spec, Version],
-       message: "Use Core `Array` or `LinkedList`. New exceptions need a justification + belongs-in note here."}
+       message: "Use Core `Array` or `LinkedList`. Use the owning core API. Add missing operations in a core prerequisite PR."}
     # Core Map
     - {name: [Data.Map, Data.Map.Strict],
        within: [Auth.Jwt, Main, Map, Service.Integration.DispatchRegistry],
-       message: "Use Core `Map`. New exceptions need a justification + belongs-in note here."}
+       message: "Use Core `Map`. Use the owning core API. Add missing operations in a core prerequisite PR."}
     # Core Maybe
     - {name: [Data.Maybe],
        within: [Config.BuilderSpec, Config.InputValidationSpec, Config.TH, Integration.Oura.SyncAllSpec, LinkedList, Maybe, Service.Integration.Selection],
-       message: "Use Core `Maybe`. New exceptions need a justification + belongs-in note here."}
+       message: "Use Core `Maybe`. Use the owning core API. Add missing operations in a core prerequisite PR."}
     # Result
     - {name: [Data.Either],
        within: [AsyncTask, Auth.OAuth2.StateToken, Auth.UrlValidation, Command, Config, Config.THSpec, Directory, Environment, Http.Client, Http.Client.Internal, Json, NeoQL.Parser, Parser, Parser.Internal, RedactedSpec, Service.Integration.Dispatcher, Task, TaskSpec],
-       message: "Use `Result err val`, never Either. New exceptions need a justification + belongs-in note here."}
+       message: "Use `Result err val`, never Either. Use the owning core API. Add missing operations in a core prerequisite PR."}
     # Core Set
     - {name: [Data.Set],
        within: [Parser, Parser.Internal.Error, Set, SetSpec],
-       message: "Use Core `Set`. New exceptions need a justification + belongs-in note here."}
+       message: "Use Core `Set`. Use the owning core API. Add missing operations in a core prerequisite PR."}
     # Array (vector)
     - {name: [Data.Vector, Data.Vector.Mutable],
        within: [Array, Collection, Service.EventStore.Postgres.Sessions],
-       message: "Use Core `Array`. New exceptions need a justification + belongs-in note here."}
+       message: "Use Core `Array`. Use the owning core API. Add missing operations in a core prerequisite PR."}
     # Core IO/Console/File
     - {name: [System.IO],
        within: [Auth.OAuth2.Client, Auth.UrlValidation, Http.Client, Http.Client.Internal, Main, Service.Application, Service.ApplicationSpec, Service.Transport.Mcp],
-       message: "Use Core `IO`/`Console`/`File`. New exceptions need a justification + belongs-in note here."}
+       message: "Use Core `IO`/`Console`/`File`. Use the owning core API. Add missing operations in a core prerequisite PR."}
     # Environment
     - {name: [System.Environment],
        within: [Command, Config, Console, Environment, Log, Main, Service.Integration.Selection],
-       message: "Use Core `Environment`. New exceptions need a justification + belongs-in note here."}
+       message: "Use Core `Environment`. Use the owning core API. Add missing operations in a core prerequisite PR."}
     # Directory/Path
     # Integration.Video.ExtractAudio.Internal: needs the OS temp directory for
     # the video/WAV temp files; belongs-in: Core `Directory` (getTemporary).
     - {name: [System.Directory],
        within: [Directory, Environment, File, Integration.Pdf.ExtractText.Internal, Integration.Video.ExtractAudio.Internal, Subprocess],
-       message: "Use Core `Directory`/`Path`. New exceptions need a justification + belongs-in note here."}
+       message: "Use Core `Directory`/`Path`. Use the owning core API. Add missing operations in a core prerequisite PR."}
     # Json
     - {name: [Data.Aeson, Data.Aeson.Key, Data.Aeson.KeyMap, Data.Aeson.Types, Data.Aeson.Encoding],
        within: [Auth.Config, Auth.Jwt, Auth.OAuth2.Types, Basics, Command, Config.TH, Config.THSpec, Decimal, DecimalSpec, Integration, Json, NeoQL.Execute, Redacted, RedactedSpec, Schema.JsonSchema, Schema.OpenApi, Service.FileUpload.Core, Service.FileUpload.Routes, Service.Query.PaginationSpec, Service.TH.Boilerplate, Service.Transport.Mcp.JsonRpc, Service.Transport.Mcp.Protocol, Service.Transport.Web, Service.Transport.Web.HealthCheckSpec, Service.Transport.Web.ReadinessRouteSpec, Set, Test.Auth.Jwt.Core],
-       message: "Use Core `Json`. New exceptions need a justification + belongs-in note here."}
+       message: "Use Core `Json`. Use the owning core API. Add missing operations in a core prerequisite PR."}
     # no GHC.Base
     - {name: [GHC.Base],
        within: [Basics, Service.CommandExecutor.TH, Service.OutboundIntegration.TH, Service.Query.TH, TypeName],
-       message: "Never import GHC internals — use Core/Basics. New exceptions need a justification + belongs-in note here."}
+       message: "Use the owning Core or Basics API. Add missing operations in a core prerequisite PR."}
+
+- modules:
+    - {name: [Control.Exception, Control.Exception.Base], within: [Task, AsyncTask, IO], message: "NeoHaskell ownership. Exception mechanisms belong in Task, AsyncTask, or IO."}
+    - {name: [Data.IORef], within: [Var], message: "NeoHaskell ownership. Use Var or an atomic concurrency API according to the invariant."}
+    - {name: [GHC.Conc, GHC.Conc.Sync], within: [AsyncTask], message: "NeoHaskell ownership. Thread inspection belongs in the owning concurrency API."}
+
+- functions:
+    - name:
+        - Control.Exception.mask
+        - Control.Exception.mask_
+        - Control.Exception.uninterruptibleMask
+        - Control.Exception.uninterruptibleMask_
+        - Control.Exception.try
+        - Control.Exception.tryJust
+        - Control.Exception.catch
+        - Control.Exception.catchJust
+        - Control.Exception.catches
+        - Control.Exception.handle
+        - Control.Exception.handleJust
+        - Control.Exception.finally
+        - Control.Exception.onException
+        - Control.Exception.bracket
+        - Control.Exception.bracket_
+        - Control.Exception.bracketOnError
+        - Control.Exception.throw
+        - Control.Exception.throwIO
+        - Control.Exception.ioError
+        - Control.Exception.throwTo
+        - Control.Exception.evaluate
+        - Control.Exception.getMaskingState
+        - Control.Exception.interruptible
+        - Control.Exception.allowInterrupt
+        - Control.Exception.assert
+        - Control.Exception.mapException
+        - Control.Exception.fromException
+        - Control.Exception.toException
+        - Control.Exception.displayException
+        - Control.Exception.asyncExceptionToException
+        - Control.Exception.asyncExceptionFromException
+        - Control.Exception.addExceptionContext
+        - Control.Exception.someExceptionContext
+        - Control.Exception.annotateIO
+      within: [Task, AsyncTask, IO]
+      message: "NeoHaskell ownership. Exception mechanisms belong in Task, AsyncTask, or IO."
+    - name:
+        - Control.Exception.Base.mask
+        - Control.Exception.Base.mask_
+        - Control.Exception.Base.uninterruptibleMask
+        - Control.Exception.Base.uninterruptibleMask_
+        - Control.Exception.Base.try
+        - Control.Exception.Base.tryJust
+        - Control.Exception.Base.catch
+        - Control.Exception.Base.catchJust
+        - Control.Exception.Base.catches
+        - Control.Exception.Base.handle
+        - Control.Exception.Base.handleJust
+        - Control.Exception.Base.finally
+        - Control.Exception.Base.onException
+        - Control.Exception.Base.bracket
+        - Control.Exception.Base.bracket_
+        - Control.Exception.Base.bracketOnError
+        - Control.Exception.Base.throw
+        - Control.Exception.Base.throwIO
+        - Control.Exception.Base.ioError
+        - Control.Exception.Base.throwTo
+        - Control.Exception.Base.evaluate
+        - Control.Exception.Base.getMaskingState
+        - Control.Exception.Base.interruptible
+        - Control.Exception.Base.allowInterrupt
+        - Control.Exception.Base.assert
+        - Control.Exception.Base.mapException
+        - Control.Exception.Base.fromException
+        - Control.Exception.Base.toException
+        - Control.Exception.Base.displayException
+        - Control.Exception.Base.asyncExceptionToException
+        - Control.Exception.Base.asyncExceptionFromException
+        - Control.Exception.Base.addExceptionContext
+        - Control.Exception.Base.someExceptionContext
+        - Control.Exception.Base.annotateIO
+      within: [Task, AsyncTask, IO]
+      message: "NeoHaskell ownership. Exception mechanisms belong in Task, AsyncTask, or IO."
+    - name:
+        - Data.IORef.newIORef
+        - Data.IORef.readIORef
+        - Data.IORef.writeIORef
+        - Data.IORef.modifyIORef
+        - Data.IORef.modifyIORef'
+        - Data.IORef.atomicModifyIORef
+        - Data.IORef.atomicModifyIORef'
+        - Data.IORef.atomicWriteIORef
+        - Data.IORef.mkWeakIORef
+      within: [Var]
+      message: "NeoHaskell ownership. Use Var or an atomic concurrency API according to the invariant."
+    - name:
+        - GHC.Conc.threadStatus
+        - GHC.Conc.labelThread
+        - GHC.Conc.numCapabilities
+        - GHC.Conc.getNumCapabilities
+        - GHC.Conc.setNumCapabilities
+      within: [AsyncTask]
+      message: "NeoHaskell ownership. Thread inspection belongs in the owning concurrency API."
+    - name:
+        - GHC.Conc.Sync.threadStatus
+        - GHC.Conc.Sync.labelThread
+        - GHC.Conc.Sync.numCapabilities
+        - GHC.Conc.Sync.getNumCapabilities
+        - GHC.Conc.Sync.setNumCapabilities
+      within: [AsyncTask]
+      message: "NeoHaskell ownership. Thread inspection belongs in the owning concurrency API."
 
 # --- 2. Function restrictions ------------------------------------------------
 - functions:
@@ -96,6 +189,10 @@
 # the escape hatch `{- HLINT ignore "NeoHaskell: use Task.when" -}`.
 - error: {lhs: "if c then a else pass", rhs: "Task.when c a", name: "NeoHaskell: use Task.when"}
 - error: {lhs: "if c then pass else a", rhs: "Task.unless c a", name: "NeoHaskell: use Task.unless"}
+
+- error: {lhs: "Task.recover (\\e -> Task.throw (f e))", rhs: "Task.mapError f", name: "NeoHaskell: use Task.mapError"}
+- error: {lhs: "Task.recover (\\e -> f e |> Task.throw)", rhs: "Task.mapError f", name: "NeoHaskell: use Task.mapError"}
+- error: {lhs: "Task.recover (\\e -> e |> f |> Task.throw)", rhs: "Task.mapError f", name: "NeoHaskell: use Task.mapError"}
 
 # --- 4. Default hints that fight the dialect (triage 2026-07-07) --------------
 # Each verdict: why the DEFAULT hint is wrong for NeoHaskell.
