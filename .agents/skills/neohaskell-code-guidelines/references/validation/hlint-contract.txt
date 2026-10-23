@@ -1,0 +1,23 @@
+test_core_alternatives_pass (__main__.StaticChecks) ... ok
+test_error_translation_uses_task_combinator (__main__.StaticChecks) ... ok
+test_existing_non_task_false_positive_suppression_is_preserved (__main__.StaticChecks) ... ok
+test_existing_suggestion_gate_is_preserved (__main__.StaticChecks) ... ok
+test_line_shift_preserves_exact_debt (__main__.StaticChecks) ... ok
+test_modified_use_in_existing_declaration_fails (__main__.StaticChecks) ... ok
+test_new_exception_operation_under_existing_import_fails (__main__.StaticChecks) ... ok
+test_owner_and_unrelated_operation_pass (__main__.StaticChecks) ... ok
+test_parse_error_cannot_be_accepted (__main__.StaticChecks) ... ok
+test_prune_cannot_admit_new_debt (__main__.StaticChecks) ... ok
+test_qualified_and_unqualified_exception_calls_fail (__main__.StaticChecks) ... ok
+test_repeated_io_ref_use_in_existing_declaration_fails (__main__.StaticChecks) ... ok
+test_report_cannot_overwrite_accepted_debt (__main__.StaticChecks) ... ok
+test_resolved_debt_requires_removal (__main__.StaticChecks) ... ok
+test_suppression_does_not_hide_ownership_rule (__main__.StaticChecks) ... ok
+test_thread_status_requires_owner (__main__.StaticChecks) ... ok
+test_tracked_python_deletion_resolves_debt (__main__.StaticChecks) ... ok
+test_workspace_reference_is_counted_in_haskell_and_python (__main__.StaticChecks) ... ok
+
+----------------------------------------------------------------------
+Ran 18 tests in 6.323s
+
+OK

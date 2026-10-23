@@ -20,6 +20,12 @@ description: NeoHaskell code style guidelines for writing and reviewing .hs code
 | `import Foo (Foo); import Foo qualified` | unqualified imports |
 | nhcore Core modules (`Text`, `Array`, `Char`, `File`, `Path`…) | raw `Data.*` / `System.*` / `Ghc*` imports |
 
+## Readable service code
+
+Read [Name for the reader](../principle-name-for-the-reader/SKILL.md) before choosing module, type, or operation names. For service orchestration, exception boundaries, outcome types, serialization, or test resources, read [service design](../neohaskell-best-practices/references/readable-services.md).
+
+Run the [static checks](references/static-checks.md) after changing Haskell or tracked application and test code. These checks own the executable subset of the rules. Review the remaining design decisions against their owning skills.
+
 ## Application examples
 
 Write generated starters, testbed modules, documentation examples and fixtures
