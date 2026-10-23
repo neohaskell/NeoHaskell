@@ -61,9 +61,9 @@
        message: "Use the owning Core or Basics API. Add missing operations in a core prerequisite PR."}
 
 - modules:
-    - {name: [Control.Exception, Control.Exception.Base], within: [Task, AsyncTask], message: "Exception mechanisms belong in Task or AsyncTask."}
-    - {name: [Data.IORef], within: [Var], message: "Use Var or an atomic concurrency API according to the invariant."}
-    - {name: [GHC.Conc, GHC.Conc.Sync], within: [AsyncTask], message: "Thread inspection belongs in the owning concurrency API."}
+    - {name: [Control.Exception, Control.Exception.Base], within: [Task, AsyncTask], message: "NeoHaskell ownership. Exception mechanisms belong in Task or AsyncTask."}
+    - {name: [Data.IORef], within: [Var], message: "NeoHaskell ownership. Use Var or an atomic concurrency API according to the invariant."}
+    - {name: [GHC.Conc, GHC.Conc.Sync], within: [AsyncTask], message: "NeoHaskell ownership. Thread inspection belongs in the owning concurrency API."}
 
 - functions:
     - name:
@@ -102,7 +102,7 @@
         - Control.Exception.someExceptionContext
         - Control.Exception.annotateIO
       within: [Task, AsyncTask]
-      message: "Exception mechanisms belong in Task or AsyncTask."
+      message: "NeoHaskell ownership. Exception mechanisms belong in Task or AsyncTask."
     - name:
         - Control.Exception.Base.mask
         - Control.Exception.Base.mask_
@@ -139,7 +139,7 @@
         - Control.Exception.Base.someExceptionContext
         - Control.Exception.Base.annotateIO
       within: [Task, AsyncTask]
-      message: "Exception mechanisms belong in Task or AsyncTask."
+      message: "NeoHaskell ownership. Exception mechanisms belong in Task or AsyncTask."
     - name:
         - Data.IORef.newIORef
         - Data.IORef.readIORef
@@ -151,7 +151,7 @@
         - Data.IORef.atomicWriteIORef
         - Data.IORef.mkWeakIORef
       within: [Var]
-      message: "Use Var or an atomic concurrency API according to the invariant."
+      message: "NeoHaskell ownership. Use Var or an atomic concurrency API according to the invariant."
     - name:
         - GHC.Conc.threadStatus
         - GHC.Conc.labelThread
@@ -159,7 +159,7 @@
         - GHC.Conc.getNumCapabilities
         - GHC.Conc.setNumCapabilities
       within: [AsyncTask]
-      message: "Thread inspection belongs in the owning concurrency API."
+      message: "NeoHaskell ownership. Thread inspection belongs in the owning concurrency API."
     - name:
         - GHC.Conc.Sync.threadStatus
         - GHC.Conc.Sync.labelThread
@@ -167,7 +167,7 @@
         - GHC.Conc.Sync.getNumCapabilities
         - GHC.Conc.Sync.setNumCapabilities
       within: [AsyncTask]
-      message: "Thread inspection belongs in the owning concurrency API."
+      message: "NeoHaskell ownership. Thread inspection belongs in the owning concurrency API."
 
 # --- 2. Function restrictions ------------------------------------------------
 - functions:

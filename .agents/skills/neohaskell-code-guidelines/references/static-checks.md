@@ -7,25 +7,19 @@ python3 .agents/skills/neohaskell-code-guidelines/scripts/check.py --hlint /path
 HLINT=/path/to/hlint python3 .agents/skills/neohaskell-code-guidelines/tests/hlint_contract.py -v
 ```
 
-The gate preserves HLint suggestions, warnings, and errors. It uses the HLint parser and import resolution for ownership rules. It also rejects new literal `.agents-state` references in application and test source. Exit code 1 means a code violation or stale debt. Exit code 2 means the check could not run, including parse errors.
+The gate rejects all reported HLint suggestions, warnings, and errors. It also rejects literal `.agents-state` references in application and test source. Existing violations fail the same check as new ones. Exit code 1 means a code violation. Exit code 2 means the check could not run, including parse errors or invalid HLint output.
 
-## Remove existing debt as code migrates
+The `NeoHaskell ownership.` prefix in restriction messages marks ownership rules whose findings remain errors even under local HLint suppression. `Task.mapError` findings also remain errors under suppression. Existing style and false-positive suppressions retain their behavior. Review marker changes and ownership exceptions as gate changes.
 
-The [debt inventory](lint-debt.json) records findings from the source revision in its `base` field. Each entry binds the path, declaration, parsed source, source line, rule, and occurrence count. Blank lines and line-number shifts preserve the identity. A duplicate use, a different alias, a changed source line, or a new declaration needs its own identity and fails.
-
-Fix new findings first. After removing existing violations, run the gate with `--prune-debt`. That mode only removes resolved entries. It fails without writing when new findings exist. Review the deletion with the production change. Do not regenerate the inventory to accept added debt.
-
-Use `--report <file>` to inspect the current findings. Store run reports under `.agents-state/<task>/`. The report does not change the accepted inventory. A change to the inventory or `.hlint.yaml` needs review like any other gate change.
+Store captured output under `.agents-state/<task>/`. Put concrete cleanup work in the issue tracker. Fix code through the owning APIs and rerun the checks. Skills retain reusable policy and fixtures.
 
 ## Understand the coverage limits
 
-The scanner reads tracked and unignored new source files with extensions declared in `SOURCE_SUFFIXES` in [check.py](../scripts/check.py). This includes Haskell, Python, JavaScript, TypeScript, shell, C, Rust, and Go sources across the repository. `.agents` contains the checker, its negative fixtures, and evidence tools. `.github` contains CI tooling. Those two directories are outside runtime-source coverage. Documentation is outside the extension set. Deleted files do not keep stale debt alive.
+The scanner reads tracked and unignored new source files with extensions declared in `SOURCE_SUFFIXES` in [check.py](../scripts/check.py). This includes Haskell, Python, JavaScript, TypeScript, shell, C, Rust, and Go sources across the repository. `.agents` contains the checker, its negative fixtures, and evidence tools. `.github` contains CI tooling. Those two directories are outside runtime-source coverage. Documentation is outside the extension set.
 
-The workspace rule counts the literal text even in source comments. It does not evaluate dynamically constructed paths or inspect binary files. The HLint rules check syntax and imported names, not Haskell types or cancellation semantics. The function list covers the named exception, IORef, and thread-inspection operations in `.hlint.yaml`. A new operation in an already indebted raw import still needs review if it is not on that list.
+The workspace rule counts literal text even in source comments. It does not evaluate dynamically constructed paths or inspect binary files. HLint checks syntax and imported names, not Haskell types or cancellation semantics. The function list covers the named exception, IORef, and thread-inspection operations in `.hlint.yaml`. An unlisted operation still needs review.
 
 HLint owner exceptions use module names. They do not prove that a file claiming `module Task` is the maintained Task owner. Review module ownership and Cabal registration together. HLint uses simple CPP processing, so this gate does not validate every preprocessor branch.
-
-Exact debt is a migration constraint, not a proof of unchanged behavior. A change to a later argument line outside a reported symbol's source line can retain that symbol's identity. Replacing one identical occurrence with another in the same declaration can retain its count. Runtime and type-contract tests remain required. The gate reads ignored ownership and Task.mapError findings too, so a local HLint suppression cannot hide those new rules. Existing style and false-positive suppressions retain their behavior.
 
 Review the exact module and function restrictions in [.hlint.yaml](../../../../.hlint.yaml) before changing ownership coverage. Existing exceptions for dialect rules are not a precedent for broad ownership exceptions.
 

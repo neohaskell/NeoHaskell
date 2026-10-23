@@ -50,4 +50,4 @@ A short module header may explain responsibility and normal usage. Follow the [c
 
 Tracked application code and tests must not depend on `.agents-state`. That directory belongs to agent work and evidence. Use a core temporary-folder operation that scopes acquisition and cleanup across success, typed failure, and exceptions. Avoid a shared fixed `/tmp` path or a repository working directory.
 
-For an illustrative storage test, allocate a unique folder, write a value, close and reopen storage, and assert that the value survives. Keep both storage sessions within the folder's lifetime. Prove cleanup after success and failure. If the core lacks the required scoped operation, add and verify it before migrating callers. Remove each resolved lint debt entry with its migration.
+For an illustrative storage test, allocate a unique folder, write a value, close and reopen storage, and assert that the value survives. Keep both storage sessions within the folder's lifetime. Prove cleanup after success and failure. If the core lacks the required scoped operation, add and verify it before migrating callers.
