@@ -965,49 +965,32 @@ stopWorkerOrCancel ::
   AsyncTask Text Unit ->
   Channel (WorkerMessage (Event Json.Value)) ->
   Task Text Unit
-stopWorkerOrCancel dispatcher streamId workerLabel queueStatus workerTask workerChannel = Task.fromIOResult do
-  GhcException.mask \restore -> do
-    claimResult <- Task.runResult (claimWorkerStop queueStatus)
-    case claimResult of
-      Err err -> pure (Err err)
-      Ok False -> pure (Ok unit)
-      Ok True -> do
-        stopResult <-
-          GhcException.try @GhcException.SomeException do
-            writerWaitResult <- restore (Task.runResult (waitForWorkerWriters queueStatus))
-            case writerWaitResult of
-              Err err -> pure (Err err)
-              Ok _ -> do
-                channelWriteResult <-
-                  restore
-                    ( Task.runResult
-                        ( Channel.tryWriteWithTimeout
-                            dispatcher.config.channelWriteTimeoutMs
-                            Stop
-                            workerChannel
-                        )
-                    )
-                case channelWriteResult of
-                  Err err -> pure (Err err)
-                  Ok (Ok _) -> pure (Ok True)
-                  Ok (Err _) -> pure (Ok False)
-        case stopResult of
-          Left exception -> do
-            Task.runOrPanic (forceWorkerStop queueStatus workerTask workerChannel)
-            GhcException.throwIO exception
-          Right (Err err) -> do
-            Task.runOrPanic (forceWorkerStop queueStatus workerTask workerChannel)
-            pure (Err err)
-          Right (Ok True) -> Task.runResult (finishWorkerStop queueStatus)
-          Right (Ok False) -> do
-            Task.runOrPanic (forceWorkerStop queueStatus workerTask workerChannel)
-            _ <-
-              Task.runResult
-                ( Log.warn
-                    [fmt|Stop message timed out for #{workerLabel} stream #{toText streamId}, force-cancelling worker|]
-                    |> Task.ignoreError
+stopWorkerOrCancel dispatcher streamId workerLabel queueStatus workerTask workerChannel = Task.mask \restore -> do
+  claimed <- claimWorkerStop queueStatus
+  if not claimed
+    then Task.yield unit
+    else do
+      let forceStop = forceWorkerStop queueStatus workerTask workerChannel
+      let attemptStop = do
+            restore (waitForWorkerWriters queueStatus)
+            writeResult <-
+              restore
+                ( Channel.tryWriteWithTimeout
+                    dispatcher.config.channelWriteTimeoutMs
+                    Stop
+                    workerChannel
                 )
-            pure (Ok unit)
+            case writeResult of
+              Ok _ -> Task.yield True
+              Err _ -> Task.yield False
+      stopResult <- Task.onFailure (\_ -> forceStop) attemptStop
+      if stopResult
+        then finishWorkerStop queueStatus
+        else do
+          forceStop
+          Log.warn
+            [fmt|Stop message timed out for #{workerLabel} stream #{toText streamId}, force-cancelling worker|]
+            |> Task.ignoreError
 
 
 forceWorkerStop ::
@@ -1017,13 +1000,12 @@ forceWorkerStop ::
   Task Text Unit
 forceWorkerStop queueStatus workerTask workerChannel = do
   -- Admitted writes use a timeout. Worker cancellation still assumes callbacks respond to cancellation.
-  abandonedEvents <- Task.fromIO do
-    GhcException.uninterruptibleMask_ do
-      Task.runOrPanic (waitForWorkerWriters queueStatus)
-      Task.runOrPanic (AsyncTask.cancel workerTask)
-      drainedEvents <- Task.runOrPanic (drainAbandonedWorkerQueue workerChannel)
-      Task.runOrPanic (finishWorkerStop queueStatus)
-      pure drainedEvents
+  abandonedEvents <- Task.withCancellationBlocked do
+    waitForWorkerWriters queueStatus
+    AsyncTask.cancel workerTask
+    drainedEvents <- drainAbandonedWorkerQueue workerChannel
+    finishWorkerStop queueStatus
+    Task.yield drainedEvents
   abandonedEvents
     |> Task.forEach \event -> do
       let logContext = integrationLogContext event
