@@ -14,6 +14,7 @@ module Task (
   mapError,
   fromFailableIO,
   fromIO,
+  evaluate,
   runMain,
   forEach,
   runNoErrors,
@@ -261,6 +262,12 @@ fromIO io =
     |> Monad.liftIO
     |> Task
 {-# INLINE fromIO #-}
+
+
+-- | Evaluate the outer layer of a value during this Task. Apply @force@ first
+-- when nested fields must also be evaluated before the Task returns.
+evaluate :: value -> Task err value
+evaluate ~value = fromIO (Exception.evaluate value)
 
 
 fromIOResult :: (Show err) => IO (Result err value) -> Task err value

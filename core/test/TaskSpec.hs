@@ -8,6 +8,7 @@ import Channel qualified
 import Control.Concurrent qualified as GhcConcurrent
 import Control.Concurrent.Async qualified as GhcAsync
 import Control.Concurrent.MVar qualified as GhcMVar
+import Control.DeepSeq qualified as DeepSeq
 import Control.Exception qualified as GhcException
 import Data.Either qualified as Either
 import Core
@@ -24,6 +25,26 @@ import Var qualified
 spec :: Spec Unit
 spec = do
   describe "Task" do
+    describe "evaluate" do
+      it "raises a deferred exception while the Task runs" \_ -> do
+        result <- Task.evaluate (GhcPrelude.error "deferred outer error" :: Unit) |> Task.asResultSafe @Text
+        case result of
+          Err message -> message |> shouldSatisfy (Text.contains "deferred outer error")
+          Ok _ -> Test.fail "expected a deferred exception"
+
+      it "leaves nested fields unevaluated without force" \_ -> do
+        result <- Task.evaluate (Just (GhcPrelude.error "nested value" :: Int))
+        case result of
+          Just _ -> Task.yield unit
+          Nothing -> Test.fail "expected the outer constructor"
+
+      it "checks nested values when the caller requests full evaluation" \_ -> do
+        let values = [1, GhcPrelude.error "deferred nested error"] :: [Int]
+        result <- Task.evaluate (DeepSeq.force values) |> Task.asResultSafe @Text
+        case result of
+          Err message -> message |> shouldSatisfy (Text.contains "deferred nested error")
+          Ok _ -> Test.fail "expected a nested deferred exception"
+
     describe "mask" do
       it "defers cancellation and restores the caller's state" \_ -> do
         callerState <- Task.cancellationState
