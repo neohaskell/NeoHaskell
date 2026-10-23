@@ -9,6 +9,8 @@ module AsyncTask (
   waitFor,
   waitCatch,
   waitOutcome,
+  isWaitingForStateChange,
+  requestThreadTermination,
   cancel,
   sleep,
   process,
@@ -24,6 +26,7 @@ import Control.Concurrent qualified as Ghc
 import Control.Concurrent.Async qualified as GhcAsync
 import Control.Exception (SomeAsyncException)
 import Control.Exception qualified as GhcException
+import GHC.Conc qualified as GhcConc
 import GHC.IO qualified as GHC
 import Data.Either qualified as GhcEither
 import Maybe (Maybe (..))
@@ -98,6 +101,24 @@ waitOutcome (AsyncTask self) = do
         Nothing -> Task.yield (Crashed (show someException |> Text.fromLinkedList))
     GhcEither.Right (Result.Ok value) -> Task.yield (Completed value)
     GhcEither.Right (Result.Err err) -> Task.yield (Failed err)
+
+
+-- | Observe whether a child is currently waiting for shared state to change.
+-- This is a momentary status snapshot, useful for coordinating concurrency tests.
+isWaitingForStateChange :: AsyncTask err result -> Task otherErr Bool
+isWaitingForStateChange (AsyncTask child) = do
+  status <- GhcConc.threadStatus (GhcAsync.asyncThreadId child) |> Task.fromIO
+  case status of
+    GhcConc.ThreadBlocked GhcConc.BlockedOnSTM -> Task.yield True
+    _ -> Task.yield False
+
+
+-- | Send 'ThreadKilled' and return after delivery, without waiting for the
+-- child to finish cleanup. Use 'waitOutcome' to observe its eventual exit.
+requestThreadTermination :: AsyncTask err result -> Task otherErr Unit
+requestThreadTermination (AsyncTask child) =
+  Ghc.throwTo (GhcAsync.asyncThreadId child) GhcException.ThreadKilled
+    |> Task.fromIO
 
 
 -- | Cancel a running async task.

@@ -6,14 +6,11 @@ import Array qualified
 import AsyncTask qualified
 import Channel qualified
 import Auth.SecretStore.InMemory qualified as InMemorySecretStore
-import Control.Concurrent qualified as Ghc
-import Control.Concurrent.Async qualified as GhcAsync
 import ConcurrentVar qualified
 import ConcurrentMap qualified
 import Control.Exception qualified as GhcException
 import Core
 import DateTime qualified
-import GHC.Conc qualified as GhcConc
 import Integration qualified
 import Integration.Command qualified as Command
 import Integration.Lifecycle qualified as Lifecycle
@@ -137,17 +134,17 @@ waitForDispatchCount attemptsLeft expectedCount dispatchCount = do
           waitForDispatchCount (attemptsLeft - 1) expectedCount dispatchCount
 
 
-waitForBlockedOnSTM :: Int -> GhcConc.ThreadId -> Task Text Unit
-waitForBlockedOnSTM attemptsLeft threadId = do
-  threadStatus <- GhcConc.threadStatus threadId |> Task.fromIO
-  case threadStatus of
-    GhcConc.ThreadBlocked GhcConc.BlockedOnSTM -> Task.yield unit
-    _ ->
+waitForBlockedOnSTM :: Int -> AsyncTask.AsyncTask err result -> Task Text Unit
+waitForBlockedOnSTM attemptsLeft child = do
+  waiting <- AsyncTask.isWaitingForStateChange child
+  if waiting
+    then Task.yield unit
+    else
       if attemptsLeft <= 0
         then Task.throw "Timed out waiting for a thread blocked on STM"
         else do
           AsyncTask.sleep 5 |> Task.mapError (\_ -> "thread status wait failed" :: Text)
-          waitForBlockedOnSTM (attemptsLeft - 1) threadId
+          waitForBlockedOnSTM (attemptsLeft - 1) child
 
 
 cancelShutdownWhileWriterIsAdmitted ::
@@ -163,25 +160,23 @@ cancelShutdownWhileWriterIsAdmitted dispatcher activeEvent queuedEvent waitingEv
   Channel.read workerStarted
   Dispatcher.dispatch dispatcher queuedEvent
 
-  writerTask <-
-    GhcAsync.async (Task.runResult (Dispatcher.dispatch dispatcher waitingEvent))
-      |> Task.fromIO
-  waitForBlockedOnSTM 200 (GhcAsync.asyncThreadId writerTask)
+  writerTask <- AsyncTask.run (Dispatcher.dispatch dispatcher waitingEvent)
+  waitForBlockedOnSTM 200 writerTask
 
-  shutdownTask <-
-    GhcAsync.async (Task.runResult (Dispatcher.shutdown dispatcher))
-      |> Task.fromIO
-  waitForBlockedOnSTM 200 (GhcAsync.asyncThreadId shutdownTask)
+  shutdownTask <- AsyncTask.run (Dispatcher.shutdown dispatcher)
+  waitForBlockedOnSTM 200 shutdownTask
 
-  Ghc.throwTo (GhcAsync.asyncThreadId shutdownTask) GhcException.ThreadKilled
-    |> Task.fromIO
-  GhcAsync.cancel writerTask |> Task.fromIO
+  AsyncTask.requestThreadTermination shutdownTask
+  AsyncTask.cancel writerTask
   workerStopRace <-
     AsyncTask.race
       (Channel.read workerStopped)
       (AsyncTask.sleep 500 |> Task.mapError (\_ -> "worker cancellation wait failed" :: Text))
 
-  _ <- GhcAsync.waitCatch shutdownTask |> Task.fromIO
+  shutdownOutcome <- AsyncTask.waitOutcome shutdownTask
+  case shutdownOutcome of
+    AsyncTask.Interrupted -> Task.yield unit
+    _ -> Task.throw "Shutdown did not preserve interruption"
   Dispatcher.shutdown dispatcher
 
   case workerStopRace of

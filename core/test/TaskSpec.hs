@@ -163,3 +163,61 @@ spec = do
         case outcome of
           AsyncTask.Crashed message -> message |> shouldSatisfy (Text.contains "child crash")
           _ -> Test.fail "expected a runtime crash"
+
+    describe "AsyncTask.isWaitingForStateChange" do
+      it "observes an STM wait and then its completion" \_ -> do
+        channel <- Channel.newBounded 1 :: Task Text (Channel Unit)
+        handle <- AsyncTask.run (Channel.read channel :: Task Text Unit)
+        let waitForBlock attempts = do
+              waiting <- AsyncTask.isWaitingForStateChange handle
+              if waiting
+                then Task.yield unit
+                else
+                  if attempts <= 0
+                    then Test.fail "child never waited for the channel"
+                    else do
+                      AsyncTask.sleep 5
+                      waitForBlock (attempts - 1)
+        waitForBlock (200 :: Int)
+        Channel.write unit channel
+        outcome <- AsyncTask.waitOutcome handle
+        case outcome of
+          AsyncTask.Completed _ -> Task.yield unit
+          _ -> Test.fail "child did not complete after the channel write"
+        waiting <- AsyncTask.isWaitingForStateChange handle
+        waiting |> shouldBe False
+
+    describe "AsyncTask.requestThreadTermination" do
+      it "delivers ThreadKilled before waiting for child cleanup" \_ -> do
+        started <- Channel.new
+        cleanupEntered <- Channel.new
+        cleanupRelease <- Channel.new
+        blocked <- Channel.newBounded 1 :: Task Text (Channel Unit)
+        let child :: Task Text Unit
+            child = do
+              Channel.write unit started
+              Channel.read blocked
+        handle <- AsyncTask.run
+          (child |> Task.onFailure (\_ -> do
+            Channel.write unit cleanupEntered
+            Channel.read cleanupRelease
+          ))
+        Channel.read started
+        request <- AsyncTask.run (AsyncTask.requestThreadTermination handle :: Task Text Unit)
+        deliveryRace <- AsyncTask.race
+          (Channel.read cleanupEntered)
+          (AsyncTask.sleep 1000 :: Task Text Unit)
+        case deliveryRace of
+          AsyncTask.LeftWon _ -> Task.yield unit
+          AsyncTask.RightWon _ -> Test.fail "termination request was not delivered"
+        requestRace <- AsyncTask.race
+          (AsyncTask.waitOutcome request)
+          (AsyncTask.sleep 1000 :: Task Text Unit)
+        case requestRace of
+          AsyncTask.LeftWon (AsyncTask.Completed _) -> Task.yield unit
+          _ -> Test.fail "termination request waited for child cleanup"
+        Channel.write unit cleanupRelease
+        outcome <- AsyncTask.waitOutcome handle
+        case outcome of
+          AsyncTask.Interrupted -> Task.yield unit
+          _ -> Test.fail "child did not terminate after cleanup"
