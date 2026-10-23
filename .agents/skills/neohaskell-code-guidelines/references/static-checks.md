@@ -15,7 +15,7 @@ The [debt inventory](lint-debt.json) records findings from the source revision i
 
 Fix new findings first. After removing existing violations, run the gate with `--prune-debt`. That mode only removes resolved entries. It fails without writing when new findings exist. Review the deletion with the production change. Do not regenerate the inventory to accept added debt.
 
-Use `--report <file>` to inspect the current findings. The report does not change the accepted inventory. A change to the inventory or `.hlint.yaml` needs review like any other gate change.
+Use `--report <file>` to inspect the current findings. Store run reports under `.agents-state/<task>/`. The report does not change the accepted inventory. A change to the inventory or `.hlint.yaml` needs review like any other gate change.
 
 ## Understand the coverage limits
 
@@ -27,8 +27,6 @@ HLint owner exceptions use module names. They do not prove that a file claiming 
 
 Exact debt is a migration constraint, not a proof of unchanged behavior. A change to a later argument line outside a reported symbol's source line can retain that symbol's identity. Replacing one identical occurrence with another in the same declaration can retain its count. Runtime and type-contract tests remain required. The gate reads ignored ownership and Task.mapError findings too, so a local HLint suppression cannot hide those new rules. Existing style and false-positive suppressions retain their behavior.
 
-Historical module exceptions in the older dialect rules remain visible in `.hlint.yaml`. This change adds no broad exceptions for the new ownership rules. The older exceptions are not a precedent for new ones.
+Review the exact module and function restrictions in [.hlint.yaml](../../../../.hlint.yaml) before changing ownership coverage. Existing exceptions for dialect rules are not a precedent for broad ownership exceptions.
 
-For rule ownership, source examples, and manual review obligations, use the [enforcement matrix](enforcement-matrix.md). For the next production stage, use the [handoff](production-handoff.md).
-
-Read [validation evidence](validation.md) for executed commands, retained transcripts, and review limits.
+For design decisions beyond mechanical coverage, apply [Name for the reader](../../principle-name-for-the-reader/SKILL.md) and [service design](../../neohaskell-best-practices/references/readable-services.md). Review names, argument structure, atomicity, cancellation, closed outcomes, serialization, module responsibility, and scoped resources. The fixtures prove lint acceptance and rejection. They do not compile their illustrative modules or prove runtime behavior.

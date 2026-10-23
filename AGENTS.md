@@ -6,7 +6,7 @@ This repository develops NeoHaskell's framework, language, and toolchain for eve
 
 Use this workflow as the default for work on NeoHaskell's framework, language and tooling. Skills live at `.agents/skills/<name>/SKILL.md` relative to the repository root. When a routed step names a skill, read its `SKILL.md` explicitly at that path and follow it within the caller's scope. Give delegates the repository-root `AGENTS.md` path and the specific skill and evidence paths their work needs.
 
-Keep intermediate work and research under `.agents-state/`. Ground framework and language guidance in maintained implementation code. Follow current entrypoints and verify examples against the source.
+Keep intermediate work and research under `.agents-state/`. Verify implementation decisions against current code and entrypoints. When authoring reusable skills, apply [self-contained skills](.agents/skills/self-contained-skills/SKILL.md).
 
 Skill-specific scripts, references, templates, tests and dependency configuration belong inside the owning `.agents/skills/<name>/` folder. Use `scripts/`, `references/` and `assets/` for their respective resources. Invoke helpers through their skill-owned paths. When several skills need a resource, keep one copy in its owning skill and link callers to it.
 
