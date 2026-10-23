@@ -52,7 +52,5 @@ shouldNotTypecheck expression = do
 -- @
 shouldTypecheck :: forall value. (NFData value) => value -> Task Text Unit
 shouldTypecheck expression = do
-  -- Force evaluation to ensure the expression is well-typed
-  -- If it doesn't typecheck, compilation will fail
   _ <- Task.evaluate (force expression)
   Task.yield unit
