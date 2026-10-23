@@ -1,0 +1,19 @@
+{
+  "schema": 2,
+  "pages": [
+    "index.md",
+    "project-and-cli.md",
+    "syntax-and-core.md",
+    "events-and-entities.md",
+    "commands.md",
+    "queries.md",
+    "configuration-and-wiring.md",
+    "transports.md",
+    "storage.md",
+    "authorization.md",
+    "testing.md",
+    "template-haskell-order.md",
+    "advanced-side-effects.md",
+    "advanced-oauth2.md"
+  ]
+}

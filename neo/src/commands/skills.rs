@@ -24,11 +24,11 @@ pub async fn run(
     output_mode: &mut OutputMode,
 ) -> miette::Result<()> {
     // Only `setup` exists today; bare `neo skills` behaves as setup with no flags.
-    let (tool_args, all_tools, skill_args, force, dry_run, refresh, no_primer) = match subcommand {
-        Some(SkillsSubcommand::Setup { tools, all_tools, skills, force, dry_run, refresh, no_primer }) => {
-            (tools, all_tools, skills, force, dry_run, refresh, no_primer)
+    let (tool_args, all_tools, skill_args, force, dry_run, refresh) = match subcommand {
+        Some(SkillsSubcommand::Setup { tools, all_tools, skills, force, dry_run, refresh, no_primer: _ }) => {
+            (tools, all_tools, skills, force, dry_run, refresh)
         }
-        None => (Vec::new(), false, Vec::new(), false, false, false, false),
+        None => (Vec::new(), false, Vec::new(), false, false, false),
     };
 
     let ci = output_mode.is_ci();
@@ -41,6 +41,7 @@ pub async fn run(
             e,
         )
     })?;
+    let mut legacy_warnings = skills::legacy_primer_warnings(&project_root);
 
     // 2. Fetch / refresh the skills library (before any TUI, so network errors
     //    print normally instead of inside the alternate screen).
@@ -51,18 +52,17 @@ pub async fn run(
     }
     let checkout = crate::network::fetch_skills_repo(refresh).await?;
 
-    // 2b. Read the optional primer (`neohaskell.md`). Absent upstream → the whole
-    //     primer feature is a clean skip; `--no-primer` disables it explicitly.
-    let primer_body: Option<String> = if no_primer {
-        None
-    } else {
-        skills::read_primer(&checkout)?
-    };
-
     // 3. Discover skills.
     let all_skills = skills::discover_skills(&checkout)?;
     if all_skills.is_empty() {
         let msg = "no skills found in neohaskell/skills yet — nothing to install";
+        for warning in &legacy_warnings {
+            if ci {
+                println!("[warn] {warning}");
+            } else {
+                println!("  warning: {warning}");
+            }
+        }
         if ci {
             println!("[info] {msg}");
         } else {
@@ -96,18 +96,23 @@ pub async fn run(
 
     let tools = skills::resolve_tools(&selected_ids)?;
 
-    // 5. Build the install plan (skills + optional primer).
-    let plan = skills::build_plan(&project_root, &tools, &skills_list)?;
-    let primer_plan = match &primer_body {
-        Some(body) => Some(skills::build_primer_plan(&project_root, &tools, body)?),
-        None => None,
-    };
+    let mut plan = skills::build_plan(&project_root, &tools, &skills_list)?;
+    let (mut receipts, receipt_warning) = skills::load_skill_receipts(&project_root)?;
+    legacy_warnings.extend(skills::preserve_developer_edits(&project_root, &mut plan, &receipts, force)?);
+    let mut preservation_warnings = legacy_warnings;
+    if let Some(warning) = receipt_warning {
+        preservation_warnings.insert(0, warning);
+    }
 
     // 6. Dry run: print the plan and stop.
     if dry_run {
         print_plan(ci, &plan);
-        if let Some(pp) = &primer_plan {
-            print_primer_plan(ci, pp);
+        for warning in &preservation_warnings {
+            if ci {
+                println!("[warn] {warning}");
+            } else {
+                println!("  warning: {warning}");
+            }
         }
         if ci {
             println!("[info] dry run — no files written");
@@ -117,22 +122,11 @@ pub async fn run(
         return Ok(());
     }
 
-    // 7. Confirm overwrites. Skill folders and primer FILE copies are gated by
-    //    `--force`; the primer's managed-block WIRINGS are not (they only ever
-    //    rewrite their own delimited region, never user content).
-    let mut overwrite_dests: Vec<std::path::PathBuf> = plan
+    let overwrite_dests: Vec<std::path::PathBuf> = plan
         .iter()
         .filter(|p| p.action == PlanAction::Overwrite)
         .map(|p| p.dest.clone())
         .collect();
-    if let Some(pp) = &primer_plan {
-        overwrite_dests.extend(
-            pp.files
-                .iter()
-                .filter(|f| f.action == PlanAction::Overwrite)
-                .map(|f| f.dest.clone()),
-        );
-    }
     let mut skip_overwrites = false;
     if !overwrite_dests.is_empty() && !force {
         if ci {
@@ -159,16 +153,21 @@ pub async fn run(
     let mut created = 0usize;
     let mut overwritten = 0usize;
     let mut skipped = 0usize;
+    let mut receipts_changed = false;
     for item in &plan {
         match item.action {
             PlanAction::Skip => skipped += 1,
             PlanAction::Overwrite if skip_overwrites => skipped += 1,
             PlanAction::Create => {
                 skills::apply_item(item)?;
+                skills::record_skill_install(&project_root, &mut receipts, item)?;
+                receipts_changed = true;
                 created += 1;
             }
             PlanAction::Overwrite => {
                 skills::apply_item(item)?;
+                skills::record_skill_install(&project_root, &mut receipts, item)?;
+                receipts_changed = true;
                 overwritten += 1;
             }
         }
@@ -185,42 +184,14 @@ pub async fn run(
         }
     }
 
-    // 8b. Write the primer: file copies honor the overwrite decision; wirings
-    //     always apply (self-delimited), and any marker warnings are surfaced.
-    if let Some(pp) = &primer_plan {
-        for f in &pp.files {
-            match f.action {
-                PlanAction::Skip => skipped += 1,
-                PlanAction::Overwrite if skip_overwrites => skipped += 1,
-                PlanAction::Create => {
-                    skills::apply_primer_file(f)?;
-                    created += 1;
-                }
-                PlanAction::Overwrite => {
-                    skills::apply_primer_file(f)?;
-                    overwritten += 1;
-                }
-            }
-        }
-        for w in &pp.wires {
-            for warn in &w.warnings {
-                if ci {
-                    println!("[warn]   {warn}");
-                } else {
-                    println!("  warning: {warn}");
-                }
-            }
-            match w.action {
-                PlanAction::Skip => skipped += 1,
-                PlanAction::Create => {
-                    skills::apply_primer_wire(w)?;
-                    created += 1;
-                }
-                PlanAction::Overwrite => {
-                    skills::apply_primer_wire(w)?;
-                    overwritten += 1;
-                }
-            }
+    if receipts_changed {
+        skills::save_skill_receipts(&project_root, &receipts)?;
+    }
+    for warning in &preservation_warnings {
+        if ci {
+            println!("[warn] {warning}");
+        } else {
+            println!("  warning: {warning}");
         }
     }
 
@@ -238,22 +209,6 @@ pub async fn run(
         println!("  created {created} · overwritten {overwritten} · skipped {skipped}");
         println!("  destinations: {dests}");
         println!();
-    }
-    if let Some(pp) = primer_plan.as_ref().filter(|pp| !pp.is_empty()) {
-        if ci {
-            println!(
-                "[ok] primer neohaskell.md → {} file(s), wired into {} instructions file(s)",
-                pp.files.len(),
-                pp.wires.len(),
-            );
-        } else {
-            println!(
-                "  primer: neohaskell.md → {} file(s), wired into {} instructions file(s)",
-                pp.files.len(),
-                pp.wires.len(),
-            );
-            println!();
-        }
     }
     Ok(())
 }
@@ -273,42 +228,6 @@ fn print_plan(ci: bool, plan: &[PlanItem]) {
             println!("[info]   {verb}: {} → {}", item.skill_name, item.dest.display());
         } else {
             println!("  {verb}: {} → {}", item.skill_name, item.dest.display());
-        }
-    }
-}
-
-/// Plan-line verb for a primer item (the managed-block Overwrite reads as an
-/// in-place "update", never a destructive overwrite).
-fn primer_verb(action: PlanAction) -> &'static str {
-    match action {
-        PlanAction::Create => "create",
-        PlanAction::Overwrite => "update",
-        PlanAction::Skip => "skip (unchanged)",
-    }
-}
-
-fn print_primer_plan(ci: bool, pp: &skills::PrimerPlan) {
-    for f in &pp.files {
-        let verb = primer_verb(f.action);
-        if ci {
-            println!("[info]   {verb}: neohaskell.md → {}", f.dest.display());
-        } else {
-            println!("  {verb}: neohaskell.md → {}", f.dest.display());
-        }
-    }
-    for w in &pp.wires {
-        let verb = primer_verb(w.action);
-        if ci {
-            println!("[info]   {verb}: primer {} → {}", w.label, w.dest.display());
-        } else {
-            println!("  {verb}: primer {} → {}", w.label, w.dest.display());
-        }
-        for warn in &w.warnings {
-            if ci {
-                println!("[warn]   {warn}");
-            } else {
-                println!("  warning: {warn}");
-            }
         }
     }
 }

@@ -1,0 +1,186 @@
+{
+  "schema": 2,
+  "capabilities": {
+    "project-and-cli": {
+      "page": "project-and-cli.md",
+      "source": "neo/src/reconcile/mod.rs",
+      "scenario": "testbed/tests/scenarios/cold-start-readiness.hurl",
+      "evidence": [
+        {
+          "kind": "consumer-contract",
+          "path": ".agents/skills/neohaskell-consumer-verification/scripts/neo-consumer-contract"
+        }
+      ]
+    },
+    "syntax-and-core": {
+      "page": "syntax-and-core.md",
+      "source": "core/core/Core.hs",
+      "scenario": "testbed/tests/scenarios/stock-reservation.hurl",
+      "evidence": []
+    },
+    "events-and-entities": {
+      "page": "events-and-entities.md",
+      "source": "core/service/Service/Entity/Core.hs",
+      "scenario": "testbed/tests/scenarios/stock-reservation.hurl",
+      "evidence": []
+    },
+    "commands": {
+      "page": "commands.md",
+      "source": "core/service/Service/Command/Core.hs",
+      "scenario": "testbed/tests/commands/register-cart-by-key.hurl",
+      "evidence": []
+    },
+    "queries": {
+      "page": "queries.md",
+      "source": "core/service/Service/Query/Core.hs",
+      "scenario": "testbed/tests/queries/cart-summary-after-create.hurl",
+      "evidence": []
+    },
+    "application-configuration": {
+      "page": "configuration-and-wiring.md",
+      "source": "core/service/Service/Application.hs",
+      "scenario": "testbed/tests/scenarios/cold-start-readiness.hurl",
+      "evidence": []
+    },
+    "transports": {
+      "page": "transports.md",
+      "source": "core/service/Service/Transport/Web.hs",
+      "scenario": "testbed/tests/integrations/openapi.hurl",
+      "evidence": [
+        {
+          "kind": "service-spec",
+          "path": "core/test/Service/Transport/CliSpec.hs"
+        },
+        {
+          "kind": "service-spec",
+          "path": "core/test/Service/Transport/McpSpec.hs"
+        }
+      ]
+    },
+    "storage": {
+      "page": "storage.md",
+      "source": "core/service/Service/EventStore/Core.hs",
+      "scenario": "testbed/tests/scenarios/query-idempotency.hurl",
+      "evidence": []
+    },
+    "authorization": {
+      "page": "authorization.md",
+      "source": "core/auth/Auth/Discovery.hs",
+      "scenario": "testbed/tests/integrations/oauth2-account-connection.hurl",
+      "evidence": [
+        {
+          "kind": "service-spec",
+          "path": "core/test/Service/Command/CanAccessSpec.hs"
+        }
+      ]
+    },
+    "testing": {
+      "page": "testing.md",
+      "source": "neo/src/commands/test.rs",
+      "scenario": "testbed/tests/scenarios/query-idempotency.hurl",
+      "evidence": [
+        {
+          "kind": "consumer-contract",
+          "path": ".agents/skills/neohaskell-consumer-verification/scripts/neo-consumer-contract"
+        }
+      ]
+    },
+    "template-haskell": {
+      "page": "template-haskell-order.md",
+      "source": "core/service/Service/Entity/TH.hs",
+      "scenario": "testbed/tests/scenarios/stock-reservation.hurl",
+      "evidence": []
+    },
+    "generic-side-effect-integration": {
+      "page": "advanced-side-effects.md",
+      "source": "integrations/Integration/Http/Request.hs",
+      "scenario": "testbed/tests/integrations/generic-http-side-effect.hurl",
+      "evidence": []
+    },
+    "external-oauth2-account": {
+      "page": "advanced-oauth2.md",
+      "source": "core/auth/Auth/OAuth2/Provider.hs",
+      "scenario": "testbed/tests/integrations/oauth2-account-connection.hurl",
+      "evidence": [
+        {
+          "kind": "auth-spec",
+          "path": "core/test/Auth/OAuth2/RoutesSpec.hs"
+        }
+      ]
+    }
+  },
+  "ignored_fragments": [
+    {
+      "page": "events-and-entities.md",
+      "ordinal": 1,
+      "fragment_sha256": "3238aea5bbc73f71b695638e0f059ccf599ac51f38b0810d1332cf28ee04f09e",
+      "source": "neo/starter/src/Starter/Counter/Entity.hs",
+      "source_sha256": "f6bb9f2b3a313f46d1c25141df35b4d66f4abaac6a5c402dfdbcdc2efdc58ed9",
+      "reason": "Checked the starter reducer cases and payload fields. The fragment omits entity and event declarations."
+    },
+    {
+      "page": "commands.md",
+      "ordinal": 1,
+      "fragment_sha256": "19c3550f802049b186126e45a61aac8fc9a779a7828106701d10ae1b2ca1cada",
+      "source": "neo/starter/src/Starter/Counter/Commands/IncrementCounter.hs",
+      "source_sha256": "2dec23e0c6217f532733936781f7801f9a6c6d22d27ee67067e2eb683fd36b12",
+      "reason": "Checked getEntityId, decide, type equations, and command marker against the starter command. The fragment omits imports and data declarations."
+    },
+    {
+      "page": "queries.md",
+      "ordinal": 1,
+      "fragment_sha256": "111496f3a92b1c9ca636f24aceca464c0f4e673c8d5905294cdcbf0002555891",
+      "source": "neo/starter/src/Starter/Counter/Queries/CounterView.hs",
+      "source_sha256": "b7256dc513730de2825d92131ab7affb9e9c2a5a67625ba7f900f274b3a5e7f9",
+      "reason": "Checked deriveQuery, queryId, and combine against the starter query. The fragment omits its row and access declarations."
+    },
+    {
+      "page": "configuration-and-wiring.md",
+      "ordinal": 1,
+      "fragment_sha256": "a95234f5e8169dc5d17a63690e1baaa4626dd8aa2b7d89851507823b08107404",
+      "source": "neo/starter/src/App.hs",
+      "source_sha256": "8dfc238cac9fe6ba36bb6d1369bd9b45543c81a3f394c3c6399cf95cf4132f8d",
+      "reason": "Checked the starter builder order. The consumer supplies store factories, service, query, and config."
+    },
+    {
+      "page": "transports.md",
+      "ordinal": 1,
+      "fragment_sha256": "ced19a37a6d99810c1510980b07e8d03dcc313e612db53daa6d7be21bb953880",
+      "source": "core/service/Service/Transport/Mcp.hs",
+      "source_sha256": "c3323656dc1c931080ebc9ee8048385b9f11870468cc08216cf0bf466b05d3f2",
+      "reason": "Checked McpTransport declaration. The command type equation needs its declarations and transport imports."
+    },
+    {
+      "page": "advanced-side-effects.md",
+      "ordinal": 1,
+      "fragment_sha256": "d518559974325e92b07a2300829afb2598f4be471d2199c2e605516eb8106594",
+      "source": "integrations/Integration/Http/Request.hs",
+      "source_sha256": "5708583718ec36d8103caf58d14aa3cecfbaedf48f2925bd0ed06869fb44aee1",
+      "reason": "Checked Request field names, callback types, and authentication constructors. The consumer must define the result command and imports."
+    },
+    {
+      "page": "advanced-oauth2.md",
+      "ordinal": 1,
+      "fragment_sha256": "29714cbc79465aeb795a1d9e134f7eef0bd588295db5cffcf6eb622d8fc22679",
+      "source": "core/service/Service/Application.hs",
+      "source_sha256": "0bb49c419277d046e054f529aceecaee84704e738289ca1957746f8c84b78416",
+      "reason": "Checked builder names, factory types, and registration order. The consumer supplies the base app and persistent store."
+    },
+    {
+      "page": "advanced-oauth2.md",
+      "ordinal": 2,
+      "fragment_sha256": "ff854a03c6a82864532f030b650abcc8f335e8748004c58d162034d245438847",
+      "source": "core/auth/Auth/OAuth2/Provider.hs",
+      "source_sha256": "580ae86aef8bde09df4b11a2f7ba311bb2141d1748e50af6c6bad5ae002cfa4e",
+      "reason": "Checked OAuth2ProviderConfig fields and callback types. The consumer supplies typed provider values and command mappings."
+    },
+    {
+      "page": "advanced-oauth2.md",
+      "ordinal": 3,
+      "fragment_sha256": "815dc666f0b83c20b648bf79558c751439b3fe48fa90d25d22194046071ded56",
+      "source": "core/service/Integration.hs",
+      "source_sha256": "5a5ba6c6585d030eaf600daec5c0931761a6feb75196d67d757a7a77a80e0924",
+      "reason": "Checked encodeCommand use in callback mapping. The consumer defines and registers ConnectionRecorded."
+    }
+  ]
+}

@@ -1,4 +1,5 @@
 pub mod build;
+pub mod guidance;
 pub mod ide;
 pub mod inspect;
 pub mod lock;
