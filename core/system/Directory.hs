@@ -7,28 +7,37 @@ module Directory (
   copy,
   getCurrent,
   removeRecursive,
+  withTemporaryFolder,
 ) where
 
 import Array (Array)
 import Array qualified
 import Basics
+import Char (Char)
 import Console qualified
 import Control.Exception qualified as Exception
 import Data.Either qualified as Either
 import Distribution.Simple.Utils qualified as Cabal
 import Distribution.Verbosity qualified as CabalVerbosity
 import GHC.IO.Exception qualified as Exception
+import LinkedList (LinkedList)
 import Maybe qualified
 import Path (Path)
 import Path qualified
+import Prelude qualified
+import Result (Result (..))
 import System.Directory qualified
 import System.Directory.Internal.Prelude qualified as Exception
 import System.Directory.Recursive qualified as RecursiveDir
+import System.FilePath qualified
 import System.IO.Error (alreadyExistsErrorType)
+import System.Posix.Directory qualified as PosixDirectory
+import System.Posix.Files qualified as PosixFiles
 import Task (Task)
 import Task qualified
 import Text qualified
 import ToText qualified
+import Uuid qualified
 
 
 data Error
@@ -158,3 +167,47 @@ removeRecursive dirPath = do
   removeDirAction
     |> Task.fromFailableIO @Exception.IOError
     |> Task.mapError (\_ -> NotWritable)
+
+
+-- | Create a private folder for one task and attempt to remove it after every
+-- exit, including typed errors, runtime exceptions, and cancellation.
+withTemporaryFolder :: (Error -> err) -> (Path -> Task err value) -> Task err value
+withTemporaryFolder mapError use = Task.mask \restore -> do
+  folder <- newTemporaryFolder |> Task.mapError mapError
+  Task.finally (removeRecursive folder) do
+    callback <- Task.evaluate (use folder)
+    restore callback
+
+
+newTemporaryFolder :: Task Error Path
+newTemporaryFolder = do
+  temporaryRoot <-
+    System.Directory.getTemporaryDirectory
+      |> Task.fromFailableIO @Exception.IOError
+      |> Task.mapError (\_ -> NotReadable)
+  absoluteRoot <-
+    System.Directory.makeAbsolute temporaryRoot
+      |> Task.fromFailableIO @Exception.IOError
+      |> Task.mapError (\_ -> NotReadable)
+  reserveTemporaryFolder 3 absoluteRoot
+
+
+reserveTemporaryFolder :: Int -> LinkedList Char -> Task Error Path
+reserveTemporaryFolder retriesLeft temporaryRoot = do
+  nonce <- Uuid.generate
+  let name = "neohaskell-" Prelude.++ Text.toLinkedList (Uuid.toText nonce)
+  let filePath = System.FilePath.combine temporaryRoot name
+  candidate <-
+    case Path.fromLinkedList filePath of
+      Maybe.Just path -> Task.yield path
+      Maybe.Nothing -> Task.throw NotWritable
+  created <-
+    PosixDirectory.createDirectory filePath PosixFiles.ownerModes
+      |> Task.fromFailableIO @Exception.IOError
+      |> Task.asResult
+  case created of
+    Ok _ -> Task.yield candidate
+    Err err ->
+      if Exception.ioeGetErrorType err == alreadyExistsErrorType && retriesLeft > 0
+        then reserveTemporaryFolder (retriesLeft - 1) temporaryRoot
+        else Task.throw NotWritable

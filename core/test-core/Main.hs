@@ -10,6 +10,7 @@ import ConcurrentMapSpec qualified
 import CryptoSpec qualified
 import DeciderSpec qualified
 import DecimalSpec qualified
+import DirectorySpec qualified
 import UuidSpec qualified
 import EventVariantOfSpec qualified
 import Config.ApplicationSpec qualified
@@ -57,6 +58,7 @@ main = Hspec.hspec do
   Hspec.describe "Crypto" CryptoSpec.spec
   Hspec.describe "Decider" DeciderSpec.spec
   Hspec.describe "Decimal" DecimalSpec.spec
+  Hspec.describe "Directory" DirectorySpec.spec
   Hspec.describe "Uuid" UuidSpec.spec
   Hspec.describe "EventVariantOf" EventVariantOfSpec.spec
   Hspec.describe "Config.Application" Config.ApplicationSpec.spec
