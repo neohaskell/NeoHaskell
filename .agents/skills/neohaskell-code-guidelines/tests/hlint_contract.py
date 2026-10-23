@@ -243,6 +243,7 @@ class StaticChecks(unittest.TestCase):
             ("AsyncTask.Extra", "Control.Concurrent.Async", "Raw.async value"),
             ("Channel.Extra", "Control.Concurrent.STM.TBQueue", "Raw.readTBQueue value"),
             ("Service.Integration.Dispatcher", "Control.Concurrent.STM", "Raw.atomically value"),
+            ("Service.Integration.Dispatcher", "Control.Concurrent.Async", "Raw.async value"),
             ("TaskSpec", "Control.Concurrent.Async", "Raw.async value"),
         ]
         for module, imported, operation in cases:
