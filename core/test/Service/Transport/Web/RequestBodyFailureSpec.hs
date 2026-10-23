@@ -15,6 +15,7 @@ import System.IO.Unsafe qualified as GhcUnsafe
 import Bytes qualified
 import Core
 import Decider qualified
+import IO qualified
 import Json qualified
 import Map qualified
 import Maybe qualified
@@ -54,7 +55,7 @@ waitForDecoderRelease =
   GhcUnsafe.unsafePerformIO do
     maybeGate <- Var.get decodeGate |> Task.runNoErrors
     case maybeGate of
-      GhcPrelude.Nothing -> GhcException.throwIO (GhcException.ErrorCall "decoder gate was not installed")
+      GhcPrelude.Nothing -> panic "decoder gate was not installed"
       GhcPrelude.Just (decodeStarted, decodeRelease) -> do
         GhcMVar.putMVar decodeStarted ()
         GhcMVar.takeMVar decodeRelease
@@ -274,7 +275,7 @@ spec = do
       let failedFetchStore =
             eventStore
               { EventStore.readAllStreamEvents = \_ _ ->
-                  Task.fromIO (GhcException.throwIO (GhcException.ErrorCall "private-web-fetch-sentinel"))
+                  Task.fromIO (panic "private-web-fetch-sentinel")
               }
       outcome <- Task.fromIO
         ( GhcException.try @GhcException.SomeException
@@ -316,7 +317,7 @@ throwingBodyRequest :: Wai.Request
 throwingBodyRequest =
   commandRequest
     { Wai.requestBody =
-        GhcException.throwIO (GhcException.ErrorCall "private-body-read-details")
+        IO.andThen (\_ -> panic "private-body-read-details") (IO.yield ())
     }
 
 
