@@ -5,12 +5,7 @@ module TaskSpec (spec) where
 import AsyncTask qualified
 import Channel (Channel)
 import Channel qualified
-import Control.Concurrent qualified as GhcConcurrent
-import Control.Concurrent.Async qualified as GhcAsync
-import Control.Concurrent.MVar qualified as GhcMVar
 import Control.DeepSeq qualified as DeepSeq
-import Control.Exception qualified as GhcException
-import Data.Either qualified as Either
 import Core
 import Maybe qualified
 import Prelude qualified as GhcPrelude
@@ -126,7 +121,7 @@ spec = do
 
     describe "asResultSafe" do
       it "catches synchronous IO exceptions as Err" \_ -> do
-        let action = Task.fromIO (GhcException.throwIO (GhcException.ErrorCall "sync error"))
+        let action = Task.evaluate (GhcPrelude.error "sync error" :: Unit) :: Task Text Unit
         result <- Task.fromIO (Task.runResult (Task.asResultSafe @Text action))
         case result of
           Ok innerResult -> (innerResult :: Result Text Unit) |> shouldSatisfy Result.isErr
@@ -152,34 +147,33 @@ spec = do
           Ok innerResult -> (innerResult :: Result Text Unit) |> shouldSatisfy Result.isErr
           Err _ -> Test.fail "outer Task should not fail"
 
-      it "propagates AsyncCancelled (does not catch it)" \_ -> do
-        readyBarrier <- Task.fromIO GhcMVar.newEmptyMVar
-        neverVar <- Task.fromIO GhcMVar.newEmptyMVar
-        handle <- Task.fromIO (GhcAsync.async (do { GhcMVar.putMVar readyBarrier (); Task.runResult (Task.asResultSafe @Text (Task.fromIO (GhcMVar.readMVar neverVar))) }))
-        Task.fromIO (GhcMVar.takeMVar readyBarrier)
-        Task.fromIO (GhcAsync.cancel handle)
-        outcome <- Task.fromIO (GhcAsync.waitCatch handle)
+      it "propagates cancellation instead of returning a result" \_ -> do
+        ready <- Channel.new
+        never <- Channel.newBounded 1 :: Task Text (Channel Unit)
+        let action = do
+              Channel.write unit ready
+              Channel.read never
+        handle <- AsyncTask.run (Task.asResultSafe @Text action :: Task Text (Result Text Unit))
+        Channel.read ready
+        AsyncTask.cancel handle
+        outcome <- AsyncTask.waitOutcome handle
         case outcome of
-          Either.Left someException ->
-            GhcException.fromException @GhcAsync.AsyncCancelled someException
-              |> shouldSatisfy (\m -> case m of { Just _ -> True; Nothing -> False })
-          Either.Right _ ->
-            Test.fail "expected async exception to propagate, but task returned a result"
+          AsyncTask.Interrupted -> Task.yield unit
+          _ -> Test.fail "expected cancellation to propagate"
 
-      it "propagates ThreadKilled (does not catch it)" \_ -> do
-        readyBarrier <- Task.fromIO GhcMVar.newEmptyMVar
-        neverVar <- Task.fromIO GhcMVar.newEmptyMVar
-        handle <- Task.fromIO (GhcAsync.async (do { GhcMVar.putMVar readyBarrier (); Task.runResult (Task.asResultSafe @Text (Task.fromIO (GhcMVar.readMVar neverVar))) }))
-        Task.fromIO (GhcMVar.takeMVar readyBarrier)
-        let threadId = GhcAsync.asyncThreadId handle
-        Task.fromIO (GhcException.throwTo threadId GhcException.ThreadKilled)
-        outcome <- Task.fromIO (GhcAsync.waitCatch handle)
+      it "propagates thread termination instead of returning a result" \_ -> do
+        ready <- Channel.new
+        never <- Channel.newBounded 1 :: Task Text (Channel Unit)
+        let action = do
+              Channel.write unit ready
+              Channel.read never
+        handle <- AsyncTask.run (Task.asResultSafe @Text action :: Task Text (Result Text Unit))
+        Channel.read ready
+        AsyncTask.requestThreadTermination handle
+        outcome <- AsyncTask.waitOutcome handle
         case outcome of
-          Either.Left someException ->
-            GhcException.fromException @GhcException.AsyncException someException
-              |> shouldSatisfy (\m -> case m of { Just GhcException.ThreadKilled -> True; _ -> False })
-          Either.Right _ ->
-            Test.fail "expected ThreadKilled to propagate, but task returned a result"
+          AsyncTask.Interrupted -> Task.yield unit
+          _ -> Test.fail "expected thread termination to propagate"
 
     describe "onFailure" do
       it "preserves a typed error after observing it" \_ -> do
