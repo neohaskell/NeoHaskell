@@ -751,7 +751,7 @@ class ArchivedTargetCompatibility(unittest.TestCase):
         }
         STATE.mkdir(parents=True, exist_ok=True)
         repo = release.Repo(ROOT)
-        main = repo.revision("HEAD")
+        main = repo.revision("v0.10.1")
         ledger = repo.ledger(main)
         plans = {
             plan["version"]: plan
