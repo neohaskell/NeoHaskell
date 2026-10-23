@@ -35,13 +35,13 @@ import Basics
 import Bytes (Bytes)
 import Bytes qualified
 import Char (Char)
-import Control.Exception qualified as GhcException
 import Data.ByteString (ByteString)
 import Data.ByteString.Char8 qualified as GhcBSChar
 import Data.CaseInsensitive qualified as CI
 import Data.Either qualified as GhcEither
 import Default (Default (..))
 import GHC.Int qualified as GhcInt
+import IO qualified
 import Json qualified
 import Log qualified
 import Map (Map)
@@ -347,7 +347,10 @@ getSecure options = do
     True -> do
       let host = requestHost options
       Log.debug [fmt|HTTP GET (secure) #{host}|] |> Task.ignoreError
-      secureResult <- getSecureRawIO options |> Task.fromIO
+      secureResult <-
+        getSecureRawIO options
+          |> Task.fromFailableIO @HttpClient.HttpException
+          |> Task.mapError sanitizeHttpError
       case secureResult of
         Err error -> Task.throw error
         Ok response -> checkResponseSize options response
@@ -355,33 +358,27 @@ getSecure options = do
 
 -- | Internal IO action for secure raw GET request using TLS 1.2+ only.
 getSecureRawIO :: Request -> GhcIO.IO (Result Error (Response Bytes))
-getSecureRawIO options = do
-  httpResult <-
-    case options.maxResponseBytes of
-      Nothing ->
-        GhcException.try @HttpClient.HttpException do
-          response <- getRawIO options
-          pure (Ok response)
-      Just _ ->
-        GhcException.try @HttpClient.HttpException do
-          baseReq <- parseRequestUrl options
-          let req = baseReq
-                |> applyRequestOptions options
-                |> setRequestIgnoreStatus
-          rawResponse <- HttpClient.responseOpen req cachedSecureTlsManager
-          case checkContentLengthHeaderLimit options.maxResponseBytes (HttpClient.responseHeaders rawResponse) of
-            Just maxBytes -> do
-              HttpClient.responseClose rawResponse
-              pure (Err (ResponseTooLarge maxBytes))
-            Nothing -> do
-              responseBody <-
-                GhcException.finally
-                  (readBodyFully (HttpClient.responseBody rawResponse))
-                  (HttpClient.responseClose rawResponse)
-              pure (Ok (extractResponseBytesFromOpenResponse rawResponse responseBody))
-  case httpResult of
-    GhcEither.Left httpException -> pure (Err (sanitizeHttpError httpException))
-    GhcEither.Right responseResult -> pure responseResult
+getSecureRawIO options =
+  case options.maxResponseBytes of
+    Nothing -> do
+      response <- getRawIO options
+      pure (Ok response)
+    Just _ -> do
+      baseReq <- parseRequestUrl options
+      let req = baseReq
+            |> applyRequestOptions options
+            |> setRequestIgnoreStatus
+      rawResponse <- HttpClient.responseOpen req cachedSecureTlsManager
+      case checkContentLengthHeaderLimit options.maxResponseBytes (HttpClient.responseHeaders rawResponse) of
+        Just maxBytes -> do
+          HttpClient.responseClose rawResponse
+          pure (Err (ResponseTooLarge maxBytes))
+        Nothing -> do
+          responseBody <-
+            IO.finally
+              (readBodyFully (HttpClient.responseBody rawResponse))
+              (HttpClient.responseClose rawResponse)
+          pure (Ok (extractResponseBytesFromOpenResponse rawResponse responseBody))
 
 
 -- | Internal IO action for secure raw GET request using TLS 1.2+ only.

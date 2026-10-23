@@ -28,6 +28,7 @@ import Http.ClientSpec qualified
 import IntSpec qualified
 import Layout.RenderSpec qualified
 import LayoutSpec qualified
+import LockSpec qualified
 import NeoQL.ExecuteSpec qualified
 import NeoQL.ParserSpec qualified
 import OutboundIntegrationSpec qualified
@@ -76,6 +77,7 @@ main = Hspec.hspec do
   Hspec.describe "Int" IntSpec.spec
   Hspec.describe "Layout" LayoutSpec.spec
   Hspec.describe "Layout.Render" Layout.RenderSpec.spec
+  Hspec.describe "Lock" LockSpec.spec
   Hspec.describe "NeoQL.Parser" NeoQL.ParserSpec.spec
   Hspec.describe "NeoQL.Execute" NeoQL.ExecuteSpec.spec
   Hspec.describe "OutboundIntegration" OutboundIntegrationSpec.spec

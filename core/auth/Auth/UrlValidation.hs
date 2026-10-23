@@ -14,8 +14,6 @@ import Auth.Hostname qualified as Hostname
 import Basics
 import Char (Char)
 import Control.Concurrent.Async qualified as GhcAsync
-import Control.Exception qualified as GhcException
-import Data.Either qualified as GhcEither
 import Data.Char qualified as GhcChar
 import Data.IP qualified as IP
 import Environment qualified
@@ -24,7 +22,6 @@ import Maybe (Maybe (..))
 import Network.URI qualified as URI
 import Result (Result (..))
 import System.Exit qualified as GhcExit
-import System.IO qualified as GhcIO
 import System.Process qualified as GhcProcess
 import System.Timeout qualified as GhcTimeout
 import Task (Task)
@@ -534,8 +531,8 @@ data DnsSubprocessResult
 
 
 -- | Run DNS resolution in a subprocess with timeout and exception handling.
--- Uses createProcess for proper control over the subprocess lifecycle.
--- SECURITY: Handles missing binary gracefully, enforces timeout.
+-- readCreateProcessWithExitCode drains both pipes before waiting and cleans up
+-- the child when the timeout interrupts the read.
 runDnsSubprocess ::
   forall error.
   Int ->
@@ -546,57 +543,26 @@ runDnsSubprocess timeoutSeconds cmd args = do
   let cmdStr = Text.toLinkedList cmd
   let argsStr = Array.map Text.toLinkedList args |> Array.toLinkedList
   let timeoutMicros = timeoutSeconds * 1000000
-  Task.fromIO do
-    -- Wrap entire subprocess operation in exception handler
-    resultOrExc <- GhcException.try @GhcException.SomeException do
-      -- Create process with pipes for stdout/stderr
-      let procSpec =
-            (GhcProcess.proc cmdStr argsStr)
-              { GhcProcess.std_out = GhcProcess.CreatePipe,
-                GhcProcess.std_err = GhcProcess.CreatePipe
-              }
-      -- Start the process
-      (_, maybeStdout, maybeStderr, procHandle) <- GhcProcess.createProcess procSpec
-      -- Wrap wait + read in timeout
-      maybeResult <- GhcTimeout.timeout timeoutMicros do
-        -- Read stdout and stderr
-        stdoutStr <- case maybeStdout of
-          Just h -> GhcIO.hGetContents h
-          Nothing -> pure ""
-        stderrStr <- case maybeStderr of
-          Just h -> GhcIO.hGetContents h
-          Nothing -> pure ""
-        -- Force evaluation of output before waiting (prevents deadlock)
-        _ <- GhcException.evaluate (LinkedList.length stdoutStr)
-        _ <- GhcException.evaluate (LinkedList.length stderrStr)
-        -- Wait for process to complete
-        exitCode <- GhcProcess.waitForProcess procHandle
-        pure (exitCode, stdoutStr, stderrStr)
-      case maybeResult of
-        Nothing -> do
-          -- Timeout - kill the process
-          GhcProcess.terminateProcess procHandle
-          _ <- GhcProcess.waitForProcess procHandle
-          pure DnsSubprocessTimeout
-        Just (exitCode, stdoutStr, stderrStr) -> do
-          let out = Text.fromLinkedList stdoutStr
-          let err = Text.fromLinkedList stderrStr
-          case exitCode of
-            GhcExit.ExitSuccess -> pure (DnsSubprocessSuccess out)
-            GhcExit.ExitFailure 1 -> do
-              -- host returns 1 for "not found" - this is normal DNS failure
-              pure (DnsSubprocessError (Text.fromLinkedList [fmt|Host not found: #{out}|]))
-            GhcExit.ExitFailure code -> do
-              let errMsg = case Text.isEmpty err of
-                    True -> Text.fromLinkedList [fmt|DNS resolution failed (exit code #{code})|]
-                    False -> err
-              pure (DnsSubprocessError errMsg)
-    -- Handle exceptions (e.g., binary not found)
-    case resultOrExc of
-      GhcEither.Left exc -> do
-        let errMsg = Text.fromLinkedList (GhcException.displayException exc)
-        pure (DnsSubprocessError errMsg)
-      GhcEither.Right result -> pure result
+  let process = GhcProcess.proc cmdStr argsStr
+  result <-
+    GhcTimeout.timeout timeoutMicros (GhcProcess.readCreateProcessWithExitCode process "")
+      |> Task.fromIO
+      |> Task.asResultSafe @Text
+  case result of
+    Err errMsg -> Task.yield (DnsSubprocessError errMsg)
+    Ok Nothing -> Task.yield DnsSubprocessTimeout
+    Ok (Just (exitCode, stdoutStr, stderrStr)) -> do
+      let out = Text.fromLinkedList stdoutStr
+      let err = Text.fromLinkedList stderrStr
+      case exitCode of
+        GhcExit.ExitSuccess -> Task.yield (DnsSubprocessSuccess out)
+        GhcExit.ExitFailure 1 ->
+          Task.yield (DnsSubprocessError (Text.fromLinkedList [fmt|Host not found: #{out}|]))
+        GhcExit.ExitFailure code -> do
+          let errMsg = case Text.isEmpty err of
+                True -> Text.fromLinkedList [fmt|DNS resolution failed (exit code #{code})|]
+                False -> err
+          Task.yield (DnsSubprocessError errMsg)
 
 
 -- | Parse output from `host -t A` or `host -t AAAA` command.

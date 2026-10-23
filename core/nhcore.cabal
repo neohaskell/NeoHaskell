@@ -730,6 +730,7 @@ test-suite nhcore-test-core
     IntSpec
     LayoutSpec
     Layout.RenderSpec
+    LockSpec
     NeoQL.ExecuteSpec
     NeoQL.ParserSpec
     OutboundIntegrationSpec

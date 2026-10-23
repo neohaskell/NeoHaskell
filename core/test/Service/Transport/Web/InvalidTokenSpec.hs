@@ -1,10 +1,9 @@
 module Service.Transport.Web.InvalidTokenSpec where
 
 import Basics
+import AsyncTask qualified
 import Bytes qualified
-import Control.Concurrent qualified as GhcConcurrent
 import Control.Concurrent.MVar qualified as GhcMVar
-import Control.Exception qualified as GhcException
 import Data.ByteString.Base64.URL qualified as GhcBase64Url
 import Data.ByteString.Lazy qualified as GhcLBS
 import Auth.Config (AuthConfig (..))
@@ -66,12 +65,11 @@ spec = do
       manager <- Jwt.createTestManager keys
       refreshStarted <- Task.fromIO GhcMVar.newEmptyMVar
       refreshRelease <- Task.fromIO GhcMVar.newEmptyMVar
-      requestOutcome <- Task.fromIO GhcMVar.newEmptyMVar
 
       authCancellation <- Task.fromIO
         ( Warp.testWithApplication
             (GhcPrelude.pure (blockedJwksApplication refreshStarted refreshRelease))
-            ( \port -> do
+            ( \port -> Task.runOrPanic do
                 let localJwksUrl = [fmt|http://127.0.0.1:#{port}/jwks|]
                 let managerWithLocalJwks =
                       manager
@@ -92,34 +90,26 @@ spec = do
                         }
                 let app = webApplication (invalidTokenEndpoints transport)
                 let request = requestWithUnknownKid
-                requestThread <-
-                  GhcConcurrent.forkIO do
-                    outcome <-
-                      GhcException.try @GhcException.SomeException
-                        (WaiTest.runSession (WaiTest.srequest (WaiTest.SRequest request "")) app)
-                    GhcMVar.putMVar requestOutcome outcome
+                requestTask <-
+                  AsyncTask.run
+                    (Task.fromIO (WaiTest.runSession (WaiTest.srequest (WaiTest.SRequest request "")) app) :: Task.Task Text WaiTest.SResponse)
                 let cleanup = do
-                      GhcConcurrent.killThread requestThread
-                      _ <- GhcMVar.tryPutMVar refreshRelease ()
-                      GhcPrelude.pure ()
-                GhcException.finally
-                  ( do
-                      refreshStart <- GhcTimeout.timeout 5000000 (GhcMVar.takeMVar refreshStarted)
-                      case refreshStart of
-                        GhcPrelude.Nothing -> GhcPrelude.pure (GhcPrelude.Left "Authentication did not reach the controlled JWKS refresh")
-                        GhcPrelude.Just () -> do
-                          GhcConcurrent.killThread requestThread
-                          maybeOutcome <- GhcTimeout.timeout 5000000 (GhcMVar.takeMVar requestOutcome)
-                          case maybeOutcome of
-                            GhcPrelude.Nothing -> GhcPrelude.pure (GhcPrelude.Left "Canceled authentication request did not finish")
-                            GhcPrelude.Just (GhcPrelude.Left exception) ->
-                              case GhcException.fromException exception :: GhcPrelude.Maybe GhcException.AsyncException of
-                                GhcPrelude.Just GhcException.ThreadKilled -> GhcPrelude.pure (GhcPrelude.Right ())
-                                GhcPrelude.Just _ -> GhcPrelude.pure (GhcPrelude.Left "Expected ThreadKilled from the canceled authentication request")
-                                GhcPrelude.Nothing -> GhcPrelude.pure (GhcPrelude.Left "Expected authentication cancellation to escape the WAI request")
-                            GhcPrelude.Just (GhcPrelude.Right _) -> GhcPrelude.pure (GhcPrelude.Left "Expected cancellation to escape the WAI request")
-                  )
-                  cleanup
+                      AsyncTask.requestThreadTermination requestTask
+                      _ <- Task.fromIO (GhcMVar.tryPutMVar refreshRelease ())
+                      Task.yield unit
+                Task.finally cleanup do
+                  refreshStart <- Task.fromIO (GhcTimeout.timeout 5000000 (GhcMVar.takeMVar refreshStarted))
+                  case refreshStart of
+                    GhcPrelude.Nothing -> Task.yield (GhcPrelude.Left "Authentication did not reach the controlled JWKS refresh")
+                    GhcPrelude.Just () -> do
+                      AsyncTask.requestThreadTermination requestTask
+                      completion <- AsyncTask.race
+                        (AsyncTask.waitOutcome requestTask :: Task.Task Text (AsyncTask.Outcome Text WaiTest.SResponse))
+                        (AsyncTask.sleep 5000 :: Task.Task Text Unit)
+                      case completion of
+                        AsyncTask.LeftWon AsyncTask.Interrupted -> Task.yield (GhcPrelude.Right ())
+                        AsyncTask.LeftWon _ -> Task.yield (GhcPrelude.Left "Expected authentication cancellation to escape the WAI request")
+                        AsyncTask.RightWon _ -> Task.yield (GhcPrelude.Left "Canceled authentication request did not finish")
             )
         )
 
