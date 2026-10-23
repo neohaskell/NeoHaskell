@@ -2,11 +2,13 @@
 
 module AsyncTask (
   AsyncTask,
+  Outcome (..),
   RaceWinner (..),
   run,
-  runUnmasked,
+  runWithCancellationEnabled,
   waitFor,
   waitCatch,
+  waitOutcome,
   cancel,
   sleep,
   process,
@@ -20,8 +22,11 @@ import Array qualified
 import Basics
 import Control.Concurrent qualified as Ghc
 import Control.Concurrent.Async qualified as GhcAsync
+import Control.Exception (SomeAsyncException)
+import Control.Exception qualified as GhcException
 import GHC.IO qualified as GHC
 import Data.Either qualified as GhcEither
+import Maybe (Maybe (..))
 import Prelude qualified
 import Result (Result)
 import Result qualified
@@ -34,6 +39,13 @@ import Task qualified
 newtype AsyncTask err result = AsyncTask (GhcAsync.Async (Result err result))
 
 
+data Outcome err result
+  = Completed result
+  | Failed err
+  | Interrupted
+  | Crashed Text
+
+
 run :: (Show err) => Task err result -> Task err (AsyncTask err result)
 run task =
   Task.runResult task
@@ -42,9 +54,9 @@ run task =
     |> Task.map AsyncTask
 
 
--- | Run a task in a child that starts unmasked, even when the caller is masked.
-runUnmasked :: (Show err) => Task err result -> Task err (AsyncTask err result)
-runUnmasked task =
+-- | Start a child that can receive cancellation while its parent protects an ownership handoff.
+runWithCancellationEnabled :: (Show err) => Task err result -> Task err (AsyncTask err result)
+runWithCancellationEnabled task =
   GhcAsync.asyncWithUnmask (\unmask -> unmask (Task.runResult task))
     |> Task.fromIO
     |> Task.map AsyncTask
@@ -72,6 +84,20 @@ waitCatch (AsyncTask self) = do
       case taskResult of
         Result.Ok value -> Task.yield (Result.Ok value)
         Result.Err err -> Task.yield (Result.Err (show err |> Text.fromLinkedList))
+
+
+-- | Wait for a child and keep typed failures separate from cancellation and
+-- runtime exceptions. A crash carries diagnostic text, not a typed task error.
+waitOutcome :: AsyncTask err result -> Task otherErr (Outcome err result)
+waitOutcome (AsyncTask self) = do
+  outcome <- GhcAsync.waitCatch self |> Task.fromIO
+  case outcome of
+    GhcEither.Left someException ->
+      case GhcException.fromException @SomeAsyncException someException of
+        Just _ -> Task.yield Interrupted
+        Nothing -> Task.yield (Crashed (show someException |> Text.fromLinkedList))
+    GhcEither.Right (Result.Ok value) -> Task.yield (Completed value)
+    GhcEither.Right (Result.Err err) -> Task.yield (Failed err)
 
 
 -- | Cancel a running async task.

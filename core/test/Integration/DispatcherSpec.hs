@@ -1342,7 +1342,7 @@ spec = do
               Dispatcher.OutboundRunner
                 { entityTypeName = "TestEntity",
                   processEvent = \_maybeContext _eventStore _event -> do
-                    maskingState <- GhcException.getMaskingState |> Task.fromIO
+                    maskingState <- Task.cancellationState
                     Channel.write maskingState callbackMaskingStates
                     Task.yield Array.empty
                 }
@@ -1355,7 +1355,7 @@ spec = do
         callbackMaskingState <- Channel.read callbackMaskingStates
         Dispatcher.shutdown dispatcher
 
-        callbackMaskingState |> shouldBe GhcException.Unmasked
+        callbackMaskingState |> shouldBe Task.CancellationEnabled
 
       it "runs lifecycle callbacks in an unmasked child" \_ -> do
         callbackMaskingStates <- Channel.new
@@ -1366,7 +1366,7 @@ spec = do
                     Task.yield
                       Dispatcher.WorkerState
                         { processEvent = \_event -> do
-                            maskingState <- GhcException.getMaskingState |> Task.fromIO
+                            maskingState <- Task.cancellationState
                             Channel.write maskingState callbackMaskingStates
                             Task.yield Array.empty,
                           cleanup = Task.yield unit
@@ -1381,7 +1381,7 @@ spec = do
         callbackMaskingState <- Channel.read callbackMaskingStates
         Dispatcher.shutdown dispatcher
 
-        callbackMaskingState |> shouldBe GhcException.Unmasked
+        callbackMaskingState |> shouldBe Task.CancellationEnabled
 
     describe "concurrent dispatch to multiple entities" do
       it "handles concurrent dispatch to multiple entities correctly" \_ -> do

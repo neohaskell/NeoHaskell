@@ -1,5 +1,9 @@
+{-# LANGUAGE RankNTypes #-}
+
 module Task (
   Task (..),
+  Failure (..),
+  CancellationState (..),
   yield,
   throw,
   map,
@@ -27,6 +31,9 @@ module Task (
   while,
   ignoreError,
   finally,
+  mask,
+  cancellationState,
+  onFailure,
 ) where
 
 import Applicable (Applicative (pure))
@@ -62,6 +69,19 @@ import Prelude qualified
 newtype Task err value = Task
   {runTask :: (ExceptT err IO) value}
   deriving (Functor, Applicable.Applicative, Monad)
+
+
+data Failure err
+  = TypedFailure err
+  | RuntimeFailure
+  | Interrupted
+
+
+data CancellationState
+  = CancellationEnabled
+  | CancellationDeferred
+  | CancellationBlocked
+  deriving (Eq, Prelude.Show)
 
 
 -- | A 'Task' wraps a deferred effect, so the value it will produce cannot be
@@ -367,3 +387,61 @@ finally cleanup task = Task do
     Either.Left err -> Except.throwE err
     Either.Right val -> Prelude.pure val
 {-# INLINE finally #-}
+
+
+-- | Defer cancellation during a handoff. The callback can restore the caller's
+-- cancellation state around work that must remain interruptible.
+mask ::
+  ((forall otherErr otherValue. Task otherErr otherValue -> Task otherErr otherValue) -> Task err value) ->
+  Task err value
+mask action =
+  Task
+    ( Except.ExceptT
+        ( Exception.mask \restoreIO -> do
+            let restoreTask :: forall otherErr otherValue. Task otherErr otherValue -> Task otherErr otherValue
+                restoreTask inner = Task (Except.ExceptT (restoreIO (Except.runExceptT inner.runTask)))
+            Except.runExceptT (action restoreTask).runTask
+        )
+    )
+
+
+-- | Report whether cancellation can arrive now, at an interruptible wait,
+-- or only after the current protected region ends.
+cancellationState :: Task err CancellationState
+cancellationState = do
+  state <- Exception.getMaskingState |> fromIO
+  case state of
+    Exception.Unmasked -> yield CancellationEnabled
+    Exception.MaskedInterruptible -> yield CancellationDeferred
+    Exception.MaskedUninterruptible -> yield CancellationBlocked
+
+
+-- | Observe a failure without replacing the task's typed error or original
+-- runtime exception. Observer typed and synchronous failures are ignored.
+-- Cancellation received by the observer still propagates.
+onFailure :: (Failure err -> Task observerErr Unit) -> Task err value -> Task err value
+onFailure observer task =
+  Task
+    ( Except.ExceptT
+        ( Exception.mask \restore -> do
+            outcome <- Exception.try @SomeException (restore (Except.runExceptT task.runTask))
+            let notify failure = do
+                  observed <- Exception.try @SomeException (Except.runExceptT (observer failure).runTask)
+                  case observed of
+                    Either.Left exception ->
+                      case Exception.fromException @SomeAsyncException exception of
+                        Just _ -> Exception.throwIO exception
+                        Nothing -> Prelude.pure ()
+                    Either.Right _ -> Prelude.pure ()
+            case outcome of
+              Either.Left exception -> do
+                case Exception.fromException @SomeAsyncException exception of
+                  Just _ -> notify Interrupted
+                  Nothing -> notify RuntimeFailure
+                Exception.throwIO exception
+              Either.Right (Either.Left err) -> do
+                notify (TypedFailure err)
+                Prelude.pure (Either.Left err)
+              Either.Right (Either.Right value) -> Prelude.pure (Either.Right value)
+        )
+    )
