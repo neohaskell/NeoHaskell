@@ -10,7 +10,6 @@ import Array (Array)
 import Array qualified
 import AsyncTask qualified
 import Basics
-import Control.Exception qualified as GhcException
 import Decider (CommandResult (..), DecisionContext (..), runDecision)
 import Float qualified
 import GHC.TypeLits qualified as GHC
@@ -416,16 +415,13 @@ execute eventStore entityFetcher entityName sourceEventMetadata requestContext c
   commandResultReported <- Var.new False
   currentRequestContext <- Var.new requestContext
   let reportCommandResult context outcome =
-        Task.fromIO do
-          GhcException.mask_ do
-            let report = emitCommandResult commandNameText entityNameText context sourceEventMetadata outcome :: Task Text Unit
-            maybeReported <-
-              CommandResultReceipt.reportIfRegistered context.requestId report
-                |> Task.runOrPanic
-            case maybeReported of
-              Nothing -> report |> Task.runOrPanic
-              Just _ -> pure ()
-            Var.set True commandResultReported |> Task.runNoErrors
+        Task.mask \_ -> do
+          let report = emitCommandResult commandNameText entityNameText context sourceEventMetadata outcome :: Task Text Unit
+          maybeReported <- CommandResultReceipt.reportIfRegistered context.requestId report
+          case maybeReported of
+            Nothing -> report
+            Just _ -> Task.yield ()
+          Var.set True commandResultReported
   let reportInterruptedCommand = do
         wasReported <- Var.get commandResultReported
         Task.unless wasReported do
@@ -488,15 +484,10 @@ execute eventStore entityFetcher entityName sourceEventMetadata requestContext c
             case attempt.commandLogOutcome of
               AcceptedCommandLog streamId _ -> do
                 let requestIdText = Uuid.toText normalizedContext.requestId
-                Task.fromIO do
-                  GhcException.mask_ do
-                    (reportCommandResult normalizedContext attempt.commandLogOutcome :: Task Text Unit)
-                      |> Task.runOrPanic
-                    ( attempt.appendedEventMetadata
-                        |> Task.forEach (\metadata -> emitEventAppended commandNameText entityNameText (StreamId.toText streamId) requestIdText metadata)
-                        :: Task Text Unit
-                      )
-                      |> Task.runOrPanic
+                Task.mask \_ -> do
+                  reportCommandResult normalizedContext attempt.commandLogOutcome
+                  attempt.appendedEventMetadata
+                    |> Task.forEach (\metadata -> emitEventAppended commandNameText entityNameText (StreamId.toText streamId) requestIdText metadata)
               _ -> reportCommandResult normalizedContext attempt.commandLogOutcome
             Task.yield attempt.attemptResult
 
