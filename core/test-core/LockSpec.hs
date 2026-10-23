@@ -1,7 +1,7 @@
 module LockSpec (spec) where
 
+import AsyncTask qualified
 import Core
-import IO qualified
 import Lock qualified
 import Task qualified
 import Test
@@ -10,7 +10,29 @@ import Var qualified
 
 spec :: Spec Unit
 spec = do
+  describe "Lock.with" do
+    it "releases the lock after a runtime failure" \_ -> do
+      lock <- Lock.new
+      let failing =
+            Task.evaluate (panic "lock-with-sentinel")
+              :: Task.Task Text Unit
+
+      outcome <- Lock.with lock failing |> Task.asResultSafe
+      case outcome of
+        Err _ -> pass
+        Ok _ -> fail "Expected the runtime exception to escape"
+
+      acquired <- Lock.withTimeout 1 lock (Task.yield (5 :: Int))
+      acquired |> shouldBe (Ok 5)
+
   describe "Lock.withTimeout" do
+    it "limits acquisition without timing out the action" \_ -> do
+      lock <- Lock.new
+      result <- Lock.withTimeout 1 lock do
+        AsyncTask.sleep 1100
+        Task.yield (6 :: Int)
+      result |> shouldBe (Ok 6)
+
     it "times out while another owner holds the lock, then permits a new owner" \_ -> do
       lock <- Lock.new
       timedOutActionRan <- Var.new False
@@ -41,7 +63,7 @@ spec = do
     it "releases the lock when its task throws at runtime" \_ -> do
       lock <- Lock.new
       let failing =
-            Task.fromIO (IO.andThen (\_ -> panic "lock-action-sentinel") (IO.yield ()))
+            Task.evaluate (panic "lock-action-sentinel")
               :: Task.Task Text Int
 
       outcome <- Lock.withTimeout 1 lock failing |> Task.asResultSafe
