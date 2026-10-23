@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Run parsed HLint rules and reject new tracked runtime workspace references."""
+"""Run parsed HLint rules and reject runtime source dependencies on agent workspaces."""
 
 import argparse
 from collections import Counter
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 import json
 from pathlib import Path
 import subprocess
@@ -12,9 +12,8 @@ import sys
 
 OWNER = Path(__file__).resolve().parents[1]
 REPO = OWNER.parents[2]
-DEBT = OWNER / "references/lint-debt.json"
 SOURCE_SUFFIXES = {".hs", ".lhs", ".py", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".sh", ".bash", ".c", ".h", ".rs", ".go"}
-ENFORCED_HINTS = {"Avoid restricted module", "Avoid restricted function", "NeoHaskell: use Task.mapError"}
+OWNERSHIP_NOTE = "NeoHaskell ownership."
 
 
 @dataclass(frozen=True, order=True)
@@ -70,7 +69,9 @@ def hlint_findings(root, executable, paths):
         rule = idea["hint"]
         if rule.startswith("Parse error"):
             raise ValueError(f"{rule} in {idea['file']} at line {idea['startLine']}.")
-        if idea["severity"] == "Ignore" and rule not in ENFORCED_HINTS:
+        ownership = rule in {"Avoid restricted module", "Avoid restricted function"} and any(note.startswith(OWNERSHIP_NOTE) for note in idea["note"])
+        enforced = ownership or rule == "NeoHaskell: use Task.mapError"
+        if idea["severity"] == "Ignore" and not enforced:
             continue
         path = Path(idea["file"])
         if path.is_absolute():
@@ -81,59 +82,20 @@ def hlint_findings(root, executable, paths):
     return findings
 
 
-def read_debt(path):
-    document = json.loads(path.read_text())
-    if document.get("schema") != 1 or document.get("hlint") != "3.10":
-        raise ValueError("Unsupported lint debt format or HLint version.")
-    findings = Counter()
-    for entry in document["findings"]:
-        count = entry["count"]
-        if not isinstance(count, int) or isinstance(count, bool) or count < 1:
-            raise ValueError("Lint debt counts must be positive integers.")
-        finding = Finding(**{key: entry[key] for key in Finding.__dataclass_fields__})
-        if finding in findings:
-            raise ValueError("Duplicate lint debt entry.")
-        findings[finding] = count
-    return document, findings
-
-
-def write_debt(path, document, findings):
-    document["findings"] = [{**asdict(finding), "count": count} for finding, count in sorted(findings.items())]
-    header = {key: value for key, value in document.items() if key != "findings"}
-    text = json.dumps(header, indent=2)[:-2] + ',\n  "findings": [\n'
-    text += ",\n".join("    " + json.dumps(entry, ensure_ascii=False) for entry in document["findings"])
-    path.write_text(text + "\n  ]\n}\n")
-
-
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--hlint", default="hlint")
-    parser.add_argument("--prune-debt", action="store_true", help="Remove resolved entries only. New findings still fail.")
-    parser.add_argument("--report", type=Path, help="Write current findings as JSON for review.")
     args = parser.parse_args()
     try:
-        if args.report and args.report.resolve() == DEBT:
-            raise ValueError("A findings report cannot overwrite the accepted debt inventory.")
         paths = tracked_sources(REPO)
         haskell = [path for path in paths if path.suffix in {".hs", ".lhs"}]
-        current = Counter(hlint_findings(REPO, args.hlint, haskell) + workspace_findings(REPO, paths))
-        document, previous = read_debt(DEBT)
-        if args.report:
-            write_debt(args.report, document.copy(), current)
-        added = current - previous
-        removed = previous - current
-        for finding, count in sorted(added.items()):
-            print(f"NEW {finding.path} [{finding.declaration}] {finding.rule} ({count}): {finding.context}")
-        if added:
-            print("FAIL. Fix new findings. The debt inventory cannot approve new violations.")
+        findings = Counter(hlint_findings(REPO, args.hlint, haskell) + workspace_findings(REPO, paths))
+        for finding, count in sorted(findings.items()):
+            print(f"FAIL {finding.path} [{finding.declaration}] {finding.rule} ({count}): {finding.context}")
+        if findings:
+            print(f"FAIL. {sum(findings.values())} violations across {len(findings)} findings. Fix every reported violation.")
             return 1
-        if removed and args.prune_debt:
-            write_debt(DEBT, document, current)
-            print(f"Removed {sum(removed.values())} resolved debt occurrences.")
-        elif removed:
-            print(f"FAIL. {sum(removed.values())} stale debt occurrences. Run with --prune-debt and review the deletion.")
-            return 1
-        print(f"PASS. {len(haskell)} Haskell files and {len(paths)} source files checked. {sum(current.values())} exact debt occurrences remain.")
+        print(f"PASS. {len(haskell)} Haskell files and {len(paths)} source files checked.")
         return 0
     except (OSError, ValueError, KeyError, TypeError) as error:
         print(f"FAIL. {error}", file=sys.stderr)
