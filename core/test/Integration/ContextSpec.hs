@@ -127,12 +127,14 @@ spec = do
             }
       dispatcher <-
         Dispatcher.newWithLifecycleConfig
-          Dispatcher.defaultConfig
-          eventStore
-          [runner]
-          []
-          Map.empty
-          emptyContext
+          Dispatcher.Setup
+            { settings = Dispatcher.defaultConfig,
+              eventStore = eventStore,
+              outboundRunners = [runner],
+              lifecycleRunners = [],
+              commandEndpoints = Map.empty,
+              actionContext = emptyContext
+            }
 
       metadata <- EventMetadata.new
       let streamId = StreamId.fromTextUnsafe "entity-A"
