@@ -4,11 +4,10 @@
 module Service.Transport.Web.RequestBodyFailureSpec where
 
 import Basics
+import AsyncTask qualified
 import AtomicVar (AtomicVar)
 import AtomicVar qualified
-import Control.Concurrent qualified as GhcConcurrent
 import Control.Concurrent.MVar qualified as GhcMVar
-import Control.Exception qualified as GhcException
 import Data.ByteString qualified as GhcBS
 import Data.ByteString.Lazy qualified as GhcLBS
 import System.IO.Unsafe qualified as GhcUnsafe
@@ -162,14 +161,12 @@ spec = do
       let endpoints = requestBodyEndpoints (recordHandlerCall handlerCalled)
       let app = webApplication endpoints
       responseResult <-
-        Task.fromIO
-          ( GhcException.try @GhcException.SomeException
-              (WaiTest.runSession (WaiTest.request throwingBodyRequest) app)
-          )
+        Task.fromIO (WaiTest.runSession (WaiTest.request throwingBodyRequest) app)
+          |> Task.asResultSafe @Text
 
       case responseResult of
-        GhcPrelude.Left _ -> fail "Expected a response after request body failure"
-        GhcPrelude.Right response -> do
+        Err _ -> fail "Expected a response after request body failure"
+        Ok response -> do
           response.simpleStatus |> HTTPStatus.statusCode |> shouldBe 500
           let responseBody = response.simpleBody |> GhcLBS.toStrict |> Bytes.fromLegacy |> Text.fromBytes
           responseBody |> shouldBe "Internal server error"
@@ -181,50 +178,37 @@ spec = do
     it "preserves cancellation while requestBody is blocked" \_ -> do
       bodyReadStarted <- Task.fromIO GhcMVar.newEmptyMVar
       bodyRelease <- Task.fromIO GhcMVar.newEmptyMVar
-      outcomeVar <- Task.fromIO GhcMVar.newEmptyMVar
       let request = blockedBodyRequest bodyReadStarted bodyRelease
       let app = webApplication (requestBodyEndpoints neverCalledHandler)
-      requestThread <- Task.fromIO do
-        GhcConcurrent.forkIO do
-          outcome <-
-            GhcException.try @GhcException.SomeException
-              (WaiTest.runSession (WaiTest.request request) app)
-          GhcMVar.putMVar outcomeVar outcome
-
-      bodyReadStart <-
-        Task.fromIO
-          (GhcTimeout.timeout 5000000 (GhcMVar.takeMVar bodyReadStarted))
-      case bodyReadStart of
-        GhcPrelude.Nothing -> do
-          GhcConcurrent.killThread requestThread |> Task.fromIO
-          fail "The route did not start reading the request body"
-        GhcPrelude.Just () -> pass
-
-      GhcConcurrent.killThread requestThread |> Task.fromIO
-      maybeOutcome <-
-        Task.fromIO
-          (GhcTimeout.timeout 5000000 (GhcMVar.takeMVar outcomeVar))
-      case maybeOutcome of
-        GhcPrelude.Nothing -> fail "The canceled request did not finish"
-        GhcPrelude.Just (GhcPrelude.Left exception) ->
-          case GhcException.fromException exception :: GhcPrelude.Maybe GhcException.AsyncException of
-            GhcPrelude.Just GhcException.ThreadKilled -> pass
-            GhcPrelude.Just _ -> fail "Expected ThreadKilled from the canceled request"
-            GhcPrelude.Nothing -> fail "Expected an asynchronous cancellation exception"
-        GhcPrelude.Just (GhcPrelude.Right _) -> fail "Expected cancellation to escape the WAI request"
+      requestTask <- AsyncTask.run
+        (Task.fromIO (WaiTest.runSession (WaiTest.request request) app) :: Task Text WaiTest.SResponse)
+      let cleanup = do
+            AsyncTask.requestThreadTermination requestTask
+            _ <- Task.fromIO (GhcMVar.tryPutMVar bodyRelease GhcBS.empty)
+            Task.yield unit
+      Task.finally cleanup do
+        bodyReadStart <- Task.fromIO (GhcTimeout.timeout 5000000 (GhcMVar.takeMVar bodyReadStarted))
+        case bodyReadStart of
+          GhcPrelude.Nothing -> fail "The route did not start reading the request body"
+          GhcPrelude.Just () -> pass
+        AsyncTask.requestThreadTermination requestTask
+        completion <- AsyncTask.race
+          (AsyncTask.waitOutcome requestTask :: Task Text (AsyncTask.Outcome Text WaiTest.SResponse))
+          (AsyncTask.sleep 5000 :: Task Text Unit)
+        case completion of
+          AsyncTask.LeftWon AsyncTask.Interrupted -> pass
+          AsyncTask.LeftWon _ -> fail "Expected cancellation to escape the WAI request"
+          AsyncTask.RightWon _ -> fail "The canceled request did not finish"
 
     it "reports one safe result when a recognized command decoder throws" \_ -> do
       (eventStore, appendCount) <- newCountedEventStore
-      outcome <- Task.fromIO
-        ( GhcException.try @GhcException.SomeException
-            (runWebProbeRequest eventStore "decoder-failure" Uuid.nil)
-        )
+      outcome <-
+        Task.fromIO (runWebProbeRequest eventStore "decoder-failure" Uuid.nil)
+          |> Task.asResultSafe @Text
 
       case outcome of
-        GhcPrelude.Left exception -> do
-          let exceptionText = exception |> GhcPrelude.show |> Text.fromLinkedList
-          Text.contains "private-command-decoder-sentinel" exceptionText |> shouldBe True
-        GhcPrelude.Right _ -> fail "Expected the command decoder exception to escape the WAI request"
+        Err message -> Text.contains "private-command-decoder-sentinel" message |> shouldBe True
+        Ok _ -> fail "Expected the command decoder exception to escape the WAI request"
 
       appendCountValue <- AtomicVar.peek appendCount
       appendCountValue |> shouldBe 0
@@ -234,38 +218,29 @@ spec = do
       (eventStore, appendCount) <- newCountedEventStore
       decodeStarted <- Task.fromIO GhcMVar.newEmptyMVar
       decodeRelease <- Task.fromIO GhcMVar.newEmptyMVar
-      requestOutcome <- Task.fromIO GhcMVar.newEmptyMVar
       Var.set (Just (decodeStarted, decodeRelease)) decodeGate
 
+      requestTask <- AsyncTask.run
+        (Task.fromIO (runWebProbeRequest eventStore "decoder-blocked" Uuid.nil) :: Task Text WaiTest.SResponse)
       let cleanup = do
+            AsyncTask.requestThreadTermination requestTask
             _ <- GhcMVar.tryPutMVar decodeRelease () |> Task.fromIO
             Var.set Nothing decodeGate
             eventStore.close
       Task.finally cleanup do
-        requestThread <- Task.fromIO do
-          GhcConcurrent.forkIO do
-            outcome <-
-              GhcException.try @GhcException.SomeException
-                (runWebProbeRequest eventStore "decoder-blocked" Uuid.nil)
-            GhcMVar.putMVar requestOutcome outcome
-
         decodeStart <- Task.fromIO (GhcTimeout.timeout 5000000 (GhcMVar.takeMVar decodeStarted))
         case decodeStart of
-          GhcPrelude.Nothing -> do
-            GhcConcurrent.killThread requestThread |> Task.fromIO
-            fail "The request did not enter command decoding"
+          GhcPrelude.Nothing -> fail "The request did not enter command decoding"
           GhcPrelude.Just () -> pass
 
-        GhcConcurrent.killThread requestThread |> Task.fromIO
-        maybeOutcome <- Task.fromIO (GhcTimeout.timeout 5000000 (GhcMVar.takeMVar requestOutcome))
-        case maybeOutcome of
-          GhcPrelude.Nothing -> fail "The canceled command request did not finish"
-          GhcPrelude.Just (GhcPrelude.Left exception) ->
-            case GhcException.fromException exception :: GhcPrelude.Maybe GhcException.AsyncException of
-              GhcPrelude.Just GhcException.ThreadKilled -> pass
-              GhcPrelude.Just _ -> fail "Expected ThreadKilled from the canceled command request"
-              GhcPrelude.Nothing -> fail "Expected command cancellation to escape the WAI request"
-          GhcPrelude.Just (GhcPrelude.Right _) -> fail "Expected cancellation to escape the WAI request"
+        AsyncTask.requestThreadTermination requestTask
+        completion <- AsyncTask.race
+          (AsyncTask.waitOutcome requestTask :: Task Text (AsyncTask.Outcome Text WaiTest.SResponse))
+          (AsyncTask.sleep 5000 :: Task Text Unit)
+        case completion of
+          AsyncTask.LeftWon AsyncTask.Interrupted -> pass
+          AsyncTask.LeftWon _ -> fail "Expected cancellation to escape the WAI request"
+          AsyncTask.RightWon _ -> fail "The canceled command request did not finish"
 
         appendCountValue <- AtomicVar.peek appendCount
         appendCountValue |> shouldBe 0
@@ -277,16 +252,13 @@ spec = do
               { EventStore.readAllStreamEvents = \_ _ ->
                   Task.fromIO (panic "private-web-fetch-sentinel")
               }
-      outcome <- Task.fromIO
-        ( GhcException.try @GhcException.SomeException
-            (runWebProbeRequest failedFetchStore "valid" Uuid.nil)
-        )
+      outcome <-
+        Task.fromIO (runWebProbeRequest failedFetchStore "valid" Uuid.nil)
+          |> Task.asResultSafe @Text
 
       case outcome of
-        GhcPrelude.Left exception -> do
-          let exceptionText = exception |> GhcPrelude.show |> Text.fromLinkedList
-          Text.contains "private-web-fetch-sentinel" exceptionText |> shouldBe True
-        GhcPrelude.Right _ -> fail "Expected the Web command execution exception to escape the request"
+        Err message -> Text.contains "private-web-fetch-sentinel" message |> shouldBe True
+        Ok _ -> fail "Expected the Web command execution exception to escape the request"
 
       appendCountValue <- AtomicVar.peek appendCount
       appendCountValue |> shouldBe 0
