@@ -154,7 +154,7 @@ jobs:
           name: dist-newstyle
           path: dist-newstyle
       - name: Run nhcore-test-auth
-        run: LOG_LEVEL=Warn nix develop --command cabal test nhcore-test-auth
+        run: LOG_LEVEL=Warn nix develop --command cabal test nhcore-test-auth nhcore-test-auth-dns
 
   test-integration:
     needs: [build]

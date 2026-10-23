@@ -399,6 +399,10 @@ library
     Service.Integration.Dispatcher.RunnerLogState
     Service.Integration.Dispatcher.WorkerQueueControl
     Service.Integration.Dispatcher.WorkerStopKind
+    Auth.UrlValidation.Dns
+    Auth.UrlValidation.Dns.Error
+    Auth.UrlValidation.Dns.RecordType
+    Auth.UrlValidation.Dns.Result
   -- other-extensions:
   hs-source-dirs:
     auth
@@ -599,6 +603,28 @@ test-suite nhcore-test-auth
 
   type: exitcode-stdio-1.0
   hs-source-dirs: test-auth, test
+  main-is: Main.hs
+  build-depends:
+    base,
+    hspec,
+    nhcore,
+
+test-suite nhcore-test-auth-dns
+  import: common_cfg
+  default-language: GHC2021
+  ghc-options:
+    -rtsopts
+    -with-rtsopts=-N
+
+  other-modules:
+    Auth.UrlValidation.Dns
+    Auth.UrlValidation.Dns.Error
+    Auth.UrlValidation.Dns.RecordType
+    Auth.UrlValidation.Dns.Result
+    Auth.UrlValidation.DnsSpec
+
+  type: exitcode-stdio-1.0
+  hs-source-dirs: test-auth-dns, auth
   main-is: Main.hs
   build-depends:
     base,
