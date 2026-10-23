@@ -33,6 +33,7 @@ module Task (
   ignoreError,
   finally,
   mask,
+  withCancellationBlocked,
   cancellationState,
   onFailure,
 ) where
@@ -410,6 +411,14 @@ mask action =
             Except.runExceptT (action restoreTask).runTask
         )
     )
+
+
+-- | Block cancellation until the task finishes, even while it waits.
+-- Use only when stopping cleanup midway would leave a resource in an invalid
+-- state. A wait that never finishes makes the caller impossible to cancel.
+withCancellationBlocked :: Task err value -> Task err value
+withCancellationBlocked task =
+  Task (Except.ExceptT (Exception.uninterruptibleMask_ (Except.runExceptT task.runTask)))
 
 
 -- | Report whether cancellation can arrive now, at an interruptible wait,
