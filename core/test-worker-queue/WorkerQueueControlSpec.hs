@@ -1,3 +1,6 @@
+-- | Verify queue retirement, replacement, and writer admission behavior.
+--
+-- The worker queue test runner calls 'spec' to exercise these transitions.
 module WorkerQueueControlSpec (spec) where
 
 import AsyncTask qualified
@@ -80,10 +83,7 @@ spec =
 waitForWriterBarrier :: AsyncTask.AsyncTask Text Unit -> Int -> Task Text Unit
 waitForWriterBarrier stopper attempts = do
   waiting <- AsyncTask.isWaitingForStateChange stopper
-  if waiting
-    then Task.yield unit
-    else if attempts == 0
-      then Test.fail "stop completed before the admitted writer left"
-      else do
-        AsyncTask.sleep 1
-        waitForWriterBarrier stopper (attempts - 1)
+  Task.unless waiting do
+    Task.when (attempts == 0) (Test.fail "stop completed before the admitted writer left")
+    AsyncTask.sleep 1
+    waitForWriterBarrier stopper (attempts - 1)

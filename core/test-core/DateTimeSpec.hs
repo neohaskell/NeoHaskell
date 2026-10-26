@@ -1,3 +1,6 @@
+-- | Verify epoch-millisecond conversion through the public DateTime API.
+--
+-- The core test runner calls 'spec' for boundary and JSON examples.
 module DateTimeSpec (spec) where
 
 import Core

@@ -531,32 +531,30 @@ stopWorkerOrCancel ::
   Task Text Unit
 stopWorkerOrCancel config worker = Task.mask \restore -> do
   claimed <- WorkerQueueControl.claimStop worker.stopQueueStatus
-  if not claimed
-    then Task.yield unit
-    else do
-      let forceStop = forceWorkerStop worker.stopQueueStatus worker.stopTask worker.stopChannel
-      let attemptStop = do
-            restore (WorkerQueueControl.waitForWriters worker.stopQueueStatus)
-            writeResult <-
-              restore
-                ( Channel.tryWriteWithTimeout
-                    config.stopWriteTimeoutMs
-                    Stop
-                    worker.stopChannel
-                )
-            case writeResult of
-              Ok _ -> Task.yield True
-              Err _ -> Task.yield False
-      stopResult <- Task.onFailure (\_ -> forceStop) attemptStop
-      if stopResult
-        then WorkerQueueControl.finishStop worker.stopQueueStatus
-        else do
-          forceStop
-          let workerLabel = WorkerStopKind.label config.stopKind
-          let streamIdText = toText config.stopStreamId
-          Log.warn
-            [fmt|Stop message timed out for #{workerLabel} stream #{streamIdText}, force-cancelling worker|]
-            |> Task.ignoreError
+  Task.when claimed do
+    let forceStop = forceWorkerStop worker.stopQueueStatus worker.stopTask worker.stopChannel
+    let attemptStop = do
+          restore (WorkerQueueControl.waitForWriters worker.stopQueueStatus)
+          writeResult <-
+            restore
+              ( Channel.tryWriteWithTimeout
+                  config.stopWriteTimeoutMs
+                  Stop
+                  worker.stopChannel
+              )
+          case writeResult of
+            Ok _ -> Task.yield True
+            Err _ -> Task.yield False
+    stopResult <- Task.onFailure (\_ -> forceStop) attemptStop
+    if stopResult
+      then WorkerQueueControl.finishStop worker.stopQueueStatus
+      else do
+        forceStop
+        let workerLabel = WorkerStopKind.label config.stopKind
+        let streamIdText = toText config.stopStreamId
+        Log.warn
+          [fmt|Stop message timed out for #{workerLabel} stream #{streamIdText}, force-cancelling worker|]
+          |> Task.ignoreError
 
 
 forceWorkerStop ::
@@ -1154,16 +1152,14 @@ reaperLoop :: IntegrationDispatcher -> Task Text Unit
 reaperLoop dispatcher = do
   AsyncTask.sleep dispatcher.config.reaperIntervalMs
   shouldShutdown <- dispatcher.shutdownSignal |> ConcurrentVar.peek
-  if shouldShutdown
-    then Task.yield unit
-    else do
-      currentTime <- getCurrentTimeMs
-      let reaperChunkSize = 50
-      dispatcher.lifecycleEntityWorkers
-        |> ConcurrentMap.forEachChunked reaperChunkSize (reapIdleLifecycleWorker dispatcher currentTime)
-      dispatcher.entityWorkers
-        |> ConcurrentMap.forEachChunked reaperChunkSize (reapIdleStatelessWorker dispatcher currentTime)
-      reaperLoop dispatcher
+  Task.unless shouldShutdown do
+    currentTime <- getCurrentTimeMs
+    let reaperChunkSize = 50
+    dispatcher.lifecycleEntityWorkers
+      |> ConcurrentMap.forEachChunked reaperChunkSize (reapIdleLifecycleWorker dispatcher currentTime)
+    dispatcher.entityWorkers
+      |> ConcurrentMap.forEachChunked reaperChunkSize (reapIdleStatelessWorker dispatcher currentTime)
+    reaperLoop dispatcher
 
 
 reapIdleLifecycleWorker ::
