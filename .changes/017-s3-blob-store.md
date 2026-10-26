@@ -17,4 +17,7 @@ config-aware API decision. Current `Application.withFileUpload` does not accept 
 BlobStore and still selects Local; do not use the previously documented snippet.
 This repair does not remove the Application promise or change Local behavior.
 
-To verify locally, run `./dev test "BlobStore.S3" nhcore-test-service`; the suite signs requests against the published AWS examples and exercises the backend against an in-process fake S3 server.
+To verify locally, run `.agents/skills/tdd/scripts/test-match "BlobStore.S3" nhcore-test-service`.
+The selection checks signing against the published AWS examples and exercises
+the backend against an in-process fake S3 server. A passing run does not resolve
+the Application release blocker.

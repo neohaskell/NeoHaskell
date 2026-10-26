@@ -157,9 +157,25 @@ stays `unit` / `none`: it only proves that a connection attempt to a closed
 loopback port becomes a sanitized `StorageError`, and no fixture server ever
 answers it.
 
-`file-upload` is a security-sensitive capability: after Gate 1,
-`./dev spec-check --plan` routes this change to the local-only security design
-review (ADR-0069) before implementation is finalized.
+## Current verification and historical gates
+
+Run the focused S3 tests with the maintained runner:
+
+```sh
+.agents/skills/tdd/scripts/test-match "BlobStore.S3" nhcore-test-service
+```
+
+This selection includes both `S3Spec` and `SigV4Spec`. The runner rejects empty
+selections, setup errors, failed assertions, and missing or ambiguous summaries.
+For broader runtime verification, use
+`.agents/skills/neohaskell-test/scripts/run-full-suite --strict`.
+
+The criteria and fixture attestations above retain the original contract and
+test mapping. They are not a fresh execution receipt. The historical workflow
+classified `file-upload` as security-sensitive and used `./dev spec-check --plan`
+after Gate 1 to require a local-only security design review under ADR-0069.
+Current main removed `./dev` and `scripts/spec-check`. Their retirement does not
+waive the review requirements or the Application release blocker below.
 
 ## User impact
 

@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd -P)"
+ROOT="$("$SCRIPT_DIR/repo-root")"
+cd "$ROOT"
+
+shopt -s nullglob
+files=(flake.nix flake.lock nix/*.nix cabal.project cabal.project.dev */*.cabal)
+
+hash_input() {
+  local file
+  for file in "${files[@]}"; do
+    [ -f "$file" ] || continue
+    printf '%s\0' "$file"
+    cat "$file"
+    printf '\0'
+  done
+}
+
+if command -v sha256sum >/dev/null 2>&1; then
+  hash_input | sha256sum | cut -d' ' -f1
+elif command -v shasum >/dev/null 2>&1; then
+  hash_input | shasum -a 256 | cut -d' ' -f1
+else
+  echo "toolchain-fp: sha256sum or shasum is required" >&2
+  exit 2
+fi

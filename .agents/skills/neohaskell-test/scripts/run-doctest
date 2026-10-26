@@ -1,0 +1,208 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import math
+import os
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+import re
+
+sys.dont_write_bytecode = True
+
+from test_runtime import (
+    cabal_packages,
+    dependency_source_dirs,
+    invoke_toolchain,
+    run_bounded,
+    transcript_destination,
+)
+
+
+SCRIPT = Path(__file__).resolve()
+MAX_TIMEOUT_SECONDS = 3600
+SUMMARY_HINT = re.compile(r"^\s*Examples\s*:", re.IGNORECASE | re.MULTILINE)
+SUMMARY = re.compile(
+    r"^\s*Examples:\s*(\d+)\s+Tried:\s*(\d+)\s+Errors:\s*(\d+)\s+Failures:\s*(\d+)\s*$",
+    re.IGNORECASE | re.MULTILINE,
+)
+
+
+def timeout_value(raw: str) -> float:
+    try:
+        seconds = float(raw)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError("timeout must be a number of seconds") from error
+    if not math.isfinite(seconds) or seconds <= 0 or seconds > MAX_TIMEOUT_SECONDS:
+        raise argparse.ArgumentTypeError(f"timeout must be between 0 and {MAX_TIMEOUT_SECONDS:g} seconds")
+    return seconds
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Run doctest examples found in the local Cabal project.")
+    parser.add_argument("--strict", action="store_true", help="fail when a package has no doctest examples")
+    parser.add_argument("--timeout", type=timeout_value, default=900, help="seconds allowed per package")
+    parser.add_argument("--transcript", help="write the captured run to this path")
+    parser.add_argument("--_inside-toolchain", action="store_true", help=argparse.SUPPRESS)
+    return parser.parse_args()
+
+
+def example_files(package_dir: Path, source_dirs: tuple[Path, ...]) -> tuple[Path, ...]:
+    found: set[Path] = set()
+    for source_dir in source_dirs:
+        if not source_dir.is_dir():
+            continue
+        for path in source_dir.rglob("*.hs"):
+            if any(part in {".git", "dist", "dist-newstyle"} for part in path.parts):
+                continue
+            try:
+                if ">>>" in path.read_text(encoding="utf-8", errors="ignore"):
+                    found.add(path.resolve())
+            except OSError:
+                continue
+    return tuple(sorted(path for path in found if path.is_relative_to(package_dir.resolve())))
+
+
+def run_inside(root: Path, strict: bool, timeout: float) -> int:
+    try:
+        packages = cabal_packages(root)
+    except (OSError, ValueError) as error:
+        print(f"doctest: FAIL: could not read Cabal project targets: {error}")
+        return 1
+    if not packages:
+        print("doctest: SKIP all packages: cabal.project declares no local Cabal targets")
+        print("doctest: INCOMPLETE")
+        return 1 if strict else 0
+
+    inventory = [
+        (package, tuple(dict.fromkeys((*package.source_dirs, *dependency_source_dirs(package, packages)))),
+         example_files(package.cabal_file.parent, package.source_dirs))
+        for package in packages
+    ]
+    packages_with_examples = [item for item in inventory if item[2]]
+    if not packages_with_examples:
+        for package, _, _ in inventory:
+            print(f"doctest: SKIP {package.name}: no Haskell source contains '>>>'")
+        print(f"doctest: INCOMPLETE: {len(packages)} package(s) skipped")
+        return 1 if strict else 0
+
+    missing = [name for name in ("ghc", "doctest") if shutil.which(name) is None]
+    if missing:
+        print(f"doctest: FAIL: toolchain is missing {', '.join(missing)}")
+        return 1
+
+    env = os.environ.copy()
+    libdir_result = run_bounded(["ghc", "--print-libdir"], cwd=root, env=env, timeout=30)
+    if libdir_result.returncode != 0 or libdir_result.timed_out or libdir_result.output_limited:
+        output = libdir_result.output.decode("utf-8", errors="replace")
+        print(output, end="" if output.endswith("\n") else "\n")
+        print("doctest: FAIL: GHC could not report its library directory")
+        return 1
+    libdir = libdir_result.output.decode("utf-8", errors="replace").strip()
+    if not libdir:
+        print("doctest: FAIL: GHC returned an empty library directory")
+        return 1
+
+    skipped = 0
+    failed = 0
+    for package, source_dirs, files in inventory:
+        if not files:
+            print(f"doctest: SKIP {package.name}: no Haskell source contains '>>>'")
+            skipped += 1
+            continue
+        if not package.source_dirs:
+            print(f"doctest: FAIL {package.name}: Cabal has no library hs-source-dirs")
+            failed += 1
+            continue
+
+        command = [f"-i{path}" for path in source_dirs]
+        language = package.language
+        if language and language.lower() not in {"haskell98", "haskell2010"}:
+            command.append(f"-X{language}")
+        command.extend(f"-X{extension}" for extension in package.extensions)
+        command.extend((f"-package-db={libdir}/package.conf.d", "-w"))
+        command.extend(str(path) for path in files)
+        result = run_bounded(["doctest", *command], cwd=root, env=env, timeout=timeout)
+        output = result.output.decode("utf-8", errors="replace")
+        print(f"doctest: package {package.name}, {len(files)} modules")
+        if output:
+            print(output, end="" if output.endswith("\n") else "\n")
+        if result.timed_out:
+            print(f"doctest: FAIL {package.name}: timed out after {timeout:g} seconds")
+            failed += 1
+        elif result.output_limited:
+            print(f"doctest: FAIL {package.name}: output exceeded 8 MiB")
+            failed += 1
+        elif result.returncode != 0:
+            print(f"doctest: FAIL {package.name}: doctest exited with status {result.returncode}")
+            failed += 1
+        else:
+            summary_lines = SUMMARY_HINT.findall(output)
+            summaries = SUMMARY.findall(output)
+            if len(summary_lines) != 1 or len(summaries) != 1:
+                print(f"doctest: FAIL {package.name}: expected exactly one well-formed doctest summary")
+                failed += 1
+                continue
+            examples, tried, errors, failures = map(int, summaries[0])
+            if tried == 0:
+                print(f"doctest: SKIP {package.name}: doctest executed no examples")
+                skipped += 1
+            elif examples < 1 or tried > examples:
+                print(f"doctest: FAIL {package.name}: doctest summary has inconsistent example counts")
+                failed += 1
+            elif errors != 0 or failures != 0:
+                print(f"doctest: FAIL {package.name}: doctest reported {errors} error(s) and {failures} failure(s)")
+                failed += 1
+            else:
+                print(f"doctest: PASS {package.name}: {tried} example(s) executed")
+
+    if failed:
+        print(f"doctest: FAIL: {failed} package(s) failed; {skipped} skipped")
+        return 1
+    if skipped:
+        print(f"doctest: INCOMPLETE: {skipped} package(s) skipped")
+        return 1 if strict else 0
+    print(f"doctest: PASS: {len(packages)} Cabal package(s) covered")
+    return 0
+
+
+def main() -> int:
+    args = parse_args()
+    invocation_cwd = Path.cwd().resolve()
+    env = os.environ.copy()
+    try:
+        from test_runtime import resolve_root
+
+        root = resolve_root(SCRIPT.parent, invocation_cwd, env)
+    except (RuntimeError, subprocess.TimeoutExpired) as error:
+        print(f"doctest: {error}", file=sys.stderr)
+        return 2
+
+    if args._inside_toolchain:
+        return run_inside(root, args.strict, args.timeout)
+
+    transcript = transcript_destination(root, "doctest", args.transcript, invocation_cwd)
+    try:
+        packages = cabal_packages(root)
+        total_timeout = args.timeout * max(1, len(packages)) + 180
+    except (OSError, ValueError):
+        total_timeout = args.timeout + 180
+    inner_args = ["--timeout", str(args.timeout)]
+    if args.strict:
+        inner_args.append("--strict")
+    return invoke_toolchain(
+        script=SCRIPT,
+        root=root,
+        invocation_cwd=invocation_cwd,
+        env=env,
+        timeout=total_timeout,
+        owner="doctest",
+        transcript=transcript,
+        inner_args=inner_args,
+    )
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

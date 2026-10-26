@@ -45,54 +45,70 @@ red identity. Formal red evidence requires the exact assertion below.
 | C1 | Reject an oversized chunk before the source may finish | `hspec:nhcore-test-core:core/test/Http/ClientRawSpec.hs#sendRaw rejects an oversized chunk before source EOF` | integration | http:real |
 | C2 | Preserve method, body, headers and raw non-2xx behavior | `hspec:nhcore-test-core:core/test/Http/ClientRawSpec.hs#sendRaw PUT delivers method, raw body and custom header`<br>`hspec:nhcore-test-core:core/test/Http/ClientRawSpec.hs#sendRaw DELETE surfaces a 404 as a status code, not an error` | integration | http:real |
 | C3 | Preserve independent public Crypto compatibility vectors | `hspec:nhcore-test-core:core/test/CryptoSpec.hs#matches the HMAC-SHA256 known answer`<br>`hspec:nhcore-test-core:core/test/CryptoSpec.hs#matches the known answer for an empty message` | unit | none |
-| C4 | Preserve combined Core/service report wiring and its missing-report controls | `script:scripts/workflow-check#--self-test` | unit | none |
+| C4 | Require successful transport evidence in the current aggregate CI gate | `script:core/test/Http/test_transport_fixture.py#WorkflowTests.test_aggregate_requires_transport_success` | unit | none |
 | C5 | Test-manager trusted TLS succeeds, untrusted CA/wrong hostname fail, public untrusted TLS fails (not public trusted success) | `script:core/test/Http/transport_fixture.py#tls` | integration | http:real |
-| C6 | Fresh-process lower/uppercase env proxy traps work, actual raw request reaches origin and actual secure CONNECT avoids trap | `script:core/test/Http/transport_fixture.py#proxy` | integration | http:real |
+| C6 | Fresh-process lower/uppercase HTTP and CONNECT proxy controls work; actual raw and trusted public secure requests return exact origin status, header and bytes without additional trap events | `script:core/test/Http/transport_fixture.py#proxy` | integration | http:real |
 | C7 | Raw exact/empty/HEAD, finite overflow, advertised/decompressed size and existing zero-builder rejection controls pass; chunked/unknown-length reads reject before EOF and close | `script:core/test/Http/transport_fixture.py#body` | integration | http:real |
-| C8 | On a supported Unix trust loader, the real public HTTPS manager accepts an isolated system bundle after a library positive control | `script:core/test/Http/transport_fixture.py#public-trust` | integration | http:real |
+| C8 | Public HTTPS accepts independently trusted A and B peers with exact status/header/bytes; A-only trust rejects B and a wrong hostname; TLS1.2 succeeds and TLS1.1 fails against a verified legacy-client positive control | `script:core/test/Http/transport_fixture.py#public-trust` | integration | http:real |
 | C9 | The internal secure reader rejects chunked/unknown-length bodies before EOF and closes the actual socket (plaintext diagnostic, not public TLS) | `script:core/test/Http/transport_fixture.py#secure-internal-body` | integration | http:real |
+| C10 | Public trusted HTTPS satisfies the complete C7 body matrix, including withheld advertised body, paced five-byte chunked and close-delimited overflow, typed early rejection and live-process socket closure | `script:core/test/Http/transport_fixture.py#public-body` | integration | http:real |
 
-### Required additional criteria before implementation
+### Executable ownership and required evidence
 
-C8 requires the pinned Unix trust-loader capability: `SYSTEM_CERTIFICATE_PATH`
+C6, C8 and C10 require the pinned Linux trust-loader capability. `SYSTEM_CERTIFICATE_PATH`
 selects the fixture bundle in a fresh process. The pinned macOS loader uses
-Keychains and has no environment-bundle override; macOS/Windows return exit77,
+Keychains and has no environment-bundle override; non-Linux hosts return exit77,
 which is unsupported evidence, never a passing or skipped-green criterion.
 The fixture clears `SSL_CERT_FILE`, `SSL_CERT_DIR` and `NIX_SSL_CERT_FILE` in
 the child environment so only `SYSTEM_CERTIFICATE_PATH` selects its bundle.
 C9 invokes the actual private
 secure reader over a plaintext loopback socket to isolate read/close behavior;
-it cannot stand in for public secure request success. Both body modes observe
+it cannot stand in for public secure request success. All three body modes observe
 peer closure and require it before the source EOF latch/deadline.
 
-The script uses Python stdlib loopback fixtures and invokes `./dev exec cabal
-repl` for the actual Haskell request path. It checks clean compilation and
+The script uses Python stdlib loopback fixtures and invokes
+`.agents/skills/neohaskell-best-practices/scripts/with-toolchain cabal repl`
+for the actual Haskell request path. It checks clean compilation and
 explicit output markers rather than trusting GHCi exit0. Temporary synthetic
 keys are deleted and listeners close in `finally`; no system trust is changed.
 
-Linux CI runs all five modes in `test-transport` and requires that job in
-`ci-gate`. The criteria report includes its actual output alongside the Core
-and service reports. Each successful mode emits one exact
+Linux CI runs all six modes in `test-transport` and requires that job in
+`ci-gate`. Current main removed `./dev`, `scripts/spec-check`,
+`scripts/workflow-check` and `codemap/`. Their removal is preserved. C4 now
+executes the current aggregate gate with successful, failed, cancelled,
+skipped and missing transport results. The obsolete combined criteria-report
+consumer is not restored. Core and service jobs remain required independently.
+Each successful transport mode emits one exact
 `PASS script:core/test/Http/transport_fixture.py#<mode>` receipt and the printed
 `Http.Client.syntheticTransport` fixture marker. Nonzero exit (including 77),
 missing or duplicate receipts, wrong modes, and missing fixture markers fail
-the gate. Scripts do not fabricate Hspec summaries. The local script probe
-allows 1800 seconds overall and 600 seconds per native-toolchain session.
+the gate. Scripts do not fabricate Hspec summaries. Each native-toolchain
+session has a 600-second timeout. CI retains generated probes, output and
+server events alongside the transport report, without private keys.
 Body probes keep the client process alive for three seconds after rejection
-and require socket closure before 2.5 seconds, so process exit cannot stand in
-for response cleanup. The typed result also excludes closure by the two-second
-read watchdog. Production timeouts are unchanged.
+and require socket closure before 2.5 seconds while that process is still alive.
+The typed result also excludes closure by the two-second read watchdog.
+The advertised-length fixture sends headers but no body and withholds EOF.
+The chunked and close-delimited fixtures flush four bytes, then one byte,
+and withhold EOF. Production timeouts are unchanged.
 
-C5–C7 now provide executable audit-derived transport controls without any
-production test seam. C5 deliberately injects trust only into a test manager;
-it does not prove public trusted success. C6 isolates traversal while secure
-origin success is still blocked by trust. C7 covers raw reads only.
+C5 and C9 remain diagnostics. C6, C8 and C10 execute `Http.sendSecure`
+through its actual cached manager, without a production test seam. C8 also
+checks ordinary library system-store loading. Its TLS1.1 server uses A's
+trusted certificate. A certificate-verifying legacy client must negotiate
+TLS1.1 and receive the exact response before public rejection can pass.
+Legacy protocol and cipher settings exist only in this fixture.
 
 Gate 1 authorizes repair of existing guarantees, not readiness or merge. The
-following remaining validation promises must be proved before final review;
+following validation promises must be proved before final review;
 no placeholder, skipped test, helper-only proof, or existing suite count can
-stand in for them. Add to `core/test/Http/ClientRawSpec.hs`, suite
-`nhcore-test-core`, attest `integration / http:real` in `test-surfaces.json`.
+stand in for them. `ClientRawSpec.hs` retains C1 and the existing byte API
+tests in `nhcore-test-core`. The public TLS and fresh-process proxy promises
+map to C6, C8 and C10 in the existing `http:real` script entry in
+`test-surfaces.json`. They do not launch a nested Cabal REPL from a Cabal-owned
+Hspec test, which can contend for the same build directory. This ownership
+adjustment changes no response, trust, proxy or resource guarantee.
+The Python unit suite validates fixture logic only, never Haskell behavior.
 
 - `sendSecure accepts a trusted TLS peer`: synthetic local CA via a test-only
   trust seam through the same secure request path; verify status, header and
@@ -141,15 +157,15 @@ without a new public abstraction. Do not alter Crypto production code.
 
 Supporting scope: correct Change 016 CI/tooling ownership and inaccurate
 loopback/shared-manager wording; point Change 021 C4 at existing independent
-known answers. Preserve combined Core/service criteria reports. Correct API,
-release and header/limit/timeout prose only as approved, with generated codemap
-regeneration on the owner-approved base. Never hand-edit generated counters.
+known answers. Preserve current main's CI jobs and tooling deletions.
+Correct API, release and header/limit/timeout prose only as approved.
 
 Gate 1 requires a committed C1 failure, verified native red-evidence receipt,
 final exact criteria, and explicit maintainer approval. No historical receipt
-was recovered in this worktree. After approval, run `./dev spec-check --plan`
-and required local security review before product edits; do not publish local
-security notes. Performance review follows actual risk routing, not an invented
+was recovered in this worktree. Required local security review still precedes
+product edits; do not publish local security notes. The retired spec-check
+entrypoint is not a runnable gate on current main.
+Performance review follows actual risk routing, not an invented
 requirement. Full native tests and current-base CI remain future gates.
 
 ## User impact

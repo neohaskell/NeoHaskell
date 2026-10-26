@@ -6,7 +6,6 @@ module Testbed.Cart.Commands.AddItem (
 
 import Core
 import Decider qualified
-import Json qualified
 import Service.Auth (RequestContext)
 import Service.Command.Core (TransportsOf)
 import Service.CommandExecutor.TH (command)
@@ -19,10 +18,6 @@ data AddItem = AddItem
   , stockId :: Uuid
   , quantity :: Int
   }
-  deriving (Generic, Typeable, Show)
-
-
-instance Json.FromJSON AddItem
 
 
 getEntityId :: AddItem -> Maybe Uuid
