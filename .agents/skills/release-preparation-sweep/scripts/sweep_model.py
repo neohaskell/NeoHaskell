@@ -132,12 +132,14 @@ class DecisionKind(str, Enum):
     CARRY_REVIEW = "carry_review"
     APPROVE_ACTIONS = "approve_actions"
     WAIT_CHECKS = "wait_checks"
+    REPAIR_CI = "repair_ci"
     WAIT_REVIEW = "wait_review"
     NEED_VERDICT = "need_verdict"
     WAIT_MERGEABILITY = "wait_mergeability"
     MERGE = "merge"
     DISPATCH_AUTO = "dispatch_auto"
     TRACK_PUBLICATION = "track_publication"
+    RECOVER_RELEASE = "recover_release"
     RETRY_FROZEN = "retry_frozen"
     COMPLETE = "complete"
     LINK_STALE = "link_stale"
@@ -217,6 +219,16 @@ class ReviewEvidence:
 
 
 @dataclass(frozen=True)
+class ConsolidationEvidence:
+    complete: bool = False
+    candidate_head_sha: str | None = None
+    source_sha: str | None = None
+    covered_heads: frozenset[tuple[PRKey, str]] = frozenset()
+    missing_paths: tuple[str, ...] = ()
+    changelog_entries: int = 0
+
+
+@dataclass(frozen=True)
 class PRRecord:
     key: PRKey
     url: str
@@ -235,6 +247,7 @@ class PRRecord:
     review: ReviewEvidence = field(default_factory=ReviewEvidence)
     carryover_findings: tuple[ReviewFinding, ...] = ()
     carryover_reconciled: bool = False
+    consolidation: ConsolidationEvidence = field(default_factory=ConsolidationEvidence)
     mergeable: bool | None = None
     mergeable_head_sha: str | None = None
     merge_commit_sha: str | None = None
@@ -407,7 +420,7 @@ def _check_decision(
         if evidence.head_sha == record.head_sha:
             evidence_by_context.setdefault(evidence.context, []).append(evidence)
 
-    pending, failed, wrong_app = [], [], []
+    pending, failed, ambiguous, wrong_app = [], [], [], []
     for required in rules.required_checks:
         evidence = evidence_by_context.get(required.context, [])
         matching_app = [item for item in evidence if item.app_id == required.app_id]
@@ -422,13 +435,15 @@ def _check_decision(
             pending.append(required.context)
             continue
         if len(authoritative) != 1:
-            failed.append(required.context + " (ambiguous run evidence)")
+            ambiguous.append(required.context)
             continue
         status = authoritative[0].status
         if status is CheckStatus.SUCCESS:
             continue
         if status in {CheckStatus.ACTION_REQUIRED, CheckStatus.PENDING}:
             pending.append(required.context)
+        elif status is CheckStatus.UNKNOWN:
+            ambiguous.append(required.context)
         else:
             failed.append(required.context + " (" + status.value + ")")
 
@@ -440,11 +455,19 @@ def _check_decision(
             record,
             (("contexts", ", ".join(sorted(wrong_app))),),
         )
-    if failed:
+    if ambiguous:
         return _decision(
             snapshot,
             DecisionKind.BLOCKED,
-            "A required check failed, was skipped, or has ambiguous evidence",
+            "A required check has ambiguous current-run evidence",
+            record,
+            (("contexts", ", ".join(sorted(ambiguous))),),
+        )
+    if failed:
+        return _decision(
+            snapshot,
+            DecisionKind.REPAIR_CI,
+            "Diagnose and repair the failed required check without changing the merge gate",
             record,
             (("contexts", ", ".join(sorted(failed))),),
         )
@@ -502,14 +525,25 @@ def _mutation_safety_decision(
         PublicationStatus.PAUSED,
         PublicationStatus.CORRUPT,
         PublicationStatus.NEEDS_SOURCE_FIX,
-        PublicationStatus.UNKNOWN,
     }:
         attempt = snapshot.pending_attempt
         return _decision(
             snapshot,
-            DecisionKind.BLOCKED,
-            "The frozen release attempt needs recovery or investigation",
+            DecisionKind.RECOVER_RELEASE,
+            "Investigate and recover the frozen release attempt through NeoHaskell release",
             details=(("attempt", attempt.plan_id), ("state", attempt.publication.value)),
+            plan_id=attempt.plan_id,
+        )
+    if (
+        snapshot.pending_attempt is not None
+        and snapshot.pending_attempt.publication is PublicationStatus.UNKNOWN
+    ):
+        attempt = snapshot.pending_attempt
+        return _decision(
+            snapshot,
+            DecisionKind.BLOCKED,
+            "The frozen release attempt has an unknown publication state",
+            details=(("attempt", attempt.plan_id),),
             plan_id=attempt.plan_id,
         )
 
@@ -541,6 +575,39 @@ def _mutation_safety_decision(
     if decision.kind not in MUTATING_DECISIONS:
         return None
     return _branch_rules_decision(snapshot)
+
+
+def _older_heads(snapshot: SweepSnapshot, candidate: PRRecord) -> frozenset[tuple[PRKey, str]]:
+    return frozenset(
+        (other.key, other.head_sha)
+        for other in snapshot.records.values()
+        if other.key != candidate.key
+        and other.ownership is Ownership.VERIFIED
+        and other.source_sha != candidate.source_sha
+        and (
+            other.disposition is Disposition.OPEN
+            or (
+                other.disposition is Disposition.CLOSED
+                and other.replacement_link_recorded
+            )
+        )
+    )
+
+
+def _coverage_proven(
+    candidate: PRRecord,
+    source_sha: str | None,
+    required_heads: frozenset[tuple[PRKey, str]],
+) -> bool:
+    coverage = candidate.consolidation
+    return (
+        coverage.complete
+        and coverage.candidate_head_sha == candidate.head_sha
+        and coverage.source_sha == source_sha
+        and required_heads <= coverage.covered_heads
+        and not coverage.missing_paths
+        and coverage.changelog_entries == 1
+    )
 
 
 def _reduce(snapshot: SweepSnapshot) -> Decision:
@@ -588,6 +655,14 @@ def _reduce(snapshot: SweepSnapshot) -> Decision:
         )
 
     if stale and merged is not None:
+        required_heads = _older_heads(snapshot, merged)
+        if not _coverage_proven(merged, merged.source_sha, required_heads):
+            return _decision(
+                snapshot,
+                DecisionKind.BLOCKED,
+                "The merged preparation lacks cumulative coverage for older heads before closure",
+                merged,
+            )
         record = stale[0]
         if not record.replacement_link_recorded:
             return _decision(
@@ -684,14 +759,6 @@ def _reduce(snapshot: SweepSnapshot) -> Decision:
             details=(("prs", ", ".join(str(record.key.number) for record in current)),),
         )
 
-    active = _active_runs(snapshot)
-    if active:
-        return _decision(
-            snapshot,
-            DecisionKind.WAIT_FOR_RUN,
-            "A relevant workflow run is active; wait and rescan before dispatching or selecting a PR",
-            details=(("runs", ", ".join(str(run.run_id) for run in active)),),
-        )
     if current:
         record = current[0]
         if record.disposition is not Disposition.OPEN:
@@ -708,6 +775,40 @@ def _reduce(snapshot: SweepSnapshot) -> Decision:
                 "The candidate base does not match the current main snapshot",
                 record,
             )
+        unknown_older = sorted(
+            (
+                other
+                for other in snapshot.records.values()
+                if other.key != record.key
+                and other.preparation_like
+                and (
+                    other.disposition is Disposition.OPEN
+                    or (
+                        other.disposition is Disposition.CLOSED
+                        and other.replacement_link_recorded
+                    )
+                )
+                and other.source_sha != snapshot.main_sha
+                and other.ownership in {Ownership.UNKNOWN, Ownership.REJECTED}
+            ),
+            key=lambda other: other.key,
+        )
+        if unknown_older:
+            return _decision(
+                snapshot,
+                DecisionKind.BLOCKED,
+                "An older preparation-like PR lacks ownership proof, so cumulative coverage is unknown",
+                record,
+                (("prs", ", ".join(str(other.key.number) for other in unknown_older)),),
+            )
+        older_heads = _older_heads(snapshot, record)
+        if not _coverage_proven(record, snapshot.main_sha, older_heads):
+            return _decision(
+                snapshot,
+                DecisionKind.BLOCKED,
+                "The one-release changelog and older preparation coverage are not proven for the current heads",
+                record,
+            )
         if record.carryover_findings and not record.carryover_reconciled:
             return _decision(
                 snapshot,
@@ -715,6 +816,50 @@ def _reduce(snapshot: SweepSnapshot) -> Decision:
                 "Carry forward actionable findings from older preparation PRs and recheck them against this diff",
                 record,
                 (("findings", str(len(record.carryover_findings))),),
+            )
+        older = sorted(
+            (
+                other
+                for other in snapshot.records.values()
+                if other.key != record.key
+                and other.ownership is Ownership.VERIFIED
+                and other.disposition is Disposition.OPEN
+                and other.source_sha != snapshot.main_sha
+            ),
+            key=lambda other: other.key,
+        )
+        if any(other.stale_source_is_ancestor_of_replacement is not True for other in older):
+            return _decision(
+                snapshot,
+                DecisionKind.BLOCKED,
+                "An older preparation lacks source ancestry proof for the current candidate",
+                record,
+            )
+        if older:
+            stale = older[0]
+            if not stale.replacement_link_recorded:
+                return _decision(
+                    snapshot,
+                    DecisionKind.LINK_STALE,
+                    "Link this proven older preparation to the open cumulative candidate",
+                    stale,
+                    (("replacement", record.url),),
+                )
+            return _decision(
+                snapshot,
+                DecisionKind.CLOSE_STALE,
+                "Close one proven older preparation after cumulative coverage is established",
+                stale,
+                (("replacement", record.url),),
+            )
+        active = _active_runs(snapshot)
+        if active:
+            return _decision(
+                snapshot,
+                DecisionKind.WAIT_FOR_RUN,
+                "A relevant workflow run is active; wait and rescan before merge",
+                record,
+                (("runs", ", ".join(str(run.run_id) for run in active)),),
             )
         if not record.review.complete:
             return _decision(
@@ -833,6 +978,15 @@ def _reduce(snapshot: SweepSnapshot) -> Decision:
             "All live gates bind the verified current head and main",
             record,
             (("queue_required", str(rules.queue_required).lower()),),
+        )
+
+    active = _active_runs(snapshot)
+    if active:
+        return _decision(
+            snapshot,
+            DecisionKind.WAIT_FOR_RUN,
+            "A relevant workflow run is active; wait and rescan before dispatch",
+            details=(("runs", ", ".join(str(run.run_id) for run in active)),),
         )
 
     same_source_unverified = [
