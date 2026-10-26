@@ -1,4 +1,3 @@
-{-# LANGUAGE Strict #-}
 
 -- | Settings that bound dispatcher workers, retries, and cleanup.
 --

@@ -1,4 +1,3 @@
-{-# LANGUAGE Strict #-}
 
 -- | Inputs required to construct one integration dispatcher.
 --

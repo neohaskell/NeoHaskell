@@ -1,4 +1,3 @@
-{-# LANGUAGE Strict #-}
 
 -- | Names the worker variant when a Stop message cannot be delivered.
 --

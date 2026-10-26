@@ -1,4 +1,3 @@
-{-# LANGUAGE Strict #-}
 
 -- | Owns admission and draining for one integration worker queue.
 --

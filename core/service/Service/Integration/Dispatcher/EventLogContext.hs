@@ -1,4 +1,3 @@
-{-# LANGUAGE Strict #-}
 
 -- | Carries event identity and optional attribution through integration logs.
 --

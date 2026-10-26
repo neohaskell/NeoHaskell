@@ -1,4 +1,3 @@
-{-# LANGUAGE Strict #-}
 
 -- | Owns the closed result of one integration runner and its failure labels.
 --

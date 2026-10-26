@@ -1,4 +1,3 @@
-{-# LANGUAGE Strict #-}
 
 -- | Owns one runner invocation and the outcome retained for interruption logs.
 --

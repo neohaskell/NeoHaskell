@@ -1,4 +1,3 @@
-{-# LANGUAGE Strict #-}
 
 -- | Tracks one runner's progress so interruption emits its last known outcome.
 --

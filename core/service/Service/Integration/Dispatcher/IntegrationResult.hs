@@ -1,4 +1,3 @@
-{-# LANGUAGE Strict #-}
 
 -- | Owns the one integration_result log record produced for each dispatch result.
 --
