@@ -45,10 +45,10 @@ spec = do
           Err message -> message |> shouldSatisfy (Text.contains "deferred nested error")
           Ok _ -> Test.fail "expected a nested deferred exception"
 
-    describe "mask" do
+    describe "withCancellationDeferred" do
       it "defers cancellation and restores the caller's state" \_ -> do
         callerState <- Task.cancellationState
-        (protectedState, restoredState) <- Task.mask \restore -> do
+        (protectedState, restoredState) <- Task.withCancellationDeferred \restore -> do
           protectedState <- Task.cancellationState
           restoredState <- restore Task.cancellationState
           Task.yield (protectedState, restoredState)

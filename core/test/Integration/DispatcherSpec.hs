@@ -124,27 +124,23 @@ makeContext = do
 waitForDispatchCount :: Int -> Int -> ConcurrentVar.ConcurrentVar Int -> Task Text Unit
 waitForDispatchCount attemptsLeft expectedCount dispatchCount = do
   currentCount <- dispatchCount |> ConcurrentVar.peek
-  if currentCount >= expectedCount
-    then Task.yield unit
-    else
-      if attemptsLeft <= 0
-        then Task.throw "Timed out waiting for command dispatch"
-        else do
-          AsyncTask.sleep 20 |> Task.mapError (\_ -> "dispatch completion wait failed" :: Text)
-          waitForDispatchCount (attemptsLeft - 1) expectedCount dispatchCount
+  Task.unless (currentCount >= expectedCount) do
+    if attemptsLeft <= 0
+      then Task.throw "Timed out waiting for command dispatch"
+      else do
+        AsyncTask.sleep 20 |> Task.mapError (\_ -> "dispatch completion wait failed" :: Text)
+        waitForDispatchCount (attemptsLeft - 1) expectedCount dispatchCount
 
 
 waitForBlockedOnSTM :: Int -> AsyncTask.AsyncTask err result -> Task Text Unit
 waitForBlockedOnSTM attemptsLeft child = do
   waiting <- AsyncTask.isWaitingForStateChange child
-  if waiting
-    then Task.yield unit
-    else
-      if attemptsLeft <= 0
-        then Task.throw "Timed out waiting for a thread blocked on STM"
-        else do
-          AsyncTask.sleep 5 |> Task.mapError (\_ -> "thread status wait failed" :: Text)
-          waitForBlockedOnSTM (attemptsLeft - 1) child
+  Task.unless waiting do
+    if attemptsLeft <= 0
+      then Task.throw "Timed out waiting for a thread blocked on STM"
+      else do
+        AsyncTask.sleep 5 |> Task.mapError (\_ -> "thread status wait failed" :: Text)
+        waitForBlockedOnSTM (attemptsLeft - 1) child
 
 
 cancelShutdownWhileWriterIsAdmitted ::
