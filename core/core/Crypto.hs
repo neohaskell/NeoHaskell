@@ -45,6 +45,11 @@ module Crypto (
 
   -- * Verification
   verifyWith,
+
+  -- * Primitives
+  sha256,
+  hmacSha256,
+  toHex,
 ) where
 
 import Basics
@@ -127,13 +132,10 @@ generateHmacKey = do
 --   |> Crypto.signWith key
 -- @
 signWith :: HmacKey -> Bytes -> Text
-signWith (HmacKey keyBytes) message = do
-  let messageBytes = Bytes.unwrap message
-  let hmacResult = HMAC.hmac keyBytes messageBytes :: HMAC.HMAC Hash.SHA256
-  let signatureBytes = BA.convert hmacResult :: BS.ByteString
-  let encoded = Encoding.convertToBase Encoding.Base16 signatureBytes :: BS.ByteString
-  Bytes.fromLegacy encoded
-    |> Text.fromBytes
+signWith (HmacKey keyBytes) message =
+  message
+    |> hmacSha256 (Bytes.fromLegacy keyBytes)
+    |> toHex
 
 
 -- | Verify an HMAC-SHA256 signature in constant time.
@@ -152,3 +154,52 @@ verifyWith key signature message = do
   let expectedBytes = Text.toBytes expected |> Bytes.unwrap
   let providedBytes = Text.toBytes (Text.toLower signature) |> Bytes.unwrap
   BA.constEq providedBytes expectedBytes
+
+
+-- | Raw SHA-256 digest (32 bytes) of the given bytes.
+--
+-- This is the unkeyed hash. For message authentication use 'signWith'
+-- or 'hmacSha256' instead.
+--
+-- @
+-- payload
+--   |> Crypto.sha256
+--   |> Crypto.toHex
+-- @
+sha256 :: Bytes -> Bytes
+sha256 message = do
+  let digest = Hash.hash (Bytes.unwrap message) :: Hash.Digest Hash.SHA256
+  Bytes.fromLegacy (BA.convert digest :: BS.ByteString)
+
+
+-- | Raw HMAC-SHA256 (32 bytes) of a message under an arbitrary key.
+--
+-- Unlike 'signWith' this takes any key bytes and returns the raw MAC, so
+-- it can be chained — protocols such as AWS Signature V4 derive a signing
+-- key by feeding one HMAC result into the next. For a single webhook
+-- signature with a fixed secret prefer 'signWith' and 'verifyWith', which
+-- also enforce the 32-byte minimum key length and compare in constant
+-- time.
+--
+-- @
+-- message
+--   |> Crypto.hmacSha256 key
+-- @
+hmacSha256 :: Bytes -> Bytes -> Bytes
+hmacSha256 key message = do
+  let mac = HMAC.hmac (Bytes.unwrap key) (Bytes.unwrap message) :: HMAC.HMAC Hash.SHA256
+  Bytes.fromLegacy (BA.convert mac :: BS.ByteString)
+
+
+-- | Lowercase hexadecimal text of the given bytes (two characters per byte).
+--
+-- >>> Bytes.pack [0, 15, 255] |> Crypto.toHex
+-- "000fff"
+--
+-- >>> Text.toBytes "abc" |> Crypto.sha256 |> Crypto.toHex
+-- "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+toHex :: Bytes -> Text
+toHex bytes = do
+  let encoded = Encoding.convertToBase Encoding.Base16 (Bytes.unwrap bytes) :: BS.ByteString
+  Bytes.fromLegacy encoded
+    |> Text.fromBytes
