@@ -74,7 +74,7 @@ jobs:
           ref: ${{ needs.prepare.outputs.tooling_revision }}
           path: .agents-state/release-tooling
           persist-credentials: false
-      - uses: DeterminateSystems/determinate-nix-action@v3.23.3
+      - uses: DeterminateSystems/determinate-nix-action@v3.24.0
         if: matrix.reuse != true
       - name: Freeze the starter at the merged release revision
         if: matrix.reuse != true
@@ -108,7 +108,7 @@ jobs:
           ref: ${{ needs.prepare.outputs.tooling_revision }}
           path: .agents-state/release-tooling
           persist-credentials: false
-      - uses: DeterminateSystems/determinate-nix-action@v3.23.3
+      - uses: DeterminateSystems/determinate-nix-action@v3.24.0
         if: matrix.reuse != true && matrix.target != 'x86_64-apple-darwin'
       - uses: cachix/install-nix-action@448cde739abec1eaf0646249e3d25bb8d9bc7702 # v31.11.2; supports Intel macOS
         if: matrix.reuse != true && matrix.target == 'x86_64-apple-darwin'
@@ -154,7 +154,7 @@ jobs:
           ref: ${{ needs.prepare.outputs.tooling_revision }}
           path: .agents-state/release-tooling
           persist-credentials: false
-      - uses: DeterminateSystems/determinate-nix-action@v3.23.3
+      - uses: DeterminateSystems/determinate-nix-action@v3.24.0
         if: matrix.reuse != true
         with:
           extra-conf: |
@@ -212,7 +212,7 @@ jobs:
           ref: ${{ needs.prepare.outputs.tooling_revision }}
           path: .agents-state/release-tooling
           persist-credentials: false
-      - uses: DeterminateSystems/determinate-nix-action@v3.23.3
+      - uses: DeterminateSystems/determinate-nix-action@v3.24.0
         if: steps.cache-auth.outputs.enabled == 'true'
         with:
           extra-conf: |
