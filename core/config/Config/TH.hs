@@ -185,16 +185,12 @@ buildFieldShowExpr configVar fd = do
   let fieldNameStr = Text.unpack fd.fieldName
   let isSecretField = hasSecretModifier fd.fieldModifiers
 
-  case isSecretField of
-    True -> do
-      -- Secret field: return literal "<REDACTED>"
+  if isSecretField
+    then do
       return (TH.LitE (TH.StringL (fieldNameStr ++ " = \"<REDACTED>\"")))
-    False -> do
-      -- Normal field: "fieldName = " ++ show (config.fieldName)
+    else do
       let prefixLit = TH.LitE (TH.StringL (fieldNameStr ++ " = "))
-      -- Access the field: config.fieldName (using GetFieldE for record dot syntax)
       let fieldAccess = TH.GetFieldE (TH.VarE configVar) fieldNameStr
-      -- Apply show: show (config.fieldName)
       let showExpr = TH.AppE (TH.VarE 'show) fieldAccess
       -- Concatenate: "fieldName = " ++ show (config.fieldName)
       return (concatStrings [prefixLit, showExpr])
@@ -306,15 +302,12 @@ fieldToDefaultAssign fd = do
   let mods = fd.fieldModifiers
   let isNestedField = hasNestedModifier mods
 
-  -- Find the default value if present
   defaultValue <- case findDefault mods of
     Just qExpr -> qExpr
-    Nothing -> case isNestedField of
-      True -> do
-        -- Nested field - use def from the nested type
+    Nothing -> if isNestedField
+      then do
         return (TH.VarE 'GhcDefault.def)
-      False -> do
-        -- Required field - use error
+      else do
         let errMsg = "Required field: " ++ Text.unpack fd.fieldName
         return (TH.AppE (TH.VarE 'GhcErr.error) (TH.LitE (TH.StringL errMsg)))
 
@@ -447,15 +440,12 @@ fieldToJsonPair configVar fd = do
   let isSecretField = hasSecretModifier fd.fieldModifiers
   let keyExp = TH.AppE (TH.VarE 'AesonKey.fromString) (TH.LitE (TH.StringL fieldNameStr))
 
-  valueExp <- case isSecretField of
-    True -> do
-      -- Secret field: use "<REDACTED>" string
+  valueExp <- if isSecretField
+    then do
       return (TH.SigE (TH.LitE (TH.StringL "<REDACTED>")) (TH.ConT ''Text))
-    False -> do
-      -- Normal field: config.fieldName
+    else do
       return (TH.GetFieldE (TH.VarE configVar) fieldNameStr)
 
-  -- key .= value
   return (TH.InfixE (Just keyExp) (TH.VarE '(Aeson..=)) (Just valueExp))
 
 
@@ -512,23 +502,20 @@ fieldToSettingExp fd = do
   let mods = fd.fieldModifiers
   let isNestedField = hasNestedModifier mods
 
-  case isNestedField of
-    True -> do
-      -- Nested field: use subSettings with the prefix
-      -- The prefix comes from envPrefix modifier, or defaults to the field name
+  if isNestedField
+    then do
       let prefix = case findEnvPrefix mods of
             Just p -> Text.unpack p
             Nothing -> Text.unpack fd.fieldName
       [|OptEnvConf.subSettings $(TH.litE (TH.stringL prefix))|]
 
-    False -> do
-      -- Regular field: setting [builder1, builder2, ..., reader auto/str]
+    else do
       builders <- fieldModifiersToBuilders fd
       -- Use 'str' reader for Text/String types (IsString-based, accepts raw values)
       -- Use 'auto' reader for everything else (Read-based, expects Haskell syntax)
-      readerExp <- case isTextLikeType fd.fieldType of
-        True -> [|OptEnvConf.reader OptEnvConf.str|]
-        False -> [|OptEnvConf.reader OptEnvConf.auto|]
+      readerExp <- if isTextLikeType fd.fieldType
+        then [|OptEnvConf.reader OptEnvConf.str|]
+        else [|OptEnvConf.reader OptEnvConf.auto|]
       let allBuilders = builders ++ [readerExp]
       let builderListExp = TH.ListE allBuilders
       return (TH.AppE (TH.VarE 'OptEnvConf.setting) builderListExp)
@@ -631,10 +618,10 @@ toEnvVarName name = do
     let needsUnderscore =
           (GhcChar.isLower c1 && GhcChar.isUpper c2) ||
           (GhcChar.isDigit c1 && GhcChar.isUpper c2)
-    case needsUnderscore of
-      True ->
+    if needsUnderscore
+      then
         c1 : '_' : insertUnderscores (c2 : rest)
-      False ->
+      else
         c1 : insertUnderscores (c2 : rest)
 
 

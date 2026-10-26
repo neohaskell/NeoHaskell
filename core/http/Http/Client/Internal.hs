@@ -49,9 +49,9 @@ getRaw options = do
   case options.maxResponseBytes of
     Nothing -> Task.yield response
     Just maxBytes ->
-      case response.body |> Bytes.length |> (\len -> len > maxBytes) of
-        True -> Task.throw (Http.ResponseTooLarge maxBytes)
-        False -> Task.yield response
+      if response.body |> Bytes.length |> (\len -> len > maxBytes)
+        then Task.throw (Http.ResponseTooLarge maxBytes)
+        else Task.yield response
 
 
 -- | Internal IO action for raw GET request
@@ -131,9 +131,9 @@ sanitizeInternalHttpError exception = do
           let truncated = case HttpSimple.parseRequest url of
                 GhcEither.Left _ -> "<malformed URL>"
                 GhcEither.Right req -> do
-                  let scheme = case HttpClient.secure req of
-                        True -> "https://" :: Text
-                        False -> "http://" :: Text
+                  let scheme = if HttpClient.secure req
+                        then "https://" :: Text
+                        else "http://" :: Text
                   let host = toText (show (HttpClient.host req))
                   scheme |> Text.append host
           [fmt|Invalid URL: #{truncated}|]

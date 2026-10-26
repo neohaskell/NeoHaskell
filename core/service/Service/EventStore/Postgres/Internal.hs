@@ -138,10 +138,10 @@ defaultOps :: Ops
 defaultOps = do
   let acquire cfg = do
         let size = cfg.poolSize
-        case size > 0 of
-          False ->
+        if size <= 0
+          then
             Task.throw [fmt|poolSize must be > 0, got #{size}|]
-          True ->
+          else
             case toConnectionSettings cfg of
               Err portErr ->
                 Task.throw portErr

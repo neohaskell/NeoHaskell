@@ -49,10 +49,9 @@ getDnsTimeoutSeconds = do
       case GhcRead.readMaybe @Int (Text.toLinkedList envValue) of
         Nothing -> Task.yield defaultDnsTimeoutSeconds
         Just seconds ->
-          -- Enforce reasonable bounds: 1-60 seconds
-          case seconds >= 1 && seconds <= 60 of
-            True -> Task.yield seconds
-            False -> Task.yield defaultDnsTimeoutSeconds
+          if seconds >= 1 && seconds <= 60
+            then Task.yield seconds
+            else Task.yield defaultDnsTimeoutSeconds
 
 
 -- | URL validation errors.
@@ -131,14 +130,13 @@ validateNonLocalhostHostname urlText normalizedHost =
   case Hostname.isLocalhost normalizedHost of
     True -> Ok urlText  -- Localhost HTTPS is always valid
     False -> do
-      -- SECURITY: Reject single-label hostnames (no dots)
       -- Single-label names may resolve via DNS search domains to internal hosts
-      case isSingleLabelHostname normalizedHost of
-        True -> Err (SingleLabelHostname urlText)
-        False ->
-          case isPrivateOrLoopback normalizedHost of
-            True -> Err (PrivateIpBlocked urlText)
-            False -> Ok urlText
+      if isSingleLabelHostname normalizedHost
+        then Err (SingleLabelHostname urlText)
+        else
+          if isPrivateOrLoopback normalizedHost
+            then Err (PrivateIpBlocked urlText)
+            else Ok urlText
 
 
 -- | Convert a character to lowercase.
@@ -308,15 +306,13 @@ isNonRoutableIPv6 ip = do
   let relay6to4 = IP.toIPv6 [0x2002, 0xc058, 0x6300, 0, 0, 0, 0, 0]
   let relay6to4Range = IP.makeAddrRange relay6to4 24
 
-  -- Extract embedded IPv4 from IPv4-mapped and check if private
-  let ipv4MappedPrivate = case isIPv4Mapped of
-        True -> extractAndCheckIPv4 ip
-        False -> False
+  let ipv4MappedPrivate = if isIPv4Mapped
+        then extractAndCheckIPv4 ip
+        else False
 
-  -- Extract embedded IPv4 from NAT64 and check if private
-  let nat64Private = case isNat64 of
-        True -> extractAndCheckIPv4 ip
-        False -> False
+  let nat64Private = if isNat64
+        then extractAndCheckIPv4 ip
+        else False
 
   IP.isMatchedTo ip unspecifiedRange
     || IP.isMatchedTo ip loopbackRange
@@ -373,19 +369,13 @@ validateSecureUrlWithDns urlText = do
         Nothing -> Task.yield (Err (MalformedUrl urlText))
         Just hostname -> do
           let hostStr = Text.toLinkedList hostname
-          -- Normalize to lowercase for consistent comparison
           let normalizedHostStr = LinkedList.map toLowerChar hostStr
-          -- Skip DNS resolution for localhost addresses (development)
-          -- Localhost is validated by validateSecureUrl, no DNS needed
-          case Hostname.isLocalhost normalizedHostStr of
-            True -> Task.yield (Ok urlText)
-            False ->
-              -- Skip DNS resolution for literal IP addresses
-              -- (already validated by validateSecureUrl above)
-              case isLiteralIpHost hostname of
-                True -> Task.yield (Ok urlText)
-                False -> do
-                  -- Resolve DNS and check all IPs
+          if Hostname.isLocalhost normalizedHostStr
+            then Task.yield (Ok urlText)
+            else
+              if isLiteralIpHost hostname
+                then Task.yield (Ok urlText)
+                else do
                   resolveResult <- resolveDns hostname
                   case resolveResult of
                     DnsTimeout ->
@@ -559,9 +549,9 @@ runDnsSubprocess timeoutSeconds cmd args = do
         GhcExit.ExitFailure 1 ->
           Task.yield (DnsSubprocessError (Text.fromLinkedList [fmt|Host not found: #{out}|]))
         GhcExit.ExitFailure code -> do
-          let errMsg = case Text.isEmpty err of
-                True -> Text.fromLinkedList [fmt|DNS resolution failed (exit code #{code})|]
-                False -> err
+          let errMsg = if Text.isEmpty err
+                then Text.fromLinkedList [fmt|DNS resolution failed (exit code #{code})|]
+                else err
           Task.yield (DnsSubprocessError errMsg)
 
 
@@ -623,9 +613,9 @@ findPrivateIp ips =
   case ips of
     [] -> Nothing
     (ip : rest) ->
-      case isPrivateIpText ip of
-        True -> Just ip
-        False -> findPrivateIp rest
+      if isPrivateIpText ip
+        then Just ip
+        else findPrivateIp rest
 
 
 -- | Check if an IP address string is private/loopback.

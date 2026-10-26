@@ -135,12 +135,12 @@ withUrl url options =
 -- FAILS FAST: Raises error if seconds <= 0 to catch misuse at call site.
 withTimeout :: GhcInt.Int -> Request -> Request
 withTimeout seconds options =
-  case seconds > 0 of
-    True ->
+  if seconds > 0
+    then
       options
         { timeoutSeconds = Just seconds
         }
-    False ->
+    else
       panic [fmt|withTimeout requires positive seconds, got: #{seconds}|]
 
 
@@ -162,12 +162,12 @@ addHeader key value options =
 -- FAILS FAST: Raises error if count < 0 to catch misuse at call site.
 withRedirects :: GhcInt.Int -> Request -> Request
 withRedirects count options =
-  case count >= 0 of
-    True ->
+  if count >= 0
+    then
       options
         { maxRedirects = count
         }
-    False ->
+    else
       panic [fmt|withRedirects requires non-negative count, got: #{count}|]
 
 
@@ -176,12 +176,12 @@ withRedirects count options =
 {-# INLINE withMaxResponseSize #-}
 withMaxResponseSize :: GhcInt.Int -> Request -> Request
 withMaxResponseSize maxBytes options =
-  case maxBytes > 0 of
-    True ->
+  if maxBytes > 0
+    then
       options
         { maxResponseBytes = Just maxBytes
         }
-    False ->
+    else
       panic [fmt|withMaxResponseSize requires positive bytes, got: #{maxBytes}|]
 
 
@@ -244,9 +244,9 @@ sanitizeUrl url = do
   case HttpSimple.parseRequest url of
     GhcEither.Left _ -> "<malformed URL>"
     GhcEither.Right req -> do
-      let schemeText = case HttpClient.secure req of
-            True -> "https://" :: Text
-            False -> "http://" :: Text
+      let schemeText = if HttpClient.secure req
+            then "https://" :: Text
+            else "http://" :: Text
       let hostText = toText (show (HttpClient.host req))
       let portText = toText (show (HttpClient.port req))
       schemeText |> Text.append hostText |> Text.append ":" |> Text.append portText
@@ -340,11 +340,10 @@ getSecure ::
   Task Error (Response Bytes)
 getSecure options = do
   let urlText = options.url |> Maybe.withDefault ""
-  case Text.startsWith "https://" urlText of
-    False ->
-      -- SECURITY: sanitizeUrlText strips query params which may contain secrets
+  if not (Text.startsWith "https://" urlText)
+    then
       Task.throw (InvalidUrl (sanitizeUrlText urlText))
-    True -> do
+    else do
       let host = requestHost options
       Log.debug [fmt|HTTP GET (secure) #{host}|] |> Task.ignoreError
       secureResult <-
@@ -402,9 +401,9 @@ readBodyFully reader = readBodyChunks reader GhcBSChar.empty
 readBodyChunks :: HttpClient.BodyReader -> ByteString -> GhcIO.IO ByteString
 readBodyChunks reader accumulatedBody = do
   chunk <- HttpClient.brRead reader
-  case chunk == GhcBSChar.empty of
-    True -> pure accumulatedBody
-    False -> do
+  if chunk == GhcBSChar.empty
+    then pure accumulatedBody
+    else do
       let nextBody = GhcBSChar.append accumulatedBody chunk
       readBodyChunks reader nextBody
 
@@ -421,9 +420,9 @@ checkContentLengthHeaderLimit maxResponseLimit responseHeaders =
       case parsedContentLength of
         Nothing -> Nothing
         Just contentLength ->
-          case contentLength > maxBytes of
-            True -> Just maxBytes
-            False -> Nothing
+          if contentLength > maxBytes
+            then Just maxBytes
+            else Nothing
 
 
 parseContentLengthHeader :: ByteString -> Maybe GhcInt.Int
@@ -431,9 +430,9 @@ parseContentLengthHeader rawContentLength =
   case GhcBSChar.readInt rawContentLength of
     Nothing -> Nothing
     Just (parsedContentLength, remainingBytes) ->
-      case GhcBSChar.null remainingBytes && parsedContentLength >= 0 of
-        True -> Just parsedContentLength
-        False -> Nothing
+      if GhcBSChar.null remainingBytes && parsedContentLength >= 0
+        then Just parsedContentLength
+        else Nothing
 
 
 findHeaderValue :: CI.CI ByteString -> [(CI.CI ByteString, ByteString)] -> Maybe ByteString
@@ -441,9 +440,9 @@ findHeaderValue headerName headers =
   case headers of
     [] -> Nothing
     (currentName, currentValue) : remainingHeaders ->
-      case currentName == headerName of
-        True -> Just currentValue
-        False -> findHeaderValue headerName remainingHeaders
+      if currentName == headerName
+        then Just currentValue
+        else findHeaderValue headerName remainingHeaders
 
 
 extractResponseBytesFromOpenResponse :: HttpClient.Response HttpClient.BodyReader -> ByteString -> Response Bytes
@@ -472,9 +471,9 @@ checkResponseSize options response =
   case options.maxResponseBytes of
     Nothing -> Task.yield response
     Just maxBytes ->
-      case response.body |> Bytes.length |> (\len -> len > maxBytes) of
-        True -> Task.throw (ResponseTooLarge maxBytes)
-        False -> Task.yield response
+      if response.body |> Bytes.length |> (\len -> len > maxBytes)
+        then Task.throw (ResponseTooLarge maxBytes)
+        else Task.yield response
 
 
 -- | Extract Response with Bytes body from http-client Response

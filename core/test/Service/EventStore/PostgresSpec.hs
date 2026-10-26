@@ -229,19 +229,14 @@ mockNewOps = do
   Task.yield (ops, newObserver)
 
 
--- | Run one subscribe/unsubscribe cycle @n@ times against the same stream id.
--- Each subscribe opens a dedicated per-stream connection that unsubscribe must
--- release; after @n@ cycles no dedicated connection should survive.
 subscribeUnsubscribeCycles ::
   EventStore.EventStore CartEvent -> EntityName -> (Event CartEvent -> Task Text Unit) -> Int -> Task Text Unit
 subscribeUnsubscribeCycles store entityName callback n =
-  case n <= 0 of
-    True -> Task.yield unit
-    False -> do
-      streamId <- StreamId.new
-      subId <- store.subscribeToStreamEvents entityName streamId callback |> Task.mapError toText
-      store.unsubscribe subId |> Task.mapError toText
-      subscribeUnsubscribeCycles store entityName callback (n - 1)
+  Task.unless (n <= 0) do
+    streamId <- StreamId.new
+    subId <- store.subscribeToStreamEvents entityName streamId callback |> Task.mapError toText
+    store.unsubscribe subId |> Task.mapError toText
+    subscribeUnsubscribeCycles store entityName callback (n - 1)
 
 
 -- | Count the backends currently open for the test database user, scoped to the
@@ -281,9 +276,9 @@ pollSettledBackends conn target = do
         let settled = case previous of
               Just prev -> current == prev && atOrBelowTarget current
               Nothing -> False
-        case settled || attempts >= maxAttempts of
-          True -> Task.yield current
-          False -> do
+        if settled || attempts >= maxAttempts
+          then Task.yield current
+          else do
             AsyncTask.sleep stepMs |> Task.mapError (\_ -> "poll settle sleep failed")
             loop (attempts + 1) (Just current)
   loop 0 Nothing

@@ -131,9 +131,9 @@ resolveAuthorizedCommand ::
   Result AccessError (AuthorizedCommand (EntityIdType commandEntity) commandEntity commandEvent)
 resolveAuthorizedCommand source command = do
   let requestContext = Source.sourceContext source
-  let gateResult = case requestContext.trustedBypass of
-        True -> Nothing
-        False -> canExecuteImpl @command requestContext.user
+  let gateResult = if requestContext.trustedBypass
+        then Nothing
+        else canExecuteImpl @command requestContext.user
   case gateResult of
     Just authError -> Err authError
     Nothing ->
