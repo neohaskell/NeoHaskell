@@ -365,6 +365,7 @@ library
     Time
     ToText
     Trigger
+    Transaction
     Tuple
     TypeName
     Unit
@@ -399,6 +400,7 @@ library
     Service.Integration.Dispatcher.RunnerLogState
     Service.Integration.Dispatcher.WorkerQueueControl
     Service.Integration.Dispatcher.WorkerStopKind
+    Transaction.Internal
   -- other-extensions:
   hs-source-dirs:
     auth

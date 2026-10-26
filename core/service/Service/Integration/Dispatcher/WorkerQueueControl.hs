@@ -21,6 +21,7 @@ import Basics
 import Maybe (Maybe (..))
 import Task (Task)
 import Task qualified
+import Transaction (Transaction)
 
 
 data QueueStatus
@@ -67,7 +68,7 @@ release status = do
   AtomicVar.modify decrement status
 
 
-markDraining :: WorkerQueueControl -> AtomicVar.Transaction Bool
+markDraining :: WorkerQueueControl -> Transaction Bool
 markDraining (WorkerQueueControl status) = do
   let transition current = case current of
         Accepting writers -> (Draining writers, True)
@@ -78,7 +79,7 @@ markDraining (WorkerQueueControl status) = do
     _ -> pure False
 
 
-shouldReplace :: WorkerQueueControl -> AtomicVar.Transaction Bool
+shouldReplace :: WorkerQueueControl -> Transaction Bool
 shouldReplace (WorkerQueueControl status) = do
   current <- AtomicVar.peekSTM status
   case current of

@@ -647,7 +647,7 @@ getOrCreateStatelessWorker dispatcher streamId = do
     (spawnStatelessWorker dispatcher streamId)
     (\candidate ->
       dispatcher.entityWorkers
-        |> ConcurrentMap.getOrInsertIfM
+        |> ConcurrentMap.getOrInsertIfTransaction
           streamId
           candidate
           (\existing -> WorkerQueueControl.shouldReplace existing.queueStatus)
@@ -685,7 +685,7 @@ createLifecycleWorkerCandidate dispatcher streamId entityTypeName =
     (spawnLifecycleWorker dispatcher streamId entityTypeName)
     (\candidate ->
       dispatcher.lifecycleEntityWorkers
-        |> ConcurrentMap.getOrInsertIfM
+        |> ConcurrentMap.getOrInsertIfTransaction
           streamId
           candidate
           (\existing -> WorkerQueueControl.shouldReplace existing.queueStatus)
@@ -1174,7 +1174,7 @@ reapIdleLifecycleWorker dispatcher currentTime streamId worker = do
             else pure False
     withWorkerCleanupHandoff
       (dispatcher.lifecycleEntityWorkers
-        |> ConcurrentMap.removeIfM streamId markSameWorkerDraining
+        |> ConcurrentMap.removeIfTransaction streamId markSameWorkerDraining
       )
       (\removedWorker -> do
         Log.debug [fmt|Reaped idle lifecycle worker for stream #{toText streamId}|]
@@ -1196,7 +1196,7 @@ reapIdleStatelessWorker dispatcher currentTime streamId worker = do
             else pure False
     withWorkerCleanupHandoff
       (dispatcher.entityWorkers
-        |> ConcurrentMap.removeIfM streamId markSameWorkerDraining
+        |> ConcurrentMap.removeIfTransaction streamId markSameWorkerDraining
       )
       (\removedWorker -> do
         Log.debug [fmt|Reaped idle worker for stream #{toText streamId}|]
