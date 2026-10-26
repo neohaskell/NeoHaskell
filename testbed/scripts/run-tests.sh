@@ -65,6 +65,8 @@ if ! command -v hurl &>/dev/null; then
 	exit 1
 fi
 
+cabal build exe:nhtestbed exe:nhoauthtestbed
+
 if is_fake_services_ready; then
 	echo -e "${GREEN}Fake services already running on http://127.0.0.1:8181${NC}"
 elif curl -s http://127.0.0.1:8181 >/dev/null 2>&1; then
