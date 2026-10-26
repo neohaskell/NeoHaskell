@@ -23,7 +23,7 @@ DOCTEST_DEPENDENCIES = (
     ".agents/skills/neohaskell-best-practices/scripts/with-toolchain",
 )
 CI_GATES = {
-    "test.yml": ("ci-gate", ("build", "doctest", "test-core", "test-auth", "test-integration", "test-service", "test-hurl")),
+    "test.yml": ("ci-gate", ("build", "doctest", "test-core", "test-transport", "test-auth", "test-integration", "test-integrations", "test-service", "test-hurl")),
     "neo-ci.yml": ("neo-ci-gate", ("rust", "ide", "nix-package", "consumer-contract")),
 }
 EXPENSIVE_JOB_SELECTORS = {
@@ -189,6 +189,131 @@ def selected_values(name: str, selected: bool) -> dict[str, str]:
 
 
 class CiVerificationTests(unittest.TestCase):
+    def assert_linux_integrations_required(self, text):
+        suite = job_block(text, "test-integrations")
+        self.assertRegex(suite, r"(?m)^    needs: \[build\]$")
+        self.assertNotIn("continue-on-error:", suite)
+        self.assertNotIn("--match", suite)
+        self.assertNotIn("--test-options", suite)
+        self.assertEqual(
+            shell_script(text, "test-integrations").replace("\\\n", "").split(),
+            ["set", "-o", "pipefail", "LOG_LEVEL=Warn", "nix", "develop", "--command",
+             "cabal", "test", "nhintegrations-test", "--test-show-details=direct", "|", "tee",
+             ".nhintegrations-test.report"],
+        )
+        self.assertIn("uses: actions/upload-artifact@", suite)
+        self.assertIn("if: always()", suite)
+        self.assertIn("path: .nhintegrations-test.report", suite)
+        self.assertIn("include-hidden-files: true", suite)
+        self.assertIn("if-no-files-found: error", suite)
+        gate = job_block(text, "ci-gate")
+        self.assertIn("if: always()", gate)
+        needs = re.search(r"(?m)^    needs: \[(.*?)\]$", gate)[1]
+        self.assertIn("test-integrations", [name.strip() for name in needs.split(",")])
+        self.assertIn("needs.test-integrations.result", gate)
+
+    def test_linux_suite_is_required(self):
+        self.assert_linux_integrations_required(workflow("test.yml"))
+        for status in ("failure", "cancelled", "skipped"):
+            with self.subTest(status=status):
+                result = run_gate("test.yml", run_expensive=True, selected={"COMPILED": "true"},
+                                  changes_result="success", job_results={"test-integrations": status})
+                self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertIn("test-integrations did not pass", result.stdout)
+
+    def test_linux_suite_preserves_failure_and_detailed_output(self):
+        script = shell_script(workflow("test.yml"), "test-integrations")
+        for exit_code in (0, 37):
+            with self.subTest(exit_code=exit_code), tempfile.TemporaryDirectory(dir=temp_root()) as directory:
+                temporary = Path(directory)
+                command = temporary / "nix"
+                command.write_text(
+                    '#!/bin/sh\nprintf "owned integration example\\n"\nexit "$SUITE_EXIT"\n'
+                )
+                command.chmod(0o755)
+                env = dict(os.environ, PATH=str(temporary) + os.pathsep + os.defpath,
+                           SUITE_EXIT=str(exit_code))
+                result = subprocess.run(["bash", "-c", script], cwd=temporary, env=env,
+                                        text=True, capture_output=True, timeout=10)
+                self.assertEqual(result.returncode, exit_code, result.stdout + result.stderr)
+                self.assertEqual(result.stdout, "owned integration example\n")
+                self.assertEqual((temporary / ".nhintegrations-test.report").read_text(), result.stdout)
+
+    def test_linux_integrations_negative_controls(self):
+        source = workflow("test.yml")
+        changes = {
+            "missing job": ("  test-integrations:", "  removed-integrations:"),
+            "missing needs": ("test-integration, test-integrations, test-service", "test-integration, test-service"),
+            "missing result": ("needs.test-integrations.result", "needs.test-integration.result"),
+            "wrong suite": ("cabal test nhintegrations-test", "cabal test nhcore-test-integration"),
+            "narrowed suite": ("cabal test nhintegrations-test", "cabal test nhintegrations-test --test-options=--match=Video"),
+            "missing details": ("--test-show-details=direct | tee .nhintegrations-test.report", "| tee .nhintegrations-test.report"),
+            "missing pipefail": ("set -o pipefail", "set +o pipefail"),
+            "missing upload": ("uses: actions/upload-artifact@", "uses: actions/download-artifact@"),
+            "missing report": ("path: .nhintegrations-test.report", "path: other.report"),
+            "empty hidden report": ("include-hidden-files: true", "include-hidden-files: false"),
+            "missing report allowed": ("if-no-files-found: error", "if-no-files-found: warn"),
+        }
+        self.assert_linux_integrations_required(source)
+        for name, (old, new) in changes.items():
+            with self.subTest(name=name):
+                self.assertIn(old, source)
+                with self.assertRaises((AssertionError, ValueError)):
+                    self.assert_linux_integrations_required(source.replace(old, new))
+
+    def assert_macos_integrations_required(self, text):
+        job = job_block(text, "tests-macos")
+        self.assertRegex(job, r"(?m)^\s+- test-suite: nhintegrations-test\s*$")
+        self.assertRegex(job, r"(?m)^        run: nix develop --command cabal test \$\{\{ matrix.test-suite \}\} --test-show-details=direct$")
+        self.assertNotIn("continue-on-error:", job)
+        self.assertNotIn("--match", job)
+        triggers = text.split("\njobs:", 1)[0]
+        self.assertIn('"integrations/**"', triggers)
+        self.assertIn('".github/workflows/**"', triggers)
+
+    def test_macos_matrix_runs_whole_suite(self):
+        self.assert_macos_integrations_required(workflow("test-macos.yml"))
+
+    def test_macos_integrations_negative_controls(self):
+        source = workflow("test-macos.yml")
+        for old, new in (
+            ("test-suite: nhintegrations-test", "test-suite: nhcore-test-integration"),
+            ("cabal test ${{ matrix.test-suite }}", "cabal test nhcore-test-integration"),
+            ("--test-show-details=direct", "--test-show-details=direct --test-options=--match=Video"),
+            ('"integrations/**"', '"unrelated/**"'),
+            ('".github/workflows/**"', '"unrelated/**"'),
+        ):
+            with self.subTest(old=old):
+                self.assertIn(old, source)
+                with self.assertRaises(AssertionError):
+                    self.assert_macos_integrations_required(source.replace(old, new))
+
+    def test_checks_executes_owned_gate_tests_and_propagates_failure(self):
+        script = shell_script(workflow("checks.yml"), "tooling")
+        owned = ".agents/skills/neohaskell-test/tests/"
+        for failing_test in ("", owned + "test_test_runtime.py", owned + "test_ci_verification.py"):
+            with self.subTest(failing_test=failing_test), tempfile.TemporaryDirectory(dir=temp_root()) as directory:
+                temporary = Path(directory)
+                command = temporary / "python3"
+                command.write_text(
+                    '#!/bin/sh\nprintf "%s\\n" "$1" >> "$FIXTURE_LOG"\n'
+                    '[ "$1" != "$FAILING_TEST" ]\n'
+                )
+                command.chmod(0o755)
+                log = temporary / "calls"
+                env = dict(os.environ, PATH=str(temporary) + os.pathsep + os.defpath,
+                           FIXTURE_LOG=str(log), FAILING_TEST=failing_test)
+                result = subprocess.run(["bash", "-c", script], cwd=REPOSITORY, env=env,
+                                        text=True, capture_output=True, timeout=10)
+                calls = log.read_text().splitlines()
+                if failing_test:
+                    self.assertIn(failing_test, calls)
+                    self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+                else:
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                    self.assertIn(owned + "test_test_runtime.py", calls)
+                    self.assertIn(owned + "test_ci_verification.py", calls)
+
     def test_pr_selector_matches_real_doctest_dependencies_and_rejects_controls(self) -> None:
         text = workflow("test.yml")
         pattern = re.search(r"PATTERN='([^']+)'", job_block(text, "changes"))[1]

@@ -134,7 +134,59 @@ jobs:
           name: dist-newstyle
           path: dist-newstyle
       - name: Run nhcore-test-core
-        run: LOG_LEVEL=Warn nix develop --command cabal test nhcore-test-core
+        run: |
+          set -o pipefail
+          LOG_LEVEL=Warn nix develop --command cabal test nhcore-test-core \
+            --test-show-details=direct | tee nhcore-test-core.report
+      - uses: actions/upload-artifact@v7
+        with:
+          name: nhcore-test-core-report
+          path: nhcore-test-core.report
+          retention-days: 1
+          if-no-files-found: error
+
+  test-transport:
+    needs: [build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: DeterminateSystems/determinate-nix-action@v3.23.3
+        with:
+          extra-conf: |
+            accept-flake-config = true
+            extra-substituters = https://cache.iog.io https://neohaskell.cachix.org
+            extra-trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= neohaskell.cachix.org-1:mo2cLaGbwqbrxs9xhqKK8jeNsn3osi7t6XoAmxSZssc=
+      - uses: DeterminateSystems/magic-nix-cache-action@v14
+      - uses: actions/download-artifact@v8
+        with:
+          name: dist-newstyle
+          path: dist-newstyle
+      - name: Run byte transport fixtures
+        run: |
+          set -euo pipefail
+          python3 -B -m unittest discover -s core/test/Http -p 'test_transport_fixture.py' -v
+          : > transport-fixture.report
+          mkdir -p transport-evidence
+          for mode in tls proxy body secure-internal-body public-trust public-body; do
+            report="transport-evidence/$mode.report"
+            nix develop --command core/test/Http/transport_fixture.py "$mode" \
+              --evidence-dir "transport-evidence/$mode" | tee "$report"
+            test "$(grep -cFx "PASS script:core/test/Http/transport_fixture.py#$mode" "$report")" -eq 1
+            test "$(grep -c '^PASS script:' "$report")" -eq 1
+            grep -qFx 'fixture: Http.Client.syntheticTransport' "$report"
+            cat "$report" >> transport-fixture.report
+          done
+          test "$(grep -c '^PASS script:' transport-fixture.report)" -eq 6
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: transport-fixture-report
+          path: |
+            transport-fixture.report
+            transport-evidence/
+          retention-days: 1
+          if-no-files-found: error
 
   test-auth:
     needs: [build]
@@ -175,6 +227,36 @@ jobs:
           path: dist-newstyle
       - name: Run nhcore-test-integration
         run: LOG_LEVEL=Warn nix develop --command cabal test nhcore-test-integration
+
+  test-integrations:
+    needs: [build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: DeterminateSystems/determinate-nix-action@v3.23.3
+        with:
+          extra-conf: |
+            accept-flake-config = true
+            extra-substituters = https://cache.iog.io https://neohaskell.cachix.org
+            extra-trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= neohaskell.cachix.org-1:mo2cLaGbwqbrxs9xhqKK8jeNsn3osi7t6XoAmxSZssc=
+      - uses: DeterminateSystems/magic-nix-cache-action@v14
+      - uses: actions/download-artifact@v8
+        with:
+          name: dist-newstyle
+          path: dist-newstyle
+      - name: Run nhintegrations-test
+        run: |
+          set -o pipefail
+          LOG_LEVEL=Warn nix develop --command cabal test nhintegrations-test \
+            --test-show-details=direct | tee .nhintegrations-test.report
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: nhintegrations-test-report
+          path: .nhintegrations-test.report
+          include-hidden-files: true
+          if-no-files-found: error
 
   test-service:
     needs: [build]
@@ -270,7 +352,7 @@ jobs:
 
   ci-gate:
     if: always()
-    needs: [changes, build, doctest, test-core, test-auth, test-integration, test-service, test-hurl]
+    needs: [changes, build, doctest, test-core, test-transport, test-auth, test-integration, test-integrations, test-service, test-hurl]
     runs-on: ubuntu-latest
     steps:
       - name: Check all tests passed
@@ -291,8 +373,10 @@ jobs:
             "build=${{ needs.build.result }}"
             "doctest=${{ needs.doctest.result }}"
             "test-core=${{ needs.test-core.result }}"
+            "test-transport=${{ needs.test-transport.result }}"
             "test-auth=${{ needs.test-auth.result }}"
             "test-integration=${{ needs.test-integration.result }}"
+            "test-integrations=${{ needs.test-integrations.result }}"
             "test-service=${{ needs.test-service.result }}"
             "test-hurl=${{ needs.test-hurl.result }}"
           )
