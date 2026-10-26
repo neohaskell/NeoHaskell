@@ -44,7 +44,7 @@ Group a datatype and its operations in a focused module when callers gain a usef
 
 Apply SOLID in proportion to functional code. Keep one reason to change, preserve substitutable service contracts, and depend on the capabilities an operation uses. Existing records of functions already support dependency injection. Add a new interface or typeclass only when it removes a demonstrated coupling or encodes a useful contract. A module per helper increases the work needed to follow the flow.
 
-A short module header may explain responsibility and normal usage. Follow the [comment exceptions](../../no-comments/references/comment-reviewer.md). Keep phase narration and temporary-workaround explanations out of source comments.
+Follow [module documentation](../../neohaskell-module-docs/SKILL.md) for every new module. Preserve qualifying headers under the [comment exceptions](../../no-comments/references/comment-reviewer.md). Keep phase narration and temporary-workaround explanations out of source comments.
 
 ## Use scoped temporary test resources
 

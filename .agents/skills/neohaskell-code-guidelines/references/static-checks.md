@@ -15,7 +15,7 @@ Store captured output under `.agents-state/<task>/`. Put concrete cleanup work i
 
 ## Preserve evaluation timing when resolving lint findings
 
-Inspect the module's effective compiler extensions before changing a lazy pattern. Include Cabal defaults, component overrides, source pragmas, and compiler flags. When compilation already enables `Strict`, make that extension explicit in the source so HLint sees the same mode. HLint 3.10 can still report `Redundant irrefutable pattern` when `Strict` is supplied only through its command line.
+Before changing a lazy pattern or extension setting, follow [language extensions](../../neohaskell-language-extensions/SKILL.md). Compare the module's effective Cabal extensions with HLint's parser settings. Correct a lint/compiler mismatch in the owning lint configuration or invocation. Keep project-wide defaults in Cabal instead of duplicating them as source pragmas. A parser limitation is a tooling defect to prove and fix, not permission to change evaluation behavior.
 
 Keep a necessary `~value` pattern and the tests that distinguish construction from execution. Removing the pattern under `Strict` can demand the value before a deferred action runs. Never enable `Strict` in a lazy module merely to silence lint. For a real evaluation change, test both construction and demanded execution at the supported optimization settings.
 

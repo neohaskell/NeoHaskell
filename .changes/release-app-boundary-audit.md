@@ -7,8 +7,9 @@ category: Improved
 
 ## Summary
 
-Release authors now trace supported application calls and framework runtime
-owners before selecting release impact. The skill collects revision-specific
-search evidence and separates direct-import compatibility caveats from app
-migrations. This changes contributor guidance and tooling only. Application APIs
-and behavior are unchanged.
+Contributor guidance now requires supported app-call evidence before selecting
+release impact. It also defines task completion and dependent PR ownership,
+requires documentation for new Haskell modules, and clarifies naming, foreign
+result conversion, domain newtypes, and language-extension ownership. These
+changes affect agent instructions only. Application APIs, runtime behavior,
+release validation, and CI gates are unchanged.
