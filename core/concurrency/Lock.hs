@@ -40,7 +40,7 @@ release self = do
 
 
 with :: Lock -> Task _ value -> Task _ value
-with self task = Task.mask \restore -> do
+with self task = Task.withCancellationDeferred \restore -> do
   acquire self
   Task.finally (release self) (restore task)
 
@@ -54,7 +54,7 @@ withTimeout :: forall value. Int -> Lock -> Task _ value -> Task _ (Result Text 
 withTimeout timeoutSeconds self task = do
   case timeoutSeconds > 0 of
     False -> Task.yield (Err "lock timeout: non-positive timeout")
-    True -> Task.mask \restore -> do
+    True -> Task.withCancellationDeferred \restore -> do
       let microseconds = timeoutSeconds * 1000000
       maybeUnit <-
         GhcTimeout.timeout microseconds (acquire self |> Task.runNoErrors)

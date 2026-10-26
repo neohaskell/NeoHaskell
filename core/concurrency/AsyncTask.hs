@@ -29,7 +29,6 @@ import Control.Exception (SomeAsyncException)
 import Control.Exception qualified as GhcException
 import GHC.Conc qualified as GhcConc
 import GHC.IO qualified as GHC
-import Data.Either qualified as GhcEither
 import Maybe (Maybe (..))
 import Prelude qualified
 import Result (Result)
@@ -81,10 +80,10 @@ waitFor (AsyncTask self) =
 waitCatch :: (Show err) => AsyncTask err result -> Task err2 (Result Text result)
 waitCatch (AsyncTask self) = do
   outcome <- GhcAsync.waitCatch self |> Task.fromIO
-  case outcome of
-    GhcEither.Left someException ->
+  case Result.fromEither outcome of
+    Result.Err someException ->
       Task.yield (Result.Err (show someException |> Text.fromLinkedList))
-    GhcEither.Right taskResult ->
+    Result.Ok taskResult ->
       case taskResult of
         Result.Ok value -> Task.yield (Result.Ok value)
         Result.Err err -> Task.yield (Result.Err (show err |> Text.fromLinkedList))
@@ -95,13 +94,13 @@ waitCatch (AsyncTask self) = do
 waitOutcome :: AsyncTask err result -> Task otherErr (Outcome err result)
 waitOutcome (AsyncTask self) = do
   outcome <- GhcAsync.waitCatch self |> Task.fromIO
-  case outcome of
-    GhcEither.Left someException ->
+  case Result.fromEither outcome of
+    Result.Err someException ->
       case GhcException.fromException @SomeAsyncException someException of
         Just _ -> Task.yield Interrupted
         Nothing -> Task.yield (Crashed (show someException |> Text.fromLinkedList))
-    GhcEither.Right (Result.Ok value) -> Task.yield (Completed value)
-    GhcEither.Right (Result.Err err) -> Task.yield (Failed err)
+    Result.Ok (Result.Ok value) -> Task.yield (Completed value)
+    Result.Ok (Result.Err err) -> Task.yield (Failed err)
 
 
 -- | Observe whether a child is currently waiting for shared state to change.
@@ -167,11 +166,11 @@ data RaceWinner a b
 race :: forall err a b. (Show err) => Task err a -> Task err b -> Task err (RaceWinner a b)
 race leftTask rightTask = Task.fromIOResult do
   outcome <- GhcAsync.race (Task.runResult leftTask) (Task.runResult rightTask)
-  case outcome of
-    GhcEither.Left (Result.Ok a) -> pure (Result.Ok (LeftWon a))
-    GhcEither.Left (Result.Err e) -> pure (Result.Err e)
-    GhcEither.Right (Result.Ok b) -> pure (Result.Ok (RightWon b))
-    GhcEither.Right (Result.Err e) -> pure (Result.Err e)
+  case Result.fromEither outcome of
+    Result.Err (Result.Ok value) -> pure (Result.Ok (LeftWon value))
+    Result.Err (Result.Err error) -> pure (Result.Err error)
+    Result.Ok (Result.Ok value) -> pure (Result.Ok (RightWon value))
+    Result.Ok (Result.Err error) -> pure (Result.Err error)
 
 
 sleep :: Int -> Task _ Unit

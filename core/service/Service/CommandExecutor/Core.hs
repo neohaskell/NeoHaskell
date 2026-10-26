@@ -415,7 +415,7 @@ execute eventStore entityFetcher entityName sourceEventMetadata requestContext c
   commandResultReported <- Var.new False
   currentRequestContext <- Var.new requestContext
   let reportCommandResult context outcome =
-        Task.mask \_ -> do
+        Task.withCancellationDeferred \_ -> do
           let report = emitCommandResult commandNameText entityNameText context sourceEventMetadata outcome :: Task Text Unit
           maybeReported <- CommandResultReceipt.reportIfRegistered context.requestId report
           case maybeReported of
@@ -484,7 +484,7 @@ execute eventStore entityFetcher entityName sourceEventMetadata requestContext c
             case attempt.commandLogOutcome of
               AcceptedCommandLog streamId _ -> do
                 let requestIdText = Uuid.toText normalizedContext.requestId
-                Task.mask \_ -> do
+                Task.withCancellationDeferred \_ -> do
                   reportCommandResult normalizedContext attempt.commandLogOutcome
                   attempt.appendedEventMetadata
                     |> Task.forEach (\metadata -> emitEventAppended commandNameText entityNameText (StreamId.toText streamId) requestIdText metadata)

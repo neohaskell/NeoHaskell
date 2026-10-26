@@ -168,7 +168,7 @@ removeRecursive dirPath = do
 -- | Create a private folder for one task and attempt to remove it after every
 -- exit, including typed errors, runtime exceptions, and cancellation.
 withTemporaryFolder :: (Error -> err) -> (Path -> Task err value) -> Task err value
-withTemporaryFolder mapError use = Task.mask \restore -> do
+withTemporaryFolder mapError use = Task.withCancellationDeferred \restore -> do
   folder <- newTemporaryFolder |> Task.mapError mapError
   Task.finally (removeRecursive folder) do
     callback <- Task.evaluate (use folder)

@@ -834,7 +834,7 @@ queueWorkerEventWithTimeout ::
   WorkerQueueControl ->
   Channel (WorkerMessage (Event Json.Value)) ->
   Task Text WorkerEnqueueResult
-queueWorkerEventWithTimeout dispatcher streamId event queueStatus workerChannel = Task.mask \restore -> do
+queueWorkerEventWithTimeout dispatcher streamId event queueStatus workerChannel = Task.withCancellationDeferred \restore -> do
   isShuttingDown <- dispatcher.shutdownSignal |> ConcurrentVar.peek
   if isShuttingDown
     then Task.yield WorkerQueueClosed
@@ -965,7 +965,7 @@ stopWorkerOrCancel ::
   AsyncTask Text Unit ->
   Channel (WorkerMessage (Event Json.Value)) ->
   Task Text Unit
-stopWorkerOrCancel dispatcher streamId workerLabel queueStatus workerTask workerChannel = Task.mask \restore -> do
+stopWorkerOrCancel dispatcher streamId workerLabel queueStatus workerTask workerChannel = Task.withCancellationDeferred \restore -> do
   claimed <- claimWorkerStop queueStatus
   if not claimed
     then Task.yield unit
@@ -1018,7 +1018,7 @@ withWorkerCleanupHandoff ::
   (worker -> Task Text Unit) ->
   (worker -> Task Text Unit) ->
   Task Text Unit
-withWorkerCleanupHandoff removeWorker ~afterRemoval ~cleanupWorker = Task.mask \restore -> do
+withWorkerCleanupHandoff removeWorker ~afterRemoval ~cleanupWorker = Task.withCancellationDeferred \restore -> do
   maybeWorker <- removeWorker
   case maybeWorker of
     Nothing -> Task.yield unit
@@ -1035,7 +1035,7 @@ withWorkerCandidateHandoff ::
   (worker -> Task Text (worker, Maybe worker)) ->
   (worker -> Task Text Unit) ->
   Task Text worker
-withWorkerCandidateHandoff ~createCandidate ~publishCandidate ~cleanupWorker = Task.mask \restore -> do
+withWorkerCandidateHandoff ~createCandidate ~publishCandidate ~cleanupWorker = Task.withCancellationDeferred \restore -> do
   candidate <- createCandidate
   let publish = Task.evaluate (publishCandidate candidate) |> Task.andThen identity
   (actualWorker, maybeDiscarded) <-
