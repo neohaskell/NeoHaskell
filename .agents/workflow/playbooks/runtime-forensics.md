@@ -1,0 +1,11 @@
+### Runtime forensics
+
+**You own the diagnosis. Instrument the live process, don't theorize from source.** The deliverable is a cited diagnosis, not a fix.
+
+1. Identify the live process and phase: browser renderer, Rust neo driver, GHC/splice process or Haskell program. Capture a real signal through its matching control skill or named driver, using diagnostics enabled in that build: CPU, allocation/residency, eventlog, compiler-phase or supported heap evidence. Use CDP for relevant browser/JavaScript surfaces. Keep raw and derived artifacts under repository-root `.agents-state/runtime-forensics/<run>/`, with captured revision/build, flags/RTS settings, workload, time window and symbol/source metadata.
+2. Reduce the artifact to the supported finding: the function on the hot path, retained state, or the loop firing without input. Trace a retainer-to-root path only when the capture supplies the actual graph; aggregates, cost centres and eventlogs do not automatically provide object paths or CPU samples, and generated splice text is not generation timing. Parse large artifacts through available roles and delegation facilities in `AGENTS.md` (the **guard-the-context-window** principle skill), keeping the reduced finding in the main thread.
+3. Prove the mechanism before believing it. Use scoped diagnostics or controlled probes supported by the actual runtime; CDP evaluation remains appropriate for relevant browser/JavaScript processes. When a diagnostic build or controlled reproduction is needed, preserve relevant workload/input and completion conditions and state its limits. Record observer effects and restore owned temporary probes. Persistent fixes remain outside this diagnosis-only scope.
+4. Map the finding back to source using metadata matching the captured build, accounting for inlining and evaluation behavior: file, symbol and supported allocation/scheduling location. State missing-symbol or attribution limits without inventing locations. Separate observed facts, confirmed mechanism and unresolved hypotheses when the evidence is incomplete.
+5. Throughput checkpoint stays one line: `throughput checkpoint: n/a, read-only forensics`.
+
+**Reply:** the signal captured, the reduced finding, how you proved the mechanism, the source location, artifact paths. No fix unless asked. Hand back to Bug fix or Perf once the cause is known.

@@ -1,0 +1,33 @@
+{
+  "strict": false,
+  "checks": [
+    {
+      "app_id": 15368,
+      "context": "hlint (dialect gate)"
+    },
+    {
+      "app_id": 15368,
+      "context": "ci-gate"
+    },
+    {
+      "app_id": 15368,
+      "context": "adr index (decisions README faithful)"
+    },
+    {
+      "app_id": 15368,
+      "context": "neo-ci-gate"
+    },
+    {
+      "app_id": 15368,
+      "context": "secret scan (gitleaks, deterministic)"
+    },
+    {
+      "context": "owned tooling checks",
+      "app_id": 15368
+    },
+    {
+      "context": "release fragment check",
+      "app_id": 15368
+    }
+  ]
+}
