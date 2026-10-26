@@ -1,3 +1,6 @@
+{-| Describe DNS lookup failures used by URL validation.
+Use errorMessage when converting a failure to a validation message.
+-}
 module Auth.UrlValidation.Dns.Error (
   DnsError (..),
   errorMessage,

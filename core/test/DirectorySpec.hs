@@ -1,3 +1,5 @@
+-- | Checks private temporary folders and cleanup across task outcomes.
+-- Run in the core suite when changing Directory.withTemporaryFolder.
 module DirectorySpec (spec) where
 
 import AsyncTask qualified

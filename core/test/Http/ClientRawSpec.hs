@@ -7,6 +7,7 @@ import Core
 import Http.Client qualified as Http
 import Http.Client.Internal qualified as HttpInternal
 import Json qualified
+import Maybe qualified
 import Task qualified
 import Test
 import Text qualified
@@ -114,9 +115,164 @@ spec = do
         Err (Http.ResponseTooLarge _) -> fail "Unexpected ResponseTooLarge from Internal.getRaw"
         Ok _ -> fail "Expected error for unreachable host"
 
+  describe "Http.Client.Internal.sendRaw" do
+    it "sendRaw rejects an oversized chunk before source EOF" \_ -> do
+      sourceRelease <- GhcConcurrent.newEmptyMVar |> Task.fromIO
+      sourceFlushed <- GhcConcurrent.newEmptyMVar |> Task.fromIO
+      clientResult <- GhcConcurrent.newEmptyMVar |> Task.fromIO
+      let streamingApp request respond =
+            if GhcWai.rawPathInfo request == "/control"
+              then mock200App request respond
+              else respond (GhcWai.responseStream GhcHTTP.status200 [] \write flush -> do
+                write "12345"
+                flush
+                GhcConcurrent.putMVar sourceFlushed ()
+                GhcConcurrent.takeMVar sourceRelease)
+      withMockServer streamingApp \testPort -> do
+        control <-
+          Http.request
+            |> Http.withUrl [fmt|http://127.0.0.1:#{testPort}/control|]
+            |> Http.withTimeout 10
+            |> HttpInternal.getRaw
+            |> Task.asResult
+        case control of
+          Ok response -> response.statusCode |> shouldBe 200
+          Err err -> fail [fmt|Fixture positive control failed: #{show err}|]
+        let requestTask :: Task Text (Result Http.Error (Http.Response Bytes))
+            requestTask =
+              Http.request
+                |> Http.withUrl [fmt|http://127.0.0.1:#{testPort}/paced|]
+                |> Http.withMaxResponseSize 4
+                |> Http.withTimeout 10
+                |> (\req -> HttpInternal.sendRaw Http.Get req Bytes.empty)
+                |> Task.asResult
+        clientThread <- GhcConcurrent.forkIO (do
+          result <- Task.runOrPanic requestTask
+          GhcConcurrent.putMVar clientResult result) |> Task.fromIO
+        let checkBeforeEof = do
+              GhcConcurrent.threadDelay 2000000 |> Task.fromIO
+              flushed <- GhcConcurrent.tryTakeMVar sourceFlushed |> Task.fromIO
+              case flushed of
+                Nothing -> fail "Fixture did not flush its oversized chunk"
+                Just () -> Task.yield ()
+              GhcConcurrent.threadDelay 2000000 |> Task.fromIO
+              observed <- GhcConcurrent.tryTakeMVar clientResult |> Task.fromIO
+              case observed of
+                Just (Err (Http.ResponseTooLarge limit)) -> limit |> shouldBe 4
+                Just other -> fail [fmt|Expected ResponseTooLarge before EOF, got: #{show other}|]
+                Nothing -> fail "REGRESSION_ASSERT:sendRaw-awaits-source-EOF"
+        let cleanup = do
+              _ <- GhcConcurrent.tryPutMVar sourceRelease () |> Task.fromIO
+              GhcConcurrent.killThread clientThread |> Task.fromIO
+        checkBeforeEof |> Task.finally cleanup
+
+    it "sendRaw PUT delivers method, raw body and custom header" \_ -> do
+      withMockServer mockEchoApp \testPort -> do
+        response <-
+          Http.request
+            |> Http.withUrl [fmt|http://localhost:#{testPort}/bucket/key|]
+            |> Http.addHeader "X-Probe" "sigv4"
+            |> (\req -> HttpInternal.sendRaw Http.Put req (Text.toBytes "payload-bytes"))
+            |> Task.asResult
+        case response of
+          Ok resp -> do
+            resp.statusCode |> shouldBe 200
+            headerValue "X-Echo-Method" resp |> shouldBe (Just "PUT")
+            headerValue "X-Echo-Probe" resp |> shouldBe (Just "sigv4")
+            resp.body |> Text.fromBytes |> shouldBe "payload-bytes"
+          Err err -> fail [fmt|Expected Ok, got Err: #{show err}|]
+
+    it "sendRaw HEAD returns headers and an empty body without throwing" \_ -> do
+      withMockServer mockEchoApp \testPort -> do
+        response <-
+          Http.request
+            |> Http.withUrl [fmt|http://localhost:#{testPort}/bucket/key|]
+            |> (\req -> HttpInternal.sendRaw Http.Head req Bytes.empty)
+            |> Task.asResult
+        case response of
+          Ok resp -> do
+            resp.statusCode |> shouldBe 200
+            headerValue "X-Echo-Method" resp |> shouldBe (Just "HEAD")
+            resp.body |> Bytes.length |> shouldBe 0
+          Err err -> fail [fmt|Expected Ok, got Err: #{show err}|]
+
+    it "sendRaw DELETE surfaces a 404 as a status code, not an error" \_ -> do
+      withMockServer (mockStatusApp GhcHTTP.status404) \testPort -> do
+        response <-
+          Http.request
+            |> Http.withUrl [fmt|http://localhost:#{testPort}/bucket/missing|]
+            |> (\req -> HttpInternal.sendRaw Http.Delete req Bytes.empty)
+            |> Task.asResult
+        case response of
+          Ok resp -> resp.statusCode |> shouldBe 404
+          Err err -> fail [fmt|Expected Ok, got Err: #{show err}|]
+
+    it "sendRaw PUT surfaces a 403 as a status code, not an error" \_ -> do
+      withMockServer (mockStatusApp GhcHTTP.status403) \testPort -> do
+        response <-
+          Http.request
+            |> Http.withUrl [fmt|http://localhost:#{testPort}/bucket/key|]
+            |> (\req -> HttpInternal.sendRaw Http.Put req (Text.toBytes "x"))
+            |> Task.asResult
+        case response of
+          Ok resp -> resp.statusCode |> shouldBe 403
+          Err err -> fail [fmt|Expected Ok, got Err: #{show err}|]
+
+    it "sendRaw enforces maxResponseBytes on the response body" \_ -> do
+      withMockServer mockEchoApp \testPort -> do
+        response <-
+          Http.request
+            |> Http.withUrl [fmt|http://localhost:#{testPort}/bucket/key|]
+            |> Http.withMaxResponseSize 4
+            |> (\req -> HttpInternal.sendRaw Http.Put req (Text.toBytes "more-than-four"))
+            |> Task.asResult
+        case response of
+          Err (Http.ResponseTooLarge limit) -> limit |> shouldBe 4
+          Err err -> fail [fmt|Expected ResponseTooLarge, got: #{show err}|]
+          Ok _ -> fail "Expected ResponseTooLarge, got Ok"
+
+  describe "Http.Client.sendSecure" do
+    it "sendSecure rejects a plain http:// URL with InvalidUrl" \_ -> do
+      response <-
+        Http.request
+          |> Http.withUrl "http://localhost:59999/bucket/key?token=secret"
+          |> (\req -> Http.sendSecure Http.Put req Bytes.empty)
+          |> Task.asResult
+      case response of
+        Err (Http.InvalidUrl sanitized) -> Text.contains "secret" sanitized |> shouldBe False
+        Err err -> fail [fmt|Expected InvalidUrl, got: #{show err}|]
+        Ok _ -> fail "Expected InvalidUrl, got Ok"
+
+    it "methodName spells every wire token" \_ -> do
+      [Http.Get, Http.Head, Http.Post, Http.Put, Http.Patch, Http.Delete]
+        |> Array.map Http.methodName
+        |> shouldBe ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"]
+
 
 -- ============================================================================
 -- Test Helpers
+-- ============================================================================
+
+-- | Run a WAI application on a free loopback port for the duration of the test.
+withMockServer :: GhcWai.Application -> (Int -> Task Text Unit) -> Task Text Unit
+withMockServer app runTest = do
+  testPort <- getFreePort
+  serverThread <- GhcConcurrent.forkIO (GhcWarp.run testPort app) |> Task.fromIO
+  GhcConcurrent.threadDelay 50000 |> Task.fromIO
+  let cleanup = GhcConcurrent.killThread serverThread |> Task.fromIO
+  runTest testPort |> Task.finally cleanup
+
+
+-- | Look up a response header case-insensitively.
+headerValue :: Text -> Http.Response Bytes -> Maybe Text
+headerValue name response =
+  response.headers
+    |> Array.find (\(headerName, _) -> Text.toLower headerName == Text.toLower name)
+    |> Maybe.map (\(_, value) -> value)
+
+
+-- ============================================================================
+-- Test Helpers (ports)
 -- ============================================================================
 
 -- | Allocate a free port dynamically to avoid collisions in parallel test runs.
@@ -176,6 +332,34 @@ mock200App _request respond = do
         [(GhcHTTP.hContentType, "application/json")]
         responseBody
     )
+
+
+-- | Mock app that echoes the request method, the X-Probe header and the raw body.
+mockEchoApp :: GhcWai.Application
+mockEchoApp request respond = do
+  body <- GhcWai.strictRequestBody request
+  let probeHeader =
+        GhcWai.requestHeaders request
+          |> Array.fromLinkedList
+          |> Array.find (\(name, _) -> name == "X-Probe")
+  let probe = case probeHeader of
+        Nothing -> ""
+        Just (_, value) -> value
+  respond
+    ( GhcWai.responseLBS
+        GhcHTTP.status200
+        [ (GhcHTTP.hContentType, "application/octet-stream"),
+          ("X-Echo-Method", GhcWai.requestMethod request),
+          ("X-Echo-Probe", probe)
+        ]
+        body
+    )
+
+
+-- | Mock app that answers every request with the given status and an empty body.
+mockStatusApp :: GhcHTTP.Status -> GhcWai.Application
+mockStatusApp status _request respond =
+  respond (GhcWai.responseLBS status [] GhcLBS.empty)
 
 
 -- | Mock app that returns valid JSON

@@ -1,6 +1,8 @@
 {-# LANGUAGE Strict #-}
 
 -- | Inputs required to construct one integration dispatcher.
+--
+-- Pass a 'Setup' to dispatcher construction with settings, stores, and runners.
 module Service.Integration.Dispatcher.Setup (
   Setup (..),
 ) where

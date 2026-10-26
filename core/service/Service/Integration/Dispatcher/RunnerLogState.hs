@@ -1,6 +1,8 @@
 {-# LANGUAGE Strict #-}
 
 -- | Tracks one runner's progress so interruption emits its last known outcome.
+--
+-- Runner execution advances this state from 'initial' through 'complete'.
 module Service.Integration.Dispatcher.RunnerLogState (
   RunnerLogState (..),
   initial,

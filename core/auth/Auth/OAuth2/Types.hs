@@ -221,9 +221,9 @@ mkRedirectUri text = do
                 Nothing -> Err (InvalidRedirectUri "Redirect URI must use HTTPS")
                 Just auth -> do
                   let host = URI.uriRegName auth
-                  case isLocalhost host of
-                    True -> Ok (RedirectUri text)
-                    False -> Err (InvalidRedirectUri "Redirect URI must use HTTPS (http allowed only for localhost)")
+                  if isLocalhost host
+                    then Ok (RedirectUri text)
+                    else Err (InvalidRedirectUri "Redirect URI must use HTTPS (http allowed only for localhost)")
             _ -> Err (InvalidRedirectUri "Redirect URI must use HTTPS scheme")
         _ -> Err (InvalidRedirectUri "Redirect URI must not contain a fragment")
 
@@ -331,10 +331,9 @@ validateState :: State -> State -> Result OAuth2Error ()
 validateState expectedState returnedState = do
   let expected = unwrapState expectedState
   let returned = unwrapState returnedState
-  -- SECURITY: constant-time comparison prevents timing oracle attacks
-  case constEq expected returned of
-    True -> Ok ()
-    False -> Err (InvalidState "State parameter mismatch - possible CSRF attack")
+  if constEq expected returned
+    then Ok ()
+    else Err (InvalidState "State parameter mismatch - possible CSRF attack")
 
 
 -- | Validate that a redirect URI matches the expected registered URI.
@@ -355,12 +354,9 @@ validateRedirectUri :: RedirectUri -> RedirectUri -> Result OAuth2Error ()
 validateRedirectUri registeredUri receivedUri = do
   let registered = unwrapRedirectUri registeredUri
   let received = unwrapRedirectUri receivedUri
-  -- Step 1: Exact match required (no normalization)
-  -- SECURITY: constant-time comparison prevents timing oracle attacks
-  case constEq registered received of
-    False -> Err (InvalidRedirectUri "Redirect URI does not match registered URI")
-    True -> do
-      -- Step 2: No fragment allowed
+  if not (constEq registered received)
+    then Err (InvalidRedirectUri "Redirect URI does not match registered URI")
+    else do
       let uriString = Text.toLinkedList received
       case URI.parseURI uriString of
         Nothing -> Err (InvalidRedirectUri "Malformed redirect URI")
@@ -376,9 +372,9 @@ validateRedirectUri registeredUri receivedUri = do
                     Nothing -> Err (InvalidRedirectUri "Redirect URI must use HTTPS")
                     Just auth -> do
                       let host = URI.uriRegName auth
-                      case isLocalhost host of
-                        True -> Ok ()
-                        False -> Err (InvalidRedirectUri "Redirect URI must use HTTPS (http allowed only for localhost)")
+                      if isLocalhost host
+                        then Ok ()
+                        else Err (InvalidRedirectUri "Redirect URI must use HTTPS (http allowed only for localhost)")
                 _ -> Err (InvalidRedirectUri "Redirect URI must use HTTPS scheme")
             _ -> Err (InvalidRedirectUri "Redirect URI must not contain a fragment")
 
@@ -520,12 +516,12 @@ mkCodeVerifier :: Text -> Result OAuth2Error CodeVerifier
 mkCodeVerifier text = do
   let chars = Text.toLinkedList text
   let len = LinkedList.length chars
-  case len >= 43 && len <= 128 of
-    False -> Err (InvalidPkceVerifier [fmt|Code verifier must be 43-128 characters, got #{len}|])
-    True -> do
-      case LinkedList.all isUnreservedChar chars of
-        False -> Err (InvalidPkceVerifier "Code verifier contains invalid characters (must be [A-Z][a-z][0-9]-._~)")
-        True -> Ok (CodeVerifier text)
+  if not (len >= 43 && len <= 128)
+    then Err (InvalidPkceVerifier [fmt|Code verifier must be 43-128 characters, got #{len}|])
+    else do
+      if not (LinkedList.all isUnreservedChar chars)
+        then Err (InvalidPkceVerifier "Code verifier contains invalid characters (must be [A-Z][a-z][0-9]-._~)")
+        else Ok (CodeVerifier text)
 
 
 -- | Create a CodeVerifier without validation (UNSAFE).

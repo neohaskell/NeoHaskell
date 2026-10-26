@@ -1,3 +1,6 @@
+{-| Resolve both DNS address families for URL validation.
+Use resolve for ordinary lookups or resolveWith when providing lookup actions.
+-}
 module Auth.UrlValidation.Dns (
   DnsConfig (..),
   DnsActions (..),
@@ -7,6 +10,7 @@ module Auth.UrlValidation.Dns (
   resolve,
   resolveWith,
   errorMessage,
+  parseConfig,
 ) where
 
 import Array (Array)
@@ -28,7 +32,6 @@ import Task (Task)
 import Task qualified
 import Text (Text)
 import Text qualified
-import Text.Read qualified as GhcRead
 
 
 data DnsConfig = DnsConfig
@@ -59,13 +62,19 @@ getDnsConfig = do
   envResult <- Environment.getVariable "DNS_TIMEOUT_SECONDS" |> Task.asResult
   case envResult of
     Err _ -> Task.yield defaultDnsConfig
-    Ok envValue -> do
-      case GhcRead.readMaybe @Int (Text.toLinkedList envValue) of
-        Nothing -> Task.yield defaultDnsConfig
-        Just seconds ->
-          case seconds >= 1 && seconds <= 60 of
-            True -> Task.yield (DnsConfig {timeoutSeconds = seconds})
-            False -> Task.yield defaultDnsConfig
+    Ok envValue -> Task.yield (parseConfig envValue)
+
+
+parseConfig :: Text -> DnsConfig
+parseConfig envValue =
+  if Text.startsWith "+" envValue
+    then defaultDnsConfig
+    else case Text.toInt envValue of
+      Nothing -> defaultDnsConfig
+      Just seconds ->
+        if seconds >= 1 && seconds <= 60
+          then DnsConfig {timeoutSeconds = seconds}
+          else defaultDnsConfig
 
 
 resolve :: Text -> Task DnsError DnsResult
@@ -98,7 +107,7 @@ resolveWith config actions hostname = do
 
 resolveDnsRecordType :: Int -> DnsRecordType -> Text -> Task DnsError DnsResult
 resolveDnsRecordType timeoutSeconds recordType hostname = do
-  let timeoutArg = Text.fromLinkedList [fmt|-W#{timeoutSeconds}|]
+  let timeoutArg = [fmt|-W#{timeoutSeconds}|]
   let hostArgs = Array.fromLinkedList [timeoutArg, "-t", RecordType.hostArgument recordType, hostname]
   completion <- runDnsSubprocess timeoutSeconds "host" hostArgs
   case completion of
@@ -135,11 +144,12 @@ runDnsSubprocess timeoutSeconds cmd args = do
       case exitCode of
         GhcExit.ExitSuccess -> Task.yield (DnsSubprocessSuccess out)
         GhcExit.ExitFailure 1 ->
-          Task.yield (DnsSubprocessError (Text.fromLinkedList [fmt|Host not found: #{out}|]))
+          Task.yield (DnsSubprocessError [fmt|Host not found: #{out}|])
         GhcExit.ExitFailure code -> do
-          let errMsg = case Text.isEmpty err of
-                True -> Text.fromLinkedList [fmt|DNS resolution failed (exit code #{code})|]
-                False -> err
+          let errMsg =
+                if Text.isEmpty err
+                  then [fmt|DNS resolution failed (exit code #{code})|]
+                  else err
           Task.yield (DnsSubprocessError errMsg)
 
 

@@ -148,11 +148,9 @@ startReaper storage = do
                   |> Map.entries
                   |> Array.reduce
                       ( \(key, tx) acc ->
-                          -- Use >= to keep tokens at exactly their expiry time
-                          -- This matches StateToken validation (currentTime <= expiresAt)
-                          case tx.expiresAt >= nowSeconds of
-                            True -> acc |> Map.set key tx
-                            False -> acc
+                          if tx.expiresAt >= nowSeconds
+                            then acc |> Map.set key tx
+                            else acc
                       )
                       Map.empty
             )

@@ -85,9 +85,9 @@ validateSecureUrl urlText = do
                 "http:" ->
                   -- DEVELOPMENT EXCEPTION: Allow HTTP only for localhost
                   -- This enables local OAuth2 providers (Keycloak, mock servers)
-                  case Hostname.isLocalhost normalizedHost of
-                    True -> Ok urlText  -- Localhost HTTP allowed, skip all other checks
-                    False -> Err (NotHttps urlText)
+                  if Hostname.isLocalhost normalizedHost
+                    then Ok urlText
+                    else Err (NotHttps urlText)
                 _ -> Err (NotHttps urlText)
 
 
@@ -97,17 +97,17 @@ validateSecureUrl urlText = do
 validateNonLocalhostHostname :: Text -> [Char] -> Result ValidationError Text
 validateNonLocalhostHostname urlText normalizedHost =
   -- Check if this is localhost first (for HTTPS localhost, still valid)
-  case Hostname.isLocalhost normalizedHost of
-    True -> Ok urlText  -- Localhost HTTPS is always valid
-    False -> do
+  if Hostname.isLocalhost normalizedHost
+    then Ok urlText
+    else do
       -- SECURITY: Reject single-label hostnames (no dots)
       -- Single-label names may resolve via DNS search domains to internal hosts
-      case isSingleLabelHostname normalizedHost of
-        True -> Err (SingleLabelHostname urlText)
-        False ->
-          case isPrivateOrLoopback normalizedHost of
-            True -> Err (PrivateIpBlocked urlText)
-            False -> Ok urlText
+      if isSingleLabelHostname normalizedHost
+        then Err (SingleLabelHostname urlText)
+        else
+          if isPrivateOrLoopback normalizedHost
+            then Err (PrivateIpBlocked urlText)
+            else Ok urlText
 
 
 -- | Convert a character to lowercase.
@@ -125,9 +125,9 @@ isSingleLabelHostname host =
     [] -> False -- Empty is handled elsewhere
     _ ->
       -- Allow literal IPs (both IPv4 and bracketed IPv6) using strict parsing
-      case isLiteralIpHostStr host of
-        True -> False -- Literal IP, allow it
-        False ->
+      if isLiteralIpHostStr host
+        then False
+        else
           -- For hostnames, require at least one dot (FQDN)
           not (LinkedList.any (\c -> c == '.') host)
 
@@ -278,14 +278,10 @@ isNonRoutableIPv6 ip = do
   let relay6to4Range = IP.makeAddrRange relay6to4 24
 
   -- Extract embedded IPv4 from IPv4-mapped and check if private
-  let ipv4MappedPrivate = case isIPv4Mapped of
-        True -> extractAndCheckIPv4 ip
-        False -> False
+  let ipv4MappedPrivate = if isIPv4Mapped then extractAndCheckIPv4 ip else False
 
   -- Extract embedded IPv4 from NAT64 and check if private
-  let nat64Private = case isNat64 of
-        True -> extractAndCheckIPv4 ip
-        False -> False
+  let nat64Private = if isNat64 then extractAndCheckIPv4 ip else False
 
   IP.isMatchedTo ip unspecifiedRange
     || IP.isMatchedTo ip loopbackRange
@@ -346,14 +342,14 @@ validateSecureUrlWithDns urlText = do
           let normalizedHostStr = LinkedList.map toLowerChar hostStr
           -- Skip DNS resolution for localhost addresses (development)
           -- Localhost is validated by validateSecureUrl, no DNS needed
-          case Hostname.isLocalhost normalizedHostStr of
-            True -> Task.yield (Ok urlText)
-            False ->
+          if Hostname.isLocalhost normalizedHostStr
+            then Task.yield (Ok urlText)
+            else
               -- Skip DNS resolution for literal IP addresses
               -- (already validated by validateSecureUrl above)
-              case isLiteralIpHost hostname of
-                True -> Task.yield (Ok urlText)
-                False -> do
+              if isLiteralIpHost hostname
+                then Task.yield (Ok urlText)
+                else do
                   -- Resolve DNS and check all IPs
                   resolveResult <- Dns.resolve hostname |> Task.asResult
                   let dnsResult = case resolveResult of
@@ -413,9 +409,9 @@ findPrivateIp ips =
   case ips of
     [] -> Nothing
     (ip : rest) ->
-      case isPrivateIpText ip of
-        True -> Just ip
-        False -> findPrivateIp rest
+      if isPrivateIpText ip
+        then Just ip
+        else findPrivateIp rest
 
 
 -- | Check if an IP address string is private/loopback.

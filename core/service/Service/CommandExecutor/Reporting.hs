@@ -1,5 +1,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
+-- | Report command outcomes and retry progress. Build a 'ReportingConfig'
+-- from the executor's dependencies, then call 'run' for the final outcome.
 module Service.CommandExecutor.Reporting (
   ReportingConfig (..),
   run,
@@ -62,7 +64,7 @@ run ::
   ReportingConfig ->
   (CommandSource -> Task CommandExecutionFailure CommandOutcome) ->
   Task CommandExecutionFailure ExecutionResult
-run reportingConfig execute = Task.mask \restore -> do
+run reportingConfig execute = Task.withCancellationDeferred \restore -> do
   completed <- Var.new False
   activeSource <- Var.new reportingConfig.source
   let scope = ReportingScope {reportingConfig, completed, activeSource}
@@ -126,12 +128,12 @@ failExecution ::
   CommandExecutionFailure ->
   Task CommandExecutionFailure value
 failExecution scope source failure = do
-  Task.mask \_ -> publishResult scope source (CommandLogSummary.fromFailure failure)
+  Task.withCancellationDeferred \_ -> publishResult scope source (CommandLogSummary.fromFailure failure)
   Task.throw failure
 
 
 reportOutcome :: ReportingScope -> CommandSource -> CommandOutcome -> Task err Unit
-reportOutcome scope source outcome = Task.mask \_ -> do
+reportOutcome scope source outcome = Task.withCancellationDeferred \_ -> do
   publishResult scope source (CommandLogSummary.fromOutcome outcome)
   case outcome of
     Accepted streamId _ metadata -> reportAppendedEvents scope source streamId metadata
@@ -143,7 +145,7 @@ reportInterruption scope = do
   wasCompleted <- Var.get scope.completed
   Task.unless wasCompleted do
     source <- Var.get scope.activeSource
-    Task.mask \_ -> publishResult scope source CommandLogSummary.interrupted
+    Task.withCancellationDeferred \_ -> publishResult scope source CommandLogSummary.interrupted
 
 
 publishResult :: ReportingScope -> CommandSource -> CommandLogSummary -> Task err Unit

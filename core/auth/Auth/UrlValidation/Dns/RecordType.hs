@@ -1,3 +1,6 @@
+{-| Identify the A or AAAA family for a DNS lookup.
+Use hostArgument when passing the chosen family to the host command.
+-}
 module Auth.UrlValidation.Dns.RecordType (
   DnsRecordType (..),
   hostArgument,

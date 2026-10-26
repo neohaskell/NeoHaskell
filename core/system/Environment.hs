@@ -37,7 +37,6 @@ module Environment (
 
 import Basics
 import Configuration.Dotenv qualified as Dotenv
-import Data.Bool qualified as GhcBool
 import Result qualified
 import System.Directory qualified as GhcDir
 import System.Environment qualified
@@ -102,6 +101,5 @@ loadEnvFileIfPresent :: Text -> Task Text ()
 loadEnvFileIfPresent filePath = do
   let path = Text.toLinkedList filePath
   exists <- Task.fromIO (GhcDir.doesFileExist path)
-  case exists of
-    GhcBool.True -> loadEnvFile filePath
-    GhcBool.False -> Task.yield ()
+  Task.when exists do
+    loadEnvFile filePath
