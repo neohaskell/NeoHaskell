@@ -64,6 +64,12 @@
     - {name: [Control.Exception, Control.Exception.Base], within: [Task, AsyncTask, IO], message: "NeoHaskell ownership. Exception mechanisms belong in Task, AsyncTask, or IO."}
     - {name: [Data.IORef], within: [Var], message: "NeoHaskell ownership. Use Var or an atomic concurrency API according to the invariant."}
     - {name: [GHC.Conc, GHC.Conc.Sync], within: [AsyncTask], message: "NeoHaskell ownership. Thread inspection belongs in the owning concurrency API."}
+    - {name: [Control.Concurrent.Async], within: [AsyncTask, Subprocess], message: "NeoHaskell ownership. Use AsyncTask for task concurrency. Raw Async belongs to AsyncTask or subprocess IO coordination."}
+    - {name: [Control.Concurrent.STM], within: [AtomicVar, Channel, ConcurrentMap, Transaction, Transaction.Internal], message: "NeoHaskell ownership. STM coordination belongs in the owning core concurrency API. Add missing operations in a core prerequisite PR."}
+    - {name: [Transaction.Internal], within: [AtomicVar, ConcurrentMap, Transaction], message: "NeoHaskell ownership. Transaction construction belongs in the owning core concurrency APIs. Use the public Transaction API."}
+    - {name: [Control.Concurrent.STM.TBQueue], within: [Channel], message: "NeoHaskell ownership. Bounded queue operations belong in Channel. Add missing operations in a core prerequisite PR."}
+    - {name: [Control.Concurrent.Async.Internal], within: [], message: "NeoHaskell ownership. Use the public Async API only in its named owners."}
+    - {name: [Control.Monad.STM, Control.Concurrent.STM.TVar, Control.Concurrent.STM.TMVar, Control.Concurrent.STM.TChan, Control.Concurrent.STM.TQueue, Control.Concurrent.STM.TArray], within: [], message: "NeoHaskell ownership. Use owning core concurrency APIs. Existing STM owners use the public umbrella module."}
 
 - functions:
     - name:
@@ -204,6 +210,44 @@
 # the escape hatch `{- HLINT ignore "NeoHaskell: use Task.when" -}`.
 - error: {lhs: "if c then a else pass", rhs: "Task.when c a", name: "NeoHaskell: use Task.when"}
 - error: {lhs: "if c then pass else a", rhs: "Task.unless c a", name: "NeoHaskell: use Task.unless"}
+- error: {lhs: "if c then Task.yield () else a", rhs: "Task.unless c a", name: "NeoHaskell: use Task.unless for yielded unit"}
+- error: {lhs: "if c then a else Task.yield ()", rhs: "Task.when c a", name: "NeoHaskell: use Task.when for yielded unit"}
+- error: {lhs: "if c then Task.yield Basics.unit else a", rhs: "Task.unless c a", name: "NeoHaskell: use Task.unless for yielded unit"}
+- error: {lhs: "if c then a else Task.yield Basics.unit", rhs: "Task.when c a", name: "NeoHaskell: use Task.when for yielded unit"}
+- error: {lhs: "if c then Task.yield Core.unit else a", rhs: "Task.unless c a", name: "NeoHaskell: use Task.unless for yielded unit"}
+- error: {lhs: "if c then a else Task.yield Core.unit", rhs: "Task.when c a", name: "NeoHaskell: use Task.when for yielded unit"}
+- warn:
+    lhs: |-
+      case c of
+        True -> a
+        False -> b
+    rhs: "if c then a else b"
+    name: "NeoHaskell candidate: Boolean case"
+- warn:
+    lhs: |-
+      case c of
+        False -> b
+        True -> a
+    rhs: "if c then a else b"
+    name: "NeoHaskell candidate: Boolean case"
+- warn:
+    lhs: |-
+      case c of
+        Basics.True -> a
+        Basics.False -> b
+    rhs: "if c then a else b"
+    name: "NeoHaskell candidate: Boolean case"
+- warn:
+    lhs: |-
+      case c of
+        Basics.False -> b
+        Basics.True -> a
+    rhs: "if c then a else b"
+    name: "NeoHaskell candidate: Boolean case"
+- warn:
+    lhs: "Text.fromLinkedList a"
+    rhs: "a"
+    name: "NeoHaskell candidate: Text conversion"
 
 - error: {lhs: "Task.recover (\\e -> Task.throw (f e))", rhs: "Task.mapError f", name: "NeoHaskell: use Task.mapError"}
 - error: {lhs: "Task.recover (\\e -> f e |> Task.throw)", rhs: "Task.mapError f", name: "NeoHaskell: use Task.mapError"}

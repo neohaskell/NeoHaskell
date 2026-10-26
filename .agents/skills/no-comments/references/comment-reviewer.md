@@ -16,6 +16,8 @@ Delete prose comments unless one of these exceptions is proven:
 - Doc comments that define a public API contract. This includes Haddock and examples that specify that contract.
 - Issue or design-document links that explain a constraint code cannot express.
 
+Check new Haskell modules under [module documentation](../../neohaskell-module-docs/SKILL.md). Flag missing or inaccurate top-level Haddock. Keep concise, accurate responsibility and normal-usage headers under the module-header exception.
+
 This is the full exception list. If investigation does not establish an exception for a prose comment, delete it.
 
 Compiler pragmas, preprocessor directives and tool-consumed annotations are not ordinary prose comments. Trace the owning compiler/tool contract before classifying them. Never edit or delete semantic directives during this comment-only pass; flag required changes for the coordinator's scoped implementation/configuration work. Comment-like delimiters alone do not establish that text is prose.

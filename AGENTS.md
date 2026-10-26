@@ -8,6 +8,8 @@ Use this workflow as the default for work on NeoHaskell's framework, language an
 
 Keep intermediate work and research under `.agents-state/`. Verify implementation decisions against current code and entrypoints. When authoring reusable skills, apply [self-contained skills](.agents/skills/self-contained-skills/SKILL.md).
 
+For implementation and fix requests, follow the [task completion policy](.agents/skills/orchestrate/references/task-completion.md). It owns delivery boundaries, dependent PR stacks, and continuation through verification and landing. Explicit narrower instructions take precedence.
+
 Skill-specific scripts, references, templates, tests and dependency configuration belong inside the owning `.agents/skills/<name>/` folder. Use `scripts/`, `references/` and `assets/` for their respective resources. Invoke helpers through their skill-owned paths. When several skills need a resource, keep one copy in its owning skill and link callers to it.
 
 ## Non-negotiables
@@ -25,6 +27,8 @@ Remaining triggers:
 - Nontrivial multi-step → write the throughput checkpoint (Feature step 3).
 - Any prose surface, your reply to the user included → the **prose-cleanup** skill. Write the reply per **Writing the reply**. For agent-facing skill authoring, use whichever skill-authoring skill or built-in is available in the current environment.
 - Haskell implementation → [NeoHaskell code guidelines](.agents/skills/neohaskell-code-guidelines/SKILL.md) and [NeoHaskell best practices](.agents/skills/neohaskell-best-practices/SKILL.md).
+- Creating or reviewing new Haskell modules → [module documentation](.agents/skills/neohaskell-module-docs/SKILL.md).
+- Changing LANGUAGE pragmas, Cabal extensions, or compiler/linter extension settings → [language extensions](.agents/skills/neohaskell-language-extensions/SKILL.md).
 - Framework exports, TH markers or generated APIs change → [NeoHaskell consumer verification](.agents/skills/neohaskell-consumer-verification/SKILL.md) for same-PR starter and testbed migration and exact-revision evidence.
 - Haskell tool commands, including compilation, tests, doctests, formatting, and generated-consumer checks → [Nix Haskell tools](.agents/skills/nix-haskell-tools/SKILL.md). Run them through `nix develop --command`.
 - Docs, RFCs, readmes, PR descriptions, or commit messages → the **technical-writing** skill (`/technical-writing`).
@@ -33,8 +37,8 @@ Remaining triggers:
 - Shipping UI / IDE / CLI / TUI → the matching available control skill. Use **control-cli** for CLIs and TUIs and **control-ui** for browser / Electron / web UIs. For bug fixes, reproduce first on the same surface yourself. Hand to the user only under the narrow Bug fix step 1 exception.
 - Selecting or running maintained framework suites, doctests or testbed checks → [NeoHaskell tests](.agents/skills/neohaskell-test/SKILL.md). Use its owned entrypoints and report incomplete coverage.
 - Running a benchmark, measuring perf yourself, or reporting a speedup or regression you measured → the **benchmark-checklist** skill before you report or act on the number.
-- Any PR-status request ("babysit this", "get it green", "address the review comments", and most often "check on PR X" or "anything outstanding on X") → the **Babysit** playbook (`.agents/workflow/playbooks/babysit.md`). Never triggered by merely opening a PR. Declare its mode before polling. The playbook's step 1 owns the request-to-mode mapping. Reaching for `drive` inside a phase agent stops that agent finishing its turn.
-- Asked to land or ship a green stack → the **Shipping** playbook (`.agents/workflow/playbooks/shipping.md`). Green is not safe. Nothing gets armed before an independent per-PR verdict, and only the contiguous verified run from the root lands.
+- Any PR-status request ("babysit this", "get it green", "address the review comments", and most often "check on PR X" or "anything outstanding on X") → the **Babysit** playbook (`.agents/workflow/playbooks/babysit.md`). The task completion policy also routes the task owner here after the implementation wave. Merely opening a PR does not transfer that ownership. Declare its mode before polling. The playbook's step 1 owns the request-to-mode mapping. Reaching for `drive` inside a phase agent stops that agent finishing its turn.
+- Landing is in scope under the task completion policy, or explicitly requested → the **Shipping** playbook (`.agents/workflow/playbooks/shipping.md`). Green is not safe. Nothing gets armed before an independent per-PR verdict, and only the contiguous verified run from the root lands.
 - A reviewer commented → skeptical posture. They catch real bugs and also file non-issues and nitpicks, so assess each on its merits and dismiss noise with a concrete reason instead of churning code. Triage fix / dismiss / ask per `.agents/skills/babysit/references/review-triage.md`.
 - Broken skill mid-task → fix it in its own PR. Don't block. Don't silently work around it.
 - Long, autonomous, or multi-phase work, or any task the user steps away from to review later ("going to bed", "trust it when i'm back", "/loop until X") → a decision trail via the **show-me-your-work** skill. Commit it when stakes need an auditable record. Keep it local otherwise.
@@ -91,7 +95,7 @@ Read the leaf skill in full for any principle you apply. Each entry names when i
 
 **Always pause** for irreversible writes: force-push to shared branches, deploys, data deletion, customer messages.
 
-**Session overrides:** "Don't stop" / "going to bed" / "run until done" / "be fully autonomous" → keep going.
+**Session overrides:** "Don't stop" / "going to bed" / "run until done" / "be fully autonomous" → keep going within the [task completion policy](.agents/skills/orchestrate/references/task-completion.md). Preserve explicit delivery limits.
 
 **No is an acceptable answer.** Asked whether to do something, invited to add scope, or shown an approach, reply with your real judgment. Decline, push back, or say "this doesn't earn its place" when true. A recommendation is a judgment, not a validation. Agreement is not the default, candor over sycophancy.
 

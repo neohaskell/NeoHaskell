@@ -391,6 +391,19 @@ library
     Service.CommandExecutor.CommandErrorClass
     Service.CommandExecutor.Reporting
     Service.CommandResultReceipt.Internal
+    Service.Integration.Dispatcher.IntegrationOutcome
+    Service.Integration.Dispatcher.IntegrationResult
+    Service.Integration.Dispatcher.Config
+    Service.Integration.Dispatcher.Setup
+    Service.Integration.Dispatcher.EventLogContext
+    Service.Integration.Dispatcher.RunnerExecution
+    Service.Integration.Dispatcher.RunnerLogState
+    Service.Integration.Dispatcher.WorkerQueueControl
+    Service.Integration.Dispatcher.WorkerStopKind
+    Auth.UrlValidation.Dns
+    Auth.UrlValidation.Dns.Error
+    Auth.UrlValidation.Dns.RecordType
+    Auth.UrlValidation.Dns.Result
     Transaction.Internal
   -- other-extensions:
   hs-source-dirs:
@@ -548,6 +561,25 @@ test-suite nhcore-test
     hspec,
     nhcore,
 
+test-suite nhcore-test-worker-queue
+  import: common_cfg
+  default-language: GHC2021
+  ghc-options:
+    -rtsopts
+    -with-rtsopts=-N
+
+  other-modules:
+    WorkerQueueControlSpec
+    Service.Integration.Dispatcher.WorkerQueueControl
+
+  type: exitcode-stdio-1.0
+  hs-source-dirs: test-worker-queue, service
+  main-is: Main.hs
+  build-depends:
+    base,
+    hspec,
+    nhcore,
+
 test-suite nhcore-test-auth
   import: common_cfg
   default-language: GHC2021
@@ -573,6 +605,28 @@ test-suite nhcore-test-auth
 
   type: exitcode-stdio-1.0
   hs-source-dirs: test-auth, test
+  main-is: Main.hs
+  build-depends:
+    base,
+    hspec,
+    nhcore,
+
+test-suite nhcore-test-auth-dns
+  import: common_cfg
+  default-language: GHC2021
+  ghc-options:
+    -rtsopts
+    -with-rtsopts=-N
+
+  other-modules:
+    Auth.UrlValidation.Dns
+    Auth.UrlValidation.Dns.Error
+    Auth.UrlValidation.Dns.RecordType
+    Auth.UrlValidation.Dns.Result
+    Auth.UrlValidation.DnsSpec
+
+  type: exitcode-stdio-1.0
+  hs-source-dirs: test-auth-dns, auth
   main-is: Main.hs
   build-depends:
     base,
@@ -734,6 +788,7 @@ test-suite nhcore-test-core
     CryptoSpec
     DeciderSpec
     DecimalSpec
+    DateTimeSpec
     DirectorySpec
     UuidSpec
     EventVariantOfSpec

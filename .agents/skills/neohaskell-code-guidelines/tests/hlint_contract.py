@@ -19,7 +19,8 @@ class StaticChecks(unittest.TestCase):
         self.root = Path(self.temporary.name)
         self.owner = self.root / ".agents/skills/neohaskell-code-guidelines"
         (self.owner / "scripts").mkdir(parents=True)
-        shutil.copy(OWNER / "scripts/check.py", self.owner / "scripts/check.py")
+        for script in (OWNER / "scripts").glob("*.py"):
+            shutil.copy(script, self.owner / "scripts" / script.name)
         shutil.copy(REPO / ".hlint.yaml", self.root / ".hlint.yaml")
         subprocess.run(["git", "init", "-q", str(self.root)], check=True)
 
@@ -33,6 +34,197 @@ class StaticChecks(unittest.TestCase):
         result = subprocess.run([sys.executable, str(self.owner / "scripts/check.py"), "--hlint", HLINT, *arguments], cwd=self.root, text=True, capture_output=True)
         self.assertEqual(result.returncode, expected, result.stdout + result.stderr)
         return result.stdout + result.stderr
+
+    def test_yielded_unit_conditionals_use_the_correct_task_operation(self):
+        for imports, yielded in [
+            ("import Task qualified\nimport Basics", "Task.yield unit"),
+            ("import Task qualified as T\nimport Basics qualified as B", "T.yield B.unit"),
+            ("import Task (yield)\nimport Core", "yield unit"),
+            ("import Task qualified", "Task.yield ()"),
+        ]:
+            for expression, rule in [
+                (f"if flag then {yielded} else action", "unless"),
+                (f"if flag then action else {yielded}", "when"),
+            ]:
+                with self.subTest(yielded=yielded, rule=rule):
+                    self.source(f"module Example where\n{imports}\nchoose flag action = {expression}\n")
+                    self.assertIn(f"NeoHaskell: use Task.{rule}", self.check(1))
+        for expression in ["Task.when flag action", "Task.unless flag action", "if flag then Task.yield value else action"]:
+            self.source(f"module Example where\nimport Task qualified\nchoose flag action value = {expression}\n")
+            self.check(0)
+        self.source("module Example where\nimport Task qualified\nchoose flag action unit = if flag then Task.yield unit else action\n")
+        self.check(0)
+
+    def test_boolean_cases_require_known_constructors(self):
+        for imported, prefix in [("import Basics", ""), ("import Core", ""), ("import Basics qualified as B", "B."), ("import Prelude qualified as P", "P.")]:
+            for first, second in [("True", "False"), ("False", "True")]:
+                self.source(f"module Example where\n{imported}\nchoose flag yes no = case flag of\n  {prefix}{first} -> yes\n  {prefix}{second} -> no\n")
+                self.assertIn("NeoHaskell: use if for Bool", self.check(1))
+        for source in [
+            "import Other qualified as O\nchoose flag yes no = case flag of\n  O.True -> yes\n  O.False -> no\n",
+            "import Basics hiding (Bool(..))\ndata Flag = True | False\nchoose flag yes no = case flag of\n  True -> yes\n  False -> no\n",
+            "import Basics\nchoose flag yes no = if flag then yes else no\n",
+            "import Basics\nchoose flag yes no = case flag of\n  True -> yes\n  _ -> no\n",
+        ]:
+            self.source("module Example where\n" + source)
+            self.check(0)
+
+    def test_fmt_conversion_requires_the_fmt_quasiquote(self):
+        for imports, expression in [
+            ("import Text qualified\nimport Basics (fmt)", "Text.fromLinkedList [fmt|hello|]"),
+            ("import Text qualified as T\nimport Basics qualified as B", "T.fromLinkedList [B.fmt|hello #{name}|]"),
+            ("import Text (fromLinkedList)\nimport Basics (fmt)", "fromLinkedList ([fmt|hello\nworld|])"),
+        ]:
+            self.source(f"module Example where\n{imports}\nrender name = {expression}\n")
+            self.assertIn("NeoHaskell: fmt already produces Text", self.check(1))
+        for expression in ['Text.fromLinkedList value', 'Text.fromLinkedList [sql|select 1|]', '[fmt|hello #{value}|]']:
+            self.source(f"module Example where\nimport Text qualified\nimport Basics (fmt)\nrender value = {expression}\n")
+            self.check(0)
+        self.source("module Example where\nimport Text qualified\nimport Other (fmt)\nrender = Text.fromLinkedList [fmt|hello|]\n")
+        self.check(0)
+
+    def test_text_parameter_signatures_preserve_results_and_conversions(self):
+        imports = "import LinkedList (LinkedList)\nimport Char (Char)\n"
+        for signature in ["LinkedList Char -> Int", "Int -> LinkedList (Char) -> Int", "forall value. Show value => LinkedList Char -> value", "(LinkedList Char -> Text) -> Int"]:
+            self.source(f"module Example where\n{imports}consume :: {signature}\n")
+            self.assertIn("NeoHaskell: use Text parameters", self.check(1))
+        for signature in ["Text -> LinkedList Char", "Text -> Result Error (LinkedList Char)", "(Text -> LinkedList Char) -> Int", "LinkedList Int -> Int", "Char LinkedList -> Int"]:
+            self.source(f"module Example where\n{imports}produce :: {signature}\n")
+            self.check(0)
+        for path, module in [("core/core/Text.hs", "Text"), ("core/system/Path.hs", "Path")]:
+            self.source(f"module {module} where\n{imports}fromLinkedList :: LinkedList Char -> Text\n", path)
+        self.check(0)
+        self.source(f"module Text where\n{imports}fromLinkedList :: LinkedList Char -> Text\n")
+        self.assertIn("NeoHaskell: use Text parameters", self.check(1))
+
+    def test_signature_aliases_comments_and_wrong_providers(self):
+        for declaration in ["consume\n  :: LinkedList Char -> Int", "(<+>) :: LinkedList Char -> Int"]:
+            self.source(f"module Example where\nimport LinkedList (LinkedList)\nimport Char (Char)\n{declaration}\n")
+            self.assertIn("NeoHaskell: use Text parameters", self.check(1))
+        for imported in ["import qualified LinkedList as L\nimport qualified Char as C", "import LinkedList qualified as L\nimport Char qualified as C"]:
+            self.source(f"module Example where\n{imported}\nconsume ::\n  L.LinkedList C.Char -> Int\n")
+            self.assertIn("NeoHaskell: use Text parameters", self.check(1))
+        for imported, signature in [
+            ("import Other qualified as O", "O.LinkedList O.Char -> Int"),
+            ("import LinkedList qualified as L\nimport Char qualified as C", "LinkedList.LinkedList Char.Char -> Int"),
+            ("import Char qualified as C", "C.LinkedList C.Char -> Int"),
+            ("import LinkedList qualified as L", "L.LinkedList L.Char -> Int"),
+        ]:
+            self.source(f"module Example where\n{imported}\nconsume :: {signature}\n")
+            self.check(0)
+        self.source('module Example where\nimport LinkedList (LinkedList)\nimport Char (Char)\n-- consume :: LinkedList Char -> Int\nmessage = "consume :: LinkedList Char -> Int"\ndata Holder = Holder { value :: LinkedList Char }\n')
+        self.check(0)
+
+    def test_cabal_strict_defaults_and_source_overrides(self):
+        self.source("cabal-version: 3.4\nname: fixture\nversion: 0.1\ncommon defaults\n  default-extensions: Strict\nlibrary\n  import: defaults\n  hs-source-dirs: core\n", "fixture.cabal")
+        source = "module Example where\ndata Deferred value = Deferred (() -> value)\ndefer ~value = Deferred (\\_ -> value)\n"
+        self.source(source)
+        self.check(0)
+        self.source("{-# LANGUAGE NoStrict #-}\n" + source)
+        self.assertIn("Redundant irrefutable pattern", self.check(1))
+        self.source("{-# LANGUAGE Strict, NoStrict #-}\n" + source)
+        self.assertIn("Redundant irrefutable pattern", self.check(1))
+        self.source("{-# LANGUAGE NoStrict, Strict #-}\n" + source)
+        self.check(0)
+        self.source(source + "first values = values !! 0\n")
+        output = self.check(1)
+        self.assertIn("core/Example.hs [first] Use head", output)
+        self.assertNotIn("Redundant irrefutable pattern", output)
+
+    def test_cabal_common_profiles_parser_flags_and_ambiguity(self):
+        self.source("cabal-version: 3.4\nname: fixture\nversion: 0.1\ncommon syntax\n  default-extensions: Arrows\nlibrary\n  import: syntax\n  hs-source-dirs: core\n", "fixture.cabal")
+        self.source("module Example where\nidentity = proc value -> returnA -< value\n")
+        self.check(0)
+        cabal = self.root / "fixture.cabal"
+        cabal.write_text(cabal.read_text() + "test-suite other\n  hs-source-dirs: core\n")
+        self.assertIn("Conflicting component", self.check(2))
+        cabal.write_text("library\n  if flag(strict)\n    default-extensions: Strict\n  hs-source-dirs: core\n")
+        self.assertIn("Conditional Cabal", self.check(2))
+
+    def test_component_overrides_and_compiler_flag_precedence(self):
+        self.source("common base\n  default-extensions: Strict\ncommon inherited\n  import: base\nlibrary\n  import: inherited\n  hs-source-dirs: strict\ntest-suite lazy\n  import: inherited\n  ghc-options: -XNoStrict\n  default-extensions: Strict\n  hs-source-dirs: lazy\n", "fixture.cabal")
+        source = "module Example where\ndata Deferred value = Deferred (() -> value)\ndefer ~value = Deferred (\\_ -> value)\n"
+        self.source(source, "strict/Example.hs")
+        self.check(0)
+        self.source(source, "lazy/Example.hs")
+        output = self.check(1)
+        self.assertIn("lazy/Example.hs [defer] Redundant irrefutable pattern", output)
+        self.assertNotIn("FAIL strict/Example.hs", output)
+
+    def test_strict_normalization_preserves_multiline_source_locations(self):
+        self.source("library\n  default-extensions: Strict\n  hs-source-dirs: core\n", "fixture.cabal")
+        self.source("{-# LANGUAGE\n  Strict, QuasiQuotes\n #-}\nmodule Example where\nfirst values = values !! 0\n")
+        self.assertIn("core/Example.hs [first] Use head (1): first values = values !! 0", self.check(1))
+        self.source("{- Outer comment {-# LANGUAGE Strict #-} -}\n{-# LANGUAGE NoStrict #-}\nmodule Example where\ndata Deferred value = Deferred (() -> value)\ndefer ~value = Deferred (\\_ -> value)\n")
+        self.assertIn("Redundant irrefutable pattern", self.check(1))
+        self.source("{-# LANGUAGE NoStrict #-}\n--- A comment containing {-# LANGUAGE Strict #-}\nmodule Example where\ndata Deferred value = Deferred (() -> value)\ndefer ~value = Deferred (\\_ -> value)\n")
+        self.assertIn("Redundant irrefutable pattern", self.check(1))
+
+    def test_unsupported_language_configuration_fails_visibly(self):
+        for cabal, expected in [
+            ("common cycle\n  import: cycle\nlibrary\n  import: cycle\n  hs-source-dirs: core\n", "Invalid common stanza"),
+            ("library\n  hs-source-dirs: elsewhere\n", "No Cabal component"),
+        ]:
+            self.source(cabal, "fixture.cabal")
+            self.source("module Example where\nvalue = 1\n")
+            self.assertIn(expected, self.check(2))
+        self.source("library\n  hs-source-dirs: core\n", "fixture.cabal")
+        for pragma, expected in [("{-# OPTIONS_GHC -XStrict #-}", "OPTIONS_GHC"), ('{-# LINE 20 "generated.hs" #-}', "LINE pragmas")]:
+            self.source(pragma + "\nmodule Example where\nvalue = 1\n")
+            self.assertIn(expected, self.check(2))
+
+    def test_starter_inherits_its_owned_cabal_template(self):
+        self.source("common defaults\n  default-extensions: Strict\nlibrary\n  import: defaults\n  hs-source-dirs: src\n", "neo/assets/templates/project.cabal.j2")
+        self.source("module Example where\ndata Deferred value = Deferred (() -> value)\ndefer ~value = Deferred (\\_ -> value)\n", "neo/starter/src/Example.hs")
+        self.check(0)
+
+    def test_new_rules_are_not_disabled_by_local_suppression(self):
+        for rule, source in [
+            ("NeoHaskell: use Task.unless for yielded unit", "import Task qualified\nimport Basics\nchoose flag action = if flag then Task.yield unit else action\n"),
+            ("NeoHaskell candidate: Boolean case", "import Basics\nchoose flag yes no = case flag of\n  True -> yes\n  False -> no\n"),
+            ("NeoHaskell candidate: Text conversion", "import Basics (fmt)\nimport Text qualified\nrender = Text.fromLinkedList [fmt|hello|]\n"),
+        ]:
+            self.source("module Example where\n" + source + f'{{-# ANN module ("HLint: ignore {rule}" :: String) #-}}\n')
+            self.check(1)
+
+    def test_literate_default_profile_preserves_diagnostic_identity(self):
+        self.source("> module Example where\n> first values = values !! 0\n", "core/Example.lhs")
+        self.assertIn("core/Example.lhs [first] Use head", self.check(1))
+        self.source("> module Example where\n> value = 1\n", "core/Example.lhs")
+        self.check(0)
+
+    def test_literate_custom_rules_check_code_and_ignore_prose(self):
+        for code in [
+            "import LinkedList (LinkedList)\nimport Char (Char)\nconsume :: LinkedList Char -> Int\n",
+            "import Basics\nchoose flag yes no = case flag of\n  True -> yes\n  False -> no\n",
+            "import Basics (fmt)\nimport Text qualified\nrender = Text.fromLinkedList [fmt|hello|]\n",
+        ]:
+            source = "module Example where\n" + code
+            for literate in ["\n".join("> " + line for line in source.splitlines()) + "\n", "\\begin{code}\n" + source + "\\end{code}\n"]:
+                self.source(literate, "core/Example.lhs")
+                self.check(1)
+        self.source("A prose example. consume :: LinkedList Char -> Int\n\n> module Example where\n> value = 1\n", "core/Example.lhs")
+        self.check(0)
+
+    def test_indented_module_bodies_keep_rule_coverage(self):
+        for body in [
+            "import LinkedList (LinkedList)\nimport Char (Char)\nconsume :: LinkedList Char -> Int\n",
+            "import Basics\nchoose flag yes no = case flag of\n  True -> yes\n  False -> no\n",
+            "import Basics (fmt)\nimport Text qualified\nrender = Text.fromLinkedList [fmt|hello|]\n",
+        ]:
+            indented = "\n".join("  " + line for line in body.splitlines()) + "\n"
+            self.source("module Example where\n" + indented)
+            self.check(1)
+        self.source("module Example where\n  import LinkedList (LinkedList)\n  import Char (Char)\n  produce :: Text -> LinkedList Char\n  data Holder = Holder { value :: LinkedList Char }\n")
+        self.check(0)
+
+    def test_transaction_constructor_ownership_is_exact(self):
+        for module in ["Transaction", "AtomicVar", "ConcurrentMap", "Service.Example", "Auth.Example", "Transaction.Extra", "TaskSpec"]:
+            self.source(f"module {module} where\nimport Transaction.Internal (Transaction(..))\nwrap value = Transaction value\n")
+            self.check(0 if module in {"Transaction", "AtomicVar", "ConcurrentMap"} else 1)
+        for module in ["Transaction", "Transaction.Internal", "Transaction.Extra"]:
+            self.source(f"module {module} where\nimport Control.Concurrent.STM qualified as Raw\ntype Action = Raw.STM ()\n")
+            self.check(1 if module == "Transaction.Extra" else 0)
 
     def test_core_alternatives_pass(self):
         self.source("module Example where\nimport Task qualified\nimport Var qualified\nreadValue variable = Var.get variable\ntranslate task = Task.mapError explain task\n")
@@ -180,6 +372,104 @@ class StaticChecks(unittest.TestCase):
     def test_thread_status_requires_owner(self):
         self.source("module Example where\nimport GHC.Conc qualified as Runtime\nstatus thread = Runtime.threadStatus thread\n")
         self.assertIn("Avoid restricted function", self.check(1))
+
+    def test_raw_async_and_stm_operations_fail_in_services(self):
+        cases = [
+            ("Control.Concurrent.Async", "qualified as Raw", "spawn task = Raw.async task"),
+            ("Control.Concurrent.Async", "(async)", "spawn task = async task"),
+            ("Control.Concurrent.STM", "qualified as Raw", "readValue value = Raw.readTVar value\ncommit value = Raw.atomically value"),
+            ("Control.Concurrent.STM", "(atomically, readTVar)", "readValue value = readTVar value\ncommit value = atomically value"),
+        ]
+        for module in ["Service.Example", "Auth.Example"]:
+            for imported, names, operation in cases:
+                with self.subTest(module=module, imported=imported, names=names):
+                    self.source(f"module {module} where\nimport {imported} {names}\n{operation}\n")
+                    self.assertIn("Avoid restricted module", self.check(1))
+
+    def test_raw_concurrency_type_imports_and_reexports_fail(self):
+        cases = [
+            "module Service.Example where\nimport Control.Concurrent.Async (Async)\ntype Worker = Async ()\n",
+            "module Auth.Example where\nimport Control.Concurrent.STM (STM)\ntype Transaction = STM ()\n",
+            "module Service.Example (module Control.Concurrent.Async) where\nimport Control.Concurrent.Async\n",
+            "module Auth.Example (module Control.Concurrent.STM) where\nimport Control.Concurrent.STM\n",
+        ]
+        for source in cases:
+            with self.subTest(source=source):
+                self.source(source)
+                self.assertIn("Avoid restricted module", self.check(1))
+
+    def test_alternate_raw_concurrency_modules_fail(self):
+        cases = [
+            ("Control.Concurrent.Async.Internal", "use value = Raw.async value"),
+            ("Control.Monad.STM", "use value = Raw.atomically value"),
+            ("Control.Concurrent.STM.TVar", "use value = Raw.readTVar value"),
+            ("Control.Concurrent.STM.TMVar", "use value = Raw.readTMVar value"),
+            ("Control.Concurrent.STM.TChan", "use value = Raw.readTChan value"),
+            ("Control.Concurrent.STM.TQueue", "use value = Raw.readTQueue value"),
+            ("Control.Concurrent.STM.TArray", "array :: Raw.TArray Int Int -> Int\narray _ = 0"),
+        ]
+        for imported, declaration in cases:
+            with self.subTest(imported=imported):
+                self.source(f"module Service.Example where\nimport {imported} qualified as Raw\n{declaration}\n")
+                self.assertIn("Avoid restricted module", self.check(1))
+
+    def test_all_six_concurrency_owner_pairs_pass(self):
+        cases = [
+            ("AsyncTask", "Control.Concurrent.Async", "Raw.async value"),
+            ("Subprocess", "Control.Concurrent.Async", "Raw.async value"),
+            ("AtomicVar", "Control.Concurrent.STM", "Raw.readTVar value"),
+            ("Channel", "Control.Concurrent.STM", "Raw.atomically value"),
+            ("ConcurrentMap", "Control.Concurrent.STM", "Raw.atomically value"),
+            ("Channel", "Control.Concurrent.STM.TBQueue", "Raw.readTBQueue value"),
+        ]
+        for module, imported, operation in cases:
+            with self.subTest(module=module, imported=imported):
+                self.source(f"module {module} where\nimport {imported} qualified as Raw\nrun value = {operation}\n")
+                self.check(0)
+
+    def test_cross_owner_near_name_dispatcher_and_task_spec_imports_fail(self):
+        cases = [
+            ("AtomicVar", "Control.Concurrent.Async", "Raw.async value"),
+            ("AsyncTask", "Control.Concurrent.STM", "Raw.atomically value"),
+            ("ConcurrentMap", "Control.Concurrent.STM.TBQueue", "Raw.readTBQueue value"),
+            ("AsyncTask.Extra", "Control.Concurrent.Async", "Raw.async value"),
+            ("Channel.Extra", "Control.Concurrent.STM.TBQueue", "Raw.readTBQueue value"),
+            ("Service.Integration.Dispatcher", "Control.Concurrent.STM", "Raw.atomically value"),
+            ("Service.Integration.Dispatcher", "Control.Concurrent.Async", "Raw.async value"),
+            ("TaskSpec", "Control.Concurrent.Async", "Raw.async value"),
+        ]
+        for module, imported, operation in cases:
+            with self.subTest(module=module, imported=imported):
+                self.source(f"module {module} where\nimport {imported} qualified as Raw\nrun value = {operation}\n")
+                self.assertIn("Avoid restricted module", self.check(1))
+        self.source("module Service.Example where\nimport Control.Concurrent.STM.TBQueue qualified as Raw\nrun value = Raw.readTBQueue value\n")
+        self.assertIn("Avoid restricted module", self.check(1))
+
+    def test_concurrency_ownership_suppressions_remain_rejected(self):
+        cases = [
+            ("Service.Example", "Control.Concurrent.Async", "run value = Raw.async value"),
+            ("Auth.Example", "Control.Concurrent.STM", "readValue value = Raw.readTVar value\ncommit value = Raw.atomically value"),
+        ]
+        suppressions = [
+            '{-# ANN module ("HLint: ignore Avoid restricted module" :: String) #-}',
+            '{- HLINT ignore "Avoid restricted module" -}',
+        ]
+        for module, imported, operations in cases:
+            for suppression in suppressions:
+                with self.subTest(module=module, suppression=suppression):
+                    self.source(f"module {module} where\nimport {imported} qualified as Raw\n{suppression}\n{operations}\n")
+                    self.assertIn("Avoid restricted module", self.check(1))
+
+    def test_core_concurrency_apis_pass(self):
+        self.source("module Service.Example where\nimport AsyncTask qualified\nimport AtomicVar qualified\nimport Channel qualified\nimport ConcurrentMap qualified\nspawn task = AsyncTask.run task\nnewVariable value = AtomicVar.containing value\nnewChannel = Channel.new\nnewMap = ConcurrentMap.new\n")
+        self.check(0)
+
+    def test_hlint_concurrency_ownership_limits_are_explicit(self):
+        spoof = self.source("module AsyncTask where\nimport Control.Concurrent.Async qualified as Raw\nspawn action = Raw.async action\n", "services/Billing.hs")
+        self.check(0)
+        spoof.unlink()
+        self.source("module Service.Example where\nimport StmContainers.Map qualified as STMMap\nnewMap = STMMap.newIO\n")
+        self.check(0)
 
     def test_error_translation_uses_task_combinator(self):
         for expression in [

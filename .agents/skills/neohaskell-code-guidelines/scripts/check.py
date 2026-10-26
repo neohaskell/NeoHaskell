@@ -8,6 +8,10 @@ import json
 from pathlib import Path
 import subprocess
 import sys
+import tempfile
+
+from cabal_extensions import parser_source, profiles
+from source_rules import SourceNames, candidate_rule, code_source, signature_violations
 
 
 OWNER = Path(__file__).resolve().parents[1]
@@ -29,12 +33,12 @@ def run(arguments, root):
     return subprocess.run(arguments, cwd=root, text=True, capture_output=True, check=False)
 
 
-def tracked_sources(root):
+def tracked_files(root):
     result = run(["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard"], root)
     if result.returncode:
         raise ValueError(result.stderr.strip())
     paths = {Path(name) for name in result.stdout.split("\0") if name}
-    return sorted(path for path in paths if path.suffix in SOURCE_SUFFIXES and path.parts[0] not in {".agents", ".github"} and (root / path).is_file())
+    return sorted(path for path in paths if path.parts[0] not in {".agents", ".github"} and (root / path).is_file())
 
 
 def workspace_findings(root, paths):
@@ -47,38 +51,64 @@ def workspace_findings(root, paths):
     return findings
 
 
-def hlint_findings(root, executable, paths):
+def hlint_ideas(root, executable, paths, tracked):
+    settings = profiles(root, paths, tracked)
+    groups = {}
+    with tempfile.TemporaryDirectory(prefix="neohaskell-lint-") as temporary:
+        for path in paths:
+            source = parser_source((root / path).read_text(), path, settings[path])
+            target = root / path if path.suffix == ".lhs" else Path(temporary) / path
+            if path.suffix != ".lhs":
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(source)
+            groups.setdefault(settings[path], []).append(str(target))
+        ideas = []
+        for extensions, targets in groups.items():
+            result = run([executable, "--json", "--show", "-j2", *["-X" + value for value in extensions], *targets], root)
+            if result.returncode not in (0, 1):
+                raise ValueError(f"HLint failed ({result.returncode}): {result.stderr.strip()}")
+            try:
+                batch = json.loads(result.stdout)
+            except json.JSONDecodeError as error:
+                raise ValueError(f"HLint did not return JSON: {result.stderr.strip()}") from error
+            if not isinstance(batch, list):
+                raise ValueError("HLint returned an invalid finding list.")
+            if result.returncode and not batch:
+                raise ValueError(f"HLint failed without findings: {result.stderr.strip()}")
+            ideas.extend(batch)
+        return ideas
+
+
+def hlint_findings(root, executable, paths, tracked):
     version = run([executable, "--numeric-version"], root)
     if version.returncode or version.stdout.strip() != "3.10":
         raise ValueError("Use HLint 3.10, matching the pinned CI gate.")
     if not paths:
         return []
-    result = run([executable, "--json", "--show", "-j2", *[str(path) for path in paths]], root)
-    if result.returncode not in (0, 1):
-        raise ValueError(f"HLint failed ({result.returncode}): {result.stderr.strip()}")
-    try:
-        ideas = json.loads(result.stdout)
-    except json.JSONDecodeError as error:
-        raise ValueError(f"HLint did not return JSON: {result.stderr.strip()}") from error
-    if not isinstance(ideas, list):
-        raise ValueError("HLint returned an invalid finding list.")
-    if result.returncode and not ideas:
-        raise ValueError(f"HLint failed without findings: {result.stderr.strip()}")
+    ideas = hlint_ideas(root, executable, paths, tracked)
+    sources = {path: (root / path).read_text() for path in paths}
+    names = {path: SourceNames(code_source(source, path)) for path, source in sources.items()}
     findings = []
     for idea in ideas:
         rule = idea["hint"]
         if rule.startswith("Parse error"):
             raise ValueError(f"{rule} in {idea['file']} at line {idea['startLine']}.")
-        ownership = rule in {"Avoid restricted module", "Avoid restricted function"} and any(note.startswith(OWNERSHIP_NOTE) for note in idea["note"])
-        enforced = ownership or rule == "NeoHaskell: use Task.mapError"
-        if idea["severity"] == "Ignore" and not enforced:
-            continue
         path = Path(idea["file"])
         if path.is_absolute():
             path = path.relative_to(root)
-        lines = (root / path).read_text().splitlines()
+        rule = candidate_rule(idea, names[path])
+        if rule is None:
+            continue
+        ownership = rule in {"Avoid restricted module", "Avoid restricted function"} and any(note.startswith(OWNERSHIP_NOTE) for note in idea["note"])
+        enforced = ownership or rule == "NeoHaskell: use Task.mapError" or rule.endswith("for yielded unit") or rule != idea["hint"]
+        if idea["severity"] == "Ignore" and not enforced:
+            continue
+        lines = sources[path].splitlines()
         context = lines[idea["startLine"] - 1].strip()
         findings.append(Finding(path.as_posix(), ".".join(idea["decl"]), rule, idea["from"], context))
+    for path, source in sources.items():
+        for declaration, line, signature in signature_violations(source, path.as_posix()):
+            findings.append(Finding(path.as_posix(), declaration, "NeoHaskell: use Text parameters", signature, source.splitlines()[line - 1].strip()))
     return findings
 
 
@@ -87,9 +117,10 @@ def main():
     parser.add_argument("--hlint", default="hlint")
     args = parser.parse_args()
     try:
-        paths = tracked_sources(REPO)
+        tracked = tracked_files(REPO)
+        paths = [path for path in tracked if path.suffix in SOURCE_SUFFIXES]
         haskell = [path for path in paths if path.suffix in {".hs", ".lhs"}]
-        findings = Counter(hlint_findings(REPO, args.hlint, haskell) + workspace_findings(REPO, paths))
+        findings = Counter(hlint_findings(REPO, args.hlint, haskell, tracked) + workspace_findings(REPO, paths))
         for finding, count in sorted(findings.items()):
             print(f"FAIL {finding.path} [{finding.declaration}] {finding.rule} ({count}): {finding.context}")
         if findings:
