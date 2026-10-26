@@ -86,7 +86,7 @@ validateSecureUrl urlText = do
                   -- DEVELOPMENT EXCEPTION: Allow HTTP only for localhost
                   -- This enables local OAuth2 providers (Keycloak, mock servers)
                   case Hostname.isLocalhost normalizedHost of
-                    True -> Ok urlText  -- Localhost HTTP allowed, skip all other checks
+                    True -> Ok urlText
                     False -> Err (NotHttps urlText)
                 _ -> Err (NotHttps urlText)
 
@@ -98,7 +98,7 @@ validateNonLocalhostHostname :: Text -> [Char] -> Result ValidationError Text
 validateNonLocalhostHostname urlText normalizedHost =
   -- Check if this is localhost first (for HTTPS localhost, still valid)
   case Hostname.isLocalhost normalizedHost of
-    True -> Ok urlText  -- Localhost HTTPS is always valid
+    True -> Ok urlText
     False -> do
       -- SECURITY: Reject single-label hostnames (no dots)
       -- Single-label names may resolve via DNS search domains to internal hosts
@@ -126,7 +126,7 @@ isSingleLabelHostname host =
     _ ->
       -- Allow literal IPs (both IPv4 and bracketed IPv6) using strict parsing
       case isLiteralIpHostStr host of
-        True -> False -- Literal IP, allow it
+        True -> False
         False ->
           -- For hostnames, require at least one dot (FQDN)
           not (LinkedList.any (\c -> c == '.') host)
