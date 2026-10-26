@@ -1,0 +1,97 @@
+{
+  "schema_version": 1,
+  "source_roots": [
+    {
+      "path": "core",
+      "extensions": [".hs", ".lhs", ".hsc", ".cabal"]
+    },
+    {
+      "path": "integrations",
+      "extensions": [".hs", ".lhs", ".hsc", ".cabal"]
+    },
+    {
+      "path": "testbed",
+      "extensions": [".hs", ".lhs", ".hsc", ".cabal"]
+    },
+    {
+      "path": "neo",
+      "extensions": [".rs", ".hs", ".lhs", ".cabal", ".toml", ".nix", ".sh", ".j2", ".ts", ".tsx", ".js", ".jsx", ".css", ".json"],
+      "exclude_files": ["Cargo.lock", "flake.lock", "package-lock.json"]
+    },
+    {
+      "path": "nix",
+      "extensions": [".nix"]
+    },
+    {
+      "path": ".agents/skills/neohaskell-best-practices",
+      "extensions": [".md", ".py", ".sh"]
+    },
+    {
+      "path": ".",
+      "extensions": [],
+      "files": ["cabal.project", "cabal.project.dev", "flake.nix"]
+    }
+  ],
+  "capabilities": [
+    {
+      "id": "task-effects",
+      "name": "Task effects",
+      "aliases": ["Task", "yield", "deferred effects"],
+      "paths": ["core/core/Task.hs"],
+      "summary": "Task wraps a deferred effect, and yield produces a value without an external effect."
+    },
+    {
+      "id": "service-execution",
+      "name": "Command execution",
+      "aliases": ["service", "command executor", "event sourcing", "execute"],
+      "paths": ["core/service"],
+      "summary": "Command execution fetches entity state, runs a decision, appends events, and retries consistency conflicts."
+    },
+    {
+      "id": "transports",
+      "name": "Service transports",
+      "aliases": ["transport", "web transport", "MCP", "CLI"],
+      "paths": ["core/service/Service/Transport.hs", "core/service/Service/Transport/Web.hs"],
+      "summary": "A transport builds endpoint handlers, assembles them, and runs the resulting transport."
+    },
+    {
+      "id": "integrations",
+      "name": "Integration adapters",
+      "aliases": ["integration", "real fake", "dispatcher"],
+      "paths": ["core/service/Service/Integration"],
+      "summary": "Integration instances provide real and fake request runners, and selection binds a dispatcher."
+    },
+    {
+      "id": "ide-routing",
+      "name": "IDE asset routing",
+      "aliases": ["IDE", "SPA", "routing", "asset serving"],
+      "paths": ["neo/src/commands/ide.rs"],
+      "summary": "The IDE command serves embedded assets and falls back to its SPA entrypoint for unknown routes."
+    },
+    {
+      "id": "toolchain",
+      "name": "Cabal and Nix toolchain",
+      "aliases": ["Cabal", "Nix", "compiler", "development shell"],
+      "paths": ["cabal.project", "flake.nix", "nix/hix.nix", "neo/src/commands/build.rs", ".agents/skills/neohaskell-release/scripts/neo-release"],
+      "summary": "The root project selects Cabal packages, Nix defines the compiler shell and local tooling, and the Neo release helper verifies and installs direct native assets."
+    }
+  ],
+  "extension_points": [
+    {
+      "id": "transport-class",
+      "name": "Transport implementation",
+      "aliases": ["transport", "HTTP endpoint", "server"],
+      "paths": ["core/service/Service/Transport.hs"],
+      "symbols": ["Transport", "assembleTransport", "runTransport", "buildHandler"],
+      "hint": "Implement the request, response, and runnable types, then assemble endpoints, build command handlers, and run the transport."
+    },
+    {
+      "id": "integration-class",
+      "name": "Integration implementation",
+      "aliases": ["integration", "real adapter", "fake adapter"],
+      "paths": ["core/service/Service/Integration/Adapter.hs"],
+      "symbols": ["Integration", "runReal", "runFake"],
+      "hint": "Define the request response type and its real and fake runners; mkDispatcher binds them from the active selection."
+    }
+  ]
+}

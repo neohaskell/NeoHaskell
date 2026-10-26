@@ -42,8 +42,5 @@ snapshot file count (which would rot on the next starter change):
   definitions, issue/PR templates, or funding/marketing files the source repo
   may carry at its top level.
 
-This exclusion policy is enforced executably by `./dev neo-skills-check`, which
-fails if any excluded artifact class appears under `neo/starter/` or if this
-manifest is missing. The invariant surfaces a generated project needs
-(application entry point, launcher, cabal project, dev flake, test tree) are
-also asserted there by presence, never by count.
+For generated-project checks, use the maintained
+[NeoHaskell consumer verification skill](../../.agents/skills/neohaskell-consumer-verification/SKILL.md).

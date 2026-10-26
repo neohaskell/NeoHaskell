@@ -43,8 +43,6 @@ import ParserSpec qualified
 import Parser.ErrorSpec qualified
 import Parser.WhitespaceSpec qualified
 import Parser.FileSpec qualified
-import Syntax.CommentSpec qualified
-import Syntax.FunctionSpec qualified
 import TaskSpec qualified
 import Test.Hspec qualified as Hspec
 
@@ -92,6 +90,4 @@ main = Hspec.hspec do
   Hspec.describe "Parser.Error" Parser.ErrorSpec.spec
   Hspec.describe "Parser.Whitespace" Parser.WhitespaceSpec.spec
   Hspec.describe "Parser.File" Parser.FileSpec.spec
-  Hspec.describe "Syntax.Comment" Syntax.CommentSpec.spec
-  Hspec.describe "Syntax.Function" Syntax.FunctionSpec.spec
   Hspec.describe "Task" TaskSpec.spec

@@ -1,0 +1,171 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import math
+import os
+import re
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+sys.dont_write_bytecode = True
+
+from test_runtime import (
+    cabal_test_targets,
+    invoke_toolchain,
+    run_bounded,
+    run_testbed,
+    transcript_destination,
+)
+
+
+SCRIPT = Path(__file__).resolve()
+MAX_TIMEOUT_SECONDS = 3600
+ANSI = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
+SUITE_RESULT = re.compile(r"^\s*Test suite ([A-Za-z0-9][A-Za-z0-9-]*):\s+(PASS|FAIL|SKIP)\b", re.IGNORECASE)
+
+
+def timeout_value(raw: str) -> float:
+    try:
+        seconds = float(raw)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError("timeout must be a number of seconds") from error
+    if not math.isfinite(seconds) or seconds <= 0 or seconds > MAX_TIMEOUT_SECONDS:
+        raise argparse.ArgumentTypeError(f"timeout must be between 0 and {MAX_TIMEOUT_SECONDS:g} seconds")
+    return seconds
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Run every test-suite target declared by the local Cabal project and the available testbed checks."
+    )
+    parser.add_argument("--strict", action="store_true", help="fail when a declared test target must be skipped")
+    parser.add_argument("--timeout", type=timeout_value, default=1800, help="seconds allowed for each command")
+    parser.add_argument("--transcript", help="write the captured run to this path")
+    parser.add_argument("--_inside-toolchain", action="store_true", help=argparse.SUPPRESS)
+    return parser.parse_args()
+
+
+def target_results(output: str) -> dict[str, str]:
+    statuses: dict[str, str] = {}
+    for line in ANSI.sub("", output).splitlines():
+        match = SUITE_RESULT.match(line)
+        if match is not None:
+            statuses[match.group(1)] = match.group(2).upper()
+    return statuses
+
+
+def run_inside(root: Path, strict: bool, timeout: float) -> int:
+    try:
+        targets = cabal_test_targets(root)
+    except (OSError, ValueError) as error:
+        print(f"full-suite: FAIL: could not read Cabal test targets: {error}")
+        return 1
+    if not targets:
+        print("full-suite: SKIP Cabal tests: no test-suite component is declared")
+        test_status, test_reason, test_result = run_testbed(root, os.environ.copy(), timeout)
+        print(f"full-suite: {test_status} testbed: {test_reason}")
+        if test_result and test_result.output:
+            print(test_result.output.decode("utf-8", errors="replace"), end="")
+        print("full-suite: INCOMPLETE")
+        return 1 if strict or test_status == "FAIL" else 0
+
+    if shutil.which("cabal") is None:
+        print("full-suite: FAIL: cabal is missing from the selected toolchain")
+        return 1
+
+    env = os.environ.copy()
+    cabal_command = [
+        "cabal",
+        "test",
+        "all",
+        "--project-file=cabal.project",
+        "--test-show-details=direct",
+    ]
+    cabal_result = run_bounded(cabal_command, cwd=root, env=env, timeout=timeout)
+    cabal_output = cabal_result.output.decode("utf-8", errors="replace")
+    if cabal_output:
+        print(cabal_output, end="" if cabal_output.endswith("\n") else "\n")
+    cabal_failed = cabal_result.timed_out or cabal_result.output_limited or cabal_result.returncode != 0
+    if cabal_failed:
+        if cabal_result.timed_out:
+            print(f"full-suite: FAIL cabal test all: timed out after {timeout:g} seconds")
+        elif cabal_result.output_limited:
+            print("full-suite: FAIL cabal test all: output exceeded 8 MiB")
+        else:
+            print(f"full-suite: FAIL cabal test all: exited with status {cabal_result.returncode}")
+
+    observed = target_results(cabal_output)
+    passed = 0
+    skipped = 0
+    failed = cabal_failed
+    for package_name, target_name in targets:
+        status = observed.get(target_name)
+        if status == "PASS":
+            print(f"full-suite: PASS Cabal target {package_name}:{target_name}")
+            passed += 1
+        elif status == "FAIL":
+            print(f"full-suite: FAIL Cabal target {package_name}:{target_name}")
+            failed = True
+        elif status == "SKIP":
+            print(f"full-suite: SKIP Cabal target {package_name}:{target_name}: Cabal reported SKIP")
+            skipped += 1
+        else:
+            print(f"full-suite: SKIP Cabal target {package_name}:{target_name}: Cabal reported no result")
+            skipped += 1
+
+    test_status, test_reason, test_result = run_testbed(root, env, timeout)
+    print(f"full-suite: {test_status} testbed acceptance: {test_reason}")
+    if test_result and test_result.output:
+        output = test_result.output.decode("utf-8", errors="replace")
+        print(output, end="" if output.endswith("\n") else "\n")
+    if test_status == "FAIL":
+        failed = True
+    elif test_status == "SKIP":
+        skipped += 1
+
+    if failed:
+        print(f"full-suite: FAIL: one or more failures, {skipped} skipped, {passed} Cabal target(s) passed")
+        return 1
+    if skipped:
+        print(f"full-suite: INCOMPLETE: {skipped} target(s) skipped, {passed} Cabal target(s) passed")
+        return 1 if strict else 0
+    print(f"full-suite: PASS: {passed} Cabal target(s) and testbed acceptance completed")
+    return 0
+
+
+def main() -> int:
+    args = parse_args()
+    invocation_cwd = Path.cwd().resolve()
+    env = os.environ.copy()
+    try:
+        from test_runtime import resolve_root
+
+        root = resolve_root(SCRIPT.parent, invocation_cwd, env)
+    except (RuntimeError, subprocess.TimeoutExpired) as error:
+        print(f"full-suite: {error}", file=sys.stderr)
+        return 2
+
+    if args._inside_toolchain:
+        return run_inside(root, args.strict, args.timeout)
+
+    transcript = transcript_destination(root, "full-suite", args.transcript, invocation_cwd)
+    inner_args = ["--timeout", str(args.timeout)]
+    if args.strict:
+        inner_args.append("--strict")
+    return invoke_toolchain(
+        script=SCRIPT,
+        root=root,
+        invocation_cwd=invocation_cwd,
+        env=env,
+        timeout=(2 * args.timeout) + 180,
+        owner="full-suite",
+        transcript=transcript,
+        inner_args=inner_args,
+    )
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

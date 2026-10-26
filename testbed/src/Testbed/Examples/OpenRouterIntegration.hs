@@ -62,7 +62,7 @@ data AiEvent
   | AiFailed
       { error :: Text
       }
-  deriving (Eq, Show, Generic)
+  deriving (Generic)
 
 
 instance Json.ToJSON AiEvent
