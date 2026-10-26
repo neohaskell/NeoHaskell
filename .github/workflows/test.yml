@@ -159,7 +159,7 @@ jobs:
   test-integration:
     needs: [build]
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: DeterminateSystems/determinate-nix-action@v3.23.3
@@ -175,6 +175,10 @@ jobs:
           path: dist-newstyle
       - name: Run nhcore-test-integration
         run: LOG_LEVEL=Warn nix develop --command cabal test nhcore-test-integration
+      - name: Install video fixture tools
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - name: Run video extraction regressions
+        run: LOG_LEVEL=Warn ./.agents/skills/tdd/scripts/test-match --timeout 900 Integration.Video.ExtractAudio nhintegrations-test
 
   test-service:
     needs: [build]

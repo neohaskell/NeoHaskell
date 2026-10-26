@@ -125,6 +125,8 @@ common common_cfg
 
 library
   import: common_cfg
+  if !os(windows)
+    build-depends: unix
   exposed-modules:
     Accumulator
     Appendable
@@ -742,6 +744,7 @@ test-suite nhcore-test-core
     Service.Transport.Web.SwaggerUISpec
     SetSpec
     StreamSpec
+    SubprocessSpec
     TaskSpec
     Test.AppSpec.AppSpecSpec
     Test.AppSpec.VerifySpec

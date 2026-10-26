@@ -1,0 +1,77 @@
+# Change 024: Return usable video audio within the promised byte limit
+
+Video extraction returns usable audio within the configured byte limit. This main-based follow-up repairs the existing guarantees from merged Change018 without changing public signatures, defaults or accepted input formats. Core Change023/PR911 remains an explicit subprocess lifecycle dependency; develop this video repair independently, then integrate that fix forward before final verification. No merge or release is authorized.
+
+```yaml spec
+issue: adhoc:video-audio-contract
+kind: bug
+touches: [outbound-integrations]
+breaking: false
+new-dependency: true
+new-capability: false
+new-extension-point: false
+```
+
+## Contract delta
+
+```diff signatures
+```
+
+The existing promise is a usable first part no larger than `maxOutputBytes` (default25,000,000 bytes). These tests preserve that default,180second timeout,16kHz mono and existing API. A real successful result must contain positive complete PCM frames and decode independently; file magic alone is not useful audio. Nick’s October9 review explicitly requested enforcing exact size and usable audio or narrowing the promise; the user’s preserve-promises instruction selects exact usable first-part output. NickSeagull approved audited fixes to existing guarantees on October13 in https://github.com/neohaskell/NeoHaskell/pull/907#issuecomment-6150729681. Native continuation is recorded after this follow-up has a PR-bound red receipt. No soft-bound fallback or accepted-format narrowing is selected. A standard PCM WAV minimum is44 header bytes plus complete sample frames; it is a representability boundary, not a requirement to discard valid optional chunks when the cap has room. Validate the WAV structure, PCM frame alignment and lengths before success. Preserve a valid in-cap WAV byte-for-byte; for an over-cap output, rebuild a valid header around its earliest complete PCM16 frames. A minimum-budget extraction must still decode enough frames rather than trusting ffmpeg -fs to produce audio within the header budget. Invalid or empty output reaches onError.
+
+Source container tags must not consume the audio budget. ffmpeg copies global source metadata into a WAV LIST/INFO chunk, and `-bitexact` does not drop it, so a tagged real MP4 under a46-byte cap previously produced no data frames. The extraction arguments add `-map_metadata -1` after the `-fs` size argument and before `-bitexact`; every other argument keeps its order and value. C13/C14 prove the minimum and a small cap on a tagged real MP4 whose tags ffprobe confirms. This is not a new metadata preservation or removal contract, and accepted formats and the public API stay unchanged.
+
+## Criteria
+
+| ID | Behavior | Proving test | Level | Boundary |
+|----|----------|--------------|-------|----------|
+| C1 | Real long audio respects the existing default exact25,000,000-byte cap | `hspec:nhintegrations-test:integrations/test/Integration/Video/ExtractAudioSpec.hs#keeps the promised exact default audio byte cap with real ffmpeg` | integration | subprocess:real |
+| C2 | Real short audio returns positive PCM16 frames and independently decodes | `hspec:nhintegrations-test:integrations/test/Integration/Video/ExtractAudioSpec.hs#returns nonempty independently decodable audio from real short media` | integration | subprocess:real |
+| C3 | A zero-frame audio track does not become successful usable audio | `hspec:nhintegrations-test:integrations/test/Integration/Video/ExtractAudioSpec.hs#rejects a real empty audio track instead of reporting success` | integration | subprocess:real |
+| C4 | Non-media input reaches the error callback, not audio success | `hspec:nhintegrations-test:integrations/test/Integration/Video/ExtractAudioSpec.hs#rejects nonmedia input through the real ffmpeg boundary` | integration | subprocess:real |
+| C5 | Real bounded output contains exactly the beginning of source PCM | `hspec:nhintegrations-test:integrations/test/Integration/Video/ExtractAudioSpec.hs#preserves the first complete source frames in capped real audio` | integration | subprocess:real |
+| C6 | Configured cap32044 is enforced on usable real output | `hspec:nhintegrations-test:integrations/test/Integration/Video/ExtractAudioSpec.hs#enforces a configured exact cap on usable real audio` | integration | subprocess:real |
+| C7 | Minimum monoPCM16 budget46 contains one playable frame | `hspec:nhintegrations-test:integrations/test/Integration/Video/ExtractAudioSpec.hs#returns a usable first frame when the cap permits only one PCM frame` | integration | subprocess:real |
+| C8 | Budget45 cannot be successful usable monoPCM16 WAV | `hspec:nhintegrations-test:integrations/test/Integration/Video/ExtractAudioSpec.hs#rejects a cap smaller than a WAV header and one complete PCM frame` | integration | subprocess:real |
+| C9 | Malformed output cannot be accepted solely because process exit is0 | `hspec:nhintegrations-test:integrations/test/Integration/Video/ExtractAudioSpec.hs#rejects malformed output even when the process reports success` | unit | none |
+| C10 | Workspace is owner-only while used and removed on ordinary exits/cancellation | `hspec:nhintegrations-test:integrations/test/Integration/Video/ExtractAudioSpec.hs#uses an owner-only workspace and removes it after success failure timeout and cancellation` | integration | filesystem:real |
+| C11 | A manifest cannot read a sibling from the shared temporary directory | `hspec:nhintegrations-test:integrations/test/Integration/Video/ExtractAudioSpec.hs#keeps shared-directory sibling media outside the extraction workspace` | integration | subprocess:real |
+| C12 | Commands contain only short safe diagnostic categories, not raw subprocess details | `hspec:nhintegrations-test:integrations/test/Integration/Video/ExtractAudioSpec.hs#omits raw subprocess diagnostics from extraction commands` | unit | none |
+| C13 | A tagged real MP4 at the minimum budget46 returns exactly one playable PCM frame | `hspec:nhintegrations-test:integrations/test/Integration/Video/ExtractAudioSpec.hs#tagged real MP4 returns exactly one usable PCM frame at the minimum cap` | integration | subprocess:real |
+| C14 | A tagged real MP4 at budget2000 returns positive playable PCM frames within the cap | `hspec:nhintegrations-test:integrations/test/Integration/Video/ExtractAudioSpec.hs#tagged real MP4 returns usable PCM frames within a 2000-byte cap` | integration | subprocess:real |
+
+Review principle: check complete real output, not merely a fake/header. The fixture validates RIFF length, PCM16 mono16kHz format, positive sample count and payload length, and asks real ffmpeg to decode the returned WAV. Tests generate only synthetic local input in private temporary fixtures. Existing application action/JSON/Base64 path is exercised using realRunner; this is not a full Application/upload/network acceptance test.
+
+## User impact
+
+Public input/output types, defaults and accepted media formats stay unchanged. The long synthetic input is900seconds/28,800,000 PCM bytes; short3seconds and empty0frames. Runtime tools ffmpeg and Python3 are required, never skipped. No paid/provider service or real user media. Temporary media moves into a securely created owner-only workspace with whole-directory cleanup. This repairs the demonstrated shared-directory sibling exposure, not arbitrary-file references or a general ffmpeg sandbox. No new format/protocol allowlist is introduced. Raw subprocess diagnostics are not returned to commands; fixed short category messages preserve the existing missing-tool, file-access and timeout meanings.
+
+## ADR
+
+[ADR-0081](../decisions/0081-private-video-workspaces.md) covers the direct secure-temp dependency. No public API or input-format restriction changes. A direct library dependency on already-resolved temporary1.3 supplies atomic0700 directory creation and bracketed cleanup; it adds no package to the existing pinned toolchain closure. Proposed ADR0081 and its format allowlist are not part of this repair.
+
+## Baseline and remaining gates
+
+The earlier unchanged-main `nhintegrations-test` baseline reported 621 examples,
+2 Oura.SyncAll failures and 3 pending cases. This is historical evidence, not
+a current candidate result or proof that this change caused those failures.
+Video checks use exact selectors with an empty provider registry and local
+file access. They do not execute the Oura or HTTP action paths.
+
+Run `./.agents/skills/tdd/scripts/test-match --timeout 900 Integration.Video.ExtractAudio nhintegrations-test`
+with ffmpeg, ffprobe and Python available. The required `test-integration` CI
+job now runs this selection, including the real-media examples. The runner
+rejects an empty selection or setup failure. Current main removed the former
+`./dev` pipeline; its old gate names are not current check commands.
+
+PR911 owns subprocess draining and cleanup. This branch integrates that fix
+without duplicating its implementation. C9 deliberately uses a fake runner
+to check malformed output, not a real subprocess. Reference restrictions that
+would reject previously accepted formats remain a separate compatibility
+decision and do not narrow this exact-cap repair.
+
+## Fixture reconciliation and implementation plan
+
+The old268-byte fake WAV has an invalid RIFF size and lacks fmt/data chunks. Replace only its fixture bytes with a valid268-byte PCM16 WAV (44-byte header plus224-byte binary payload). Preserve every existing equality,268-byte count,MIME,argument and cleanup assertion. C9 continues deliberately returning malformed four-byte RIFF data. This corrects the test setup to the existing usable-WAV guarantee; it does not weaken the output test.
+
+Files: existing `Integration/Video/ExtractAudio/Internal.hs` and facade; existing `ExtractAudioSpec.hs`; scoped dependency/HLint declarations only if required by the native secure-temp primitive. Copy-adapt the existing conversion/error/task pipeline and the existing scenario/real-media helpers. Resolve Bytes slices/pack/unpack, Task validation/finally and native secure-temp APIs against current source. No new public symbol or product default is introduced. System.IO.Temp.withTempDirectory supplies acquisition/release masking; the Directory wrapper lacks this primitive. A scoped HLint exception points to that missing Core capability. POSIX owner-only protection assumes a trusted/sticky temporary parent; it is not same-user isolation or a Windows ACL claim. Deletion can still fail if the OS rejects cleanup. ffmpeg -fs remains a coarse process stop, never the final byte-bound proof.

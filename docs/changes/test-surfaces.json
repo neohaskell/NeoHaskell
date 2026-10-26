@@ -213,6 +213,267 @@
       "boundary": "postgres:real",
       "expected_examples": 1,
       "fixture": "Service.QueryObjectStore.Postgres"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhintegrations-test",
+      "path": "integrations/test/Integration/Video/ExtractAudioSpec.hs",
+      "match": "keeps the promised exact default audio byte cap with real ffmpeg",
+      "boundary": "subprocess:real",
+      "expected_examples": 1,
+      "fixture": "ExtractAudioSpec.mediaControl validate"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhintegrations-test",
+      "path": "integrations/test/Integration/Video/ExtractAudioSpec.hs",
+      "match": "returns nonempty independently decodable audio from real short media",
+      "boundary": "subprocess:real",
+      "expected_examples": 1,
+      "fixture": "ExtractAudioSpec.mediaControl validate"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhintegrations-test",
+      "path": "integrations/test/Integration/Video/ExtractAudioSpec.hs",
+      "match": "rejects a real empty audio track instead of reporting success",
+      "boundary": "subprocess:real",
+      "expected_examples": 1,
+      "fixture": "ExtractAudioSpec.mediaControl create"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhintegrations-test",
+      "path": "integrations/test/Integration/Video/ExtractAudioSpec.hs",
+      "match": "rejects nonmedia input through the real ffmpeg boundary",
+      "boundary": "subprocess:real",
+      "expected_examples": 1,
+      "fixture": "ExtractAudioSpec.mediaControl create"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhintegrations-test",
+      "path": "integrations/test/Integration/Video/ExtractAudioSpec.hs",
+      "match": "preserves the first complete source frames in capped real audio",
+      "boundary": "subprocess:real",
+      "expected_examples": 1,
+      "fixture": "ExtractAudioSpec.mediaControl validate"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhintegrations-test",
+      "path": "integrations/test/Integration/Video/ExtractAudioSpec.hs",
+      "match": "enforces a configured exact cap on usable real audio",
+      "boundary": "subprocess:real",
+      "expected_examples": 1,
+      "fixture": "ExtractAudioSpec.mediaControl validate"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhintegrations-test",
+      "path": "integrations/test/Integration/Video/ExtractAudioSpec.hs",
+      "match": "returns a usable first frame when the cap permits only one PCM frame",
+      "boundary": "subprocess:real",
+      "expected_examples": 1,
+      "fixture": "ExtractAudioSpec.mediaControl validate"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhintegrations-test",
+      "path": "integrations/test/Integration/Video/ExtractAudioSpec.hs",
+      "match": "rejects a cap smaller than a WAV header and one complete PCM frame",
+      "boundary": "subprocess:real",
+      "expected_examples": 1,
+      "fixture": "ExtractAudioSpec.mediaControl create"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhintegrations-test",
+      "path": "integrations/test/Integration/Video/ExtractAudioSpec.hs",
+      "match": "uses an owner-only workspace and removes it after success failure timeout and cancellation",
+      "boundary": "filesystem:real",
+      "expected_examples": 1,
+      "fixture": "ExtractAudioSpec.mediaControl workspace-check"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhintegrations-test",
+      "path": "integrations/test/Integration/Video/ExtractAudioSpec.hs",
+      "match": "keeps shared-directory sibling media outside the extraction workspace",
+      "boundary": "subprocess:real",
+      "expected_examples": 1,
+      "fixture": "ExtractAudioSpec.mediaControl sibling-intact"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-core",
+      "path": "core/test/SubprocessSpec.hs",
+      "match": "drains real stderr before waiting for process exit",
+      "boundary": "subprocess:real",
+      "expected_examples": 1,
+      "fixture": "Subprocess.runWithTimeout (real OS process boundary)"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-core",
+      "path": "core/test/SubprocessSpec.hs",
+      "match": "captures complete normal and nonzero child output",
+      "boundary": "subprocess:real",
+      "expected_examples": 1,
+      "fixture": "Subprocess.runWithTimeout (real OS process boundary)"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-core",
+      "path": "core/test/SubprocessSpec.hs",
+      "match": "drains simultaneous real pipes beyond pipe capacity",
+      "boundary": "subprocess:real",
+      "expected_examples": 1,
+      "fixture": "Subprocess.runWithTimeout (real OS process boundary)"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-core",
+      "path": "core/test/SubprocessSpec.hs",
+      "match": "captures complete one MiB output per stream",
+      "boundary": "subprocess:real",
+      "expected_examples": 1,
+      "fixture": "Subprocess.runWithTimeout (real OS process boundary)"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-core",
+      "path": "core/test/SubprocessSpec.hs",
+      "match": "preserves complete output above one MiB without a new capture cap",
+      "boundary": "subprocess:real",
+      "expected_examples": 1,
+      "fixture": "Subprocess.runWithTimeout (real OS process boundary)"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-core",
+      "path": "core/test/SubprocessSpec.hs",
+      "match": "reaps an observed direct child after timeout",
+      "boundary": "subprocess:real",
+      "expected_examples": 1,
+      "fixture": "Subprocess.runWithTimeout (real OS process boundary)"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-core",
+      "path": "core/test/SubprocessSpec.hs",
+      "match": "reaps an observed TERM-resistant child after timeout",
+      "boundary": "subprocess:real",
+      "expected_examples": 1,
+      "fixture": "Subprocess.runWithTimeout (real OS process boundary)"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-core",
+      "path": "core/test/SubprocessSpec.hs",
+      "match": "propagates cancellation and reaps the observed direct child",
+      "boundary": "subprocess:real",
+      "expected_examples": 1,
+      "fixture": "Subprocess.runWithTimeout (real OS process boundary)"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-core",
+      "path": "core/test/SubprocessSpec.hs",
+      "match": "times out when a descendant retains the output pipes",
+      "boundary": "subprocess:real",
+      "expected_examples": 1,
+      "fixture": "Subprocess.runWithTimeout (real OS process boundary)"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-core",
+      "path": "core/test/SubprocessSpec.hs",
+      "match": "reaps the direct child after a real UTF8 pipe decoding failure",
+      "boundary": "subprocess:real",
+      "expected_examples": 1,
+      "fixture": "Subprocess.runWithTimeout (real OS process boundary)"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-core",
+      "path": "core/test/SubprocessSpec.hs",
+      "match": "times out after pipe EOF while the child still runs",
+      "boundary": "subprocess:real",
+      "expected_examples": 1,
+      "fixture": "Subprocess.runWithTimeout (real OS process boundary)"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-core",
+      "path": "core/test/SubprocessSpec.hs",
+      "match": "propagates cancellation while both pipes are backpressured",
+      "boundary": "subprocess:real",
+      "expected_examples": 1,
+      "fixture": "Subprocess.runWithTimeout (real OS process boundary)"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-core",
+      "path": "core/test/SubprocessSpec.hs",
+      "match": "returns a typed error when process creation fails",
+      "boundary": "subprocess:real",
+      "expected_examples": 1,
+      "fixture": "Subprocess.runWithTimeout (real OS process boundary)"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-core",
+      "path": "core/test/SubprocessSpec.hs",
+      "match": "reaps a TERM-resistant child despite repeated cancellation during cleanup",
+      "boundary": "subprocess:real",
+      "expected_examples": 1,
+      "fixture": "Subprocess.runWithTimeout (real OS process boundary)"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhintegrations-test",
+      "path": "integrations/test/Integration/Video/ExtractAudioSpec.hs",
+      "match": "real MP4 video with AAC audio returns independently decodable WAV audio",
+      "boundary": "subprocess:real",
+      "expected_examples": 1,
+      "fixture": "ExtractAudioSpec.mediaControl validate"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhintegrations-test",
+      "path": "integrations/test/Integration/Video/ExtractAudioSpec.hs",
+      "match": "real MP4 video with AAC audio returns a usable portion within the configured cap",
+      "boundary": "subprocess:real",
+      "expected_examples": 1,
+      "fixture": "ExtractAudioSpec.mediaControl validate"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhintegrations-test",
+      "path": "integrations/test/Integration/Video/ExtractAudioSpec.hs",
+      "match": "tagged real MP4 returns exactly one usable PCM frame at the minimum cap",
+      "boundary": "subprocess:real",
+      "expected_examples": 1,
+      "fixture": "ExtractAudioSpec.mediaControl validate"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhintegrations-test",
+      "path": "integrations/test/Integration/Video/ExtractAudioSpec.hs",
+      "match": "tagged real MP4 returns usable PCM frames within a 2000-byte cap",
+      "boundary": "subprocess:real",
+      "expected_examples": 1,
+      "fixture": "ExtractAudioSpec.mediaControl validate"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-core",
+      "path": "core/test/SubprocessSpec.hs",
+      "match": "reaps the owned child when a synchronous exception interrupts cancellation cleanup",
+      "boundary": "subprocess:real",
+      "expected_examples": 1,
+      "fixture": "Subprocess.runWithTimeout (real OS process boundary)"
     }
   ]
 }
