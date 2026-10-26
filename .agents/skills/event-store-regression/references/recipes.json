@@ -1,0 +1,72 @@
+{
+  "schema": 1,
+  "helper": "core/testlib/Test/Service/EventStore/Regression.hs",
+  "recipes": [
+    {
+      "name": "insertion-guard",
+      "when": "Require StreamCreation and show the exact rejected insertion type",
+      "backend": "in-memory",
+      "examples": 2,
+      "suite": "nhcore-test-service",
+      "source": "core/testlib/Test/Service/CommandHandler/Execute/Spec.hs",
+      "test": "rejects an unexpected insertion type with exact guard evidence",
+      "fault": "bypass the insertion guard",
+      "assertion": "REGRESSION_ASSERT:insertion-guard"
+    },
+    {
+      "name": "record-payloads-and-revisions",
+      "when": "Record the complete append payload and exact fetched revision",
+      "backend": "in-memory",
+      "examples": 2,
+      "suite": "nhcore-test-service",
+      "source": "core/testlib/Test/Service/CommandHandler/Execute/Spec.hs",
+      "test": "records exact insertion payloads and fetched revisions",
+      "fault": "bypass both recording wrappers",
+      "assertion": "REGRESSION_ASSERT:record-payloads-and-revisions"
+    },
+    {
+      "name": "consistency-conflict-refetch",
+      "when": "Prove a conflict refetches, re-decides, drops the stale payload, and appends after the fresh revision",
+      "backend": "in-memory",
+      "examples": 2,
+      "suite": "nhcore-test-service",
+      "source": "core/testlib/Test/Service/CommandHandler/Execute/Spec.hs",
+      "test": "records the exact insertion precondition after refetch",
+      "fault": "submit the stale revision on the second append attempt",
+      "assertion": "REGRESSION_ASSERT:consistency-conflict-refetch"
+    },
+    {
+      "name": "postgres-append-barrier",
+      "when": "Coordinate two PostgreSQL appends at the same expected position without sleeps",
+      "backend": "postgres",
+      "examples": 3,
+      "suite": "nhcore-test-service",
+      "source": "core/testlib/Test/Service/EventStore/OptimisticConcurrency/Spec.hs",
+      "test": "will only allow one event to be appended, when two writers try to append at the same time",
+      "fault": "make both non-colliding writes unconditional",
+      "assertion": "REGRESSION_ASSERT:postgres-append-barrier"
+    },
+    {
+      "name": "stream-creation-race",
+      "when": "Race two StreamCreation appends and verify one durable creation fact",
+      "backend": "postgres",
+      "examples": 3,
+      "suite": "nhcore-test-service",
+      "source": "core/testlib/Test/Service/EventStore/OptimisticConcurrency/Spec.hs",
+      "test": "allows only one concurrent StreamCreation and persists one creation fact",
+      "fault": "turn both creations into unconditional appends",
+      "assertion": "REGRESSION_ASSERT:stream-creation-race"
+    },
+    {
+      "name": "any-stream-state",
+      "when": "Prove two stale concurrent AnyStreamState appends both persist in durable order",
+      "backend": "in-memory",
+      "examples": 3,
+      "suite": "nhcore-test-service",
+      "source": "core/testlib/Test/Service/EventStore/OptimisticConcurrency/Spec.hs",
+      "test": "persists both AnyStreamState events in durable order",
+      "fault": "impose a stale InsertAfter precondition on one append",
+      "assertion": "REGRESSION_ASSERT:any-stream-state"
+    }
+  ]
+}

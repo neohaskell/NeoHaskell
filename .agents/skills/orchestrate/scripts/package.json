@@ -1,0 +1,19 @@
+{
+  "name": "neohaskell-orchestration-tools",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24.2.0"
+  },
+  "scripts": {
+    "test": "node --test orch.test.ts",
+    "typecheck": "tsc --noEmit --strict --target ESNext --module NodeNext --moduleResolution NodeNext --allowImportingTsExtensions --types node orch.ts store.ts orch.test.ts"
+  },
+  "dependencies": {
+    "commander": "14.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.9.3"
+  }
+}

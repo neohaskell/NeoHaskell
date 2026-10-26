@@ -14,7 +14,6 @@ import Auth.OAuth2.Types
   ( Provider (..)
   , unsafeValidatedProvider
   , mkAccessToken
-  , mkRefreshToken
   , TokenSet (..)
   , ClientId (..)
   , mkClientSecret
@@ -201,7 +200,7 @@ setupMockContext = do
   let tokenKey = TokenKey "oauth:oura:test-user"
   let tokenSet = TokenSet
         { accessToken = mkAccessToken "mock-access-token"
-        , refreshToken = Just (mkRefreshToken "mock-refresh-token")
+        , refreshToken = Nothing
         , expiresInSeconds = Just 3600
         }
   secretStore.put tokenKey tokenSet

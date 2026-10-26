@@ -1288,7 +1288,7 @@ runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup maybeWebAuthSe
             case Json.decodeText actionJson of
               Err err -> Task.throw [fmt|Failed to decode OAuth2 action JSON: #{err}|]
               Ok (payload :: Integration.CommandPayload) -> do
-                Dispatcher.dispatchCommand combinedCommandEndpoints payload
+                Dispatcher.dispatchCommandWithSource combinedCommandEndpoints Nothing payload
       let providerCount = Array.length resolvedProviderConfigs
       Log.info [fmt|Initialized #{providerCount} provider(s)|]
       Task.yield (Just Web.OAuth2Config {Web.routes = routes, Web.dispatchAction = dispatchAction}, actionContext)

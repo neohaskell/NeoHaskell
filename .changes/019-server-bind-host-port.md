@@ -28,7 +28,7 @@ Prefer `WebTransport.server { port = 9090 }` or `Application.withHost` and `Appl
 
 ### Verify
 
-Build your app, then start it and request `/health` on the address you chose. To check the framework change itself, run `./dev test "Service.Transport.Web.Bind" nhcore-test-service`. The suite checks real application assembly, owned-instance identity (including a competing-server negative control), loopback exclusion, early validation, and returned bind-failure cleanup. Consult the current test receipt for results; these checks do not replace the full suite or final review.
+Build your app, then start it and request `/health` on the address you chose. To check the framework change itself, run `.agents/skills/tdd/scripts/test-match "WebTransport bind host and port" nhcore-test-service`. The suite checks real application assembly, owned-instance identity (including a competing-server negative control), loopback exclusion, early validation, and returned bind-failure cleanup. Consult the current test receipt for results; these checks do not replace the full suite or final review.
 
 ## Agent prompt
 

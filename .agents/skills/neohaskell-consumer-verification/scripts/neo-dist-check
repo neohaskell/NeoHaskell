@@ -1,0 +1,143 @@
+#!/usr/bin/env python3
+
+from __future__ import annotations
+
+import os
+from pathlib import Path
+import shutil
+import signal
+import subprocess
+import sys
+import tempfile
+
+
+def find_root() -> Path:
+    explicit = os.getenv("NEOHASKELL_ROOT")
+    if explicit:
+        candidate = Path(explicit).expanduser().resolve()
+        if (candidate / "flake.nix").is_file() and (candidate / "neo/Cargo.toml").is_file():
+            return candidate
+        raise RuntimeError(f"NEOHASKELL_ROOT does not identify a NeoHaskell checkout: {candidate}")
+    candidates = Path(__file__).resolve().parents
+    for candidate in candidates:
+        if (candidate / "flake.nix").is_file() and (candidate / "neo/Cargo.toml").is_file():
+            return candidate
+    raise RuntimeError("Could not find NeoHaskell root; set NEOHASKELL_ROOT")
+
+
+ROOT = find_root()
+STATE = ROOT / ".agents-state/neohaskell-consumer-verification"
+
+
+def files(root: Path) -> dict[str, bytes]:
+    if root.is_symlink() or not root.is_dir():
+        raise ValueError(f"bundle root must be a real directory: {root}")
+    result = {}
+    for path in root.rglob("*"):
+        mode = path.lstat().st_mode
+        if path.is_symlink():
+            raise ValueError(f"bundle contains a symlink: {path.relative_to(root)}")
+        if path.is_dir():
+            continue
+        if not path.is_file():
+            raise ValueError(f"bundle contains a non-regular file: {path.relative_to(root)}")
+        result[path.relative_to(root).as_posix()] = path.read_bytes()
+    return result
+
+
+def differences(expected: dict[str, bytes], actual: dict[str, bytes]) -> list[str]:
+    missing = sorted(expected.keys() - actual.keys())
+    extra = sorted(actual.keys() - expected.keys())
+    changed = sorted(path for path in expected.keys() & actual.keys() if expected[path] != actual[path])
+    return [*(f"missing {path}" for path in missing), *(f"extra {path}" for path in extra), *(f"changed {path}" for path in changed)]
+
+
+def run_bounded(argv: list[str], *, cwd: Path, env: dict[str, str], timeout: int) -> None:
+    child = subprocess.Popen(argv, cwd=cwd, env=env, start_new_session=True)
+    try:
+        status = child.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        for signum in (signal.SIGTERM, signal.SIGKILL):
+            try:
+                os.killpg(child.pid, signum)
+            except ProcessLookupError:
+                break
+            try:
+                child.wait(timeout=2)
+                break
+            except subprocess.TimeoutExpired:
+                continue
+        raise RuntimeError(f"command exceeded {timeout}s: {' '.join(argv)}")
+    if status:
+        raise RuntimeError(f"command failed ({status}): {' '.join(argv)}")
+
+
+def self_test() -> None:
+    with tempfile.TemporaryDirectory(prefix="bundle-fixtures-", dir=STATE) as directory:
+        base = Path(directory)
+        expected_root = base / "expected"
+        actual_root = base / "actual"
+        expected_root.mkdir()
+        actual_root.mkdir()
+        (expected_root / "index.html").write_bytes(b"bundle")
+        (actual_root / "index.html").write_bytes(b"bundle")
+        assert differences(files(expected_root), files(actual_root)) == []
+        (actual_root / "index.html").unlink()
+        assert differences(files(expected_root), files(actual_root)) == ["missing index.html"]
+        (actual_root / "index.html").write_bytes(b"changed")
+        (actual_root / "untracked.js").write_bytes(b"extra")
+        assert differences(files(expected_root), files(actual_root)) == [
+            "extra untracked.js",
+            "changed index.html",
+        ]
+        link = actual_root / "link.js"
+        link.symlink_to(actual_root / "index.html")
+        try:
+            files(actual_root)
+            raise AssertionError("symlink was accepted")
+        except ValueError as error:
+            assert "symlink" in str(error)
+    print("neo-dist-check self-test: OK - exact file set/content, missing/extra/changed files, symlink rejection")
+
+
+def check() -> None:
+    if shutil.which("nix") is None:
+        raise RuntimeError("nix is required for the pinned Neo IDE toolchain")
+    committed = ROOT / "neo/assets/ide/dist"
+    if not committed.is_dir():
+        raise RuntimeError(f"committed IDE bundle is missing: {committed}")
+    STATE.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="ide-build-", dir=STATE) as directory:
+        output = Path(directory) / "dist"
+        env = os.environ | {"IDE_BUILD_OUT": str(output)}
+        command = "cd neo/assets/ide && npm ci && npx tsc -b && npx vite build --outDir \"$IDE_BUILD_OUT\" --emptyOutDir"
+        print("rebuilding Neo IDE bundle into owner-scoped temporary storage", flush=True)
+        run_bounded(
+            ["nix", "develop", "./neo", "--command", "bash", "-euc", command],
+            cwd=ROOT,
+            env=env,
+            timeout=int(os.getenv("IDE_BUILD_TIMEOUT", "1800")),
+        )
+        delta = differences(files(committed), files(output))
+        if delta:
+            raise RuntimeError("committed Neo IDE bundle differs from the lockfile build:\n" + "\n".join(delta[:100]))
+    print("neo-dist-check: committed bundle matches the fresh lockfile build")
+
+
+def main() -> int:
+    try:
+        STATE.mkdir(parents=True, exist_ok=True)
+        if sys.argv[1:] == ["--self-test"]:
+            self_test()
+        elif not sys.argv[1:]:
+            check()
+        else:
+            raise ValueError("usage: neo-dist-check [--self-test]")
+    except Exception as error:
+        print(f"neo-dist-check: {error}", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
