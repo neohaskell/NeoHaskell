@@ -365,6 +365,7 @@ library
     Time
     ToText
     Trigger
+    Transaction
     Tuple
     TypeName
     Unit
@@ -390,6 +391,7 @@ library
     Service.CommandExecutor.CommandErrorClass
     Service.CommandExecutor.Reporting
     Service.CommandResultReceipt.Internal
+    Transaction.Internal
   -- other-extensions:
   hs-source-dirs:
     auth
@@ -714,6 +716,7 @@ test-suite nhcore-test-core
 
   other-modules:
     AsyncTask.RaceSpec
+    AtomicVarSpec
     ArraySpec
     Command.FromSchemaSpec
     ConcurrentMapSpec
