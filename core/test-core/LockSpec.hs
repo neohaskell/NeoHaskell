@@ -1,3 +1,5 @@
+-- | Checks lock release and acquisition timeout behavior.
+-- Run in the core suite when changing Lock.with or Lock.withTimeout.
 module LockSpec (spec) where
 
 import AsyncTask qualified

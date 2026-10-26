@@ -887,9 +887,9 @@ instance Transport WebTransport where
                 let nonEmpty maybeVal =
                       case maybeVal of
                         Maybe.Just val ->
-                          case Text.isEmpty val of
-                            True -> Maybe.Nothing
-                            False -> Maybe.Just val
+                          if Text.isEmpty val
+                            then Maybe.Nothing
+                            else Maybe.Just val
                         Maybe.Nothing -> Maybe.Nothing
                 let maybeToken = case nonEmpty headerToken of
                       Maybe.Just token -> Maybe.Just token

@@ -1,6 +1,8 @@
 {-# LANGUAGE Strict #-}
 
 -- | Carries event identity and optional attribution through integration logs.
+--
+-- Build a context with 'fromEvent', then pass it to 'logResult' or 'logRetry'.
 module Service.Integration.Dispatcher.EventLogContext (
   EventLogContext,
   RetryDetails (..),

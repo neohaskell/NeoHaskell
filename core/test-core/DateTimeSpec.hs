@@ -1,3 +1,5 @@
+-- | Verify Unix epoch millisecond conversion through the public DateTime API.
+-- The core test runner calls 'spec' when checking rounding behavior.
 module DateTimeSpec (spec) where
 
 import Core
@@ -21,5 +23,15 @@ spec = do
         (Ok belowTime, Ok aboveTime) -> do
           DateTime.toEpochMilliseconds belowTime |> shouldBe 0
           DateTime.toEpochMilliseconds aboveTime |> shouldBe 1
+        (Err err, _) -> Test.fail err
+        (_, Err err) -> Test.fail err
+
+    it "rounds present-epoch half-millisecond boundaries precisely" \_ -> do
+      let aboveFirstHalf = Json.decodeText @DateTime "\"2026-10-26T00:00:00.000500000001Z\""
+      let belowSecondHalf = Json.decodeText @DateTime "\"2026-10-26T00:00:00.001499999999Z\""
+      case (aboveFirstHalf, belowSecondHalf) of
+        (Ok firstTime, Ok secondTime) -> do
+          DateTime.toEpochMilliseconds firstTime |> shouldBe 1792972800001
+          DateTime.toEpochMilliseconds secondTime |> shouldBe 1792972800001
         (Err err, _) -> Test.fail err
         (_, Err err) -> Test.fail err

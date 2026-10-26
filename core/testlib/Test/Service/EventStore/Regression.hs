@@ -148,21 +148,17 @@ barrierBeforeInsert barrier store = do
 -- | Block until the requested number of insertion attempts have arrived.
 awaitInsertions :: Int -> InsertBarrier -> Task error Unit
 awaitInsertions count barrier = do
-  if count <= 0
-    then Task.yield unit
-    else do
-      Channel.read barrier.arrivals
-      awaitInsertions (count - 1) barrier
+  Task.unless (count <= 0) do
+    Channel.read barrier.arrivals
+    awaitInsertions (count - 1) barrier
 
 
 -- | Release the requested number of waiting insertion attempts.
 releaseInsertions :: Int -> InsertBarrier -> Task error Unit
 releaseInsertions count barrier = do
-  if count <= 0
-    then Task.yield unit
-    else do
-      Channel.write unit barrier.releases
-      releaseInsertions (count - 1) barrier
+  Task.unless (count <= 0) do
+    Channel.write unit barrier.releases
+    releaseInsertions (count - 1) barrier
 
 
 -- | Select one committed controlled mutation for regression-smoke.
@@ -179,6 +175,5 @@ knownBad recipe backend = do
 -- | Name the exact semantic assertion exercised by a controlled mutation.
 assertBehavior :: Text -> Bool -> Task Text Unit
 assertBehavior identity condition = do
-  if condition
-    then Task.yield unit
-    else Task.throw [fmt|REGRESSION_ASSERT:#{identity}|]
+  Task.unless condition do
+    Task.throw [fmt|REGRESSION_ASSERT:#{identity}|]

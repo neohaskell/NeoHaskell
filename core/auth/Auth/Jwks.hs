@@ -257,11 +257,11 @@ requestRefresh manager = do
         let newState = RefreshState {lastAttemptAt = now, refreshInProgress = True}
          in (newState, True)
 
-  case shouldRefresh of
-    False -> do
+  if not (shouldRefresh)
+    then do
       Log.debug "JWKS refresh skipped (cooldown)" |> Task.ignoreError
       Task.yield ()
-    True -> do
+    else do
       Log.debug "On-demand JWKS refresh requested" |> Task.ignoreError
       performRefreshWithLock manager
 
@@ -319,14 +319,10 @@ refreshLoop manager = do
     let intervalSeconds = manager.config.refreshIntervalSeconds
     AsyncTask.sleep (fromIntegral intervalSeconds * 1000)
 
-    -- Check if still running
     running <- AtomicVar.peek manager.isRunning
-    case running of
-      False -> Task.throw "Manager stopped"
-      True -> do
-        -- Use shared refresh gate (same as on-demand refresh)
-        -- This prevents background and on-demand from running concurrently
-        -- Wrap in asResult to prevent exceptions from killing the loop
+    if not (running)
+      then Task.throw "Manager stopped"
+      else do
         refreshResult <- (refreshWithGate manager :: Task Text Unit) |> Task.asResult
         case refreshResult of
           Ok _ -> Task.yield ()
@@ -380,9 +376,9 @@ markKeysStaleIfVersion expectedVersion manager = do
         let elapsed = now - snapshot.fetchedAt
         let versionMatches = snapshot.snapshotVersion == expectedVersion
         let windowExceeded = elapsed >= maxStale
-        case versionMatches && windowExceeded of
-          True -> snapshot {isStale = True}
-          False -> snapshot -- Version changed or within staleness window
+        if versionMatches && windowExceeded
+          then snapshot {isStale = True}
+          else snapshot
     )
     manager.keySnapshot
   Log.warn "JWKS keys marked stale" |> Task.ignoreError

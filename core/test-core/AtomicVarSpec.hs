@@ -1,3 +1,6 @@
+-- | Verify AtomicVar transactions and waits through public concurrency APIs.
+--
+-- The core test runner calls 'spec' to exercise map composition and cancellation.
 module AtomicVarSpec (spec) where
 
 import AsyncTask qualified
@@ -6,6 +9,7 @@ import ConcurrentMap qualified
 import Core
 import Task qualified
 import Test
+import Transaction qualified
 
 
 spec :: Spec Unit
@@ -17,7 +21,7 @@ spec = do
       ConcurrentMap.set "worker" status workers
       removed <-
         workers
-          |> ConcurrentMap.removeIfM "worker" (AtomicVar.modifyWithResultSTM (\accepting -> (False, accepting)))
+          |> ConcurrentMap.removeIfTransaction "worker" (AtomicVar.modifyWithResultSTM (\accepting -> (False, accepting)))
       case removed of
         Just _ -> Task.yield unit
         Nothing -> Test.fail "expected the accepting worker to be removed"
@@ -27,6 +31,41 @@ spec = do
       case current of
         Just _ -> Test.fail "expected the worker map entry to be removed"
         Nothing -> Task.yield unit
+
+    it "replaces a map entry and updates the old value in one transaction" \_ -> do
+      existing <- AtomicVar.containing (1 :: Int)
+      candidate <- AtomicVar.containing (5 :: Int)
+      workers <- ConcurrentMap.new @Text @(AtomicVar.AtomicVar Int)
+      ConcurrentMap.set "worker" existing workers
+      (_, discarded) <-
+        workers
+          |> ConcurrentMap.getOrInsertIfTransaction
+            "worker"
+            candidate
+            (AtomicVar.modifyWithResultSTM (\value -> (value + 1, value == 1)))
+      case discarded of
+        Just old -> do
+          oldValue <- AtomicVar.peek old
+          oldValue |> shouldBe 2
+        Nothing -> Test.fail "expected the old worker to be returned"
+      current <- ConcurrentMap.get "worker" workers
+      case current of
+        Just stored -> do
+          currentValue <- AtomicVar.peek stored
+          currentValue |> shouldBe 5
+        Nothing -> Test.fail "expected the replacement worker in the map"
+
+    it "runs composed updates as one transaction" \_ -> do
+      left <- AtomicVar.containing (2 :: Int)
+      right <- AtomicVar.containing (7 :: Int)
+      previous <- Transaction.run do
+        leftBefore <- AtomicVar.modifyWithResultSTM (\value -> (value + 1, value)) left
+        rightBefore <- AtomicVar.modifyWithResultSTM (\value -> (value + 1, value)) right
+        pure (leftBefore, rightBefore)
+      previous |> shouldBe (2, 7)
+      leftValue <- AtomicVar.peek left
+      rightValue <- AtomicVar.peek right
+      (leftValue, rightValue) |> shouldBe (3, 8)
 
     it "waits for a satisfying value and wakes after an update" \_ -> do
       status <- AtomicVar.containing (0 :: Int)
@@ -52,10 +91,7 @@ spec = do
 waitForStateChange :: AsyncTask.AsyncTask Text Unit -> Int -> Task Text Unit
 waitForStateChange waiter attempts = do
   waiting <- AsyncTask.isWaitingForStateChange waiter
-  if waiting
-    then Task.yield unit
-    else if attempts == 0
-      then Test.fail "expected the task to wait for the state change"
-      else do
-        AsyncTask.sleep 1
-        waitForStateChange waiter (attempts - 1)
+  Task.unless waiting do
+    Task.when (attempts == 0) (Test.fail "expected the task to wait for the state change")
+    AsyncTask.sleep 1
+    waitForStateChange waiter (attempts - 1)

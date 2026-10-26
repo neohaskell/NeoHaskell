@@ -1,6 +1,8 @@
 {-# LANGUAGE Strict #-}
 
 -- | Owns the one integration_result log record produced for each dispatch result.
+--
+-- Dispatcher sends each result to the event log context for one structured record.
 module Service.Integration.Dispatcher.IntegrationResult (
   RunnerKind (..),
   IntegrationResult (..),

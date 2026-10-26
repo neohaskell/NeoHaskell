@@ -152,16 +152,14 @@ checkLimitImpl storage config key = do
 
           let requestCount = Array.length validTimes
 
-          case requestCount >= config.maxRequests of
-            True -> do
-              -- Rate limited - calculate retry-after
+          if requestCount >= config.maxRequests
+            then do
               let oldestRequest = case Array.first validTimes of
                     Just t -> t
                     Nothing -> nowSeconds
               let retryAfter = oldestRequest + config.windowSeconds - nowSeconds
               Task.yield (store, Limited (max 1 retryAfter))
-            False -> do
-              -- Allowed - add this request
+            else do
               let newTimes = validTimes |> Array.push nowSeconds
               let newBucket = RequestBucket {requestTimes = newTimes, windowStart = currentBucket.windowStart}
               let newStore = store |> Map.set key newBucket
@@ -203,9 +201,9 @@ startReaper storage windowSeconds = do
                                   |> Collection.takeIf (\t -> t > cutoff)
                                   |> Array.length
                                   |> (\len -> len > 0)
-                          case hasRecentRequests of
-                            True -> acc |> Map.set key bucket
-                            False -> acc
+                          if hasRecentRequests
+                            then acc |> Map.set key bucket
+                            else acc
                       )
                       Map.empty
             )

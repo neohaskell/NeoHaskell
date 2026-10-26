@@ -202,6 +202,182 @@
       ],
       "source_sha": "4ba756552d2b5ba20c734ba9ae29fa31dab3a11e",
       "version": "0.10.1"
+    },
+    {
+      "base_sha": "f4dbf25d9213f7ab339467b8327dcc655c3278f0",
+      "base_tag": "neo-v0.10.1",
+      "base_version": "0.10.1",
+      "bootstrap": false,
+      "date": "2026-10-23",
+      "group": "platform",
+      "id": "cc57e80b5fb0c23e1801769e19283aa67995049a213a61f1eb995265efe2a90c",
+      "impact": "breaking",
+      "kind": "release",
+      "notes": [
+        {
+          "category": "Fixed",
+          "commit": "cab923c0b098fdb82ece539380719c0757ec9057",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "467b451e70826a65b4b942f95043a9df36b832454d54ecc9271195cfb1af1207",
+          "impact": "compatible",
+          "path": ".changes/858-command-executor-revisions.md",
+          "sections": {
+            "Summary": "Concurrent commands that update the same entity now use the entity revision they actually read. If another command writes first, the stale command retries with fresh state instead of appending an outdated event. New-entity commands also prevent duplicate stream creation, while unconditional appends keep their existing behavior.\n\nExisting applications do not need code or data migrations. From a NeoHaskell checkout, run `./.agents/skills/tdd/scripts/test-match 'Retry Logic' nhcore-test-service` and confirm the command-handler retry examples pass. PostgreSQL must be available for the PostgreSQL backend examples."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: compatible\ncategory: Fixed\n---\n\n## Summary\n\nConcurrent commands that update the same entity now use the entity revision they actually read. If another command writes first, the stale command retries with fresh state instead of appending an outdated event. New-entity commands also prevent duplicate stream creation, while unconditional appends keep their existing behavior.\n\nExisting applications do not need code or data migrations. From a NeoHaskell checkout, run `./.agents/skills/tdd/scripts/test-match 'Retry Logic' nhcore-test-service` and confirm the command-handler retry examples pass. PostgreSQL must be available for the PostgreSQL backend examples.\n"
+        },
+        {
+          "category": "Added",
+          "commit": "7bd77c0fd88a4b56091fc015388df85837e97d96",
+          "component": "Integrations",
+          "group": "platform",
+          "hash": "3a83f344087aadca85bf15fd721ea60c3a51ca13a7f0b17d4ce75312520ed767",
+          "impact": "compatible",
+          "path": ".changes/018-video-extract-audio.md",
+          "sections": {
+            "Summary": "You can now pull the audio out of an uploaded video with the new\n`Integration.Video.ExtractAudio` integration. Give it the video's file\nreference and it returns mono 16 kHz WAV bytes (`audio/wav`). Upload those\nbytes as a new file, save the returned `FileRef`, and pass that reference to\n`Integration.Audio.Transcribe` with `mimeType = \"audio/wav\"`. By default,\nextraction allows 180 seconds and stops at 25 MB; both limits are in the\nconfig. It needs `ffmpeg` on the machine that runs your app (for example\n`brew install ffmpeg`). If `ffmpeg` is missing, the action fails with a\nmessage that tells you to install it. If the video itself cannot be\nconverted, your `onError` command receives the reason.\n\nThe dispatcher's `eventProcessingTimeoutMs` must cover video retrieval and\nextraction. Raise it above the extraction timeout and expected retrieval time.\nFor example, `Just 200000` may fit a 180-second extraction, but it is not a\nguarantee for every upload. The 30-second default can stop a slow operation\nbefore your `onSuccess` or `onError` command is sent.\nTo keep the audio in a command, store it as Base64 text\n(`result.audio |> Bytes.toBase64 |> Text.fromBytes`). The new\n`Bytes.fromBase64` turns it back into the exact audio bytes\n(`audioBase64 |> Text.toBytes |> Bytes.fromBase64`) and returns an error\ninstead of different bytes if the text is not valid Base64.\n\nExisting applications do not need any changes. From a NeoHaskell checkout,\nrun `./.agents/skills/tdd/scripts/test-match 'Integration.Video' nhintegrations-test`\nand confirm the extraction examples pass. They use a stand-in for `ffmpeg`,\nso you do not need it installed to run them."
+          },
+          "text": "---\ngroup: platform\ncomponent: Integrations\nimpact: compatible\ncategory: Added\n---\n\n## Summary\n\nYou can now pull the audio out of an uploaded video with the new\n`Integration.Video.ExtractAudio` integration. Give it the video's file\nreference and it returns mono 16 kHz WAV bytes (`audio/wav`). Upload those\nbytes as a new file, save the returned `FileRef`, and pass that reference to\n`Integration.Audio.Transcribe` with `mimeType = \"audio/wav\"`. By default,\nextraction allows 180 seconds and stops at 25 MB; both limits are in the\nconfig. It needs `ffmpeg` on the machine that runs your app (for example\n`brew install ffmpeg`). If `ffmpeg` is missing, the action fails with a\nmessage that tells you to install it. If the video itself cannot be\nconverted, your `onError` command receives the reason.\n\nThe dispatcher's `eventProcessingTimeoutMs` must cover video retrieval and\nextraction. Raise it above the extraction timeout and expected retrieval time.\nFor example, `Just 200000` may fit a 180-second extraction, but it is not a\nguarantee for every upload. The 30-second default can stop a slow operation\nbefore your `onSuccess` or `onError` command is sent.\nTo keep the audio in a command, store it as Base64 text\n(`result.audio |> Bytes.toBase64 |> Text.fromBytes`). The new\n`Bytes.fromBase64` turns it back into the exact audio bytes\n(`audioBase64 |> Text.toBytes |> Bytes.fromBase64`) and returns an error\ninstead of different bytes if the text is not valid Base64.\n\nExisting applications do not need any changes. From a NeoHaskell checkout,\nrun `./.agents/skills/tdd/scripts/test-match 'Integration.Video' nhintegrations-test`\nand confirm the extraction examples pass. They use a stand-in for `ffmpeg`,\nso you do not need it installed to run them.\n"
+        },
+        {
+          "category": "Improved",
+          "commit": "991f800e99c44a72ca265511b1df004e2d32c69c",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "3d8550bfa91e021cb5d228c755cf221a02695fd47c010d854d49cb4135d06719",
+          "impact": "none",
+          "path": ".changes/agent-skills-and-tooling.md",
+          "sections": {
+            "Summary": "This change reorganizes repository agent instructions, development helpers, and CI checks.\nIt changes contributor tooling without changing application APIs or runtime behavior.\nApplications need no migration."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: none\ncategory: Improved\n---\n\n## Summary\n\nThis change reorganizes repository agent instructions, development helpers, and CI checks.\nIt changes contributor tooling without changing application APIs or runtime behavior.\nApplications need no migration.\n"
+        },
+        {
+          "category": "Breaking changes",
+          "commit": "991f800e99c44a72ca265511b1df004e2d32c69c",
+          "component": "CLI",
+          "group": "platform",
+          "hash": "4fa5ce98b132c3a669840dbad2b04b08154fa0e93bb34d13896fe91fd7fce256",
+          "impact": "breaking",
+          "path": ".changes/installer-retirement-native-assets.md",
+          "sections": {
+            "Agent prompt": "```text\nMigrate uses of the retired NeoHaskell installer to direct Neo CLI release\nassets. The public bootstrap path\nhttps://raw.githubusercontent.com/neohaskell/NeoHaskell/main/installer/scripts/bootstrap.sh\nand the standalone installer release assets are retired. New Neo CLI assets are\nno longer produced for `aarch64-unknown-linux-gnu` or `x86_64-apple-darwin`.\nHistorical release assets remain unchanged. Existing installer binaries have\nno guarantee of working with future Neo releases.\n\nFind scripts and setup instructions that call the bootstrap URL. Replace that\nstep with a download of `neo-<target>` and `SHA256SUMS` from the same\n`neo-vX.Y.Z` release. The supported targets are `x86_64-unknown-linux-gnu`\nand `aarch64-apple-darwin`. Verify the selected asset against the manifest\nwith the platform checksum tool before placing it on PATH. The verified\nrepository helper is `.agents/skills/neohaskell-release/scripts/neo-release`;\nits `install <dir> <target> <dest>` command verifies the bytes during atomic\ninstallation. Preserve the existing external Nix setup for generated projects.\n\nUse the following standalone example from a shell with `curl`, `awk`, and\neither `sha256sum` or `shasum` installed. It downloads both files from the\nsame release, checks the selected asset, installs it, and prints its version.\n\n~~~sh\nset -eu\nversion=0.11.0\ntarget=x86_64-unknown-linux-gnu\ndownload_dir=\"$HOME/Downloads/neo-$version\"\ndestination=\"$HOME/.local/bin/neo\"\nrelease_url=\"https://github.com/neohaskell/NeoHaskell/releases/download/neo-v$version\"\nmkdir -p \"$download_dir\" \"$HOME/.local/bin\"\ncurl -fL \"$release_url/neo-$target\" -o \"$download_dir/neo-$target\"\ncurl -fL \"$release_url/SHA256SUMS\" -o \"$download_dir/SHA256SUMS\"\nexpected=$(awk -v name=\"neo-$target\" '$2 == name {print $1}' \"$download_dir/SHA256SUMS\")\ntest -n \"$expected\"\nif command -v sha256sum >/dev/null 2>&1; then\n  actual=$(sha256sum \"$download_dir/neo-$target\" | awk '{print $1}')\nelse\n  actual=$(shasum -a 256 \"$download_dir/neo-$target\" | awk '{print $1}')\nfi\ntest \"$actual\" = \"$expected\"\ninstall -m 0755 \"$download_dir/neo-$target\" \"$destination\"\nexport PATH=\"$HOME/.local/bin:$PATH\"\n\"$destination\" --version\n~~~\n\nUse `aarch64-apple-darwin` for an Apple silicon Mac. Add `$HOME/.local/bin`\nto your shell configuration to keep `neo` on `PATH` in new sessions. If a\nconsumer uses a retired native target, flag the need for an owner-selected\ninstallation method instead of proposing an unverified replacement.\n\nRun the installed destination's `--version` command and check that it reports\nthe chosen release. Preserve unrelated setup behavior. Report changed files,\ncommands and results, and any script whose owner must choose a different\ninstallation method. Do not restore the bootstrap, publish assets, or assume\nold installer binaries are compatible with future releases.\n```",
+            "Migration": "Remove scripts that call\n`https://raw.githubusercontent.com/neohaskell/NeoHaskell/main/installer/scripts/bootstrap.sh`.\nExisting copies of the old installer have no guarantee of working with future\nNeo releases.\n\nDownload `neo-<target>` and `SHA256SUMS` from the same `neo-vX.Y.Z` release. The\nnew native targets are `x86_64-unknown-linux-gnu` and `aarch64-apple-darwin`.\nNew assets are no longer produced for `aarch64-unknown-linux-gnu` or\n`x86_64-apple-darwin`; historical release assets remain unchanged. No\nreplacement installation method is defined here for those platforms. Compare\nthe downloaded asset's SHA-256 with its line in `SHA256SUMS`. From a NeoHaskell\ncheckout, the verified release helper checks the selected asset and installs\nit atomically:\n\n```sh\nmkdir -p \"$HOME/.local/bin\"\n./.agents/skills/neohaskell-release/scripts/neo-release install \\\n  \"$HOME/Downloads/neo-vX.Y.Z\" x86_64-unknown-linux-gnu \\\n  \"$HOME/.local/bin/neo\"\n\"$HOME/.local/bin/neo\" --version\n```\n\nUse `aarch64-apple-darwin` on an Apple silicon Mac. The example invokes the\ninstalled destination directly. Add `$HOME/.local/bin` to `PATH` to run `neo`\nby name. Confirm the binary reports the version you downloaded. Nix setup for\nbuilding and running generated projects remains a separate prerequisite; use\nthe existing [Nix installation instructions](https://nixos.org/download).\n\n### Verify\n\nConfirm that the release directory contains the selected `neo-<target>` asset\nand `SHA256SUMS`. Install it with the verified helper, then run the installed\ndestination's `--version` command and confirm it prints the selected release\nversion. Keep project build and run verification unchanged after installation.",
+            "Summary": "NeoHaskell no longer publishes the standalone `neo-install` bootstrap. The\npublic `bootstrap.sh` URL stops working, and future Neo releases no longer\ninclude installer assets. Future Neo releases also stop producing native CLI\nassets for Linux ARM and Intel macOS. Historical releases and their assets\nremain unchanged. New Neo CLI assets remain available for Linux x86-64 and\nApple silicon macOS."
+          },
+          "text": "---\ngroup: platform\ncomponent: CLI\nimpact: breaking\ncategory: Breaking changes\n---\n\n## Summary\n\nNeoHaskell no longer publishes the standalone `neo-install` bootstrap. The\npublic `bootstrap.sh` URL stops working, and future Neo releases no longer\ninclude installer assets. Future Neo releases also stop producing native CLI\nassets for Linux ARM and Intel macOS. Historical releases and their assets\nremain unchanged. New Neo CLI assets remain available for Linux x86-64 and\nApple silicon macOS.\n\n## Migration\n\nRemove scripts that call\n`https://raw.githubusercontent.com/neohaskell/NeoHaskell/main/installer/scripts/bootstrap.sh`.\nExisting copies of the old installer have no guarantee of working with future\nNeo releases.\n\nDownload `neo-<target>` and `SHA256SUMS` from the same `neo-vX.Y.Z` release. The\nnew native targets are `x86_64-unknown-linux-gnu` and `aarch64-apple-darwin`.\nNew assets are no longer produced for `aarch64-unknown-linux-gnu` or\n`x86_64-apple-darwin`; historical release assets remain unchanged. No\nreplacement installation method is defined here for those platforms. Compare\nthe downloaded asset's SHA-256 with its line in `SHA256SUMS`. From a NeoHaskell\ncheckout, the verified release helper checks the selected asset and installs\nit atomically:\n\n```sh\nmkdir -p \"$HOME/.local/bin\"\n./.agents/skills/neohaskell-release/scripts/neo-release install \\\n  \"$HOME/Downloads/neo-vX.Y.Z\" x86_64-unknown-linux-gnu \\\n  \"$HOME/.local/bin/neo\"\n\"$HOME/.local/bin/neo\" --version\n```\n\nUse `aarch64-apple-darwin` on an Apple silicon Mac. The example invokes the\ninstalled destination directly. Add `$HOME/.local/bin` to `PATH` to run `neo`\nby name. Confirm the binary reports the version you downloaded. Nix setup for\nbuilding and running generated projects remains a separate prerequisite; use\nthe existing [Nix installation instructions](https://nixos.org/download).\n\n### Verify\n\nConfirm that the release directory contains the selected `neo-<target>` asset\nand `SHA256SUMS`. Install it with the verified helper, then run the installed\ndestination's `--version` command and confirm it prints the selected release\nversion. Keep project build and run verification unchanged after installation.\n\n## Agent prompt\n\n```text\nMigrate uses of the retired NeoHaskell installer to direct Neo CLI release\nassets. The public bootstrap path\nhttps://raw.githubusercontent.com/neohaskell/NeoHaskell/main/installer/scripts/bootstrap.sh\nand the standalone installer release assets are retired. New Neo CLI assets are\nno longer produced for `aarch64-unknown-linux-gnu` or `x86_64-apple-darwin`.\nHistorical release assets remain unchanged. Existing installer binaries have\nno guarantee of working with future Neo releases.\n\nFind scripts and setup instructions that call the bootstrap URL. Replace that\nstep with a download of `neo-<target>` and `SHA256SUMS` from the same\n`neo-vX.Y.Z` release. The supported targets are `x86_64-unknown-linux-gnu`\nand `aarch64-apple-darwin`. Verify the selected asset against the manifest\nwith the platform checksum tool before placing it on PATH. The verified\nrepository helper is `.agents/skills/neohaskell-release/scripts/neo-release`;\nits `install <dir> <target> <dest>` command verifies the bytes during atomic\ninstallation. Preserve the existing external Nix setup for generated projects.\n\nUse the following standalone example from a shell with `curl`, `awk`, and\neither `sha256sum` or `shasum` installed. It downloads both files from the\nsame release, checks the selected asset, installs it, and prints its version.\n\n~~~sh\nset -eu\nversion=0.11.0\ntarget=x86_64-unknown-linux-gnu\ndownload_dir=\"$HOME/Downloads/neo-$version\"\ndestination=\"$HOME/.local/bin/neo\"\nrelease_url=\"https://github.com/neohaskell/NeoHaskell/releases/download/neo-v$version\"\nmkdir -p \"$download_dir\" \"$HOME/.local/bin\"\ncurl -fL \"$release_url/neo-$target\" -o \"$download_dir/neo-$target\"\ncurl -fL \"$release_url/SHA256SUMS\" -o \"$download_dir/SHA256SUMS\"\nexpected=$(awk -v name=\"neo-$target\" '$2 == name {print $1}' \"$download_dir/SHA256SUMS\")\ntest -n \"$expected\"\nif command -v sha256sum >/dev/null 2>&1; then\n  actual=$(sha256sum \"$download_dir/neo-$target\" | awk '{print $1}')\nelse\n  actual=$(shasum -a 256 \"$download_dir/neo-$target\" | awk '{print $1}')\nfi\ntest \"$actual\" = \"$expected\"\ninstall -m 0755 \"$download_dir/neo-$target\" \"$destination\"\nexport PATH=\"$HOME/.local/bin:$PATH\"\n\"$destination\" --version\n~~~\n\nUse `aarch64-apple-darwin` for an Apple silicon Mac. Add `$HOME/.local/bin`\nto your shell configuration to keep `neo` on `PATH` in new sessions. If a\nconsumer uses a retired native target, flag the need for an owner-selected\ninstallation method instead of proposing an unverified replacement.\n\nRun the installed destination's `--version` command and check that it reports\nthe chosen release. Preserve unrelated setup behavior. Report changed files,\ncommands and results, and any script whose owner must choose a different\ninstallation method. Do not restore the bootstrap, publish assets, or assume\nold installer binaries are compatible with future releases.\n```\n"
+        },
+        {
+          "category": "Fixed",
+          "commit": "991f800e99c44a72ca265511b1df004e2d32c69c",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "01a425ae128868b35f1461c1471c2e6a0ddaf25d339e7f2af8a07bd6332c8057",
+          "impact": "compatible",
+          "path": ".changes/openapi-enum-wire-values.md",
+          "sections": {
+            "Summary": "OpenAPI now preserves enum values exactly as declared in your schema.\nFor example, a derived enum that sends `\"Pending\"` in JSON now advertises\n`\"Pending\"` in `/openapi.json`. Generated clients can match these values\nwithout a casing mismatch. Your application's JSON format stays the same.\nRegenerate clients from the updated specification to get the corrected values."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: compatible\ncategory: Fixed\n---\n\n## Summary\n\nOpenAPI now preserves enum values exactly as declared in your schema.\nFor example, a derived enum that sends `\"Pending\"` in JSON now advertises\n`\"Pending\"` in `/openapi.json`. Generated clients can match these values\nwithout a casing mismatch. Your application's JSON format stays the same.\nRegenerate clients from the updated specification to get the corrected values.\n"
+        },
+        {
+          "category": "Added",
+          "commit": "0a229bb6eb05499473adb57a9e510ffffa190926",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "30b65e0364ab38929638ed1c0fefe11b32fdb422c2b7eea7074a08cec499b04f",
+          "impact": "none",
+          "path": ".changes/dependabot-sweep-skill.md",
+          "sections": {
+            "Summary": "Add an on-demand Dependabot sweep skill for repository maintainers. It merges verified upgrades, closes unsuitable proposals with reasons, and keeps useful blocked upgrades open with comments. This changes agent instructions only. Application APIs and runtime behavior are unchanged."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: none\ncategory: Added\n---\n\n## Summary\n\nAdd an on-demand Dependabot sweep skill for repository maintainers. It merges verified upgrades, closes unsuitable proposals with reasons, and keeps useful blocked upgrades open with comments. This changes agent instructions only. Application APIs and runtime behavior are unchanged.\n"
+        },
+        {
+          "category": "Fixed",
+          "commit": "6fac8bcf4ee17d20ee455f8419396dd9f96dfd5a",
+          "component": "CLI",
+          "group": "platform",
+          "hash": "909a7b75c434c6503d1ae1652ad0b2ae6d794dac4488a604234723185c53d7d7",
+          "impact": "none",
+          "path": ".changes/cachix-nix-security-patch.md",
+          "sections": {
+            "Summary": "The release workflow installs Nix 2.35.3 through Cachix install-nix-action 31.11.2\nfor historical Intel macOS release builds. This internal security update does not\nchange generated applications or require application changes."
+          },
+          "text": "---\ngroup: platform\ncomponent: CLI\nimpact: none\ncategory: Fixed\n---\n\n## Summary\n\nThe release workflow installs Nix 2.35.3 through Cachix install-nix-action 31.11.2\nfor historical Intel macOS release builds. This internal security update does not\nchange generated applications or require application changes.\n"
+        },
+        {
+          "category": "Fixed",
+          "commit": "36cd89bf60c19cfa89f2a20eca4716572c1e16f2",
+          "component": "CLI",
+          "group": "platform",
+          "hash": "c7ec85624f8752d9021a33777985d1858129010d2d8102ca2175d3cb746aca66",
+          "impact": "compatible",
+          "path": ".changes/starter-consumer-ci.md",
+          "sections": {
+            "Summary": "A newly generated project now uses framework APIs that match the framework\nrevision pinned by its starter. Generate a project with `neo --ci new my-app`,\nthen run `neo --ci build` and `neo --ci test` from its directory. Both commands\nshould pass. Existing applications do not need edits for this fix."
+          },
+          "text": "---\ngroup: platform\ncomponent: CLI\nimpact: compatible\ncategory: Fixed\n---\n\n## Summary\n\nA newly generated project now uses framework APIs that match the framework\nrevision pinned by its starter. Generate a project with `neo --ci new my-app`,\nthen run `neo --ci build` and `neo --ci test` from its directory. Both commands\nshould pass. Existing applications do not need edits for this fix.\n"
+        },
+        {
+          "category": "Fixed",
+          "commit": "71893b6609b3ad190a6971360d226b85368c6d1f",
+          "component": "CLI",
+          "group": "platform",
+          "hash": "003908af64c57a2a59e9b1cb85a8c3eee96838c51d89b83dd3c2b6ecf52e17e6",
+          "impact": "compatible",
+          "path": ".changes/neo-cli-tls-handshake-fix.md",
+          "sections": {
+            "Summary": "The Neo CLI now uses an updated TLS library that rejects malformed TLS 1.3 handshake messages sent at the wrong encryption level. This hardens HTTPS connections. Existing commands and configuration need no changes."
+          },
+          "text": "---\ngroup: platform\ncomponent: CLI\nimpact: compatible\ncategory: Fixed\n---\n\n## Summary\n\nThe Neo CLI now uses an updated TLS library that rejects malformed TLS 1.3 handshake messages sent at the wrong encryption level. This hardens HTTPS connections. Existing commands and configuration need no changes.\n"
+        },
+        {
+          "category": "Fixed",
+          "commit": "1c83f8b931b6adc58ebaf43cc942518e92783b05",
+          "component": "IDE",
+          "group": "platform",
+          "hash": "c97d0b0124332768b84d8cda146db88541797237d874555353e03b97bdbdd949",
+          "impact": "none",
+          "path": ".changes/ide-build-tool-dependencies.md",
+          "sections": {
+            "Summary": "Refresh the IDE's build and test dependencies and regenerate its committed bundle.\nThis keeps the packaged IDE reproducible with the current toolchain. It does not\nchange NeoHaskell application APIs or require a project migration."
+          },
+          "text": "---\ngroup: platform\ncomponent: IDE\nimpact: none\ncategory: Fixed\n---\n\n## Summary\n\nRefresh the IDE's build and test dependencies and regenerate its committed bundle.\nThis keeps the packaged IDE reproducible with the current toolchain. It does not\nchange NeoHaskell application APIs or require a project migration.\n"
+        },
+        {
+          "category": "Breaking changes",
+          "commit": "deacffb43babc44cc12855f0897d7259901b3c33",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "140344c984330d1f2b49d3422de4ab4c18c2deac3ca10a25e92cdece5e298ee6",
+          "impact": "breaking",
+          "path": ".changes/event-attribution-logs.md",
+          "sections": {
+            "Agent prompt": "```text\nUpdate this NeoHaskell application for event attribution. Find direct calls to CommandExecutor.execute. Add Nothing before the request context for root commands, or Just sourceEvent.metadata for commands triggered by an event. Find direct calls to ServiceRunner.getEndpointsByTransport. Change explicit types for its third result from Map Text EndpointHandler to Map Text DispatchHandler. Pass Nothing or Just sourceEvent.metadata to each dispatch handler before its existing arguments. Keep verified request claims and stored event attribution separate. Do not change application authorization rules. Build the application, run its command and integration tests, execute a command, and read its saved events. Report the changed files, test results, and any calls whose event source is unclear.\n```",
+            "Migration": "Applications built with `Application` and the built-in transports need no code changes. If your code calls `CommandExecutor.execute` directly, pass `Nothing` before the request context for a root command. Pass `Just sourceEvent.metadata` for a command triggered by an event.\n\nIf your code calls `ServiceRunner.getEndpointsByTransport` directly, its third result now contains `DispatchHandler` values. Each handler takes `Maybe EventMetadata` before the existing request context, command bytes, and response callback. Update any explicit map type and pass `Nothing` for autonomous work or `Just sourceEvent.metadata` for an event callback. Stored user attribution does not grant authorization.\n\n### Verify\n\nBuild the application and run its command and integration tests. Execute a command and read its saved event. Check that `relatedUserSub` is the verified user and `correlationId` is the server request ID. For an event callback, check that `causationId` is the immediate source event ID.",
+            "Summary": "Events created by a command now record the verified user and a correlation ID. When an integration runs another command, its events retain that attribution and identify the event that caused them. JSON logs carry the same IDs through commands and integrations. Scheduled commands have a correlation ID without an invented user. Existing events stay unchanged."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: breaking\ncategory: Breaking changes\n---\n\n## Summary\n\nEvents created by a command now record the verified user and a correlation ID. When an integration runs another command, its events retain that attribution and identify the event that caused them. JSON logs carry the same IDs through commands and integrations. Scheduled commands have a correlation ID without an invented user. Existing events stay unchanged.\n\n## Migration\n\nApplications built with `Application` and the built-in transports need no code changes. If your code calls `CommandExecutor.execute` directly, pass `Nothing` before the request context for a root command. Pass `Just sourceEvent.metadata` for a command triggered by an event.\n\nIf your code calls `ServiceRunner.getEndpointsByTransport` directly, its third result now contains `DispatchHandler` values. Each handler takes `Maybe EventMetadata` before the existing request context, command bytes, and response callback. Update any explicit map type and pass `Nothing` for autonomous work or `Just sourceEvent.metadata` for an event callback. Stored user attribution does not grant authorization.\n\n### Verify\n\nBuild the application and run its command and integration tests. Execute a command and read its saved event. Check that `relatedUserSub` is the verified user and `correlationId` is the server request ID. For an event callback, check that `causationId` is the immediate source event ID.\n\n## Agent prompt\n\n```text\nUpdate this NeoHaskell application for event attribution. Find direct calls to CommandExecutor.execute. Add Nothing before the request context for root commands, or Just sourceEvent.metadata for commands triggered by an event. Find direct calls to ServiceRunner.getEndpointsByTransport. Change explicit types for its third result from Map Text EndpointHandler to Map Text DispatchHandler. Pass Nothing or Just sourceEvent.metadata to each dispatch handler before its existing arguments. Keep verified request claims and stored event attribution separate. Do not change application authorization rules. Build the application, run its command and integration tests, execute a command, and read its saved events. Report the changed files, test results, and any calls whose event source is unclear.\n```\n"
+        },
+        {
+          "category": "Fixed",
+          "commit": "bc5b915f6beee0999f66aee5c08021f9d75c547c",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "d1d7b47623e26dc09bfa6bab1c6a81878e131a3437abaf72f61679bd3cef1bc5",
+          "impact": "none",
+          "path": ".changes/release-archived-retry-fixture.md",
+          "sections": {
+            "Summary": "Pin the archived release retry test to its 0.10.1 ledger snapshot. Generated release preparations can now run the owned tooling check without treating a later release plan as part of the historical retry. Application behavior and APIs do not change."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: none\ncategory: Fixed\n---\n\n## Summary\n\nPin the archived release retry test to its 0.10.1 ledger snapshot. Generated release preparations can now run the owned tooling check without treating a later release plan as part of the historical retry. Application behavior and APIs do not change.\n"
+        }
+      ],
+      "source_sha": "bc5b915f6beee0999f66aee5c08021f9d75c547c",
+      "target_policy": "native-v2",
+      "version": "0.11.0"
     }
   ],
   "recoveries": [],

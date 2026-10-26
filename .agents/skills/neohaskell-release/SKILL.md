@@ -45,15 +45,20 @@ Coordinate the protection update with landing the workflow migration. Requiring 
 ## During a change PR
 
 1. Inspect the approved specification and the actual diff against the owning
-   stack base. Keep implementation guidance separate from user release prose.
+   stack base. For changed exported or internal symbols, complete the
+   [application-boundary audit](references/app-boundary.md) before selecting impact
+   or drafting a migration. Keep implementation guidance separate from user
+   release prose.
 2. Copy [the fragment template](assets/change.md) to
    `.changes/<unique-slug>.md`. Use one fragment per affected component and do
    not reuse a consumed filename.
 3. Use `group: platform` for Framework, Integrations, CLI or IDE. Installer
    publication is retired, and installer release fragments are rejected.
 4. Declare `impact: compatible`, `breaking` or `none`. Features, fixes and
-   performance improvements normally mean compatible. Internal CI or docs work
-   uses none with a concrete reason in Summary.
+   performance improvements normally mean compatible. Internal refactors with
+   unchanged supported app contracts, CI work, and docs work use none with a
+   concrete reason in Summary. Apply the audit to distinguish app contracts from
+   direct-import compatibility caveats.
 5. Write a substantive Summary. Breaking fragments require category
    `Breaking changes`, a Migration section with `### Verify`, and a fenced,
    self-contained Agent prompt. Ground edits and checks in the maintained API.

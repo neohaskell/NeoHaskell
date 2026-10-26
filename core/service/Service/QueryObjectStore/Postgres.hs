@@ -120,10 +120,10 @@ newFromConfig config queryName = do
 acquirePool :: PostgresQueryObjectStoreConfig -> Task QueryObjectStoreError Pool
 acquirePool cfg = do
   let size = cfg.poolSize
-  case size > 0 of
-    False ->
+  if size <= 0
+    then
       Task.throw (ConnectionFailed [fmt|poolSize must be > 0, got #{size}|])
-    True ->
+    else
       case ConnectionConfig.toConnectionParams
              ConnectionConfig.ConnectionParams
                { host = cfg.host

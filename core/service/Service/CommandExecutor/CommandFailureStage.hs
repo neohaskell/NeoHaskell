@@ -1,3 +1,5 @@
+-- | Name the stage that failed for structured command logs. Use 'fromFailure'
+-- for executor failures and 'text' when writing the log field.
 module Service.CommandExecutor.CommandFailureStage (
   CommandFailureStage (..),
   fromFailure,

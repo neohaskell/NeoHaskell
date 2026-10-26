@@ -529,34 +529,32 @@ stopWorkerOrCancel ::
   WorkerStopConfig ->
   WorkerStopData ->
   Task Text Unit
-stopWorkerOrCancel config worker = Task.mask \restore -> do
+stopWorkerOrCancel config worker = Task.withCancellationDeferred \restore -> do
   claimed <- WorkerQueueControl.claimStop worker.stopQueueStatus
-  if not claimed
-    then Task.yield unit
-    else do
-      let forceStop = forceWorkerStop worker.stopQueueStatus worker.stopTask worker.stopChannel
-      let attemptStop = do
-            restore (WorkerQueueControl.waitForWriters worker.stopQueueStatus)
-            writeResult <-
-              restore
-                ( Channel.tryWriteWithTimeout
-                    config.stopWriteTimeoutMs
-                    Stop
-                    worker.stopChannel
-                )
-            case writeResult of
-              Ok _ -> Task.yield True
-              Err _ -> Task.yield False
-      stopResult <- Task.onFailure (\_ -> forceStop) attemptStop
-      if stopResult
-        then WorkerQueueControl.finishStop worker.stopQueueStatus
-        else do
-          forceStop
-          let workerLabel = WorkerStopKind.label config.stopKind
-          let streamIdText = toText config.stopStreamId
-          Log.warn
-            [fmt|Stop message timed out for #{workerLabel} stream #{streamIdText}, force-cancelling worker|]
-            |> Task.ignoreError
+  Task.when claimed do
+    let forceStop = forceWorkerStop worker.stopQueueStatus worker.stopTask worker.stopChannel
+    let attemptStop = do
+          restore (WorkerQueueControl.waitForWriters worker.stopQueueStatus)
+          writeResult <-
+            restore
+              ( Channel.tryWriteWithTimeout
+                  config.stopWriteTimeoutMs
+                  Stop
+                  worker.stopChannel
+              )
+          case writeResult of
+            Ok _ -> Task.yield True
+            Err _ -> Task.yield False
+    stopResult <- Task.onFailure (\_ -> forceStop) attemptStop
+    if stopResult
+      then WorkerQueueControl.finishStop worker.stopQueueStatus
+      else do
+        forceStop
+        let workerLabel = WorkerStopKind.label config.stopKind
+        let streamIdText = toText config.stopStreamId
+        Log.warn
+          [fmt|Stop message timed out for #{workerLabel} stream #{streamIdText}, force-cancelling worker|]
+          |> Task.ignoreError
 
 
 forceWorkerStop ::
@@ -584,7 +582,7 @@ withWorkerCleanupHandoff ::
   (worker -> Task Text Unit) ->
   (worker -> Task Text Unit) ->
   Task Text Unit
-withWorkerCleanupHandoff removeWorker ~afterRemoval ~cleanupWorker = Task.mask \restore -> do
+withWorkerCleanupHandoff removeWorker ~afterRemoval ~cleanupWorker = Task.withCancellationDeferred \restore -> do
   maybeWorker <- removeWorker
   case maybeWorker of
     Nothing -> Task.yield unit
@@ -601,7 +599,7 @@ withWorkerCandidateHandoff ::
   (worker -> Task Text (worker, Maybe worker)) ->
   (worker -> Task Text Unit) ->
   Task Text worker
-withWorkerCandidateHandoff ~createCandidate ~publishCandidate ~cleanupWorker = Task.mask \restore -> do
+withWorkerCandidateHandoff ~createCandidate ~publishCandidate ~cleanupWorker = Task.withCancellationDeferred \restore -> do
   candidate <- createCandidate
   let publish = Task.evaluate (publishCandidate candidate) |> Task.andThen identity
   (actualWorker, maybeDiscarded) <-
@@ -649,7 +647,7 @@ getOrCreateStatelessWorker dispatcher streamId = do
     (spawnStatelessWorker dispatcher streamId)
     (\candidate ->
       dispatcher.entityWorkers
-        |> ConcurrentMap.getOrInsertIfM
+        |> ConcurrentMap.getOrInsertIfTransaction
           streamId
           candidate
           (\existing -> WorkerQueueControl.shouldReplace existing.queueStatus)
@@ -687,7 +685,7 @@ createLifecycleWorkerCandidate dispatcher streamId entityTypeName =
     (spawnLifecycleWorker dispatcher streamId entityTypeName)
     (\candidate ->
       dispatcher.lifecycleEntityWorkers
-        |> ConcurrentMap.getOrInsertIfM
+        |> ConcurrentMap.getOrInsertIfTransaction
           streamId
           candidate
           (\existing -> WorkerQueueControl.shouldReplace existing.queueStatus)
@@ -1154,16 +1152,14 @@ reaperLoop :: IntegrationDispatcher -> Task Text Unit
 reaperLoop dispatcher = do
   AsyncTask.sleep dispatcher.config.reaperIntervalMs
   shouldShutdown <- dispatcher.shutdownSignal |> ConcurrentVar.peek
-  if shouldShutdown
-    then Task.yield unit
-    else do
-      currentTime <- getCurrentTimeMs
-      let reaperChunkSize = 50
-      dispatcher.lifecycleEntityWorkers
-        |> ConcurrentMap.forEachChunked reaperChunkSize (reapIdleLifecycleWorker dispatcher currentTime)
-      dispatcher.entityWorkers
-        |> ConcurrentMap.forEachChunked reaperChunkSize (reapIdleStatelessWorker dispatcher currentTime)
-      reaperLoop dispatcher
+  Task.unless shouldShutdown do
+    currentTime <- getCurrentTimeMs
+    let reaperChunkSize = 50
+    dispatcher.lifecycleEntityWorkers
+      |> ConcurrentMap.forEachChunked reaperChunkSize (reapIdleLifecycleWorker dispatcher currentTime)
+    dispatcher.entityWorkers
+      |> ConcurrentMap.forEachChunked reaperChunkSize (reapIdleStatelessWorker dispatcher currentTime)
+    reaperLoop dispatcher
 
 
 reapIdleLifecycleWorker ::
@@ -1178,7 +1174,7 @@ reapIdleLifecycleWorker dispatcher currentTime streamId worker = do
             else pure False
     withWorkerCleanupHandoff
       (dispatcher.lifecycleEntityWorkers
-        |> ConcurrentMap.removeIfM streamId markSameWorkerDraining
+        |> ConcurrentMap.removeIfTransaction streamId markSameWorkerDraining
       )
       (\removedWorker -> do
         Log.debug [fmt|Reaped idle lifecycle worker for stream #{toText streamId}|]
@@ -1200,7 +1196,7 @@ reapIdleStatelessWorker dispatcher currentTime streamId worker = do
             else pure False
     withWorkerCleanupHandoff
       (dispatcher.entityWorkers
-        |> ConcurrentMap.removeIfM streamId markSameWorkerDraining
+        |> ConcurrentMap.removeIfTransaction streamId markSameWorkerDraining
       )
       (\removedWorker -> do
         Log.debug [fmt|Reaped idle worker for stream #{toText streamId}|]

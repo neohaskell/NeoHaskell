@@ -24,7 +24,11 @@ from bounded_process import DEFAULT_MAX_OUTPUT_BYTES, ProcessOutcome, ProcessRes
 
 MAX_OUTPUT_BYTES = DEFAULT_MAX_OUTPUT_BYTES
 MAX_TIMEOUT_SECONDS = 3600
-SUMMARY = re.compile(r"^\s*(\d+)\s+(example|examples),\s*(\d+)\s+(failure|failures)\s*$", re.IGNORECASE)
+SUMMARY = re.compile(
+    r"^\s*(\d+)\s+(example|examples),\s*(\d+)\s+(failure|failures)"
+    r"(?:,\s*(\d+)\s+pending)?\s*$",
+    re.IGNORECASE,
+)
 SUMMARY_HINT = re.compile(r"\b\d+\s+examples?,\s*\d+\s+failures?\b", re.IGNORECASE)
 ANSI = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 SETUP_ERROR = re.compile(
@@ -166,15 +170,25 @@ def classify(result: ProcessResult) -> MatchClassification:
         return MatchClassification(MatchOutcome.SETUP_ERROR, "FAIL", "compiler or REPL setup error appeared in the transcript")
     if len(summary_lines) != 1 or parsed[0] is None:
         return MatchClassification(MatchOutcome.INVALID_SUMMARY, "FAIL", "expected exactly one valid Hspec summary")
-    examples = int(parsed[0].group(1))
-    example_word = parsed[0].group(2).lower()
-    failures = int(parsed[0].group(3))
-    failure_word = parsed[0].group(4).lower()
     summary = summary_lines[0].strip()
+    try:
+        examples = int(parsed[0].group(1))
+        failures = int(parsed[0].group(3))
+        pending = int(parsed[0].group(5) or "0")
+    except ValueError:
+        return MatchClassification(MatchOutcome.INVALID_SUMMARY, "FAIL", f"Hspec summary contains an invalid numeric count; {summary}")
+    example_word = parsed[0].group(2).lower()
+    failure_word = parsed[0].group(4).lower()
     if example_word != ("example" if examples == 1 else "examples"):
         return MatchClassification(MatchOutcome.INVALID_SUMMARY, "FAIL", f"Hspec summary has a count mismatch; {summary}")
     if failure_word != ("failure" if failures == 1 else "failures"):
         return MatchClassification(MatchOutcome.INVALID_SUMMARY, "FAIL", f"Hspec summary has a count mismatch; {summary}")
+    if failures + pending > examples:
+        return MatchClassification(
+            MatchOutcome.INVALID_SUMMARY,
+            "FAIL",
+            f"Hspec's failure and pending counts exceed the example count; {summary}",
+        )
     if examples == 0:
         return MatchClassification(MatchOutcome.EMPTY_SELECTION, "FAIL", f"no Hspec examples matched; {summary}")
     if failures != 0:

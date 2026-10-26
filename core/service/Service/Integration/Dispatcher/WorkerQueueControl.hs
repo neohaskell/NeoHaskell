@@ -1,6 +1,8 @@
 {-# LANGUAGE Strict #-}
 
 -- | Owns admission and draining for one integration worker queue.
+--
+-- Wrap writes with 'withAdmission'; idle reapers call 'markDraining' before removal.
 module Service.Integration.Dispatcher.WorkerQueueControl (
   WorkerQueueControl,
   new,
@@ -19,6 +21,7 @@ import Basics
 import Maybe (Maybe (..))
 import Task (Task)
 import Task qualified
+import Transaction (Transaction)
 
 
 data QueueStatus
@@ -44,7 +47,7 @@ isAccepting (WorkerQueueControl status) = do
 
 
 withAdmission :: WorkerQueueControl -> Task err result -> Task err (Maybe result)
-withAdmission (WorkerQueueControl status) write = Task.mask \restore -> do
+withAdmission (WorkerQueueControl status) write = Task.withCancellationDeferred \restore -> do
   admitted <- AtomicVar.modifyWithResult status \current -> case current of
     Accepting writers -> (Accepting (writers + 1), True)
     _ -> (current, False)
@@ -65,7 +68,7 @@ release status = do
   AtomicVar.modify decrement status
 
 
-markDraining :: WorkerQueueControl -> AtomicVar.Transaction Bool
+markDraining :: WorkerQueueControl -> Transaction Bool
 markDraining (WorkerQueueControl status) = do
   let transition current = case current of
         Accepting writers -> (Draining writers, True)
@@ -76,7 +79,7 @@ markDraining (WorkerQueueControl status) = do
     _ -> pure False
 
 
-shouldReplace :: WorkerQueueControl -> AtomicVar.Transaction Bool
+shouldReplace :: WorkerQueueControl -> Transaction Bool
 shouldReplace (WorkerQueueControl status) = do
   current <- AtomicVar.peekSTM status
   case current of

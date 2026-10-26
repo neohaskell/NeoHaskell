@@ -499,11 +499,9 @@ recordingEndpoint received _sourceMetadata _requestContext commandBytes _respond
 waitForCommand :: ConcurrentVar (Array TestCommand) -> Int -> Task Text Unit
 waitForCommand received remainingMs = do
   commands <- ConcurrentVar.peek received
-  if Array.length commands > 0 || remainingMs <= 0
-    then Task.yield unit
-    else do
-      AsyncTask.sleep 25
-      waitForCommand received (remainingMs - 25)
+  Task.unless (Array.length commands > 0 || remainingMs <= 0) do
+    AsyncTask.sleep 25
+    waitForCommand received (remainingMs - 25)
 
 
 videoUploadedEvent :: Task Text (Event Json.Value)

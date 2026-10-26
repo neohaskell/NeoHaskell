@@ -10,7 +10,6 @@ module DateTime (
 import Basics
 import Data.Time.Clock qualified as Clock
 import Data.Time.Clock.POSIX qualified as Posix
-import GHC.Float (Double)
 import GHC.Real qualified as GhcReal
 import Json (FromJSON, ToJSON)
 import Task (Task)
@@ -55,7 +54,7 @@ toEpochSeconds (DateTime utc) = do
 toEpochMilliseconds :: DateTime -> Int
 toEpochMilliseconds (DateTime utc) = do
   let posixTime = Posix.utcTimeToPOSIXSeconds utc
-  GhcReal.round (GhcReal.realToFrac posixTime * 1000 :: Double)
+  GhcReal.round (posixTime * 1000)
 
 
 -- | Create DateTime from Unix epoch seconds

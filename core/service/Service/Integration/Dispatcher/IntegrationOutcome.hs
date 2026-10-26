@@ -1,6 +1,8 @@
 {-# LANGUAGE Strict #-}
 
 -- | Owns the closed result of one integration runner and its failure labels.
+--
+-- Runner execution records an outcome for result logging and interruption handling.
 module Service.Integration.Dispatcher.IntegrationOutcome (
   IntegrationOutcome (..),
   RunnerFailure (..),
