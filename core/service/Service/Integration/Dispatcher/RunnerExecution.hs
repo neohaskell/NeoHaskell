@@ -1,6 +1,8 @@
 {-# LANGUAGE Strict #-}
 
 -- | Owns one runner invocation and the outcome retained for interruption logs.
+--
+-- Create an execution with 'new', call 'run', then log the batch with 'logAll'.
 module Service.Integration.Dispatcher.RunnerExecution (
   RunnerExecution (..),
   new,

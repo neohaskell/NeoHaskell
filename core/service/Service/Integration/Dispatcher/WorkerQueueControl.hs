@@ -1,6 +1,8 @@
 {-# LANGUAGE Strict #-}
 
 -- | Owns admission and draining for one integration worker queue.
+--
+-- Wrap writes with 'withAdmission'; idle reapers call 'markDraining' before removal.
 module Service.Integration.Dispatcher.WorkerQueueControl (
   WorkerQueueControl,
   new,
