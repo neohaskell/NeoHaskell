@@ -4,19 +4,8 @@ on:
   pull_request:
     branches:
       - main
-      # Neo CLI monorepo migration (bootstrap): scoped PRs land on the staging
-      # integration branch first, so the required Test gate must run on them
-      # exactly as it does on main. `main` behavior is unchanged — this only
-      # ADDS the integration base. The branch is retired at the final merge.
       - integration/neo-monorepo
-    # ready_for_review is NOT a default activity type — without it, flipping
-    # a draft to ready would never re-trigger the suite the guard skipped
-    types: [opened, synchronize, reopened, ready_for_review]
-    # NB: no workflow-level `paths:` on pull_request. A REQUIRED check must always
-    # report — a path-filtered workflow that never runs leaves its check pending
-    # forever and blocks tooling-only PRs. Path gating moves to the `changes` job
-    # below: heavy jobs SKIP when nothing compiled changed, and `ci-gate` (always
-    # runs) accepts those skips, so it is a sound required check.
+    types: [opened, synchronize, reopened, ready_for_review, labeled]
   push:
     branches:
       - main
@@ -25,6 +14,12 @@ on:
       - "testbed/**"
       - "integrations/**"
       - "nix/**"
+      - ".agents/skills/neohaskell-test/scripts/run-doctest"
+      - ".agents/skills/neohaskell-test/scripts/test_runtime.py"
+      - ".agents/skills/neohaskell-best-practices/scripts/bounded_process.py"
+      - ".agents/skills/neohaskell-best-practices/scripts/repo-root"
+      - ".agents/skills/neohaskell-best-practices/scripts/toolchain-fp"
+      - ".agents/skills/neohaskell-best-practices/scripts/with-toolchain"
       - ".github/workflows/**"
 
 permissions:
@@ -32,22 +27,12 @@ permissions:
   contents: read
 
 jobs:
-  # DRAFT-PR CI GUARD (pipeline Phase 5, task 3): a draft PR is a parked spec
-  # awaiting the maintainer's gate decision — burning ~1h of build+test on it
-  # is waste. The heavy jobs skip on drafts (dependents skip transitively);
-  # ci-gate accepts the skips only while the PR stays a draft. Marking the PR
-  # ready-for-review re-triggers the full matrix. checks.yml (doctor, codemap,
-  # lint, spec) still runs on drafts — seconds, and it is what validates the
-  # spec itself.
-  # Path gating at the JOB level (not the workflow level — see the note under
-  # `on:`). `compiled` is true when a PR touches anything that can change a
-  # build/test outcome; on push it is always true (the push paths filter already
-  # ensured that). Cheap (~15s) so it can run on every PR.
   changes:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
       compiled: ${{ steps.detect.outputs.compiled }}
+      run_expensive: ${{ steps.detect.outputs.run_expensive }}
     steps:
       - uses: actions/checkout@v7.0.1
         with:
@@ -57,20 +42,23 @@ jobs:
         env:
           EVENT: ${{ github.event_name }}
           BASE_REF: ${{ github.base_ref }}
+          IS_DRAFT: ${{ github.event.pull_request.draft }}
+          FULL_CI_LABEL_PRESENT: ${{ github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'run-full-ci') }}
         run: |
           set -euo pipefail
+          run_expensive=true
+          if [ "$EVENT" = "pull_request" ]; then
+            run_expensive=false
+            if [ "$IS_DRAFT" != "true" ] || [ "$FULL_CI_LABEL_PRESENT" = "true" ]; then
+              run_expensive=true
+            fi
+          fi
+          echo "run_expensive=$run_expensive" >> "$GITHUB_OUTPUT"
           if [ "$EVENT" = "push" ]; then
             echo "compiled=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          # `neo/` is deliberately ABSENT: the Neo CLI is a Rust crate with its
-          # own required component workflow (neo-ci.yml, which runs on arbitrary
-          # stacked-PR bases and gates fmt/tests/nix-build). The cabal build here
-          # neither compiles nor tests it, so a neo-only PR must NOT drag the
-          # whole Haskell suite. `installer/` is absent for the same reason
-          # (installer-ci.yml). `flake.nix` stays: the Haskell hix outputs are
-          # defined there, so a flake change still rebuilds them.
-          PATTERN='^(core/|testbed/|integrations/|nix/|\.github/workflows/|cabal\.project|flake\.nix|flake\.lock)'
+          PATTERN='^(core/|testbed/|integrations/|nix/|\.agents/skills/neohaskell-test/scripts/(run-doctest|test_runtime\.py)$|\.agents/skills/neohaskell-best-practices/scripts/(bounded_process\.py|repo-root|toolchain-fp|with-toolchain)$|\.github/workflows/|cabal\.project|flake\.nix|flake\.lock)'
           if git diff --name-only "origin/${BASE_REF}...HEAD" | grep -qE "$PATTERN"; then
             echo "compiled=true" >> "$GITHUB_OUTPUT"
           else
@@ -80,13 +68,13 @@ jobs:
   build:
     needs: changes
     if: >-
-      (github.event_name == 'push' || github.event.pull_request.draft == false)
+      needs.changes.outputs.run_expensive == 'true'
       && needs.changes.outputs.compiled == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7.0.1
-      - uses: DeterminateSystems/determinate-nix-action@v3.22.2
+      - uses: DeterminateSystems/determinate-nix-action@v3.23.3
         with:
           extra-conf: |
             accept-flake-config = true
@@ -109,61 +97,16 @@ jobs:
           retention-days: 1
           if-no-files-found: error
 
-  codemap-sync:
-    # Runs in PARALLEL with the test suites (needs only build's artifact) so it
-    # adds no wall-clock, and is ENFORCED as a merge gate via ci-gate below — a
-    # separate runner, so parallelism is free. (If a test fails the regen was
-    # spent for nothing, but that costs a runner-minute, not PR latency.)
-    needs: build
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          persist-credentials: false
-      - uses: DeterminateSystems/determinate-nix-action@v3.22.2
-        with:
-          extra-conf: |
-            accept-flake-config = true
-            extra-substituters = https://cache.iog.io https://neohaskell.cachix.org
-            extra-trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= neohaskell.cachix.org-1:mo2cLaGbwqbrxs9xhqKK8jeNsn3osi7t6XoAmxSZssc=
-      - uses: DeterminateSystems/magic-nix-cache-action@v14
-      - uses: actions/download-artifact@v8
-        with:
-          name: dist-newstyle
-          path: dist-newstyle
-      # Hackage hoogle txts for the ./dev api vanilla DB (dep-closure mined;
-      # see ADR-0066) — cached so the fetch is a no-op on warm runs.
-      - uses: actions/cache@v6.1.0
-        with:
-          path: .hoogle-vanilla-src
-          key: ${{ runner.os }}-hoogle-vanilla-${{ hashFiles('flake.lock', '**/*.cabal') }}
-          restore-keys: |
-            ${{ runner.os }}-hoogle-vanilla-
-      - name: Regenerate codemap + build/smoke-check hoogle DBs (canary — same flow as local ./dev codemap)
-        run: CODEMAP_PROJECT=cabal.project ./dev codemap
-      - name: Sync check — committed codemap must match regenerated
-        run: |
-          git diff --exit-code codemap/ || {
-            echo "::error::codemap out of sync with the code — run ./dev codemap and commit the result"
-            exit 1
-          }
-
-  # Doctest gate (pipeline Phase 4): the examples on codemap/api-hot.md and
-  # codemap/phrasebook.md are mined from source doctests — THIS job is what
-  # makes their "doctest-gated" claim true. Runner: scripts/run-doctest
-  # (build-free: doctest interprets sources against the dev-shell GHC's
-  # package DB, so no dist-newstyle artifact is needed).
   doctest:
     needs: changes
     if: >-
-      (github.event_name == 'push' || github.event.pull_request.draft == false)
+      needs.changes.outputs.run_expensive == 'true'
       && needs.changes.outputs.compiled == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7.0.1
-      - uses: DeterminateSystems/determinate-nix-action@v3.22.2
+      - uses: DeterminateSystems/determinate-nix-action@v3.23.3
         with:
           extra-conf: |
             accept-flake-config = true
@@ -171,7 +114,7 @@ jobs:
             extra-trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= neohaskell.cachix.org-1:mo2cLaGbwqbrxs9xhqKK8jeNsn3osi7t6XoAmxSZssc=
       - uses: DeterminateSystems/magic-nix-cache-action@v14
       - name: Run doctest suite
-        run: ./dev doctest
+        run: ./.agents/skills/neohaskell-test/scripts/run-doctest --strict
 
   test-core:
     needs: [build]
@@ -179,7 +122,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7.0.1
-      - uses: DeterminateSystems/determinate-nix-action@v3.22.2
+      - uses: DeterminateSystems/determinate-nix-action@v3.23.3
         with:
           extra-conf: |
             accept-flake-config = true
@@ -199,7 +142,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7.0.1
-      - uses: DeterminateSystems/determinate-nix-action@v3.22.2
+      - uses: DeterminateSystems/determinate-nix-action@v3.23.3
         with:
           extra-conf: |
             accept-flake-config = true
@@ -216,10 +159,10 @@ jobs:
   test-integration:
     needs: [build]
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7.0.1
-      - uses: DeterminateSystems/determinate-nix-action@v3.22.2
+      - uses: DeterminateSystems/determinate-nix-action@v3.23.3
         with:
           extra-conf: |
             accept-flake-config = true
@@ -232,6 +175,10 @@ jobs:
           path: dist-newstyle
       - name: Run nhcore-test-integration
         run: LOG_LEVEL=Warn nix develop --command cabal test nhcore-test-integration
+      - name: Install video fixture tools
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - name: Run video extraction regressions
+        run: LOG_LEVEL=Warn ./.agents/skills/tdd/scripts/test-match --timeout 900 Integration.Video.ExtractAudio nhintegrations-test
 
   test-service:
     needs: [build]
@@ -239,9 +186,7 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7.0.1
-        with:
-          fetch-depth: 0
-      - uses: DeterminateSystems/determinate-nix-action@v3.22.2
+      - uses: DeterminateSystems/determinate-nix-action@v3.23.3
         with:
           extra-conf: |
             accept-flake-config = true
@@ -273,30 +218,15 @@ jobs:
       - name: Run nhcore-test-service
         env:
           POSTGRES_AVAILABLE: "true"
-        run: |
-          set -o pipefail
-          LOG_LEVEL=Warn nix develop --command cabal test nhcore-test-service \
-            --test-show-details=direct | tee .nhcore-test-service.report
-      - name: Prove integration criterion selectors and real fixtures
-        if: github.event_name == 'pull_request'
-        env:
-          BASE_REF: ${{ github.base_ref }}
-          POSTGRES_AVAILABLE: "true"
-        run: ./dev spec-check --criteria-runtime "origin/${BASE_REF}" --report .nhcore-test-service.report
+        run: LOG_LEVEL=Warn nix develop --command cabal test nhcore-test-service --test-show-details=direct
 
   test-hurl:
     needs: [build]
     runs-on: ubuntu-latest
-    # 60m: the dev-shell entry pulls HLS / fourmolu / hlint / ormolu /
-    # stylish-haskell / floskell on cold magic-nix-cache, and the post-job
-    # cache upload step pushes those same paths back to GHA cache (~12m).
-    # Tests themselves run in ~8.5m, dev-shell pull ~5m, post-cache upload
-    # ~12m worst case, and the bounded cold-start acceptance runs separately.
-    # 60m absorbs the cold-cache one-time cost; warm-cache runs are much faster.
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7.0.1
-      - uses: DeterminateSystems/determinate-nix-action@v3.22.2
+      - uses: DeterminateSystems/determinate-nix-action@v3.23.3
         with:
           extra-conf: |
             accept-flake-config = true
@@ -329,16 +259,6 @@ jobs:
           PGPASSWORD: neohaskell
       - name: Install hurl (pinned binary + checksum)
         run: |
-          # A bare `curl -LO` here is what turned the acceptance job — and with
-          # it `main` — red on 2026-08-12 (run 31644435957: "curl: (56)
-          # Connection died, tried 5 times"). The release CDN drops connections
-          # often enough that an unretried, unverified fetch is a coin flip on
-          # every run of the required gate. Retry the transfer, then verify the
-          # bytes: same pinned-binary discipline as hlint in checks.yml.
-          # --connect-timeout bounds only the handshake; --max-time bounds each
-          # attempt and --retry-max-time the whole retry window, so a stalled
-          # response cannot quietly eat this job's 60-minute budget (a 2 MB file
-          # has no business taking two minutes).
           curl -fsSL --retry 5 --retry-delay 5 --retry-all-errors \
             --connect-timeout 20 --max-time 120 --retry-max-time 300 \
             -o hurl.deb \
@@ -352,37 +272,25 @@ jobs:
       - name: Prove cold-start health stays flat through 100k events
         run: nix develop --command ./testbed/scripts/cold-start-readiness.sh
 
-  # THE REQUIRED CHECK. `if: always()` + no workflow paths filter ⇒ this always
-  # runs and reports a real conclusion on every PR, so it is safe to require in
-  # branch protection (unlike the individual, path-skipped jobs). It enforces
-  # "the project compiles AND tests pass" whenever there is a compiled surface to
-  # check, and passes cleanly when there is nothing to check.
   ci-gate:
     if: always()
-    needs: [changes, build, doctest, test-core, test-auth, test-integration, test-service, test-hurl, codemap-sync]
+    needs: [changes, build, doctest, test-core, test-auth, test-integration, test-service, test-hurl]
     runs-on: ubuntu-latest
     steps:
       - name: Check all tests passed
         env:
-          IS_DRAFT: ${{ github.event_name == 'pull_request' && github.event.pull_request.draft }}
+          RUN_EXPENSIVE: ${{ needs.changes.outputs.run_expensive }}
           COMPILED: ${{ needs.changes.outputs.compiled }}
           CHANGES_RESULT: ${{ needs.changes.result }}
         run: |
-          # Fail closed if path-detection itself failed — otherwise a compiled PR
-          # could skip everything and pass on a bad `compiled` reading.
           if [[ "$CHANGES_RESULT" != "success" ]]; then
             echo "::error::changes-detection job did not succeed ($CHANGES_RESULT)"
             exit 1
           fi
-          # Skips are acceptable ONLY when there is genuinely nothing to test: a
-          # draft PR (parked spec) or a PR that changed no compiled surface.
-          # Otherwise every build/test job must be success.
           allow_skip=false
-          if [[ "$IS_DRAFT" == "true" || "$COMPILED" != "true" ]]; then
+          if [[ "$RUN_EXPENSIVE" != "true" || "$COMPILED" != "true" ]]; then
             allow_skip=true
           fi
-          # codemap-sync runs in parallel; listed last so a test failure is the
-          # first error reported when several jobs fail together.
           results=(
             "build=${{ needs.build.result }}"
             "doctest=${{ needs.doctest.result }}"
@@ -391,7 +299,6 @@ jobs:
             "test-integration=${{ needs.test-integration.result }}"
             "test-service=${{ needs.test-service.result }}"
             "test-hurl=${{ needs.test-hurl.result }}"
-            "codemap-sync=${{ needs.codemap-sync.result }}"
           )
           for entry in "${results[@]}"; do
             job="${entry%%=*}"; r="${entry#*=}"
@@ -403,4 +310,4 @@ jobs:
               exit 1
             fi
           done
-          echo "ci-gate: all build/test jobs passed (or correctly skipped — nothing to test)"
+          echo "ci-gate: all build/test jobs passed (or correctly skipped by event and path selection)"

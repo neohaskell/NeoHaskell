@@ -22,6 +22,7 @@ import Data.Kind (Constraint)
 import GHC.TypeLits (ErrorMessage (..), TypeError)
 import GHC.TypeLits qualified as GHC
 import Json qualified
+import Log qualified
 import Map (Map)
 import Map qualified
 import Maybe (Maybe (..), withDefault)
@@ -30,15 +31,16 @@ import Record (Record)
 import Record qualified
 import Schema (FieldSchema (..), Schema)
 import Schema qualified
-import Service.Auth (RequestContext)
+import Service.Auth (RequestContext (..))
 import Service.Transport.Internal (InternalTransport)
-import Service.Transport (Transport (..), EndpointHandler, EndpointSchema (..))
+import Service.Transport (Transport (..), EndpointHandler, DispatchHandler, EndpointSchema (..))
 import Service.Command (EntityOf, EventOf)
 import Service.Command.Core (TransportsOf, NamesOf, AppendSymbols, AllKnownSymbols (..), Command (..), Entity (..), Event, KnownMultiTenant (..), NameOf)
 import Service.CommandExecutor qualified as CommandExecutor
 import Service.Response qualified as Response
 import Service.EntityFetcher.Core qualified as EntityFetcher
 import Service.Event.EntityName (EntityName (..))
+import Service.Event.EventMetadata (EventMetadata (..))
 import Service.Event.StreamId qualified as StreamId
 import Service.EventStore.Core (EventStore)
 import Service.EventStore.Core qualified as EventStore
@@ -49,6 +51,7 @@ import Text (Text)
 import Text qualified
 import ToText (toText)
 import Unsafe.Coerce qualified as GHC
+import Uuid qualified
 
 
 -- | Extracts the common event type from all commands in a service.
@@ -243,7 +246,7 @@ class CommandInspect definition where
     EventStore (CmdEvent definition) ->
     Maybe (SnapshotCache (CmdEntity definition)) ->
     Record.Proxy (Cmd definition) ->
-    EndpointHandler
+    DispatchHandler
 
 
   includeInDispatchMap ::
@@ -259,19 +262,48 @@ buildDispatchHandler ::
     Record.KnownSymbol name
   ) =>
   Record.Proxy command ->
-  (RequestContext -> command -> Task Text Response.CommandResponse) ->
-  EndpointHandler
-buildDispatchHandler _ handler requestContext body respond = do
+  (Maybe EventMetadata -> RequestContext -> command -> Task Text Response.CommandResponse) ->
+  DispatchHandler
+buildDispatchHandler _ handler sourceEventMetadata requestContext body respond = do
   let commandName =
         GHC.symbolVal (Record.Proxy @name)
           |> Text.fromLinkedList
   let commandValue = body |> Json.decodeBytes @command
   case commandValue of
     Ok cmd -> do
-      response <- handler requestContext cmd
+      response <- handler sourceEventMetadata requestContext cmd
       let responseJson = Json.encodeText response |> Text.toBytes
       respond (response, responseJson)
     Err _err -> do
+      requestId <- if requestContext.requestId == Uuid.nil
+        then Uuid.generate
+        else Task.yield requestContext.requestId
+      let requestIdText = Uuid.toText requestId
+      let correlationIdText = case sourceEventMetadata of
+            Just metadata -> Maybe.withDefault (Uuid.toText metadata.eventId) metadata.correlationId
+            Nothing -> requestIdText
+      let sourceTraceFields = case sourceEventMetadata of
+            Nothing -> []
+            Just metadata -> do
+              let actorFields = case metadata.relatedUserSub of
+                    Just actor -> ["relatedUserSub" Json..= actor]
+                    Nothing -> []
+              ["causationId" Json..= Uuid.toText metadata.eventId] |> Array.append actorFields
+      Log.recordIsolated Log.Warn
+        ( [ "component" Json..= ("ServiceDefinition" :: Text)
+          , "requestId" Json..= requestIdText
+          , "correlationId" Json..= correlationIdText
+          , "commandName" Json..= commandName
+          , "kind" Json..= ("command_result" :: Text)
+          , "result" Json..= ("rejected" :: Text)
+          , "failureStage" Json..= ("decoding" :: Text)
+          , "errorClass" Json..= ("InvalidCommand" :: Text)
+          , "eventsAppended" Json..= (0 :: Int)
+          ]
+          |> Array.append sourceTraceFields
+        )
+        "Command payload could not be decoded"
+        |> Task.ignoreError
       let errorResponse =
             Response.Failed
               { error = [fmt|Invalid input for command #{commandName}|]
@@ -303,10 +335,11 @@ buildCommandResponseHandler ::
   ) =>
   EventStore event ->
   Maybe (SnapshotCache entity) ->
+  Maybe EventMetadata ->
   RequestContext ->
   cmd ->
   Task Text Response.CommandResponse
-buildCommandResponseHandler eventStore maybeCache requestContext cmdInstance = do
+buildCommandResponseHandler eventStore maybeCache sourceEventMetadata requestContext cmdInstance = do
   fetcher <- case maybeCache of
     Just cache ->
       EntityFetcher.newWithCache
@@ -322,7 +355,7 @@ buildCommandResponseHandler eventStore maybeCache requestContext cmdInstance = d
         (updateImpl @entity)
         |> Task.mapError toText
   let entityName = EntityName (getSymbolText (Record.Proxy @entityName))
-  result <- CommandExecutor.execute eventStore fetcher entityName requestContext cmdInstance
+  result <- CommandExecutor.execute eventStore fetcher entityName sourceEventMetadata requestContext cmdInstance
   Task.yield (Response.fromExecutionResult result)
 
 
@@ -377,7 +410,7 @@ instance
     Array (Text, EndpointHandler)
   createHandlers _ eventStore maybeCache transportsMap cmd =
     buildHandlersForAll @(PublicTransports transports) transportsMap cmd
-      (buildCommandResponseHandler @cmd @entity @event @entityName eventStore maybeCache)
+      (buildCommandResponseHandler @cmd @entity @event @entityName eventStore maybeCache Nothing)
 
 
   createDispatchHandler _ eventStore maybeCache cmd =
@@ -518,7 +551,7 @@ data ServiceRunner = ServiceRunner
     getEndpointsByTransport ::
       EventStore Json.Value ->
       Map Text TransportValue ->
-      Task Text (Map Text (Map Text EndpointHandler), Map Text (Map Text Service.Transport.EndpointSchema), Map Text EndpointHandler)
+      Task Text (Map Text (Map Text EndpointHandler), Map Text (Map Text Service.Transport.EndpointSchema), Map Text DispatchHandler)
   }
 
 
@@ -573,7 +606,7 @@ buildEndpointsByTransport ::
   EventStore Json.Value ->
   Record.ContextRecord Record.I cmds ->
   Map Text TransportValue ->
-  Task Text (Map Text (Map Text EndpointHandler), Map Text (Map Text Service.Transport.EndpointSchema), Map Text EndpointHandler)
+  Task Text (Map Text (Map Text EndpointHandler), Map Text (Map Text Service.Transport.EndpointSchema), Map Text DispatchHandler)
 buildEndpointsByTransport rawEventStore commandDefinitions transportsMap = do
   let eventStore = rawEventStore |> EventStore.castEventStore @event
   let maybeCache = Nothing :: Maybe (SnapshotCache entity)
@@ -602,7 +635,7 @@ buildEndpointsByTransport rawEventStore commandDefinitions transportsMap = do
           cmd ~ Cmd cmdDef
         ) =>
         Record.I cmdDef ->
-        Record.K (Maybe (Text, EndpointHandler)) cmdDef
+        Record.K (Maybe (Text, DispatchHandler)) cmdDef
       dispatchMapper (Record.I x) = do
         if includeInDispatchMap x
           then do

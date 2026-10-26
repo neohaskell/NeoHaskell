@@ -149,7 +149,7 @@ basicExecutionSpecs newCartStoreAndFetcher = do
       -- Expected: Should fetch entity, call decide, insert event, return success
       let cmd = AddItemToCart {cartId = context.cartId, itemId = context.itemId1, amount = 5}
 
-      result <- CommandExecutor.execute context.cartStore context.cartFetcher context.cartEntityName Auth.emptyContext cmd
+      result <- CommandExecutor.execute context.cartStore context.cartFetcher context.cartEntityName Nothing Auth.emptyContext cmd
 
       -- Should succeed
       case result of
@@ -177,7 +177,7 @@ basicExecutionSpecs newCartStoreAndFetcher = do
       -- Try to add item to non-existent cart
       let cmd = AddItemToCart {cartId = context.cartId, itemId = context.itemId1, amount = 5}
 
-      result <- CommandExecutor.execute context.cartStore context.cartFetcher context.cartEntityName Auth.emptyContext cmd
+      result <- CommandExecutor.execute context.cartStore context.cartFetcher context.cartEntityName Nothing Auth.emptyContext cmd
 
       case result of
         CommandRejected msg -> do
@@ -236,7 +236,7 @@ basicExecutionSpecs newCartStoreAndFetcher = do
       -- Now add another item using CommandHandler
       let cmd = AddItemToCart {cartId = context.cartId, itemId = context.itemId2, amount = 7}
 
-      result <- CommandExecutor.execute context.cartStore context.cartFetcher context.cartEntityName Auth.emptyContext cmd
+      result <- CommandExecutor.execute context.cartStore context.cartFetcher context.cartEntityName Nothing Auth.emptyContext cmd
 
       case result of
         CommandAccepted {} -> do
@@ -314,7 +314,7 @@ retryLogicSpecs backend newCartStoreAndFetcher = do
         let command = AddItemToCart
               {cartId = context.cartId, itemId = context.itemId1, amount = 1}
         result <- CommandExecutor.execute recordingStore context.cartFetcher
-          context.cartEntityName Auth.emptyContext command
+          context.cartEntityName Nothing Auth.emptyContext command
         insertionPayloads <- readInsertions
         let insertionTypes = insertionPayloads |> Array.map (\payload -> payload.insertionType)
         case result of
@@ -361,7 +361,7 @@ retryLogicSpecs backend newCartStoreAndFetcher = do
       let command = AddItemToCartAfterItemCount
             {cartId = context.cartId, itemId = context.itemId1, amount = 1}
       result <- CommandExecutor.execute controlledStore recordingFetcher
-        context.cartEntityName Auth.emptyContext command
+        context.cartEntityName Nothing Auth.emptyContext command
       insertionPayloads <- readInsertions
       fetchedRevisions <- readRevisions
       fetchedEntities <- readFetches
@@ -426,7 +426,7 @@ retryLogicSpecs backend newCartStoreAndFetcher = do
         let controlledStore = context.cartStore {EventStore.insert = insert}
         let run command =
               CommandExecutor.execute controlledStore recordingFetcher
-                context.cartEntityName Auth.emptyContext command
+                context.cartEntityName Nothing Auth.emptyContext command
         firstAsync <-
           AsyncTask.run
             (run (AcceptExistingByItemCount context.cartId context.itemId1))
@@ -481,7 +481,7 @@ retryLogicSpecs backend newCartStoreAndFetcher = do
         let controlledStore = context.cartStore {EventStore.insert = insert}
         let run command =
               CommandExecutor.execute controlledStore context.cartFetcher
-                context.cartEntityName Auth.emptyContext command
+                context.cartEntityName Nothing Auth.emptyContext command
         firstAsync <- AsyncTask.run (run (AcceptNewCart context.cartId))
         secondAsync <- AsyncTask.run (run (AcceptNewCart context.cartId))
         Regression.awaitInsertions 2 barrier
@@ -526,7 +526,7 @@ retryLogicSpecs backend newCartStoreAndFetcher = do
         let controlledStore = context.cartStore {EventStore.insert = insert}
         let run command =
               CommandExecutor.execute controlledStore context.cartFetcher
-                context.cartEntityName Auth.emptyContext command
+                context.cartEntityName Nothing Auth.emptyContext command
         firstAsync <-
           AsyncTask.run
             (run (AcceptAnyItem context.cartId context.itemId1 1))
@@ -615,7 +615,7 @@ retryLogicSpecs backend newCartStoreAndFetcher = do
       -- CommandHandler should detect stale state and retry
       let cmd = AddItemToCart {cartId = context.cartId, itemId = context.itemId1, amount = 1}
 
-      result <- CommandExecutor.execute context.cartStore context.cartFetcher context.cartEntityName Auth.emptyContext cmd
+      result <- CommandExecutor.execute context.cartStore context.cartFetcher context.cartEntityName Nothing Auth.emptyContext cmd
 
       case result of
         CommandAccepted {} -> do
@@ -753,8 +753,8 @@ concurrencySpecs newCartStoreAndFetcher = do
       -- Both commands should execute concurrently with retry logic
       (result1, result2) <-
         AsyncTask.runConcurrently
-          ( CommandExecutor.execute context.cartStore context.cartFetcher context.cartEntityName Auth.emptyContext cmd1,
-            CommandExecutor.execute context.cartStore context.cartFetcher context.cartEntityName Auth.emptyContext cmd2
+          ( CommandExecutor.execute context.cartStore context.cartFetcher context.cartEntityName Nothing Auth.emptyContext cmd1,
+            CommandExecutor.execute context.cartStore context.cartFetcher context.cartEntityName Nothing Auth.emptyContext cmd2
           )
 
       -- Both should succeed
@@ -823,8 +823,8 @@ concurrencySpecs newCartStoreAndFetcher = do
       let cmd1 = AddItemToCart {cartId = cartId1, itemId = context.itemId1, amount = 3}
       let cmd2 = AddItemToCart {cartId = cartId2, itemId = context.itemId2, amount = 5}
 
-      result1 <- CommandExecutor.execute context.cartStore context.cartFetcher context.cartEntityName Auth.emptyContext cmd1
-      result2 <- CommandExecutor.execute context.cartStore context.cartFetcher context.cartEntityName Auth.emptyContext cmd2
+      result1 <- CommandExecutor.execute context.cartStore context.cartFetcher context.cartEntityName Nothing Auth.emptyContext cmd1
+      result2 <- CommandExecutor.execute context.cartStore context.cartFetcher context.cartEntityName Nothing Auth.emptyContext cmd2
 
       -- Both should succeed without retries
       case result1 of
@@ -870,7 +870,7 @@ errorScenarioSpecs newCartStoreAndFetcher = do
       -- Try to checkout non-existent cart
       let cmd = CheckoutCart {cartId = context.cartId}
 
-      result <- CommandExecutor.execute context.cartStore context.cartFetcher context.cartEntityName Auth.emptyContext cmd
+      result <- CommandExecutor.execute context.cartStore context.cartFetcher context.cartEntityName Nothing Auth.emptyContext cmd
 
       case result of
         CommandRejected msg -> do
@@ -928,7 +928,7 @@ errorScenarioSpecs newCartStoreAndFetcher = do
       -- Try to add item to checked out cart
       let cmd = AddItemToCart {cartId = context.cartId, itemId = context.itemId2, amount = 5}
 
-      result <- CommandExecutor.execute context.cartStore context.cartFetcher context.cartEntityName Auth.emptyContext cmd
+      result <- CommandExecutor.execute context.cartStore context.cartFetcher context.cartEntityName Nothing Auth.emptyContext cmd
 
       case result of
         CommandRejected msg -> do
@@ -945,7 +945,7 @@ errorScenarioSpecs newCartStoreAndFetcher = do
       -- When trying to add to non-existent cart, should reject (not crash)
       let cmd = AddItemToCart {cartId = context.cartId, itemId = context.itemId1, amount = 5}
 
-      result <- CommandExecutor.execute context.cartStore context.cartFetcher context.cartEntityName Auth.emptyContext cmd
+      result <- CommandExecutor.execute context.cartStore context.cartFetcher context.cartEntityName Nothing Auth.emptyContext cmd
 
       -- Should get CommandRejected (business rule), not an error
       case result of

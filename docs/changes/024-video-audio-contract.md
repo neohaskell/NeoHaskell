@@ -52,12 +52,26 @@ Public input/output types, defaults and accepted media formats stay unchanged. T
 
 ## Baseline and remaining gates
 
-The unchanged-main full nhintegrations-test baseline ran once:621examples,2Oura.SyncAll failures,3pending. Both error-path fixtures accidentally invoke a real external token endpoint because refresh is not mocked. No rerun until fixture network ownership is corrected, no assertion weakening. New tests run exact video-only selectors with empty provider registry and local file access; no Oura/HTTP action path. Full release/025 gates remain red.
+The earlier unchanged-main `nhintegrations-test` baseline reported 621 examples,
+2 Oura.SyncAll failures and 3 pending cases. This is historical evidence, not
+a current candidate result or proof that this change caused those failures.
+Video checks use exact selectors with an empty provider registry and local
+file access. They do not execute the Oura or HTTP action paths.
 
-Core911 owns drains/cancel/reap; this draft does not duplicate them. Reference-policy negatives need a correctly isolated relative-reference fixture, not an absolute-path rejection that ffmpeg already performs for a different reason. C9 is deliberately a fake-runner malformed-output branch check, not subprocess:real. Reference restrictions that would reject previously accepted formats are isolated for a separate compatibility decision and do not block the exact-cap repair. Workspace/privacy coverage is added before those repairs. No product implementation before native Gate1 plus local security design review.
+Run `./.agents/skills/tdd/scripts/test-match --timeout 900 Integration.Video.ExtractAudio nhintegrations-test`
+with ffmpeg, ffprobe and Python available. The required `test-integration` CI
+job now runs this selection, including the real-media examples. The runner
+rejects an empty selection or setup failure. Current main removed the former
+`./dev` pipeline; its old gate names are not current check commands.
+
+PR911 owns subprocess draining and cleanup. This branch integrates that fix
+without duplicating its implementation. C9 deliberately uses a fake runner
+to check malformed output, not a real subprocess. Reference restrictions that
+would reject previously accepted formats remain a separate compatibility
+decision and do not narrow this exact-cap repair.
 
 ## Fixture reconciliation and implementation plan
 
 The old268-byte fake WAV has an invalid RIFF size and lacks fmt/data chunks. Replace only its fixture bytes with a valid268-byte PCM16 WAV (44-byte header plus224-byte binary payload). Preserve every existing equality,268-byte count,MIME,argument and cleanup assertion. C9 continues deliberately returning malformed four-byte RIFF data. This corrects the test setup to the existing usable-WAV guarantee; it does not weaken the output test.
 
-Files: existing `Integration/Video/ExtractAudio/Internal.hs` and facade; existing `ExtractAudioSpec.hs`; scoped dependency/HLint declarations only if required by the native secure-temp primitive. Copy-adapt the existing conversion/error/task pipeline and the existing scenario/real-media helpers. Resolve Bytes slices/pack/unpack, Task validation/finally and native secure-temp APIs through codemap/API lookup. No new public symbol or product default is introduced. System.IO.Temp.withTempDirectory supplies acquisition/release masking; the Directory wrapper lacks this primitive. A scoped HLint exception points to that missing Core capability. POSIX owner-only protection assumes a trusted/sticky temporary parent; it is not same-user isolation or a Windows ACL claim. Deletion can still fail if the OS rejects cleanup. ffmpeg -fs remains a coarse process stop, never the final byte-bound proof.
+Files: existing `Integration/Video/ExtractAudio/Internal.hs` and facade; existing `ExtractAudioSpec.hs`; scoped dependency/HLint declarations only if required by the native secure-temp primitive. Copy-adapt the existing conversion/error/task pipeline and the existing scenario/real-media helpers. Resolve Bytes slices/pack/unpack, Task validation/finally and native secure-temp APIs against current source. No new public symbol or product default is introduced. System.IO.Temp.withTempDirectory supplies acquisition/release masking; the Directory wrapper lacks this primitive. A scoped HLint exception points to that missing Core capability. POSIX owner-only protection assumes a trusted/sticky temporary parent; it is not same-user isolation or a Windows ACL claim. Deletion can still fail if the OS rejects cleanup. ffmpeg -fs remains a coarse process stop, never the final byte-bound proof.

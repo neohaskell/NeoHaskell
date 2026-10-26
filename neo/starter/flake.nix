@@ -7,7 +7,7 @@
   # tree (core/ + integrations/) is compatible with THIS starter's source. To
   # bump: set the rev below, `nix flake lock --update-input neohaskell`, then sync
   # the `tag:` in cabal.project and `neohaskellCommit` below to the same rev.
-  inputs.neohaskell.url = "git+https://github.com/neohaskell/neohaskell.git?rev=4459b861649d12e883a38544e09f9b09374038c8";
+  inputs.neohaskell.url = "git+https://github.com/neohaskell/neohaskell.git?rev=cbdc45f1bb89c9c7bb8da9fbdb25343771d924ca";
   inputs.neohaskell.flake = false;
 
   outputs = { self, nixpkgs, flake-utils, haskellNix, neohaskell }:
@@ -16,7 +16,7 @@
         [ "x86_64-linux" "x86_64-darwin" "aarch64-linux" "aarch64-darwin" ];
 
       # Must match the `tag:` in cabal.project for both subdirs AND the rev in the neohaskell input above.
-      neohaskellCommit = "4459b861649d12e883a38544e09f9b09374038c8";
+      neohaskellCommit = "cbdc45f1bb89c9c7bb8da9fbdb25343771d924ca";
 
     in flake-utils.lib.eachSystem supportedSystems (system:
       let

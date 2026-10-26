@@ -56,10 +56,10 @@ ADRs document significant architectural decisions made during the development of
 | [0040](0040-neoql-mvp.md) | NeoQL MVP — Field Access and Equality Filtering | Accepted |
 | [0041](0041-audio-transcription-integration.md) | Audio Transcription Integration via Multimodal Models | Accepted |
 | [0042](0042-parser-library.md) | Parser Library — Beginner-Friendly megaparsec Wrapper | Accepted |
-| [0043](0043-neohaskell-comment-syntax-parsing.md) | NeoHaskell Comment Syntax Parsing | Accepted |
+| [0043](0043-neohaskell-comment-syntax-parsing.md) | NeoHaskell Comment Syntax Parsing | Historical |
 | [0044](0044-layout-library.md) | Layout Library — Beginner-Friendly prettyprinter Wrapper | Accepted |
 | [0045](0045-integration-agent.md) | Integration.Agent — Provider-Agnostic AI Agent via Tool Calling | Accepted |
-| [0046](0046-function-syntax-fun-keyword.md) | Function Syntax — `fun` Keyword Parsing and Transpilation | Accepted |
+| [0046](0046-function-syntax-fun-keyword.md) | Function Syntax — `fun` Keyword Parsing and Transpilation | Historical |
 | [0047](0047-eventvariantof-typeclass.md) | EventVariantOf Typeclass for Type-Safe Event Variant Wrapping | Accepted |
 | [0048](0048-file-upload-content-deduplication.md) | File Upload Content Deduplication via SHA-256 | Accepted |
 | [0049](0049-outboundintegration-typeclass-dispatch-generation.md) | OutboundIntegration Typeclass with Typed Event Dispatch | Accepted |
@@ -85,7 +85,7 @@ ADRs document significant architectural decisions made during the development of
 | [0069](0069-security-reviews-are-local.md) | Security design-review records are local-only, never pushed | Accepted |
 | [0070](0070-maintainer-codemap-regeneration.md) | Maintainer-triggered codemap regeneration onto a contributor PR | Accepted |
 | [0071](0071-thread-query-name-through-query-object-store.md) | Thread the query name through the QueryObjectStore factory | Accepted |
-| [0072](0072-neo-cutover-and-onboarding-slo.md) | Neo CLI cutover — archive-as-human-gate and the clean-machine onboarding SLO | Accepted |
+| [0072](0072-neo-cutover-and-onboarding-slo.md) | Historical Neo CLI cutover and clean-machine onboarding SLO | Historical |
 | [0073](0073-deterministic-uuid-v5.md) | Deterministic UUID v5 as a Core primitive and a Decision combinator | Implemented |
 | [0074](0074-dependabot-auto-merge.md) | Dependabot patch/minor auto-merges; majors stop for a human | Accepted |
 | [0075](0075-change-process-v2.md) | Change process v2: five coarse steps, one human gate, verified auto-merge | Superseded |

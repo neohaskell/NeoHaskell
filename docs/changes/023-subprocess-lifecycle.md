@@ -62,8 +62,23 @@ No API or capture-limit change; PDF callers keep full extracted text. Declare co
 
 ## Localized implementation and verification plan
 
-Files: `core/system/Subprocess.hs` (`runWithTimeout`); `core/test/SubprocessSpec.hs`; `core/test-core/Main.hs`; `core/nhcore.cabal`; `docs/changes/test-surfaces.json`; generated `codemap/**`; separate Framework release fragment. No lower API export added. Test skeleton copy-adapts `core/test/TaskSpec.hs`.
+The implementation stays in `core/system/Subprocess.hs` (`runWithTimeout`).
+`core/test/SubprocessSpec.hs` owns the regression tests, registered by
+`core/test-core/Main.hs` and `core/nhcore.cabal`. The criteria registry and
+Framework release fragment describe the same contract. No lower API export
+is added.
 
-Uses resolved in generated signatures: `Subprocess.runWithTimeout`, `Task.asResult`, `Text.length`; existing Task/Test conventions. `./dev who-calls runWithTimeout Subprocess` had no HIE index; emitted bounded fallback confirms PDF `extractText`/`pdfinfo` and video `realRunner` callers. Run PDF impact tests and the full integrations suite, not only video.
+Run `./.agents/skills/tdd/scripts/test-match Subprocess nhcore-test-core`
+for the lifecycle criteria. PDF text extraction, PDF metadata, and video
+extraction call this function. Run their impact tests and the full integrations
+suite, not only the lifecycle tests. Use
+`./.agents/skills/neohaskell-test/scripts/run-full-suite --strict` and
+`./.agents/skills/neohaskell-test/scripts/run-doctest --strict` for broad checks.
+Current main removed generated codemap files and the former `./dev` pipeline.
 
-After explicit Gate 1: spec plan plus explicit security/performance review before product code (current system tag is not evidence of low risk). Real synthetic fixtures only, macOS and Linux receipts. One watcher, check/test repair loop, at most two repairs. No blanket async catch; no process-tree claim. The macOS native matrix currently passes14examples; the full Core suite passes1114examples with3existingpending. Real pdftotext/pdfinfo smoke through runWithTimeout returns expected text and page count; this is not full PDF Integration.ToAction acceptance. Linux and Windows runtime receipts, full release gates and final maintainer review remain outstanding.
+Earlier macOS verification reported 14 examples and a full Core suite with
+1114 examples and 3 pending cases. That predates C15 and current-main
+integration, so it is historical evidence only. The earlier real
+`pdftotext` and `pdfinfo` smoke checked text and page count, not complete PDF
+`Integration.ToAction` acceptance. Fresh candidate results must identify the
+tested revision and platform. Final maintainer review remains pending.

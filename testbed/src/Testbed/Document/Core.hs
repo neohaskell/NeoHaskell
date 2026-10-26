@@ -51,7 +51,7 @@ data DocumentEvent
       , attachmentRef :: FileRef
       , createdAt :: Int64
       }
-  deriving (Eq, Show, Ord, Generic)
+  deriving (Generic, Show)
 
 
 getEventEntityId :: DocumentEvent -> Uuid

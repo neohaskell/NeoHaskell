@@ -4,8 +4,11 @@ module Log
   , info
   , warn
   , critical
+  , record
+  , finish
   , -- Framework-internal
     withScope
+  , recordIsolated
   )
 where
 
@@ -97,27 +100,43 @@ withScope fields task = do
 
 
 debug :: (Stack.HasCallStack) => Text -> Task _ Unit
-debug message = writeLog Debug message
+debug message = writeLog True Debug [] message
 {-# INLINE debug #-}
 
 
 info :: (Stack.HasCallStack) => Text -> Task _ Unit
-info message = writeLog Info message
+info message = writeLog True Info [] message
 {-# INLINE info #-}
 
 
 warn :: (Stack.HasCallStack) => Text -> Task _ Unit
-warn message = writeLog Warn message
+warn message = writeLog True Warn [] message
 {-# INLINE warn #-}
 
 
 critical :: (Stack.HasCallStack) => Text -> Task _ Unit
-critical message = writeLog Error message
+critical message = writeLog True Error [] message
 {-# INLINE critical #-}
 
 
-writeLog :: (Stack.HasCallStack) => Level -> Text -> Task _ Unit
-writeLog level message = do
+record :: (Stack.HasCallStack) => Level -> Array (Text, Json.Value) -> Text -> Task _ Unit
+record level fields message = writeLog True level fields message
+{-# INLINE record #-}
+
+
+recordIsolated :: (Stack.HasCallStack) => Level -> Array (Text, Json.Value) -> Text -> Task _ Unit
+recordIsolated level fields message = writeLog False level fields message
+{-# INLINE recordIsolated #-}
+
+
+finish :: Task Text Unit
+finish = do
+  let (_, closeLogger) = globalLogger
+  Task.fromIO closeLogger
+
+
+writeLog :: (Stack.HasCallStack) => Bool -> Level -> Array (Text, Json.Value) -> Text -> Task _ Unit
+writeLog includeScope level fields message = do
   minLevel <- GhcIORef.readIORef globalMinLevel |> Task.fromIO
   Task.when (level >= minLevel) do
     Task.fromIO do
@@ -126,10 +145,11 @@ writeLog level message = do
             Stack.callStack
               |> Stack.getCallStack
               |> LinkedList.get 1
-      threadId <- GhcThread.myThreadId
-      maybeContext <-
-        (ConcurrentMap.get threadId globalContext :: Task Text (Maybe (Map Text Text)))
-          |> Task.runOrPanic
+      maybeContext <- if includeScope
+        then do
+          threadId <- GhcThread.myThreadId
+          (ConcurrentMap.get threadId globalContext :: Task Text (Maybe (Map Text Text))) |> Task.runOrPanic
+        else pure Nothing
       timedLogger \formattedTime -> do
         let timeText =
               formattedTime
@@ -154,7 +174,7 @@ writeLog level message = do
                   |> Array.map (\(key, value) -> key Json..= value)
                   |> Array.toLinkedList
               Nothing -> ([] :: [(Text, Json.Value)])
-        let allFields = baseFields ++ locationFields ++ contextFields
+        let allFields = baseFields ++ locationFields ++ contextFields ++ Array.toLinkedList fields
         let entry = Json.object allFields
         let line = Json.encodeText entry
         let logLine = GhcLogger.toLogStr (Text.toLinkedList line)

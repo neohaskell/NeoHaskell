@@ -66,7 +66,7 @@ data ExtractionOutcome
       { documentId :: Text
       , errorMessage :: Text
       }
-  deriving (Generic, Show, Typeable)
+  deriving (Generic)
 
 instance Json.ToJSON ExtractionOutcome
 instance Json.FromJSON ExtractionOutcome
@@ -83,7 +83,7 @@ data BatchExtractionOutcome
       , successCount :: Int
       , failedDocumentIds :: Array Text
       }
-  deriving (Generic, Show, Typeable)
+  deriving (Generic)
 
 instance Json.ToJSON BatchExtractionOutcome
 instance Json.FromJSON BatchExtractionOutcome
