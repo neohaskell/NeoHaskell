@@ -378,6 +378,180 @@
       "source_sha": "bc5b915f6beee0999f66aee5c08021f9d75c547c",
       "target_policy": "native-v2",
       "version": "0.11.0"
+    },
+    {
+      "base_sha": "1277f961b7c33f0d47df72cc8b452ce60b7d8646",
+      "base_tag": "neo-v0.11.0",
+      "base_version": "0.11.0",
+      "bootstrap": false,
+      "date": "2026-10-26",
+      "group": "platform",
+      "id": "51adb92d75956d269166004cfe5d8c83422eeaa99d086ed073c94ef915194652",
+      "impact": "breaking",
+      "kind": "release",
+      "notes": [
+        {
+          "category": "Added",
+          "commit": "c243b9787e361f54f6436dc07be06694c7198852",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "610916536ef9d8d8c91b4acef7e30d29bf4afcfff7cd3a33c0f79ef1245392c6",
+          "impact": "compatible",
+          "path": ".changes/016-http-client-byte-level-methods.md",
+          "sections": {
+            "Summary": "`Http.Client` can now send PUT, HEAD, DELETE, POST and PATCH requests with a raw byte body and read the status code and headers of every response, including 4xx and 5xx. Use `Http.Client.sendSecure method request body` for HTTPS services and `Http.Client.Internal.sendRaw` for trusted loopback endpoints. `Http.getSecure` and `getRaw` keep working exactly as before.\n\nHTTPS byte requests load the system certificate store while keeping certificate\nand hostname checks and TLS 1.2 or later. Byte-level requests ignore environment\nproxies and stop retaining response chunks as soon as the configured size limit\nis exceeded, closing the response instead of waiting for the entire body.\nThe limit is not a fixed process-memory cap; network buffers can contain extra\nbytes. The raw internal API remains caller-restricted, not a loopback validator.\n\nExisting applications do not need code changes. To verify locally, run `./dev test \"Http.Client\" nhcore-test-core` and confirm the `sendRaw` and `sendSecure` examples pass."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: compatible\ncategory: Added\n---\n\n## Summary\n\n`Http.Client` can now send PUT, HEAD, DELETE, POST and PATCH requests with a raw byte body and read the status code and headers of every response, including 4xx and 5xx. Use `Http.Client.sendSecure method request body` for HTTPS services and `Http.Client.Internal.sendRaw` for trusted loopback endpoints. `Http.getSecure` and `getRaw` keep working exactly as before.\n\nHTTPS byte requests load the system certificate store while keeping certificate\nand hostname checks and TLS 1.2 or later. Byte-level requests ignore environment\nproxies and stop retaining response chunks as soon as the configured size limit\nis exceeded, closing the response instead of waiting for the entire body.\nThe limit is not a fixed process-memory cap; network buffers can contain extra\nbytes. The raw internal API remains caller-restricted, not a loopback validator.\n\nExisting applications do not need code changes. To verify locally, run `./dev test \"Http.Client\" nhcore-test-core` and confirm the `sendRaw` and `sendSecure` examples pass.\n"
+        },
+        {
+          "category": "Added",
+          "commit": "c243b9787e361f54f6436dc07be06694c7198852",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "7adc591458fdbf7024b567d2a6d1e07e169fa4b03b448a9c5eb19dfe715e728b",
+          "impact": "compatible",
+          "path": ".changes/021-crypto-sha256-hmac-hex.md",
+          "sections": {
+            "Summary": "`Crypto` now offers the raw building blocks behind signatures: `Crypto.sha256` (32-byte digest), `Crypto.hmacSha256 key message` (raw HMAC that can be chained, any key length) and `Crypto.toHex` (lowercase hexadecimal). Use them when a protocol tells you exactly which bytes to hash or sign; keep using `Crypto.signWith` and `Crypto.verifyWith` for webhook secrets, which are unchanged.\n\nExisting applications do not need code changes. To verify locally, run `./dev test \"Crypto\" nhcore-test-core` and confirm the `sha256`, `hmacSha256` and `toHex` examples pass."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: compatible\ncategory: Added\n---\n\n## Summary\n\n`Crypto` now offers the raw building blocks behind signatures: `Crypto.sha256` (32-byte digest), `Crypto.hmacSha256 key message` (raw HMAC that can be chained, any key length) and `Crypto.toHex` (lowercase hexadecimal). Use them when a protocol tells you exactly which bytes to hash or sign; keep using `Crypto.signWith` and `Crypto.verifyWith` for webhook secrets, which are unchanged.\n\nExisting applications do not need code changes. To verify locally, run `./dev test \"Crypto\" nhcore-test-core` and confirm the `sha256`, `hmacSha256` and `toHex` examples pass.\n"
+        },
+        {
+          "category": "Fixed",
+          "commit": "b71a18bb7a793189c4aeda5cab48f11b4b8baa29",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "d30cef20cc5d887280700d4a3b32d439873c0a534612fe411f8036876c50368d",
+          "impact": "compatible",
+          "path": ".changes/020-dedup-no-blind-rewrite.md",
+          "sections": {
+            "Summary": "A duplicate file upload no longer rewrites the existing stored blob when the blob store's existence check returns an error. The upload instead fails with \"Failed to verify stored file content. Please retry.\" Backend details are logged at error level via `Log.critical`. A check that reports the blob present still reuses it; a check that reports it missing still restores the uploaded content. This does not change how the Local backend reports existence-check results.\n\nA concurrent upload that loses a state-store conflict may already have written its own provisional blob. It attempts to delete that provisional blob; it does not rewrite the winner's existing blob when the winner's existence check returns an error. This check does not prevent another actor from removing a blob later.\n\nNo code or data changes are needed in applications. To verify locally, run `./.agents/skills/tdd/scripts/test-match \"ContentDedup\" nhcore-test-service` and confirm `dedup fails closed when the existence check errors` passes."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: compatible\ncategory: Fixed\n---\n\n## Summary\n\nA duplicate file upload no longer rewrites the existing stored blob when the blob store's existence check returns an error. The upload instead fails with \"Failed to verify stored file content. Please retry.\" Backend details are logged at error level via `Log.critical`. A check that reports the blob present still reuses it; a check that reports it missing still restores the uploaded content. This does not change how the Local backend reports existence-check results.\n\nA concurrent upload that loses a state-store conflict may already have written its own provisional blob. It attempts to delete that provisional blob; it does not rewrite the winner's existing blob when the winner's existence check returns an error. This check does not prevent another actor from removing a blob later.\n\nNo code or data changes are needed in applications. To verify locally, run `./.agents/skills/tdd/scripts/test-match \"ContentDedup\" nhcore-test-service` and confirm `dedup fails closed when the existence check errors` passes.\n"
+        },
+        {
+          "category": "Breaking changes",
+          "commit": "f70bf7f7b1854c0cc26b606d18a274182308225b",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "a60ffba7f367dbc705d361d793cbdb243aaf59c6dfbfb2b1e1b1ebdbdbdf3a82",
+          "impact": "breaking",
+          "path": ".changes/async-task-cancellation-name.md",
+          "sections": {
+            "Agent prompt": "```text\nIn this NeoHaskell app, replace every AsyncTask.runUnmasked call with AsyncTask.runWithCancellationEnabled. This is an API rename: the child still receives cancellation while its parent protects a handoff. Do not replace ordinary AsyncTask.run calls. Search for remaining runUnmasked uses, run neo build and neo test --ci, and report the changed files and command results. If a call relies on a different cancellation contract, report it instead of changing that call automatically.\n```",
+            "Migration": "Replace `AsyncTask.runUnmasked task` with `AsyncTask.runWithCancellationEnabled task`. The child still runs with cancellation enabled even when its parent starts it during a protected handoff. Keep ordinary `AsyncTask.run` calls when the child should inherit the parent's cancellation state.\n\n### Verify\n\nSearch the app for `runUnmasked` and update each call. Run `neo build` and `neo test --ci` in the app. Both commands should finish successfully, and the search should find no old calls.",
+            "Summary": "`AsyncTask.runWithCancellationEnabled` starts a child that can receive cancellation while its parent protects a handoff. It replaces `AsyncTask.runUnmasked`. Apps that call the old name need to update that call."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: breaking\ncategory: Breaking changes\n---\n\n## Summary\n\n`AsyncTask.runWithCancellationEnabled` starts a child that can receive cancellation while its parent protects a handoff. It replaces `AsyncTask.runUnmasked`. Apps that call the old name need to update that call.\n\n## Migration\n\nReplace `AsyncTask.runUnmasked task` with `AsyncTask.runWithCancellationEnabled task`. The child still runs with cancellation enabled even when its parent starts it during a protected handoff. Keep ordinary `AsyncTask.run` calls when the child should inherit the parent's cancellation state.\n\n### Verify\n\nSearch the app for `runUnmasked` and update each call. Run `neo build` and `neo test --ci` in the app. Both commands should finish successfully, and the search should find no old calls.\n\n## Agent prompt\n\n```text\nIn this NeoHaskell app, replace every AsyncTask.runUnmasked call with AsyncTask.runWithCancellationEnabled. This is an API rename: the child still receives cancellation while its parent protects a handoff. Do not replace ordinary AsyncTask.run calls. Search for remaining runUnmasked uses, run neo build and neo test --ci, and report the changed files and command results. If a call relies on a different cancellation contract, report it instead of changing that call automatically.\n```\n"
+        },
+        {
+          "category": "Fixed",
+          "commit": "f70bf7f7b1854c0cc26b606d18a274182308225b",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "b4071d1f85d13fa969237003eab6f533808445a6b91a81aa3dd8f9b91354c744",
+          "impact": "none",
+          "path": ".changes/guardrail-exception-strictness.md",
+          "sections": {
+            "Summary": "Tighten contributor lint checks for internal exception imports and preserve the existing strictness and filesystem-test contracts. This changes internal development checks and guidance. Application behavior and public APIs remain unchanged, so no release or migration is needed."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: none\ncategory: Fixed\n---\n\n## Summary\n\nTighten contributor lint checks for internal exception imports and preserve the existing strictness and filesystem-test contracts. This changes internal development checks and guidance. Application behavior and public APIs remain unchanged, so no release or migration is needed.\n"
+        },
+        {
+          "category": "Improved",
+          "commit": "f70bf7f7b1854c0cc26b606d18a274182308225b",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "e0a0f75c9cbe419393ed25cb9019de0f6ffad6a44fc6fdce8fa7f59bd8d7d1d8",
+          "impact": "none",
+          "path": ".changes/readable-service-checks.md",
+          "sections": {
+            "Summary": "Framework contributors get clearer service-code guidance and checks that reject misplaced exception mechanisms and agent-workspace dependencies. This change affects development tools and instructions. It does not change application behavior or public APIs."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: none\ncategory: Improved\n---\n\n## Summary\n\nFramework contributors get clearer service-code guidance and checks that reject misplaced exception mechanisms and agent-workspace dependencies. This change affects development tools and instructions. It does not change application behavior or public APIs.\n"
+        },
+        {
+          "category": "Added",
+          "commit": "f70bf7f7b1854c0cc26b606d18a274182308225b",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "e661d1e53e22fd5388781c63e1b108bd130fb5177d64848a59ad4a37bdb33a18",
+          "impact": "compatible",
+          "path": ".changes/scoped-temporary-folders.md",
+          "sections": {
+            "Summary": "`Directory.withTemporaryFolder` gives a task a private, unique folder under the system temporary directory. It attempts to remove the folder when the task finishes, fails, or is cancelled. Use it for files that should last only as long as one operation. Existing apps need no changes."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: compatible\ncategory: Added\n---\n\n## Summary\n\n`Directory.withTemporaryFolder` gives a task a private, unique folder under the system temporary directory. It attempts to remove the folder when the task finishes, fails, or is cancelled. Use it for files that should last only as long as one operation. Existing apps need no changes.\n"
+        },
+        {
+          "category": "Added",
+          "commit": "f70bf7f7b1854c0cc26b606d18a274182308225b",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "1223c32916bc02e93e664110965cdabcddd24bace15d459943bfe7707f20e827",
+          "impact": "compatible",
+          "path": ".changes/task-cancellation-blocked.md",
+          "sections": {
+            "Summary": "`Task.withCancellationBlocked` lets a cleanup task finish an ownership handoff before cancellation can interrupt it, including while it waits. Use it only when the wait and cleanup can finish. A stalled task in this operation cannot be cancelled. `AsyncTask.isWaitingForExceptionDelivery` exposes a momentary status snapshot for cancellation tests."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: compatible\ncategory: Added\n---\n\n## Summary\n\n`Task.withCancellationBlocked` lets a cleanup task finish an ownership handoff before cancellation can interrupt it, including while it waits. Use it only when the wait and cleanup can finish. A stalled task in this operation cannot be cancelled. `AsyncTask.isWaitingForExceptionDelivery` exposes a momentary status snapshot for cancellation tests.\n"
+        },
+        {
+          "category": "Improved",
+          "commit": "f70bf7f7b1854c0cc26b606d18a274182308225b",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "1a66886a160127297f640092f65fa961c60c990997a8405c2db4d5f3ad120b1e",
+          "impact": "compatible",
+          "path": ".changes/unconditional-lint-cleanup.md",
+          "sections": {
+            "Summary": "Command requests retain one safe result when decoding or handling fails, and cancellation still reaches blocked requests. Framework contributors can run the unconditional service-code lint check without an allowance for old findings. Public APIs and response formats are unchanged, so application projects need no migration."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: compatible\ncategory: Improved\n---\n\n## Summary\n\nCommand requests retain one safe result when decoding or handling fails, and cancellation still reaches blocked requests. Framework contributors can run the unconditional service-code lint check without an allowance for old findings. Public APIs and response formats are unchanged, so application projects need no migration.\n"
+        },
+        {
+          "category": "Added",
+          "commit": "00cc026f0322e1c23e25e301b86f4f13c92d61ce",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "7de03d98c2884760f69db63d55d76ae61cdba588bbe8ed1c1cbddeac56ce94aa",
+          "impact": "none",
+          "path": ".changes/nix-haskell-tools-skill.md",
+          "sections": {
+            "Summary": "Add a repository skill that runs Haskell tools through the project's Nix development shell. Agent instructions and test skills now use that shell for compiler and Cabal commands. This changes the development workflow only. Application APIs and runtime behavior are unchanged."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: none\ncategory: Added\n---\n\n## Summary\n\nAdd a repository skill that runs Haskell tools through the project's Nix development shell. Agent instructions and test skills now use that shell for compiler and Cabal commands. This changes the development workflow only. Application APIs and runtime behavior are unchanged.\n"
+        },
+        {
+          "category": "Fixed",
+          "commit": "39d9e93f565aa4d7577e40497fde9b569256fec9",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "090c66f7162ad85abed7e2956eb63fba42084596c1a3dd66aa786f29559ba999",
+          "impact": "compatible",
+          "path": ".changes/command-attribution-migration-clarification.md",
+          "sections": {
+            "Summary": "The migration guidance for command event attribution now identifies the applications that need an edit. Applications using `Application.withService` and built-in transports need no source changes. Applications that construct a custom `ServiceRunner` for `Application.withServiceRunner` must update command handlers in the third result of `getEndpointsByTransport` to accept `Maybe EventMetadata` before the request context, request bytes, and response callback. The first two result maps are unchanged, and an empty third map needs no edit. This clarifies the already released 0.11.0 change for these supported application entrypoints.\n\nFor a handler that does not start another command, wrap its existing `EndpointHandler` as `\\_sourceEvent requestContext body respond -> existingHandler requestContext body respond`. A handler that delegates to another dispatch handler must pass `sourceEvent` through. Keep the verified request context as the source of authorization. Stored event attribution does not grant permission to act as its user.\n\nCode that imports the internal `Service.CommandExecutor.Core.execute` function directly must now group its event store, entity fetcher, and entity name into `ExecutionDependencies`. Pass `FromRequest requestContext` for a root command or `FromEvent requestContext sourceEventMetadata` for an event-triggered command. Handle the typed `CommandExecutionFailure` result instead of a `Text` error.\n\nBuild the application and run its command and integration tests. Execute a command and inspect its saved event. Check that `relatedUserSub` is the verified user and `correlationId` is the server request ID. For a command started by an event, check that `causationId` is the immediate source event ID. An absent source should not produce a `causationId`."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: compatible\ncategory: Fixed\n---\n\n## Summary\n\nThe migration guidance for command event attribution now identifies the applications that need an edit. Applications using `Application.withService` and built-in transports need no source changes. Applications that construct a custom `ServiceRunner` for `Application.withServiceRunner` must update command handlers in the third result of `getEndpointsByTransport` to accept `Maybe EventMetadata` before the request context, request bytes, and response callback. The first two result maps are unchanged, and an empty third map needs no edit. This clarifies the already released 0.11.0 change for these supported application entrypoints.\n\nFor a handler that does not start another command, wrap its existing `EndpointHandler` as `\\_sourceEvent requestContext body respond -> existingHandler requestContext body respond`. A handler that delegates to another dispatch handler must pass `sourceEvent` through. Keep the verified request context as the source of authorization. Stored event attribution does not grant permission to act as its user.\n\nCode that imports the internal `Service.CommandExecutor.Core.execute` function directly must now group its event store, entity fetcher, and entity name into `ExecutionDependencies`. Pass `FromRequest requestContext` for a root command or `FromEvent requestContext sourceEventMetadata` for an event-triggered command. Handle the typed `CommandExecutionFailure` result instead of a `Text` error.\n\nBuild the application and run its command and integration tests. Execute a command and inspect its saved event. Check that `relatedUserSub` is the verified user and `correlationId` is the server request ID. For a command started by an event, check that `causationId` is the immediate source event ID. An absent source should not produce a `causationId`.\n"
+        },
+        {
+          "category": "Improved",
+          "commit": "39d9e93f565aa4d7577e40497fde9b569256fec9",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "f65393010d43debfa055c2d5d56b660650be3e101af96c62416b99d1df2c284c",
+          "impact": "none",
+          "path": ".changes/command-executor-internal-refactor.md",
+          "sections": {
+            "Summary": "The framework now keeps command attribution, execution outcomes, and result reporting in smaller internal modules. Applications still define commands with the `command` marker and register them with `Service.command`. They add services with `Application.withService`. These application APIs and the command response JSON are unchanged. App authors need no code or data migration. This internal refactor does not need a release announcement."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: none\ncategory: Improved\n---\n\n## Summary\n\nThe framework now keeps command attribution, execution outcomes, and result reporting in smaller internal modules. Applications still define commands with the `command` marker and register them with `Service.command`. They add services with `Application.withService`. These application APIs and the command response JSON are unchanged. App authors need no code or data migration. This internal refactor does not need a release announcement.\n"
+        }
+      ],
+      "source_sha": "d25f8b00caa819a16c0d197ec1bf65c312ecce29",
+      "target_policy": "native-v2",
+      "version": "0.12.0"
     }
   ],
   "recoveries": [],
