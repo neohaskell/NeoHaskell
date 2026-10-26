@@ -2111,117 +2111,79 @@ fn skills_setup_ci_all_tools_creates_dests() {
     assert!(!proj.path().join(".codex/skills").exists());
     assert!(proj.path().join(".kiro/skills/sample-skill/SKILL.md").exists());
     assert!(proj.path().join(".cursor/rules/sample-skill.mdc").exists());
-    // There is no universal AGENTS.md skills dump. AGENTS.md exists only because
-    // codex/kiro inline the (single, small) primer into it — never the skill bodies.
-    let agents = std::fs::read_to_string(proj.path().join("AGENTS.md")).unwrap();
-    assert!(!agents.contains("BEGIN neo skills"), "no universal skills block");
-    assert!(!agents.contains("### sample-skill"), "skill bodies not inlined into AGENTS.md");
-    assert!(agents.contains("<!-- BEGIN neohaskell-skills -->"), "primer inlined into AGENTS.md");
+    assert!(!proj.path().join("AGENTS.md").exists());
+    assert!(!proj.path().join("CLAUDE.md").exists());
+    assert!(!proj.path().join(".claude/neohaskell.md").exists());
 }
 
 #[test]
 fn skills_setup_idempotent_twice() {
     let (proj, home) = skills_sandbox();
     skills_cmd(proj.path(), home.path()).arg("--all-tools").assert().success();
-    // Second run: everything is unchanged. 4 skill items (one per tool) + 4
-    // distinct primer files + 2 deduped primer wires (CLAUDE.md, AGENTS.md) = 10.
     skills_cmd(proj.path(), home.path())
         .arg("--all-tools")
         .assert()
         .success()
-        .stdout(predicate::str::contains("skipped 10"));
+        .stdout(predicate::str::contains("skipped 4"));
 }
 
 #[test]
-fn skills_setup_installs_primer_file_and_wiring() {
+fn skills_setup_preserves_existing_instruction_files_and_managed_regions() {
     let (proj, home) = skills_sandbox();
+    let agents = "# Local rules\n\n<!-- BEGIN neohaskell-skills -->\nOld mutable primer text.\n<!-- END neohaskell-skills -->\n";
+    let claude = "# Claude rules\n@AGENTS.md\n@.claude/neohaskell.md\n";
+    std::fs::write(proj.path().join("AGENTS.md"), agents).unwrap();
+    std::fs::write(proj.path().join("CLAUDE.md"), claude).unwrap();
+    std::fs::create_dir_all(proj.path().join(".claude")).unwrap();
+    std::fs::write(proj.path().join(".claude/neohaskell.md"), "old mutable primer\n").unwrap();
     skills_cmd(proj.path(), home.path())
         .arg("--all-tools")
         .assert()
         .success()
-        .stdout(predicate::str::contains("primer neohaskell.md"));
-
-    // Primer file co-located with each tool's skills (deduped .agents shared).
-    assert!(proj.path().join(".claude/neohaskell.md").exists());
-    assert!(proj.path().join(".agents/neohaskell.md").exists());
-    assert!(proj.path().join(".kiro/neohaskell.md").exists());
-    // Cursor gets an always-apply `.mdc` rule (not an AGENTS.md inline).
-    let cursor_primer = std::fs::read_to_string(proj.path().join(".cursor/rules/neohaskell.mdc")).unwrap();
-    assert!(cursor_primer.contains("alwaysApply: true"), "cursor primer is a self-activating rule");
-
-    // Claude wires via an `@`-import in CLAUDE.md; the managed markers wrap it.
-    let claude_md = std::fs::read_to_string(proj.path().join("CLAUDE.md")).unwrap();
-    assert!(claude_md.contains("<!-- BEGIN neohaskell-skills -->"));
-    assert!(claude_md.contains("@.claude/neohaskell.md"));
-    assert!(claude_md.contains("<!-- END neohaskell-skills -->"));
-
-    // AGENTS.md carries only the inlined primer (no universal skills dump).
-    let agents_md = std::fs::read_to_string(proj.path().join("AGENTS.md")).unwrap();
-    assert!(!agents_md.contains("BEGIN neo skills"), "no universal skills block");
-    assert!(agents_md.contains("<!-- BEGIN neohaskell-skills -->"), "primer block present");
-    assert!(agents_md.contains("NeoHaskell primer"), "primer body inlined into AGENTS.md");
+        .stdout(predicate::str::contains("legacy mutable NeoHaskell guidance remains"))
+        .stdout(predicate::str::contains(".neo/agent-guidance/active.md"));
+    assert_eq!(std::fs::read_to_string(proj.path().join("AGENTS.md")).unwrap(), agents);
+    assert_eq!(std::fs::read_to_string(proj.path().join("CLAUDE.md")).unwrap(), claude);
+    assert_eq!(std::fs::read_to_string(proj.path().join(".claude/neohaskell.md")).unwrap(), "old mutable primer\n");
 }
 
 #[test]
-fn skills_setup_no_primer_skips_primer() {
+fn skills_setup_never_installs_mutable_primer() {
     let (proj, home) = skills_sandbox();
     skills_cmd(proj.path(), home.path())
-        .args(["--all-tools", "--no-primer"])
+        .arg("--all-tools")
         .assert()
         .success();
-    // Skills still install…
     assert!(proj.path().join(".claude/skills/sample-skill/SKILL.md").exists());
-    // …but no primer file or CLAUDE.md wiring is written.
     assert!(!proj.path().join(".claude/neohaskell.md").exists());
     assert!(!proj.path().join("CLAUDE.md").exists());
-    // AGENTS.md is only ever written to inline the primer; with `--no-primer`
-    // (and no universal AGENTS.md skills dump) nothing writes it at all.
-    assert!(!proj.path().join("AGENTS.md").exists(), "AGENTS.md not written with --no-primer");
 }
 
 #[test]
-fn skills_setup_primer_preserves_user_content_outside_block() {
-    let (proj, home) = skills_sandbox();
-    // Pre-author a CLAUDE.md with user content and no managed block.
-    std::fs::write(proj.path().join("CLAUDE.md"), "# My rules\n\nkeep me.\n").unwrap();
-    skills_cmd(proj.path(), home.path()).args(["--tool", "claude"]).assert().success();
-
-    let claude_md = std::fs::read_to_string(proj.path().join("CLAUDE.md")).unwrap();
-    assert!(claude_md.contains("# My rules"), "user heading preserved");
-    assert!(claude_md.contains("keep me."), "user body preserved");
-    assert!(claude_md.contains("@.claude/neohaskell.md"), "primer import appended");
-
-    // Re-run is a no-op on the file (idempotent): content unchanged.
-    let before = claude_md;
-    skills_cmd(proj.path(), home.path()).args(["--tool", "claude"]).assert().success();
-    let after = std::fs::read_to_string(proj.path().join("CLAUDE.md")).unwrap();
-    assert_eq!(before, after, "second run must not change CLAUDE.md");
-}
-
-#[test]
-fn skills_setup_dry_run_writes_no_primer() {
+fn skills_setup_dry_run_writes_no_instructions() {
     let (proj, home) = skills_sandbox();
     skills_cmd(proj.path(), home.path())
         .args(["--all-tools", "--dry-run"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("neohaskell.md"));
-    assert!(!proj.path().join(".claude/neohaskell.md").exists(), "dry run writes no primer");
-    assert!(!proj.path().join("CLAUDE.md").exists(), "dry run writes no wiring");
+        .stdout(predicate::str::contains("create"));
+    assert!(!proj.path().join(".claude/neohaskell.md").exists());
+    assert!(!proj.path().join("CLAUDE.md").exists());
+    assert!(!proj.path().join("AGENTS.md").exists());
 }
 
 #[test]
-fn skills_setup_overwrite_without_force_refused() {
+fn skills_setup_preserves_developer_edited_skill_without_force() {
     let (proj, home) = skills_sandbox();
     skills_cmd(proj.path(), home.path()).arg("--all-tools").assert().success();
-    // Tamper with an installed destination so it no longer matches the source.
-    std::fs::write(proj.path().join(".claude/skills/sample-skill/SKILL.md"), "tampered").unwrap();
+    let path = proj.path().join(".claude/skills/sample-skill/SKILL.md");
+    std::fs::write(&path, "developer edit\n").unwrap();
     skills_cmd(proj.path(), home.path())
         .arg("--all-tools")
         .assert()
-        .failure()
-        .stderr(predicate::str::contains("already exist"))
-        .stderr(predicate::str::contains("--force"));
+        .success()
+        .stdout(predicate::str::contains("preserved developer-edited skill"));
+    assert_eq!(std::fs::read_to_string(path).unwrap(), "developer edit\n");
 }
 
 #[test]

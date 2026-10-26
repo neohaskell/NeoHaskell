@@ -82,6 +82,9 @@ pub async fn dispatch(
         Some(Commands::Skills { subcommand }) => {
             commands::skills::run(subcommand, output_mode).await?;
         }
+        Some(Commands::Guidance { subcommand: crate::cli::GuidanceSubcommand::Retry }) => {
+            commands::guidance::retry().await?;
+        }
         None => {
             let _ = output_mode;
             println!("The NeoHaskell CLI. Run `neo --help` for commands.");
@@ -256,6 +259,7 @@ mod tests {
         std::env::set_current_dir(temp.path()).unwrap();
 
         let prev_home = std::env::var("NEO_HOME").ok();
+        let prev_skip_network = std::env::var("NEO_SKIP_NETWORK").ok();
         unsafe {
             std::env::set_var("NEO_SKIP_NETWORK", "1");
             std::env::set_var("NEO_HOME", home.path());
@@ -282,14 +286,17 @@ mod tests {
                 Some(v) => std::env::set_var("NEO_HOME", v),
                 None => std::env::remove_var("NEO_HOME"),
             }
+            match prev_skip_network {
+                Some(v) => std::env::set_var("NEO_SKIP_NETWORK", v),
+                None => std::env::remove_var("NEO_SKIP_NETWORK"),
+            }
         }
 
         assert!(result.is_ok(), "dispatch skills failed: {result:?}");
         assert!(temp.path().join(".claude/skills/sample-skill/SKILL.md").exists());
-        // The primer ships with the offline stub: installed + wired into CLAUDE.md.
-        assert!(temp.path().join(".claude/neohaskell.md").exists());
-        let claude_md = std::fs::read_to_string(temp.path().join("CLAUDE.md")).unwrap();
-        assert!(claude_md.contains("@.claude/neohaskell.md"));
+        assert!(!temp.path().join(".claude/neohaskell.md").exists());
+        assert!(!temp.path().join("AGENTS.md").exists());
+        assert!(!temp.path().join("CLAUDE.md").exists());
     }
 
     #[tokio::test]

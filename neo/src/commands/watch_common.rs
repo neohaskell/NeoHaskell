@@ -1,5 +1,4 @@
 use crate::output::OutputMode;
-use crate::config::NeoConfig;
 use crate::subprocess::ghci::GhciSession;
 use crate::tui::watch::{WatchState, WatchStatus};
 use crate::app::{Action, State};
@@ -49,8 +48,7 @@ pub async fn run_watch(command_name: &str, output_mode: &mut OutputMode) -> miet
                             terminal.draw(|frame| state.view(frame)).into_diagnostic()?;
                             
                             // Reconcile before reload
-                            let config = NeoConfig::load("neo.json")?;
-                            crate::reconcile::run(".", &config).await?;
+                            crate::reconcile::run_project(".").await?;
                             
                             match ghci.reload().await {
                                 Ok(output) => {
