@@ -6,11 +6,9 @@ module ConcurrentMap (
   update,
   getOrInsert,
   getOrInsertIf,
-  getOrInsertIfM,
   getOrInsertIfTransaction,
   remove,
   removeIf,
-  removeIfM,
   removeIfTransaction,
   contains,
   clear,
@@ -223,18 +221,6 @@ getOrInsertIfTransaction key candidate shouldReplace (ConcurrentMap stmMap) =
   |> Task.fromIO
 
 
-getOrInsertIfM ::
-  forall key value.
-  (Hashable key, Eq key) =>
-  key ->
-  value ->
-  (value -> GhcSTM.STM Bool) ->
-  ConcurrentMap key value ->
-  Task _ (value, Maybe value)
-getOrInsertIfM key candidate shouldReplace entries =
-  getOrInsertIfTransaction key candidate (\existing -> TransactionInternal.Transaction (shouldReplace existing)) entries
-
-
 -- | Remove a key from the map.
 -- Does nothing if the key is not present.
 remove ::
@@ -318,17 +304,6 @@ removeIfTransaction key shouldRemove (ConcurrentMap stmMap) =
       Nothing ->
         pure Nothing
   |> Task.fromIO
-
-
-removeIfM ::
-  forall key value.
-  (Hashable key, Eq key) =>
-  key ->
-  (value -> GhcSTM.STM Bool) ->
-  ConcurrentMap key value ->
-  Task _ (Maybe value)
-removeIfM key shouldRemove entries =
-  removeIfTransaction key (\existing -> TransactionInternal.Transaction (shouldRemove existing)) entries
 
 
 -- | Check if a key exists in the map.

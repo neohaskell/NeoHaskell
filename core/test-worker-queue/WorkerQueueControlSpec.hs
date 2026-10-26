@@ -36,7 +36,7 @@ spec =
       writer <- AsyncTask.run (WorkerQueueControl.withAdmission oldQueue write)
       Channel.read writerEntered
 
-      removed <- workers |> ConcurrentMap.removeIfM "stream" (\current ->
+      removed <- workers |> ConcurrentMap.removeIfTransaction "stream" (\current ->
         if current.workerId == 1
           then WorkerQueueControl.markDraining current.queue
           else pure False
@@ -46,7 +46,7 @@ spec =
         Nothing -> Test.fail "expected the captured worker to be removed"
 
       ConcurrentMap.set "stream" TestWorker {workerId = 2, queue = replacementQueue} workers
-      staleRemoval <- workers |> ConcurrentMap.removeIfM "stream" (\current ->
+      staleRemoval <- workers |> ConcurrentMap.removeIfTransaction "stream" (\current ->
         if current.workerId == 1
           then WorkerQueueControl.markDraining current.queue
           else pure False
