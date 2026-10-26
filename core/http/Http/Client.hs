@@ -12,8 +12,12 @@ module Http.Client (
   Response (..),
 
   -- * HTTP Methods
+  Method (..),
+  methodName,
   get,
   getSecure,
+  sendSecure,
+  applyMethodAndBody,
   secureTlsSupportedVersions,
   checkContentLengthHeaderLimit,
   -- ^ Enforces HTTPS (rejects http:// URLs). Use for all external API calls.
@@ -41,22 +45,22 @@ import Data.CaseInsensitive qualified as CI
 import Data.Either qualified as GhcEither
 import Default (Default (..))
 import GHC.Int qualified as GhcInt
-import IO qualified
 import Json qualified
+import LinkedList qualified
 import Log qualified
 import Map (Map)
 import Map qualified
 import Maybe (Maybe (..))
 import Maybe qualified
-import Result (Result (..))
 import Network.Connection qualified as Connection
 import Network.HTTP.Client qualified as HttpClient
-import Network.HTTP.Simple qualified as HttpSimple
-import Network.HTTP.Simple (setRequestIgnoreStatus)
 import Network.HTTP.Client.TLS qualified as HttpTls
+import Network.HTTP.Simple (setRequestIgnoreStatus)
+import Network.HTTP.Simple qualified as HttpSimple
 import Network.HTTP.Types (hContentLength)
 import Network.HTTP.Types.Status qualified as HttpStatus
 import Network.TLS qualified as TLS
+import Result (Result (..))
 import System.IO qualified as GhcIO
 import System.IO.Unsafe qualified as GhcUnsafe
 import Task (Task)
@@ -69,16 +73,16 @@ import ToText (toText)
 data Request = Request
   { url :: Maybe Text,
     headers :: Map Text Text,
+    -- | Request timeout in seconds (default: 10 seconds)
     timeoutSeconds :: Maybe GhcInt.Int,
-    -- ^ Request timeout in seconds (default: 10 seconds)
+    -- | Maximum redirects to follow (default: 0 for SSRF protection)
     maxRedirects :: GhcInt.Int,
-    -- ^ Maximum redirects to follow (default: 0 for SSRF protection)
-    maxResponseBytes :: !(Maybe GhcInt.Int)
-    -- ^ Maximum response body size in bytes (default: 10MB).
-    -- Enforced in 'getSecure' only. Other methods ('get', 'post', etc.) do not
-    -- check this limit. The check is post-read (full body is fetched first, then
-    -- size is validated). For true OOM prevention, use a streaming HTTP client.
+    -- | Maximum response body size in bytes (default: 10MB).
+    -- Both byte-level paths count delivered chunks before retaining them and
+    -- close the response on overflow. Transport buffers may hold an extra chunk;
+    -- this is not a fixed process-memory bound. JSON methods do not use this cap.
     -- Set to Nothing to disable the limit (not recommended for external APIs).
+    maxResponseBytes :: !(Maybe GhcInt.Int)
   }
 
 
@@ -108,21 +112,24 @@ instance Default Request where
       { url = Nothing,
         headers = Map.empty,
         timeoutSeconds = Just 10,
-        -- ^ Default 10 second timeout for production safety.
+        -- \^ Default 10 second timeout for production safety.
         -- Prevents indefinite hangs under load. Override with withTimeout if needed.
         maxRedirects = 0,
-        -- ^ SECURITY: Default 0 redirects to prevent SSRF bypass.
+        -- \^ SECURITY: Default 0 redirects to prevent SSRF bypass.
         -- Attackers can redirect validated URLs to internal IPs (169.254.169.254).
         -- Use withRedirects to explicitly opt-in when needed.
         maxResponseBytes = Just (10 * 1024 * 1024)
-        -- ^ Default 10MB limit to prevent OOM from malicious servers.
       }
 
 
+-- \^ Default 10MB limit to prevent OOM from malicious servers.
+
+-- | An empty request: no URL, no headers, default timeout and limits.
 request :: Request
 request = def
 
 
+-- | Set the request URL.
 withUrl :: Text -> Request -> Request
 withUrl url options =
   options
@@ -144,15 +151,16 @@ withTimeout seconds options =
       panic [fmt|withTimeout requires positive seconds, got: #{seconds}|]
 
 
+-- | Add one header; later additions win on duplicate names.
 addHeader :: Text -> Text -> Request -> Request
 addHeader key value options =
   let newHeaders = options.headers |> Map.set key value
   in  Request
-        { url = options.url
-        , headers = newHeaders
-        , timeoutSeconds = options.timeoutSeconds
-        , maxRedirects = options.maxRedirects
-        , maxResponseBytes = options.maxResponseBytes
+        { url = options.url,
+          headers = newHeaders,
+          timeoutSeconds = options.timeoutSeconds,
+          maxRedirects = options.maxRedirects,
+          maxResponseBytes = options.maxResponseBytes
         }
 
 
@@ -174,6 +182,9 @@ withRedirects count options =
 -- | Set the maximum response body size in bytes.
 -- Default is 10MB. Use this to override for specific endpoints.
 {-# INLINE withMaxResponseSize #-}
+
+
+-- | Cap byte-level responses while reading; JSON methods do not use this limit.
 withMaxResponseSize :: GhcInt.Int -> Request -> Request
 withMaxResponseSize maxBytes options =
   case maxBytes > 0 of
@@ -185,13 +196,32 @@ withMaxResponseSize maxBytes options =
       panic [fmt|withMaxResponseSize requires positive bytes, got: #{maxBytes}|]
 
 
-data Error = Error Text
-  | InvalidUrl Text
-    -- ^ The URL does not use HTTPS. Use getSecure only with https:// URLs.
+-- | HTTP method for byte-level requests ('sendSecure', 'Http.Client.Internal.sendRaw').
+-- A closed set: protocol clients (object stores, webhooks) pick a verb from here
+-- instead of spelling the wire token themselves.
+data Method = Get | Head | Post | Put | Patch | Delete
+  deriving (Eq, Show)
+
+
+-- | The wire token of a 'Method' ("GET", "HEAD", ...).
+methodName :: Method -> Text
+methodName method = case method of
+  Get -> "GET"
+  Head -> "HEAD"
+  Post -> "POST"
+  Put -> "PUT"
+  Patch -> "PATCH"
+  Delete -> "DELETE"
+
+
+data Error
+  = Error Text
+  | -- | The URL does not use HTTPS. Use getSecure only with https:// URLs.
     -- The URL is sanitized (query params stripped) to prevent secret leakage in logs.
-  | ResponseTooLarge GhcInt.Int
-    -- ^ Response body exceeded the configured size limit.
+    InvalidUrl Text
+  | -- | Response body exceeded the configured size limit.
     -- The Int is the limit in bytes that was exceeded.
+    ResponseTooLarge GhcInt.Int
   deriving (Show)
 
 
@@ -207,10 +237,10 @@ data Error = Error Text
 -- @
 data Response body = Response
   { -- | HTTP status code (e.g., 200, 201, 404)
-    statusCode :: Int
-  , -- | Response headers as key-value pairs
-    headers :: Array (Text, Text)
-  , -- | Parsed response body
+    statusCode :: Int,
+    -- | Response headers as key-value pairs
+    headers :: Array (Text, Text),
+    -- | Parsed response body
     body :: body
   }
   deriving (Show, Generic)
@@ -285,6 +315,7 @@ requestHost :: Request -> Text
 requestHost options = options.url |> Maybe.map sanitizeUrlText |> Maybe.withDefault "<no url>"
 
 
+-- | GET a JSON document from any URL (plain HTTP allowed; prefer getSecure).
 get ::
   (Json.FromJSON response) =>
   Request ->
@@ -317,28 +348,55 @@ getIO options = do
 secureTlsSupportedVersions :: [TLS.Version]
 secureTlsSupportedVersions = [TLS.TLS13, TLS.TLS12]
 
+
+-- | Build the TLS 1.2+ connection manager shared by every secure request.
 secureTlsManager :: GhcIO.IO HttpClient.Manager
 secureTlsManager = do
-  let tlsParams =
-        (TLS.defaultParamsClient "" "")
-          { TLS.clientSupported =
-              TLS.defaultSupported
-                { TLS.supportedVersions = secureTlsSupportedVersions
-                }
+  let tlsSettings =
+        Connection.TLSSettingsSimple
+          { Connection.settingDisableCertificateValidation = False,
+            Connection.settingDisableSession = False,
+            Connection.settingUseServerName = True,
+            Connection.settingClientSupported =
+              TLS.defaultSupported {TLS.supportedVersions = secureTlsSupportedVersions}
           }
-  let tlsSettings = Connection.TLSSettings tlsParams
   let managerSettings = HttpTls.mkManagerSettings tlsSettings Nothing
-  HttpClient.newManager managerSettings
+  HttpClient.newManager (HttpClient.managerSetProxy HttpClient.noProxy managerSettings)
+
 
 {-# NOINLINE cachedSecureTlsManager #-}
+
+
+-- | The process-wide secure manager, built once.
 cachedSecureTlsManager :: HttpClient.Manager
 cachedSecureTlsManager = GhcUnsafe.unsafePerformIO secureTlsManager
 
+
 {-# INLINE getSecure #-}
+
+
+-- | GET raw bytes over HTTPS only; returns the status code instead of throwing on 4xx/5xx.
 getSecure ::
   Request ->
   Task Error (Response Bytes)
-getSecure options = do
+getSecure options = sendSecure Get options Bytes.empty
+
+
+-- | Performs a byte-level request with any 'Method', enforcing HTTPS and TLS 1.2+.
+--
+-- Built for protocol clients (object stores, signed webhooks) that need the
+-- status code and headers of every response, including 4xx/5xx: this never
+-- throws on a non-2xx status, never follows redirects beyond 'maxRedirects',
+-- and never decodes the body. The request body is sent as-is; set
+-- @Content-Type@ with 'addHeader'. The response body is bounded by
+-- 'maxResponseBytes' exactly like 'getSecure'.
+-- Use 'Http.Client.Internal.sendRaw' only for trusted loopback endpoints.
+sendSecure ::
+  Method ->
+  Request ->
+  Bytes ->
+  Task Error (Response Bytes)
+sendSecure method options body = do
   let urlText = options.url |> Maybe.withDefault ""
   case Text.startsWith "https://" urlText of
     False ->
@@ -346,69 +404,81 @@ getSecure options = do
       Task.throw (InvalidUrl (sanitizeUrlText urlText))
     True -> do
       let host = requestHost options
-      Log.debug [fmt|HTTP GET (secure) #{host}|] |> Task.ignoreError
-      secureResult <-
-        getSecureRawIO options
-          |> Task.fromFailableIO @HttpClient.HttpException
-          |> Task.mapError sanitizeHttpError
+      let verb = methodName method
+      Log.debug [fmt|HTTP #{verb} (secure) #{host}|] |> Task.ignoreError
+      secureResult <- sendSecureRaw method options body
       case secureResult of
         Err error -> Task.throw error
         Ok response -> checkResponseSize options response
 
 
--- | Internal IO action for secure raw GET request using TLS 1.2+ only.
-getSecureRawIO :: Request -> GhcIO.IO (Result Error (Response Bytes))
-getSecureRawIO options =
-  case options.maxResponseBytes of
+-- | Own the secure response through a bounded read or cancellation.
+sendSecureRaw :: Method -> Request -> Bytes -> Task Error (Result Error (Response Bytes))
+sendSecureRaw method options body = Task.withCancellationDeferred \restore -> do
+  baseReq <-
+    parseRequestUrl options
+      |> Task.fromFailableIO @HttpClient.HttpException
+      |> Task.mapError sanitizeHttpError
+  let req =
+        baseReq
+          |> applyRequestOptions options
+          |> applyMethodAndBody method body
+          |> setRequestIgnoreStatus
+  rawResponse <-
+    HttpClient.responseOpen req cachedSecureTlsManager
+      |> Task.fromFailableIO @HttpClient.HttpException
+      |> Task.mapError sanitizeHttpError
+  readLimitedResponse method options rawResponse
+    |> Task.fromFailableIO @HttpClient.HttpException
+    |> Task.mapError sanitizeHttpError
+    |> restore
+    |> Task.finally (HttpClient.responseClose rawResponse |> Task.fromIO)
+
+
+-- | HEAD advertises an unsent body; other methods retain the early header guard.
+readLimitedResponse ::
+  Method -> Request -> HttpClient.Response HttpClient.BodyReader -> GhcIO.IO (Result Error (Response Bytes))
+readLimitedResponse method options rawResponse = do
+  let declaredLimit = case method of
+        Head -> Nothing
+        _ -> checkContentLengthHeaderLimit options.maxResponseBytes (HttpClient.responseHeaders rawResponse)
+  case declaredLimit of
+    Just maxBytes -> pure (Err (ResponseTooLarge maxBytes))
     Nothing -> do
-      response <- getRawIO options
-      pure (Ok response)
-    Just _ -> do
-      baseReq <- parseRequestUrl options
-      let req = baseReq
-            |> applyRequestOptions options
-            |> setRequestIgnoreStatus
-      rawResponse <- HttpClient.responseOpen req cachedSecureTlsManager
-      case checkContentLengthHeaderLimit options.maxResponseBytes (HttpClient.responseHeaders rawResponse) of
-        Just maxBytes -> do
-          HttpClient.responseClose rawResponse
-          pure (Err (ResponseTooLarge maxBytes))
-        Nothing -> do
-          responseBody <-
-            IO.finally
-              (readBodyFully (HttpClient.responseBody rawResponse))
-              (HttpClient.responseClose rawResponse)
-          pure (Ok (extractResponseBytesFromOpenResponse rawResponse responseBody))
+      bodyResult <- readBodyFully options.maxResponseBytes (HttpClient.responseBody rawResponse)
+      pure (bodyResult |> fmap (extractResponseBytesFromOpenResponse rawResponse))
 
 
--- | Internal IO action for secure raw GET request using TLS 1.2+ only.
-getRawIO ::
-  Request ->
-  GhcIO.IO (Response Bytes)
-getRawIO options = do
-  baseReq <- parseRequestUrl options
-  let req = baseReq
-        |> applyRequestOptions options
-        |> setRequestIgnoreStatus
-        |> HttpSimple.setRequestManager cachedSecureTlsManager
-  httpResponse <- HttpSimple.httpBS req
-  pure (extractResponseBytes httpResponse)
+-- | Set the wire method and the raw request body. Shared with 'Http.Client.Internal'.
+applyMethodAndBody :: Method -> Bytes -> HttpClient.Request -> HttpClient.Request
+applyMethodAndBody method body req =
+  req
+    |> HttpSimple.setRequestMethod (methodName method |> Text.convert)
+    |> HttpSimple.setRequestBodyLBS (Bytes.toLazyLegacy body)
 
 
-readBodyFully :: HttpClient.BodyReader -> GhcIO.IO ByteString
-readBodyFully reader = readBodyChunks reader GhcBSChar.empty
+-- | Stop before retaining a chunk that would exceed the response limit.
+readBodyFully :: Maybe GhcInt.Int -> HttpClient.BodyReader -> GhcIO.IO (Result Error ByteString)
+readBodyFully limit reader = readBodyChunks limit reader 0 []
 
 
-readBodyChunks :: HttpClient.BodyReader -> ByteString -> GhcIO.IO ByteString
-readBodyChunks reader accumulatedBody = do
+-- | Check remaining capacity before retaining a chunk; concatenate once at EOF.
+readBodyChunks ::
+  Maybe GhcInt.Int -> HttpClient.BodyReader -> GhcInt.Int -> [ByteString] -> GhcIO.IO (Result Error ByteString)
+readBodyChunks limit reader received chunks = do
   chunk <- HttpClient.brRead reader
-  case chunk == GhcBSChar.empty of
-    True -> pure accumulatedBody
-    False -> do
-      let nextBody = GhcBSChar.append accumulatedBody chunk
-      readBodyChunks reader nextBody
+  if GhcBSChar.null chunk
+    then pure (Ok (GhcBSChar.concat (LinkedList.reverse chunks)))
+    else do
+      let chunkBytes = GhcBSChar.length chunk
+      case limit of
+        Just maxBytes | chunkBytes > maxBytes - received -> pure (Err (ResponseTooLarge maxBytes))
+        _ -> readBodyChunks limit reader (received + chunkBytes) (chunk : chunks)
 
 
+-- | Reject early when @Content-Length@ already exceeds the limit.
+-- This advertised-size shortcut precedes the delivered/decompressed chunk count;
+-- HEAD bypasses it because its advertised body is not sent.
 checkContentLengthHeaderLimit :: Maybe GhcInt.Int -> [(CI.CI ByteString, ByteString)] -> Maybe GhcInt.Int
 checkContentLengthHeaderLimit maxResponseLimit responseHeaders =
   case maxResponseLimit of
@@ -426,6 +496,7 @@ checkContentLengthHeaderLimit maxResponseLimit responseHeaders =
             False -> Nothing
 
 
+-- | Parse a @Content-Length@ value, if well-formed.
 parseContentLengthHeader :: ByteString -> Maybe GhcInt.Int
 parseContentLengthHeader rawContentLength =
   case GhcBSChar.readInt rawContentLength of
@@ -436,6 +507,7 @@ parseContentLengthHeader rawContentLength =
         False -> Nothing
 
 
+-- | First value for a header name, if present.
 findHeaderValue :: CI.CI ByteString -> [(CI.CI ByteString, ByteString)] -> Maybe ByteString
 findHeaderValue headerName headers =
   case headers of
@@ -446,22 +518,26 @@ findHeaderValue headerName headers =
         False -> findHeaderValue headerName remainingHeaders
 
 
+-- | Drain an open response into bytes under the size limit.
 extractResponseBytesFromOpenResponse :: HttpClient.Response HttpClient.BodyReader -> ByteString -> Response Bytes
-extractResponseBytesFromOpenResponse rawResponse responseBody = Response
-  { statusCode = rawResponse |> HttpClient.responseStatus |> HttpStatus.statusCode
-  , headers = rawResponse |> HttpClient.responseHeaders |> extractRawHeaders
-  , body = responseBody |> Bytes.fromLegacy
-  }
+extractResponseBytesFromOpenResponse rawResponse responseBody =
+  Response
+    { statusCode = rawResponse |> HttpClient.responseStatus |> HttpStatus.statusCode,
+      headers = rawResponse |> HttpClient.responseHeaders |> extractRawHeaders,
+      body = responseBody |> Bytes.fromLegacy
+    }
 
 
+-- | Convert wire headers to @(name, value)@ text pairs.
 extractRawHeaders :: [(CI.CI ByteString, ByteString)] -> Array (Text, Text)
 extractRawHeaders rawHeaders =
   rawHeaders
     |> fmap
-      (\(name, value) ->
-        ( name |> CI.original |> Bytes.fromLegacy |> Text.fromBytes
-        , value |> Bytes.fromLegacy |> Text.fromBytes
-        ))
+      ( \(name, value) ->
+          ( name |> CI.original |> Bytes.fromLegacy |> Text.fromBytes,
+            value |> Bytes.fromLegacy |> Text.fromBytes
+          )
+      )
     |> Array.fromLinkedList
 
 
@@ -475,15 +551,6 @@ checkResponseSize options response =
       case response.body |> Bytes.length |> (\len -> len > maxBytes) of
         True -> Task.throw (ResponseTooLarge maxBytes)
         False -> Task.yield response
-
-
--- | Extract Response with Bytes body from http-client Response
-extractResponseBytes :: HttpSimple.Response ByteString -> Response Bytes
-extractResponseBytes httpResponse = Response
-  { statusCode = HttpSimple.getResponseStatusCode httpResponse
-  , headers = extractHeaders httpResponse
-  , body = Bytes.fromLegacy (HttpSimple.getResponseBody httpResponse)
-  }
 
 
 -- | Performs a POST request with JSON body.
@@ -580,8 +647,10 @@ postRaw ::
   forall response.
   (Json.FromJSON response) =>
   Request ->
-  Text ->  -- ^ Content-Type
-  Text ->  -- ^ Body content
+  -- | Content-Type
+  Text ->
+  -- | Body content
+  Text ->
   Task Error (Response response)
 postRaw options contentType bodyContent = do
   let host = requestHost options
@@ -734,21 +803,24 @@ extractResponse ::
   forall body.
   HttpSimple.Response body ->
   Response body
-extractResponse httpResponse = Response
-  { statusCode = HttpSimple.getResponseStatusCode httpResponse
-  , headers = extractHeaders httpResponse
-  , body = HttpSimple.getResponseBody httpResponse
-  }
+extractResponse httpResponse =
+  Response
+    { statusCode = HttpSimple.getResponseStatusCode httpResponse,
+      headers = extractHeaders httpResponse,
+      body = HttpSimple.getResponseBody httpResponse
+    }
 
 
 -- | Extract headers from HTTP response as Array of (Text, Text).
 extractHeaders :: HttpSimple.Response body -> Array (Text, Text)
 extractHeaders httpResponse =
   HttpSimple.getResponseHeaders httpResponse
-    |> fmap (\(name, value) ->
-        ( name |> CI.original |> Bytes.fromLegacy |> Text.fromBytes
-        , value |> Bytes.fromLegacy |> Text.fromBytes
-        ))
+    |> fmap
+      ( \(name, value) ->
+          ( name |> CI.original |> Bytes.fromLegacy |> Text.fromBytes,
+            value |> Bytes.fromLegacy |> Text.fromBytes
+          )
+      )
     |> Array.fromLinkedList
 
 
@@ -767,8 +839,11 @@ applyRequestOptions :: Request -> HttpClient.Request -> HttpClient.Request
 applyRequestOptions options baseReq = do
   let withHeaders =
         options.headers
-          |> Map.reduce baseReq (\key value acc ->
-            HttpSimple.addRequestHeader (Text.convert key) (Text.convert value) acc)
+          |> Map.reduce
+            baseReq
+            ( \key value acc ->
+                HttpSimple.addRequestHeader (Text.convert key) (Text.convert value) acc
+            )
   let withTimeout = case options.timeoutSeconds of
         Nothing -> withHeaders
         Just seconds -> do
