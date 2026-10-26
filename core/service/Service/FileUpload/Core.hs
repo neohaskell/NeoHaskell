@@ -420,7 +420,7 @@ instance Json.ToJSON FileStateStoreBackend where
 -- The config type is inferred from the factory signature.
 data FileUploadConfig = FileUploadConfig
   { blobStoreDir :: Text
-  -- ^ Directory for storing uploaded files (created if missing)
+  -- ^ Local storage directory, created if missing. Ignored by withFileUploadUsing.
   , stateStoreBackend :: FileStateStoreBackend
   -- ^ Where to track file lifecycle state
   , maxFileSizeBytes :: Int64

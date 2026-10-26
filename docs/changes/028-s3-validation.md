@@ -3,7 +3,8 @@
 Repair the audited existing constructor guarantee without a new public API.
 NickSeagull approved continuing audited fixes to existing guarantees in
 https://github.com/neohaskell/NeoHaskell/pull/906#issuecomment-6150728911.
-Public Application backend selection remains a separate unresolved decision.
+Application backend selection is covered separately by the additive
+`withFileUploadUsing` contract in [Change 017](017-s3-blob-store.md).
 
 ```yaml spec
 issue: adhoc:s3-validation

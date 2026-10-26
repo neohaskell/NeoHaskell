@@ -7,15 +7,14 @@
 -- The unified API uses a single function that accepts a factory:
 -- - Static config: withEventStore @() (\_ -> config)
 -- - Dynamic config: withEventStore makeConfig (type inferred from factory)
---
--- NOTE: Full integration testing (actual config loading + event store creation)
--- is done via the testbed integration tests. These unit tests verify the
--- builder API surface and basic behavior.
 {-# LANGUAGE TemplateHaskell #-}
 module Config.ConfigDependentSpec where
 import Array qualified
 import Auth.SecretStore (SecretStore (..))
 import Auth.SecretStore.InMemory qualified as InMemorySecretStore
+import ConcurrentVar qualified
+import Config (defaultsTo, defineConfig, doc, envVar, field)
+import Control.Exception qualified as GhcException
 import Core
 import Integration qualified
 import Integration.Lifecycle qualified as Lifecycle
@@ -23,16 +22,38 @@ import Json qualified
 import Service.Application qualified as Application
 import Service.Application.Types (ApiInfo (..))
 import Service.Event (Event)
+import Service.EventStore (EventStoreConfig (..))
 import Service.EventStore.InMemory qualified as InMemory
 import Service.EventStore.Postgres (PostgresEventStore (..))
+import Service.FileUpload.BlobStore (BlobStore (..), BlobStoreError (..))
 import Service.FileUpload.Core (FileUploadConfig (..), FileStateStoreBackend (..))
 import Service.Integration.Dispatcher qualified as Dispatcher
 import Service.OutboundIntegration.TH (outboundIntegration)
 import Service.Transport.Web qualified as Web
+import System.Environment qualified as GhcEnvironment
 import Task qualified
 import Test
 import Text qualified
 import Uuid qualified
+
+
+$(defineConfig "CustomUploadConfig"
+  [ field @Int64 "uploadLimit"
+      |> doc "Upload size limit"
+      |> defaultsTo (0 :: Int64)
+      |> envVar "NH_TEST_CUSTOM_UPLOAD_LIMIT"
+  , field @Text "backendName"
+      |> doc "Selected upload backend"
+      |> defaultsTo ("default-backend" :: Text)
+      |> envVar "NH_TEST_CUSTOM_UPLOAD_BACKEND"
+  ])
+
+
+data TestEventStore = TestEventStore
+
+
+instance EventStoreConfig TestEventStore where
+  createEventStore _config = InMemory.new |> Task.mapError toText
 
 
 -- | Mock config type for testing.
@@ -252,6 +273,76 @@ spec = do
       let app = Application.new
             |> Application.withFileUpload @() (\_ -> directFileUploadConfig)
       Application.hasFileUpload app |> shouldBe True
+
+  describe "Application.withFileUploadUsing (config-dependent)" do
+    it "run passes loaded nondefault config to both factories and ignores blobStoreDir" \_ -> do
+      observed <- ConcurrentVar.containing ([] :: Array (Text, Int64))
+      let app = Application.new
+            |> Application.withConfig @CustomUploadConfig
+            |> Application.withEventStore @() (\_ -> TestEventStore)
+            |> Application.withFileUploadUsing @CustomUploadConfig
+              (\cfg -> directFileUploadConfig {blobStoreDir = "", maxFileSizeBytes = cfg.uploadLimit})
+              (\cfg -> do
+                ConcurrentVar.modify (Array.push (cfg.backendName, cfg.uploadLimit)) observed
+                Task.yield BlobStore
+                  { store = \_ _ -> Task.throw (StorageError "unexpected store")
+                  , retrieve = \_ -> Task.throw (StorageError "unexpected retrieve")
+                  , delete = \_ -> Task.throw (StorageError "unexpected delete")
+                  , exists = \_ -> Task.throw (StorageError "unexpected exists")
+                  })
+      result <- withUploadEnvironment "NH_TEST_CUSTOM_UPLOAD_LIMIT" "4096"
+        (withUploadEnvironment "NH_TEST_CUSTOM_UPLOAD_BACKEND" "loaded-backend"
+          (Application.run app |> Task.asResult))
+      result |> shouldBe (Ok ())
+      ConcurrentVar.peek observed |> Task.andThen (shouldBe [("loaded-backend", 4096)])
+
+    it "run validates loaded upload limits before applying the backend factory" \_ -> do
+      let app = Application.new
+            |> Application.withConfig @CustomUploadConfig
+            |> Application.withEventStore @() (\_ -> TestEventStore)
+            |> Application.withFileUploadUsing @CustomUploadConfig
+              (\cfg -> directFileUploadConfig {maxFileSizeBytes = cfg.uploadLimit})
+              (\_ -> panic "Backend factory applied before upload validation")
+      result <- withUploadEnvironment "NH_TEST_CUSTOM_UPLOAD_LIMIT" "-7"
+        (Application.run app |> Task.asResult)
+      result |> shouldBe (Err "maxFileSizeBytes must be positive, got: -7")
+
+    it "run never applies either factory when config loading fails" \_ -> do
+      let app = Application.new
+            |> Application.withConfig @CustomUploadConfig
+            |> Application.withEventStore @() (\_ -> TestEventStore)
+            |> Application.withFileUploadUsing @CustomUploadConfig
+              (\_ -> panic "Upload factory applied after config loading failed")
+              (\_ -> panic "Backend factory applied after config loading failed")
+      result <- withUploadEnvironment "NH_TEST_CUSTOM_UPLOAD_LIMIT" "not-an-integer"
+        (Application.run app |> Task.asResult)
+      case result of
+        Ok _ -> fail "Expected configuration loading to fail"
+        Err err -> err |> shouldSatisfy (Text.contains "Configuration failed:")
+
+    it "runWith rejects deferred custom factories without applying either factory" \_ -> do
+      eventStore <- InMemory.new |> Task.mapError toText
+      let app = Application.new
+            |> Application.withConfig @CustomUploadConfig
+            |> Application.withFileUploadUsing @CustomUploadConfig
+              (\_ -> panic "Upload factory applied by runWith")
+              (\_ -> panic "Backend factory applied by runWith")
+      result <- Application.runWith eventStore app |> Task.asResult
+      case result of
+        Ok _ -> fail "Expected runWith to reject config-dependent file uploads"
+        Err err -> err |> shouldSatisfy (Text.contains "runWith does not support config-dependent FileUpload")
+
+    it "run rejects missing withConfig after creating a working event store" \_ -> do
+      let app = Application.new
+            |> Application.withEventStore @() (\_ -> TestEventStore)
+            |> Application.withFileUploadUsing @CustomUploadConfig
+              (\_ -> panic "Upload factory applied without withConfig")
+              (\_ -> panic "Backend factory applied without withConfig")
+      result <- Task.fromIO
+        (GhcEnvironment.withArgs [] (Application.run app |> Task.runResult))
+      case result of
+        Ok _ -> fail "Expected file uploads to require withConfig"
+        Err err -> err |> shouldSatisfy (Text.contains "withFileUpload requires withConfig")
 
   describe "Application.withAuth (unified API)" do
     it "stores factory and sets hasAuth to True" \_ -> do
@@ -780,3 +871,15 @@ spec = do
       case result of
         Ok _ -> pass
         Err err -> err |> shouldSatisfy (\e -> not (Text.contains "DispatcherConfig" e))
+
+
+withUploadEnvironment :: Text -> Text -> Task Text value -> Task Text value
+withUploadEnvironment name value action = Task.fromIOResult do
+  let key = Text.toLinkedList name
+  GhcException.bracket (GhcEnvironment.lookupEnv key)
+    (\previous -> case previous of
+      Nothing -> GhcEnvironment.unsetEnv key
+      Just original -> GhcEnvironment.setEnv key original)
+    (\_ -> do
+      GhcEnvironment.setEnv key (Text.toLinkedList value)
+      GhcEnvironment.withArgs [] (Task.runResult action))

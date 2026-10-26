@@ -18,7 +18,7 @@ touches: [file-upload]
 breaking: false
 new-dependency: false
 new-capability: false
-new-extension-point: false
+new-extension-point: true
 ```
 
 ## Contract delta
@@ -31,6 +31,7 @@ steps are unit-testable against the AWS reference vectors; applications are
 expected to use only `S3Config` and `createBlobStore`.
 
 ```diff signatures
++ Service.Application: withFileUploadUsing :: Typeable config => (config -> FileUploadConfig) -> (config -> Task Text BlobStore) -> Application -> Application
 + Service.FileUpload.BlobStore.S3: data S3Config
 + Service.FileUpload.BlobStore.S3: S3Config :: Text -> Text -> Text -> Text -> Text -> S3Config
 + Service.FileUpload.BlobStore.S3: [endpoint] :: S3Config -> Text
@@ -63,6 +64,15 @@ expected to use only `S3Config` and `createBlobStore`.
 
 ### Decisions carried from the review
 
+- **Application selection.** `withFileUploadUsing` accepts upload policy and a
+  backend factory using the same application configuration. The existing
+  `withFileUpload` remains Local. Both replace the whole upload registration.
+  Common limits are validated before the backend factory is applied or executed.
+  Custom storage ignores `blobStoreDir`; startup errors propagate without Local
+  fallback. Backend creation runs once per startup, not once per upload.
+  Application still owns file-state storage, upload routes and their cleanup.
+  A custom backend owns any extra resources it allocates; `BlobStore` has no
+  shutdown operation. The S3 constructor allocates no such resources.
 - **Shape.** Same as `Local`: a config record and one constructor. No extra
   operations outside the `BlobStore` facade. Conditional writes
   (`If-None-Match`/`If-Match`) are **not** included. Application dedup uses
@@ -163,10 +173,16 @@ Run the focused S3 tests with the maintained runner:
 
 ```sh
 .agents/skills/tdd/scripts/test-match "BlobStore.S3" nhcore-test-service
+.agents/skills/tdd/scripts/test-match "file upload backend selection" nhcore-test-service
+.agents/skills/tdd/scripts/test-match "Application.withFileUploadUsing" nhcore-test-core
 ```
 
 This selection includes both `S3Spec` and `SigV4Spec`. The runner rejects empty
 selections, setup errors, failed assertions, and missing or ambiguous summaries.
+The Application selection test sends an HTTP upload and download through a
+running Application. Its S3 fixture checks the signed requests and stored bytes.
+The startup tests cover Local compatibility, builder replacement, factory errors,
+limit validation before backend application, and real config loading.
 For broader runtime verification, use
 `.agents/skills/neohaskell-test/scripts/run-full-suite --strict`.
 
@@ -175,17 +191,25 @@ test mapping. They are not a fresh execution receipt. The historical workflow
 classified `file-upload` as security-sensitive and used `./dev spec-check --plan`
 after Gate 1 to require a local-only security design review under ADR-0069.
 Current main removed `./dev` and `scripts/spec-check`. Their retirement does not
-waive the review requirements or the Application release blocker below.
+waive the review requirements.
 
 ## User impact
 
-Existing applications on the local backend are unaffected. The promised public
-Application use case remains **unresolved and release-blocking**: current
-`Application.withFileUpload` accepts a configuration factory, not a BlobStore,
-and always selects Local. Do not pass `S3.createBlobStore` results to that API.
-The proposed config-aware backend factory needs a separate maintainer decision;
-this validation repair neither adds that API nor silently narrows the promise
-to a primitive-only release.
+Existing applications using `Application.withFileUpload` keep Local storage.
+Applications can select S3 without constructing upload routes themselves:
+
+```haskell
+Application.new
+  |> Application.withConfig @AppConfig
+  |> Application.withFileUploadUsing
+       makeFileUploadConfig
+       (\config -> S3.createBlobStore (makeS3Config config))
+```
+
+For static configuration, use `withFileUploadUsing @()` with two functions that
+ignore their argument. Static registration also works with `runWith`.
+Config-dependent registration requires `run` to load application configuration.
+Neither mode reads or creates `blobStoreDir` when a custom backend is selected.
 
 The existing S3 primitive uses application-supplied configuration and supports
 single-request uploads (no multipart). The bucket must already exist. Responses
@@ -194,8 +218,11 @@ on change016/022. No retries: a failed write may or may not have landed.
 
 ## ADR
 
-Not required — no trigger (breaking / new-dependency / new-capability /
-new-extension-point all false). The SigV4 implementation reuses `crypton` and
-`memory`, which `nhcore` already depends on for `Crypto`. Design rationale
-(provider scope, transport choice, testing boundary) is recorded above so the
-maintainer approves it at Gate 1 together with the contract.
+Application selection follows the config-dependent builder pattern in
+[ADR-0035](../decisions/0035-config-dependent-application-builders.md) and retains
+the storage interface in [ADR-0011](../decisions/0011-file-upload-architecture.md).
+The private evaluated/deferred factory now carries an optional custom backend.
+An alternative normalized upload record would duplicate existing configuration
+without strengthening this contract. No backend registry, new dependency or
+new resource lifecycle is introduced. The additive extension and its limits are
+recorded above.

@@ -9,13 +9,18 @@ import Service.Application (Application (..), ServiceRunner (..))
 import Service.Application qualified as Application
 import Service.Event.EntityName (EntityName (..))
 import Service.EventStore.InMemory qualified as InMemory
+import Service.FileUpload.BlobStore (BlobStore (..), BlobStoreError (..))
+import Service.FileUpload.Core (FileUploadConfig (..), FileStateStoreBackend (..))
 import Service.MockTransport qualified as MockTransport
 import Service.Query.Registry (QueryUpdater (..))
 import Service.Query.Registry qualified as Registry
 import Service.TestHelpers (insertTestEvent)
+import System.Directory qualified as GhcDirectory
 import System.IO qualified as GhcIO
 import Task qualified
 import Test
+import Text qualified
+import Uuid qualified
 
 
 -- ============================================================================
@@ -228,6 +233,79 @@ spec = do
         count <- ConcurrentVar.peek liveEventCount
         count |> shouldBe 1
 
+    describe "file upload backend selection" do
+      it "creates the custom backend once per startup and ignores Local paths" \_ -> do
+        count <- ConcurrentVar.containing (0 :: Int)
+        let makeBackend _ = do
+              ConcurrentVar.modify (\n -> n + 1) count
+              Task.yield unusedBlobStore
+        ["", "invalid\0local-path"] |> Task.forEach (\directory -> do
+          eventStore <- InMemory.new |> Task.mapError toText
+          let app = Application.new
+                |> Application.withFileUploadUsing @() (\_ -> uploadConfig directory) makeBackend
+          Application.hasFileUpload app |> shouldBe True
+          [(), ()] |> Task.forEach (\_ -> do
+            before <- ConcurrentVar.peek count
+            Application.runWith eventStore app
+            after <- ConcurrentVar.peek count
+            after |> shouldBe (before + 1)))
+        ConcurrentVar.peek count |> Task.andThen (shouldBe 4)
+
+      it "validates every shared limit before applying the backend factory" \_ -> do
+        eventStore <- InMemory.new |> Task.mapError toText
+        let config = uploadConfig ""
+        let invalid =
+              [ (config {maxFileSizeBytes = 0}, "maxFileSizeBytes")
+              , (config {pendingTtlSeconds = 0}, "pendingTtlSeconds")
+              , (config {cleanupIntervalSeconds = 0}, "cleanupIntervalSeconds")
+              , (config {cleanupIntervalSeconds = 60}, "must be less")
+              , (config {cleanupIntervalSeconds = 61}, "must be less")
+              ]
+        invalid |> Task.forEach (\(fileConfig, expected) -> do
+          let app = Application.new
+                |> Application.withFileUploadUsing @() (\_ -> fileConfig)
+                     (\_ -> panic "backend factory applied before validation")
+          Application.hasFileUpload app |> shouldBe True
+          result <- Application.runWith eventStore app |> Task.asResult
+          case result of
+            Err message -> Text.contains expected message |> shouldBe True
+            Ok _ -> fail "Invalid upload limits accepted")
+
+      it "propagates backend failure without creating Local storage" \_ -> do
+        withUnusedUploadDirectory \directory -> do
+          eventStore <- InMemory.new |> Task.mapError toText
+          let app = Application.new
+                |> Application.withFileUploadUsing @() (\_ -> uploadConfig directory)
+                     (\_ -> Task.throw "custom backend unavailable")
+          result <- Application.runWith eventStore app |> Task.asResult
+          result |> shouldBe (Err "custom backend unavailable")
+          exists <- Task.fromIO (GhcDirectory.doesPathExist (Text.toLinkedList directory))
+          exists |> shouldBe False
+
+      it "lets the last builder select Local or custom storage" \_ -> do
+        withUnusedUploadDirectory \directory -> do
+          eventStore <- InMemory.new |> Task.mapError toText
+          let config = uploadConfig directory
+          let custom = Application.new
+                |> Application.withFileUpload @() (\_ -> config)
+                |> Application.withFileUploadUsing @() (\_ -> config) (\_ -> Task.yield unusedBlobStore)
+          Application.runWith eventStore custom
+          customCreatedDirectory <- Task.fromIO (GhcDirectory.doesPathExist (Text.toLinkedList directory))
+          customCreatedDirectory |> shouldBe False
+          let local = Application.new
+                |> Application.withFileUploadUsing @() (\_ -> config)
+                     (\_ -> panic "replaced backend factory applied")
+                |> Application.withFileUpload @() (\_ -> config)
+          Application.runWith eventStore local
+          localCreatedDirectory <- Task.fromIO (GhcDirectory.doesDirectoryExist (Text.toLinkedList directory))
+          localCreatedDirectory |> shouldBe True
+
+      it "still rejects an empty Local directory" \_ -> do
+        eventStore <- InMemory.new |> Task.mapError toText
+        let app = Application.new |> Application.withFileUpload @() (\_ -> uploadConfig "")
+        result <- Application.runWith eventStore app |> Task.asResult
+        result |> shouldBe (Err "blobStoreDir cannot be empty")
+
     describe "isEmpty with service runners" do
       it "returns False when service runners are added" \_ -> do
         let app =
@@ -293,3 +371,33 @@ mockServiceRunner =
   ServiceRunner
     { getEndpointsByTransport = \_ _ -> Task.yield (Map.empty, Map.empty, Map.empty)
     }
+
+
+uploadConfig :: Text -> FileUploadConfig
+uploadConfig directory = FileUploadConfig
+  { blobStoreDir = directory
+  , stateStoreBackend = InMemoryStateStore
+  , maxFileSizeBytes = 4096
+  , pendingTtlSeconds = 60
+  , cleanupIntervalSeconds = 59
+  , allowedContentTypes = Nothing
+  , storeOriginalFilename = True
+  }
+
+
+unusedBlobStore :: BlobStore
+unusedBlobStore = BlobStore
+  { store = \_ _ -> Task.throw (StorageError "unexpected store")
+  , retrieve = \_ -> Task.throw (StorageError "unexpected retrieve")
+  , delete = \_ -> Task.throw (StorageError "unexpected delete")
+  , exists = \_ -> Task.throw (StorageError "unexpected exists")
+  }
+
+
+withUnusedUploadDirectory :: (Text -> Task Text Unit) -> Task Text Unit
+withUnusedUploadDirectory action = do
+  temporary <- Task.fromIO GhcDirectory.getTemporaryDirectory
+  identifier <- Uuid.generate
+  let directory = [fmt|#{temporary}/neohaskell-upload-#{Uuid.toText identifier}|]
+  action directory
+    |> Task.finally (Task.fromIO (GhcDirectory.removePathForcibly (Text.toLinkedList directory)))

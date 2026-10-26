@@ -42,6 +42,7 @@ module Service.Application (
   withOAuth2StateKey,
   withOAuth2Provider,
   withFileUpload,
+  withFileUploadUsing,
   withCors,
   withHealthCheck,
   withoutHealthCheck,
@@ -279,9 +280,9 @@ data EventStoreFactory where
 -- 'Application.run' after config is loaded (if needed).
 data FileUploadFactory where
   -- | FileUpload config evaluated at build time (when config type is ())
-  EvaluatedFileUpload :: !FileUploadConfig -> FileUploadFactory
+  EvaluatedFileUpload :: !FileUploadConfig -> Maybe (Task Text BlobStore) -> FileUploadFactory
   -- | FileUpload config deferred to run time (requires withConfig)
-  DeferredFileUpload :: (Typeable cfg) => (cfg -> FileUploadConfig) -> FileUploadFactory
+  DeferredFileUpload :: (Typeable cfg) => (cfg -> FileUploadConfig) -> Maybe (cfg -> Task Text BlobStore) -> FileUploadFactory
 
 
 -- | Factory for creating WebAuth configuration.
@@ -748,11 +749,11 @@ serviceRunnerCount app = Array.length app.serviceRunners
 --
 -- This extracts the common initialization pattern used in both 'run' and 'runWith'
 -- to avoid code duplication.
-initAndWrapFileUpload :: FileUploadConfig -> Task Text (Maybe FileUploadSetup, Task Text ())
-initAndWrapFileUpload fileConfig = do
+initAndWrapFileUpload :: FileUploadConfig -> Maybe (Task Text BlobStore) -> Task Text (Maybe FileUploadSetup, Task Text ())
+initAndWrapFileUpload fileConfig maybeCreateBlobStore = do
   Log.info "Initializing file upload..."
     |> Task.ignoreError
-  (setup, cleanup) <- initializeFileUpload fileConfig
+  (setup, cleanup) <- initializeFileUpload fileConfig maybeCreateBlobStore
   Log.info "File uploads enabled"
     |> Task.ignoreError
   Task.yield (Just setup, cleanup)
@@ -820,15 +821,18 @@ run app =
      -- 4. Resolve FileUploadFactory (must happen after config is loaded)
      (maybeFileUploadSetup, fileUploadCleanup) <- case app.fileUploadFactory of
        Nothing -> Task.yield (Nothing, Task.yield ())
-       Just (EvaluatedFileUpload fileConfig) ->
-         initAndWrapFileUpload fileConfig
-       Just (DeferredFileUpload mkConfig) -> do
+       Just (EvaluatedFileUpload fileConfig maybeCreateBlobStore) ->
+         initAndWrapFileUpload fileConfig maybeCreateBlobStore
+       Just (DeferredFileUpload mkConfig maybeMkBlobStore) -> do
          case app.configSpec of
            Nothing -> Task.throw "withFileUpload requires withConfig when the factory uses the config parameter. If you don't need config, use: withFileUpload @() (\\_ -> yourConfig)"
            Just _ -> do
              let appConfig = Config.get
              let fileConfig = mkConfig appConfig
-             initAndWrapFileUpload fileConfig
+             let maybeCreateBlobStore = case maybeMkBlobStore of
+                   Nothing -> Nothing
+                   Just mkBlobStore -> Just (Task.yield () |> Task.andThen (\_ -> mkBlobStore appConfig))
+             initAndWrapFileUpload fileConfig maybeCreateBlobStore
 
      -- 5. Resolve WebAuthFactory (must happen after config is loaded)
      maybeWebAuthSetup <- case app.webAuthFactory of
@@ -964,9 +968,9 @@ runWith eventStore app = do
   -- Resolve file upload (only EvaluatedFileUpload supported - DeferredFileUpload requires run)
   (maybeFileUploadSetup, fileUploadCleanup) <- case app.fileUploadFactory of
     Nothing -> Task.yield (Nothing, Task.yield ())
-    Just (EvaluatedFileUpload fileConfig) ->
-      initAndWrapFileUpload fileConfig
-    Just (DeferredFileUpload _) ->
+    Just (EvaluatedFileUpload fileConfig maybeCreateBlobStore) ->
+      initAndWrapFileUpload fileConfig maybeCreateBlobStore
+    Just (DeferredFileUpload _ _) ->
       Task.throw "runWith does not support config-dependent FileUpload. Use Application.run instead, or use: withFileUpload @() (\\_ -> yourConfig)"
   -- Resolve auth (only EvaluatedWebAuth supported - DeferredWebAuth requires run)
   maybeWebAuthSetup <- case app.webAuthFactory of
@@ -1987,8 +1991,36 @@ withFileUpload ::
   Application
 withFileUpload mkConfig app = do
   let factory = case eqT @config @() of
-        Just Refl -> EvaluatedFileUpload (mkConfig ())
-        Nothing -> DeferredFileUpload mkConfig
+        Just Refl -> EvaluatedFileUpload (mkConfig ()) Nothing
+        Nothing -> DeferredFileUpload mkConfig Nothing
+  app {fileUploadFactory = Just factory}
+
+
+-- | Configure file uploads with a caller-selected blob store, such as S3.
+-- Both factories receive the same application config. Use @()@ for static
+-- configuration, or 'withConfig' and 'run' for config-dependent factories.
+-- The blob store factory is applied and executed once per startup, after upload
+-- limits pass validation. Its errors abort startup without falling back to Local.
+-- 'blobStoreDir' is ignored. State storage, routes and cleanup remain configured
+-- by 'FileUploadConfig'. The caller owns any extra resources of a custom store.
+--
+-- @
+-- Application.new
+--   |> Application.withFileUploadUsing \@()
+--        (\\_ -> fileUploadConfig)
+--        (\\_ -> S3.createBlobStore s3Config)
+-- @
+withFileUploadUsing ::
+  forall config.
+  (Typeable config) =>
+  (config -> FileUploadConfig) ->
+  (config -> Task Text BlobStore) ->
+  Application ->
+  Application
+withFileUploadUsing mkConfig mkBlobStore app = do
+  let factory = case eqT @config @() of
+        Just Refl -> EvaluatedFileUpload (mkConfig ()) (Just (Task.yield () |> Task.andThen (\_ -> mkBlobStore ())))
+        Nothing -> DeferredFileUpload mkConfig (Just mkBlobStore)
   app {fileUploadFactory = Just factory}
 
 
@@ -2004,18 +2036,14 @@ hasFileUpload app = case app.fileUploadFactory of
 -- This performs the IO required to set up file uploads:
 --
 -- * Validates configuration parameters
--- * Creates the blob store directory if it doesn't exist
 -- * Initializes the state store connection (PostgreSQL or in-memory)
---
--- If state store initialization fails after blob store creation, the blob store
--- directory is left in place (it may contain data from previous runs).
 --
 -- Returns a tuple of (setup, cleanup action). The cleanup action releases
 -- any database connection pools and should be called during shutdown.
 --
 -- This is called internally by 'Application.run' - users should not call this directly.
-initializeFileUpload :: FileUploadConfig -> Task Text (FileUploadSetup, Task Text ())
-initializeFileUpload fileConfig = do
+initializeFileUpload :: FileUploadConfig -> Maybe (Task Text BlobStore) -> Task Text (FileUploadSetup, Task Text ())
+initializeFileUpload fileConfig maybeCreateBlobStore = do
   -- Extract config fields (needed for fmt quasiquoter compatibility)
   let blobDir = fileConfig.blobStoreDir
   let maxSize = fileConfig.maxFileSizeBytes
@@ -2023,16 +2051,19 @@ initializeFileUpload fileConfig = do
   let cleanupInterval = fileConfig.cleanupIntervalSeconds
 
   -- 1. Validate configuration
-  validateFileUploadConfig blobDir maxSize pendingTtl cleanupInterval
+  validateFileUploadConfig maxSize pendingTtl cleanupInterval
 
-  -- 2. Create blob store from directory path
-  blobStorePath <- case Path.fromText blobDir of
-    Just path -> Task.yield path
-    Nothing -> Task.throw [fmt|Invalid blob store directory path: #{blobDir}|]
-
-  blobStore <- LocalBlobStore.createBlobStore LocalBlobStoreConfig
-    { rootDir = blobStorePath
-    }
+  blobStore <- case maybeCreateBlobStore of
+    Just createBlobStore -> createBlobStore
+    Nothing -> do
+      Task.when (Text.isEmpty blobDir) do
+        Task.throw "blobStoreDir cannot be empty"
+      blobStorePath <- case Path.fromText blobDir of
+        Just path -> Task.yield path
+        Nothing -> Task.throw [fmt|Invalid blob store directory path: #{blobDir}|]
+      LocalBlobStore.createBlobStore LocalBlobStoreConfig
+        { rootDir = blobStorePath
+        }
 
   -- 3. Create state store based on backend configuration
   -- If this fails, the blob store directory remains (may have existing data)
@@ -2084,17 +2115,12 @@ initializeFileUpload fileConfig = do
 -- | Validate file upload configuration parameters.
 --
 -- Checks:
--- * blobStoreDir is not empty
 -- * maxFileSizeBytes is positive
 -- * pendingTtlSeconds is positive
 -- * cleanupIntervalSeconds is positive
 -- * cleanupIntervalSeconds < pendingTtlSeconds (cleanup must run before TTL expires)
-validateFileUploadConfig :: Text -> Int64 -> Int64 -> Int64 -> Task Text ()
-validateFileUploadConfig blobDir maxSize pendingTtl cleanupInterval = do
-  -- Validate blob store directory path
-  Task.when (Text.isEmpty blobDir) do
-    Task.throw "blobStoreDir cannot be empty"
-
+validateFileUploadConfig :: Int64 -> Int64 -> Int64 -> Task Text ()
+validateFileUploadConfig maxSize pendingTtl cleanupInterval = do
   -- Validate size limit
   Task.when (maxSize <= 0) do
     Task.throw [fmt|maxFileSizeBytes must be positive, got: #{maxSize}|]

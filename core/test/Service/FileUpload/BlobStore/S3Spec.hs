@@ -4,21 +4,64 @@ import Array qualified
 import Bytes qualified
 import ConcurrentVar qualified
 import Core
+import Control.Concurrent qualified as GhcConcurrent
+import Control.Concurrent.Async qualified as GhcAsync
+import Http.Client qualified as Http
+import Http.Client.Internal qualified as HttpInternal
+import Json qualified
+import Network.Socket qualified as GhcSocket
+import Network.Wai.Handler.Warp qualified as GhcWarp
 import Result qualified
+import Service.Application qualified as Application
+import Service.EventStore.InMemory qualified as InMemory
 import Service.FileUpload.BlobStore (BlobStore (..), BlobStoreError (..))
 import Service.FileUpload.BlobStore.S3 (S3Config (..), createBlobStore)
 import Service.FileUpload.BlobStore.S3 qualified as S3
 import Service.FileUpload.BlobStore.S3.FakeS3 (FakeS3 (..), Mode (..), withFakeS3)
 import Service.FileUpload.BlobStore.S3.FakeS3 qualified as FakeS3
-import Service.FileUpload.Core (BlobKey (..))
+import Service.FileUpload.Core (BlobKey (..), FileUploadConfig (..), FileStateStoreBackend (..))
+import Service.Transport.Web qualified as Web
+import System.Timeout qualified as GhcTimeout
 import Task qualified
 import Test
 import Text qualified
+import Uuid qualified
 
 
 spec :: Spec Unit
 spec = do
   describe "Service.FileUpload.BlobStore.S3" do
+    describe "Application selection" do
+      it "uploads and downloads through Application using signed S3 requests" \_ -> do
+        withS3BlobStore \fake _ -> do
+          count <- ConcurrentVar.containing (0 :: Int)
+          let makeBackend _ = do
+                ConcurrentVar.modify (\n -> n + 1) count
+                createBlobStore (validConfig fake.endpoint)
+          let app = Application.new
+                |> Application.withFileUploadUsing @() (\_ -> applicationUploadConfig) makeBackend
+          withUploadApplication app \endpoint -> do
+            let payload = "application-selected-s3\0binary-content"
+            let body = Text.toBytes [fmt|--upload-boundary\r\nContent-Disposition: form-data; name="file"; filename="proof.bin"\r\nContent-Type: application/octet-stream\r\n\r\n#{payload}\r\n--upload-boundary--\r\n|]
+            let request = Http.request
+                  |> Http.withUrl [fmt|#{endpoint}/files/upload|]
+                  |> Http.addHeader "Content-Type" "multipart/form-data; boundary=upload-boundary"
+            uploaded <- HttpInternal.sendRaw Http.Post request body |> Task.mapError toText
+            uploaded.statusCode |> shouldBe 200
+            receipt <- case Json.decodeBytes @UploadedFile uploaded.body of
+              Ok value -> Task.yield value
+              Err error -> Task.throw [fmt|Invalid upload response: #{error}|]
+            let reference = receipt.fileRef
+            downloaded <- HttpInternal.getRaw (Http.request |> Http.withUrl [fmt|#{endpoint}/files/#{reference}|]) |> Task.mapError toText
+            downloaded.statusCode |> shouldBe 200
+            downloaded.body |> shouldBe (Text.toBytes payload)
+            keys <- FakeS3.objects fake
+            Array.length keys |> shouldBe 1
+            seen <- ConcurrentVar.peek fake.requests
+            seen |> Array.map (\(method, _) -> method) |> shouldBe ["PUT", "GET"]
+            seen |> Array.map (\(_, path) -> path) |> shouldBe (Array.append keys keys)
+            ConcurrentVar.peek count |> Task.andThen (shouldBe 1)
+
     describe "Independent wire verifier" do
       it "accepts the published AWS GET signature independently" \_ -> do
         verifyAwsRequest "GET" "/test.txt" awsHeaders Bytes.empty |> shouldBe True
@@ -292,3 +335,58 @@ configRejected config = do
 
 orFail :: Task BlobStoreError value -> Task Text value
 orFail task = task |> Task.mapError (\e -> [fmt|blob store failed: #{show e}|])
+
+
+data UploadedFile = UploadedFile
+  { fileRef :: Text
+  }
+  deriving (Generic)
+
+instance Json.FromJSON UploadedFile
+
+
+applicationUploadConfig :: FileUploadConfig
+applicationUploadConfig = FileUploadConfig
+  { blobStoreDir = ""
+  , stateStoreBackend = InMemoryStateStore
+  , maxFileSizeBytes = 4096
+  , pendingTtlSeconds = 60
+  , cleanupIntervalSeconds = 30
+  , allowedContentTypes = Nothing
+  , storeOriginalFilename = True
+  }
+
+
+withUploadApplication :: Application.Application -> (Text -> Task Text Unit) -> Task Text Unit
+withUploadApplication app action = do
+  eventStore <- InMemory.new |> Task.mapError toText
+  identifier <- Uuid.generate
+  let healthPath = [fmt|s3-proof-#{Uuid.toText identifier}|]
+  Task.fromIOResult do
+    (port, socket) <- GhcWarp.openFreePort
+    GhcSocket.close socket
+    let endpoint = [fmt|http://127.0.0.1:#{port}|]
+    let configured = app
+          |> Application.withTransport (Web.server {Web.port = port})
+          |> Application.withHealthCheck @() (\_ -> healthPath)
+    GhcAsync.withAsync (Application.runWith eventStore configured |> Task.runOrPanic) \server -> do
+      GhcAsync.link server
+      outcome <- GhcTimeout.timeout 10000000 (Task.runResult do
+        awaitUploadApplication [fmt|#{endpoint}/#{healthPath}|] 100
+        action endpoint)
+      case outcome of
+        Nothing -> pure (Err "Application upload roundtrip timed out")
+        Just result -> pure result
+
+
+awaitUploadApplication :: Text -> Int -> Task Text Unit
+awaitUploadApplication healthUrl attempts = do
+  result <- HttpInternal.getRaw (Http.request |> Http.withUrl healthUrl |> Http.withTimeout 1) |> Task.asResult
+  case result of
+    Ok response -> response.statusCode |> shouldBe 200
+    Err error ->
+      if attempts <= 0
+        then fail [fmt|Application did not become ready: #{show error}|]
+        else do
+          Task.fromIO (GhcConcurrent.threadDelay 25000)
+          awaitUploadApplication healthUrl (attempts - 1)

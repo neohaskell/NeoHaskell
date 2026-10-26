@@ -12,12 +12,13 @@ Malformed endpoint and header-bound configuration is rejected before requests.
 Local wire tests verify signatures independently, including wrong-secret controls;
 they do not certify deployments on every S3-compatible provider.
 
-The promised public Application wiring remains release-blocking pending a separate
-config-aware API decision. Current `Application.withFileUpload` does not accept a
-BlobStore and still selects Local; do not use the previously documented snippet.
-This repair does not remove the Application promise or change Local behavior.
+`Application.withFileUploadUsing` selects S3 through a config-aware backend
+factory. Upload limits are validated before backend creation. Custom storage
+ignores the Local directory and startup errors never fall back to disk.
+Existing `Application.withFileUpload` callers keep Local storage unchanged.
 
 To verify locally, run `.agents/skills/tdd/scripts/test-match "BlobStore.S3" nhcore-test-service`.
 The selection checks signing against the published AWS examples and exercises
-the backend against an in-process fake S3 server. A passing run does not resolve
-the Application release blocker.
+the backend against an in-process fake S3 server, including an upload/download
+through a running Application. Startup selection and config loading are covered
+by the additional focused commands in `docs/changes/017-s3-blob-store.md`.
