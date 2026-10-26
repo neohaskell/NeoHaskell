@@ -1,18 +1,7 @@
-# Fast governance checks (pipeline Phase 1+). Pure bash, no toolchain —
-# feedback in seconds, long before the build workflows finish.
-#
-# Jobs:
-#   doctor — enforces "every pipeline asset registers a ./dev verb or carries
-#            a reasoned exemption" (see scripts/doctor for the contract).
-#   lint   — the NeoHaskell dialect gate: hlint with the dialect-first
-#            .hlint.yaml (vanilla-module restrictions, banned partials,
-#            teaching hints). Standalone pinned binary — no nix needed.
 name: checks
 
 on:
   pull_request:
-    # ready_for_review included so the spec job's drift gate fires the moment
-    # a draft (parked spec) is promoted — default types would miss the flip
     types: [opened, synchronize, reopened, ready_for_review, edited]
   push:
     branches: [main]
@@ -25,22 +14,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  doctor:
-    name: dev doctor (verb registration)
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - run: ./dev doctor
-      # Static workflow wiring: hidden-artifact upload opt-in + retrospect
-      # loop stays deterministic/report-only (pure stdlib, no toolchain).
-      - run: ./dev workflow-check
-      # ADR-0076: prove `.pipeline` is the sole discoverable change process
-      # and superseded queue-backed execution assets remain absent.
-      - run: ./dev process-check
-
   secrets:
     name: secret scan (gitleaks, deterministic)
     runs-on: ubuntu-latest
@@ -49,32 +22,12 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      # Pinned binary, not gitleaks-action (the action needs an org license).
-      # Scans the working tree, not git history: deterministic on the state
-      # being merged, no permanent red from historical noise. --redact keeps
-      # any finding out of public CI logs. Deterministic security checks stay
-      # in CI; design-review agents handle only what needs judgment.
       - name: Install gitleaks (pinned + checksum)
         run: |
           curl -sSfL -o gitleaks.tar.gz https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz
           echo "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  gitleaks.tar.gz" | sha256sum -c -
           tar -xzf gitleaks.tar.gz gitleaks
       - run: ./gitleaks dir . --redact --no-banner --exit-code 1
-
-  codemap:
-    name: codemap check (localization ontology)
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      # Same check.py as ./dev codemap-check; runner python + pinned pyyaml
-      # (pulling the full nix dev shell for a YAML check is not worth 40m —
-      # the PYTHON override is the sanctioned CI path, like lint's HLINT=).
-      - run: python3 -c "import yaml" 2>/dev/null || pip3 install pyyaml==6.0.3
-      - run: PYTHON=python3 ./dev codemap-check
-      - run: python3 scripts/test-codemap-empty-changes
 
   adr-index:
     name: adr index (decisions README faithful)
@@ -84,71 +37,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      # Pure-stdlib python check: every docs/decisions/NNNN-*.md is indexed
-      # exactly once with a status matching its own `## Status` section.
-      - run: ./dev adr-check
+      - run: python3 .agents/skills/technical-writing/scripts/adr-index-check.py
 
-  spec:
-    name: spec check (contract-delta gate)
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-          # spec-drift --pr diffs against the merge base — needs history
-          fetch-depth: 0
-      # Structure gate: every committed spec (incl. TEMPLATE.md, which is a
-      # validated instance) parses and machine-joins. Runs on drafts too —
-      # this is what the maintainer's gate decision reads.
-      - run: ./dev spec-check
-      - name: PR changes a contract spec (maintainer bootstrap label may exempt)
-        if: github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'pipeline-bootstrap-exempt')
-        env:
-          BASE_REF: ${{ github.base_ref }}
-        run: ./dev spec-check --require-changed "origin/${BASE_REF}"
-      # Drift gate: at PR-READY only, the specs this PR touches must be
-      # honored by the generated API surface (codemap-sync proves committed
-      # signatures == code; this proves signatures == promise). A draft is
-      # still implementing its spec — drift there is expected, not an error.
-      - name: Spec drift (PR-ready only)
-        if: github.event_name == 'pull_request' && github.event.pull_request.draft == false
-        env:
-          # env-var indirection, not inline ${{ }} in run: — the standard
-          # template-injection defense-in-depth for workflow expressions
-          BASE_REF: ${{ github.base_ref }}
-        run: ./dev spec-drift --pr "origin/${BASE_REF}"
-      # Review-record gate: at PR-ready, every COMMITTED design review a changed
-      # spec ROUTES (touches ∩ perf-sensitive) must have its committed record.
-      # Security reviews are local-only (gitignored, never pushed — they map
-      # attack surface; ADR-0069), enforced on the dev machine via
-      # `spec-check --reviews-local`, so CI's --reviews-pr gates only perf.
-      - name: Design-review records present (PR-ready only)
-        if: github.event_name == 'pull_request' && github.event.pull_request.draft == false
-        env:
-          BASE_REF: ${{ github.base_ref }}
-        run: ./dev spec-check --reviews-pr "origin/${BASE_REF}"
-      # Reviewed fragments replace feature-branch changelog edits. Generated
-      # release bookkeeping passes only after exact diff reconstruction.
-      - name: Release notes and generated bookkeeping (PR-ready only)
-        if: github.event_name == 'pull_request' && github.event.pull_request.draft == false
-        env:
-          BASE_REF: ${{ github.base_ref }}
-          RELEASE_PR_TITLE: ${{ github.event.pull_request.title }}
-          RELEASE_PR_BODY: ${{ github.event.pull_request.body }}
-        run: ./dev changelog --check "origin/${BASE_REF}"
-      # DoD criterion-test gate: at PR-ready, every criterion in a changed spec
-      # must name a proving test that RESOLVES (a real .hurl or *.hs spec module)
-      # — a criterion can't cite a test that was never written (Phase 6, task 1).
-      - name: Criterion proving-tests resolve (PR-ready only)
-        if: github.event_name == 'pull_request' && github.event.pull_request.draft == false
-        env:
-          BASE_REF: ${{ github.base_ref }}
-        run: ./dev spec-check --criteria-tests "origin/${BASE_REF}"
-
-  expectations:
-    name: expectation guard (test-contract diff)
-    # PRs only (drafts included — weakening a test is never OK); never on push.
+  release-check:
+    name: release fragment check
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -156,16 +48,57 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          # census-diffs committed test files against the merge base
           fetch-depth: 0
-      - name: Expectation census (maintainer label overrides)
+      - name: Check release fragments and generated provenance
         env:
           BASE_REF: ${{ github.base_ref }}
-          # a maintainer-only PR label — labels need write access, so the agent
-          # cannot self-apply it (unlike the local, gitignored marker). This is
-          # the load-bearing approval signal.
-          EXPECTATIONS_APPROVED: ${{ contains(github.event.pull_request.labels.*.name, 'expectations-approved') }}
-        run: python3 scripts/guards/expectation-guard.py --pr-diff "origin/${BASE_REF}"
+          RELEASE_PR_TITLE: ${{ github.event.pull_request.title }}
+          RELEASE_PR_BODY: ${{ github.event.pull_request.body }}
+        run: ./.agents/skills/neohaskell-release/scripts/semantic-release check --base "origin/${BASE_REF}"
+
+  tooling:
+    name: owned tooling checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: DeterminateSystems/determinate-nix-action@96c5ee93a9dddf2830d31e1da6ec719077336c28 # v3.23.3
+        with:
+          extra-conf: |
+            accept-flake-config = true
+            extra-substituters = https://cache.iog.io https://neohaskell.cachix.org
+            extra-trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= neohaskell.cachix.org-1:mo2cLaGbwqbrxs9xhqKK8jeNsn3osi7t6XoAmxSZssc=
+      - name: Validate skill metadata and owned links
+        run: python3 .agents/skills/validate-skills/scripts/check.py --repo .
+      - name: Run owned Python fixtures
+        run: |
+          set -euo pipefail
+          found=false
+          while IFS= read -r -d '' test_file; do
+            found=true
+            printf 'Running %s\n' "$test_file"
+            python3 "$test_file"
+          done < <(find .agents/skills -type f -path '*/tests/test_*.py' -print0 | sort -z)
+          if [ "$found" != true ]; then
+            echo "::error::No owned Python tests were found"
+            exit 1
+          fi
+      - name: Test worktree cleanup audit helper
+        run: python3 .agents/skills/worktree-cleanup/scripts/test_worktree_audit.py
+      - name: Run offline release checks
+        run: env -u GH_TOKEN -u GITHUB_TOKEN ./.agents/skills/neohaskell-release/scripts/semantic-release --self-test
+      - name: Run Node 24 orchestration and plan checks
+        run: |
+          nix shell .#legacyPackages.x86_64-linux.nodejs_24 --command bash -euo pipefail -c '
+            node -e '\''const [major, minor] = process.versions.node.split(".").map(Number); if (major < 24 || (major === 24 && minor < 2)) process.exit(1)'\''
+            npm install --prefix .agents/skills/orchestrate/scripts --ignore-scripts --no-audit --no-fund --no-package-lock
+            npm --prefix .agents/skills/orchestrate/scripts test
+            npm --prefix .agents/skills/orchestrate/scripts run typecheck
+            node --test .agents/skills/multi-phase-plan/scripts/check-plan.test.mjs
+          '
 
   lint:
     name: hlint (dialect gate)
@@ -175,15 +108,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          # The dialect syntax ratchet evaluates the complete PR diff.
-          fetch-depth: 0
       - name: Install hlint 3.10 (pinned binary + checksum)
         run: |
           curl -sSfL -o hlint.tar.gz \
             https://github.com/ndmitchell/hlint/releases/download/v3.10/hlint-3.10-x86_64-linux.tar.gz
           echo "ccabc8802a58154699a3583b8dddc5ea2e6d65753a62c45c0e80088ebb16b42b  hlint.tar.gz" | sha256sum -c -
           tar xzf hlint.tar.gz
-      - name: Dialect gate
-        env:
-          DIALECT_DIFF_BASE: origin/${{ github.base_ref || github.event.repository.default_branch }}
-        run: HLINT=./hlint-3.10/hlint ./dev lint
+      - name: Run HLint with the repository configuration
+        run: ./hlint-3.10/hlint core integrations testbed

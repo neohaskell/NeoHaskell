@@ -69,13 +69,17 @@ presence guarantee is included.
 
 `kind: bug`: C1 is the reproduction. It replaces the test
 `dedup self-heals when the existence check errors` from change 001 (C4 there),
-whose expectation encoded the behavior this change removes. **Rewording an
-existing expectation requires maintainer approval** (AGENTS.md
-non-negotiable; `scripts/guards/expectation-guard.py` flags it): the
-maintainer must create `.agents/allow-expectation-edits` locally or apply the
-`expectations-approved` label on the PR. Change 001's C4 row and the attested
-match in `docs/changes/test-surfaces.json` are updated to the new test name so
-`./dev spec-check` stays consistent.
+whose expectation encoded the behavior this change removes. The maintainer
+approved that expectation change. Change 001's C4 row and the match in
+`docs/changes/test-surfaces.json` name the replacement test.
+
+Run `./.agents/skills/tdd/scripts/test-match "ContentDedup" nhcore-test-service`
+for these criteria. Run
+`./.agents/skills/neohaskell-test/scripts/run-full-suite --strict` and
+`./.agents/skills/neohaskell-test/scripts/run-doctest --strict` for broader
+coverage. The full suite requires PostgreSQL and Hurl for testbed acceptance.
+The former expectation guard, local approval file and `./dev spec-check`
+belong to the retired development pipeline, not the current check commands.
 
 | ID | Behavior | Proving test | Level | Boundary |
 |----|----------|--------------|-------|----------|
@@ -103,11 +107,13 @@ do not rewrite the existing key when its existence check returns `Err`.
 
 The first published change020 commit contains spec, test and implementation
 together. That history does not show a red-only commit; it does not establish
-that a private red receipt never existed. The maintainer must verify a genuine
-receipt or explicitly decide how to accept a clearly labelled after-the-fact
-reproduction. Such a reproduction is new evidence, not historical red-first
-compliance, and must not rewrite published history to simulate it. The current
-fixed head is not a new red reproduction. Existing `expectations-approved`
-authorization is limited to the previously approved expectation change, not a
-new Gate 1 continuation or final Gate 2. No additional behavior or expectation
-changes are authorized by this proposal.
+that a private red receipt never existed. A new reproduction is after-the-fact
+regression evidence, not proof of historical red-first compliance. Published
+history must not be rewritten to simulate that evidence. The current fixed
+head is not a red reproduction.
+
+On October 13, 2026, the maintainer approved audited fixes to existing
+guarantees with regression tests in PR #908. That approval preserves the
+current contracts. It does not authorize discretionary API changes or weaker
+guarantees, and it is neither runtime evidence nor final merge approval.
+The old Gate 1 and Gate 2 machinery has since been removed from main.

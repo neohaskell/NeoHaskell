@@ -354,17 +354,6 @@ spec = do
             (Text.length response2.contentType > 0) |> shouldBe True
             (response2.sizeBytes > 0) |> shouldBe True
 
-      -- ==========================================================================
-      -- Blob Loss Self-Heal (issue #713)
-      --
-      -- Dedup must never return a FileRef whose blob has been lost. Before
-      -- returning a match, the blob's presence is verified; only if the store
-      -- confirms it is missing is the content re-stored under the SAME blob key
-      -- so the reference is healed in place — no new FileRef, no state
-      -- mutation, robust for both in-memory and Postgres backends. When the
-      -- existence check itself errors, presence is unknown: the upload fails
-      -- closed and nothing is re-stored.
-      -- ==========================================================================
       describe "Blob Loss Self-Heal (issue #713)" do
         it "dedup self-heals a missing Pending blob on re-upload" \_ -> do
           withTestDedupEnv \env -> do
@@ -413,8 +402,6 @@ spec = do
           withTestDedupEnv \env -> do
             let content = "fail-closed on exists-error content" |> Text.toBytes
             response1 <- uploadFile env "owner1" "file.txt" "text/plain" content
-            -- Presence is unknown, not known-missing: the blob is still there,
-            -- only the check fails. The upload must not rewrite it blindly.
             storeCalls <- ConcurrentVar.containing (0 :: Int)
             let faultingBlobStore =
                   (env.blobStore)
@@ -431,7 +418,6 @@ spec = do
                 (Text.contains "injected" msg) |> shouldBe False
             rewrites <- ConcurrentVar.peek storeCalls
             rewrites |> shouldBe 0
-            -- The original blob is untouched and still served.
             restored <- env.blobStore.retrieve response1.blobKey
               |> Task.mapError (\e -> [fmt|retrieve failed: #{show e}|])
             restored |> shouldBe content

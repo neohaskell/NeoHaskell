@@ -34,7 +34,7 @@ import Service.EventStore.InMemory qualified as InMemory
 import Service.FileUpload.Core (FileAccessError (..), FileRef (..))
 import Service.Integration.DispatchRegistry qualified as DispatchRegistry
 import Service.Integration.Dispatcher qualified as Dispatcher
-import Service.Transport (EndpointHandler)
+import Service.Transport (DispatchHandler)
 import Subprocess qualified
 import Task (Task)
 import Task qualified
@@ -446,7 +446,7 @@ runThroughDispatcher scenario dispatcherTimeoutMs = do
   context <- makeContext (Just videoAccess)
   eventStore <- InMemory.new |> Task.mapError (\err -> [fmt|#{err}|])
   dispatcher <-
-    Dispatcher.newWithLifecycleConfig
+    Dispatcher.newWithLifecycleConfigWithSource
       (dispatcherConfig dispatcherTimeoutMs)
       eventStore
       (Array.wrap (extractionOutboundRunner (fakeRunner callsVar scenario)))
@@ -486,8 +486,8 @@ extractionOutboundRunner runner = Dispatcher.OutboundRunner
 
 
 -- | A command endpoint that decodes and keeps every command it receives.
-recordingEndpoint :: ConcurrentVar (Array TestCommand) -> EndpointHandler
-recordingEndpoint received _requestContext commandBytes _respond =
+recordingEndpoint :: ConcurrentVar (Array TestCommand) -> DispatchHandler
+recordingEndpoint received _sourceMetadata _requestContext commandBytes _respond =
   case Json.decodeBytes commandBytes of
     Ok command -> received |> ConcurrentVar.modify (Array.push command)
     Err decodeError -> Task.throw [fmt|undecodable command: #{decodeError}|]
