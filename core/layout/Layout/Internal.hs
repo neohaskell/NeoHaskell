@@ -77,9 +77,9 @@ instance ToBlueprint Float where
 
 instance ToBlueprint Bool where
   toBlueprint boolValue =
-    case boolValue of
-      True -> wrap (GhcPretty.pretty ("True" :: Text))
-      False -> wrap (GhcPretty.pretty ("False" :: Text))
+    if boolValue
+      then wrap (GhcPretty.pretty ("True" :: Text))
+      else wrap (GhcPretty.pretty ("False" :: Text))
 
 
 instance (ToBlueprint value) => ToBlueprint (Maybe value) where

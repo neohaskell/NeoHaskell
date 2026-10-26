@@ -21,6 +21,7 @@ module Service.FileUpload.BlobStore.S3.FakeS3 (
 
 import Array (Array)
 import Array qualified
+import AsyncTask qualified
 import Basics
 import Bytes (Bytes)
 import Bytes qualified
@@ -29,7 +30,6 @@ import ConcurrentMap qualified
 import ConcurrentVar (ConcurrentVar)
 import ConcurrentVar qualified
 import Crypto qualified
-import IO (IO)
 import Maybe (Maybe (..))
 import Maybe qualified
 import Task (Task)
@@ -38,9 +38,6 @@ import Text (Text)
 import Text qualified
 
 -- Transport only: WAI/Warp are the HTTP server core already depends on.
-import Control.Concurrent qualified as GhcConcurrent
-import Control.Concurrent.Async qualified as GhcAsync
-import Control.Exception qualified as GhcException
 import Data.ByteString.Lazy qualified as GhcLBS
 import Data.CaseInsensitive qualified as GhcCI
 import Network.HTTP.Types qualified as GhcHTTP
@@ -79,26 +76,35 @@ withFakeS3 bucket accessKeyId expectedSecret action = do
   mode <- ConcurrentVar.containing Accept
   store <- ConcurrentMap.new
   requests <- ConcurrentVar.containing Array.empty
-  Task.fromIOResult do
-    GhcException.bracket openLoopbackSocket GhcSocket.close \socket -> do
-      assignedPort <- GhcSocket.socketPort socket
-      let port = fromIntegral assignedPort
-      ready <- GhcConcurrent.newEmptyMVar
-      let fake = FakeS3
-            { port
-            , endpoint = [fmt|http://127.0.0.1:#{port}|]
-            , bucket
-            , accessKeyId
-            , expectedSecret
-            , mode
-            , store
-            , requests
-            }
-      let settings = GhcWarp.defaultSettings |> GhcWarp.setBeforeMainLoop (GhcConcurrent.putMVar ready ())
-      GhcAsync.withAsync (GhcWarp.runSettingsSocket settings socket (application fake)) \server -> do
-        GhcAsync.link server
-        GhcConcurrent.takeMVar ready
-        action fake |> Task.runResult
+  Task.withCancellationDeferred \restore -> do
+    socket <- Task.fromIO (GhcSocket.socket GhcSocket.AF_INET GhcSocket.Stream GhcSocket.defaultProtocol)
+    let run = do
+          Task.fromIO (GhcSocket.bind socket (GhcSocket.SockAddrInet 0 (GhcSocket.tupleToHostAddress (127, 0, 0, 1))))
+          Task.fromIO (GhcSocket.listen socket GhcSocket.maxListenQueue)
+          assignedPort <- Task.fromIO (GhcSocket.socketPort socket)
+          let port = fromIntegral assignedPort
+          ready <- ConcurrentVar.new
+          let fake = FakeS3
+                { port
+                , endpoint = [fmt|http://127.0.0.1:#{port}|]
+                , bucket
+                , accessKeyId
+                , expectedSecret
+                , mode
+                , store
+                , requests
+                }
+          let settings = GhcWarp.defaultSettings
+                |> GhcWarp.setBeforeMainLoop (ConcurrentVar.set () ready |> Task.runNoErrors)
+          let serve = do
+                Task.fromIO (GhcWarp.runSettingsSocket settings socket (application fake))
+                Task.throw "S3 fixture stopped before its checks completed"
+          let check = do
+                ConcurrentVar.get ready
+                action fake
+          _ <- AsyncTask.race serve check
+          Task.yield ()
+    restore run |> Task.finally (Task.fromIO (GhcSocket.close socket))
 
 
 -- | Current object paths, for assertions.
@@ -245,15 +251,3 @@ xmlError status code =
     status
     [(GhcHTTP.hContentType, "application/xml")]
     (GhcLBS.fromStrict ([fmt|<Error><Code>#{code}</Code></Error>|] |> Text.toBytes |> Bytes.unwrap))
-
-
--- | The socket stays owned by the surrounding bracket; no release/rebind gap.
-openLoopbackSocket :: IO GhcSocket.Socket
-openLoopbackSocket =
-  GhcException.bracketOnError
-    (GhcSocket.socket GhcSocket.AF_INET GhcSocket.Stream GhcSocket.defaultProtocol)
-    GhcSocket.close
-    (\socket -> do
-      GhcSocket.bind socket (GhcSocket.SockAddrInet 0 (GhcSocket.tupleToHostAddress (127, 0, 0, 1)))
-      GhcSocket.listen socket GhcSocket.maxListenQueue
-      pure socket) -- HOOK-ALLOW: IO boundary of the owned fake server

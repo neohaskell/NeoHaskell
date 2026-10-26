@@ -13,12 +13,20 @@ description: NeoHaskell code style guidelines for writing and reviewing .hs code
 | Comments that explain constraints or intent | comments narrating what code does; extract a named function instead |
 | Early-exit sentinel guards in `Task` validation | nested if/case pyramids |
 | `[fmt\|Hello #{name}!\|]` | `<>` / `++` for strings |
-| `Result err val` | `Either` |
+| `Result err val`; convert foreign `Either` with `Result.fromEither`, then match `Ok`/`Err` | matching foreign `Left`/`Right` outside the Result conversion owner |
 | `Task err val` | `IO` |
 | `Task.yield v` | `pure`, `return` |
 | `forall element result.` | single-letter type params |
 | `import Foo (Foo); import Foo qualified` | unqualified imports |
 | nhcore Core modules (`Text`, `Array`, `Char`, `File`, `Path`…) | raw `Data.*` / `System.*` / `Ghc*` imports |
+
+For every new Haskell module, follow [module documentation](../neohaskell-module-docs/SKILL.md). Before changing source pragmas or Cabal extension settings, follow [language extensions](../neohaskell-language-extensions/SKILL.md).
+
+## Readable service code
+
+Read [Name for the reader](../principle-name-for-the-reader/SKILL.md) before choosing module, type, or operation names. For service orchestration, exception boundaries, outcome types, serialization, or test resources, read [service design](../neohaskell-best-practices/references/readable-services.md).
+
+Run the [static checks](references/static-checks.md) after changing Haskell or tracked application and test code. These checks own the executable subset of the rules. Review the remaining design decisions against their owning skills.
 
 ## Application examples
 

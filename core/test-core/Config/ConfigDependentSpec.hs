@@ -14,7 +14,6 @@ import Auth.SecretStore (SecretStore (..))
 import Auth.SecretStore.InMemory qualified as InMemorySecretStore
 import ConcurrentVar qualified
 import Config (defaultsTo, defineConfig, doc, envVar, field)
-import Control.Exception qualified as GhcException
 import Core
 import Integration qualified
 import Integration.Lifecycle qualified as Lifecycle
@@ -874,12 +873,14 @@ spec = do
 
 
 withUploadEnvironment :: Text -> Text -> Task Text value -> Task Text value
-withUploadEnvironment name value action = Task.fromIOResult do
+withUploadEnvironment name value action = Task.withCancellationDeferred \restore -> do
   let key = Text.toLinkedList name
-  GhcException.bracket (GhcEnvironment.lookupEnv key)
-    (\previous -> case previous of
-      Nothing -> GhcEnvironment.unsetEnv key
-      Just original -> GhcEnvironment.setEnv key original)
-    (\_ -> do
-      GhcEnvironment.setEnv key (Text.toLinkedList value)
-      GhcEnvironment.withArgs [] (Task.runResult action))
+  previous <- Task.fromIO (GhcEnvironment.lookupEnv key)
+  let reset = Task.fromIO do
+        case previous of
+          Nothing -> GhcEnvironment.unsetEnv key
+          Just original -> GhcEnvironment.setEnv key original
+  let run = do
+        Task.fromIO (GhcEnvironment.setEnv key (Text.toLinkedList value))
+        Task.fromIOResult (GhcEnvironment.withArgs [] (Task.runResult action))
+  restore run |> Task.finally reset

@@ -235,7 +235,16 @@ startIntegrationSubscriber maybeDispatcherConfig eventStore runners lifecycleRun
     then Task.yield Nothing
     else do
       let config = Maybe.withDefault Dispatcher.defaultConfig maybeDispatcherConfig
-      dispatcher <- Dispatcher.newWithLifecycleConfigWithSource config eventStore runners lifecycleRunners commandEndpoints ctx
+      dispatcher <-
+        Dispatcher.newWithLifecycleConfigWithSource
+          Dispatcher.Setup
+            { settings = config,
+              eventStore,
+              outboundRunners = runners,
+              lifecycleRunners,
+              commandEndpoints,
+              actionContext = ctx
+            }
 
       let processIntegrationEvent :: Event Json.Value -> Task Text Unit
           processIntegrationEvent rawEvent = do

@@ -9,8 +9,8 @@ import ConcurrentVar qualified
 import Directory qualified
 import Maybe (Maybe (..))
 import Maybe qualified
-import "nhcore" Path qualified
 import Service.Auth qualified as Auth
+import Service.CommandExecutor.CommandExecutionFailure qualified as CommandExecutionFailure
 import Service.CommandExecutor.Core qualified as Executor
 import Service.EntityFetcher.Core qualified as Fetcher
 import Service.Event (Event)
@@ -42,60 +42,58 @@ spec = do
   describe "metadata through production command execution and storage" do
     it "persists command metadata through a subscribed Simple store restart" \_ -> do
       runId <- Uuid.generate
-      let basePath = Path.fromText [fmt|.agents-state/storage-metadata/simple-#{Uuid.toText runId}|] |> Maybe.getOrDie
-      let config = SimpleEventStore {basePath, persistent = True}
-      rawStore <- Simple.new config
-      let store = EventStore.castEventStore @CartEvent rawStore
-      let cleanup = do
-            store.close |> Task.ignoreError
-            Directory.removeRecursive basePath |> Task.mapError toText |> Task.ignoreError
-      Task.finally cleanup do
-        cartId <- Uuid.generate
-        let entityName = EntityName [fmt|StorageMetadataSimple#{Uuid.toText runId}|]
-        let streamId = StreamId.toStreamId cartId
-        seedPayload <- Event.payloadFromEvents entityName streamId [CartCreated cartId]
-        store.insert seedPayload |> Task.mapError toText |> discard
-        eventsBeforeCommand <- readStreamEvents store entityName streamId
-        Array.length eventsBeforeCommand |> shouldBe 1
-        let seedEvent = Array.first eventsBeforeCommand |> Maybe.getOrDie
+      Directory.withTemporaryFolder toText \basePath -> do
+        let config = SimpleEventStore {basePath, persistent = True}
+        rawStore <- Simple.new config
+        let store = EventStore.castEventStore @CartEvent rawStore
+        let cleanup = store.close |> Task.ignoreError
+        Task.finally cleanup do
+          cartId <- Uuid.generate
+          let entityName = EntityName [fmt|StorageMetadataSimple#{Uuid.toText runId}|]
+          let streamId = StreamId.toStreamId cartId
+          seedPayload <- Event.payloadFromEvents entityName streamId [CartCreated cartId]
+          store.insert seedPayload |> Task.mapError toText |> discard
+          eventsBeforeCommand <- readStreamEvents store entityName streamId
+          Array.length eventsBeforeCommand |> shouldBe 1
+          let seedEvent = Array.first eventsBeforeCommand |> Maybe.getOrDie
 
-        sourceMetadata <- sourceMetadataForCommand
-        observed <- ConcurrentVar.containing (Array.empty :: Array (Event CartEvent))
-        subscription <-
-          store.subscribeToStreamEvents entityName streamId (recordEvent observed)
-            |> Task.mapError toText
-        let unsubscribe = store.unsubscribe subscription |> Task.mapError toText |> Task.ignoreError
-        Task.finally unsubscribe do
-          result <- executeAddItem store entityName cartId sourceMetadata
-          assertAccepted result
-          storedEvents <- readStreamEvents store entityName streamId
-          Array.length storedEvents |> shouldBe 2
-          let savedEvent = Array.get 1 storedEvents |> Maybe.getOrDie
-          assertCommandEvent seedEvent sourceMetadata cartId savedEvent
-          globalEvents <- readGlobalEvents store entityName
-          assertGlobalCommandEvent savedEvent globalEvents
-          seedEvent.metadata.relatedUserSub |> shouldBe Nothing
-          seedEvent.metadata.correlationId |> shouldBe Nothing
-          seedEvent.metadata.causationId |> shouldBe Nothing
-          savedEvent.metadata.globalPosition |> shouldBe (Just (Event.StreamPosition 1))
+          sourceMetadata <- sourceMetadataForCommand
+          observed <- ConcurrentVar.containing (Array.empty :: Array (Event CartEvent))
+          subscription <-
+            store.subscribeToStreamEvents entityName streamId (recordEvent observed)
+              |> Task.mapError toText
+          let unsubscribe = store.unsubscribe subscription |> Task.mapError toText |> Task.ignoreError
+          Task.finally unsubscribe do
+            result <- executeAddItem store entityName cartId sourceMetadata
+            assertAccepted result
+            storedEvents <- readStreamEvents store entityName streamId
+            Array.length storedEvents |> shouldBe 2
+            let savedEvent = Array.get 1 storedEvents |> Maybe.getOrDie
+            assertCommandEvent seedEvent sourceMetadata cartId savedEvent
+            globalEvents <- readGlobalEvents store entityName
+            assertGlobalCommandEvent savedEvent globalEvents
+            seedEvent.metadata.relatedUserSub |> shouldBe Nothing
+            seedEvent.metadata.correlationId |> shouldBe Nothing
+            seedEvent.metadata.causationId |> shouldBe Nothing
+            savedEvent.metadata.globalPosition |> shouldBe (Just (Event.StreamPosition 1))
 
-          notifications <- ConcurrentVar.peek observed
-          Array.length notifications |> shouldBe 1
-          let notifiedEvent = Array.first notifications |> Maybe.getOrDie
-          notifiedEvent |> shouldBe savedEvent
+            notifications <- ConcurrentVar.peek observed
+            Array.length notifications |> shouldBe 1
+            let notifiedEvent = Array.first notifications |> Maybe.getOrDie
+            notifiedEvent |> shouldBe savedEvent
 
-          store.close |> Task.mapError toText
-          restartedRawStore <- Simple.new config
-          let restartedStore = EventStore.castEventStore @CartEvent restartedRawStore
-          Task.finally (restartedStore.close |> Task.ignoreError) do
-            eventsAfterRestart <- readStreamEvents restartedStore entityName streamId
-            Array.length eventsAfterRestart |> shouldBe 2
-            let restartedSeed = Array.first eventsAfterRestart |> Maybe.getOrDie
-            let restartedCommand = Array.get 1 eventsAfterRestart |> Maybe.getOrDie
-            restartedSeed.metadata |> shouldBe seedEvent.metadata
-            restartedCommand.metadata |> shouldBe savedEvent.metadata
-            globalEventsAfterRestart <- readGlobalEvents restartedStore entityName
-            assertGlobalCommandEvent savedEvent globalEventsAfterRestart
+            store.close |> Task.mapError toText
+            restartedRawStore <- Simple.new config
+            let restartedStore = EventStore.castEventStore @CartEvent restartedRawStore
+            Task.finally (restartedStore.close |> Task.ignoreError) do
+              eventsAfterRestart <- readStreamEvents restartedStore entityName streamId
+              Array.length eventsAfterRestart |> shouldBe 2
+              let restartedSeed = Array.first eventsAfterRestart |> Maybe.getOrDie
+              let restartedCommand = Array.get 1 eventsAfterRestart |> Maybe.getOrDie
+              restartedSeed.metadata |> shouldBe seedEvent.metadata
+              restartedCommand.metadata |> shouldBe savedEvent.metadata
+              globalEventsAfterRestart <- readGlobalEvents restartedStore entityName
+              assertGlobalCommandEvent savedEvent globalEventsAfterRestart
 
     whenEnvVar "POSTGRES_AVAILABLE" do
       it "persists command metadata through typed PostgreSQL writes, subscription, and reopen" \_ -> do
@@ -175,12 +173,14 @@ executeAddItem :: EventStore CartEvent -> EntityName -> Uuid.Uuid -> EventMetada
 executeAddItem eventStore entityName cartId sourceMetadata = do
   fetcher <- Fetcher.new eventStore initialCartState applyCartEvent |> Task.mapError toText
   Executor.execute
-    eventStore
-    fetcher
-    entityName
-    (Just sourceMetadata)
-    Auth.emptyContext
+    (Executor.ExecutionDependencies
+      { Executor.eventStore = eventStore,
+        Executor.entityFetcher = fetcher,
+        Executor.entityName = entityName
+      })
+    (Executor.FromEvent Auth.emptyContext sourceMetadata)
     AddItemToCart {cartId, itemId = Uuid.nil, amount = 1}
+    |> Task.mapError CommandExecutionFailure.message
 
 
 assertAccepted :: Executor.ExecutionResult -> Task Text Unit
@@ -243,11 +243,9 @@ recordEvent observed event =
 waitForEventCount :: Int -> Int -> ConcurrentVar (Array (Event CartEvent)) -> Task Text Unit
 waitForEventCount expected attemptsLeft observed = do
   events <- ConcurrentVar.peek observed
-  if Array.length events >= expected
-    then Task.yield unit
-    else
-      if attemptsLeft <= 0
-        then Task.throw "Timed out waiting for PostgreSQL event subscription"
-        else do
-          AsyncTask.sleep 50 |> Task.mapError (\_ -> "PostgreSQL event subscription wait failed")
-          waitForEventCount expected (attemptsLeft - 1) observed
+  Task.unless (Array.length events >= expected) do
+    if attemptsLeft <= 0
+      then Task.throw "Timed out waiting for PostgreSQL event subscription"
+      else do
+        AsyncTask.sleep 50 |> Task.mapError (\_ -> "PostgreSQL event subscription wait failed")
+        waitForEventCount expected (attemptsLeft - 1) observed

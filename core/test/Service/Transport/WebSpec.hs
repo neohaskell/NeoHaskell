@@ -71,9 +71,9 @@ instance Service.Query.Core.Query AdminQuery where
   canAccessImpl user = case user of
     Nothing -> Just Unauthenticated
     Just claims ->
-      case claims.permissions |> Array.contains "admin:read" of
-        True -> Nothing
-        False -> Just (InsufficientPermissions ["admin:read"])
+      if claims.permissions |> Array.contains "admin:read"
+        then Nothing
+        else Just (InsufficientPermissions ["admin:read"])
   canViewImpl _ _ = Nothing
 
 

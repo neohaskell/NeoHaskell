@@ -1,11 +1,10 @@
 module Service.FileUpload.BlobStore.S3Spec where
 
 import Array qualified
+import AsyncTask qualified
 import Bytes qualified
 import ConcurrentVar qualified
 import Core
-import Control.Concurrent qualified as GhcConcurrent
-import Control.Concurrent.Async qualified as GhcAsync
 import Http.Client qualified as Http
 import Http.Client.Internal qualified as HttpInternal
 import Json qualified
@@ -21,7 +20,6 @@ import Service.FileUpload.BlobStore.S3.FakeS3 (FakeS3 (..), Mode (..), withFakeS
 import Service.FileUpload.BlobStore.S3.FakeS3 qualified as FakeS3
 import Service.FileUpload.Core (BlobKey (..), FileUploadConfig (..), FileStateStoreBackend (..))
 import Service.Transport.Web qualified as Web
-import System.Timeout qualified as GhcTimeout
 import Task qualified
 import Test
 import Text qualified
@@ -362,21 +360,25 @@ withUploadApplication app action = do
   eventStore <- InMemory.new |> Task.mapError toText
   identifier <- Uuid.generate
   let healthPath = [fmt|s3-proof-#{Uuid.toText identifier}|]
-  Task.fromIOResult do
-    (port, socket) <- GhcWarp.openFreePort
-    GhcSocket.close socket
-    let endpoint = [fmt|http://127.0.0.1:#{port}|]
-    let configured = app
-          |> Application.withTransport (Web.server {Web.port = port})
-          |> Application.withHealthCheck @() (\_ -> healthPath)
-    GhcAsync.withAsync (Application.runWith eventStore configured |> Task.runOrPanic) \server -> do
-      GhcAsync.link server
-      outcome <- GhcTimeout.timeout 10000000 (Task.runResult do
+  port <- Task.withCancellationDeferred \_ -> do
+    (assignedPort, socket) <- Task.fromIO GhcWarp.openFreePort
+    Task.fromIO (GhcSocket.close socket)
+    Task.yield assignedPort
+  let endpoint = [fmt|http://127.0.0.1:#{port}|]
+  let configured = app
+        |> Application.withTransport (Web.server {Web.port = port})
+        |> Application.withHealthCheck @() (\_ -> healthPath)
+  let serve = do
+        Application.runWith eventStore configured
+        Task.throw "Application stopped before its upload checks completed"
+  let check = do
         awaitUploadApplication [fmt|#{endpoint}/#{healthPath}|] 100
-        action endpoint)
-      case outcome of
-        Nothing -> pure (Err "Application upload roundtrip timed out")
-        Just result -> pure result
+        action endpoint
+  let timeout = do
+        AsyncTask.sleep 10000
+        Task.throw "Application upload roundtrip timed out"
+  _ <- AsyncTask.race timeout (AsyncTask.race serve check)
+  Task.yield ()
 
 
 awaitUploadApplication :: Text -> Int -> Task Text Unit
@@ -388,5 +390,5 @@ awaitUploadApplication healthUrl attempts = do
       if attempts <= 0
         then fail [fmt|Application did not become ready: #{show error}|]
         else do
-          Task.fromIO (GhcConcurrent.threadDelay 25000)
+          AsyncTask.sleep 25
           awaitUploadApplication healthUrl (attempts - 1)

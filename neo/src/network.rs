@@ -40,10 +40,18 @@ pub async fn fetch_neo_sha(version: &str) -> miette::Result<String> {
         version
     };
 
-    let output = tokio::process::Command::new("git")
-        .args(["ls-remote", "https://github.com/NeoHaskell/neohaskell", target])
-        .output()
+    let peeled_target = format!("{target}^{{}}");
+    let mut command = tokio::process::Command::new("git");
+    command
+        .args(["ls-remote", "https://github.com/NeoHaskell/neohaskell", target, &peeled_target])
+        .kill_on_drop(true);
+    let output = tokio::time::timeout(std::time::Duration::from_secs(30), command.output())
         .await
+        .map_err(|_| NeoError::SubprocessFailed {
+            operation: format!("`git ls-remote https://github.com/NeoHaskell/neohaskell {}`", target),
+            cause: "resolving the framework revision exceeded the 30 second limit".to_string(),
+            fix: "Check network access to GitHub, then retry the command. If you already have an exact commit SHA, set `neo-version` in `neo.json` to that SHA.".to_string(),
+        })?
         .map_err(|e| NeoError::SubprocessFailed {
             operation: format!("spawning `git ls-remote https://github.com/NeoHaskell/neohaskell {}`", target),
             cause: format!("could not run git: {}", e),
@@ -67,16 +75,43 @@ pub async fn fetch_neo_sha(version: &str) -> miette::Result<String> {
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    let sha = stdout
-        .split_whitespace()
-        .next()
+    let sha = resolve_neo_ref(&stdout, target)
         .ok_or_else(|| NeoError::SubprocessFailed {
             operation: format!("resolving NeoHaskell version `{}` against https://github.com/NeoHaskell/neohaskell", version),
             cause: format!("`git ls-remote` returned no SHA for ref `{}`", target),
             fix: format!("Edit `neo.json` or your `neo` invocation: the NeoHaskell version `{}` does not resolve to any branch, tag, or SHA on https://github.com/NeoHaskell/neohaskell. Use `main`, `latest`, or a published tag (list them with `git ls-remote https://github.com/NeoHaskell/neohaskell`).", version),
         })?;
 
-    Ok(sha.to_string())
+    Ok(sha)
+}
+
+fn resolve_neo_ref(stdout: &str, target: &str) -> Option<String> {
+    let branch = format!("refs/heads/{target}");
+    let tag = format!("refs/tags/{target}");
+    let peeled_tag = format!("{tag}^{{}}");
+    let mut branch_sha = None;
+    let mut tag_sha = None;
+    let mut peeled_sha = None;
+    for line in stdout.lines() {
+        let Some((sha, reference)) = line.split_once('\t') else {
+            continue;
+        };
+        if !is_commit_sha(sha) {
+            continue;
+        }
+        if reference == branch {
+            branch_sha = Some(sha.to_string());
+        } else if reference == peeled_tag {
+            peeled_sha = Some(sha.to_string());
+        } else if reference == tag {
+            tag_sha = Some(sha.to_string());
+        }
+    }
+    if target == "main" {
+        branch_sha.or(peeled_sha).or(tag_sha)
+    } else {
+        peeled_sha.or(tag_sha).or(branch_sha)
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -300,6 +335,12 @@ pub fn write_starter_template(dest: &Path) -> miette::Result<()> {
             rel
         ))?;
         let dest_path = safe_join(dest, rel.as_ref())?;
+        let is_instruction = Path::new(rel.as_ref())
+            .file_name()
+            .is_some_and(|name| name == "AGENTS.md" || name == "CLAUDE.md");
+        if is_instruction && std::fs::symlink_metadata(&dest_path).is_ok() {
+            continue;
+        }
         if let Some(parent) = dest_path.parent() {
             std::fs::create_dir_all(parent)
                 .map_err(|e| NeoError::io_at("creating a starter template directory at", &parent.to_path_buf(), e))?;
@@ -464,9 +505,6 @@ pub async fn fetch_skills_repo(refresh: bool) -> miette::Result<std::path::PathB
     Ok(checkout)
 }
 
-/// Write a deterministic offline stub `neohaskell/skills` checkout (one sample
-/// skill in agentskills.io format) so `neo skills setup` can run without
-/// network. Used under `NEO_SKIP_NETWORK`.
 fn write_skills_stub(checkout: &Path) -> miette::Result<()> {
     let skill_dir = checkout.join("skills").join("sample-skill");
     std::fs::create_dir_all(&skill_dir)
@@ -478,14 +516,6 @@ fn write_skills_stub(checkout: &Path) -> miette::Result<()> {
     )
     .map_err(|e| NeoError::io_at("writing the offline-stub `SKILL.md` to", &skill_md, e))?;
 
-    // Ship a stub primer so `neo skills setup` exercises the primer install +
-    // wiring offline (mirrors the real repo's top-level `neohaskell.md`).
-    let primer = checkout.join("neohaskell.md");
-    std::fs::write(
-        &primer,
-        "# NeoHaskell primer (offline stub)\n\nThis is NeoHaskell, not vanilla Haskell. Start from the neohaskell-feature-pipeline skill.\n",
-    )
-    .map_err(|e| NeoError::io_at("writing the offline-stub `neohaskell.md` to", &primer, e))?;
     Ok(())
 }
 
@@ -493,6 +523,20 @@ fn write_skills_stub(checkout: &Path) -> miette::Result<()> {
 mod tests {
     use super::*;
     use tempfile::tempdir;
+
+    #[test]
+    fn annotated_framework_tag_resolves_to_peeled_commit() {
+        let tag_object = "1111111111111111111111111111111111111111";
+        let commit = "2222222222222222222222222222222222222222";
+        let stdout = format!(
+            "{tag_object}\trefs/tags/neo-v1.2.3\n{commit}\trefs/tags/neo-v1.2.3^{{}}\n"
+        );
+        assert_eq!(resolve_neo_ref(&stdout, "neo-v1.2.3"), Some(commit.to_string()));
+        assert_eq!(
+            resolve_neo_ref(&format!("{commit}\trefs/heads/main\n"), "main"),
+            Some(commit.to_string())
+        );
+    }
 
     #[tokio::test]
     async fn test_fetch_skills_repo_skip_network_stub() {
@@ -563,10 +607,38 @@ mod tests {
         assert!(dir.path().join("cabal.project").exists(), "cabal.project missing");
         // The starter's own test tree.
         assert!(dir.path().join("tests/Spec.hs").exists(), "tests/Spec.hs missing");
+        let agents = std::fs::read_to_string(dir.path().join("AGENTS.md")).unwrap();
+        assert!(agents.contains(".neo/agent-guidance/active.md"));
+        assert_eq!(std::fs::read_to_string(dir.path().join("CLAUDE.md")).unwrap(), "@AGENTS.md\n");
 
         // The monorepo-only provenance manifest must NOT leak into a generated
         // project (it is excluded from the embed).
         assert!(!dir.path().join("IMPORT.md").exists(), "IMPORT.md must not be scaffolded into a project");
+    }
+
+    #[test]
+    fn starter_extraction_preserves_existing_instruction_files() {
+        let dir = tempdir().unwrap();
+        std::fs::write(dir.path().join("AGENTS.md"), "developer agents rules\n").unwrap();
+        std::fs::write(dir.path().join("CLAUDE.md"), "developer claude rules\n").unwrap();
+
+        write_starter_template(dir.path()).unwrap();
+
+        assert_eq!(std::fs::read_to_string(dir.path().join("AGENTS.md")).unwrap(), "developer agents rules\n");
+        assert_eq!(std::fs::read_to_string(dir.path().join("CLAUDE.md")).unwrap(), "developer claude rules\n");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn starter_extraction_preserves_broken_instruction_symlinks() {
+        let dir = tempdir().unwrap();
+        let external_target = dir.path().join("outside-target");
+        std::os::unix::fs::symlink(&external_target, dir.path().join("AGENTS.md")).unwrap();
+
+        write_starter_template(dir.path()).unwrap();
+
+        assert!(std::fs::symlink_metadata(dir.path().join("AGENTS.md")).unwrap().file_type().is_symlink());
+        assert!(!external_target.exists());
     }
 
     #[test]
