@@ -1,3 +1,5 @@
+{-# LANGUAGE Strict #-}
+
 -- | # Integration Dispatcher
 --
 -- Routes events to per-entity workers to ensure sequential processing
@@ -69,7 +71,6 @@ import Channel (Channel)
 import Channel qualified
 import Control.Concurrent.Async qualified as GhcAsync
 import Control.Concurrent.STM qualified as GhcSTM
-import Control.Exception qualified as GhcException
 import ConcurrentMap (ConcurrentMap)
 import ConcurrentMap qualified
 import ConcurrentVar (ConcurrentVar)
@@ -81,7 +82,6 @@ import Data.Time.Clock.POSIX qualified as GhcPosix
 import Float qualified
 import GHC.Float (Double)
 import GHC.Real qualified as GhcReal
-import GHC.IO qualified as GhcIO
 import Int qualified
 import Integration qualified
 import Json qualified
@@ -458,19 +458,15 @@ runIntegrationRunner execution runnerTask dispatchPayload = do
                       IntegrationRunnerProcessing commandCount -> IntegrationRunnerProcessing (commandCount + 1)
                       completed -> completed
                     )
-            dispatchResult <- Task.fromIO do
-              GhcException.try @GhcException.SomeException
-                (commands |> Task.forEach dispatchCommandPayload |> Task.runResult)
-            case dispatchResult of
-              Left exception -> case GhcException.fromException @GhcException.SomeAsyncException exception of
-                Just asyncException -> Task.fromIO (GhcException.throwIO asyncException)
-                Nothing -> do
-                  completeRunner (IntegrationFailure IntegrationCallbackDispatchFailure)
-                  Task.fromIO (GhcException.throwIO exception)
-              Right (Ok _) -> completeRunner IntegrationProcessed
-              Right (Err errorText) -> do
-                completeRunner (IntegrationFailure IntegrationCallbackDispatchFailure)
-                Task.throw errorText
+            let reportDispatchFailure failure = case failure of
+                  Task.Interrupted -> Task.yield unit
+                  Task.TypedFailure _ -> completeRunner (IntegrationFailure IntegrationCallbackDispatchFailure)
+                  Task.RuntimeFailure -> completeRunner (IntegrationFailure IntegrationCallbackDispatchFailure)
+            let dispatchCommands =
+                  Task.evaluate (commands |> Task.forEach dispatchCommandPayload)
+                    |> Task.andThen identity
+            dispatchCommands |> Task.onFailure reportDispatchFailure
+            completeRunner IntegrationProcessed
         Task.yield unit
   processRunner
 
@@ -838,40 +834,29 @@ queueWorkerEventWithTimeout ::
   WorkerQueueControl ->
   Channel (WorkerMessage (Event Json.Value)) ->
   Task Text WorkerEnqueueResult
-queueWorkerEventWithTimeout dispatcher streamId event queueStatus workerChannel = Task.fromIOResult do
-  GhcException.mask \restore -> do
-    shutdownResult <- Task.runResult (dispatcher.shutdownSignal |> ConcurrentVar.peek)
-    case shutdownResult of
-      Err err -> pure (Err err)
-      Ok True -> pure (Ok WorkerQueueClosed)
-      Ok False -> do
-        admissionResult <- Task.runResult (acquireWorkerWrite queueStatus)
-        case admissionResult of
-          Err err -> pure (Err err)
-          Ok False -> pure (Ok WorkerQueueClosed)
-          Ok True -> do
-            writeResult <-
-              GhcException.finally
-                ( restore
-                    ( Task.runResult
-                        ( Channel.tryWriteWithTimeout
-                            dispatcher.config.channelWriteTimeoutMs
-                            (ProcessEvent event)
-                            workerChannel
-                        )
-                    )
+queueWorkerEventWithTimeout dispatcher streamId event queueStatus workerChannel = Task.withCancellationDeferred \restore -> do
+  isShuttingDown <- dispatcher.shutdownSignal |> ConcurrentVar.peek
+  if isShuttingDown
+    then Task.yield WorkerQueueClosed
+    else do
+      admitted <- acquireWorkerWrite queueStatus
+      if not admitted
+        then Task.yield WorkerQueueClosed
+        else do
+          writeResult <-
+            Task.finally (releaseWorkerWrite queueStatus) do
+              restore
+                ( Channel.tryWriteWithTimeout
+                    dispatcher.config.channelWriteTimeoutMs
+                    (ProcessEvent event)
+                    workerChannel
                 )
-                (Task.runOrPanic (releaseWorkerWrite queueStatus))
-            case writeResult of
-              Err err -> pure (Err err)
-              Ok (Ok _) -> pure (Ok WorkerEventEnqueued)
-              Ok (Err _) -> do
-                _ <-
-                  Task.runResult
-                    ( Log.warn [fmt|Dropped event for stream #{toText streamId} (channel write timeout)|]
-                        |> Task.ignoreError
-                    )
-                pure (Ok WorkerEventWriteTimedOut)
+          case writeResult of
+            Ok _ -> Task.yield WorkerEventEnqueued
+            Err _ -> do
+              Log.warn [fmt|Dropped event for stream #{toText streamId} (channel write timeout)|]
+                |> Task.ignoreError
+              Task.yield WorkerEventWriteTimedOut
 
 
 queueStatelessEvent ::
@@ -980,49 +965,32 @@ stopWorkerOrCancel ::
   AsyncTask Text Unit ->
   Channel (WorkerMessage (Event Json.Value)) ->
   Task Text Unit
-stopWorkerOrCancel dispatcher streamId workerLabel queueStatus workerTask workerChannel = Task.fromIOResult do
-  GhcException.mask \restore -> do
-    claimResult <- Task.runResult (claimWorkerStop queueStatus)
-    case claimResult of
-      Err err -> pure (Err err)
-      Ok False -> pure (Ok unit)
-      Ok True -> do
-        stopResult <-
-          GhcException.try @GhcException.SomeException do
-            writerWaitResult <- restore (Task.runResult (waitForWorkerWriters queueStatus))
-            case writerWaitResult of
-              Err err -> pure (Err err)
-              Ok _ -> do
-                channelWriteResult <-
-                  restore
-                    ( Task.runResult
-                        ( Channel.tryWriteWithTimeout
-                            dispatcher.config.channelWriteTimeoutMs
-                            Stop
-                            workerChannel
-                        )
-                    )
-                case channelWriteResult of
-                  Err err -> pure (Err err)
-                  Ok (Ok _) -> pure (Ok True)
-                  Ok (Err _) -> pure (Ok False)
-        case stopResult of
-          Left exception -> do
-            Task.runOrPanic (forceWorkerStop queueStatus workerTask workerChannel)
-            GhcException.throwIO exception
-          Right (Err err) -> do
-            Task.runOrPanic (forceWorkerStop queueStatus workerTask workerChannel)
-            pure (Err err)
-          Right (Ok True) -> Task.runResult (finishWorkerStop queueStatus)
-          Right (Ok False) -> do
-            Task.runOrPanic (forceWorkerStop queueStatus workerTask workerChannel)
-            _ <-
-              Task.runResult
-                ( Log.warn
-                    [fmt|Stop message timed out for #{workerLabel} stream #{toText streamId}, force-cancelling worker|]
-                    |> Task.ignoreError
+stopWorkerOrCancel dispatcher streamId workerLabel queueStatus workerTask workerChannel = Task.withCancellationDeferred \restore -> do
+  claimed <- claimWorkerStop queueStatus
+  if not claimed
+    then Task.yield unit
+    else do
+      let forceStop = forceWorkerStop queueStatus workerTask workerChannel
+      let attemptStop = do
+            restore (waitForWorkerWriters queueStatus)
+            writeResult <-
+              restore
+                ( Channel.tryWriteWithTimeout
+                    dispatcher.config.channelWriteTimeoutMs
+                    Stop
+                    workerChannel
                 )
-            pure (Ok unit)
+            case writeResult of
+              Ok _ -> Task.yield True
+              Err _ -> Task.yield False
+      stopResult <- Task.onFailure (\_ -> forceStop) attemptStop
+      if stopResult
+        then finishWorkerStop queueStatus
+        else do
+          forceStop
+          Log.warn
+            [fmt|Stop message timed out for #{workerLabel} stream #{toText streamId}, force-cancelling worker|]
+            |> Task.ignoreError
 
 
 forceWorkerStop ::
@@ -1032,13 +1000,12 @@ forceWorkerStop ::
   Task Text Unit
 forceWorkerStop queueStatus workerTask workerChannel = do
   -- Admitted writes use a timeout. Worker cancellation still assumes callbacks respond to cancellation.
-  abandonedEvents <- Task.fromIO do
-    GhcException.uninterruptibleMask_ do
-      Task.runOrPanic (waitForWorkerWriters queueStatus)
-      Task.runOrPanic (AsyncTask.cancel workerTask)
-      drainedEvents <- Task.runOrPanic (drainAbandonedWorkerQueue workerChannel)
-      Task.runOrPanic (finishWorkerStop queueStatus)
-      pure drainedEvents
+  abandonedEvents <- Task.withCancellationBlocked do
+    waitForWorkerWriters queueStatus
+    AsyncTask.cancel workerTask
+    drainedEvents <- drainAbandonedWorkerQueue workerChannel
+    finishWorkerStop queueStatus
+    Task.yield drainedEvents
   abandonedEvents
     |> Task.forEach \event -> do
       let logContext = integrationLogContext event
@@ -1051,25 +1018,16 @@ withWorkerCleanupHandoff ::
   (worker -> Task Text Unit) ->
   (worker -> Task Text Unit) ->
   Task Text Unit
-withWorkerCleanupHandoff removeWorker afterRemoval cleanupWorker =
-  Task.fromIOResult do
-  GhcException.mask \restore -> do
-    removeResult <- Task.runResult removeWorker
-    case removeResult of
-      Err err -> pure (Err err)
-      Ok Nothing -> pure (Ok unit)
-      Ok (Just worker) -> do
-        actionResult <-
-          GhcException.try @GhcException.SomeException
-            (restore (Task.runResult (afterRemoval worker)))
-        case actionResult of
-          Left exception -> do
-            _ <- Task.runResult (cleanupWorker worker)
-            GhcException.throwIO exception
-          Right (Err err) -> do
-            _ <- Task.runResult (cleanupWorker worker)
-            pure (Err err)
-          Right (Ok _) -> pure (Ok unit)
+withWorkerCleanupHandoff removeWorker ~afterRemoval ~cleanupWorker = Task.withCancellationDeferred \restore -> do
+  maybeWorker <- removeWorker
+  case maybeWorker of
+    Nothing -> Task.yield unit
+    Just worker -> do
+      let cleanup = Task.evaluate (cleanupWorker worker) |> Task.andThen identity
+      let runAfterRemoval = do
+            callback <- Task.evaluate (afterRemoval worker)
+            restore callback
+      Task.onFailure (\_ -> cleanup) runAfterRemoval
 
 
 withWorkerCandidateHandoff ::
@@ -1077,45 +1035,30 @@ withWorkerCandidateHandoff ::
   (worker -> Task Text (worker, Maybe worker)) ->
   (worker -> Task Text Unit) ->
   Task Text worker
-withWorkerCandidateHandoff createCandidate publishCandidate cleanupWorker =
-  Task.fromIOResult do
-  GhcException.mask \restore -> do
-    candidateResult <- GhcException.try @GhcException.SomeException (Task.runResult createCandidate)
-    case candidateResult of
-      Left exception -> GhcException.throwIO exception
-      Right (Err err) -> pure (Err err)
-      Right (Ok candidate) -> do
-        publishResult <- Task.runResult (publishCandidate candidate)
-        case publishResult of
-          Err err -> do
-            _ <- Task.runResult (cleanupOwnedWorker restore candidate cleanupWorker)
-            pure (Err err)
-          Ok (actualWorker, maybeDiscarded) -> case maybeDiscarded of
-            Nothing -> pure (Ok actualWorker)
-            Just discardedWorker -> do
-              cleanupResult <- Task.runResult (cleanupOwnedWorker restore discardedWorker cleanupWorker)
-              case cleanupResult of
-                Err err -> pure (Err err)
-                Ok _ -> pure (Ok actualWorker)
+withWorkerCandidateHandoff ~createCandidate ~publishCandidate ~cleanupWorker = Task.withCancellationDeferred \restore -> do
+  candidate <- createCandidate
+  let publish = Task.evaluate (publishCandidate candidate) |> Task.andThen identity
+  (actualWorker, maybeDiscarded) <-
+    publish
+      |> Task.onFailure (\_ -> cleanupOwnedWorker restore candidate cleanupWorker)
+  case maybeDiscarded of
+    Nothing -> Task.yield actualWorker
+    Just discardedWorker -> do
+      cleanupOwnedWorker restore discardedWorker cleanupWorker
+      Task.yield actualWorker
 
 
 cleanupOwnedWorker ::
-  (GhcIO.IO (Result Text Unit) -> GhcIO.IO (Result Text Unit)) ->
+  (Task Text Unit -> Task Text Unit) ->
   worker ->
   (worker -> Task Text Unit) ->
   Task Text Unit
-cleanupOwnedWorker restore worker cleanupWorker = Task.fromIOResult do
-  cleanupResult <-
-    GhcException.try @GhcException.SomeException
-      (restore (Task.runResult (cleanupWorker worker)))
-  case cleanupResult of
-    Left exception -> do
-      _ <- Task.runResult (cleanupWorker worker)
-      GhcException.throwIO exception
-    Right (Err err) -> do
-      _ <- Task.runResult (cleanupWorker worker)
-      pure (Err err)
-    Right (Ok _) -> pure (Ok unit)
+cleanupOwnedWorker restore worker ~cleanupWorker = do
+  let attempt = do
+        callback <- Task.evaluate (cleanupWorker worker)
+        restore callback
+  let retry _ = Task.evaluate (cleanupWorker worker) |> Task.andThen identity
+  Task.onFailure retry attempt
 
 
 drainAbandonedWorkerQueue ::
@@ -1256,7 +1199,7 @@ spawnStatelessWorker dispatcher streamId = do
     Log.debug [fmt|Starting worker for stream #{toText streamId}|]
       |> Task.ignoreError
 
-  workerTask <- AsyncTask.runUnmasked safeWorkerLoop
+  workerTask <- AsyncTask.runWithCancellationEnabled safeWorkerLoop
   Task.yield
     EntityWorker
       { workerId = uniqueId,
@@ -1350,7 +1293,7 @@ spawnLifecycleWorker dispatcher streamId entityTypeName = do
     Log.debug [fmt|Starting lifecycle worker for stream #{toText streamId}|]
       |> Task.ignoreError
 
-  workerTask <- AsyncTask.runUnmasked safeWorkerLoop
+  workerTask <- AsyncTask.runWithCancellationEnabled safeWorkerLoop
   Task.yield
     LifecycleEntityWorker
       { workerId = uniqueId,

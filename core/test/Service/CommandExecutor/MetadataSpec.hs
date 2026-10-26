@@ -5,7 +5,6 @@ import AsyncTask qualified
 import Auth.Claims (UserClaims (..))
 import Basics
 import ConcurrentVar qualified
-import Control.Exception qualified as GhcException
 import Decider qualified
 import Log qualified
 import Map qualified
@@ -196,7 +195,7 @@ spec = do
       let throwingFetcher =
             fetcher
               { Fetcher.fetch = \_ _ ->
-                  Task.fromIO (GhcException.throwIO (GhcException.ErrorCall "private-io-exception-sentinel"))
+                  Task.fromIO (panic "private-io-exception-sentinel")
               }
       Log.withScope
         [ ("eventId", "ambient-event-id-sentinel")

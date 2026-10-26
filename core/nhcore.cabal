@@ -84,6 +84,7 @@ common common_cfg
     transformers,
     tls,
     unagi-chan,
+    unix,
     uuid,
     vector,
     wai,
@@ -445,6 +446,7 @@ test-suite nhcore-test
     LogSpec
     DecimalSpec
     DeciderSpec
+    DirectorySpec
     UuidSpec
     Service.ApplicationSpec
     Service.AuthSpec
@@ -720,6 +722,7 @@ test-suite nhcore-test-core
     CryptoSpec
     DeciderSpec
     DecimalSpec
+    DirectorySpec
     UuidSpec
     EventVariantOfSpec
     Http.ClientRawSpec
@@ -727,6 +730,7 @@ test-suite nhcore-test-core
     IntSpec
     LayoutSpec
     Layout.RenderSpec
+    LockSpec
     NeoQL.ExecuteSpec
     NeoQL.ParserSpec
     OutboundIntegrationSpec

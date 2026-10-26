@@ -2,11 +2,16 @@
 
 module AsyncTask (
   AsyncTask,
+  Outcome (..),
   RaceWinner (..),
   run,
-  runUnmasked,
+  runWithCancellationEnabled,
   waitFor,
   waitCatch,
+  waitOutcome,
+  isWaitingForStateChange,
+  isWaitingForExceptionDelivery,
+  requestThreadTermination,
   cancel,
   sleep,
   process,
@@ -20,8 +25,11 @@ import Array qualified
 import Basics
 import Control.Concurrent qualified as Ghc
 import Control.Concurrent.Async qualified as GhcAsync
+import Control.Exception (SomeAsyncException)
+import Control.Exception qualified as GhcException
+import GHC.Conc qualified as GhcConc
 import GHC.IO qualified as GHC
-import Data.Either qualified as GhcEither
+import Maybe (Maybe (..))
 import Prelude qualified
 import Result (Result)
 import Result qualified
@@ -34,6 +42,13 @@ import Task qualified
 newtype AsyncTask err result = AsyncTask (GhcAsync.Async (Result err result))
 
 
+data Outcome err result
+  = Completed result
+  | Failed err
+  | Interrupted
+  | Crashed Text
+
+
 run :: (Show err) => Task err result -> Task err (AsyncTask err result)
 run task =
   Task.runResult task
@@ -42,9 +57,9 @@ run task =
     |> Task.map AsyncTask
 
 
--- | Run a task in a child that starts unmasked, even when the caller is masked.
-runUnmasked :: (Show err) => Task err result -> Task err (AsyncTask err result)
-runUnmasked task =
+-- | Start a child that can receive cancellation while its parent protects an ownership handoff.
+runWithCancellationEnabled :: (Show err) => Task err result -> Task err (AsyncTask err result)
+runWithCancellationEnabled task =
   GhcAsync.asyncWithUnmask (\unmask -> unmask (Task.runResult task))
     |> Task.fromIO
     |> Task.map AsyncTask
@@ -65,13 +80,55 @@ waitFor (AsyncTask self) =
 waitCatch :: (Show err) => AsyncTask err result -> Task err2 (Result Text result)
 waitCatch (AsyncTask self) = do
   outcome <- GhcAsync.waitCatch self |> Task.fromIO
-  case outcome of
-    GhcEither.Left someException ->
+  case Result.fromEither outcome of
+    Result.Err someException ->
       Task.yield (Result.Err (show someException |> Text.fromLinkedList))
-    GhcEither.Right taskResult ->
+    Result.Ok taskResult ->
       case taskResult of
         Result.Ok value -> Task.yield (Result.Ok value)
         Result.Err err -> Task.yield (Result.Err (show err |> Text.fromLinkedList))
+
+
+-- | Wait for a child and keep typed failures separate from cancellation and
+-- runtime exceptions. A crash carries diagnostic text, not a typed task error.
+waitOutcome :: AsyncTask err result -> Task otherErr (Outcome err result)
+waitOutcome (AsyncTask self) = do
+  outcome <- GhcAsync.waitCatch self |> Task.fromIO
+  case Result.fromEither outcome of
+    Result.Err someException ->
+      case GhcException.fromException @SomeAsyncException someException of
+        Just _ -> Task.yield Interrupted
+        Nothing -> Task.yield (Crashed (show someException |> Text.fromLinkedList))
+    Result.Ok (Result.Ok value) -> Task.yield (Completed value)
+    Result.Ok (Result.Err err) -> Task.yield (Failed err)
+
+
+-- | Observe whether a child is currently waiting for shared state to change.
+-- This is a momentary status snapshot, useful for coordinating concurrency tests.
+isWaitingForStateChange :: AsyncTask err result -> Task otherErr Bool
+isWaitingForStateChange (AsyncTask child) = do
+  status <- GhcConc.threadStatus (GhcAsync.asyncThreadId child) |> Task.fromIO
+  case status of
+    GhcConc.ThreadBlocked GhcConc.BlockedOnSTM -> Task.yield True
+    _ -> Task.yield False
+
+
+-- | Observe whether this task is blocked while delivering an exception.
+-- This is a momentary status snapshot for coordinating cancellation tests.
+isWaitingForExceptionDelivery :: AsyncTask err result -> Task otherErr Bool
+isWaitingForExceptionDelivery (AsyncTask child) = do
+  status <- GhcConc.threadStatus (GhcAsync.asyncThreadId child) |> Task.fromIO
+  case status of
+    GhcConc.ThreadBlocked GhcConc.BlockedOnException -> Task.yield True
+    _ -> Task.yield False
+
+
+-- | Send 'ThreadKilled' and return after delivery, without waiting for the
+-- child to finish cleanup. Use 'waitOutcome' to observe its eventual exit.
+requestThreadTermination :: AsyncTask err result -> Task otherErr Unit
+requestThreadTermination (AsyncTask child) =
+  Ghc.throwTo (GhcAsync.asyncThreadId child) GhcException.ThreadKilled
+    |> Task.fromIO
 
 
 -- | Cancel a running async task.
@@ -109,11 +166,11 @@ data RaceWinner a b
 race :: forall err a b. (Show err) => Task err a -> Task err b -> Task err (RaceWinner a b)
 race leftTask rightTask = Task.fromIOResult do
   outcome <- GhcAsync.race (Task.runResult leftTask) (Task.runResult rightTask)
-  case outcome of
-    GhcEither.Left (Result.Ok a) -> pure (Result.Ok (LeftWon a))
-    GhcEither.Left (Result.Err e) -> pure (Result.Err e)
-    GhcEither.Right (Result.Ok b) -> pure (Result.Ok (RightWon b))
-    GhcEither.Right (Result.Err e) -> pure (Result.Err e)
+  case Result.fromEither outcome of
+    Result.Err (Result.Ok value) -> pure (Result.Ok (LeftWon value))
+    Result.Err (Result.Err error) -> pure (Result.Err error)
+    Result.Ok (Result.Ok value) -> pure (Result.Ok (RightWon value))
+    Result.Ok (Result.Err error) -> pure (Result.Err error)
 
 
 sleep :: Int -> Task _ Unit

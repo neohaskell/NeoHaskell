@@ -39,7 +39,6 @@ import Basics
 import Bytes (Bytes)
 import Bytes qualified
 import Char (Char)
-import Control.Exception qualified as GhcException
 import Data.ByteString (ByteString)
 import Data.ByteString.Char8 qualified as GhcBSChar
 import Data.CaseInsensitive qualified as CI
@@ -407,29 +406,33 @@ sendSecure method options body = do
       let host = requestHost options
       let verb = methodName method
       Log.debug [fmt|HTTP #{verb} (secure) #{host}|] |> Task.ignoreError
-      secureResult <- sendSecureRawIO method options body |> Task.fromIO
+      secureResult <- sendSecureRaw method options body
       case secureResult of
         Err error -> Task.throw error
         Ok response -> checkResponseSize options response
 
 
--- | Internal IO action for a secure byte-level request using TLS 1.2+ only.
-sendSecureRawIO :: Method -> Request -> Bytes -> GhcIO.IO (Result Error (Response Bytes))
-sendSecureRawIO method options body = do
-  httpResult <- GhcException.try @HttpClient.HttpException do
-    baseReq <- parseRequestUrl options
-    let req =
-          baseReq
-            |> applyRequestOptions options
-            |> applyMethodAndBody method body
-            |> setRequestIgnoreStatus
-    GhcException.bracket
-      (HttpClient.responseOpen req cachedSecureTlsManager)
-      HttpClient.responseClose
-      (readLimitedResponse method options)
-  case httpResult of
-    GhcEither.Left httpException -> pure (Err (sanitizeHttpError httpException))
-    GhcEither.Right responseResult -> pure responseResult
+-- | Own the secure response through a bounded read or cancellation.
+sendSecureRaw :: Method -> Request -> Bytes -> Task Error (Result Error (Response Bytes))
+sendSecureRaw method options body = Task.withCancellationDeferred \restore -> do
+  baseReq <-
+    parseRequestUrl options
+      |> Task.fromFailableIO @HttpClient.HttpException
+      |> Task.mapError sanitizeHttpError
+  let req =
+        baseReq
+          |> applyRequestOptions options
+          |> applyMethodAndBody method body
+          |> setRequestIgnoreStatus
+  rawResponse <-
+    HttpClient.responseOpen req cachedSecureTlsManager
+      |> Task.fromFailableIO @HttpClient.HttpException
+      |> Task.mapError sanitizeHttpError
+  readLimitedResponse method options rawResponse
+    |> Task.fromFailableIO @HttpClient.HttpException
+    |> Task.mapError sanitizeHttpError
+    |> restore
+    |> Task.finally (HttpClient.responseClose rawResponse |> Task.fromIO)
 
 
 -- | HEAD advertises an unsent body; other methods retain the early header guard.

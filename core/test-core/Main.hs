@@ -10,6 +10,7 @@ import ConcurrentMapSpec qualified
 import CryptoSpec qualified
 import DeciderSpec qualified
 import DecimalSpec qualified
+import DirectorySpec qualified
 import UuidSpec qualified
 import EventVariantOfSpec qualified
 import Config.ApplicationSpec qualified
@@ -27,6 +28,7 @@ import Http.ClientSpec qualified
 import IntSpec qualified
 import Layout.RenderSpec qualified
 import LayoutSpec qualified
+import LockSpec qualified
 import NeoQL.ExecuteSpec qualified
 import NeoQL.ParserSpec qualified
 import OutboundIntegrationSpec qualified
@@ -57,6 +59,7 @@ main = Hspec.hspec do
   Hspec.describe "Crypto" CryptoSpec.spec
   Hspec.describe "Decider" DeciderSpec.spec
   Hspec.describe "Decimal" DecimalSpec.spec
+  Hspec.describe "Directory" DirectorySpec.spec
   Hspec.describe "Uuid" UuidSpec.spec
   Hspec.describe "EventVariantOf" EventVariantOfSpec.spec
   Hspec.describe "Config.Application" Config.ApplicationSpec.spec
@@ -74,6 +77,7 @@ main = Hspec.hspec do
   Hspec.describe "Int" IntSpec.spec
   Hspec.describe "Layout" LayoutSpec.spec
   Hspec.describe "Layout.Render" Layout.RenderSpec.spec
+  Hspec.describe "Lock" LockSpec.spec
   Hspec.describe "NeoQL.Parser" NeoQL.ParserSpec.spec
   Hspec.describe "NeoQL.Execute" NeoQL.ExecuteSpec.spec
   Hspec.describe "OutboundIntegration" OutboundIntegrationSpec.spec

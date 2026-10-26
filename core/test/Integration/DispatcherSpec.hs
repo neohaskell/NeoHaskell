@@ -6,14 +6,10 @@ import Array qualified
 import AsyncTask qualified
 import Channel qualified
 import Auth.SecretStore.InMemory qualified as InMemorySecretStore
-import Control.Concurrent qualified as Ghc
-import Control.Concurrent.Async qualified as GhcAsync
 import ConcurrentVar qualified
 import ConcurrentMap qualified
-import Control.Exception qualified as GhcException
 import Core
 import DateTime qualified
-import GHC.Conc qualified as GhcConc
 import Integration qualified
 import Integration.Command qualified as Command
 import Integration.Lifecycle qualified as Lifecycle
@@ -127,27 +123,23 @@ makeContext = do
 waitForDispatchCount :: Int -> Int -> ConcurrentVar.ConcurrentVar Int -> Task Text Unit
 waitForDispatchCount attemptsLeft expectedCount dispatchCount = do
   currentCount <- dispatchCount |> ConcurrentVar.peek
-  if currentCount >= expectedCount
-    then Task.yield unit
-    else
-      if attemptsLeft <= 0
-        then Task.throw "Timed out waiting for command dispatch"
-        else do
-          AsyncTask.sleep 20 |> Task.mapError (\_ -> "dispatch completion wait failed" :: Text)
-          waitForDispatchCount (attemptsLeft - 1) expectedCount dispatchCount
+  Task.unless (currentCount >= expectedCount) do
+    if attemptsLeft <= 0
+      then Task.throw "Timed out waiting for command dispatch"
+      else do
+        AsyncTask.sleep 20 |> Task.mapError (\_ -> "dispatch completion wait failed" :: Text)
+        waitForDispatchCount (attemptsLeft - 1) expectedCount dispatchCount
 
 
-waitForBlockedOnSTM :: Int -> GhcConc.ThreadId -> Task Text Unit
-waitForBlockedOnSTM attemptsLeft threadId = do
-  threadStatus <- GhcConc.threadStatus threadId |> Task.fromIO
-  case threadStatus of
-    GhcConc.ThreadBlocked GhcConc.BlockedOnSTM -> Task.yield unit
-    _ ->
-      if attemptsLeft <= 0
-        then Task.throw "Timed out waiting for a thread blocked on STM"
-        else do
-          AsyncTask.sleep 5 |> Task.mapError (\_ -> "thread status wait failed" :: Text)
-          waitForBlockedOnSTM (attemptsLeft - 1) threadId
+waitForBlockedOnSTM :: Int -> AsyncTask.AsyncTask err result -> Task Text Unit
+waitForBlockedOnSTM attemptsLeft child = do
+  waiting <- AsyncTask.isWaitingForStateChange child
+  Task.unless waiting do
+    if attemptsLeft <= 0
+      then Task.throw "Timed out waiting for a thread blocked on STM"
+      else do
+        AsyncTask.sleep 5 |> Task.mapError (\_ -> "thread status wait failed" :: Text)
+        waitForBlockedOnSTM (attemptsLeft - 1) child
 
 
 cancelShutdownWhileWriterIsAdmitted ::
@@ -163,25 +155,23 @@ cancelShutdownWhileWriterIsAdmitted dispatcher activeEvent queuedEvent waitingEv
   Channel.read workerStarted
   Dispatcher.dispatch dispatcher queuedEvent
 
-  writerTask <-
-    GhcAsync.async (Task.runResult (Dispatcher.dispatch dispatcher waitingEvent))
-      |> Task.fromIO
-  waitForBlockedOnSTM 200 (GhcAsync.asyncThreadId writerTask)
+  writerTask <- AsyncTask.run (Dispatcher.dispatch dispatcher waitingEvent)
+  waitForBlockedOnSTM 200 writerTask
 
-  shutdownTask <-
-    GhcAsync.async (Task.runResult (Dispatcher.shutdown dispatcher))
-      |> Task.fromIO
-  waitForBlockedOnSTM 200 (GhcAsync.asyncThreadId shutdownTask)
+  shutdownTask <- AsyncTask.run (Dispatcher.shutdown dispatcher)
+  waitForBlockedOnSTM 200 shutdownTask
 
-  Ghc.throwTo (GhcAsync.asyncThreadId shutdownTask) GhcException.ThreadKilled
-    |> Task.fromIO
-  GhcAsync.cancel writerTask |> Task.fromIO
+  AsyncTask.requestThreadTermination shutdownTask
+  AsyncTask.cancel writerTask
   workerStopRace <-
     AsyncTask.race
       (Channel.read workerStopped)
       (AsyncTask.sleep 500 |> Task.mapError (\_ -> "worker cancellation wait failed" :: Text))
 
-  _ <- GhcAsync.waitCatch shutdownTask |> Task.fromIO
+  shutdownOutcome <- AsyncTask.waitOutcome shutdownTask
+  case shutdownOutcome of
+    AsyncTask.Interrupted -> Task.yield unit
+    _ -> Task.throw "Shutdown did not preserve interruption"
   Dispatcher.shutdown dispatcher
 
   case workerStopRace of
@@ -409,8 +399,7 @@ spec = do
                         callCount |> ConcurrentVar.modify (+ 1)
                         if currentCount == 0
                           then do
-                            -- First call: throw a raw IO exception (bypasses ExceptT)
-                            Task.fromIO (GhcException.throwIO (GhcException.ErrorCall "private-runner-error-sentinel"))
+                            Task.evaluate (panic "private-runner-error-sentinel")
                           else do
                             -- Subsequent calls: process normally
                             processedEvents
@@ -1342,7 +1331,7 @@ spec = do
               Dispatcher.OutboundRunner
                 { entityTypeName = "TestEntity",
                   processEvent = \_maybeContext _eventStore _event -> do
-                    maskingState <- GhcException.getMaskingState |> Task.fromIO
+                    maskingState <- Task.cancellationState
                     Channel.write maskingState callbackMaskingStates
                     Task.yield Array.empty
                 }
@@ -1355,7 +1344,7 @@ spec = do
         callbackMaskingState <- Channel.read callbackMaskingStates
         Dispatcher.shutdown dispatcher
 
-        callbackMaskingState |> shouldBe GhcException.Unmasked
+        callbackMaskingState |> shouldBe Task.CancellationEnabled
 
       it "runs lifecycle callbacks in an unmasked child" \_ -> do
         callbackMaskingStates <- Channel.new
@@ -1366,7 +1355,7 @@ spec = do
                     Task.yield
                       Dispatcher.WorkerState
                         { processEvent = \_event -> do
-                            maskingState <- GhcException.getMaskingState |> Task.fromIO
+                            maskingState <- Task.cancellationState
                             Channel.write maskingState callbackMaskingStates
                             Task.yield Array.empty,
                           cleanup = Task.yield unit
@@ -1381,7 +1370,7 @@ spec = do
         callbackMaskingState <- Channel.read callbackMaskingStates
         Dispatcher.shutdown dispatcher
 
-        callbackMaskingState |> shouldBe GhcException.Unmasked
+        callbackMaskingState |> shouldBe Task.CancellationEnabled
 
     describe "concurrent dispatch to multiple entities" do
       it "handles concurrent dispatch to multiple entities correctly" \_ -> do
@@ -1635,7 +1624,7 @@ spec = do
                         attemptCount |> ConcurrentVar.modify (+ 1)
                         if currentAttempt == 0
                           then
-                            Task.fromIO (GhcException.throwIO (GhcException.ErrorCall "transient network error"))
+                            Task.evaluate (panic "transient network error")
                           else do
                             processedEvents
                               |> ConcurrentVar.modify (\evts -> evts ++ [decoded.sequenceNum])
@@ -1692,7 +1681,7 @@ spec = do
                         attemptCount |> ConcurrentVar.modify (+ 1)
                         if decoded.sequenceNum == 1
                           then
-                            Task.fromIO (GhcException.throwIO (GhcException.ErrorCall "persistent network error"))
+                            Task.evaluate (panic "persistent network error")
                           else do
                             processedEvents
                               |> ConcurrentVar.modify (\evts -> evts ++ [decoded.sequenceNum])

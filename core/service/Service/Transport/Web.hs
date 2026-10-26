@@ -34,7 +34,6 @@ import Log qualified
 import Data.Aeson qualified as Aeson
 import Data.ByteString qualified as GhcBS
 import Data.ByteString.Lazy qualified as GhcLBS
-import Data.IORef qualified as GhcIORef
 import Data.List qualified as GhcList
 import Data.Yaml qualified as Yaml
 import GHC.TypeLits qualified as GHC
@@ -75,6 +74,7 @@ import Service.Query.Subscriber (Readiness)
 import Service.Query.Subscriber qualified as Subscriber
 import Task (Task)
 import Task qualified
+import Var qualified
 import Text (Text)
 import Text qualified
 import ToText (toText)
@@ -233,20 +233,15 @@ data CommandRouteResultState
 -- Returns Err if the body exceeds the limit, Ok with the body bytes otherwise.
 readBodyWithLimit :: Int -> Wai.Request -> Task Text (Result Text Bytes)
 readBodyWithLimit maxSize request = Task.fromIO do
-  sizeRef <- GhcIORef.newIORef 0
-  chunksRef <- GhcIORef.newIORef []
-
-  let readChunks = do
+  let readChunks currentSize chunks = do
         chunk <- Wai.getRequestBodyChunk request
         if GhcBS.null chunk
           then do
-            chunks <- GhcIORef.readIORef chunksRef
             let reversedChunks = GhcList.reverse chunks
             let concatenated = GhcBS.concat reversedChunks
             let body = Bytes.fromLegacy concatenated
             pure (Result.Ok body)
           else do
-            currentSize <- GhcIORef.readIORef sizeRef
             let chunkSize = GhcBS.length chunk
             let newSize = currentSize + chunkSize
             if newSize > maxSize
@@ -254,10 +249,7 @@ readBodyWithLimit maxSize request = Task.fromIO do
                 -- Drain remaining body to avoid connection issues
                 drainBody
                 pure (Result.Err [fmt|Request body exceeds maximum size of #{maxSize} bytes|])
-              else do
-                GhcIORef.writeIORef sizeRef newSize
-                GhcIORef.modifyIORef chunksRef (\chunks -> chunk : chunks)
-                readChunks
+              else readChunks newSize (chunk : chunks)
 
       drainBody = do
         chunk <- Wai.getRequestBodyChunk request
@@ -265,7 +257,7 @@ readBodyWithLimit maxSize request = Task.fromIO do
           then pure ()
           else drainBody
 
-  readChunks
+  readChunks 0 []
 
 
 reportCommandRequestBodyState :: Text -> RequestContext -> CommandRequestBodyState -> Task Text Unit
@@ -661,27 +653,23 @@ instance Transport WebTransport where
                 Log.withScope [("component", "WebTransport"), ("command", commandName)] do
                   Log.debug "Command received"
                     |> Task.ignoreError
-                routeResultState <- Task.fromIO (GhcIORef.newIORef CommandRouteAuthenticationPending)
+                routeResultState <- Var.new CommandRouteAuthenticationPending
                 let processCommandWithContext :: RequestContext -> Task Text Wai.ResponseReceived
                     processCommandWithContext requestContext = do
-                      GhcIORef.writeIORef routeResultState (CommandRouteBodyRequest requestContext CommandRequestBodyInProgress)
-                        |> Task.fromIO
+                      Var.set (CommandRouteBodyRequest requestContext CommandRequestBodyInProgress) routeResultState
                       CommandResultReceipt.setRelatedUserSub
                         requestId
                         (requestContext.user |> Maybe.map (\claims -> claims.sub))
                       safeBodyResult <- readBodyWithLimit maxBodySize request |> Task.asResultSafe @Text
                       bodyResult <- case safeBodyResult of
                         Result.Err _ -> do
-                          GhcIORef.writeIORef routeResultState (CommandRouteBodyRequest requestContext CommandRequestBodyFailed)
-                            |> Task.fromIO
+                          Var.set (CommandRouteBodyRequest requestContext CommandRequestBodyFailed) routeResultState
                           Task.yield CommandRequestBodyReadFailed
                         Result.Ok (Result.Err errorMessage) -> do
-                          GhcIORef.writeIORef routeResultState (CommandRouteBodyRequest requestContext CommandRequestBodyTooLarge)
-                            |> Task.fromIO
+                          Var.set (CommandRouteBodyRequest requestContext CommandRequestBodyTooLarge) routeResultState
                           Task.yield (CommandRequestBodyRejected errorMessage)
                         Result.Ok (Result.Ok bodyBytes) -> do
-                          GhcIORef.writeIORef routeResultState (CommandRouteBodyRequest requestContext CommandRequestBodySucceeded)
-                            |> Task.fromIO
+                          Var.set (CommandRouteBodyRequest requestContext CommandRequestBodySucceeded) routeResultState
                           Task.yield (CommandRequestBodyBytes bodyBytes)
                       case bodyResult of
                         CommandRequestBodyRejected errorMessage -> do
@@ -690,8 +678,7 @@ instance Transport WebTransport where
                           internalError "Internal server error"
                         CommandRequestBodyBytes bodyBytes -> do
                           respondVar <- ConcurrentVar.new
-                          GhcIORef.writeIORef routeResultState (CommandRouteHandlerOwnsResult requestContext)
-                            |> Task.fromIO
+                          Var.set (CommandRouteHandlerOwnsResult requestContext) routeResultState
                           handler
                             requestContext
                             bodyBytes
@@ -724,8 +711,7 @@ instance Transport WebTransport where
 
                 let requestIdText = Uuid.toText requestId
                 let setRouteResultState state =
-                      GhcIORef.writeIORef routeResultState state
-                        |> Task.fromIO
+                      Var.set state routeResultState
                 let reportRouteResult :: Log.Level -> Text -> Text -> Text -> Text -> Task Text Unit
                     reportRouteResult level result failureStage errorClass message = do
                       let report =
@@ -761,7 +747,7 @@ instance Transport WebTransport where
                         Result.Ok requestContext ->
                           processCommandWithContext requestContext {Auth.requestId = requestId}
                 let finalizeCommandResult = do
-                      state <- GhcIORef.readIORef routeResultState |> Task.fromIO
+                      state <- Var.get routeResultState
                       case state of
                         CommandRouteAuthenticationPending ->
                           reportRouteResult Log.Error "execution_failed" "authentication" "ExecutionInterrupted" "Command authentication was interrupted"
