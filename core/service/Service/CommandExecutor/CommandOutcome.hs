@@ -1,3 +1,5 @@
+-- | Hold the executor's accepted and failed outcomes. Convert an outcome to
+-- 'ExecutionResult' when returning a command result to its caller.
 module Service.CommandExecutor.CommandOutcome (
   CommandOutcome (..),
   executionResult,

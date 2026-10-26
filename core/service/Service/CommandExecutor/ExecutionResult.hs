@@ -1,3 +1,5 @@
+-- | Return a command's accepted, rejected, failed, or unauthorized result.
+-- Service adapters serialize this result for command callers.
 module Service.CommandExecutor.ExecutionResult (ExecutionResult (..)) where
 
 import Basics
