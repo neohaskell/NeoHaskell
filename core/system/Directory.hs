@@ -13,15 +13,12 @@ module Directory (
 import Array (Array)
 import Array qualified
 import Basics
-import Char (Char)
 import Console qualified
 import Distribution.Simple.Utils qualified as Cabal
 import Distribution.Verbosity qualified as CabalVerbosity
-import LinkedList (LinkedList)
 import Maybe qualified
 import Path (Path)
 import Path qualified
-import Prelude qualified
 import Result qualified
 import System.Directory qualified
 import System.Directory.Recursive qualified as RecursiveDir
@@ -31,6 +28,7 @@ import System.Posix.Directory qualified as PosixDirectory
 import System.Posix.Files qualified as PosixFiles
 import Task (Task)
 import Task qualified
+import Text (Text)
 import Text qualified
 import ToText qualified
 import Uuid qualified
@@ -168,7 +166,7 @@ removeRecursive dirPath = do
 -- | Create a private folder for one task and attempt to remove it after every
 -- exit, including typed errors, runtime exceptions, and cancellation.
 withTemporaryFolder :: (Error -> err) -> (Path -> Task err value) -> Task err value
-withTemporaryFolder mapError use = Task.mask \restore -> do
+withTemporaryFolder mapError use = Task.withCancellationDeferred \restore -> do
   folder <- newTemporaryFolder |> Task.mapError mapError
   Task.finally (removeRecursive folder) do
     callback <- Task.evaluate (use folder)
@@ -185,14 +183,14 @@ newTemporaryFolder = do
     System.Directory.makeAbsolute temporaryRoot
       |> Task.fromFailableIO @IOError.IOError
       |> Task.mapError (\_ -> NotReadable)
-  reserveTemporaryFolder 3 absoluteRoot
+  reserveTemporaryFolder 3 (Text.fromLinkedList absoluteRoot)
 
 
-reserveTemporaryFolder :: Int -> LinkedList Char -> Task Error Path
+reserveTemporaryFolder :: Int -> Text -> Task Error Path
 reserveTemporaryFolder retriesLeft temporaryRoot = do
   nonce <- Uuid.generate
-  let name = "neohaskell-" Prelude.++ Text.toLinkedList (Uuid.toText nonce)
-  let filePath = System.FilePath.combine temporaryRoot name
+  let name = [fmt|neohaskell-#{Uuid.toText nonce}|]
+  let filePath = System.FilePath.combine (Text.toLinkedList temporaryRoot) (Text.toLinkedList name)
   candidate <-
     case Path.fromLinkedList filePath of
       Maybe.Just path -> Task.yield path

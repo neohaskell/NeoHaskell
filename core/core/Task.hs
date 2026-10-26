@@ -33,8 +33,8 @@ module Task (
   while,
   ignoreError,
   finally,
-  mask,
   withCancellationBlocked,
+  withCancellationDeferred,
   cancellationState,
   onFailure,
 ) where
@@ -398,12 +398,13 @@ finally cleanup task = Task do
 {-# INLINE finally #-}
 
 
--- | Defer cancellation during a handoff. The callback can restore the caller's
--- cancellation state around work that must remain interruptible.
-mask ::
+-- | Defer cancellation during a handoff. Cancellation can still arrive at an
+-- interruptible wait. The callback restores the caller's cancellation state
+-- around work that must remain interruptible.
+withCancellationDeferred ::
   ((forall otherErr otherValue. Task otherErr otherValue -> Task otherErr otherValue) -> Task err value) ->
   Task err value
-mask action =
+withCancellationDeferred action =
   Task
     ( Except.ExceptT
         ( Exception.mask \restoreIO -> do

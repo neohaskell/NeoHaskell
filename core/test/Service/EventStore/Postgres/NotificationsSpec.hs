@@ -820,12 +820,10 @@ waitUntil stepMs condition =
 
 waitUntilLoop :: Int -> Task Text Bool -> Int -> Task Text Unit
 waitUntilLoop stepMs condition attemptsLeft = do
-  case attemptsLeft <= 0 of
-    True -> Task.throw "waitUntil timed out"
-    False -> do
+  if attemptsLeft <= 0
+    then Task.throw "waitUntil timed out"
+    else do
       satisfied <- condition
-      case satisfied of
-        True -> Task.yield unit
-        False -> do
-          AsyncTask.sleep stepMs |> Task.mapError (\_ -> "waitUntil sleep failed")
-          waitUntilLoop stepMs condition (attemptsLeft - 1)
+      Task.unless satisfied do
+        AsyncTask.sleep stepMs |> Task.mapError (\_ -> "waitUntil sleep failed")
+        waitUntilLoop stepMs condition (attemptsLeft - 1)

@@ -100,29 +100,26 @@ instance Transport McpTransport where
       endpoints.queryEndpoints
       endpoints.commandSchemas
       endpoints.querySchemas
-    -- STDIO event loop: read JSON-RPC from stdin, dispatch, write to stdout
     let loop = do
           isEof <- Task.fromIO GhcIO.isEOF
-          if isEof
-            then Task.yield unit
-            else do
-              line <- Task.fromIO (GhcByteStringChar8.hGetLine GhcIO.stdin)
-              let request = JsonRpc.parseRequest (Bytes.fromLegacy line)
-              case request of
-                Err errResp -> do
-                  let encoded = JsonRpc.encodeResponse errResp
-                  Task.fromIO (GhcByteString.hPut GhcIO.stdout (Bytes.unwrap encoded))
-                  Task.fromIO (GhcIO.hFlush GhcIO.stdout)
-                  loop
-                Ok req -> do
-                  maybeResp <- Protocol.handleRequest serverState req
-                  case maybeResp of
-                    Nothing -> loop
-                    Just resp -> do
-                      let encoded = JsonRpc.encodeResponse resp
-                      Task.fromIO (GhcByteString.hPut GhcIO.stdout (Bytes.unwrap encoded))
-                      Task.fromIO (GhcIO.hFlush GhcIO.stdout)
-                      loop
+          Task.unless isEof do
+            line <- Task.fromIO (GhcByteStringChar8.hGetLine GhcIO.stdin)
+            let request = JsonRpc.parseRequest (Bytes.fromLegacy line)
+            case request of
+              Err errResp -> do
+                let encoded = JsonRpc.encodeResponse errResp
+                Task.fromIO (GhcByteString.hPut GhcIO.stdout (Bytes.unwrap encoded))
+                Task.fromIO (GhcIO.hFlush GhcIO.stdout)
+                loop
+              Ok req -> do
+                maybeResp <- Protocol.handleRequest serverState req
+                case maybeResp of
+                  Nothing -> loop
+                  Just resp -> do
+                    let encoded = JsonRpc.encodeResponse resp
+                    Task.fromIO (GhcByteString.hPut GhcIO.stdout (Bytes.unwrap encoded))
+                    Task.fromIO (GhcIO.hFlush GhcIO.stdout)
+                    loop
     loop
 
 
