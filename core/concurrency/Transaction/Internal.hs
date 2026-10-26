@@ -1,3 +1,7 @@
+-- | Wrap STM actions for the owning concurrency modules.
+--
+-- AtomicVar and ConcurrentMap use this hidden representation to compose their
+-- updates before one transaction commits.
 module Transaction.Internal (
   Transaction (..),
 ) where

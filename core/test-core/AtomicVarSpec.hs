@@ -1,3 +1,6 @@
+-- | Verify AtomicVar transactions and waits through public concurrency APIs.
+--
+-- The core test runner calls 'spec' to exercise map composition and cancellation.
 module AtomicVarSpec (spec) where
 
 import AsyncTask qualified
@@ -88,10 +91,7 @@ spec = do
 waitForStateChange :: AsyncTask.AsyncTask Text Unit -> Int -> Task Text Unit
 waitForStateChange waiter attempts = do
   waiting <- AsyncTask.isWaitingForStateChange waiter
-  if waiting
-    then Task.yield unit
-    else if attempts == 0
-      then Test.fail "expected the task to wait for the state change"
-      else do
-        AsyncTask.sleep 1
-        waitForStateChange waiter (attempts - 1)
+  Task.unless waiting do
+    Task.when (attempts == 0) (Test.fail "expected the task to wait for the state change")
+    AsyncTask.sleep 1
+    waitForStateChange waiter (attempts - 1)
