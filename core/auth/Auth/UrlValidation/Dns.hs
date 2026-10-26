@@ -107,7 +107,7 @@ resolveWith config actions hostname = do
 
 resolveDnsRecordType :: Int -> DnsRecordType -> Text -> Task DnsError DnsResult
 resolveDnsRecordType timeoutSeconds recordType hostname = do
-  let timeoutArg = Text.fromLinkedList [fmt|-W#{timeoutSeconds}|]
+  let timeoutArg = [fmt|-W#{timeoutSeconds}|]
   let hostArgs = Array.fromLinkedList [timeoutArg, "-t", RecordType.hostArgument recordType, hostname]
   completion <- runDnsSubprocess timeoutSeconds "host" hostArgs
   case completion of
@@ -144,11 +144,12 @@ runDnsSubprocess timeoutSeconds cmd args = do
       case exitCode of
         GhcExit.ExitSuccess -> Task.yield (DnsSubprocessSuccess out)
         GhcExit.ExitFailure 1 ->
-          Task.yield (DnsSubprocessError (Text.fromLinkedList [fmt|Host not found: #{out}|]))
+          Task.yield (DnsSubprocessError [fmt|Host not found: #{out}|])
         GhcExit.ExitFailure code -> do
-          let errMsg = case Text.isEmpty err of
-                True -> Text.fromLinkedList [fmt|DNS resolution failed (exit code #{code})|]
-                False -> err
+          let errMsg =
+                if Text.isEmpty err
+                  then [fmt|DNS resolution failed (exit code #{code})|]
+                  else err
           Task.yield (DnsSubprocessError errMsg)
 
 
