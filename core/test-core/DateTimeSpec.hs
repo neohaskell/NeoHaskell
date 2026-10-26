@@ -1,3 +1,5 @@
+-- | Verify Unix epoch millisecond conversion through the public DateTime API.
+-- The core test runner calls 'spec' when checking rounding behavior.
 module DateTimeSpec (spec) where
 
 import Core
