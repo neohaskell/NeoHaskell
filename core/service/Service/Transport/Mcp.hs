@@ -8,8 +8,9 @@ import Data.ByteString qualified as GhcByteString
 import Data.ByteString.Char8 qualified as GhcByteStringChar8
 import GHC.TypeLits qualified
 import Json qualified
+import Log qualified
 import Record qualified
-import Service.Auth (RequestContext)
+import Service.Auth (RequestContext (..))
 import Service.CommandExecutor.TH (deriveKnownHash)
 import Service.Response (CommandResponse)
 import Service.Response qualified as Response
@@ -19,6 +20,7 @@ import Service.Transport.Mcp.Protocol qualified as Protocol
 import System.IO qualified as GhcIO
 import Task qualified
 import Text qualified
+import Uuid qualified
 
 
 data McpTransport = McpTransport
@@ -61,6 +63,23 @@ instance Transport McpTransport where
         let responseJson = Json.encodeText response |> Text.toBytes
         respond (response, responseJson)
       Err _err -> do
+        requestId <- if requestContext.requestId == Uuid.nil
+          then Uuid.generate
+          else Task.yield requestContext.requestId
+        let requestIdText = Uuid.toText requestId
+        Log.recordIsolated Log.Warn
+          [ "component" Json..= ("McpTransport" :: Text)
+          , "commandName" Json..= commandName
+          , "requestId" Json..= requestIdText
+          , "correlationId" Json..= requestIdText
+          , "kind" Json..= ("command_result" :: Text)
+          , "result" Json..= ("rejected" :: Text)
+          , "failureStage" Json..= ("decoding" :: Text)
+          , "errorClass" Json..= ("InvalidCommand" :: Text)
+          , "eventsAppended" Json..= (0 :: Int)
+          ]
+          "Command payload could not be decoded"
+          |> Task.ignoreError
         let errorResponse =
               Response.Failed
                 { error = [fmt|Invalid input for command #{commandName}|]

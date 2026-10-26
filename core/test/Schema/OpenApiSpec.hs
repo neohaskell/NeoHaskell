@@ -7,6 +7,7 @@ import Core
 import Data.HashMap.Strict.InsOrd qualified as InsOrdHashMap
 import Data.HashSet.InsOrd qualified as InsOrdHashSet
 import Data.OpenApi qualified as OpenApi
+import Json qualified
 import LinkedList qualified
 import Map qualified
 import Schema.OpenApi qualified as OpenApiGen
@@ -18,6 +19,19 @@ import Test
 -- -----------------------------------------------------------------------------
 -- Test Helpers
 -- -----------------------------------------------------------------------------
+
+data OpenApiEnumFixture
+  = OpenApiEnumActive
+  | OpenApiEnumINACTIVE
+  | OpenApiEnumPending
+  deriving (Generic)
+
+
+instance Json.ToJSON OpenApiEnumFixture
+
+
+instance ToSchema OpenApiEnumFixture
+
 
 -- | Helper to create a simple EndpointSchema for testing
 makeEndpointSchema :: Maybe Schema -> Schema -> EndpointSchema
@@ -144,13 +158,31 @@ spec = do
 
   describe "toOpenApiSchema - Enum Types" do
     it "converts SEnum to string with enum values" \_ -> do
-      let variants = Array.fromLinkedList ["Active", "Inactive", "Pending"]
+      let variants = Array.fromLinkedList ["Active", "INACTIVE", "pending"]
       let schema = OpenApiGen.toOpenApiSchema (SEnum variants)
       let typeValue = schema |> Lens.view OpenApi.type_
       typeValue |> shouldBe (Just OpenApi.OpenApiString)
-      -- Verify enum values are set
       let enumValues = schema |> Lens.view OpenApi.enum_
-      enumValues |> shouldSatisfy (\x -> case x of { Just _ -> True; Nothing -> False })
+      enumValues
+        |> shouldBe
+          ( Just
+              [ Json.encode ("Active" :: Text)
+              , Json.encode ("INACTIVE" :: Text)
+              , Json.encode ("pending" :: Text)
+              ]
+          )
+
+    it "uses the generic JSON value for each enum constructor" \_ -> do
+      let schema = OpenApiGen.toOpenApiSchema (toSchema @OpenApiEnumFixture)
+      let enumValues = schema |> Lens.view OpenApi.enum_
+      let expectedValues = Array.fromLinkedList
+            [ Json.encode OpenApiEnumActive
+            , Json.encode OpenApiEnumINACTIVE
+            , Json.encode OpenApiEnumPending
+            ]
+      case enumValues of
+        Nothing -> Test.fail "Expected enum values in the OpenAPI schema"
+        Just values -> values |> Array.fromLinkedList |> shouldMatchList expectedValues
 
   describe "toOpenApiSchema - Union Types" do
     it "converts SUnion to oneOf" \_ -> do

@@ -1,0 +1,240 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import math
+import datetime as dt
+import json
+import os
+import re
+import subprocess
+import sys
+import tempfile
+from dataclasses import dataclass
+from enum import Enum
+from pathlib import Path
+
+sys.dont_write_bytecode = True
+
+
+TOOLCHAIN_DIR = Path(__file__).resolve().parents[2] / "neohaskell-best-practices" / "scripts"
+sys.path.insert(0, str(TOOLCHAIN_DIR))
+from bounded_process import DEFAULT_MAX_OUTPUT_BYTES, ProcessOutcome, ProcessResult, run_bounded
+
+
+MAX_OUTPUT_BYTES = DEFAULT_MAX_OUTPUT_BYTES
+MAX_TIMEOUT_SECONDS = 3600
+SUMMARY = re.compile(r"^\s*(\d+)\s+(example|examples),\s*(\d+)\s+(failure|failures)\s*$", re.IGNORECASE)
+SUMMARY_HINT = re.compile(r"\b\d+\s+examples?,\s*\d+\s+failures?\b", re.IGNORECASE)
+ANSI = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
+SETUP_ERROR = re.compile(
+    r"(?:^\s*cabal:.*(?:error|could not|cannot|failed)|"
+    r"^.*\.(?:hs|lhs):\d+(?::\d+)?:\s*(?:fatal )?error:|"
+    r"^<interactive>:\d+(?::\d+)?:\s*(?:fatal )?error:|"
+    r"^Failed, no modules loaded\b|^Could not find module\b|"
+    r"^Failed to load interface for\b|^Not in scope:\b|^Compilation failed\b)",
+    re.IGNORECASE,
+)
+SUITE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:+-]*$")
+
+
+class MatchOutcome(str, Enum):
+    PASSED = "passed"
+    ASSERTION_FAILURE = "assertion-failure"
+    TIMED_OUT = "timed-out"
+    OUTPUT_LIMITED = "output-limited"
+    PROCESS_FAILURE = "process-failure"
+    SETUP_ERROR = "setup-error"
+    INVALID_SUMMARY = "invalid-summary"
+    EMPTY_SELECTION = "empty-selection"
+
+
+@dataclass(frozen=True)
+class MatchClassification:
+    outcome: MatchOutcome
+    verdict: str
+    detail: str
+
+
+def parse_timeout(raw: str) -> float:
+    try:
+        seconds = float(raw)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError("timeout must be a number of seconds") from error
+    if not math.isfinite(seconds) or seconds <= 0 or seconds > MAX_TIMEOUT_SECONDS:
+        raise argparse.ArgumentTypeError(f"timeout must be between 0 and {MAX_TIMEOUT_SECONDS:g} seconds")
+    return seconds
+
+
+def parser() -> argparse.ArgumentParser:
+    result = argparse.ArgumentParser(
+        prog="test-match",
+        description="Run a focused Hspec selection without linking a test executable.",
+    )
+    result.add_argument("--timeout", type=parse_timeout, default=300)
+    result.add_argument("--transcript", help="write the captured run to this path")
+    result.add_argument("pattern", help="Hspec pattern; use -- before a pattern that starts with '-'")
+    result.add_argument("suite", nargs="?", default="nhcore-test-core")
+    return result
+
+
+def resolve_root(invocation_cwd: Path, env: dict[str, str]) -> Path:
+    result = subprocess.run(
+        [str(TOOLCHAIN_DIR / "repo-root")],
+        cwd=invocation_cwd,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=10,
+        check=False,
+    )
+    if result.returncode != 0:
+        message = result.stderr.strip() or "repository root was not found"
+        raise RuntimeError(message)
+    return Path(result.stdout.strip()).resolve()
+
+
+def haskell_string(value: str) -> str:
+    escapes = {
+        "\\": "\\\\",
+        '"': '\\"',
+        "\n": "\\n",
+        "\r": "\\r",
+        "\t": "\\t",
+        "\b": "\\b",
+        "\f": "\\f",
+    }
+    escaped = []
+    for character in value:
+        codepoint = ord(character)
+        if character in escapes:
+            escaped.append(escapes[character])
+        elif codepoint < 32 or codepoint == 127:
+            escaped.append(f"\\x{codepoint:x}\\&")
+        else:
+            escaped.append(character)
+    return '"' + "".join(escaped) + '"'
+
+
+def transcript_path(root: Path, invocation_cwd: Path, requested: str | None) -> Path:
+    if requested:
+        path = Path(requested).expanduser()
+        return (path if path.is_absolute() else invocation_cwd / path).resolve()
+    directory = root / ".agents-state" / "tdd" / "test-match"
+    directory.mkdir(parents=True, exist_ok=True)
+    stamp = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")
+    return directory / f"run-{stamp}-{os.getpid()}.log"
+
+
+def write_transcript(path: Path, command: list[str], result: ProcessResult, classification: MatchClassification) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    body = (
+        f"command: {json.dumps(command, ensure_ascii=False)}\n"
+        f"exit_code: {result.returncode}\n"
+        f"timed_out: {str(result.timed_out).lower()}\n"
+        f"output_limited: {str(result.output_limited).lower()}\n"
+        f"verdict: {classification.verdict}\n"
+        f"outcome: {classification.outcome.value}\n"
+        f"summary: {classification.detail}\n"
+        "--- output ---\n"
+        + result.output.decode("utf-8", errors="replace")
+    )
+    temporary: str | None = None
+    try:
+        with tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=path.parent, prefix=f".{path.name}.", delete=False) as file:
+            temporary = file.name
+            file.write(body)
+        os.replace(temporary, path)
+    finally:
+        if temporary and os.path.exists(temporary):
+            os.unlink(temporary)
+
+
+def classify(result: ProcessResult) -> MatchClassification:
+    output = result.output.decode("utf-8", errors="replace")
+    if result.outcome is ProcessOutcome.TIMED_OUT:
+        return MatchClassification(MatchOutcome.TIMED_OUT, "FAIL", "child process timed out")
+    if result.outcome is ProcessOutcome.OUTPUT_LIMITED:
+        return MatchClassification(MatchOutcome.OUTPUT_LIMITED, "FAIL", f"child output exceeded {MAX_OUTPUT_BYTES} bytes")
+    clean_output = ANSI.sub("", output)
+    lines = clean_output.splitlines()
+    summary_lines = [line for line in lines if SUMMARY_HINT.search(line)]
+    parsed = [SUMMARY.fullmatch(line) for line in summary_lines]
+    if result.returncode != 0:
+        return MatchClassification(MatchOutcome.PROCESS_FAILURE, "FAIL", f"toolchain command exited with status {result.returncode}")
+    if any(SETUP_ERROR.search(line) for line in lines):
+        return MatchClassification(MatchOutcome.SETUP_ERROR, "FAIL", "compiler or REPL setup error appeared in the transcript")
+    if len(summary_lines) != 1 or parsed[0] is None:
+        return MatchClassification(MatchOutcome.INVALID_SUMMARY, "FAIL", "expected exactly one valid Hspec summary")
+    examples = int(parsed[0].group(1))
+    example_word = parsed[0].group(2).lower()
+    failures = int(parsed[0].group(3))
+    failure_word = parsed[0].group(4).lower()
+    summary = summary_lines[0].strip()
+    if example_word != ("example" if examples == 1 else "examples"):
+        return MatchClassification(MatchOutcome.INVALID_SUMMARY, "FAIL", f"Hspec summary has a count mismatch; {summary}")
+    if failure_word != ("failure" if failures == 1 else "failures"):
+        return MatchClassification(MatchOutcome.INVALID_SUMMARY, "FAIL", f"Hspec summary has a count mismatch; {summary}")
+    if examples == 0:
+        return MatchClassification(MatchOutcome.EMPTY_SELECTION, "FAIL", f"no Hspec examples matched; {summary}")
+    if failures != 0:
+        return MatchClassification(MatchOutcome.ASSERTION_FAILURE, "FAIL", f"Hspec reported failures; {summary}")
+    return MatchClassification(MatchOutcome.PASSED, "PASS", summary)
+
+
+def main() -> int:
+    args = parser().parse_args()
+    invocation_cwd = Path.cwd().resolve()
+    if not args.pattern:
+        print("test-match: pattern must not be empty", file=sys.stderr)
+        return 2
+    if not SUITE.fullmatch(args.suite):
+        print("test-match: suite must be one Cabal target token", file=sys.stderr)
+        return 2
+
+    env = os.environ.copy()
+    try:
+        root = resolve_root(invocation_cwd, env)
+    except (RuntimeError, subprocess.TimeoutExpired) as error:
+        print(f"test-match: {error}", file=sys.stderr)
+        return 2
+    env["NEOHASKELL_ROOT"] = str(root)
+    command = [
+        str(TOOLCHAIN_DIR / "with-toolchain"),
+        "cabal",
+        "repl",
+        args.suite,
+        "--project-file=cabal.project.dev",
+        "-v0",
+    ]
+    repl_input = f":main --match {haskell_string(args.pattern)}\n"
+    transcript = transcript_path(root, invocation_cwd, args.transcript)
+    try:
+        result = run_bounded(command, stdin=repl_input.encode("utf-8"), timeout=args.timeout, cwd=root, env=env)
+    except OSError as error:
+        print(f"test-match: could not start the shared toolchain wrapper: {error}", file=sys.stderr)
+        return 2
+
+    output = result.output.decode("utf-8", errors="replace")
+    if output:
+        sys.stdout.write(output)
+        if not output.endswith("\n"):
+            sys.stdout.write("\n")
+    classification = classify(result)
+    verdict = classification.verdict
+    detail = classification.detail
+    if "with-toolchain: nix not found; using unpinned host tools" in output:
+        verdict = f"{verdict} (unpinned host tools)"
+    try:
+        write_transcript(transcript, command, result, classification)
+    except OSError as error:
+        print(f"test-match: could not write transcript {transcript}: {error}", file=sys.stderr)
+        return 2
+
+    print(f"test-match: {verdict}: {detail}")
+    print(f"test-match: transcript {transcript}")
+    return 0 if verdict.startswith("PASS") else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -50,11 +50,13 @@ module Service.Integration.Dispatcher (
   new,
   newWithLifecycle,
   newWithLifecycleConfig,
+  newWithLifecycleConfigWithSource,
 
   -- * Operations
   dispatch,
   shutdown,
   dispatchCommand,
+  dispatchCommandWithSource,
 ) where
 
 import Array (Array)
@@ -62,26 +64,28 @@ import Array qualified
 import AsyncTask (AsyncTask)
 import AsyncTask qualified
 import Auth.SecretStore.InMemory qualified as InMemorySecretStore
-import AtomicVar (AtomicVar)
-import AtomicVar qualified
 import Basics
 import Channel (Channel)
 import Channel qualified
+import Control.Concurrent.Async qualified as GhcAsync
+import Control.Concurrent.STM qualified as GhcSTM
+import Control.Exception qualified as GhcException
 import ConcurrentMap (ConcurrentMap)
 import ConcurrentMap qualified
 import ConcurrentVar (ConcurrentVar)
 import ConcurrentVar qualified
 import Log qualified
 import Service.Response (CommandResponse (..))
-import Control.Concurrent.Async qualified as GhcAsync
 import Data.Either (Either (..))
 import Data.Time.Clock.POSIX qualified as GhcPosix
 import Float qualified
 import GHC.Float (Double)
 import GHC.Real qualified as GhcReal
+import GHC.IO qualified as GhcIO
 import Int qualified
 import Integration qualified
 import Json qualified
+import LinkedList qualified
 import Map (Map)
 import Map qualified
 import Maybe (Maybe (..))
@@ -90,12 +94,14 @@ import Uuid qualified
 import Result (Result (..))
 import Service.Auth qualified as Auth
 import Service.Event (Event (..))
+import Service.Event.EventMetadata (EventMetadata (..))
 import Service.Event.EntityName qualified as EntityName
 import Service.Event.StreamId (StreamId)
+import Service.Event.StreamId qualified as StreamId
 import Service.EventStore.Core (EventStore)
 import Service.Integration.DispatchRegistry qualified as DispatchRegistry
 import Service.Integration.Types (OutboundRunner (..), OutboundLifecycleRunner (..), WorkerState (..))
-import Service.Transport (EndpointHandler)
+import Service.Transport (DispatchHandler, EndpointHandler)
 import Task (Task)
 import Task qualified
 import Text (Text)
@@ -109,19 +115,17 @@ import ToText (toText)
 -- returns @Err "timeout"@. Otherwise returns @Ok result@.
 runWithTimeout ::
   forall err result.
-  (Show err) =>
+  ConcurrentVar Bool ->
   Maybe Int -> -- ^ Timeout in milliseconds (Nothing = no timeout)
   Task err result ->
   Task Text (Result Text result)
-runWithTimeout maybeTimeoutMs task = case maybeTimeoutMs of
+runWithTimeout timeoutReached maybeTimeoutMs task = case maybeTimeoutMs of
   Nothing -> do
     -- No timeout, just run the task and wrap result
     result <- task |> Task.asResult
     case result of
       Ok value -> Task.yield (Ok value)
-      Err err -> do
-        let errText = show err |> Text.fromLinkedList
-        Task.yield (Err errText)
+      Err _ -> Task.yield (Err "processing failed")
   Just timeoutMs -> do
     -- Race the task against a sleep
     raceResult <- Task.fromIO do
@@ -130,14 +134,13 @@ runWithTimeout maybeTimeoutMs task = case maybeTimeoutMs of
         (do
           -- Sleep returns Task _ Unit, use runResult and ignore result
           _ <- AsyncTask.sleep timeoutMs |> Task.runResult
+          _ <- timeoutReached |> ConcurrentVar.modify (\_ -> True) |> Task.runResult
           pure unit
         )
     case raceResult of
       Left taskResult -> case taskResult of
         Ok value -> Task.yield (Ok value)
-        Err err -> do
-          let errText = show err |> Text.fromLinkedList
-          Task.yield (Err errText)
+        Err _ -> Task.yield (Err "processing failed")
       Right _ -> Task.yield (Err "timeout")
 
 
@@ -149,6 +152,327 @@ data WorkerMessage value
   = ProcessEvent value
   | Stop
   deriving (Show)
+
+
+data IntegrationLogContext = IntegrationLogContext
+  { integrationEventId :: Text,
+    integrationStreamId :: Text,
+    integrationEntityName :: Text,
+    integrationCorrelationId :: Text,
+    integrationCausationId :: Maybe Text,
+    integrationRelatedUserSub :: Maybe Text
+  }
+
+
+data IntegrationRunnerKind
+  = OutboundRunnerKind
+  | LifecycleRunnerKind
+
+
+data IntegrationRunnerOutcome
+  = IntegrationProcessed
+  | IntegrationFailure IntegrationRunnerFailure
+
+
+data IntegrationRunnerFailure
+  = IntegrationRunnerProcessingFailure
+  | IntegrationCallbackDispatchFailure
+  | IntegrationRunnerTimeout
+  | IntegrationRunnerCancellation
+  | IntegrationRunnerNotStarted
+
+
+data IntegrationResult
+  = IntegrationSkipped
+  | IntegrationDropped
+  | IntegrationRunnerResult IntegrationRunnerKind Int IntegrationRunnerOutcome Int
+
+
+data IntegrationRunnerLogState
+  = IntegrationRunnerPending
+  | IntegrationRunnerProcessing Int
+  | IntegrationRunnerCompleted IntegrationRunnerOutcome Int
+
+
+data IntegrationRunnerExecution runner = IntegrationRunnerExecution
+  { integrationExecutionKind :: IntegrationRunnerKind,
+    integrationExecutionOrdinal :: Int,
+    integrationExecutionRunner :: runner,
+    integrationExecutionLogState :: ConcurrentVar IntegrationRunnerLogState
+  }
+
+
+data LifecycleRunnerWorkerState = LifecycleRunnerWorkerState
+  { lifecycleRunnerOrdinal :: Int,
+    lifecycleRunnerEntityTypeName :: Text,
+    lifecycleRunnerState :: WorkerState
+  }
+
+
+integrationLogContext :: Event Json.Value -> IntegrationLogContext
+integrationLogContext event =
+  IntegrationLogContext
+    { integrationEventId = event.metadata.eventId |> Uuid.toText,
+      integrationStreamId = event.streamId |> StreamId.toText,
+      integrationEntityName = event.entityName |> EntityName.toText,
+      integrationCorrelationId = integrationSourceCorrelationId event,
+      integrationCausationId = event.metadata.causationId,
+      integrationRelatedUserSub = event.metadata.relatedUserSub
+    }
+
+
+integrationSourceCorrelationId :: Event Json.Value -> Text
+integrationSourceCorrelationId event = case event.metadata.correlationId of
+  Just correlationId -> correlationId
+  Nothing -> event.metadata.eventId |> Uuid.toText
+
+
+integrationLogScopeFields :: IntegrationLogContext -> Array (Text, Text)
+integrationLogScopeFields logContext =
+  Array.fromLinkedList
+    [ ("component", "Dispatcher"),
+      ("eventId", logContext.integrationEventId),
+      ("streamId", logContext.integrationStreamId),
+      ("entityName", logContext.integrationEntityName),
+      ("correlationId", logContext.integrationCorrelationId)
+    ]
+    |> appendIntegrationScopeField "causationId" logContext.integrationCausationId
+    |> appendIntegrationScopeField "relatedUserSub" logContext.integrationRelatedUserSub
+
+
+appendIntegrationScopeField :: Text -> Maybe Text -> Array (Text, Text) -> Array (Text, Text)
+appendIntegrationScopeField fieldName maybeValue fields = case maybeValue of
+  Just value -> fields |> Array.append (Array.fromLinkedList [(fieldName, value)])
+  Nothing -> fields
+
+
+withIntegrationEventScope :: IntegrationLogContext -> Task err value -> Task err value
+withIntegrationEventScope logContext task =
+  Log.withScope (integrationLogScopeFields logContext) task
+
+
+integrationRunnerKindText :: IntegrationRunnerKind -> Text
+integrationRunnerKindText runnerKind = case runnerKind of
+  OutboundRunnerKind -> "outbound"
+  LifecycleRunnerKind -> "lifecycle"
+
+
+integrationOutcomeText :: IntegrationRunnerOutcome -> Text
+integrationOutcomeText outcome = case outcome of
+  IntegrationProcessed -> "processed"
+  IntegrationFailure failure -> case failure of
+    IntegrationRunnerProcessingFailure -> "failed"
+    IntegrationCallbackDispatchFailure -> "failed"
+    IntegrationRunnerTimeout -> "timed_out"
+    IntegrationRunnerCancellation -> "cancelled"
+    IntegrationRunnerNotStarted -> "cancelled"
+
+
+integrationFailureFields :: IntegrationRunnerOutcome -> Array (Text, Json.Value)
+integrationFailureFields outcome = case outcome of
+  IntegrationProcessed -> Array.empty
+  IntegrationFailure failure ->
+    Array.fromLinkedList
+      [ ("failureStage" Json..= integrationFailureStageText failure),
+        ("errorClass" Json..= integrationFailureErrorClassText failure)
+      ]
+
+
+integrationFailureStageText :: IntegrationRunnerFailure -> Text
+integrationFailureStageText failure = case failure of
+  IntegrationRunnerProcessingFailure -> "runner_processing"
+  IntegrationCallbackDispatchFailure -> "callback_dispatch"
+  IntegrationRunnerTimeout -> "timeout"
+  IntegrationRunnerCancellation -> "cancellation"
+  IntegrationRunnerNotStarted -> "cancellation"
+
+
+integrationFailureErrorClassText :: IntegrationRunnerFailure -> Text
+integrationFailureErrorClassText failure = case failure of
+  IntegrationRunnerProcessingFailure -> "RunnerProcessingFailure"
+  IntegrationCallbackDispatchFailure -> "CallbackDispatchFailure"
+  IntegrationRunnerTimeout -> "Timeout"
+  IntegrationRunnerCancellation -> "ExecutionInterrupted"
+  IntegrationRunnerNotStarted -> "RunnerNotStarted"
+
+
+integrationOutcomeMessage :: IntegrationRunnerOutcome -> Text
+integrationOutcomeMessage outcome = case outcome of
+  IntegrationProcessed -> "Integration runner processed event"
+  IntegrationFailure failure -> case failure of
+    IntegrationRunnerProcessingFailure -> "Integration runner failed to process event"
+    IntegrationCallbackDispatchFailure -> "Integration runner callback dispatch failed"
+    IntegrationRunnerTimeout -> "Integration runner timed out"
+    IntegrationRunnerCancellation -> "Integration runner was cancelled"
+    IntegrationRunnerNotStarted -> "Integration runner was not started"
+
+
+writeIntegrationResult ::
+  IntegrationLogContext ->
+  Log.Level ->
+  Text ->
+  Int ->
+  Array (Text, Json.Value) ->
+  Text ->
+  Task Text Unit
+writeIntegrationResult logContext level resultName commandsEmitted runnerFields message = do
+  let commonFields =
+        Array.fromLinkedList
+          [ ("kind" Json..= ("integration_result" :: Text)),
+            ("result" Json..= resultName),
+            ("commandsEmitted" Json..= commandsEmitted)
+          ]
+  let fields = commonFields |> Array.append runnerFields
+  withIntegrationEventScope logContext do
+    Log.record level fields message |> Task.ignoreError
+
+
+logIntegrationRetry :: IntegrationLogContext -> Int -> Int -> Int -> Task Text Unit
+logIntegrationRetry logContext attempt maxRetries delayMs = do
+  let fields =
+        Array.fromLinkedList
+          [ ("kind" Json..= ("retry" :: Text)),
+            ("attempt" Json..= attempt),
+            ("maxRetries" Json..= maxRetries),
+            ("delayMs" Json..= delayMs)
+          ]
+  withIntegrationEventScope logContext do
+    Log.record Log.Warn fields "Retrying integration runner after transient failure"
+      |> Task.ignoreError
+
+
+logIntegrationResult :: IntegrationLogContext -> IntegrationResult -> Task Text Unit
+logIntegrationResult logContext result = case result of
+  IntegrationSkipped ->
+    writeIntegrationResult logContext Log.Info "skipped" 0 Array.empty "No integration runner matched the event"
+  IntegrationDropped ->
+    writeIntegrationResult logContext Log.Warn "dropped" 0 Array.empty "Integration event was not delivered"
+  IntegrationRunnerResult runnerKind runnerOrdinal outcome commandsEmitted -> do
+    let resultName = integrationOutcomeText outcome
+    let runnerFields =
+          Array.fromLinkedList
+            [ ("runnerKind" Json..= integrationRunnerKindText runnerKind),
+              ("runnerOrdinal" Json..= runnerOrdinal)
+            ]
+            |> Array.append (integrationFailureFields outcome)
+    let level = case outcome of
+          IntegrationProcessed -> Log.Info
+          IntegrationFailure _ -> Log.Warn
+    let message = integrationOutcomeMessage outcome
+    writeIntegrationResult logContext level resultName commandsEmitted runnerFields message
+
+
+newIntegrationRunnerExecution ::
+  IntegrationRunnerKind ->
+  Int ->
+  runner ->
+  Task Text (IntegrationRunnerExecution runner)
+newIntegrationRunnerExecution runnerKind runnerOrdinal runner = do
+  runnerLogState <- ConcurrentVar.containing IntegrationRunnerPending
+  Task.yield
+    IntegrationRunnerExecution
+      { integrationExecutionKind = runnerKind,
+        integrationExecutionOrdinal = runnerOrdinal,
+        integrationExecutionRunner = runner,
+        integrationExecutionLogState = runnerLogState
+      }
+
+
+logIntegrationRunnerExecutions ::
+  IntegrationLogContext ->
+  ConcurrentVar Bool ->
+  Array (IntegrationRunnerExecution runner) ->
+  Task Text Unit
+logIntegrationRunnerExecutions logContext timeoutReached executions =
+  executions |> Task.forEach (logIntegrationRunnerExecution logContext timeoutReached)
+
+
+logIntegrationRunnerExecution ::
+  IntegrationLogContext ->
+  ConcurrentVar Bool ->
+  IntegrationRunnerExecution runner ->
+  Task Text Unit
+logIntegrationRunnerExecution logContext timeoutReached execution = do
+  runnerState <- execution.integrationExecutionLogState |> ConcurrentVar.peek
+  case runnerState of
+    IntegrationRunnerPending ->
+      logIntegrationResult
+        logContext
+        ( IntegrationRunnerResult
+            execution.integrationExecutionKind
+            execution.integrationExecutionOrdinal
+            (IntegrationFailure IntegrationRunnerNotStarted)
+            0
+        )
+    IntegrationRunnerProcessing commandCount -> do
+      didTimeout <- timeoutReached |> ConcurrentVar.peek
+      let failure = if didTimeout then IntegrationRunnerTimeout else IntegrationRunnerCancellation
+      logIntegrationResult
+        logContext
+        ( IntegrationRunnerResult
+            execution.integrationExecutionKind
+            execution.integrationExecutionOrdinal
+            (IntegrationFailure failure)
+            commandCount
+        )
+    IntegrationRunnerCompleted outcome commandCount ->
+      logIntegrationResult
+        logContext
+        ( IntegrationRunnerResult
+            execution.integrationExecutionKind
+            execution.integrationExecutionOrdinal
+            outcome
+            commandCount
+        )
+
+
+runIntegrationRunner ::
+  IntegrationRunnerExecution runner ->
+  Task Text (Maybe (Array Integration.CommandPayload)) ->
+  (Integration.CommandPayload -> Task Text Unit) ->
+  Task Text Unit
+runIntegrationRunner execution runnerTask dispatchPayload = do
+  let runnerLogState = execution.integrationExecutionLogState
+  let completeRunner outcome = do
+        runnerLogState
+          |> ConcurrentVar.modify (\runnerState -> case runnerState of
+            IntegrationRunnerPending -> IntegrationRunnerCompleted outcome 0
+            IntegrationRunnerProcessing commandCount -> IntegrationRunnerCompleted outcome commandCount
+            IntegrationRunnerCompleted _ commandCount -> IntegrationRunnerCompleted outcome commandCount
+          )
+  runnerLogState
+    |> ConcurrentVar.modify (\runnerState -> case runnerState of
+      IntegrationRunnerPending -> IntegrationRunnerProcessing 0
+      existing -> existing
+    )
+  let processRunner = do
+        maybeCommandsResult <- runnerTask |> Task.asResultSafe
+        case maybeCommandsResult of
+          Err _ -> completeRunner (IntegrationFailure IntegrationRunnerProcessingFailure)
+          Ok Nothing -> completeRunner (IntegrationFailure IntegrationRunnerProcessingFailure)
+          Ok (Just commands) -> do
+            let dispatchCommandPayload payload = do
+                  dispatchPayload payload
+                  runnerLogState
+                    |> ConcurrentVar.modify (\state -> case state of
+                      IntegrationRunnerProcessing commandCount -> IntegrationRunnerProcessing (commandCount + 1)
+                      completed -> completed
+                    )
+            dispatchResult <- Task.fromIO do
+              GhcException.try @GhcException.SomeException
+                (commands |> Task.forEach dispatchCommandPayload |> Task.runResult)
+            case dispatchResult of
+              Left exception -> case GhcException.fromException @GhcException.SomeAsyncException exception of
+                Just asyncException -> Task.fromIO (GhcException.throwIO asyncException)
+                Nothing -> do
+                  completeRunner (IntegrationFailure IntegrationCallbackDispatchFailure)
+                  Task.fromIO (GhcException.throwIO exception)
+              Right (Ok _) -> completeRunner IntegrationProcessed
+              Right (Err errorText) -> do
+                completeRunner (IntegrationFailure IntegrationCallbackDispatchFailure)
+                Task.throw errorText
+        Task.yield unit
+  processRunner
 
 
 -- | Configuration for the dispatcher.
@@ -209,21 +533,115 @@ data EntityWorker = EntityWorker
     channel :: Channel (WorkerMessage (Event Json.Value)),
     workerTask :: AsyncTask Text Unit,
     -- | Last activity time in milliseconds (for idle reaping).
-    lastActivityTime :: ConcurrentVar Int
+    lastActivityTime :: ConcurrentVar Int,
+    queueStatus :: WorkerQueueControl
   }
 
 
--- | Status of a lifecycle worker for coordinating with the reaper.
---
--- This prevents a race condition where the reaper removes a worker from the map
--- while dispatch is simultaneously writing to that worker's channel.
-data WorkerStatus
-  = -- | Worker is active and accepting events
-    Active
-  | -- | Worker is draining its queue and will exit soon.
-    -- New events should spawn a new worker instead of using this one.
-    Draining
+data WorkerQueueStatus
+  = WorkerAccepting Int
+  | WorkerDraining Int
+  | WorkerStopping Int
+  | WorkerStopped
   deriving (Eq, Show)
+
+
+newtype WorkerQueueControl = WorkerQueueControl (GhcSTM.TVar WorkerQueueStatus)
+
+
+newWorkerQueueControl :: Task Text WorkerQueueControl
+newWorkerQueueControl = do
+  status <- GhcSTM.newTVarIO (WorkerAccepting 0) |> Task.fromIO
+  Task.yield (WorkerQueueControl status)
+
+
+workerQueueStatusSTM :: WorkerQueueControl -> GhcSTM.STM WorkerQueueStatus
+workerQueueStatusSTM (WorkerQueueControl status) =
+  GhcSTM.readTVar status
+
+
+workerQueueStatus :: WorkerQueueControl -> Task Text WorkerQueueStatus
+workerQueueStatus control =
+  GhcSTM.atomically (workerQueueStatusSTM control)
+    |> Task.fromIO
+
+
+acquireWorkerWrite :: WorkerQueueControl -> Task Text Bool
+acquireWorkerWrite (WorkerQueueControl status) =
+  GhcSTM.atomically do
+    currentStatus <- GhcSTM.readTVar status
+    case currentStatus of
+      WorkerAccepting writers -> do
+        GhcSTM.writeTVar status (WorkerAccepting (writers + 1))
+        pure True
+      _ -> pure False
+  |> Task.fromIO
+
+
+releaseWorkerWrite :: WorkerQueueControl -> Task Text Unit
+releaseWorkerWrite (WorkerQueueControl status) =
+  GhcSTM.atomically do
+    currentStatus <- GhcSTM.readTVar status
+    case currentStatus of
+      WorkerAccepting writers -> GhcSTM.writeTVar status (WorkerAccepting (writers - 1))
+      WorkerDraining writers -> GhcSTM.writeTVar status (WorkerDraining (writers - 1))
+      WorkerStopping writers -> GhcSTM.writeTVar status (WorkerStopping (writers - 1))
+      WorkerStopped -> pure ()
+  |> Task.fromIO
+
+
+markWorkerDrainingSTM :: WorkerQueueControl -> GhcSTM.STM Bool
+markWorkerDrainingSTM (WorkerQueueControl status) = do
+  currentStatus <- GhcSTM.readTVar status
+  case currentStatus of
+    WorkerAccepting writers -> do
+      GhcSTM.writeTVar status (WorkerDraining writers)
+      pure True
+    _ -> pure False
+
+
+workerShouldBeReplacedSTM :: WorkerQueueControl -> GhcSTM.STM Bool
+workerShouldBeReplacedSTM control = do
+  currentStatus <- workerQueueStatusSTM control
+  case currentStatus of
+    WorkerAccepting _ -> pure False
+    _ -> pure True
+
+
+claimWorkerStop :: WorkerQueueControl -> Task Text Bool
+claimWorkerStop (WorkerQueueControl status) =
+  GhcSTM.atomically do
+    currentStatus <- GhcSTM.readTVar status
+    case currentStatus of
+      WorkerAccepting writers -> do
+        GhcSTM.writeTVar status (WorkerStopping writers)
+        pure True
+      WorkerDraining writers -> do
+        GhcSTM.writeTVar status (WorkerStopping writers)
+        pure True
+      _ -> pure False
+  |> Task.fromIO
+
+
+waitForWorkerWriters :: WorkerQueueControl -> Task Text Unit
+waitForWorkerWriters (WorkerQueueControl status) =
+  GhcSTM.atomically do
+    currentStatus <- GhcSTM.readTVar status
+    case currentStatus of
+      WorkerStopping 0 -> pure ()
+      WorkerStopping _ -> GhcSTM.retry
+      _ -> pure ()
+  |> Task.fromIO
+
+
+finishWorkerStop :: WorkerQueueControl -> Task Text Unit
+finishWorkerStop (WorkerQueueControl status) =
+  GhcSTM.atomically do
+    currentStatus <- GhcSTM.readTVar status
+    case currentStatus of
+      WorkerStopping 0 -> GhcSTM.writeTVar status WorkerStopped
+      _ -> pure ()
+  |> Task.fromIO
 
 
 -- | Worker for a specific entity with lifecycle management.
@@ -235,12 +653,8 @@ data LifecycleEntityWorker = LifecycleEntityWorker
     channel :: Channel (WorkerMessage (Event Json.Value)),
     workerTask :: AsyncTask Text Unit,
     lastActivityTime :: ConcurrentVar Int,
-    workerStates :: Array (Text, WorkerState), -- (entityTypeName, state) per lifecycle runner
-    -- | Status for reaper coordination. When Draining, the dispatcher will
-    -- spawn a new worker instead of using this one.
-    -- Uses AtomicVar (TVar-based) so status can be read inside STM transactions
-    -- for ConcurrentMap.getOrInsertIfM predicates.
-    status :: AtomicVar WorkerStatus
+    workerStates :: Array LifecycleRunnerWorkerState,
+    queueStatus :: WorkerQueueControl
   }
 
 
@@ -255,7 +669,7 @@ data IntegrationDispatcher = IntegrationDispatcher
     eventStore :: EventStore Json.Value,
     outboundRunners :: Array OutboundRunner,
     lifecycleRunners :: Array OutboundLifecycleRunner,
-    commandEndpoints :: Map Text EndpointHandler,
+    commandEndpoints :: Map Text DispatchHandler,
     shutdownSignal :: ConcurrentVar Bool,
     config :: DispatcherConfig,
     reaperTask :: ConcurrentVar (Maybe (AsyncTask Text Unit)),
@@ -316,7 +730,25 @@ newWithLifecycleConfig ::
   Map Text EndpointHandler ->
   Integration.ActionContext ->
   Task Text IntegrationDispatcher
-newWithLifecycleConfig dispatcherConfig store runners lifecycleRunners endpoints actionContext = do
+newWithLifecycleConfig dispatcherConfig store runners lifecycleRunners endpoints actionContext =
+  newWithLifecycleConfigWithSource
+    dispatcherConfig
+    store
+    runners
+    lifecycleRunners
+    (endpoints |> Map.mapValues (\handler _sourceEventMetadata -> handler))
+    actionContext
+
+
+newWithLifecycleConfigWithSource ::
+  DispatcherConfig ->
+  EventStore Json.Value ->
+  Array OutboundRunner ->
+  Array OutboundLifecycleRunner ->
+  Map Text DispatchHandler ->
+  Integration.ActionContext ->
+  Task Text IntegrationDispatcher
+newWithLifecycleConfigWithSource dispatcherConfig store runners lifecycleRunners endpoints actionContext = do
   workers <- ConcurrentMap.new
   lifecycleWorkers <- ConcurrentMap.new
   shutdownSignal <- ConcurrentVar.containing False
@@ -361,60 +793,144 @@ dispatch dispatcher event =
       isShuttingDown <- dispatcher.shutdownSignal |> ConcurrentVar.peek
       if isShuttingDown
         then do
-          let streamId = event.streamId
-          Log.info [fmt|Rejected event for stream #{toText streamId} - dispatcher is shutting down|]
-            |> Task.ignoreError
+          let logContext = integrationLogContext event
+          logIntegrationResult logContext IntegrationDropped
         else do
           let streamId = event.streamId
           let eventEntityName = event.entityName |> EntityName.toText
           Log.debug [fmt|Routing event to workers for stream #{toText streamId}|]
             |> Task.ignoreError
 
-          -- Handle stateless workers (only if a matching runner exists)
           let matchingStatelessRunners =
                 dispatcher.outboundRunners
                   |> Array.takeIf (\runner -> runner.entityTypeName == eventEntityName)
-          Task.unless (Array.isEmpty matchingStatelessRunners) do
-              worker <- getOrCreateStatelessWorker dispatcher streamId
-              writeWorkerMessageWithTimeout dispatcher streamId (ProcessEvent event) worker.channel
-
-          -- Handle lifecycle workers (only if a matching runner exists)
           let matchingLifecycleRunners =
                 dispatcher.lifecycleRunners
                   |> Array.takeIf (\runner -> runner.entityTypeName == eventEntityName)
-          Task.unless (Array.isEmpty matchingLifecycleRunners) do
-              lifecycleWorker <- getOrCreateLifecycleWorker dispatcher streamId eventEntityName
-              -- Update last activity time
-              currentTime <- getCurrentTimeMs
-              _ <- lifecycleWorker.lastActivityTime |> ConcurrentVar.swap currentTime
-              writeWorkerMessageWithTimeout dispatcher streamId (ProcessEvent event) lifecycleWorker.channel
+          if Array.isEmpty matchingStatelessRunners && Array.isEmpty matchingLifecycleRunners
+            then do
+              let logContext = integrationLogContext event
+              logIntegrationResult logContext IntegrationSkipped
+            else do
+              didQueueStateless <- if Array.isEmpty matchingStatelessRunners
+                then Task.yield True
+                else queueStatelessEvent dispatcher streamId event
+
+              didQueueLifecycle <- if Array.isEmpty matchingLifecycleRunners
+                then Task.yield True
+                else queueLifecycleEvent dispatcher streamId eventEntityName event
+
+              Task.when (not didQueueStateless || not didQueueLifecycle) do
+                let logContext = integrationLogContext event
+                logIntegrationResult logContext IntegrationDropped
 
 
-writeWorkerMessageWithTimeout ::
+data WorkerEnqueueResult
+  = WorkerEventEnqueued
+  | WorkerEventWriteTimedOut
+  | WorkerQueueClosed
+
+
+queueWorkerEventWithTimeout ::
   IntegrationDispatcher ->
   StreamId ->
-  WorkerMessage (Event Json.Value) ->
+  Event Json.Value ->
+  WorkerQueueControl ->
   Channel (WorkerMessage (Event Json.Value)) ->
-  Task Text Unit
-writeWorkerMessageWithTimeout dispatcher streamId message channel = do
-  writeResult <-
-    Channel.tryWriteWithTimeout dispatcher.config.channelWriteTimeoutMs message channel
-  case writeResult of
-    Ok _ -> pass
-    Err err -> do
-      let messageLabel = workerMessageLabel message
-      Log.warn
-        [fmt|Dropped #{messageLabel} for stream #{toText streamId} (channel write timeout: #{err})|]
-        |> Task.ignoreError
+  Task Text WorkerEnqueueResult
+queueWorkerEventWithTimeout dispatcher streamId event queueStatus workerChannel = Task.fromIOResult do
+  GhcException.mask \restore -> do
+    shutdownResult <- Task.runResult (dispatcher.shutdownSignal |> ConcurrentVar.peek)
+    case shutdownResult of
+      Err err -> pure (Err err)
+      Ok True -> pure (Ok WorkerQueueClosed)
+      Ok False -> do
+        admissionResult <- Task.runResult (acquireWorkerWrite queueStatus)
+        case admissionResult of
+          Err err -> pure (Err err)
+          Ok False -> pure (Ok WorkerQueueClosed)
+          Ok True -> do
+            writeResult <-
+              GhcException.finally
+                ( restore
+                    ( Task.runResult
+                        ( Channel.tryWriteWithTimeout
+                            dispatcher.config.channelWriteTimeoutMs
+                            (ProcessEvent event)
+                            workerChannel
+                        )
+                    )
+                )
+                (Task.runOrPanic (releaseWorkerWrite queueStatus))
+            case writeResult of
+              Err err -> pure (Err err)
+              Ok (Ok _) -> pure (Ok WorkerEventEnqueued)
+              Ok (Err _) -> do
+                _ <-
+                  Task.runResult
+                    ( Log.warn [fmt|Dropped event for stream #{toText streamId} (channel write timeout)|]
+                        |> Task.ignoreError
+                    )
+                pure (Ok WorkerEventWriteTimedOut)
 
 
-workerMessageLabel ::
-  forall value.
-  WorkerMessage value ->
-  Text
-workerMessageLabel message = case message of
-  ProcessEvent _ -> [fmt|event|]
-  Stop -> [fmt|stop|]
+queueStatelessEvent ::
+  IntegrationDispatcher ->
+  StreamId ->
+  Event Json.Value ->
+  Task Text Bool
+queueStatelessEvent dispatcher streamId event = do
+  worker <- getOrCreateStatelessWorker dispatcher streamId
+  enqueueResult <-
+    queueWorkerEventWithTimeout dispatcher streamId event worker.queueStatus worker.channel
+  case enqueueResult of
+    WorkerEventEnqueued -> Task.yield True
+    WorkerEventWriteTimedOut -> Task.yield False
+    WorkerQueueClosed -> do
+      isShuttingDown <- dispatcher.shutdownSignal |> ConcurrentVar.peek
+      if isShuttingDown
+        then do
+          withWorkerCleanupHandoff
+            ( do
+                _ <- dispatcher.entityWorkers
+                  |> ConcurrentMap.removeIf streamId (\currentWorker -> currentWorker.workerId == worker.workerId)
+                Task.yield (Just worker)
+            )
+            (stopStatelessWorkerOrCancel dispatcher streamId)
+            (stopStatelessWorkerOrCancel dispatcher streamId)
+          Task.yield False
+        else queueStatelessEvent dispatcher streamId event
+
+
+queueLifecycleEvent ::
+  IntegrationDispatcher ->
+  StreamId ->
+  Text ->
+  Event Json.Value ->
+  Task Text Bool
+queueLifecycleEvent dispatcher streamId entityTypeName event = do
+  worker <- getOrCreateLifecycleWorker dispatcher streamId entityTypeName
+  currentTime <- getCurrentTimeMs
+  _ <- worker.lastActivityTime |> ConcurrentVar.swap currentTime
+  enqueueResult <-
+    queueWorkerEventWithTimeout dispatcher streamId event worker.queueStatus worker.channel
+  case enqueueResult of
+    WorkerEventEnqueued -> Task.yield True
+    WorkerEventWriteTimedOut -> Task.yield False
+    WorkerQueueClosed -> do
+      isShuttingDown <- dispatcher.shutdownSignal |> ConcurrentVar.peek
+      if isShuttingDown
+        then do
+          withWorkerCleanupHandoff
+            ( do
+                _ <- dispatcher.lifecycleEntityWorkers
+                  |> ConcurrentMap.removeIf streamId (\currentWorker -> currentWorker.workerId == worker.workerId)
+                Task.yield (Just worker)
+            )
+            (stopLifecycleWorkerOrCancel dispatcher streamId)
+            (stopLifecycleWorkerOrCancel dispatcher streamId)
+          Task.yield False
+        else queueLifecycleEvent dispatcher streamId entityTypeName event
 
 
 -- | Stop a stateless worker gracefully or force-cancel if channel is full.
@@ -428,16 +944,13 @@ stopStatelessWorkerOrCancel ::
   EntityWorker ->
   Task Text Unit
 stopStatelessWorkerOrCancel dispatcher streamId worker = do
-  writeResult <-
-    Channel.tryWriteWithTimeout dispatcher.config.channelWriteTimeoutMs Stop worker.channel
-  case writeResult of
-    Ok _ -> pass
-    Err err -> do
-      Log.warn
-        [fmt|Stop message timed out for stream #{toText streamId} (#{err}), force-cancelling worker|]
-        |> Task.ignoreError
-      -- Force-cancel the worker since we can't stop it gracefully
-      AsyncTask.cancel worker.workerTask
+  stopWorkerOrCancel
+    dispatcher
+    streamId
+    "worker"
+    worker.queueStatus
+    worker.workerTask
+    worker.channel
 
 
 -- | Stop a lifecycle worker gracefully or force-cancel if channel is full.
@@ -450,65 +963,193 @@ stopLifecycleWorkerOrCancel ::
   LifecycleEntityWorker ->
   Task Text Unit
 stopLifecycleWorkerOrCancel dispatcher streamId worker = do
-  writeResult <-
-    Channel.tryWriteWithTimeout dispatcher.config.channelWriteTimeoutMs Stop worker.channel
-  case writeResult of
-    Ok _ -> pass
-    Err err -> do
-      Log.warn
-        [fmt|Stop message timed out for lifecycle worker stream #{toText streamId} (#{err}), force-cancelling (cleanup may be skipped)|]
+  stopWorkerOrCancel
+    dispatcher
+    streamId
+    "lifecycle worker"
+    worker.queueStatus
+    worker.workerTask
+    worker.channel
+
+
+stopWorkerOrCancel ::
+  IntegrationDispatcher ->
+  StreamId ->
+  Text ->
+  WorkerQueueControl ->
+  AsyncTask Text Unit ->
+  Channel (WorkerMessage (Event Json.Value)) ->
+  Task Text Unit
+stopWorkerOrCancel dispatcher streamId workerLabel queueStatus workerTask workerChannel = Task.fromIOResult do
+  GhcException.mask \restore -> do
+    claimResult <- Task.runResult (claimWorkerStop queueStatus)
+    case claimResult of
+      Err err -> pure (Err err)
+      Ok False -> pure (Ok unit)
+      Ok True -> do
+        stopResult <-
+          GhcException.try @GhcException.SomeException do
+            writerWaitResult <- restore (Task.runResult (waitForWorkerWriters queueStatus))
+            case writerWaitResult of
+              Err err -> pure (Err err)
+              Ok _ -> do
+                channelWriteResult <-
+                  restore
+                    ( Task.runResult
+                        ( Channel.tryWriteWithTimeout
+                            dispatcher.config.channelWriteTimeoutMs
+                            Stop
+                            workerChannel
+                        )
+                    )
+                case channelWriteResult of
+                  Err err -> pure (Err err)
+                  Ok (Ok _) -> pure (Ok True)
+                  Ok (Err _) -> pure (Ok False)
+        case stopResult of
+          Left exception -> do
+            Task.runOrPanic (forceWorkerStop queueStatus workerTask workerChannel)
+            GhcException.throwIO exception
+          Right (Err err) -> do
+            Task.runOrPanic (forceWorkerStop queueStatus workerTask workerChannel)
+            pure (Err err)
+          Right (Ok True) -> Task.runResult (finishWorkerStop queueStatus)
+          Right (Ok False) -> do
+            Task.runOrPanic (forceWorkerStop queueStatus workerTask workerChannel)
+            _ <-
+              Task.runResult
+                ( Log.warn
+                    [fmt|Stop message timed out for #{workerLabel} stream #{toText streamId}, force-cancelling worker|]
+                    |> Task.ignoreError
+                )
+            pure (Ok unit)
+
+
+forceWorkerStop ::
+  WorkerQueueControl ->
+  AsyncTask Text Unit ->
+  Channel (WorkerMessage (Event Json.Value)) ->
+  Task Text Unit
+forceWorkerStop queueStatus workerTask workerChannel = do
+  -- Admitted writes use a timeout. Worker cancellation still assumes callbacks respond to cancellation.
+  abandonedEvents <- Task.fromIO do
+    GhcException.uninterruptibleMask_ do
+      Task.runOrPanic (waitForWorkerWriters queueStatus)
+      Task.runOrPanic (AsyncTask.cancel workerTask)
+      drainedEvents <- Task.runOrPanic (drainAbandonedWorkerQueue workerChannel)
+      Task.runOrPanic (finishWorkerStop queueStatus)
+      pure drainedEvents
+  abandonedEvents
+    |> Task.forEach \event -> do
+      let logContext = integrationLogContext event
+      logIntegrationResult logContext IntegrationDropped
         |> Task.ignoreError
-      -- Force-cancel - note that cleanup callbacks won't be called in this case
-      -- This is a trade-off: we prevent memory leaks but may leak external resources
-      AsyncTask.cancel worker.workerTask
 
 
--- | Get an existing stateless worker or create a new one atomically.
---
--- This prevents the race condition where two threads could both see no worker
--- exists and both create one, causing one to be orphaned (memory leak) and
--- events to be lost.
---
--- Implementation uses optimistic spawning with ConcurrentMap.getOrInsert:
--- 1. Pre-spawn a worker outside the STM transaction (allows effects)
--- 2. Atomically check-and-insert using STM
--- 3. If another thread won the race, clean up the discarded candidate
---
--- Using ConcurrentMap instead of ConcurrentVar (MVar) eliminates the global
--- lock bottleneck, allowing concurrent access to different entity keys.
+withWorkerCleanupHandoff ::
+  Task Text (Maybe worker) ->
+  (worker -> Task Text Unit) ->
+  (worker -> Task Text Unit) ->
+  Task Text Unit
+withWorkerCleanupHandoff removeWorker afterRemoval cleanupWorker =
+  Task.fromIOResult do
+  GhcException.mask \restore -> do
+    removeResult <- Task.runResult removeWorker
+    case removeResult of
+      Err err -> pure (Err err)
+      Ok Nothing -> pure (Ok unit)
+      Ok (Just worker) -> do
+        actionResult <-
+          GhcException.try @GhcException.SomeException
+            (restore (Task.runResult (afterRemoval worker)))
+        case actionResult of
+          Left exception -> do
+            _ <- Task.runResult (cleanupWorker worker)
+            GhcException.throwIO exception
+          Right (Err err) -> do
+            _ <- Task.runResult (cleanupWorker worker)
+            pure (Err err)
+          Right (Ok _) -> pure (Ok unit)
+
+
+withWorkerCandidateHandoff ::
+  Task Text worker ->
+  (worker -> Task Text (worker, Maybe worker)) ->
+  (worker -> Task Text Unit) ->
+  Task Text worker
+withWorkerCandidateHandoff createCandidate publishCandidate cleanupWorker =
+  Task.fromIOResult do
+  GhcException.mask \restore -> do
+    candidateResult <- GhcException.try @GhcException.SomeException (Task.runResult createCandidate)
+    case candidateResult of
+      Left exception -> GhcException.throwIO exception
+      Right (Err err) -> pure (Err err)
+      Right (Ok candidate) -> do
+        publishResult <- Task.runResult (publishCandidate candidate)
+        case publishResult of
+          Err err -> do
+            _ <- Task.runResult (cleanupOwnedWorker restore candidate cleanupWorker)
+            pure (Err err)
+          Ok (actualWorker, maybeDiscarded) -> case maybeDiscarded of
+            Nothing -> pure (Ok actualWorker)
+            Just discardedWorker -> do
+              cleanupResult <- Task.runResult (cleanupOwnedWorker restore discardedWorker cleanupWorker)
+              case cleanupResult of
+                Err err -> pure (Err err)
+                Ok _ -> pure (Ok actualWorker)
+
+
+cleanupOwnedWorker ::
+  (GhcIO.IO (Result Text Unit) -> GhcIO.IO (Result Text Unit)) ->
+  worker ->
+  (worker -> Task Text Unit) ->
+  Task Text Unit
+cleanupOwnedWorker restore worker cleanupWorker = Task.fromIOResult do
+  cleanupResult <-
+    GhcException.try @GhcException.SomeException
+      (restore (Task.runResult (cleanupWorker worker)))
+  case cleanupResult of
+    Left exception -> do
+      _ <- Task.runResult (cleanupWorker worker)
+      GhcException.throwIO exception
+    Right (Err err) -> do
+      _ <- Task.runResult (cleanupWorker worker)
+      pure (Err err)
+    Right (Ok _) -> pure (Ok unit)
+
+
+drainAbandonedWorkerQueue ::
+  Channel (WorkerMessage (Event Json.Value)) ->
+  Task Text (Array (Event Json.Value))
+drainAbandonedWorkerQueue workerChannel = drain []
+  where
+    drain reversedEvents = do
+      maybeMessage <- workerChannel |> Channel.tryRead
+      case maybeMessage of
+        Nothing -> Task.yield (reversedEvents |> LinkedList.reverse |> Array.fromLinkedList)
+        Just Stop -> drain reversedEvents
+        Just (ProcessEvent event) -> drain (event : reversedEvents)
+
+
 getOrCreateStatelessWorker ::
   IntegrationDispatcher ->
   StreamId ->
   Task Text EntityWorker
 getOrCreateStatelessWorker dispatcher streamId = do
-  -- First, optimistically spawn a new worker (outside STM transaction)
-  -- This may be discarded if another thread wins the race
-  candidateWorker <- spawnStatelessWorker dispatcher streamId
-
-  -- Atomically check if a worker exists, insert ours if not
-  (actualWorker, maybeDiscarded) <-
-    dispatcher.entityWorkers
-      |> ConcurrentMap.getOrInsert streamId candidateWorker
-
-  -- Clean up discarded candidate if we lost the race
-  case maybeDiscarded of
-    Just discarded -> stopStatelessWorkerOrCancel dispatcher streamId discarded
-    Nothing -> pass
-
-  Task.yield actualWorker
+  withWorkerCandidateHandoff
+    (spawnStatelessWorker dispatcher streamId)
+    (\candidate ->
+      dispatcher.entityWorkers
+        |> ConcurrentMap.getOrInsertIfM
+          streamId
+          candidate
+          (\existing -> workerShouldBeReplacedSTM existing.queueStatus)
+    )
+    (stopStatelessWorkerOrCancel dispatcher streamId)
 
 
 -- | Get an existing lifecycle worker or create a new one atomically.
 --
--- This function handles the reaper race condition by checking worker status:
--- - If existing worker is Active, return it
--- - If existing worker is Draining, spawn new worker to replace it
--- - If no worker exists, spawn new one
---
--- The two-phase approach (check status, then replace if needed) is safe because:
--- 1. If status is Active, we use existing worker (correct)
--- 2. If status is Draining, we atomically replace it (getOrInsertIf)
--- 3. Concurrent replacements are serialized by STM
 getOrCreateLifecycleWorker ::
   IntegrationDispatcher ->
   StreamId ->
@@ -520,39 +1161,30 @@ getOrCreateLifecycleWorker dispatcher streamId entityTypeName = do
 
   case maybeExisting of
     Just existingWorker -> do
-      -- Check if the existing worker is being drained by the reaper
-      existingStatus <- existingWorker.status |> AtomicVar.peek
+      existingStatus <- workerQueueStatus existingWorker.queueStatus
       case existingStatus of
-        Active ->
-          -- Worker is active, use it
+        WorkerAccepting _ ->
           Task.yield existingWorker
-        Draining -> do
-          -- Worker is draining, spawn new one to replace it
-          candidateWorker <- spawnLifecycleWorker dispatcher streamId entityTypeName
-          -- Atomically replace the draining worker using getOrInsertIfM
-          -- The predicate reads status inside STM, allowing replacement only if still Draining
-          let shouldReplace existing = do
-                s <- AtomicVar.peekSTM existing.status
-                pure (s == Draining)
-          (actualWorker, maybeDiscarded) <-
-            dispatcher.lifecycleEntityWorkers
-              |> ConcurrentMap.getOrInsertIfM streamId candidateWorker shouldReplace
-          -- Clean up discarded worker (either our candidate or the old draining one)
-          case maybeDiscarded of
-            Just discarded -> stopLifecycleWorkerOrCancel dispatcher streamId discarded
-            Nothing -> pass
-          Task.yield actualWorker
-    Nothing -> do
-      -- No worker exists, spawn one
-      candidateWorker <- spawnLifecycleWorker dispatcher streamId entityTypeName
-      (actualWorker, maybeDiscarded) <-
-        dispatcher.lifecycleEntityWorkers
-          |> ConcurrentMap.getOrInsert streamId candidateWorker
-      -- Clean up discarded candidate if we lost the race
-      case maybeDiscarded of
-        Just discarded -> stopLifecycleWorkerOrCancel dispatcher streamId discarded
-        Nothing -> pass
-      Task.yield actualWorker
+        _ -> createLifecycleWorkerCandidate dispatcher streamId entityTypeName
+    Nothing -> createLifecycleWorkerCandidate dispatcher streamId entityTypeName
+
+
+createLifecycleWorkerCandidate ::
+  IntegrationDispatcher ->
+  StreamId ->
+  Text ->
+  Task Text LifecycleEntityWorker
+createLifecycleWorkerCandidate dispatcher streamId entityTypeName =
+  withWorkerCandidateHandoff
+    (spawnLifecycleWorker dispatcher streamId entityTypeName)
+    (\candidate ->
+      dispatcher.lifecycleEntityWorkers
+        |> ConcurrentMap.getOrInsertIfM
+          streamId
+          candidate
+          (\existing -> workerShouldBeReplacedSTM existing.queueStatus)
+    )
+    (stopLifecycleWorkerOrCancel dispatcher streamId)
 
 
 -- | Get current time in milliseconds.
@@ -577,6 +1209,7 @@ spawnStatelessWorker dispatcher streamId = do
   workerChannel <- Channel.newBounded dispatcher.config.workerChannelCapacity
   currentTime <- getCurrentTimeMs
   lastActivity <- ConcurrentVar.containing currentTime
+  queueStatus <- newWorkerQueueControl
 
   let workerLoop :: Task Text Unit
       workerLoop = do
@@ -589,14 +1222,20 @@ spawnStatelessWorker dispatcher streamId = do
             -- Update activity time
             newTime <- getCurrentTimeMs
             _ <- lastActivity |> ConcurrentVar.swap newTime
+            let logContext = integrationLogContext event
+            timeoutReached <- ConcurrentVar.containing False
             -- Process with optional timeout
-            processResult <- runWithTimeout
-              dispatcher.config.eventProcessingTimeoutMs
-              (processStatelessEvent dispatcher event)
+            processResult <- withIntegrationEventScope logContext do
+              runWithTimeout
+                timeoutReached
+                dispatcher.config.eventProcessingTimeoutMs
+                ( withIntegrationEventScope logContext
+                    (processStatelessEvent dispatcher logContext timeoutReached event)
+                )
             case processResult of
               Ok _ -> pass
-              Err err -> do
-                Log.warn [fmt|Event processing failed for stream #{toText streamId}: #{err}|]
+              Err _ -> do
+                Log.warn [fmt|Event processing failed for stream #{toText streamId}|]
                   |> Task.ignoreError
             workerLoop
 
@@ -606,23 +1245,25 @@ spawnStatelessWorker dispatcher streamId = do
         result <- workerLoop |> Task.asResultSafe
         case result of
           Ok _ -> pass
-          Err err -> do
+          Err _ -> do
             -- Remove from map FIRST so new events can spawn a fresh worker
             dispatcher.entityWorkers |> ConcurrentMap.remove streamId
             -- Log after removal to ensure map is cleaned up even if logging fails
-            Log.warn [fmt|Stateless worker crashed for stream #{toText streamId}: #{err}|]
+            Log.warn [fmt|Stateless worker crashed for stream #{toText streamId}|]
               |> Task.ignoreError
 
-  workerTask <- AsyncTask.run safeWorkerLoop
   Log.withScope [("component", "Dispatcher")] do
-    Log.debug [fmt|Spawned stateless worker for stream #{toText streamId}|]
+    Log.debug [fmt|Starting worker for stream #{toText streamId}|]
       |> Task.ignoreError
+
+  workerTask <- AsyncTask.runUnmasked safeWorkerLoop
   Task.yield
     EntityWorker
       { workerId = uniqueId,
         channel = workerChannel,
         workerTask = workerTask,
-        lastActivityTime = lastActivity
+        lastActivityTime = lastActivity,
+        queueStatus = queueStatus
       }
 
 
@@ -641,17 +1282,23 @@ spawnLifecycleWorker dispatcher streamId entityTypeName = do
   workerChannel <- Channel.newBounded dispatcher.config.workerChannelCapacity
   currentTime <- getCurrentTimeMs
   lastActivity <- ConcurrentVar.containing currentTime
-  workerStatus <- AtomicVar.containing Active
+  queueStatus <- newWorkerQueueControl
 
   -- Initialize only lifecycle runners matching the entity type for this stream.
   -- This avoids expensive resource allocation (DB connections, interpreters) for
   -- runners that will never process events on this stream.
   states <-
     dispatcher.lifecycleRunners
-      |> Array.takeIf (\runner -> runner.entityTypeName == entityTypeName)
-      |> Task.mapArray (\runner -> do
+      |> Array.indexed
+      |> Array.takeIf (\(_, runner) -> runner.entityTypeName == entityTypeName)
+      |> Task.mapArray (\(runnerOrdinal, runner) -> do
         state <- runner.spawnWorkerState streamId
-        Task.yield (runner.entityTypeName, state)
+        Task.yield
+          LifecycleRunnerWorkerState
+            { lifecycleRunnerOrdinal = runnerOrdinal,
+              lifecycleRunnerEntityTypeName = runner.entityTypeName,
+              lifecycleRunnerState = state
+            }
       )
 
   let workerLoop :: Task Text Unit
@@ -662,19 +1309,25 @@ spawnLifecycleWorker dispatcher streamId entityTypeName = do
             -- Drain remaining events before cleanup
             drainLifecycleWorker dispatcher.config states dispatcher.commandEndpoints workerChannel
             -- Cleanup on stop (reap or shutdown)
-            states |> Task.forEach (\(_, state) -> state.cleanup |> Task.ignoreError)
+            states |> Task.forEach (\runnerState -> runnerState.lifecycleRunnerState.cleanup |> Task.ignoreError)
           ProcessEvent event -> do
             -- Update activity time
             newTime <- getCurrentTimeMs
             lastActivity |> ConcurrentVar.modify (\_ -> newTime)
+            let logContext = integrationLogContext event
+            timeoutReached <- ConcurrentVar.containing False
             -- Process event through matching lifecycle runners with optional timeout
-            processResult <- runWithTimeout
-              dispatcher.config.eventProcessingTimeoutMs
-              (processLifecycleEvent dispatcher.config states dispatcher.commandEndpoints event)
+            processResult <- withIntegrationEventScope logContext do
+              runWithTimeout
+                timeoutReached
+                dispatcher.config.eventProcessingTimeoutMs
+                ( withIntegrationEventScope logContext
+                    (processLifecycleEvent dispatcher.config states dispatcher.commandEndpoints logContext timeoutReached event)
+                )
             case processResult of
               Ok _ -> pass
-              Err err -> do
-                Log.warn [fmt|Lifecycle event processing failed for stream #{toText streamId}: #{err}|]
+              Err _ -> do
+                Log.warn [fmt|Lifecycle event processing failed for stream #{toText streamId}|]
                   |> Task.ignoreError
             workerLoop
 
@@ -684,19 +1337,20 @@ spawnLifecycleWorker dispatcher streamId entityTypeName = do
         result <- workerLoop |> Task.asResultSafe
         case result of
           Ok _ -> pass
-          Err err -> do
+          Err _ -> do
             -- Remove from map FIRST so new events can spawn a fresh worker
             dispatcher.lifecycleEntityWorkers |> ConcurrentMap.remove streamId
             -- Log after removal to ensure map is cleaned up even if logging fails
-            Log.warn [fmt|Lifecycle worker crashed for stream #{toText streamId}: #{err}|]
+            Log.warn [fmt|Lifecycle worker crashed for stream #{toText streamId}|]
               |> Task.ignoreError
             -- Attempt cleanup even on crash (best effort, after removal)
-            states |> Task.forEach (\(_, state) -> state.cleanup |> Task.ignoreError)
+            states |> Task.forEach (\runnerState -> runnerState.lifecycleRunnerState.cleanup |> Task.ignoreError)
 
-  workerTask <- AsyncTask.run safeWorkerLoop
   Log.withScope [("component", "Dispatcher")] do
-    Log.debug [fmt|Spawned lifecycle worker for stream #{toText streamId}|]
+    Log.debug [fmt|Starting lifecycle worker for stream #{toText streamId}|]
       |> Task.ignoreError
+
+  workerTask <- AsyncTask.runUnmasked safeWorkerLoop
   Task.yield
     LifecycleEntityWorker
       { workerId = uniqueId,
@@ -704,7 +1358,7 @@ spawnLifecycleWorker dispatcher streamId entityTypeName = do
         workerTask = workerTask,
         lastActivityTime = lastActivity,
         workerStates = states,
-        status = workerStatus
+        queueStatus = queueStatus
       }
 
 
@@ -726,12 +1380,13 @@ spawnLifecycleWorker dispatcher streamId entityTypeName = do
 -- Retry delays follow: @baseDelay * 2^attempt@ (e.g., 500ms, 1000ms, 2000ms).
 executeWithRetry ::
   forall result.
+  IntegrationLogContext ->
   DispatcherConfig ->
   Text -> -- ^ Entity type name (for logging)
   StreamId -> -- ^ Stream ID (for logging)
   Task Text result -> -- ^ Action to execute (should be pure/idempotent)
   Task Text (Maybe result)
-executeWithRetry config entityType streamId action = do
+executeWithRetry logContext config entityType streamId action = do
   let maxRetries = config.maxEventRetries
   let baseDelay = config.retryBaseDelayMs
   let streamIdText = toText streamId
@@ -742,27 +1397,26 @@ executeWithRetry config entityType streamId action = do
               innerResult <- action |> Task.asResult
               case innerResult of
                 Ok value -> Task.yield (Just value)
-                Err err -> do
-                  Log.warn [fmt|[Integration] Failed to process event for #{entityType} (stream: #{streamIdText}): #{err}|]
+                Err _ -> do
+                  Log.warn [fmt|[Integration] Failed to process event for #{entityType} (stream: #{streamIdText})|]
                     |> Task.ignoreError
                   Task.yield Nothing
         -- Outer layer: catch IO exceptions (retryable)
         outerResult <- innerAction |> Task.asResultSafe
         case outerResult of
           Ok maybeValue -> Task.yield maybeValue
-          Err ioErr -> do
+          Err _ -> do
             let attemptNum = attempt + 1
             if attempt >= maxRetries
               then do
-                Log.warn [fmt|[Integration] Outbound processing failed for #{entityType} (stream: #{streamIdText}) after #{attemptNum} attempt(s): #{ioErr}. Check network connectivity or increase maxEventRetries.|]
+                Log.warn [fmt|[Integration] Outbound processing failed for #{entityType} (stream: #{streamIdText}) after #{attemptNum} attempt(s)|]
                   |> Task.ignoreError
                 Task.yield Nothing
               else do
                 let attemptFloat = Int.toFloat attempt
                 let candidateDelay = Float.toInt (Int.toFloat baseDelay * (2.0 ^ attemptFloat))
                 let delay = min candidateDelay 60000 -- Cap at 60s to prevent overflow
-                Log.debug [fmt|[Integration] Retry #{attemptNum}/#{maxRetries} for #{entityType} (stream: #{streamIdText}): #{ioErr}, waiting #{delay}ms|]
-                  |> Task.ignoreError
+                logIntegrationRetry logContext attemptNum maxRetries delay
                 AsyncTask.sleep delay
                   |> Task.mapError (\_ -> "retry sleep error" :: Text)
                 retryLoop (attempt + 1)
@@ -776,25 +1430,31 @@ executeWithRetry config entityType streamId action = do
 -- backoff via 'executeWithRetry' (fixes issue #571).
 processStatelessEvent ::
   IntegrationDispatcher ->
+  IntegrationLogContext ->
+  ConcurrentVar Bool ->
   Event Json.Value ->
   Task Text Unit
-processStatelessEvent dispatcher event = do
+processStatelessEvent dispatcher logContext timeoutReached event = do
   let streamId = event.streamId
   let eventEntityName = event.entityName |> EntityName.toText
-  dispatcher.outboundRunners
-    |> Array.takeIf (\runner -> runner.entityTypeName == eventEntityName)
-    |> Task.forEach \runner -> do
-      let runnerEntityType = runner.entityTypeName
-      -- Retry only wraps processEvent; dispatchCommand runs outside to avoid
-      -- duplicate command sends on retry.
-      maybeCommands <- executeWithRetry dispatcher.config runnerEntityType streamId
-        (runner.processEvent dispatcher.context dispatcher.eventStore event)
-      case maybeCommands of
-        Just commands ->
-          commands
-            |> Task.forEach \payload ->
-              dispatchCommand dispatcher.commandEndpoints payload
-        Nothing -> pass
+  let sourceEventMetadata = event.metadata
+  runnerExecutions <-
+    dispatcher.outboundRunners
+      |> Array.indexed
+      |> Array.takeIf (\(_, runner) -> runner.entityTypeName == eventEntityName)
+      |> Task.mapArray \(runnerOrdinal, runner) ->
+        newIntegrationRunnerExecution OutboundRunnerKind runnerOrdinal runner
+  let processRunner execution = do
+        let runner = execution.integrationExecutionRunner
+        let runnerEntityType = runner.entityTypeName
+        let runnerTask = executeWithRetry logContext dispatcher.config runnerEntityType streamId
+              (runner.processEvent dispatcher.context dispatcher.eventStore event)
+        let dispatchPayload payload =
+              dispatchCommandWithSource dispatcher.commandEndpoints (Just sourceEventMetadata) payload
+        runIntegrationRunner execution runnerTask dispatchPayload
+  Task.finally
+    (logIntegrationRunnerExecutions logContext timeoutReached runnerExecutions)
+    (runnerExecutions |> Task.forEach processRunner)
 
 
 -- | Process an event through lifecycle runners.
@@ -803,24 +1463,35 @@ processStatelessEvent dispatcher event = do
 -- IO exceptions are retried with exponential backoff.
 processLifecycleEvent ::
   DispatcherConfig ->
-  Array (Text, WorkerState) ->
-  Map Text EndpointHandler ->
+  Array LifecycleRunnerWorkerState ->
+  Map Text DispatchHandler ->
+  IntegrationLogContext ->
+  ConcurrentVar Bool ->
   Event Json.Value ->
   Task Text Unit
-processLifecycleEvent config states endpoints event = do
+processLifecycleEvent config states endpoints logContext timeoutReached event = do
   let streamId = event.streamId
   let eventEntityName = event.entityName |> EntityName.toText
-  states
-    |> Array.takeIf (\(entityType, _) -> entityType == eventEntityName)
-    |> Task.forEach \(entityType, state) -> do
-      maybeCommands <- executeWithRetry config entityType streamId
-        (state.processEvent event)
-      case maybeCommands of
-        Just commands ->
-          commands
-            |> Task.forEach \payload ->
-              dispatchCommand endpoints payload
-        Nothing -> pass
+  let sourceEventMetadata = event.metadata
+  runnerExecutions <-
+    states
+      |> Array.takeIf (\runnerState -> runnerState.lifecycleRunnerEntityTypeName == eventEntityName)
+      |> Task.mapArray \runnerState ->
+        newIntegrationRunnerExecution
+          LifecycleRunnerKind
+          runnerState.lifecycleRunnerOrdinal
+          runnerState
+  let processRunner execution = do
+        let runnerState = execution.integrationExecutionRunner
+        let runnerEntityType = runnerState.lifecycleRunnerEntityTypeName
+        let runnerTask = executeWithRetry logContext config runnerEntityType streamId
+              (runnerState.lifecycleRunnerState.processEvent event)
+        let dispatchPayload payload =
+              dispatchCommandWithSource endpoints (Just sourceEventMetadata) payload
+        runIntegrationRunner execution runnerTask dispatchPayload
+  Task.finally
+    (logIntegrationRunnerExecutions logContext timeoutReached runnerExecutions)
+    (runnerExecutions |> Task.forEach processRunner)
 
 
 -- | Drain remaining events from a stateless worker's channel before exiting.
@@ -843,8 +1514,10 @@ drainStatelessWorker dispatcher workerChannel = do
         -- Another Stop, ignore and continue draining
         drainStatelessWorker dispatcher workerChannel
       ProcessEvent event -> do
-        -- Process the remaining event
-        processStatelessEvent dispatcher event
+        let logContext = integrationLogContext event
+        timeoutReached <- ConcurrentVar.containing False
+        withIntegrationEventScope logContext do
+          processStatelessEvent dispatcher logContext timeoutReached event
         -- Continue draining
         drainStatelessWorker dispatcher workerChannel
 
@@ -854,8 +1527,8 @@ drainStatelessWorker dispatcher workerChannel = do
 -- Similar to drainStatelessWorker but uses lifecycle event processing.
 drainLifecycleWorker ::
   DispatcherConfig ->
-  Array (Text, WorkerState) ->
-  Map Text EndpointHandler ->
+  Array LifecycleRunnerWorkerState ->
+  Map Text DispatchHandler ->
   Channel (WorkerMessage (Event Json.Value)) ->
   Task Text Unit
 drainLifecycleWorker config states endpoints workerChannel = do
@@ -869,8 +1542,10 @@ drainLifecycleWorker config states endpoints workerChannel = do
         -- Another Stop, ignore and continue draining
         drainLifecycleWorker config states endpoints workerChannel
       ProcessEvent event -> do
-        -- Process the remaining event
-        processLifecycleEvent config states endpoints event
+        let logContext = integrationLogContext event
+        timeoutReached <- ConcurrentVar.containing False
+        withIntegrationEventScope logContext do
+          processLifecycleEvent config states endpoints logContext timeoutReached event
         -- Continue draining
         drainLifecycleWorker config states endpoints workerChannel
 
@@ -881,7 +1556,19 @@ dispatchCommand ::
   Map Text EndpointHandler ->
   Integration.CommandPayload ->
   Task Text Unit
-dispatchCommand endpoints payload = do
+dispatchCommand endpoints payload =
+  dispatchCommandWithSource
+    (endpoints |> Map.mapValues (\handler _sourceEventMetadata -> handler))
+    Nothing
+    payload
+
+
+dispatchCommandWithSource ::
+  Map Text DispatchHandler ->
+  Maybe EventMetadata ->
+  Integration.CommandPayload ->
+  Task Text Unit
+dispatchCommandWithSource endpoints sourceEventMetadata payload = do
   let cmdType = payload.commandType
   case Map.get cmdType endpoints of
     Just handler -> do
@@ -895,14 +1582,14 @@ dispatchCommand endpoints payload = do
       let cmdBytes = Json.encodeText payload.commandData |> Text.toBytes
       let responseCallback (response, _) = do
             case response of
-              Failed {error = err} ->
-                Log.warn [fmt|Command dispatch failed: #{err}|] |> Task.ignoreError
-              Rejected {reason = reason} ->
-                Log.warn [fmt|Command dispatch rejected: #{reason}|] |> Task.ignoreError
+              Failed {} ->
+                Log.warn "Command dispatch failed" |> Task.ignoreError
+              Rejected {} ->
+                Log.warn "Command dispatch rejected" |> Task.ignoreError
               _ ->
                 Log.debug [fmt|Command dispatched successfully: #{cmdType}|] |> Task.ignoreError
             Task.yield unit
-      handler requestContext cmdBytes responseCallback
+      handler sourceEventMetadata requestContext cmdBytes responseCallback
         |> Task.mapError (\err -> [fmt|Command dispatch failed for #{cmdType}: #{err}|])
     Nothing -> do
       Log.warn [fmt|No handler found for command: #{cmdType}|]
@@ -936,57 +1623,45 @@ startReaper dispatcher = do
             dispatcher.lifecycleEntityWorkers
               |> ConcurrentMap.forEachChunked reaperChunkSize \streamId worker -> do
                 -- Find and clean up idle workers
-                -- Reaper race condition fix:
-                -- 1. Mark worker as Draining (so dispatcher knows not to use it)
-                -- 2. Atomically remove from map ONLY IF it's still the same worker
-                --    (uses removeIf to prevent removing a newly-spawned replacement)
-                -- 3. Send Stop (worker drains queue then exits)
                 lastActivity <- worker.lastActivityTime |> ConcurrentVar.peek
                 let idleTime = currentTime - lastActivity
                 Task.when (idleTime > dispatcher.config.idleTimeoutMs) do
-                    -- Capture the worker ID we're trying to remove
                     let capturedWorkerId = worker.workerId
-                    -- Step 1: Mark as Draining so dispatcher won't use this worker
-                    worker.status |> AtomicVar.set Draining
-                    -- Step 2: Atomically remove ONLY IF the worker ID matches
-                    -- If a new worker was spawned between our check and remove,
-                    -- it will have a different ID and won't be removed
-                    let isSameWorker currentWorker =
-                          currentWorker.workerId == capturedWorkerId
-                    removed <- dispatcher.lifecycleEntityWorkers
-                      |> ConcurrentMap.removeIf streamId isSameWorker
-                    -- Step 3: Send Stop only if we actually removed the worker
-                    case removed of
-                      Just removedWorker -> do
+                    let markSameWorkerDraining currentWorker = do
+                          if currentWorker.workerId == capturedWorkerId
+                            then markWorkerDrainingSTM currentWorker.queueStatus
+                            else pure False
+                    withWorkerCleanupHandoff
+                      (dispatcher.lifecycleEntityWorkers
+                        |> ConcurrentMap.removeIfM streamId markSameWorkerDraining
+                      )
+                      (\removedWorker -> do
                         Log.debug [fmt|Reaped idle lifecycle worker for stream #{toText streamId}|]
                           |> Task.ignoreError
                         stopLifecycleWorkerOrCancel dispatcher streamId removedWorker
-                      Nothing ->
-                        -- Worker was replaced, don't send Stop to the new one
-                        pass
+                      )
+                      (stopLifecycleWorkerOrCancel dispatcher streamId)
 
-            -- Reap idle STATELESS workers (same logic, simpler - no Draining status)
             dispatcher.entityWorkers
               |> ConcurrentMap.forEachChunked reaperChunkSize \streamId worker -> do
                 lastActivity <- worker.lastActivityTime |> ConcurrentVar.peek
                 let idleTime = currentTime - lastActivity
                 Task.when (idleTime > dispatcher.config.idleTimeoutMs) do
-                    -- Capture the worker ID we're trying to remove
                     let capturedWorkerId = worker.workerId
-                    -- Atomically remove ONLY IF the worker ID matches
-                    let isSameWorker currentWorker =
-                          currentWorker.workerId == capturedWorkerId
-                    removed <- dispatcher.entityWorkers
-                      |> ConcurrentMap.removeIf streamId isSameWorker
-                    -- Send Stop only if we actually removed the worker
-                    case removed of
-                      Just removedWorker -> do
+                    let markSameWorkerDraining currentWorker = do
+                          if currentWorker.workerId == capturedWorkerId
+                            then markWorkerDrainingSTM currentWorker.queueStatus
+                            else pure False
+                    withWorkerCleanupHandoff
+                      (dispatcher.entityWorkers
+                        |> ConcurrentMap.removeIfM streamId markSameWorkerDraining
+                      )
+                      (\removedWorker -> do
                         Log.debug [fmt|Reaped idle worker for stream #{toText streamId}|]
                           |> Task.ignoreError
                         stopStatelessWorkerOrCancel dispatcher streamId removedWorker
-                      Nothing ->
-                        -- Worker was replaced, don't send Stop to the new one
-                        pass
+                      )
+                      (stopStatelessWorkerOrCancel dispatcher streamId)
 
             -- Continue reaping
             reaperLoop

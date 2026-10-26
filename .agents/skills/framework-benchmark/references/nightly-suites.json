@@ -1,0 +1,22 @@
+{
+  "schema": 1,
+  "mode": "compiled cabal test with cabal.project; suite wallclock includes toolchain startup and any build work",
+  "entries": [
+    {
+      "name": "eventstore-inmemory",
+      "suite": "nhcore-test-service",
+      "match": "Service.EventStore.InMemory",
+      "requires": null,
+      "timeout_s": 1800,
+      "budget_s": null
+    },
+    {
+      "name": "eventstore-postgres",
+      "suite": "nhcore-test-service",
+      "match": "Service.EventStore.Postgres",
+      "requires": "postgres",
+      "timeout_s": 1800,
+      "budget_s": null
+    }
+  ]
+}

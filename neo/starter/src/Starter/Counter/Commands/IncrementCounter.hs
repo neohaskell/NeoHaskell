@@ -6,7 +6,6 @@ module Starter.Counter.Commands.IncrementCounter (
 
 import Core
 import Decider qualified
-import Json qualified
 import Service.Auth (RequestContext)
 import Service.Command.Core (TransportsOf)
 import Service.CommandExecutor.TH (command)
@@ -20,10 +19,6 @@ data IncrementCounter = IncrementCounter
   { entityId :: Uuid
   , amount :: Int
   }
-  deriving (Generic, Typeable, Show)
-
-
-instance Json.FromJSON IncrementCounter
 
 
 -- | Returning `Just` tells the framework to load this entity before calling `decide`.

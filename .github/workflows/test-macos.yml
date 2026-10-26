@@ -62,7 +62,7 @@ jobs:
 
       - uses: actions/checkout@v7.0.1
 
-      - uses: DeterminateSystems/determinate-nix-action@v3.22.2
+      - uses: DeterminateSystems/determinate-nix-action@v3.23.3
         with:
           extra-conf: |
             accept-flake-config = true
@@ -81,4 +81,4 @@ jobs:
         run: nix develop --command cabal build all --disable-documentation
 
       - name: Run ${{ matrix.test-suite }}
-        run: nix develop --command cabal test ${{ matrix.test-suite }}
+        run: nix develop --command cabal test ${{ matrix.test-suite }} --test-show-details=direct

@@ -65,7 +65,7 @@ This restoration does not weaken or rename the current repository gates:
 - deterministic gitleaks scanning;
 - spec, design-review, criterion-test, expectation, changelog, and spec-drift
   checks;
-- full Haskell, Neo CLI, installer, testbed, and post-merge workflows;
+- full Haskell, Neo CLI, testbed, and post-merge workflows;
 - PR-comment allowlist filtering;
 - Dependabot and required-check policy from ADR-0074;
 - codemap, API-discovery, and dialect enforcement;

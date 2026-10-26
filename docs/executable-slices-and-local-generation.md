@@ -17,7 +17,7 @@ Implement this architecture as a sequence of vertical, independently reviewable 
    - Close [#819](https://github.com/neohaskell/NeoHaskell/issues/819) through deletion of the shelved full-port plan. The new Haskell semantic-engine issue [#827](https://github.com/neohaskell/NeoHaskell/issues/827) is deliberately narrower than that shelved rewrite: the production native launcher and operational CLI remain while semantic capabilities move behind a proven protocol.
    - Reconcile the broad missing-code idea in [#49](https://github.com/neohaskell/NeoHaskell/issues/49) with the restricted synthesis contract in [#831](https://github.com/neohaskell/NeoHaskell/issues/831); do not ship unrestricted `implement` behavior.
    - Coordinate the semantic engine with the VSCode/HLS work tracked by [#493](https://github.com/neohaskell/NeoHaskell/issues/493) so both clients can consume the same typed project service rather than creating competing compiler sessions.
-   - Keep [#807](https://github.com/neohaskell/NeoHaskell/issues/807) and [#785](https://github.com/neohaskell/NeoHaskell/issues/785) as continuous CLI-quality and onboarding gates.
+   - Keep [#807](https://github.com/neohaskell/NeoHaskell/issues/807) and [#785](https://github.com/neohaskell/NeoHaskell/issues/785) for ongoing CLI-quality work.
 2. **Stabilize semantic identity.** Complete [#801](https://github.com/neohaskell/NeoHaskell/issues/801) so slices and their nodes have one versionable identity independent of source position or display text.
 3. **Define executable local slices.** Implement [#825](https://github.com/neohaskell/NeoHaskell/issues/825), reconciling [#573](https://github.com/neohaskell/NeoHaskell/issues/573), [#578](https://github.com/neohaskell/NeoHaskell/issues/578), and [#580](https://github.com/neohaskell/NeoHaskell/issues/580). Prove state-change, state-view, translation, multi-entity-query, incomplete-implementation, example, counterexample, and property declarations.
 4. **Prove one runtime vertical slice without public `Service`.** Implement [#826](https://github.com/neohaskell/NeoHaskell/issues/826) together with the applicable compile-time validation from [#581](https://github.com/neohaskell/NeoHaskell/issues/581). One behavior must run from `Application.withSlices`, derive its entity runtime, and pass an acceptance test before broad migration begins.
@@ -29,7 +29,7 @@ Implement this architecture as a sequence of vertical, independently reviewable 
 10. **Implement atomic typed-hole synthesis.** Implement [#831](https://github.com/neohaskell/NeoHaskell/issues/831). Start with preconditions and field mappings, then earn support for decider branches, projections, fixtures, generators, shrinkers, and property bodies independently.
 11. **Integrate and evaluate local inference.** Implement [#832](https://github.com/neohaskell/NeoHaskell/issues/832). Benchmark MiniCPM5-1B as one baseline behind a provider-neutral interface; do not make the model name part of the architecture or grant autonomy without per-module evidence.
 12. **Render the same source-derived model.** Complete the export work in [#584](https://github.com/neohaskell/NeoHaskell/issues/584), then implement [#834](https://github.com/neohaskell/NeoHaskell/issues/834) so the IDE shows source, typed, implementation, test, and drift states without becoming another model editor.
-13. **Migrate and prove the complete consumer workflow.** Implement [#835](https://github.com/neohaskell/NeoHaskell/issues/835), revising or superseding [#585](https://github.com/neohaskell/NeoHaskell/issues/585). Preserve acceptance behavior, deployed identities, CLI compatibility, packaging, and the clean-machine 600-second onboarding SLO.
+13. **Migrate and prove the complete consumer workflow.** Implement [#835](https://github.com/neohaskell/NeoHaskell/issues/835), revising or superseding [#585](https://github.com/neohaskell/NeoHaskell/issues/585). Preserve acceptance behavior, deployed identities, CLI compatibility, packaging, and release behavior.
 
 The dependency spine is:
 
@@ -85,7 +85,7 @@ Generation should follow hole-driven development. Deterministic scaffolding crea
 - Make deterministic mechanisms contribute most of the generation capability.
 - Use local inference only where semantic ranking or bounded expression composition is required.
 - Keep the workflow useful offline and on a low-end 16 GB development machine.
-- Preserve CLI, packaging, release, compatibility, and onboarding contracts throughout migration.
+- Preserve CLI, packaging, release, compatibility, and external Nix setup throughout migration.
 
 ## Non-goals
 
@@ -896,7 +896,7 @@ Continuously verify:
 - generated application build/test/run/health;
 - source inspection in green and red states;
 - package and release artifacts;
-- clean-machine onboarding within 600 seconds;
+- the verified `neo-release install` helper;
 - offline deterministic workflow;
 - local-model installation and checksum behavior.
 
