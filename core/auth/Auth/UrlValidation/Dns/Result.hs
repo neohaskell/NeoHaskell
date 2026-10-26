@@ -1,3 +1,6 @@
+{-| Represent DNS lookup outcomes used by URL validation.
+Use combine to merge A and AAAA results before validating addresses.
+-}
 module Auth.UrlValidation.Dns.Result (
   DnsResult (..),
   combine,

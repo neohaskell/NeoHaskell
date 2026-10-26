@@ -1,3 +1,6 @@
+{-| Resolve both DNS address families for URL validation.
+Use resolve for ordinary lookups or resolveWith when providing lookup actions.
+-}
 module Auth.UrlValidation.Dns (
   DnsConfig (..),
   DnsActions (..),

@@ -1,3 +1,6 @@
+{-| Run the private DNS resolver specification.
+Use this module as the nhcore-test-auth-dns test target entry point.
+-}
 module Main (main) where
 
 import Auth.UrlValidation.DnsSpec qualified

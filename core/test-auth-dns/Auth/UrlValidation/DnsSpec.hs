@@ -1,3 +1,6 @@
+{-| Specify observable DNS resolver behavior with controlled lookup actions.
+Run spec through the private DNS test target to check its resolution contract.
+-}
 module Auth.UrlValidation.DnsSpec where
 
 import AsyncTask qualified
