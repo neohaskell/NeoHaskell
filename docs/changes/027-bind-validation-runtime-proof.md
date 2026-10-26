@@ -36,6 +36,7 @@ No public signatures or new production constants. Present static overrides for a
 | C11 | a wildcard listener defeats the owned-interface bind probe | `hspec:nhcore-test-service:core/test/Service/Transport/Web/BindSpec.hs#a wildcard listener defeats the owned-interface bind probe` | integration | http:real |
 | C12 | rejects an unrelated catch-all 200 after the intended Application bind fails | `hspec:nhcore-test-service:core/test/Service/Transport/Web/BindSpec.hs#rejects an unrelated catch-all 200 after the intended Application bind fails` | integration | http:real |
 | C13 | Returned bind failure stops and closes an already-started owned inbound socket before returning; live/release control makes the cleanup oracle falsifiable | `hspec:nhcore-test-service:core/test/Service/Transport/Web/BindSpec.hs#closes a started inbound socket before returning the bind error`<br>`hspec:nhcore-test-service:core/test/Service/Transport/Web/BindSpec.hs#the same worker stays live until explicitly released without Application cleanup` | integration | http:real |
+| C14 | Both `::1` and `[::1]` serve the owned Application on IPv6 loopback; bracketed names do not become wildcard preferences | `hspec:nhcore-test-service:core/test/Service/Transport/Web/BindSpec.hs#serves the owned application on bare and bracketed IPv6 loopback`<br>`hspec:nhcore-test-service:core/test/Service/Transport/Web/BindSpec.hs#does not unwrap bracketed names or wildcard preferences` | integration | http:real |
 
 ### Verification scope
 
@@ -46,11 +47,11 @@ then checks cleanup before fixture rescue or caller-owned EventStore closure.
 The test-only watchdog is five seconds; elapsed time is never the evidence.
 No new product constants are introduced.
 
-Known gap: balanced bracketed hosts such as `[::1]` and `[]` pass validation
-but are handed unchanged to Warp and fail during address resolution. Use bare
-`::1`. Early rejection needs a maintainer-approved correction to the published
-`[::1]` acceptance expectation; this follow-up does not change that expectation
-or claim complete early validation of bracketed input.
+C14 preserves the accepted `[::1]` input by removing IPv6 brackets when building
+Warp settings. The bare `::1` control must answer before the bracketed case runs.
+Both cases require the owned query handler to answer. Bracketed names such as
+`[]`, `[*]` and `[localhost]` remain unchanged and can still fail at address
+resolution. This is not a claim of complete early address validation.
 
 Fresh native C1 receipt `a31fd74ad8e86d6f4546a9b3cad3ee314dee490a0322d64522471d197c079057`
 was recorded at clean successor head `e9aa116e8bc99c40a561d068a951a1e295173688`,

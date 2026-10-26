@@ -231,11 +231,15 @@ server =
 -- | Convert a 'WebTransport' host setting into a Warp 'Warp.HostPreference'.
 --
 -- @"*"@ selects either family; @"*4"@ and @"*6"@ prefer IPv4 / IPv6 with fallback.
--- @"!4"@ and @"!6"@ select only that family. Other text is passed through
--- as a literal address or hostname.
+-- @"!4"@ and @"!6"@ select only that family. IPv6 brackets are removed for
+-- Warp's address resolver. Other text remains a literal address or hostname.
 hostPreference :: Text -> Warp.HostPreference
-hostPreference hostText =
-  hostText
+hostPreference hostText = do
+  let bindHost =
+        if Text.startsWith "[" hostText && Text.endsWith "]" hostText && Text.contains ":" hostText
+          then hostText |> Text.dropLeft 1 |> Text.dropRight 1
+          else hostText
+  bindHost
     |> Text.toLinkedList
     |> fromString
 
@@ -275,9 +279,7 @@ applyBindOverrides maybeHost maybePort transport =
 -- @could not bind@ error from 'runTransport'.
 --
 -- Returns the reason the host is rejected, or 'Nothing' when these checks pass.
--- Balanced bracketed text currently passes but is not unwrapped for Warp:
--- use bare @"::1"@, not @"[::1]"@. Early rejection of balanced brackets is
--- pending a separate correction to the published validation expectation.
+-- Bracketed IPv6 such as @"[::1]"@ is accepted and unwrapped by 'hostPreference'.
 validateBindHost :: Text -> Maybe Text
 validateBindHost hostText
   | Text.isEmpty (Text.trim hostText) =

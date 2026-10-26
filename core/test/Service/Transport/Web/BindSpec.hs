@@ -96,6 +96,14 @@ spec = do
 
       it "maps a literal IPv6 address to that host" \_ -> do
         show (hostPreference "::1") |> shouldBe "Host \"::1\""
+        show (hostPreference "[::1]") |> shouldBe "Host \"::1\""
+        show (hostPreference "[2001:db8::8]") |> shouldBe "Host \"2001:db8::8\""
+
+      it "does not unwrap bracketed names or wildcard preferences" \_ -> do
+        show (hostPreference "[]") |> shouldBe "Host \"[]\""
+        show (hostPreference "[*]") |> shouldBe "Host \"[*]\""
+        show (hostPreference "[!6]") |> shouldBe "Host \"[!6]\""
+        show (hostPreference "[localhost]") |> shouldBe "Host \"[localhost]\""
 
     describe "override composition" do
       it "withHost and withPort apply whether they come before or after withTransport" \_ -> do
@@ -200,6 +208,25 @@ spec = do
         GhcWarp.getPort settings |> shouldBe 9191
 
     describe "Application.runWith registered bind settings" do
+      it "serves the owned application on bare and bracketed IPv6 loopback" \_ -> do
+        ["::1", "[::1]"] |> Task.forEach \host -> do
+          eventStore <- InMemory.new |> Task.mapError toText
+          freePort <- getOwnedFreePort
+          (app, hits, body) <- newIdentityApplication
+            (Application.new
+              |> Application.withTransport server
+              |> Application.withHost host
+              |> Application.withPort freePort)
+          let probe = do
+                owned <- probeOwnedInstanceAt "[::1]" hits body freePort 50
+                owned |> shouldBe True
+          let run = AsyncTask.process (Application.runWith eventStore app) \running -> do
+                outcome <- AsyncTask.race (AsyncTask.waitCatch running) probe
+                case outcome of
+                  AsyncTask.LeftWon result -> Task.throw [fmt|IPv6 Application ended early for #{host}: #{show result}|]
+                  AsyncTask.RightWon _ -> pass
+          run |> Task.finally eventStore.close
+
       it "applies host and port set before withTransport at runtime" \_ -> do
         withHeldLoopbackPort (GhcSocket.tupleToHostAddress (127, 0, 0, 1)) \occupiedPort -> do
           freePort <- getDifferentFreePort occupiedPort
@@ -497,10 +524,15 @@ newIdentityApplication app = do
 
 
 probeOwnedInstance :: GhcIORef.IORef Int -> Text -> Int -> Int -> Task Text Bool
-probeOwnedInstance hits expectedBody port attemptsLeft = do
+probeOwnedInstance hits expectedBody port attemptsLeft =
+  probeOwnedInstanceAt "127.0.0.1" hits expectedBody port attemptsLeft
+
+
+probeOwnedInstanceAt :: Text -> GhcIORef.IORef Int -> Text -> Int -> Int -> Task Text Bool
+probeOwnedInstanceAt host hits expectedBody port attemptsLeft = do
   result <-
     Http.request
-      |> Http.withUrl [fmt|http://127.0.0.1:#{port}/queries/bind-probe|]
+      |> Http.withUrl [fmt|http://#{host}:#{port}/queries/bind-probe|]
       |> Http.withTimeout 2
       |> HttpInternal.getRaw
       |> Task.asResult
@@ -517,7 +549,7 @@ probeOwnedInstance hits expectedBody port attemptsLeft = do
         Task.throw "owned Application listener never answered"
       else do
         AsyncTask.sleep 100
-        probeOwnedInstance hits expectedBody port (attemptsLeft - 1)
+        probeOwnedInstanceAt host hits expectedBody port (attemptsLeft - 1)
 
 
 -- Never treat nonLoopbackAddress's fallback as a distinct-interface proof.
