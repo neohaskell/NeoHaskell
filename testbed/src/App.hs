@@ -79,10 +79,9 @@ makePostgresConfig config =
       sslMode = case ConnectionConfig.textToSslMode config.dbSslMode of
         Ok mode -> mode
         Err e -> panic e,
-      -- WI-5 (#684): map "" (the Config default) to Nothing; any path -> Just path.
-      sslRootCert = case Text.isEmpty config.dbSslRootCert of
-        True -> Nothing
-        False -> Just config.dbSslRootCert
+      sslRootCert = if Text.isEmpty config.dbSslRootCert
+        then Nothing
+        else Just config.dbSslRootCert
     }
 
 
@@ -107,9 +106,9 @@ makeFileUploadConfig config = FileUploadConfig
       , pgSslMode = case ConnectionConfig.textToSslMode config.dbSslMode of
           Ok mode -> mode
           Err e -> panic e
-      , pgSslRootCert = case Text.isEmpty config.dbSslRootCert of
-          True -> Nothing
-          False -> Just config.dbSslRootCert
+      , pgSslRootCert = if Text.isEmpty config.dbSslRootCert
+          then Nothing
+          else Just config.dbSslRootCert
       }
   , maxFileSizeBytes = 10485760  -- 10 MB
   , pendingTtlSeconds = 21600    -- 6 hours

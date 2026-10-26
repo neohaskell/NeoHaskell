@@ -47,7 +47,7 @@ isAccepting (WorkerQueueControl status) = do
 
 
 withAdmission :: WorkerQueueControl -> Task err result -> Task err (Maybe result)
-withAdmission (WorkerQueueControl status) write = Task.mask \restore -> do
+withAdmission (WorkerQueueControl status) write = Task.withCancellationDeferred \restore -> do
   admitted <- AtomicVar.modifyWithResult status \current -> case current of
     Accepting writers -> (Accepting (writers + 1), True)
     _ -> (current, False)

@@ -756,9 +756,9 @@ findClosingBrace (c : rest) depth acc = do
   case c of
     '{' -> findClosingBrace rest (depth + 1) newAcc
     '}' -> do
-      case depth == 1 of
-        True -> Just (LinkedList.reverse newAcc)
-        False -> findClosingBrace rest (depth - 1) newAcc
+      if depth == 1
+        then Just (LinkedList.reverse newAcc)
+        else findClosingBrace rest (depth - 1) newAcc
     _ -> findClosingBrace rest depth newAcc
 
 

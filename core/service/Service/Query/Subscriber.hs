@@ -726,10 +726,7 @@ processCoordinatedReplayEvent subscriber coordinator rawEvent = do
   case rawEvent.metadata.globalPosition of
     Nothing -> Task.throw "Replay event had no global position"
     Just position ->
-      if queryReplayPositionProcessed state position then
-        Task.yield unit
-      else do
-        -- Updaters run outside the coordinator so live events can enter the inbox.
+      Task.unless (queryReplayPositionProcessed state position) do
         processEventHandlerStrict subscriber rawEvent
         advanceQueryReplayHighWater coordinator position
 

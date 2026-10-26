@@ -1,3 +1,5 @@
+-- | Carry the origin and request context of a command. Normalize a source
+-- before using it to attribute events and populate trace fields.
 module Service.CommandExecutor.Source (
   CommandSource (..),
   sourceContext,

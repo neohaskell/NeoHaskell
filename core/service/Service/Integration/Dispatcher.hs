@@ -529,7 +529,7 @@ stopWorkerOrCancel ::
   WorkerStopConfig ->
   WorkerStopData ->
   Task Text Unit
-stopWorkerOrCancel config worker = Task.mask \restore -> do
+stopWorkerOrCancel config worker = Task.withCancellationDeferred \restore -> do
   claimed <- WorkerQueueControl.claimStop worker.stopQueueStatus
   Task.when claimed do
     let forceStop = forceWorkerStop worker.stopQueueStatus worker.stopTask worker.stopChannel
@@ -582,7 +582,7 @@ withWorkerCleanupHandoff ::
   (worker -> Task Text Unit) ->
   (worker -> Task Text Unit) ->
   Task Text Unit
-withWorkerCleanupHandoff removeWorker ~afterRemoval ~cleanupWorker = Task.mask \restore -> do
+withWorkerCleanupHandoff removeWorker ~afterRemoval ~cleanupWorker = Task.withCancellationDeferred \restore -> do
   maybeWorker <- removeWorker
   case maybeWorker of
     Nothing -> Task.yield unit
@@ -599,7 +599,7 @@ withWorkerCandidateHandoff ::
   (worker -> Task Text (worker, Maybe worker)) ->
   (worker -> Task Text Unit) ->
   Task Text worker
-withWorkerCandidateHandoff ~createCandidate ~publishCandidate ~cleanupWorker = Task.mask \restore -> do
+withWorkerCandidateHandoff ~createCandidate ~publishCandidate ~cleanupWorker = Task.withCancellationDeferred \restore -> do
   candidate <- createCandidate
   let publish = Task.evaluate (publishCandidate candidate) |> Task.andThen identity
   (actualWorker, maybeDiscarded) <-

@@ -30,9 +30,8 @@ entityFilteredSubscriber ::
   Event CartEvent ->
   Task Text Unit
 entityFilteredSubscriber targetEntity handler event = do
-  if event.entityName == targetEntity
-    then handler event
-    else Task.yield unit
+  Task.when (event.entityName == targetEntity) do
+    handler event
 
 
 spec :: Task Text (EventStore CartEvent) -> Spec Unit
@@ -440,13 +439,10 @@ spec newStore = do
         receivedEvents <- ConcurrentVar.containing (Array.empty :: Array (Event CartEvent))
 
         let subscriber event = do
-              -- Only track events from our test entities
-              if event.entityName == entity1Id || event.entityName == entity2Id
-                then receivedEvents |> ConcurrentVar.modify (Array.push event)
-                else Task.yield unit
+              Task.when (event.entityName == entity1Id || event.entityName == entity2Id) do
+                receivedEvents |> ConcurrentVar.modify (Array.push event)
               Task.yield unit :: Task Text Unit
 
-        -- Subscribe to all events (this should only receive NEW events "from now on")
         subscriptionId <- context.store.subscribeToAllEvents subscriber |> Task.mapError toText
 
         -- Wrap the test logic with guaranteed cleanup
@@ -491,9 +487,8 @@ spec newStore = do
           Nothing -> Task.throw "inclusive-position fixture inserted no events"
         received <- ConcurrentVar.containing (Array.empty :: Array (Event CartEvent))
         let subscriber event = do
-              if event.entityName == entityName
-                then received |> ConcurrentVar.modify (Array.push event)
-                else Task.yield unit
+              Task.when (event.entityName == entityName) do
+                received |> ConcurrentVar.modify (Array.push event)
         subscriptionId <-
           context.store.subscribeToAllEventsFromPosition startPosition subscriber
             |> Task.mapError toText
@@ -534,14 +529,10 @@ spec newStore = do
         receivedEvents <- ConcurrentVar.containing (Array.empty :: Array (Event CartEvent))
 
         let subscriber event = do
-              -- Only track events from our test entities
-              if event.entityName == entity1Id || event.entityName == entity2Id
-                then receivedEvents |> ConcurrentVar.modify (Array.push event)
-                else Task.yield unit
+              Task.when (event.entityName == entity1Id || event.entityName == entity2Id) do
+                receivedEvents |> ConcurrentVar.modify (Array.push event)
               Task.yield unit :: Task Text Unit
 
-        -- The backend contract is inclusive. To request events AFTER the
-        -- checkpoint, callers resume at checkpoint + 1.
         let (Event.StreamPosition checkpointPosition) = positionAfterFirstBatch
         let resumePosition = Event.StreamPosition (checkpointPosition + 1)
         subscriptionId <-
@@ -623,24 +614,18 @@ spec newStore = do
                   AsyncTask.sleep 10 |> Task.mapError (\_ -> "overflow count sleep failed")
                   waitForCount expected (attempts - 1)
         let subscriber event = do
-              if event.entityName != entityName
-                then Task.yield unit
-                else do
-                  case event.metadata.globalPosition of
-                    Just position -> receivedPositions |> ConcurrentVar.modify (Array.push position)
-                    Nothing -> Task.throw "overflow fixture event had no global position"
-                  if event.metadata.globalPosition == Just startPosition then do
-                    replayEntered |> ConcurrentVar.modify (\_ -> True)
-                    let waitUntilReleased attempts = do
-                          released <- ConcurrentVar.peek releaseReplay
-                          if released || attempts <= (0 :: Int) then
-                            Task.yield unit
-                          else do
-                            AsyncTask.sleep 10 |> Task.mapError (\_ -> "replay barrier sleep failed")
-                            waitUntilReleased (attempts - 1)
-                    waitUntilReleased 1000
-                  else
-                    Task.yield unit
+              Task.when (event.entityName == entityName) do
+                case event.metadata.globalPosition of
+                  Just position -> receivedPositions |> ConcurrentVar.modify (Array.push position)
+                  Nothing -> Task.throw "overflow fixture event had no global position"
+                Task.when (event.metadata.globalPosition == Just startPosition) do
+                  replayEntered |> ConcurrentVar.modify (\_ -> True)
+                  let waitUntilReleased attempts = do
+                        released <- ConcurrentVar.peek releaseReplay
+                        Task.unless (released || attempts <= (0 :: Int)) do
+                          AsyncTask.sleep 10 |> Task.mapError (\_ -> "replay barrier sleep failed")
+                          waitUntilReleased (attempts - 1)
+                  waitUntilReleased 1000
 
         subscriptionTask <- AsyncTask.run do
           subscriptionId <-
@@ -704,18 +689,14 @@ spec newStore = do
               case (event.entityName == entityName, event.metadata.globalPosition) of
                 (True, Just position) -> do
                   receivedPositions |> ConcurrentVar.modify (Array.push position)
-                  if position == historicalPosition then do
+                  Task.when (position == historicalPosition) do
                     replayEntered |> ConcurrentVar.modify (\_ -> True)
                     let waitForRelease attempts = do
                           released <- ConcurrentVar.peek releaseReplay
-                          if released || attempts <= (0 :: Int) then
-                            Task.yield unit
-                          else do
+                          Task.unless (released || attempts <= (0 :: Int)) do
                             AsyncTask.sleep 10 |> Task.mapError (\_ -> "concurrent overlap barrier failed")
                             waitForRelease (attempts - 1)
                     waitForRelease 500
-                  else
-                    Task.yield unit
                 (True, Nothing) -> Task.throw "concurrent overlap event had no global position"
                 _ -> Task.yield unit
         subscriptionId <-
@@ -785,19 +766,17 @@ spec newStore = do
         readStarted <- ConcurrentVar.containing False
 
         let readingHandler event = do
-              if event.entityName != context.entityName
-                then Task.yield unit
-                else do
-                  readStarted |> ConcurrentVar.modify (\_ -> True)
-                  context.store.readStreamForwardFrom
-                    event.entityName
-                    event.streamId
-                    (Event.StreamPosition 0)
-                    (EventStore.Limit 100)
-                    |> Task.mapError toText
-                    |> Task.andThen Stream.toArray
-                    |> discard
-                  Task.yield unit
+              Task.when (event.entityName == context.entityName) do
+                readStarted |> ConcurrentVar.modify (\_ -> True)
+                context.store.readStreamForwardFrom
+                  event.entityName
+                  event.streamId
+                  (Event.StreamPosition 0)
+                  (EventStore.Limit 100)
+                  |> Task.mapError toText
+                  |> Task.andThen Stream.toArray
+                  |> discard
+                Task.yield unit
 
         subscriptionId <-
           context.store.subscribeToAllEvents readingHandler
@@ -843,16 +822,12 @@ spec newStore = do
         nestedStarted <- ConcurrentVar.containing False
         receivedCount <- ConcurrentVar.containing (0 :: Int)
         let recursiveHandler event = do
-              if event.entityName == context.entityName then do
+              Task.when (event.entityName == context.entityName) do
                 receivedCount |> ConcurrentVar.modify (\count -> count + 1)
                 shouldInsert <- nestedStarted |> ConcurrentVar.modifyReturning \started ->
                   Task.yield (True, not started)
-                if shouldInsert then
+                Task.when shouldInsert do
                   context.store.insert nestedPayload |> Task.mapError toText |> discard
-                else
-                  Task.yield unit
-              else
-                Task.yield unit
         subscriptionId <- context.store.subscribeToAllEvents recursiveHandler |> Task.mapError toText
         Task.finally
           (context.store.unsubscribe subscriptionId |> Task.mapError toText)
@@ -900,13 +875,10 @@ spec newStore = do
         receivedEvents <- ConcurrentVar.containing (Array.empty :: Array (Event CartEvent))
 
         let subscriber event = do
-              -- Only track events from our test entities
-              if event.entityName == entity1Id || event.entityName == entity2Id
-                then receivedEvents |> ConcurrentVar.modify (Array.push event)
-                else Task.yield unit
+              Task.when (event.entityName == entity1Id || event.entityName == entity2Id) do
+                receivedEvents |> ConcurrentVar.modify (Array.push event)
               Task.yield unit :: Task Text Unit
 
-        -- Subscribe from the START (should receive ALL events including historical ones)
         subscriptionId <-
           context.store.subscribeToAllEventsFromStart subscriber |> Task.mapError toText
 
