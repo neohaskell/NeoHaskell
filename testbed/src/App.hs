@@ -1,12 +1,11 @@
-module App (app) where
+module App (app, makePostgresConfig) where
 
 import Core
-import Service.Application (Application, ApiInfo (..))
+import Service.Application (ApiInfo (..), Application)
 import Service.Application qualified as Application
 import Service.EventStore.Postgres (PostgresEventStore (..))
+import Service.FileUpload.Core (FileStateStoreBackend (..), FileUploadConfig (..))
 import Service.Infra.Postgres.ConnectionConfig qualified as ConnectionConfig
-import Text qualified
-import Service.FileUpload.Core (FileUploadConfig (..), FileStateStoreBackend (..))
 import Service.Transport.Web qualified as WebTransport
 import Testbed.Cart.Core (CartEntity)
 import Testbed.Cart.Integrations (periodicCartCreator)
@@ -15,8 +14,12 @@ import Testbed.Cart.Integrations.ReserveStockOnItemAdded (ReserveStockOnItemAdde
 import Testbed.Cart.Queries.CartSummary (CartSummary)
 import Testbed.Config (TestbedConfig (..))
 import Testbed.Document.Core ()
+import Testbed.ExternalEffect.Outbound (ExternalEffectOutbound)
+import Testbed.ExternalEffect.Query (ExternalEffectSummary)
+import Testbed.ExternalEffect.Service qualified as ExternalEffectService
 import Testbed.Service qualified
 import Testbed.Stock.Queries.StockLevel (StockLevel)
+import Text qualified
 
 
 -- | API metadata for the testbed application.
@@ -46,10 +49,13 @@ app =
     |> Application.withService Testbed.Service.cartService
     |> Application.withService Testbed.Service.stockService
     |> Application.withService Testbed.Service.documentService
+    |> Application.withService ExternalEffectService.service
     |> Application.withQuery @CartSummary
     |> Application.withQuery @StockLevel
+    |> Application.withQuery @ExternalEffectSummary
     -- Typed outbound handler: reserve stock when items are added to cart
     |> Application.withOutbound @ReserveStockOnItemAdded
+    |> Application.withOutbound @ExternalEffectOutbound
     -- Outbound with lifecycle: count events per entity (demonstrates stateful integration)
     |> Application.withOutboundLifecycle @() @CartEntity (\_ -> EventCounter.eventCounterIntegration)
     -- Inbound: create a cart every 30 seconds
