@@ -149,26 +149,22 @@ validateToken ::
   Text ->
   Task err (Result AuthError UserClaims)
 validateToken config keys token = do
-  -- Step 1: Check for empty token
-  case Text.isEmpty token of
-    True -> do
+  if Text.isEmpty token
+    then do
       Log.debug "Token validation failed: empty token" |> Task.ignoreError
       Task.yield (Err (TokenMalformed "Empty token"))
-    False -> do
-      -- Step 2: Parse header ONCE (optimized hot path)
+    else do
       case parseHeader token of
         Err err -> do
           Log.debug [fmt|Token validation failed: #{toText err}|] |> Task.ignoreError
           Task.yield (Err err)
         Ok header -> do
-          -- Step 3: Check algorithm allowlist (RFC 8725 fail-fast)
-          case isAlgorithmAllowed config.allowedAlgorithmsSet header.alg of
-            False -> do
+          if not (isAlgorithmAllowed config.allowedAlgorithmsSet header.alg)
+            then do
               let algErr = AlgorithmNotAllowed header.alg
               Log.debug [fmt|Token validation failed: #{toText algErr}|] |> Task.ignoreError
               Task.yield (Err algErr)
-            True -> do
-              -- Step 4: Check crit headers
+            else do
               case checkCritHeaders header.crit config.supportedCritHeaders of
                 Err err -> do
                   Log.debug [fmt|Token validation failed: #{toText err}|] |> Task.ignoreError
@@ -200,26 +196,22 @@ validateTokenWithJwkSet ::
   Text ->
   Task err (Result AuthError UserClaims)
 validateTokenWithJwkSet config jwkSet token = do
-  -- Step 1: Check for empty token
-  case Text.isEmpty token of
-    True -> do
+  if Text.isEmpty token
+    then do
       Log.debug "Token validation failed: empty token" |> Task.ignoreError
       Task.yield (Err (TokenMalformed "Empty token"))
-    False -> do
-      -- Step 2: Parse header ONCE (optimized hot path)
+    else do
       case parseHeader token of
         Err err -> do
           Log.debug [fmt|Token validation failed: #{toText err}|] |> Task.ignoreError
           Task.yield (Err err)
         Ok header -> do
-          -- Step 3: Check algorithm allowlist (RFC 8725 fail-fast)
-          case isAlgorithmAllowed config.allowedAlgorithmsSet header.alg of
-            False -> do
+          if not (isAlgorithmAllowed config.allowedAlgorithmsSet header.alg)
+            then do
               let algErr = AlgorithmNotAllowed header.alg
               Log.debug [fmt|Token validation failed: #{toText algErr}|] |> Task.ignoreError
               Task.yield (Err algErr)
-            True -> do
-              -- Step 4: Check crit headers
+            else do
               case checkCritHeaders header.crit config.supportedCritHeaders of
                 Err err -> do
                   Log.debug [fmt|Token validation failed: #{toText err}|] |> Task.ignoreError
@@ -254,14 +246,12 @@ validateTokenWithParsedHeader ::
   Text ->
   Task err (Result AuthError UserClaims)
 validateTokenWithParsedHeader config jwkSet header token = do
-  -- Step 1: Check algorithm allowlist (RFC 8725 fail-fast)
-  case isAlgorithmAllowed config.allowedAlgorithmsSet header.alg of
-    False -> do
+  if not (isAlgorithmAllowed config.allowedAlgorithmsSet header.alg)
+    then do
       let algErr = AlgorithmNotAllowed header.alg
       Log.debug [fmt|Token validation failed: #{toText algErr}|] |> Task.ignoreError
       Task.yield (Err algErr)
-    True -> do
-      -- Step 2: Check crit headers
+    else do
       case checkCritHeaders header.crit config.supportedCritHeaders of
         Err err -> do
           Log.debug [fmt|Token validation failed: #{toText err}|] |> Task.ignoreError
@@ -294,9 +284,9 @@ checkCritHeaders critHeaders supported = do
   let unsupported =
         critHeaders
           |> Array.dropIf (\c -> supportedSet |> Set.contains c)
-  case Array.isEmpty unsupported of
-    True -> Ok ()
-    False -> Err (UnsupportedCritHeader unsupported)
+  if Array.isEmpty unsupported
+    then Ok ()
+    else Err (UnsupportedCritHeader unsupported)
 
 
 -- | Validate typ header if present (RFC 8725 hardening).
@@ -310,9 +300,9 @@ validateTypHeader maybeTyp =
       -- Accept "JWT" or "at+jwt" (RFC 9068 access token)
       -- Case-insensitive comparison per RFC 7515 Section 4.1.9
       let typLower = typ |> Text.toLower
-      case typLower == "jwt" || typLower == "at+jwt" of
-        True -> Ok ()
-        False -> Err (TokenMalformed [fmt|Invalid typ header: #{typ}|])
+      if typLower == "jwt" || typLower == "at+jwt"
+        then Ok ()
+        else Err (TokenMalformed [fmt|Invalid typ header: #{typ}|])
 
 
 -- | Extract kid (key ID) from JWT token header.
@@ -347,11 +337,10 @@ extractTextValue val =
 extractCritHeaders :: Array Aeson.Value -> Result Text (Array Text)
 extractCritHeaders values = do
   let results = values |> Array.map validateCritEntry
-  -- If any entry is invalid, fail closed
   let hasInvalid = results |> Array.any isNothing
-  case hasInvalid of
-    True -> Err "crit header contains non-string or empty values"
-    False -> Ok (results |> Array.map (Maybe.withDefault ""))
+  if hasInvalid
+    then Err "crit header contains non-string or empty values"
+    else Ok (results |> Array.map (Maybe.withDefault ""))
  where
   validateCritEntry :: Aeson.Value -> Maybe Text
   validateCritEntry val =

@@ -1,3 +1,5 @@
+-- | Summarize one command outcome for structured reporting. Build a summary
+-- from the outcome or failure, then read its log fields.
 module Service.CommandExecutor.CommandLogSummary (
   CommandLogSummary,
   fromOutcome,

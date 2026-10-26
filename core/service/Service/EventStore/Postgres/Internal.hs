@@ -138,10 +138,10 @@ defaultOps :: Ops
 defaultOps = do
   let acquire cfg = do
         let size = cfg.poolSize
-        case size > 0 of
-          False ->
+        if size <= 0
+          then
             Task.throw [fmt|poolSize must be > 0, got #{size}|]
-          True ->
+          else
             case toConnectionSettings cfg of
               Err portErr ->
                 Task.throw portErr
@@ -811,10 +811,7 @@ processPostgresReplayEvent callback coordinator event = do
   case event.metadata.globalPosition of
     Nothing -> Task.yield unit
     Just position ->
-      if isPostgresReplayDuplicate state position then
-        Task.yield unit
-      else do
-        -- Keep the inbox available while the historical callback runs.
+      Task.unless (isPostgresReplayDuplicate state position) do
         notifyPostgresSubscriberSafely callback event
         advancePostgresReplayHighWater coordinator position
 
@@ -897,9 +894,7 @@ continuePostgresReplay
   -> Int
   -> Task Error Unit
 continuePostgresReplay ops cfg replayEnd callback coordinator lastPosition count =
-  if count < (1000 :: Int) then
-    Task.yield unit
-  else
+  Task.unless (count < (1000 :: Int)) do
     case lastPosition of
       Nothing -> Task.yield unit
       Just (StreamPosition position) ->

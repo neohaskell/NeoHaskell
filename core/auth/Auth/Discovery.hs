@@ -223,12 +223,11 @@ validateDomainAllowlist url maybeAllowlist =
       case extractDomain url of
         Nothing -> Err (UrlValidationFailed [fmt|Cannot extract domain from URL: #{url}|])
         Just domain -> do
-          -- Case-insensitive comparison: normalize both to lowercase
           let domainLower = Text.toLower domain
           let isAllowed = Array.any (\allowed -> Text.toLower allowed == domainLower) allowlist
-          case isAllowed of
-            True -> Ok ()
-            False -> Err (UrlValidationFailed [fmt|Domain not in allowlist: #{domain}|])
+          if isAllowed
+            then Ok ()
+            else Err (UrlValidationFailed [fmt|Domain not in allowlist: #{domain}|])
 
 
 -- | Extract domain (hostname) from URL.

@@ -243,11 +243,9 @@ recordEvent observed event =
 waitForEventCount :: Int -> Int -> ConcurrentVar (Array (Event CartEvent)) -> Task Text Unit
 waitForEventCount expected attemptsLeft observed = do
   events <- ConcurrentVar.peek observed
-  if Array.length events >= expected
-    then Task.yield unit
-    else
-      if attemptsLeft <= 0
-        then Task.throw "Timed out waiting for PostgreSQL event subscription"
-        else do
-          AsyncTask.sleep 50 |> Task.mapError (\_ -> "PostgreSQL event subscription wait failed")
-          waitForEventCount expected (attemptsLeft - 1) observed
+  Task.unless (Array.length events >= expected) do
+    if attemptsLeft <= 0
+      then Task.throw "Timed out waiting for PostgreSQL event subscription"
+      else do
+        AsyncTask.sleep 50 |> Task.mapError (\_ -> "PostgreSQL event subscription wait failed")
+        waitForEventCount expected (attemptsLeft - 1) observed

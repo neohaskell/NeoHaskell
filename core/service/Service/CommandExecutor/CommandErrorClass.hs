@@ -1,3 +1,5 @@
+-- | Classify command failures for the structured result log. Use 'fromFailure',
+-- 'fromAccessError', or 'fromEventStoreError' for the matching error source.
 module Service.CommandExecutor.CommandErrorClass (
   CommandErrorClass (..),
   fromFailure,

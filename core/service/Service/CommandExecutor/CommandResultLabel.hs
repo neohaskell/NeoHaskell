@@ -1,3 +1,5 @@
+-- | Define stable result labels for command logs. Use 'text' when writing the
+-- structured result field.
 module Service.CommandExecutor.CommandResultLabel (
   CommandResultLabel (..),
   text,

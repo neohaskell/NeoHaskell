@@ -269,13 +269,9 @@ handleCallbackImpl deps providerName code stateToken = do
       Task.throw err
     Ok p -> Task.yield p
 
-  -- 4. Verify provider matches (mix-up attack prevention)
-  case payload.provider == providerName of
-    False -> Task.throw (ProviderMismatch payload.provider providerName)
-    True -> pass
+  Task.when (not (payload.provider == providerName)) do
+    Task.throw (ProviderMismatch payload.provider providerName)
 
-  -- 5. Consume transaction from store (one-time use, atomic)
-  -- This retrieves userId which was stored server-side (GDPR compliant)
   let txKey = TransactionStore.fromText stateToken
   maybeTransaction <- deps.transactionStore.consume txKey
     |> Task.mapError (\_ -> StateNotFound)
