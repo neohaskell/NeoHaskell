@@ -1499,7 +1499,7 @@ class Workflow(unittest.TestCase):
             self.assertIn("run: ./.agents-state/release-tooling/.agents/skills/neohaskell-release/scripts/semantic-release", block)
         self.assertIn("NEOHASKELL_ROOT: ${{ github.workspace }}", text)
         native = self.job_block(text, "platform_native")
-        self.assertIn("cachix/install-nix-action@448cde739abec1eaf0646249e3d25bb8d9bc7702", native)
+        self.assertIn("cachix/install-nix-action@75c75c31ebece974e48ebc36b4ad125bd97bd97b", native)
         self.assertLess(native.index("uses: DeterminateSystems/determinate-nix-action@"), native.index("semantic-release build-native"))
         consumer = self.job_block(text, "platform_consumer")
         self.assertIn("accept-flake-config = true", consumer)
