@@ -1,5 +1,63 @@
 # Changelog
 
+## 0.12.0 — 2026-10-26
+
+### Breaking changes
+
+- **Framework**: `AsyncTask.runWithCancellationEnabled` starts a child that can receive cancellation while its parent protects a handoff. It replaces `AsyncTask.runUnmasked`. Apps that call the old name need to update that call. ([change](https://github.com/neohaskell/NeoHaskell/commit/f70bf7f7b1854c0cc26b606d18a274182308225b))
+
+### Added
+
+- **Framework**: `Http.Client` can now send PUT, HEAD, DELETE, POST and PATCH requests with a raw byte body and read the status code and headers of every response, including 4xx and 5xx. Use `Http.Client.sendSecure method request body` for HTTPS services and `Http.Client.Internal.sendRaw` for trusted loopback endpoints. `Http.getSecure` and `getRaw` keep working exactly as before.
+
+HTTPS byte requests load the system certificate store while keeping certificate
+and hostname checks and TLS 1.2 or later. Byte-level requests ignore environment
+proxies and stop retaining response chunks as soon as the configured size limit
+is exceeded, closing the response instead of waiting for the entire body.
+The limit is not a fixed process-memory cap; network buffers can contain extra
+bytes. The raw internal API remains caller-restricted, not a loopback validator.
+
+Existing applications do not need code changes. To verify locally, run `./dev test "Http.Client" nhcore-test-core` and confirm the `sendRaw` and `sendSecure` examples pass. ([change](https://github.com/neohaskell/NeoHaskell/commit/c243b9787e361f54f6436dc07be06694c7198852))
+- **Framework**: `Crypto` now offers the raw building blocks behind signatures: `Crypto.sha256` (32-byte digest), `Crypto.hmacSha256 key message` (raw HMAC that can be chained, any key length) and `Crypto.toHex` (lowercase hexadecimal). Use them when a protocol tells you exactly which bytes to hash or sign; keep using `Crypto.signWith` and `Crypto.verifyWith` for webhook secrets, which are unchanged.
+
+Existing applications do not need code changes. To verify locally, run `./dev test "Crypto" nhcore-test-core` and confirm the `sha256`, `hmacSha256` and `toHex` examples pass. ([change](https://github.com/neohaskell/NeoHaskell/commit/c243b9787e361f54f6436dc07be06694c7198852))
+- **Framework**: `Directory.withTemporaryFolder` gives a task a private, unique folder under the system temporary directory. It attempts to remove the folder when the task finishes, fails, or is cancelled. Use it for files that should last only as long as one operation. Existing apps need no changes. ([change](https://github.com/neohaskell/NeoHaskell/commit/f70bf7f7b1854c0cc26b606d18a274182308225b))
+- **Framework**: `Task.withCancellationBlocked` lets a cleanup task finish an ownership handoff before cancellation can interrupt it, including while it waits. Use it only when the wait and cleanup can finish. A stalled task in this operation cannot be cancelled. `AsyncTask.isWaitingForExceptionDelivery` exposes a momentary status snapshot for cancellation tests. ([change](https://github.com/neohaskell/NeoHaskell/commit/f70bf7f7b1854c0cc26b606d18a274182308225b))
+
+### Improved
+
+- **Framework**: Command requests retain one safe result when decoding or handling fails, and cancellation still reaches blocked requests. Framework contributors can run the unconditional service-code lint check without an allowance for old findings. Public APIs and response formats are unchanged, so application projects need no migration. ([change](https://github.com/neohaskell/NeoHaskell/commit/f70bf7f7b1854c0cc26b606d18a274182308225b))
+
+### Fixed
+
+- **Framework**: A duplicate file upload no longer rewrites the existing stored blob when the blob store's existence check returns an error. The upload instead fails with "Failed to verify stored file content. Please retry." Backend details are logged at error level via `Log.critical`. A check that reports the blob present still reuses it; a check that reports it missing still restores the uploaded content. This does not change how the Local backend reports existence-check results.
+
+A concurrent upload that loses a state-store conflict may already have written its own provisional blob. It attempts to delete that provisional blob; it does not rewrite the winner's existing blob when the winner's existence check returns an error. This check does not prevent another actor from removing a blob later.
+
+No code or data changes are needed in applications. To verify locally, run `./.agents/skills/tdd/scripts/test-match "ContentDedup" nhcore-test-service` and confirm `dedup fails closed when the existence check errors` passes. ([change](https://github.com/neohaskell/NeoHaskell/commit/b71a18bb7a793189c4aeda5cab48f11b4b8baa29))
+
+### Migration from 0.11.0
+
+#### Framework
+
+Replace `AsyncTask.runUnmasked task` with `AsyncTask.runWithCancellationEnabled task`. The child still runs with cancellation enabled even when its parent starts it during a protected handoff. Keep ordinary `AsyncTask.run` calls when the child should inherit the parent's cancellation state.
+
+### Verify
+
+Search the app for `runUnmasked` and update each call. Run `neo build` and `neo test --ci` in the app. Both commands should finish successfully, and the search should find no old calls.
+
+<details>
+<summary>Copy this prompt to your coding agent</summary>
+
+```text
+Migrate Framework from NeoHaskell 0.11.0 to 0.12.0.
+In this NeoHaskell app, replace every AsyncTask.runUnmasked call with AsyncTask.runWithCancellationEnabled. This is an API rename: the child still receives cancellation while its parent protects a handoff. Do not replace ordinary AsyncTask.run calls. Search for remaining runUnmasked uses, run neo build and neo test --ci, and report the changed files and command results. If a call relies on a different cancellation contract, report it instead of changing that call automatically.
+```
+
+</details>
+
+[Compare changes](https://github.com/neohaskell/NeoHaskell/compare/neo-v0.11.0...neo-v0.12.0)
+
 ## 0.11.0 — 2026-10-23
 
 ### Breaking changes
