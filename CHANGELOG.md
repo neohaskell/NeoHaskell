@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.11.1 — 2026-10-26
+
+### Added
+
+- **Framework**: `Http.Client` can now send PUT, HEAD, DELETE, POST and PATCH requests with a raw byte body and read the status code and headers of every response, including 4xx and 5xx. Use `Http.Client.sendSecure method request body` for HTTPS services and `Http.Client.Internal.sendRaw` for trusted loopback endpoints. `Http.getSecure` and `getRaw` keep working exactly as before.
+
+HTTPS byte requests load the system certificate store while keeping certificate
+and hostname checks and TLS 1.2 or later. Byte-level requests ignore environment
+proxies and stop retaining response chunks as soon as the configured size limit
+is exceeded, closing the response instead of waiting for the entire body.
+The limit is not a fixed process-memory cap; network buffers can contain extra
+bytes. The raw internal API remains caller-restricted, not a loopback validator.
+
+Existing applications do not need code changes. To verify locally, run `./dev test "Http.Client" nhcore-test-core` and confirm the `sendRaw` and `sendSecure` examples pass. ([change](https://github.com/neohaskell/NeoHaskell/commit/c243b9787e361f54f6436dc07be06694c7198852))
+- **Framework**: `Crypto` now offers the raw building blocks behind signatures: `Crypto.sha256` (32-byte digest), `Crypto.hmacSha256 key message` (raw HMAC that can be chained, any key length) and `Crypto.toHex` (lowercase hexadecimal). Use them when a protocol tells you exactly which bytes to hash or sign; keep using `Crypto.signWith` and `Crypto.verifyWith` for webhook secrets, which are unchanged.
+
+Existing applications do not need code changes. To verify locally, run `./dev test "Crypto" nhcore-test-core` and confirm the `sha256`, `hmacSha256` and `toHex` examples pass. ([change](https://github.com/neohaskell/NeoHaskell/commit/c243b9787e361f54f6436dc07be06694c7198852))
+
+[Compare changes](https://github.com/neohaskell/NeoHaskell/compare/neo-v0.11.0...neo-v0.11.1)
+
 ## 0.11.0 — 2026-10-23
 
 ### Breaking changes

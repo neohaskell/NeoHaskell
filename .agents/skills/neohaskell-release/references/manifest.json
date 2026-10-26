@@ -378,6 +378,48 @@
       "source_sha": "bc5b915f6beee0999f66aee5c08021f9d75c547c",
       "target_policy": "native-v2",
       "version": "0.11.0"
+    },
+    {
+      "base_sha": "1277f961b7c33f0d47df72cc8b452ce60b7d8646",
+      "base_tag": "neo-v0.11.0",
+      "base_version": "0.11.0",
+      "bootstrap": false,
+      "date": "2026-10-26",
+      "group": "platform",
+      "id": "4ef5fc5d4bdae0d1ab775fd84b64abac8a85a8987f8e97baccccbd62652840e9",
+      "impact": "compatible",
+      "kind": "release",
+      "notes": [
+        {
+          "category": "Added",
+          "commit": "c243b9787e361f54f6436dc07be06694c7198852",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "610916536ef9d8d8c91b4acef7e30d29bf4afcfff7cd3a33c0f79ef1245392c6",
+          "impact": "compatible",
+          "path": ".changes/016-http-client-byte-level-methods.md",
+          "sections": {
+            "Summary": "`Http.Client` can now send PUT, HEAD, DELETE, POST and PATCH requests with a raw byte body and read the status code and headers of every response, including 4xx and 5xx. Use `Http.Client.sendSecure method request body` for HTTPS services and `Http.Client.Internal.sendRaw` for trusted loopback endpoints. `Http.getSecure` and `getRaw` keep working exactly as before.\n\nHTTPS byte requests load the system certificate store while keeping certificate\nand hostname checks and TLS 1.2 or later. Byte-level requests ignore environment\nproxies and stop retaining response chunks as soon as the configured size limit\nis exceeded, closing the response instead of waiting for the entire body.\nThe limit is not a fixed process-memory cap; network buffers can contain extra\nbytes. The raw internal API remains caller-restricted, not a loopback validator.\n\nExisting applications do not need code changes. To verify locally, run `./dev test \"Http.Client\" nhcore-test-core` and confirm the `sendRaw` and `sendSecure` examples pass."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: compatible\ncategory: Added\n---\n\n## Summary\n\n`Http.Client` can now send PUT, HEAD, DELETE, POST and PATCH requests with a raw byte body and read the status code and headers of every response, including 4xx and 5xx. Use `Http.Client.sendSecure method request body` for HTTPS services and `Http.Client.Internal.sendRaw` for trusted loopback endpoints. `Http.getSecure` and `getRaw` keep working exactly as before.\n\nHTTPS byte requests load the system certificate store while keeping certificate\nand hostname checks and TLS 1.2 or later. Byte-level requests ignore environment\nproxies and stop retaining response chunks as soon as the configured size limit\nis exceeded, closing the response instead of waiting for the entire body.\nThe limit is not a fixed process-memory cap; network buffers can contain extra\nbytes. The raw internal API remains caller-restricted, not a loopback validator.\n\nExisting applications do not need code changes. To verify locally, run `./dev test \"Http.Client\" nhcore-test-core` and confirm the `sendRaw` and `sendSecure` examples pass.\n"
+        },
+        {
+          "category": "Added",
+          "commit": "c243b9787e361f54f6436dc07be06694c7198852",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "7adc591458fdbf7024b567d2a6d1e07e169fa4b03b448a9c5eb19dfe715e728b",
+          "impact": "compatible",
+          "path": ".changes/021-crypto-sha256-hmac-hex.md",
+          "sections": {
+            "Summary": "`Crypto` now offers the raw building blocks behind signatures: `Crypto.sha256` (32-byte digest), `Crypto.hmacSha256 key message` (raw HMAC that can be chained, any key length) and `Crypto.toHex` (lowercase hexadecimal). Use them when a protocol tells you exactly which bytes to hash or sign; keep using `Crypto.signWith` and `Crypto.verifyWith` for webhook secrets, which are unchanged.\n\nExisting applications do not need code changes. To verify locally, run `./dev test \"Crypto\" nhcore-test-core` and confirm the `sha256`, `hmacSha256` and `toHex` examples pass."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: compatible\ncategory: Added\n---\n\n## Summary\n\n`Crypto` now offers the raw building blocks behind signatures: `Crypto.sha256` (32-byte digest), `Crypto.hmacSha256 key message` (raw HMAC that can be chained, any key length) and `Crypto.toHex` (lowercase hexadecimal). Use them when a protocol tells you exactly which bytes to hash or sign; keep using `Crypto.signWith` and `Crypto.verifyWith` for webhook secrets, which are unchanged.\n\nExisting applications do not need code changes. To verify locally, run `./dev test \"Crypto\" nhcore-test-core` and confirm the `sha256`, `hmacSha256` and `toHex` examples pass.\n"
+        }
+      ],
+      "source_sha": "c243b9787e361f54f6436dc07be06694c7198852",
+      "target_policy": "native-v2",
+      "version": "0.11.1"
     }
   ],
   "recoveries": [],
