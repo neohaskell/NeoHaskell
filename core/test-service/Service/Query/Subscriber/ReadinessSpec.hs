@@ -396,11 +396,9 @@ spec = do
       gate <- ConcurrentVar.containing False
       let waitForGate attempts = do
             opened <- ConcurrentVar.peek gate
-            if opened || attempts <= (0 :: Int)
-              then Task.yield unit
-              else do
-                AsyncTask.sleep 10 |> Task.mapError (\_ -> "gate sleep failed")
-                waitForGate (attempts - 1)
+            Task.unless (opened || attempts <= (0 :: Int)) do
+              AsyncTask.sleep 10 |> Task.mapError (\_ -> "gate sleep failed")
+              waitForGate (attempts - 1)
       eventMeta <- EventMetadata.new
       let entityName = EntityName "readiness-all-entity"
       let event =
@@ -469,9 +467,8 @@ spec = do
                 checkpointPositions |> ConcurrentVar.modify (Array.push position)
                 attempt <- checkpointAttempts |> ConcurrentVar.modifyReturning \count ->
                   Task.yield (count + 1, count + 1)
-                if attempt < (4 :: Int)
-                  then Task.throw (StatementFailed "transient checkpoint fixture failure")
-                  else Task.yield unit
+                Task.when (attempt < (4 :: Int)) do
+                  Task.throw (StatementFailed "transient checkpoint fixture failure")
             }
       let checkpointUpdater = QueryUpdater
             { queryName = "checkpoint-retry-query"
@@ -505,9 +502,8 @@ spec = do
             { queryName = "recovery-query"
             , updateQuery = \_ -> do
                 shouldFail <- ConcurrentVar.peek updaterShouldFail
-                if shouldFail
-                  then Task.throw "deterministic updater failure"
-                  else Task.yield unit
+                Task.when shouldFail do
+                  Task.throw "deterministic updater failure"
             }
       let recoveryRegistry = Registry.register entityName recoveryUpdater Registry.empty
       recoverySubscriber <- Subscriber.new recoveryStore recoveryRegistry

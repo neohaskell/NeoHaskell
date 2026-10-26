@@ -785,10 +785,7 @@ processSimpleReplayEvent handler coordinator event = do
   case event.metadata.globalPosition of
     Nothing -> Task.yield unit
     Just position ->
-      if isSimpleReplayDuplicate state position then
-        Task.yield unit
-      else do
-        -- User code runs outside the coordinator so live events can enter the inbox.
+      Task.unless (isSimpleReplayDuplicate state position) do
         notifySubscriberSafely handler event
         advanceSimpleReplayHighWater coordinator position
 

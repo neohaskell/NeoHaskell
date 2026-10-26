@@ -127,9 +127,9 @@ requirePermission :: Text -> Maybe UserClaims -> Maybe AccessError
 requirePermission permission user = case user of
   Nothing -> Just Unauthenticated
   Just claims ->
-    case claims.permissions |> Array.contains permission of
-      True -> Nothing
-      False -> Just (InsufficientPermissions [permission])
+    if claims.permissions |> Array.contains permission
+      then Nothing
+      else Just (InsufficientPermissions [permission])
 
 
 -- | Require ANY of the specified permissions to access this query type.
@@ -144,9 +144,9 @@ requireAnyPermission requiredPermissions user = case user of
     let hasAny =
           requiredPermissions
             |> Array.any (\p -> claims.permissions |> Array.contains p)
-    case hasAny of
-      True -> Nothing
-      False -> Just (InsufficientPermissions requiredPermissions)
+    if hasAny
+      then Nothing
+      else Just (InsufficientPermissions requiredPermissions)
 
 
 -- | Require ALL of the specified permissions to access this query type.
@@ -161,9 +161,9 @@ requireAllPermissions requiredPermissions user = case user of
     let missingPermissions =
           requiredPermissions
             |> Array.takeIf (\p -> not (claims.permissions |> Array.contains p))
-    case Array.isEmpty missingPermissions of
-      True -> Nothing
-      False -> Just (InsufficientPermissions missingPermissions)
+    if Array.isEmpty missingPermissions
+      then Nothing
+      else Just (InsufficientPermissions missingPermissions)
 
 
 -- ============================================================================
@@ -198,9 +198,9 @@ ownerOnly ::
 ownerOnly getOwnerId user query = case user of
   Nothing -> Just Unauthenticated
   Just claims ->
-    case claims.sub == getOwnerId query of
-      True -> Nothing
-      False -> Just Forbidden
+    if claims.sub == getOwnerId query
+      then Nothing
+      else Just Forbidden
 
 
 -- | Restrict viewing to instances belonging to the requesting user's tenant.

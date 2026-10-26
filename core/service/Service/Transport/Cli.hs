@@ -106,11 +106,10 @@ instance Transport CliTransport where
   assembleTransport endpoints = do
     let cliTransport = endpoints.transport
     let commandSchemaEntries = endpoints.commandSchemas |> Map.entries
-    -- Helper: strip "Entity" suffix from entity names
     let stripEntitySuffix entityName =
-          case Text.endsWith "Entity" entityName of
-            True -> Text.dropRight 6 entityName
-            False -> entityName
+          if Text.endsWith "Entity" entityName
+            then Text.dropRight 6 entityName
+            else entityName
     -- Helper: add a command to the correct entity group
     let addToGroup (cmdName, schema) groups = do
           let entityRawName = case schema.entityName of

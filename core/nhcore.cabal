@@ -225,6 +225,7 @@ library
     Service.Command
     Service.Command.Core
     Service.CommandExecutor
+    Service.CommandExecutor.CommandExecutionFailure
     Service.CommandExecutor.Core
     Service.CommandExecutor.TH
     Service.Entity
@@ -380,6 +381,14 @@ library
     Parser.Internal.Whitespace
     Layout.Internal
     Layout.Internal.Render
+    Service.CommandExecutor.Source
+    Service.CommandExecutor.ExecutionResult
+    Service.CommandExecutor.CommandOutcome
+    Service.CommandExecutor.CommandLogSummary
+    Service.CommandExecutor.CommandResultLabel
+    Service.CommandExecutor.CommandFailureStage
+    Service.CommandExecutor.CommandErrorClass
+    Service.CommandExecutor.Reporting
     Service.CommandResultReceipt.Internal
   -- other-extensions:
   hs-source-dirs:

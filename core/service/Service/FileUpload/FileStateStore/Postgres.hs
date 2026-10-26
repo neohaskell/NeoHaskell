@@ -191,10 +191,10 @@ toEventStoreConfig backend =
 createPool :: PostgresEventStore -> Task PostgresFileStoreError HasqlPool.Pool
 createPool cfg = do
   let size = cfg.poolSize
-  case size > 0 of
-    False ->
+  if size <= 0
+    then
       Task.throw (InvalidPoolSize [fmt|poolSize must be > 0, got #{size}|])
-    True ->
+    else
       case ConnectionConfig.toConnectionParams
              ConnectionConfig.ConnectionParams
                { host = cfg.host

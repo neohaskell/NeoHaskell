@@ -52,9 +52,9 @@ with self task = Task.withCancellationDeferred \restore -> do
 -- SECURITY: Use this instead of 'with' for refresh operations to prevent deadlock.
 withTimeout :: forall value. Int -> Lock -> Task _ value -> Task _ (Result Text value)
 withTimeout timeoutSeconds self task = do
-  case timeoutSeconds > 0 of
-    False -> Task.yield (Err "lock timeout: non-positive timeout")
-    True -> Task.withCancellationDeferred \restore -> do
+  if timeoutSeconds <= 0
+    then Task.yield (Err "lock timeout: non-positive timeout")
+    else Task.withCancellationDeferred \restore -> do
       let microseconds = timeoutSeconds * 1000000
       maybeUnit <-
         GhcTimeout.timeout microseconds (acquire self |> Task.runNoErrors)
