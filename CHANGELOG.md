@@ -1,5 +1,188 @@
 # Changelog
 
+## 0.11.0 — 2026-10-23
+
+### Breaking changes
+
+- **CLI**: NeoHaskell no longer publishes the standalone `neo-install` bootstrap. The
+public `bootstrap.sh` URL stops working, and future Neo releases no longer
+include installer assets. Future Neo releases also stop producing native CLI
+assets for Linux ARM and Intel macOS. Historical releases and their assets
+remain unchanged. New Neo CLI assets remain available for Linux x86-64 and
+Apple silicon macOS. ([change](https://github.com/neohaskell/NeoHaskell/commit/991f800e99c44a72ca265511b1df004e2d32c69c))
+- **Framework**: Events created by a command now record the verified user and a correlation ID. When an integration runs another command, its events retain that attribution and identify the event that caused them. JSON logs carry the same IDs through commands and integrations. Scheduled commands have a correlation ID without an invented user. Existing events stay unchanged. ([change](https://github.com/neohaskell/NeoHaskell/commit/deacffb43babc44cc12855f0897d7259901b3c33))
+
+### Added
+
+- **Integrations**: You can now pull the audio out of an uploaded video with the new
+`Integration.Video.ExtractAudio` integration. Give it the video's file
+reference and it returns mono 16 kHz WAV bytes (`audio/wav`). Upload those
+bytes as a new file, save the returned `FileRef`, and pass that reference to
+`Integration.Audio.Transcribe` with `mimeType = "audio/wav"`. By default,
+extraction allows 180 seconds and stops at 25 MB; both limits are in the
+config. It needs `ffmpeg` on the machine that runs your app (for example
+`brew install ffmpeg`). If `ffmpeg` is missing, the action fails with a
+message that tells you to install it. If the video itself cannot be
+converted, your `onError` command receives the reason.
+
+The dispatcher's `eventProcessingTimeoutMs` must cover video retrieval and
+extraction. Raise it above the extraction timeout and expected retrieval time.
+For example, `Just 200000` may fit a 180-second extraction, but it is not a
+guarantee for every upload. The 30-second default can stop a slow operation
+before your `onSuccess` or `onError` command is sent.
+To keep the audio in a command, store it as Base64 text
+(`result.audio |> Bytes.toBase64 |> Text.fromBytes`). The new
+`Bytes.fromBase64` turns it back into the exact audio bytes
+(`audioBase64 |> Text.toBytes |> Bytes.fromBase64`) and returns an error
+instead of different bytes if the text is not valid Base64.
+
+Existing applications do not need any changes. From a NeoHaskell checkout,
+run `./.agents/skills/tdd/scripts/test-match 'Integration.Video' nhintegrations-test`
+and confirm the extraction examples pass. They use a stand-in for `ffmpeg`,
+so you do not need it installed to run them. ([change](https://github.com/neohaskell/NeoHaskell/commit/7bd77c0fd88a4b56091fc015388df85837e97d96))
+
+### Fixed
+
+- **Framework**: Concurrent commands that update the same entity now use the entity revision they actually read. If another command writes first, the stale command retries with fresh state instead of appending an outdated event. New-entity commands also prevent duplicate stream creation, while unconditional appends keep their existing behavior.
+
+Existing applications do not need code or data migrations. From a NeoHaskell checkout, run `./.agents/skills/tdd/scripts/test-match 'Retry Logic' nhcore-test-service` and confirm the command-handler retry examples pass. PostgreSQL must be available for the PostgreSQL backend examples. ([change](https://github.com/neohaskell/NeoHaskell/commit/cab923c0b098fdb82ece539380719c0757ec9057))
+- **Framework**: OpenAPI now preserves enum values exactly as declared in your schema.
+For example, a derived enum that sends `"Pending"` in JSON now advertises
+`"Pending"` in `/openapi.json`. Generated clients can match these values
+without a casing mismatch. Your application's JSON format stays the same.
+Regenerate clients from the updated specification to get the corrected values. ([change](https://github.com/neohaskell/NeoHaskell/commit/991f800e99c44a72ca265511b1df004e2d32c69c))
+- **CLI**: A newly generated project now uses framework APIs that match the framework
+revision pinned by its starter. Generate a project with `neo --ci new my-app`,
+then run `neo --ci build` and `neo --ci test` from its directory. Both commands
+should pass. Existing applications do not need edits for this fix. ([change](https://github.com/neohaskell/NeoHaskell/commit/36cd89bf60c19cfa89f2a20eca4716572c1e16f2))
+- **CLI**: The Neo CLI now uses an updated TLS library that rejects malformed TLS 1.3 handshake messages sent at the wrong encryption level. This hardens HTTPS connections. Existing commands and configuration need no changes. ([change](https://github.com/neohaskell/NeoHaskell/commit/71893b6609b3ad190a6971360d226b85368c6d1f))
+
+### Migration from 0.10.1
+
+#### CLI
+
+Remove scripts that call
+`https://raw.githubusercontent.com/neohaskell/NeoHaskell/main/installer/scripts/bootstrap.sh`.
+Existing copies of the old installer have no guarantee of working with future
+Neo releases.
+
+Download `neo-<target>` and `SHA256SUMS` from the same `neo-vX.Y.Z` release. The
+new native targets are `x86_64-unknown-linux-gnu` and `aarch64-apple-darwin`.
+New assets are no longer produced for `aarch64-unknown-linux-gnu` or
+`x86_64-apple-darwin`; historical release assets remain unchanged. No
+replacement installation method is defined here for those platforms. Compare
+the downloaded asset's SHA-256 with its line in `SHA256SUMS`. From a NeoHaskell
+checkout, the verified release helper checks the selected asset and installs
+it atomically:
+
+```sh
+mkdir -p "$HOME/.local/bin"
+./.agents/skills/neohaskell-release/scripts/neo-release install \
+  "$HOME/Downloads/neo-vX.Y.Z" x86_64-unknown-linux-gnu \
+  "$HOME/.local/bin/neo"
+"$HOME/.local/bin/neo" --version
+```
+
+Use `aarch64-apple-darwin` on an Apple silicon Mac. The example invokes the
+installed destination directly. Add `$HOME/.local/bin` to `PATH` to run `neo`
+by name. Confirm the binary reports the version you downloaded. Nix setup for
+building and running generated projects remains a separate prerequisite; use
+the existing [Nix installation instructions](https://nixos.org/download).
+
+### Verify
+
+Confirm that the release directory contains the selected `neo-<target>` asset
+and `SHA256SUMS`. Install it with the verified helper, then run the installed
+destination's `--version` command and confirm it prints the selected release
+version. Keep project build and run verification unchanged after installation.
+
+<details>
+<summary>Copy this prompt to your coding agent</summary>
+
+```text
+Migrate CLI from NeoHaskell 0.10.1 to 0.11.0.
+Migrate uses of the retired NeoHaskell installer to direct Neo CLI release
+assets. The public bootstrap path
+https://raw.githubusercontent.com/neohaskell/NeoHaskell/main/installer/scripts/bootstrap.sh
+and the standalone installer release assets are retired. New Neo CLI assets are
+no longer produced for `aarch64-unknown-linux-gnu` or `x86_64-apple-darwin`.
+Historical release assets remain unchanged. Existing installer binaries have
+no guarantee of working with future Neo releases.
+
+Find scripts and setup instructions that call the bootstrap URL. Replace that
+step with a download of `neo-<target>` and `SHA256SUMS` from the same
+`neo-vX.Y.Z` release. The supported targets are `x86_64-unknown-linux-gnu`
+and `aarch64-apple-darwin`. Verify the selected asset against the manifest
+with the platform checksum tool before placing it on PATH. The verified
+repository helper is `.agents/skills/neohaskell-release/scripts/neo-release`;
+its `install <dir> <target> <dest>` command verifies the bytes during atomic
+installation. Preserve the existing external Nix setup for generated projects.
+
+Use the following standalone example from a shell with `curl`, `awk`, and
+either `sha256sum` or `shasum` installed. It downloads both files from the
+same release, checks the selected asset, installs it, and prints its version.
+
+~~~sh
+set -eu
+version=0.11.0
+target=x86_64-unknown-linux-gnu
+download_dir="$HOME/Downloads/neo-$version"
+destination="$HOME/.local/bin/neo"
+release_url="https://github.com/neohaskell/NeoHaskell/releases/download/neo-v$version"
+mkdir -p "$download_dir" "$HOME/.local/bin"
+curl -fL "$release_url/neo-$target" -o "$download_dir/neo-$target"
+curl -fL "$release_url/SHA256SUMS" -o "$download_dir/SHA256SUMS"
+expected=$(awk -v name="neo-$target" '$2 == name {print $1}' "$download_dir/SHA256SUMS")
+test -n "$expected"
+if command -v sha256sum >/dev/null 2>&1; then
+  actual=$(sha256sum "$download_dir/neo-$target" | awk '{print $1}')
+else
+  actual=$(shasum -a 256 "$download_dir/neo-$target" | awk '{print $1}')
+fi
+test "$actual" = "$expected"
+install -m 0755 "$download_dir/neo-$target" "$destination"
+export PATH="$HOME/.local/bin:$PATH"
+"$destination" --version
+~~~
+
+Use `aarch64-apple-darwin` for an Apple silicon Mac. Add `$HOME/.local/bin`
+to your shell configuration to keep `neo` on `PATH` in new sessions. If a
+consumer uses a retired native target, flag the need for an owner-selected
+installation method instead of proposing an unverified replacement.
+
+Run the installed destination's `--version` command and check that it reports
+the chosen release. Preserve unrelated setup behavior. Report changed files,
+commands and results, and any script whose owner must choose a different
+installation method. Do not restore the bootstrap, publish assets, or assume
+old installer binaries are compatible with future releases.
+```
+
+</details>
+
+#### Framework
+
+Applications using `Application.withService` and built-in transports need no source changes. Stored user attribution does not grant authorization.
+
+This affects applications that construct a custom `ServiceRunner` for `Application.withServiceRunner` and return command handlers in the third result of `getEndpointsByTransport`. That map now contains `DispatchHandler` values. Each value accepts `Maybe EventMetadata` before the existing request context, request bytes, and response callback. The first two result maps stay the same. A third map that is always empty needs no edit.
+
+If a custom handler does not start another command, wrap its existing `EndpointHandler` as `\_sourceEvent requestContext body respond -> existingHandler requestContext body respond`. If it delegates to another dispatch handler, pass `sourceEvent` through. Preserve the existing request context for authorization. Event attribution is not permission to act as that user.
+
+### Verify
+
+Build the application and run its command and integration tests. Execute a command and inspect its saved event. Check that `relatedUserSub` is the verified user and `correlationId` is the server request ID. For a command started by an event, check that `causationId` is the immediate source event ID. An absent source should not produce a `causationId`.
+
+<details>
+<summary>Copy this prompt to your coding agent</summary>
+
+```text
+Migrate Framework from NeoHaskell 0.10.1 to 0.11.0.
+Update this NeoHaskell application only if it constructs a custom ServiceRunner for Application.withServiceRunner. In each getEndpointsByTransport result, inspect the third map of command dispatch handlers. Each handler now takes Maybe EventMetadata before its existing RequestContext, request bytes, and response callback. Add that leading parameter to custom handlers. If the handler does not create a command or delegate to another dispatch handler, it may ignore the source event. If it delegates to a dispatch handler, pass the source event through. Keep the verified RequestContext as the source of authorization; saved event attribution never grants permission. Do not change ordinary Service.command registrations or Application.withService wiring. Build the app and run its command and integration tests. Run a command and inspect saved event metadata. Check the verified user and request correlation, and for a command started by an event check causationId against the immediate source event ID. Report changed files, test results, and handlers whose event-source behavior is unclear.
+```
+
+</details>
+
+[Compare changes](https://github.com/neohaskell/NeoHaskell/compare/neo-v0.10.1...neo-v0.11.0)
+
 ## 0.10.1 — 2026-09-22
 
 ### Added

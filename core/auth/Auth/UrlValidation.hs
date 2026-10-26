@@ -49,6 +49,7 @@ getDnsTimeoutSeconds = do
       case GhcRead.readMaybe @Int (Text.toLinkedList envValue) of
         Nothing -> Task.yield defaultDnsTimeoutSeconds
         Just seconds ->
+          -- Enforce reasonable bounds: 1-60 seconds
           if seconds >= 1 && seconds <= 60
             then Task.yield seconds
             else Task.yield defaultDnsTimeoutSeconds
@@ -115,9 +116,9 @@ validateSecureUrl urlText = do
                 "http:" ->
                   -- DEVELOPMENT EXCEPTION: Allow HTTP only for localhost
                   -- This enables local OAuth2 providers (Keycloak, mock servers)
-                  case Hostname.isLocalhost normalizedHost of
-                    True -> Ok urlText  -- Localhost HTTP allowed, skip all other checks
-                    False -> Err (NotHttps urlText)
+                  if Hostname.isLocalhost normalizedHost
+                    then Ok urlText
+                    else Err (NotHttps urlText)
                 _ -> Err (NotHttps urlText)
 
 
@@ -127,9 +128,10 @@ validateSecureUrl urlText = do
 validateNonLocalhostHostname :: Text -> [Char] -> Result ValidationError Text
 validateNonLocalhostHostname urlText normalizedHost =
   -- Check if this is localhost first (for HTTPS localhost, still valid)
-  case Hostname.isLocalhost normalizedHost of
-    True -> Ok urlText  -- Localhost HTTPS is always valid
-    False -> do
+  if Hostname.isLocalhost normalizedHost
+    then Ok urlText
+    else do
+      -- SECURITY: Reject single-label hostnames (no dots)
       -- Single-label names may resolve via DNS search domains to internal hosts
       if isSingleLabelHostname normalizedHost
         then Err (SingleLabelHostname urlText)
@@ -154,9 +156,9 @@ isSingleLabelHostname host =
     [] -> False -- Empty is handled elsewhere
     _ ->
       -- Allow literal IPs (both IPv4 and bracketed IPv6) using strict parsing
-      case isLiteralIpHostStr host of
-        True -> False -- Literal IP, allow it
-        False ->
+      if isLiteralIpHostStr host
+        then False
+        else
           -- For hostnames, require at least one dot (FQDN)
           not (LinkedList.any (\c -> c == '.') host)
 
@@ -306,13 +308,17 @@ isNonRoutableIPv6 ip = do
   let relay6to4 = IP.toIPv6 [0x2002, 0xc058, 0x6300, 0, 0, 0, 0, 0]
   let relay6to4Range = IP.makeAddrRange relay6to4 24
 
-  let ipv4MappedPrivate = if isIPv4Mapped
-        then extractAndCheckIPv4 ip
-        else False
+  -- Extract embedded IPv4 from IPv4-mapped and check if private
+  let ipv4MappedPrivate =
+        if isIPv4Mapped
+          then extractAndCheckIPv4 ip
+          else False
 
-  let nat64Private = if isNat64
-        then extractAndCheckIPv4 ip
-        else False
+  -- Extract embedded IPv4 from NAT64 and check if private
+  let nat64Private =
+        if isNat64
+          then extractAndCheckIPv4 ip
+          else False
 
   IP.isMatchedTo ip unspecifiedRange
     || IP.isMatchedTo ip loopbackRange
@@ -369,13 +375,19 @@ validateSecureUrlWithDns urlText = do
         Nothing -> Task.yield (Err (MalformedUrl urlText))
         Just hostname -> do
           let hostStr = Text.toLinkedList hostname
+          -- Normalize to lowercase for consistent comparison
           let normalizedHostStr = LinkedList.map toLowerChar hostStr
+          -- Skip DNS resolution for localhost addresses (development)
+          -- Localhost is validated by validateSecureUrl, no DNS needed
           if Hostname.isLocalhost normalizedHostStr
             then Task.yield (Ok urlText)
             else
+              -- Skip DNS resolution for literal IP addresses
+              -- (already validated by validateSecureUrl above)
               if isLiteralIpHost hostname
                 then Task.yield (Ok urlText)
                 else do
+                  -- Resolve DNS and check all IPs
                   resolveResult <- resolveDns hostname
                   case resolveResult of
                     DnsTimeout ->
@@ -493,7 +505,7 @@ resolveDnsRecordType timeoutSeconds recordType hostname = do
   -- Use `host` command which is available on both Linux and macOS
   -- -W sets the timeout in seconds (kills the query on timeout)
   -- -t specifies the record type (A for IPv4, AAAA for IPv6)
-  let timeoutArg = Text.fromLinkedList [fmt|-W#{timeoutSeconds}|]
+  let timeoutArg = [fmt|-W#{timeoutSeconds}|]
   let hostArgs =
         Array.fromLinkedList
           [ timeoutArg,
@@ -547,11 +559,12 @@ runDnsSubprocess timeoutSeconds cmd args = do
       case exitCode of
         GhcExit.ExitSuccess -> Task.yield (DnsSubprocessSuccess out)
         GhcExit.ExitFailure 1 ->
-          Task.yield (DnsSubprocessError (Text.fromLinkedList [fmt|Host not found: #{out}|]))
+          Task.yield (DnsSubprocessError [fmt|Host not found: #{out}|])
         GhcExit.ExitFailure code -> do
-          let errMsg = if Text.isEmpty err
-                then Text.fromLinkedList [fmt|DNS resolution failed (exit code #{code})|]
-                else err
+          let errMsg =
+                if Text.isEmpty err
+                  then [fmt|DNS resolution failed (exit code #{code})|]
+                  else err
           Task.yield (DnsSubprocessError errMsg)
 
 
