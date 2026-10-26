@@ -11,4 +11,4 @@ import Prelude qualified
 
 
 newtype Transaction value = Transaction (GhcSTM.STM value)
-  deriving newtype (Prelude.Functor, Prelude.Applicative, Prelude.Monad)
+  deriving (Prelude.Functor, Prelude.Applicative, Prelude.Monad)
