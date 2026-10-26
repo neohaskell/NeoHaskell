@@ -1,6 +1,8 @@
 {-# LANGUAGE Strict #-}
 
 -- | Settings that bound dispatcher workers, retries, and cleanup.
+--
+-- Use 'defaultConfig' as dispatcher settings and override fields when needed.
 module Service.Integration.Dispatcher.Config (
   DispatcherConfig (..),
   defaultConfig,

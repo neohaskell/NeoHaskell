@@ -36,10 +36,10 @@ type Parser = GhcMegaparsec.Parsec GhcVoid.Void Text
 --   parse "status"               -> Err "NeoQL parse error: ..."
 parse :: Text -> Result Text Expr
 parse input = do
-  case Text.length input > maxQueryLength of
-    True ->
+  if Text.length input > maxQueryLength
+    then
       Result.Err [fmt|NeoQL query too long (max #{maxQueryLength} chars)|]
-    False ->
+    else
       case GhcMegaparsec.parse exprParser "" input of
         GhcEither.Left bundle ->
           Result.Err [fmt|NeoQL parse error: #{GhcMegaparsec.errorBundlePretty bundle}|]

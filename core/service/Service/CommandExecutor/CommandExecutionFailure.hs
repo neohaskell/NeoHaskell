@@ -1,3 +1,5 @@
+-- | Represent failures at the executor's internal stages. Construct a
+-- stage-specific failure and use 'message' at the service response boundary.
 module Service.CommandExecutor.CommandExecutionFailure (
   CommandExecutionFailure (..),
   message,

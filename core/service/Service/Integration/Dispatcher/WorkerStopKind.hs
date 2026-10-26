@@ -1,6 +1,8 @@
 {-# LANGUAGE Strict #-}
 
 -- | Names the worker variant when a Stop message cannot be delivered.
+--
+-- The stop path calls 'label' when reporting an undelivered Stop message.
 module Service.Integration.Dispatcher.WorkerStopKind (
   WorkerStopKind (..),
   label,

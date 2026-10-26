@@ -1,3 +1,6 @@
+-- | Verify queue retirement, replacement, and writer admission behavior.
+--
+-- The worker queue test runner calls 'spec' to exercise these transitions.
 module WorkerQueueControlSpec (spec) where
 
 import AsyncTask qualified
@@ -33,7 +36,7 @@ spec =
       writer <- AsyncTask.run (WorkerQueueControl.withAdmission oldQueue write)
       Channel.read writerEntered
 
-      removed <- workers |> ConcurrentMap.removeIfM "stream" (\current ->
+      removed <- workers |> ConcurrentMap.removeIfTransaction "stream" (\current ->
         if current.workerId == 1
           then WorkerQueueControl.markDraining current.queue
           else pure False
@@ -43,7 +46,7 @@ spec =
         Nothing -> Test.fail "expected the captured worker to be removed"
 
       ConcurrentMap.set "stream" TestWorker {workerId = 2, queue = replacementQueue} workers
-      staleRemoval <- workers |> ConcurrentMap.removeIfM "stream" (\current ->
+      staleRemoval <- workers |> ConcurrentMap.removeIfTransaction "stream" (\current ->
         if current.workerId == 1
           then WorkerQueueControl.markDraining current.queue
           else pure False
@@ -80,10 +83,7 @@ spec =
 waitForWriterBarrier :: AsyncTask.AsyncTask Text Unit -> Int -> Task Text Unit
 waitForWriterBarrier stopper attempts = do
   waiting <- AsyncTask.isWaitingForStateChange stopper
-  if waiting
-    then Task.yield unit
-    else if attempts == 0
-      then Test.fail "stop completed before the admitted writer left"
-      else do
-        AsyncTask.sleep 1
-        waitForWriterBarrier stopper (attempts - 1)
+  Task.unless waiting do
+    Task.when (attempts == 0) (Test.fail "stop completed before the admitted writer left")
+    AsyncTask.sleep 1
+    waitForWriterBarrier stopper (attempts - 1)
