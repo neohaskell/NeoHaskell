@@ -30,6 +30,7 @@ Remaining triggers:
 - Creating or reviewing new Haskell modules → [module documentation](.agents/skills/neohaskell-module-docs/SKILL.md).
 - Changing LANGUAGE pragmas, Cabal extensions, or compiler/linter extension settings → [language extensions](.agents/skills/neohaskell-language-extensions/SKILL.md).
 - Framework exports, TH markers or generated APIs change → [NeoHaskell consumer verification](.agents/skills/neohaskell-consumer-verification/SKILL.md) for same-PR starter and testbed migration and exact-revision evidence.
+- Haskell tool commands, including compilation, tests, doctests, formatting, and generated-consumer checks → [Nix Haskell tools](.agents/skills/nix-haskell-tools/SKILL.md). Run them through `nix develop --command`.
 - Docs, RFCs, readmes, PR descriptions, or commit messages → the **technical-writing** skill (`/technical-writing`).
 - Before commit → the **deslop** skill (`/deslop`).
 - Before review → the **no-comments** skill (`/no-comments`).

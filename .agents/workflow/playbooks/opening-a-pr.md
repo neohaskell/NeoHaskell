@@ -8,6 +8,8 @@ Invoked at the end of every other playbook. Apply the [task completion policy](.
 
 **PRs.** Run `/deslop` over the diff before commit and `/no-comments` before review. Write every PR title, description, and commit body with `/technical-writing` (every layer except Diátaxis, and apply the STE vocabulary rules: one word per action, keep articles, a plain verb over `-ing` where one works), then apply the **prose-cleanup** skill.
 
+**Source-owned agent guidance.** For a PR that changes a consumer-facing framework contract, generated CLI behavior, or `docs/agent/`, complete the [local guidance review](../../skills/neohaskell-consumer-verification/SKILL.md#source-owned-agent-guidance) before review. Report its result in the PR verification section.
+
 **Release notes.** Before final substantive PR review, follow [neohaskell-release](../../skills/neohaskell-release/SKILL.md) for change fragments, breaking-change migrations and their validation.
 
 **Titles.** Conventional Commits `type(scope): subject`, no trailing period. Type such as `feat`, `fix`, `docs`, `refactor`, `test`, `chore`, or `perf`. Scope is the area, such as `core`, `service`, or `neo`. Subject is short, imperative, and names a real symbol when one carries the change, for example `fix(service): preserve CommandExecutor request context`.
