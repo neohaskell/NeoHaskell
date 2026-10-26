@@ -77,7 +77,7 @@ data ShippingResult
       { orderId :: Text
       , errorMessage :: Text
       }
-  deriving (Generic, Show, Typeable)
+  deriving (Generic)
 
 instance Json.ToJSON ShippingResult
 instance Json.FromJSON ShippingResult
@@ -93,7 +93,7 @@ data RefundResult
       { orderId :: Text
       , errorMessage :: Text
       }
-  deriving (Generic, Show, Typeable)
+  deriving (Generic)
 
 instance Json.ToJSON RefundResult
 instance Json.FromJSON RefundResult
@@ -105,7 +105,7 @@ instance Json.FromJSON RefundResult
 -- so this is kept simple.
 data SlackResult
   = SlackMessageSent
-  deriving (Generic, Show, Typeable)
+  deriving (Generic)
 
 instance Json.ToJSON SlackResult
 instance Json.FromJSON SlackResult
@@ -178,7 +178,7 @@ data ShipmentPayload = ShipmentPayload
   , carrier :: Text
   , recipient_email :: Text
   }
-  deriving (Generic, Show)
+  deriving (Generic)
 
 instance Json.ToJSON ShipmentPayload
 
@@ -187,7 +187,7 @@ instance Json.ToJSON ShipmentPayload
 data TrackingResponse = TrackingResponse
   { tracking_url_provider :: Text
   }
-  deriving (Generic, Show)
+  deriving (Generic)
 
 instance Json.FromJSON TrackingResponse
 
@@ -265,7 +265,7 @@ data SlackPayload = SlackPayload
   { text :: Text
   , channel :: Text
   }
-  deriving (Generic, Show)
+  deriving (Generic)
 
 instance Json.ToJSON SlackPayload
 
@@ -283,7 +283,7 @@ data ProfileUpdateResult
       { userId :: Text
       , errorMessage :: Text
       }
-  deriving (Generic, Show, Typeable)
+  deriving (Generic)
 
 instance Json.ToJSON ProfileUpdateResult
 instance Json.FromJSON ProfileUpdateResult
@@ -301,7 +301,7 @@ data OrderPatchResult
       { orderId :: Text
       , errorMessage :: Text
       }
-  deriving (Generic, Show, Typeable)
+  deriving (Generic)
 
 instance Json.ToJSON OrderPatchResult
 instance Json.FromJSON OrderPatchResult
@@ -318,7 +318,7 @@ data SubscriptionResult
       { subscriptionId :: Text
       , errorMessage :: Text
       }
-  deriving (Generic, Show, Typeable)
+  deriving (Generic)
 
 instance Json.ToJSON SubscriptionResult
 instance Json.FromJSON SubscriptionResult
@@ -340,7 +340,7 @@ data ConditionalResult
       , statusCode :: Int
       , errorMessage :: Text
       }
-  deriving (Generic, Show, Typeable)
+  deriving (Generic)
 
 instance Json.ToJSON ConditionalResult
 instance Json.FromJSON ConditionalResult
@@ -356,7 +356,7 @@ data XmlOrderResult
   | XmlOrderRejected
       { errorMessage :: Text
       }
-  deriving (Generic, Show, Typeable)
+  deriving (Generic)
 
 instance Json.ToJSON XmlOrderResult
 instance Json.FromJSON XmlOrderResult
@@ -406,7 +406,7 @@ data UserProfile = UserProfile
   { display_name :: Text
   , email :: Text
   }
-  deriving (Generic, Show)
+  deriving (Generic)
 
 instance Json.ToJSON UserProfile
 
@@ -455,7 +455,7 @@ partialUpdateOrderIntegration orderId newStatus =
 data OrderPatch = OrderPatch
   { status :: Text
   }
-  deriving (Generic, Show)
+  deriving (Generic)
 
 instance Json.ToJSON OrderPatch
 
@@ -464,7 +464,7 @@ instance Json.ToJSON OrderPatch
 data PatchResponse = PatchResponse
   { updated_fields :: Array Text
   }
-  deriving (Generic, Show)
+  deriving (Generic)
 
 instance Json.FromJSON PatchResponse
 
@@ -546,7 +546,7 @@ conditionalUpdateIntegration resourceId currentEtag newData =
 data ResourceData = ResourceData
   { data_field :: Text
   }
-  deriving (Generic, Show)
+  deriving (Generic)
 
 instance Json.ToJSON ResourceData
 

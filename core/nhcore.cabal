@@ -1,6 +1,6 @@
 cabal-version: 3.4
 name: nhcore
-version: 0.10.1
+version: 0.11.0
 synopsis: Core Library for NeoHaskell
 description: NeoHaskell is a dialect of Haskell that is focused on newcomer-friendliness and productivity.
 homepage: https://neohaskell.org
@@ -308,8 +308,6 @@ library
     Set
     Stream
     Subprocess
-    Syntax.Comment
-    Syntax.Function
     Task
     Test
     Test.AppSpec
@@ -383,6 +381,7 @@ library
     Parser.Internal.Whitespace
     Layout.Internal
     Layout.Internal.Render
+    Service.CommandResultReceipt.Internal
   -- other-extensions:
   hs-source-dirs:
     auth
@@ -402,7 +401,6 @@ library
     neoql
     parser
     layout
-    syntax
 
   default-language: GHC2021
 
@@ -415,6 +413,7 @@ test-suite nhcore-test
     -with-rtsopts=-N
 
   other-modules:
+    ArraySpec
     Auth.HostnameSpec
     Auth.InMemorySecretStoreSpec
     Auth.JwtSpec
@@ -523,7 +522,11 @@ test-suite nhcore-test
     Service.Command.CanAccess.PublicAccessFixture
     Service.Command.CanAccess.PermissionFixture
     Service.Transport.Web.CommandAuthSpec
+    Service.Transport.Web.InvalidTokenSpec
+    Service.Transport.Web.RequestBodyFailureSpec
     Service.CommandExecutor.AuditLoggingSpec
+    Service.CommandExecutor.MetadataSpec
+    Service.CommandExecutor.StorageMetadataSpec
 
   -- other-extensions:
   type: exitcode-stdio-1.0
@@ -640,7 +643,11 @@ test-suite nhcore-test-service
     Service.Command.CanAccess.PublicAccessFixture
     Service.Command.CanAccess.PermissionFixture
     Service.Transport.Web.CommandAuthSpec
+    Service.Transport.Web.InvalidTokenSpec
+    Service.Transport.Web.RequestBodyFailureSpec
     Service.CommandExecutor.AuditLoggingSpec
+    Service.CommandExecutor.MetadataSpec
+    Service.CommandExecutor.StorageMetadataSpec
     Service.QueryObjectStore.PostgresSpec
     Service.Query.Subscriber.ReadinessSpec
 
@@ -741,8 +748,6 @@ test-suite nhcore-test-core
     TaskSpec
     Test.AppSpec.AppSpecSpec
     Test.AppSpec.VerifySpec
-    Syntax.CommentSpec
-    Syntax.FunctionSpec
     TextSpec
 
   type: exitcode-stdio-1.0

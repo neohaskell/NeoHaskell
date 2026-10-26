@@ -42,6 +42,7 @@ import Json qualified
 import LinkedList qualified
 import Map qualified
 import Maybe (Maybe (..))
+import Maybe qualified
 import Network.HTTP.Types.Header qualified as HTTP
 import Network.HTTP.Types.Method qualified as GhcMethod
 import Network.HTTP.Types.Status qualified as HTTP
@@ -53,13 +54,14 @@ import Result (Result (..))
 import Schema.OpenApi qualified as OpenApi
 import Service.Application.Types (ApiInfo (..))
 import Service.Application.Types qualified
-import Service.Auth (RequestContext)
+import Service.Auth (RequestContext (..))
 import Service.Auth qualified as Auth
 import Service.Command.Core (Command, NameOf)
 import Service.FileUpload.Core (FileRef (..))
 import Service.FileUpload.Core qualified as FileUpload
 import Service.FileUpload.Web (FileUploadRoutes (..))
 import Service.CommandExecutor.TH (deriveKnownHash)
+import Service.CommandResultReceipt.Internal qualified as CommandResultReceipt
 import Service.AccessControl (AccessError (..), QueryEndpointError (..))
 import Service.Query.Pagination qualified as Pagination
 import Service.Response (CommandResponse)
@@ -77,6 +79,7 @@ import Text (Text)
 import Text qualified
 import ToText (toText)
 import NeoQL qualified
+import Uuid qualified
 
 
 -- | Auth configuration for WebTransport endpoints.
@@ -203,6 +206,29 @@ server =
     }
 
 
+data CommandRequestBodyState
+  = CommandRequestBodyInProgress
+  | CommandRequestBodySucceeded
+  | CommandRequestBodyTooLarge
+  | CommandRequestBodyFailed
+
+
+data CommandRequestBodyResult
+  = CommandRequestBodyBytes Bytes
+  | CommandRequestBodyRejected Text
+  | CommandRequestBodyReadFailed
+
+
+data CommandRouteResultState
+  = CommandRouteAuthenticationPending
+  | CommandRouteRequestContextPending
+  | CommandRouteAuthenticationRejected AuthError
+  | CommandRouteAuthenticationFailed
+  | CommandRouteRequestContextFailed
+  | CommandRouteBodyRequest RequestContext CommandRequestBodyState
+  | CommandRouteHandlerOwnsResult RequestContext
+
+
 -- | Read request body with a size limit to prevent DoS attacks.
 -- Returns Err if the body exceeds the limit, Ok with the body bytes otherwise.
 readBodyWithLimit :: Int -> Wai.Request -> Task Text (Result Text Bytes)
@@ -240,6 +266,75 @@ readBodyWithLimit maxSize request = Task.fromIO do
           else drainBody
 
   readChunks
+
+
+reportCommandRequestBodyState :: Text -> RequestContext -> CommandRequestBodyState -> Task Text Unit
+reportCommandRequestBodyState commandName requestContext bodyState = do
+  let emitResult :: Log.Level -> Text -> Text -> Text -> Text -> Task Text Unit
+      emitResult level result failureStage errorClass message = do
+        let requestIdText = Uuid.toText requestContext.requestId
+        let actorFields = case requestContext.user of
+              Maybe.Just claims -> ["relatedUserSub" Json..= claims.sub]
+              Maybe.Nothing -> []
+        Log.recordIsolated level
+          ( [ "component" Json..= ("WebTransport" :: Text)
+            , "commandName" Json..= commandName
+            , "requestId" Json..= requestIdText
+            , "correlationId" Json..= requestIdText
+            , "kind" Json..= ("command_result" :: Text)
+            , "result" Json..= (result :: Text)
+            , "failureStage" Json..= failureStage
+            , "errorClass" Json..= (errorClass :: Text)
+            , "eventsAppended" Json..= (0 :: Int)
+            ]
+              |> Array.append actorFields
+          )
+          message
+          |> Task.ignoreError
+
+  let reportResultOnce level result failureStage errorClass message = do
+        let report = emitResult level result failureStage errorClass message
+        maybeReported <- CommandResultReceipt.reportIfRegistered requestContext.requestId report
+        case maybeReported of
+          Maybe.Nothing -> report
+          Maybe.Just _ -> Task.yield ()
+
+  case bodyState of
+    CommandRequestBodyInProgress ->
+      reportResultOnce Log.Error "execution_failed" "request_body" "ExecutionInterrupted" "Command request body read interrupted"
+    CommandRequestBodySucceeded ->
+      reportResultOnce Log.Error "execution_failed" "dispatch" "ExecutionInterrupted" "Command handoff was interrupted"
+    CommandRequestBodyTooLarge ->
+      reportResultOnce Log.Warn "rejected" "request_body" "PayloadTooLarge" "Command request body rejected"
+    CommandRequestBodyFailed ->
+      reportResultOnce Log.Error "execution_failed" "request_body" "SynchronousException" "Command request body read failed"
+
+
+reportUnclaimedCommandResult :: Text -> Uuid.Uuid -> Maybe Text -> CommandResultReceipt.ReceiptExit -> Task Text Unit
+reportUnclaimedCommandResult commandName requestId maybeActor exit = do
+  let (errorClass, message) = case exit of
+        CommandResultReceipt.HandlerFailed -> ("SynchronousException" :: Text, "Command handler failed before reporting a result")
+        CommandResultReceipt.HandlerInterrupted -> ("ExecutionInterrupted", "Command handler was interrupted before reporting a result")
+        CommandResultReceipt.HandlerReturnedWithoutResult -> ("MissingCommandResult", "Command handler returned without reporting a result")
+      requestIdText = Uuid.toText requestId
+      actorFields = case maybeActor of
+        Maybe.Nothing -> Array.empty
+        Maybe.Just actor -> ["relatedUserSub" Json..= actor]
+  Log.recordIsolated Log.Error
+    ( [ "component" Json..= ("WebTransport" :: Text)
+      , "commandName" Json..= commandName
+      , "requestId" Json..= requestIdText
+      , "correlationId" Json..= requestIdText
+      , "kind" Json..= ("command_result" :: Text)
+      , "result" Json..= ("execution_failed" :: Text)
+      , "failureStage" Json..= ("execution" :: Text)
+      , "errorClass" Json..= errorClass
+      , "eventsAppended" Json..= (0 :: Int)
+      ]
+        |> Array.append actorFields
+    )
+    message
+    |> Task.ignoreError
 
 
 -- | Parse multipart form data to extract file upload.
@@ -560,77 +655,163 @@ instance Transport WebTransport where
         -- Look up the command handler in the endpoints map
         case Map.get commandName endpoints.commandEndpoints of
           Maybe.Just handler -> do
-            Log.withScope [("component", "WebTransport"), ("command", commandName)] do
-              Log.debug "Command received"
-                |> Task.ignoreError
-            -- Helper to process command with a RequestContext
-            let processCommandWithContext :: RequestContext -> Task Text Wai.ResponseReceived
-                processCommandWithContext requestContext = do
-                  -- Read the request body with size limit to prevent DoS attacks
-                  bodyResult <- readBodyWithLimit maxBodySize request
-                  case bodyResult of
-                    Result.Err errorMessage ->
-                      payloadTooLarge errorMessage
-                    Result.Ok bodyBytes -> do
-                      respondVar <- ConcurrentVar.new
-                      -- We need to capture the ResponseReceived from the handler's callback
-                      -- Since handler returns Unit, we'll use andThen to chain the result
-                      handler
-                        requestContext
-                        bodyBytes
-                        ( \(commandResponse, responseBytes) -> do
-                            -- Map CommandUnauthorized to 401/403 with a clean message body.
-                            -- Mirror the query-side AuthorizationError mapping (lines ~655-659).
-                            let httpStatus = commandResponseToHttpStatus commandResponse
-                            let (statusOverride, bodyOverride :: Maybe Text) = case commandResponse of
-                                  Response.Unauthorized {authError} ->
-                                    case unauthorizedResponse authError of
-                                      (statusCode, message) -> (statusCode, Just message)
-                                  _ -> (httpStatus, Nothing)
-                            let finalBodyBytes = case bodyOverride of
-                                  Maybe.Just msg ->
-                                    -- Wrap the message in a JSON envelope so the
-                                    -- application/json content-type is honoured.
-                                    unauthorizedResponseBody msg
-                                      |> Text.toBytes
-                                      |> Bytes.toLazyLegacy
-                                  Maybe.Nothing ->
-                                    responseBytes
-                                      |> Bytes.toLazyLegacy
-                            let responseBody =
-                                  finalBodyBytes
-                                    |> Wai.responseLBS statusOverride [(HTTP.hContentType, "application/json")]
-                            respondValue <- respond responseBody
-                            respondVar |> ConcurrentVar.set respondValue
-                            Task.yield ()
-                        )
-                        |> Task.andThen
-                          ( \_ -> do
-                              ConcurrentVar.get respondVar
-                          )
+            CommandResultReceipt.withFreshReceipt
+              (reportUnclaimedCommandResult commandName)
+              (\requestId -> do
+                Log.withScope [("component", "WebTransport"), ("command", commandName)] do
+                  Log.debug "Command received"
+                    |> Task.ignoreError
+                routeResultState <- Task.fromIO (GhcIORef.newIORef CommandRouteAuthenticationPending)
+                let processCommandWithContext :: RequestContext -> Task Text Wai.ResponseReceived
+                    processCommandWithContext requestContext = do
+                      GhcIORef.writeIORef routeResultState (CommandRouteBodyRequest requestContext CommandRequestBodyInProgress)
+                        |> Task.fromIO
+                      CommandResultReceipt.setRelatedUserSub
+                        requestId
+                        (requestContext.user |> Maybe.map (\claims -> claims.sub))
+                      safeBodyResult <- readBodyWithLimit maxBodySize request |> Task.asResultSafe @Text
+                      bodyResult <- case safeBodyResult of
+                        Result.Err _ -> do
+                          GhcIORef.writeIORef routeResultState (CommandRouteBodyRequest requestContext CommandRequestBodyFailed)
+                            |> Task.fromIO
+                          Task.yield CommandRequestBodyReadFailed
+                        Result.Ok (Result.Err errorMessage) -> do
+                          GhcIORef.writeIORef routeResultState (CommandRouteBodyRequest requestContext CommandRequestBodyTooLarge)
+                            |> Task.fromIO
+                          Task.yield (CommandRequestBodyRejected errorMessage)
+                        Result.Ok (Result.Ok bodyBytes) -> do
+                          GhcIORef.writeIORef routeResultState (CommandRouteBodyRequest requestContext CommandRequestBodySucceeded)
+                            |> Task.fromIO
+                          Task.yield (CommandRequestBodyBytes bodyBytes)
+                      case bodyResult of
+                        CommandRequestBodyRejected errorMessage -> do
+                          payloadTooLarge errorMessage
+                        CommandRequestBodyReadFailed ->
+                          internalError "Internal server error"
+                        CommandRequestBodyBytes bodyBytes -> do
+                          respondVar <- ConcurrentVar.new
+                          GhcIORef.writeIORef routeResultState (CommandRouteHandlerOwnsResult requestContext)
+                            |> Task.fromIO
+                          handler
+                            requestContext
+                            bodyBytes
+                            ( \(commandResponse, responseBytes) -> do
+                                let httpStatus = commandResponseToHttpStatus commandResponse
+                                let (statusOverride, bodyOverride :: Maybe Text) = case commandResponse of
+                                      Response.Unauthorized {authError} ->
+                                        case unauthorizedResponse authError of
+                                          (statusCode, message) -> (statusCode, Just message)
+                                      _ -> (httpStatus, Nothing)
+                                let finalBodyBytes = case bodyOverride of
+                                      Maybe.Just msg ->
+                                        unauthorizedResponseBody msg
+                                          |> Text.toBytes
+                                          |> Bytes.toLazyLegacy
+                                      Maybe.Nothing ->
+                                        responseBytes
+                                          |> Bytes.toLazyLegacy
+                                let responseBody =
+                                      finalBodyBytes
+                                        |> Wai.responseLBS statusOverride [(HTTP.hContentType, "application/json")]
+                                respondValue <- respond responseBody
+                                respondVar |> ConcurrentVar.set respondValue
+                                Task.yield ()
+                            )
+                            |> Task.andThen
+                              ( \_ -> do
+                                  ConcurrentVar.get respondVar
+                              )
 
-            -- Resolve auth and dispatch.
-            --
-            -- 'authEnabled = Nothing' means the application never wired
-            -- 'Application.withAuth'. The trusted context bypasses the
-            -- dispatcher's 'canExecuteImpl' gate so the legacy no-auth
-            -- deployment story keeps working: every command stays
-            -- reachable regardless of its 'canAccess' declaration.
-            --
-            -- When JWT auth IS configured, 'withResolvedClaims' folds the
-            -- three-way auth-resolution rule (TokenMissing → anonymous
-            -- fallthrough, other AuthError → reject, Ok → claims) and we
-            -- adapt the resolved claims to a command-side RequestContext.
-            case webTransport.authEnabled of
-              Maybe.Nothing -> do
-                requestContext <- Auth.trustedContext
-                processCommandWithContext requestContext
-              Maybe.Just auth ->
-                withResolvedClaims auth request respond \claims -> do
-                  requestContext <- case claims of
-                    Maybe.Just c  -> Auth.authenticatedContext c
-                    Maybe.Nothing -> Auth.anonymousContext
-                  processCommandWithContext requestContext
+                let requestIdText = Uuid.toText requestId
+                let setRouteResultState state =
+                      GhcIORef.writeIORef routeResultState state
+                        |> Task.fromIO
+                let reportRouteResult :: Log.Level -> Text -> Text -> Text -> Text -> Task Text Unit
+                    reportRouteResult level result failureStage errorClass message = do
+                      let report =
+                            Log.recordIsolated level
+                              [ "component" Json..= ("WebTransport" :: Text)
+                              , "commandName" Json..= commandName
+                              , "requestId" Json..= requestIdText
+                              , "correlationId" Json..= requestIdText
+                              , "kind" Json..= ("command_result" :: Text)
+                              , "result" Json..= (result :: Text)
+                              , "failureStage" Json..= failureStage
+                              , "errorClass" Json..= errorClass
+                              , "eventsAppended" Json..= (0 :: Int)
+                              ]
+                              message
+                              |> Task.ignoreError
+                      maybeReported <- CommandResultReceipt.reportIfRegistered requestId report
+                      case maybeReported of
+                        Maybe.Nothing -> report
+                        Maybe.Just _ -> Task.yield ()
+                let processWithClaims :: Maybe UserClaims -> Task Text Wai.ResponseReceived
+                    processWithClaims claims = do
+                      safeContext <-
+                        (case claims of
+                          Maybe.Just userClaims -> Auth.authenticatedContext userClaims
+                          Maybe.Nothing -> Auth.anonymousContext
+                        )
+                          |> Task.asResultSafe @Text
+                      case safeContext of
+                        Result.Err _ -> do
+                          setRouteResultState CommandRouteRequestContextFailed
+                          internalError "Internal server error"
+                        Result.Ok requestContext ->
+                          processCommandWithContext requestContext {Auth.requestId = requestId}
+                let finalizeCommandResult = do
+                      state <- GhcIORef.readIORef routeResultState |> Task.fromIO
+                      case state of
+                        CommandRouteAuthenticationPending ->
+                          reportRouteResult Log.Error "execution_failed" "authentication" "ExecutionInterrupted" "Command authentication was interrupted"
+                        CommandRouteRequestContextPending ->
+                          reportRouteResult Log.Error "execution_failed" "request_context" "ExecutionInterrupted" "Command request context was interrupted"
+                        CommandRouteAuthenticationRejected authError -> do
+                          let errorClass = case authError of
+                                AuthInfraUnavailable _ -> "AuthenticationUnavailable"
+                                _ -> "InvalidToken"
+                          reportRouteResult Log.Warn "unauthorized" "authentication" errorClass "Command authentication failed"
+                        CommandRouteAuthenticationFailed ->
+                          reportRouteResult Log.Error "execution_failed" "authentication" "SynchronousException" "Command authentication failed"
+                        CommandRouteRequestContextFailed ->
+                          reportRouteResult Log.Error "execution_failed" "request_context" "SynchronousException" "Command request context failed"
+                        CommandRouteBodyRequest requestContext bodyState ->
+                          reportCommandRequestBodyState commandName requestContext bodyState
+                        CommandRouteHandlerOwnsResult requestContext ->
+                          CommandResultReceipt.setRelatedUserSub
+                            requestId
+                            (requestContext.user |> Maybe.map (\claims -> claims.sub))
+
+                Task.finally finalizeCommandResult do
+                  Log.withScope [("component", "WebTransport"), ("commandName", commandName), ("requestId", requestIdText)] do
+                    case webTransport.authEnabled of
+                      Maybe.Nothing -> do
+                        setRouteResultState CommandRouteRequestContextPending
+                        safeContext <- Auth.trustedContext |> Task.asResultSafe @Text
+                        case safeContext of
+                          Result.Err _ -> do
+                            setRouteResultState CommandRouteRequestContextFailed
+                            internalError "Internal server error"
+                          Result.Ok requestContext ->
+                            processCommandWithContext requestContext {Auth.requestId = requestId}
+                      Maybe.Just auth -> do
+                        safeAuthResult <-
+                          Middleware.checkAuth (Maybe.Just auth.jwksManager) auth.authConfig Authenticated request
+                            |> Task.asResultSafe @Text
+                        case safeAuthResult of
+                          Result.Err _ -> do
+                            setRouteResultState CommandRouteAuthenticationFailed
+                            internalError "Internal server error"
+                          Result.Ok authResult -> do
+                            setRouteResultState CommandRouteRequestContextPending
+                            case authResult of
+                              Result.Err TokenMissing -> processWithClaims Maybe.Nothing
+                              Result.Err authError -> do
+                                setRouteResultState (CommandRouteAuthenticationRejected authError)
+                                Middleware.respondWithAuthError authError respond
+                              Result.Ok authContext -> processWithClaims authContext.claims
+              )
           Maybe.Nothing ->
             notFound [fmt|Command not found: #{commandName}|]
       ["queries", queryNameKebab] -> do
@@ -699,7 +880,7 @@ instance Transport WebTransport where
                 -- 'Nothing' claims (existing behaviour pre-PR).
                 case webTransport.authEnabled of
                   Maybe.Nothing -> processQueryWithClaims Maybe.Nothing
-                  Maybe.Just auth -> withResolvedClaims auth request respond processQueryWithClaims
+                  Maybe.Just auth -> withResolvedClaims auth request respond (\_ -> Task.yield ()) processQueryWithClaims
           Maybe.Nothing ->
             notFound [fmt|Query not found: #{queryName}|]
       -- OAuth2 routes: /connect/{provider}, /callback/{provider}, /disconnect/{provider}
@@ -1084,10 +1265,30 @@ instance Transport WebTransport where
         let responseJson = Json.encodeText response |> Text.toBytes
         respond (response, responseJson)
       Result.Err _err -> do
-        -- Handle parsing error - return a Failed response
-        Log.withScope [("component", "WebTransport"), ("command", n), ("port", port |> toText)] do
-          Log.warn [fmt|Failed to parse command #{n}|]
-            |> Task.ignoreError
+        let requestIdText = Uuid.toText requestContext.requestId
+        let actorFields = case requestContext.user of
+              Maybe.Just claims -> ["relatedUserSub" Json..= claims.sub]
+              Maybe.Nothing -> []
+        let report =
+              Log.recordIsolated Log.Warn
+                ( [ "component" Json..= ("WebTransport" :: Text)
+                  , "commandName" Json..= n
+                  , "requestId" Json..= requestIdText
+                  , "correlationId" Json..= requestIdText
+                  , "kind" Json..= ("command_result" :: Text)
+                  , "result" Json..= ("rejected" :: Text)
+                  , "failureStage" Json..= ("decoding" :: Text)
+                  , "errorClass" Json..= ("InvalidCommand" :: Text)
+                  , "eventsAppended" Json..= (0 :: Int)
+                  ]
+                  |> Array.append actorFields
+                )
+                "Command payload could not be decoded"
+                |> Task.ignoreError
+        maybeReported <- CommandResultReceipt.reportIfRegistered requestContext.requestId report
+        case maybeReported of
+          Maybe.Nothing -> report
+          Maybe.Just _ -> Task.yield ()
         let errorResponse =
               Response.Failed
                 { error = [fmt|Invalid JSON format for command #{n}|]
@@ -1301,15 +1502,18 @@ withResolvedClaims ::
   AuthEnabled ->
   Wai.Request ->
   (Wai.Response -> Task Text Wai.ResponseReceived) ->
+  (AuthError -> Task Text Unit) ->
   (Maybe UserClaims -> Task Text Wai.ResponseReceived) ->
   Task Text Wai.ResponseReceived
-withResolvedClaims auth request respond k = do
+withResolvedClaims auth request respond onFailure k = do
   authResult <-
     Middleware.checkAuth (Maybe.Just auth.jwksManager) auth.authConfig Authenticated request
   case authResult of
     Result.Err authErr -> case authErr of
       TokenMissing -> k Maybe.Nothing
-      _            -> Middleware.respondWithAuthError authErr respond
+      _            -> do
+        onFailure authErr
+        Middleware.respondWithAuthError authErr respond
     Result.Ok authContext -> k authContext.claims
 
 

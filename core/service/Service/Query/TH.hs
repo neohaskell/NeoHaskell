@@ -35,6 +35,9 @@ import Service.TH.Boilerplate (emitEmptyInstance, emitJsonAndDerivingBoilerplate
 -- * @type instance EntitiesOf CartSummary = '[CartEntity]@
 -- * @instance Query CartSummary where canAccessImpl = canAccess; canViewImpl = canView@
 -- * @instance KnownHash "CartSummary"@
+-- * Missing 'Show', 'Generic', 'Json.FromJSON', 'Json.ToJSON', and 'ToSchema'
+--   instances. Each is generated only when the query type does not already
+--   have that instance.
 --
 -- Note: You must define 'canAccess' and 'canView' functions in your module.
 -- You must also manually implement 'QueryOf' instances for each

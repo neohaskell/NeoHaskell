@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd -P)"
+
+valid_root() {
+  local candidate="$1"
+  [ -d "$candidate" ] || return 1
+  candidate="$(cd "$candidate" && pwd -P)" || return 1
+  [ -f "$candidate/cabal.project" ] || return 1
+  [ -f "$candidate/nix/hix.nix" ] || return 1
+  printf '%s\n' "$candidate"
+}
+
+if [ -n "${NEOHASKELL_ROOT:-}" ]; then
+  if root="$(valid_root "$NEOHASKELL_ROOT")"; then
+    printf '%s\n' "$root"
+    exit 0
+  fi
+  echo "repo-root: NEOHASKELL_ROOT must contain cabal.project and nix/hix.nix" >&2
+  exit 2
+fi
+
+candidate="$SCRIPT_DIR"
+while [ "$candidate" != / ]; do
+  if root="$(valid_root "$candidate")"; then
+    printf '%s\n' "$root"
+    exit 0
+  fi
+  candidate="$(dirname "$candidate")"
+done
+
+if command -v git >/dev/null 2>&1; then
+  git_root="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel 2>/dev/null || true)"
+  if [ -n "$git_root" ] && root="$(valid_root "$git_root")"; then
+    printf '%s\n' "$root"
+    exit 0
+  fi
+fi
+
+if root="$(valid_root /)"; then
+  printf '%s\n' "$root"
+  exit 0
+fi
+
+echo "repo-root: could not find a repository with cabal.project and nix/hix.nix" >&2
+exit 2

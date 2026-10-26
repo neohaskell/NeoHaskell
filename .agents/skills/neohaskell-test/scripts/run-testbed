@@ -1,0 +1,89 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import math
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+sys.dont_write_bytecode = True
+
+from test_runtime import invoke_toolchain, run_testbed, transcript_destination
+
+
+SCRIPT = Path(__file__).resolve()
+MAX_TIMEOUT_SECONDS = 3600
+
+
+def timeout_value(raw: str) -> float:
+    try:
+        seconds = float(raw)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError("timeout must be a number of seconds") from error
+    if not math.isfinite(seconds) or seconds <= 0 or seconds > MAX_TIMEOUT_SECONDS:
+        raise argparse.ArgumentTypeError(f"timeout must be between 0 and {MAX_TIMEOUT_SECONDS:g} seconds")
+    return seconds
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Run the maintained Hurl testbed suite when its local prerequisites are ready."
+    )
+    parser.add_argument("--strict", action="store_true", help="fail when Hurl or PostgreSQL is unavailable")
+    parser.add_argument("--timeout", type=timeout_value, default=1200, help="seconds allowed for the maintained runner")
+    parser.add_argument("--transcript", help="write the captured run to this path")
+    parser.add_argument("--_inside-toolchain", action="store_true", help=argparse.SUPPRESS)
+    return parser.parse_args()
+
+
+def run_inside(root: Path, strict: bool, timeout: float) -> int:
+    status, reason, result = run_testbed(root, os.environ.copy(), timeout)
+    if result and result.output:
+        output = result.output.decode("utf-8", errors="replace")
+        print(output, end="" if output.endswith("\n") else "\n")
+    if status == "SKIP":
+        print(f"testbed: SKIP: {reason}")
+        print("testbed: INCOMPLETE")
+        return 1 if strict else 0
+    if status == "FAIL":
+        print(f"testbed: FAIL: {reason}")
+        return 1
+    print("testbed: PASS: maintained Hurl testbed runner completed")
+    return 0
+
+
+def main() -> int:
+    args = parse_args()
+    invocation_cwd = Path.cwd().resolve()
+    env = os.environ.copy()
+    try:
+        from test_runtime import resolve_root
+
+        root = resolve_root(SCRIPT.parent, invocation_cwd, env)
+    except (RuntimeError, subprocess.TimeoutExpired) as error:
+        print(f"testbed: {error}", file=sys.stderr)
+        return 2
+
+    if args._inside_toolchain:
+        return run_inside(root, args.strict, args.timeout)
+
+    transcript = transcript_destination(root, "testbed", args.transcript, invocation_cwd)
+    inner_args = ["--timeout", str(args.timeout)]
+    if args.strict:
+        inner_args.append("--strict")
+    return invoke_toolchain(
+        script=SCRIPT,
+        root=root,
+        invocation_cwd=invocation_cwd,
+        env=env,
+        timeout=args.timeout + 180,
+        owner="testbed",
+        transcript=transcript,
+        inner_args=inner_args,
+    )
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

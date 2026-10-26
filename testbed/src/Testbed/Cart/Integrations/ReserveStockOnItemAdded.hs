@@ -12,7 +12,6 @@ import Testbed.Stock.Commands.ReserveStock (ReserveStock (..))
 
 
 data ReserveStockOnItemAdded = ReserveStockOnItemAdded
-  deriving (Generic, Typeable, Show)
 
 
 type instance EntityOf ReserveStockOnItemAdded = CartEntity
