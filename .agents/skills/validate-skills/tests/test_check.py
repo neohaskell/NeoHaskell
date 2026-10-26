@@ -19,7 +19,7 @@ class ResourceTests(unittest.TestCase):
             root = root.parent
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
-        self.root = Path(directory.name)
+        self.root = Path(directory.name).resolve()
 
     def skill(self, name, body='', metadata=None):
         path = self.root / '.agents/skills' / name / 'SKILL.md'
