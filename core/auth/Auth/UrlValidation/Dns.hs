@@ -7,6 +7,7 @@ module Auth.UrlValidation.Dns (
   resolve,
   resolveWith,
   errorMessage,
+  parseConfig,
 ) where
 
 import Array (Array)
@@ -28,7 +29,6 @@ import Task (Task)
 import Task qualified
 import Text (Text)
 import Text qualified
-import Text.Read qualified as GhcRead
 
 
 data DnsConfig = DnsConfig
@@ -59,13 +59,19 @@ getDnsConfig = do
   envResult <- Environment.getVariable "DNS_TIMEOUT_SECONDS" |> Task.asResult
   case envResult of
     Err _ -> Task.yield defaultDnsConfig
-    Ok envValue -> do
-      case GhcRead.readMaybe @Int (Text.toLinkedList envValue) of
-        Nothing -> Task.yield defaultDnsConfig
-        Just seconds ->
-          case seconds >= 1 && seconds <= 60 of
-            True -> Task.yield (DnsConfig {timeoutSeconds = seconds})
-            False -> Task.yield defaultDnsConfig
+    Ok envValue -> Task.yield (parseConfig envValue)
+
+
+parseConfig :: Text -> DnsConfig
+parseConfig envValue =
+  if Text.startsWith "+" envValue
+    then defaultDnsConfig
+    else case Text.toInt envValue of
+      Nothing -> defaultDnsConfig
+      Just seconds ->
+        if seconds >= 1 && seconds <= 60
+          then DnsConfig {timeoutSeconds = seconds}
+          else defaultDnsConfig
 
 
 resolve :: Text -> Task DnsError DnsResult

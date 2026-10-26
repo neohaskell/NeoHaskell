@@ -1,7 +1,7 @@
 module Auth.UrlValidation.DnsSpec where
 
 import AsyncTask qualified
-import Auth.UrlValidation.Dns (DnsActions (..), DnsConfig (..), DnsError (..), DnsRecordType (..), DnsResult (..), errorMessage, resolveWith)
+import Auth.UrlValidation.Dns (DnsActions (..), DnsConfig (..), DnsError (..), DnsRecordType (..), DnsResult (..), errorMessage, parseConfig, resolveWith)
 import Auth.UrlValidation.Dns.RecordType qualified as RecordType
 import Channel qualified
 import Core
@@ -12,6 +12,22 @@ import Test
 spec :: Spec Unit
 spec = parallel do
   describe "Auth.UrlValidation.Dns" do
+    it "accepts bounded DNS timeouts with complete integer input" \_ -> do
+      parseConfig "1" |> shouldBe (DnsConfig {timeoutSeconds = 1})
+      parseConfig "60" |> shouldBe (DnsConfig {timeoutSeconds = 60})
+      parseConfig " 7 " |> shouldBe (DnsConfig {timeoutSeconds = 7})
+
+    it "uses the default for malformed or out-of-range DNS timeouts" \_ -> do
+      let defaultConfig = DnsConfig {timeoutSeconds = 5}
+      parseConfig "0" |> shouldBe defaultConfig
+      parseConfig "61" |> shouldBe defaultConfig
+      parseConfig "-1" |> shouldBe defaultConfig
+      parseConfig "7x" |> shouldBe defaultConfig
+      parseConfig "7 8" |> shouldBe defaultConfig
+      parseConfig "invalid" |> shouldBe defaultConfig
+      parseConfig "+7" |> shouldBe defaultConfig
+      parseConfig "+ 7" |> shouldBe defaultConfig
+
     it "renders each record type only at the host argument boundary" \_ -> do
       RecordType.hostArgument ARecord |> shouldBe "A"
       RecordType.hostArgument AAAARecord |> shouldBe "AAAA"
