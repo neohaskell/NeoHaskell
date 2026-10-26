@@ -165,15 +165,26 @@ jobs:
       - name: Run byte transport fixtures
         run: |
           set -euo pipefail
+          python3 -B -m unittest discover -s core/test/Http -p 'test_transport_fixture.py' -v
           : > transport-fixture.report
-          for mode in tls proxy body secure-internal-body public-trust; do
-            nix develop --command core/test/Http/transport_fixture.py "$mode" | tee -a transport-fixture.report
+          mkdir -p transport-evidence
+          for mode in tls proxy body secure-internal-body public-trust public-body; do
+            report="transport-evidence/$mode.report"
+            nix develop --command core/test/Http/transport_fixture.py "$mode" \
+              --evidence-dir "transport-evidence/$mode" | tee "$report"
+            test "$(grep -cFx "PASS script:core/test/Http/transport_fixture.py#$mode" "$report")" -eq 1
+            test "$(grep -c '^PASS script:' "$report")" -eq 1
+            grep -qFx 'fixture: Http.Client.syntheticTransport' "$report"
+            cat "$report" >> transport-fixture.report
           done
+          test "$(grep -c '^PASS script:' transport-fixture.report)" -eq 6
       - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: transport-fixture-report
-          path: transport-fixture.report
+          path: |
+            transport-fixture.report
+            transport-evidence/
           retention-days: 1
           if-no-files-found: error
 
