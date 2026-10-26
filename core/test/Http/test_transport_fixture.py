@@ -196,9 +196,10 @@ class CancellationTests(unittest.TestCase):
                 wrapper.parent.mkdir(parents=True)
                 wrapper.write_text(f"#!{sys.executable}\nimport os, pathlib, sys, time\n"
                                    "print('child stdout', flush=True)\nprint('child stderr', file=sys.stderr, flush=True)\n"
-                                   "pathlib.Path('child.pid').write_text(str(os.getpid()))\ntime.sleep(60)\n")
+                                   "pathlib.Path('child.tmp').write_text(str(os.getpid()))\n"
+                                   "pathlib.Path('child.tmp').rename('child.pid')\ntime.sleep(60)\n")
                 wrapper.chmod(0o755)
-                runner = "import sys; from pathlib import Path; import transport_fixture as t; t.ROOT=Path(sys.argv[1]); sys.argv=['fixture','body','--evidence-dir',sys.argv[1]]; t.main()"
+                runner = "import signal, sys; signal.signal(signal.SIGINT, signal.default_int_handler); from pathlib import Path; import transport_fixture as t; t.ROOT=Path(sys.argv[1]); sys.argv=['fixture','body','--evidence-dir',sys.argv[1]]; t.main()"
                 process = subprocess.Popen([sys.executable, "-c", runner, temp],
                                            cwd=Path(transport.__file__).parent,
                                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
