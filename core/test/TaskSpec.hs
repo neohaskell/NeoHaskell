@@ -85,27 +85,23 @@ spec = do
         Channel.read entered
         let waitForBlock attempts = do
               waiting <- AsyncTask.isWaitingForStateChange child
-              if waiting
-                then Task.yield unit
-                else
-                  if attempts <= 0
-                    then Test.fail "the protected task did not reach its wait"
-                    else do
-                      AsyncTask.sleep 0
-                      waitForBlock (attempts - 1)
+              Task.unless waiting do
+                if attempts <= 0
+                  then Test.fail "the protected task did not reach its wait"
+                  else do
+                    AsyncTask.sleep 0
+                    waitForBlock (attempts - 1)
         waitForBlock (100000 :: Int)
         requester <- AsyncTask.run do
           AsyncTask.requestThreadTermination child
         let waitForRequest attempts = do
               waiting <- AsyncTask.isWaitingForExceptionDelivery requester
-              if waiting
-                then Task.yield unit
-                else
-                  if attempts <= 0
-                    then Test.fail "the cancellation request did not reach its wait"
-                    else do
-                      AsyncTask.sleep 0
-                      waitForRequest (attempts - 1)
+              Task.unless waiting do
+                if attempts <= 0
+                  then Test.fail "the cancellation request did not reach its wait"
+                  else do
+                    AsyncTask.sleep 0
+                    waitForRequest (attempts - 1)
         waitForRequest (100000 :: Int)
         Channel.write unit release
         requestOutcome <- AsyncTask.waitOutcome requester
@@ -254,14 +250,12 @@ spec = do
         handle <- AsyncTask.run (Channel.read channel :: Task Text Unit)
         let waitForBlock attempts = do
               waiting <- AsyncTask.isWaitingForStateChange handle
-              if waiting
-                then Task.yield unit
-                else
-                  if attempts <= 0
-                    then Test.fail "child never waited for the channel"
-                    else do
-                      AsyncTask.sleep 5
-                      waitForBlock (attempts - 1)
+              Task.unless waiting do
+                if attempts <= 0
+                  then Test.fail "child never waited for the channel"
+                  else do
+                    AsyncTask.sleep 5
+                    waitForBlock (attempts - 1)
         waitForBlock (200 :: Int)
         Channel.write unit channel
         outcome <- AsyncTask.waitOutcome handle
