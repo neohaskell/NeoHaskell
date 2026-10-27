@@ -850,11 +850,11 @@ class Prepare(History):
         first, baseline = self.publish_bootstrap()
         workflow = ".github/workflows/semantic-release.yml"
         fixture = ".agents/skills/neohaskell-release/scripts/releases/test_release.py"
-        self.write(workflow, "      - uses: cachix/install-nix-action@" + "a" * 40 + " # 31.11.2\n")
+        self.write(workflow, "      - uses: cachix/install-nix-action@" + "a" * 40 + " # v31.11.2; supports Intel macOS\n")
         self.write(fixture, 'self.assertIn("cachix/install-nix-action@' + "a" * 40 + '", native)\n')
         self.commit("chore: record current release installer")
         owning_base = self.git("rev-parse", "HEAD")
-        self.write(workflow, "      - uses: cachix/install-nix-action@" + "b" * 40 + " # 31.11.3\n")
+        self.write(workflow, "      - uses: cachix/install-nix-action@" + "b" * 40 + " # 31.11.3; supports Intel macOS\n")
         self.commit("fix(deps): bump cachix/install-nix-action")
         self.write(fixture, 'self.assertIn("cachix/install-nix-action@' + "b" * 40 + '", native)\n')
         self.commit("chore(release): sync installer pin assertion")
@@ -893,6 +893,28 @@ class Prepare(History):
         self.commit("fix(deps): update checks")
         with self.assertRaisesRegex(ValueError, "fragment"):
             release.check_checkout(self.repo, owning_base, "fix(deps): update checks")
+
+    def test_dependency_subject_does_not_hide_runtime_lock_change(self):
+        path = "neo/assets/ide/package-lock.json"
+        old = {"packages": {"node_modules/runtime": {"version": "1.0.0", "dev": False}}}
+        new = {"packages": {"node_modules/runtime": {"version": "1.1.0", "dev": False}}}
+        self.write(path, json.dumps(old))
+        self.commit("chore: record current lockfile")
+        owning_base = self.git("rev-parse", "HEAD")
+        self.write(path, json.dumps(new))
+        self.commit("fix(deps): bump runtime package")
+        with self.assertRaisesRegex(ValueError, "fragment"):
+            release.check_checkout(self.repo, owning_base, "fix(deps): bump runtime package")
+
+    def test_dependency_subject_does_not_hide_unrelated_fixture_change(self):
+        path = ".agents/skills/neohaskell-release/scripts/releases/test_release.py"
+        self.write(path, 'self.assertIn("owner/action@' + "a" * 40 + '", native)\n')
+        self.commit("chore: record current assertion")
+        owning_base = self.git("rev-parse", "HEAD")
+        self.write(path, 'self.assertIn("owner/action@' + "b" * 40 + '", native)\n')
+        self.commit("fix(deps): change assertion")
+        with self.assertRaisesRegex(ValueError, "fragment"):
+            release.check_checkout(self.repo, owning_base, "fix(deps): change assertion")
 
     def test_dependency_subject_does_not_hide_app_change_or_breaking_notice(self):
         self.write("source.txt", "changed app behavior")
