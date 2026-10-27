@@ -6,6 +6,8 @@ Derivation markers inspect declarations already visible to Template Haskell. Pla
 
 `deriveEvent ''EventType` supplies missing `Show`, `Generic`, `Json.FromJSON`, and `Json.ToJSON` instances. Define a custom instance before the marker. Defining it afterwards can duplicate an instance the marker already generated.
 
+`deriveEntityEvents ''EntityType [''FirstPayload, ''SecondPayload]` creates a new parent event sum from the listed payload types. Declare or import the payload types and map each with `EntityOf` before the marker. Define the entity reducer and each payload's `Event` routing instance after the marker. Define any custom payload JSON instances before `deriveEvent` on those payloads. The generated parent receives ordinary JSON instances and cannot replace a handwritten stored event sum without checking historical event bytes.
+
 ## Entities
 
 `deriveEntity ''EntityType ''EventType` supplies missing naming, JSON, type relationships, `Default`, `Entity`, and event routing. Define `initialState`, `update`, and `getEventEntityId` first when the marker must generate their corresponding instances. Existing instances take precedence. Conflicting entity and event mappings fail compilation.
