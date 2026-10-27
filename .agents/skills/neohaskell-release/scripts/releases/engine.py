@@ -86,6 +86,131 @@ def commit_impact(message):
     return "none"
 
 
+def dependency_only_change(repo, before, after):
+    old_tree, new_tree = repo.tree(before), repo.tree(after)
+    paths = {
+        path
+        for path in old_tree.keys() | new_tree.keys()
+        if old_tree.get(path) != new_tree.get(path)
+    }
+    if not paths or any(
+        old_tree.get(path, (None,))[0] not in {"100644", "100755"}
+        or old_tree[path][0] != new_tree.get(path, (None,))[0]
+        or (
+            old_tree[path][0] == "100755"
+            and path != ".agents/skills/neohaskell-release/scripts/releases/test_release.py"
+        )
+        for path in paths
+    ):
+        return False
+
+    action_changes = set()
+    fixture_changes = set()
+    for path in paths:
+        old, new = repo.read(before, path), repo.read(after, path)
+        if path == "neo/assets/ide/package-lock.json":
+            try:
+                old_data, new_data = json.loads(old), json.loads(new)
+                old_packages = old_data["packages"]
+                new_packages = new_data["packages"]
+                if old_packages.keys() != new_packages.keys():
+                    return False
+                changed = [
+                    key for key in old_packages if old_packages[key] != new_packages[key]
+                ]
+                if not changed or any(
+                    key == ""
+                    or old_packages[key].get("dev") is not True
+                    or new_packages[key].get("dev") is not True
+                    or old_packages[key].keys() != new_packages[key].keys()
+                    or {
+                        k: v
+                        for k, v in old_packages[key].items()
+                        if k not in {"version", "resolved", "integrity"}
+                    }
+                    != {
+                        k: v
+                        for k, v in new_packages[key].items()
+                        if k not in {"version", "resolved", "integrity"}
+                    }
+                    for key in changed
+                ):
+                    return False
+                if {
+                    k: v for k, v in old_data.items() if k != "packages"
+                } != {
+                    k: v for k, v in new_data.items() if k != "packages"
+                }:
+                    return False
+            except (TypeError, ValueError, KeyError, AttributeError):
+                return False
+        elif re.fullmatch(r"\.github/workflows/[^/]+\.ya?ml", path):
+            old_lines = old.splitlines(keepends=True)
+            new_lines = new.splitlines(keepends=True)
+            if len(old_lines) != len(new_lines):
+                return False
+            for old_line, new_line in zip(old_lines, new_lines):
+                if old_line == new_line:
+                    continue
+                pattern = r"([ \t]*-[ \t]*uses:[ \t]*)([\w.-]+/[\w.-]+)@([^\s#]+)([^\n]*\n?)"
+                old_match = re.fullmatch(pattern, old_line)
+                new_match = re.fullmatch(pattern, new_line)
+                if (
+                    not old_match
+                    or not new_match
+                    or old_match.group(1, 2) != new_match.group(1, 2)
+                ):
+                    return False
+                if old_match[4] != new_match[4]:
+                    comment = r"([ \t]*#[ \t]*)(v?[0-9]+(?:\.[0-9]+){1,3})([^\n]*\n?)"
+                    old_comment = re.fullmatch(comment, old_match[4])
+                    new_comment = re.fullmatch(comment, new_match[4])
+                    if (
+                        not old_comment
+                        or not new_comment
+                        or old_comment.group(1, 3) != new_comment.group(1, 3)
+                    ):
+                        return False
+                old_ref, new_ref = old_match[3], new_match[3]
+                sha_refs = all(re.fullmatch(r"[0-9a-f]{40}", ref) for ref in (old_ref, new_ref))
+                tag_refs = all(re.fullmatch(r"v?[0-9]+(?:\.[0-9]+){1,3}", ref) for ref in (old_ref, new_ref))
+                tag_refs = tag_refs and old_ref.startswith("v") == new_ref.startswith("v")
+                if not (sha_refs or tag_refs):
+                    return False
+                action_changes.add((old_match[2], old_ref, new_ref))
+        elif path == ".agents/skills/neohaskell-release/scripts/releases/test_release.py":
+            old_lines = old.splitlines(keepends=True)
+            new_lines = new.splitlines(keepends=True)
+            if len(old_lines) != len(new_lines):
+                return False
+            for old_line, new_line in zip(old_lines, new_lines):
+                if old_line == new_line:
+                    continue
+                pattern = r'(\s*self\.assertIn\(")([\w.-]+/[\w.-]+)@([^"\s]+)(", native\)\s*)'
+                old_match = re.fullmatch(pattern, old_line)
+                new_match = re.fullmatch(pattern, new_line)
+                if (
+                    not old_match
+                    or not new_match
+                    or old_match.group(1, 2, 4) != new_match.group(1, 2, 4)
+                ):
+                    return False
+                fixture_changes.add((old_match[2], old_match[3], new_match[3]))
+        else:
+            return False
+    return (
+        bool(action_changes or "neo/assets/ide/package-lock.json" in paths)
+        and fixture_changes <= action_changes
+    )
+
+
+def release_impact(repo, message, before, after):
+    impact = commit_impact(message)
+    if impact != "compatible" or not re.match(r"fix\(deps\):", message):
+        return impact
+    return "none" if dependency_only_change(repo, before, after) else impact
+
+
 def sections(body):
     result, name, lines, fence = {}, None, [], None
     for line in body.splitlines():
@@ -481,7 +606,7 @@ def plan_release(repo, source, group, completed, date, bootstrap=None, check_tag
     if bootstrap is None:
         for sha in repo.commits(base_sha, source):
             message = repo.git("show", "-s", "--format=%B", sha)
-            level = commit_impact(message)
+            level = release_impact(repo, message, sha + "^1", sha)
             impact = max(impact, level, key=IMPACTS.get)
     if impact == "none":
         if bootstrap:
@@ -763,10 +888,21 @@ def check_checkout(repo, base, pr_message=None):
     if before != after:
         raise ValueError("A feature PR cannot rewrite release history")
     revisions = repo.git("rev-list", "--no-merges", base + ".." + head).splitlines()
-    messages = [repo.git("show", "-s", "--format=%B", sha) for sha in revisions]
+    needs = max(
+        (
+            release_impact(
+                repo, repo.git("show", "-s", "--format=%B", sha), sha + "^1", sha
+            )
+            for sha in revisions
+        ),
+        key=IMPACTS.get,
+        default="none",
+    )
     if pr_message:
-        messages.append(pr_message)
-    needs = max((commit_impact(m) for m in messages), key=IMPACTS.get, default="none")
+        merge_base = repo.git("merge-base", base, head)
+        needs = max(
+            needs, release_impact(repo, pr_message, merge_base, head), key=IMPACTS.get
+        )
     changed = set(repo.git("diff", "--name-only", base + "..." + head).splitlines())
     pending = [
         n for n in notes if n["path"] in changed or n["path"] not in repo.tree(base)

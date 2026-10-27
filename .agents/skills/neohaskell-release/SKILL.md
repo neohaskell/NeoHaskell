@@ -59,6 +59,10 @@ Coordinate the protection update with landing the workflow migration. Requiring 
    unchanged supported app contracts, CI work, and docs work use none with a
    concrete reason in Summary. Apply the audit to distinguish app contracts from
    direct-import compatibility caveats.
+   A nonbreaking `fix(deps)` whose entire Git diff matches the release engine's
+   verified dependency-maintenance shapes needs no platform fragment. The
+   engine applies the same rule during PR validation and main release planning.
+   A mixed diff or breaking declaration keeps the normal fragment requirement.
 5. Write a substantive Summary. Breaking fragments require category
    `Breaking changes`, a Migration section with `### Verify`, and a fenced,
    self-contained Agent prompt. Ground edits and checks in the maintained API.
