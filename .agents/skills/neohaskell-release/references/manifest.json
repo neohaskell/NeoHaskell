@@ -660,6 +660,61 @@
       "source_sha": "64c28a77047d47d151ffff30b3dd4925583de18d",
       "target_policy": "native-v2",
       "version": "0.12.0"
+    },
+    {
+      "base_sha": "1b4f1c5d6c2bdb54f91689988f36ba2e6ab271c7",
+      "base_tag": "neo-v0.12.0",
+      "base_version": "0.12.0",
+      "bootstrap": false,
+      "date": "2026-10-27",
+      "group": "platform",
+      "id": "55c41c2a605f35966bf52cef613e20281e321d2ef061ef818c378e553cc30c03",
+      "impact": "compatible",
+      "kind": "release",
+      "notes": [
+        {
+          "category": "Fixed",
+          "commit": "0dfb861c0a3eb914af6e3fe2f49d7c73ed6caf84",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "cffc74fb321a586c5a9661cfa0531e109552e8d99a0a33b383acd546d8cbab1e",
+          "impact": "none",
+          "path": ".changes/how-codemap-source-revalidation.md",
+          "sections": {
+            "Summary": "After a slow local HIE indexing attempt, the `how` codemap keeps returning\ncurrent-source search results. This changes repository tooling only; it does\nnot affect app APIs or require a migration."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: none\ncategory: Fixed\n---\n\n## Summary\n\nAfter a slow local HIE indexing attempt, the `how` codemap keeps returning\ncurrent-source search results. This changes repository tooling only; it does\nnot affect app APIs or require a migration.\n"
+        },
+        {
+          "category": "Improved",
+          "commit": "c37220187793a9e7b1c07d0bd3f99eb38616c417",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "710de87956ac992422d0262d0f2726452d2966e39add9a60c89a15abc3e462be",
+          "impact": "none",
+          "path": ".changes/release-preparation-consolidation.md",
+          "sections": {
+            "Summary": "The release preparation sweep now combines verified older preparations into one current generated PR, closes covered older PRs when the replacement opens, and continues through CI repair, merge, and public release verification. It accepts a revised note only when the new text matches the current source fragment and the revision has been reviewed. This changes the contributor release workflow only. Application behavior and public APIs remain unchanged, so applications need no migration."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: none\ncategory: Improved\n---\n\n## Summary\n\nThe release preparation sweep now combines verified older preparations into one current generated PR, closes covered older PRs when the replacement opens, and continues through CI repair, merge, and public release verification. It accepts a revised note only when the new text matches the current source fragment and the revision has been reviewed. This changes the contributor release workflow only. Application behavior and public APIs remain unchanged, so applications need no migration.\n"
+        },
+        {
+          "category": "Added",
+          "commit": "b6bf53e813498ef4c2c53e5500c9c14f4dd3dbb2",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "15ea150b6bfeaa68136654c6615740e33cfb58b37bce5b6436a394f35cd9274a",
+          "impact": "compatible",
+          "path": ".changes/explicit-entity-events.md",
+          "sections": {
+            "Summary": "New applications can list an entity's event payload types in `deriveEntityEvents`.\nThe marker creates the parent event type and lets commands emit a single payload\ntype without writing its wrapper constructor. Existing event types and stored\nevents are unchanged. An application needs no migration to keep using a handwritten\nevent type."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: compatible\ncategory: Added\n---\n\n## Summary\n\nNew applications can list an entity's event payload types in `deriveEntityEvents`.\nThe marker creates the parent event type and lets commands emit a single payload\ntype without writing its wrapper constructor. Existing event types and stored\nevents are unchanged. An application needs no migration to keep using a handwritten\nevent type.\n"
+        }
+      ],
+      "source_sha": "b6bf53e813498ef4c2c53e5500c9c14f4dd3dbb2",
+      "target_policy": "native-v2",
+      "version": "0.12.1"
     }
   ],
   "recoveries": [],

@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.12.1 — 2026-10-27
+
+### Added
+
+- **Framework**: New applications can list an entity's event payload types in `deriveEntityEvents`.
+The marker creates the parent event type and lets commands emit a single payload
+type without writing its wrapper constructor. Existing event types and stored
+events are unchanged. An application needs no migration to keep using a handwritten
+event type. ([change](https://github.com/neohaskell/NeoHaskell/commit/b6bf53e813498ef4c2c53e5500c9c14f4dd3dbb2))
+
+[Compare changes](https://github.com/neohaskell/NeoHaskell/compare/neo-v0.12.0...neo-v0.12.1)
+
 ## 0.12.0 — 2026-10-26
 
 ### Breaking changes
