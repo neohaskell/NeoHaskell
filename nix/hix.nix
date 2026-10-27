@@ -38,5 +38,6 @@
     poppler_utils
     (python3.withPackages (ps: [ ps.pyyaml ]))
     haskellPackages.hoogle
+    haskellPackages.markdown-unlit
   ];
 }

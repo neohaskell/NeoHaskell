@@ -6,10 +6,10 @@ module ConcurrentMap (
   update,
   getOrInsert,
   getOrInsertIf,
-  getOrInsertIfM,
+  getOrInsertIfTransaction,
   remove,
   removeIf,
-  removeIfM,
+  removeIfTransaction,
   contains,
   clear,
   length,
@@ -31,6 +31,8 @@ import StmContainers.Map qualified as STMMap
 import Task (Task)
 import Task qualified
 import Tuple qualified
+import Transaction (Transaction)
+import Transaction.Internal qualified as TransactionInternal
 
 
 -- | A concurrent map that supports high-throughput concurrent access.
@@ -179,7 +181,7 @@ getOrInsertIf key candidate shouldReplace (ConcurrentMap stmMap) =
   |> Task.fromIO
 
 
--- | Like 'getOrInsertIf', but the predicate can perform STM operations.
+-- | Like 'getOrInsertIf', but the predicate can compose 'Transaction' operations.
 --
 -- This is useful when the predicate needs to read 'AtomicVar' values
 -- inside the value being checked, allowing truly atomic decisions.
@@ -190,32 +192,30 @@ getOrInsertIf key candidate shouldReplace (ConcurrentMap stmMap) =
 -- let shouldReplace existing = do
 --       status <- AtomicVar.peekSTM existing.status
 --       pure (status == Draining)
--- ConcurrentMap.getOrInsertIfM key candidate shouldReplace map
+-- ConcurrentMap.getOrInsertIfTransaction key candidate shouldReplace map
 -- @
-getOrInsertIfM ::
+getOrInsertIfTransaction ::
   forall key value.
   (Hashable key, Eq key) =>
   key ->
   value ->
-  (value -> GhcSTM.STM Bool) ->
+  (value -> Transaction Bool) ->
   ConcurrentMap key value ->
   Task _ (value, Maybe value)
-getOrInsertIfM key candidate shouldReplace (ConcurrentMap stmMap) =
+getOrInsertIfTransaction key candidate shouldReplace (ConcurrentMap stmMap) =
   GhcSTM.atomically do
     existing <- STMMap.lookup key stmMap
     case existing of
       Just existingValue -> do
-        replace <- shouldReplace existingValue
+        let TransactionInternal.Transaction checkReplacement = shouldReplace existingValue
+        replace <- checkReplacement
         if replace
           then do
-            -- Replace existing with candidate
             STMMap.insert candidate key stmMap
             pure (candidate, Just existingValue)
           else
-            -- Keep existing, discard candidate
             pure (existingValue, Just candidate)
       Nothing -> do
-        -- Key doesn't exist, insert candidate
         STMMap.insert candidate key stmMap
         pure (candidate, Nothing)
   |> Task.fromIO
@@ -268,7 +268,7 @@ removeIf key shouldRemove (ConcurrentMap stmMap) =
   |> Task.fromIO
 
 
--- | Like 'removeIf', but the predicate can perform STM operations.
+-- | Like 'removeIf', but the predicate can compose 'Transaction' operations.
 --
 -- This is useful when the predicate needs to read 'AtomicVar' values
 -- inside the value being checked.
@@ -279,21 +279,22 @@ removeIf key shouldRemove (ConcurrentMap stmMap) =
 -- let shouldRemove existing = do
 --       status <- AtomicVar.peekSTM existing.status
 --       pure (status == Draining)
--- ConcurrentMap.removeIfM key shouldRemove map
+-- ConcurrentMap.removeIfTransaction key shouldRemove map
 -- @
-removeIfM ::
+removeIfTransaction ::
   forall key value.
   (Hashable key, Eq key) =>
   key ->
-  (value -> GhcSTM.STM Bool) ->
+  (value -> Transaction Bool) ->
   ConcurrentMap key value ->
   Task _ (Maybe value)
-removeIfM key shouldRemove (ConcurrentMap stmMap) =
+removeIfTransaction key shouldRemove (ConcurrentMap stmMap) =
   GhcSTM.atomically do
     existing <- STMMap.lookup key stmMap
     case existing of
       Just existingValue -> do
-        doRemove <- shouldRemove existingValue
+        let TransactionInternal.Transaction checkRemoval = shouldRemove existingValue
+        doRemove <- checkRemoval
         if doRemove
           then do
             STMMap.delete key stmMap

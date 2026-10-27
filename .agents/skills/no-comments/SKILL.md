@@ -13,7 +13,7 @@ Defer to the comment reviewer's fresh perspective.
 
 Use the caller's files or diff. Otherwise use the current diff against the base branch, default `main`, including the working tree.
 
-Compiler pragmas, preprocessor directives and tool-consumed annotations are not ordinary prose comments. Trace their owning compiler/tool contract. The reviewer flags any required changes for the coordinator; those changes belong in the scoped implementation/configuration work. Public API Haddock, including examples that specify the contract, qualifies for the existing public-contract exception.
+Compiler pragmas, preprocessor directives and tool-consumed annotations are not ordinary prose comments. Trace their owning compiler/tool contract. The reviewer flags any required changes for the coordinator; those changes belong in the scoped implementation/configuration work. Public API Haddock, including examples that specify the contract, qualifies for the existing public-contract exception. For new Haskell modules, also apply [module documentation](../neohaskell-module-docs/SKILL.md). A missing required header is a finding, not a reason to skip its review.
 
 ## Steps
 

@@ -846,6 +846,89 @@ class ArchivedTargetCompatibility(unittest.TestCase):
 
 
 class Prepare(History):
+    def test_dependency_only_action_update_needs_no_platform_release(self):
+        first, baseline = self.publish_bootstrap()
+        workflow = ".github/workflows/semantic-release.yml"
+        fixture = ".agents/skills/neohaskell-release/scripts/releases/test_release.py"
+        self.write(workflow, "      - uses: cachix/install-nix-action@" + "a" * 40 + " # v31.11.2; supports Intel macOS\n")
+        self.write(fixture, 'self.assertIn("cachix/install-nix-action@' + "a" * 40 + '", native)\n')
+        self.commit("chore: record current release installer")
+        owning_base = self.git("rev-parse", "HEAD")
+        self.write(workflow, "      - uses: cachix/install-nix-action@" + "b" * 40 + " # 31.11.3; supports Intel macOS\n")
+        self.commit("fix(deps): bump cachix/install-nix-action")
+        self.write(fixture, 'self.assertIn("cachix/install-nix-action@' + "b" * 40 + '", native)\n')
+        self.commit("chore(release): sync installer pin assertion")
+        self.assertEqual(
+            release.check_checkout(self.repo, owning_base, "fix(deps): bump cachix/install-nix-action"),
+            "release fragments valid",
+        )
+        self.assertIsNone(
+            release.plan_release(self.repo, "HEAD", "platform", {first["id"]: baseline}, "2026-09-16")
+        )
+
+    def test_dev_only_lockfile_update_needs_no_platform_release(self):
+        first, baseline = self.publish_bootstrap()
+        path = "neo/assets/ide/package-lock.json"
+        old = {"packages": {"": {"devDependencies": {"jsdom": "^29"}}, "node_modules/undici": {"version": "7.29.1", "resolved": "old", "integrity": "old", "dev": True}}}
+        new = copy.deepcopy(old)
+        new["packages"]["node_modules/undici"].update({"version": "7.30.1", "resolved": "new", "integrity": "new"})
+        self.write(path, json.dumps(old))
+        self.commit("chore: record current IDE lockfile")
+        owning_base = self.git("rev-parse", "HEAD")
+        self.write(path, json.dumps(new))
+        self.commit("fix(deps): bump IDE development tools")
+        self.assertEqual(
+            release.check_checkout(self.repo, owning_base, "fix(deps): bump IDE development tools"),
+            "release fragments valid",
+        )
+        self.assertIsNone(
+            release.plan_release(self.repo, "HEAD", "platform", {first["id"]: baseline}, "2026-09-16")
+        )
+
+    def test_dependency_subject_does_not_hide_workflow_code_change(self):
+        self.write(".github/workflows/checks.yml", "      - run: echo safe\n")
+        self.commit("chore: record checks workflow")
+        owning_base = self.git("rev-parse", "HEAD")
+        self.write(".github/workflows/checks.yml", "      - run: echo bypass\n")
+        self.commit("fix(deps): update checks")
+        with self.assertRaisesRegex(ValueError, "fragment"):
+            release.check_checkout(self.repo, owning_base, "fix(deps): update checks")
+
+    def test_dependency_subject_does_not_hide_runtime_lock_change(self):
+        path = "neo/assets/ide/package-lock.json"
+        old = {"packages": {"node_modules/runtime": {"version": "1.0.0", "dev": False}}}
+        new = {"packages": {"node_modules/runtime": {"version": "1.1.0", "dev": False}}}
+        self.write(path, json.dumps(old))
+        self.commit("chore: record current lockfile")
+        owning_base = self.git("rev-parse", "HEAD")
+        self.write(path, json.dumps(new))
+        self.commit("fix(deps): bump runtime package")
+        with self.assertRaisesRegex(ValueError, "fragment"):
+            release.check_checkout(self.repo, owning_base, "fix(deps): bump runtime package")
+
+    def test_dependency_subject_does_not_hide_unrelated_fixture_change(self):
+        path = ".agents/skills/neohaskell-release/scripts/releases/test_release.py"
+        self.write(path, 'self.assertIn("owner/action@' + "a" * 40 + '", native)\n')
+        self.commit("chore: record current assertion")
+        owning_base = self.git("rev-parse", "HEAD")
+        self.write(path, 'self.assertIn("owner/action@' + "b" * 40 + '", native)\n')
+        self.commit("fix(deps): change assertion")
+        with self.assertRaisesRegex(ValueError, "fragment"):
+            release.check_checkout(self.repo, owning_base, "fix(deps): change assertion")
+
+    def test_dependency_subject_does_not_hide_app_change_or_breaking_notice(self):
+        self.write("source.txt", "changed app behavior")
+        self.commit("fix(deps): update app runtime")
+        with self.assertRaisesRegex(ValueError, "fragment"):
+            release.check_checkout(self.repo, self.base, "fix(deps): update app runtime")
+
+        _first, baseline = self.publish_bootstrap()
+        self.write(".github/workflows/test.yml", "      - uses: owner/action@v2\n")
+        self.commit("fix(deps)!: update action incompatibly")
+        self.note("breaking-dependency", NOTE, "docs: describe the update")
+        with self.assertRaisesRegex(ValueError, "migration"):
+            release.check_checkout(self.repo, baseline, "fix(deps)!: update action incompatibly")
+
     def test_lockstep_updates_platform_inputs(self):
         plan, revision = self.bootstrap()
         self.assertTrue(release.verify_generated(self.repo, revision, plan))

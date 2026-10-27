@@ -432,22 +432,35 @@ oldSymbol = unit
         hie_file = self.root / "dist-newstyle/build/hie/Task.hie"
         hie_file.parent.mkdir(parents=True)
         hie_file.write_bytes(b"artifact")
+        marker = self.root / ".agents-state/how/hiedb-started"
         fake_hiedb = self.root / "fake-hiedb"
         fake_hiedb.write_text(
-            "#!/usr/bin/env python3\n"
-            "import time\n"
-            "time.sleep(2)\n",
+            "#!/bin/sh\n"
+            "printf started > \"$CODEMAP_ROOT/.agents-state/how/hiedb-started\"\n"
+            "sleep 2\n",
             encoding="utf-8",
         )
         fake_hiedb.chmod(0o755)
+        original_scan = CODEMAP.scan_inventory
+        delayed_final_scan = False
+
+        def delay_final_scan(root, catalog, deadline, include_body=True):
+            nonlocal delayed_final_scan
+            if marker.exists() and not delayed_final_scan:
+                delayed_final_scan = True
+                time.sleep(0.1)
+            return original_scan(root, catalog, deadline, include_body)
+
         started = time.monotonic()
-        with mock.patch.object(CODEMAP, "TOTAL_DEADLINE_SECONDS", 0.25):
-            with mock.patch.dict(
-                os.environ,
-                {"CODEMAP_HIEDB": str(fake_hiedb), "CODEMAP_ROOT": str(self.root)},
-            ):
-                result = self.invoke("symbol", "Task.yield")
-        self.assertLess(time.monotonic() - started, 1.0)
+        with mock.patch.object(CODEMAP, "TOTAL_DEADLINE_SECONDS", 2.0):
+            with mock.patch.object(CODEMAP, "scan_inventory", side_effect=delay_final_scan):
+                with mock.patch.dict(
+                    os.environ,
+                    {"CODEMAP_HIEDB": str(fake_hiedb), "CODEMAP_ROOT": str(self.root)},
+                ):
+                    result = self.invoke("symbol", "Task.yield")
+        self.assertLess(time.monotonic() - started, 2.5)
+        self.assertTrue(delayed_final_scan)
         self.assertEqual(result["provenance"], "current-source-index")
         self.assertTrue(result["results"])
         self.assertEqual(result["compiler_results"], [])

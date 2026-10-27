@@ -447,12 +447,14 @@ runThroughDispatcher scenario dispatcherTimeoutMs = do
   eventStore <- InMemory.new |> Task.mapError (\err -> [fmt|#{err}|])
   dispatcher <-
     Dispatcher.newWithLifecycleConfigWithSource
-      (dispatcherConfig dispatcherTimeoutMs)
-      eventStore
-      (Array.wrap (extractionOutboundRunner (fakeRunner callsVar scenario)))
-      Array.empty
-      (Map.empty |> Map.set "TestCommand" (recordingEndpoint received))
-      context
+      Dispatcher.Setup
+        { settings = (dispatcherConfig dispatcherTimeoutMs),
+          eventStore = eventStore,
+          outboundRunners = (Array.wrap (extractionOutboundRunner (fakeRunner callsVar scenario))),
+          lifecycleRunners = Array.empty,
+          commandEndpoints = (Map.empty |> Map.set "TestCommand" (recordingEndpoint received)),
+          actionContext = context
+        }
   event <- videoUploadedEvent
   Dispatcher.dispatch dispatcher event
   waitForCommand received commandWaitMs
@@ -497,11 +499,9 @@ recordingEndpoint received _sourceMetadata _requestContext commandBytes _respond
 waitForCommand :: ConcurrentVar (Array TestCommand) -> Int -> Task Text Unit
 waitForCommand received remainingMs = do
   commands <- ConcurrentVar.peek received
-  if Array.length commands > 0 || remainingMs <= 0
-    then Task.yield unit
-    else do
-      AsyncTask.sleep 25
-      waitForCommand received (remainingMs - 25)
+  Task.unless (Array.length commands > 0 || remainingMs <= 0) do
+    AsyncTask.sleep 25
+    waitForCommand received (remainingMs - 25)
 
 
 videoUploadedEvent :: Task Text (Event Json.Value)

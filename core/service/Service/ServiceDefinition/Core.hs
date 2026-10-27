@@ -36,6 +36,7 @@ import Service.Transport.Internal (InternalTransport)
 import Service.Transport (Transport (..), EndpointHandler, DispatchHandler, EndpointSchema (..))
 import Service.Command (EntityOf, EventOf)
 import Service.Command.Core (TransportsOf, NamesOf, AppendSymbols, AllKnownSymbols (..), Command (..), Entity (..), Event, KnownMultiTenant (..), NameOf)
+import Service.CommandExecutor.CommandExecutionFailure qualified as CommandExecutionFailure
 import Service.CommandExecutor qualified as CommandExecutor
 import Service.Response qualified as Response
 import Service.EntityFetcher.Core qualified as EntityFetcher
@@ -355,7 +356,13 @@ buildCommandResponseHandler eventStore maybeCache sourceEventMetadata requestCon
         (updateImpl @entity)
         |> Task.mapError toText
   let entityName = EntityName (getSymbolText (Record.Proxy @entityName))
-  result <- CommandExecutor.execute eventStore fetcher entityName sourceEventMetadata requestContext cmdInstance
+  let dependencies = CommandExecutor.ExecutionDependencies {eventStore, entityFetcher = fetcher, entityName}
+  let source = case sourceEventMetadata of
+        Nothing -> CommandExecutor.FromRequest requestContext
+        Just metadata -> CommandExecutor.FromEvent requestContext metadata
+  result <-
+    CommandExecutor.execute dependencies source cmdInstance
+      |> Task.mapError CommandExecutionFailure.message
   Task.yield (Response.fromExecutionResult result)
 
 

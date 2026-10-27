@@ -17,8 +17,9 @@ Apply [NeoHaskell code guidelines](../neohaskell-code-guidelines/SKILL.md) for t
 | Algebraic data types | Put each valid case and its required data in a constructor. If fields become present or absent together, encode those states with constructors; keep genuinely independent absence as `Maybe`. Use named ADT modes when Boolean parameters hide domain meaning; retain `Bool` for genuine predicates and clearly named Boolean fields. Match constructors explicitly when adding a case should force a caller decision; preserve the build's incomplete-pattern checks. |
 | Module-qualified API names | Design the module, type, and operation names together. The module supplies the subject: `Array.first`, `Array.append`, and `Map.get`; avoid repeating that subject in function names. Match a type-centered public module and its principal type, enabling paired imports such as `import Array (Array)` and `import Array qualified`. |
 | Intentional module APIs | Group helpers around the owning type or subsystem and export its intended contract. Keep implementation helpers private. Restrict constructor access when it protects a concrete invariant; expose constructors when caller pattern matching belongs to the contract. |
-| Semantic newtypes | Distinguish values with different meanings even when their representations coincide. A newtype alone proves no value constraint: inspect constructors, decoders, and conversions before trusting an invariant. |
+| Semantic newtypes | Prefer `newtype` over `type` for an abstraction with its own meaning, operations, or ownership. Follow [Type System Discipline](../principle-type-system-discipline/SKILL.md) for module ownership, transparent-alias exceptions, and construction guarantees. |
 | Constructive, total representations | Prefer a shape that carries the required guarantee, such as a head plus rest or pairs. Keep ordinary collections when the contract is total; `Array.first` and `LinkedList.head` already represent absence with `Maybe`. A start plus duration still needs a nonnegative-duration invariant. |
+| Foreign results | Convert a GHC or foreign `Either` with `Result.fromEither` before branching, then match `Ok` and `Err`. Keep raw `Left`/`Right` matching inside the owning Result conversion implementation. Preserve the original error value and evaluation behavior. |
 | Boundary parsing and errors | Decode external `Text`, `Bytes`, or `Json.Value` into the owning type, then establish semantic constraints the decoder does not check. Use `Result` for explained pure failure and `Task` for effects; preserve typed errors until an adapter owns their presentation. Follow [Boundary Discipline](../principle-boundary-discipline/SKILL.md). |
 | Authoritative shapes | Reuse owning types, type families, and existing Generic/Template Haskell derivation. `ToSchema` derives a schema from a Haskell type; it is not an input validator. Keep custom decoding when the contract requires it, and check what a marker already generates before adding instances. |
 | Necessary declarations | Follow [Minimize Reader Load](../principle-minimize-reader-load/SKILL.md). Keep derived capabilities, imports and annotations for demonstrated constraints or operations. Remove automatically supplied and unused boilerplate from consumer examples. |
@@ -30,7 +31,7 @@ Apply [NeoHaskell code guidelines](../neohaskell-code-guidelines/SKILL.md) for t
 | Behavioral and compiler evidence | Exercise real service operations and assert observable results. Use meaningful QuickCheck properties in the owning Hspec suite. Compile consumer fixtures for generated APIs and type guarantees; run generated behavior when the claim is behavioral. Follow [Test Behavior](../principle-test-behavior-not-implementation/SKILL.md) and [Prove It Works](../principle-prove-it-works/SKILL.md). |
 | Framework diagnostics | Use `Log.debug`, `Log.info`, `Log.warn`, or `Log.critical` for runtime diagnostics. Framework internals can use `Log.withScope` for structured context. Include useful operation identifiers, preserve redaction, and make compiler/generator failures explain the expected contract and repair. |
 
-Run compiler and test commands through `scripts/with-toolchain <command> <arguments...>`. The wrapper uses the checked shell witness, enters the project Nix shell when needed, and labels an unpinned host fallback. It preserves argument boundaries and command exit status.
+Run Haskell tool commands through `nix develop --command` as specified by [Nix Haskell tools](../nix-haskell-tools/SKILL.md).
 
 Use [NeoHaskell tests](../neohaskell-test/SKILL.md) for current suite, doctest and testbed entrypoints. Capture runtime or compiler contracts with [Regression evidence](../regression-evidence/SKILL.md). For event-store behavior, select relevant [controlled-fault regression recipes](../event-store-regression/SKILL.md) alongside the broader maintained tests.
 
@@ -39,5 +40,9 @@ For framework export, TH marker or generated-API changes, follow
 before implementation and verification. It owns the starter and testbed migration
 contract. Apply the [application example rules](../neohaskell-code-guidelines/SKILL.md#application-examples)
 to consumer code, including fixtures that represent an app.
+
+For new modules, follow [module documentation](../neohaskell-module-docs/SKILL.md). For extension changes or compiler/linter mismatches, follow [language extensions](../neohaskell-language-extensions/SKILL.md).
+
+Read [readable services](references/readable-services.md) when changing service orchestration, internal outcomes, exception ownership, JSON codecs, or temporary test resources.
 
 Read [patterns](references/patterns.md) when designing module APIs, functions, and pipelines or working on boundary invariants, service ownership, deferred execution, concurrency, generated consumers, or diagnostics.

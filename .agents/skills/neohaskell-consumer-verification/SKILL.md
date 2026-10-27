@@ -1,6 +1,6 @@
 ---
 name: neohaskell-consumer-verification
-description: Verify generated projects, starter and testbed freshness, or the embedded IDE bundle. Use when framework exports, Template Haskell markers, generated APIs, starter dependencies, CLI generation or IDE sources change.
+description: Verify generated projects, starter and testbed freshness, source-owned agent guidance, or the embedded IDE bundle. Use when framework exports, Template Haskell markers, generated APIs, starter dependencies, CLI generation, guidance accuracy or IDE sources change.
 ---
 
 # NeoHaskell consumer verification
@@ -102,3 +102,46 @@ The CI workflow runs both owner self-tests and the applicable full check. Every
 PR runs the generated-project contract, including drafts and documentation
 changes. The aggregate gate requires its success. Component-specific draft and
 path selection does not permit skipping the generated-project contract.
+
+## Source-owned agent guidance
+
+Before opening a PR that changes a consumer-facing framework contract, generated
+CLI behavior, or `docs/agent/`, compare the changed source with the private
+capability registry and published topic pages. Read the maintained implementation behind each
+affected claim. Update stale pages, examples, scenarios, and evidence records.
+For each affected capability, report the updated page or explain why its guide
+still matches the source. Review explanatory fragments against their cited
+source; compilation cannot prove prose claims.
+
+Follow [Agent guide authoring](../agent-guide-authoring/SKILL.md) for the
+published pages. Keep implementation paths and evidence in this skill's private
+registry so generated applications receive only consumer guidance.
+
+Run the local corpus check from the repository root inside the pinned Nix shell:
+
+```sh
+nix develop --command .agents/skills/neohaskell-consumer-verification/scripts/agent-docs-check
+nix develop --command .agents/skills/neohaskell-consumer-verification/scripts/agent-docs-check --verify-evidence
+```
+
+The gate validates the published `docs/agent/manifest.json` page inventory,
+local links, and the private capability registry at
+`references/agent-docs-evidence.json`. Each required capability retains a
+source file and maintained Hurl scenario in that registry. The gate rejects
+framework repository paths in published guidance. It compiles every runnable
+Haskell fence with `markdown-unlit`
+against the checkout's `nhcore` and `nhintegrations` packages. Use `haskell
+ignore` only for fragments that need surrounding application definitions.
+Record each such fragment and its owning source in `references/agent-docs-evidence.json`.
+
+`--structure-only` provides quick feedback but does not compile examples.
+Run the default check for each affected PR. For a corpus-wide change or a
+change to the capability evidence, run `--verify-evidence`. It also runs the
+service and auth specs, the maintained Hurl testbed, and the generated-project
+contract. For a narrower runtime change, run the affected maintained scenario
+or suite and record the command and result in the PR. Use a fresh PostgreSQL
+database for repeated local evidence runs. The testbed retains events across
+runs and uses in-memory query projections.
+
+If you change the corpus validator, run its local cases with
+`python3 .agents/skills/neohaskell-consumer-verification/tests/agent_docs_check_cases.py`.
