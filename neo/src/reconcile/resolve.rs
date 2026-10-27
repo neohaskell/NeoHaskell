@@ -6,6 +6,7 @@ use crate::config::{NeoConfig, ProjectKind};
 use crate::errors::NeoError;
 use crate::network::{NeoPackages, PackageTag};
 use crate::reconcile::dep_spec::{self, DependencyDecl, NpmRange};
+use crate::reconcile::source::FrameworkSource;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum DependencySource {
@@ -20,12 +21,11 @@ pub struct ResolvedDependency {
     pub source: DependencySource,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct ResolvedConfig {
     pub name: String,
     pub version: String,
-    pub neo_version: String,
-    pub neo_sha: String,
+    pub framework_source: FrameworkSource,
     pub description: Option<String>,
     pub author: Option<String>,
     pub license: String,
@@ -33,8 +33,7 @@ pub struct ResolvedConfig {
     pub dependencies: Vec<ResolvedDependency>,
 }
 
-pub async fn resolve(config: &NeoConfig) -> miette::Result<ResolvedConfig> {
-    let neo_sha = resolve_neo_sha(&config.neo_version).await?;
+pub async fn resolve(config: &NeoConfig, framework_source: FrameworkSource) -> miette::Result<ResolvedConfig> {
 
     // Parse every dep first so we can skip the registry fetch when no bare deps are present.
     let mut parsed: Vec<(String, DependencyDecl)> = Vec::new();
@@ -83,21 +82,13 @@ pub async fn resolve(config: &NeoConfig) -> miette::Result<ResolvedConfig> {
     Ok(ResolvedConfig {
         name: config.name.clone(),
         version: config.version.clone(),
-        neo_version: config.neo_version.clone(),
-        neo_sha,
+        framework_source,
         description: config.description.clone(),
         author: config.author.clone(),
         license: config.license.clone(),
         kind: config.kind,
         dependencies: deps,
     })
-}
-
-async fn resolve_neo_sha(version: &str) -> miette::Result<String> {
-    if std::env::var("NEO_SKIP_NETWORK").is_ok() {
-        return Ok("deadbeef".to_string());
-    }
-    crate::network::fetch_neo_sha(version).await
 }
 
 pub(crate) fn resolve_decl(
@@ -493,7 +484,7 @@ mod tests {
             source_content: None,
         };
         unsafe { std::env::set_var("NEO_SKIP_NETWORK", "1"); }
-        let resolved = resolve(&config).await.unwrap();
+        let resolved = resolve(&config, FrameworkSource::OfflinePlaceholder).await.unwrap();
         assert_eq!(resolved.dependencies.len(), 1);
         assert_eq!(resolved.dependencies[0].name, "base");
     }
@@ -586,7 +577,7 @@ mod tests {
             source_content: None,
         };
         unsafe { std::env::set_var("NEO_SKIP_NETWORK", "1"); }
-        let resolved = resolve(&config).await.unwrap();
+        let resolved = resolve(&config, FrameworkSource::OfflinePlaceholder).await.unwrap();
         // `name == "neo"` skip is applied after prefix strip, so `hackage:neo` is filtered too.
         assert_eq!(resolved.dependencies.len(), 0);
     }
@@ -609,8 +600,8 @@ mod tests {
             source_content: None,
         };
         unsafe { std::env::set_var("NEO_SKIP_NETWORK", "1"); }
-        let r1 = resolve(&config).await.unwrap();
-        let r2 = resolve(&config).await.unwrap();
+        let r1 = resolve(&config, FrameworkSource::OfflinePlaceholder).await.unwrap();
+        let r2 = resolve(&config, FrameworkSource::OfflinePlaceholder).await.unwrap();
         let names1: Vec<_> = r1.dependencies.iter().map(|d| &d.name).collect();
         let names2: Vec<_> = r2.dependencies.iter().map(|d| &d.name).collect();
         assert_eq!(names1, names2);
@@ -634,7 +625,7 @@ mod tests {
             source_content: None,
         };
         unsafe { std::env::set_var("NEO_SKIP_NETWORK", "1"); }
-        let resolved = resolve(&config).await.unwrap();
+        let resolved = resolve(&config, FrameworkSource::OfflinePlaceholder).await.unwrap();
         let names: Vec<_> = resolved.dependencies.iter().map(|d| d.name.clone()).collect();
         assert_eq!(names, vec!["alpha", "mu", "zeta"]);
     }

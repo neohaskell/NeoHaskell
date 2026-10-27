@@ -206,7 +206,7 @@ jobs:
           name: dist-newstyle
           path: dist-newstyle
       - name: Run nhcore-test-auth
-        run: LOG_LEVEL=Warn nix develop --command cabal test nhcore-test-auth
+        run: LOG_LEVEL=Warn nix develop --command cabal test nhcore-test-auth nhcore-test-auth-dns
 
   test-integration:
     needs: [build]
@@ -286,7 +286,7 @@ jobs:
           name: dist-newstyle
           path: dist-newstyle
       - name: Restore executable permissions
-        run: find dist-newstyle/build -type f -name 'nhtestbed' -exec chmod +x {} +
+        run: find dist-newstyle/build -type f \( -name 'nhtestbed' -o -name 'nhoauthtestbed' \) -exec chmod +x {} +
       - name: Start PostgreSQL
         run: |
           docker run -d --name neohaskell_postgres \

@@ -85,9 +85,9 @@ instance Service.Query.Core.Query OwnerOnlyQuery where
   canViewImpl user query = case user of
     Nothing -> Just Unauthenticated
     Just claims ->
-      case claims.sub == query.ownerId of
-        True -> Nothing
-        False -> Just Forbidden
+      if claims.sub == query.ownerId
+        then Nothing
+        else Just Forbidden
 
 
 -- | Test query type - requires specific permission
@@ -109,9 +109,9 @@ instance Service.Query.Core.Query PermissionQuery where
   canAccessImpl user = case user of
     Nothing -> Just Unauthenticated
     Just claims ->
-      case claims.permissions |> Array.contains "admin:read" of
-        True -> Nothing
-        False -> Just (InsufficientPermissions ["admin:read"])
+      if claims.permissions |> Array.contains "admin:read"
+        then Nothing
+        else Just (InsufficientPermissions ["admin:read"])
   canViewImpl _ _ = Nothing
 
 

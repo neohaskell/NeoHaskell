@@ -12,7 +12,6 @@ import Array qualified
 import Basics
 import Bytes (Bytes)
 import Bytes qualified
-import Control.Exception qualified as GhcException
 import Data.ByteString (ByteString)
 import Data.ByteString qualified as GhcBS
 import Data.CaseInsensitive qualified as CI
@@ -65,10 +64,7 @@ sendRaw ::
 sendRaw method options body = do
   let verb = Http.methodName method
   Log.debug [fmt|HTTP #{verb} (raw/internal)|] |> Task.ignoreError
-  result <-
-    sendRawInternalIO method options body
-      |> Task.fromFailableIO @HttpClient.HttpException
-      |> Task.mapError sanitizeInternalHttpError
+  result <- sendRawInternal method options body
   case result of
     Err error -> Task.throw error
     Ok response -> Task.yield response
@@ -82,18 +78,26 @@ rawManager = GhcUnsafe.unsafePerformIO do
 
 
 -- | Own the response until its bounded body has been read or rejected.
-sendRawInternalIO :: Method -> Http.Request -> Bytes -> GhcIO.IO (Result Http.Error (Http.Response Bytes))
-sendRawInternalIO method options body = do
-  baseReq <- parseRequestUrl options
+sendRawInternal :: Method -> Http.Request -> Bytes -> Task Http.Error (Result Http.Error (Http.Response Bytes))
+sendRawInternal method options body = Task.withCancellationDeferred \restore -> do
+  baseReq <-
+    parseRequestUrl options
+      |> Task.fromFailableIO @HttpClient.HttpException
+      |> Task.mapError sanitizeInternalHttpError
   let req =
         baseReq
           |> applyRequestOptions options
           |> Http.applyMethodAndBody method body
           |> setRequestIgnoreStatus
-  GhcException.bracket
-    (HttpClient.responseOpen req rawManager)
-    HttpClient.responseClose
-    (readLimitedResponse method options)
+  response <-
+    HttpClient.responseOpen req rawManager
+      |> Task.fromFailableIO @HttpClient.HttpException
+      |> Task.mapError sanitizeInternalHttpError
+  readLimitedResponse method options response
+    |> Task.fromFailableIO @HttpClient.HttpException
+    |> Task.mapError sanitizeInternalHttpError
+    |> restore
+    |> Task.finally (HttpClient.responseClose response |> Task.fromIO)
 
 
 -- | HEAD bypasses advertised length; delivered chunks still obey the byte cap.
@@ -194,9 +198,9 @@ sanitizeInternalHttpError exception = do
           let truncated = case HttpSimple.parseRequest url of
                 GhcEither.Left _ -> "<malformed URL>"
                 GhcEither.Right req -> do
-                  let scheme = case HttpClient.secure req of
-                        True -> "https://" :: Text
-                        False -> "http://" :: Text
+                  let scheme = if HttpClient.secure req
+                        then "https://" :: Text
+                        else "http://" :: Text
                   let host = toText (show (HttpClient.host req))
                   scheme |> Text.append host
           [fmt|Invalid URL: #{truncated}|]

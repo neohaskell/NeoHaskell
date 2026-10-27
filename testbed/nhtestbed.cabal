@@ -1,6 +1,6 @@
 cabal-version: 3.4
 name: nhtestbed
-version: 0.11.0
+version: 0.12.0
 synopsis: End-to-End Testbed for NeoHaskell
 description: A real NeoHaskell application that demonstrates features and runs blackbox acceptance tests.
 homepage: https://neohaskell.org
@@ -80,6 +80,19 @@ library
     Testbed.Examples.HttpIntegration
     Testbed.Examples.OpenRouterIntegration
     Testbed.Examples.PdfExtraction
+    Testbed.Integrations.JsonSideEffect
+    Testbed.ExternalEffect.Core
+    Testbed.ExternalEffect.Commands.RecordExternalEffect
+    Testbed.ExternalEffect.Commands.RequestExternalEffect
+    Testbed.ExternalEffect.Outbound
+    Testbed.ExternalEffect.Query
+    Testbed.ExternalEffect.Service
+    Testbed.AccountConnection.Core
+    Testbed.AccountConnection.Commands.RecordAccountConnection
+    Testbed.AccountConnection.Outbound
+    Testbed.AccountConnection.Query
+    Testbed.AccountConnection.Service
+    OAuth2App
 
   hs-source-dirs: src
   default-language: GHC2021
@@ -87,6 +100,15 @@ library
 executable nhtestbed
   import: common_cfg
   main-is: Launcher.hs
+  build-depends:
+    nhtestbed
+
+  hs-source-dirs: launcher
+  default-language: GHC2021
+
+executable nhoauthtestbed
+  import: common_cfg
+  main-is: OAuth2Launcher.hs
   build-depends:
     nhtestbed
 
