@@ -1,6 +1,7 @@
 module Testbed.Cart.Core (
   CartEntity (..),
   CartEvent (..),
+  ItemAddedPayload (..),
   initialState,
 ) where
 
@@ -70,6 +71,30 @@ data CartEvent
         quantity :: Int
       }
   deriving (Generic, Show)
+
+
+data ItemAddedPayload = ItemAddedPayload
+  { itemAddedEntityId :: Uuid,
+    itemAddedStockId :: Uuid,
+    itemAddedQuantity :: Int
+  }
+
+
+instance EventVariantOf CartEvent ItemAddedPayload where
+  fromVariant payload =
+    ItemAdded
+      { entityId = payload.itemAddedEntityId,
+        stockId = payload.itemAddedStockId,
+        quantity = payload.itemAddedQuantity
+      }
+  toVariant eventValue = case eventValue of
+    ItemAdded {entityId, stockId, quantity} ->
+      Just ItemAddedPayload
+        { itemAddedEntityId = entityId,
+          itemAddedStockId = stockId,
+          itemAddedQuantity = quantity
+        }
+    CartCreated {} -> Nothing
 
 
 getEventEntityId :: CartEvent -> Uuid

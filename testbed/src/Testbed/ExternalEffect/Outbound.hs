@@ -10,7 +10,7 @@ import Integration qualified
 import Integration.Http qualified as Http
 import Json qualified
 import Result qualified as Result
-import Service.OutboundIntegration.TH (outboundIntegration)
+import Service.OutboundIntegration.TH (outboundIntegrationFullEvent)
 import Testbed.ExternalEffect.Commands.RecordExternalEffect (RecordExternalEffect (..))
 import Testbed.ExternalEffect.Core
 import Testbed.Integrations.JsonSideEffect qualified as JsonSideEffect
@@ -83,4 +83,4 @@ mapSuccess effectId response =
         RecordEffectFailure {effectId = effectId}
 
 
-outboundIntegration ''ExternalEffectOutbound
+outboundIntegrationFullEvent ''ExternalEffectOutbound

@@ -138,6 +138,8 @@ jobs:
           set -o pipefail
           LOG_LEVEL=Warn nix develop --command cabal test nhcore-test-core \
             --test-show-details=direct | tee nhcore-test-core.report
+      - name: Check outbound payload compiler diagnostics
+        run: nix develop --command python3 core/test/Service/OutboundIntegration/check_compiler_rejections.py
       - uses: actions/upload-artifact@v7
         with:
           name: nhcore-test-core-report

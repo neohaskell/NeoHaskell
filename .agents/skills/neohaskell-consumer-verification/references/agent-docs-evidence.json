@@ -163,8 +163,8 @@
       "ordinal": 1,
       "fragment_sha256": "29714cbc79465aeb795a1d9e134f7eef0bd588295db5cffcf6eb622d8fc22679",
       "source": "core/service/Service/Application.hs",
-      "source_sha256": "cda59a281ea3fad3680b4761faccc529f15cb457673f18eae4cc24663820a2cb",
-      "reason": "Checked builder names, factory types, registration order, and callback dispatch after the command dispatcher refactor. The consumer supplies the base app and persistent store."
+      "source_sha256": "75cff52771e33f3e7839881f1aa97f13ee0530cdc0274f9abfa8ecb3e6cdae3f",
+      "reason": "Checked OAuth2 builder names, factory types, registration order, and callback dispatch. The outbound handler constraint change does not alter these builders. The consumer supplies the base app and persistent store."
     },
     {
       "page": "advanced-oauth2.md",

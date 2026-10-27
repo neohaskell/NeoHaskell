@@ -20,7 +20,7 @@ import Service.Event.EntityName (EntityName (..))
 import Service.EventStore.InMemory qualified as InMemory
 import Service.Integration.DispatchRegistry qualified as DispatchRegistry
 import Service.OutboundIntegration.Core (OutboundIntegration (..))
-import Service.OutboundIntegration.TH (outboundIntegration)
+import Service.OutboundIntegration.TH (outboundIntegrationFullEvent)
 import Service.TestHelpers (insertTypedEvent)
 import Task qualified
 import Test
@@ -119,7 +119,7 @@ handleEvent entity event =
     _ -> Integration.none
 
 
-outboundIntegration ''TestRuntimeHandler
+outboundIntegrationFullEvent ''TestRuntimeHandler
 
 
 makeContext :: Task Text Integration.ActionContext

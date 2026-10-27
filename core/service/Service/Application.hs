@@ -138,6 +138,7 @@ import Service.Application.Integrations qualified as Integrations
 import Service.Application.Transports qualified as Transports
 import Service.Integration.Dispatcher qualified as Dispatcher
 import Service.OutboundIntegration.Core (OutboundIntegration (..))
+import EventVariantOf (EventVariantOf)
 import Service.Integration.Types (OutboundRunner, OutboundLifecycleRunner)
 import Service.Transport (Transport (..), QueryEndpointHandler)
 import Service.Transport.Web qualified as Web
@@ -1445,7 +1446,7 @@ withOutbound ::
   ( OutboundIntegration handler
   , entity ~ EntityOf handler
   , event ~ EventOf entity
-  , event ~ HandledEvent handler
+  , EventVariantOf event (HandledEvent handler)
   , Json.FromJSON entity
   , Json.FromJSON event
   , Json.FromJSON (EventOf entity)

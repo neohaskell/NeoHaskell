@@ -9,7 +9,7 @@ import Auth.SecretStore (SecretStore (..), TokenKey (..))
 import Basics
 import Core
 import Integration qualified
-import Service.OutboundIntegration.TH (outboundIntegration)
+import Service.OutboundIntegration.TH (outboundIntegrationFullEvent)
 import Task qualified
 import Testbed.AccountConnection.Commands.RecordAccountConnection (
   RecordAccountConnection (..),
@@ -50,4 +50,4 @@ observeTokenStorage userId =
     ]
 
 
-outboundIntegration ''AccountTokenPresenceObserver
+outboundIntegrationFullEvent ''AccountTokenPresenceObserver

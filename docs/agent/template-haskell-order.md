@@ -28,4 +28,4 @@ Declare the row type, `canAccess`, and `canView` before `deriveQuery`. The marke
 
 `defineConfig` creates the config type itself from field declarations. Do not add a duplicate data declaration.
 
-`outboundIntegration ''HandlerType` follows the handler type, its `EntityOf` equation, and `handleEvent`.
+`outboundIntegration ''HandlerType` follows the handler type, its `EntityOf` equation, a visible `EventVariantOf` mapping, and `handleEvent :: Entity -> Payload -> Integration.Outbound`. The marker infers the payload from that signature. Use `outboundIntegrationFullEvent` for an existing handler that still accepts the full event type.
