@@ -532,6 +532,7 @@ test-suite nhcore-test
     Service.CommandExecutor.TH.SumCommandFixture
     Service.CommandExecutor.THSpec
     Service.Event.THSpec
+    Service.Event.EntityEventsSpec
     Service.Entity.THSpec
     Service.Entity.TH.FreshFixture
     Service.Entity.TH.NoShowFixture
@@ -651,6 +652,7 @@ test-suite nhcore-test-service
     Service.CommandHandlerSpec
     Service.CommandSpec
     Service.Event.THSpec
+    Service.Event.EntityEventsSpec
     Service.Entity.THSpec
     Service.Entity.TH.FreshFixture
     Service.Entity.TH.NoShowFixture

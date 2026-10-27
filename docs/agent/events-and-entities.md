@@ -25,8 +25,12 @@ update event entity = case event of
 
 ## Event changes
 
-For a new event, add its payload, add a constructor to the event sum, add its routing branch, and add its reducer branch.
+For a handwritten event sum, add the new constructor, its routing branch, and its reducer branch.
 
 `deriveEvent` supplies serialization and stock instances that are missing. `deriveEntity` supplies missing entity plumbing, while application code still defines state transitions and event routing. Read [marker order](template-haskell-order.md) before using either marker.
+
+For a new entity whose events are separate payload types, call `deriveEntityEvents ''Proposal [''ProposalCreated, ''PdfUploaded]` after declaring or importing both payloads and their `EntityOf` mappings. The marker generates `ProposalEvent`, one constructor per listed payload, `EventOf Proposal`, payload injection and extraction, routing through each payload's `Event` instance, and JSON instances for the parent event. Define the entity reducer and each payload's `Event` routing instance after the marker so the reducer can match the generated constructors. A command can pass one payload type directly to `Decider.acceptNew` or `Decider.acceptExisting`; use `event` around each payload in a mixed list. The marker does not read or evaluate an Event Model.
+
+Generated parent events use tagged JSON even when the list has one payload. Adding another payload does not remove that tag from earlier events.
 
 Existing stored events are inputs to future replays. A change to their JSON representation or reducer semantics affects reconstruction. Verify old histories when changing that contract.

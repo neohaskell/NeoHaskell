@@ -147,8 +147,8 @@
       "ordinal": 1,
       "fragment_sha256": "ced19a37a6d99810c1510980b07e8d03dcc313e612db53daa6d7be21bb953880",
       "source": "core/service/Service/Transport/Mcp.hs",
-      "source_sha256": "c993bdaae3f433115ca93e2ebca44bd1486c70f79938ece3d6ffdc814630f9fc",
-      "reason": "Checked McpTransport declaration and rejected-payload handling. The command type equation needs its declarations and transport imports."
+      "source_sha256": "548569c4e78d9d42bab89b3c0304c392d02241a4b1181868286e33c03760a9ee",
+      "reason": "Checked McpTransport fields, rejected-payload handling, and the current JSON-RPC standard input and output loop. The command type equation needs its declarations and transport imports."
     },
     {
       "page": "advanced-side-effects.md",
@@ -163,8 +163,8 @@
       "ordinal": 1,
       "fragment_sha256": "29714cbc79465aeb795a1d9e134f7eef0bd588295db5cffcf6eb622d8fc22679",
       "source": "core/service/Service/Application.hs",
-      "source_sha256": "9f54aa527b19c3596d9c188b5da723c420cb63ef67bf3260969449ab8640ed86",
-      "reason": "Checked builder names, factory types, registration order, and callback dispatch. The consumer supplies the base app and persistent store."
+      "source_sha256": "cda59a281ea3fad3680b4761faccc529f15cb457673f18eae4cc24663820a2cb",
+      "reason": "Checked builder names, factory types, registration order, and callback dispatch after the command dispatcher refactor. The consumer supplies the base app and persistent store."
     },
     {
       "page": "advanced-oauth2.md",

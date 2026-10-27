@@ -31,6 +31,7 @@ import Service.Integration.SelectionSpec qualified
 import Service.Integration.WireupSpec qualified
 import Service.Entity.THSpec qualified
 import Service.Event.THSpec qualified
+import Service.Event.EntityEventsSpec qualified
 import Service.Query.DefinitionSpec qualified
 import Service.Query.EndpointSpec qualified
 import Service.Query.RegistrySpec qualified
@@ -94,6 +95,7 @@ serviceSpecs = do
   Hspec.describe "Service.Integration.Wireup" Service.Integration.WireupSpec.spec
   Hspec.describe "Service.Entity.TH" Service.Entity.THSpec.spec
   Hspec.describe "Service.Event.TH" Service.Event.THSpec.spec
+  Hspec.describe "Service.Event.EntityEvents" Service.Event.EntityEventsSpec.spec
   Hspec.describe "Service.Query.Definition" Service.Query.DefinitionSpec.spec
   Hspec.describe "Service.Query.Endpoint" Service.Query.EndpointSpec.spec
   Hspec.describe "Service.Query.Registry" Service.Query.RegistrySpec.spec
