@@ -19,7 +19,7 @@ class ResourceTests(unittest.TestCase):
             root = root.parent
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
-        self.root = Path(directory.name)
+        self.root = Path(directory.name).resolve()
 
     def skill(self, name, body='', metadata=None):
         path = self.root / '.agents/skills' / name / 'SKILL.md'
@@ -95,6 +95,65 @@ class ResourceTests(unittest.TestCase):
         common.write_text('unrelated')
         self.assertEqual(check.validate(self.root, skill=path.parent)['errors'], [])
         self.assertIn('move skill resources', '\n'.join(check.validate(self.root)['errors']))
+
+    def test_installed_dependency_documents_are_excluded_in_all_selection_modes(self):
+        skill = self.skill('example')
+        dependency = skill.parent / 'scripts/node_modules/package/node_modules/nested/README.md'
+        dependency.parent.mkdir(parents=True)
+        dependency.write_text('[upstream](missing.md)')
+        for selection in ({}, {'skill': skill.parent}, {'skills_root': skill.parent.parent}):
+            with self.subTest(selection=selection):
+                result = check.validate(self.root, **selection)
+                self.assertEqual(result['errors'], [])
+                self.assertEqual(result['documents'], 1)
+
+    def test_untracked_authored_document_next_to_dependencies_is_still_checked(self):
+        skill = self.skill('example')
+        scripts = skill.parent / 'scripts'
+        dependency = scripts / 'node_modules/package/README.md'
+        dependency.parent.mkdir(parents=True)
+        dependency.write_text('[upstream](missing-upstream.md)')
+        authored = scripts / 'usage.md'
+        authored.write_text('[owned](missing-owned.md)')
+        result = check.validate(self.root)
+        self.assertEqual(result['documents'], 2)
+        self.assertEqual(result['errors'], [f'{authored}: missing link missing-owned.md'])
+
+    def test_authored_links_into_missing_dependency_resources_still_fail(self):
+        skill = self.skill('example', '[dependency](scripts/node_modules/package/missing.md)')
+        self.assertEqual(check.validate(self.root)['errors'], [
+            f'{skill}: missing link scripts/node_modules/package/missing.md'
+        ])
+
+    def test_external_git_free_skills_exclude_only_installed_dependency_documents(self):
+        skill = self.skill('example')
+        external = self.root / 'external'
+        skill.parent.parent.rename(external)
+        skill = external / 'example/SKILL.md'
+        dependency = skill.parent / 'node_modules/package/README.md'
+        dependency.parent.mkdir(parents=True)
+        dependency.write_text('[upstream](missing.md)')
+        for selection in ({'skill': skill.parent}, {'skills_root': external}):
+            with self.subTest(selection=selection):
+                result = check.validate(self.root, **selection)
+                self.assertEqual(result['errors'], [])
+                self.assertEqual(result['documents'], 1)
+        authored = skill.parent / 'usage.md'
+        authored.write_text('[owned](missing-owned.md)')
+        for selection in ({'skill': skill.parent}, {'skills_root': external}):
+            with self.subTest(selection=selection):
+                self.assertEqual(check.validate(self.root, **selection)['errors'], [
+                    f'{authored}: missing link missing-owned.md'
+                ])
+
+    def test_similarly_named_authored_directory_is_still_checked(self):
+        skill = self.skill('example')
+        authored = skill.parent / 'node_modules-notes/usage.md'
+        authored.parent.mkdir()
+        authored.write_text('[owned](missing.md)')
+        result = check.validate(self.root)
+        self.assertEqual(result['documents'], 2)
+        self.assertEqual(result['errors'], [f'{authored}: missing link missing.md'])
 
 
 if __name__ == '__main__':

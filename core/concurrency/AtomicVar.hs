@@ -7,12 +7,12 @@
 --
 -- * Non-blocking reads and writes
 -- * Composable atomic transactions (multiple operations execute as one)
--- * Pure reads via 'peekSTM' for use inside STM transactions (e.g., ConcurrentMap predicates)
+-- * Composable reads via 'peekSTM' for use inside concurrent map predicates
 --
 -- == When to use AtomicVar vs ConcurrentVar
 --
--- * Use 'AtomicVar' when you need to read the value inside STM transactions
---   (e.g., predicates for 'ConcurrentMap.getOrInsertIf')
+-- * Use 'AtomicVar' when a concurrent map predicate needs a shared-state read
+--   that commits with the map update
 -- * Use 'AtomicVar' when you need multiple variables to update atomically together
 -- * Use 'ConcurrentVar' for simple producer/consumer patterns with blocking semantics
 module AtomicVar (
@@ -23,6 +23,8 @@ module AtomicVar (
   set,
   modify,
   modifyWithResult,
+  modifyWithResultSTM,
+  waitUntil,
 ) where
 
 import Basics
@@ -30,6 +32,9 @@ import Control.Concurrent.STM qualified as GhcSTM
 import Prelude qualified
 import Task (Task)
 import Task qualified
+import Transaction (Transaction)
+import Transaction qualified
+import Transaction.Internal qualified as TransactionInternal
 
 
 -- | A transactional variable that supports atomic composition.
@@ -58,10 +63,10 @@ peek atomicVar = do
         |> Task.fromIO
 
 
--- | Read the current value inside an STM transaction.
+-- | Read the current value inside a 'Transaction.Transaction'.
 --
--- This is useful for predicates in 'ConcurrentMap.getOrInsertIfM' which
--- run inside STM and cannot perform IO.
+-- This is useful for predicates in 'ConcurrentMap.getOrInsertIfTransaction'
+-- which commit with the map update.
 --
 -- Example usage with ConcurrentMap:
 --
@@ -69,16 +74,16 @@ peek atomicVar = do
 -- let shouldReplace existing = do
 --       status <- AtomicVar.peekSTM existing.status
 --       pure (status == Draining)
--- ConcurrentMap.getOrInsertIfM key candidate shouldReplace map
+-- ConcurrentMap.getOrInsertIfTransaction key candidate shouldReplace map
 -- @
 peekSTM ::
   forall value.
   AtomicVar value ->
-  GhcSTM.STM value
+  Transaction value
 peekSTM atomicVar =
   case atomicVar of
     AtomicVar tvar ->
-      GhcSTM.readTVar tvar
+      TransactionInternal.Transaction (GhcSTM.readTVar tvar)
 
 
 -- | Set a new value.
@@ -116,12 +121,31 @@ modifyWithResult ::
   (value -> (value, result)) ->
   Task _ result
 modifyWithResult atomicVar f =
-  case atomicVar of
-    AtomicVar tvar -> do
-      let stmAction = do
-            oldValue <- GhcSTM.readTVar tvar
-            let (newValue, result) = f oldValue
-            GhcSTM.writeTVar tvar newValue
-            Prelude.pure result
-      GhcSTM.atomically stmAction
-        |> Task.fromIO
+  Transaction.run (modifyWithResultSTM f atomicVar)
+
+
+-- | Update a value inside a caller-owned transaction, such as a map predicate.
+modifyWithResultSTM ::
+  forall value result.
+  (value -> (value, result)) ->
+  AtomicVar value ->
+  Transaction result
+modifyWithResultSTM f (AtomicVar tvar) =
+  TransactionInternal.Transaction do
+    oldValue <- GhcSTM.readTVar tvar
+    let (newValue, result) = f oldValue
+    GhcSTM.writeTVar tvar newValue
+    Prelude.pure result
+
+
+-- | Wait until a value satisfies a predicate without polling.
+waitUntil ::
+  forall value err.
+  (value -> Bool) ->
+  AtomicVar value ->
+  Task err Unit
+waitUntil predicate (AtomicVar tvar) =
+  GhcSTM.atomically do
+    value <- GhcSTM.readTVar tvar
+    if predicate value then Prelude.pure unit else GhcSTM.retry
+  |> Task.fromIO

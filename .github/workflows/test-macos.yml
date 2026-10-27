@@ -21,6 +21,8 @@ jobs:
         include:
           - test-suite: nhcore-test-auth
             needs-postgres: false
+          - test-suite: nhcore-test-auth-dns
+            needs-postgres: false
           - test-suite: nhcore-test-core
             needs-postgres: false
           - test-suite: nhcore-test-integration

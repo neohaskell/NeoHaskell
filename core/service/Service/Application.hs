@@ -981,10 +981,8 @@ runWith eventStore app = do
       let hasDeferred = providerFactories
             |> Array.toLinkedList
             |> anyDeferred
-      case hasDeferred of
-        True -> Task.throw "runWith does not support config-dependent OAuth2 providers. Use Application.run instead, or use: withOAuth2Provider @() (\\_ -> yourProviderConfig)"
-        False -> pass
-  -- Reject deferred simple factories (runWith doesn't support config loading)
+      Task.when hasDeferred do
+        Task.throw "runWith does not support config-dependent OAuth2 providers. Use Application.run instead, or use: withOAuth2Provider @() (\\_ -> yourProviderConfig)"
   resolvedCorsConfig <- case app.corsFactory of
     Nothing -> Task.yield app.corsConfig
     Just (EvaluatedCors config) -> Task.yield (Just config)
@@ -1010,14 +1008,10 @@ runWith eventStore app = do
     Just (EvaluatedSecretStore store) -> Task.yield (Just store)
     Just (DeferredSecretStore _) ->
       Task.throw "runWith does not support config-dependent SecretStore. Use Application.run instead, or use: withSecretStore @() (\\_ -> yourStore)"
-  -- Reject deferred integration registrations (runWith doesn't support config loading)
-  case Array.isEmpty app.deferredOutboundLifecycleRegs of
-    False -> Task.throw "runWith does not support config-dependent outbound lifecycle integrations. Use Application.run instead, or use: withOutboundLifecycle @() (\\_ -> yourConfig)"
-    True -> pass
-  case Array.isEmpty app.deferredInboundRegs of
-    False -> Task.throw "runWith does not support config-dependent inbound integrations. Use Application.run instead, or use: withInbound @() (\\_ -> yourInbound)"
-    True -> pass
-  -- Build ADR-0055 DispatchRegistry and integration status (same helper as run)
+  Task.when (not (Array.isEmpty app.deferredOutboundLifecycleRegs)) do
+    Task.throw "runWith does not support config-dependent outbound lifecycle integrations. Use Application.run instead, or use: withOutboundLifecycle @() (\\_ -> yourConfig)"
+  Task.when (not (Array.isEmpty app.deferredInboundRegs)) do
+    Task.throw "runWith does not support config-dependent inbound integrations. Use Application.run instead, or use: withInbound @() (\\_ -> yourInbound)"
   (registry, maybeIntegrationStatus) <- buildIntegrationContext app
   let resolvedApp = app
         { corsConfig = resolvedCorsConfig
@@ -1740,9 +1734,9 @@ withCors mkConfig app = do
 -- | Normalize a health check path, defaulting to "health" when empty.
 normalizeHealthPath :: Text -> Web.HealthCheckConfig
 normalizeHealthPath path = do
-  case Text.isEmpty path of
-    True -> Web.HealthCheckConfig {Web.healthPath = "health"}
-    False -> Web.HealthCheckConfig {Web.healthPath = path}
+  if Text.isEmpty path
+    then Web.HealthCheckConfig {Web.healthPath = "health"}
+    else Web.HealthCheckConfig {Web.healthPath = path}
 
 
 -- | Customize the health check endpoint path.
@@ -1791,22 +1785,20 @@ withoutHealthCheck app =
   app {healthCheckConfig = Nothing, healthCheckFactory = Nothing}
 
 
--- | Validate dispatcher configuration fields are positive.
--- Returns 'Just errorMessage' if validation fails, 'Nothing' if valid.
 validateDispatcherConfig :: Dispatcher.DispatcherConfig -> Maybe Text
 validateDispatcherConfig config = do
-  case config.workerChannelCapacity <= 0 of
-    True -> Just "workerChannelCapacity must be positive"
-    False -> case config.channelWriteTimeoutMs <= 0 of
-      True -> Just "channelWriteTimeoutMs must be positive"
-      False -> case config.idleTimeoutMs <= 0 of
-        True -> Just "idleTimeoutMs must be positive"
-        False -> case config.reaperIntervalMs <= 0 of
-          True -> Just "reaperIntervalMs must be positive"
-          False -> case config.eventProcessingTimeoutMs of
-            Just ms -> case ms <= 0 of
-              True -> Just "eventProcessingTimeoutMs must be positive when set"
-              False -> Nothing
+  if config.workerChannelCapacity <= 0
+    then Just "workerChannelCapacity must be positive"
+    else if config.channelWriteTimeoutMs <= 0
+      then Just "channelWriteTimeoutMs must be positive"
+      else if config.idleTimeoutMs <= 0
+        then Just "idleTimeoutMs must be positive"
+        else if config.reaperIntervalMs <= 0
+          then Just "reaperIntervalMs must be positive"
+          else case config.eventProcessingTimeoutMs of
+            Just ms -> if ms <= 0
+              then Just "eventProcessingTimeoutMs must be positive when set"
+              else Nothing
             Nothing -> Nothing
 
 

@@ -1852,7 +1852,13 @@ def run_command(root: Path, command: str, query: str, limit: int, as_json: bool)
                         "truncated": False,
                     }
                 else:
-                    compiler_info = compiler_lookup(root, connection, command, query, limit, deadline)
+                    source_revalidation_reserve = deadline.remaining() / 2
+                    compiler_deadline = Deadline(
+                        deadline.expires_at - source_revalidation_reserve
+                    )
+                    compiler_info = compiler_lookup(
+                        root, connection, command, query, limit, compiler_deadline
+                    )
                 if connection is not None:
                     final_inventory = scan_inventory(root, catalog, deadline, include_body=False)
                     deadline.check()

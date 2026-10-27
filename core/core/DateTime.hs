@@ -3,6 +3,7 @@ module DateTime (
   now,
   addSeconds,
   toEpochSeconds,
+  toEpochMilliseconds,
   fromEpochSeconds,
 ) where
 
@@ -47,6 +48,13 @@ toEpochSeconds :: DateTime -> Int64
 toEpochSeconds (DateTime utc) = do
   let posixTime = Posix.utcTimeToPOSIXSeconds utc
   GhcReal.truncate posixTime
+
+
+-- | Convert to rounded Unix epoch milliseconds.
+toEpochMilliseconds :: DateTime -> Int
+toEpochMilliseconds (DateTime utc) = do
+  let posixTime = Posix.utcTimeToPOSIXSeconds utc
+  GhcReal.round (posixTime * 1000)
 
 
 -- | Create DateTime from Unix epoch seconds

@@ -109,10 +109,15 @@ jobs:
         with:
           persist-credentials: false
       - name: Install hlint 3.10 (pinned binary + checksum)
+        working-directory: ${{ runner.temp }}
         run: |
           curl -sSfL -o hlint.tar.gz \
             https://github.com/ndmitchell/hlint/releases/download/v3.10/hlint-3.10-x86_64-linux.tar.gz
           echo "ccabc8802a58154699a3583b8dddc5ea2e6d65753a62c45c0e80088ebb16b42b  hlint.tar.gz" | sha256sum -c -
           tar xzf hlint.tar.gz
-      - name: Run HLint with the repository configuration
-        run: ./hlint-3.10/hlint core integrations testbed
+      - name: Test the dialect and ownership checks
+        env:
+          HLINT: ${{ runner.temp }}/hlint-3.10/hlint
+        run: python3 .agents/skills/neohaskell-code-guidelines/tests/hlint_contract.py -v
+      - name: Run the dialect and ownership gate
+        run: python3 .agents/skills/neohaskell-code-guidelines/scripts/check.py --hlint "${{ runner.temp }}/hlint-3.10/hlint"
