@@ -267,6 +267,8 @@ jobs:
         env:
           POSTGRES_AVAILABLE: "true"
         run: LOG_LEVEL=Warn nix develop --command cabal test nhcore-test-service --test-show-details=direct
+      - name: Check entity event compiler rejections
+        run: nix develop --command python3 core/test/Service/Event/check_compiler_rejections.py
 
   test-hurl:
     needs: [build]
