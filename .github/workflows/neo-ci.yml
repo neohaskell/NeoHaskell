@@ -76,7 +76,7 @@ jobs:
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@v7.0.1
-      - uses: DeterminateSystems/determinate-nix-action@v3.23.3
+      - uses: DeterminateSystems/determinate-nix-action@v3.24.0
         with:
           extra-conf: |
             accept-flake-config = true
@@ -106,7 +106,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7.0.1
-      - uses: DeterminateSystems/determinate-nix-action@v3.23.3
+      - uses: DeterminateSystems/determinate-nix-action@v3.24.0
         with:
           extra-conf: |
             accept-flake-config = true
@@ -150,7 +150,7 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7.0.1
-      - uses: DeterminateSystems/determinate-nix-action@v3.23.3
+      - uses: DeterminateSystems/determinate-nix-action@v3.24.0
         with:
           extra-conf: |
             accept-flake-config = true
@@ -180,7 +180,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: neo
-      - uses: DeterminateSystems/determinate-nix-action@v3.23.3
+      - uses: DeterminateSystems/determinate-nix-action@v3.24.0
         with:
           extra-conf: |
             accept-flake-config = true
@@ -235,7 +235,7 @@ jobs:
         if: ${{ env.CACHIX_AUTH_TOKEN != '' }}
         with:
           workspaces: neo
-      - uses: DeterminateSystems/determinate-nix-action@v3.23.3
+      - uses: DeterminateSystems/determinate-nix-action@v3.24.0
         if: ${{ env.CACHIX_AUTH_TOKEN != '' }}
         with:
           extra-conf: |
