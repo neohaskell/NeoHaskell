@@ -121,7 +121,7 @@ jobs:
       - name: Run nhcore-test-core
         run: |
           set -o pipefail
-          LOG_LEVEL=Warn nix develop .#ci --command cabal test nhcore-test-core \
+          LOG_LEVEL=Warn ./.agents/skills/neohaskell-test/scripts/nix-acquisition-diagnostics nix develop .#ci --command cabal test nhcore-test-core \
             --test-show-details=direct | tee nhcore-test-core.report
       - name: Check outbound payload compiler diagnostics
         run: nix develop .#ci --command python3 core/test/Service/OutboundIntegration/check_compiler_rejections.py
