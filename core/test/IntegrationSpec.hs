@@ -11,6 +11,7 @@ import GHC.TypeLits qualified as GHC
 import Integration qualified
 import Json qualified
 import Map qualified
+import Result qualified
 import Service.Command.Core (NameOf)
 import Service.Integration.DispatchRegistry qualified as DispatchRegistry
 import Task qualified
@@ -75,6 +76,28 @@ instance
 
 spec :: Spec Unit
 spec = do
+  describe "Json.decodeText" do
+    it "preserves accented Spanish text and ñ" \_ -> do
+      Json.decodeText @Text "\"canción y niño\"" |> shouldBe (Ok "canción y niño")
+
+    it "preserves Japanese and emoji" \_ -> do
+      Json.decodeText @Text "\"日本語 😀\"" |> shouldBe (Ok "日本語 😀")
+
+    it "preserves composed and decomposed Unicode separately" \_ -> do
+      Json.decodeText @Text "\"é\"" |> shouldBe (Ok "é")
+      Json.decodeText @Text "\"e\x0301\"" |> shouldBe (Ok "e\x0301")
+
+    it "preserves nested object values" \_ -> do
+      let expected = Json.object [("outer", Json.object [("message", Json.encode ("niño 日本語 😀" :: Text))])]
+      Json.decodeText @Json.Value "{\"outer\":{\"message\":\"niño 日本語 😀\"}}" |> shouldBe (Ok expected)
+
+    it "decodes escaped Unicode and surrogate pairs" \_ -> do
+      Json.decodeText @Text "\"ni\\u00f1o \\u65e5\\u672c \\ud83d\\ude00\"" |> shouldBe (Ok "niño 日本 😀")
+
+    it "preserves ASCII and rejects malformed JSON" \_ -> do
+      Json.decodeText @Text "\"plain ASCII\"" |> shouldBe (Ok "plain ASCII")
+      Json.decodeText @Text "{\"broken\":" |> shouldSatisfy Result.isErr
+
   describe "Integration.Outbound" do
     describe "batch" do
       it "collects multiple actions" \_ -> do
@@ -207,7 +230,7 @@ spec = do
       jsonText |> shouldSatisfy (Text.contains "encode-test")
 
     it "round-trips through decodeText -> CommandPayload" \_ -> do
-      let cmd = TestCommand {commandId = 99, commandName = "roundtrip-test"}
+      let cmd = TestCommand {commandId = 99, commandName = "canción de niño 日本語 😀"}
       let jsonText = Integration.encodeCommand cmd
       case Json.decodeText jsonText of
         Err err -> fail [fmt|Failed to decode JSON: #{err}|]
@@ -217,7 +240,7 @@ spec = do
             Err err -> fail [fmt|Failed to decode command data: #{err}|]
             Ok decoded -> do
               decoded.commandId |> shouldBe 99
-              decoded.commandName |> shouldBe "roundtrip-test"
+              decoded.commandName |> shouldBe "canción de niño 日本語 😀"
 
     it "matches the format expected by dispatchAction" \_ -> do
       -- This verifies encodeCommand produces the exact JSON format
