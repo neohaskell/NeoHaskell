@@ -641,10 +641,7 @@ instance Transport WebTransport where
     -- Parse the request path to check if it matches /commands/<name> or /queries/<name>
     case Wai.pathInfo request of
       ["commands", commandNameKebab] -> do
-        -- Convert kebab-case URL path to PascalCase for lookup
-        -- URL: /commands/reserve-stock -> lookup key: "ReserveStock"
-        let commandName = commandNameKebab |> Text.toPascalCase
-        -- Look up the command handler in the endpoints map
+        let commandName = commandNameKebab
         case Map.get commandName endpoints.commandEndpoints of
           Maybe.Just handler -> do
             CommandResultReceipt.withFreshReceipt

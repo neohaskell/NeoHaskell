@@ -3,7 +3,6 @@
 module Service.Transport.Web.AcronymRoutingSpec where
 
 import Core
-import Control.Exception qualified as GhcException
 import Data.ByteString.Lazy qualified as GhcLBS
 import Decider qualified
 import Bytes qualified
@@ -14,7 +13,6 @@ import Network.HTTP.Types.Method qualified as HTTPMethod
 import Network.HTTP.Types.Status qualified as HTTPStatus
 import Network.Wai qualified as Wai
 import Network.Wai.Test qualified as WaiTest
-import Result qualified
 import Service qualified
 import Service.Auth (RequestContext)
 import Service.Command.Core (TransportsOf)
@@ -94,11 +92,9 @@ spec = do
             |> GhcLBS.fromStrict
       response <- WaiTest.runSession (WaiTest.srequest (WaiTest.SRequest request payload)) app |> Task.fromIO
       let statusCode = response.simpleStatus |> HTTPStatus.statusCode
-      if statusCode == 200
-        then pass
-        else do
-          let responseBody = response.simpleBody |> GhcLBS.toStrict |> Bytes.fromLegacy |> Text.fromBytes
-          fail [fmt|Expected HTTP 200, got #{statusCode}: #{responseBody}|]
+      Task.unless (statusCode == 200) do
+        let responseBody = response.simpleBody |> GhcLBS.toStrict |> Bytes.fromLegacy |> Text.fromBytes
+        fail [fmt|Expected HTTP 200, got #{statusCode}: #{responseBody}|]
       let typedEventStore = eventStore |> EventStore.castEventStore @WebDecodeProbeEvent
       fetcher <- EntityFetcher.new typedEventStore (initialStateImpl @WebDecodeProbeEntity) (updateImpl @WebDecodeProbeEntity) |> Task.mapError toText
       found <- fetcher.fetch (EntityName "WebDecodeProbeEntity") (StreamId.toStreamId probeId) |> Task.mapError toText
@@ -133,13 +129,11 @@ spec = do
             [ ("WebTransport", ServiceDefinition.TransportValue Web.server)
             , ("McpTransport", ServiceDefinition.TransportValue McpTransport {serverName = "test", serverVersion = "1.0"})
             ]
-      result <- Task.fromIO (GhcException.try @GhcException.ErrorCall do
-        (handlers, _, _) <- Task.runOrPanic (runner.getEndpointsByTransport eventStore transports)
-        GhcException.evaluate (Map.length handlers))
-      case Result.fromEither result of
+      result <- Task.asResultSafe do
+        (handlers, _, _) <- runner.getEndpointsByTransport eventStore transports
+        handlers |> Map.length |> Task.evaluate
+      case result of
         Err errorMessage ->
           errorMessage
-            |> GhcException.displayException
-            |> Text.fromLinkedList
             |> shouldSatisfy (Text.contains "Duplicate command handler registered for: web-decode-probe-command")
         Ok _ -> fail "Expected a Web URL collision to reject service registration"
