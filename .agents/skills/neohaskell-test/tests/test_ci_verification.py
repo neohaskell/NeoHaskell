@@ -191,7 +191,7 @@ def selected_values(name: str, selected: bool) -> dict[str, str]:
 class CiVerificationTests(unittest.TestCase):
     def test_linux_build_requires_strict_doctest_before_artifact_upload(self) -> None:
         build = job_block(workflow("test.yml"), "build")
-        self.assertIn("nix develop .#ci --command cabal build all --disable-documentation", build)
+        self.assertRegex(build, r"nix (?:--debug )?develop .#ci --command cabal build all --disable-documentation")
         self.assertIn("nix develop .#ci --command ./.agents/skills/neohaskell-test/scripts/run-doctest --strict", build)
         self.assertLess(build.index("- name: Run doctest suite"), build.index("- uses: actions/upload-artifact@v7"))
 

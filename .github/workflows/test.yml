@@ -89,7 +89,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cabal-
       - name: Build the project with cabal
-        run: nix develop .#ci --command cabal build all --disable-documentation
+        run: ./.agents/skills/neohaskell-test/scripts/nix-acquisition-diagnostics nix --debug develop .#ci --command cabal build all --disable-documentation
       - name: Run doctest suite
         run: nix develop .#ci --command ./.agents/skills/neohaskell-test/scripts/run-doctest --strict
       - uses: actions/upload-artifact@v7
