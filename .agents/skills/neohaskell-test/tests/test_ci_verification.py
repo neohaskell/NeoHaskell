@@ -189,6 +189,28 @@ def selected_values(name: str, selected: bool) -> dict[str, str]:
 
 
 class CiVerificationTests(unittest.TestCase):
+    def test_core_uses_stable_acquisition_settings(self) -> None:
+        core = job_block(workflow("test.yml"), "test-core")
+        self.assertIn("http2 = false", core)
+        self.assertIn("https://neohaskell.cachix.org?priority=30 https://cache.iog.io", core)
+        self.assertIn("cabal test nhcore-test-core", core)
+
+    def test_ci_shell_omits_editor_tools_before_shell_construction(self) -> None:
+        flake = (REPOSITORY / "flake.nix").read_text(encoding="utf-8")
+        self.assertIn("ciProject = pkgs.hixProject.appendModule", flake)
+        tools = re.search(r"shell\.tools = lib\.mkForce \{([^}]*)\};", flake)
+        self.assertIsNotNone(tools)
+        self.assertEqual(
+            set(re.findall(r"([\w-]+)\s*=\s*\"latest\";", tools[1])),
+            {"cabal", "doctest", "hspec-discover"},
+        )
+        self.assertIn("ci = ciProject.shell", flake)
+
+    def test_service_captures_acquisition_state_without_verbose_nix_urls(self) -> None:
+        service = job_block(workflow("test.yml"), "test-service")
+        self.assertIn("nix-acquisition-diagnostics nix develop .#ci --command cabal test nhcore-test-service", service)
+        self.assertNotIn("nix --debug develop", service)
+
     def test_linux_build_requires_strict_doctest_before_artifact_upload(self) -> None:
         build = job_block(workflow("test.yml"), "build")
         self.assertRegex(build, r"nix (?:--debug )?develop .#ci --command cabal build all --disable-documentation")
