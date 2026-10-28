@@ -108,14 +108,16 @@ path selection does not permit skipping the generated-project contract.
 Before opening a PR that changes a consumer-facing framework contract, generated
 CLI behavior, or `docs/agent/`, compare the changed source with the private
 capability registry and published topic pages. Read the maintained implementation behind each
-affected claim. Update stale pages, examples, scenarios, and evidence records.
+affected claim. Update stale pages, examples, scenarios, and review records.
 For each affected capability, report the updated page or explain why its guide
 still matches the source. Review explanatory fragments against their cited
 source; compilation cannot prove prose claims.
 
 Follow [Agent guide authoring](../agent-guide-authoring/SKILL.md) for the
-published pages. Keep implementation paths and evidence in this skill's private
-registry so generated applications receive only consumer guidance.
+published pages. Keep implementation paths and required checks in this skill's
+private policy at `references/agent-docs-policy.json`. Keep review receipts in
+the ignored `.agents-state/neohaskell-consumer-verification/agent-docs-reviews.json`
+of the current worktree.
 
 Run the local corpus check from the repository root inside the pinned Nix shell:
 
@@ -125,18 +127,27 @@ nix develop --command .agents/skills/neohaskell-consumer-verification/scripts/ag
 ```
 
 The gate validates the published `docs/agent/manifest.json` page inventory,
-local links, and the private capability registry at
-`references/agent-docs-evidence.json`. Each required capability retains a
-source file and maintained Hurl scenario in that registry. The gate rejects
+local links, and the private capability policy at
+`references/agent-docs-policy.json`. Each required capability retains a
+source file and maintained Hurl scenario in that policy. The gate rejects
 framework repository paths in published guidance. It compiles every runnable
 Haskell fence with `markdown-unlit`
 against the checkout's `nhcore` and `nhintegrations` packages. Use `haskell
 ignore` only for fragments that need surrounding application definitions.
-Record each such fragment and its owning source in `references/agent-docs-evidence.json`.
+Declare each such fragment and its owning source in the policy.
+
+A fresh checkout has no review receipts. The default and `--structure-only`
+checks fail until the current worktree has reviewed every ignored fragment.
+Run `agent-docs-check --prepare-reviews` to create a local draft with the
+current revision, worktree path, fragment hashes, and source hashes. Read each
+declared source and fragment, then fill its empty `reason` with the concrete
+review finding. Run the default check again. Preparing a draft alone never
+passes the gate. A new commit, changed fragment, changed source, or another
+worktree invalidates the receipt. Regenerate and review after the final commit.
 
 `--structure-only` provides quick feedback but does not compile examples.
 Run the default check for each affected PR. For a corpus-wide change or a
-change to the capability evidence, run `--verify-evidence`. It also runs the
+change to the capability policy, run `--verify-evidence`. It also runs the
 service and auth specs, the maintained Hurl testbed, and the generated-project
 contract. For a narrower runtime change, run the affected maintained scenario
 or suite and record the command and result in the PR. Use a fresh PostgreSQL
