@@ -24,7 +24,8 @@ data CartSummary = CartSummary
   { cartSummaryId :: Uuid,
     ownerId :: Text,
     itemCount :: Int,
-    isEmpty :: Bool
+    isEmpty :: Bool,
+    iban :: Maybe Text
   }
 
 
@@ -59,5 +60,6 @@ instance QueryOf CartEntity CartSummary where
         { cartSummaryId = cart.cartId,
           ownerId = cart.ownerId,
           itemCount = count,
-          isEmpty = count == 0
+          isEmpty = count == 0,
+          iban = cart.savedIBAN
         }
