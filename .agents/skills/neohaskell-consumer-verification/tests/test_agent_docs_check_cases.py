@@ -143,7 +143,7 @@ class AgentDocsCheckTests(unittest.TestCase):
         (self.root / "testbed/tests/integrations/oauth2-account-connection.hurl").unlink()
         self.check(1, "missing or unsafe scenario")
 
-    def test_new_capability_with_mapped_scenario_and_assertions(self):
+    def test_new_mapping_passes_structure_with_unrelated_scenario(self):
         path = self.root / POLICY
         policy = json.loads(path.read_text())
         capability = policy["capabilities"]["external-oauth2-account"].copy()

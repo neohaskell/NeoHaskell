@@ -151,9 +151,12 @@ local links, and the private capability policy at
 source file and maintained Hurl scenario in that policy. Add a capability and
 page mapping when a new public feature changes the generated application guide.
 The gate preserves its baseline capabilities and accepts new mappings with
-valid evidence. It does not infer that every public API has a testbed example
-from filenames or a passing guide check. Review the feature's actual public
-path and scenario under the requirement above. The gate rejects
+valid evidence. It checks that mapped source and scenario paths exist and that
+the scenario has a request and assertions. It cannot tell whether that scenario
+exercises the public feature. An independent verifier must trace the feature's
+public API through the testbed application and run the relevant maintained
+assertion before accepting a public-feature PR. A passing guide check does not
+replace that verification. The gate rejects
 framework repository paths in published guidance. It compiles every runnable
 Haskell fence with `markdown-unlit`
 against the checkout's `nhcore` and `nhintegrations` packages. Use `haskell
@@ -179,4 +182,4 @@ database for repeated local evidence runs. The testbed retains events across
 runs and uses in-memory query projections.
 
 If you change the corpus validator, run its local cases with
-`python3 .agents/skills/neohaskell-consumer-verification/tests/agent_docs_check_cases.py`.
+`python3 .agents/skills/neohaskell-consumer-verification/tests/test_agent_docs_check_cases.py`.
