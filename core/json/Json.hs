@@ -48,7 +48,7 @@ import Text qualified
 
 decodeText :: (Aeson.FromJSON value) => Text -> Result Text value
 decodeText text = do
-  let bs = Text.convert text
+  let bs = text |> Text.toBytes |> Bytes.unwrap
   case Aeson.eitherDecodeStrict bs of
     Either.Left error -> Result.Err (Text.fromLinkedList error)
     Either.Right value -> Result.Ok value

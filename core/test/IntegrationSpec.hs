@@ -85,7 +85,7 @@ spec = do
 
     it "preserves composed and decomposed Unicode separately" \_ -> do
       Json.decodeText @Text "\"é\"" |> shouldBe (Ok "é")
-      Json.decodeText @Text "\"é\"" |> shouldBe (Ok "é")
+      Json.decodeText @Text "\"e\x0301\"" |> shouldBe (Ok "e\x0301")
 
     it "preserves nested object values" \_ -> do
       let expected = Json.object [("outer", Json.object [("message", Json.encode ("niño 日本語 😀" :: Text))])]
