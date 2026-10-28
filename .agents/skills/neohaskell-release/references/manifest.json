@@ -660,6 +660,115 @@
       "source_sha": "64c28a77047d47d151ffff30b3dd4925583de18d",
       "target_policy": "native-v2",
       "version": "0.12.0"
+    },
+    {
+      "base_sha": "1b4f1c5d6c2bdb54f91689988f36ba2e6ab271c7",
+      "base_tag": "neo-v0.12.0",
+      "base_version": "0.12.0",
+      "bootstrap": false,
+      "date": "2026-10-28",
+      "group": "platform",
+      "id": "be5ecb41f6b0009f052f597ee41be9c931ca0757ff2f2f02f9052c542c4aa0cd",
+      "impact": "breaking",
+      "kind": "release",
+      "notes": [
+        {
+          "category": "Fixed",
+          "commit": "0dfb861c0a3eb914af6e3fe2f49d7c73ed6caf84",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "cffc74fb321a586c5a9661cfa0531e109552e8d99a0a33b383acd546d8cbab1e",
+          "impact": "none",
+          "path": ".changes/how-codemap-source-revalidation.md",
+          "sections": {
+            "Summary": "After a slow local HIE indexing attempt, the `how` codemap keeps returning\ncurrent-source search results. This changes repository tooling only; it does\nnot affect app APIs or require a migration."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: none\ncategory: Fixed\n---\n\n## Summary\n\nAfter a slow local HIE indexing attempt, the `how` codemap keeps returning\ncurrent-source search results. This changes repository tooling only; it does\nnot affect app APIs or require a migration.\n"
+        },
+        {
+          "category": "Improved",
+          "commit": "c37220187793a9e7b1c07d0bd3f99eb38616c417",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "710de87956ac992422d0262d0f2726452d2966e39add9a60c89a15abc3e462be",
+          "impact": "none",
+          "path": ".changes/release-preparation-consolidation.md",
+          "sections": {
+            "Summary": "The release preparation sweep now combines verified older preparations into one current generated PR, closes covered older PRs when the replacement opens, and continues through CI repair, merge, and public release verification. It accepts a revised note only when the new text matches the current source fragment and the revision has been reviewed. This changes the contributor release workflow only. Application behavior and public APIs remain unchanged, so applications need no migration."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: none\ncategory: Improved\n---\n\n## Summary\n\nThe release preparation sweep now combines verified older preparations into one current generated PR, closes covered older PRs when the replacement opens, and continues through CI repair, merge, and public release verification. It accepts a revised note only when the new text matches the current source fragment and the revision has been reviewed. This changes the contributor release workflow only. Application behavior and public APIs remain unchanged, so applications need no migration.\n"
+        },
+        {
+          "category": "Added",
+          "commit": "b6bf53e813498ef4c2c53e5500c9c14f4dd3dbb2",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "15ea150b6bfeaa68136654c6615740e33cfb58b37bce5b6436a394f35cd9274a",
+          "impact": "compatible",
+          "path": ".changes/explicit-entity-events.md",
+          "sections": {
+            "Summary": "New applications can list an entity's event payload types in `deriveEntityEvents`.\nThe marker creates the parent event type and lets commands emit a single payload\ntype without writing its wrapper constructor. Existing event types and stored\nevents are unchanged. An application needs no migration to keep using a handwritten\nevent type."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: compatible\ncategory: Added\n---\n\n## Summary\n\nNew applications can list an entity's event payload types in `deriveEntityEvents`.\nThe marker creates the parent event type and lets commands emit a single payload\ntype without writing its wrapper constructor. Existing event types and stored\nevents are unchanged. An application needs no migration to keep using a handwritten\nevent type.\n"
+        },
+        {
+          "category": "Breaking changes",
+          "commit": "e411f0e0ea2ec504065267c987c98c3c0e5460aa",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "9a7e1f5fc2b2b69a2a1980399c206a11296d193ed9a1e27ce0d109016503d82e",
+          "impact": "breaking",
+          "path": ".changes/outbound-payload-dispatch.md",
+          "sections": {
+            "Agent prompt": "```text\nUpdate my NeoHaskell outbound handlers for payload dispatch. Find each\n`outboundIntegration ''Handler` or `deriveOutboundIntegration ''Handler` marker.\nIf `handleEvent` takes the entity's full event type as its second argument,\nimport `outboundIntegrationFullEvent` from `Service.OutboundIntegration.TH` and\nuse `outboundIntegrationFullEvent ''Handler` to preserve its behavior. Keep the\nhandler body and stored event type unchanged. For a handler that already takes\none concrete payload, keep `outboundIntegration ''Handler` and confirm that\n`EventVariantOf` maps the stored event type to that payload. Run `neo build`\nand `neo test --ci`. Report the changed files, test results, and any handler\nwhose payload mapping or intended event selection remains unclear.\n```",
+            "Migration": "Find each `outboundIntegration ''Handler` or `deriveOutboundIntegration ''Handler`\nwhose `handleEvent` second argument is the entity's full event type. Replace\nthe marker with `outboundIntegrationFullEvent ''Handler` and import that name\nfrom `Service.OutboundIntegration.TH`. The handler body and stored events stay\nthe same. To narrow the handler, give it one concrete payload argument, provide\nan `EventVariantOf` mapping from the stored event type, and keep\n`outboundIntegration ''Handler`.\n\n### Verify\n\nRun `neo build` and `neo test --ci` in the application. Exercise one matching\nevent and one unrelated event. A payload handler runs only for the matching\nevent. A full-event handler keeps its previous behavior.",
+            "Summary": "Outbound handlers can now receive one event payload. The runtime skips the handler\nfor other event types. Existing handlers that take the full event type need the\nexplicit `outboundIntegrationFullEvent` marker to keep their current behavior."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: breaking\ncategory: Breaking changes\n---\n\n## Summary\n\nOutbound handlers can now receive one event payload. The runtime skips the handler\nfor other event types. Existing handlers that take the full event type need the\nexplicit `outboundIntegrationFullEvent` marker to keep their current behavior.\n\n## Migration\n\nFind each `outboundIntegration ''Handler` or `deriveOutboundIntegration ''Handler`\nwhose `handleEvent` second argument is the entity's full event type. Replace\nthe marker with `outboundIntegrationFullEvent ''Handler` and import that name\nfrom `Service.OutboundIntegration.TH`. The handler body and stored events stay\nthe same. To narrow the handler, give it one concrete payload argument, provide\nan `EventVariantOf` mapping from the stored event type, and keep\n`outboundIntegration ''Handler`.\n\n### Verify\n\nRun `neo build` and `neo test --ci` in the application. Exercise one matching\nevent and one unrelated event. A payload handler runs only for the matching\nevent. A full-event handler keeps its previous behavior.\n\n## Agent prompt\n\n```text\nUpdate my NeoHaskell outbound handlers for payload dispatch. Find each\n`outboundIntegration ''Handler` or `deriveOutboundIntegration ''Handler` marker.\nIf `handleEvent` takes the entity's full event type as its second argument,\nimport `outboundIntegrationFullEvent` from `Service.OutboundIntegration.TH` and\nuse `outboundIntegrationFullEvent ''Handler` to preserve its behavior. Keep the\nhandler body and stored event type unchanged. For a handler that already takes\none concrete payload, keep `outboundIntegration ''Handler` and confirm that\n`EventVariantOf` maps the stored event type to that payload. Run `neo build`\nand `neo test --ci`. Report the changed files, test results, and any handler\nwhose payload mapping or intended event selection remains unclear.\n```\n"
+        },
+        {
+          "category": "Fixed",
+          "commit": "5a4f6b60fd9c2f428e907ed4702849980a51b303",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "af47dc0d8bf0af6f3533e6f82b2307f30f1ae7868563b29b26a76fb608263b71",
+          "impact": "none",
+          "path": ".changes/local-agent-guide-reviews.md",
+          "sections": {
+            "Summary": "The agent guide check now keeps ignored Haskell fragment reviews in ignored worktree-local state. A fresh checkout must review the fragments before the local corpus gate passes. This changes contributor verification only and does not change generated applications."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: none\ncategory: Fixed\n---\n\n## Summary\n\nThe agent guide check now keeps ignored Haskell fragment reviews in ignored worktree-local state. A fresh checkout must review the fragments before the local corpus gate passes. This changes contributor verification only and does not change generated applications.\n"
+        },
+        {
+          "category": "Fixed",
+          "commit": "1342718ade3e7eb87b652eb619f98aaf5f0f41a5",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "e4923d38bd3ddb016e5dddb29a433b925237ac26e65f057b7bcc05754ccdfb6f",
+          "impact": "none",
+          "path": ".changes/postmerge-gate-reliability.md",
+          "sections": {
+            "Summary": "The core test and doctest CI jobs now use a Nix shell without Haskell Language Server. Release self-test Git fixtures disable automatic maintenance so a detached Git process cannot write inside a fixture during cleanup. This changes repository checks only. Application behavior and public APIs remain unchanged, so applications need no migration."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: none\ncategory: Fixed\n---\n\n## Summary\n\nThe core test and doctest CI jobs now use a Nix shell without Haskell Language Server. Release self-test Git fixtures disable automatic maintenance so a detached Git process cannot write inside a fixture during cleanup. This changes repository checks only. Application behavior and public APIs remain unchanged, so applications need no migration.\n"
+        },
+        {
+          "category": "Fixed",
+          "commit": "a8ca484045e9f263c4402746fe560bfdb73ce95b",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "706a09221db48feb8feaa0a9577a3011857a9c912417d0c7f2fb17919e1af826",
+          "impact": "compatible",
+          "path": ".changes/fix-json-unicode-640.md",
+          "sections": {
+            "Summary": "JSON text decoding now preserves names and messages with accented characters, ñ, Japanese text, and emoji. Existing apps need no code changes. For example, decoding `\"niño\"` now returns `niño` instead of an error."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: compatible\ncategory: Fixed\n---\n\n## Summary\n\nJSON text decoding now preserves names and messages with accented characters, ñ, Japanese text, and emoji. Existing apps need no code changes. For example, decoding `\"niño\"` now returns `niño` instead of an error.\n"
+        }
+      ],
+      "source_sha": "f9b6d8c701ccd9579494d0b9a3a69cc93fe5d1c1",
+      "target_policy": "native-v2",
+      "version": "0.13.0"
     }
   ],
   "recoveries": [],
