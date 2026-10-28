@@ -1,5 +1,5 @@
-{-| Project the protected entity into an authorized testbed query.
-The query retains the wrapper so response rendering reads current key state.
+{-| Project the protected entity into a public testbed query.
+Register 'ProtectedView' to expose its protected fields through response rendering.
 -}
 module Testbed.Erasable.Query (
   ProtectedView (..),

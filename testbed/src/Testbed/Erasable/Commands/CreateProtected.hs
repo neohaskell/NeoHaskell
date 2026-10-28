@@ -1,5 +1,5 @@
-{-| Create one protected testbed entity through the ordinary command executor.
-The fixed value keeps the testbed request free of personal input while exercising encryption.
+{-| Create one protected testbed entity through the command executor.
+Register 'CreateProtected' with the testbed service.
 -}
 module Testbed.Erasable.Commands.CreateProtected (
   CreateProtected (..),

@@ -1,5 +1,5 @@
-{-| Exercise durable key state and a private erasure fixture against PostgreSQL.
-The event-store append tests verify key and event atomicity separately.
+{-| Verify PostgreSQL key storage and private erasure through the service APIs.
+Run 'spec' in the service test suite.
 -}
 module Service.EventStore.Postgres.ErasableKeysSpec (spec) where
 

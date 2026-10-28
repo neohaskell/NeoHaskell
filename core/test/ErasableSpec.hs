@@ -1,5 +1,5 @@
-{-| Check command decision identity and the ordinary display boundary for protected values.
-The PostgreSQL fixture checks persistence separately.
+{-| Check protected-value identity and display through command decisions.
+Run 'spec' in the core test suite.
 -}
 module ErasableSpec (spec) where
 

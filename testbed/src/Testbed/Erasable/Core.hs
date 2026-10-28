@@ -1,5 +1,5 @@
-{-| Define a small application entity whose protected field survives event reconstruction.
-The retained identifier is illustrative; the protected payload carries nested Unicode data.
+{-| Define a testbed entity with protected fields retained across event reconstruction.
+Use 'ProtectedCreated' to populate its fields.
 -}
 module Testbed.Erasable.Core (
   ProtectedEntity (..),
