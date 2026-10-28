@@ -184,7 +184,8 @@ jobs:
         with:
           extra-conf: |
             accept-flake-config = true
-            extra-substituters = https://cache.iog.io https://neohaskell.cachix.org
+            http2 = false
+            extra-substituters = https://neohaskell.cachix.org?priority=30 https://cache.iog.io
             extra-trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= neohaskell.cachix.org-1:mo2cLaGbwqbrxs9xhqKK8jeNsn3osi7t6XoAmxSZssc=
       - uses: DeterminateSystems/magic-nix-cache-action@v14
       - uses: actions/download-artifact@v8
@@ -192,7 +193,7 @@ jobs:
           name: dist-newstyle
           path: dist-newstyle
       - name: Run nhcore-test-auth
-        run: LOG_LEVEL=Warn nix develop --command cabal test nhcore-test-auth nhcore-test-auth-dns
+        run: LOG_LEVEL=Warn nix develop .#ci --command cabal test nhcore-test-auth nhcore-test-auth-dns
 
   test-integration:
     needs: [build]
