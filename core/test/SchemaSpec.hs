@@ -2,7 +2,14 @@ module SchemaSpec where
 
 import Array qualified
 import Basics
+import Control.Lens qualified as Lens
 import Core
+import Data.HashMap.Strict.InsOrd qualified as InsOrdHashMap
+import Data.OpenApi qualified as OpenApi
+import DateTime qualified
+import Json qualified
+import Schema.JsonSchema qualified
+import Schema.OpenApi qualified
 import Test
 
 
@@ -65,6 +72,19 @@ data ShoppingOrder = ShoppingOrder
 instance ToSchema ShoppingOrder
 
 
+data TimestampedRecord = TimestampedRecord
+  { occurredAt :: DateTime
+  , completedAt :: Maybe DateTime
+  }
+  deriving (Generic)
+
+
+instance Json.ToJSON TimestampedRecord
+
+
+instance ToSchema TimestampedRecord
+
+
 -- -----------------------------------------------------------------------------
 -- Tests
 -- -----------------------------------------------------------------------------
@@ -84,6 +104,16 @@ spec = do
     it "generates SText for Text" \_ -> do
       toSchema @Text |> shouldBe SText
 
+    it "generates SText for DateTime and preserves its JSON string" \_ -> do
+      toSchema @DateTime |> shouldBe SText
+      let occurredAt = DateTime.fromEpochSeconds 0
+      Json.encode occurredAt |> shouldBe (Json.toJSON ("1970-01-01T00:00:00Z" :: Text))
+      Schema.JsonSchema.toJsonSchema (toSchema @DateTime)
+        |> shouldBe (Json.object [("type", Json.toJSON ("string" :: Text))])
+      Schema.OpenApi.toOpenApiSchema (toSchema @DateTime)
+        |> Lens.view OpenApi.type_
+        |> shouldBe (Just OpenApi.OpenApiString)
+
   describe "ToSchema container instances" do
     it "generates SArray for Array" \_ -> do
       toSchema @(Array Int) |> shouldBe (SArray SInt)
@@ -94,10 +124,50 @@ spec = do
     it "generates SOptional for Maybe" \_ -> do
       toSchema @(Maybe Int) |> shouldBe (SOptional SInt)
 
+    it "generates an optional string schema for Maybe DateTime" \_ -> do
+      toSchema @(Maybe DateTime) |> shouldBe (SOptional SText)
+      Schema.JsonSchema.toJsonSchema (toSchema @(Maybe DateTime))
+        |> shouldBe (Json.object [("type", Json.toJSON ("string" :: Text))])
+      Schema.OpenApi.toOpenApiSchema (toSchema @(Maybe DateTime))
+        |> Lens.view OpenApi.type_
+        |> shouldBe (Just OpenApi.OpenApiString)
+
     it "generates nested SArray SOptional" \_ -> do
       toSchema @(Array (Maybe Text)) |> shouldBe (SArray (SOptional SText))
 
   describe "ToSchema for records" do
+    it "generates required and optional timestamp fields with string lowering" \_ -> do
+      let schema = toSchema @TimestampedRecord
+      let expectedFields = Array.fromLinkedList
+            [ FieldSchema "occurredAt" SText True ""
+            , FieldSchema "completedAt" (SOptional SText) False ""
+            ]
+      schema |> shouldBe (SObject expectedFields)
+      let record = TimestampedRecord (DateTime.fromEpochSeconds 0) Nothing
+      Json.encode record
+        |> shouldBe
+          (Json.object
+            [ ("occurredAt", Json.toJSON ("1970-01-01T00:00:00Z" :: Text))
+            , ("completedAt", Json.toJSON (Nothing :: Maybe Text))
+            ])
+      let properties = Schema.OpenApi.toOpenApiSchema schema |> Lens.view OpenApi.properties
+      case (InsOrdHashMap.lookup "occurredAt" properties, InsOrdHashMap.lookup "completedAt" properties) of
+        (Just (OpenApi.Inline occurred), Just (OpenApi.Inline completed)) -> do
+          occurred |> Lens.view OpenApi.type_ |> shouldBe (Just OpenApi.OpenApiString)
+          completed |> Lens.view OpenApi.type_ |> shouldBe (Just OpenApi.OpenApiString)
+        _ -> Test.fail "Expected timestamp properties in OpenAPI schema"
+      Schema.JsonSchema.toJsonSchema schema
+        |> shouldBe
+          (Json.object
+            [ ("type", Json.toJSON ("object" :: Text))
+            , ("properties", Json.object
+                [ ("occurredAt", Json.object [("type", Json.toJSON ("string" :: Text))])
+                , ("completedAt", Json.object [("type", Json.toJSON ("string" :: Text))])
+                ])
+            , ("required", Json.toJSON (["occurredAt"] :: [Text]))
+            , ("additionalProperties", Json.toJSON False)
+            ])
+
     it "generates SObject for simple record" \_ -> do
       let schema = toSchema @Person
       case schema of
