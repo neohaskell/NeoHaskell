@@ -12,6 +12,25 @@ self-test checks only its orchestration or comparison logic.
 
 ## Framework changes include their consumers
 
+Every developed public NeoHaskell feature needs a working example in the
+repository testbed. Exercise the public API in testbed application code, assert
+its observable behavior with a maintained automated testbed scenario, and give
+concrete commands to run the example and its test in testbed documentation.
+Add or update these in the feature PR. Unit tests, compiler fixtures,
+generated-project checks, and
+documentation snippets are useful additional evidence, but none replaces the
+testbed example and assertion. A change with no public feature can state that
+the testbed requirement does not apply and identify the internal-only scope.
+Do not exempt a public feature because its API is compile-time, because it has
+no convenient HTTP endpoint, or because its example is deferred. Adapt the
+testbed's application and maintained runner to exercise the actual contract.
+
+During review, trace the testbed example from the public API through its
+registration and runtime path to the scenario's independent expected result.
+Run the affected scenario through [NeoHaskell tests](../neohaskell-test/SKILL.md)
+against the PR revision. Report the example, assertion, commands, revision,
+and result. A missing or skipped required run is incomplete.
+
 For framework export, marker or generated-API changes, inventory affected uses in
 `neo/starter/` and `testbed/` before implementation. Migrate those consumers in
 the same PR. Compare every affected example with the resulting public API and
@@ -128,8 +147,16 @@ nix develop --command .agents/skills/neohaskell-consumer-verification/scripts/ag
 
 The gate validates the published `docs/agent/manifest.json` page inventory,
 local links, and the private capability policy at
-`references/agent-docs-policy.json`. Each required capability retains a
-source file and maintained Hurl scenario in that policy. The gate rejects
+`references/agent-docs-policy.json`. Each mapped capability retains a
+source file and maintained Hurl scenario in that policy. Add a capability and
+page mapping when a new public feature changes the generated application guide.
+The gate preserves its baseline capabilities and accepts new mappings with
+valid evidence. It checks that mapped source and scenario paths exist and that
+the scenario has a request and assertions. It cannot tell whether that scenario
+exercises the public feature. An independent verifier must trace the feature's
+public API through the testbed application and run the relevant maintained
+assertion before accepting a public-feature PR. A passing guide check does not
+replace that verification. The gate rejects
 framework repository paths in published guidance. It compiles every runnable
 Haskell fence with `markdown-unlit`
 against the checkout's `nhcore` and `nhintegrations` packages. Use `haskell
@@ -155,4 +182,4 @@ database for repeated local evidence runs. The testbed retains events across
 runs and uses in-memory query projections.
 
 If you change the corpus validator, run its local cases with
-`python3 .agents/skills/neohaskell-consumer-verification/tests/agent_docs_check_cases.py`.
+`python3 .agents/skills/neohaskell-consumer-verification/tests/test_agent_docs_check_cases.py`.

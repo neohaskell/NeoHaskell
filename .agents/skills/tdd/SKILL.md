@@ -8,6 +8,7 @@ description: "Use only when the user explicitly asks for TDD, a failing test, or
 When fixing a bug with a clear, cheap test path, make the broken behavior executable before changing production code. The goal is a focused regression test that fails before the fix and passes after it.
 
 Do not force a test when it would be impractical. If the available test would require broad harness setup, brittle mocks, slow end-to-end infrastructure, production-only state, vague reproduction steps, or large unrelated fixture churn, skip adding a new test and use the closest useful verification instead.
+This focused-test fallback does not waive the [working testbed example](../neohaskell-consumer-verification/SKILL.md#framework-changes-include-their-consumers) required for a developed public NeoHaskell feature. Record a failing testbed observation before the fix when practical, then run the maintained assertion after the fix.
 
 Run `nix develop --command .agents/skills/tdd/scripts/test-match <pattern> [suite]` from the repository root for a selected Hspec example, as required by [Nix Haskell tools](../nix-haskell-tools/SKILL.md). The default suite is `nhcore-test-core`. It rejects empty selections and retains a bounded transcript. Follow [Regression evidence](../regression-evidence/SKILL.md) when capturing the failing and passing observations. For broader suites, doctests or testbed checks, use [NeoHaskell tests](../neohaskell-test/SKILL.md).
 
