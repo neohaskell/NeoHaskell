@@ -177,6 +177,28 @@ spec = do
         case result of
           Ok _ -> fail "Swapped envelopes authenticated at distinct JSON locations"
           Err _ -> pass
+        corruptEnvelope <- case Json.parts pair.literal.envelope of
+          Json.ObjectParts fields ->
+            fields
+              |> Array.map (\(key, value) ->
+                if key == "tag"
+                  then (key, Json.toJSON ("AAAAAAAAAAAAAAAAAAAAAA==" :: Text))
+                  else (key, value))
+              |> Array.toLinkedList
+              |> Json.object
+              |> Task.yield
+          _ -> Task.throw "Expected persisted envelope object"
+        let corrupt = Json.object
+              [ ("a/b", Json.toJSON (pair.literal {envelope = corruptEnvelope})),
+                ("a", Json.object [("b", Json.toJSON pair.nested)])
+              ]
+        corruptPayload <- Event.payloadFromEvents entityName streamId [corrupt]
+        corruptResult <- store.insert (corruptPayload {Event.insertionType = Event.AnyStreamState}) |> Task.asResult
+        case corruptResult of
+          Ok _ -> fail "Corrupt active authentication tag was stored"
+          Err _ -> pass
+        after <- store.readAllStreamEvents entityName streamId |> Task.mapError toText |> Task.andThen Stream.toArray
+        Array.length (EventStore.collectStreamEvents after) |> shouldBe 1
         store.close
 
       it "distinguishes unknown, active, and erased across a new pool" \_ -> do
