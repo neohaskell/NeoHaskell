@@ -39,6 +39,12 @@ The Hurl scenario asserts a command-generated event, a reconstructed query, two 
 
 ### Run the maintained suite
 
+The maintained runner builds and starts both testbed applications and the fake
+external services. It requires a PostgreSQL user that can create databases.
+Each run creates separate fresh databases for the two applications and prints
+their names for inspection. The runner retains those databases after the run.
+Ports 8080 and 8081 must be free.
+
 ```bash
 # From the repository root, with PostgreSQL running locally.
 nix develop --command .agents/skills/neohaskell-test/scripts/run-testbed --strict
