@@ -230,6 +230,8 @@ library
     Service.CommandExecutor.TH
     Service.Entity
     Service.Entity.Core
+    Service.InboundIntegration.Core
+    Service.InboundIntegration.TH
     Service.Entity.TH
     Service.EntityFetcher
     Service.EntityFetcher.Core
@@ -497,6 +499,8 @@ test-suite nhcore-test
     Service.Transport.CliSpec
     Service.Transport.Cli.OutputSpec
     Service.Transport.InternalSpec
+    Service.InboundIntegration.TypedSpec
+    Service.InboundIntegration.ConfiguredFixture
     Service.Transport.McpSpec
     Service.Transport.Mcp.JsonRpcSpec
     Service.Transport.Mcp.ProtocolSpec
