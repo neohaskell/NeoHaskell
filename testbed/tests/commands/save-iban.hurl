@@ -21,7 +21,7 @@ jsonpath "$.entityId" == "{{cart_id}}"
 GET http://localhost:8080/queries/cart-summary
 [Options]
 retry: 5
-retry-interval: 100
+retry-interval: 100ms
 
 HTTP/1.1 200
 
