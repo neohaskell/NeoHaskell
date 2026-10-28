@@ -48,6 +48,44 @@ instance Json.ToJSON ProtectedRead
 instance Json.FromJSON ProtectedRead
 
 
+data StoredEnvelope = StoredEnvelope
+  { reference :: Text,
+    context :: Text,
+    envelope :: Json.Value
+  }
+
+
+instance Json.FromJSON StoredEnvelope where
+  parseJSON = Json.withObject "StoredEnvelope" \object -> do
+    reference <- object Json..: "reference"
+    context <- object Json..: "context"
+    envelope <- object Json..: "envelope"
+    Json.yield StoredEnvelope {reference, context, envelope}
+
+
+instance Json.ToJSON StoredEnvelope where
+  toJSON stored = Json.object
+    [ ("$erasable", Json.toJSON (1 :: Int)),
+      ("reference", Json.toJSON stored.reference),
+      ("context", Json.toJSON stored.context),
+      ("envelope", stored.envelope)
+    ]
+
+
+data CollisionPair = CollisionPair
+  { literal :: StoredEnvelope,
+    nested :: StoredEnvelope
+  }
+
+
+instance Json.FromJSON CollisionPair where
+  parseJSON = Json.withObject "CollisionPair" \object -> do
+    literal <- object Json..: "a/b"
+    nestedObject <- object Json..: "a"
+    nested <- nestedObject Json..: "b"
+    Json.yield CollisionPair {literal, nested}
+
+
 instance Query ProtectedRead where
   canAccessImpl _ = Nothing
   canViewImpl _ _ = Nothing
@@ -95,6 +133,47 @@ spec :: Spec Unit
 spec = do
   describe "Erasable key store" do
     whenEnvVar "POSTGRES_AVAILABLE" do
+      it "rejects ciphertext swapped between a slash key and nested keys" \_ -> do
+        store <- PostgresStore.new config
+        entityId <- Uuid.generate
+        let streamId = Event.StreamId (Uuid.toText entityId)
+        let entityName = Event.EntityName "erasable-path-collision"
+        let decision = do
+              first <- Erasable.new ("first" :: Text)
+              second <- Erasable.map (\_ -> "second" :: Text) first
+              Accept Event.StreamCreation [(first, second)]
+        (outcome, keys) <- Decider.runDecisionWithKeys (DecisionContext {genUuid = Uuid.generate}) (\_ -> Task.throw "No stored key") decision
+        (first, second) <- case outcome of
+          RejectCommand _ -> Task.throw "Expected protected values"
+          AcceptCommand _ values ->
+            case Array.first values of
+              Nothing -> Task.throw "Expected protected values"
+              Just pair -> Task.yield pair
+        Erasable.reference first |> shouldBe (Erasable.reference second)
+        let original = Json.object
+              [ ("a/b", Json.toJSON first),
+                ("a", Json.object [("b", Json.toJSON second)])
+              ]
+        payload <- Event.payloadFromEvents entityName streamId [original]
+        store.insertWithErasableKeys keys (payload {Event.insertionType = Event.StreamCreation}) |> Task.mapError toText |> discard
+        messages <- store.readAllStreamEvents entityName streamId |> Task.mapError toText |> Task.andThen Stream.toArray
+        stored <- case Array.first (EventStore.collectStreamEvents messages) of
+          Nothing -> Task.throw "Expected protected event"
+          Just event -> Task.yield event.event
+        pair <- case Json.decode @CollisionPair stored of
+          Err reason -> Task.throw reason
+          Ok value -> Task.yield value
+        let swapped = Json.object
+              [ ("a/b", Json.toJSON (pair.literal {envelope = pair.nested.envelope})),
+                ("a", Json.object [("b", Json.toJSON (pair.nested {envelope = pair.literal.envelope}))])
+              ]
+        swappedPayload <- Event.payloadFromEvents entityName streamId [swapped]
+        result <- store.insert (swappedPayload {Event.insertionType = Event.AnyStreamState}) |> Task.asResult
+        case result of
+          Ok _ -> fail "Swapped envelopes authenticated at distinct JSON locations"
+          Err _ -> pass
+        store.close
+
       it "distinguishes unknown, active, and erased across a new pool" \_ -> do
         connection <- Postgres.defaultOps.acquire config
         runReal connection createKeyTable
