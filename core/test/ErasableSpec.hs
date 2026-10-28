@@ -60,7 +60,7 @@ spec = parallel do
       let mappedDecision = do
             mapped <- Erasable.map unavailable first
             Accept AnyStreamState [mapped]
-      (mappedResult, keys) <- Decider.runDecisionWithKeys (DecisionContext {genUuid = Uuid.generate}) (\_ -> Task.yield (Just Nothing)) mappedDecision
+      (mappedResult, keys) <- Decider.runDecisionWithKeys (DecisionContext {genUuid = Uuid.generate}) (\_ -> Task.yield Decider.Erased) mappedDecision
       case mappedResult of
         RejectCommand _ -> fail "Expected mapped wrapper"
         AcceptCommand _ values ->

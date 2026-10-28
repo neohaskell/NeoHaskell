@@ -3,6 +3,7 @@ module Decider (
   Decision (..),
   DecisionContext (..),
   CommandResult (..),
+  KeyState (..),
 
   -- * Execution
   runDecision,
@@ -25,7 +26,7 @@ import Array (Array)
 import Array qualified
 import Basics
 import Erasable.Cipher qualified as Cipher
-import Erasable.Internal (NewKey (..), ProtectedValue (..))
+import Erasable.Internal (KeyState (..), NewKey (..), ProtectedValue (..))
 import Erasable.Internal qualified as Erasable
 import EventVariantOf (EventVariantOf (..))
 import Control.Monad qualified as Monad
@@ -107,17 +108,26 @@ runDecision ctx decision = do
 runDecisionWithKeys ::
   (HasCallStack) =>
   DecisionContext ->
-  (Text -> Task Text (Maybe (Maybe Cipher.Key))) ->
+  (Text -> Task Text KeyState) ->
   Decision a ->
   Task Text (CommandResult a, Array NewKey)
-runDecisionWithKeys ctx lookupKey = go Array.empty
- where
-  go :: forall a. (HasCallStack) => Array NewKey -> Decision a -> Task Text (CommandResult a, Array NewKey)
-  go _ (Return _) = Task.throw "Decision didn't terminate with accept/reject"
-  go keys (Bind m f) = case m of
+runDecisionWithKeys ctx lookupKey decision = runDecisionStep ctx lookupKey Array.empty decision
+
+
+runDecisionStep ::
+  forall a.
+  (HasCallStack) =>
+  DecisionContext ->
+  (Text -> Task Text KeyState) ->
+  Array NewKey ->
+  Decision a ->
+  Task Text (CommandResult a, Array NewKey)
+runDecisionStep ctx lookupKey keys decision = case decision of
+  Return _ -> Task.throw "Decision didn't terminate with accept/reject"
+  Bind m f -> case m of
     GenUuid -> do
       uuid <- ctx.genUuid
-      f uuid |> go keys
+      f uuid |> runDecisionStep ctx lookupKey keys
     ProtectValue jsonValue -> do
       uuid <- ctx.genUuid
       key <- Cipher.generateKey
@@ -127,16 +137,16 @@ runDecisionWithKeys ctx lookupKey = go Array.empty
       envelope <- Cipher.seal key (Erasable.contextBytes reference context) plaintext
       let protected = ProtectedValue {reference, context, envelope}
       let newKey = NewKey {reference, key}
-      f protected |> go (keys |> Array.push newKey)
+      f protected |> runDecisionStep ctx lookupKey (keys |> Array.push newKey)
     TransformValue transform protected -> do
       keyState <-
         case Array.find (\entry -> entry.reference == protected.reference) keys of
-          Just entry -> Task.yield (Just (Just entry.key))
+          Just entry -> Task.yield (Active entry.key)
           Nothing -> lookupKey protected.reference
       case keyState of
-        Nothing -> Task.throw "Erasable key record is missing"
-        Just Nothing -> f protected |> go keys
-        Just (Just key) -> do
+        Missing -> Task.throw "Erasable key record is missing"
+        Erased -> f protected |> runDecisionStep ctx lookupKey keys
+        Active key -> do
           bytes <-
             case Cipher.open key (Erasable.contextBytes protected.reference protected.context) protected.envelope of
               Err err -> Task.throw err
@@ -147,19 +157,19 @@ runDecisionWithKeys ctx lookupKey = go Array.empty
               Ok value -> Task.yield value
           let transformed = transform source |> Json.toJSON |> Json.encodeText |> Text.toBytes
           envelope <- Cipher.seal key (Erasable.contextBytes protected.reference protected.context) transformed
-          f (protected {envelope}) |> go keys
+          f (protected {envelope}) |> runDecisionStep ctx lookupKey keys
     Accept _ _ -> Task.throw "Accept must be the last statement"
     Reject _ -> Task.throw "Reject must be the last statement"
-    Return a -> go keys (f a)
-    Bind m' f' -> go keys (Bind m' (\x -> Bind (f' x) f))
-  go _ GenUuid = Task.throw "Unbound GenUuid"
-  go _ (ProtectValue _) = Task.throw "Unbound ProtectValue"
-  go _ (TransformValue _ _) = Task.throw "Unbound TransformValue"
-  go keys (Accept s events) = do
+    Return a -> runDecisionStep ctx lookupKey keys (f a)
+    Bind m' f' -> runDecisionStep ctx lookupKey keys (Bind m' (\x -> Bind (f' x) f))
+  GenUuid -> Task.throw "Unbound GenUuid"
+  ProtectValue _ -> Task.throw "Unbound ProtectValue"
+  TransformValue _ _ -> Task.throw "Unbound TransformValue"
+  Accept s events -> do
     let eventCount = Array.length events
     Log.debug [fmt|Decision: accepted with #{toText eventCount} event(s)|] |> Task.ignoreError
     (AcceptCommand s events, keys) |> Task.yield
-  go _ (Reject reason) = do
+  Reject reason -> do
     Log.debug "Decision: rejected" |> Task.ignoreError
     (RejectCommand reason, Array.empty) |> Task.yield
 

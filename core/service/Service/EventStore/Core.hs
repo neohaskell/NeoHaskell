@@ -18,8 +18,7 @@ module Service.EventStore.Core (
 import Array (Array)
 import Array qualified
 import Basics
-import Erasable.Cipher qualified as Cipher
-import Erasable.Internal (NewKey)
+import Erasable.Internal (KeyState, NewKey)
 import Json qualified
 import Log qualified
 import Maybe (Maybe (..))
@@ -132,7 +131,7 @@ data EventStore eventType = EventStore
     insert :: InsertionPayload eventType -> Task Error InsertionSuccess,
     insertWithErasableKeys :: Array NewKey -> InsertionPayload eventType -> Task Error InsertionSuccess,
     renderProtectedJson :: Json.Value -> Task Error Json.Value,
-    readErasableKey :: Text -> Task Error (Maybe (Maybe Cipher.Key)),
+    readErasableKey :: Text -> Task Error KeyState,
     -- | Read events from a stream in forward direction starting from a given revision.
     --   Returns a stream of ReadStreamMessage or an Error.
     readStreamForwardFrom ::

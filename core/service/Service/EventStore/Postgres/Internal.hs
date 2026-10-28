@@ -265,15 +265,7 @@ new ops cfg = do
                   (readKeyState pool)
                   value
                   |> Task.mapError StorageFailure,
-              readErasableKey = \reference -> do
-                state <- ErasableKeys.readKeyBytes reference |> Sessions.run pool |> Task.mapError (toText .> StorageFailure)
-                case state of
-                  Nothing -> Task.yield Nothing
-                  Just Nothing -> Task.yield (Just Nothing)
-                  Just (Just bytes) ->
-                    case Cipher.keyFromBytes (Bytes.fromLegacy bytes) of
-                      Err err -> Task.throw (StorageFailure err)
-                      Ok key -> Task.yield (Just (Just key)),
+              readErasableKey = \reference -> readKeyState pool reference |> Task.mapError StorageFailure,
               readStreamForwardFrom = readStreamForwardFromImpl sharedOps cfg,
               readStreamBackwardFrom = readStreamBackwardFromImpl sharedOps cfg,
               readAllStreamEvents = readAllStreamEventsImpl sharedOps cfg,
