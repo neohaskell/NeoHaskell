@@ -24,6 +24,13 @@
           inherit (haskellNix) config;
         };
         flake = pkgs.hixProject.flake { };
+        ciProject = pkgs.hixProject.appendModule ({ lib, ... }: {
+          shell.tools = lib.mkForce {
+            cabal = "latest";
+            hspec-discover = "latest";
+            doctest = "latest";
+          };
+        });
 
         # The Rust Neo CLI (neo/) exposed as a first-class monorepo output.
         # Defined in nix/neo-package.nix as the single source of truth; it stays
@@ -32,11 +39,7 @@
         neo = pkgs.callPackage ./nix/neo-package.nix { };
       in flake // {
         devShells = flake.devShells // {
-          ci = flake.devShells.default.overrideAttrs (old: {
-            nativeBuildInputs = builtins.filter (input:
-              !(pkgs.lib.hasPrefix "haskell-language-server-"
-                (pkgs.lib.getName input))) old.nativeBuildInputs;
-          });
+          ci = ciProject.shell;
         };
         legacyPackages = pkgs;
         # Merge alongside the existing hix outputs; the default NeoHaskell
