@@ -24,23 +24,23 @@ This testbed includes:
 
 ### Start the Application
 
-```bash
-# From the root of this repo
-cabal run testbed
+Start PostgreSQL using the default connection values in `Testbed.Config`, or
+set `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, and `DB_NAME`. From the
+repository root, run:
+
+```sh
+nix develop --command cabal run exe:nhtestbed
 ```
 
 The app will start and be available at `http://localhost:8080`
 
 ### Run the Tests
 
-```bash
-# Run all blackbox tests
-./scripts/run-tests.sh
+The maintained runner builds and starts both testbed applications and the fake
+external services. It requires PostgreSQL and runs every Hurl file:
 
-# Or run specific test suites
-hurl --test tests/commands/*.hurl
-hurl --test tests/queries/*.hurl
-hurl --test tests/scenarios/*.hurl
+```sh
+nix develop --command .agents/skills/neohaskell-test/scripts/run-testbed
 ```
 
 ## Project Structure
@@ -85,6 +85,24 @@ Each test file focuses on a specific area:
 - **`tests/commands/`** - Command execution, event generation, business rules
 - **`tests/queries/`** - Read model queries and projections
 - **`tests/scenarios/`** - Complete user workflows across multiple bounded contexts
+
+## Run the typed inbound example
+
+`Testbed.Integrations.TypedInboundExample` uses `Integration.typedInbound` and
+`Application.withInboundHandler` to emit a cart command and a stock command from
+one worker. The cart query identifies its carts by owner, and the stock query
+identifies its stock records by the example quantity. The Hurl test waits for a
+new record in each query without requiring one command to finish before the other.
+Both emitted commands use `InternalTransport`, so the receiving services register
+them for integration dispatch.
+
+The maintained suite includes `testbed/tests/integrations/typed-inbound.hurl`.
+To run that scenario alone, start the application as shown above. In another
+terminal, run:
+
+```sh
+nix develop --command hurl --test testbed/tests/integrations/typed-inbound.hurl
+```
 
 ## Contributing
 
