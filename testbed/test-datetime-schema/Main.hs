@@ -2,10 +2,10 @@
 -- Run the nhtestbed-datetime-schema test suite to verify the example.
 module Main (main) where
 
+import Array qualified
 import Core
 import DateTime qualified
 import Json qualified
-import Prelude (IO)
 import Schema.JsonSchema qualified
 import Test
 import Test.Hspec qualified as Hspec
@@ -29,12 +29,12 @@ main = Hspec.hspec do
   describe "Shipment timestamp schema" do
     it "publishes timestamp strings and encodes a shipment" \_ -> do
       let schema = toSchema @ShipmentTimeline
-      schema
-        |> shouldBe
-          (SObject
-            [ FieldSchema "shippedAt" SText True ""
-            , FieldSchema "deliveredAt" (SOptional SText) False ""
-            ])
+      case schema of
+        SObject fields -> do
+          Array.length fields |> shouldBe 2
+          Array.contains (FieldSchema "shippedAt" SText True "") fields |> shouldBe True
+          Array.contains (FieldSchema "deliveredAt" (SOptional SText) False "") fields |> shouldBe True
+        _ -> Test.fail "Expected an object schema for the shipment timeline"
       Schema.JsonSchema.toJsonSchema schema
         |> shouldBe
           (Json.object

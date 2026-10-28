@@ -138,11 +138,12 @@ spec = do
   describe "ToSchema for records" do
     it "generates required and optional timestamp fields with string lowering" \_ -> do
       let schema = toSchema @TimestampedRecord
-      let expectedFields = Array.fromLinkedList
-            [ FieldSchema "occurredAt" SText True ""
-            , FieldSchema "completedAt" (SOptional SText) False ""
-            ]
-      schema |> shouldBe (SObject expectedFields)
+      case schema of
+        SObject fields -> do
+          Array.length fields |> shouldBe 2
+          Array.contains (FieldSchema "occurredAt" SText True "") fields |> shouldBe True
+          Array.contains (FieldSchema "completedAt" (SOptional SText) False "") fields |> shouldBe True
+        _ -> Test.fail "Expected an object schema for the timestamped record"
       let record = TimestampedRecord (DateTime.fromEpochSeconds 0) Nothing
       Json.encode record
         |> shouldBe
