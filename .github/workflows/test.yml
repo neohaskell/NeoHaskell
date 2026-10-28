@@ -114,7 +114,7 @@ jobs:
             extra-trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= neohaskell.cachix.org-1:mo2cLaGbwqbrxs9xhqKK8jeNsn3osi7t6XoAmxSZssc=
       - uses: DeterminateSystems/magic-nix-cache-action@v14
       - name: Run doctest suite
-        run: ./.agents/skills/neohaskell-test/scripts/run-doctest --strict
+        run: nix develop .#ci --command ./.agents/skills/neohaskell-test/scripts/run-doctest --strict
 
   test-core:
     needs: [build]
@@ -136,10 +136,10 @@ jobs:
       - name: Run nhcore-test-core
         run: |
           set -o pipefail
-          LOG_LEVEL=Warn nix develop --command cabal test nhcore-test-core \
+          LOG_LEVEL=Warn nix develop .#ci --command cabal test nhcore-test-core \
             --test-show-details=direct | tee nhcore-test-core.report
       - name: Check outbound payload compiler diagnostics
-        run: nix develop --command python3 core/test/Service/OutboundIntegration/check_compiler_rejections.py
+        run: nix develop .#ci --command python3 core/test/Service/OutboundIntegration/check_compiler_rejections.py
       - uses: actions/upload-artifact@v7
         with:
           name: nhcore-test-core-report

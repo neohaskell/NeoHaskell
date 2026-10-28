@@ -31,6 +31,13 @@
         # workspace, no coupling to the NeoHaskell library outputs below).
         neo = pkgs.callPackage ./nix/neo-package.nix { };
       in flake // {
+        devShells = flake.devShells // {
+          ci = flake.devShells.default.overrideAttrs (old: {
+            nativeBuildInputs = builtins.filter (input:
+              !(pkgs.lib.hasPrefix "haskell-language-server-"
+                (pkgs.lib.getName input))) old.nativeBuildInputs;
+          });
+        };
         legacyPackages = pkgs;
         # Merge alongside the existing hix outputs; the default NeoHaskell
         # package/app is untouched; `neo` is purely additive.
