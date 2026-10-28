@@ -133,7 +133,10 @@ fi
 # Run integration tests (PDF extraction, etc.)
 if [ -d "testbed/tests/integrations" ] && [ "$(ls -A testbed/tests/integrations/*.hurl 2>/dev/null)" ]; then
 	echo -e "${GREEN}Running integration tests...${NC}"
-	hurl --test testbed/tests/integrations/*.hurl
+	delivered_effect_id=$(python3 -c 'import uuid; print(uuid.uuid4())')
+	failed_effect_id=$(python3 -c 'import uuid; print(uuid.uuid4())')
+	echo "Generic HTTP effect IDs: $delivered_effect_id $failed_effect_id"
+	hurl --test --variable "delivered_effect_id=$delivered_effect_id" --variable "failed_effect_id=$failed_effect_id" testbed/tests/integrations/*.hurl
 	echo ""
 fi
 
