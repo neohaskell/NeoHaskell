@@ -23,11 +23,11 @@ DOCTEST_DEPENDENCIES = (
     ".agents/skills/neohaskell-best-practices/scripts/with-toolchain",
 )
 CI_GATES = {
-    "test.yml": ("ci-gate", ("build", "doctest", "test-core", "test-auth", "test-integration", "test-service", "test-hurl")),
+    "test.yml": ("ci-gate", ("build", "test-core", "test-transport", "test-auth", "test-integration", "test-service", "test-hurl")),
     "neo-ci.yml": ("neo-ci-gate", ("rust", "ide", "nix-package", "consumer-contract")),
 }
 EXPENSIVE_JOB_SELECTORS = {
-    "test.yml": {"build": "compiled", "doctest": "compiled"},
+    "test.yml": {"build": "compiled"},
     "neo-ci.yml": {"rust": "touched", "ide": "touched", "nix-package": "touched"},
 }
 
@@ -189,6 +189,12 @@ def selected_values(name: str, selected: bool) -> dict[str, str]:
 
 
 class CiVerificationTests(unittest.TestCase):
+    def test_linux_build_requires_strict_doctest_before_artifact_upload(self) -> None:
+        build = job_block(workflow("test.yml"), "build")
+        self.assertRegex(build, r"nix (?:--debug )?develop .#ci --command cabal build all --disable-documentation")
+        self.assertIn("nix develop .#ci --command ./.agents/skills/neohaskell-test/scripts/run-doctest --strict", build)
+        self.assertLess(build.index("- name: Run doctest suite"), build.index("- uses: actions/upload-artifact@v7"))
+
     def test_pr_selector_matches_real_doctest_dependencies_and_rejects_controls(self) -> None:
         text = workflow("test.yml")
         pattern = re.search(r"PATTERN='([^']+)'", job_block(text, "changes"))[1]
@@ -378,9 +384,11 @@ class CiVerificationTests(unittest.TestCase):
                     unrelated_results["consumer-contract"] = "success"
                 unrelated = run_gate(name, run_expensive=True, selected=selected_values(name, False), changes_result="success", job_results=unrelated_results)
                 self.assertEqual(unrelated.returncode, 0, unrelated.stdout + unrelated.stderr)
-            with self.subTest(workflow=name, state="selected job failure"):
-                failed = run_gate(name, run_expensive=True, selected=selected_values(name, True), changes_result="success", job_results={job: "failure" for job in jobs})
-                self.assertNotEqual(failed.returncode, 0)
+            for job in jobs:
+                with self.subTest(workflow=name, state="selected job failure", job=job):
+                    failed = run_gate(name, run_expensive=True, selected=selected_values(name, True), changes_result="success", job_results={job: "failure"})
+                    self.assertNotEqual(failed.returncode, 0)
+                    self.assertIn(f"{job} did not pass", failed.stdout + failed.stderr)
             for changes_result in ("failure", "cancelled", "skipped"):
                 with self.subTest(workflow=name, changes_result=changes_result):
                     blocked = run_gate(name, run_expensive=False, selected=selected_values(name, False), changes_result=changes_result, job_results={job: "skipped" for job in jobs})

@@ -363,6 +363,7 @@ class History(unittest.TestCase):
         self.root = Path(self.temp.name)
         self.repo = release.Repo(self.root)
         self.git("init", "-q", "-b", "main")
+        self.git("config", "maintenance.auto", "false")
         self.git("config", "user.email", "fixture@example.invalid")
         self.git("config", "user.name", "Fixture")
         self.write(

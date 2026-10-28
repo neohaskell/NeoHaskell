@@ -78,7 +78,8 @@ jobs:
         with:
           extra-conf: |
             accept-flake-config = true
-            extra-substituters = https://cache.iog.io https://neohaskell.cachix.org
+            http2 = false
+            extra-substituters = https://neohaskell.cachix.org?priority=30 https://cache.iog.io
             extra-trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= neohaskell.cachix.org-1:mo2cLaGbwqbrxs9xhqKK8jeNsn3osi7t6XoAmxSZssc=
       - uses: DeterminateSystems/magic-nix-cache-action@v14
       - uses: actions/cache@v6.1.0
@@ -88,7 +89,9 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cabal-
       - name: Build the project with cabal
-        run: nix develop --command cabal build all --disable-documentation
+        run: ./.agents/skills/neohaskell-test/scripts/nix-acquisition-diagnostics nix --debug develop .#ci --command cabal build all --disable-documentation
+      - name: Run doctest suite
+        run: nix develop .#ci --command ./.agents/skills/neohaskell-test/scripts/run-doctest --strict
       - uses: actions/upload-artifact@v7
         with:
           name: dist-newstyle
@@ -96,25 +99,6 @@ jobs:
           compression-level: 0
           retention-days: 1
           if-no-files-found: error
-
-  doctest:
-    needs: changes
-    if: >-
-      needs.changes.outputs.run_expensive == 'true'
-      && needs.changes.outputs.compiled == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v7.0.1
-      - uses: DeterminateSystems/determinate-nix-action@v3.24.0
-        with:
-          extra-conf: |
-            accept-flake-config = true
-            extra-substituters = https://cache.iog.io https://neohaskell.cachix.org
-            extra-trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= neohaskell.cachix.org-1:mo2cLaGbwqbrxs9xhqKK8jeNsn3osi7t6XoAmxSZssc=
-      - uses: DeterminateSystems/magic-nix-cache-action@v14
-      - name: Run doctest suite
-        run: ./.agents/skills/neohaskell-test/scripts/run-doctest --strict
 
   test-core:
     needs: [build]
@@ -136,10 +120,10 @@ jobs:
       - name: Run nhcore-test-core
         run: |
           set -o pipefail
-          LOG_LEVEL=Warn nix develop --command cabal test nhcore-test-core \
+          LOG_LEVEL=Warn nix develop .#ci --command cabal test nhcore-test-core \
             --test-show-details=direct | tee nhcore-test-core.report
       - name: Check outbound payload compiler diagnostics
-        run: nix develop --command python3 core/test/Service/OutboundIntegration/check_compiler_rejections.py
+        run: nix develop .#ci --command python3 core/test/Service/OutboundIntegration/check_compiler_rejections.py
       - uses: actions/upload-artifact@v7
         with:
           name: nhcore-test-core-report
@@ -200,7 +184,8 @@ jobs:
         with:
           extra-conf: |
             accept-flake-config = true
-            extra-substituters = https://cache.iog.io https://neohaskell.cachix.org
+            http2 = false
+            extra-substituters = https://neohaskell.cachix.org?priority=30 https://cache.iog.io
             extra-trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= neohaskell.cachix.org-1:mo2cLaGbwqbrxs9xhqKK8jeNsn3osi7t6XoAmxSZssc=
       - uses: DeterminateSystems/magic-nix-cache-action@v14
       - uses: actions/download-artifact@v8
@@ -208,7 +193,7 @@ jobs:
           name: dist-newstyle
           path: dist-newstyle
       - name: Run nhcore-test-auth
-        run: LOG_LEVEL=Warn nix develop --command cabal test nhcore-test-auth nhcore-test-auth-dns
+        run: LOG_LEVEL=Warn nix develop .#ci --command cabal test nhcore-test-auth nhcore-test-auth-dns
 
   test-integration:
     needs: [build]
@@ -220,7 +205,8 @@ jobs:
         with:
           extra-conf: |
             accept-flake-config = true
-            extra-substituters = https://cache.iog.io https://neohaskell.cachix.org
+            http2 = false
+            extra-substituters = https://neohaskell.cachix.org?priority=30 https://cache.iog.io
             extra-trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= neohaskell.cachix.org-1:mo2cLaGbwqbrxs9xhqKK8jeNsn3osi7t6XoAmxSZssc=
       - uses: DeterminateSystems/magic-nix-cache-action@v14
       - uses: actions/download-artifact@v8
@@ -228,7 +214,7 @@ jobs:
           name: dist-newstyle
           path: dist-newstyle
       - name: Run nhcore-test-integration
-        run: LOG_LEVEL=Warn nix develop --command cabal test nhcore-test-integration
+        run: LOG_LEVEL=Warn nix develop .#ci --command cabal test nhcore-test-integration
 
   test-service:
     needs: [build]
@@ -240,7 +226,8 @@ jobs:
         with:
           extra-conf: |
             accept-flake-config = true
-            extra-substituters = https://cache.iog.io https://neohaskell.cachix.org
+            http2 = false
+            extra-substituters = https://neohaskell.cachix.org?priority=30 https://cache.iog.io
             extra-trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= neohaskell.cachix.org-1:mo2cLaGbwqbrxs9xhqKK8jeNsn3osi7t6XoAmxSZssc=
       - uses: DeterminateSystems/magic-nix-cache-action@v14
       - uses: actions/download-artifact@v8
@@ -268,9 +255,9 @@ jobs:
       - name: Run nhcore-test-service
         env:
           POSTGRES_AVAILABLE: "true"
-        run: LOG_LEVEL=Warn nix develop --command cabal test nhcore-test-service --test-show-details=direct
+        run: LOG_LEVEL=Warn nix develop .#ci --command cabal test nhcore-test-service --test-show-details=direct
       - name: Check entity event compiler rejections
-        run: nix develop --command python3 core/test/Service/Event/check_compiler_rejections.py
+        run: nix develop .#ci --command python3 core/test/Service/Event/check_compiler_rejections.py
 
   test-hurl:
     needs: [build]
@@ -326,7 +313,7 @@ jobs:
 
   ci-gate:
     if: always()
-    needs: [changes, build, doctest, test-core, test-transport, test-auth, test-integration, test-service, test-hurl]
+    needs: [changes, build, test-core, test-transport, test-auth, test-integration, test-service, test-hurl]
     runs-on: ubuntu-latest
     steps:
       - name: Check all tests passed
@@ -345,7 +332,6 @@ jobs:
           fi
           results=(
             "build=${{ needs.build.result }}"
-            "doctest=${{ needs.doctest.result }}"
             "test-core=${{ needs.test-core.result }}"
             "test-transport=${{ needs.test-transport.result }}"
             "test-auth=${{ needs.test-auth.result }}"
