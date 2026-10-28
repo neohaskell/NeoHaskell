@@ -18,6 +18,9 @@ import Hasql.Session qualified as Session
 import Hasql.Statement (Statement (..))
 import Hasql.Statement qualified as Hasql
 import Hasql.TH qualified as TH
+import Erasable.Cipher qualified as Cipher
+import Erasable.Internal (NewKey (..))
+import Erasable.Internal qualified as Erasable
 import Json qualified
 import Mappable qualified
 import Maybe qualified
@@ -26,7 +29,7 @@ import Service.Event (EntityName (..), Event (..), StreamId (..), StreamPosition
 import Service.Event.EventMetadata (EventMetadata (..))
 import Service.Event.EventMetadata qualified as EventMetadata
 import Service.EventStore.Postgres.Core
-import Service.EventStore.Postgres.PostgresEventRecord (PostgresEventRecord)
+import Service.EventStore.Postgres.PostgresEventRecord (PostgresEventRecord (..))
 import Service.EventStore.Postgres.PostgresEventRecord qualified as PostgresEventRecord
 import Task qualified
 import Text qualified
@@ -71,6 +74,8 @@ postgresRecordToEvent ::
   PostgresEventRecord ->
   Result Text (Event Json.Value)
 postgresRecordToEvent record = do
+  let recordId = record.eventId
+  Erasable.validateStorageContext [fmt|event:#{Uuid.toText recordId}|] record.eventData
   rawMetadata <- Json.decode record.metadata
   let metadata =
         rawMetadata
@@ -364,6 +369,48 @@ insertRecordsIntoStream events = do
             )
   let vectorEvents = events |> Array.unwrap
   Session.statement vectorEvents statement
+
+
+insertRecordsWithKeys ::
+  Array NewKey -> Array EventInsertionRecord -> Session.Session Unit
+insertRecordsWithKeys newKeys events = do
+  let statement :: Statement (Array NewKey, Array EventInsertionRecord) Unit =
+        Statement sql encoder Decoders.noResult True
+       where
+        sql =
+          "WITH inserted_keys AS ("
+            <> " INSERT INTO erasable_keys (reference, key_bytes)"
+            <> " SELECT reference, key_bytes FROM UNNEST($1::text[], $2::bytea[]) AS keys(reference, key_bytes)"
+            <> " RETURNING reference"
+            <> ") INSERT INTO Events (EventId, LocalPosition, InlinedStreamId, Entity, EventData, Metadata)"
+            <> " SELECT event_id, local_position, stream_id, entity, event_data, metadata"
+            <> " FROM UNNEST($3::uuid[], $4::bigint[], $5::text[], $6::text[], $7::jsonb[], $8::jsonb[])"
+            <> " AS events(event_id, local_position, stream_id, entity, event_data, metadata)"
+            <> " WHERE (SELECT COUNT(*) FROM inserted_keys) = CARDINALITY($1::text[])"
+        encoder =
+          extractFields
+            >$< Contravariant.contrazip8
+              (Encoders.param (Encoders.nonNullable (Encoders.foldableArray (Encoders.nonNullable Encoders.text))))
+              (Encoders.param (Encoders.nonNullable (Encoders.foldableArray (Encoders.nonNullable Encoders.bytea))))
+              (Encoders.param (Encoders.nonNullable (Encoders.foldableArray (Encoders.nonNullable Encoders.uuid))))
+              (Encoders.param (Encoders.nonNullable (Encoders.foldableArray (Encoders.nonNullable Encoders.int8))))
+              (Encoders.param (Encoders.nonNullable (Encoders.foldableArray (Encoders.nonNullable Encoders.text))))
+              (Encoders.param (Encoders.nonNullable (Encoders.foldableArray (Encoders.nonNullable Encoders.text))))
+              (Encoders.param (Encoders.nonNullable (Encoders.foldableArray (Encoders.nonNullable Encoders.jsonb))))
+              (Encoders.param (Encoders.nonNullable (Encoders.foldableArray (Encoders.nonNullable Encoders.jsonb))))
+        extractFields (keys, records) =
+          let keyVector = Array.unwrap keys
+              recordVector = Array.unwrap records
+           in ( Vector.map (\key -> key.reference) keyVector,
+                Vector.map (\key -> Cipher.keyToBytes key.key |> Bytes.unwrap) keyVector,
+                Vector.map (\record -> Uuid.toLegacy record.eventId) recordVector,
+                Vector.map (\record -> record.localPosition) recordVector,
+                Vector.map (\record -> record.inlinedStreamId) recordVector,
+                Vector.map (\record -> record.entity) recordVector,
+                Vector.map (\record -> record.eventData) recordVector,
+                Vector.map (\record -> record.metadata) recordVector
+              )
+  Session.statement (newKeys, events) statement
 
 
 selectEventBatch ::

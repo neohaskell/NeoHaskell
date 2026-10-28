@@ -22,6 +22,21 @@ This testbed includes:
 
 ## Running the Testbed
 
+### Protected PostgreSQL round trip
+
+From the repository root, start PostgreSQL with the testbed defaults (`neohaskell` database and user, password `neohaskell`, port `5432`). Then run these commands in separate terminals:
+
+```bash
+nix develop --command cabal run exe:nhtestbed
+```
+
+```bash
+nix develop --command hurl --test testbed/tests/scenarios/cryptoerasure-m1.hurl
+POSTGRES_AVAILABLE=true nix develop --command .agents/skills/tdd/scripts/test-match 'Erasable key store' nhcore-test-service
+```
+
+The Hurl scenario asserts a command-generated event, a reconstructed query, two independently protected values, a mapped copy, nested optional values, and Unicode `Available` content. The service fixture uses real PostgreSQL to assert encrypted event storage, restart, key/event rollback, and a private tombstone yielding `Erased`. Erasure is deliberately not exposed as an application command or HTTP success response in this slice.
+
 ### Start the Application
 
 ```bash

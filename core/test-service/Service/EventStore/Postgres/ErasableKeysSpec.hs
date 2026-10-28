@@ -1,0 +1,342 @@
+{-| Exercise durable key state and a private erasure fixture against PostgreSQL.
+The event-store append tests verify key and event atomicity separately.
+-}
+module Service.EventStore.Postgres.ErasableKeysSpec (spec) where
+
+import Core
+import Array qualified
+import Bytes qualified
+import Data.ByteString qualified as ByteString
+import Data.Functor.Contravariant ((>$<))
+import Data.Semigroup ((<>))
+import Decider (Decision (..), DecisionContext (..))
+import Decider qualified
+import Erasable qualified
+import Hasql.Decoders qualified as Decoders
+import Hasql.Encoders qualified as Encoders
+import Hasql.Pool qualified as HasqlPool
+import Hasql.Session qualified as Session
+import Hasql.Statement (Statement (..))
+import Json qualified
+import Result qualified
+import Service.Event qualified as Event
+import Service.AccessControl qualified as AccessControl
+import Service.Event.EventMetadata (EventMetadata (..))
+import Service.EventStore.Core qualified as EventStore
+import Service.EventStore.Postgres qualified as PostgresStore
+import Service.EventStore.Postgres.Internal qualified as Postgres
+import Service.Infra.Postgres.ConnectionConfig qualified as ConnectionConfig
+import Service.QueryObjectStore.Postgres qualified as QueryStore
+import Service.QueryObjectStore.Core (QueryObjectStore (..))
+import Service.Query.Endpoint qualified as QueryEndpoint
+import Service.Query.Pagination (QueryPageRequest (..))
+import Task qualified
+import Test
+import Text qualified
+import Uuid qualified
+import Stream qualified
+import Data.UUID qualified as UUID
+
+
+data ProtectedRead = ProtectedRead
+  { secret :: Erasable.Erasable Json.Value
+  }
+  deriving (Generic)
+
+
+instance Json.ToJSON ProtectedRead
+instance Json.FromJSON ProtectedRead
+
+
+instance Query ProtectedRead where
+  canAccessImpl _ = Nothing
+  canViewImpl _ _ = Nothing
+
+
+runReal :: Postgres.Connection -> Session.Session value -> Task Text value
+runReal connection session =
+  case connection of
+    Postgres.MockConnection -> Task.throw "Expected PostgreSQL connection"
+    Postgres.Connection pool -> do
+      outcome <- HasqlPool.use pool session |> Task.fromIO
+      case Result.fromEither outcome of
+        Err err -> Task.throw (toText (show err))
+        Ok value -> Task.yield value
+
+
+config :: Postgres.PostgresEventStore
+config =
+  Postgres.PostgresEventStore
+    { host = "localhost",
+      databaseName = "neohaskell",
+      user = "neohaskell",
+      password = "neohaskell",
+      port = 5432,
+      poolSize = 2,
+      sslMode = ConnectionConfig.SslModeUnset,
+      sslRootCert = Nothing
+    }
+
+
+queryConfig :: QueryStore.PostgresQueryObjectStoreConfig
+queryConfig = QueryStore.PostgresQueryObjectStoreConfig
+  { host = "localhost",
+    databaseName = "neohaskell",
+    user = "neohaskell",
+    password = "neohaskell",
+    port = 5432,
+    poolSize = 2,
+    sslMode = ConnectionConfig.SslModeUnset,
+    sslRootCert = Nothing
+  }
+
+
+spec :: Spec Unit
+spec = do
+  describe "Erasable key store" do
+    whenEnvVar "POSTGRES_AVAILABLE" do
+      it "distinguishes unknown, active, and erased across a new pool" \_ -> do
+        connection <- Postgres.defaultOps.acquire config
+        runReal connection createKeyTable
+        firstId <- Uuid.generate
+        secondId <- Uuid.generate
+        let first = Uuid.toText firstId
+        let second = Uuid.toText secondId
+        firstKey <- Bytes.getRandom 32
+        secondKey <- Bytes.getRandom 32
+        unknown <- runReal connection (keyRecord first)
+        case unknown of
+          Nothing -> pass
+          _ -> fail "Fresh reference must be unknown"
+        runReal connection (insertFixtureKey first firstKey)
+        runReal connection (insertFixtureKey second secondKey)
+        Postgres.defaultOps.release connection
+        restarted <- Postgres.defaultOps.acquire config
+        runReal restarted (eraseFixtureKey first)
+        erased <- runReal restarted (keyRecord first)
+        case erased of
+          Just Nothing -> pass
+          _ -> fail "Erasure must leave a tombstone"
+        runReal restarted (eraseFixtureKey first)
+        repeated <- runReal restarted (keyRecord first)
+        case repeated of
+          Just Nothing -> pass
+          _ -> fail "Repeated erasure must stay erased"
+        resurrection <- runReal restarted (insertFixtureKey first firstKey) |> Task.asResult
+        case resurrection of
+          Ok _ -> fail "An erased reference must not accept a new key"
+          Err _ -> pass
+        remaining <- runReal restarted (keyRecord second)
+        case remaining of
+          Just (Just _) -> pass
+          _ -> fail "Independent reference must remain active"
+        Postgres.defaultOps.release restarted
+
+      it "stores encrypted events atomically and resolves fresh key state after restart" \_ -> do
+        store <- PostgresStore.new config
+        entityId <- Uuid.generate
+        let streamId = Event.StreamId (Uuid.toText entityId)
+        let entityName = Event.EntityName "erasable-fixture"
+        let marker = "Álvaro ñ 😀"
+        let secret = Json.object [("name", Json.toJSON marker), ("nested", Json.toJSON ([Just ("café" :: Text), Nothing] :: [Maybe Text]))]
+        let decision = do
+              protected <- Erasable.new secret
+              Accept Event.StreamCreation [protected]
+        (outcome, keys) <- Decider.runDecisionWithKeys (DecisionContext {genUuid = Uuid.generate}) (\_ -> Task.throw "No stored key") decision
+        protected <- case outcome of
+          RejectCommand _ -> Task.throw "Expected protected value"
+          AcceptCommand _ values ->
+            case Array.first values of
+              Nothing -> Task.throw "Expected one protected value"
+              Just value -> Task.yield value
+        let eventJson = Json.object [("private", Json.toJSON protected)]
+        payload <- Event.payloadFromEvents entityName streamId [eventJson]
+        store.insertWithErasableKeys keys (payload {Event.insertionType = Event.StreamCreation}) |> Task.mapError toText
+        repeated <- store.insertWithErasableKeys keys (payload {Event.insertionType = Event.StreamCreation}) |> Task.asResult
+        case repeated of
+          Ok _ -> fail "A protected duplicate ID must not be accepted as a fresh append"
+          Err _ -> pass
+        let eventId = case Array.first payload.insertions of
+              Just insertion -> insertion.metadata.eventId
+              Nothing -> panic "Payload must have one insertion"
+        connection <- Postgres.defaultOps.acquire config
+        rawStored <- runReal connection (eventJsonText eventId)
+        case rawStored of
+          Nothing -> fail "Expected committed event"
+          Just storedText -> storedText |> shouldSatisfy (\value -> not (Text.contains marker value))
+        Postgres.defaultOps.release connection
+        store.close
+        restarted <- PostgresStore.new config
+        messages <- restarted.readAllStreamEvents entityName streamId |> Task.mapError toText |> Task.andThen Stream.toArray
+        let events = EventStore.collectStreamEvents messages
+        storedEvent <- case Array.first events of
+          Nothing -> Task.throw "Expected event after restart"
+          Just value -> Task.yield value
+        available <- restarted.renderProtectedJson storedEvent.event |> Task.mapError toText
+        Json.encodeText available |> shouldSatisfy (Text.contains marker)
+        queryStore <- QueryStore.newFromConfig @Json.Value queryConfig "erasable-m1-fixture" |> Task.mapError toText
+        queryId <- Uuid.generate
+        queryStore.atomicUpdate queryId (\_ -> Just storedEvent.event) |> Task.mapError toText
+        queryConnection <- Postgres.defaultOps.acquire config
+        queryStored <- runReal queryConnection (queryJsonText queryId)
+        case queryStored of
+          Nothing -> fail "Expected protected query row"
+          Just queryText -> do
+            queryText |> shouldSatisfy (\value -> not (Text.contains marker value))
+            rawStored |> shouldSatisfy (\eventText -> eventText != Just queryText)
+        Postgres.defaultOps.release queryConnection
+        authorizedStore <- QueryStore.newFromConfig @ProtectedRead queryConfig "erasable-m1-authorized" |> Task.mapError toText
+        authorizedId <- Uuid.generate
+        authorizedStore.atomicUpdate authorizedId (\_ -> Just (ProtectedRead {secret = protected})) |> Task.mapError toText
+        let readAuthorized = QueryEndpoint.createQueryEndpointWithProtection
+              (\value -> restarted.renderProtectedJson value |> Task.mapError (\_ -> AccessControl.StorageError "Protected response resolution failed"))
+              authorizedStore Nothing Nothing (QueryPageRequest {limit = 100, offset = 0})
+        beforeErasure <- readAuthorized |> Task.mapError toText
+        beforeErasure |> shouldSatisfy (Text.contains "Available")
+        beforeErasure |> shouldSatisfy (Text.contains marker)
+        keyConnection <- Postgres.defaultOps.acquire config
+        runReal keyConnection (eraseFixtureKey (Erasable.reference protected))
+        erased <- runReal keyConnection (keyRecord (Erasable.reference protected))
+        case erased of
+          Just Nothing -> pass
+          _ -> fail "Expected erased tombstone"
+        Postgres.defaultOps.release keyConnection
+        unavailable <- restarted.renderProtectedJson storedEvent.event |> Task.mapError toText
+        Json.encodeText unavailable |> shouldSatisfy (\value -> not (Text.contains marker value))
+        Json.encodeText unavailable |> shouldSatisfy (Text.contains "Erased")
+        afterErasure <- readAuthorized |> Task.mapError toText
+        afterErasure |> shouldSatisfy (Text.contains "Erased")
+        afterErasure |> shouldSatisfy (\value -> not (Text.contains marker value))
+        restarted.close
+
+      it "rolls back a new key when its event conflicts with the stream" \_ -> do
+        store <- PostgresStore.new config
+        entityId <- Uuid.generate
+        let streamId = Event.StreamId (Uuid.toText entityId)
+        let entityName = Event.EntityName "erasable-conflict-fixture"
+        firstPayload <- Event.payloadFromEvents entityName streamId [Json.toJSON ("first" :: Text)]
+        store.insert (firstPayload {Event.insertionType = Event.StreamCreation}) |> Task.mapError toText |> discard
+        let decision = do
+              protected <- Erasable.new ("private" :: Text)
+              Accept Event.AnyStreamState [protected]
+        (outcome, keys) <- Decider.runDecisionWithKeys (DecisionContext {genUuid = Uuid.generate}) (\_ -> Task.throw "No stored key") decision
+        protected <- case outcome of
+          RejectCommand _ -> Task.throw "Expected protected value"
+          AcceptCommand _ values ->
+            case Array.first values of
+              Nothing -> Task.throw "Expected protected value"
+              Just value -> Task.yield value
+        secondPayload <- Event.payloadFromEvents entityName streamId [Json.toJSON protected]
+        result <- store.insertWithErasableKeys keys (secondPayload {Event.insertionType = Event.InsertAfter (Event.StreamPosition (-1))}) |> Task.asResult
+        case result of
+          Ok _ -> fail "Conflicting event must fail"
+          Err _ -> pass
+        connection <- Postgres.defaultOps.acquire config
+        state <- runReal connection (keyRecord (Erasable.reference protected))
+        case state of
+          Nothing -> pass
+          _ -> fail "A failed event insert must leave no key"
+        let secondEventId = case Array.first secondPayload.insertions of
+              Just insertion -> insertion.metadata.eventId
+              Nothing -> panic "Payload must have one insertion"
+        stored <- runReal connection (eventJsonText secondEventId)
+        stored |> shouldBe Nothing
+        Postgres.defaultOps.release connection
+        store.close
+
+      it "rolls back keys when event insertion fails inside the same statement" \_ -> do
+        store <- PostgresStore.new config
+        entityId <- Uuid.generate
+        let streamId = Event.StreamId (Uuid.toText entityId)
+        let entityName = Event.EntityName "erasable-statement-failure"
+        let decision = do
+              first <- Erasable.new ("first" :: Text)
+              second <- Erasable.new ("second" :: Text)
+              Accept Event.StreamCreation [first, second]
+        (outcome, keys) <- Decider.runDecisionWithKeys (DecisionContext {genUuid = Uuid.generate}) (\_ -> Task.throw "No stored key") decision
+        values <- case outcome of
+          RejectCommand _ -> Task.throw "Expected protected values"
+          AcceptCommand _ accepted -> Task.yield accepted
+        payload <- Event.payloadFromEvents entityName streamId (Array.map Json.toJSON values)
+        badInsertions <- case (Array.get 0 payload.insertions, Array.get 1 payload.insertions) of
+          (Just first, Just second) -> do
+            let repeatedMetadata = second.metadata {eventId = first.metadata.eventId}
+            let repeated = Event.Insertion {id = second.id, event = second.event, metadata = repeatedMetadata}
+            Task.yield (Array.fromLinkedList [first, repeated])
+          _ -> Task.throw "Expected two event insertions"
+        result <- store.insertWithErasableKeys keys (payload {Event.insertions = badInsertions}) |> Task.asResult
+        case result of
+          Ok _ -> fail "Duplicate event IDs in one batch must fail"
+          Err _ -> pass
+        connection <- Postgres.defaultOps.acquire config
+        values |> Task.mapArray (\value -> do
+          state <- runReal connection (keyRecord (Erasable.reference value))
+          state |> shouldBe Nothing)
+          |> discard
+        stored <- runReal connection (eventJsonText (case Array.first payload.insertions of
+          Just insertion -> insertion.metadata.eventId
+          Nothing -> panic "Payload must have insertions"))
+        stored |> shouldBe Nothing
+        Postgres.defaultOps.release connection
+        store.close
+
+
+eventJsonText :: Uuid -> Session.Session (Maybe Text)
+eventJsonText eventId = do
+  let statement :: Statement UUID.UUID (Maybe Text) =
+        Statement
+          "SELECT eventData::text FROM Events WHERE eventId = $1"
+          (Encoders.param (Encoders.nonNullable Encoders.uuid))
+          (Decoders.rowMaybe (Decoders.column (Decoders.nonNullable Decoders.text)))
+          True
+  Session.statement (Uuid.toLegacy eventId) statement
+
+
+createKeyTable :: Session.Session ()
+createKeyTable =
+  Session.sql "CREATE TABLE IF NOT EXISTS erasable_keys (reference TEXT PRIMARY KEY, key_bytes BYTEA NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT now())"
+
+
+insertFixtureKey :: Text -> Bytes.Bytes -> Session.Session ()
+insertFixtureKey reference key = do
+  let statement :: Statement (Text, ByteString.ByteString) () =
+        Statement
+          "INSERT INTO erasable_keys (reference, key_bytes) VALUES ($1, $2)"
+          (((\(ref, _) -> ref) >$< Encoders.param (Encoders.nonNullable Encoders.text))
+            <> ((\(_, bytes) -> bytes) >$< Encoders.param (Encoders.nonNullable Encoders.bytea)))
+          Decoders.noResult
+          True
+  Session.statement (reference, Bytes.unwrap key) statement
+
+
+keyRecord :: Text -> Session.Session (Maybe (Maybe ByteString.ByteString))
+keyRecord reference = do
+  let statement :: Statement Text (Maybe (Maybe ByteString.ByteString)) =
+        Statement
+          "SELECT key_bytes FROM erasable_keys WHERE reference = $1"
+          (Encoders.param (Encoders.nonNullable Encoders.text))
+          (Decoders.rowMaybe (Decoders.column (Decoders.nullable Decoders.bytea)))
+          True
+  Session.statement reference statement
+
+
+eraseFixtureKey :: Text -> Session.Session ()
+eraseFixtureKey reference = do
+  let statement :: Statement Text () =
+        Statement
+          "UPDATE erasable_keys SET key_bytes = NULL WHERE reference = $1 AND key_bytes IS NOT NULL"
+          (Encoders.param (Encoders.nonNullable Encoders.text))
+          Decoders.noResult
+          True
+  Session.statement reference statement
+
+
+queryJsonText :: Uuid -> Session.Session (Maybe Text)
+queryJsonText queryId = do
+  let statement :: Statement UUID.UUID (Maybe Text) =
+        Statement
+          "SELECT state_json::text FROM query_object_store WHERE query_name = 'erasable-m1-fixture' AND instance_uuid = $1"
+          (Encoders.param (Encoders.nonNullable Encoders.uuid))
+          (Decoders.rowMaybe (Decoders.column (Decoders.nonNullable Decoders.text)))
+          True
+  Session.statement (Uuid.toLegacy queryId) statement

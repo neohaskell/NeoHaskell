@@ -105,6 +105,7 @@ new eventStore initialState reduceFunction = do
                             let newPos = event.metadata.localPosition
                             -- Mark that we've seen at least one event
                             Task.yield (True, newState, newPos)
+                          EventStore.ToxicStreamEvent _ -> Task.throw "Entity reconstruction encountered an unreadable event"
                           -- For all other message types, keep state unchanged
                           _ -> Task.yield (seenEvents, state, _lastPos)
                     )
@@ -198,6 +199,7 @@ newWithCache eventStore snapshotCache initialState reduceFunction = do
                       let newState = reduceFunction eventData state
                       let newPos = event.metadata.localPosition
                       Task.yield (True, newState, newPos)
+                    EventStore.ToxicStreamEvent _ -> Task.throw "Entity reconstruction encountered an unreadable event"
                     _ -> Task.yield (seenNewEvents, state, lastPos)
               )
               (False, startState, Just startPosition)
