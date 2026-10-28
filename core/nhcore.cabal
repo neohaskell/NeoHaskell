@@ -552,6 +552,7 @@ test-suite nhcore-test
     Service.Transport.Web.CommandAuthSpec
     Service.Transport.Web.InvalidTokenSpec
     Service.Transport.Web.RequestBodyFailureSpec
+    Service.Transport.Web.AcronymRoutingSpec
     Service.CommandExecutor.AuditLoggingSpec
     Service.CommandExecutor.MetadataSpec
     Service.CommandExecutor.StorageMetadataSpec
@@ -715,6 +716,7 @@ test-suite nhcore-test-service
     Service.Transport.Web.CommandAuthSpec
     Service.Transport.Web.InvalidTokenSpec
     Service.Transport.Web.RequestBodyFailureSpec
+    Service.Transport.Web.AcronymRoutingSpec
     Service.CommandExecutor.AuditLoggingSpec
     Service.CommandExecutor.MetadataSpec
     Service.CommandExecutor.StorageMetadataSpec

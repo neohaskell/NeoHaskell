@@ -22,25 +22,25 @@ This testbed includes:
 
 ## Running the Testbed
 
-### Start the Application
+### Run the maintained suite
 
 ```bash
-# From the root of this repo
-cabal run testbed
+# From the repository root, with PostgreSQL running locally.
+nix develop --command .agents/skills/neohaskell-test/scripts/run-testbed --strict
 ```
 
-The app will start and be available at `http://localhost:8080`
+The runner starts the testbed, runs every Hurl file, and stops the processes it started. The `save-iban.hurl` scenario posts to `/commands/save-iban` and reads the saved IBAN through the cart summary query.
 
-### Run the Tests
+### Run the SaveIBAN scenario alone
 
 ```bash
-# Run all blackbox tests
-./scripts/run-tests.sh
+# In one terminal, from the repository root, with PostgreSQL running locally.
+nix develop --command cabal run exe:nhtestbed
+```
 
-# Or run specific test suites
-hurl --test tests/commands/*.hurl
-hurl --test tests/queries/*.hurl
-hurl --test tests/scenarios/*.hurl
+```bash
+# In another terminal, from the repository root.
+nix develop --command hurl --test testbed/tests/commands/save-iban.hurl
 ```
 
 ### Check timestamped records
