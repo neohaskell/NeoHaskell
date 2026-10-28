@@ -55,6 +55,7 @@ import Service.Command.CanAccessSpec qualified
 import Service.Transport.Web.CommandAuthSpec qualified
 import Service.Transport.Web.InvalidTokenSpec qualified
 import Service.Transport.Web.RequestBodyFailureSpec qualified
+import Service.Transport.Web.AcronymRoutingSpec qualified
 import Service.CommandExecutor.AuditLoggingSpec qualified
 import Service.CommandExecutor.MetadataSpec qualified
 import Service.CommandExecutor.StorageMetadataSpec qualified
@@ -119,6 +120,7 @@ serviceSpecs = do
   Hspec.describe "Service.Transport.Web.CommandAuth" Service.Transport.Web.CommandAuthSpec.spec
   Hspec.describe "Service.Transport.Web.InvalidToken" Service.Transport.Web.InvalidTokenSpec.spec
   Hspec.describe "Service.Transport.Web.RequestBodyFailure" Service.Transport.Web.RequestBodyFailureSpec.spec
+  Hspec.describe "Service.Transport.Web.AcronymRouting" Service.Transport.Web.AcronymRoutingSpec.spec
   Hspec.describe "Service.CommandExecutor.AuditLogging" Service.CommandExecutor.AuditLoggingSpec.spec
   Hspec.describe "Service.CommandExecutor.Metadata" Service.CommandExecutor.MetadataSpec.spec
   Hspec.describe "Service.CommandExecutor.StorageMetadata" Service.CommandExecutor.StorageMetadataSpec.spec

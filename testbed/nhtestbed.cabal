@@ -1,6 +1,6 @@
 cabal-version: 3.4
 name: nhtestbed
-version: 0.12.0
+version: 0.13.0
 synopsis: End-to-End Testbed for NeoHaskell
 description: A real NeoHaskell application that demonstrates features and runs blackbox acceptance tests.
 homepage: https://neohaskell.org
@@ -61,6 +61,7 @@ library
     Testbed.Cart.Commands.CreateCart
     Testbed.Cart.Commands.CreateCartInternal
     Testbed.Cart.Commands.RegisterCartByKey
+    Testbed.Cart.Commands.SaveIBAN
     Testbed.Cart.Core
     Testbed.Cart.Integrations
     Testbed.Cart.Integrations.EventCounter
@@ -125,3 +126,13 @@ test-suite nhtestbed-spec-demo
     hspec,
     nhcore
   default-language: GHC2021
+
+test-suite nhtestbed-datetime-schema
+  import: common_cfg
+  type: exitcode-stdio-1.0
+  main-is: Main.hs
+  hs-source-dirs: test-datetime-schema
+  default-language: GHC2021
+  build-depends:
+    base,
+    hspec

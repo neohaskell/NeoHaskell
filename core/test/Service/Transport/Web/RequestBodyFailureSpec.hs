@@ -269,7 +269,7 @@ requestBodyEndpoints :: EndpointHandler -> Transport.Endpoints Web.WebTransport
 requestBodyEndpoints handler =
   Transport.Endpoints
     { Transport.transport = Web.server
-    , Transport.commandEndpoints = Map.fromArray [("BodyProbe", handler)]
+    , Transport.commandEndpoints = Map.fromArray [("body-probe", handler)]
     , Transport.queryEndpoints = Map.empty
     , Transport.commandSchemas = Map.empty
     , Transport.querySchemas = Map.empty

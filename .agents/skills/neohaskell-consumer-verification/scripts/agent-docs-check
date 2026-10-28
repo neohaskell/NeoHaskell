@@ -15,7 +15,7 @@ from pathlib import Path
 from urllib.parse import unquote
 
 
-REQUIRED_CAPABILITIES = {
+BASELINE_CAPABILITIES = {
     "project-and-cli",
     "syntax-and-core",
     "events-and-entities",
@@ -304,10 +304,9 @@ def validate(root: Path, prepare_reviews: bool = False) -> tuple[list[str], dict
             named_checks.add((kind, path))
         if not REQUIRED_CHECKS.get(name, set()) <= named_checks:
             raise CorpusError(f"{PRIVATE_POLICY}: {name} lacks required executable evidence")
-    if names != REQUIRED_CAPABILITIES:
+    if not BASELINE_CAPABILITIES <= names:
         raise CorpusError(
-            f"{PRIVATE_POLICY}: missing capabilities {sorted(REQUIRED_CAPABILITIES - names)}; "
-            f"unknown capabilities {sorted(names - REQUIRED_CAPABILITIES)}"
+            f"{PRIVATE_POLICY}: missing capabilities {sorted(BASELINE_CAPABILITIES - names)}"
         )
     if mapped_pages != page_set - {"index.md"}:
         raise CorpusError(f"{PRIVATE_POLICY}: missing page coverage {sorted(page_set - mapped_pages - {'index.md'})}")
@@ -443,6 +442,7 @@ def main() -> int:
     root = arguments.root.resolve()
     try:
         runnable_pages, evidence = validate(root, arguments.prepare_reviews)
+        capability_count = len(load_policy(root)["capabilities"])
         if not arguments.structure_only and not arguments.prepare_reviews:
             compile_pages(root, runnable_pages)
             if arguments.verify_evidence:
@@ -453,10 +453,10 @@ def main() -> int:
     if arguments.prepare_reviews:
         return 0
     print(
-        f"agent docs: PASS: {len(REQUIRED_CAPABILITIES)} capabilities, "
+        f"agent docs: PASS: {capability_count} capabilities, "
         f"{sum(map(len, evidence.values()))} evidence files, {len(runnable_pages)} compiled page(s)"
         if not arguments.structure_only
-        else f"agent docs: PASS: structure, {len(REQUIRED_CAPABILITIES)} capabilities"
+        else f"agent docs: PASS: structure, {capability_count} capabilities"
     )
     return 0
 

@@ -123,7 +123,7 @@ invalidTokenEndpoints :: Web.WebTransport -> Transport.Endpoints Web.WebTranspor
 invalidTokenEndpoints transport =
   Transport.Endpoints
     { Transport.transport = transport
-    , Transport.commandEndpoints = Map.fromArray [("AuthProbe", rejectInvalidToken)]
+    , Transport.commandEndpoints = Map.fromArray [("auth-probe", rejectInvalidToken)]
     , Transport.queryEndpoints = Map.empty
     , Transport.commandSchemas = Map.empty
     , Transport.querySchemas = Map.empty
