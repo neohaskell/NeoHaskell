@@ -15,8 +15,9 @@ self-test checks only its orchestration or comparison logic.
 Every developed public NeoHaskell feature needs a working example in the
 repository testbed. Exercise the public API in testbed application code, assert
 its observable behavior with a maintained automated testbed scenario, and give
-concrete commands to run the example and its test. Add or update these in the
-feature PR. Unit tests, compiler fixtures, generated-project checks, and
+concrete commands to run the example and its test in testbed documentation.
+Add or update these in the feature PR. Unit tests, compiler fixtures,
+generated-project checks, and
 documentation snippets are useful additional evidence, but none replaces the
 testbed example and assertion. A change with no public feature can state that
 the testbed requirement does not apply and identify the internal-only scope.
