@@ -4,6 +4,7 @@ import Array qualified
 import Bytes qualified
 import Contravariant.Extras qualified as Contravariant
 import Core
+import Data.ByteString qualified as ByteString
 import Data.Functor.Contravariant ((>$<))
 import Data.Semigroup ((<>))
 import Data.Tuple (fst, snd)
@@ -374,43 +375,55 @@ insertRecordsIntoStream events = do
 insertRecordsWithKeys ::
   Array NewKey -> Array EventInsertionRecord -> Session.Session Unit
 insertRecordsWithKeys newKeys events = do
+  let sql = [fmt|
+    WITH inserted_keys AS (
+      INSERT INTO erasable_keys (reference, key_bytes)
+      SELECT reference, key_bytes FROM UNNEST($1::text[], $2::bytea[]) AS keys(reference, key_bytes)
+      RETURNING reference
+    )
+    INSERT INTO Events (EventId, LocalPosition, InlinedStreamId, Entity, EventData, Metadata)
+    SELECT event_id, local_position, stream_id, entity, event_data, metadata
+    FROM UNNEST($3::uuid[], $4::bigint[], $5::text[], $6::text[], $7::jsonb[], $8::jsonb[])
+      AS events(event_id, local_position, stream_id, entity, event_data, metadata)
+    WHERE (SELECT COUNT(*) FROM inserted_keys) = CARDINALITY($1::text[])
+  |]
+  let encoder =
+        keyAndEventFields
+          >$< Contravariant.contrazip8
+            (Encoders.param (Encoders.nonNullable (Encoders.foldableArray (Encoders.nonNullable Encoders.text))))
+            (Encoders.param (Encoders.nonNullable (Encoders.foldableArray (Encoders.nonNullable Encoders.bytea))))
+            (Encoders.param (Encoders.nonNullable (Encoders.foldableArray (Encoders.nonNullable Encoders.uuid))))
+            (Encoders.param (Encoders.nonNullable (Encoders.foldableArray (Encoders.nonNullable Encoders.int8))))
+            (Encoders.param (Encoders.nonNullable (Encoders.foldableArray (Encoders.nonNullable Encoders.text))))
+            (Encoders.param (Encoders.nonNullable (Encoders.foldableArray (Encoders.nonNullable Encoders.text))))
+            (Encoders.param (Encoders.nonNullable (Encoders.foldableArray (Encoders.nonNullable Encoders.jsonb))))
+            (Encoders.param (Encoders.nonNullable (Encoders.foldableArray (Encoders.nonNullable Encoders.jsonb))))
   let statement :: Statement (Array NewKey, Array EventInsertionRecord) Unit =
         Statement sql encoder Decoders.noResult True
-       where
-        sql =
-          "WITH inserted_keys AS ("
-            <> " INSERT INTO erasable_keys (reference, key_bytes)"
-            <> " SELECT reference, key_bytes FROM UNNEST($1::text[], $2::bytea[]) AS keys(reference, key_bytes)"
-            <> " RETURNING reference"
-            <> ") INSERT INTO Events (EventId, LocalPosition, InlinedStreamId, Entity, EventData, Metadata)"
-            <> " SELECT event_id, local_position, stream_id, entity, event_data, metadata"
-            <> " FROM UNNEST($3::uuid[], $4::bigint[], $5::text[], $6::text[], $7::jsonb[], $8::jsonb[])"
-            <> " AS events(event_id, local_position, stream_id, entity, event_data, metadata)"
-            <> " WHERE (SELECT COUNT(*) FROM inserted_keys) = CARDINALITY($1::text[])"
-        encoder =
-          extractFields
-            >$< Contravariant.contrazip8
-              (Encoders.param (Encoders.nonNullable (Encoders.foldableArray (Encoders.nonNullable Encoders.text))))
-              (Encoders.param (Encoders.nonNullable (Encoders.foldableArray (Encoders.nonNullable Encoders.bytea))))
-              (Encoders.param (Encoders.nonNullable (Encoders.foldableArray (Encoders.nonNullable Encoders.uuid))))
-              (Encoders.param (Encoders.nonNullable (Encoders.foldableArray (Encoders.nonNullable Encoders.int8))))
-              (Encoders.param (Encoders.nonNullable (Encoders.foldableArray (Encoders.nonNullable Encoders.text))))
-              (Encoders.param (Encoders.nonNullable (Encoders.foldableArray (Encoders.nonNullable Encoders.text))))
-              (Encoders.param (Encoders.nonNullable (Encoders.foldableArray (Encoders.nonNullable Encoders.jsonb))))
-              (Encoders.param (Encoders.nonNullable (Encoders.foldableArray (Encoders.nonNullable Encoders.jsonb))))
-        extractFields (keys, records) =
-          let keyVector = Array.unwrap keys
-              recordVector = Array.unwrap records
-           in ( Vector.map (\key -> key.reference) keyVector,
-                Vector.map (\key -> Cipher.keyToBytes key.key |> Bytes.unwrap) keyVector,
-                Vector.map (\record -> Uuid.toLegacy record.eventId) recordVector,
-                Vector.map (\record -> record.localPosition) recordVector,
-                Vector.map (\record -> record.inlinedStreamId) recordVector,
-                Vector.map (\record -> record.entity) recordVector,
-                Vector.map (\record -> record.eventData) recordVector,
-                Vector.map (\record -> record.metadata) recordVector
-              )
   Session.statement (newKeys, events) statement
+
+
+keyAndEventFields ::
+  (Array NewKey, Array EventInsertionRecord) ->
+  ( Vector Text,
+    Vector ByteString.ByteString,
+    Vector UUID.UUID,
+    Vector Int64,
+    Vector Text,
+    Vector Text,
+    Vector Json.Value,
+    Vector Json.Value
+  )
+keyAndEventFields (keys, records) =
+  ( Vector.map (\key -> key.reference) (Array.unwrap keys),
+    Vector.map (\key -> Cipher.keyToBytes key.key |> Bytes.unwrap) (Array.unwrap keys),
+    Vector.map (\record -> Uuid.toLegacy record.eventId) (Array.unwrap records),
+    Vector.map (\record -> record.localPosition) (Array.unwrap records),
+    Vector.map (\record -> record.inlinedStreamId) (Array.unwrap records),
+    Vector.map (\record -> record.entity) (Array.unwrap records),
+    Vector.map (\record -> record.eventData) (Array.unwrap records),
+    Vector.map (\record -> record.metadata) (Array.unwrap records)
+  )
 
 
 selectEventBatch ::

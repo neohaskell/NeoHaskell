@@ -163,6 +163,11 @@ spec = do
         pair <- case Json.decode @CollisionPair stored of
           Err reason -> Task.throw reason
           Ok value -> Task.yield value
+        pair.literal.reference |> shouldBe pair.nested.reference
+        pair.literal.context |> shouldNotBe pair.nested.context
+        available <- store.renderProtectedJson stored |> Task.mapError toText
+        Json.encodeText available |> shouldSatisfy (Text.contains "first")
+        Json.encodeText available |> shouldSatisfy (Text.contains "second")
         let swapped = Json.object
               [ ("a/b", Json.toJSON (pair.literal {envelope = pair.nested.envelope})),
                 ("a", Json.object [("b", Json.toJSON (pair.nested {envelope = pair.literal.envelope}))])
@@ -253,7 +258,8 @@ spec = do
           Just value -> Task.yield value
         available <- restarted.renderProtectedJson storedEvent.event |> Task.mapError toText
         Json.encodeText available |> shouldSatisfy (Text.contains marker)
-        queryStore <- QueryStore.newFromConfig @Json.Value queryConfig "erasable-m1-fixture" |> Task.mapError toText
+        queryName <- Uuid.generate
+        queryStore <- QueryStore.newFromConfig @Json.Value queryConfig [fmt|erasable-m1-fixture-#{Uuid.toText queryName}|] |> Task.mapError toText
         queryId <- Uuid.generate
         queryStore.atomicUpdate queryId (\_ -> Just storedEvent.event) |> Task.mapError toText
         queryConnection <- Postgres.defaultOps.acquire config
@@ -264,7 +270,8 @@ spec = do
             queryText |> shouldSatisfy (\value -> not (Text.contains marker value))
             rawStored |> shouldSatisfy (\eventText -> eventText != Just queryText)
         Postgres.defaultOps.release queryConnection
-        authorizedStore <- QueryStore.newFromConfig @ProtectedRead queryConfig "erasable-m1-authorized" |> Task.mapError toText
+        authorizedName <- Uuid.generate
+        authorizedStore <- QueryStore.newFromConfig @ProtectedRead queryConfig [fmt|erasable-m1-authorized-#{Uuid.toText authorizedName}|] |> Task.mapError toText
         authorizedId <- Uuid.generate
         authorizedStore.atomicUpdate authorizedId (\_ -> Just (ProtectedRead {secret = protected})) |> Task.mapError toText
         let readAuthorized = QueryEndpoint.createQueryEndpointWithProtection
@@ -414,7 +421,7 @@ queryJsonText :: Uuid -> Session.Session (Maybe Text)
 queryJsonText queryId = do
   let statement :: Statement UUID.UUID (Maybe Text) =
         Statement
-          "SELECT state_json::text FROM query_object_store WHERE query_name = 'erasable-m1-fixture' AND instance_uuid = $1"
+          "SELECT state_json::text FROM query_object_store WHERE instance_uuid = $1"
           (Encoders.param (Encoders.nonNullable Encoders.uuid))
           (Decoders.rowMaybe (Decoders.column (Decoders.nonNullable Decoders.text)))
           True

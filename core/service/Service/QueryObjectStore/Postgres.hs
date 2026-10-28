@@ -330,9 +330,7 @@ resealForStorage pool queryName rawUuid value =
       state <- runPool pool (ErasableKeys.readKey reference) |> Task.mapError (show .> toText)
       case state of
         Err err -> Task.throw err
-        Ok ErasableKeys.Missing -> Task.yield Nothing
-        Ok ErasableKeys.Erased -> Task.yield (Just Nothing)
-        Ok (ErasableKeys.Active key) -> Task.yield (Just (Just key)))
+        Ok state -> Task.yield state)
     [fmt|query:#{queryName}:#{UUID.toText rawUuid}|]
     value
     |> Task.mapError StatementFailed

@@ -363,7 +363,11 @@ appendAcceptedEvents context authorized state (AcceptedDecision insertionType ev
       let attributedInsertions = payload.insertions |> Array.map (Source.attributeInsertionMetadata context.source)
       let positionedInsertions = positionInsertions finalInsertionType attributedInsertions
       let payloadWithType = payload {insertionType = finalInsertionType, insertions = positionedInsertions}
-      insertResult <- dependencies.eventStore.insertWithErasableKeys newKeys payloadWithType |> Task.asResult
+      insertResult <-
+        (if Array.isEmpty newKeys
+          then dependencies.eventStore.insert payloadWithType
+          else dependencies.eventStore.insertWithErasableKeys newKeys payloadWithType)
+          |> Task.asResult
       case insertResult of
         Ok _ -> do
           let metadata = positionedInsertions |> Array.map (\insertion -> insertion.metadata)

@@ -4,6 +4,7 @@ Application code uses 'Erasable' instead of constructing this representation.
 module Erasable.Internal (
   ProtectedValue (..),
   NewKey (..),
+  KeyState (..),
   references,
   renderWith,
   resealWith,
@@ -14,15 +15,9 @@ module Erasable.Internal (
 import Array (Array)
 import Array qualified
 import Basics
-import Data.Aeson qualified as Aeson
-import Data.Aeson.KeyMap qualified as KeyMap
-import Data.Aeson.Key qualified as Key
-import Data.ByteString qualified as ByteString
-import Data.Vector qualified as Vector
 import Erasable.Cipher (Envelope, Key)
 import Erasable.Cipher qualified as Cipher
 import Json qualified
-import Maybe (Maybe (..))
 import Result (Result (..))
 import Task (Task)
 import Task qualified
@@ -74,17 +69,25 @@ instance Show NewKey where
   show _ = "NewErasableKey <REDACTED>"
 
 
+data KeyState = Active Key | Erased | Missing
+  deriving (Show)
+
+
 references :: Json.Value -> Result Text (Array Text)
 references jsonValue =
-  case jsonValue of
-    Aeson.Object object ->
-      case KeyMap.lookup "$erasable" object of
-        Just _ -> do
+  case Json.parts jsonValue of
+    Json.ObjectParts pairs ->
+      if hasErasableMarker pairs
+        then do
           protected <- Json.decode @ProtectedValue jsonValue
           Ok (Array.wrap protected.reference)
-        Nothing -> collect (KeyMap.elems object |> Array.fromLinkedList)
-    Aeson.Array values -> collect (Vector.toList values |> Array.fromLinkedList)
-    _ -> Ok Array.empty
+        else collect (pairs |> Array.map (\(_, value) -> value))
+    Json.ArrayParts values -> collect values
+    Json.Scalar _ -> Ok Array.empty
+
+
+hasErasableMarker :: Array (Text, Json.Value) -> Bool
+hasErasableMarker pairs = pairs |> Array.any (\(key, _) -> key == "$erasable")
 
 
 collect :: Array Json.Value -> Result Text (Array Text)
@@ -99,49 +102,55 @@ collect values =
 
 
 renderWith ::
-  (Text -> Task Text (Maybe (Maybe ByteString.ByteString))) ->
+  (Text -> Task Text KeyState) ->
   Json.Value ->
   Task Text Json.Value
 renderWith lookupKey jsonValue =
-  case jsonValue of
-    Aeson.Object object ->
-      case KeyMap.lookup "$erasable" object of
-        Just _ -> renderProtected lookupKey jsonValue
-        Nothing -> do
-          let pairs = KeyMap.toList object |> Array.fromLinkedList
+  case Json.parts jsonValue of
+    Json.ObjectParts pairs ->
+      if hasErasableMarker pairs
+        then renderProtected lookupKey jsonValue
+        else do
           rendered <- pairs |> Task.mapArray (\(key, value) -> do
             result <- renderWith lookupKey value
             Task.yield (key, result))
-          KeyMap.fromList (Array.toLinkedList rendered) |> Aeson.Object |> Task.yield
-    Aeson.Array values -> do
-      rendered <- values |> Vector.toList |> Array.fromLinkedList |> Task.mapArray (renderWith lookupKey)
-      Array.toLinkedList rendered |> Vector.fromList |> Aeson.Array |> Task.yield
-    _ -> Task.yield jsonValue
+          Json.object (Array.toLinkedList rendered) |> Task.yield
+    Json.ArrayParts values -> do
+      rendered <- values |> Task.mapArray (renderWith lookupKey)
+      Json.array rendered |> Task.yield
+    Json.Scalar _ -> Task.yield jsonValue
 
 
 resealWith ::
-  (Text -> Task Text (Maybe (Maybe Key))) ->
+  (Text -> Task Text KeyState) ->
   Text ->
   Json.Value ->
   Task Text Json.Value
-resealWith lookupKey base = go ""
- where
-  go :: Text -> Json.Value -> Task Text Json.Value
-  go path jsonValue = case jsonValue of
-    Aeson.Object object ->
-      case KeyMap.lookup "$erasable" object of
-        Just _ -> do
+resealWith lookupKey base jsonValue = resealAt lookupKey base "" jsonValue
+
+
+resealAt ::
+  (Text -> Task Text KeyState) ->
+  Text ->
+  Text ->
+  Json.Value ->
+  Task Text Json.Value
+resealAt lookupKey base path jsonValue =
+  case Json.parts jsonValue of
+    Json.ObjectParts pairs ->
+      if hasErasableMarker pairs
+        then do
           protected <-
             case Json.decode @ProtectedValue jsonValue of
               Err _ -> Task.throw "Malformed erasable envelope"
               Ok value -> Task.yield value
           keyState <- lookupKey protected.reference
           case keyState of
-            Nothing -> Task.throw "Erasable key record is missing"
-            Just Nothing -> do
+            Missing -> Task.throw "Erasable key record is missing"
+            Erased -> do
               let context = [fmt|#{base}#{path}|]
               Task.yield (Json.toJSON (protected {context}))
-            Just (Just key) -> do
+            Active key -> do
               plaintext <-
                 case Cipher.open key (contextBytes protected.reference protected.context) protected.envelope of
                   Err err -> Task.throw err
@@ -149,42 +158,54 @@ resealWith lookupKey base = go ""
               let context = [fmt|#{base}#{path}|]
               envelope <- Cipher.seal key (contextBytes protected.reference context) plaintext
               Task.yield (Json.toJSON (protected {context, envelope}))
-        Nothing -> do
-          let pairs = KeyMap.toList object |> Array.fromLinkedList
+        else do
           resealed <- pairs |> Task.mapArray (\(key, value) -> do
-            result <- go [fmt|#{path}/#{Key.toText key}|] value
+            result <- resealAt lookupKey base (objectPath path key) value
             Task.yield (key, result))
-          KeyMap.fromList (Array.toLinkedList resealed) |> Aeson.Object |> Task.yield
-    Aeson.Array values -> do
-      resealed <- values |> Vector.toList |> Array.fromLinkedList |> Array.indexed |> Task.mapArray (\(index, value) -> go [fmt|#{path}/#{index}|] value)
-      Array.toLinkedList resealed |> Vector.fromList |> Aeson.Array |> Task.yield
-    _ -> Task.yield jsonValue
+          Json.object (Array.toLinkedList resealed) |> Task.yield
+    Json.ArrayParts values -> do
+      resealed <- values |> Array.indexed |> Task.mapArray (\(index, value) -> resealAt lookupKey base (arrayPath path index) value)
+      Json.array resealed |> Task.yield
+    Json.Scalar _ -> Task.yield jsonValue
 
 
 validateStorageContext :: Text -> Json.Value -> Result Text Unit
-validateStorageContext base = go ""
- where
-  go :: Text -> Json.Value -> Result Text Unit
-  go path jsonValue =
-    case jsonValue of
-      Aeson.Object object ->
-        case KeyMap.lookup "$erasable" object of
-          Just _ -> do
-            protected <- Json.decode @ProtectedValue jsonValue
-            if protected.context == [fmt|#{base}#{path}|]
-              then Ok unit
-              else Err "Erasable storage context does not match its location"
-          Nothing -> KeyMap.toList object |> Array.fromLinkedList |> Array.foldl
-            (\(key, value) accumulated -> do
-              accumulated
-              go [fmt|#{path}/#{Key.toText key}|] value)
-            (Ok unit)
-      Aeson.Array values -> Vector.toList values |> Array.fromLinkedList |> Array.indexed |> Array.foldl
-        (\(index, value) accumulated -> do
-          accumulated
-          go [fmt|#{path}/#{index}|] value)
-        (Ok unit)
-      _ -> Ok unit
+validateStorageContext base jsonValue = validateAt base "" jsonValue
+
+
+validateAt :: Text -> Text -> Json.Value -> Result Text Unit
+validateAt base path jsonValue =
+  case Json.parts jsonValue of
+    Json.ObjectParts pairs ->
+      if hasErasableMarker pairs
+        then do
+          protected <- Json.decode @ProtectedValue jsonValue
+          if protected.context == [fmt|#{base}#{path}|]
+            then Ok unit
+            else Err "Erasable storage context does not match its location"
+        else pairs |> Array.foldl
+          (\(key, value) accumulated -> do
+            accumulated
+            validateAt base (objectPath path key) value)
+          (Ok unit)
+    Json.ArrayParts values -> values |> Array.indexed |> Array.foldl
+      (\(index, value) accumulated -> do
+        accumulated
+        validateAt base (arrayPath path index) value)
+      (Ok unit)
+    Json.Scalar _ -> Ok unit
+
+
+objectPath :: Text -> Text -> Text
+objectPath path key = [fmt|#{path}/o:#{escapeObjectKey key}|]
+
+
+escapeObjectKey :: Text -> Text
+escapeObjectKey key = key |> Text.replace "~" "~0" |> Text.replace "/" "~1"
+
+
+arrayPath :: Text -> Int -> Text
+arrayPath path index = [fmt|#{path}/a:#{index}|]
 
 
 contextBytes :: Text -> Text -> Bytes.Bytes
@@ -192,7 +213,7 @@ contextBytes reference context = Text.toBytes [fmt|#{reference}:#{context}|]
 
 
 renderProtected ::
-  (Text -> Task Text (Maybe (Maybe ByteString.ByteString))) ->
+  (Text -> Task Text KeyState) ->
   Json.Value ->
   Task Text Json.Value
 renderProtected lookupKey jsonValue = do
@@ -202,13 +223,9 @@ renderProtected lookupKey jsonValue = do
       Ok value -> Task.yield value
   state <- lookupKey protected.reference
   case state of
-    Nothing -> Task.throw "Erasable key record is missing"
-    Just Nothing -> Task.yield (publicValue "Erased" Json.null)
-    Just (Just keyBytes) -> do
-      key <-
-        case Cipher.keyFromBytes (Bytes.fromLegacy keyBytes) of
-          Err err -> Task.throw err
-          Ok value -> Task.yield value
+    Missing -> Task.throw "Erasable key record is missing"
+    Erased -> Task.yield (publicValue "Erased" Json.null)
+    Active key -> do
       plaintext <-
         case Cipher.open key (contextBytes protected.reference protected.context) protected.envelope of
           Err err -> Task.throw err

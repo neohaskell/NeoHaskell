@@ -11,16 +11,16 @@ module Service.EventStore.Postgres.Internal (
 
 import Array (Array)
 import Array qualified
+import Bytes qualified
 import AsyncTask qualified
 import Basics
-import Bytes qualified
 import ConcurrentVar (ConcurrentVar)
 import ConcurrentVar qualified
 import Default (Default)
 import Default qualified
-import Erasable.Cipher qualified as Cipher
 import Erasable.Internal (NewKey (..))
 import Erasable.Internal qualified as Erasable
+import Erasable.Cipher qualified as Cipher
 import Hasql.Connection qualified as Hasql
 import Hasql.Connection.Setting qualified as Hasql
 import Hasql.Pool qualified as HasqlPool
@@ -262,7 +262,7 @@ new ops cfg = do
                   Err err -> Task.throw err,
               renderProtectedJson = \value ->
                 Erasable.renderWith
-                  (\reference -> ErasableKeys.readKeyBytes reference |> Sessions.run pool |> Task.mapError toText)
+                  (readKeyState pool)
                   value
                   |> Task.mapError StorageFailure,
               readErasableKey = \reference -> do
@@ -352,6 +352,18 @@ payloadReferences payload =
       (Ok Array.empty)
 
 
+readKeyState :: Sessions.Connection -> Text -> Task Text Erasable.KeyState
+readKeyState connection reference = do
+  stored <- ErasableKeys.readKeyBytes reference |> Sessions.run connection |> Task.mapError toText
+  case stored of
+    Nothing -> Task.yield Erasable.Missing
+    Just Nothing -> Task.yield Erasable.Erased
+    Just (Just bytes) ->
+      case Cipher.keyFromBytes (Bytes.fromLegacy bytes) of
+        Err error -> Task.throw error
+        Ok key -> Task.yield (Erasable.Active key)
+
+
 insertGo ::
   Ops ->
   PostgresEventStore ->
@@ -373,12 +385,10 @@ insertGo ops cfg keys payload =
       |> discard
     references |> Task.mapArray (\reference -> do
       let supplied = keys |> Array.any (\key -> key.reference == reference)
-      if supplied
-        then Task.yield unit
-        else do
-          exists <- ErasableKeys.referenceExists reference |> Sessions.run conn |> Task.mapError SessionError
-          Task.when (not exists) do
-            Task.throw (CoreInsertionError (InsertionFailed "Erasable reference has no key record")))
+      Task.unless supplied do
+        exists <- ErasableKeys.referenceExists reference |> Sessions.run conn |> Task.mapError SessionError
+        Task.when (not exists) do
+          Task.throw (CoreInsertionError (InsertionFailed "Erasable reference has no key record")))
       |> discard
     Task.when (payload.insertions |> Array.isEmpty) do
       Task.throw (CoreInsertionError EmptyPayload)
@@ -437,16 +447,9 @@ insertGo ops cfg keys payload =
           event <- Erasable.resealWith
             (\reference ->
               case Array.find (\key -> key.reference == reference) keys of
-                Just key -> Task.yield (Just (Just key.key))
+                Just key -> Task.yield (Erasable.Active key.key)
                 Nothing -> do
-                  state <- ErasableKeys.readKeyBytes reference |> Sessions.run conn |> Task.mapError toText
-                  case state of
-                    Nothing -> Task.yield Nothing
-                    Just Nothing -> Task.yield (Just Nothing)
-                    Just (Just bytes) ->
-                      case Cipher.keyFromBytes (Bytes.fromLegacy bytes) of
-                        Err err -> Task.throw err
-                        Ok key -> Task.yield (Just (Just key)))
+                  readKeyState conn reference)
             [fmt|event:#{Uuid.toText insertionId}|]
             insertion.event
             |> Task.mapError (InsertionFailed .> CoreInsertionError)

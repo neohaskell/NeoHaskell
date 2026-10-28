@@ -18,6 +18,7 @@ import Data.Functor.Contravariant ((>$<))
 import Data.Semigroup ((<>))
 import Erasable.Cipher (Key)
 import Erasable.Cipher qualified as Cipher
+import Erasable.Internal (KeyState (..))
 import Hasql.Decoders qualified as Decoders
 import Hasql.Encoders qualified as Encoders
 import Hasql.Session qualified as Session
@@ -25,10 +26,6 @@ import Hasql.Statement (Statement (..))
 import Maybe (Maybe (..))
 import Result (Result (..))
 import Text (Text)
-
-
-data KeyState = Active Key | Erased | Missing
-  deriving (Show)
 
 
 createTable :: Session.Session ()
