@@ -40,6 +40,7 @@ import Service.Event (Event (..), EntityName (..))
 import Service.Event.StreamId (StreamId (..))
 import Service.EventStore (EventStore (..))
 import Service.EventStore.Core (Error)
+import EventVariantOf (EventVariantOf (..))
 import Service.EntityFetcher.Core qualified as EntityFetcher
 import Service.Integration.Dispatcher qualified as Dispatcher
 import Service.Integration.Types (OutboundRunner (..), OutboundLifecycleRunner (..), WorkerState (..))
@@ -57,7 +58,7 @@ import TypeName qualified
 -- This wraps the typed handler with:
 -- 1. JSON decoding of the full event ADT
 -- 2. Entity state reconstruction via event replay
--- 3. Dispatch to 'handleEventImpl'
+-- 3. Extract the selected payload and dispatch to 'handleEventImpl'
 --
 -- The handler's entity type and event type are determined by the type
 -- constraints. The event is decoded from JSON, the entity is reconstructed
@@ -67,7 +68,7 @@ createTypedOutboundRunner ::
   ( OutboundIntegration handler
   , entity ~ EntityOf handler
   , event ~ EventOf entity
-  , event ~ HandledEvent handler
+  , EventVariantOf event (HandledEvent handler)
   , Json.FromJSON entity
   , Json.FromJSON event
   , TypeName.Inspectable entity
@@ -87,18 +88,21 @@ createTypedOutboundRunner = do
               Log.warn [fmt|Failed to decode event: #{decodeErr}|]
                 |> Task.ignoreError
             Task.yield Array.empty
-          Ok decodedEvent -> do
-            entity <- fetchEntityState @entity eventStore typeName streamId
-            let outbound = handleEventImpl @handler entity decodedEvent
-            let actions = Integration.getActions outbound
-            actions
-              |> Task.mapArray (\action -> do
-                  result <- Integration.runAction ctx action |> Task.mapError toText
-                  case result of
-                    Just payload -> Task.yield [payload]
-                    Nothing -> Task.yield []
-                )
-              |> Task.map Array.flatten
+          Ok decodedEvent ->
+            case toVariant @event @(HandledEvent handler) decodedEvent of
+              Nothing -> Task.yield Array.empty
+              Just payload -> do
+                entity <- fetchEntityState @entity eventStore typeName streamId
+                let outbound = handleEventImpl @handler entity payload
+                let actions = Integration.getActions outbound
+                actions
+                  |> Task.mapArray (\action -> do
+                      result <- Integration.runAction ctx action |> Task.mapError toText
+                      case result of
+                        Just commandPayload -> Task.yield [commandPayload]
+                        Nothing -> Task.yield []
+                    )
+                  |> Task.map Array.flatten
     }
 
 

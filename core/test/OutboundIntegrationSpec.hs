@@ -12,6 +12,7 @@ import Data.Proxy (Proxy (..))
 import DateTime qualified
 import Default (Default (..))
 import Data.Hashable qualified as GhcHashable
+import EventVariantOf qualified
 import GHC.Enum qualified as GhcEnum
 import GHC.TypeLits (symbolVal)
 import Integration qualified
@@ -26,8 +27,15 @@ import Service.Event.StreamId (StreamId)
 import Service.Event.StreamId qualified as StreamId
 import Service.EventStore.InMemory qualified as InMemory
 import Service.Integration.DispatchRegistry qualified as DispatchRegistry
+import Service.Integration.Selection (Selection (..))
+import Service.Integration.TestFixtures (SendEmail)
 import Service.Integration.Types (OutboundRunner (..))
 import Service.OutboundIntegration.Core (OutboundIntegration (..))
+import Service.OutboundIntegration.TH (outboundIntegrationFullEvent)
+import Service.OutboundIntegration.FirstHandler (FirstHandler)
+import Service.OutboundIntegration.PayloadFixtures
+import Service.OutboundIntegration.SecondHandler (SecondHandler)
+import Service.Application qualified as Application
 import Task qualified
 import Test
 import Text qualified
@@ -131,7 +139,7 @@ handleEvent _entity event =
 
 -- | TH splice: generates OutboundIntegration instance, NameOf, and KnownHash.
 -- IMPORTANT: handleEvent and all type instances MUST appear BEFORE this splice.
-deriveOutboundIntegration ''TestHandlerA
+outboundIntegrationFullEvent ''TestHandlerA
 
 
 -- ============================================================================
@@ -200,6 +208,47 @@ makeRawEvent entityTypeName streamIdText eventPayload = do
 spec :: Spec Unit
 spec = do
   describe "OutboundIntegration" do
+
+    describe "payload dispatch" do
+      it "extracts only the matching payload from the stored event" \_ -> do
+        let payload = PayloadAdded {addedId = Uuid.nil, addedAmount = 7}
+        let matching = EventVariantOf.fromVariant payload :: PayloadEvent
+        let other = EventVariantOf.fromVariant (PayloadRemoved {removedId = Uuid.nil}) :: PayloadEvent
+        EventVariantOf.toVariant matching |> shouldBe (Just payload)
+        (EventVariantOf.toVariant other :: Maybe PayloadAdded) |> shouldBe Nothing
+
+      it "runs two distinct handlers for a matching payload and skips another payload" \_ -> do
+        eventStore <- InMemory.new |> Task.mapError toText
+        ctx <- makeContext
+        let app = Application.new
+              |> Application.withOutbound @FirstHandler
+              |> Application.withOutbound @SecondHandler
+              |> Application.withIntegration @SendEmail
+        let registry = app.integrationRegistrations
+              |> Array.reduce (\entry current -> entry.registerInto Real current) DispatchRegistry.empty
+        Array.length app.outboundRunners |> shouldBe 2
+        DispatchRegistry.size registry |> shouldBe 1
+        let payload = PayloadAdded {addedId = Uuid.nil, addedAmount = 7}
+        let matching = EventVariantOf.fromVariant payload :: PayloadEvent
+        rawMatching <- makeRawEvent (TypeName.reflect @PayloadEntity) "payload-match" (Json.encode matching)
+        first <- (createTypedOutboundRunner @FirstHandler).processEvent ctx eventStore rawMatching
+        second <- (createTypedOutboundRunner @SecondHandler).processEvent ctx eventStore rawMatching
+        Array.length first |> shouldBe 1
+        Array.length second |> shouldBe 1
+        case (Array.first first, Array.first second) of
+          (Just firstCommand, Just secondCommand) -> do
+            case (Json.decode @PayloadCommand firstCommand.commandData, Json.decode @PayloadCommand secondCommand.commandData) of
+              (Ok firstValue, Ok secondValue) -> do
+                firstValue.commandValue |> shouldBe 7
+                secondValue.commandValue |> shouldBe 107
+              _ -> fail "Expected both handlers to emit commands"
+          _ -> fail "Expected both handlers to emit commands"
+        let other = EventVariantOf.fromVariant (PayloadRemoved {removedId = Uuid.nil}) :: PayloadEvent
+        rawOther <- makeRawEvent (TypeName.reflect @PayloadEntity) "payload-other" (Json.encode other)
+        skippedFirst <- (createTypedOutboundRunner @FirstHandler).processEvent ctx eventStore rawOther
+        skippedSecond <- (createTypedOutboundRunner @SecondHandler).processEvent ctx eventStore rawOther
+        Array.length skippedFirst |> shouldBe 0
+        Array.length skippedSecond |> shouldBe 0
 
     describe "outboundIntegration TH macro" do
 

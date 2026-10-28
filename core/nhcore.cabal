@@ -466,6 +466,9 @@ test-suite nhcore-test
     IntegrationSpec
     IntSpec
     OutboundIntegrationSpec
+    Service.OutboundIntegration.PayloadFixtures
+    Service.OutboundIntegration.FirstHandler
+    Service.OutboundIntegration.SecondHandler
     EventVariantOfSpec
     LogSpec
     DecimalSpec
@@ -803,6 +806,9 @@ test-suite nhcore-test-core
     NeoQL.ExecuteSpec
     NeoQL.ParserSpec
     OutboundIntegrationSpec
+    Service.OutboundIntegration.PayloadFixtures
+    Service.OutboundIntegration.FirstHandler
+    Service.OutboundIntegration.SecondHandler
     Parser.ErrorSpec
     Parser.FileSpec
     Parser.WhitespaceSpec

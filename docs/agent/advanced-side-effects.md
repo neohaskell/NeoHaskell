@@ -40,7 +40,9 @@ For operations beyond HTTP configuration, implement `toAction` with `Integration
 
 ## Application wiring
 
-Define a handler type and its `EntityOf` equation. Write `handleEvent :: Entity -> Event -> Integration.Outbound` before `outboundIntegration ''Handler`. Match the event that triggers delivery. Return `Integration.batch [Integration.outbound delivery]` for that event and `Integration.none` for unrelated events.
+Define a handler type and its `EntityOf` equation. Write `handleEvent :: Entity -> Payload -> Integration.Outbound` before `outboundIntegration ''Handler`. The payload needs an `EventVariantOf` mapping to the entity's stored event type. `deriveEntityEvents` generates that mapping for listed payloads. The runtime calls this handler only when the stored event contains its payload. Return `Integration.batch [Integration.outbound delivery]` to run the effect.
+
+For an existing handler that still takes the full event type, add `import Service.OutboundIntegration.TH (outboundIntegrationFullEvent)` to its module and replace its marker with `outboundIntegrationFullEvent ''Handler`. This explicit compatibility path still sends every event to that handler. Move one event case into a concrete payload handler when you want payload-specific dispatch. For a handwritten event sum, define an `EventVariantOf` mapping for the payload without changing the stored event JSON.
 
 Register the handler with `Application.withOutbound @Handler`. Register the callback commands in their owning services. The callbacks need `Json.ToJSON` and `NameOf` to form command payloads. Their handlers still need valid routing and decisions.
 

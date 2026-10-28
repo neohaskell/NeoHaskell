@@ -27,7 +27,7 @@ import Service.EventStore.InMemory qualified as InMemory
 import Service.EventStore.Postgres (PostgresEventStore (..))
 import Service.FileUpload.Core (FileUploadConfig (..), FileStateStoreBackend (..))
 import Service.Integration.Dispatcher qualified as Dispatcher
-import Service.OutboundIntegration.TH (outboundIntegration)
+import Service.OutboundIntegration.TH (outboundIntegrationFullEvent)
 import Service.Transport.Web qualified as Web
 import Task qualified
 import Test
@@ -219,7 +219,7 @@ handleEvent :: TestEntity -> TestEntityEvent -> Integration.Outbound
 handleEvent _entity _event = Integration.none
 
 
-outboundIntegration ''TestOutboundHandler
+outboundIntegrationFullEvent ''TestOutboundHandler
 
 
 spec :: Spec Unit
