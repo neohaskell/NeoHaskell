@@ -54,6 +54,7 @@ Can you tell that this code works from reading it?
 - If this touches an integration boundary: is the full path tested?
 - Check the real thing, not a proxy. If the code checks liveness via file mtime or cached state instead of reading the actual value, that's a verification gap.
 - For delegated or async work: does the code verify actual output artifacts, or does it trust self-reports and summaries?
+- For a developed public NeoHaskell feature: does the testbed application exercise its public API, does a maintained automated scenario assert observable behavior, and are the commands and run results supplied? Unit or compiler tests and documentation examples do not fill a missing testbed example. For internal-only work, check the stated applicability against the diff.
 
 ## Complexity Budget
 
