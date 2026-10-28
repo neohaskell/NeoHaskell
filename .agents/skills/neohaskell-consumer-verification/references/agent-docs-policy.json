@@ -1,5 +1,5 @@
 {
-  "schema": 2,
+  "schema": 3,
   "capabilities": {
     "project-and-cli": {
       "page": "project-and-cli.md",
@@ -113,74 +113,47 @@
     {
       "page": "events-and-entities.md",
       "ordinal": 1,
-      "fragment_sha256": "3238aea5bbc73f71b695638e0f059ccf599ac51f38b0810d1332cf28ee04f09e",
-      "source": "neo/starter/src/Starter/Counter/Entity.hs",
-      "source_sha256": "f6bb9f2b3a313f46d1c25141df35b4d66f4abaac6a5c402dfdbcdc2efdc58ed9",
-      "reason": "Checked the starter reducer cases and payload fields. The fragment omits entity and event declarations."
+      "source": "neo/starter/src/Starter/Counter/Entity.hs"
     },
     {
       "page": "commands.md",
       "ordinal": 1,
-      "fragment_sha256": "19c3550f802049b186126e45a61aac8fc9a779a7828106701d10ae1b2ca1cada",
-      "source": "neo/starter/src/Starter/Counter/Commands/IncrementCounter.hs",
-      "source_sha256": "3876de329e7894ccf3ead36bfc3fc52611e668d73d3538478a6bd6e039e76a07",
-      "reason": "Checked getEntityId, decide, type equations, and the marker's generated instances against the starter command. The fragment omits imports and data declarations."
+      "source": "neo/starter/src/Starter/Counter/Commands/IncrementCounter.hs"
     },
     {
       "page": "queries.md",
       "ordinal": 1,
-      "fragment_sha256": "111496f3a92b1c9ca636f24aceca464c0f4e673c8d5905294cdcbf0002555891",
-      "source": "neo/starter/src/Starter/Counter/Queries/CounterView.hs",
-      "source_sha256": "f6d15bc78b5d7394932dfd990dc0faa343d3619e96c8f8e9d8a8bb03bda32eb6",
-      "reason": "Checked deriveQuery, queryId, combine, and the marker's generated instances against the starter query. The fragment omits its row and access declarations."
+      "source": "neo/starter/src/Starter/Counter/Queries/CounterView.hs"
     },
     {
       "page": "configuration-and-wiring.md",
       "ordinal": 1,
-      "fragment_sha256": "a95234f5e8169dc5d17a63690e1baaa4626dd8aa2b7d89851507823b08107404",
-      "source": "neo/starter/src/App.hs",
-      "source_sha256": "8dfc238cac9fe6ba36bb6d1369bd9b45543c81a3f394c3c6399cf95cf4132f8d",
-      "reason": "Checked the starter builder order. The consumer supplies store factories, service, query, and config."
+      "source": "neo/starter/src/App.hs"
     },
     {
       "page": "transports.md",
       "ordinal": 1,
-      "fragment_sha256": "ced19a37a6d99810c1510980b07e8d03dcc313e612db53daa6d7be21bb953880",
-      "source": "core/service/Service/Transport/Mcp.hs",
-      "source_sha256": "548569c4e78d9d42bab89b3c0304c392d02241a4b1181868286e33c03760a9ee",
-      "reason": "Checked McpTransport fields, rejected-payload handling, and the current JSON-RPC standard input and output loop. The command type equation needs its declarations and transport imports."
+      "source": "core/service/Service/Transport/Mcp.hs"
     },
     {
       "page": "advanced-side-effects.md",
       "ordinal": 1,
-      "fragment_sha256": "d518559974325e92b07a2300829afb2598f4be471d2199c2e605516eb8106594",
-      "source": "integrations/Integration/Http/Request.hs",
-      "source_sha256": "5708583718ec36d8103caf58d14aa3cecfbaedf48f2925bd0ed06869fb44aee1",
-      "reason": "Checked Request field names, callback types, and authentication constructors. The consumer must define the result command and imports."
+      "source": "integrations/Integration/Http/Request.hs"
     },
     {
       "page": "advanced-oauth2.md",
       "ordinal": 1,
-      "fragment_sha256": "29714cbc79465aeb795a1d9e134f7eef0bd588295db5cffcf6eb622d8fc22679",
-      "source": "core/service/Service/Application.hs",
-      "source_sha256": "75cff52771e33f3e7839881f1aa97f13ee0530cdc0274f9abfa8ecb3e6cdae3f",
-      "reason": "Checked OAuth2 builder names, factory types, registration order, and callback dispatch. The outbound handler constraint change does not alter these builders. The consumer supplies the base app and persistent store."
+      "source": "core/service/Service/Application.hs"
     },
     {
       "page": "advanced-oauth2.md",
       "ordinal": 2,
-      "fragment_sha256": "ff854a03c6a82864532f030b650abcc8f335e8748004c58d162034d245438847",
-      "source": "core/auth/Auth/OAuth2/Provider.hs",
-      "source_sha256": "580ae86aef8bde09df4b11a2f7ba311bb2141d1748e50af6c6bad5ae002cfa4e",
-      "reason": "Checked OAuth2ProviderConfig fields and callback types. The consumer supplies typed provider values and command mappings."
+      "source": "core/auth/Auth/OAuth2/Provider.hs"
     },
     {
       "page": "advanced-oauth2.md",
       "ordinal": 3,
-      "fragment_sha256": "815dc666f0b83c20b648bf79558c751439b3fe48fa90d25d22194046071ded56",
-      "source": "core/service/Integration.hs",
-      "source_sha256": "5a5ba6c6585d030eaf600daec5c0931761a6feb75196d67d757a7a77a80e0924",
-      "reason": "Checked encodeCommand use in callback mapping. The consumer defines and registers ConnectionRecorded."
+      "source": "core/service/Integration.hs"
     }
   ]
 }

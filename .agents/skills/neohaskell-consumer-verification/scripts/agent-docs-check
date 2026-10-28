@@ -51,7 +51,8 @@ REQUIRED_CHECKS = {
     "authorization": {("service-spec", "core/test/Service/Command/CanAccessSpec.hs")},
     "external-oauth2-account": {("auth-spec", "core/test/Auth/OAuth2/RoutesSpec.hs")},
 }
-PRIVATE_EVIDENCE = ".agents/skills/neohaskell-consumer-verification/references/agent-docs-evidence.json"
+PRIVATE_POLICY = ".agents/skills/neohaskell-consumer-verification/references/agent-docs-policy.json"
+LOCAL_REVIEWS = ".agents-state/neohaskell-consumer-verification/agent-docs-reviews.json"
 INTERNAL_PATH = re.compile(
     r"(?<![A-Za-z0-9_.-])(?:core|integrations|neo|testbed|docs|nix|telemetry|website|"
     r"\.agents|\.agents-state|\.assets|\.changes|\.github)/[A-Za-z0-9_./-]+"
@@ -90,18 +91,18 @@ def load_manifest(root: Path) -> dict:
     return manifest
 
 
-def load_evidence(root: Path) -> dict:
-    path = root / PRIVATE_EVIDENCE
+def load_policy(root: Path) -> dict:
+    path = root / PRIVATE_POLICY
     try:
-        evidence = json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=unique_object_pairs)
+        policy = json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=unique_object_pairs)
     except (OSError, ValueError) as error:
-        raise CorpusError(f"{path}: cannot read valid evidence: {error}") from error
-    if not isinstance(evidence, dict) or set(evidence) != {"schema", "capabilities", "ignored_fragments"} or evidence.get("schema") != 2:
-        raise CorpusError(f"{path}: expected schema 2")
-    capabilities = evidence.get("capabilities")
+        raise CorpusError(f"{path}: cannot read valid policy: {error}") from error
+    if not isinstance(policy, dict) or set(policy) != {"schema", "capabilities", "ignored_fragments"} or policy.get("schema") != 3:
+        raise CorpusError(f"{path}: expected schema 3")
+    capabilities = policy.get("capabilities")
     if not isinstance(capabilities, dict):
         raise CorpusError(f"{path}: capabilities must be an object")
-    return evidence
+    return policy
 
 
 def heading_ids(markdown: str) -> set[str]:
@@ -198,9 +199,16 @@ def has_hurl_assertions(content: str) -> bool:
     return False
 
 
-def validate(root: Path) -> tuple[list[str], dict[str, set[str]]]:
+def checkout_revision(root: Path) -> str:
+    result = subprocess.run(["git", "-C", str(root), "rev-parse", "HEAD"], capture_output=True, text=True)
+    if result.returncode:
+        raise CorpusError(f"{root}: cannot identify checkout revision: {result.stderr.strip()}")
+    return result.stdout.strip()
+
+
+def validate(root: Path, prepare_reviews: bool = False) -> tuple[list[str], dict[str, set[str]]]:
     manifest = load_manifest(root)
-    evidence_manifest = load_evidence(root)
+    policy = load_policy(root)
     corpus = root / "docs/agent"
     pages = manifest["pages"]
     page_set = set(pages)
@@ -250,82 +258,125 @@ def validate(root: Path) -> tuple[list[str], dict[str, set[str]]]:
             f"docs/agent/index.md: link each corpus page once; missing {sorted(page_set - index_links - {'index.md'})}"
         )
 
-    capabilities = evidence_manifest["capabilities"]
+    capabilities = policy["capabilities"]
     names: set[str] = set()
     mapped_pages: set[str] = set()
     evidence: dict[str, set[str]] = {runner: set() for runner in EVIDENCE_RUNNERS}
     for name, capability in capabilities.items():
         if not isinstance(name, str) or not isinstance(capability, dict) or set(capability) != {"page", "source", "scenario", "evidence"}:
-            raise CorpusError(f"{PRIVATE_EVIDENCE}: invalid capability {name!r}")
+            raise CorpusError(f"{PRIVATE_POLICY}: invalid capability {name!r}")
         page = capability.get("page")
         source = capability.get("source")
         scenario = capability.get("scenario")
         checks = capability.get("evidence")
         if not all(isinstance(value, str) and value for value in (name, page, source, scenario)) or not isinstance(checks, list):
-            raise CorpusError(f"{PRIVATE_EVIDENCE}: incomplete capability {name!r}")
+            raise CorpusError(f"{PRIVATE_POLICY}: incomplete capability {name!r}")
         if page not in page_set or page == "index.md" or page in mapped_pages:
-            raise CorpusError(f"{PRIVATE_EVIDENCE}: duplicate or invalid page for {name!r}")
+            raise CorpusError(f"{PRIVATE_POLICY}: duplicate or invalid page for {name!r}")
         names.add(name)
         mapped_pages.add(page)
         safe_file(root, source, f"source for {name}")
         scenario_path = safe_file(root, scenario, f"scenario for {name}")
         if not scenario.startswith("testbed/tests/") or not scenario.endswith(".hurl"):
-            raise CorpusError(f"{PRIVATE_EVIDENCE}: {name} needs a maintained Hurl scenario")
+            raise CorpusError(f"{PRIVATE_POLICY}: {name} needs a maintained Hurl scenario")
         scenario_text = scenario_path.read_text(encoding="utf-8")
         if not HURL_REQUEST.search(scenario_text) or not has_hurl_assertions(scenario_text):
-            raise CorpusError(f"{PRIVATE_EVIDENCE}: {name} scenario needs a request and assertions")
+            raise CorpusError(f"{PRIVATE_POLICY}: {name} scenario needs a request and assertions")
         evidence["hurl"].add(scenario)
         named_checks: set[tuple[str, str]] = set()
         for check in checks:
             if not isinstance(check, dict) or set(check) != {"kind", "path"}:
-                raise CorpusError(f"{PRIVATE_EVIDENCE}: invalid evidence for {name}")
+                raise CorpusError(f"{PRIVATE_POLICY}: invalid evidence for {name}")
             kind, path = check["kind"], check["path"]
             if kind not in EVIDENCE_RUNNERS or not isinstance(path, str):
-                raise CorpusError(f"{PRIVATE_EVIDENCE}: unknown evidence for {name}")
+                raise CorpusError(f"{PRIVATE_POLICY}: unknown evidence for {name}")
             safe_file(root, path, f"evidence for {name}")
             if kind == "hurl":
-                raise CorpusError(f"{PRIVATE_EVIDENCE}: {name} has redundant Hurl evidence")
+                raise CorpusError(f"{PRIVATE_POLICY}: {name} has redundant Hurl evidence")
             if kind == "consumer-contract" and path != EVIDENCE_RUNNERS[kind]:
-                raise CorpusError(f"{PRIVATE_EVIDENCE}: {name} needs the owned consumer contract")
+                raise CorpusError(f"{PRIVATE_POLICY}: {name} needs the owned consumer contract")
             if kind in ("service-spec", "auth-spec"):
                 suite = EVIDENCE_RUNNERS[kind]
                 module = Path(path).stem
                 if not path.endswith("Spec.hs") or module not in (root / suite).read_text(encoding="utf-8"):
-                    raise CorpusError(f"{PRIVATE_EVIDENCE}: {name} spec is not registered in {suite}")
+                    raise CorpusError(f"{PRIVATE_POLICY}: {name} spec is not registered in {suite}")
             evidence[kind].add(path)
             named_checks.add((kind, path))
         if not REQUIRED_CHECKS.get(name, set()) <= named_checks:
-            raise CorpusError(f"{PRIVATE_EVIDENCE}: {name} lacks required executable evidence")
+            raise CorpusError(f"{PRIVATE_POLICY}: {name} lacks required executable evidence")
     if names != REQUIRED_CAPABILITIES:
         raise CorpusError(
-            f"{PRIVATE_EVIDENCE}: missing capabilities {sorted(REQUIRED_CAPABILITIES - names)}; "
+            f"{PRIVATE_POLICY}: missing capabilities {sorted(REQUIRED_CAPABILITIES - names)}; "
             f"unknown capabilities {sorted(names - REQUIRED_CAPABILITIES)}"
         )
     if mapped_pages != page_set - {"index.md"}:
-        raise CorpusError(f"{PRIVATE_EVIDENCE}: missing page coverage {sorted(page_set - mapped_pages - {'index.md'})}")
-    receipts = evidence_manifest.get("ignored_fragments")
+        raise CorpusError(f"{PRIVATE_POLICY}: missing page coverage {sorted(page_set - mapped_pages - {'index.md'})}")
+    declarations = policy.get("ignored_fragments")
+    if not isinstance(declarations, list):
+        raise CorpusError(f"{PRIVATE_POLICY}: ignored_fragments must be an array")
+    review_inputs: dict[tuple[str, int], dict] = {}
+    for declaration in declarations:
+        if not isinstance(declaration, dict) or set(declaration) != {"page", "ordinal", "source"}:
+            raise CorpusError(f"{PRIVATE_POLICY}: invalid ignored fragment declaration")
+        page, ordinal = declaration["page"], declaration["ordinal"]
+        if not isinstance(page, str) or type(ordinal) is not int or ordinal < 1 or ordinal > len(ignored_hashes.get(page, [])):
+            raise CorpusError(f"{PRIVATE_POLICY}: declaration does not identify an ignored Haskell fence")
+        key = (page, ordinal)
+        if key in review_inputs:
+            raise CorpusError(f"{PRIVATE_POLICY}: duplicate ignored fragment declaration {key}")
+        source = declaration["source"]
+        if not isinstance(source, str):
+            raise CorpusError(f"{PRIVATE_POLICY}: invalid review source for {key}")
+        path = safe_file(root, source, f"review source for {key}")
+        review_inputs[key] = {
+            **declaration,
+            "fragment_sha256": ignored_hashes[page][ordinal - 1],
+            "source_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+        }
+    expected = {(page, ordinal) for page, hashes in ignored_hashes.items() for ordinal in range(1, len(hashes) + 1)}
+    if set(review_inputs) != expected:
+        raise CorpusError(f"{PRIVATE_POLICY}: missing ignored fragment declarations {sorted(expected - set(review_inputs))}")
+    review_path = root / LOCAL_REVIEWS
+    if prepare_reviews:
+        review_path.parent.mkdir(parents=True, exist_ok=True)
+        review_path.write_text(json.dumps({
+            "schema": 1,
+            "revision": checkout_revision(root),
+            "worktree": str(root),
+            "ignored_fragments": [{**review_inputs[key], "reason": ""} for key in sorted(review_inputs)],
+        }, indent=2) + "\n", encoding="utf-8")
+        print(f"agent docs: prepared {review_path}; review each source and fill every reason")
+        return runnable_pages, evidence
+    try:
+        reviews = json.loads(review_path.read_text(encoding="utf-8"), object_pairs_hook=unique_object_pairs)
+    except (OSError, ValueError) as error:
+        raise CorpusError(f"{LOCAL_REVIEWS}: missing or invalid local reviews; run --prepare-reviews, inspect sources, then fill reasons: {error}") from error
+    if not isinstance(reviews, dict) or set(reviews) != {"schema", "revision", "worktree", "ignored_fragments"} or reviews["schema"] != 1:
+        raise CorpusError(f"{LOCAL_REVIEWS}: expected local review schema 1")
+    if reviews["revision"] != checkout_revision(root) or reviews["worktree"] != str(root):
+        raise CorpusError(f"{LOCAL_REVIEWS}: stale checkout review; run --prepare-reviews and review this revision")
+    receipts = reviews["ignored_fragments"]
     if not isinstance(receipts, list):
-        raise CorpusError(f"{PRIVATE_EVIDENCE}: ignored_fragments must be an array")
+        raise CorpusError(f"{LOCAL_REVIEWS}: ignored_fragments must be an array")
     received: set[tuple[str, int]] = set()
     for receipt in receipts:
         if not isinstance(receipt, dict) or set(receipt) != {"page", "ordinal", "fragment_sha256", "source", "source_sha256", "reason"}:
-            raise CorpusError(f"{PRIVATE_EVIDENCE}: invalid ignored fragment receipt")
-        page, ordinal = receipt["page"], receipt["ordinal"]
-        if not isinstance(page, str) or not isinstance(ordinal, int) or ordinal < 1 or ordinal > len(ignored_hashes.get(page, [])):
-            raise CorpusError(f"{PRIVATE_EVIDENCE}: receipt does not identify an ignored Haskell fence")
-        key = (page, ordinal)
-        if key in received or not isinstance(receipt["reason"], str) or not receipt["reason"].strip():
-            raise CorpusError(f"{PRIVATE_EVIDENCE}: duplicate or empty receipt for {key}")
+            raise CorpusError(f"{LOCAL_REVIEWS}: invalid ignored fragment receipt")
+        if not isinstance(receipt["page"], str) or type(receipt["ordinal"]) is not int:
+            raise CorpusError(f"{LOCAL_REVIEWS}: invalid ignored fragment receipt")
+        key = (receipt["page"], receipt["ordinal"])
+        if key not in review_inputs or key in received or not isinstance(receipt["reason"], str) or not receipt["reason"].strip():
+            raise CorpusError(f"{LOCAL_REVIEWS}: missing or invalid review reason for {key}")
         received.add(key)
-        if receipt["fragment_sha256"] != ignored_hashes[page][ordinal - 1]:
-            raise CorpusError(f"{PRIVATE_EVIDENCE}: stale fragment review for {key}")
-        path = safe_file(root, receipt["source"], f"review source for {key}")
-        actual = hashlib.sha256(path.read_bytes()).hexdigest()
-        if receipt["source_sha256"] != actual:
-            raise CorpusError(f"{PRIVATE_EVIDENCE}: stale source review for {key}")
-    expected = {(page, ordinal) for page, hashes in ignored_hashes.items() for ordinal in range(1, len(hashes) + 1)}
+        expected_receipt = review_inputs[key]
+        if receipt["source"] != expected_receipt["source"]:
+            raise CorpusError(f"{LOCAL_REVIEWS}: wrong review source for {key}")
+        if receipt["fragment_sha256"] != expected_receipt["fragment_sha256"]:
+            raise CorpusError(f"{LOCAL_REVIEWS}: stale fragment review for {key}")
+        if receipt["source_sha256"] != expected_receipt["source_sha256"]:
+            raise CorpusError(f"{LOCAL_REVIEWS}: stale source review for {key}")
     if received != expected:
-        raise CorpusError(f"{PRIVATE_EVIDENCE}: missing ignored fragment receipts {sorted(expected - received)}")
+        raise CorpusError(f"{LOCAL_REVIEWS}: missing ignored fragment receipts {sorted(expected - received)}")
     return runnable_pages, evidence
 
 
@@ -383,19 +434,24 @@ def main() -> int:
     parser.add_argument("--root", type=Path, default=Path.cwd())
     parser.add_argument("--structure-only", action="store_true")
     parser.add_argument("--verify-evidence", action="store_true")
+    parser.add_argument("--prepare-reviews", action="store_true")
     arguments = parser.parse_args()
     if arguments.structure_only and arguments.verify_evidence:
         parser.error("--structure-only and --verify-evidence cannot be combined")
+    if arguments.prepare_reviews and (arguments.structure_only or arguments.verify_evidence):
+        parser.error("--prepare-reviews cannot be combined with other modes")
     root = arguments.root.resolve()
     try:
-        runnable_pages, evidence = validate(root)
-        if not arguments.structure_only:
+        runnable_pages, evidence = validate(root, arguments.prepare_reviews)
+        if not arguments.structure_only and not arguments.prepare_reviews:
             compile_pages(root, runnable_pages)
             if arguments.verify_evidence:
                 verify_evidence(root, evidence)
     except (CorpusError, OSError, subprocess.TimeoutExpired) as error:
         print(f"agent docs: FAIL: {error}", file=sys.stderr)
         return 1
+    if arguments.prepare_reviews:
+        return 0
     print(
         f"agent docs: PASS: {len(REQUIRED_CAPABILITIES)} capabilities, "
         f"{sum(map(len, evidence.values()))} evidence files, {len(runnable_pages)} compiled page(s)"
