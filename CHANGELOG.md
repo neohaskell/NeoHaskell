@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.13.1 — 2026-10-28
+
+### Fixed
+
+- **Framework**: Records with `DateTime` or `Maybe DateTime` fields can now derive `ToSchema`. Timestamp fields appear as strings in OpenAPI and JSON Schema, matching their JSON encoding. Applications that defined an orphan `ToSchema DateTime` instance as a workaround must remove that instance to avoid a duplicate-instance error after updating NeoHaskell. ([change](https://github.com/neohaskell/NeoHaskell/commit/6f534e067dc61140796e46d3c32e6c144b9f30d4))
+
+[Compare changes](https://github.com/neohaskell/NeoHaskell/compare/neo-v0.13.0...neo-v0.13.1)
+
 ## 0.13.0 — 2026-10-28
 
 ### Breaking changes

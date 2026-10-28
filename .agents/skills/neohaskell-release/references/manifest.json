@@ -769,6 +769,35 @@
       "source_sha": "f9b6d8c701ccd9579494d0b9a3a69cc93fe5d1c1",
       "target_policy": "native-v2",
       "version": "0.13.0"
+    },
+    {
+      "base_sha": "0ec4a119deb7a3d5bca77aaed437bfa5f5eff5ea",
+      "base_tag": "neo-v0.13.0",
+      "base_version": "0.13.0",
+      "bootstrap": false,
+      "date": "2026-10-28",
+      "group": "platform",
+      "id": "dc51fd7c3931b38d314b9869946a1a2da7b417ea5085bac113e12bbcb33cd913",
+      "impact": "compatible",
+      "kind": "release",
+      "notes": [
+        {
+          "category": "Fixed",
+          "commit": "6f534e067dc61140796e46d3c32e6c144b9f30d4",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "235c7213bffa5e7230c81142964e88565b2afd447714170839f79f479d642c0d",
+          "impact": "compatible",
+          "path": ".changes/datetime-schema.md",
+          "sections": {
+            "Summary": "Records with `DateTime` or `Maybe DateTime` fields can now derive `ToSchema`. Timestamp fields appear as strings in OpenAPI and JSON Schema, matching their JSON encoding. Applications that defined an orphan `ToSchema DateTime` instance as a workaround must remove that instance to avoid a duplicate-instance error after updating NeoHaskell."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: compatible\ncategory: Fixed\n---\n\n## Summary\n\nRecords with `DateTime` or `Maybe DateTime` fields can now derive `ToSchema`. Timestamp fields appear as strings in OpenAPI and JSON Schema, matching their JSON encoding. Applications that defined an orphan `ToSchema DateTime` instance as a workaround must remove that instance to avoid a duplicate-instance error after updating NeoHaskell.\n"
+        }
+      ],
+      "source_sha": "6f534e067dc61140796e46d3c32e6c144b9f30d4",
+      "target_policy": "native-v2",
+      "version": "0.13.1"
     }
   ],
   "recoveries": [],
