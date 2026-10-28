@@ -22,6 +22,16 @@ This testbed includes:
 
 ## Running the Testbed
 
+### Run the public matcher example
+
+From the repository root, run the Haskell test suite for the `Test` matchers:
+
+```sh
+nix develop --command cabal test --project-file=cabal.project.dev nhtestbed-spec-demo --test-show-details=direct
+```
+
+The suite checks `actual |> shouldContain expected` and `actual |> shouldNotContain expected` with arrays of different lengths. It needs no running app or PostgreSQL service. A passing run reports `2 examples, 0 failures`.
+
 ### Start the Application
 
 ```bash
