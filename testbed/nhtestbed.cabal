@@ -114,3 +114,14 @@ executable nhoauthtestbed
 
   hs-source-dirs: launcher
   default-language: GHC2021
+
+test-suite nhtestbed-spec-demo
+  import: common_cfg
+  type: exitcode-stdio-1.0
+  hs-source-dirs: spec-demo
+  main-is: SpecDemo.hs
+  build-depends:
+    base,
+    hspec,
+    nhcore
+  default-language: GHC2021
