@@ -154,6 +154,7 @@ jobs:
         with:
           extra-conf: |
             accept-flake-config = true
+            http2 = false
       - uses: DeterminateSystems/magic-nix-cache-action@v14
       - name: Build the flake package (runs the in-crate unit tests as checkPhase)
         run: nix build .#neo --print-build-logs
