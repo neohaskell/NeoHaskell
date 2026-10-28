@@ -118,3 +118,13 @@ executable nhoauthtestbed
 
   hs-source-dirs: launcher
   default-language: GHC2021
+
+test-suite nhtestbed-datetime-schema
+  import: common_cfg
+  type: exitcode-stdio-1.0
+  main-is: Main.hs
+  hs-source-dirs: test-datetime-schema
+  default-language: GHC2021
+  build-depends:
+    base,
+    hspec

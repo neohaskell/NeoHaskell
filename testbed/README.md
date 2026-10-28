@@ -58,6 +58,18 @@ hurl --test tests/queries/*.hurl
 hurl --test tests/scenarios/*.hurl
 ```
 
+### Check timestamped records
+
+The `nhtestbed-datetime-schema` suite defines a `ShipmentTimeline` record with a required `DateTime` and an optional `Maybe DateTime`. It checks that both fields lower to JSON Schema strings and that a real shipment encodes its timestamp as a JSON string.
+
+From the repository root, run:
+
+```sh
+nix develop --command cabal test nhtestbed:nhtestbed-datetime-schema --test-show-details=direct
+```
+
+The suite passes with `1 example, 0 failures`. Its source is `testbed/test-datetime-schema/Main.hs`.
+
 ## Project Structure
 
 ```text
