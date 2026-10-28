@@ -193,6 +193,10 @@ class CiVerificationTests(unittest.TestCase):
         core = job_block(workflow("test.yml"), "test-core")
         self.assertIn("http2 = false", core)
         self.assertIn("https://neohaskell.cachix.org?priority=30 https://cache.iog.io", core)
+        self.assertIn(
+            "nix-acquisition-diagnostics nix develop .#ci --command cabal test nhcore-test-core",
+            core,
+        )
         self.assertIn("cabal test nhcore-test-core", core)
 
     def test_ci_shell_omits_editor_tools_before_shell_construction(self) -> None:
