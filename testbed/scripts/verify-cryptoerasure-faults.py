@@ -114,7 +114,10 @@ environment.update({
     "DB_PASSWORD": DB_PASSWORD,
     "DB_NAME": database,
 })
-bin_command = ["cabal", "list-bin"]
+bin_command = ["cabal"]
+if os.environ.get("TESTBED_CABAL_BUILDDIR"):
+    bin_command.append(f"--builddir={os.environ['TESTBED_CABAL_BUILDDIR']}")
+bin_command.append("list-bin")
 if platform.system() == "Darwin":
     bin_command.append("--enable-executable-dynamic")
 bin_command.append("exe:nhoauthtestbed")

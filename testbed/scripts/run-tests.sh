@@ -22,6 +22,10 @@ TESTBED_FIXTURE_PORT="${TESTBED_FIXTURE_PORT:-8181}"
 export TESTBED_OAUTH_PORT TESTBED_FIXTURE_PORT
 HURL_TEST_ROOT="testbed/tests"
 CABAL_EXE_OPTIONS=()
+CABAL_GLOBAL_OPTIONS=()
+if [ -n "${TESTBED_CABAL_BUILDDIR:-}" ]; then
+	CABAL_GLOBAL_OPTIONS+=(--builddir="$TESTBED_CABAL_BUILDDIR")
+fi
 if [ "$(uname)" = "Darwin" ]; then
 	CABAL_EXE_OPTIONS+=(--enable-executable-dynamic)
 fi
@@ -107,7 +111,7 @@ PY
 	HURL_TEST_ROOT="$HURL_TEMP_DIR"
 fi
 
-cabal build "${CABAL_EXE_OPTIONS[@]}" exe:nhtestbed exe:nhoauthtestbed
+cabal "${CABAL_GLOBAL_OPTIONS[@]}" build "${CABAL_EXE_OPTIONS[@]}" exe:nhtestbed exe:nhoauthtestbed
 
 if is_testbed_ready || curl -s "http://127.0.0.1:$TESTBED_HTTP_PORT" >/dev/null 2>&1; then
 	echo -e "${RED}Error: Port $TESTBED_HTTP_PORT is already in use${NC}"
@@ -148,13 +152,13 @@ createdb -h "${DB_HOST:-localhost}" -p "${DB_PORT:-5432}" -U "${DB_USER:-neohask
 echo "Testbed databases: $testbed_db $oauth_db"
 
 echo -e "${YELLOW}Starting testbed...${NC}"
-DB_NAME="$testbed_db" "$(cabal list-bin "${CABAL_EXE_OPTIONS[@]}" exe:nhtestbed)" &
+DB_NAME="$testbed_db" "$(cabal "${CABAL_GLOBAL_OPTIONS[@]}" list-bin "${CABAL_EXE_OPTIONS[@]}" exe:nhtestbed)" &
 TESTBED_PID=$!
 wait_for_service "http://127.0.0.1:$TESTBED_HTTP_PORT/health" "Testbed" "$TESTBED_PID"
 echo ""
 
 echo -e "${YELLOW}Starting OAuth testbed...${NC}"
-DB_NAME="$oauth_db" "$(cabal list-bin "${CABAL_EXE_OPTIONS[@]}" exe:nhoauthtestbed)" &
+DB_NAME="$oauth_db" "$(cabal "${CABAL_GLOBAL_OPTIONS[@]}" list-bin "${CABAL_EXE_OPTIONS[@]}" exe:nhoauthtestbed)" &
 OAUTH_TESTBED_PID=$!
 wait_for_service "http://127.0.0.1:$TESTBED_OAUTH_PORT/health" "OAuth testbed" "$OAUTH_TESTBED_PID"
 
@@ -202,7 +206,7 @@ restart_oauth_testbed() {
 		echo -e "${RED}Error: OAuth testbed still responds after its owned process stopped${NC}"
 		exit 1
 	fi
-	DB_NAME="$oauth_db" "$(cabal list-bin "${CABAL_EXE_OPTIONS[@]}" exe:nhoauthtestbed)" &
+	DB_NAME="$oauth_db" "$(cabal "${CABAL_GLOBAL_OPTIONS[@]}" list-bin "${CABAL_EXE_OPTIONS[@]}" exe:nhoauthtestbed)" &
 	OAUTH_TESTBED_PID=$!
 	wait_for_service "http://127.0.0.1:$TESTBED_OAUTH_PORT/health" "Restarted OAuth testbed" "$OAUTH_TESTBED_PID"
 }
@@ -226,6 +230,8 @@ if [ "${CRYPTOERASURE_FAULT_TESTS:-0}" = "1" ]; then
 	done
 	test "$fault_count" -eq 7
 	echo "Cryptoerasure fault cases: $fault_count"
+	DB_HOST="${DB_HOST:-127.0.0.1}" DB_PASSWORD="${DB_PASSWORD:-neohaskell}" \
+		python3 testbed/scripts/verify-cryptoerasure-replay-overlap.py
 fi
 
 echo -e "${GREEN}All tests completed!${NC}"

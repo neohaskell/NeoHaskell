@@ -81,6 +81,7 @@ library
     Testbed.Erasable.Owned.Commands.Record
     Testbed.Erasable.Owned.Outbound
     Testbed.Erasable.Owned.Query
+    Testbed.Erasable.Owned.ReplayGateStore
     Testbed.Erasable.Owned.Service
     Testbed.Service
     Testbed.Stock.Commands.InitializeStock
