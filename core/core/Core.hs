@@ -38,6 +38,8 @@ import Service.Command as Reexported (Command (IsMultiTenant, getEntityIdImpl, d
 import Service.CommandExecutor.TH as Reexported (deriveCommand)
 import Service.Entity as Reexported (Entity (..), EntityOf, EventOf)
 import Service.Entity.TH (deriveEntity)
+import Service.InboundIntegration.Core as Reexported (InboundIntegration (..))
+import Service.InboundIntegration.TH as Reexported (inboundIntegration)
 import Service.Event as Reexported (InsertionType (..), StreamId, ToStreamId (..))
 import Service.Event.TH as Reexported (deriveEvent, deriveEntityEvents)
 import Service.OutboundIntegration.Core as Reexported (OutboundIntegration (..))

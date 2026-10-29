@@ -60,6 +60,7 @@ library
     Testbed.Cart.Commands.AddItem
     Testbed.Cart.Commands.CreateCart
     Testbed.Cart.Commands.CreateCartInternal
+    Testbed.Cart.Commands.CreateTypedInboundCart
     Testbed.Cart.Commands.RegisterCartByKey
     Testbed.Cart.Commands.SaveIBAN
     Testbed.Cart.Core
@@ -84,6 +85,7 @@ library
     Testbed.Erasable.Owned.Service
     Testbed.Service
     Testbed.Stock.Commands.InitializeStock
+    Testbed.Stock.Commands.InitializeStockInternal
     Testbed.Stock.Commands.ReserveStock
     Testbed.Stock.Core
     Testbed.Stock.Queries.StockLevel
@@ -93,6 +95,7 @@ library
     Testbed.Examples.OpenRouterIntegration
     Testbed.Examples.PdfExtraction
     Testbed.Integrations.JsonSideEffect
+    Testbed.Integrations.TypedInboundExample
     Testbed.ExternalEffect.Core
     Testbed.ExternalEffect.Commands.RecordExternalEffect
     Testbed.ExternalEffect.Commands.RequestExternalEffect
