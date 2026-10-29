@@ -41,6 +41,7 @@ module Schema (
 import Array (Array)
 import Array qualified
 import Basics
+import DateTime (DateTime)
 import GHC.Generics qualified as Generics
 import Maybe (Maybe (..))
 import Prelude qualified as GhcPrelude
@@ -152,6 +153,10 @@ instance {-# OVERLAPPING #-} ToSchema GhcPrelude.String where
 
 instance ToSchema Uuid where
   toSchema = SText -- UUIDs serialize as text/strings
+
+
+instance ToSchema DateTime where
+  toSchema = SText
 
 
 -- -----------------------------------------------------------------------------

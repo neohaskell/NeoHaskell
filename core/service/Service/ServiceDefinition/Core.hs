@@ -672,8 +672,11 @@ buildEndpointsByTransport rawEventStore commandDefinitions transportsMap = do
               )
               Array.empty
 
-  -- Group by transport name, detecting duplicate command handlers
-  let groupByTransport (transportNameText, cmdName, handler, schema) (handlersAcc, schemasAcc) =
+  let groupByTransport (transportNameText, cmdName, handler, schema) (handlersAcc, schemasAcc) = do
+        let endpointName =
+              if transportNameText == "WebTransport"
+                then cmdName |> Text.toKebabCase
+                else cmdName
         let endpointSchema = Service.Transport.EndpointSchema
               { requestSchema = Just schema
               , responseSchema = commandResponseSchema
@@ -681,20 +684,19 @@ buildEndpointsByTransport rawEventStore commandDefinitions transportsMap = do
               , deprecated = False
               , entityName = Just entityNameText
               }
-        in case handlersAcc |> Map.get transportNameText of
+        case handlersAcc |> Map.get transportNameText of
           Nothing -> do
-            let newHandlers = handlersAcc |> Map.set transportNameText (Map.empty |> Map.set cmdName handler)
-            let newSchemas = schemasAcc |> Map.set transportNameText (Map.empty |> Map.set cmdName endpointSchema)
+            let newHandlers = handlersAcc |> Map.set transportNameText (Map.empty |> Map.set endpointName handler)
+            let newSchemas = schemasAcc |> Map.set transportNameText (Map.empty |> Map.set endpointName endpointSchema)
             (newHandlers, newSchemas)
           Just existingHandlers ->
-            case existingHandlers |> Map.get cmdName of
+            case existingHandlers |> Map.get endpointName of
               Just _ ->
-                -- Duplicate handler detected - this is a configuration error
-                panic [fmt|Duplicate command handler registered for: #{cmdName}|]
+                panic [fmt|Duplicate command handler registered for: #{endpointName}|]
               Nothing -> do
-                let newHandlers = handlersAcc |> Map.set transportNameText (existingHandlers |> Map.set cmdName handler)
+                let newHandlers = handlersAcc |> Map.set transportNameText (existingHandlers |> Map.set endpointName handler)
                 let existingSchemas = schemasAcc |> Map.get transportNameText |> Maybe.withDefault Map.empty
-                let newSchemas = schemasAcc |> Map.set transportNameText (existingSchemas |> Map.set cmdName endpointSchema)
+                let newSchemas = schemasAcc |> Map.set transportNameText (existingSchemas |> Map.set endpointName endpointSchema)
                 (newHandlers, newSchemas)
 
   let groupDispatch (cmdName, handler) dispatchResult =

@@ -15,7 +15,8 @@ import Uuid qualified
 data CartEntity = CartEntity
   { cartId :: Uuid,
     ownerId :: Text,
-    items :: Array CartItem
+    items :: Array CartItem,
+    savedIBAN :: Maybe Text
   }
   deriving (Generic)
 
@@ -48,7 +49,8 @@ initialState =
   CartEntity
     { cartId = Uuid.nil,
       ownerId = "",
-      items = Array.empty
+      items = Array.empty,
+      savedIBAN = Nothing
     }
 
 
@@ -69,6 +71,10 @@ data CartEvent
       { entityId :: Uuid,
         stockId :: Uuid,
         quantity :: Int
+      }
+  | IBANSaved
+      { entityId :: Uuid,
+        iban :: Text
       }
   deriving (Generic, Show)
 
@@ -95,12 +101,14 @@ instance EventVariantOf CartEvent ItemAddedPayload where
           itemAddedQuantity = quantity
         }
     CartCreated {} -> Nothing
+    IBANSaved {} -> Nothing
 
 
 getEventEntityId :: CartEvent -> Uuid
 getEventEntityId event = case event of
   CartCreated {entityId} -> entityId
   ItemAdded {entityId} -> entityId
+  IBANSaved {entityId} -> entityId
 
 
 type instance EventOf CartEntity = CartEvent
@@ -125,7 +133,8 @@ update event entity = case event of
     CartEntity
       { cartId = entityId,
         ownerId = ownerId,
-        items = Array.empty
+        items = Array.empty,
+        savedIBAN = Nothing
       }
   ItemAdded {stockId, quantity} ->
     entity
@@ -137,3 +146,4 @@ update event entity = case event of
                   amount = makeNaturalOrPanic quantity
                 }
       }
+  IBANSaved {iban} -> entity {savedIBAN = Just iban}

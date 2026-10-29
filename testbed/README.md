@@ -22,26 +22,64 @@ This testbed includes:
 
 ## Running the Testbed
 
-### Start the Application
+### Run the maintained suite
 
-Start PostgreSQL using the default connection values in `Testbed.Config`, or
-set `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, and `DB_NAME`. From the
-repository root, run:
+```bash
+# From the repository root, with PostgreSQL running locally.
+nix develop --command .agents/skills/neohaskell-test/scripts/run-testbed --strict
+```
+
+The runner builds and starts both testbed applications and the fake external services. It requires a PostgreSQL user that can create databases. Each run creates separate fresh databases for the two applications and prints their names for inspection. It retains those databases, runs every Hurl file, and stops the processes it started. Ports 8080 and 8081 must be free. The `save-iban.hurl` scenario posts to `/commands/save-iban` and reads the saved IBAN through the cart summary query.
+
+### Run the typed inbound example
+
+`Testbed.Integrations.TypedInboundExample` uses `Integration.typedInbound` and
+`Application.withInboundHandler` to emit a cart command and a stock command from
+one worker. Both commands use `InternalTransport`, and their services register
+them for integration dispatch. The Hurl scenario waits for new records in the
+cart and stock queries.
+
+The maintained suite runs `testbed/tests/integrations/typed-inbound.hurl`. To run
+that scenario alone, start the application as shown in the SaveIBAN instructions
+below. In another terminal, run:
 
 ```sh
+nix develop --command hurl --test testbed/tests/integrations/typed-inbound.hurl
+```
+
+### Run the public matcher example
+
+From the repository root, run the Haskell test suite for the `Test` matchers:
+
+```sh
+nix develop --command cabal test --project-file=cabal.project.dev nhtestbed-spec-demo --test-show-details=direct
+```
+
+The suite checks `actual |> shouldContain expected` and `actual |> shouldNotContain expected` with arrays of different lengths. It needs no running app or PostgreSQL service. A passing run reports `2 examples, 0 failures`.
+
+### Run the SaveIBAN scenario alone
+
+```bash
+# In one terminal, from the repository root, with PostgreSQL running locally.
 nix develop --command cabal run exe:nhtestbed
 ```
 
-The app will start and be available at `http://localhost:8080`
+```bash
+# In another terminal, from the repository root.
+nix develop --command hurl --test testbed/tests/commands/save-iban.hurl
+```
 
-### Run the Tests
+### Check timestamped records
 
-The maintained runner builds and starts both testbed applications and the fake
-external services. It requires PostgreSQL and runs every Hurl file:
+The `nhtestbed-datetime-schema` suite defines a `ShipmentTimeline` record with a required `DateTime` and an optional `Maybe DateTime`. It checks that both fields lower to JSON Schema strings and that a real shipment encodes its timestamp as a JSON string.
+
+From the repository root, run:
 
 ```sh
-nix develop --command .agents/skills/neohaskell-test/scripts/run-testbed
+nix develop --command cabal test nhtestbed:nhtestbed-datetime-schema --test-show-details=direct
 ```
+
+The suite passes with `1 example, 0 failures`. Its source is `testbed/test-datetime-schema/Main.hs`.
 
 ## Project Structure
 
@@ -85,24 +123,6 @@ Each test file focuses on a specific area:
 - **`tests/commands/`** - Command execution, event generation, business rules
 - **`tests/queries/`** - Read model queries and projections
 - **`tests/scenarios/`** - Complete user workflows across multiple bounded contexts
-
-## Run the typed inbound example
-
-`Testbed.Integrations.TypedInboundExample` uses `Integration.typedInbound` and
-`Application.withInboundHandler` to emit a cart command and a stock command from
-one worker. The cart query identifies its carts by owner, and the stock query
-identifies its stock records by the example quantity. The Hurl test waits for a
-new record in each query without requiring one command to finish before the other.
-Both emitted commands use `InternalTransport`, so the receiving services register
-them for integration dispatch.
-
-The maintained suite includes `testbed/tests/integrations/typed-inbound.hurl`.
-To run that scenario alone, start the application as shown above. In another
-terminal, run:
-
-```sh
-nix develop --command hurl --test testbed/tests/integrations/typed-inbound.hurl
-```
 
 ## Contributing
 

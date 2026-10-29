@@ -67,6 +67,16 @@ fi
 
 cabal build exe:nhtestbed exe:nhoauthtestbed
 
+if is_testbed_ready || curl -s http://127.0.0.1:8080 >/dev/null 2>&1; then
+	echo -e "${RED}Error: Port 8080 is already in use${NC}"
+	exit 1
+fi
+
+if is_oauth_testbed_ready || curl -s http://127.0.0.1:8081 >/dev/null 2>&1; then
+	echo -e "${RED}Error: Port 8081 is already in use${NC}"
+	exit 1
+fi
+
 if is_fake_services_ready; then
 	echo -e "${GREEN}Fake services already running on http://127.0.0.1:8181${NC}"
 elif curl -s http://127.0.0.1:8181 >/dev/null 2>&1; then
@@ -81,33 +91,24 @@ fi
 
 export OAUTH2_TESTBED_STATE_KEY="${OAUTH2_TESTBED_STATE_KEY:-testbed-oauth-state-key-that-is-at-least-32-bytes}"
 
-# Start the testbed if not already running
-if is_testbed_ready; then
-	echo -e "${GREEN}Testbed already running on http://127.0.0.1:8080${NC}"
-	echo ""
-elif curl -s http://127.0.0.1:8080 >/dev/null 2>&1; then
-	echo -e "${RED}Error: Port 8080 is in use, but NeoHaskell testbed endpoints are not available${NC}"
-	echo "Please stop the process using port 8080 and run again."
-	exit 1
-else
-	echo -e "${YELLOW}Starting testbed...${NC}"
-	cabal run exe:nhtestbed &
-	TESTBED_PID=$!
-	wait_for_service http://127.0.0.1:8080/health "Testbed" "$TESTBED_PID"
-	echo ""
-fi
+export PGPASSWORD="${DB_PASSWORD:-neohaskell}"
+database_suffix=$(python3 -c 'import uuid; print(uuid.uuid4().hex[:12])')
+testbed_db="nh_testbed_${database_suffix}"
+oauth_db="nh_oauth_${database_suffix}"
+createdb -h "${DB_HOST:-localhost}" -p "${DB_PORT:-5432}" -U "${DB_USER:-neohaskell}" "$testbed_db"
+createdb -h "${DB_HOST:-localhost}" -p "${DB_PORT:-5432}" -U "${DB_USER:-neohaskell}" "$oauth_db"
+echo "Testbed databases: $testbed_db $oauth_db"
 
-if is_oauth_testbed_ready; then
-	echo -e "${GREEN}OAuth testbed already running on http://127.0.0.1:8081${NC}"
-elif curl -s http://127.0.0.1:8081 >/dev/null 2>&1; then
-	echo -e "${RED}Error: Port 8081 is in use, but NeoHaskell OAuth testbed endpoints are not available${NC}"
-	exit 1
-else
-	echo -e "${YELLOW}Starting OAuth testbed...${NC}"
-	cabal run exe:nhoauthtestbed &
-	OAUTH_TESTBED_PID=$!
-	wait_for_service http://127.0.0.1:8081/health "OAuth testbed" "$OAUTH_TESTBED_PID"
-fi
+echo -e "${YELLOW}Starting testbed...${NC}"
+DB_NAME="$testbed_db" cabal run exe:nhtestbed &
+TESTBED_PID=$!
+wait_for_service http://127.0.0.1:8080/health "Testbed" "$TESTBED_PID"
+echo ""
+
+echo -e "${YELLOW}Starting OAuth testbed...${NC}"
+DB_NAME="$oauth_db" cabal run exe:nhoauthtestbed &
+OAUTH_TESTBED_PID=$!
+wait_for_service http://127.0.0.1:8081/health "OAuth testbed" "$OAUTH_TESTBED_PID"
 
 # Run command tests
 if [ -d "testbed/tests/commands" ] && [ "$(ls -A testbed/tests/commands/*.hurl 2>/dev/null)" ]; then
@@ -133,8 +134,13 @@ fi
 # Run integration tests (PDF extraction, etc.)
 if [ -d "testbed/tests/integrations" ] && [ "$(ls -A testbed/tests/integrations/*.hurl 2>/dev/null)" ]; then
 	echo -e "${GREEN}Running integration tests...${NC}"
-	hurl --test testbed/tests/integrations/*.hurl
+	delivered_effect_id=$(python3 -c 'import uuid; print(uuid.uuid4())')
+	failed_effect_id=$(python3 -c 'import uuid; print(uuid.uuid4())')
+	echo "Generic HTTP effect IDs: $delivered_effect_id $failed_effect_id"
+	hurl --test --variable "delivered_effect_id=$delivered_effect_id" --variable "failed_effect_id=$failed_effect_id" testbed/tests/integrations/*.hurl
 	echo ""
 fi
+
+bash testbed/scripts/verify-database-isolation.sh "$testbed_db" "$oauth_db"
 
 echo -e "${GREEN}All tests completed!${NC}"

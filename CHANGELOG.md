@@ -1,5 +1,64 @@
 # Changelog
 
+## 0.13.0 — 2026-10-28
+
+### Breaking changes
+
+- **Framework**: Outbound handlers can now receive one event payload. The runtime skips the handler
+for other event types. Existing handlers that take the full event type need the
+explicit `outboundIntegrationFullEvent` marker to keep their current behavior. ([change](https://github.com/neohaskell/NeoHaskell/commit/e411f0e0ea2ec504065267c987c98c3c0e5460aa))
+
+### Added
+
+- **Framework**: New applications can list an entity's event payload types in `deriveEntityEvents`.
+The marker creates the parent event type and lets commands emit a single payload
+type without writing its wrapper constructor. Existing event types and stored
+events are unchanged. An application needs no migration to keep using a handwritten
+event type. ([change](https://github.com/neohaskell/NeoHaskell/commit/b6bf53e813498ef4c2c53e5500c9c14f4dd3dbb2))
+
+### Fixed
+
+- **Framework**: JSON text decoding now preserves names and messages with accented characters, ñ, Japanese text, and emoji. Existing apps need no code changes. For example, decoding `"niño"` now returns `niño` instead of an error. ([change](https://github.com/neohaskell/NeoHaskell/commit/a8ca484045e9f263c4402746fe560bfdb73ce95b))
+
+### Migration from 0.12.0
+
+#### Framework
+
+Find each `outboundIntegration ''Handler` or `deriveOutboundIntegration ''Handler`
+whose `handleEvent` second argument is the entity's full event type. Replace
+the marker with `outboundIntegrationFullEvent ''Handler` and import that name
+from `Service.OutboundIntegration.TH`. The handler body and stored events stay
+the same. To narrow the handler, give it one concrete payload argument, provide
+an `EventVariantOf` mapping from the stored event type, and keep
+`outboundIntegration ''Handler`.
+
+### Verify
+
+Run `neo build` and `neo test --ci` in the application. Exercise one matching
+event and one unrelated event. A payload handler runs only for the matching
+event. A full-event handler keeps its previous behavior.
+
+<details>
+<summary>Copy this prompt to your coding agent</summary>
+
+```text
+Migrate Framework from NeoHaskell 0.12.0 to 0.13.0.
+Update my NeoHaskell outbound handlers for payload dispatch. Find each
+`outboundIntegration ''Handler` or `deriveOutboundIntegration ''Handler` marker.
+If `handleEvent` takes the entity's full event type as its second argument,
+import `outboundIntegrationFullEvent` from `Service.OutboundIntegration.TH` and
+use `outboundIntegrationFullEvent ''Handler` to preserve its behavior. Keep the
+handler body and stored event type unchanged. For a handler that already takes
+one concrete payload, keep `outboundIntegration ''Handler` and confirm that
+`EventVariantOf` maps the stored event type to that payload. Run `neo build`
+and `neo test --ci`. Report the changed files, test results, and any handler
+whose payload mapping or intended event selection remains unclear.
+```
+
+</details>
+
+[Compare changes](https://github.com/neohaskell/NeoHaskell/compare/neo-v0.12.0...neo-v0.13.0)
+
 ## 0.12.0 — 2026-10-26
 
 ### Breaking changes
