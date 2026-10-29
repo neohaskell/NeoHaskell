@@ -14,6 +14,7 @@ import Schema.OpenApi qualified as OpenApiGen
 import Service.Application (ApiInfo (..))
 import Service.Transport (EndpointSchema (..))
 import Test
+import Text qualified
 
 
 -- -----------------------------------------------------------------------------
@@ -194,6 +195,9 @@ spec = do
       -- Verify oneOf is set
       let oneOf = schema |> Lens.view OpenApi.oneOf
       oneOf |> shouldSatisfy (\x -> case x of { Just _ -> True; Nothing -> False })
+      let encoded = Json.encodeText (Json.toJSON schema)
+      encoded |> shouldSatisfy (Text.contains "\"tag\"")
+      encoded |> shouldSatisfy (Text.contains "\"contents\"")
 
   describe "toOpenApiSchema - Reference Types" do
     it "converts SRef to schema with title as reference" \_ -> do

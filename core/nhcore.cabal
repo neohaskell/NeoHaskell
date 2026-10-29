@@ -174,6 +174,7 @@ library
     Console
     Core
     Crypto
+    Erasable
     DateTime
     Decimal
     Decider
@@ -375,6 +376,9 @@ library
     Version
 
   other-modules:
+    Erasable.Cipher
+    Erasable.Internal
+    Service.EventStore.Postgres.ErasableKeys
     Bytes.Internal
     Parser.Internal
     Parser.Internal.Error
@@ -455,6 +459,7 @@ test-suite nhcore-test
     BytesSpec
     ConcurrentMapSpec
     CryptoSpec
+    ErasableSpec
     Command.FromSchemaSpec
     Integration.CommandSpec
     Integration.ContextSpec
@@ -670,6 +675,7 @@ test-suite nhcore-test-service
     Service.EventStore.Postgres.PoolBudgetSpec
     Service.Infra.Postgres.ConnectionConfigSpec
     Service.EventStore.Postgres.SubscriptionStoreSpec
+    Service.EventStore.Postgres.ErasableKeysSpec
     Service.EventStore.Postgres.NotificationsSpec
     Service.EventStore.PostgresSpec
     Service.FileUpload.BlobStore.LocalSpec
@@ -793,6 +799,7 @@ test-suite nhcore-test-core
     Config.THSpec
     BytesSpec
     CryptoSpec
+    ErasableSpec
     DeciderSpec
     DecimalSpec
     DateTimeSpec

@@ -18,6 +18,7 @@ module Service.EventStore.Core (
 import Array (Array)
 import Array qualified
 import Basics
+import Erasable.Internal (KeyState, NewKey)
 import Json qualified
 import Log qualified
 import Maybe (Maybe (..))
@@ -128,6 +129,9 @@ data EventStore eventType = EventStore
   { -- | Insert an event in a stream
     --   Returns the local and global stream position if successful, or an error on conflict or failure.
     insert :: InsertionPayload eventType -> Task Error InsertionSuccess,
+    insertWithErasableKeys :: Array NewKey -> InsertionPayload eventType -> Task Error InsertionSuccess,
+    renderProtectedJson :: Json.Value -> Task Error Json.Value,
+    readErasableKey :: Text -> Task Error KeyState,
     -- | Read events from a stream in forward direction starting from a given revision.
     --   Returns a stream of ReadStreamMessage or an Error.
     readStreamForwardFrom ::
@@ -196,6 +200,11 @@ castEventStore rawStore =
     { insert = \payload -> do
         let rawPayload = encodeInsertionPayload payload
         rawStore.insert rawPayload,
+      insertWithErasableKeys = \keys payload -> do
+        let rawPayload = encodeInsertionPayload payload
+        rawStore.insertWithErasableKeys keys rawPayload,
+      renderProtectedJson = rawStore.renderProtectedJson,
+      readErasableKey = rawStore.readErasableKey,
       readStreamForwardFrom = \entityName streamId position limit -> do
         rawStream <- rawStore.readStreamForwardFrom entityName streamId position limit
         rawStream |> Stream.mapStream decodeReadStreamMessage,
@@ -325,3 +334,4 @@ castEventStore rawStore =
     globalPosition: #{globalPos}
     localPosition: #{localPos}|]
             |> Task.ignoreError
+          Task.throw "Subscription event decoding failed"

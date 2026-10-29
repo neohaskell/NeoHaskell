@@ -71,6 +71,10 @@ library
     Testbed.Document.Commands.CreateDocument
     Testbed.Document.Core
     Testbed.Document.Service
+    Testbed.Erasable.Core
+    Testbed.Erasable.Commands.CreateProtected
+    Testbed.Erasable.Query
+    Testbed.Erasable.Service
     Testbed.Service
     Testbed.Stock.Commands.InitializeStock
     Testbed.Stock.Commands.ReserveStock

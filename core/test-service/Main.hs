@@ -12,6 +12,7 @@ import Service.CommandSpec qualified
 import Service.EventStore.InMemorySpec qualified
 import Service.EventStore.SimpleSpec qualified
 import Service.EventStore.Postgres.PoolBudgetSpec qualified
+import Service.EventStore.Postgres.ErasableKeysSpec qualified
 import Service.Infra.Postgres.ConnectionConfigSpec qualified
 import Service.EventStore.Postgres.SubscriptionStoreSpec qualified
 import Service.EventStore.Postgres.NotificationsSpec qualified
@@ -77,6 +78,7 @@ serviceSpecs = do
   Hspec.describe "Service.EventStore.InMemory" Service.EventStore.InMemorySpec.spec
   Hspec.describe "Service.EventStore.Simple" Service.EventStore.SimpleSpec.spec
   Hspec.describe "Service.EventStore.Postgres.PoolBudget" Service.EventStore.Postgres.PoolBudgetSpec.spec
+  Hspec.describe "Service.EventStore.Postgres.ErasableKeys" Service.EventStore.Postgres.ErasableKeysSpec.spec
   Hspec.describe "Service.Infra.Postgres.ConnectionConfig" Service.Infra.Postgres.ConnectionConfigSpec.spec
   Hspec.describe "Service.EventStore.Postgres.SubscriptionStore" Service.EventStore.Postgres.SubscriptionStoreSpec.spec
   Hspec.describe "Service.EventStore.Postgres" Service.EventStore.PostgresSpec.spec

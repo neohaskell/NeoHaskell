@@ -17,6 +17,8 @@ import Testbed.Document.Core ()
 import Testbed.ExternalEffect.Outbound (ExternalEffectOutbound)
 import Testbed.ExternalEffect.Query (ExternalEffectSummary)
 import Testbed.ExternalEffect.Service qualified as ExternalEffectService
+import Testbed.Erasable.Service qualified as ErasableService
+import Testbed.Erasable.Query (ProtectedView)
 import Testbed.Service qualified
 import Testbed.Stock.Queries.StockLevel (StockLevel)
 import Text qualified
@@ -50,9 +52,11 @@ app =
     |> Application.withService Testbed.Service.stockService
     |> Application.withService Testbed.Service.documentService
     |> Application.withService ExternalEffectService.service
+    |> Application.withService ErasableService.service
     |> Application.withQuery @CartSummary
     |> Application.withQuery @StockLevel
     |> Application.withQuery @ExternalEffectSummary
+    |> Application.withQuery @ProtectedView
     -- Typed outbound handler: reserve stock when items are added to cart
     |> Application.withOutbound @ReserveStockOnItemAdded
     |> Application.withOutbound @ExternalEffectOutbound
