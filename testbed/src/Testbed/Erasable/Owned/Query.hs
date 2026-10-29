@@ -20,6 +20,7 @@ import Testbed.Erasable.Owned.Core
 data OwnedProtectedView = OwnedProtectedView
   { caseId :: Uuid,
     ownerId :: Text,
+    caseStatus :: Text,
     firstReference :: Maybe Text,
     firstSecret :: Maybe (Erasable SecretPayload),
     secondSecret :: Maybe (Erasable SecretPayload),
@@ -53,6 +54,7 @@ instance QueryOf OwnedProtectedEntity OwnedProtectedView where
     Update OwnedProtectedView
       { caseId = entity.caseId,
         ownerId = entity.ownerId,
+        caseStatus = entity.caseStatus,
         firstReference = reference,
         firstSecret = entity.firstSecret,
         secondSecret = entity.secondSecret,

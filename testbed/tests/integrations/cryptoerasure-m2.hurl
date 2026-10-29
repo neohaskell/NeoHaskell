@@ -25,6 +25,7 @@ HTTP/1.1 200
 reference: jsonpath "$.items[?(@.caseId == '{{case_id}}')].firstReference" nth 0
 [Asserts]
 jsonpath "$.items[?(@.caseId == '{{case_id}}')].firstSecret.tag" nth 0 == "Available"
+jsonpath "$.items[?(@.caseId == '{{case_id}}')].caseStatus" nth 0 == "open"
 jsonpath "$.items[?(@.caseId == '{{case_id}}')].secondSecret.tag" nth 0 == "Available"
 jsonpath "$.items[?(@.caseId == '{{case_id}}')].erasureStatus" nth 0 == "not-requested"
 
@@ -90,6 +91,7 @@ HTTP/1.1 200
 jsonpath "$.items[?(@.caseId == '{{case_id}}')].firstSecret.tag" nth 0 == "Erased"
 jsonpath "$.items[?(@.caseId == '{{case_id}}')].secondSecret.tag" nth 0 == "Available"
 jsonpath "$.items[?(@.caseId == '{{case_id}}')].erasureStatus" nth 0 == "completed"
+jsonpath "$.items[?(@.caseId == '{{case_id}}')].caseStatus" nth 0 == "open"
 jsonpath "$.items[?(@.caseId == '{{case_id}}')].staleSecret.tag" nth 0 == "Erased"
 jsonpath "$.items[?(@.caseId == '{{case_id}}')].wasAlreadyErased" nth 0 == true
 
