@@ -10,6 +10,7 @@
     "configuration-and-wiring.md",
     "transports.md",
     "storage.md",
+    "advanced-erasure.md",
     "authorization.md",
     "testing.md",
     "template-haskell-order.md",

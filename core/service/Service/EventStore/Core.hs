@@ -2,6 +2,8 @@
 
 module Service.EventStore.Core (
   EventStore (..),
+  ErasureTarget (..),
+  ErasureResult (..),
   Error (..),
   Limit (..),
   SubscriptionId (..),
@@ -59,6 +61,18 @@ data Error
   | TruncationError EntityName StreamId StreamPosition Text -- Stream truncation errors with context
   | InsertionError InsertionFailure
   | ReadingAllError Text
+  deriving (Eq, Show)
+
+
+data ErasureTarget = ErasureTarget
+  { reference :: Text,
+    entityName :: EntityName,
+    streamId :: StreamId
+  }
+  deriving (Eq, Show)
+
+
+data ErasureResult = ErasedNow | AlreadyErased | UnknownReference
   deriving (Eq, Show)
 
 
@@ -132,6 +146,7 @@ data EventStore eventType = EventStore
     insertWithErasableKeys :: Array NewKey -> InsertionPayload eventType -> Task Error InsertionSuccess,
     renderProtectedJson :: Json.Value -> Task Error Json.Value,
     readErasableKey :: Text -> Task Error KeyState,
+    eraseErasableKey :: ErasureTarget -> Task Error ErasureResult,
     -- | Read events from a stream in forward direction starting from a given revision.
     --   Returns a stream of ReadStreamMessage or an Error.
     readStreamForwardFrom ::
@@ -205,6 +220,7 @@ castEventStore rawStore =
         rawStore.insertWithErasableKeys keys rawPayload,
       renderProtectedJson = rawStore.renderProtectedJson,
       readErasableKey = rawStore.readErasableKey,
+      eraseErasableKey = rawStore.eraseErasableKey,
       readStreamForwardFrom = \entityName streamId position limit -> do
         rawStream <- rawStore.readStreamForwardFrom entityName streamId position limit
         rawStream |> Stream.mapStream decodeReadStreamMessage,

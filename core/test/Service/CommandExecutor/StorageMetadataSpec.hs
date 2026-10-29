@@ -106,7 +106,8 @@ spec = do
                   port = 5432,
                   poolSize = 3,
                   sslMode = ConnectionConfig.SslModeUnset,
-                  sslRootCert = Nothing
+                  sslRootCert = Nothing,
+                  erasableApplicationScope = "storage-metadata-spec"
                 }
         runId <- Uuid.generate
         cartId <- Uuid.generate

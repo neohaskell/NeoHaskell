@@ -63,6 +63,12 @@
       "scenario": "testbed/tests/scenarios/query-idempotency.hurl",
       "evidence": []
     },
+    "protected-value-erasure": {
+      "page": "advanced-erasure.md",
+      "source": "core/service/Integration/Erasable.hs",
+      "scenario": "testbed/tests/integrations/cryptoerasure-m2.hurl",
+      "evidence": []
+    },
     "authorization": {
       "page": "authorization.md",
       "source": "core/auth/Auth/Discovery.hs",

@@ -43,7 +43,8 @@ spec = do
               Internal.port = 5432,
               Internal.poolSize = 6,
               Internal.sslMode = ConnectionConfig.SslModeUnset,
-              Internal.sslRootCert = Nothing
+              Internal.sslRootCert = Nothing,
+              Internal.erasableApplicationScope = "postgres-spec"
             }
     describe "new method" do
       it "acquires the connection" \_ -> do

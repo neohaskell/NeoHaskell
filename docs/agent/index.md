@@ -19,6 +19,7 @@ Start with [project and CLI](project-and-cli.md), then [syntax and Core](syntax-
 The generated Counter application is a working example of a command, reducer, and query. Advanced integrations belong in applications that need external effects.
 
 - [Reusable side effects](advanced-side-effects.md) covers `ToAction`, HTTP requests, callbacks, and the separate adapter API.
+- [Protected-value erasure](advanced-erasure.md) covers owner authorization, one-reference deletion, result commands, and explicit retry.
 - [External OAuth2](advanced-oauth2.md) covers account connections, persistent token storage, and callback commands.
 
 A `haskell` code fence is a complete module. A `haskell ignore` fence is a fragment that needs the surrounding application definitions.

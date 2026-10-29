@@ -50,4 +50,5 @@ app =
 --     , host = config.dbHost
 --     , databaseName = config.dbName
 --     , port = config.dbPort
+--     , erasableApplicationScope = "my-application"
 --     }

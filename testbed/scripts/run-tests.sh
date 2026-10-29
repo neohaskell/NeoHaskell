@@ -12,8 +12,16 @@ NC='\033[0m' # No Color
 TESTBED_PID=""
 OAUTH_TESTBED_PID=""
 FAKE_SERVICES_PID=""
+ERASURE_STATE_FILE=""
+CABAL_EXE_OPTIONS=()
+if [ "$(uname)" = "Darwin" ]; then
+	CABAL_EXE_OPTIONS+=(--enable-executable-dynamic)
+fi
 
 cleanup() {
+	if [ -n "$ERASURE_STATE_FILE" ]; then
+		rm -f "$ERASURE_STATE_FILE"
+	fi
 	for pid in "$OAUTH_TESTBED_PID" "$TESTBED_PID" "$FAKE_SERVICES_PID"; do
 		if [ -n "$pid" ]; then
 			kill "$pid" 2>/dev/null || true
@@ -65,7 +73,7 @@ if ! command -v hurl &>/dev/null; then
 	exit 1
 fi
 
-cabal build exe:nhtestbed exe:nhoauthtestbed
+cabal build "${CABAL_EXE_OPTIONS[@]}" exe:nhtestbed exe:nhoauthtestbed
 
 if is_testbed_ready || curl -s http://127.0.0.1:8080 >/dev/null 2>&1; then
 	echo -e "${RED}Error: Port 8080 is already in use${NC}"
@@ -100,13 +108,13 @@ createdb -h "${DB_HOST:-localhost}" -p "${DB_PORT:-5432}" -U "${DB_USER:-neohask
 echo "Testbed databases: $testbed_db $oauth_db"
 
 echo -e "${YELLOW}Starting testbed...${NC}"
-DB_NAME="$testbed_db" cabal run exe:nhtestbed &
+DB_NAME="$testbed_db" "$(cabal list-bin "${CABAL_EXE_OPTIONS[@]}" exe:nhtestbed)" &
 TESTBED_PID=$!
 wait_for_service http://127.0.0.1:8080/health "Testbed" "$TESTBED_PID"
 echo ""
 
 echo -e "${YELLOW}Starting OAuth testbed...${NC}"
-DB_NAME="$oauth_db" cabal run exe:nhoauthtestbed &
+DB_NAME="$oauth_db" "$(cabal list-bin "${CABAL_EXE_OPTIONS[@]}" exe:nhoauthtestbed)" &
 OAUTH_TESTBED_PID=$!
 wait_for_service http://127.0.0.1:8081/health "OAuth testbed" "$OAUTH_TESTBED_PID"
 
@@ -142,5 +150,19 @@ if [ -d "testbed/tests/integrations" ] && [ "$(ls -A testbed/tests/integrations/
 fi
 
 bash testbed/scripts/verify-database-isolation.sh "$testbed_db" "$oauth_db"
+
+ERASURE_STATE_FILE=$(mktemp)
+python3 testbed/scripts/verify-cryptoerasure-restart.py prepare "$ERASURE_STATE_FILE"
+kill "$OAUTH_TESTBED_PID"
+wait "$OAUTH_TESTBED_PID" 2>/dev/null || true
+OAUTH_TESTBED_PID=""
+if is_oauth_testbed_ready; then
+	echo -e "${RED}Error: OAuth testbed still responds after its owned process stopped${NC}"
+	exit 1
+fi
+DB_NAME="$oauth_db" "$(cabal list-bin "${CABAL_EXE_OPTIONS[@]}" exe:nhoauthtestbed)" &
+OAUTH_TESTBED_PID=$!
+wait_for_service http://127.0.0.1:8081/health "Restarted OAuth testbed" "$OAUTH_TESTBED_PID"
+python3 testbed/scripts/verify-cryptoerasure-restart.py verify "$ERASURE_STATE_FILE"
 
 echo -e "${GREEN}All tests completed!${NC}"

@@ -6,9 +6,11 @@ Event storage and query storage have separate configuration. `withEventStore` se
 
 `SimpleEventStore` has `basePath :: Path` and `persistent :: Bool`. With persistence enabled, it loads events from disk and writes event files. A generated starter project sets `persistent = False`, so its events disappear when that process ends.
 
-`PostgresEventStore` configures Postgres event storage. Its fields are `host`, `databaseName`, `user`, `password`, `port`, `poolSize`, `sslMode`, and `sslRootCert`. `sslRootCert` is `Maybe Text`; use `Nothing` when no certificate path is needed.
+`PostgresEventStore` configures Postgres event storage. Its fields are `host`, `databaseName`, `user`, `password`, `port`, `poolSize`, `sslMode`, `sslRootCert`, and `erasableApplicationScope`. `sslRootCert` is `Maybe Text`; use `Nothing` when no certificate path is needed. Set `erasableApplicationScope` to a stable, nonempty identifier for the application before using protected-value erasure.
 
 The event store supports insertion preconditions, ordered reads, and subscriptions. The command executor uses the target stream's history and insertion result. One successful append does not establish a transaction across commands, services, or application instances.
+
+For application-owned key deletion, read [protected-value erasure](advanced-erasure.md).
 
 ## Query rows
 

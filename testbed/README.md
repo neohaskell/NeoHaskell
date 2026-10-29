@@ -37,6 +37,26 @@ POSTGRES_AVAILABLE=true nix develop --command .agents/skills/tdd/scripts/test-ma
 
 The Hurl scenario asserts a command-generated event, a reconstructed query, two independently protected values, a mapped copy, nested optional values, and Unicode `Available` content. The service fixture uses real PostgreSQL to assert encrypted event storage, restart, key/event rollback, and a private tombstone yielding `Erased`. Erasure is deliberately not exposed as an application command or HTTP success response in this slice.
 
+### Application-owned erasure
+
+The `OwnedProtectedEntity` example in `testbed/src/Testbed/Erasable/Owned/` shows an application accepting a request from the owner of a protected record. Its `RequestErasure` command checks the owner and reference, then records a pending request. `OwnedErasureOutbound` erases one reference through `Integration.Erasable.Erase` and sends a result to the application's internal `RecordErasureResult` command. The query exposes completion separately from the protected value's `Erased` state. A second protected value stays available.
+
+Run the maintained suite from the repository root with PostgreSQL running and ports 8080, 8081, and 8181 free:
+
+```sh
+nix develop --command .agents/skills/neohaskell-test/scripts/run-testbed --strict
+```
+
+The runner creates private databases, runs `testbed/tests/integrations/cryptoerasure-m2.hurl`, and restarts the OAuth testbed for `testbed/scripts/verify-cryptoerasure-restart.py`. The restart check creates a request whose result command is deliberately rejected after key deletion. It verifies that the request remains pending across restart and that an explicit retry records `AlreadyErased` as a completed application operation. The application must retain and retry pending requests; the framework does not promise automatic replay after a crash. The OAuth-enabled and disabled application setups both register the outbound handler; the authenticated scenario uses port 8081.
+
+Run `nix develop --command cabal test nhtestbed:nhtestbed-erasure --test-show-details=direct` to check that another authenticated user and a userless no-OAuth transport cannot authorize the application-owned erasure request.
+
+For the scoped PostgreSQL service fixture, create a fresh database owned by the configured test user and run:
+
+```sh
+CRYPTOERASURE_TEST_DB=<private-database-name> nix develop --command .agents/skills/tdd/scripts/test-match 'erases only a matching application and stream' nhcore-test-service
+```
+
 ### Run the maintained suite
 
 The maintained runner builds and starts both testbed applications and the fake

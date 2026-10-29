@@ -82,7 +82,8 @@ data PostgresEventStore = PostgresEventStore
     poolSize :: Int,
     -- WI-5 (#684): optional TLS hardening. Both default to off.
     sslMode :: ConnectionConfig.SslMode,
-    sslRootCert :: Maybe Text
+    sslRootCert :: Maybe Text,
+    erasableApplicationScope :: Text
   }
   deriving (Eq, Ord)
 
@@ -100,7 +101,8 @@ instance Default PostgresEventStore where
         port = 5432,
         poolSize = 6,
         sslMode = ConnectionConfig.SslModeUnset,
-        sslRootCert = Nothing
+        sslRootCert = Nothing,
+        erasableApplicationScope = ""
       }
 
 
@@ -266,6 +268,19 @@ new ops cfg = do
                   value
                   |> Task.mapError StorageFailure,
               readErasableKey = \reference -> readKeyState pool reference |> Task.mapError StorageFailure,
+              eraseErasableKey = \target -> do
+                if Text.isEmpty cfg.erasableApplicationScope
+                  then Task.throw (StorageFailure "Erasable erasure requires an application scope")
+                  else do
+                    outcome <- ErasableKeys.eraseScoped cfg.erasableApplicationScope target
+                      |> Sessions.run pool
+                      |> Task.mapError (toText .> StorageFailure)
+                    case outcome of
+                      ErasableKeys.ScopeDenied -> Task.throw (StorageFailure "Erasable scope denied")
+                      ErasableKeys.CorruptKey -> Task.throw (StorageFailure "Erasable key is corrupt")
+                      ErasableKeys.ErasedNow -> Task.yield ErasedNow
+                      ErasableKeys.AlreadyErased -> Task.yield AlreadyErased
+                      ErasableKeys.UnknownReference -> Task.yield UnknownReference,
               readStreamForwardFrom = readStreamForwardFromImpl sharedOps cfg,
               readStreamBackwardFrom = readStreamBackwardFromImpl sharedOps cfg,
               readAllStreamEvents = readAllStreamEventsImpl sharedOps cfg,
@@ -465,7 +480,7 @@ insertGo ops cfg keys payload =
                     metadata = Json.encode i.metadata
                   }
         if protected
-          then Sessions.insertRecordsWithKeys keys insertionRecords
+          then Sessions.insertRecordsWithKeys cfg.erasableApplicationScope keys insertionRecords
             |> Sessions.run conn
             |> Task.mapError SessionError
           else Sessions.insertRecordsIntoStream insertionRecords
