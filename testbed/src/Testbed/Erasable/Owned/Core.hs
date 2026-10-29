@@ -61,7 +61,8 @@ data OwnedProtectedEvent
       { entityId :: Uuid,
         reference :: Text,
         rejectResult :: Bool,
-        simulateUnknownReference :: Bool
+        simulateUnknownReference :: Bool,
+        pauseAfterCommit :: Bool
       }
   | ErasureCompleted
       { entityId :: Uuid,

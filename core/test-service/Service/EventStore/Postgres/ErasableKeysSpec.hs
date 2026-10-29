@@ -174,7 +174,9 @@ spec = do
           Just event -> Task.yield event.event
         let queryName = [fmt|erasable-race-#{Uuid.toText queryNameId}|]
         queryWriter <- QueryStore.newFromConfig @ProtectedRead privateQueryConfig queryName |> Task.mapError toText
-        queryWriter.atomicUpdate queryId (\_ -> Just (ProtectedRead {secret = first})) |> Task.mapError toText
+        queryWriter.atomicUpdate queryId (\_ -> Just (ProtectedRead {secret = second})) |> Task.mapError toText
+        postEraseQueryId <- Uuid.generate
+        queryWriter.atomicUpdate postEraseQueryId (\_ -> Just (ProtectedRead {secret = second})) |> Task.mapError toText
         let target = EventStore.ErasureTarget
               { reference = Erasable.reference first,
                 entityName,
@@ -188,22 +190,47 @@ spec = do
         erasedNow |> shouldBe EventStore.ErasedNow
         AsyncTask.waitFor appendTask |> discard
         AsyncTask.waitFor queryTask |> discard
+        postEraseAppend <- Event.payloadFromEvents entityName streamId [stale]
+        writer.insert (postEraseAppend {Event.insertionType = Event.AnyStreamState}) |> Task.mapError toText |> discard
+        queryWriter.atomicUpdate postEraseQueryId (\_ -> Just (ProtectedRead {secret = mapped})) |> Task.mapError toText
+        connection <- Postgres.defaultOps.acquire privateConfig
+        tombstone <- runReal connection (keyRecord (Erasable.reference first))
+        tombstone |> shouldBe (Just Nothing)
+        raceQuery <- runReal connection (queryJsonText queryId)
+        postEraseQuery <- runReal connection (queryJsonText postEraseQueryId)
+        raceQuery |> shouldSatisfy (\value -> case value of
+          Just stored -> Text.contains (Erasable.reference first) stored
+            && not (Text.contains (Erasable.reference second) stored)
+            && not (Text.contains "private-one" stored)
+            && not (Text.contains "private-two" stored)
+          Nothing -> False)
+        postEraseQuery |> shouldSatisfy (\value -> case value of
+          Just stored -> Text.contains (Erasable.reference first) stored
+            && not (Text.contains (Erasable.reference second) stored)
+            && not (Text.contains "private-one" stored)
+            && not (Text.contains "private-two" stored)
+          Nothing -> False)
+        Postgres.defaultOps.release connection
         let renderQuery store query = QueryEndpoint.createQueryEndpointWithProtection
               (\value -> store.renderProtectedJson value |> Task.mapError (\_ -> AccessControl.StorageError "Protected response resolution failed"))
               query Nothing Nothing (QueryPageRequest {limit = 100, offset = 0})
         after <- renderQuery writer queryWriter |> Task.mapError toText
         after |> shouldSatisfy (Text.contains "Erased")
+        after |> shouldSatisfy (\value -> not (Text.contains "Available" value))
         after |> shouldSatisfy (\value -> not (Text.contains "private-one" value))
+        after |> shouldSatisfy (\value -> not (Text.contains "private-two" value))
         writer.close
         eraser.close
         reconnected <- PostgresStore.new privateConfig
         queryReader <- QueryStore.newFromConfig @ProtectedRead privateQueryConfig queryName |> Task.mapError toText
         afterReconnect <- renderQuery reconnected queryReader |> Task.mapError toText
         afterReconnect |> shouldSatisfy (Text.contains "Erased")
+        afterReconnect |> shouldSatisfy (\value -> not (Text.contains "Available" value))
         afterReconnect |> shouldSatisfy (\value -> not (Text.contains "private-one" value))
+        afterReconnect |> shouldSatisfy (\value -> not (Text.contains "private-two" value))
         replay <- reconnected.readAllStreamEvents entityName streamId |> Task.mapError toText |> Task.andThen Stream.toArray
         let events = EventStore.collectStreamEvents replay
-        Array.length events |> shouldBe 2
+        Array.length events |> shouldBe 3
         events |> Task.mapArray (\event -> do
           rendered <- reconnected.renderProtectedJson event.event |> Task.mapError toText
           let serialized = Json.encodeText rendered

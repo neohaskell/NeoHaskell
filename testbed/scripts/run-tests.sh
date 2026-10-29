@@ -13,6 +13,7 @@ TESTBED_PID=""
 OAUTH_TESTBED_PID=""
 FAKE_SERVICES_PID=""
 ERASURE_STATE_FILE=""
+ERASURE_COMMIT_MARKER=""
 CABAL_EXE_OPTIONS=()
 if [ "$(uname)" = "Darwin" ]; then
 	CABAL_EXE_OPTIONS+=(--enable-executable-dynamic)
@@ -21,6 +22,9 @@ fi
 cleanup() {
 	if [ -n "$ERASURE_STATE_FILE" ]; then
 		rm -f "$ERASURE_STATE_FILE"
+	fi
+	if [ -n "$ERASURE_COMMIT_MARKER" ]; then
+		rm -f "$ERASURE_COMMIT_MARKER"
 	fi
 	for pid in "$OAUTH_TESTBED_PID" "$TESTBED_PID" "$FAKE_SERVICES_PID"; do
 		if [ -n "$pid" ]; then
@@ -98,6 +102,9 @@ else
 fi
 
 export OAUTH2_TESTBED_STATE_KEY="${OAUTH2_TESTBED_STATE_KEY:-testbed-oauth-state-key-that-is-at-least-32-bytes}"
+ERASURE_COMMIT_MARKER=$(mktemp)
+rm -f "$ERASURE_COMMIT_MARKER"
+export CRYPTOERASURE_COMMIT_MARKER="$ERASURE_COMMIT_MARKER"
 
 export PGPASSWORD="${DB_PASSWORD:-neohaskell}"
 database_suffix=$(python3 -c 'import uuid; print(uuid.uuid4().hex[:12])')
@@ -154,16 +161,24 @@ bash testbed/scripts/verify-database-isolation.sh "$testbed_db" "$oauth_db"
 python3 testbed/scripts/verify-cryptoerasure-restart.py concurrent
 ERASURE_STATE_FILE=$(mktemp)
 python3 testbed/scripts/verify-cryptoerasure-restart.py prepare "$ERASURE_STATE_FILE"
-kill "$OAUTH_TESTBED_PID"
-wait "$OAUTH_TESTBED_PID" 2>/dev/null || true
-OAUTH_TESTBED_PID=""
-if is_oauth_testbed_ready; then
-	echo -e "${RED}Error: OAuth testbed still responds after its owned process stopped${NC}"
-	exit 1
-fi
-DB_NAME="$oauth_db" "$(cabal list-bin "${CABAL_EXE_OPTIONS[@]}" exe:nhoauthtestbed)" &
-OAUTH_TESTBED_PID=$!
-wait_for_service http://127.0.0.1:8081/health "Restarted OAuth testbed" "$OAUTH_TESTBED_PID"
+restart_oauth_testbed() {
+	kill "$OAUTH_TESTBED_PID"
+	wait "$OAUTH_TESTBED_PID" 2>/dev/null || true
+	OAUTH_TESTBED_PID=""
+	if is_oauth_testbed_ready; then
+		echo -e "${RED}Error: OAuth testbed still responds after its owned process stopped${NC}"
+		exit 1
+	fi
+	DB_NAME="$oauth_db" "$(cabal list-bin "${CABAL_EXE_OPTIONS[@]}" exe:nhoauthtestbed)" &
+	OAUTH_TESTBED_PID=$!
+	wait_for_service http://127.0.0.1:8081/health "Restarted OAuth testbed" "$OAUTH_TESTBED_PID"
+}
+restart_oauth_testbed
 python3 testbed/scripts/verify-cryptoerasure-restart.py verify "$ERASURE_STATE_FILE"
+python3 testbed/scripts/verify-cryptoerasure-restart.py prepare-crash "$ERASURE_STATE_FILE" "$ERASURE_COMMIT_MARKER"
+restart_oauth_testbed
+python3 testbed/scripts/verify-cryptoerasure-restart.py verify "$ERASURE_STATE_FILE"
+restart_oauth_testbed
+python3 testbed/scripts/verify-cryptoerasure-restart.py verify-completed "$ERASURE_STATE_FILE"
 
 echo -e "${GREEN}All tests completed!${NC}"

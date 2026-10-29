@@ -22,7 +22,8 @@ data RequestErasure
       { caseId :: Uuid,
         reference :: Text,
         rejectResult :: Bool,
-        simulateUnknownReference :: Bool
+        simulateUnknownReference :: Bool,
+        pauseAfterCommit :: Bool
       }
   | RetryFirstErasure
       { caseId :: Uuid
@@ -48,29 +49,30 @@ decide command maybeEntity context = case (maybeEntity, context.user) of
 
 decideForReference :: RequestErasure -> OwnedProtectedEntity -> Text -> Decision OwnedProtectedEvent
 decideForReference command entity ownedReference = case command of
-  RequestFirstErasure {reference, rejectResult, simulateUnknownReference} ->
+  RequestFirstErasure {reference, rejectResult, simulateUnknownReference, pauseAfterCommit} ->
     if reference != ownedReference
       then Decider.reject "Protected reference was not found"
       else case entity.erasureState of
-        NotRequested -> request entity ownedReference rejectResult simulateUnknownReference
-        Failed _ -> request entity ownedReference rejectResult simulateUnknownReference
+        NotRequested -> request entity ownedReference rejectResult simulateUnknownReference pauseAfterCommit
+        Failed _ -> request entity ownedReference rejectResult simulateUnknownReference pauseAfterCommit
         Pending -> Decider.reject "Erasure is pending; use the retry command"
         Completed _ -> Decider.reject "Erasure already completed"
   RetryFirstErasure {} -> case entity.erasureState of
     NotRequested -> Decider.reject "No erasure request to retry"
-    Pending -> request entity ownedReference False False
-    Failed _ -> request entity ownedReference False False
-    Completed _ -> request entity ownedReference False False
+    Pending -> request entity ownedReference False False False
+    Failed _ -> request entity ownedReference False False False
+    Completed _ -> request entity ownedReference False False False
 
 
-request :: OwnedProtectedEntity -> Text -> Bool -> Bool -> Decision OwnedProtectedEvent
-request entity ownedReference rejectResult simulateUnknownReference =
+request :: OwnedProtectedEntity -> Text -> Bool -> Bool -> Bool -> Decision OwnedProtectedEvent
+request entity ownedReference rejectResult simulateUnknownReference pauseAfterCommit =
   Decider.acceptExisting
     [ ErasureRequested
         { entityId = entity.caseId,
           reference = ownedReference,
           rejectResult,
-          simulateUnknownReference
+          simulateUnknownReference,
+          pauseAfterCommit
         }
     ]
 

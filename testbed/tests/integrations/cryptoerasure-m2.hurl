@@ -35,7 +35,8 @@ Authorization: Bearer {{jwt}}
   "caseId": "{{case_id}}",
   "reference": "not-the-owned-reference",
   "rejectResult": false,
-  "simulateUnknownReference": false
+  "simulateUnknownReference": false,
+  "pauseAfterCommit": false
 }
 
 HTTP/1.1 400
@@ -49,7 +50,8 @@ Authorization: Bearer {{jwt}}
   "caseId": "{{case_id}}",
   "reference": "{{reference}}",
   "rejectResult": true,
-  "simulateUnknownReference": false
+  "simulateUnknownReference": false,
+  "pauseAfterCommit": false
 }
 
 HTTP/1.1 200
@@ -117,7 +119,8 @@ Authorization: Bearer {{jwt}}
   "caseId": "{{other_case_id}}",
   "reference": "{{reference}}",
   "rejectResult": false,
-  "simulateUnknownReference": false
+  "simulateUnknownReference": false,
+  "pauseAfterCommit": false
 }
 
 HTTP/1.1 400
@@ -131,7 +134,8 @@ Authorization: Bearer {{jwt}}
   "caseId": "{{other_case_id}}",
   "reference": "{{other_reference}}",
   "rejectResult": false,
-  "simulateUnknownReference": false
+  "simulateUnknownReference": false,
+  "pauseAfterCommit": false
 }
 
 HTTP/1.1 200
@@ -174,7 +178,8 @@ Authorization: Bearer {{jwt}}
   "caseId": "{{failure_case_id}}",
   "reference": "{{failure_reference}}",
   "rejectResult": false,
-  "simulateUnknownReference": true
+  "simulateUnknownReference": true,
+  "pauseAfterCommit": false
 }
 
 HTTP/1.1 200

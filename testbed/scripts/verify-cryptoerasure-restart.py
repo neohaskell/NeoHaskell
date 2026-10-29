@@ -62,7 +62,7 @@ def concurrent_case(token):
     status, result = request("POST", f"{API}/commands/request-erasure", token, {
         "tag": "RequestFirstErasure", "caseId": case_id,
         "reference": reference, "rejectResult": False,
-        "simulateUnknownReference": False,
+        "simulateUnknownReference": False, "pauseAfterCommit": False,
     })
     assert status == 200 and result["tag"] == "Accepted", (status, result)
     completed = wait_for(case_id, token, lambda item: item["erasureStatus"] == "completed")
@@ -92,7 +92,7 @@ def concurrent():
     print("Four concurrent application requests and explicit retries kept independent tombstones")
 
 
-def prepare(path):
+def prepare(path, pause_after_commit=False, marker_path=None):
     token = owner_token()
     status, result = request("POST", f"{API}/commands/create-owned-protected", token, [])
     assert status == 200 and result["tag"] == "Accepted", (status, result)
@@ -103,13 +103,24 @@ def prepare(path):
     assert view["secondSecret"]["tag"] == "Available", view
     status, result = request("POST", f"{API}/commands/request-erasure", token, {
         "tag": "RequestFirstErasure", "caseId": case_id,
-        "reference": reference, "rejectResult": True,
-        "simulateUnknownReference": False,
+        "reference": reference, "rejectResult": not pause_after_commit,
+        "simulateUnknownReference": False, "pauseAfterCommit": pause_after_commit,
     })
     assert status == 200 and result["tag"] == "Accepted", (status, result)
+    if pause_after_commit:
+        deadline = time.monotonic() + 15
+        while time.monotonic() < deadline:
+            if marker_path.exists() and marker_path.read_text() == reference:
+                break
+            time.sleep(0.1)
+        else:
+            raise AssertionError("Erasure did not reach the committed-key pause")
     wait_for(case_id, token, lambda item: item["firstSecret"]["tag"] == "Erased" and item["erasureStatus"] == "pending")
     path.write_text(json.dumps({"caseId": case_id, "reference": reference, "ownerId": view["ownerId"]}))
-    print("Committed key deletion left the application request pending before restart")
+    if pause_after_commit:
+        print("Key deletion committed and the result callback is paused before process death")
+    else:
+        print("Rejected result command left the application request pending before restart")
 
 
 def verify(path):
@@ -133,6 +144,18 @@ def verify(path):
     print("Explicit retry completed after restart with AlreadyErased")
 
 
+def verify_completed(path):
+    token = owner_token()
+    state = json.loads(path.read_text())
+    completed = wait_for(state["caseId"], token, lambda item: item["erasureStatus"] == "completed")
+    assert completed["firstReference"] == state["reference"], completed
+    assert completed["ownerId"] == state["ownerId"], completed
+    assert completed["firstSecret"]["tag"] == "Erased", completed
+    assert completed["secondSecret"]["tag"] == "Available", completed
+    assert completed["wasAlreadyErased"] is True, completed
+    print("Reconstructed application completion and erased projection after second restart")
+
+
 if __name__ == "__main__":
     action = sys.argv[1]
     if action == "concurrent":
@@ -140,8 +163,12 @@ if __name__ == "__main__":
     elif action == "prepare":
         state_path = sys.argv[2]
         prepare(Path(state_path))
+    elif action == "prepare-crash":
+        prepare(Path(sys.argv[2]), True, Path(sys.argv[3]))
     elif action == "verify":
         state_path = sys.argv[2]
         verify(Path(state_path))
+    elif action == "verify-completed":
+        verify_completed(Path(sys.argv[2]))
     else:
-        raise SystemExit("expected prepare or verify")
+        raise SystemExit("expected concurrent, prepare, prepare-crash, verify, or verify-completed")
