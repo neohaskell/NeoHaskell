@@ -5,6 +5,7 @@ module Service.EventStore.Postgres.ErasableKeysSpec (spec) where
 
 import Core
 import Array qualified
+import AsyncTask qualified
 import Bytes qualified
 import Data.ByteString qualified as ByteString
 import Data.Functor.Contravariant ((>$<))
@@ -135,6 +136,85 @@ spec :: Spec Unit
 spec = do
   describe "Erasable key store" do
     whenEnvVar "CRYPTOERASURE_TEST_DB" do
+      it "keeps a stale protected reference erased across concurrent pools and reconstruction" \_ -> do
+        databaseName <- Environment.getVariable "CRYPTOERASURE_TEST_DB"
+        let privateConfig = config {Postgres.databaseName = databaseName}
+        let privateQueryConfig = queryConfig {QueryStore.databaseName = databaseName}
+        writer <- PostgresStore.new privateConfig
+        eraser <- PostgresStore.new privateConfig
+        entityId <- Uuid.generate
+        queryId <- Uuid.generate
+        queryNameId <- Uuid.generate
+        let streamId = Event.StreamId (Uuid.toText entityId)
+        let entityName = Event.EntityName "erasable-race-fixture"
+        let decision = do
+              first <- Erasable.new (Json.toJSON ("private-one" :: Text))
+              second <- Erasable.new (Json.toJSON ("private-two" :: Text))
+              mapped <- Erasable.map identity first
+              Accept Event.StreamCreation [(first, second, mapped)]
+        (outcome, keys) <- Decider.runDecisionWithKeys (DecisionContext {genUuid = Uuid.generate}) (\_ -> Task.throw "No stored key") decision
+        (first, second, mapped) <- case outcome of
+          AcceptCommand _ values -> case Array.first values of
+            Just protected -> Task.yield protected
+            Nothing -> Task.throw "Expected protected values"
+          RejectCommand _ -> Task.throw "Expected protected values"
+        Erasable.reference first |> shouldBe (Erasable.reference mapped)
+        Erasable.reference first |> shouldNotBe (Erasable.reference second)
+        let initial = Json.object
+              [ ("first", Json.toJSON first),
+                ("second", Json.toJSON second),
+                ("mapped", Json.toJSON mapped),
+                ("retained", Json.toJSON ("approved fact" :: Text))
+              ]
+        created <- Event.payloadFromEvents entityName streamId [initial]
+        writer.insertWithErasableKeys keys (created {Event.insertionType = Event.StreamCreation}) |> Task.mapError toText |> discard
+        staleMessages <- writer.readAllStreamEvents entityName streamId |> Task.mapError toText |> Task.andThen Stream.toArray
+        stale <- case Array.first (EventStore.collectStreamEvents staleMessages) of
+          Nothing -> Task.throw "Expected a stored event"
+          Just event -> Task.yield event.event
+        let queryName = [fmt|erasable-race-#{Uuid.toText queryNameId}|]
+        queryWriter <- QueryStore.newFromConfig @ProtectedRead privateQueryConfig queryName |> Task.mapError toText
+        queryWriter.atomicUpdate queryId (\_ -> Just (ProtectedRead {secret = first})) |> Task.mapError toText
+        let target = EventStore.ErasureTarget
+              { reference = Erasable.reference first,
+                entityName,
+                streamId
+              }
+        staleAppend <- Event.payloadFromEvents entityName streamId [stale]
+        eraseTask <- AsyncTask.run (eraser.eraseErasableKey target |> Task.mapError toText)
+        appendTask <- AsyncTask.run (writer.insert (staleAppend {Event.insertionType = Event.AnyStreamState}) |> Task.mapError toText)
+        queryTask <- AsyncTask.run (queryWriter.atomicUpdate queryId (\_ -> Just (ProtectedRead {secret = mapped})) |> Task.mapError toText)
+        erasedNow <- AsyncTask.waitFor eraseTask
+        erasedNow |> shouldBe EventStore.ErasedNow
+        AsyncTask.waitFor appendTask |> discard
+        AsyncTask.waitFor queryTask |> discard
+        let renderQuery store query = QueryEndpoint.createQueryEndpointWithProtection
+              (\value -> store.renderProtectedJson value |> Task.mapError (\_ -> AccessControl.StorageError "Protected response resolution failed"))
+              query Nothing Nothing (QueryPageRequest {limit = 100, offset = 0})
+        after <- renderQuery writer queryWriter |> Task.mapError toText
+        after |> shouldSatisfy (Text.contains "Erased")
+        after |> shouldSatisfy (\value -> not (Text.contains "private-one" value))
+        writer.close
+        eraser.close
+        reconnected <- PostgresStore.new privateConfig
+        queryReader <- QueryStore.newFromConfig @ProtectedRead privateQueryConfig queryName |> Task.mapError toText
+        afterReconnect <- renderQuery reconnected queryReader |> Task.mapError toText
+        afterReconnect |> shouldSatisfy (Text.contains "Erased")
+        afterReconnect |> shouldSatisfy (\value -> not (Text.contains "private-one" value))
+        replay <- reconnected.readAllStreamEvents entityName streamId |> Task.mapError toText |> Task.andThen Stream.toArray
+        let events = EventStore.collectStreamEvents replay
+        Array.length events |> shouldBe 2
+        events |> Task.mapArray (\event -> do
+          rendered <- reconnected.renderProtectedJson event.event |> Task.mapError toText
+          let serialized = Json.encodeText rendered
+          serialized |> shouldSatisfy (Text.contains "Erased")
+          serialized |> shouldSatisfy (Text.contains "private-two")
+          serialized |> shouldSatisfy (Text.contains "approved fact")
+          serialized |> shouldSatisfy (\value -> not (Text.contains "private-one" value))) |> discard
+        repeated <- reconnected.eraseErasableKey target |> Task.mapError toText
+        repeated |> shouldBe EventStore.AlreadyErased
+        reconnected.close
+
       it "erases only a matching application and stream, and survives a new pool" \_ -> do
         databaseName <- Environment.getVariable "CRYPTOERASURE_TEST_DB"
         let privateConfig = config {Postgres.databaseName = databaseName}
