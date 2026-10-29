@@ -7,11 +7,15 @@ import Core
 import Map qualified
 import Service.Application (Application (..), ServiceRunner (..))
 import Service.Application qualified as Application
+import Service.Application.Transports qualified as Transports
+import Service.AccessControl qualified as AccessControl
 import Service.Event.EntityName (EntityName (..))
 import Service.EventStore.InMemory qualified as InMemory
 import Service.MockTransport qualified as MockTransport
+import Service.Query.Pagination (QueryPageRequest (..))
 import Service.Query.Registry (QueryUpdater (..))
 import Service.Query.Registry qualified as Registry
+import Service.Query.Subscriber qualified as Subscriber
 import Service.TestHelpers (insertTestEvent)
 import System.IO qualified as GhcIO
 import Task qualified
@@ -25,6 +29,33 @@ import Test
 spec :: Spec Unit
 spec = do
   describe "Service.Application" do
+    describe "query readiness guard" do
+      it "rejects a page captured during rebuilding even when replay becomes ready before return" \_ -> do
+        readiness <- ConcurrentVar.containing (Just Subscriber.Rebuilding)
+        let readReadiness = ConcurrentVar.peek readiness
+        let incompletePage = "{\"items\":[],\"total\":0,\"hasMore\":false,\"effectiveLimit\":1}"
+        let completePage = "{\"items\":[\"protected\"],\"total\":1,\"hasMore\":false,\"effectiveLimit\":1}"
+        page <- ConcurrentVar.containing incompletePage
+        let handler _ _ _ = do
+              snapshot <- ConcurrentVar.peek page
+              page |> ConcurrentVar.modify (\_ -> completePage)
+              readiness |> ConcurrentVar.modify (\_ -> Just Subscriber.Ready)
+              Task.yield snapshot
+        let guarded = Transports.guardQueryEndpoint readReadiness handler
+        let pageRequest = QueryPageRequest {limit = 1, offset = 0}
+        result <- guarded Nothing Nothing pageRequest |> Task.asResult
+        result |> shouldBe (Err (AccessControl.StorageError "Query projection unavailable"))
+        freshResult <- guarded Nothing Nothing pageRequest |> Task.asResult
+        freshResult |> shouldBe (Ok completePage)
+
+      it "preserves an authorization error when readiness cannot be read" \_ -> do
+        let unavailable = Task.throw (AccessControl.StorageError "Query readiness unavailable")
+        let handler _ _ _ = Task.throw (AccessControl.AuthorizationError AccessControl.Unauthenticated)
+        let guarded = Transports.guardQueryEndpoint unavailable handler
+        let pageRequest = QueryPageRequest {limit = 1, offset = 0}
+        result <- guarded Nothing Nothing pageRequest |> Task.asResult
+        result |> shouldBe (Err (AccessControl.AuthorizationError AccessControl.Unauthenticated))
+
     describe "new" do
       it "creates an empty application" \_ -> do
         let app = Application.new

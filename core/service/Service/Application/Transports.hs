@@ -6,6 +6,7 @@
 module Service.Application.Transports (
   -- * Runtime
   runTransports,
+  guardQueryEndpoint,
 ) where
 
 import Array qualified
@@ -123,15 +124,11 @@ runWebTransport transportVal commandEndpoints commandSchemas queryEndpoints quer
               |> Array.map
                 ( \(queryName, handler) ->
                     ( queryName,
-                      \userClaims maybeExpr pageRequest -> do
-                        response <- handler userClaims maybeExpr pageRequest
-                        readiness <-
-                          Subscriber.readinessOfQuery subscriber queryName
+                      guardQueryEndpoint
+                        ( Subscriber.readinessOfQuery subscriber queryName
                             |> Task.mapError (\_ -> AccessControl.StorageError "Query readiness unavailable")
-                        case readiness of
-                          Nothing -> Task.yield response
-                          Just Subscriber.Ready -> Task.yield response
-                          Just _ -> Task.throw (AccessControl.StorageError "Query projection unavailable")
+                        )
+                        handler
                     )
                 )
               |> Map.fromArray
@@ -168,6 +165,19 @@ runWebTransport transportVal commandEndpoints commandSchemas queryEndpoints quer
               }
       let runnableTransport = assembleTransport endpoints
       runTransport webTransportWithConfig runnableTransport
+
+
+guardQueryEndpoint ::
+  Task AccessControl.QueryEndpointError (Maybe Subscriber.Readiness) ->
+  QueryEndpointHandler ->
+  QueryEndpointHandler
+guardQueryEndpoint queryReadiness handler userClaims maybeExpr pageRequest = do
+  response <- handler userClaims maybeExpr pageRequest
+  readiness <- queryReadiness
+  case readiness of
+    Nothing -> Task.yield response
+    Just Subscriber.Ready -> Task.yield response
+    Just _ -> Task.throw (AccessControl.StorageError "Query projection unavailable")
 
 
 -- | Run a generic transport without auth.
