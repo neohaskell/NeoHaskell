@@ -22,26 +22,48 @@ This testbed includes:
 
 ## Running the Testbed
 
-### Start the Application
+### Run the maintained suite
 
 ```bash
-# From the root of this repo
-cabal run testbed
+# From the repository root, with PostgreSQL running locally.
+nix develop --command .agents/skills/neohaskell-test/scripts/run-testbed --strict
 ```
 
-The app will start and be available at `http://localhost:8080`
+The runner builds and starts both testbed applications and the fake external services. It requires a PostgreSQL user that can create databases. Each run creates separate fresh databases for the two applications and prints their names for inspection. It retains those databases, runs every Hurl file, and stops the processes it started. Ports 8080 and 8081 must be free. The `save-iban.hurl` scenario posts to `/commands/save-iban` and reads the saved IBAN through the cart summary query.
 
-### Run the Tests
+### Run the public matcher example
+
+From the repository root, run the Haskell test suite for the `Test` matchers:
+
+```sh
+nix develop --command cabal test --project-file=cabal.project.dev nhtestbed-spec-demo --test-show-details=direct
+```
+
+The suite checks `actual |> shouldContain expected` and `actual |> shouldNotContain expected` with arrays of different lengths. It needs no running app or PostgreSQL service. A passing run reports `2 examples, 0 failures`.
+
+### Run the SaveIBAN scenario alone
 
 ```bash
-# Run all blackbox tests
-./scripts/run-tests.sh
-
-# Or run specific test suites
-hurl --test tests/commands/*.hurl
-hurl --test tests/queries/*.hurl
-hurl --test tests/scenarios/*.hurl
+# In one terminal, from the repository root, with PostgreSQL running locally.
+nix develop --command cabal run exe:nhtestbed
 ```
+
+```bash
+# In another terminal, from the repository root.
+nix develop --command hurl --test testbed/tests/commands/save-iban.hurl
+```
+
+### Check timestamped records
+
+The `nhtestbed-datetime-schema` suite defines a `ShipmentTimeline` record with a required `DateTime` and an optional `Maybe DateTime`. It checks that both fields lower to JSON Schema strings and that a real shipment encodes its timestamp as a JSON string.
+
+From the repository root, run:
+
+```sh
+nix develop --command cabal test nhtestbed:nhtestbed-datetime-schema --test-show-details=direct
+```
+
+The suite passes with `1 example, 0 failures`. Its source is `testbed/test-datetime-schema/Main.hs`.
 
 ## Project Structure
 

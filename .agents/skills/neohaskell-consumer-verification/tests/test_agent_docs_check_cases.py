@@ -143,6 +143,37 @@ class AgentDocsCheckTests(unittest.TestCase):
         (self.root / "testbed/tests/integrations/oauth2-account-connection.hurl").unlink()
         self.check(1, "missing or unsafe scenario")
 
+    def test_new_mapping_passes_structure_with_unrelated_scenario(self):
+        path = self.root / POLICY
+        policy = json.loads(path.read_text())
+        capability = policy["capabilities"]["external-oauth2-account"].copy()
+        capability["page"] = "typed-inbound.md"
+        capability["scenario"] = "testbed/tests/integrations/typed-inbound.hurl"
+        policy["capabilities"]["typed-inbound"] = capability
+        path.write_text(json.dumps(policy))
+
+        page = self.root / "docs/agent/typed-inbound.md"
+        page.write_text("# Typed inbound\n\nUse a typed inbound worker.\n")
+        manifest = self.root / "docs/agent/manifest.json"
+        inventory = json.loads(manifest.read_text())
+        inventory["pages"].append("typed-inbound.md")
+        manifest.write_text(json.dumps(inventory))
+        index = self.root / "docs/agent/index.md"
+        index.write_text(index.read_text() + "\n[Typed inbound](typed-inbound.md)\n")
+        scenario = self.root / capability["scenario"]
+        scenario.write_text('GET http://localhost:8080/health\nHTTP 200\n[Asserts]\nbody contains "ok"\n')
+        self.check(0, "PASS: structure")
+
+        scenario.write_text("GET http://localhost:8080/health\nHTTP 200\n")
+        self.check(1, "scenario needs a request and assertions")
+
+    def test_missing_baseline_capability(self):
+        path = self.root / POLICY
+        policy = json.loads(path.read_text())
+        del policy["capabilities"]["commands"]
+        path.write_text(json.dumps(policy))
+        self.check(1, "missing capabilities ['commands']")
+
     def test_empty_scenario(self):
         (self.root / "testbed/tests/integrations/oauth2-account-connection.hurl").write_text("")
         self.check(1, "scenario needs a request and assertions")

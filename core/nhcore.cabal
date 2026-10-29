@@ -1,6 +1,6 @@
 cabal-version: 3.4
 name: nhcore
-version: 0.12.0
+version: 0.13.0
 synopsis: Core Library for NeoHaskell
 description: NeoHaskell is a dialect of Haskell that is focused on newcomer-friendliness and productivity.
 homepage: https://neohaskell.org
@@ -556,6 +556,7 @@ test-suite nhcore-test
     Service.Transport.Web.CommandAuthSpec
     Service.Transport.Web.InvalidTokenSpec
     Service.Transport.Web.RequestBodyFailureSpec
+    Service.Transport.Web.AcronymRoutingSpec
     Service.CommandExecutor.AuditLoggingSpec
     Service.CommandExecutor.MetadataSpec
     Service.CommandExecutor.StorageMetadataSpec
@@ -719,6 +720,7 @@ test-suite nhcore-test-service
     Service.Transport.Web.CommandAuthSpec
     Service.Transport.Web.InvalidTokenSpec
     Service.Transport.Web.RequestBodyFailureSpec
+    Service.Transport.Web.AcronymRoutingSpec
     Service.CommandExecutor.AuditLoggingSpec
     Service.CommandExecutor.MetadataSpec
     Service.CommandExecutor.StorageMetadataSpec
@@ -828,6 +830,7 @@ test-suite nhcore-test-core
     TaskSpec
     Test.AppSpec.AppSpecSpec
     Test.AppSpec.VerifySpec
+    Test.SpecSpec
     TextSpec
 
   type: exitcode-stdio-1.0
