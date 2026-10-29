@@ -215,4 +215,13 @@ python3 testbed/scripts/verify-cryptoerasure-restart.py verify "$ERASURE_STATE_F
 restart_oauth_testbed
 python3 testbed/scripts/verify-cryptoerasure-restart.py verify-completed "$ERASURE_STATE_FILE" "$oauth_db"
 
+if [ "${CRYPTOERASURE_FAULT_TESTS:-0}" = "1" ]; then
+	: "${TESTBED_FAULT_HTTP_PORT:?Set a private fault HTTP port}"
+	: "${TESTBED_FAULT_FIXTURE_PORT:?Set a private fault fixture port}"
+	for fault in missing-key version tag missing-envelope bad-nonce bad-ciphertext unavailable-store; do
+		DB_HOST="${DB_HOST:-127.0.0.1}" DB_PASSWORD="${DB_PASSWORD:-neohaskell}" \
+			python3 testbed/scripts/verify-cryptoerasure-faults.py "$fault"
+	done
+fi
+
 echo -e "${GREEN}All tests completed!${NC}"

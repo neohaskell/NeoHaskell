@@ -104,11 +104,11 @@ runReal connection session =
         Ok value -> Task.yield value
 
 
-config :: Postgres.PostgresEventStore
-config =
+config :: Text -> Postgres.PostgresEventStore
+config databaseName =
   Postgres.PostgresEventStore
-    { host = "localhost",
-      databaseName = "neohaskell",
+    { host = "127.0.0.1",
+      databaseName,
       user = "neohaskell",
       password = "neohaskell",
       port = 5432,
@@ -119,10 +119,10 @@ config =
     }
 
 
-queryConfig :: QueryStore.PostgresQueryObjectStoreConfig
-queryConfig = QueryStore.PostgresQueryObjectStoreConfig
-  { host = "localhost",
-    databaseName = "neohaskell",
+queryConfig :: Text -> QueryStore.PostgresQueryObjectStoreConfig
+queryConfig databaseName = QueryStore.PostgresQueryObjectStoreConfig
+  { host = "127.0.0.1",
+    databaseName,
     user = "neohaskell",
     password = "neohaskell",
     port = 5432,
@@ -132,14 +132,22 @@ queryConfig = QueryStore.PostgresQueryObjectStoreConfig
   }
 
 
+privateDatabase :: Task Text Text
+privateDatabase = do
+  databaseName <- Environment.getVariable "CRYPTOERASURE_TEST_DB"
+  if Text.startsWith "nh_cryptoerasure_" databaseName
+    then Task.yield databaseName
+    else Task.throw "CRYPTOERASURE_TEST_DB must name a fresh nh_cryptoerasure_ database"
+
+
 spec :: Spec Unit
 spec = do
   describe "Erasable key store" do
     whenEnvVar "CRYPTOERASURE_TEST_DB" do
       it "keeps a stale protected reference erased across concurrent pools and reconstruction" \_ -> do
-        databaseName <- Environment.getVariable "CRYPTOERASURE_TEST_DB"
-        let privateConfig = config {Postgres.databaseName = databaseName}
-        let privateQueryConfig = queryConfig {QueryStore.databaseName = databaseName}
+        databaseName <- privateDatabase
+        let privateConfig = config databaseName
+        let privateQueryConfig = queryConfig databaseName
         writer <- PostgresStore.new privateConfig
         eraser <- PostgresStore.new privateConfig
         entityId <- Uuid.generate
@@ -243,8 +251,8 @@ spec = do
         reconnected.close
 
       it "erases only a matching application and stream, and survives a new pool" \_ -> do
-        databaseName <- Environment.getVariable "CRYPTOERASURE_TEST_DB"
-        let privateConfig = config {Postgres.databaseName = databaseName}
+        databaseName <- privateDatabase
+        let privateConfig = config databaseName
         store <- PostgresStore.new privateConfig
         entityId <- Uuid.generate
         otherId <- Uuid.generate
@@ -301,9 +309,11 @@ spec = do
         Postgres.defaultOps.release connection
         restarted.close
 
-    whenEnvVar "POSTGRES_AVAILABLE" do
+    whenEnvVar "CRYPTOERASURE_TEST_DB" do
       it "rejects ciphertext swapped between a slash key and nested keys" \_ -> do
-        store <- PostgresStore.new config
+        databaseName <- privateDatabase
+        let privateConfig = config databaseName
+        store <- PostgresStore.new privateConfig
         entityId <- Uuid.generate
         let streamId = Event.StreamId (Uuid.toText entityId)
         let entityName = Event.EntityName "erasable-path-collision"
@@ -371,7 +381,9 @@ spec = do
         store.close
 
       it "distinguishes unknown, active, and erased across a new pool" \_ -> do
-        connection <- Postgres.defaultOps.acquire config
+        databaseName <- privateDatabase
+        let privateConfig = config databaseName
+        connection <- Postgres.defaultOps.acquire privateConfig
         runReal connection createKeyTable
         firstId <- Uuid.generate
         secondId <- Uuid.generate
@@ -386,7 +398,7 @@ spec = do
         runReal connection (insertFixtureKey first firstKey)
         runReal connection (insertFixtureKey second secondKey)
         Postgres.defaultOps.release connection
-        restarted <- Postgres.defaultOps.acquire config
+        restarted <- Postgres.defaultOps.acquire privateConfig
         runReal restarted (eraseFixtureKey first)
         erased <- runReal restarted (keyRecord first)
         case erased of
@@ -408,7 +420,10 @@ spec = do
         Postgres.defaultOps.release restarted
 
       it "stores encrypted events atomically and resolves fresh key state after restart" \_ -> do
-        store <- PostgresStore.new config
+        databaseName <- privateDatabase
+        let privateConfig = config databaseName
+        let privateQueryConfig = queryConfig databaseName
+        store <- PostgresStore.new privateConfig
         entityId <- Uuid.generate
         let streamId = Event.StreamId (Uuid.toText entityId)
         let entityName = Event.EntityName "erasable-fixture"
@@ -434,14 +449,37 @@ spec = do
         let eventId = case Array.first payload.insertions of
               Just insertion -> insertion.metadata.eventId
               Nothing -> panic "Payload must have one insertion"
-        connection <- Postgres.defaultOps.acquire config
+        equivalentRetry <- store.insert (payload {Event.insertionType = Event.AnyStreamState}) |> Task.asResult
+        case equivalentRetry of
+          Ok _ -> fail "A retried protected event ID must not be accepted as a new append"
+          Err _ -> pass
+        conflictingPayload <- Event.payloadFromEvents entityName streamId
+          [Json.object [("private", Json.toJSON protected), ("retained", Json.toJSON ("changed" :: Text))]]
+        conflictingInsertions <- case Array.first conflictingPayload.insertions of
+          Nothing -> Task.throw "Expected conflicting insertion"
+          Just insertion -> do
+            let repeatedMetadata = insertion.metadata {eventId = eventId}
+            let repeated = Event.Insertion {id = insertion.id, event = insertion.event, metadata = repeatedMetadata}
+            Task.yield (Array.fromLinkedList [repeated])
+        conflict <- store.insert (conflictingPayload
+          { Event.insertions = conflictingInsertions,
+            Event.insertionType = Event.AnyStreamState
+          }) |> Task.asResult
+        case conflict of
+          Ok _ -> fail "A conflicting protected event ID must not be accepted"
+          Err _ -> pass
+        recoveredPayload <- Event.payloadFromEvents entityName streamId [Json.toJSON protected]
+        store.insert (recoveredPayload {Event.insertionType = Event.AnyStreamState}) |> Task.mapError toText |> discard
+        recovered <- store.readAllStreamEvents entityName streamId |> Task.mapError toText |> Task.andThen Stream.toArray
+        Array.length (EventStore.collectStreamEvents recovered) |> shouldBe 2
+        connection <- Postgres.defaultOps.acquire privateConfig
         rawStored <- runReal connection (eventJsonText eventId)
         case rawStored of
           Nothing -> fail "Expected committed event"
-          Just storedText -> storedText |> shouldSatisfy (\value -> not (Text.contains marker value))
+          Just storedText -> storedText |> shouldSatisfy (\value -> not (Text.contains marker value) && not (Text.contains "changed" value))
         Postgres.defaultOps.release connection
         store.close
-        restarted <- PostgresStore.new config
+        restarted <- PostgresStore.new privateConfig
         messages <- restarted.readAllStreamEvents entityName streamId |> Task.mapError toText |> Task.andThen Stream.toArray
         let events = EventStore.collectStreamEvents messages
         storedEvent <- case Array.first events of
@@ -450,10 +488,10 @@ spec = do
         available <- restarted.renderProtectedJson storedEvent.event |> Task.mapError toText
         Json.encodeText available |> shouldSatisfy (Text.contains marker)
         queryName <- Uuid.generate
-        queryStore <- QueryStore.newFromConfig @Json.Value queryConfig [fmt|erasable-m1-fixture-#{Uuid.toText queryName}|] |> Task.mapError toText
+        queryStore <- QueryStore.newFromConfig @Json.Value privateQueryConfig [fmt|erasable-m1-fixture-#{Uuid.toText queryName}|] |> Task.mapError toText
         queryId <- Uuid.generate
         queryStore.atomicUpdate queryId (\_ -> Just storedEvent.event) |> Task.mapError toText
-        queryConnection <- Postgres.defaultOps.acquire config
+        queryConnection <- Postgres.defaultOps.acquire privateConfig
         queryStored <- runReal queryConnection (queryJsonText queryId)
         case queryStored of
           Nothing -> fail "Expected protected query row"
@@ -462,7 +500,7 @@ spec = do
             rawStored |> shouldSatisfy (\eventText -> eventText != Just queryText)
         Postgres.defaultOps.release queryConnection
         authorizedName <- Uuid.generate
-        authorizedStore <- QueryStore.newFromConfig @ProtectedRead queryConfig [fmt|erasable-m1-authorized-#{Uuid.toText authorizedName}|] |> Task.mapError toText
+        authorizedStore <- QueryStore.newFromConfig @ProtectedRead privateQueryConfig [fmt|erasable-m1-authorized-#{Uuid.toText authorizedName}|] |> Task.mapError toText
         authorizedId <- Uuid.generate
         authorizedStore.atomicUpdate authorizedId (\_ -> Just (ProtectedRead {secret = protected})) |> Task.mapError toText
         let readAuthorized = QueryEndpoint.createQueryEndpointWithProtection
@@ -471,7 +509,7 @@ spec = do
         beforeErasure <- readAuthorized |> Task.mapError toText
         beforeErasure |> shouldSatisfy (Text.contains "Available")
         beforeErasure |> shouldSatisfy (Text.contains marker)
-        keyConnection <- Postgres.defaultOps.acquire config
+        keyConnection <- Postgres.defaultOps.acquire privateConfig
         runReal keyConnection (eraseFixtureKey (Erasable.reference protected))
         erased <- runReal keyConnection (keyRecord (Erasable.reference protected))
         case erased of
@@ -487,7 +525,9 @@ spec = do
         restarted.close
 
       it "rolls back a new key when its event conflicts with the stream" \_ -> do
-        store <- PostgresStore.new config
+        databaseName <- privateDatabase
+        let privateConfig = config databaseName
+        store <- PostgresStore.new privateConfig
         entityId <- Uuid.generate
         let streamId = Event.StreamId (Uuid.toText entityId)
         let entityName = Event.EntityName "erasable-conflict-fixture"
@@ -508,7 +548,7 @@ spec = do
         case result of
           Ok _ -> fail "Conflicting event must fail"
           Err _ -> pass
-        connection <- Postgres.defaultOps.acquire config
+        connection <- Postgres.defaultOps.acquire privateConfig
         state <- runReal connection (keyRecord (Erasable.reference protected))
         case state of
           Nothing -> pass
@@ -522,7 +562,9 @@ spec = do
         store.close
 
       it "rolls back keys when event insertion fails inside the same statement" \_ -> do
-        store <- PostgresStore.new config
+        databaseName <- privateDatabase
+        let privateConfig = config databaseName
+        store <- PostgresStore.new privateConfig
         entityId <- Uuid.generate
         let streamId = Event.StreamId (Uuid.toText entityId)
         let entityName = Event.EntityName "erasable-statement-failure"
@@ -545,7 +587,7 @@ spec = do
         case result of
           Ok _ -> fail "Duplicate event IDs in one batch must fail"
           Err _ -> pass
-        connection <- Postgres.defaultOps.acquire config
+        connection <- Postgres.defaultOps.acquire privateConfig
         values |> Task.mapArray (\value -> do
           state <- runReal connection (keyRecord (Erasable.reference value))
           state |> shouldBe Nothing)
