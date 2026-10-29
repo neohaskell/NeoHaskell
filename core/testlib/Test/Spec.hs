@@ -180,14 +180,14 @@ shouldSatisfy predicate value = do
 -- | Assert that an array contains another array
 shouldContain :: (HasCallStack, Show a, Eq a) => Array a -> Array a -> Task Text Unit
 shouldContain expected actual = do
-  Task.fromIO (Hspec.shouldContain (Array.toLinkedList expected) (Array.toLinkedList actual))
+  Task.fromIO (Hspec.shouldContain (Array.toLinkedList actual) (Array.toLinkedList expected))
 {-# INLINE shouldContain #-}
 
 
 -- | Assert that an array does not contain another array
 shouldNotContain :: (HasCallStack, Show a, Eq a) => Array a -> Array a -> Task Text Unit
 shouldNotContain expected actual = do
-  Task.fromIO (Hspec.shouldNotContain (Array.toLinkedList expected) (Array.toLinkedList actual))
+  Task.fromIO (Hspec.shouldNotContain (Array.toLinkedList actual) (Array.toLinkedList expected))
 {-# INLINE shouldNotContain #-}
 
 

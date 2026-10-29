@@ -826,6 +826,7 @@ test-suite nhcore-test-core
     TaskSpec
     Test.AppSpec.AppSpecSpec
     Test.AppSpec.VerifySpec
+    Test.SpecSpec
     TextSpec
 
   type: exitcode-stdio-1.0

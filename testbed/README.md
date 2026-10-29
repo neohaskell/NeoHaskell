@@ -31,6 +31,16 @@ nix develop --command .agents/skills/neohaskell-test/scripts/run-testbed --stric
 
 The runner builds and starts both testbed applications and the fake external services. It requires a PostgreSQL user that can create databases. Each run creates separate fresh databases for the two applications and prints their names for inspection. It retains those databases, runs every Hurl file, and stops the processes it started. Ports 8080 and 8081 must be free. The `save-iban.hurl` scenario posts to `/commands/save-iban` and reads the saved IBAN through the cart summary query.
 
+### Run the public matcher example
+
+From the repository root, run the Haskell test suite for the `Test` matchers:
+
+```sh
+nix develop --command cabal test --project-file=cabal.project.dev nhtestbed-spec-demo --test-show-details=direct
+```
+
+The suite checks `actual |> shouldContain expected` and `actual |> shouldNotContain expected` with arrays of different lengths. It needs no running app or PostgreSQL service. A passing run reports `2 examples, 0 failures`.
+
 ### Run the SaveIBAN scenario alone
 
 ```bash
