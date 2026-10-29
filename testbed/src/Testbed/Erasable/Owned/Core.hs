@@ -26,6 +26,7 @@ instance Json.FromJSON ErasureState
 data OwnedProtectedEntity = OwnedProtectedEntity
   { caseId :: Uuid,
     ownerId :: Text,
+    caseStatus :: Text,
     firstSecret :: Maybe (Erasable SecretPayload),
     secondSecret :: Maybe (Erasable SecretPayload),
     staleSecret :: Maybe (Erasable SecretPayload),
@@ -45,6 +46,7 @@ instance Default OwnedProtectedEntity where
   def = OwnedProtectedEntity
     { caseId = Uuid.nil,
       ownerId = "",
+      caseStatus = "",
       firstSecret = Nothing,
       secondSecret = Nothing,
       staleSecret = Nothing,
@@ -56,6 +58,7 @@ data OwnedProtectedEvent
   = OwnedProtectedCreated
       { entityId :: Uuid,
         owner :: Text,
+        caseStatus :: Text,
         first :: Erasable SecretPayload,
         second :: Erasable SecretPayload
       }
@@ -95,10 +98,11 @@ instance Event OwnedProtectedEvent where
 instance Entity OwnedProtectedEntity where
   initialStateImpl = def
   updateImpl event entity = case event of
-    OwnedProtectedCreated {entityId, owner, first, second} ->
+    OwnedProtectedCreated {entityId, owner, caseStatus, first, second} ->
       entity
         { caseId = entityId,
           ownerId = owner,
+          caseStatus,
           firstSecret = Just first,
           secondSecret = Just second,
           staleSecret = Nothing,

@@ -69,6 +69,7 @@ def persisted_case(database, case_id, reference):
         f"SELECT eventData::text FROM Events WHERE inlinedStreamId = '{safe_id}' "
         "AND entity = 'OwnedProtectedEntity' ORDER BY localPosition"], text=True)
     events = [json.loads(line) for line in events_text.splitlines()]
+    assert any(event.get("tag") == "OwnedProtectedCreated" and event.get("caseStatus") == "open" for event in events), (case_id, events)
     completions = [event for event in events if event.get("tag") == "ErasureCompleted"]
     assert len(events) >= 3 and completions, (case_id, events)
     assert all("staleFirst" in event and reference in json.dumps(event)
@@ -83,6 +84,7 @@ def concurrent_case(token):
     loaded = wait_for(case_id, token, lambda item: bool(item.get("firstReference")))
     reference = loaded["firstReference"]
     assert loaded["firstSecret"]["tag"] == "Available", loaded
+    assert loaded["caseStatus"] == "open", loaded
     status, result = request("POST", f"{API}/commands/request-erasure", token, {
         "tag": "RequestFirstErasure", "caseId": case_id,
         "reference": reference, "rejectResult": False,
@@ -93,6 +95,7 @@ def concurrent_case(token):
     assert completed["firstSecret"]["tag"] == "Erased", completed
     assert completed["staleSecret"]["tag"] == "Erased", completed
     assert completed["secondSecret"]["tag"] == "Available", completed
+    assert completed["caseStatus"] == "open", completed
     assert completed["wasAlreadyErased"] is False, completed
     return case_id, reference, loaded["ownerId"]
 
@@ -115,6 +118,7 @@ def concurrent(database):
         assert completed["firstSecret"]["tag"] == "Erased", completed
         assert completed["staleSecret"]["tag"] == "Erased", completed
         assert completed["secondSecret"]["tag"] == "Available", completed
+        assert completed["caseStatus"] == "open", completed
         persisted_case(database, case_id, reference)
     print("Four concurrent application requests and explicit retries kept independent tombstones")
 
@@ -145,7 +149,7 @@ def prepare(path, pause_after_commit=False, marker_path=None, selector_path=None
         else:
             raise AssertionError("Erasure did not reach the committed-key pause")
     wait_for(case_id, token, lambda item: item["firstSecret"]["tag"] == "Erased" and item["erasureStatus"] == "pending")
-    path.write_text(json.dumps({"caseId": case_id, "reference": reference, "ownerId": view["ownerId"]}))
+    path.write_text(json.dumps({"caseId": case_id, "reference": reference, "ownerId": view["ownerId"], "caseStatus": view["caseStatus"]}))
     if pause_after_commit:
         print("Key deletion committed and the result callback is paused before process death")
     else:
@@ -159,6 +163,7 @@ def verify(path):
     view = wait_for(case_id, token, lambda item: True)
     assert view["firstReference"] == state["reference"], view
     assert view["ownerId"] == state["ownerId"], view
+    assert view["caseStatus"] == state["caseStatus"] == "open", view
     assert view["firstSecret"]["tag"] == "Erased", view
     assert view["secondSecret"]["tag"] == "Available", view
     assert view["erasureStatus"] == "pending", view
@@ -180,6 +185,7 @@ def verify_completed(path, database):
     completed = wait_for(state["caseId"], token, lambda item: item["erasureStatus"] == "completed")
     assert completed["firstReference"] == state["reference"], completed
     assert completed["ownerId"] == state["ownerId"], completed
+    assert completed["caseStatus"] == state["caseStatus"] == "open", completed
     assert completed["firstSecret"]["tag"] == "Erased", completed
     assert completed["secondSecret"]["tag"] == "Available", completed
     assert completed["wasAlreadyErased"] is True, completed

@@ -2,6 +2,8 @@
 
 An application can erase one protected value while retaining its event and read model. The event store removes that value's key. Later authorized reads render `Erased`; other protected references remain `Available`. Already delivered plaintext cannot be revoked.
 
+Before choosing protected fields, decide which business facts the application must retain. Separate personal decision inputs from recorded outcomes. Review copies, derived values, query fields, event metadata, logs, and exports. Erasing one reference does not erase an unprotected derivative or another reference. Record retained outcomes directly in events so reconstruction does not need erased inputs. The application's retention policy is its own decision.
+
 ## Create and identify a value
 
 Create protected values with `Erasable.new` inside a command decision. Each new call gets a fresh opaque reference. Copies and `Erasable.map` keep the original reference. An authorized application query can use `Erasable.reference` to discover a reference for a request. The reference is metadata, not proof that the caller owns the value.
@@ -19,3 +21,5 @@ Use `Integration.outbound` with `Integration.Erasable.Erase`. Its `target` is an
 If deletion commits but the result command fails or the process stops, the application request stays pending. Expose an explicit authorized retry command. The retry can receive `AlreadyErased` and then record completion. The framework does not automatically replay a lost result or maintain a recovery ledger for the application.
 
 Keys created before application scopes were stored remain readable, but scoped erasure refuses them. Establish each key's application ownership before a separately reviewed scope migration. Backup, WAL, replica, and restore retention remain deployment responsibilities.
+
+Keep a surviving record of erasure intent when planning restores. Restoring an old backup with an old key can make old ciphertext readable again. Active-store erasure does not certify GDPR compliance.
