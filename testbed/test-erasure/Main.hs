@@ -36,8 +36,7 @@ spec = do
             { caseId = Uuid.nil,
               reference = "owner-reference",
               rejectResult = False,
-              simulateUnknownReference = False,
-              pauseAfterCommit = False
+              simulateUnknownReference = False
             }
       result <- Decider.runDecision (Decider.DecisionContext {genUuid = Uuid.generate}) (Request.decide command (Just entity) context)
       case result of

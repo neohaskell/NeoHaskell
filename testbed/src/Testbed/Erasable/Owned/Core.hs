@@ -28,6 +28,7 @@ data OwnedProtectedEntity = OwnedProtectedEntity
     ownerId :: Text,
     firstSecret :: Maybe (Erasable SecretPayload),
     secondSecret :: Maybe (Erasable SecretPayload),
+    staleSecret :: Maybe (Erasable SecretPayload),
     erasureState :: ErasureState
   }
   deriving (Generic)
@@ -46,6 +47,7 @@ instance Default OwnedProtectedEntity where
       ownerId = "",
       firstSecret = Nothing,
       secondSecret = Nothing,
+      staleSecret = Nothing,
       erasureState = NotRequested
     }
 
@@ -62,12 +64,13 @@ data OwnedProtectedEvent
         reference :: Text,
         rejectResult :: Bool,
         simulateUnknownReference :: Bool,
-        pauseAfterCommit :: Bool
+        staleFirst :: Erasable SecretPayload
       }
   | ErasureCompleted
       { entityId :: Uuid,
         reference :: Text,
-        wasAlreadyErased :: Bool
+        wasAlreadyErased :: Bool,
+        staleFirst :: Erasable SecretPayload
       }
   | ErasureFailed
       { entityId :: Uuid,
@@ -98,8 +101,9 @@ instance Entity OwnedProtectedEntity where
           ownerId = owner,
           firstSecret = Just first,
           secondSecret = Just second,
+          staleSecret = Nothing,
           erasureState = NotRequested
         }
     ErasureRequested {} -> entity {erasureState = Pending}
-    ErasureCompleted {wasAlreadyErased} -> entity {erasureState = Completed wasAlreadyErased}
+    ErasureCompleted {wasAlreadyErased, staleFirst} -> entity {erasureState = Completed wasAlreadyErased, staleSecret = Just staleFirst}
     ErasureFailed {failureReason} -> entity {erasureState = Failed failureReason}

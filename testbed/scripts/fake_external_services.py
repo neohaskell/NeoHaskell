@@ -4,16 +4,18 @@ from __future__ import annotations
 import hashlib
 import json
 import base64
+import os
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import parse_qs, urlencode, urlsplit
 
 
 HOST = "127.0.0.1"
-PORT = 8181
+PORT = int(os.environ.get("TESTBED_FIXTURE_PORT", "8181"))
 ISSUER = "http://127.0.0.1:8181/oidc"
+JWKS_URI = f"http://127.0.0.1:{PORT}/oidc/jwks"
 CLIENT_ID = "testbed-client"
 CLIENT_SECRET = "testbed-fake-client-secret"
-REDIRECT_URI = "http://localhost:8081/callback/test-provider"
+REDIRECT_URI = f"http://localhost:{os.environ.get('TESTBED_OAUTH_PORT', '8081')}/callback/test-provider"
 AUTHORIZATION_CODE = "fixture-authorization-code"
 FIXTURE_JWT = ".".join(
     (
@@ -106,7 +108,7 @@ class FixtureHandler(BaseHTTPRequestHandler):
             self.send_json(
                 {
                     "issuer": ISSUER,
-                    "jwks_uri": f"{ISSUER}/jwks",
+                    "jwks_uri": JWKS_URI,
                 }
             )
         elif path == "/oidc/jwks":

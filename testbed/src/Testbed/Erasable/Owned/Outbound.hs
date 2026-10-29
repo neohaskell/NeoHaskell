@@ -9,6 +9,7 @@ module Testbed.Erasable.Owned.Outbound (
 import Core
 import AsyncTask qualified
 import Environment qualified
+import Erasable (Erasable)
 import File qualified
 import Integration qualified
 import Integration.Erasable qualified as Erasure
@@ -16,8 +17,10 @@ import Path qualified
 import Service.Event.EntityName (EntityName (..))
 import Service.OutboundIntegration.TH (outboundIntegrationFullEvent)
 import Task qualified
+import Testbed.Erasable.Core (SecretPayload)
 import Testbed.Erasable.Owned.Commands.Record (RecordErasureResult (..))
 import Testbed.Erasable.Owned.Core
+import Uuid qualified
 
 
 data OwnedErasureOutbound = OwnedErasureOutbound
@@ -29,24 +32,35 @@ type instance EntityOf OwnedErasureOutbound = OwnedProtectedEntity
 
 handleEvent :: OwnedProtectedEntity -> OwnedProtectedEvent -> Integration.Outbound
 handleEvent _ event = case event of
-  ErasureRequested {entityId, reference, rejectResult, simulateUnknownReference, pauseAfterCommit} ->
-    Integration.batch [requestAction entityId reference rejectResult simulateUnknownReference pauseAfterCommit]
+  ErasureRequested {entityId, reference, rejectResult, simulateUnknownReference, staleFirst} ->
+    Integration.batch [requestAction entityId reference rejectResult simulateUnknownReference staleFirst]
   _ -> Integration.none
 
 
-requestAction :: Uuid -> Text -> Bool -> Bool -> Bool -> Integration.Action
-requestAction entityId reference rejectResult simulateUnknownReference pauseAfterCommit =
-  if pauseAfterCommit
-    then pauseAfterCommittedErase
-      (erasureTarget entityId reference simulateUnknownReference)
-      reference
-      (resultCommand entityId reference rejectResult)
-      (failureCommand entityId reference)
-    else Integration.outbound Erasure.Erase
-      { target = erasureTarget entityId reference simulateUnknownReference,
-        onResult = resultCommand entityId reference rejectResult,
-        onFailure = failureCommand entityId reference
-      }
+requestAction :: Uuid -> Text -> Bool -> Bool -> Erasable SecretPayload -> Integration.Action
+requestAction entityId reference rejectResult simulateUnknownReference staleFirst =
+  Integration.action \context -> do
+    pause <- shouldPause entityId
+    let target = erasureTarget entityId reference simulateUnknownReference
+    let onResult = resultCommand entityId reference rejectResult staleFirst
+    let onFailure = failureCommand entityId reference
+    if pause
+      then Integration.runAction context (pauseAfterCommittedErase target reference onResult onFailure)
+      else Integration.runAction context (Integration.outbound Erasure.Erase {target, onResult, onFailure})
+
+
+shouldPause :: Uuid -> Task Integration.IntegrationError Bool
+shouldPause entityId = do
+  selector <- Environment.getVariable "CRYPTOERASURE_PAUSE_SELECTOR" |> Task.asResult
+  case selector of
+    Err _ -> Task.yield False
+    Ok selectorText -> case Path.fromText selectorText of
+      Nothing -> Task.yield False
+      Just selectorPath -> do
+        selected <- File.readText selectorPath |> Task.asResult
+        case selected of
+          Err _ -> Task.yield False
+          Ok selectedId -> Task.yield (selectedId == Uuid.toText entityId)
 
 
 erasureTarget :: Uuid -> Text -> Bool -> Erasure.ErasureTarget
@@ -58,10 +72,10 @@ erasureTarget entityId reference simulateUnknownReference =
     }
 
 
-resultCommand :: Uuid -> Text -> Bool -> Erasure.ErasureResult -> RecordErasureResult
-resultCommand entityId reference rejectResult result = case result of
-  Erasure.ErasedNow -> RecordErasureSuccess {caseId = entityId, reference, wasAlreadyErased = False, rejectResult}
-  Erasure.AlreadyErased -> RecordErasureSuccess {caseId = entityId, reference, wasAlreadyErased = True, rejectResult}
+resultCommand :: Uuid -> Text -> Bool -> Erasable SecretPayload -> Erasure.ErasureResult -> RecordErasureResult
+resultCommand entityId reference rejectResult staleFirst result = case result of
+  Erasure.ErasedNow -> RecordErasureSuccess {caseId = entityId, reference, wasAlreadyErased = False, rejectResult, staleFirst}
+  Erasure.AlreadyErased -> RecordErasureSuccess {caseId = entityId, reference, wasAlreadyErased = True, rejectResult, staleFirst}
   Erasure.UnknownReference -> RecordErasureFailure {caseId = entityId, reference, reason = "unknown reference"}
 
 

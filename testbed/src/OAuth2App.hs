@@ -24,20 +24,20 @@ import Testbed.Erasable.Owned.Query (OwnedProtectedView)
 import Testbed.Erasable.Owned.Service qualified as OwnedErasableService
 
 
-app :: Application
-app =
+app :: Int -> Int -> Application
+app oauthPort fixturePort =
   Application.new
     |> Application.withConfig @TestbedConfig
     |> Application.withEventStore makeOAuthPostgresConfig
-    |> Application.withTransport (WebTransport.server {WebTransport.port = 8081})
+    |> Application.withTransport (WebTransport.server {WebTransport.port = oauthPort})
     |> Application.withApiInfo @() (\_ -> oauthApiInfo)
     |> Application.withService AccountConnectionService.service
     |> Application.withService OwnedErasableService.service
     |> Application.withQuery @AccountConnectionSummary
     |> Application.withQuery @OwnedProtectedView
-    |> Application.withAuth @() (\_ -> "http://127.0.0.1:8181/oidc")
+    |> Application.withAuth @() (\_ -> [fmt|http://127.0.0.1:#{fixturePort}/oidc|])
     |> Application.withOAuth2StateKey "OAUTH2_TESTBED_STATE_KEY"
-    |> Application.withOAuth2Provider @() (\_ -> providerConfig)
+    |> Application.withOAuth2Provider @() (\_ -> providerConfig oauthPort fixturePort)
     |> Application.withOutbound @AccountTokenPresenceObserver
     |> Application.withOutbound @OwnedErasureOutbound
 
@@ -56,18 +56,18 @@ oauthApiInfo =
     }
 
 
-providerConfig :: OAuth2ProviderConfig
-providerConfig =
+providerConfig :: Int -> Int -> OAuth2ProviderConfig
+providerConfig oauthPort fixturePort =
   OAuth2ProviderConfig
     { provider =
         Provider
           { name = "test-provider",
-            authorizeEndpoint = "http://127.0.0.1:8181/oauth/authorize",
-            tokenEndpoint = "http://127.0.0.1:8181/oauth/token"
+            authorizeEndpoint = [fmt|http://127.0.0.1:#{fixturePort}/oauth/authorize|],
+            tokenEndpoint = [fmt|http://127.0.0.1:#{fixturePort}/oauth/token|]
           },
       clientId = ClientId "testbed-client",
       clientSecret = mkClientSecret "testbed-fake-client-secret",
-      redirectUri = case mkRedirectUri "http://localhost:8081/callback/test-provider" of
+      redirectUri = case mkRedirectUri [fmt|http://localhost:#{oauthPort}/callback/test-provider|] of
         Result.Ok uri -> uri
         Result.Err _ -> panic "Invalid testbed OAuth2 callback URL",
       scopes = [Scope "account:read"],
@@ -90,6 +90,6 @@ providerConfig =
           RecordAccountConnection
             { action = RecordDisconnected {userId = userId}
             },
-      successRedirectUrl = "http://127.0.0.1:8081/oauth/success",
-      failureRedirectUrl = "http://127.0.0.1:8081/oauth/failure"
+      successRedirectUrl = [fmt|http://127.0.0.1:#{oauthPort}/oauth/success|],
+      failureRedirectUrl = [fmt|http://127.0.0.1:#{oauthPort}/oauth/failure|]
     }
