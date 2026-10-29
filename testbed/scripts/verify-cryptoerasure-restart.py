@@ -4,6 +4,7 @@
 import json
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
@@ -51,6 +52,46 @@ def wait_for(case_id, token, predicate):
     raise AssertionError(f"Timed out waiting for erasure state: {view}")
 
 
+def concurrent_case(token):
+    status, result = request("POST", f"{API}/commands/create-owned-protected", token, [])
+    assert status == 200 and result["tag"] == "Accepted", (status, result)
+    case_id = result["entityId"]
+    loaded = wait_for(case_id, token, lambda item: bool(item.get("firstReference")))
+    reference = loaded["firstReference"]
+    assert loaded["firstSecret"]["tag"] == "Available", loaded
+    status, result = request("POST", f"{API}/commands/request-erasure", token, {
+        "tag": "RequestFirstErasure", "caseId": case_id,
+        "reference": reference, "rejectResult": False,
+        "simulateUnknownReference": False,
+    })
+    assert status == 200 and result["tag"] == "Accepted", (status, result)
+    completed = wait_for(case_id, token, lambda item: item["erasureStatus"] == "completed")
+    assert completed["firstSecret"]["tag"] == "Erased", completed
+    assert completed["secondSecret"]["tag"] == "Available", completed
+    assert completed["wasAlreadyErased"] is False, completed
+    return case_id, reference, loaded["ownerId"]
+
+
+def concurrent():
+    token = owner_token()
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        cases = list(executor.map(lambda _: concurrent_case(token), range(4)))
+    references = [reference for _, reference, _ in cases]
+    assert len(set(references)) == len(references), cases
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        retries = list(executor.map(lambda item: request("POST", f"{API}/commands/request-erasure", token, {
+            "tag": "RetryFirstErasure", "caseId": item[0],
+        }), cases))
+    assert all(status == 200 and body["tag"] == "Accepted" for status, body in retries), retries
+    for case_id, reference, owner in cases:
+        completed = wait_for(case_id, token, lambda item: item["erasureStatus"] == "completed" and item["wasAlreadyErased"] is True)
+        assert completed["firstReference"] == reference, completed
+        assert completed["ownerId"] == owner, completed
+        assert completed["firstSecret"]["tag"] == "Erased", completed
+        assert completed["secondSecret"]["tag"] == "Available", completed
+    print("Four concurrent application requests and explicit retries kept independent tombstones")
+
+
 def prepare(path):
     token = owner_token()
     status, result = request("POST", f"{API}/commands/create-owned-protected", token, [])
@@ -67,7 +108,7 @@ def prepare(path):
     })
     assert status == 200 and result["tag"] == "Accepted", (status, result)
     wait_for(case_id, token, lambda item: item["firstSecret"]["tag"] == "Erased" and item["erasureStatus"] == "pending")
-    path.write_text(json.dumps({"caseId": case_id, "reference": reference}))
+    path.write_text(json.dumps({"caseId": case_id, "reference": reference, "ownerId": view["ownerId"]}))
     print("Committed key deletion left the application request pending before restart")
 
 
@@ -77,6 +118,7 @@ def verify(path):
     case_id = state["caseId"]
     view = wait_for(case_id, token, lambda item: True)
     assert view["firstReference"] == state["reference"], view
+    assert view["ownerId"] == state["ownerId"], view
     assert view["firstSecret"]["tag"] == "Erased", view
     assert view["secondSecret"]["tag"] == "Available", view
     assert view["erasureStatus"] == "pending", view
@@ -92,10 +134,14 @@ def verify(path):
 
 
 if __name__ == "__main__":
-    action, state_path = sys.argv[1:]
-    if action == "prepare":
+    action = sys.argv[1]
+    if action == "concurrent":
+        concurrent()
+    elif action == "prepare":
+        state_path = sys.argv[2]
         prepare(Path(state_path))
     elif action == "verify":
+        state_path = sys.argv[2]
         verify(Path(state_path))
     else:
         raise SystemExit("expected prepare or verify")

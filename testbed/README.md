@@ -49,13 +49,18 @@ nix develop --command .agents/skills/neohaskell-test/scripts/run-testbed --stric
 
 The runner creates private databases, runs `testbed/tests/integrations/cryptoerasure-m2.hurl`, and restarts the OAuth testbed for `testbed/scripts/verify-cryptoerasure-restart.py`. The restart check creates a request whose result command is deliberately rejected after key deletion. It verifies that the request remains pending across restart and that an explicit retry records `AlreadyErased` as a completed application operation. The application must retain and retry pending requests; the framework does not promise automatic replay after a crash. The OAuth-enabled and disabled application setups both register the outbound handler; the authenticated scenario uses port 8081.
 
+The same runner sends four owner-authorized erasure requests concurrently through one OAuth application instance. It checks that every reference remains separate, each completed request renders its first value as `Erased`, and explicit retries report `AlreadyErased`. The restart check also compares the application's retained owner field before and after reconstruction. These are example retention choices, not a policy for other applications.
+
 Run `nix develop --command cabal test nhtestbed:nhtestbed-erasure --test-show-details=direct` to check that another authenticated user and a userless no-OAuth transport cannot authorize the application-owned erasure request.
 
 For the scoped PostgreSQL service fixture, create a fresh database owned by the configured test user and run:
 
 ```sh
 CRYPTOERASURE_TEST_DB=<private-database-name> nix develop --command .agents/skills/tdd/scripts/test-match 'erases only a matching application and stream' nhcore-test-service
+CRYPTOERASURE_TEST_DB=<private-database-name> nix develop --command .agents/skills/tdd/scripts/test-match 'keeps a stale protected reference erased' nhcore-test-service
 ```
+
+The second fixture uses independent PostgreSQL pools and concurrent tasks. It races deletion with an append and query update made from an earlier loaded wrapper. It then reconnects, reads both persisted events, and checks that the erased reference stays erased while the second value and the example's retained fact survive.
 
 ### Run the maintained suite
 
