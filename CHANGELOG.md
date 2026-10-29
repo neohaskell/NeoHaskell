@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.13.1 — 2026-10-29
+
+### Fixed
+
+- **Framework**: Records with `DateTime` or `Maybe DateTime` fields can now derive `ToSchema`. Timestamp fields appear as strings in OpenAPI and JSON Schema, matching their JSON encoding. Applications that defined an orphan `ToSchema DateTime` instance as a workaround must remove that instance to avoid a duplicate-instance error after updating NeoHaskell. ([change](https://github.com/neohaskell/NeoHaskell/commit/6f534e067dc61140796e46d3c32e6c144b9f30d4))
+- **Framework**: Web commands with acronym names now use the expected kebab-case URL. For example, `SaveIBAN` responds at `POST /commands/save-iban`, and OpenAPI lists the same path. Internal dispatch and MCP command names retain their original spelling.
+
+If two different command names produce the same Web URL, service registration rejects the duplicate instead of choosing one command. Rename one of the commands before starting the service. ([change](https://github.com/neohaskell/NeoHaskell/commit/3c05e3d83cdb6d2579b653694918961154d59391))
+- **Framework**: `actual |> shouldContain expected` now checks whether the actual array contains the expected subarray. `actual |> shouldNotContain expected` checks whether the actual array does not contain it. Both matchers previously checked the arrays in the opposite direction.
+
+If you swapped the arguments to work around this bug, put the expected subarray first again. For example, change `expected |> shouldContain actual` to `actual |> shouldContain expected`. Run your tests to confirm that their assertions still check the intended array. ([change](https://github.com/neohaskell/NeoHaskell/commit/e07c3910cdf69baf16543bebf7b9338dc98b98e3))
+
+[Compare changes](https://github.com/neohaskell/NeoHaskell/compare/neo-v0.13.0...neo-v0.13.1)
+
 ## 0.13.0 — 2026-10-28
 
 ### Breaking changes
