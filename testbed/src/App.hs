@@ -17,6 +17,7 @@ import Testbed.Document.Core ()
 import Testbed.ExternalEffect.Outbound (ExternalEffectOutbound)
 import Testbed.ExternalEffect.Query (ExternalEffectSummary)
 import Testbed.ExternalEffect.Service qualified as ExternalEffectService
+import Testbed.Integrations.TypedInboundExample (TypedInboundExample)
 import Testbed.Service qualified
 import Testbed.Stock.Queries.StockLevel (StockLevel)
 import Text qualified
@@ -58,8 +59,9 @@ app =
     |> Application.withOutbound @ExternalEffectOutbound
     -- Outbound with lifecycle: count events per entity (demonstrates stateful integration)
     |> Application.withOutboundLifecycle @() @CartEntity (\_ -> EventCounter.eventCounterIntegration)
-    -- Inbound: create a cart every 30 seconds
+    -- Inbound: create a cart every 3 seconds
     |> Application.withInbound @() (\_ -> periodicCartCreator)
+    |> Application.withInboundHandler @TypedInboundExample
     -- File uploads with declarative config (initialized at runtime)
     |> Application.withFileUpload makeFileUploadConfig
 
