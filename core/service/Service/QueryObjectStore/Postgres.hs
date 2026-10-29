@@ -15,6 +15,7 @@ import Data.Tuple (fst, snd)
 import Data.UUID qualified as UUID
 import Default (Default)
 import Default qualified
+import Erasable.Internal qualified as Erasable
 import Hasql.Decoders qualified as Decoders
 import Hasql.Encoders qualified as Encoders
 import Hasql.Pool (Pool)
@@ -26,6 +27,7 @@ import Maybe (Maybe (..))
 import Result (Result (..))
 import Result qualified
 import Service.Infra.Postgres.ConnectionConfig qualified as ConnectionConfig
+import Service.EventStore.Postgres.ErasableKeys qualified as ErasableKeys
 import Service.QueryObjectStore.Core (Error (..), QueryObjectStore (..))
 import Service.QueryObjectStore.Core qualified as Core
 import Task (Task)
@@ -225,7 +227,10 @@ getImpl pool queryName uuid = do
     |> Task.mapError (\e -> StorageError (toText (show e)))
   case result of
     Nothing -> Task.yield Nothing
-    Just jsonVal ->
+    Just jsonVal -> do
+      case Erasable.validateStorageContext [fmt|query:#{queryName}:#{UUID.toText rawUuid}|] jsonVal of
+        Err err -> Task.throw (SerializationError err)
+        Ok _ -> pass
       case Json.decode jsonVal of
         Err err -> Task.throw (SerializationError err)
         Ok val -> Task.yield (Just val)
@@ -284,7 +289,10 @@ atomicUpdateAttempt pool queryName rawUuid updateFn retriesLeft =
         |> Task.mapError (\e -> StorageError (toText (show e)))
       maybeExisting <- case maybeJson of
         Nothing -> Task.yield Nothing
-        Just jsonVal ->
+        Just jsonVal -> do
+          case Erasable.validateStorageContext [fmt|query:#{queryName}:#{UUID.toText rawUuid}|] jsonVal of
+            Err err -> Task.throw (SerializationError err)
+            Ok _ -> pass
           case Json.decode jsonVal of
             Err err -> Task.throw (SerializationError err)
             Ok val -> Task.yield (Just val)
@@ -304,13 +312,28 @@ atomicUpdateAttempt pool queryName rawUuid updateFn retriesLeft =
             |> Task.mapError (\e -> StorageError (toText (show e)))
             |> Task.andThen afterWrite
         (Just newVal, Nothing) ->
-          runPool pool (insertIfAbsentSession queryName rawUuid (Json.encode newVal))
+          resealForStorage pool queryName rawUuid (Json.encode newVal)
+            |> Task.andThen (\value -> runPool pool (insertIfAbsentSession queryName rawUuid value))
             |> Task.mapError (\e -> StorageError (toText (show e)))
             |> Task.andThen afterWrite
         (Just newVal, Just oldJson) ->
-          runPool pool (casUpdateSession queryName rawUuid oldJson (Json.encode newVal))
+          resealForStorage pool queryName rawUuid (Json.encode newVal)
+            |> Task.andThen (\value -> runPool pool (casUpdateSession queryName rawUuid oldJson value))
             |> Task.mapError (\e -> StorageError (toText (show e)))
             |> Task.andThen afterWrite
+
+
+resealForStorage :: Pool -> Text -> UUID.UUID -> Json.Value -> Task QueryObjectStoreError Json.Value
+resealForStorage pool queryName rawUuid value =
+  Erasable.resealWith
+    (\reference -> do
+      state <- runPool pool (ErasableKeys.readKey reference) |> Task.mapError (show .> toText)
+      case state of
+        Err err -> Task.throw err
+        Ok state -> Task.yield state)
+    [fmt|query:#{queryName}:#{UUID.toText rawUuid}|]
+    value
+    |> Task.mapError StatementFailed
 
 
 -- | Get all instances stored under the store's own query name (@NameOf query@).
@@ -329,13 +352,15 @@ getAllImpl pool queryName = do
   let buildResult =
         jsonValues
           |> Array.reduce
-              (\jsonVal acc ->
+              (\(rawUuid, jsonVal) acc ->
                 case acc of
                   Err e -> Err e
                   Ok arr ->
-                    case Json.decode jsonVal of
+                    case Erasable.validateStorageContext [fmt|query:#{queryName}:#{UUID.toText rawUuid}|] jsonVal of
                       Err err -> Err (SerializationError err)
-                      Ok val -> Ok (Array.push val arr))
+                      Ok _ -> case Json.decode jsonVal of
+                        Err err -> Err (SerializationError err)
+                        Ok val -> Ok (Array.push val arr))
               (Ok Array.empty)
   case buildResult of
     Err e -> Task.throw e
@@ -428,14 +453,17 @@ casUpdateSession queryName rawUuid expectedJson newJson = do
 -- 'writeCheckpointSession'): trait rows and the checkpoint marker now share one
 -- query_name (#734 / ADR-0071), so the marker's placeholder @'{}'@ state must
 -- not leak into getAll — it is not a query instance.
-selectAllSession :: Text -> Session.Session (Array Json.Value)
+selectAllSession :: Text -> Session.Session (Array (UUID.UUID, Json.Value))
 selectAllSession queryName = do
   let sql =
-        "SELECT state_json FROM query_object_store \
+        "SELECT instance_uuid, state_json FROM query_object_store \
         \WHERE query_name = $1 \
         \  AND instance_uuid <> '00000000-0000-0000-0000-000000000000'"
   let encoder = Encoders.param (Encoders.nonNullable Encoders.text)
-  let decoder = Decoders.rowList (Decoders.column (Decoders.nonNullable Decoders.jsonb))
+  let decoder = Decoders.rowList do
+        rawUuid <- Decoders.column (Decoders.nonNullable Decoders.uuid)
+        value <- Decoders.column (Decoders.nonNullable Decoders.jsonb)
+        pure (rawUuid, value)
   let stmt = Statement (sql |> Text.toBytes |> Bytes.unwrap) encoder decoder True
   rows <- Session.statement queryName stmt
   rows |> Array.fromLinkedList |> pure

@@ -12,7 +12,9 @@ import Array (Array)
 import Array qualified
 import AsyncTask qualified
 import Basics
-import Decider (CommandResult (..), Decision, DecisionContext (..), runDecision)
+import Decider (CommandResult (..), Decision, DecisionContext (..))
+import Decider qualified
+import Erasable.Internal (NewKey)
 import Float qualified
 import GHC.TypeLits qualified as GHC
 import Int qualified
@@ -76,7 +78,7 @@ data AttemptState entity = AttemptState
   }
 
 
-data AcceptedDecision event = AcceptedDecision InsertionType (Array event)
+data AcceptedDecision event = AcceptedDecision InsertionType (Array event) (Array NewKey)
 
 
 data InsertionRejection
@@ -323,13 +325,15 @@ runAttempt context authorized state = do
       ("commandName", context.commandName)
     ] do
     let decisionContext = DecisionContext {genUuid = Uuid.generate}
-    decision <-
-      runDecision decisionContext (decideFor authorized currentEntity)
+    (decision, newKeys) <-
+      Decider.runDecisionWithKeys decisionContext
+        (\reference -> context.services.eventStore.readErasableKey reference |> Task.mapError toText)
+        (decideFor authorized currentEntity)
         |> Task.mapError DecisionExecutionFailed
     case decision of
       RejectCommand reason -> Task.yield (Rejected state.attemptStream reason)
       AcceptCommand insertionType events ->
-        appendAcceptedEvents context authorized state (AcceptedDecision insertionType events)
+        appendAcceptedEvents context authorized state (AcceptedDecision insertionType events newKeys)
 
 
 appendAcceptedEvents ::
@@ -347,7 +351,7 @@ appendAcceptedEvents ::
   AttemptState entity ->
   AcceptedDecision event ->
   Task CommandExecutionFailure CommandOutcome
-appendAcceptedEvents context authorized state (AcceptedDecision insertionType events) = do
+appendAcceptedEvents context authorized state (AcceptedDecision insertionType events newKeys) = do
   let currentEntity = state.attemptFetched |> Maybe.map (\fetched -> fetched.state)
   case validateInsertion insertionType currentEntity of
     Just rejection -> Task.yield (Rejected state.attemptStream (insertionRejectionText rejection))
@@ -359,7 +363,11 @@ appendAcceptedEvents context authorized state (AcceptedDecision insertionType ev
       let attributedInsertions = payload.insertions |> Array.map (Source.attributeInsertionMetadata context.source)
       let positionedInsertions = positionInsertions finalInsertionType attributedInsertions
       let payloadWithType = payload {insertionType = finalInsertionType, insertions = positionedInsertions}
-      insertResult <- dependencies.eventStore.insert payloadWithType |> Task.asResult
+      insertResult <-
+        (if Array.isEmpty newKeys
+          then dependencies.eventStore.insert payloadWithType
+          else dependencies.eventStore.insertWithErasableKeys newKeys payloadWithType)
+          |> Task.asResult
       case insertResult of
         Ok _ -> do
           let metadata = positionedInsertions |> Array.map (\insertion -> insertion.metadata)

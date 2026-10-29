@@ -105,10 +105,19 @@ toOpenApiSchema schema = case schema of
   
   SUnion variants -> do
     let variantSchemas = variants
-          |> Array.map (\(name, variantSchema) -> 
-               toOpenApiSchema variantSchema
-                 |> Lens.set OpenApiLens.title (Just name)
-             )
+          |> Array.map (\(name, contentsSchema) ->
+               let tagSchema = GhcMonoid.mempty
+                     |> Lens.set OpenApiLens.type_ (Just OpenApi.OpenApiString)
+                     |> Lens.set OpenApiLens.enum_ (Just [Json.toJSON name])
+                in GhcMonoid.mempty
+                     |> Lens.set OpenApiLens.type_ (Just OpenApi.OpenApiObject)
+                     |> Lens.set OpenApiLens.title (Just name)
+                     |> Lens.set OpenApiLens.properties
+                          (InsOrdHashMap.fromList
+                            [ ("tag", OpenApi.Inline tagSchema)
+                            , ("contents", OpenApi.Inline (toOpenApiSchema contentsSchema))
+                            ])
+                     |> Lens.set OpenApiLens.required ["tag", "contents"])
           |> Array.toLinkedList
     GhcMonoid.mempty
       |> Lens.set OpenApiLens.oneOf (Just (variantSchemas |> LinkedList.map OpenApi.Inline))

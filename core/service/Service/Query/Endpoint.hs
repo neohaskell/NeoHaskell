@@ -1,12 +1,15 @@
 module Service.Query.Endpoint (
   createQueryEndpoint,
+  createQueryEndpointWithProtection,
 ) where
 
 import Array qualified
 import Auth.Claims (UserClaims)
 import Basics
+import Erasable.Internal qualified as Erasable
 import Json qualified
 import Maybe (Maybe (..))
+import Result (Result (..))
 import Service.AccessControl (QueryEndpointError)
 import Service.AccessControl qualified as Auth
 import Service.Query.Core (Query (..))
@@ -48,6 +51,29 @@ createQueryEndpoint ::
   QueryPageRequest ->
   Task QueryEndpointError Text
 createQueryEndpoint queryStore userClaims maybeExpr pageRequest = do
+  createQueryEndpointWithProtection rejectProtectedJson queryStore userClaims maybeExpr pageRequest
+
+
+rejectProtectedJson :: Json.Value -> Task QueryEndpointError Json.Value
+rejectProtectedJson value =
+  case Erasable.references value of
+    Err _ -> Task.throw (Auth.StorageError "Malformed erasable response")
+    Ok refs ->
+      if Array.isEmpty refs
+        then Task.yield value
+        else Task.throw (Auth.StorageError "Protected response resolver is unavailable")
+
+
+createQueryEndpointWithProtection ::
+  forall query.
+  (Json.ToJSON query, Query query) =>
+  (Json.Value -> Task QueryEndpointError Json.Value) ->
+  QueryObjectStore query ->
+  Maybe UserClaims ->
+  Maybe Expr ->
+  QueryPageRequest ->
+  Task QueryEndpointError Text
+createQueryEndpointWithProtection renderProtected queryStore userClaims maybeExpr pageRequest = do
   -- Phase 1: Pre-fetch authorization
   case canAccessImpl @query userClaims of
     Just authErr -> Task.throw (Auth.AuthorizationError authErr)
@@ -85,7 +111,8 @@ createQueryEndpoint queryStore userClaims maybeExpr pageRequest = do
             , effectiveLimit = effectiveLimit
             }
 
-      let responseText = response |> Json.encodeText
+      responseJson <- response |> Json.toJSON |> renderProtected
+      let responseText = responseJson |> Json.encodeText
 
       Task.yield responseText
 

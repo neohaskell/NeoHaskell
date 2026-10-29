@@ -15,6 +15,7 @@ import Record qualified
 import Schema (Schema)
 import Schema qualified
 import Service.Command.Core (Entity (..), EventOf, NameOf)
+import Service.AccessControl qualified as Auth
 import Service.EntityFetcher.Core qualified as EntityFetcher
 import Service.Event.EntityName (EntityName (..))
 import Service.EventStore.Core (EventStore)
@@ -131,9 +132,16 @@ createDefinitionWithStore storeFactory = do
 
   let schema = Schema.toSchema @query
 
+  let pageSchema = Schema.SObject
+        [ Schema.FieldSchema "items" (Schema.SArray schema) True ""
+        , Schema.FieldSchema "total" Schema.SInt True ""
+        , Schema.FieldSchema "hasMore" Schema.SBool True ""
+        , Schema.FieldSchema "effectiveLimit" Schema.SInt True ""
+        ]
+
   let endpointSchema = EndpointSchema
         { requestSchema = Nothing  -- Queries have no request body (GET)
-        , responseSchema = schema
+        , responseSchema = pageSchema
         , description = ""
         , deprecated = False
         , entityName = Nothing  -- Queries grouped under fixed "Queries" tag
@@ -151,7 +159,11 @@ createDefinitionWithStore storeFactory = do
         registry <- wireEntities @entities @query queryNameText rawEventStore queryStore
 
         -- 3. Create endpoint handler (lambda accepts Maybe UserClaims, Maybe NeoQL.Expr, and QueryPageRequest)
-        let endpoint userClaims maybeExpr pageRequest = Endpoint.createQueryEndpoint queryStore userClaims maybeExpr pageRequest
+        let endpoint userClaims maybeExpr pageRequest =
+              Endpoint.createQueryEndpointWithProtection
+                (\jsonValue -> rawEventStore.renderProtectedJson jsonValue
+                  |> Task.mapError (\_ -> Auth.StorageError "Protected response resolution failed"))
+                queryStore userClaims maybeExpr pageRequest
 
         Task.yield (registry, (queryNameText, endpoint, endpointSchema))
     }

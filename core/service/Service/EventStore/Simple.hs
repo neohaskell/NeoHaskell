@@ -9,6 +9,7 @@ import ConcurrentVar qualified
 import Core
 import Directory qualified
 import DurableChannel qualified
+import Erasable.Internal qualified as Erasable
 import File qualified
 import Json qualified
 import LinkedList qualified
@@ -49,7 +50,20 @@ new config = do
       |> Task.mapError toText
   let eventStore =
         EventStore
-          { insert = insertImpl config store insertionLock,
+          { insert = insertSupported config store insertionLock,
+            insertWithErasableKeys = \keys payload ->
+              if Array.isEmpty keys
+                then insertSupported config store insertionLock payload
+                else rejectProtected payload,
+            renderProtectedJson = \value ->
+              case Erasable.references value of
+                Err _ -> Task.throw (StorageFailure "Malformed erasable envelope")
+                Ok refs ->
+                  if Array.isEmpty refs
+                    then Task.yield value
+                    else Task.throw (StorageFailure "Erasable values require the PostgreSQL event store"),
+            readErasableKey = \_ -> Task.throw (StorageFailure "Erasable values require the PostgreSQL event store"),
+            eraseErasableKey = \_ -> Task.throw (StorageFailure "Erasable values require the PostgreSQL event store"),
             readStreamForwardFrom = readStreamForwardFromImpl store,
             readStreamBackwardFrom = readStreamBackwardFromImpl store,
             readAllStreamEvents = readAllStreamEventsImpl store,
@@ -67,6 +81,23 @@ new config = do
             close = closeImpl
           }
   Task.yield eventStore
+
+
+insertSupported ::
+  SimpleEventStore -> StreamStore -> Lock.Lock -> InsertionPayload Json.Value -> Task Error InsertionSuccess
+insertSupported config store insertionLock payload = do
+  let protected = payload.insertions |> Array.any (\insertion ->
+        case Erasable.references insertion.event of
+          Err _ -> True
+          Ok references -> not (Array.isEmpty references))
+  if protected
+    then rejectProtected payload
+    else insertImpl config store insertionLock payload
+
+
+rejectProtected :: InsertionPayload Json.Value -> Task Error InsertionSuccess
+rejectProtected _ =
+  Task.throw (InsertionError (InsertionFailed "Erasable values require the PostgreSQL event store"))
 
 
 closeImpl :: Task Text Unit

@@ -17,6 +17,11 @@ import Testbed.Document.Core ()
 import Testbed.ExternalEffect.Outbound (ExternalEffectOutbound)
 import Testbed.ExternalEffect.Query (ExternalEffectSummary)
 import Testbed.ExternalEffect.Service qualified as ExternalEffectService
+import Testbed.Erasable.Service qualified as ErasableService
+import Testbed.Erasable.Query (ProtectedView)
+import Testbed.Erasable.Owned.Outbound (OwnedErasureOutbound)
+import Testbed.Erasable.Owned.Query (OwnedProtectedView)
+import Testbed.Erasable.Owned.Service qualified as OwnedErasableService
 import Testbed.Integrations.TypedInboundExample (TypedInboundExample)
 import Testbed.Service qualified
 import Testbed.Stock.Queries.StockLevel (StockLevel)
@@ -40,23 +45,28 @@ testbedApiInfo = ApiInfo
 -- Use 'withEventStore' and 'withFileUpload' with factory functions that take
 -- the config type as a parameter. The factory is called AFTER Application.run
 -- loads the config, eliminating the chicken-and-egg problem.
-app :: Application
-app =
+app :: Int -> Application
+app httpPort =
   Application.new
     |> Application.withConfig @TestbedConfig
     |> Application.withEventStore makePostgresConfig
-    |> Application.withTransport WebTransport.server
+    |> Application.withTransport (WebTransport.server {WebTransport.port = httpPort})
     |> Application.withApiInfo @() (\_ -> testbedApiInfo)
     |> Application.withService Testbed.Service.cartService
     |> Application.withService Testbed.Service.stockService
     |> Application.withService Testbed.Service.documentService
     |> Application.withService ExternalEffectService.service
+    |> Application.withService ErasableService.service
+    |> Application.withService OwnedErasableService.service
     |> Application.withQuery @CartSummary
     |> Application.withQuery @StockLevel
     |> Application.withQuery @ExternalEffectSummary
+    |> Application.withQuery @ProtectedView
+    |> Application.withQuery @OwnedProtectedView
     -- Typed outbound handler: reserve stock when items are added to cart
     |> Application.withOutbound @ReserveStockOnItemAdded
     |> Application.withOutbound @ExternalEffectOutbound
+    |> Application.withOutbound @OwnedErasureOutbound
     -- Outbound with lifecycle: count events per entity (demonstrates stateful integration)
     |> Application.withOutboundLifecycle @() @CartEntity (\_ -> EventCounter.eventCounterIntegration)
     -- Inbound: create a cart every 3 seconds
@@ -87,6 +97,7 @@ makePostgresConfig config =
       sslMode = case ConnectionConfig.textToSslMode config.dbSslMode of
         Ok mode -> mode
         Err e -> panic e,
+      erasableApplicationScope = "testbed",
       sslRootCert = if Text.isEmpty config.dbSslRootCert
         then Nothing
         else Just config.dbSslRootCert

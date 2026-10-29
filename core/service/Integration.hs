@@ -108,6 +108,7 @@ import Maybe (Maybe (..))
 import Service.Command.Core (NameOf)
 import Service.Entity.Core (EntityOf)
 import Service.FileUpload.Core (FileAccessError, FileMetadata, FileRef)
+import Service.EventStore.Core (ErasureResult, ErasureTarget)
 import Service.Integration.DispatchRegistry (DispatchRegistry)
 import Task (Task)
 import Task qualified
@@ -173,6 +174,7 @@ data ActionContext = ActionContext
   , fileAccess :: Maybe FileAccessContext
   -- ^ File access context for retrieving uploaded files.
   -- 'Nothing' when file uploads are not enabled in the application.
+  , eraseErasableKey :: Maybe (ErasureTarget -> Task IntegrationError ErasureResult)
   , outboundDispatch :: DispatchRegistry
   -- ^ ADR-0055 registry of pre-bound outbound-integration dispatcher closures.
   -- Populated once at startup by 'Application.run' based on the

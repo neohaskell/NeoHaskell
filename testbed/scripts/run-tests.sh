@@ -12,8 +12,33 @@ NC='\033[0m' # No Color
 TESTBED_PID=""
 OAUTH_TESTBED_PID=""
 FAKE_SERVICES_PID=""
+ERASURE_STATE_FILE=""
+ERASURE_COMMIT_MARKER=""
+ERASURE_PAUSE_SELECTOR=""
+HURL_TEMP_DIR=""
+TESTBED_HTTP_PORT="${TESTBED_HTTP_PORT:-8080}"
+TESTBED_OAUTH_PORT="${TESTBED_OAUTH_PORT:-8081}"
+TESTBED_FIXTURE_PORT="${TESTBED_FIXTURE_PORT:-8181}"
+export TESTBED_OAUTH_PORT TESTBED_FIXTURE_PORT
+HURL_TEST_ROOT="testbed/tests"
+CABAL_EXE_OPTIONS=()
+if [ "$(uname)" = "Darwin" ]; then
+	CABAL_EXE_OPTIONS+=(--enable-executable-dynamic)
+fi
 
 cleanup() {
+	if [ -n "$ERASURE_STATE_FILE" ]; then
+		rm -f "$ERASURE_STATE_FILE"
+	fi
+	if [ -n "$ERASURE_COMMIT_MARKER" ]; then
+		rm -f "$ERASURE_COMMIT_MARKER"
+	fi
+	if [ -n "$ERASURE_PAUSE_SELECTOR" ]; then
+		rm -f "$ERASURE_PAUSE_SELECTOR"
+	fi
+	if [ -n "$HURL_TEMP_DIR" ]; then
+		rm -rf "$HURL_TEMP_DIR"
+	fi
 	for pid in "$OAUTH_TESTBED_PID" "$TESTBED_PID" "$FAKE_SERVICES_PID"; do
 		if [ -n "$pid" ]; then
 			kill "$pid" 2>/dev/null || true
@@ -28,15 +53,15 @@ echo "Running NeoHaskell Testbed Tests..."
 echo ""
 
 is_testbed_ready() {
-	curl -sf http://127.0.0.1:8080/health >/dev/null 2>&1
+	curl -sf "http://127.0.0.1:$TESTBED_HTTP_PORT/health" >/dev/null 2>&1
 }
 
 is_oauth_testbed_ready() {
-	curl -sf http://127.0.0.1:8081/health >/dev/null 2>&1
+	curl -sf "http://127.0.0.1:$TESTBED_OAUTH_PORT/health" >/dev/null 2>&1
 }
 
 is_fake_services_ready() {
-	curl -sf http://127.0.0.1:8181/health 2>/dev/null | grep -q '"fixture":"neohaskell-testbed"'
+	curl -sf "http://127.0.0.1:$TESTBED_FIXTURE_PORT/health" 2>/dev/null | grep -q '"fixture":"neohaskell-testbed"'
 }
 
 wait_for_service() {
@@ -65,31 +90,54 @@ if ! command -v hurl &>/dev/null; then
 	exit 1
 fi
 
-cabal build exe:nhtestbed exe:nhoauthtestbed
+if [ "$TESTBED_HTTP_PORT:$TESTBED_OAUTH_PORT:$TESTBED_FIXTURE_PORT" != "8080:8081:8181" ]; then
+	HURL_TEMP_DIR=$(mktemp -d)
+	cp -R testbed/tests/. "$HURL_TEMP_DIR/"
+	python3 - "$HURL_TEMP_DIR" "$TESTBED_HTTP_PORT" "$TESTBED_OAUTH_PORT" "$TESTBED_FIXTURE_PORT" <<'PY'
+from pathlib import Path
+import sys
 
-if is_testbed_ready || curl -s http://127.0.0.1:8080 >/dev/null 2>&1; then
-	echo -e "${RED}Error: Port 8080 is already in use${NC}"
+root = Path(sys.argv[1])
+for path in root.rglob("*.hurl"):
+    content = path.read_text()
+    for old, new in zip(("8080", "8081", "8181"), sys.argv[2:]):
+        content = content.replace(f":{old}", f":{new}")
+    path.write_text(content)
+PY
+	HURL_TEST_ROOT="$HURL_TEMP_DIR"
+fi
+
+cabal build "${CABAL_EXE_OPTIONS[@]}" exe:nhtestbed exe:nhoauthtestbed
+
+if is_testbed_ready || curl -s "http://127.0.0.1:$TESTBED_HTTP_PORT" >/dev/null 2>&1; then
+	echo -e "${RED}Error: Port $TESTBED_HTTP_PORT is already in use${NC}"
 	exit 1
 fi
 
-if is_oauth_testbed_ready || curl -s http://127.0.0.1:8081 >/dev/null 2>&1; then
-	echo -e "${RED}Error: Port 8081 is already in use${NC}"
+if is_oauth_testbed_ready || curl -s "http://127.0.0.1:$TESTBED_OAUTH_PORT" >/dev/null 2>&1; then
+	echo -e "${RED}Error: Port $TESTBED_OAUTH_PORT is already in use${NC}"
 	exit 1
 fi
 
 if is_fake_services_ready; then
-	echo -e "${GREEN}Fake services already running on http://127.0.0.1:8181${NC}"
-elif curl -s http://127.0.0.1:8181 >/dev/null 2>&1; then
-	echo -e "${RED}Error: Port 8181 is in use, but the testbed fake services are unavailable${NC}"
+	echo -e "${GREEN}Fake services already running on http://127.0.0.1:$TESTBED_FIXTURE_PORT${NC}"
+elif curl -s "http://127.0.0.1:$TESTBED_FIXTURE_PORT" >/dev/null 2>&1; then
+	echo -e "${RED}Error: Port $TESTBED_FIXTURE_PORT is in use, but the testbed fake services are unavailable${NC}"
 	exit 1
 else
 	echo -e "${YELLOW}Starting fake external services...${NC}"
 	python3 testbed/scripts/fake_external_services.py &
 	FAKE_SERVICES_PID=$!
-	wait_for_service http://127.0.0.1:8181/health "Fake services" "$FAKE_SERVICES_PID"
+	wait_for_service "http://127.0.0.1:$TESTBED_FIXTURE_PORT/health" "Fake services" "$FAKE_SERVICES_PID"
 fi
 
 export OAUTH2_TESTBED_STATE_KEY="${OAUTH2_TESTBED_STATE_KEY:-testbed-oauth-state-key-that-is-at-least-32-bytes}"
+ERASURE_COMMIT_MARKER=$(mktemp)
+rm -f "$ERASURE_COMMIT_MARKER"
+export CRYPTOERASURE_COMMIT_MARKER="$ERASURE_COMMIT_MARKER"
+ERASURE_PAUSE_SELECTOR=$(mktemp)
+rm -f "$ERASURE_PAUSE_SELECTOR"
+export CRYPTOERASURE_PAUSE_SELECTOR="$ERASURE_PAUSE_SELECTOR"
 
 export PGPASSWORD="${DB_PASSWORD:-neohaskell}"
 database_suffix=$(python3 -c 'import uuid; print(uuid.uuid4().hex[:12])')
@@ -100,47 +148,71 @@ createdb -h "${DB_HOST:-localhost}" -p "${DB_PORT:-5432}" -U "${DB_USER:-neohask
 echo "Testbed databases: $testbed_db $oauth_db"
 
 echo -e "${YELLOW}Starting testbed...${NC}"
-DB_NAME="$testbed_db" cabal run exe:nhtestbed &
+DB_NAME="$testbed_db" "$(cabal list-bin "${CABAL_EXE_OPTIONS[@]}" exe:nhtestbed)" &
 TESTBED_PID=$!
-wait_for_service http://127.0.0.1:8080/health "Testbed" "$TESTBED_PID"
+wait_for_service "http://127.0.0.1:$TESTBED_HTTP_PORT/health" "Testbed" "$TESTBED_PID"
 echo ""
 
 echo -e "${YELLOW}Starting OAuth testbed...${NC}"
-DB_NAME="$oauth_db" cabal run exe:nhoauthtestbed &
+DB_NAME="$oauth_db" "$(cabal list-bin "${CABAL_EXE_OPTIONS[@]}" exe:nhoauthtestbed)" &
 OAUTH_TESTBED_PID=$!
-wait_for_service http://127.0.0.1:8081/health "OAuth testbed" "$OAUTH_TESTBED_PID"
+wait_for_service "http://127.0.0.1:$TESTBED_OAUTH_PORT/health" "OAuth testbed" "$OAUTH_TESTBED_PID"
 
 # Run command tests
-if [ -d "testbed/tests/commands" ] && [ "$(ls -A testbed/tests/commands/*.hurl 2>/dev/null)" ]; then
+if [ -d "$HURL_TEST_ROOT/commands" ] && [ "$(ls -A "$HURL_TEST_ROOT"/commands/*.hurl 2>/dev/null)" ]; then
 	echo -e "${GREEN}Running command tests...${NC}"
-	hurl --test testbed/tests/commands/*.hurl
+	hurl --test "$HURL_TEST_ROOT"/commands/*.hurl
 	echo ""
 fi
 
 # Run query tests
-if [ -d "testbed/tests/queries" ] && [ "$(ls -A testbed/tests/queries/*.hurl 2>/dev/null)" ]; then
+if [ -d "$HURL_TEST_ROOT/queries" ] && [ "$(ls -A "$HURL_TEST_ROOT"/queries/*.hurl 2>/dev/null)" ]; then
 	echo -e "${GREEN}Running query tests...${NC}"
-	hurl --test testbed/tests/queries/*.hurl
+	hurl --test "$HURL_TEST_ROOT"/queries/*.hurl
 	echo ""
 fi
 
 # Run scenario tests
-if [ -d "testbed/tests/scenarios" ] && [ "$(ls -A testbed/tests/scenarios/*.hurl 2>/dev/null)" ]; then
+if [ -d "$HURL_TEST_ROOT/scenarios" ] && [ "$(ls -A "$HURL_TEST_ROOT"/scenarios/*.hurl 2>/dev/null)" ]; then
 	echo -e "${GREEN}Running scenario tests...${NC}"
-	hurl --test testbed/tests/scenarios/*.hurl
+	hurl --test "$HURL_TEST_ROOT"/scenarios/*.hurl
 	echo ""
 fi
 
 # Run integration tests (PDF extraction, etc.)
-if [ -d "testbed/tests/integrations" ] && [ "$(ls -A testbed/tests/integrations/*.hurl 2>/dev/null)" ]; then
+if [ -d "$HURL_TEST_ROOT/integrations" ] && [ "$(ls -A "$HURL_TEST_ROOT"/integrations/*.hurl 2>/dev/null)" ]; then
 	echo -e "${GREEN}Running integration tests...${NC}"
 	delivered_effect_id=$(python3 -c 'import uuid; print(uuid.uuid4())')
 	failed_effect_id=$(python3 -c 'import uuid; print(uuid.uuid4())')
 	echo "Generic HTTP effect IDs: $delivered_effect_id $failed_effect_id"
-	hurl --test --variable "delivered_effect_id=$delivered_effect_id" --variable "failed_effect_id=$failed_effect_id" testbed/tests/integrations/*.hurl
+	hurl --test --variable "delivered_effect_id=$delivered_effect_id" --variable "failed_effect_id=$failed_effect_id" "$HURL_TEST_ROOT"/integrations/*.hurl
 	echo ""
 fi
 
 bash testbed/scripts/verify-database-isolation.sh "$testbed_db" "$oauth_db"
+
+python3 testbed/scripts/verify-cryptoerasure-restart.py concurrent "$oauth_db"
+ERASURE_STATE_FILE=$(mktemp)
+python3 testbed/scripts/verify-cryptoerasure-restart.py prepare "$ERASURE_STATE_FILE"
+restart_oauth_testbed() {
+	kill "$OAUTH_TESTBED_PID"
+	wait "$OAUTH_TESTBED_PID" 2>/dev/null || true
+	OAUTH_TESTBED_PID=""
+	if is_oauth_testbed_ready; then
+		echo -e "${RED}Error: OAuth testbed still responds after its owned process stopped${NC}"
+		exit 1
+	fi
+	DB_NAME="$oauth_db" "$(cabal list-bin "${CABAL_EXE_OPTIONS[@]}" exe:nhoauthtestbed)" &
+	OAUTH_TESTBED_PID=$!
+	wait_for_service "http://127.0.0.1:$TESTBED_OAUTH_PORT/health" "Restarted OAuth testbed" "$OAUTH_TESTBED_PID"
+}
+restart_oauth_testbed
+python3 testbed/scripts/verify-cryptoerasure-restart.py verify "$ERASURE_STATE_FILE"
+python3 testbed/scripts/verify-cryptoerasure-restart.py prepare-crash "$ERASURE_STATE_FILE" "$ERASURE_COMMIT_MARKER" "$ERASURE_PAUSE_SELECTOR"
+rm -f "$ERASURE_PAUSE_SELECTOR"
+restart_oauth_testbed
+python3 testbed/scripts/verify-cryptoerasure-restart.py verify "$ERASURE_STATE_FILE"
+restart_oauth_testbed
+python3 testbed/scripts/verify-cryptoerasure-restart.py verify-completed "$ERASURE_STATE_FILE" "$oauth_db"
 
 echo -e "${GREEN}All tests completed!${NC}"

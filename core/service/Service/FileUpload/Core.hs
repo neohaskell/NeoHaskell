@@ -368,6 +368,7 @@ instance Json.ToJSON FileStateStoreBackend where
 -- postgresConfig = PostgresEventStore
 --   { host = "localhost", port = 5432, databaseName = "myapp"
 --   , user = "myuser", password = "mypassword"
+--   , erasableApplicationScope = "myapp"
 --   }
 --
 -- -- Reuse for file state store

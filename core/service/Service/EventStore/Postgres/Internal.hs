@@ -11,12 +11,16 @@ module Service.EventStore.Postgres.Internal (
 
 import Array (Array)
 import Array qualified
+import Bytes qualified
 import AsyncTask qualified
 import Basics
 import ConcurrentVar (ConcurrentVar)
 import ConcurrentVar qualified
 import Default (Default)
 import Default qualified
+import Erasable.Internal (NewKey (..))
+import Erasable.Internal qualified as Erasable
+import Erasable.Cipher qualified as Cipher
 import Hasql.Connection qualified as Hasql
 import Hasql.Connection.Setting qualified as Hasql
 import Hasql.Pool qualified as HasqlPool
@@ -37,6 +41,7 @@ import Service.Event.EventMetadata qualified as EventMetadata
 import Service.Event.StreamId qualified as StreamId
 import Service.EventStore.Core
 import Service.EventStore.Postgres.Core
+import Service.EventStore.Postgres.ErasableKeys qualified as ErasableKeys
 import Service.EventStore.Postgres.Notifications qualified as Notifications
 import Service.EventStore.Postgres.PostgresEventRecord (PostgresEventRecord (..))
 import Service.EventStore.Postgres.Sessions qualified as Sessions
@@ -51,6 +56,7 @@ import Text qualified
 import ToText (toText)
 import Var (Var)
 import Var qualified
+import Uuid qualified
 
 
 -- | PostgreSQL event store configuration.
@@ -76,7 +82,8 @@ data PostgresEventStore = PostgresEventStore
     poolSize :: Int,
     -- WI-5 (#684): optional TLS hardening. Both default to off.
     sslMode :: ConnectionConfig.SslMode,
-    sslRootCert :: Maybe Text
+    sslRootCert :: Maybe Text,
+    erasableApplicationScope :: Text
   }
   deriving (Eq, Ord)
 
@@ -94,7 +101,8 @@ instance Default PostgresEventStore where
         port = 5432,
         poolSize = 6,
         sslMode = ConnectionConfig.SslModeUnset,
-        sslRootCert = Nothing
+        sslRootCert = Nothing,
+        erasableApplicationScope = ""
       }
 
 
@@ -154,6 +162,9 @@ defaultOps = do
 
   let initializeTable connection = do
         Sessions.createEventsTableSession
+          |> Sessions.run connection
+          |> Task.mapError toText
+        ErasableKeys.createTable
           |> Sessions.run connection
           |> Task.mapError toText
 
@@ -239,13 +250,37 @@ new ops cfg = do
     subscriptionStore <- SubscriptionStore.new |> Task.mapError (toText .> SubscriptionInitializationError .> toText)
     cleanup <- ops.initializeSubscriptions pool subscriptionStore cfg |> Task.mapError (SubscriptionInitializationError .> toText)
     let insertSerially payload = do
-          insertResult <- insertImpl sharedOps cfg 0 payload |> Task.asResult |> Lock.with insertionLock
+          insertResult <- insertImpl sharedOps cfg 0 Array.empty payload |> Task.asResult |> Lock.with insertionLock
           case insertResult of
             Ok success -> Task.yield success
             Err err -> Task.throw err
     let eventStore =
           EventStore
             { insert = insertSerially,
+              insertWithErasableKeys = \keys payload -> do
+                insertResult <- insertImpl sharedOps cfg 0 keys payload |> Task.asResult |> Lock.with insertionLock
+                case insertResult of
+                  Ok success -> Task.yield success
+                  Err err -> Task.throw err,
+              renderProtectedJson = \value ->
+                Erasable.renderWith
+                  (readKeyState pool)
+                  value
+                  |> Task.mapError StorageFailure,
+              readErasableKey = \reference -> readKeyState pool reference |> Task.mapError StorageFailure,
+              eraseErasableKey = \target -> do
+                if Text.isEmpty cfg.erasableApplicationScope
+                  then Task.throw (StorageFailure "Erasable erasure requires an application scope")
+                  else do
+                    outcome <- ErasableKeys.eraseScoped cfg.erasableApplicationScope target
+                      |> Sessions.run pool
+                      |> Task.mapError (toText .> StorageFailure)
+                    case outcome of
+                      ErasableKeys.ScopeDenied -> Task.throw (StorageFailure "Erasable scope denied")
+                      ErasableKeys.CorruptKey -> Task.throw (StorageFailure "Erasable key is corrupt")
+                      ErasableKeys.ErasedNow -> Task.yield ErasedNow
+                      ErasableKeys.AlreadyErased -> Task.yield AlreadyErased
+                      ErasableKeys.UnknownReference -> Task.yield UnknownReference,
               readStreamForwardFrom = readStreamForwardFromImpl sharedOps cfg,
               readStreamBackwardFrom = readStreamBackwardFromImpl sharedOps cfg,
               readAllStreamEvents = readAllStreamEventsImpl sharedOps cfg,
@@ -277,10 +312,11 @@ insertImpl ::
   Ops ->
   PostgresEventStore ->
   Int ->
+  Array NewKey ->
   InsertionPayload Json.Value ->
   Task Error InsertionSuccess
-insertImpl ops cfg consistencyRetryCount payload = do
-  res <- insertGo ops cfg payload |> Task.asResult
+insertImpl ops cfg consistencyRetryCount keys payload = do
+  res <- insertGo ops cfg keys payload |> Task.asResult
   case res of
     Ok success ->
       Task.yield success
@@ -307,18 +343,60 @@ insertImpl ops cfg consistencyRetryCount payload = do
           if (err |> isEventsUniqueKeyViolation) && (payload.insertionType == AnyStreamState) && (consistencyRetryCount < 100)
             then do
               AsyncTask.sleep (consistencyRetryCount + 1)
-              insertImpl ops cfg (consistencyRetryCount + 1) payload
+              insertImpl ops cfg (consistencyRetryCount + 1) keys payload
             else
               Task.throw (InsertionError (InsertionFailed (toText err)))
+
+
+payloadReferences :: InsertionPayload Json.Value -> Result Text (Array Text)
+payloadReferences payload =
+  payload.insertions
+    |> Array.foldl
+      (\insertion accumulated -> do
+        before <- accumulated
+        next <- Erasable.references insertion.event
+        Ok (before |> Array.append next))
+      (Ok Array.empty)
+
+
+readKeyState :: Sessions.Connection -> Text -> Task Text Erasable.KeyState
+readKeyState connection reference = do
+  stored <- ErasableKeys.readKeyBytes reference |> Sessions.run connection |> Task.mapError toText
+  case stored of
+    Nothing -> Task.yield Erasable.Missing
+    Just Nothing -> Task.yield Erasable.Erased
+    Just (Just bytes) ->
+      case Cipher.keyFromBytes (Bytes.fromLegacy bytes) of
+        Err error -> Task.throw error
+        Ok key -> Task.yield (Erasable.Active key)
 
 
 insertGo ::
   Ops ->
   PostgresEventStore ->
+  Array NewKey ->
   InsertionPayload Json.Value ->
   Task PostgresStoreError InsertionSuccess
-insertGo ops cfg payload =
+insertGo ops cfg keys payload =
   ops |> withConnection cfg \conn -> do
+    references <-
+      case payloadReferences payload of
+        Err _ -> Task.throw (CoreInsertionError (InsertionFailed "Malformed erasable envelope"))
+        Ok refs -> Task.yield refs
+    let protected = not (Array.isEmpty references)
+    Task.when ((not protected) && not (Array.isEmpty keys)) do
+      Task.throw (CoreInsertionError (InsertionFailed "Erasable key has no event value"))
+    keys |> Task.mapArray (\key -> do
+      Task.when (not (Array.contains key.reference references)) do
+        Task.throw (CoreInsertionError (InsertionFailed "Erasable key has no matching event value")))
+      |> discard
+    references |> Task.mapArray (\reference -> do
+      let supplied = keys |> Array.any (\key -> key.reference == reference)
+      Task.unless supplied do
+        exists <- ErasableKeys.referenceExists reference |> Sessions.run conn |> Task.mapError SessionError
+        Task.when (not exists) do
+          Task.throw (CoreInsertionError (InsertionFailed "Erasable reference has no key record")))
+      |> discard
     Task.when (payload.insertions |> Array.isEmpty) do
       Task.throw (CoreInsertionError EmptyPayload)
 
@@ -330,6 +408,9 @@ insertGo ops cfg payload =
       Sessions.selectExistingIdsSession payloadEventIds
         |> Sessions.run conn
         |> Task.mapError SessionError
+
+    Task.when (protected && not (Array.isEmpty alreadyExistingIds)) do
+      Task.throw (CoreInsertionError ConsistencyCheckFailed)
 
     let insertions =
           payload.insertions
@@ -368,6 +449,18 @@ insertGo ops cfg payload =
               latestPositions |> Maybe.withDefault (StreamPosition 0, StreamPosition 0)
         Task.yield InsertionSuccess {localPosition, globalPosition}
       else do
+        resealedInsertions <- insertions |> Task.mapArray (\(insertion :: Insertion Json.Value) -> do
+          let insertionId = insertion.metadata.eventId
+          event <- Erasable.resealWith
+            (\reference ->
+              case Array.find (\key -> key.reference == reference) keys of
+                Just key -> Task.yield (Erasable.Active key.key)
+                Nothing -> do
+                  readKeyState conn reference)
+            [fmt|event:#{Uuid.toText insertionId}|]
+            insertion.event
+            |> Task.mapError (InsertionFailed .> CoreInsertionError)
+          Task.yield (Insertion {id = insertion.id, event, metadata = insertion.metadata}))
         let offset =
               case payload.insertionType of
                 InsertAfter (StreamPosition pos) -> pos + 1
@@ -376,7 +469,7 @@ insertGo ops cfg payload =
                     |> Maybe.map (\(_, StreamPosition localPos) -> localPos + 1)
                     |> Maybe.withDefault 0
         let insertionRecords =
-              insertions |> Array.indexed |> Array.map \(idx, i) -> do
+              resealedInsertions |> Array.indexed |> Array.map \(idx, i) -> do
                 Sessions.EventInsertionRecord
                   { eventId = i.metadata.eventId,
                     localPosition = offset + fromIntegral idx,
@@ -386,9 +479,13 @@ insertGo ops cfg payload =
                     eventData = Json.encode i.event,
                     metadata = Json.encode i.metadata
                   }
-        Sessions.insertRecordsIntoStream insertionRecords
-          |> Sessions.run conn
-          |> Task.mapError SessionError
+        if protected
+          then Sessions.insertRecordsWithKeys cfg.erasableApplicationScope keys insertionRecords
+            |> Sessions.run conn
+            |> Task.mapError SessionError
+          else Sessions.insertRecordsIntoStream insertionRecords
+            |> Sessions.run conn
+            |> Task.mapError SessionError
 
         case insertionRecords |> Array.last of
           Nothing ->
@@ -606,7 +703,9 @@ performReadAllStreamEvents
             notifiedReadingRef |> Var.set True
 
         records |> Task.forEach \record -> do
+          let recordId = record.eventId
           let evt :: Result Text (ReadAllMessage Json.Value) = do
+                Erasable.validateStorageContext [fmt|event:#{Uuid.toText recordId}|] record.eventData
                 m <- Json.decode record.metadata
                 -- Use fromTextUnsafe: reading from trusted database where values were validated on insert
                 let streamId = record.inlinedStreamId |> StreamId.fromTextUnsafe
@@ -1231,7 +1330,9 @@ performReadStreamEvents
             notifiedReadingRef |> Var.set True
 
         records |> Task.forEach \record -> do
+          let recordId = record.eventId
           let evt :: Result Text (ReadStreamMessage Json.Value) = do
+                Erasable.validateStorageContext [fmt|event:#{Uuid.toText recordId}|] record.eventData
                 m <- Json.decode record.metadata
                 let metadata =
                       m

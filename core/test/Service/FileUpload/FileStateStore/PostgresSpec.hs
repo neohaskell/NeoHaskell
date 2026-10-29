@@ -35,6 +35,7 @@ testConfig =
     , poolSize = 6
     , sslMode = SslModeUnset
     , sslRootCert = Nothing
+    , erasableApplicationScope = ""
     }
 
 

@@ -1206,6 +1206,7 @@ runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup maybeWebAuthSe
             , Integration.refreshLocks = refreshLocksMap
             , Integration.fileAccess = maybeFileAccessContext
             , Integration.outboundDispatch = integrationRegistry
+            , Integration.eraseErasableKey = Just (\target -> eventStore.eraseErasableKey target |> Task.mapError (\_ -> Integration.UnexpectedError "Erasable key operation failed"))
             }
         )
     Just (OAuth2Setup envVarName providerFactories) -> do
@@ -1243,6 +1244,7 @@ runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup maybeWebAuthSe
               , Integration.refreshLocks = refreshLocksMap2
               , Integration.fileAccess = maybeFileAccessContext
               , Integration.outboundDispatch = integrationRegistry
+              , Integration.eraseErasableKey = Just (\target -> eventStore.eraseErasableKey target |> Task.mapError (\_ -> Integration.UnexpectedError "Erasable key operation failed"))
               }
       -- Create route handlers with loaded HMAC key and rate limiters
       let routeDeps =
