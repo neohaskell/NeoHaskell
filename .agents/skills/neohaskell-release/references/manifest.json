@@ -769,6 +769,61 @@
       "source_sha": "f9b6d8c701ccd9579494d0b9a3a69cc93fe5d1c1",
       "target_policy": "native-v2",
       "version": "0.13.0"
+    },
+    {
+      "base_sha": "0ec4a119deb7a3d5bca77aaed437bfa5f5eff5ea",
+      "base_tag": "neo-v0.13.0",
+      "base_version": "0.13.0",
+      "bootstrap": false,
+      "date": "2026-10-29",
+      "group": "platform",
+      "id": "63d723c3af8cd0e036baab875f65f3a5384fa65365a1132c1f5f084e53ed2ad9",
+      "impact": "compatible",
+      "kind": "release",
+      "notes": [
+        {
+          "category": "Fixed",
+          "commit": "6f534e067dc61140796e46d3c32e6c144b9f30d4",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "235c7213bffa5e7230c81142964e88565b2afd447714170839f79f479d642c0d",
+          "impact": "compatible",
+          "path": ".changes/datetime-schema.md",
+          "sections": {
+            "Summary": "Records with `DateTime` or `Maybe DateTime` fields can now derive `ToSchema`. Timestamp fields appear as strings in OpenAPI and JSON Schema, matching their JSON encoding. Applications that defined an orphan `ToSchema DateTime` instance as a workaround must remove that instance to avoid a duplicate-instance error after updating NeoHaskell."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: compatible\ncategory: Fixed\n---\n\n## Summary\n\nRecords with `DateTime` or `Maybe DateTime` fields can now derive `ToSchema`. Timestamp fields appear as strings in OpenAPI and JSON Schema, matching their JSON encoding. Applications that defined an orphan `ToSchema DateTime` instance as a workaround must remove that instance to avoid a duplicate-instance error after updating NeoHaskell.\n"
+        },
+        {
+          "category": "Fixed",
+          "commit": "3c05e3d83cdb6d2579b653694918961154d59391",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "24e00563084d71d97dd7c12468597af27752dccf9559b96ba24104bb88885623",
+          "impact": "compatible",
+          "path": ".changes/fix-web-acronym-routing.md",
+          "sections": {
+            "Summary": "Web commands with acronym names now use the expected kebab-case URL. For example, `SaveIBAN` responds at `POST /commands/save-iban`, and OpenAPI lists the same path. Internal dispatch and MCP command names retain their original spelling.\n\nIf two different command names produce the same Web URL, service registration rejects the duplicate instead of choosing one command. Rename one of the commands before starting the service."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: compatible\ncategory: Fixed\n---\n\n## Summary\n\nWeb commands with acronym names now use the expected kebab-case URL. For example, `SaveIBAN` responds at `POST /commands/save-iban`, and OpenAPI lists the same path. Internal dispatch and MCP command names retain their original spelling.\n\nIf two different command names produce the same Web URL, service registration rejects the duplicate instead of choosing one command. Rename one of the commands before starting the service.\n"
+        },
+        {
+          "category": "Fixed",
+          "commit": "4d9fac0c318dc189051af52672b70a16a6da4ad9",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "e61bf10dd60bc8c73e13a141e72508187762bfc9c32b73e566b553c6995cdd49",
+          "impact": "none",
+          "path": ".changes/testbed-maintained-fixture-isolation.md",
+          "sections": {
+            "Summary": "The maintained testbed now gives each application a separate event database and generates fresh IDs for generic HTTP effect checks. This changes repository verification only. Application behavior and public APIs remain unchanged, so applications need no migration."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: none\ncategory: Fixed\n---\n\n## Summary\n\nThe maintained testbed now gives each application a separate event database and generates fresh IDs for generic HTTP effect checks. This changes repository verification only. Application behavior and public APIs remain unchanged, so applications need no migration.\n"
+        }
+      ],
+      "source_sha": "4d9fac0c318dc189051af52672b70a16a6da4ad9",
+      "target_policy": "native-v2",
+      "version": "0.13.1"
     }
   ],
   "recoveries": [],
