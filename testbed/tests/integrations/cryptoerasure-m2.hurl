@@ -90,6 +90,7 @@ HTTP/1.1 200
 jsonpath "$.items[?(@.caseId == '{{case_id}}')].firstSecret.tag" nth 0 == "Erased"
 jsonpath "$.items[?(@.caseId == '{{case_id}}')].secondSecret.tag" nth 0 == "Available"
 jsonpath "$.items[?(@.caseId == '{{case_id}}')].erasureStatus" nth 0 == "completed"
+jsonpath "$.items[?(@.caseId == '{{case_id}}')].staleSecret.tag" nth 0 == "Erased"
 jsonpath "$.items[?(@.caseId == '{{case_id}}')].wasAlreadyErased" nth 0 == true
 
 POST http://127.0.0.1:8081/commands/create-owned-protected
@@ -131,7 +132,8 @@ Authorization: Bearer {{jwt}}
   "caseId": "{{other_case_id}}",
   "reference": "{{other_reference}}",
   "rejectResult": false,
-  "simulateUnknownReference": false
+  "simulateUnknownReference": false,
+  "pauseAfterCommit": true
 }
 
 HTTP/1.1 200
@@ -147,6 +149,7 @@ HTTP/1.1 200
 jsonpath "$.items[?(@.caseId == '{{other_case_id}}')].firstSecret.tag" nth 0 == "Erased"
 jsonpath "$.items[?(@.caseId == '{{other_case_id}}')].secondSecret.tag" nth 0 == "Available"
 jsonpath "$.items[?(@.caseId == '{{other_case_id}}')].erasureStatus" nth 0 == "completed"
+jsonpath "$.items[?(@.caseId == '{{other_case_id}}')].staleSecret.tag" nth 0 == "Erased"
 jsonpath "$.items[?(@.caseId == '{{other_case_id}}')].wasAlreadyErased" nth 0 == false
 
 POST http://127.0.0.1:8081/commands/create-owned-protected

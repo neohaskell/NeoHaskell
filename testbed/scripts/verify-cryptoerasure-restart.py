@@ -2,15 +2,19 @@
 """Assert that an application retries a committed erasure after its process restarts."""
 
 import json
+import os
+import subprocess
 import sys
 import time
+import uuid
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 
-API = "http://127.0.0.1:8081"
-FIXTURE = "http://127.0.0.1:8181"
+API = f"http://127.0.0.1:{os.environ.get('TESTBED_OAUTH_PORT', '8081')}"
+FIXTURE = f"http://127.0.0.1:{os.environ.get('TESTBED_FIXTURE_PORT', '8181')}"
 
 
 def request(method, url, token=None, body=None):
@@ -51,7 +55,71 @@ def wait_for(case_id, token, predicate):
     raise AssertionError(f"Timed out waiting for erasure state: {view}")
 
 
-def prepare(path):
+def persisted_case(database, case_id, reference):
+    safe_id = str(uuid.UUID(case_id))
+    command = ["psql", "-h", os.environ.get("DB_HOST", "localhost"),
+               "-p", os.environ.get("DB_PORT", "5432"),
+               "-U", os.environ.get("DB_USER", "neohaskell"),
+               "-d", database, "-At"]
+    keys = subprocess.check_output(command + ["-F", "|", "-c",
+        "SELECT reference, key_bytes IS NULL FROM erasable_keys"], text=True)
+    key_states = dict(line.split("|", 1) for line in keys.splitlines())
+    assert key_states.get(reference) == "t", (case_id, key_states.get(reference))
+    events_text = subprocess.check_output(command + ["-c",
+        f"SELECT eventData::text FROM Events WHERE inlinedStreamId = '{safe_id}' "
+        "AND entity = 'OwnedProtectedEntity' ORDER BY localPosition"], text=True)
+    events = [json.loads(line) for line in events_text.splitlines()]
+    completions = [event for event in events if event.get("tag") == "ErasureCompleted"]
+    assert len(events) >= 3 and completions, (case_id, events)
+    assert all("staleFirst" in event and reference in json.dumps(event)
+               for event in completions), (case_id, completions)
+    assert "Álvaro" not in events_text, (case_id, events_text)
+
+
+def concurrent_case(token):
+    status, result = request("POST", f"{API}/commands/create-owned-protected", token, [])
+    assert status == 200 and result["tag"] == "Accepted", (status, result)
+    case_id = result["entityId"]
+    loaded = wait_for(case_id, token, lambda item: bool(item.get("firstReference")))
+    reference = loaded["firstReference"]
+    assert loaded["firstSecret"]["tag"] == "Available", loaded
+    status, result = request("POST", f"{API}/commands/request-erasure", token, {
+        "tag": "RequestFirstErasure", "caseId": case_id,
+        "reference": reference, "rejectResult": False,
+        "simulateUnknownReference": False, "pauseAfterCommit": True,
+    })
+    assert status == 200 and result["tag"] == "Accepted", (status, result)
+    completed = wait_for(case_id, token, lambda item: item["erasureStatus"] == "completed")
+    assert completed["firstSecret"]["tag"] == "Erased", completed
+    assert completed["staleSecret"]["tag"] == "Erased", completed
+    assert completed["secondSecret"]["tag"] == "Available", completed
+    assert completed["wasAlreadyErased"] is False, completed
+    return case_id, reference, loaded["ownerId"]
+
+
+def concurrent(database):
+    token = owner_token()
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        cases = list(executor.map(lambda _: concurrent_case(token), range(4)))
+    references = [reference for _, reference, _ in cases]
+    assert len(set(references)) == len(references), cases
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        retries = list(executor.map(lambda item: request("POST", f"{API}/commands/request-erasure", token, {
+            "tag": "RetryFirstErasure", "caseId": item[0],
+        }), cases))
+    assert all(status == 200 and body["tag"] == "Accepted" for status, body in retries), retries
+    for case_id, reference, owner in cases:
+        completed = wait_for(case_id, token, lambda item: item["erasureStatus"] == "completed" and item["wasAlreadyErased"] is True)
+        assert completed["firstReference"] == reference, completed
+        assert completed["ownerId"] == owner, completed
+        assert completed["firstSecret"]["tag"] == "Erased", completed
+        assert completed["staleSecret"]["tag"] == "Erased", completed
+        assert completed["secondSecret"]["tag"] == "Available", completed
+        persisted_case(database, case_id, reference)
+    print("Four concurrent application requests and explicit retries kept independent tombstones")
+
+
+def prepare(path, pause_after_commit=False, marker_path=None, selector_path=None):
     token = owner_token()
     status, result = request("POST", f"{API}/commands/create-owned-protected", token, [])
     assert status == 200 and result["tag"] == "Accepted", (status, result)
@@ -60,15 +128,28 @@ def prepare(path):
     reference = view["firstReference"]
     assert view["firstSecret"]["tag"] == "Available", view
     assert view["secondSecret"]["tag"] == "Available", view
+    if pause_after_commit:
+        selector_path.write_text(case_id)
     status, result = request("POST", f"{API}/commands/request-erasure", token, {
         "tag": "RequestFirstErasure", "caseId": case_id,
-        "reference": reference, "rejectResult": True,
+        "reference": reference, "rejectResult": not pause_after_commit,
         "simulateUnknownReference": False,
     })
     assert status == 200 and result["tag"] == "Accepted", (status, result)
+    if pause_after_commit:
+        deadline = time.monotonic() + 15
+        while time.monotonic() < deadline:
+            if marker_path.exists() and marker_path.read_text() == reference:
+                break
+            time.sleep(0.1)
+        else:
+            raise AssertionError("Erasure did not reach the committed-key pause")
     wait_for(case_id, token, lambda item: item["firstSecret"]["tag"] == "Erased" and item["erasureStatus"] == "pending")
-    path.write_text(json.dumps({"caseId": case_id, "reference": reference}))
-    print("Committed key deletion left the application request pending before restart")
+    path.write_text(json.dumps({"caseId": case_id, "reference": reference, "ownerId": view["ownerId"]}))
+    if pause_after_commit:
+        print("Key deletion committed and the result callback is paused before process death")
+    else:
+        print("Rejected result command left the application request pending before restart")
 
 
 def verify(path):
@@ -77,6 +158,7 @@ def verify(path):
     case_id = state["caseId"]
     view = wait_for(case_id, token, lambda item: True)
     assert view["firstReference"] == state["reference"], view
+    assert view["ownerId"] == state["ownerId"], view
     assert view["firstSecret"]["tag"] == "Erased", view
     assert view["secondSecret"]["tag"] == "Available", view
     assert view["erasureStatus"] == "pending", view
@@ -87,15 +169,37 @@ def verify(path):
     completed = wait_for(case_id, token, lambda item: item["erasureStatus"] == "completed")
     assert completed["wasAlreadyErased"] is True, completed
     assert completed["firstSecret"]["tag"] == "Erased", completed
+    assert completed["staleSecret"]["tag"] == "Erased", completed
     assert completed["secondSecret"]["tag"] == "Available", completed
     print("Explicit retry completed after restart with AlreadyErased")
 
 
+def verify_completed(path, database):
+    token = owner_token()
+    state = json.loads(path.read_text())
+    completed = wait_for(state["caseId"], token, lambda item: item["erasureStatus"] == "completed")
+    assert completed["firstReference"] == state["reference"], completed
+    assert completed["ownerId"] == state["ownerId"], completed
+    assert completed["firstSecret"]["tag"] == "Erased", completed
+    assert completed["secondSecret"]["tag"] == "Available", completed
+    assert completed["wasAlreadyErased"] is True, completed
+    persisted_case(database, state["caseId"], state["reference"])
+    print("Reconstructed application completion and erased projection after second restart")
+
+
 if __name__ == "__main__":
-    action, state_path = sys.argv[1:]
-    if action == "prepare":
+    action = sys.argv[1]
+    if action == "concurrent":
+        concurrent(sys.argv[2])
+    elif action == "prepare":
+        state_path = sys.argv[2]
         prepare(Path(state_path))
+    elif action == "prepare-crash":
+        prepare(Path(sys.argv[2]), True, Path(sys.argv[3]), Path(sys.argv[4]))
     elif action == "verify":
+        state_path = sys.argv[2]
         verify(Path(state_path))
+    elif action == "verify-completed":
+        verify_completed(Path(sys.argv[2]), sys.argv[3])
     else:
-        raise SystemExit("expected prepare or verify")
+        raise SystemExit("expected concurrent, prepare, prepare-crash, verify, or verify-completed")

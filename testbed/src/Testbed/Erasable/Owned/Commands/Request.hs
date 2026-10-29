@@ -9,11 +9,13 @@ module Testbed.Erasable.Owned.Commands.Request (
 
 import Core
 import Decider qualified
+import Erasable (Erasable)
 import Erasable qualified
 import Service.Auth (RequestContext (..), UserClaims (..))
 import Service.Command.Core (TransportsOf)
 import Service.CommandExecutor.TH (command)
 import Service.Transport.Web (WebTransport)
+import Testbed.Erasable.Core (SecretPayload)
 import Testbed.Erasable.Owned.Core
 
 
@@ -43,34 +45,35 @@ decide command maybeEntity context = case (maybeEntity, context.user) of
       then Decider.reject "Protected record is not owned by this user"
       else case entity.firstSecret of
         Nothing -> Decider.reject "Protected reference was not found"
-        Just first -> decideForReference command entity (Erasable.reference first)
+        Just first -> decideForReference command entity first
 
 
-decideForReference :: RequestErasure -> OwnedProtectedEntity -> Text -> Decision OwnedProtectedEvent
-decideForReference command entity ownedReference = case command of
+decideForReference :: RequestErasure -> OwnedProtectedEntity -> Erasable SecretPayload -> Decision OwnedProtectedEvent
+decideForReference command entity first = case command of
   RequestFirstErasure {reference, rejectResult, simulateUnknownReference} ->
-    if reference != ownedReference
+    if reference != Erasable.reference first
       then Decider.reject "Protected reference was not found"
       else case entity.erasureState of
-        NotRequested -> request entity ownedReference rejectResult simulateUnknownReference
-        Failed _ -> request entity ownedReference rejectResult simulateUnknownReference
+        NotRequested -> request entity first rejectResult simulateUnknownReference
+        Failed _ -> request entity first rejectResult simulateUnknownReference
         Pending -> Decider.reject "Erasure is pending; use the retry command"
         Completed _ -> Decider.reject "Erasure already completed"
   RetryFirstErasure {} -> case entity.erasureState of
     NotRequested -> Decider.reject "No erasure request to retry"
-    Pending -> request entity ownedReference False False
-    Failed _ -> request entity ownedReference False False
-    Completed _ -> request entity ownedReference False False
+    Pending -> request entity first False False
+    Failed _ -> request entity first False False
+    Completed _ -> request entity first False False
 
 
-request :: OwnedProtectedEntity -> Text -> Bool -> Bool -> Decision OwnedProtectedEvent
-request entity ownedReference rejectResult simulateUnknownReference =
+request :: OwnedProtectedEntity -> Erasable SecretPayload -> Bool -> Bool -> Decision OwnedProtectedEvent
+request entity first rejectResult simulateUnknownReference =
   Decider.acceptExisting
     [ ErasureRequested
         { entityId = entity.caseId,
-          reference = ownedReference,
+          reference = Erasable.reference first,
           rejectResult,
-          simulateUnknownReference
+          simulateUnknownReference,
+          staleFirst = first
         }
     ]
 

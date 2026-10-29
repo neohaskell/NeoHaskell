@@ -9,11 +9,13 @@ module Testbed.Erasable.Owned.Commands.Record (
 
 import Core
 import Decider qualified
+import Erasable (Erasable)
 import Erasable qualified
 import Service.Auth (RequestContext)
 import Service.Command.Core (TransportsOf)
 import Service.CommandExecutor.TH (command)
 import Service.Transport.Internal (InternalTransport)
+import Testbed.Erasable.Core (SecretPayload)
 import Testbed.Erasable.Owned.Core
 
 
@@ -22,7 +24,8 @@ data RecordErasureResult
       { caseId :: Uuid,
         reference :: Text,
         wasAlreadyErased :: Bool,
-        rejectResult :: Bool
+        rejectResult :: Bool,
+        staleFirst :: Erasable SecretPayload
       }
   | RecordErasureFailure
       { caseId :: Uuid,
@@ -53,10 +56,10 @@ decide command maybeEntity _ = case maybeEntity of
 
 recordPending :: RecordErasureResult -> Decision OwnedProtectedEvent
 recordPending command = case command of
-  RecordErasureSuccess {caseId, reference, wasAlreadyErased, rejectResult} ->
+  RecordErasureSuccess {caseId, reference, wasAlreadyErased, rejectResult, staleFirst} ->
     if rejectResult
       then Decider.reject "Testbed rejected the result after key commit"
-      else Decider.acceptExisting [ErasureCompleted {entityId = caseId, reference, wasAlreadyErased}]
+      else Decider.acceptExisting [ErasureCompleted {entityId = caseId, reference, wasAlreadyErased, staleFirst}]
   RecordErasureFailure {caseId, reference, reason} ->
     Decider.acceptExisting [ErasureFailed {entityId = caseId, reference, failureReason = reason}]
 

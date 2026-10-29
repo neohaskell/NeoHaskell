@@ -23,6 +23,7 @@ data OwnedProtectedView = OwnedProtectedView
     firstReference :: Maybe Text,
     firstSecret :: Maybe (Erasable SecretPayload),
     secondSecret :: Maybe (Erasable SecretPayload),
+    staleSecret :: Maybe (Erasable SecretPayload),
     erasureStatus :: Text,
     wasAlreadyErased :: Maybe Bool,
     failureReason :: Maybe Text
@@ -55,6 +56,7 @@ instance QueryOf OwnedProtectedEntity OwnedProtectedView where
         firstReference = reference,
         firstSecret = entity.firstSecret,
         secondSecret = entity.secondSecret,
+        staleSecret = entity.staleSecret,
         erasureStatus = status,
         wasAlreadyErased = already,
         failureReason = failure

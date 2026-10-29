@@ -44,12 +44,12 @@ testbedApiInfo = ApiInfo
 -- Use 'withEventStore' and 'withFileUpload' with factory functions that take
 -- the config type as a parameter. The factory is called AFTER Application.run
 -- loads the config, eliminating the chicken-and-egg problem.
-app :: Application
-app =
+app :: Int -> Application
+app httpPort =
   Application.new
     |> Application.withConfig @TestbedConfig
     |> Application.withEventStore makePostgresConfig
-    |> Application.withTransport WebTransport.server
+    |> Application.withTransport (WebTransport.server {WebTransport.port = httpPort})
     |> Application.withApiInfo @() (\_ -> testbedApiInfo)
     |> Application.withService Testbed.Service.cartService
     |> Application.withService Testbed.Service.stockService
