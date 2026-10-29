@@ -16,6 +16,7 @@ import Map (Map)
 import Map qualified
 import Maybe (Maybe (..))
 import Maybe qualified
+import Result (Result (..))
 import Service.AccessControl qualified as AccessControl
 import Service.ServiceDefinition.Core (TransportValue (..))
 import Service.Transport (Transport (..), QueryEndpointHandler, EndpointHandler, Endpoints (..), EndpointSchema (..))
@@ -172,12 +173,13 @@ guardQueryEndpoint ::
   QueryEndpointHandler ->
   QueryEndpointHandler
 guardQueryEndpoint queryReadiness handler userClaims maybeExpr pageRequest = do
+  before <- queryReadiness |> Task.asResult
   response <- handler userClaims maybeExpr pageRequest
-  readiness <- queryReadiness
-  case readiness of
-    Nothing -> Task.yield response
-    Just Subscriber.Ready -> Task.yield response
-    Just _ -> Task.throw (AccessControl.StorageError "Query projection unavailable")
+  after <- queryReadiness |> Task.asResult
+  case (before, after) of
+    (Ok Nothing, Ok Nothing) -> Task.yield response
+    (Ok (Just Subscriber.Ready), Ok (Just Subscriber.Ready)) -> Task.yield response
+    _ -> Task.throw (AccessControl.StorageError "Query projection unavailable")
 
 
 -- | Run a generic transport without auth.
