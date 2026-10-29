@@ -12,6 +12,7 @@ import Data.Semigroup ((<>))
 import Decider (Decision (..), DecisionContext (..))
 import Decider qualified
 import Erasable qualified
+import Environment qualified
 import Hasql.Decoders qualified as Decoders
 import Hasql.Encoders qualified as Encoders
 import Hasql.Pool qualified as HasqlPool
@@ -112,7 +113,8 @@ config =
       port = 5432,
       poolSize = 2,
       sslMode = ConnectionConfig.SslModeUnset,
-      sslRootCert = Nothing
+      sslRootCert = Nothing,
+      erasableApplicationScope = "erasable-key-spec"
     }
 
 
@@ -132,6 +134,66 @@ queryConfig = QueryStore.PostgresQueryObjectStoreConfig
 spec :: Spec Unit
 spec = do
   describe "Erasable key store" do
+    whenEnvVar "CRYPTOERASURE_TEST_DB" do
+      it "erases only a matching application and stream, and survives a new pool" \_ -> do
+        databaseName <- Environment.getVariable "CRYPTOERASURE_TEST_DB"
+        let privateConfig = config {Postgres.databaseName = databaseName}
+        store <- PostgresStore.new privateConfig
+        entityId <- Uuid.generate
+        otherId <- Uuid.generate
+        unknownId <- Uuid.generate
+        let streamId = Event.StreamId (Uuid.toText entityId)
+        let entityName = Event.EntityName "scoped-erasure-fixture"
+        let decision = do
+              first <- Erasable.new ("first" :: Text)
+              second <- Erasable.new ("second" :: Text)
+              Accept Event.StreamCreation [(first, second)]
+        (outcome, keys) <- Decider.runDecisionWithKeys (DecisionContext {genUuid = Uuid.generate}) (\_ -> Task.throw "No stored key") decision
+        (first, second) <- case outcome of
+          AcceptCommand _ values -> case Array.first values of
+            Just pair -> Task.yield pair
+            Nothing -> Task.throw "Expected protected values"
+          RejectCommand _ -> Task.throw "Expected protected values"
+        payload <- Event.payloadFromEvents entityName streamId [Json.toJSON (first, second)]
+        store.insertWithErasableKeys keys (payload {Event.insertionType = Event.StreamCreation}) |> Task.mapError toText |> discard
+        let target = EventStore.ErasureTarget
+              { reference = Erasable.reference first,
+                entityName,
+                streamId
+              }
+        let unknown = target {EventStore.reference = Uuid.toText unknownId}
+        unknownResult <- store.eraseErasableKey unknown |> Task.mapError toText
+        unknownResult |> shouldBe EventStore.UnknownReference
+        let wrongStream = target {EventStore.streamId = Event.StreamId (Uuid.toText otherId)}
+        wrongStreamResult <- store.eraseErasableKey wrongStream |> Task.asResult
+        wrongStreamResult |> shouldSatisfy (\result -> case result of Err _ -> True; Ok _ -> False)
+        otherApplication <- PostgresStore.new (privateConfig {Postgres.erasableApplicationScope = "other-application"})
+        wrongApplicationResult <- otherApplication.eraseErasableKey target |> Task.asResult
+        wrongApplicationResult |> shouldSatisfy (\result -> case result of Err _ -> True; Ok _ -> False)
+        otherApplication.close
+        before <- store.renderProtectedJson (Json.toJSON first) |> Task.mapError toText
+        Json.encodeText before |> shouldSatisfy (Text.contains "first")
+        firstErasure <- store.eraseErasableKey target |> Task.mapError toText
+        firstErasure |> shouldBe EventStore.ErasedNow
+        repeatedErasure <- store.eraseErasableKey target |> Task.mapError toText
+        repeatedErasure |> shouldBe EventStore.AlreadyErased
+        store.close
+        restarted <- PostgresStore.new privateConfig
+        afterRestart <- restarted.eraseErasableKey target |> Task.mapError toText
+        afterRestart |> shouldBe EventStore.AlreadyErased
+        erased <- restarted.renderProtectedJson (Json.toJSON first) |> Task.mapError toText
+        Json.encodeText erased |> shouldSatisfy (Text.contains "Erased")
+        remaining <- restarted.renderProtectedJson (Json.toJSON second) |> Task.mapError toText
+        Json.encodeText remaining |> shouldSatisfy (Text.contains "second")
+        connection <- Postgres.defaultOps.acquire privateConfig
+        runReal connection (corruptFixtureKey (Erasable.reference second))
+        corruptResult <- restarted.eraseErasableKey (target {EventStore.reference = Erasable.reference second}) |> Task.asResult
+        corruptResult |> shouldSatisfy (\result -> case result of Err _ -> True; Ok _ -> False)
+        stillStored <- runReal connection (keyRecord (Erasable.reference second))
+        stillStored |> shouldSatisfy (\value -> case value of Just (Just _) -> True; _ -> False)
+        Postgres.defaultOps.release connection
+        restarted.close
+
     whenEnvVar "POSTGRES_AVAILABLE" do
       it "rejects ciphertext swapped between a slash key and nested keys" \_ -> do
         store <- PostgresStore.new config
@@ -424,6 +486,17 @@ keyRecord reference = do
           "SELECT key_bytes FROM erasable_keys WHERE reference = $1"
           (Encoders.param (Encoders.nonNullable Encoders.text))
           (Decoders.rowMaybe (Decoders.column (Decoders.nullable Decoders.bytea)))
+          True
+  Session.statement reference statement
+
+
+corruptFixtureKey :: Text -> Session.Session ()
+corruptFixtureKey reference = do
+  let statement :: Statement Text () =
+        Statement
+          "UPDATE erasable_keys SET key_bytes = decode('00', 'hex') WHERE reference = $1"
+          (Encoders.param (Encoders.nonNullable Encoders.text))
+          Decoders.noResult
           True
   Session.statement reference statement
 

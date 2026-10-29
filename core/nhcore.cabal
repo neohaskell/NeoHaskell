@@ -192,6 +192,7 @@ library
     Http.Client.Internal
     Integration
     Integration.Command
+    Integration.Erasable
     Integration.Exit
     Integration.Lifecycle
     Integration.Timer

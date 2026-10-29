@@ -9,10 +9,12 @@ import ConcurrentMap qualified
 import Core
 import GHC.TypeLits qualified as GHC
 import Integration qualified
+import Integration.Erasable qualified as ErasableIntegration
 import Json qualified
 import Map qualified
 import Result qualified
 import Service.Command.Core (NameOf)
+import Service.Event qualified as Event
 import Service.Integration.DispatchRegistry qualified as DispatchRegistry
 import Task qualified
 import Test
@@ -51,6 +53,7 @@ makeContext = do
       , Integration.refreshLocks = locks
       , Integration.fileAccess = Nothing
       , Integration.outboundDispatch = DispatchRegistry.empty
+      , Integration.eraseErasableKey = Nothing
       }
 
 
@@ -130,6 +133,52 @@ spec = do
             payload.commandType |> shouldSatisfy (Text.contains "TestCommand")
           Nothing -> do
             fail "Expected Just CommandPayload but got Nothing"
+
+  describe "Integration.Erasable.Erase" do
+    it "passes an already-erased result to the application's command" \_ -> do
+      context <- makeContext
+      let target = ErasableIntegration.ErasureTarget
+            { reference = "known-reference",
+              entityName = Event.EntityName "OwnedEntity",
+              streamId = Event.StreamId "owned-stream"
+            }
+      let configured = context
+            { Integration.eraseErasableKey = Just (\_ -> Task.yield ErasableIntegration.AlreadyErased)
+            }
+      let action = Integration.outbound ErasableIntegration.Erase
+            { target,
+              onResult = \result -> TestCommand {commandId = 1, commandName = case result of
+                ErasableIntegration.ErasedNow -> "erased"
+                ErasableIntegration.AlreadyErased -> "already"
+                ErasableIntegration.UnknownReference -> "unknown"},
+              onFailure = \_ -> TestCommand {commandId = 2, commandName = "failed"}
+            }
+      output <- Integration.runAction configured action |> Task.mapError toText
+      case output of
+        Nothing -> fail "Expected a result command"
+        Just payload ->
+          Json.decode payload.commandData |> shouldBe (Ok TestCommand {commandId = 1, commandName = "already"})
+
+    it "sends storage failure to the application's failure command" \_ -> do
+      context <- makeContext
+      let target = ErasableIntegration.ErasureTarget
+            { reference = "known-reference",
+              entityName = Event.EntityName "OwnedEntity",
+              streamId = Event.StreamId "owned-stream"
+            }
+      let configured = context
+            { Integration.eraseErasableKey = Just (\_ -> Task.throw (Integration.UnexpectedError "storage failed"))
+            }
+      let action = Integration.outbound ErasableIntegration.Erase
+            { target,
+              onResult = \_ -> TestCommand {commandId = 1, commandName = "erased"},
+              onFailure = \_ -> TestCommand {commandId = 2, commandName = "failed"}
+            }
+      output <- Integration.runAction configured action |> Task.mapError toText
+      case output of
+        Nothing -> fail "Expected a failure command"
+        Just payload ->
+          Json.decode payload.commandData |> shouldBe (Ok TestCommand {commandId = 2, commandName = "failed"})
 
   describe "Integration.Action construction" do
     describe "action" do

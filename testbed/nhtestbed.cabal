@@ -75,6 +75,13 @@ library
     Testbed.Erasable.Commands.CreateProtected
     Testbed.Erasable.Query
     Testbed.Erasable.Service
+    Testbed.Erasable.Owned.Core
+    Testbed.Erasable.Owned.Commands.Create
+    Testbed.Erasable.Owned.Commands.Request
+    Testbed.Erasable.Owned.Commands.Record
+    Testbed.Erasable.Owned.Outbound
+    Testbed.Erasable.Owned.Query
+    Testbed.Erasable.Owned.Service
     Testbed.Service
     Testbed.Stock.Commands.InitializeStock
     Testbed.Stock.Commands.ReserveStock
@@ -140,3 +147,15 @@ test-suite nhtestbed-datetime-schema
   build-depends:
     base,
     hspec
+
+test-suite nhtestbed-erasure
+  import: common_cfg
+  type: exitcode-stdio-1.0
+  main-is: Main.hs
+  hs-source-dirs: test-erasure
+  default-language: GHC2021
+  build-depends:
+    base,
+    hspec,
+    nhcore,
+    nhtestbed

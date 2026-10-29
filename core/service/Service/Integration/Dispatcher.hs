@@ -226,6 +226,7 @@ new store runners endpoints = do
         , Integration.refreshLocks = emptyRefreshLocks
         , Integration.fileAccess = Nothing
         , Integration.outboundDispatch = DispatchRegistry.empty
+        , Integration.eraseErasableKey = Nothing
         }
   newWithLifecycleConfig
     Setup
@@ -256,6 +257,7 @@ newWithLifecycle store runners lifecycleRunners endpoints = do
         , Integration.refreshLocks = emptyRefreshLocks
         , Integration.fileAccess = Nothing
         , Integration.outboundDispatch = DispatchRegistry.empty
+        , Integration.eraseErasableKey = Nothing
         }
   newWithLifecycleConfig
     Setup

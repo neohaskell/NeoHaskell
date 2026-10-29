@@ -16,6 +16,7 @@
 --       , databaseName = "myapp"
 --       , user = "myuser"
 --       , password = "mypassword"
+--       , erasableApplicationScope = "myapp"
 --       }
 --
 -- stateStore <- PostgresFileStore.new dbConfig
@@ -179,6 +180,7 @@ toEventStoreConfig backend =
               password = pgPassword,
               sslMode = pgSslMode,
               sslRootCert = pgSslRootCert
+              , erasableApplicationScope = ""
             }
         )
 

@@ -19,6 +19,9 @@ import Testbed.ExternalEffect.Query (ExternalEffectSummary)
 import Testbed.ExternalEffect.Service qualified as ExternalEffectService
 import Testbed.Erasable.Service qualified as ErasableService
 import Testbed.Erasable.Query (ProtectedView)
+import Testbed.Erasable.Owned.Outbound (OwnedErasureOutbound)
+import Testbed.Erasable.Owned.Query (OwnedProtectedView)
+import Testbed.Erasable.Owned.Service qualified as OwnedErasableService
 import Testbed.Service qualified
 import Testbed.Stock.Queries.StockLevel (StockLevel)
 import Text qualified
@@ -53,13 +56,16 @@ app =
     |> Application.withService Testbed.Service.documentService
     |> Application.withService ExternalEffectService.service
     |> Application.withService ErasableService.service
+    |> Application.withService OwnedErasableService.service
     |> Application.withQuery @CartSummary
     |> Application.withQuery @StockLevel
     |> Application.withQuery @ExternalEffectSummary
     |> Application.withQuery @ProtectedView
+    |> Application.withQuery @OwnedProtectedView
     -- Typed outbound handler: reserve stock when items are added to cart
     |> Application.withOutbound @ReserveStockOnItemAdded
     |> Application.withOutbound @ExternalEffectOutbound
+    |> Application.withOutbound @OwnedErasureOutbound
     -- Outbound with lifecycle: count events per entity (demonstrates stateful integration)
     |> Application.withOutboundLifecycle @() @CartEntity (\_ -> EventCounter.eventCounterIntegration)
     -- Inbound: create a cart every 30 seconds
@@ -89,6 +95,7 @@ makePostgresConfig config =
       sslMode = case ConnectionConfig.textToSslMode config.dbSslMode of
         Ok mode -> mode
         Err e -> panic e,
+      erasableApplicationScope = "testbed",
       sslRootCert = if Text.isEmpty config.dbSslRootCert
         then Nothing
         else Just config.dbSslRootCert

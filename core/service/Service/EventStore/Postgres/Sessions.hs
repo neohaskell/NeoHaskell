@@ -373,12 +373,13 @@ insertRecordsIntoStream events = do
 
 
 insertRecordsWithKeys ::
-  Array NewKey -> Array EventInsertionRecord -> Session.Session Unit
-insertRecordsWithKeys newKeys events = do
+  Text -> Array NewKey -> Array EventInsertionRecord -> Session.Session Unit
+insertRecordsWithKeys applicationScope newKeys events = do
   let sql = [fmt|
     WITH inserted_keys AS (
-      INSERT INTO erasable_keys (reference, key_bytes)
-      SELECT reference, key_bytes FROM UNNEST($1::text[], $2::bytea[]) AS keys(reference, key_bytes)
+      INSERT INTO erasable_keys (reference, key_bytes, application_scope, owner_entity, owner_stream)
+      SELECT reference, key_bytes, $9, ($6::text[])[1], ($5::text[])[1]
+      FROM UNNEST($1::text[], $2::bytea[]) AS keys(reference, key_bytes)
       RETURNING reference
     )
     INSERT INTO Events (EventId, LocalPosition, InlinedStreamId, Entity, EventData, Metadata)
@@ -387,7 +388,7 @@ insertRecordsWithKeys newKeys events = do
       AS events(event_id, local_position, stream_id, entity, event_data, metadata)
     WHERE (SELECT COUNT(*) FROM inserted_keys) = CARDINALITY($1::text[])
   |]
-  let encoder =
+  let eventEncoder =
         keyAndEventFields
           >$< Contravariant.contrazip8
             (Encoders.param (Encoders.nonNullable (Encoders.foldableArray (Encoders.nonNullable Encoders.text))))
@@ -398,9 +399,12 @@ insertRecordsWithKeys newKeys events = do
             (Encoders.param (Encoders.nonNullable (Encoders.foldableArray (Encoders.nonNullable Encoders.text))))
             (Encoders.param (Encoders.nonNullable (Encoders.foldableArray (Encoders.nonNullable Encoders.jsonb))))
             (Encoders.param (Encoders.nonNullable (Encoders.foldableArray (Encoders.nonNullable Encoders.jsonb))))
-  let statement :: Statement (Array NewKey, Array EventInsertionRecord) Unit =
+  let encoder =
+        ((\(_, keys, records) -> (keys, records)) >$< eventEncoder)
+          <> ((\(scope, _, _) -> scope) >$< Encoders.param (Encoders.nonNullable Encoders.text))
+  let statement :: Statement (Text, Array NewKey, Array EventInsertionRecord) Unit =
         Statement sql encoder Decoders.noResult True
-  Session.statement (newKeys, events) statement
+  Session.statement (applicationScope, newKeys, events) statement
 
 
 keyAndEventFields ::

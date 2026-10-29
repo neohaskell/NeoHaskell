@@ -63,6 +63,7 @@ new config = do
                     then Task.yield value
                     else Task.throw (StorageFailure "Erasable values require the PostgreSQL event store"),
             readErasableKey = \_ -> Task.throw (StorageFailure "Erasable values require the PostgreSQL event store"),
+            eraseErasableKey = \_ -> Task.throw (StorageFailure "Erasable values require the PostgreSQL event store"),
             readStreamForwardFrom = readStreamForwardFromImpl store,
             readStreamBackwardFrom = readStreamBackwardFromImpl store,
             readAllStreamEvents = readAllStreamEventsImpl store,
