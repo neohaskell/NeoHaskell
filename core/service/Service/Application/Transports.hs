@@ -8,12 +8,14 @@ module Service.Application.Transports (
   runTransports,
 ) where
 
+import Array qualified
 import Basics
 import Log qualified
 import Map (Map)
 import Map qualified
 import Maybe (Maybe (..))
 import Maybe qualified
+import Service.AccessControl qualified as AccessControl
 import Service.ServiceDefinition.Core (TransportValue (..))
 import Service.Transport (Transport (..), QueryEndpointHandler, EndpointHandler, Endpoints (..), EndpointSchema (..))
 import Service.Transport.Web (WebTransport (..), AuthEnabled, OAuth2Config, FileUploadEnabled (..), CorsConfig, HealthCheckConfig, IntegrationStatus)
@@ -115,6 +117,24 @@ runWebTransport ::
 runWebTransport transportVal commandEndpoints commandSchemas queryEndpoints querySchemas maybeAuth maybeOAuth2 maybeFileUpload maybeApiInfo maybeCors maybeHealthCheck maybeIntegrationStatus maybeReadinessConfig subscriber = do
   case transportVal of
     TransportValue transport -> do
+      let guardedQueryEndpoints =
+            queryEndpoints
+              |> Map.entries
+              |> Array.map
+                ( \(queryName, handler) ->
+                    ( queryName,
+                      \userClaims maybeExpr pageRequest -> do
+                        response <- handler userClaims maybeExpr pageRequest
+                        readiness <-
+                          Subscriber.readinessOfQuery subscriber queryName
+                            |> Task.mapError (\_ -> AccessControl.StorageError "Query readiness unavailable")
+                        case readiness of
+                          Nothing -> Task.yield response
+                          Just Subscriber.Ready -> Task.yield response
+                          Just _ -> Task.throw (AccessControl.StorageError "Query projection unavailable")
+                    )
+                )
+              |> Map.fromArray
       -- Cast the existentially-typed transport to WebTransport
       let baseWebTransport :: WebTransport = GhcUnsafe.unsafeCoerce transport
       -- Configure auth, OAuth2, file uploads, and API info on the WebTransport itself
@@ -142,7 +162,7 @@ runWebTransport transportVal commandEndpoints commandSchemas queryEndpoints quer
             Endpoints
               { transport = webTransportWithConfig,
                 commandEndpoints = commandEndpoints,
-                queryEndpoints = queryEndpoints,
+                queryEndpoints = guardedQueryEndpoints,
                 commandSchemas = commandSchemas,
                 querySchemas = querySchemas
               }

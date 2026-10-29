@@ -220,11 +220,14 @@ try:
     failure_status, failure_body = request(
         "GET", f"{API}/queries/owned-protected-view", token
     )
-    if FAULT != "missing-envelope":
-        assert failure_status == 500, (failure_status, failure_body)
+    assert failure_status == 500, (failure_status, failure_body)
     assert case_id not in failure_body, failure_body
     assert all(marker not in failure_body for marker in MARKER_ENCODINGS), failure_body
     assert original_reference not in failure_body, failure_body
+    for denied_token in (None, "invalid-token"):
+        denied_status, denied_body = request("GET", f"{API}/queries/owned-protected-view", denied_token)
+        assert denied_status in (401, 403), (denied_status, denied_body)
+        assert case_id not in denied_body and all(marker not in denied_body for marker in MARKER_ENCODINGS), denied_body
     stop(app)
     app = None
     app_log.flush()

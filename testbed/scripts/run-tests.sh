@@ -218,10 +218,14 @@ python3 testbed/scripts/verify-cryptoerasure-restart.py verify-completed "$ERASU
 if [ "${CRYPTOERASURE_FAULT_TESTS:-0}" = "1" ]; then
 	: "${TESTBED_FAULT_HTTP_PORT:?Set a private fault HTTP port}"
 	: "${TESTBED_FAULT_FIXTURE_PORT:?Set a private fault fixture port}"
+	fault_count=0
 	for fault in missing-key version tag missing-envelope bad-nonce bad-ciphertext unavailable-store; do
 		DB_HOST="${DB_HOST:-127.0.0.1}" DB_PASSWORD="${DB_PASSWORD:-neohaskell}" \
 			python3 testbed/scripts/verify-cryptoerasure-faults.py "$fault"
+		fault_count=$((fault_count + 1))
 	done
+	test "$fault_count" -eq 7
+	echo "Cryptoerasure fault cases: $fault_count"
 fi
 
 echo -e "${GREEN}All tests completed!${NC}"
