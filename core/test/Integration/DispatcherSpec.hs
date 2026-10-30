@@ -209,8 +209,9 @@ spec = do
                   processEvent = \_maybeContext _eventStore _event -> Task.yield [payload]
                 }
         let captureSource :: DispatchHandler
-            captureSource sourceEventMetadata _requestContext _commandBytes _respond =
+            captureSource sourceEventMetadata _requestContext _commandBytes respond = do
               Channel.write sourceEventMetadata capturedSources
+              respond (Accepted {entityId = "entity-source"}, Json.encodeText ("accepted" :: Text.Text) |> Text.toBytes)
 
         eventStore <- InMemory.new |> Task.mapError toText
         context <- makeContext
@@ -332,8 +333,9 @@ spec = do
                   commandData = Json.encode ("ignored" :: Text.Text)
                 }
         let legacyHandler :: EndpointHandler
-            legacyHandler _requestContext _commandBytes _respond =
+            legacyHandler _requestContext _commandBytes respond = do
               dispatchCount |> ConcurrentVar.modify (+ 1)
+              respond (Accepted {entityId = "legacy-stream"}, Json.encodeText ("accepted" :: Text.Text) |> Text.toBytes)
         let legacyEndpoints :: Map.Map Text EndpointHandler
             legacyEndpoints = Map.empty |> Map.set "LegacyCommand" legacyHandler
         let runner =
@@ -507,15 +509,15 @@ spec = do
         wasLaterRunnerStarted <- ConcurrentVar.peek laterRunnerStarted
         wasLaterRunnerStarted |> shouldBe False
 
-      it "reports every matching runner when callback dispatch fails" \_ -> do
+      it "stops later runners when a handler omits its callback" \_ -> do
         dispatchCount <- ConcurrentVar.containing (0 :: Int)
         laterRunnerStarted <- ConcurrentVar.containing False
         let payload =
               Integration.CommandPayload
-                { commandType = "FailCommand",
+                { commandType = "OmitCommand",
                   commandData = Json.encode ("ignored" :: Text.Text)
                 }
-        let failingRunner =
+        let omittingRunner =
               Dispatcher.OutboundRunner
                 { entityTypeName = "TestEntity",
                   processEvent = \_context _store _event -> Task.yield [payload]
@@ -527,10 +529,10 @@ spec = do
                     laterRunnerStarted |> ConcurrentVar.modify (\_ -> True)
                     Task.yield Array.empty
                 }
-        let failDispatch :: DispatchHandler
-            failDispatch _sourceEventMetadata _requestContext _commandBytes _respond = do
+        let omitDispatch :: DispatchHandler
+            omitDispatch _sourceEventMetadata _requestContext _commandBytes _respond = do
               dispatchCount |> ConcurrentVar.modify (+ 1)
-              Task.throw "private-dispatch-error-sentinel"
+              Task.yield unit
 
         eventStore <- InMemory.new |> Task.mapError toText
         context <- makeContext
@@ -539,9 +541,9 @@ spec = do
             Dispatcher.Setup
               { settings = Dispatcher.defaultConfig,
                 eventStore = eventStore,
-                outboundRunners = [failingRunner, laterRunner],
+                outboundRunners = [omittingRunner, laterRunner],
                 lifecycleRunners = [],
-                commandEndpoints = (Map.empty |> Map.set "FailCommand" failDispatch),
+                commandEndpoints = (Map.empty |> Map.set "OmitCommand" omitDispatch),
                 actionContext = context
               }
         event <- makeTestEvent "dispatch-failure-stream" 1 1
@@ -587,6 +589,18 @@ spec = do
                 }
         missing <- Dispatcher.dispatchCommandWithSource Map.empty Nothing payload |> Task.asResult
         missing |> shouldBe (Err "Command dispatch handler unavailable")
+
+      it "reports a handler that omits its callback" \_ -> do
+        let payload =
+              Integration.CommandPayload
+                { commandType = "OmittedCallback",
+                  commandData = Json.encode ("ignored" :: Text.Text)
+                }
+        let omitCallback :: DispatchHandler
+            omitCallback _source _context _bytes _respond = Task.yield unit
+        let endpoints = Map.empty |> Map.set "OmittedCallback" omitCallback
+        omitted <- Dispatcher.dispatchCommandWithSource endpoints Nothing payload |> Task.asResult
+        omitted |> shouldBe (Err "Command dispatch failed")
 
       it "reports unauthorized callback commands without exposing their response" \_ -> do
         let payload =

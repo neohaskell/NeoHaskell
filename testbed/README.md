@@ -76,6 +76,14 @@ The runner creates private databases, runs `testbed/tests/integrations/cryptoera
 
 The same strict command checks that a rejected result command records a callback dispatch failure while the application request stays pending. It reads the private PostgreSQL tombstone, then checks that the authorized `Erased` response contains only `tag` and null `contents` for the erased value. The maintained runner also checks that its application log contains neither the protected value nor its storage envelope. The second protected value remains `Available`, and an explicit retry records completion without restoring the first value. Set `TESTBED_OAUTH_LOG_DIR` to retain the application log in a chosen directory; otherwise the runner uses the system temporary directory. A passing run prints `Rejected result command was logged as callback dispatch failure without protected data` and ends with `testbed: PASS`.
 
+To check that an integration command handler cannot return success without calling its response callback, run the focused dispatcher regression:
+
+```sh
+nix develop --command .agents/skills/tdd/scripts/test-match 'reports a handler that omits its callback' nhcore-test-integration
+```
+
+The focused run reports one example and zero failures. The PostgreSQL testbed above checks the application request, result callback, pending state, explicit retry, and authorized query; it does not inject callback omission into the application.
+
 To run the persisted fault cases with the maintained testbed, reserve two more private ports and set `CRYPTOERASURE_FAULT_TESTS=1`:
 
 ```sh
