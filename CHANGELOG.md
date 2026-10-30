@@ -1,5 +1,57 @@
 # Changelog
 
+## 0.14.0 — 2026-10-30
+
+### Breaking changes
+
+- **Framework**: An application can now request deletion of one protected value through `Integration.Erasable.Erase`. The application checks who owns the record, records a pending request, and records completion or failure when the outbound action returns. Repeating a deletion reports `AlreadyErased`, so an application can finish a request after a restart without restoring the key. The remaining protected values stay available. ([change](https://github.com/neohaskell/NeoHaskell/commit/e3142bb358ab331e0a0efb539bf1fb8feeca1dbb))
+
+### Added
+
+- **Framework**: Apps can create protected values in commands with `Erasable.new` and carry them through events and queries. The PostgreSQL event store encrypts these values before storing events and keeps their keys separately. This first step does not provide an app-facing erasure operation or a complete erasure workflow. Existing apps need no changes. ([change](https://github.com/neohaskell/NeoHaskell/commit/c2dc34b2590cffd8a5bc291d614b0491ba5ceb29))
+- **Framework**: An inbound worker can now emit several command types, including commands for different entities. List each command and its target in a typed worker, then register the handler with `Application.withInboundHandler`. The compiler rejects undeclared commands and wrong targets. Startup reports a missing receiving service before the worker runs. Existing `Integration.inbound`, `Timer.every`, and `Application.withInbound` calls keep working. ([change](https://github.com/neohaskell/NeoHaskell/commit/9df0280ccd34a21c278892183e388e763d165eaa))
+
+### Fixed
+
+- **Framework**: Records with `DateTime` or `Maybe DateTime` fields can now derive `ToSchema`. Timestamp fields appear as strings in OpenAPI and JSON Schema, matching their JSON encoding. Applications that defined an orphan `ToSchema DateTime` instance as a workaround must remove that instance to avoid a duplicate-instance error after updating NeoHaskell. ([change](https://github.com/neohaskell/NeoHaskell/commit/6f534e067dc61140796e46d3c32e6c144b9f30d4))
+- **Framework**: Web commands with acronym names now use the expected kebab-case URL. For example, `SaveIBAN` responds at `POST /commands/save-iban`, and OpenAPI lists the same path. Internal dispatch and MCP command names retain their original spelling.
+
+If two different command names produce the same Web URL, service registration rejects the duplicate instead of choosing one command. Rename one of the commands before starting the service. ([change](https://github.com/neohaskell/NeoHaskell/commit/3c05e3d83cdb6d2579b653694918961154d59391))
+- **Framework**: `actual |> shouldContain expected` now checks whether the actual array contains the expected subarray. `actual |> shouldNotContain expected` checks whether the actual array does not contain it. Both matchers previously checked the arrays in the opposite direction.
+
+If you swapped the arguments to work around this bug, put the expected subarray first again. For example, change `expected |> shouldContain actual` to `actual |> shouldContain expected`. Run your tests to confirm that their assertions still check the intended array. ([change](https://github.com/neohaskell/NeoHaskell/commit/e07c3910cdf69baf16543bebf7b9338dc98b98e3))
+- **Framework**: The maintained erasure example now checks that an erased value stays erased during concurrent owner requests, stale writes, and restart within one application instance. Its runner can use private loopback ports, and its crash check pauses only the selected local request. Application authors can run the example to check their erasure flow. The framework API and production erasure behavior are unchanged, so existing applications need no migration. ([change](https://github.com/neohaskell/NeoHaskell/commit/1abd28799061797b7dbf0d1e22ebcec7bbddd0bf))
+- **Framework**: The maintained protected-erasure example now shows a case status that remains after erasure and is reconstructed from events after restart. Its automated checks assert the status alongside the erased value, explicit retry, and application completion. Application authors can use the example to test their own retention choices. The framework erasure API and behavior are unchanged, so existing applications need no migration. ([change](https://github.com/neohaskell/NeoHaskell/commit/34af414272051e3e19ac69dddf587308dbd90778))
+- **Framework**: If a stored event is unreadable, query replay reports failure through `/ready` instead of marking an incomplete query ready. An affected HTTP query returns a generic 500 response while its projection reports rebuilding or failed. A query that reads a partial page during rebuilding also returns 500 if replay becomes ready before the response. Applications need no code change. The maintained testbed checks missing keys, malformed envelopes, and an unavailable key table without returning protected values. ([change](https://github.com/neohaskell/NeoHaskell/commit/b878164011e2177543c02b7d776a88d785134301))
+
+### Migration from 0.13.0
+
+#### Framework
+
+Apps that build `PostgresEventStore` with a record constructor must add `erasableApplicationScope` with a stable, nonempty identifier for that application. For example, add `erasableApplicationScope = "my-application"` to the existing configuration record. Apps using `def` can set the field with a record update before creating protected values they intend to erase. The event store refuses outbound deletion when the scope is empty.
+
+Apps that construct the exported `EventStore` record, including stores returned by a custom `EventStoreConfig` instance, must add its new `eraseErasableKey` field. For a store without protected-value erasure, set `eraseErasableKey = \_ -> Task.throw (StorageFailure "Protected-value erasure is unsupported by this event store")`. Add `import Task qualified` and `import Service.EventStore (Error (StorageFailure))` if those imports are absent. Do not omit the field. The current compiler rejects a custom record constructor that lacks it. A store that supports erasure must implement the one-reference `ErasureTarget -> Task Error ErasureResult` contract. Return `UnknownReference` only for a missing reference, `AlreadyErased` only for a known tombstone, and an error for scope denial or storage failure.
+
+Existing protected keys written before this change remain readable but have no application scope. The new scoped deletion action will refuse those keys. A data owner must assess and migrate legacy keys under a separately reviewed process before using this action on them. Do not assign a scope to a shared key table without first proving which application owns each key.
+
+The application must authorize requests and retain pending work. Register an outbound handler using `Integration.Erasable.Erase`, then record its result in an application command. The framework does not replay a lost result automatically. The maintained `OwnedProtectedEntity` testbed example shows explicit retry after a restart.
+
+### Verify
+
+Build each application and call a custom store's `eraseErasableKey` field in a test. An unsupported store must return `StorageFailure`. In this repository, run `nix develop --command cabal build lib:nhcore lib:nhtestbed` to check application wiring. With PostgreSQL running and ports 8080, 8081, and 8181 free, run `nix develop --command .agents/skills/neohaskell-test/scripts/run-testbed --strict`. The erasure scenario must show one `Erased` value, one `Available` value, a pending request after a rejected result, and a completed request after retry.
+
+<details>
+<summary>Copy this prompt to your coding agent</summary>
+
+```text
+Migrate Framework from NeoHaskell 0.13.0 to 0.14.0.
+Find every application-owned PostgresEventStore record constructor and add a stable, nonempty erasableApplicationScope value unique to the application. For constructors based on def, set the field before using outbound erasure. Find every custom EventStore record constructor, including those returned by EventStoreConfig instances, and add eraseErasableKey. If that store cannot erase protected values, use eraseErasableKey = \_ -> Task.throw (StorageFailure "Protected-value erasure is unsupported by this event store"). Add import Task qualified and import Service.EventStore (Error (StorageFailure)) if absent. The current compiler rejects a constructor with this field missing. A supporting store must delete only the named reference in its application, entity, and stream scope; distinguish a known tombstone from an unknown reference; and return an error for scope denial or storage failure. Preserve existing connection, OAuth, and file-upload settings. If the application needs erasure, put owner authorization and reference discovery in its commands and queries, use Integration.Erasable.Erase for one reference per request, and record completion or failure in its own entity. Keep pending requests until a result command commits and add an explicit retry path for a lost result. Do not assign a scope to legacy keys without proving their application ownership. Build the application and execute its custom store's erasure field. Run protected-value request, restart, retry, and authorization tests for applications that support erasure. Report every changed file, test result, and legacy-key ownership that remains unresolved.
+```
+
+</details>
+
+[Compare changes](https://github.com/neohaskell/NeoHaskell/compare/neo-v0.13.0...neo-v0.14.0)
+
 ## 0.13.0 — 2026-10-28
 
 ### Breaking changes
