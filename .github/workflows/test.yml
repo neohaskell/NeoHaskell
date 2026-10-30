@@ -262,7 +262,7 @@ jobs:
           private_db="nh_cryptoerasure_ci_${GITHUB_RUN_ID}_${GITHUB_RUN_ATTEMPT}"
           docker exec neohaskell_postgres createdb -U neohaskell "$private_db"
           CRYPTOERASURE_TEST_DB="$private_db" LOG_LEVEL=Warn nix develop .#ci --command .agents/skills/tdd/scripts/test-match --builddir "$RUNNER_TEMP/erasable-build" --transcript "$RUNNER_TEMP/erasable-service.log" 'Erasable key store' nhcore-test-service
-          grep -F 'summary: 7 examples, 0 failures' "$RUNNER_TEMP/erasable-service.log"
+          grep -F 'summary: 9 examples, 0 failures' "$RUNNER_TEMP/erasable-service.log"
       - name: Check entity event compiler rejections
         run: nix develop .#ci --command python3 core/test/Service/Event/check_compiler_rejections.py
 
