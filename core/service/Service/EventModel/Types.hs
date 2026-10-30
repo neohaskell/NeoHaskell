@@ -16,6 +16,22 @@ module Service.EventModel.Types (
   InboundPart (..),
   SlicePart (..),
   ModelPart (..),
+  SliceContext (..),
+  Rule (..),
+  RuleAction (..),
+  RuleCase (..),
+  RuleSample (..),
+  RulePart (..),
+  HistoricalEvent (..),
+  WhenValue (..),
+  ExpectedOutcome (..),
+  CommandExpectation (..),
+  ExpectedEvent (..),
+  OutcomeMode (..),
+  OutcomePart (..),
+  QuerySnapshot (..),
+  QueryDiff (..),
+  ViewObservation (..),
   QuerySourceMember,
   primaryKind,
   typeName,
@@ -26,16 +42,20 @@ import Data.Kind (Constraint)
 import Data.Proxy (Proxy (..))
 import EventVariantOf (EventVariantOf)
 import GHC.TypeLits qualified as GHC
+import Maybe (Maybe)
+import Map (Map)
+import Prelude (Applicative (..), Functor (..), Monad (..))
 import Result (Result)
 import Service.Command.Core (Command)
 import Service.Entity.Core (Entity, EntityOf, EventOf)
 import Service.InboundIntegration.Core (InboundIntegration)
 import Service.OutboundIntegration.Core (OutboundIntegration (..))
-import Service.Query.Core (EntitiesOf, Query, QueryOf)
+import Service.Query.Core (EntitiesOf, Query, QueryAction, QueryOf)
 import Text (Text)
 import Text qualified
 import Type.Reflection (Typeable)
 import Type.Reflection qualified as Reflection
+import Uuid (Uuid)
 
 
 data EventModel = EventModel
@@ -56,21 +76,22 @@ data Chapter = Chapter
   }
 
 
-data Slice = Slice
-  { sliceName :: Text,
-    slicePrimary :: Primary
-  }
+data Slice where
+  Slice :: Text -> Primary context -> [Rule context] -> Slice
 
 
-data Primary where
-  StateChange :: (Entity entity, Typeable entity) => Proxy entity -> CommandRoot entity -> Primary
-  StateView :: (Query query, Typeable query) => Proxy query -> [ReadSource query] -> Primary
-  OutboundTranslation :: (OutboundIntegration handler, Typeable handler) => Proxy handler -> [OutboundPart handler] -> Primary
-  InboundTranslation :: (InboundIntegration handler, Typeable handler) => Proxy handler -> [InboundPart handler] -> Primary
+data SliceContext = Change Type Type | View Type | Outbound Type | Inbound Type
 
 
-data CommandRoot entity where
-  CommandRoot :: (Command command, EntityOf command ~ entity, Typeable command) => Proxy command -> [Produced entity] -> CommandRoot entity
+data Primary context where
+  StateChange :: (Entity entity, Typeable entity) => Proxy entity -> CommandRoot entity command -> Primary ('Change entity command)
+  StateView :: (Query query, Typeable query) => Proxy query -> [ReadSource query] -> Primary ('View query)
+  OutboundTranslation :: (OutboundIntegration handler, Typeable handler) => Proxy handler -> [OutboundPart handler] -> Primary ('Outbound handler)
+  InboundTranslation :: (InboundIntegration handler, Typeable handler) => Proxy handler -> [InboundPart handler] -> Primary ('Inbound handler)
+
+
+data CommandRoot entity command where
+  CommandRoot :: (Command command, EntityOf command ~ entity, Typeable command) => Proxy command -> [Produced entity] -> CommandRoot entity command
 
 
 data Produced entity where
@@ -108,7 +129,109 @@ data InboundPart handler where
   InboundCommand :: CommandTarget -> InboundPart handler
 
 
-data SlicePart = SlicePrimary Primary
+data SlicePart context
+  = SlicePrimary (Primary context)
+  | SliceRule (Rule context)
+
+
+data Rule context = Rule
+  { ruleName :: Text,
+    ruleScript :: RuleAction context ()
+  }
+
+
+data RuleAction context value where
+  RuleDone :: value -> RuleAction context value
+  RuleBind :: RuleAction context input -> (input -> RuleAction context value) -> RuleAction context value
+  RuleRequest :: (Typeable value) => Proxy value -> RuleAction context value
+  RuleRecord :: RulePart context -> RuleAction context ()
+
+
+instance Functor (RuleAction context) where
+  fmap transform action = RuleBind action (\value -> RuleDone (transform value))
+
+
+instance Applicative (RuleAction context) where
+  pure = RuleDone
+  function <*> input = RuleBind function (\transform -> RuleBind input (\value -> RuleDone (transform value)))
+
+
+instance Monad (RuleAction context) where
+  action >>= next = RuleBind action next
+
+
+data RuleCase context = RuleCase
+  { ruleHistory :: [HistoricalEvent],
+    ruleWhen :: WhenValue context,
+    ruleExpected :: ExpectedOutcome context
+  }
+
+
+data RuleSample where
+  ChangeSample :: (Entity entity, Typeable entity, Command command, Typeable command, EntityOf command ~ entity) => Proxy entity -> Proxy command -> Text -> RuleCase ('Change entity command) -> RuleSample
+  ViewSample :: (Query query, Typeable query) => Proxy query -> Text -> RuleCase ('View query) -> RuleSample
+
+
+data HistoricalEvent where
+  HistoricalEvent :: (Entity entity, EntityOf payload ~ entity, EventVariantOf (EventOf entity) payload, Typeable entity, Typeable payload) => Proxy entity -> payload -> HistoricalEvent
+
+
+data WhenValue context where
+  CommandWhen :: command -> WhenValue ('Change entity command)
+  EventWhen :: (Entity entity, EntityOf payload ~ entity, EventVariantOf (EventOf entity) payload, QueryOf entity query, QuerySourceMember entity query (EntitiesOf query), Typeable entity, Typeable payload) => payload -> WhenValue ('View query)
+
+
+data ExpectedEvent entity where
+  ExpectedEvent :: (EntityOf payload ~ entity, EventVariantOf (EventOf entity) payload, Typeable payload) => payload -> ExpectedEvent entity
+
+
+data CommandExpectation entity
+  = Emitted [ExpectedEvent entity]
+  | RejectedReason (Maybe Text)
+  | RejectedPattern Text
+  | AcceptedWithoutEvents
+
+
+data ExpectedOutcome context where
+  CommandExpected :: CommandExpectation entity -> ExpectedOutcome ('Change entity command)
+  ViewExpected :: QueryAction query -> ExpectedOutcome ('View query)
+
+
+newtype QuerySnapshot query = QuerySnapshot (Map Uuid query)
+
+
+data QueryDiff query = QueryDiff
+  { before :: QuerySnapshot query,
+    after :: QuerySnapshot query
+  }
+
+
+data ViewObservation query = ViewObservation
+  { action :: QueryAction query,
+    diff :: QueryDiff query
+  }
+
+
+data RulePart context
+  = GivenStart
+  | GivenEvent HistoricalEvent
+  | GivenNothing
+  | WhenPart (WhenValue context)
+  | ThereforePart (ExpectedOutcome context)
+  | InvalidOutcome Text
+
+
+data OutcomeMode = Events | Rejection | ZeroEvents | ViewUpdate | ViewDelete | ViewNoOpMode
+
+
+data OutcomePart context mode where
+  OutcomeEvent :: ExpectedEvent entity -> OutcomePart ('Change entity command) 'Events
+  OutcomeRejected :: Maybe Text -> OutcomePart ('Change entity command) 'Rejection
+  OutcomeRejectedPattern :: Text -> OutcomePart ('Change entity command) 'Rejection
+  OutcomeAcceptedWithoutEvents :: OutcomePart ('Change entity command) 'ZeroEvents
+  OutcomeUpdated :: query -> OutcomePart ('View query) 'ViewUpdate
+  OutcomeDeleted :: OutcomePart ('View query) 'ViewDelete
+  OutcomeNoOp :: OutcomePart ('View query) 'ViewNoOpMode
 
 
 data ModelPart
@@ -116,7 +239,7 @@ data ModelPart
   | ModelFeatures [Result Text Feature]
 
 
-primaryKind :: Primary -> Text
+primaryKind :: Primary context -> Text
 primaryKind primary = case primary of
   StateChange _ _ -> "state-change"
   StateView _ _ -> "state-view"

@@ -29,6 +29,7 @@ FLAGS = (
 )
 CASES = (
     ("ValidModel.hs", None),
+    ("ValidRuleForms.hs", None),
     ("TwoCommands.hs", r"No instance for.*Monad.*CommandRoot|Couldn't match.*CommandRoot"),
     ("InboundEvent.hs", r"EventPart.*InboundPart"),
     ("WrongCommandTarget.hs", r"Couldn't match type.*StockEntity.*CartEntity"),
@@ -38,6 +39,16 @@ CASES = (
     ("MissingQueryImplementation.hs", r"No instance for.*Query MissingView"),
     ("MissingEventVariant.hs", r"No instance for.*EventVariantOf.*MissingPayload"),
     ("UndeclaredInboundCommand.hs", r"Inbound worker emitted undeclared command ReserveStock"),
+    ("TwoPrimaryKinds.hs", r"Couldn't match type.*View CartSummary.*Change CartEntity AddItem"),
+    ("TwoPrimaryQueries.hs", r"Couldn't match type.*StockLevel.*CartSummary"),
+    ("WrongRuleCommand.hs", r"RuleInput.*Change CartEntity AddItem.*ReserveStock"),
+    ("WrongRuleViewEvent.hs", r"Query source .*StockEntity is absent from EntitiesOf CartSummary"),
+    ("CommandWithViewOutcome.hs", r"Couldn't match type.*View CartSummary.*Change CartEntity AddItem"),
+    ("ViewWithCommandOutcome.hs", r"Couldn't match type.*Change.*View CartSummary"),
+    ("MixedRuleOutcomes.hs", r"Couldn't match type.*Rejection.*Events"),
+    ("MixedZeroEventOutcomes.hs", r"Couldn't match type.*ZeroEvents.*Events"),
+    ("MixedZeroRejectionOutcomes.hs", r"Couldn't match type.*Rejection.*ZeroEvents"),
+    ("RuleInTranslation.hs", r"Couldn't match type.*Change.*Outbound.*ReserveStockOnItemAdded"),
 )
 
 
