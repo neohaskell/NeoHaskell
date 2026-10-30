@@ -321,11 +321,9 @@ mod tests {
 
     #[test]
     fn entry_count_matches_documented() {
-        // Day-one count is 11. Bump this when adding/removing entries —
-        // the test failure forces an intentional update.
         assert_eq!(
             patterns::ALL.len(),
-            11,
+            12,
             "patterns::ALL has {} entries; update entry_count_matches_documented \
              after adding or removing an interpreter",
             patterns::ALL.len()

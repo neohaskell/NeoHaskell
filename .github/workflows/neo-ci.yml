@@ -201,6 +201,10 @@ jobs:
           ./.agents/skills/neohaskell-release/scripts/neo-release checksums "$RUNNER_TEMP/neo-artifacts"
           ./.agents/skills/neohaskell-release/scripts/neo-release install "$RUNNER_TEMP/neo-artifacts" "$REHEARSAL_TARGET" "$RUNNER_TEMP/neo-bin/neo"
           echo "NEO_BIN=$RUNNER_TEMP/neo-bin/neo" >> "$GITHUB_ENV"
+          df -h "$RUNNER_TEMP"
+          cargo clean --manifest-path neo/Cargo.toml
+          test -x "$RUNNER_TEMP/neo-bin/neo"
+          df -h "$RUNNER_TEMP"
       - name: Run the generated-project consumer contract against the installed artifact
         env:
           CONTRACT_BUILD_TIMEOUT: "5400"

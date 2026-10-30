@@ -15,7 +15,7 @@ pub const ENTRY: Interpreter = Interpreter {
 
 #[cfg(test)]
 mod tests {
-    use crate::interpret::{match_kind, Kind};
+    use crate::interpret::{match_any, match_kind, Kind};
 
     #[test]
     fn matches_tarball() {
@@ -33,7 +33,7 @@ mod tests {
     #[test]
     fn disk_exhaustion_outweighs_earlier_download_error() {
         let captured = "error: unable to download 'http://127.0.0.1/cache.narinfo': HTTP error 418\nerror: write of 23016 bytes: No space left on device";
-        let i = match_kind(Kind::Nix, captured).expect("should match");
+        let i = match_any(captured).expect("should match");
         assert!(i.cause.contains("disk space"), "cause: {}", i.cause);
         assert!(i.fix.contains("disk space"), "fix: {}", i.fix);
     }

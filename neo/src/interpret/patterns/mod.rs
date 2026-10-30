@@ -22,6 +22,7 @@ pub mod nix_attribute_missing_single_quotes;
 pub mod nix_attribute_missing_backticks;
 pub mod nix_deadbeef_hash;
 pub mod nix_builder_failed;
+pub mod nix_disk_full;
 pub mod nix_tarball_download;
 pub mod git_missing_ref;
 pub mod git_unknown_revision;
@@ -34,6 +35,7 @@ pub mod hurl_connection_refused;
 pub const ALL: &[&Interpreter] = &[
     &cabal_unknown_package::ENTRY,
     &cabal_could_not_resolve::ENTRY,
+    &nix_disk_full::ENTRY,
     &nix_attribute_missing_single_quotes::ENTRY,
     &nix_attribute_missing_backticks::ENTRY,
     &nix_deadbeef_hash::ENTRY,

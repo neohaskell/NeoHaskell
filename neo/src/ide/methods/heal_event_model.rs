@@ -1305,7 +1305,7 @@ mod tests {
     async fn run_with_argv_capture(
         workspace: &std::path::Path,
         capture: &std::path::Path,
-    ) -> Result<HealEventModelResult, NeoError> {
+    ) -> Result<String, String> {
         run_with_argv_capture_in_mode(workspace, capture, HealMode::Validate).await
     }
 
@@ -1313,7 +1313,7 @@ mod tests {
         workspace: &std::path::Path,
         capture: &std::path::Path,
         mode: HealMode,
-    ) -> Result<HealEventModelResult, NeoError> {
+    ) -> Result<String, String> {
         let stub_dir = tempfile::tempdir().unwrap();
         let stub_path = stub_dir.path().join("claude");
         // Write argv (one per line) + pwd to the capture file, then exit 0.
@@ -1327,14 +1327,13 @@ mod tests {
             ),
         );
         let session = fixture_session(workspace);
-        // Need to keep stub_dir alive past the call — leak it by moving into a static-ish
-        // location. Simpler: write a copy of the stub to a path we own.
-        let owned_stub = workspace.join(".test-claude-stub.sh");
-        std::fs::copy(&stub_path, &owned_stub).unwrap();
-        let mut perms = std::fs::metadata(&owned_stub).unwrap().permissions();
-        perms.set_mode(0o755);
-        std::fs::set_permissions(&owned_stub, perms).unwrap();
-        handle_with_config(session, mode, quick_config(owned_stub, 10_000)).await
+        let heal_result = handle_with_config(session, mode, quick_config(stub_path, 10_000)).await;
+        std::fs::read_to_string(capture).map_err(|error| {
+            format!(
+                "reading argv capture {} failed: {error}; heal result: {heal_result:?}",
+                capture.display()
+            )
+        })
     }
 
     #[tokio::test]
@@ -1344,7 +1343,9 @@ mod tests {
         std::fs::write(workspace.join("event-model.json"), INVALID_MODEL).unwrap();
         let capture = workspace.join("missing/argv.log");
 
-        let error = run_with_argv_capture(workspace, &capture).await.unwrap_err();
+        let error = run_with_argv_capture(workspace, &capture)
+            .await
+            .unwrap_err();
         assert!(
             error.to_string().contains("No such file or directory"),
             "{error}"
@@ -1357,8 +1358,7 @@ mod tests {
         let workspace = dir.path();
         std::fs::write(workspace.join("event-model.json"), INVALID_MODEL).unwrap();
         let capture = workspace.join("argv.log");
-        let _ = run_with_argv_capture(workspace, &capture).await;
-        let logged = std::fs::read_to_string(&capture).unwrap();
+        let logged = run_with_argv_capture(workspace, &capture).await.unwrap();
         // New prompt contract: the "Remaining ... validation errors" section
         // appears, and the offending field id from the schema error is
         // included in the listed error.
@@ -1375,8 +1375,7 @@ mod tests {
         let workspace = dir.path();
         std::fs::write(workspace.join("event-model.json"), INVALID_MODEL).unwrap();
         let capture = workspace.join("argv.log");
-        let _ = run_with_argv_capture(workspace, &capture).await;
-        let logged = std::fs::read_to_string(&capture).unwrap();
+        let logged = run_with_argv_capture(workspace, &capture).await.unwrap();
         assert!(
             logged.contains("event-model.json"),
             "prompt should include the file path, got: {logged}"
@@ -1389,8 +1388,7 @@ mod tests {
         let workspace = dir.path();
         std::fs::write(workspace.join("event-model.json"), INVALID_MODEL).unwrap();
         let capture = workspace.join("argv.log");
-        let _ = run_with_argv_capture(workspace, &capture).await;
-        let logged = std::fs::read_to_string(&capture).unwrap();
+        let logged = run_with_argv_capture(workspace, &capture).await.unwrap();
         assert!(
             logged.contains("$schema"),
             "prompt should include the JSON Schema header, got first 200 chars: {}",
@@ -1413,8 +1411,7 @@ mod tests {
         let workspace = dir.path();
         std::fs::write(workspace.join("event-model.json"), INVALID_MODEL).unwrap();
         let capture = workspace.join("argv.log");
-        let _ = run_with_argv_capture(workspace, &capture).await;
-        let logged = std::fs::read_to_string(&capture).unwrap();
+        let logged = run_with_argv_capture(workspace, &capture).await.unwrap();
 
         assert!(logged.contains("MODE = VALIDATE"), "prompt should name the mode");
         assert!(logged.contains("$schema"), "prompt should embed the schema");
@@ -1438,8 +1435,7 @@ mod tests {
         let workspace = dir.path();
         std::fs::write(workspace.join("event-model.json"), INVALID_MODEL).unwrap();
         let capture = workspace.join("argv.log");
-        let _ = run_with_argv_capture(workspace, &capture).await;
-        let logged = std::fs::read_to_string(&capture).unwrap();
+        let logged = run_with_argv_capture(workspace, &capture).await.unwrap();
         // PWD=<workspace canonical path>
         let canonical = workspace.canonicalize().unwrap();
         assert!(
@@ -1454,8 +1450,7 @@ mod tests {
         let workspace = dir.path();
         std::fs::write(workspace.join("event-model.json"), INVALID_MODEL).unwrap();
         let capture = workspace.join("argv.log");
-        let _ = run_with_argv_capture(workspace, &capture).await;
-        let logged = std::fs::read_to_string(&capture).unwrap();
+        let logged = run_with_argv_capture(workspace, &capture).await.unwrap();
         assert!(
             logged.contains("--allowed-tools"),
             "argv should include --allowed-tools, got: {logged}"
@@ -1490,8 +1485,7 @@ mod tests {
         let workspace = dir.path();
         std::fs::write(workspace.join("event-model.json"), INVALID_MODEL).unwrap();
         let capture = workspace.join("argv.log");
-        let _ = run_with_argv_capture(workspace, &capture).await;
-        let logged = std::fs::read_to_string(&capture).unwrap();
+        let logged = run_with_argv_capture(workspace, &capture).await.unwrap();
         assert!(logged.contains("--model"), "argv should include --model, got: {logged}");
         assert!(
             logged.contains("\nopus\n") || logged.contains("\nopus") || logged.contains(" opus "),
@@ -1527,8 +1521,7 @@ mod tests {
         .unwrap();
 
         let capture = workspace.join("argv.log");
-        let _ = run_with_argv_capture(workspace, &capture).await;
-        let logged = std::fs::read_to_string(&capture).unwrap();
+        let logged = run_with_argv_capture(workspace, &capture).await.unwrap();
         assert!(logged.contains("--model"), "argv should include --model");
         assert!(
             logged.contains("\nhaiku\n") || logged.contains(" haiku ") || logged.contains("\nhaiku"),
@@ -1590,8 +1583,9 @@ mod tests {
         .unwrap();
 
         let capture = workspace.join("argv.log");
-        let _ = run_with_argv_capture_in_mode(workspace, &capture, HealMode::Improve).await;
-        let logged = std::fs::read_to_string(&capture).unwrap();
+        let logged = run_with_argv_capture_in_mode(workspace, &capture, HealMode::Improve)
+            .await
+            .unwrap();
         assert!(
             logged.contains("\nsonnet\n") || logged.contains(" sonnet ") || logged.contains("\nsonnet"),
             "large orphan residual should route to sonnet; got first 500 chars: {}",
