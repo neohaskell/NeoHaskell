@@ -160,6 +160,12 @@ try:
         WHERE entity = 'OwnedProtectedEntity' AND inlinedStreamId = '{case_id}'
     """)
     assert all(marker not in raw_events for marker in MARKER_ENCODINGS), raw_events
+    raw_metadata = sql(database, f"""
+        SELECT coalesce(string_agg(metadata::text, ' '), '') FROM Events
+        WHERE entity = 'OwnedProtectedEntity' AND inlinedStreamId = '{case_id}'
+    """)
+    assert all(marker not in raw_metadata for marker in MARKER_ENCODINGS), raw_metadata
+    assert original_reference not in raw_metadata, raw_metadata
     for denied_token in (None, "invalid-token"):
         denied_status, denied_body = request("GET", f"{API}/queries/owned-protected-view", denied_token)
         assert denied_status in (401, 403), (denied_status, denied_body)
