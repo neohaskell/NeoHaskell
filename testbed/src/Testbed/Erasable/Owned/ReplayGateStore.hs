@@ -60,9 +60,8 @@ gatePath directory name =
 waitForRelease :: Path.Path -> Int -> Task Error Unit
 waitForRelease release attemptsLeft = do
   released <- File.exists release |> Task.mapError (\_ -> StorageError "Replay test gate unavailable")
-  if released
-    then Task.yield unit
-    else if attemptsLeft <= 0
+  Task.unless released do
+    if attemptsLeft <= 0
       then Task.throw (StorageError "Replay test gate timed out")
       else do
         AsyncTask.sleep 20
