@@ -236,6 +236,7 @@ setupMockContext = do
     , providerRegistry = fromMap providerRegistry
     , refreshLocks = locks
     , fileAccess = Nothing
+    , eraseErasableKey = Nothing
     , outboundDispatch = DispatchRegistry.empty
     }
 
