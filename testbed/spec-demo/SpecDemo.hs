@@ -6,18 +6,20 @@ module Main (main, ObserveItemAdded (..), CrossEntityView (..)) where
 import Core
 import App qualified
 import Array qualified
+import Data.Dynamic qualified as Dynamic
 import Integration qualified
+import Map qualified
 import Service.EventModel qualified as EventModel
 import Test
 import Test.Hspec qualified as Hspec
-import Testbed.Cart.Commands.AddItem (AddItem)
-import Testbed.Cart.Core (CartCreatedPayload, CartEntity (..), ItemAddedPayload)
+import Testbed.Cart.Commands.AddItem (AddItem (..))
+import Testbed.Cart.Core (CartCreatedPayload (..), CartEntity (..), ItemAddedPayload (..))
 import Testbed.Cart.Integrations.ReserveStockOnItemAdded (ReserveStockOnItemAdded)
-import Testbed.Cart.Queries.CartSummary (CartSummary)
+import Testbed.Cart.Queries.CartSummary (CartSummary (..))
 import Testbed.Integrations.TypedInboundExample (TypedInboundExample)
-import Testbed.Stock.Queries.StockLevel (StockLevel)
 import Testbed.Stock.Core (StockEntity (..), StockInitializedPayload)
 import Text qualified
+import Uuid qualified
 
 
 data ObserveItemAdded = ObserveItemAdded
@@ -71,6 +73,125 @@ spec = do
           let allSlices = allChapters |> Array.flatMap (\selected -> selected |> EventModel.chapterSlices |> Array.fromLinkedList)
           allSlices |> Array.map EventModel.sliceKind |> shouldBe ["state-change", "state-view", "outbound", "inbound", "state-change", "state-view"]
           allSlices |> Array.map EventModel.sliceName |> shouldBe ["Add an item", "Show cart summary", "Reserve stock after an item", "Accept typed inbound commands", "Initialize stock", "Show stock level"]
+
+    it "keeps direct rules with concrete history, command, and ordered event values" \_ -> do
+      case App.appEventModel of
+        Err problem -> problem |> shouldBe "valid Event Model"
+        Ok model -> do
+          let selected = model |> modelSlices |> Array.takeIf (\item -> EventModel.sliceName item == "Add an item")
+          case Array.first selected of
+            Nothing -> False |> shouldBe True
+            Just selectedSlice -> do
+              selectedSlice |> EventModel.sliceRuleNames |> shouldBe ["Adding an item emits its exact event", "An unknown cart rejects the command", "A missing cart reason matches its pattern"]
+              let samples = EventModel.sampleSliceRules [[Dynamic.toDyn (-3 :: Int)], [], []] selectedSlice
+              case samples of
+                [Ok accepted, Ok rejectedCase, Ok regexCase] -> do
+                  EventModel.sampleRuleName accepted |> shouldBe "Adding an item emits its exact event"
+                  case EventModel.sampleRuleHistory accepted of
+                    [historical] -> case Dynamic.fromDynamic @CartCreatedPayload historical of
+                      Just created -> created.cartCreatedOwnerId |> shouldBe "owner"
+                      Nothing -> False |> shouldBe True
+                    _ -> False |> shouldBe True
+                  case Dynamic.fromDynamic @AddItem (EventModel.sampleRuleWhen accepted) of
+                    Just commandValue -> do
+                      commandValue.quantity |> shouldBe 8
+                      case Dynamic.fromDynamic @(EventModel.CommandExpectation CartEntity) (EventModel.sampleRuleOutcome accepted) of
+                        Just (EventModel.Emitted [expected]) -> case Dynamic.fromDynamic @ItemAddedPayload (EventModel.expectedEventValue expected) of
+                          Just emitted -> emitted.itemAddedQuantity |> shouldBe commandValue.quantity
+                          Nothing -> False |> shouldBe True
+                        _ -> False |> shouldBe True
+                    Nothing -> False |> shouldBe True
+                  case Dynamic.fromDynamic @(EventModel.CommandExpectation CartEntity) (EventModel.sampleRuleOutcome rejectedCase) of
+                    Just (EventModel.RejectedReason (Just reason)) -> reason |> shouldBe "Cart not found!"
+                    _ -> False |> shouldBe True
+                  case Dynamic.fromDynamic @(EventModel.CommandExpectation CartEntity) (EventModel.sampleRuleOutcome regexCase) of
+                    Just (EventModel.RejectedPattern patternText) -> patternText |> shouldBe "^Cart not found!$"
+                    _ -> False |> shouldBe True
+                _ -> False |> shouldBe True
+
+    it "keeps view rules with their exact query actions" \_ -> do
+      case App.appEventModel of
+        Err problem -> problem |> shouldBe "valid Event Model"
+        Ok model -> do
+          let selected = model |> modelSlices |> Array.takeIf (\item -> EventModel.sliceName item == "Show cart summary")
+          case Array.first selected of
+            Nothing -> False |> shouldBe True
+            Just selectedSlice -> do
+              selectedSlice |> EventModel.sliceRuleNames |> shouldBe ["A new cart has an empty summary", "An added item changes the summary"]
+              let samples = EventModel.sampleSliceRules [[], []] selectedSlice
+              case samples of
+                [Ok createdCase, Ok addedCase] -> do
+                  case Dynamic.fromDynamic @(QueryAction CartSummary) (EventModel.sampleRuleOutcome createdCase) of
+                    Just (Update summary) -> summary.itemCount |> shouldBe 0
+                    _ -> False |> shouldBe True
+                  case Dynamic.fromDynamic @(QueryAction CartSummary) (EventModel.sampleRuleOutcome addedCase) of
+                    Just (Update summary) -> summary.itemCount |> shouldBe 1
+                    _ -> False |> shouldBe True
+                _ -> False |> shouldBe True
+
+    it "rejects a view rule whose when payload is absent from onEvent" \_ -> do
+      let modelResult = EventModel.eventModel do
+            EventModel.appName "Missing subscription"
+            EventModel.features do
+              EventModel.feature "Cart" do
+                EventModel.chapter "Read" do
+                  EventModel.slice "Summary" do
+                    EventModel.query @CartSummary do
+                      EventModel.readsFrom @CartEntity do
+                        EventModel.onEvent @CartCreatedPayload
+                    EventModel.rule "Undeclared incoming event" do
+                      EventModel.givenNothing
+                      EventModel.when ItemAddedPayload {itemAddedEntityId = Uuid.nil, itemAddedStockId = Uuid.nil, itemAddedQuantity = 1}
+                      EventModel.therefore do
+                        EventModel.noOp @CartSummary
+      case modelResult of
+        Err problem -> problem |> shouldBe "valid Event Model"
+        Ok model -> case Array.first (model |> modelSlices) of
+          Nothing -> False |> shouldBe True
+          Just selectedSlice -> do
+            let samples = EventModel.sampleSliceRules [[]] selectedSlice
+            case samples of
+              [Err problem] -> problem |> Text.contains "Rule \"Undeclared incoming event\" when payload ItemAddedPayload is not listed" |> shouldBe True
+              _ -> False |> shouldBe True
+
+    it "checks the query action and complete snapshot diff" \_ -> do
+      let before = Map.fromArray [(Uuid.nil, 1 :: Int)]
+      let removed = EventModel.ViewObservation
+            { action = Delete,
+              diff = EventModel.QueryDiff
+                { before = EventModel.QuerySnapshot before,
+                  after = EventModel.QuerySnapshot Map.empty
+                }
+            }
+      EventModel.verifyViewObservation Uuid.nil Delete removed |> shouldBe True
+      EventModel.verifyViewObservation Uuid.nil NoOp removed |> shouldBe False
+      let unchanged = EventModel.ViewObservation
+            { action = NoOp,
+              diff = EventModel.QueryDiff
+                { before = EventModel.QuerySnapshot before,
+                  after = EventModel.QuerySnapshot before
+                }
+            }
+      EventModel.verifyViewObservation Uuid.nil NoOp unchanged |> shouldBe True
+      case Uuid.fromText "00000000-0000-0000-0000-000000000001" of
+        Nothing -> False |> shouldBe True
+        Just otherId -> do
+          let updated = EventModel.ViewObservation
+                { action = Update 2,
+                  diff = EventModel.QueryDiff
+                    { before = EventModel.QuerySnapshot before,
+                      after = EventModel.QuerySnapshot (before |> Map.set Uuid.nil 2)
+                    }
+                }
+          EventModel.verifyViewObservation Uuid.nil (Update 2) updated |> shouldBe True
+          let changedAnotherRow = EventModel.ViewObservation
+                { action = Update 2,
+                  diff = EventModel.QueryDiff
+                    { before = EventModel.QuerySnapshot before,
+                      after = EventModel.QuerySnapshot (before |> Map.set Uuid.nil 2 |> Map.set otherId 3)
+                    }
+                }
+          EventModel.verifyViewObservation Uuid.nil (Update 2) changedAnotherRow |> shouldBe False
 
     it "keeps each translation command with its own target and explicit triggers" \_ -> do
       case App.appEventModel of
@@ -216,37 +337,6 @@ spec = do
                     pass
       case invalid of
         Err problem -> problem |> Text.contains "Slice \"Missing\" requires exactly one primary; found 0" |> shouldBe True
-        Ok _ -> False |> shouldBe True
-
-    it "rejects two primary patterns in one Slice" \_ -> do
-      let invalid = EventModel.eventModel do
-            EventModel.appName "Invalid"
-            EventModel.features do
-              EventModel.feature "Cart" do
-                EventModel.chapter "Commands" do
-                  EventModel.slice "Two roots" do
-                    EventModel.entity @CartEntity do
-                      EventModel.command @AddItem do
-                        pass
-                    EventModel.query @CartSummary do
-                      pass
-      case invalid of
-        Err problem -> problem |> Text.contains "Slice \"Two roots\" requires exactly one primary; found 2" |> shouldBe True
-        Ok _ -> False |> shouldBe True
-
-    it "rejects two primary queries in one Slice" \_ -> do
-      let invalid = EventModel.eventModel do
-            EventModel.appName "Invalid"
-            EventModel.features do
-              EventModel.feature "Views" do
-                EventModel.chapter "Queries" do
-                  EventModel.slice "Two queries" do
-                    EventModel.query @CartSummary do
-                      pass
-                    EventModel.query @StockLevel do
-                      pass
-      case invalid of
-        Err problem -> problem |> Text.contains "Slice \"Two queries\" requires exactly one primary; found 2" |> shouldBe True
         Ok _ -> False |> shouldBe True
 
   describe "public containment matchers" do

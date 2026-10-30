@@ -136,13 +136,15 @@ nix develop --command hurl --test testbed/tests/integrations/typed-inbound.hurl
 
 `Testbed.Cart.Feature.cartFlow` and `Testbed.Stock.Feature.stockFlow` are exported Feature actions. `App.appEventModel` composes them as bare actions in a named `eventModel do` value. Every declared entity, command, event payload, query, and integration has a concrete implementation. The Features describe all four Slice shapes and each typed inbound command target. `App.app` registers and starts these implementations while Event Model runtime wiring remains a separate delivery.
 
+The cart Feature also declares three direct state-change rules and two direct state-view rules. The first command rule requests a typed quantity, makes it positive, uses it in `when AddItem`, and expects the same concrete quantity in its emitted `ItemAddedPayload`. The spec supplies a value of -3 and checks the normalized quantity of 8, ordered historical fixtures, emitted event, rejection reason, regex pattern, query actions, and full snapshot differences. Rule generation and isolated case execution belong to the separate generated-test delivery; the maintained Hurl scenario runs the cart and stock behavior now.
+
 From the repository root, run the maintained public API assertions:
 
 ```sh
 nix develop --command cabal test --project-file=cabal.project.dev nhtestbed-spec-demo --test-show-details=direct
 ```
 
-The `source-local Event Model` examples assert both executable Features, every Slice once, concrete query payload subscriptions, a query with two explicit entity sources, the outbound payload trigger, and each translation command's target entity. The compiler fixture runner accepts the complete testbed model and rejects missing command or query implementations, a missing event variant mapping, and wrong ownership:
+The `source-local Event Model` examples assert both executable Features, every Slice once, direct rules, concrete query payload subscriptions, a query with two explicit entity sources, the outbound payload trigger, and each translation command's target entity. The compiler fixture runner accepts the complete testbed model and the remaining typed outcome forms. It rejects missing implementations, wrong ownership, invalid rule contexts, mixed command outcomes, and rules in translation Slices:
 
 ```sh
 nix develop --command python3 core/test/Service/EventModel/check_compiler_rejections.py
