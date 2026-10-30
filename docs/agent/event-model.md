@@ -51,7 +51,7 @@ appEventModel = eventModel do
 		cartFlow
 ```
 
-Import `Service.EventModel` for these builders. Each Slice has one primary declaration. Use `entity` for one initiating `command`, `query` for a view, `outboundIntegration` for one payload trigger, or `inboundIntegration` for a worker. `readsFrom` may repeat for each entity listed in the query's `EntitiesOf` type family. A query source lists each subscribed payload with `onEvent`.
+Import `Service.EventModel` for these builders. Each Slice has one primary declaration. Use `entity` for one initiating `command`, `query` for a view, `outboundIntegration` for one payload trigger, or `inboundIntegration` for a worker. An inbound Slice lists every command and target entity pair in the worker's `InboundOutputsOf` type exactly once. `readsFrom` may repeat for each entity listed in the query's `EntitiesOf` type family. A query source lists each subscribed payload with `onEvent`.
 
 State-change and state-view Slices accept zero or more direct `rule "..." do` children. Translation Slices reject rules at compilation. In a rule, `givenNothing` starts with no history. `given do` lists concrete historical events in order. `when` accepts the Slice's command or a payload subscribed by its query. Use `requestValue @Type` to bind a typed value for the rule runner to supply, then reuse it in later statements. The Event Model does not choose a generator or run generated cases yet. Keep application tests for the declared behavior.
 
@@ -61,4 +61,6 @@ If the Feature module imports `Core`, use `import Core hiding (event)` before im
 
 The compiler requires an `Entity` instance, a `Command` instance, and a `Query` instance for declarations that use them. It checks `EntityOf` for commands and payloads, `EntitiesOf` and `QueryOf` for query sources, and `EventVariantOf` for event payloads. Define the real behavior before adding its Slice. A missing implementation or ownership mismatch fails compilation. There is no topology-only declaration.
 
-Generate an entity's Event ADT separately with `deriveEntityEvents`. Evaluating `eventModel` does not generate types or start workers. Until Event Model application wiring is available, register the same implemented services, queries, and integrations in `Application` as described in [configuration and wiring](configuration-and-wiring.md). Evaluate the `eventModel` result and handle an `Err` before startup. It reports residual shape errors, including an empty Feature or Chapter and an outbound Slice with the wrong number of triggers.
+Generate an entity's Event ADT separately with `deriveEntityEvents`. Evaluating `eventModel` does not generate types or start workers. Until Event Model application wiring is available, register the same implemented services, queries, and integrations in `Application` as described in [configuration and wiring](configuration-and-wiring.md).
+
+Evaluate the `eventModel` result and handle an `Err` before startup. Validation reports every residual Slice failure with its Feature, Chapter, and Slice path. It rejects empty Features or Chapters, outbound Slices with the wrong number of triggers, reuse of one outbound handler type, and inbound Slices that omit a typed worker output. Two distinct outbound handler types may subscribe to one payload.
