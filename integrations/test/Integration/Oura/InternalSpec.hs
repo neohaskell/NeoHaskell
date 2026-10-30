@@ -131,6 +131,7 @@ spec = do
               , providerRegistry = fromMap Map.empty
               , refreshLocks = emptyLocks
               , fileAccess = Nothing
+              , eraseErasableKey = Nothing
               , outboundDispatch = DispatchRegistry.empty
               }
 
