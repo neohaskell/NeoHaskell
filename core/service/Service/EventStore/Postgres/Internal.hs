@@ -412,6 +412,18 @@ insertGo ops cfg keys payload =
     Task.when (protected && not (Array.isEmpty alreadyExistingIds)) do
       Task.throw (CoreInsertionError ConsistencyCheckFailed)
 
+    Task.when (not (Array.isEmpty alreadyExistingIds)) do
+      existingEvents <-
+        Sessions.selectExistingEventDataSession alreadyExistingIds
+          |> Sessions.run conn
+          |> Task.mapError SessionError
+      existingEvents |> Task.mapArray (\event -> do
+        case Erasable.references event of
+          Err _ -> Task.throw (CoreInsertionError (InsertionFailed "Malformed stored erasable envelope"))
+          Ok refs -> Task.when (not (Array.isEmpty refs)) do
+            Task.throw (CoreInsertionError ConsistencyCheckFailed))
+        |> discard
+
     let insertions =
           payload.insertions
             |> Array.dropIf

@@ -36,7 +36,7 @@ PGPASSWORD=neohaskell nix develop --command createdb -h 127.0.0.1 -U neohaskell 
 CRYPTOERASURE_TEST_DB="$private_db" nix develop --command .agents/skills/tdd/scripts/test-match 'Erasable key store' nhcore-test-service
 ```
 
-The Hurl scenario asserts a command-generated event, a reconstructed query, two independently protected values, a mapped copy, nested optional values, and Unicode `Available` content. The service fixture uses real PostgreSQL to assert encrypted event storage, restart, key/event rollback, and a private tombstone yielding `Erased`. Create the named private database before running the fixture. The fixture rejects names without the `nh_cryptoerasure_` prefix.
+The Hurl scenario asserts a command-generated event, a reconstructed query, two independently protected values, a mapped copy, nested optional values, and Unicode `Available` content. The service fixture uses real PostgreSQL to assert encrypted event storage, restart, key/event rollback, and a private tombstone yielding `Erased`. It rejects equivalent and conflicting protected event ID retries, mixed batches, and concurrent retries through separate pools. Create the named private database before running the fixture. The fixture rejects names without the `nh_cryptoerasure_` prefix.
 
 ### Application-owned erasure
 
