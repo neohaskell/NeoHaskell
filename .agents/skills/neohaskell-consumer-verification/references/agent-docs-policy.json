@@ -36,6 +36,12 @@
       "scenario": "testbed/tests/queries/cart-summary-after-create.hurl",
       "evidence": []
     },
+    "source-local-event-model": {
+      "page": "event-model.md",
+      "source": "core/service/Service/EventModel.hs",
+      "scenario": "testbed/tests/scenarios/stock-reservation.hurl",
+      "evidence": []
+    },
     "application-configuration": {
       "page": "configuration-and-wiring.md",
       "source": "core/service/Service/Application.hs",
@@ -141,6 +147,16 @@
       "page": "configuration-and-wiring.md",
       "ordinal": 1,
       "source": "neo/starter/src/App.hs"
+    },
+    {
+      "page": "event-model.md",
+      "ordinal": 1,
+      "source": "testbed/src/Testbed/Cart/Feature.hs"
+    },
+    {
+      "page": "event-model.md",
+      "ordinal": 2,
+      "source": "testbed/src/App.hs"
     },
     {
       "page": "transports.md",

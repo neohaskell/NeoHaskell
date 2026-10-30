@@ -9,6 +9,7 @@ Start with [project and CLI](project-and-cli.md), then [syntax and Core](syntax-
 | Model state and its history | [Events and entities](events-and-entities.md) |
 | Change one entity | [Commands](commands.md) |
 | Expose a read model | [Queries](queries.md) |
+| Describe executable business flows | [Source-local Event Models](event-model.md) |
 | Assemble an application | [Configuration and wiring](configuration-and-wiring.md) |
 | Choose an interface | [Transports](transports.md) |
 | Choose durable storage | [Storage](storage.md) |

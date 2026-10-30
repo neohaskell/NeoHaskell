@@ -48,6 +48,15 @@ POST http://localhost:8080/commands/add-item
 
 HTTP/1.1 200
 
+GET http://localhost:8080/queries/cart-summary
+[Options]
+retry: 10
+retry-interval: 200
+
+HTTP/1.1 200
+[Asserts]
+jsonpath "$.items[?(@.cartSummaryId == '{{cart_id}}')].itemCount" nth 0 == 1
+
 # Step 5: Verify stock was reserved (integration ran)
 # The Cart integration should have emitted ReserveStock command
 GET http://localhost:8080/queries/stock-level
@@ -70,6 +79,15 @@ POST http://localhost:8080/commands/add-item
 }
 
 HTTP/1.1 200
+
+GET http://localhost:8080/queries/cart-summary
+[Options]
+retry: 10
+retry-interval: 200
+
+HTTP/1.1 200
+[Asserts]
+jsonpath "$.items[?(@.cartSummaryId == '{{cart_id}}')].itemCount" nth 0 == 2
 
 # Step 7: Verify cumulative reservation
 GET http://localhost:8080/queries/stock-level
