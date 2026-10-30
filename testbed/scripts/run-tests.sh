@@ -15,6 +15,8 @@ FAKE_SERVICES_PID=""
 ERASURE_STATE_FILE=""
 ERASURE_COMMIT_MARKER=""
 ERASURE_PAUSE_SELECTOR=""
+ERASURE_PRE_ACTION_SELECTOR=""
+ERASURE_PRE_ACTION_MARKER=""
 OAUTH_TESTBED_LOG=""
 HURL_TEMP_DIR=""
 TESTBED_HTTP_PORT="${TESTBED_HTTP_PORT:-8080}"
@@ -40,6 +42,12 @@ cleanup() {
 	fi
 	if [ -n "$ERASURE_PAUSE_SELECTOR" ]; then
 		rm -f "$ERASURE_PAUSE_SELECTOR"
+	fi
+	if [ -n "$ERASURE_PRE_ACTION_SELECTOR" ]; then
+		rm -f "$ERASURE_PRE_ACTION_SELECTOR"
+	fi
+	if [ -n "$ERASURE_PRE_ACTION_MARKER" ]; then
+		rm -f "$ERASURE_PRE_ACTION_MARKER"
 	fi
 	if [ -n "$HURL_TEMP_DIR" ]; then
 		rm -rf "$HURL_TEMP_DIR"
@@ -143,6 +151,12 @@ export CRYPTOERASURE_COMMIT_MARKER="$ERASURE_COMMIT_MARKER"
 ERASURE_PAUSE_SELECTOR=$(mktemp)
 rm -f "$ERASURE_PAUSE_SELECTOR"
 export CRYPTOERASURE_PAUSE_SELECTOR="$ERASURE_PAUSE_SELECTOR"
+ERASURE_PRE_ACTION_SELECTOR=$(mktemp)
+rm -f "$ERASURE_PRE_ACTION_SELECTOR"
+export CRYPTOERASURE_PRE_ACTION_SELECTOR="$ERASURE_PRE_ACTION_SELECTOR"
+ERASURE_PRE_ACTION_MARKER=$(mktemp)
+rm -f "$ERASURE_PRE_ACTION_MARKER"
+export CRYPTOERASURE_PRE_ACTION_MARKER="$ERASURE_PRE_ACTION_MARKER"
 
 export PGPASSWORD="${DB_PASSWORD:-neohaskell}"
 database_suffix=$(python3 -c 'import uuid; print(uuid.uuid4().hex[:12])')
@@ -223,6 +237,10 @@ restart_oauth_testbed
 python3 testbed/scripts/verify-cryptoerasure-restart.py verify "$ERASURE_STATE_FILE"
 restart_oauth_testbed
 python3 testbed/scripts/verify-cryptoerasure-restart.py verify-completed "$ERASURE_STATE_FILE" "$oauth_db"
+python3 testbed/scripts/verify-cryptoerasure-restart.py prepare-pre-action "$ERASURE_STATE_FILE" "$ERASURE_PRE_ACTION_MARKER" "$ERASURE_PRE_ACTION_SELECTOR"
+rm -f "$ERASURE_PRE_ACTION_SELECTOR"
+restart_oauth_testbed
+python3 testbed/scripts/verify-cryptoerasure-restart.py verify-pre-action "$ERASURE_STATE_FILE" "$oauth_db"
 
 if [ "${CRYPTOERASURE_FAULT_TESTS:-0}" = "1" ]; then
 	: "${TESTBED_FAULT_HTTP_PORT:?Set a private fault HTTP port}"
