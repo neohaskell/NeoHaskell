@@ -25,7 +25,6 @@ import Testbed.Erasable.Owned.Outbound (OwnedErasureOutbound)
 import Testbed.Erasable.Owned.Query (OwnedProtectedView)
 import Testbed.Erasable.Owned.Service qualified as OwnedErasableService
 import Testbed.Integrations.TypedInboundExample (TypedInboundExample)
-import Testbed.Planned.Feature (plannedFlow)
 import Testbed.Service qualified
 import Testbed.Stock.Queries.StockLevel (StockLevel)
 import Testbed.Stock.Feature (stockFlow)
@@ -38,7 +37,6 @@ appEventModel = EventModel.eventModel do
   EventModel.features do
     cartFlow
     stockFlow
-    plannedFlow
 
 
 -- | API metadata for the testbed application.
@@ -59,8 +57,9 @@ testbedApiInfo = ApiInfo
 -- the config type as a parameter. The factory is called AFTER Application.run
 -- loads the config, eliminating the chicken-and-egg problem.
 app :: Int -> Application
-app httpPort =
-  Application.new
+app httpPort = case appEventModel of
+  Err problem -> panic problem
+  Ok _ -> Application.new
     |> Application.withConfig @TestbedConfig
     |> Application.withEventStore makePostgresConfig
     |> Application.withTransport (WebTransport.server {WebTransport.port = httpPort})

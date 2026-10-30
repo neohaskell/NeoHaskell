@@ -18,7 +18,6 @@ module Service.EventModel (
   chapterSlices,
   sliceName,
   sliceKind,
-  sliceIsPlanned,
   sliceEventTypes,
   sliceCommandTargets,
   sliceEventSources,
@@ -29,17 +28,11 @@ module Service.EventModel (
   chapter,
   slice,
   entity,
-  plannedEntity,
   command,
-  plannedCommand,
   produces,
-  plannedProduces,
   query,
-  plannedQuery,
   readsFrom,
-  plannedReadsFrom,
   onEvent,
-  plannedOnEvent,
   outboundIntegration,
   inboundIntegration,
   triggersCommand,
@@ -56,7 +49,7 @@ import Prelude qualified
 import Result (Result (..))
 import Service.Command.Core (Command)
 import Service.Entity.Core (Entity, EntityOf, EventOf)
-import Service.EventModel.Types (Chapter (..), CommandRoot (..), CommandTarget (..), CommandTargetFor (..), EventModel (..), EventRef (..), Feature (..), InboundPart (..), ModelPart (..), OutboundPart (..), PlannedCommandRoot (..), PlannedEventRef (..), PlannedProduced (..), PlannedReadSource (..), Primary (..), Produced (..), QuerySourceMember, ReadSource (..), Slice (..), SlicePart (..))
+import Service.EventModel.Types (Chapter (..), CommandRoot (..), CommandTarget (..), CommandTargetFor (..), EventModel (..), EventRef (..), Feature (..), InboundPart (..), ModelPart (..), OutboundPart (..), Primary (..), Produced (..), QuerySourceMember, ReadSource (..), Slice (..), SlicePart (..))
 import Service.EventModel.Types qualified as Types
 import Service.InboundIntegration.Core (InboundIntegration (..))
 import Service.OutboundIntegration.Core (OutboundIntegration (..))
@@ -155,45 +148,20 @@ entity :: forall entity. (Entity entity, Typeable entity) => CommandRoot entity 
 entity root = Writer.tell [SlicePrimary (StateChange (Proxy @entity) root)]
 
 
--- | Keep a state-change component in the authoring topology without requiring its implementation.
-plannedEntity :: forall entity. Typeable entity => PlannedCommandRoot entity -> Writer [SlicePart] ()
-plannedEntity root = Writer.tell [SlicePrimary (PlannedStateChange (Proxy @entity) root)]
-
-
 command :: forall command entity. (Command command, EntityOf command ~ entity, Typeable command) => Writer [Produced entity] () -> CommandRoot entity
 command builder = CommandRoot (Proxy @command) (Writer.execWriter builder)
-
-
--- | Reference a planned command whose target is declared with 'EntityOf'.
-plannedCommand :: forall command entity. (EntityOf command ~ entity, Typeable command) => Writer [PlannedProduced entity] () -> PlannedCommandRoot entity
-plannedCommand builder = PlannedCommandRoot (Proxy @command) (Writer.execWriter builder)
 
 
 produces :: forall payload entity. (EntityOf payload ~ entity, EventVariantOf (EventOf entity) payload, Typeable payload) => Writer [Produced entity] ()
 produces = Writer.tell [Produced (Proxy @payload)]
 
 
--- | Reference a planned event payload before its Event ADT exists.
-plannedProduces :: forall payload entity. (EntityOf payload ~ entity, Typeable payload) => Writer [PlannedProduced entity] ()
-plannedProduces = Writer.tell [PlannedProduced (Proxy @payload)]
-
-
 query :: forall query. (Query query, Typeable query) => Writer [ReadSource query] () -> Writer [SlicePart] ()
 query builder = Writer.tell [SlicePrimary (StateView (Proxy @query) (Writer.execWriter builder))]
 
 
--- | Keep a state-view component in the authoring topology without requiring its implementation.
-plannedQuery :: forall query. Typeable query => Writer [PlannedReadSource query] () -> Writer [SlicePart] ()
-plannedQuery builder = Writer.tell [SlicePrimary (PlannedStateView (Proxy @query) (Writer.execWriter builder))]
-
-
 readsFrom :: forall entity query. (Entity entity, QueryOf entity query, QuerySourceMember entity query (EntitiesOf query), Typeable entity) => Writer [EventRef entity] () -> Writer [ReadSource query] ()
 readsFrom builder = Writer.tell [ReadSource (Proxy @entity) (Writer.execWriter builder)]
-
-
--- | Name a planned query source that belongs to the query's complete 'EntitiesOf' list.
-plannedReadsFrom :: forall entity query. (QuerySourceMember entity query (EntitiesOf query), Typeable entity) => Writer [PlannedEventRef entity] () -> Writer [PlannedReadSource query] ()
-plannedReadsFrom builder = Writer.tell [PlannedReadSource (Proxy @entity) (Writer.execWriter builder)]
 
 
 class EventPart part payload where
@@ -211,11 +179,6 @@ instance (EntityOf payload ~ EntityOf handler, HandledEvent handler ~ payload, E
 -- | Name a concrete payload subscription in a query source or outbound handler.
 onEvent :: forall payload part. (EventPart part payload) => Writer [part] ()
 onEvent = Writer.tell [makeEventPart @part @payload Proxy]
-
-
--- | Name a planned payload subscription without requiring its Event ADT mapping.
-plannedOnEvent :: forall payload entity. (EntityOf payload ~ entity, Typeable payload) => Writer [PlannedEventRef entity] ()
-plannedOnEvent = Writer.tell [PlannedEventRef (Proxy @payload)]
 
 
 outboundIntegration :: forall handler. (OutboundIntegration handler, Typeable handler) => Writer [OutboundPart handler] () -> Writer [SlicePart] ()
@@ -250,23 +213,10 @@ sliceKind :: Slice -> Text
 sliceKind selected = Types.primaryKind selected.slicePrimary
 
 
--- | Report whether this Slice is topology only and must not start a runtime component.
-sliceIsPlanned :: Slice -> Bool
-sliceIsPlanned selected = case selected.slicePrimary of
-  PlannedStateChange _ _ -> True
-  PlannedStateView _ _ -> True
-  StateChange _ _ -> False
-  StateView _ _ -> False
-  OutboundTranslation _ _ -> False
-  InboundTranslation _ _ -> False
-
-
 sliceEventTypes :: Slice -> [Text]
 sliceEventTypes selected = case selected.slicePrimary of
   StateChange _ (CommandRoot _ produced) -> [Types.typeName payload | Produced payload <- produced]
   StateView _ sources -> Prelude.concat [eventNames events | ReadSource _ events <- sources]
-  PlannedStateChange _ (PlannedCommandRoot _ produced) -> [Types.typeName payload | PlannedProduced payload <- produced]
-  PlannedStateView _ sources -> Prelude.concat [plannedEventNames events | PlannedReadSource _ events <- sources]
   OutboundTranslation _ parts -> [Types.typeName payload | OutboundEvent payload <- parts]
   InboundTranslation _ _ -> []
 
@@ -275,8 +225,6 @@ sliceCommandTargets :: Slice -> [(Text, Text)]
 sliceCommandTargets selected = case selected.slicePrimary of
   StateChange entityProxy (CommandRoot commandProxy _) -> [(Types.typeName commandProxy, Types.typeName entityProxy)]
   StateView _ _ -> []
-  PlannedStateChange entityProxy (PlannedCommandRoot commandProxy _) -> [(Types.typeName commandProxy, Types.typeName entityProxy)]
-  PlannedStateView _ _ -> []
   OutboundTranslation _ parts -> [targetNames target | OutboundCommand target <- parts]
   InboundTranslation _ parts -> [targetNames target | InboundCommand target <- parts]
 
@@ -284,16 +232,11 @@ sliceCommandTargets selected = case selected.slicePrimary of
 sliceEventSources :: Slice -> [(Text, [Text])]
 sliceEventSources selected = case selected.slicePrimary of
   StateView _ sources -> [(Types.typeName entityProxy, eventNames events) | ReadSource entityProxy events <- sources]
-  PlannedStateView _ sources -> [(Types.typeName entityProxy, plannedEventNames events) | PlannedReadSource entityProxy events <- sources]
   _ -> []
 
 
 eventNames :: [EventRef entity] -> [Text]
 eventNames events = [Types.typeName payload | EventRef payload <- events]
-
-
-plannedEventNames :: [PlannedEventRef entity] -> [Text]
-plannedEventNames events = [Types.typeName payload | PlannedEventRef payload <- events]
 
 
 targetNames :: CommandTarget -> (Text, Text)
@@ -339,8 +282,6 @@ validateSlice :: Text -> Text -> Slice -> [Reflection.SomeTypeRep] -> Result Tex
 validateSlice featureLabel chapterLabel selected seen = case selected.slicePrimary of
   StateChange _ _ -> Ok seen
   StateView _ _ -> Ok seen
-  PlannedStateChange _ _ -> Ok seen
-  PlannedStateView _ _ -> Ok seen
   InboundTranslation _ _ -> Ok seen
   OutboundTranslation (proxy :: Proxy handler) parts -> do
     let triggerCount = countOutboundEvents parts
