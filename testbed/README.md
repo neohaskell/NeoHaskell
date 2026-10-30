@@ -38,6 +38,23 @@ CRYPTOERASURE_TEST_DB="$private_db" nix develop --command .agents/skills/tdd/scr
 
 The Hurl scenario asserts a command-generated event, a reconstructed query, two independently protected values, a mapped copy, nested optional values, and Unicode `Available` content. The service fixture uses real PostgreSQL to assert encrypted event storage, restart, key/event rollback, and a private tombstone yielding `Erased`. It rejects equivalent and conflicting protected event ID retries, mixed batches, and concurrent retries through separate pools. Create the named private database before running the fixture. The fixture rejects names without the `nh_cryptoerasure_` prefix.
 
+To check transaction faults against an isolated PostgreSQL instance, set its port in `db_port` and reserve another loopback port for the commit-response proxy. Start the proxy before the fixture. It drops one response only after PostgreSQL reports a completed key and event statement. The fixture also terminates a writer while that statement is blocked, forces two separate-pool writers to overlap at the SQL insert, and reads the durable event and key rows before retrying.
+
+```sh
+db_port=19105
+proxy_port=19106
+private_db="nh_cryptoerasure_$(python3 -c 'import uuid; print(uuid.uuid4().hex[:12])')"
+PGPASSWORD=neohaskell nix develop --command createdb -h 127.0.0.1 -p "$db_port" -U neohaskell "$private_db"
+(
+  python3 -u testbed/scripts/cryptoerasure-commit-proxy.py --listen "$proxy_port" --upstream "$db_port" --evidence .agents-state/cryptoerasure-commit-proxy.json &
+  proxy_pid=$!
+  trap 'kill "$proxy_pid" 2>/dev/null || true' EXIT
+  CRYPTOERASURE_TEST_DB="$private_db" CRYPTOERASURE_TEST_DB_PORT="$db_port" CRYPTOERASURE_COMMIT_PROXY_PORT="$proxy_port" nix develop --command .agents/skills/tdd/scripts/test-match 'Erasable key store' nhcore-test-service
+)
+```
+
+The fixture requires 11 passing examples. The proxy evidence file must contain `"dropped_after_commit": true`. Use a fresh proxy process for each run because it drops only the first completed statement response.
+
 ### Application-owned erasure
 
 The `OwnedProtectedEntity` example in `testbed/src/Testbed/Erasable/Owned/` shows an application accepting a request from the owner of a protected record. Its `RequestErasure` command checks the owner and reference, then records a pending request. `OwnedErasureOutbound` erases one reference through `Integration.Erasable.Erase` and sends a result to the application's internal `RecordErasureResult` command. The query exposes completion separately from the protected value's `Erased` state. A second protected value stays available. The event records a case status of `open` as an illustrative retained business fact; the query rebuilds it from events after restart without reading the erased name. The example also retains the owner ID to authorize retries. Applications must review whether their own owner IDs and other metadata may be retained.
