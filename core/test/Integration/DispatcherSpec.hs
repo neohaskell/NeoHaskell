@@ -588,6 +588,18 @@ spec = do
         missing <- Dispatcher.dispatchCommandWithSource Map.empty Nothing payload |> Task.asResult
         missing |> shouldBe (Err "Command dispatch handler unavailable")
 
+      it "reports a handler that omits its callback" \_ -> do
+        let payload =
+              Integration.CommandPayload
+                { commandType = "OmittedCallback",
+                  commandData = Json.encode ("ignored" :: Text.Text)
+                }
+        let omitCallback :: DispatchHandler
+            omitCallback _source _context _bytes _respond = Task.yield unit
+        let endpoints = Map.empty |> Map.set "OmittedCallback" omitCallback
+        omitted <- Dispatcher.dispatchCommandWithSource endpoints Nothing payload |> Task.asResult
+        omitted |> shouldBe (Err "Command dispatch failed")
+
       it "reports unauthorized callback commands without exposing their response" \_ -> do
         let payload =
               Integration.CommandPayload
