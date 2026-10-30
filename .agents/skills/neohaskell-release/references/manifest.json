@@ -943,6 +943,89 @@
       "source_sha": "708848a109251d6665ced9324e90c2c6dcf60e33",
       "target_policy": "native-v2",
       "version": "0.14.0"
+    },
+    {
+      "base_sha": "56f92499a1650c1f59dec0c6798638bfde327fb7",
+      "base_tag": "neo-v0.14.0",
+      "base_version": "0.14.0",
+      "bootstrap": false,
+      "date": "2026-10-30",
+      "group": "platform",
+      "id": "e759ac51f81ac16550edde88f366c3db1910911ecfc360bb9b1bf6baf163fef7",
+      "impact": "breaking",
+      "kind": "release",
+      "notes": [
+        {
+          "category": "Added",
+          "commit": "522a94bc2fe8e3187eb03a940231561656d56521",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "11b4537c231e5ad3e3de9b2013b9c758a4f8ab3ea13c2882310c27d2dbf6aa7a",
+          "impact": "compatible",
+          "path": ".changes/source-local-event-model-578.md",
+          "sections": {
+            "Summary": "An application can now describe its event flow in source-local Features. Export a Feature action beside its commands, queries, and integrations, then compose those actions in a named Event Model. The compiler checks typed event sources and command targets, and model evaluation checks each Slice has one primary shape. The description does not start workers yet. Existing application registration remains in place."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: compatible\ncategory: Added\n---\n\n## Summary\n\nAn application can now describe its event flow in source-local Features. Export a Feature action beside its commands, queries, and integrations, then compose those actions in a named Event Model. The compiler checks typed event sources and command targets, and model evaluation checks each Slice has one primary shape. The description does not start workers yet. Existing application registration remains in place.\n"
+        },
+        {
+          "category": "Breaking changes",
+          "commit": "0ca306213afe31b5f23b3733de06fc8c1b76f541",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "18ac3272c621fab810e847195d83ad1efd201e3c19b065722e4610d92908dfb2",
+          "impact": "breaking",
+          "path": ".changes/executable-event-model-topology.md",
+          "sections": {
+            "Agent prompt": "```text\nFind every plannedEntity, plannedCommand, plannedProduces, plannedQuery, plannedReadsFrom, plannedOnEvent, and sliceIsPlanned use in my NeoHaskell application. Implement the declared entity, command, query, and payload behavior before replacing each planned builder with entity, command, produces, query, readsFrom, or onEvent. Generate event ADTs separately with deriveEntityEvents, and preserve the existing Application registrations until Event Model runtime wiring is available. Remove any topology-only Slice whose behavior is not being implemented. Compile the app, run its command, query, and integration tests, and report the changed files, results, and any missing implementation that still blocks compilation.\n```",
+            "Migration": "If your application used a `planned*` builder, implement that component before adding it to a Feature. Replace `plannedEntity` with `entity`, `plannedCommand` with `command`, `plannedProduces` with `produces`, `plannedQuery` with `query`, `plannedReadsFrom` with `readsFrom`, and `plannedOnEvent` with `onEvent`. Define the matching `Entity`, `Command`, `Query`, `QueryOf`, and event payload relationships. Generate each entity Event ADT with a separate `deriveEntityEvents` call. Keep the existing `Application` registrations until Event Model runtime wiring is available.\n\n### Verify\n\nCompile the application and run the command, query, and integration tests for every declared Slice. In this repository, run `nix develop --command python3 core/test/Service/EventModel/check_compiler_rejections.py` and `nix develop --command .agents/skills/neohaskell-test/scripts/run-testbed --strict`.",
+            "Summary": "Event Model Slices now require implemented components. A declared command, query, entity, or event payload without its required implementation fails compilation. Applications cannot describe future components with `plannedEntity`, `plannedCommand`, `plannedProduces`, `plannedQuery`, `plannedReadsFrom`, or `plannedOnEvent`."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: breaking\ncategory: Breaking changes\n---\n\n## Summary\n\nEvent Model Slices now require implemented components. A declared command, query, entity, or event payload without its required implementation fails compilation. Applications cannot describe future components with `plannedEntity`, `plannedCommand`, `plannedProduces`, `plannedQuery`, `plannedReadsFrom`, or `plannedOnEvent`.\n\n## Migration\n\nIf your application used a `planned*` builder, implement that component before adding it to a Feature. Replace `plannedEntity` with `entity`, `plannedCommand` with `command`, `plannedProduces` with `produces`, `plannedQuery` with `query`, `plannedReadsFrom` with `readsFrom`, and `plannedOnEvent` with `onEvent`. Define the matching `Entity`, `Command`, `Query`, `QueryOf`, and event payload relationships. Generate each entity Event ADT with a separate `deriveEntityEvents` call. Keep the existing `Application` registrations until Event Model runtime wiring is available.\n\n### Verify\n\nCompile the application and run the command, query, and integration tests for every declared Slice. In this repository, run `nix develop --command python3 core/test/Service/EventModel/check_compiler_rejections.py` and `nix develop --command .agents/skills/neohaskell-test/scripts/run-testbed --strict`.\n\n## Agent prompt\n\n```text\nFind every plannedEntity, plannedCommand, plannedProduces, plannedQuery, plannedReadsFrom, plannedOnEvent, and sliceIsPlanned use in my NeoHaskell application. Implement the declared entity, command, query, and payload behavior before replacing each planned builder with entity, command, produces, query, readsFrom, or onEvent. Generate event ADTs separately with deriveEntityEvents, and preserve the existing Application registrations until Event Model runtime wiring is available. Remove any topology-only Slice whose behavior is not being implemented. Compile the app, run its command, query, and integration tests, and report the changed files, results, and any missing implementation that still blocks compilation.\n```\n"
+        },
+        {
+          "category": "Added",
+          "commit": "ce5df894f75a80532a89f029dd8f15f72d177909",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "261305c1c32324b7d024a89d460733ec3c299cb783eba014affaf8301de9618e",
+          "impact": "compatible",
+          "path": ".changes/event-model-business-rules.md",
+          "sections": {
+            "Summary": "An Event Model state-change or state-view Slice can now keep direct Given-When-Therefore rules beside its implemented command or query. Rules hold concrete historical events, a typed command or incoming event, and an exact command or query outcome. A rule can request typed values and reuse them in the same block. The runner that generates and executes cases will follow separately; applications should keep their existing behavior tests."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: compatible\ncategory: Added\n---\n\n## Summary\n\nAn Event Model state-change or state-view Slice can now keep direct Given-When-Therefore rules beside its implemented command or query. Rules hold concrete historical events, a typed command or incoming event, and an exact command or query outcome. A rule can request typed values and reuse them in the same block. The runner that generates and executes cases will follow separately; applications should keep their existing behavior tests.\n"
+        },
+        {
+          "category": "Fixed",
+          "commit": "829928e19db7d5e00ee9d1e98818af420cc73d32",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "9c45538eebb474bbec975a0c9e99b0861d0b464e5229b17146b3a64276236f62",
+          "impact": "compatible",
+          "path": ".changes/integration-callback-outcome.md",
+          "sections": {
+            "Summary": "An outbound integration now reports a failed result when its callback command is rejected, fails, is unauthorized, or has no handler. Callback failure text stays out of dispatcher errors and logs. An application still decides when and how to retry a pending request."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: compatible\ncategory: Fixed\n---\n\n## Summary\n\nAn outbound integration now reports a failed result when its callback command is rejected, fails, is unauthorized, or has no handler. Callback failure text stays out of dispatcher errors and logs. An application still decides when and how to retry a pending request.\n"
+        },
+        {
+          "category": "Fixed",
+          "commit": "23231da55d8e95bbe9e3084b2f4f768ebc80149c",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "2d6a1d5c610cd90c55c22e4aa3e6b7bc4c1a4b6f13b9a13b3b53fb2ad5aac6de",
+          "impact": "compatible",
+          "path": ".changes/integration-callback-omission.md",
+          "sections": {
+            "Summary": "An outbound integration now reports failure if its command handler returns without sending a result. Your application can keep an erasure request pending and retry it explicitly instead of treating the missing result as completion. No application code change is required."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: compatible\ncategory: Fixed\n---\n\n## Summary\n\nAn outbound integration now reports failure if its command handler returns without sending a result. Your application can keep an erasure request pending and retry it explicitly instead of treating the missing result as completion. No application code change is required.\n"
+        }
+      ],
+      "source_sha": "23231da55d8e95bbe9e3084b2f4f768ebc80149c",
+      "target_policy": "native-v2",
+      "version": "0.15.0"
     }
   ],
   "recoveries": [],
