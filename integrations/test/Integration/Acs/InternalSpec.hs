@@ -354,6 +354,7 @@ spec = do
             , providerRegistry = fromMap Map.empty
             , refreshLocks = emptyLocks
             , fileAccess = Nothing
+            , eraseErasableKey = Nothing
             , outboundDispatch = DispatchRegistry.empty
             }
       let req = makeTestRequestForToAction "http://my-acs.communication.azure.com"
