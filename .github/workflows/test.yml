@@ -27,6 +27,99 @@ permissions:
   contents: read
 
 jobs:
+  pr1019-exact-head:
+    if: github.event_name == 'pull_request' && github.head_ref == 'nh139-pr1019-ci-isolation'
+    runs-on: macos-latest
+    timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      matrix:
+        gate: [strict-suite, guide-evidence]
+    env:
+      PGHOST: 127.0.0.1
+      PGUSER: neohaskell
+      PGPASSWORD: neohaskell
+      POSTGRES_AVAILABLE: "true"
+      DB_HOST: 127.0.0.1
+      DB_PASSWORD: neohaskell
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: de8bd03d20b97acc65cb5e528417da9cd4e541a2
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify the PR head and record the source revision
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/pr1019"
+          head_sha="$(git ls-remote origin refs/heads/nh139-aggregate-actioncontext-test-fixtures | cut -f1)"
+          test "$head_sha" = de8bd03d20b97acc65cb5e528417da9cd4e541a2
+          test "$(git rev-parse HEAD)" = "$head_sha"
+          git rev-parse HEAD | tee "$RUNNER_TEMP/pr1019/source.sha"
+          printf '%s/%s/actions/runs/%s\n' "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" | tee "$RUNNER_TEMP/pr1019/run.url"
+      - name: Install macOS test dependencies
+        run: |
+          brew install bash hurl poppler postgresql@16
+          pg_bin="$(brew --prefix postgresql@16)/bin"
+          echo "$pg_bin" >> "$GITHUB_PATH"
+          echo "PG_BIN=$pg_bin" >> "$GITHUB_ENV"
+      - uses: DeterminateSystems/determinate-nix-action@v3.24.0
+        with:
+          extra-conf: |
+            accept-flake-config = true
+            http2 = false
+            extra-substituters = https://neohaskell.cachix.org?priority=30 https://cache.iog.io
+            extra-trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= neohaskell.cachix.org-1:mo2cLaGbwqbrxs9xhqKK8jeNsn3osi7t6XoAmxSZssc=
+      - uses: DeterminateSystems/magic-nix-cache-action@v14
+      - name: Start a private PostgreSQL 16 cluster
+        run: |
+          set -euo pipefail
+          if lsof -nP -iTCP:5432 -sTCP:LISTEN; then
+            echo 'Port 5432 already has a listener' >&2
+            exit 1
+          fi
+          pg_data="$RUNNER_TEMP/pr1019-postgres"
+          printf 'neohaskell\n' > "$RUNNER_TEMP/pr1019-postgres-password"
+          "$PG_BIN/initdb" -D "$pg_data" -U neohaskell --auth-local=trust --auth-host=scram-sha-256 --pwfile="$RUNNER_TEMP/pr1019-postgres-password"
+          rm "$RUNNER_TEMP/pr1019-postgres-password"
+          "$PG_BIN/pg_ctl" -D "$pg_data" -l "$RUNNER_TEMP/pr1019/postgres.log" -o '-c listen_addresses=localhost -c port=5432 -c max_connections=200' start
+          echo "CI_PGDATA=$pg_data" >> "$GITHUB_ENV"
+          "$PG_BIN/createdb" neohaskell
+          "$PG_BIN/psql" -XAt -d neohaskell -c "SELECT current_setting('server_version_num'), current_setting('data_directory'), inet_server_addr(), inet_server_port()" | tee "$RUNNER_TEMP/pr1019/postgres-identity.txt"
+          test "$("$PG_BIN/psql" -XAt -d neohaskell -c 'SHOW server_version_num' | cut -c1-2)" = 16
+          test "$("$PG_BIN/psql" -XAt -d neohaskell -c 'SHOW data_directory')" = "$pg_data"
+          test "$("$PG_BIN/psql" -XAt -d neohaskell -c 'SELECT inet_server_addr()')" = 127.0.0.1
+          test "$("$PG_BIN/psql" -XAt -d neohaskell -c 'SELECT inet_server_port()')" = 5432
+      - name: Run the exact-head strict aggregate
+        if: matrix.gate == 'strict-suite'
+        run: |
+          set +e
+          nix develop --command .agents/skills/neohaskell-test/scripts/run-full-suite --strict 2>&1 | tee "$RUNNER_TEMP/pr1019/strict-suite.log"
+          status=${PIPESTATUS[0]}
+          printf '%s\n' "$status" > "$RUNNER_TEMP/pr1019/strict-suite.exit"
+          exit "$status"
+      - name: Run the exact-head complete agent guide check
+        if: matrix.gate == 'guide-evidence'
+        run: |
+          set +e
+          nix develop --command .agents/skills/neohaskell-consumer-verification/scripts/agent-docs-check --verify-evidence 2>&1 | tee "$RUNNER_TEMP/pr1019/guide-evidence.log"
+          status=${PIPESTATUS[0]}
+          printf '%s\n' "$status" > "$RUNNER_TEMP/pr1019/guide-evidence.exit"
+          exit "$status"
+      - name: Stop this job's PostgreSQL cluster
+        if: always()
+        run: |
+          if [ -n "${CI_PGDATA:-}" ] && [ -f "$CI_PGDATA/postmaster.pid" ]; then
+            "$PG_BIN/pg_ctl" -D "$CI_PGDATA" -m immediate stop
+          fi
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: pr1019-${{ matrix.gate }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/pr1019/
+          retention-days: 30
+          if-no-files-found: warn
+
   changes:
     runs-on: ubuntu-latest
     timeout-minutes: 5
