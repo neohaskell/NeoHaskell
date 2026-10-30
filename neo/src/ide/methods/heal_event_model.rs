@@ -1338,6 +1338,20 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn argv_capture_reports_its_original_file_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let workspace = dir.path();
+        std::fs::write(workspace.join("event-model.json"), INVALID_MODEL).unwrap();
+        let capture = workspace.join("missing/argv.log");
+
+        let error = run_with_argv_capture(workspace, &capture).await.unwrap_err();
+        assert!(
+            error.to_string().contains("No such file or directory"),
+            "{error}"
+        );
+    }
+
+    #[tokio::test]
     async fn heal_prompt_contains_validation_errors() {
         let dir = tempfile::tempdir().unwrap();
         let workspace = dir.path();
