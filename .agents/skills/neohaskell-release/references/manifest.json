@@ -943,6 +943,50 @@
       "source_sha": "708848a109251d6665ced9324e90c2c6dcf60e33",
       "target_policy": "native-v2",
       "version": "0.14.0"
+    },
+    {
+      "base_sha": "56f92499a1650c1f59dec0c6798638bfde327fb7",
+      "base_tag": "neo-v0.14.0",
+      "base_version": "0.14.0",
+      "bootstrap": false,
+      "date": "2026-10-30",
+      "group": "platform",
+      "id": "f00f3a28dcd0a7c560d3a37e0863c09bb923e8b0f73a05ed81add0dc56818edb",
+      "impact": "breaking",
+      "kind": "release",
+      "notes": [
+        {
+          "category": "Added",
+          "commit": "522a94bc2fe8e3187eb03a940231561656d56521",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "11b4537c231e5ad3e3de9b2013b9c758a4f8ab3ea13c2882310c27d2dbf6aa7a",
+          "impact": "compatible",
+          "path": ".changes/source-local-event-model-578.md",
+          "sections": {
+            "Summary": "An application can now describe its event flow in source-local Features. Export a Feature action beside its commands, queries, and integrations, then compose those actions in a named Event Model. The compiler checks typed event sources and command targets, and model evaluation checks each Slice has one primary shape. The description does not start workers yet. Existing application registration remains in place."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: compatible\ncategory: Added\n---\n\n## Summary\n\nAn application can now describe its event flow in source-local Features. Export a Feature action beside its commands, queries, and integrations, then compose those actions in a named Event Model. The compiler checks typed event sources and command targets, and model evaluation checks each Slice has one primary shape. The description does not start workers yet. Existing application registration remains in place.\n"
+        },
+        {
+          "category": "Breaking changes",
+          "commit": "0ca306213afe31b5f23b3733de06fc8c1b76f541",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "18ac3272c621fab810e847195d83ad1efd201e3c19b065722e4610d92908dfb2",
+          "impact": "breaking",
+          "path": ".changes/executable-event-model-topology.md",
+          "sections": {
+            "Agent prompt": "```text\nFind every plannedEntity, plannedCommand, plannedProduces, plannedQuery, plannedReadsFrom, plannedOnEvent, and sliceIsPlanned use in my NeoHaskell application. Implement the declared entity, command, query, and payload behavior before replacing each planned builder with entity, command, produces, query, readsFrom, or onEvent. Generate event ADTs separately with deriveEntityEvents, and preserve the existing Application registrations until Event Model runtime wiring is available. Remove any topology-only Slice whose behavior is not being implemented. Compile the app, run its command, query, and integration tests, and report the changed files, results, and any missing implementation that still blocks compilation.\n```",
+            "Migration": "If your application used a `planned*` builder, implement that component before adding it to a Feature. Replace `plannedEntity` with `entity`, `plannedCommand` with `command`, `plannedProduces` with `produces`, `plannedQuery` with `query`, `plannedReadsFrom` with `readsFrom`, and `plannedOnEvent` with `onEvent`. Define the matching `Entity`, `Command`, `Query`, `QueryOf`, and event payload relationships. Generate each entity Event ADT with a separate `deriveEntityEvents` call. Keep the existing `Application` registrations until Event Model runtime wiring is available.\n\n### Verify\n\nCompile the application and run the command, query, and integration tests for every declared Slice. In this repository, run `nix develop --command python3 core/test/Service/EventModel/check_compiler_rejections.py` and `nix develop --command .agents/skills/neohaskell-test/scripts/run-testbed --strict`.",
+            "Summary": "Event Model Slices now require implemented components. A declared command, query, entity, or event payload without its required implementation fails compilation. Applications cannot describe future components with `plannedEntity`, `plannedCommand`, `plannedProduces`, `plannedQuery`, `plannedReadsFrom`, or `plannedOnEvent`."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: breaking\ncategory: Breaking changes\n---\n\n## Summary\n\nEvent Model Slices now require implemented components. A declared command, query, entity, or event payload without its required implementation fails compilation. Applications cannot describe future components with `plannedEntity`, `plannedCommand`, `plannedProduces`, `plannedQuery`, `plannedReadsFrom`, or `plannedOnEvent`.\n\n## Migration\n\nIf your application used a `planned*` builder, implement that component before adding it to a Feature. Replace `plannedEntity` with `entity`, `plannedCommand` with `command`, `plannedProduces` with `produces`, `plannedQuery` with `query`, `plannedReadsFrom` with `readsFrom`, and `plannedOnEvent` with `onEvent`. Define the matching `Entity`, `Command`, `Query`, `QueryOf`, and event payload relationships. Generate each entity Event ADT with a separate `deriveEntityEvents` call. Keep the existing `Application` registrations until Event Model runtime wiring is available.\n\n### Verify\n\nCompile the application and run the command, query, and integration tests for every declared Slice. In this repository, run `nix develop --command python3 core/test/Service/EventModel/check_compiler_rejections.py` and `nix develop --command .agents/skills/neohaskell-test/scripts/run-testbed --strict`.\n\n## Agent prompt\n\n```text\nFind every plannedEntity, plannedCommand, plannedProduces, plannedQuery, plannedReadsFrom, plannedOnEvent, and sliceIsPlanned use in my NeoHaskell application. Implement the declared entity, command, query, and payload behavior before replacing each planned builder with entity, command, produces, query, readsFrom, or onEvent. Generate event ADTs separately with deriveEntityEvents, and preserve the existing Application registrations until Event Model runtime wiring is available. Remove any topology-only Slice whose behavior is not being implemented. Compile the app, run its command, query, and integration tests, and report the changed files, results, and any missing implementation that still blocks compilation.\n```\n"
+        }
+      ],
+      "source_sha": "0ca306213afe31b5f23b3733de06fc8c1b76f541",
+      "target_policy": "native-v2",
+      "version": "0.15.0"
     }
   ],
   "recoveries": [],
