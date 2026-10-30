@@ -34,6 +34,9 @@ instance OutboundIntegration ObserveItemAdded where
 data CrossEntityView = CrossEntityView
 
 
+type instance EntitiesOf CrossEntityView = '[CartEntity, StockEntity]
+
+
 instance Query CrossEntityView where
   canAccessImpl _ = Nothing
   canViewImpl _ _ = Nothing
@@ -56,18 +59,28 @@ main = Hspec.hspec spec
 spec :: Spec Unit
 spec = do
   describe "source-local Event Model" do
-    it "composes both exported Features and all four Slice shapes" \_ -> do
+    it "composes three exported Features and all four Slice shapes" \_ -> do
       case App.appEventModel of
         Err problem -> problem |> shouldBe "valid Event Model"
         Ok model -> do
           model |> EventModel.modelName |> shouldBe "Testbed"
           let foundFeatures = model |> EventModel.modelFeatures |> Array.fromLinkedList
-          foundFeatures |> Array.map EventModel.featureName |> shouldBe ["Cart flow", "Stock flow"]
+          foundFeatures |> Array.map EventModel.featureName |> shouldBe ["Cart flow", "Stock flow", "Planned flow"]
           let allChapters = foundFeatures |> Array.flatMap (\selected -> selected |> EventModel.featureChapters |> Array.fromLinkedList)
-          allChapters |> Array.map EventModel.chapterName |> shouldBe ["Manage carts", "Track availability"]
+          allChapters |> Array.map EventModel.chapterName |> shouldBe ["Manage carts", "Track availability", "Review a future flow"]
           let allSlices = allChapters |> Array.flatMap (\selected -> selected |> EventModel.chapterSlices |> Array.fromLinkedList)
-          allSlices |> Array.map EventModel.sliceKind |> shouldBe ["state-change", "state-view", "outbound", "inbound", "state-change", "state-view"]
-          allSlices |> Array.map EventModel.sliceName |> shouldBe ["Add an item", "Show cart summary", "Reserve stock after an item", "Accept typed inbound commands", "Initialize stock", "Show stock level"]
+          allSlices |> Array.map EventModel.sliceKind |> shouldBe ["state-change", "state-view", "outbound", "inbound", "state-change", "state-view", "state-change", "state-view"]
+          allSlices |> Array.map EventModel.sliceName |> shouldBe ["Add an item", "Show cart summary", "Reserve stock after an item", "Accept typed inbound commands", "Initialize stock", "Show stock level", "Record a planned change", "Show a planned view"]
+
+    it "keeps planned components visible without running them" \_ -> do
+      case App.appEventModel of
+        Err problem -> problem |> shouldBe "valid Event Model"
+        Ok model -> do
+          let planned = model |> modelSlices |> Array.takeIf EventModel.sliceIsPlanned
+          planned |> Array.map EventModel.sliceName |> shouldBe ["Record a planned change", "Show a planned view"]
+          planned |> Array.flatMap (\selected -> selected |> EventModel.sliceCommandTargets |> Array.fromLinkedList) |> shouldBe [("PlannedCommand", "PlannedEntity")]
+          planned |> Array.flatMap (\selected -> selected |> EventModel.sliceEventTypes |> Array.fromLinkedList) |> shouldBe ["PlannedPayload", "PlannedPayload"]
+          planned |> Array.flatMap (\selected -> selected |> EventModel.sliceEventSources |> Array.fromLinkedList) |> shouldBe [("PlannedEntity", ["PlannedPayload"])]
 
     it "keeps each translation command with its own target and explicit triggers" \_ -> do
       case App.appEventModel of

@@ -134,7 +134,7 @@ nix develop --command hurl --test testbed/tests/integrations/typed-inbound.hurl
 
 ### Run the source-local Event Model example
 
-`Testbed.Cart.Feature.cartFlow` and `Testbed.Stock.Feature.stockFlow` are exported Feature actions. `App.appEventModel` composes them as bare actions in a named `eventModel do` value. The model describes the cart and stock topology, including all four Slice shapes and each typed inbound command target. The existing `App.app` still starts the testbed until Event Model runtime wiring is implemented.
+`Testbed.Cart.Feature.cartFlow`, `Testbed.Stock.Feature.stockFlow`, and `Testbed.Planned.Feature.plannedFlow` are exported Feature actions. `App.appEventModel` composes them as bare actions in a named `eventModel do` value. The cart and stock Features describe running component topology, including all four Slice shapes and each typed inbound command target. The planned Feature contains declared entity, command, payload, and query types without implementation instances. Its two Slices remain visible through `sliceIsPlanned`, `sliceCommandTargets`, `sliceEventTypes`, and `sliceEventSources`. The existing `App.app` still starts only the registered running components until Event Model runtime wiring is implemented.
 
 From the repository root, run the maintained public API assertions:
 
@@ -142,7 +142,13 @@ From the repository root, run the maintained public API assertions:
 nix develop --command cabal test --project-file=cabal.project.dev nhtestbed-spec-demo --test-show-details=direct
 ```
 
-The `source-local Event Model` examples assert both Features, every Slice once, concrete query payload subscriptions, a query with two explicit entity sources, the outbound payload trigger, and each translation command's target entity. The existing Hurl testbed continues to exercise the cart, stock, outbound, and typed inbound runtime paths through `App.app`:
+The `source-local Event Model` examples assert all three Features, every Slice once, the planned types and their relationships, concrete query payload subscriptions, a query with two explicit entity sources, the outbound payload trigger, and each translation command's target entity. The compiler fixture runner also rejects a planned query source absent from `EntitiesOf` and a planned command aimed at the wrong entity:
+
+```sh
+nix develop --command python3 core/test/Service/EventModel/check_compiler_rejections.py
+```
+
+The existing Hurl testbed continues to exercise the cart, stock, outbound, and typed inbound runtime paths through `App.app`:
 
 ```sh
 TESTBED_HTTP_PORT=18880 TESTBED_OAUTH_PORT=18881 TESTBED_FIXTURE_PORT=18882 nix develop --command .agents/skills/neohaskell-test/scripts/run-testbed --strict

@@ -25,6 +25,7 @@ import Testbed.Erasable.Owned.Outbound (OwnedErasureOutbound)
 import Testbed.Erasable.Owned.Query (OwnedProtectedView)
 import Testbed.Erasable.Owned.Service qualified as OwnedErasableService
 import Testbed.Integrations.TypedInboundExample (TypedInboundExample)
+import Testbed.Planned.Feature (plannedFlow)
 import Testbed.Service qualified
 import Testbed.Stock.Queries.StockLevel (StockLevel)
 import Testbed.Stock.Feature (stockFlow)
@@ -37,6 +38,7 @@ appEventModel = EventModel.eventModel do
   EventModel.features do
     cartFlow
     stockFlow
+    plannedFlow
 
 
 -- | API metadata for the testbed application.
