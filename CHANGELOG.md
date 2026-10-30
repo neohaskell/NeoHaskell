@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.14.1 — 2026-10-30
+
+### Added
+
+- **Framework**: An application can now describe its event flow in source-local Features. Export a Feature action beside its commands, queries, and integrations, then compose those actions in a named Event Model. The compiler checks typed event sources and command targets, and model evaluation checks each Slice has one primary shape. The description does not start workers yet. Existing application registration remains in place. ([change](https://github.com/neohaskell/NeoHaskell/commit/522a94bc2fe8e3187eb03a940231561656d56521))
+- **Framework**: An application can describe a planned state change or query in a source-local Feature before its handlers exist. The model keeps each planned command, event, and query source visible without starting it. Query sources must belong to the query's `EntitiesOf` list, so an invalid source fails compilation. ([change](https://github.com/neohaskell/NeoHaskell/commit/0065a3a30ee09f8961ab8dddf6970fa09ab794ad))
+
+[Compare changes](https://github.com/neohaskell/NeoHaskell/compare/neo-v0.14.0...neo-v0.14.1)
+
 ## 0.14.0 — 2026-10-30
 
 ### Breaking changes

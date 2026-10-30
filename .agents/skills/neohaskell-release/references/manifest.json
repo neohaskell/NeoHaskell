@@ -943,6 +943,48 @@
       "source_sha": "708848a109251d6665ced9324e90c2c6dcf60e33",
       "target_policy": "native-v2",
       "version": "0.14.0"
+    },
+    {
+      "base_sha": "56f92499a1650c1f59dec0c6798638bfde327fb7",
+      "base_tag": "neo-v0.14.0",
+      "base_version": "0.14.0",
+      "bootstrap": false,
+      "date": "2026-10-30",
+      "group": "platform",
+      "id": "e610ef6ba77b350bff050e6fd6426b3dd12e978a382db12da318c5582aa2b774",
+      "impact": "compatible",
+      "kind": "release",
+      "notes": [
+        {
+          "category": "Added",
+          "commit": "522a94bc2fe8e3187eb03a940231561656d56521",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "11b4537c231e5ad3e3de9b2013b9c758a4f8ab3ea13c2882310c27d2dbf6aa7a",
+          "impact": "compatible",
+          "path": ".changes/source-local-event-model-578.md",
+          "sections": {
+            "Summary": "An application can now describe its event flow in source-local Features. Export a Feature action beside its commands, queries, and integrations, then compose those actions in a named Event Model. The compiler checks typed event sources and command targets, and model evaluation checks each Slice has one primary shape. The description does not start workers yet. Existing application registration remains in place."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: compatible\ncategory: Added\n---\n\n## Summary\n\nAn application can now describe its event flow in source-local Features. Export a Feature action beside its commands, queries, and integrations, then compose those actions in a named Event Model. The compiler checks typed event sources and command targets, and model evaluation checks each Slice has one primary shape. The description does not start workers yet. Existing application registration remains in place.\n"
+        },
+        {
+          "category": "Added",
+          "commit": "0065a3a30ee09f8961ab8dddf6970fa09ab794ad",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "baf87493ac009ab4b9ba159bd2426a730f91f79b64fe95e1176cb4f201b29f93",
+          "impact": "compatible",
+          "path": ".changes/planned-event-model-topology.md",
+          "sections": {
+            "Summary": "An application can describe a planned state change or query in a source-local Feature before its handlers exist. The model keeps each planned command, event, and query source visible without starting it. Query sources must belong to the query's `EntitiesOf` list, so an invalid source fails compilation."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: compatible\ncategory: Added\n---\n\n## Summary\n\nAn application can describe a planned state change or query in a source-local Feature before its handlers exist. The model keeps each planned command, event, and query source visible without starting it. Query sources must belong to the query's `EntitiesOf` list, so an invalid source fails compilation.\n"
+        }
+      ],
+      "source_sha": "0065a3a30ee09f8961ab8dddf6970fa09ab794ad",
+      "target_policy": "native-v2",
+      "version": "0.14.1"
     }
   ],
   "recoveries": [],
