@@ -1127,6 +1127,7 @@ dispatchCommandWithSource endpoints sourceEventMetadata payload = do
       -- authenticatedAccess gate.
       requestContext <- Auth.trustedContext
       let cmdBytes = Json.encodeText payload.commandData |> Text.toBytes
+      callbackAccepted <- ConcurrentVar.containing False
       let responseCallback (response, _) = do
             case response of
               Failed {} -> do
@@ -1139,10 +1140,15 @@ dispatchCommandWithSource endpoints sourceEventMetadata payload = do
                 Log.warn "Command dispatch unauthorized" |> Task.ignoreError
                 Task.throw "Command dispatch failed"
               Accepted {} -> do
+                callbackAccepted |> ConcurrentVar.modify (\_ -> True)
                 Log.debug [fmt|Command dispatched successfully: #{cmdType}|] |> Task.ignoreError
                 Task.yield unit
       handler sourceEventMetadata requestContext cmdBytes responseCallback
         |> Task.mapError (\_ -> "Command dispatch failed")
+      wasAccepted <- callbackAccepted |> ConcurrentVar.peek
+      Task.unless wasAccepted do
+        Log.warn "Command dispatch callback unavailable" |> Task.ignoreError
+        Task.throw "Command dispatch failed"
     Nothing -> do
       Log.warn "Command dispatch handler unavailable"
         |> Task.ignoreError

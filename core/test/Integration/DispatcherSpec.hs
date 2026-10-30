@@ -507,15 +507,15 @@ spec = do
         wasLaterRunnerStarted <- ConcurrentVar.peek laterRunnerStarted
         wasLaterRunnerStarted |> shouldBe False
 
-      it "reports every matching runner when callback dispatch fails" \_ -> do
+      it "stops later runners when a handler omits its callback" \_ -> do
         dispatchCount <- ConcurrentVar.containing (0 :: Int)
         laterRunnerStarted <- ConcurrentVar.containing False
         let payload =
               Integration.CommandPayload
-                { commandType = "FailCommand",
+                { commandType = "OmitCommand",
                   commandData = Json.encode ("ignored" :: Text.Text)
                 }
-        let failingRunner =
+        let omittingRunner =
               Dispatcher.OutboundRunner
                 { entityTypeName = "TestEntity",
                   processEvent = \_context _store _event -> Task.yield [payload]
@@ -527,10 +527,10 @@ spec = do
                     laterRunnerStarted |> ConcurrentVar.modify (\_ -> True)
                     Task.yield Array.empty
                 }
-        let failDispatch :: DispatchHandler
-            failDispatch _sourceEventMetadata _requestContext _commandBytes _respond = do
+        let omitDispatch :: DispatchHandler
+            omitDispatch _sourceEventMetadata _requestContext _commandBytes _respond = do
               dispatchCount |> ConcurrentVar.modify (+ 1)
-              Task.throw "private-dispatch-error-sentinel"
+              Task.yield unit
 
         eventStore <- InMemory.new |> Task.mapError toText
         context <- makeContext
@@ -539,9 +539,9 @@ spec = do
             Dispatcher.Setup
               { settings = Dispatcher.defaultConfig,
                 eventStore = eventStore,
-                outboundRunners = [failingRunner, laterRunner],
+                outboundRunners = [omittingRunner, laterRunner],
                 lifecycleRunners = [],
-                commandEndpoints = (Map.empty |> Map.set "FailCommand" failDispatch),
+                commandEndpoints = (Map.empty |> Map.set "OmitCommand" omitDispatch),
                 actionContext = context
               }
         event <- makeTestEvent "dispatch-failure-stream" 1 1
