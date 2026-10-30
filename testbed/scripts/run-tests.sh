@@ -15,6 +15,7 @@ FAKE_SERVICES_PID=""
 ERASURE_STATE_FILE=""
 ERASURE_COMMIT_MARKER=""
 ERASURE_PAUSE_SELECTOR=""
+OAUTH_TESTBED_LOG=""
 HURL_TEMP_DIR=""
 TESTBED_HTTP_PORT="${TESTBED_HTTP_PORT:-8080}"
 TESTBED_OAUTH_PORT="${TESTBED_OAUTH_PORT:-8081}"
@@ -158,7 +159,10 @@ wait_for_service "http://127.0.0.1:$TESTBED_HTTP_PORT/health" "Testbed" "$TESTBE
 echo ""
 
 echo -e "${YELLOW}Starting OAuth testbed...${NC}"
-DB_NAME="$oauth_db" "$(cabal "${CABAL_GLOBAL_OPTIONS[@]}" list-bin "${CABAL_EXE_OPTIONS[@]}" exe:nhoauthtestbed)" &
+oauth_log_dir="${TESTBED_OAUTH_LOG_DIR:-${TMPDIR:-/tmp}}"
+mkdir -p "$oauth_log_dir"
+OAUTH_TESTBED_LOG=$(mktemp "$oauth_log_dir/oauth-cryptoerasure-XXXXXX")
+DB_NAME="$oauth_db" "$(cabal "${CABAL_GLOBAL_OPTIONS[@]}" list-bin "${CABAL_EXE_OPTIONS[@]}" exe:nhoauthtestbed)" >>"$OAUTH_TESTBED_LOG" 2>&1 &
 OAUTH_TESTBED_PID=$!
 wait_for_service "http://127.0.0.1:$TESTBED_OAUTH_PORT/health" "OAuth testbed" "$OAUTH_TESTBED_PID"
 
@@ -198,6 +202,7 @@ bash testbed/scripts/verify-database-isolation.sh "$testbed_db" "$oauth_db"
 python3 testbed/scripts/verify-cryptoerasure-restart.py concurrent "$oauth_db"
 ERASURE_STATE_FILE=$(mktemp)
 python3 testbed/scripts/verify-cryptoerasure-restart.py prepare "$ERASURE_STATE_FILE"
+python3 testbed/scripts/verify-cryptoerasure-restart.py verify-callback-log "$ERASURE_STATE_FILE" "$OAUTH_TESTBED_LOG"
 restart_oauth_testbed() {
 	kill "$OAUTH_TESTBED_PID"
 	wait "$OAUTH_TESTBED_PID" 2>/dev/null || true
@@ -206,7 +211,7 @@ restart_oauth_testbed() {
 		echo -e "${RED}Error: OAuth testbed still responds after its owned process stopped${NC}"
 		exit 1
 	fi
-	DB_NAME="$oauth_db" "$(cabal "${CABAL_GLOBAL_OPTIONS[@]}" list-bin "${CABAL_EXE_OPTIONS[@]}" exe:nhoauthtestbed)" &
+	DB_NAME="$oauth_db" "$(cabal "${CABAL_GLOBAL_OPTIONS[@]}" list-bin "${CABAL_EXE_OPTIONS[@]}" exe:nhoauthtestbed)" >>"$OAUTH_TESTBED_LOG" 2>&1 &
 	OAUTH_TESTBED_PID=$!
 	wait_for_service "http://127.0.0.1:$TESTBED_OAUTH_PORT/health" "Restarted OAuth testbed" "$OAUTH_TESTBED_PID"
 }

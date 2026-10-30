@@ -29,6 +29,8 @@ import Service.Application.Integrations qualified as Integrations
 import Service.Integration.Dispatcher qualified as Dispatcher
 import Service.Integration.DispatchRegistry qualified as DispatchRegistry
 import Service qualified
+import Service.AccessControl (AccessError (..))
+import Service.Response (CommandResponse (..))
 import Service.Transport (DispatchHandler, EndpointHandler)
 import Service.Transport.InternalSpec qualified as InternalCommand
 import Stream qualified
@@ -550,6 +552,66 @@ spec = do
         dispatchAttempts |> shouldBe 1
         wasLaterRunnerStarted <- ConcurrentVar.peek laterRunnerStarted
         wasLaterRunnerStarted |> shouldBe False
+
+      it "reports rejected callback commands without exposing their reason" \_ -> do
+        let payload =
+              Integration.CommandPayload
+                { commandType = "RejectedCallback",
+                  commandData = Json.encode ("ignored" :: Text.Text)
+                }
+        let rejectDispatch :: DispatchHandler
+            rejectDispatch _source _context _bytes respond =
+              respond (Rejected {reason = "private-callback-sentinel"}, Json.encodeText ("ignored" :: Text.Text) |> Text.toBytes)
+        let endpoints = Map.empty |> Map.set "RejectedCallback" rejectDispatch
+        rejected <- Dispatcher.dispatchCommandWithSource endpoints Nothing payload |> Task.asResult
+        rejected |> shouldBe (Err "Command dispatch failed")
+
+      it "reports failed callback commands without exposing their error" \_ -> do
+        let payload =
+              Integration.CommandPayload
+                { commandType = "FailedCallback",
+                  commandData = Json.encode ("ignored" :: Text.Text)
+                }
+        let failDispatch :: DispatchHandler
+            failDispatch _source _context _bytes respond =
+              respond (Failed {error = "private-callback-sentinel"}, Json.encodeText ("ignored" :: Text.Text) |> Text.toBytes)
+        let endpoints = Map.empty |> Map.set "FailedCallback" failDispatch
+        failed <- Dispatcher.dispatchCommandWithSource endpoints Nothing payload |> Task.asResult
+        failed |> shouldBe (Err "Command dispatch failed")
+
+      it "reports a missing callback command handler" \_ -> do
+        let payload =
+              Integration.CommandPayload
+                { commandType = "MissingCallback",
+                  commandData = Json.encode ("ignored" :: Text.Text)
+                }
+        missing <- Dispatcher.dispatchCommandWithSource Map.empty Nothing payload |> Task.asResult
+        missing |> shouldBe (Err "Command dispatch handler unavailable")
+
+      it "reports unauthorized callback commands without exposing their response" \_ -> do
+        let payload =
+              Integration.CommandPayload
+                { commandType = "UnauthorizedCallback",
+                  commandData = Json.encode ("ignored" :: Text.Text)
+                }
+        let unauthorizedDispatch :: DispatchHandler
+            unauthorizedDispatch _source _context _bytes respond =
+              respond (Unauthorized {authError = Unauthenticated}, Json.encodeText ("private-callback-sentinel" :: Text.Text) |> Text.toBytes)
+        let endpoints = Map.empty |> Map.set "UnauthorizedCallback" unauthorizedDispatch
+        unauthorized <- Dispatcher.dispatchCommandWithSource endpoints Nothing payload |> Task.asResult
+        unauthorized |> shouldBe (Err "Command dispatch failed")
+
+      it "does not expose a callback handler failure" \_ -> do
+        let payload =
+              Integration.CommandPayload
+                { commandType = "ThrowingCallback",
+                  commandData = Json.encode ("ignored" :: Text.Text)
+                }
+        let throwingDispatch :: DispatchHandler
+            throwingDispatch _source _context _bytes _respond = Task.throw "private-callback-sentinel"
+        let endpoints = Map.empty |> Map.set "ThrowingCallback" throwingDispatch
+        failed <- Dispatcher.dispatchCommandWithSource endpoints Nothing payload |> Task.asResult
+        failed |> shouldBe (Err "Command dispatch failed")
 
     describe "per-entity ordering" do
       it "processes events for the same entity in order" \_ -> do

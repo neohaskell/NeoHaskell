@@ -55,6 +55,35 @@ def wait_for(case_id, token, predicate):
     raise AssertionError(f"Timed out waiting for erasure state: {view}")
 
 
+def assert_erased_wire(view):
+    assert view["firstSecret"] == {"tag": "Erased", "contents": None}, view
+    assert "$erasable" not in json.dumps(view), view
+    assert "envelope" not in json.dumps(view), view
+
+
+def verify_callback_log(path, log_path):
+    case_id = json.loads(path.read_text())["caseId"]
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        log_text = log_path.read_text()
+        assert "Álvaro" not in log_text and "\\u00c1lvaro" not in log_text, "Protected value appeared in application log"
+        assert "$erasable" not in log_text, "Protected envelope appeared in application log"
+        records = []
+        for line in log_text.splitlines():
+            if line.startswith("{") and line.endswith("}"):
+                records.append(json.loads(line))
+        failures = [record for record in records
+                    if record.get("kind") == "integration_result"
+                    and record.get("streamId") == case_id
+                    and record.get("failureStage") == "callback_dispatch"]
+        if failures:
+            assert len(failures) == 1 and failures[0]["result"] == "failed", failures
+            print("Rejected result command was logged as callback dispatch failure without protected data")
+            return
+        time.sleep(0.1)
+    raise AssertionError("Rejected result command was not logged as callback dispatch failure")
+
+
 def persisted_case(database, case_id, reference):
     safe_id = str(uuid.UUID(case_id))
     command = ["psql", "-h", os.environ.get("DB_HOST", "localhost"),
@@ -92,6 +121,7 @@ def concurrent_case(token):
     })
     assert status == 200 and result["tag"] == "Accepted", (status, result)
     completed = wait_for(case_id, token, lambda item: item["erasureStatus"] == "completed")
+    assert_erased_wire(completed)
     assert completed["firstSecret"]["tag"] == "Erased", completed
     assert completed["staleSecret"]["tag"] == "Erased", completed
     assert completed["secondSecret"]["tag"] == "Available", completed
@@ -116,6 +146,7 @@ def concurrent(database):
         assert completed["firstReference"] == reference, completed
         assert completed["ownerId"] == owner, completed
         assert completed["firstSecret"]["tag"] == "Erased", completed
+        assert_erased_wire(completed)
         assert completed["staleSecret"]["tag"] == "Erased", completed
         assert completed["secondSecret"]["tag"] == "Available", completed
         assert completed["caseStatus"] == "open", completed
@@ -149,6 +180,7 @@ def prepare(path, pause_after_commit=False, marker_path=None, selector_path=None
         else:
             raise AssertionError("Erasure did not reach the committed-key pause")
     wait_for(case_id, token, lambda item: item["firstSecret"]["tag"] == "Erased" and item["erasureStatus"] == "pending")
+    assert_erased_wire(view_for(case_id, token))
     path.write_text(json.dumps({"caseId": case_id, "reference": reference, "ownerId": view["ownerId"], "caseStatus": view["caseStatus"]}))
     if pause_after_commit:
         print("Key deletion committed and the result callback is paused before process death")
@@ -165,6 +197,7 @@ def verify(path):
     assert view["ownerId"] == state["ownerId"], view
     assert view["caseStatus"] == state["caseStatus"] == "open", view
     assert view["firstSecret"]["tag"] == "Erased", view
+    assert_erased_wire(view)
     assert view["secondSecret"]["tag"] == "Available", view
     assert view["erasureStatus"] == "pending", view
     status, result = request("POST", f"{API}/commands/request-erasure", token, {
@@ -174,6 +207,7 @@ def verify(path):
     completed = wait_for(case_id, token, lambda item: item["erasureStatus"] == "completed")
     assert completed["wasAlreadyErased"] is True, completed
     assert completed["firstSecret"]["tag"] == "Erased", completed
+    assert_erased_wire(completed)
     assert completed["staleSecret"]["tag"] == "Erased", completed
     assert completed["secondSecret"]["tag"] == "Available", completed
     print("Explicit retry completed after restart with AlreadyErased")
@@ -207,5 +241,7 @@ if __name__ == "__main__":
         verify(Path(state_path))
     elif action == "verify-completed":
         verify_completed(Path(sys.argv[2]), sys.argv[3])
+    elif action == "verify-callback-log":
+        verify_callback_log(Path(sys.argv[2]), Path(sys.argv[3]))
     else:
-        raise SystemExit("expected concurrent, prepare, prepare-crash, verify, or verify-completed")
+        raise SystemExit("expected concurrent, prepare, prepare-crash, verify, verify-completed, or verify-callback-log")

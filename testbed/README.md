@@ -74,6 +74,14 @@ TESTBED_HTTP_PORT=18880 TESTBED_OAUTH_PORT=18881 TESTBED_FIXTURE_PORT=18882 nix 
 
 The runner creates private databases, runs `testbed/tests/integrations/cryptoerasure-m2.hurl`, and restarts the OAuth testbed for `testbed/scripts/verify-cryptoerasure-restart.py`. One check rejects the result command after key deletion. A separate check pauses after the key transaction commits and before the result callback runs, stops the owned OAuth process, and restarts it. Both checks read the pending application state after restart, retry explicitly, and require `AlreadyErased` completion. The crash check restarts once more and reads back the completed event through the authorized query. The application must retain and retry pending requests; the framework does not promise automatic replay after a crash. The OAuth-enabled and disabled application setups both register the outbound handler; the authenticated scenario uses port 8081.
 
+The same strict command checks that a rejected result command records a callback dispatch failure while the application request stays pending. It reads the private PostgreSQL tombstone, then checks that the authorized `Erased` response contains only `tag` and null `contents` for the erased value. The maintained runner also checks that its application log contains neither the protected value nor its storage envelope. The second protected value remains `Available`, and an explicit retry records completion without restoring the first value. Set `TESTBED_OAUTH_LOG_DIR` to retain the application log in a chosen directory; otherwise the runner uses the system temporary directory. A passing run prints `Rejected result command was logged as callback dispatch failure without protected data` and ends with `testbed: PASS`.
+
+With a PostgreSQL test instance accepting the `neohaskell` user on `127.0.0.1:18883`, run the same check on private database and application ports:
+
+```sh
+DB_HOST=127.0.0.1 DB_PORT=18883 DB_USER=neohaskell DB_PASSWORD=neohaskell TESTBED_HTTP_PORT=18880 TESTBED_OAUTH_PORT=18881 TESTBED_FIXTURE_PORT=18882 TESTBED_OAUTH_LOG_DIR=.agents-state/testbed nix develop --command .agents/skills/neohaskell-test/scripts/run-testbed --strict
+```
+
 To run the persisted fault cases with the maintained testbed, reserve two more private ports and set `CRYPTOERASURE_FAULT_TESTS=1`:
 
 ```sh

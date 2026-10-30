@@ -1129,18 +1129,24 @@ dispatchCommandWithSource endpoints sourceEventMetadata payload = do
       let cmdBytes = Json.encodeText payload.commandData |> Text.toBytes
       let responseCallback (response, _) = do
             case response of
-              Failed {} ->
+              Failed {} -> do
                 Log.warn "Command dispatch failed" |> Task.ignoreError
-              Rejected {} ->
+                Task.throw "Command dispatch failed"
+              Rejected {} -> do
                 Log.warn "Command dispatch rejected" |> Task.ignoreError
-              _ ->
+                Task.throw "Command dispatch failed"
+              Unauthorized {} -> do
+                Log.warn "Command dispatch unauthorized" |> Task.ignoreError
+                Task.throw "Command dispatch failed"
+              Accepted {} -> do
                 Log.debug [fmt|Command dispatched successfully: #{cmdType}|] |> Task.ignoreError
-            Task.yield unit
+                Task.yield unit
       handler sourceEventMetadata requestContext cmdBytes responseCallback
-        |> Task.mapError (\err -> [fmt|Command dispatch failed for #{cmdType}: #{err}|])
+        |> Task.mapError (\_ -> "Command dispatch failed")
     Nothing -> do
-      Log.warn [fmt|No handler found for command: #{cmdType}|]
+      Log.warn "Command dispatch handler unavailable"
         |> Task.ignoreError
+      Task.throw "Command dispatch handler unavailable"
 
 
 startReaper ::
