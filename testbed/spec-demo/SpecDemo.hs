@@ -13,10 +13,12 @@ import Service.EventModel qualified as EventModel
 import Test
 import Test.Hspec qualified as Hspec
 import Testbed.Cart.Commands.AddItem (AddItem (..))
+import Testbed.Cart.Commands.CreateTypedInboundCart (CreateTypedInboundCart)
 import Testbed.Cart.Core (CartCreatedPayload (..), CartEntity (..), ItemAddedPayload (..))
 import Testbed.Cart.Integrations.ReserveStockOnItemAdded (ReserveStockOnItemAdded)
 import Testbed.Cart.Queries.CartSummary (CartSummary (..))
 import Testbed.Integrations.TypedInboundExample (TypedInboundExample)
+import Testbed.Stock.Commands.InitializeStockInternal (InitializeStockInternal)
 import Testbed.Stock.Core (StockEntity (..), StockInitializedPayload)
 import Text qualified
 import Uuid qualified
@@ -280,13 +282,84 @@ spec = do
                 EventModel.chapter "Integrations" do
                   EventModel.slice "First inbound" do
                     EventModel.inboundIntegration @TypedInboundExample do
-                      pass
+                      EventModel.triggersCommand @CreateTypedInboundCart do
+                        EventModel.onTargetEntity @CartEntity
+                      EventModel.triggersCommand @InitializeStockInternal do
+                        EventModel.onTargetEntity @StockEntity
                   EventModel.slice "Second inbound" do
                     EventModel.inboundIntegration @TypedInboundExample do
-                      pass
+                      EventModel.triggersCommand @CreateTypedInboundCart do
+                        EventModel.onTargetEntity @CartEntity
+                      EventModel.triggersCommand @InitializeStockInternal do
+                        EventModel.onTargetEntity @StockEntity
       case modelResult of
         Err problem -> problem |> shouldBe "valid Event Model"
         Ok model -> model |> modelSlices |> Array.map EventModel.sliceName |> shouldBe ["First inbound", "Second inbound"]
+
+    it "rejects an incomplete typed inbound output list at model entry" \_ -> do
+      let invalid = EventModel.eventModel do
+            EventModel.appName "Incomplete inbound"
+            EventModel.features do
+              EventModel.feature "Cart" do
+                EventModel.chapter "Integrations" do
+                  EventModel.slice "Missing stock output" do
+                    EventModel.inboundIntegration @TypedInboundExample do
+                      EventModel.triggersCommand @CreateTypedInboundCart do
+                        EventModel.onTargetEntity @CartEntity
+      case invalid of
+        Err problem -> problem |> Text.contains "Feature \"Cart\", Chapter \"Integrations\", Slice \"Missing stock output\" omits inbound worker output InitializeStockInternal -> StockEntity" |> shouldBe True
+        Ok _ -> False |> shouldBe True
+
+    it "reports each assembled Slice failure before application startup" \_ -> do
+      let invalid = EventModel.eventModel do
+            EventModel.appName "Several errors"
+            EventModel.features do
+              EventModel.feature "Cart" do
+                EventModel.chapter "Integrations" do
+                  EventModel.slice "First" do
+                    EventModel.outboundIntegration @ReserveStockOnItemAdded do
+                      EventModel.onEvent @ItemAddedPayload
+                  EventModel.slice "Second" do
+                    EventModel.outboundIntegration @ReserveStockOnItemAdded do
+                      pass
+                  EventModel.slice "Incomplete inbound" do
+                    EventModel.inboundIntegration @TypedInboundExample do
+                      pass
+      case invalid of
+        Err problem -> do
+          problem |> Text.contains "Slice \"Second\" requires exactly one outbound onEvent; found 0" |> shouldBe True
+          problem |> Text.contains "Slice \"Second\" reuses outbound handler ReserveStockOnItemAdded" |> shouldBe True
+          problem |> Text.contains "Slice \"Incomplete inbound\" omits inbound worker output CreateTypedInboundCart -> CartEntity" |> shouldBe True
+          problem |> Text.contains "Slice \"Incomplete inbound\" omits inbound worker output InitializeStockInternal -> StockEntity" |> shouldBe True
+        Ok _ -> False |> shouldBe True
+
+    it "reports structural and assembled failures across Features and Chapters" \_ -> do
+      let invalid = EventModel.eventModel do
+            EventModel.appName "Mixed failures"
+            EventModel.features do
+              EventModel.feature "Cart" do
+                EventModel.chapter "Integrations" do
+                  EventModel.slice "No primary" do
+                    pass
+                  EventModel.slice "Missing trigger" do
+                    EventModel.outboundIntegration @ReserveStockOnItemAdded do
+                      pass
+              EventModel.feature "Stock" do
+                EventModel.chapter "Commands" do
+                  EventModel.slice "No stock primary" do
+                    pass
+                EventModel.chapter "Notifications" do
+                  EventModel.slice "No notification trigger" do
+                    EventModel.outboundIntegration @ObserveItemAdded do
+                      pass
+      case invalid of
+        Err problem -> do
+          problem |> Text.contains "Feature \"Cart\", Chapter \"Integrations\", Slice \"No primary\" requires exactly one primary; found 0" |> shouldBe True
+          problem |> Text.contains "Feature \"Cart\", Chapter \"Integrations\", Slice \"Missing trigger\" requires exactly one outbound onEvent; found 0" |> shouldBe True
+          problem |> Text.contains "Feature \"Stock\", Chapter \"Commands\", Slice \"No stock primary\" requires exactly one primary; found 0" |> shouldBe True
+          problem |> Text.contains "Feature \"Stock\", Chapter \"Notifications\", Slice \"No notification trigger\" requires exactly one outbound onEvent; found 0" |> shouldBe True
+          problem |> Text.contains "requires a Slice" |> shouldBe False
+        Ok _ -> False |> shouldBe True
 
     it "keeps separate explicit subscriptions for a multi-entity query" \_ -> do
       let modelResult = EventModel.eventModel do
@@ -337,6 +410,23 @@ spec = do
                     pass
       case invalid of
         Err problem -> problem |> Text.contains "Slice \"Missing\" requires exactly one primary; found 0" |> shouldBe True
+        Ok _ -> False |> shouldBe True
+
+    it "names both constructs when a Slice repeats its primary" \_ -> do
+      let invalid = EventModel.eventModel do
+            EventModel.appName "Invalid"
+            EventModel.features do
+              EventModel.feature "Cart" do
+                EventModel.chapter "Commands" do
+                  EventModel.slice "Repeated command" do
+                    EventModel.entity @CartEntity do
+                      EventModel.command @AddItem do
+                        pass
+                    EventModel.entity @CartEntity do
+                      EventModel.command @AddItem do
+                        pass
+      case invalid of
+        Err problem -> problem |> Text.contains "Slice \"Repeated command\" requires exactly one primary; found 2: state-change, state-change" |> shouldBe True
         Ok _ -> False |> shouldBe True
 
   describe "public containment matchers" do
