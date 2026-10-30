@@ -1,5 +1,43 @@
 # Changelog
 
+## 0.15.0 — 2026-10-30
+
+### Breaking changes
+
+- **Framework**: Event Model Slices now require implemented components. A declared command, query, entity, or event payload without its required implementation fails compilation. Applications cannot describe future components with `plannedEntity`, `plannedCommand`, `plannedProduces`, `plannedQuery`, `plannedReadsFrom`, or `plannedOnEvent`. ([change](https://github.com/neohaskell/NeoHaskell/commit/0ca306213afe31b5f23b3733de06fc8c1b76f541))
+
+### Added
+
+- **Framework**: An application can now describe its event flow in source-local Features. Export a Feature action beside its commands, queries, and integrations, then compose those actions in a named Event Model. The compiler checks typed event sources and command targets, and model evaluation checks each Slice has one primary shape. The description does not start workers yet. Existing application registration remains in place. ([change](https://github.com/neohaskell/NeoHaskell/commit/522a94bc2fe8e3187eb03a940231561656d56521))
+- **Framework**: An Event Model state-change or state-view Slice can now keep direct Given-When-Therefore rules beside its implemented command or query. Rules hold concrete historical events, a typed command or incoming event, and an exact command or query outcome. A rule can request typed values and reuse them in the same block. The runner that generates and executes cases will follow separately; applications should keep their existing behavior tests. ([change](https://github.com/neohaskell/NeoHaskell/commit/ce5df894f75a80532a89f029dd8f15f72d177909))
+
+### Fixed
+
+- **Framework**: An outbound integration now reports a failed result when its callback command is rejected, fails, is unauthorized, or has no handler. Callback failure text stays out of dispatcher errors and logs. An application still decides when and how to retry a pending request. ([change](https://github.com/neohaskell/NeoHaskell/commit/829928e19db7d5e00ee9d1e98818af420cc73d32))
+- **Framework**: An outbound integration now reports failure if its command handler returns without sending a result. Your application can keep an erasure request pending and retry it explicitly instead of treating the missing result as completion. No application code change is required. ([change](https://github.com/neohaskell/NeoHaskell/commit/23231da55d8e95bbe9e3084b2f4f768ebc80149c))
+
+### Migration from 0.14.0
+
+#### Framework
+
+If your application used a `planned*` builder, implement that component before adding it to a Feature. Replace `plannedEntity` with `entity`, `plannedCommand` with `command`, `plannedProduces` with `produces`, `plannedQuery` with `query`, `plannedReadsFrom` with `readsFrom`, and `plannedOnEvent` with `onEvent`. Define the matching `Entity`, `Command`, `Query`, `QueryOf`, and event payload relationships. Generate each entity Event ADT with a separate `deriveEntityEvents` call. Keep the existing `Application` registrations until Event Model runtime wiring is available.
+
+### Verify
+
+Compile the application and run the command, query, and integration tests for every declared Slice. In this repository, run `nix develop --command python3 core/test/Service/EventModel/check_compiler_rejections.py` and `nix develop --command .agents/skills/neohaskell-test/scripts/run-testbed --strict`.
+
+<details>
+<summary>Copy this prompt to your coding agent</summary>
+
+```text
+Migrate Framework from NeoHaskell 0.14.0 to 0.15.0.
+Find every plannedEntity, plannedCommand, plannedProduces, plannedQuery, plannedReadsFrom, plannedOnEvent, and sliceIsPlanned use in my NeoHaskell application. Implement the declared entity, command, query, and payload behavior before replacing each planned builder with entity, command, produces, query, readsFrom, or onEvent. Generate event ADTs separately with deriveEntityEvents, and preserve the existing Application registrations until Event Model runtime wiring is available. Remove any topology-only Slice whose behavior is not being implemented. Compile the app, run its command, query, and integration tests, and report the changed files, results, and any missing implementation that still blocks compilation.
+```
+
+</details>
+
+[Compare changes](https://github.com/neohaskell/NeoHaskell/compare/neo-v0.14.0...neo-v0.15.0)
+
 ## 0.14.0 — 2026-10-30
 
 ### Breaking changes
