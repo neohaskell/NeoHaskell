@@ -104,14 +104,14 @@ runReal connection session =
         Ok value -> Task.yield value
 
 
-config :: Postgres.PostgresEventStore
-config =
+config :: Text -> Int -> Postgres.PostgresEventStore
+config databaseName databasePort =
   Postgres.PostgresEventStore
-    { host = "localhost",
-      databaseName = "neohaskell",
+    { host = "127.0.0.1",
+      databaseName,
       user = "neohaskell",
       password = "neohaskell",
-      port = 5432,
+      port = databasePort,
       poolSize = 2,
       sslMode = ConnectionConfig.SslModeUnset,
       sslRootCert = Nothing,
@@ -119,17 +119,43 @@ config =
     }
 
 
-queryConfig :: QueryStore.PostgresQueryObjectStoreConfig
-queryConfig = QueryStore.PostgresQueryObjectStoreConfig
-  { host = "localhost",
-    databaseName = "neohaskell",
+queryConfig :: Text -> Int -> QueryStore.PostgresQueryObjectStoreConfig
+queryConfig databaseName databasePort = QueryStore.PostgresQueryObjectStoreConfig
+  { host = "127.0.0.1",
+    databaseName,
     user = "neohaskell",
     password = "neohaskell",
-    port = 5432,
+    port = databasePort,
     poolSize = 2,
     sslMode = ConnectionConfig.SslModeUnset,
     sslRootCert = Nothing
   }
+
+
+privateDatabase :: Task Text Text
+privateDatabase = do
+  databaseName <- Environment.getVariable "CRYPTOERASURE_TEST_DB"
+  if Text.startsWith "nh_cryptoerasure_" databaseName
+    then Task.yield databaseName
+    else Task.throw "CRYPTOERASURE_TEST_DB must name a fresh nh_cryptoerasure_ database"
+
+
+privatePort :: Task Text Int
+privatePort = do
+  configured <- Environment.getVariable "CRYPTOERASURE_TEST_DB_PORT" |> Task.asResult
+  case configured of
+    Err _ -> Task.yield 5432
+    Ok value -> case Text.toInt value of
+      Nothing -> Task.throw "Invalid CRYPTOERASURE_TEST_DB_PORT"
+      Just port -> Task.yield port
+
+
+commitProxyPort :: Task Text Int
+commitProxyPort = do
+  configured <- Environment.getVariable "CRYPTOERASURE_COMMIT_PROXY_PORT"
+  case Text.toInt configured of
+    Nothing -> Task.throw "Invalid CRYPTOERASURE_COMMIT_PROXY_PORT"
+    Just port -> Task.yield port
 
 
 spec :: Spec Unit
@@ -137,9 +163,10 @@ spec = do
   describe "Erasable key store" do
     whenEnvVar "CRYPTOERASURE_TEST_DB" do
       it "keeps a stale protected reference erased across concurrent pools and reconstruction" \_ -> do
-        databaseName <- Environment.getVariable "CRYPTOERASURE_TEST_DB"
-        let privateConfig = config {Postgres.databaseName = databaseName}
-        let privateQueryConfig = queryConfig {QueryStore.databaseName = databaseName}
+        databaseName <- privateDatabase
+        databasePort <- privatePort
+        let privateConfig = config databaseName databasePort
+        let privateQueryConfig = queryConfig databaseName databasePort
         writer <- PostgresStore.new privateConfig
         eraser <- PostgresStore.new privateConfig
         entityId <- Uuid.generate
@@ -243,8 +270,9 @@ spec = do
         reconnected.close
 
       it "erases only a matching application and stream, and survives a new pool" \_ -> do
-        databaseName <- Environment.getVariable "CRYPTOERASURE_TEST_DB"
-        let privateConfig = config {Postgres.databaseName = databaseName}
+        databaseName <- privateDatabase
+        databasePort <- privatePort
+        let privateConfig = config databaseName databasePort
         store <- PostgresStore.new privateConfig
         entityId <- Uuid.generate
         otherId <- Uuid.generate
@@ -301,9 +329,12 @@ spec = do
         Postgres.defaultOps.release connection
         restarted.close
 
-    whenEnvVar "POSTGRES_AVAILABLE" do
+    whenEnvVar "CRYPTOERASURE_TEST_DB" do
       it "rejects ciphertext swapped between a slash key and nested keys" \_ -> do
-        store <- PostgresStore.new config
+        databaseName <- privateDatabase
+        databasePort <- privatePort
+        let privateConfig = config databaseName databasePort
+        store <- PostgresStore.new privateConfig
         entityId <- Uuid.generate
         let streamId = Event.StreamId (Uuid.toText entityId)
         let entityName = Event.EntityName "erasable-path-collision"
@@ -371,7 +402,10 @@ spec = do
         store.close
 
       it "distinguishes unknown, active, and erased across a new pool" \_ -> do
-        connection <- Postgres.defaultOps.acquire config
+        databaseName <- privateDatabase
+        databasePort <- privatePort
+        let privateConfig = config databaseName databasePort
+        connection <- Postgres.defaultOps.acquire privateConfig
         runReal connection createKeyTable
         firstId <- Uuid.generate
         secondId <- Uuid.generate
@@ -386,7 +420,7 @@ spec = do
         runReal connection (insertFixtureKey first firstKey)
         runReal connection (insertFixtureKey second secondKey)
         Postgres.defaultOps.release connection
-        restarted <- Postgres.defaultOps.acquire config
+        restarted <- Postgres.defaultOps.acquire privateConfig
         runReal restarted (eraseFixtureKey first)
         erased <- runReal restarted (keyRecord first)
         case erased of
@@ -408,7 +442,11 @@ spec = do
         Postgres.defaultOps.release restarted
 
       it "stores encrypted events atomically and resolves fresh key state after restart" \_ -> do
-        store <- PostgresStore.new config
+        databaseName <- privateDatabase
+        databasePort <- privatePort
+        let privateConfig = config databaseName databasePort
+        let privateQueryConfig = queryConfig databaseName databasePort
+        store <- PostgresStore.new privateConfig
         entityId <- Uuid.generate
         let streamId = Event.StreamId (Uuid.toText entityId)
         let entityName = Event.EntityName "erasable-fixture"
@@ -428,20 +466,87 @@ spec = do
         payload <- Event.payloadFromEvents entityName streamId [eventJson]
         store.insertWithErasableKeys keys (payload {Event.insertionType = Event.StreamCreation}) |> Task.mapError toText
         repeated <- store.insertWithErasableKeys keys (payload {Event.insertionType = Event.StreamCreation}) |> Task.asResult
-        case repeated of
-          Ok _ -> fail "A protected duplicate ID must not be accepted as a fresh append"
-          Err _ -> pass
+        repeated |> shouldBe (Err (EventStore.InsertionError Event.ConsistencyCheckFailed))
         let eventId = case Array.first payload.insertions of
               Just insertion -> insertion.metadata.eventId
               Nothing -> panic "Payload must have one insertion"
-        connection <- Postgres.defaultOps.acquire config
+        equivalentRetry <- store.insert (payload {Event.insertionType = Event.AnyStreamState}) |> Task.asResult
+        equivalentRetry |> shouldBe (Err (EventStore.InsertionError Event.ConsistencyCheckFailed))
+        conflictingPayload <- Event.payloadFromEvents entityName streamId
+          [Json.object [("private", Json.toJSON protected), ("retained", Json.toJSON ("changed" :: Text))]]
+        conflictingInsertions <- case Array.first conflictingPayload.insertions of
+          Nothing -> Task.throw "Expected conflicting insertion"
+          Just insertion -> do
+            let repeatedMetadata = insertion.metadata {eventId = eventId}
+            let repeated = Event.Insertion {id = insertion.id, event = insertion.event, metadata = repeatedMetadata}
+            Task.yield (Array.fromLinkedList [repeated])
+        conflict <- store.insert (conflictingPayload
+          { Event.insertions = conflictingInsertions,
+            Event.insertionType = Event.AnyStreamState
+          }) |> Task.asResult
+        conflict |> shouldBe (Err (EventStore.InsertionError Event.ConsistencyCheckFailed))
+        let otherDecision = do
+              other <- Erasable.new (Json.toJSON ("other secret" :: Text))
+              Accept Event.AnyStreamState [other]
+        (otherOutcome, otherKeys) <- Decider.runDecisionWithKeys (DecisionContext {genUuid = Uuid.generate}) (\_ -> Task.throw "No stored key") otherDecision
+        other <- case otherOutcome of
+          RejectCommand _ -> Task.throw "Expected another protected value"
+          AcceptCommand _ values -> case Array.first values of
+            Nothing -> Task.throw "Expected another protected value"
+            Just value -> Task.yield value
+        otherPayload <- Event.payloadFromEvents entityName streamId [Json.toJSON other]
+        otherInsertions <- case Array.first otherPayload.insertions of
+          Nothing -> Task.throw "Expected another insertion"
+          Just insertion -> do
+            let repeatedMetadata = insertion.metadata {eventId = eventId}
+            let repeated = Event.Insertion {id = insertion.id, event = insertion.event, metadata = repeatedMetadata}
+            Task.yield (Array.fromLinkedList [repeated])
+        otherRetry <- store.insertWithErasableKeys otherKeys (otherPayload
+          { Event.insertions = otherInsertions,
+            Event.insertionType = Event.AnyStreamState
+          }) |> Task.asResult
+        otherRetry |> shouldBe (Err (EventStore.InsertionError Event.ConsistencyCheckFailed))
+        strippedPayload <- Event.payloadFromEvents entityName streamId [Json.toJSON ("stripped" :: Text)]
+        strippedInsertions <- case Array.first strippedPayload.insertions of
+          Nothing -> Task.throw "Expected stripped insertion"
+          Just insertion -> do
+            let repeatedMetadata = insertion.metadata {eventId = eventId}
+            let repeated = Event.Insertion {id = insertion.id, event = insertion.event, metadata = repeatedMetadata}
+            Task.yield (Array.fromLinkedList [repeated])
+        strippedRetry <- store.insert (strippedPayload
+          { Event.insertions = strippedInsertions,
+            Event.insertionType = Event.AnyStreamState
+          }) |> Task.asResult
+        strippedRetry |> shouldBe (Err (EventStore.InsertionError Event.ConsistencyCheckFailed))
+        mixedPayload <- Event.payloadFromEvents entityName streamId
+          [Json.toJSON ("stripped" :: Text), Json.toJSON ("new event" :: Text)]
+        (mixedInsertions, newEventId) <- case (Array.get 0 mixedPayload.insertions, Array.get 1 mixedPayload.insertions) of
+          (Just repeated, Just newEvent) -> do
+            let repeatedMetadata = repeated.metadata {eventId = eventId}
+            let collision = Event.Insertion {id = repeated.id, event = repeated.event, metadata = repeatedMetadata}
+            Task.yield (Array.fromLinkedList [collision, newEvent], newEvent.metadata.eventId)
+          _ -> Task.throw "Expected two mixed insertions"
+        mixedRetry <- store.insert (mixedPayload
+          { Event.insertions = mixedInsertions,
+            Event.insertionType = Event.AnyStreamState
+          }) |> Task.asResult
+        mixedRetry |> shouldBe (Err (EventStore.InsertionError Event.ConsistencyCheckFailed))
+        recoveredPayload <- Event.payloadFromEvents entityName streamId [Json.toJSON protected]
+        store.insert (recoveredPayload {Event.insertionType = Event.AnyStreamState}) |> Task.mapError toText |> discard
+        recovered <- store.readAllStreamEvents entityName streamId |> Task.mapError toText |> Task.andThen Stream.toArray
+        Array.length (EventStore.collectStreamEvents recovered) |> shouldBe 2
+        connection <- Postgres.defaultOps.acquire privateConfig
         rawStored <- runReal connection (eventJsonText eventId)
+        orphan <- runReal connection (keyRecord (Erasable.reference other))
+        orphan |> shouldBe Nothing
+        omitted <- runReal connection (eventJsonText newEventId)
+        omitted |> shouldBe Nothing
         case rawStored of
           Nothing -> fail "Expected committed event"
-          Just storedText -> storedText |> shouldSatisfy (\value -> not (Text.contains marker value))
+          Just storedText -> storedText |> shouldSatisfy (\value -> not (Text.contains marker value) && not (Text.contains "changed" value))
         Postgres.defaultOps.release connection
         store.close
-        restarted <- PostgresStore.new config
+        restarted <- PostgresStore.new privateConfig
         messages <- restarted.readAllStreamEvents entityName streamId |> Task.mapError toText |> Task.andThen Stream.toArray
         let events = EventStore.collectStreamEvents messages
         storedEvent <- case Array.first events of
@@ -450,10 +555,10 @@ spec = do
         available <- restarted.renderProtectedJson storedEvent.event |> Task.mapError toText
         Json.encodeText available |> shouldSatisfy (Text.contains marker)
         queryName <- Uuid.generate
-        queryStore <- QueryStore.newFromConfig @Json.Value queryConfig [fmt|erasable-m1-fixture-#{Uuid.toText queryName}|] |> Task.mapError toText
+        queryStore <- QueryStore.newFromConfig @Json.Value privateQueryConfig [fmt|erasable-m1-fixture-#{Uuid.toText queryName}|] |> Task.mapError toText
         queryId <- Uuid.generate
         queryStore.atomicUpdate queryId (\_ -> Just storedEvent.event) |> Task.mapError toText
-        queryConnection <- Postgres.defaultOps.acquire config
+        queryConnection <- Postgres.defaultOps.acquire privateConfig
         queryStored <- runReal queryConnection (queryJsonText queryId)
         case queryStored of
           Nothing -> fail "Expected protected query row"
@@ -462,7 +567,7 @@ spec = do
             rawStored |> shouldSatisfy (\eventText -> eventText != Just queryText)
         Postgres.defaultOps.release queryConnection
         authorizedName <- Uuid.generate
-        authorizedStore <- QueryStore.newFromConfig @ProtectedRead queryConfig [fmt|erasable-m1-authorized-#{Uuid.toText authorizedName}|] |> Task.mapError toText
+        authorizedStore <- QueryStore.newFromConfig @ProtectedRead privateQueryConfig [fmt|erasable-m1-authorized-#{Uuid.toText authorizedName}|] |> Task.mapError toText
         authorizedId <- Uuid.generate
         authorizedStore.atomicUpdate authorizedId (\_ -> Just (ProtectedRead {secret = protected})) |> Task.mapError toText
         let readAuthorized = QueryEndpoint.createQueryEndpointWithProtection
@@ -471,7 +576,7 @@ spec = do
         beforeErasure <- readAuthorized |> Task.mapError toText
         beforeErasure |> shouldSatisfy (Text.contains "Available")
         beforeErasure |> shouldSatisfy (Text.contains marker)
-        keyConnection <- Postgres.defaultOps.acquire config
+        keyConnection <- Postgres.defaultOps.acquire privateConfig
         runReal keyConnection (eraseFixtureKey (Erasable.reference protected))
         erased <- runReal keyConnection (keyRecord (Erasable.reference protected))
         case erased of
@@ -487,7 +592,10 @@ spec = do
         restarted.close
 
       it "rolls back a new key when its event conflicts with the stream" \_ -> do
-        store <- PostgresStore.new config
+        databaseName <- privateDatabase
+        databasePort <- privatePort
+        let privateConfig = config databaseName databasePort
+        store <- PostgresStore.new privateConfig
         entityId <- Uuid.generate
         let streamId = Event.StreamId (Uuid.toText entityId)
         let entityName = Event.EntityName "erasable-conflict-fixture"
@@ -508,7 +616,7 @@ spec = do
         case result of
           Ok _ -> fail "Conflicting event must fail"
           Err _ -> pass
-        connection <- Postgres.defaultOps.acquire config
+        connection <- Postgres.defaultOps.acquire privateConfig
         state <- runReal connection (keyRecord (Erasable.reference protected))
         case state of
           Nothing -> pass
@@ -522,7 +630,10 @@ spec = do
         store.close
 
       it "rolls back keys when event insertion fails inside the same statement" \_ -> do
-        store <- PostgresStore.new config
+        databaseName <- privateDatabase
+        databasePort <- privatePort
+        let privateConfig = config databaseName databasePort
+        store <- PostgresStore.new privateConfig
         entityId <- Uuid.generate
         let streamId = Event.StreamId (Uuid.toText entityId)
         let entityName = Event.EntityName "erasable-statement-failure"
@@ -545,7 +656,7 @@ spec = do
         case result of
           Ok _ -> fail "Duplicate event IDs in one batch must fail"
           Err _ -> pass
-        connection <- Postgres.defaultOps.acquire config
+        connection <- Postgres.defaultOps.acquire privateConfig
         values |> Task.mapArray (\value -> do
           state <- runReal connection (keyRecord (Erasable.reference value))
           state |> shouldBe Nothing)
@@ -555,6 +666,276 @@ spec = do
           Nothing -> panic "Payload must have insertions"))
         stored |> shouldBe Nothing
         Postgres.defaultOps.release connection
+        store.close
+
+      it "rolls back the key and event when a writer disconnects inside the atomic statement" \_ -> do
+        databaseName <- privateDatabase
+        databasePort <- privatePort
+        let privateConfig = config databaseName databasePort
+        store <- PostgresStore.new privateConfig
+        gateOwner <- Postgres.defaultOps.acquire (privateConfig {Postgres.poolSize = 1})
+        observer <- Postgres.defaultOps.acquire (privateConfig {Postgres.poolSize = 1})
+        entityId <- Uuid.generate
+        let streamId = Event.StreamId (Uuid.toText entityId)
+        let entityName = Event.EntityName "erasable-disconnect"
+        let decision = do
+              protected <- Erasable.new ("disconnect secret" :: Text)
+              Accept Event.AnyStreamState [protected]
+        (outcome, keys) <- Decider.runDecisionWithKeys (DecisionContext {genUuid = Uuid.generate}) (\_ -> Task.throw "No stored key") decision
+        protected <- case outcome of
+          RejectCommand _ -> Task.throw "Expected protected value"
+          AcceptCommand _ values -> case Array.first values of
+            Nothing -> Task.throw "Expected protected value"
+            Just value -> Task.yield value
+        payload <- Event.payloadFromEvents entityName streamId [Json.toJSON protected]
+        let eventId = case Array.first payload.insertions of
+              Nothing -> panic "Expected protected insertion"
+              Just insertion -> insertion.metadata.eventId
+        installInsertGate observer
+        holdInsertGate gateOwner
+        Task.finally
+          (do
+            releaseInsertGate gateOwner |> Task.asResult |> discard
+            Postgres.defaultOps.release gateOwner
+            removeInsertGate observer
+            Postgres.defaultOps.release observer)
+          do
+            attempt <- AsyncTask.run (store.insertWithErasableKeys keys payload |> Task.asResult)
+            waitForBlockedWriters observer 1 100
+            backendPid <- blockedWriterPid observer
+            terminated <- case backendPid of
+              Nothing -> Task.throw "Expected blocked writer PID"
+              Just pid -> terminateWriter observer pid
+            terminated |> shouldBe True
+            result <- AsyncTask.waitFor attempt
+            case result of
+              Err (EventStore.InsertionError (Event.InsertionFailed _)) -> pass
+              _ -> fail "A disconnected SQL writer must return an insertion storage error"
+            absentEvent <- runReal observer (eventJsonText eventId)
+            absentKey <- runReal observer (keyRecord (Erasable.reference protected))
+            absentEvent |> shouldBe Nothing
+            absentKey |> shouldBe Nothing
+        store.close
+        reconnected <- PostgresStore.new privateConfig
+        reconnected.insertWithErasableKeys keys payload |> Task.mapError toText |> discard
+        recovered <- reconnected.readAllStreamEvents entityName streamId |> Task.mapError toText |> Task.andThen Stream.toArray
+        Array.length (EventStore.collectStreamEvents recovered) |> shouldBe 1
+        let target = EventStore.ErasureTarget
+              { reference = Erasable.reference protected,
+                entityName,
+                streamId
+              }
+        reconnected.eraseErasableKey target |> Task.mapError toText |> discard
+        repeated <- reconnected.insertWithErasableKeys keys payload |> Task.asResult
+        repeated |> shouldBe (Err (EventStore.InsertionError Event.ConsistencyCheckFailed))
+        verifyConnection <- Postgres.defaultOps.acquire privateConfig
+        tombstone <- runReal verifyConnection (keyRecord (Erasable.reference protected))
+        tombstone |> shouldBe (Just Nothing)
+        Postgres.defaultOps.release verifyConnection
+        reconnected.close
+
+      whenEnvVar "CRYPTOERASURE_COMMIT_PROXY_PORT" do
+        it "recovers a committed protected event after its database response is lost" \_ -> do
+          databaseName <- privateDatabase
+          databasePort <- privatePort
+          proxyPort <- commitProxyPort
+          let privateConfig = config databaseName databasePort
+          let proxyConfig = config databaseName proxyPort
+          writer <- PostgresStore.new proxyConfig
+          observer <- Postgres.defaultOps.acquire privateConfig
+          entityId <- Uuid.generate
+          let streamId = Event.StreamId (Uuid.toText entityId)
+          let entityName = Event.EntityName "erasable-uncertain-commit"
+          let decision = do
+                protected <- Erasable.new ("uncertain secret" :: Text)
+                Accept Event.AnyStreamState [protected]
+          (outcome, keys) <- Decider.runDecisionWithKeys (DecisionContext {genUuid = Uuid.generate}) (\_ -> Task.throw "No stored key") decision
+          protected <- case outcome of
+            RejectCommand _ -> Task.throw "Expected protected value"
+            AcceptCommand _ values -> case Array.first values of
+              Nothing -> Task.throw "Expected protected value"
+              Just value -> Task.yield value
+          payload <- Event.payloadFromEvents entityName streamId [Json.toJSON protected]
+          let eventId = case Array.first payload.insertions of
+                Nothing -> panic "Expected protected insertion"
+                Just insertion -> insertion.metadata.eventId
+          uncertain <- writer.insertWithErasableKeys keys payload |> Task.asResult
+          case uncertain of
+            Err (EventStore.InsertionError (Event.InsertionFailed _)) -> pass
+            _ -> fail "A lost commit response must leave the caller uncertain"
+          durableEvent <- runReal observer (eventJsonText eventId)
+          durableKey <- runReal observer (keyRecord (Erasable.reference protected))
+          durableEvent |> shouldSatisfy (\value -> case value of
+            Nothing -> False
+            Just stored -> Text.contains (Erasable.reference protected) stored && not (Text.contains "uncertain secret" stored))
+          durableKey |> shouldSatisfy (\value -> case value of Just (Just _) -> True; _ -> False)
+          writer.close
+          reconnected <- PostgresStore.new privateConfig
+          exactRetry <- reconnected.insertWithErasableKeys keys payload |> Task.asResult
+          exactRetry |> shouldBe (Err (EventStore.InsertionError Event.ConsistencyCheckFailed))
+          conflicting <- Event.payloadFromEvents entityName streamId
+            [Json.object [("protected", Json.toJSON protected), ("retained", Json.toJSON ("changed" :: Text))]]
+          let conflictingInsertions = conflicting.insertions |> Array.map (\insertion -> do
+                let repeatedMetadata = insertion.metadata {eventId = eventId}
+                Event.Insertion {id = insertion.id, event = insertion.event, metadata = repeatedMetadata})
+          conflictResult <- reconnected.insert (conflicting
+            {Event.insertions = conflictingInsertions, Event.insertionType = Event.AnyStreamState}) |> Task.asResult
+          conflictResult |> shouldBe (Err (EventStore.InsertionError Event.ConsistencyCheckFailed))
+          stripped <- Event.payloadFromEvents entityName streamId [Json.toJSON ("stripped" :: Text)]
+          let strippedInsertions = stripped.insertions |> Array.map (\insertion -> do
+                let repeatedMetadata = insertion.metadata {eventId = eventId}
+                Event.Insertion {id = insertion.id, event = insertion.event, metadata = repeatedMetadata})
+          strippedResult <- reconnected.insert (stripped
+            {Event.insertions = strippedInsertions, Event.insertionType = Event.AnyStreamState}) |> Task.asResult
+          strippedResult |> shouldBe (Err (EventStore.InsertionError Event.ConsistencyCheckFailed))
+          messages <- reconnected.readAllStreamEvents entityName streamId |> Task.mapError toText |> Task.andThen Stream.toArray
+          Array.length (EventStore.collectStreamEvents messages) |> shouldBe 1
+          let target = EventStore.ErasureTarget
+                { reference = Erasable.reference protected,
+                  entityName,
+                  streamId
+                }
+          reconnected.eraseErasableKey target |> Task.mapError toText |> discard
+          afterErasure <- reconnected.insertWithErasableKeys keys payload |> Task.asResult
+          afterErasure |> shouldBe (Err (EventStore.InsertionError Event.ConsistencyCheckFailed))
+          tombstone <- runReal observer (keyRecord (Erasable.reference protected))
+          tombstone |> shouldBe (Just Nothing)
+          reconnected.close
+          Postgres.defaultOps.release observer
+
+      it "keeps one protected event and key across concurrent pool retries and reconnect" \_ -> do
+        databaseName <- privateDatabase
+        databasePort <- privatePort
+        let privateConfig = config databaseName databasePort
+        firstStore <- PostgresStore.new privateConfig
+        secondStore <- PostgresStore.new privateConfig
+        entityId <- Uuid.generate
+        let streamId = Event.StreamId (Uuid.toText entityId)
+        let entityName = Event.EntityName "erasable-duplicate-race"
+        let firstDecision = do
+              protected <- Erasable.new ("first race secret" :: Text)
+              Accept Event.AnyStreamState [protected]
+        (firstOutcome, firstKeys) <- Decider.runDecisionWithKeys (DecisionContext {genUuid = Uuid.generate}) (\_ -> Task.throw "No stored key") firstDecision
+        firstProtected <- case firstOutcome of
+          RejectCommand _ -> Task.throw "Expected protected value"
+          AcceptCommand _ values -> case Array.first values of
+            Nothing -> Task.throw "Expected protected value"
+            Just value -> Task.yield value
+        let secondDecision = do
+              protected <- Erasable.new ("second race secret" :: Text)
+              Accept Event.AnyStreamState [protected]
+        (secondOutcome, secondKeys) <- Decider.runDecisionWithKeys (DecisionContext {genUuid = Uuid.generate}) (\_ -> Task.throw "No stored key") secondDecision
+        secondProtected <- case secondOutcome of
+          RejectCommand _ -> Task.throw "Expected second protected value"
+          AcceptCommand _ values -> case Array.first values of
+            Nothing -> Task.throw "Expected second protected value"
+            Just value -> Task.yield value
+        firstPayload <- Event.payloadFromEvents entityName streamId [Json.toJSON firstProtected]
+        secondPayload <- Event.payloadFromEvents entityName streamId [Json.toJSON secondProtected]
+        let eventId = case Array.first firstPayload.insertions of
+              Nothing -> panic "Expected first insertion"
+              Just insertion -> insertion.metadata.eventId
+        let collision = secondPayload.insertions |> Array.map (\insertion -> do
+              let repeatedMetadata = insertion.metadata {eventId = eventId}
+              Event.Insertion {id = insertion.id, event = insertion.event, metadata = repeatedMetadata})
+        let conflictingPayload = secondPayload {Event.insertions = collision}
+        gateOwner <- Postgres.defaultOps.acquire (privateConfig {Postgres.poolSize = 1})
+        observer <- Postgres.defaultOps.acquire (privateConfig {Postgres.poolSize = 1})
+        installInsertGate observer
+        holdInsertGate gateOwner
+        winner <- Task.finally
+          (do
+            Postgres.defaultOps.release gateOwner
+            removeInsertGate observer
+            Postgres.defaultOps.release observer)
+          do
+            firstAttempt <- AsyncTask.run (firstStore.insertWithErasableKeys firstKeys firstPayload |> Task.asResult)
+            secondAttempt <- AsyncTask.run (secondStore.insertWithErasableKeys secondKeys conflictingPayload |> Task.asResult)
+            waitForBlockedWriters observer 2 100
+            releaseInsertGate gateOwner
+            firstResult <- AsyncTask.waitFor firstAttempt
+            secondResult <- AsyncTask.waitFor secondAttempt
+            case (firstResult, secondResult) of
+              (Ok _, Err (EventStore.InsertionError (Event.InsertionFailed error))) -> do
+                error |> shouldSatisfy (Text.contains "23505")
+                Task.yield firstProtected
+              (Err (EventStore.InsertionError (Event.InsertionFailed error)), Ok _) -> do
+                error |> shouldSatisfy (Text.contains "23505")
+                Task.yield secondProtected
+              _ -> Task.throw "Exactly one overlapping SQL writer must commit"
+        firstStore.close
+        secondStore.close
+        reconnected <- PostgresStore.new privateConfig
+        firstRetry <- reconnected.insertWithErasableKeys firstKeys firstPayload |> Task.asResult
+        secondRetry <- reconnected.insertWithErasableKeys secondKeys conflictingPayload |> Task.asResult
+        firstRetry |> shouldBe (Err (EventStore.InsertionError Event.ConsistencyCheckFailed))
+        secondRetry |> shouldBe (Err (EventStore.InsertionError Event.ConsistencyCheckFailed))
+        messages <- reconnected.readAllStreamEvents entityName streamId |> Task.mapError toText |> Task.andThen Stream.toArray
+        Array.length (EventStore.collectStreamEvents messages) |> shouldBe 1
+        connection <- Postgres.defaultOps.acquire privateConfig
+        winnerKey <- runReal connection (keyRecord (Erasable.reference winner))
+        winnerKey |> shouldSatisfy (\value -> case value of Just (Just _) -> True; _ -> False)
+        let loser = if Erasable.reference winner == Erasable.reference firstProtected then secondProtected else firstProtected
+        loserKey <- runReal connection (keyRecord (Erasable.reference loser))
+        loserKey |> shouldBe Nothing
+        storedEvent <- runReal connection (eventJsonText eventId)
+        storedEvent |> shouldSatisfy (\value -> case value of Just text -> Text.contains (Erasable.reference winner) text; Nothing -> False)
+        Postgres.defaultOps.release connection
+        let target = EventStore.ErasureTarget
+              { reference = Erasable.reference winner,
+                entityName,
+                streamId
+              }
+        reconnected.eraseErasableKey target |> Task.mapError toText |> discard
+        firstAfterErasure <- reconnected.insertWithErasableKeys firstKeys firstPayload |> Task.asResult
+        secondAfterErasure <- reconnected.insertWithErasableKeys secondKeys conflictingPayload |> Task.asResult
+        firstAfterErasure |> shouldBe (Err (EventStore.InsertionError Event.ConsistencyCheckFailed))
+        secondAfterErasure |> shouldBe (Err (EventStore.InsertionError Event.ConsistencyCheckFailed))
+        erased <- reconnected.renderProtectedJson (Json.toJSON winner) |> Task.mapError toText
+        Json.encodeText erased |> shouldSatisfy (Text.contains "Erased")
+        finalConnection <- Postgres.defaultOps.acquire privateConfig
+        tombstone <- runReal finalConnection (keyRecord (Erasable.reference winner))
+        tombstone |> shouldBe (Just Nothing)
+        remainingLoser <- runReal finalConnection (keyRecord (Erasable.reference loser))
+        remainingLoser |> shouldBe Nothing
+        Postgres.defaultOps.release finalConnection
+        reconnected.close
+
+      it "does not insert an event when its key write fails" \_ -> do
+        databaseName <- privateDatabase
+        databasePort <- privatePort
+        let privateConfig = config databaseName databasePort
+        store <- PostgresStore.new privateConfig
+        entityId <- Uuid.generate
+        let streamId = Event.StreamId (Uuid.toText entityId)
+        let entityName = Event.EntityName "erasable-key-failure"
+        let decision = do
+              protected <- Erasable.new ("private" :: Text)
+              Accept Event.AnyStreamState [protected]
+        (outcome, keys) <- Decider.runDecisionWithKeys (DecisionContext {genUuid = Uuid.generate}) (\_ -> Task.throw "No stored key") decision
+        protected <- case outcome of
+          RejectCommand _ -> Task.throw "Expected protected value"
+          AcceptCommand _ values -> case Array.first values of
+            Nothing -> Task.throw "Expected protected value"
+            Just value -> Task.yield value
+        firstPayload <- Event.payloadFromEvents entityName streamId [Json.toJSON protected]
+        store.insertWithErasableKeys keys firstPayload |> Task.mapError toText |> discard
+        secondPayload <- Event.payloadFromEvents entityName streamId [Json.toJSON protected]
+        failed <- store.insertWithErasableKeys keys secondPayload |> Task.asResult
+        case failed of
+          Ok _ -> fail "A duplicate key write must reject the new event"
+          Err _ -> pass
+        let secondEventId = case Array.first secondPayload.insertions of
+              Just insertion -> insertion.metadata.eventId
+              Nothing -> panic "Expected a second insertion"
+        connection <- Postgres.defaultOps.acquire privateConfig
+        absent <- runReal connection (eventJsonText secondEventId)
+        absent |> shouldBe Nothing
+        storedKey <- runReal connection (keyRecord (Erasable.reference protected))
+        storedKey |> shouldSatisfy (\value -> case value of Just (Just _) -> True; _ -> False)
+        Postgres.defaultOps.release connection
+        messages <- store.readAllStreamEvents entityName streamId |> Task.mapError toText |> Task.andThen Stream.toArray
+        Array.length (EventStore.collectStreamEvents messages) |> shouldBe 1
         store.close
 
 
@@ -567,6 +948,72 @@ eventJsonText eventId = do
           (Decoders.rowMaybe (Decoders.column (Decoders.nonNullable Decoders.text)))
           True
   Session.statement (Uuid.toLegacy eventId) statement
+
+
+installInsertGate :: Postgres.Connection -> Task Text Unit
+installInsertGate connection =
+  runReal connection do
+    Session.sql "CREATE FUNCTION cryptoerasure_insert_gate() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN PERFORM pg_advisory_xact_lock(782391); RETURN NEW; END $$"
+    Session.sql "CREATE TRIGGER cryptoerasure_insert_gate BEFORE INSERT ON Events FOR EACH ROW EXECUTE FUNCTION cryptoerasure_insert_gate()"
+
+
+removeInsertGate :: Postgres.Connection -> Task Text Unit
+removeInsertGate connection =
+  runReal connection do
+    Session.sql "DROP TRIGGER IF EXISTS cryptoerasure_insert_gate ON Events"
+    Session.sql "DROP FUNCTION IF EXISTS cryptoerasure_insert_gate()"
+
+
+holdInsertGate :: Postgres.Connection -> Task Text Unit
+holdInsertGate connection = runReal connection (Session.sql "DO $$ BEGIN PERFORM pg_advisory_lock(782391); END $$")
+
+
+releaseInsertGate :: Postgres.Connection -> Task Text Unit
+releaseInsertGate connection = runReal connection (Session.sql "DO $$ BEGIN PERFORM pg_advisory_unlock(782391); END $$")
+
+
+blockedWriterCount :: Postgres.Connection -> Task Text Int64
+blockedWriterCount connection =
+  runReal connection do
+    let statement :: Statement () Int64 = Statement
+          "SELECT count(*)::bigint FROM pg_stat_activity WHERE datname = current_database() AND wait_event = 'advisory' AND query LIKE '%inserted_keys%'"
+          Encoders.noParams
+          (Decoders.singleRow (Decoders.column (Decoders.nonNullable Decoders.int8)))
+          True
+    Session.statement () statement
+
+
+blockedWriterPid :: Postgres.Connection -> Task Text (Maybe Int64)
+blockedWriterPid connection =
+  runReal connection do
+    let statement :: Statement () (Maybe Int64) = Statement
+          "SELECT pid::bigint FROM pg_stat_activity WHERE datname = current_database() AND wait_event = 'advisory' AND query LIKE '%inserted_keys%' LIMIT 1"
+          Encoders.noParams
+          (Decoders.rowMaybe (Decoders.column (Decoders.nonNullable Decoders.int8)))
+          True
+    Session.statement () statement
+
+
+waitForBlockedWriters :: Postgres.Connection -> Int64 -> Int -> Task Text Unit
+waitForBlockedWriters connection expected attempts = do
+  observed <- blockedWriterCount connection
+  Task.unless (observed >= expected) do
+    if attempts <= 0
+      then Task.throw [fmt|Expected #{expected} SQL writers at the database gate, observed #{observed}|]
+      else do
+        AsyncTask.sleep 20
+        waitForBlockedWriters connection expected (attempts - 1)
+
+
+terminateWriter :: Postgres.Connection -> Int64 -> Task Text Bool
+terminateWriter connection backendPid =
+  runReal connection do
+    let statement :: Statement Int64 Bool = Statement
+          "SELECT pg_terminate_backend(($1::bigint)::integer)"
+          (Encoders.param (Encoders.nonNullable Encoders.int8))
+          (Decoders.singleRow (Decoders.column (Decoders.nonNullable Decoders.bool)))
+          True
+    Session.statement backendPid statement
 
 
 createKeyTable :: Session.Session ()

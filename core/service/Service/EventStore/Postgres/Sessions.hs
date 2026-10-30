@@ -271,6 +271,18 @@ selectExistingIdsSession ids = do
     |> Mappable.map fromLegacyUuids
 
 
+selectExistingEventDataSession :: Array Uuid -> Session.Session (Array Json.Value)
+selectExistingEventDataSession ids = do
+  let statement :: Statement (Vector UUID.UUID) (Array Json.Value) =
+        Statement
+          "SELECT EventData FROM Events WHERE EventId = ANY ($1 :: uuid[])"
+          (Encoders.param (Encoders.nonNullable (Encoders.foldableArray (Encoders.nonNullable Encoders.uuid))))
+          (Decoders.rowVector (Decoders.column (Decoders.nonNullable Decoders.jsonb)))
+          True
+            |> Mappable.map Array.fromLegacy
+  Session.statement (toLegacyUuids ids) statement
+
+
 toLegacyUuids :: Array Uuid -> Vector UUID.UUID
 toLegacyUuids ids =
   ids

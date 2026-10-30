@@ -261,6 +261,12 @@ jobs:
         env:
           POSTGRES_AVAILABLE: "true"
         run: LOG_LEVEL=Warn ./.agents/skills/neohaskell-test/scripts/nix-acquisition-diagnostics nix develop .#ci --command cabal test nhcore-test-service --test-show-details=direct
+      - name: Run Erasable key store examples
+        run: |
+          private_db="nh_cryptoerasure_ci_${GITHUB_RUN_ID}_${GITHUB_RUN_ATTEMPT}"
+          docker exec neohaskell_postgres createdb -U neohaskell "$private_db"
+          CRYPTOERASURE_TEST_DB="$private_db" LOG_LEVEL=Warn nix develop .#ci --command .agents/skills/tdd/scripts/test-match --builddir "$RUNNER_TEMP/erasable-build" --transcript "$RUNNER_TEMP/erasable-service.log" 'Erasable key store' nhcore-test-service
+          grep -F 'summary: 10 examples, 0 failures' "$RUNNER_TEMP/erasable-service.log"
       - name: Check entity event compiler rejections
         run: nix develop .#ci --command python3 core/test/Service/Event/check_compiler_rejections.py
 
@@ -312,6 +318,12 @@ jobs:
       - name: Install poppler-utils (for PDF extraction tests)
         run: sudo apt-get update && sudo apt-get install -y poppler-utils
       - name: Run integration tests
+        env:
+          DB_HOST: 127.0.0.1
+          DB_PASSWORD: neohaskell
+          CRYPTOERASURE_FAULT_TESTS: "1"
+          TESTBED_FAULT_HTTP_PORT: "19153"
+          TESTBED_FAULT_FIXTURE_PORT: "19154"
         run: nix develop --command ./testbed/scripts/run-tests.sh
       - name: Prove cold-start health stays flat through 100k events
         run: nix develop --command ./testbed/scripts/cold-start-readiness.sh

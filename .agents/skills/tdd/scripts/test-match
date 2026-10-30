@@ -77,6 +77,7 @@ def parser() -> argparse.ArgumentParser:
     )
     result.add_argument("--timeout", type=parse_timeout, default=300)
     result.add_argument("--transcript", help="write the captured run to this path")
+    result.add_argument("--builddir", help="keep Cabal build output in this directory")
     result.add_argument("pattern", help="Hspec pattern; use -- before a pattern that starts with '-'")
     result.add_argument("suite", nargs="?", default="nhcore-test-core")
     return result
@@ -221,6 +222,8 @@ def main() -> int:
         "--project-file=cabal.project.dev",
         "-v0",
     ]
+    if args.builddir:
+        command.append(f"--builddir={args.builddir}")
     repl_input = f":main --match {haskell_string(args.pattern)}\n"
     transcript = transcript_path(root, invocation_cwd, args.transcript)
     try:
