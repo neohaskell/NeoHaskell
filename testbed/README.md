@@ -24,18 +24,19 @@ This testbed includes:
 
 ### Protected PostgreSQL round trip
 
-From the repository root, start PostgreSQL with the testbed defaults (`neohaskell` database and user, password `neohaskell`, port `5432`). Then run these commands in separate terminals:
+From the repository root, start PostgreSQL with a test user that can create databases. Run the maintained testbed against private ports, then create another fresh database for the service fixture:
 
 ```bash
-nix develop --command cabal run exe:nhtestbed
+DB_HOST=127.0.0.1 TESTBED_HTTP_PORT=19150 TESTBED_OAUTH_PORT=19151 TESTBED_FIXTURE_PORT=19152 nix develop --command .agents/skills/neohaskell-test/scripts/run-testbed --strict
 ```
 
 ```bash
-nix develop --command hurl --test testbed/tests/scenarios/cryptoerasure-m1.hurl
-POSTGRES_AVAILABLE=true nix develop --command .agents/skills/tdd/scripts/test-match 'Erasable key store' nhcore-test-service
+private_db="nh_cryptoerasure_$(python3 -c 'import uuid; print(uuid.uuid4().hex[:12])')"
+PGPASSWORD=neohaskell nix develop --command createdb -h 127.0.0.1 -U neohaskell "$private_db"
+CRYPTOERASURE_TEST_DB="$private_db" nix develop --command .agents/skills/tdd/scripts/test-match 'Erasable key store' nhcore-test-service
 ```
 
-The Hurl scenario asserts a command-generated event, a reconstructed query, two independently protected values, a mapped copy, nested optional values, and Unicode `Available` content. The service fixture uses real PostgreSQL to assert encrypted event storage, restart, key/event rollback, and a private tombstone yielding `Erased`. Erasure is deliberately not exposed as an application command or HTTP success response in this slice.
+The Hurl scenario asserts a command-generated event, a reconstructed query, two independently protected values, a mapped copy, nested optional values, and Unicode `Available` content. The service fixture uses real PostgreSQL to assert encrypted event storage, restart, key/event rollback, and a private tombstone yielding `Erased`. Create the named private database before running the fixture. The fixture rejects names without the `nh_cryptoerasure_` prefix.
 
 ### Application-owned erasure
 
@@ -56,6 +57,16 @@ TESTBED_HTTP_PORT=18880 TESTBED_OAUTH_PORT=18881 TESTBED_FIXTURE_PORT=18882 nix 
 
 The runner creates private databases, runs `testbed/tests/integrations/cryptoerasure-m2.hurl`, and restarts the OAuth testbed for `testbed/scripts/verify-cryptoerasure-restart.py`. One check rejects the result command after key deletion. A separate check pauses after the key transaction commits and before the result callback runs, stops the owned OAuth process, and restarts it. Both checks read the pending application state after restart, retry explicitly, and require `AlreadyErased` completion. The crash check restarts once more and reads back the completed event through the authorized query. The application must retain and retry pending requests; the framework does not promise automatic replay after a crash. The OAuth-enabled and disabled application setups both register the outbound handler; the authenticated scenario uses port 8081.
 
+To run the persisted fault cases with the maintained testbed, reserve two more private ports and set `CRYPTOERASURE_FAULT_TESTS=1`:
+
+```sh
+DB_HOST=127.0.0.1 DB_PASSWORD=neohaskell TESTBED_HTTP_PORT=19150 TESTBED_OAUTH_PORT=19151 TESTBED_FIXTURE_PORT=19152 TESTBED_FAULT_HTTP_PORT=19153 TESTBED_FAULT_FIXTURE_PORT=19154 CRYPTOERASURE_FAULT_TESTS=1 CRYPTOERASURE_FAULT_REPORT_DIR=.agents-state/cryptoerasure-faults CRYPTOERASURE_REPLAY_REPORT_DIR=.agents-state/cryptoerasure-replay nix develop --command .agents/skills/neohaskell-test/scripts/run-testbed --strict
+```
+
+The fault checks create a fresh `nh_cryptoerasure_fault_` database for each case. They require an authorized `Available` read, then inject a missing key, malformed envelope, or unavailable key table. All seven faults make the owner query return HTTP 500 without the protected value. An absent envelope makes the event unreadable, so replay also reports `failed` through `/ready` with HTTP 503. The checks reject anonymous and invalid-token reads, inspect the page shape, and confirm that stored event JSON omits the Unicode value. The databases remain available for inspection after the run. With `CRYPTOERASURE_FAULT_REPORT_DIR` set as above, logs and database names are under `.agents-state/cryptoerasure-faults/`.
+
+The same strict run seeds one owned case in a fresh PostgreSQL database, then restarts the OAuth application. A testbed query-store gate holds replay before the case reaches the in-memory projection and holds an authenticated HTTP read after it captures an empty page. The runner releases replay first and waits for `/ready` to report `ready`. The held request must return a generic HTTP 500, and a fresh owner request must return the protected `Available` case. Anonymous and invalid-token requests remain denied. The gate is active only when the runner sets `CRYPTOERASURE_REPLAY_GATE_DIR`. The replay report directory keeps the database name and application logs.
+
 The same runner sends four owner-authorized erasure requests concurrently through one OAuth application instance. Each request records a copy of the first protected value before erasure. After the key commit, the result command appends that copy to the same entity, and the query projection reads it. The runner checks the persisted key tombstone and event, then the authorized `Erased` response. It also checks that the second value remains available and explicit retries report `AlreadyErased`. The restart checks read the query rebuilt from persisted events and compare the retained owner, case status, and protected state. These are example retention choices, not a policy for other applications.
 
 The crash pause reads a case ID from the runner's local selector file. Public `RequestErasure` JSON has no pause setting. The runner writes the selector only for its crash case, removes it before restart, and checks that a normal owner command with an extra `pauseAfterCommit` field completes without pausing.
@@ -65,8 +76,10 @@ Run `nix develop --command cabal test nhtestbed:nhtestbed-erasure --test-show-de
 For the scoped PostgreSQL service fixture, create a fresh database owned by the configured test user and run:
 
 ```sh
-CRYPTOERASURE_TEST_DB=<private-database-name> nix develop --command .agents/skills/tdd/scripts/test-match 'erases only a matching application and stream' nhcore-test-service
-CRYPTOERASURE_TEST_DB=<private-database-name> nix develop --command .agents/skills/tdd/scripts/test-match 'keeps a stale protected reference erased' nhcore-test-service
+private_db="nh_cryptoerasure_$(python3 -c 'import uuid; print(uuid.uuid4().hex[:12])')"
+PGPASSWORD=neohaskell nix develop --command createdb -h 127.0.0.1 -U neohaskell "$private_db"
+CRYPTOERASURE_TEST_DB="$private_db" nix develop --command .agents/skills/tdd/scripts/test-match 'erases only a matching application and stream' nhcore-test-service
+CRYPTOERASURE_TEST_DB="$private_db" nix develop --command .agents/skills/tdd/scripts/test-match 'keeps a stale protected reference erased' nhcore-test-service
 ```
 
 The second fixture uses independent PostgreSQL pools and concurrent tasks. It races deletion with an append and query update made from an earlier loaded wrapper. It then appends and updates another query row after confirmed erasure. It checks the persisted key tombstone, event count, and both query rows before reconnecting. The authorized response must render the first value as `Erased` while the second value and the example's retained fact survive.

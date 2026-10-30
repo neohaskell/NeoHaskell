@@ -21,6 +21,7 @@ import Testbed.AccountConnection.Service qualified as AccountConnectionService
 import Testbed.Config (TestbedConfig)
 import Testbed.Erasable.Owned.Outbound (OwnedErasureOutbound)
 import Testbed.Erasable.Owned.Query (OwnedProtectedView)
+import Testbed.Erasable.Owned.ReplayGateStore (ReplayGateStoreConfig (..))
 import Testbed.Erasable.Owned.Service qualified as OwnedErasableService
 
 
@@ -33,6 +34,7 @@ app oauthPort fixturePort =
     |> Application.withApiInfo @() (\_ -> oauthApiInfo)
     |> Application.withService AccountConnectionService.service
     |> Application.withService OwnedErasableService.service
+    |> Application.withQueryObjectStore ReplayGateStoreConfig
     |> Application.withQuery @AccountConnectionSummary
     |> Application.withQuery @OwnedProtectedView
     |> Application.withAuth @() (\_ -> [fmt|http://127.0.0.1:#{fixturePort}/oidc|])

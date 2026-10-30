@@ -104,6 +104,22 @@ class TestMatchTests(unittest.TestCase):
         self.assertTrue(transcript.is_file())
         self.assertEqual(transcript.parent, self.root.resolve() / ".agents-state/tdd/test-match")
 
+    def test_builddir_keeps_focused_repl_output_separate(self) -> None:
+        builddir = self.base / "focused-build"
+        result = self.run_match("--builddir", str(builddir), "Cart")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(
+            json.loads(self.log.read_text()),
+            [
+                "cabal",
+                "repl",
+                "nhcore-test-core",
+                "--project-file=cabal.project.dev",
+                "-v0",
+                f"--builddir={builddir}",
+            ],
+        )
+
     def test_zero_selection_is_rejected(self) -> None:
         self.set_scenario(output="0 examples, 0 failures\n", exit=0)
         result = self.run_match("NoSuchExample")
