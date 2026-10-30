@@ -362,6 +362,7 @@ makeContext fileAccess = do
     , providerRegistry = Integration.fromMap Map.empty
     , refreshLocks = emptyLocks
     , fileAccess = fileAccess
+    , eraseErasableKey = Nothing
     , outboundDispatch = DispatchRegistry.empty
     }
 
