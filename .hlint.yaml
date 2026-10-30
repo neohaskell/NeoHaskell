@@ -42,14 +42,18 @@
        within: [Auth.OAuth2.Client, Auth.UrlValidation, Http.Client, Http.Client.Internal, Main, Service.Application, Service.ApplicationSpec, Service.Transport.Mcp],
        message: "Use Core `IO`/`Console`/`File`. Use the owning core API. Add missing operations in a core prerequisite PR."}
     # Environment
+    # Config.ConfigDependentSpec: restores process arguments and environment after
+    # real config-loading tests; belongs-in: Core `Environment` test helpers.
     - {name: [System.Environment],
-       within: [Command, Config, Console, Environment, Log, Main, Service.Integration.Selection],
+       within: [Command, Config, Config.ConfigDependentSpec, Console, Environment, Log, Main, Service.Integration.Selection],
        message: "Use Core `Environment`. Use the owning core API. Add missing operations in a core prerequisite PR."}
     # Directory/Path
     # Integration.Video.ExtractAudio.Internal: needs the OS temp directory for
     # the video/WAV temp files; belongs-in: Core `Directory` (getTemporary).
+    # Service.ApplicationSpec: checks directory absence and uses the OS temp
+    # directory; belongs-in: Core `Directory` (exists, getTemporary).
     - {name: [System.Directory],
-       within: [Directory, DirectorySpec, Environment, File, Integration.Pdf.ExtractText.Internal, Integration.Video.ExtractAudio.Internal, Subprocess],
+       within: [Directory, DirectorySpec, Environment, File, Integration.Pdf.ExtractText.Internal, Integration.Video.ExtractAudio.Internal, Service.ApplicationSpec, Subprocess],
        message: "Use Core `Directory`/`Path`. Use the owning core API. Add missing operations in a core prerequisite PR."}
     # Json
     - {name: [Data.Aeson, Data.Aeson.Key, Data.Aeson.KeyMap, Data.Aeson.Types, Data.Aeson.Encoding],

@@ -301,6 +301,114 @@
       "boundary": "http:real",
       "expected_examples": 1,
       "fixture": "Http.Client.Internal.getRaw"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-service",
+      "path": "core/test/Service/FileUpload/BlobStore/S3Spec.hs",
+      "match": "store and retrieve roundtrips bytes through signed PUT and GET",
+      "boundary": "http:real",
+      "expected_examples": 1,
+      "fixture": "Service.FileUpload.BlobStore.S3"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-service",
+      "path": "core/test/Service/FileUpload/BlobStore/S3Spec.hs",
+      "match": "store overwrites an existing blob",
+      "boundary": "http:real",
+      "expected_examples": 1,
+      "fixture": "Service.FileUpload.BlobStore.S3"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-service",
+      "path": "core/test/Service/FileUpload/BlobStore/S3Spec.hs",
+      "match": "stores and retrieves an empty blob",
+      "boundary": "http:real",
+      "expected_examples": 1,
+      "fixture": "Service.FileUpload.BlobStore.S3"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-service",
+      "path": "core/test/Service/FileUpload/BlobStore/S3Spec.hs",
+      "match": "exists answers True after store and False for an unknown key",
+      "boundary": "http:real",
+      "expected_examples": 1,
+      "fixture": "Service.FileUpload.BlobStore.S3"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-service",
+      "path": "core/test/Service/FileUpload/BlobStore/S3Spec.hs",
+      "match": "delete removes the blob and is idempotent",
+      "boundary": "http:real",
+      "expected_examples": 1,
+      "fixture": "Service.FileUpload.BlobStore.S3"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-service",
+      "path": "core/test/Service/FileUpload/BlobStore/S3Spec.hs",
+      "match": "retrieve of a missing key is NotFound",
+      "boundary": "http:real",
+      "expected_examples": 1,
+      "fixture": "Service.FileUpload.BlobStore.S3"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-service",
+      "path": "core/test/Service/FileUpload/BlobStore/S3Spec.hs",
+      "match": "a 403 from the store is a StorageError carrying only the status",
+      "boundary": "http:real",
+      "expected_examples": 1,
+      "fixture": "Service.FileUpload.BlobStore.S3"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-service",
+      "path": "core/test/Service/FileUpload/BlobStore/S3Spec.hs",
+      "match": "encodes each key segment and keeps slashes as separators",
+      "boundary": "http:real",
+      "expected_examples": 1,
+      "fixture": "Service.FileUpload.BlobStore.S3"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-service",
+      "path": "core/test/Service/FileUpload/BlobStore/S3Spec.hs",
+      "match": "rejects dot segments and empty keys without sending a request",
+      "boundary": "http:real",
+      "expected_examples": 1,
+      "fixture": "Service.FileUpload.BlobStore.S3"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-service",
+      "path": "core/test/Service/FileUpload/BlobStore/S3Spec.hs",
+      "match": "rejects header-bound controls before any HTTP request",
+      "boundary": "http:real",
+      "expected_examples": 1,
+      "fixture": "Service.FileUpload.BlobStore.S3"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-service",
+      "path": "core/test/Service/FileUpload/BlobStore/S3Spec.hs",
+      "match": "rejects a wrong signing secret without storing bytes",
+      "boundary": "http:real",
+      "expected_examples": 1,
+      "fixture": "Service.FileUpload.BlobStore.S3"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-service",
+      "path": "core/test/Service/FileUpload/BlobStore/S3Spec.hs",
+      "match": "serves immediately on each owned socket without a startup delay",
+      "boundary": "http:real",
+      "expected_examples": 1,
+      "fixture": "Service.FileUpload.BlobStore.S3"
     }
   ]
 }

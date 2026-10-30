@@ -39,7 +39,7 @@ instance Show BlobStoreError where
 -- ==========================================================================
 
 -- | Interface for blob storage backends
--- Implementations: Local (filesystem), S3 (future), GCS (future)
+-- Implementations: Local (filesystem), S3 (S3-compatible object stores), GCS (future)
 data BlobStore = BlobStore
   { store :: BlobKey -> Bytes -> Task BlobStoreError Unit
   -- ^ Store bytes under the given key (overwrites if exists)
