@@ -99,6 +99,7 @@ library
     Testbed.Examples.PdfExtraction
     Testbed.Integrations.JsonSideEffect
     Testbed.Integrations.TypedInboundExample
+    Testbed.Planned.Feature
     Testbed.ExternalEffect.Core
     Testbed.ExternalEffect.Commands.RecordExternalEffect
     Testbed.ExternalEffect.Commands.RequestExternalEffect

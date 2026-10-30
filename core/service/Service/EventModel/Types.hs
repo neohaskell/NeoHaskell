@@ -7,28 +7,35 @@ module Service.EventModel.Types (
   Slice (..),
   Primary (..),
   CommandRoot (..),
+  PlannedCommandRoot (..),
   Produced (..),
+  PlannedProduced (..),
   ReadSource (..),
+  PlannedReadSource (..),
   EventRef (..),
+  PlannedEventRef (..),
   CommandTarget (..),
   CommandTargetFor (..),
   OutboundPart (..),
   InboundPart (..),
   SlicePart (..),
   ModelPart (..),
+  QuerySourceMember,
   primaryKind,
   typeName,
 ) where
 
 import Basics
+import Data.Kind (Constraint)
 import Data.Proxy (Proxy (..))
 import EventVariantOf (EventVariantOf)
+import GHC.TypeLits qualified as GHC
 import Result (Result)
 import Service.Command.Core (Command)
 import Service.Entity.Core (Entity, EntityOf, EventOf)
 import Service.InboundIntegration.Core (InboundIntegration)
 import Service.OutboundIntegration.Core (OutboundIntegration (..))
-import Service.Query.Core (Query, QueryOf)
+import Service.Query.Core (EntitiesOf, Query, QueryOf)
 import Text (Text)
 import Text qualified
 import Type.Reflection (Typeable)
@@ -62,6 +69,8 @@ data Slice = Slice
 data Primary where
   StateChange :: (Entity entity, Typeable entity) => Proxy entity -> CommandRoot entity -> Primary
   StateView :: (Query query, Typeable query) => Proxy query -> [ReadSource query] -> Primary
+  PlannedStateChange :: Typeable entity => Proxy entity -> PlannedCommandRoot entity -> Primary
+  PlannedStateView :: Typeable query => Proxy query -> [PlannedReadSource query] -> Primary
   OutboundTranslation :: (OutboundIntegration handler, Typeable handler) => Proxy handler -> [OutboundPart handler] -> Primary
   InboundTranslation :: (InboundIntegration handler, Typeable handler) => Proxy handler -> [InboundPart handler] -> Primary
 
@@ -70,16 +79,38 @@ data CommandRoot entity where
   CommandRoot :: (Command command, EntityOf command ~ entity, Typeable command) => Proxy command -> [Produced entity] -> CommandRoot entity
 
 
+data PlannedCommandRoot entity where
+  PlannedCommandRoot :: (EntityOf command ~ entity, Typeable command) => Proxy command -> [PlannedProduced entity] -> PlannedCommandRoot entity
+
+
 data Produced entity where
   Produced :: (EntityOf payload ~ entity, EventVariantOf (EventOf entity) payload, Typeable payload) => Proxy payload -> Produced entity
 
 
+data PlannedProduced entity where
+  PlannedProduced :: (EntityOf payload ~ entity, Typeable payload) => Proxy payload -> PlannedProduced entity
+
+
 data ReadSource query where
-  ReadSource :: (Entity entity, QueryOf entity query, Typeable entity) => Proxy entity -> [EventRef entity] -> ReadSource query
+  ReadSource :: (Entity entity, QueryOf entity query, QuerySourceMember entity query (EntitiesOf query), Typeable entity) => Proxy entity -> [EventRef entity] -> ReadSource query
+
+
+data PlannedReadSource query where
+  PlannedReadSource :: (QuerySourceMember entity query (EntitiesOf query), Typeable entity) => Proxy entity -> [PlannedEventRef entity] -> PlannedReadSource query
 
 
 data EventRef entity where
   EventRef :: (EntityOf payload ~ entity, EventVariantOf (EventOf entity) payload, Typeable payload) => Proxy payload -> EventRef entity
+
+
+data PlannedEventRef entity where
+  PlannedEventRef :: (EntityOf payload ~ entity, Typeable payload) => Proxy payload -> PlannedEventRef entity
+
+
+type family QuerySourceMember (entity :: Type) (query :: Type) (entities :: [Type]) :: Constraint where
+  QuerySourceMember entity query '[] = GHC.TypeError (GHC.Text "Query source " GHC.:<>: GHC.ShowType entity GHC.:<>: GHC.Text " is absent from EntitiesOf " GHC.:<>: GHC.ShowType query)
+  QuerySourceMember entity query (entity ': rest) = ()
+  QuerySourceMember entity query (other ': rest) = QuerySourceMember entity query rest
 
 
 data CommandTarget where
@@ -111,6 +142,8 @@ primaryKind :: Primary -> Text
 primaryKind primary = case primary of
   StateChange _ _ -> "state-change"
   StateView _ _ -> "state-view"
+  PlannedStateChange _ _ -> "state-change"
+  PlannedStateView _ _ -> "state-view"
   OutboundTranslation _ _ -> "outbound"
   InboundTranslation _ _ -> "inbound"
 

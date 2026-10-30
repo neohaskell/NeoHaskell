@@ -19,6 +19,7 @@ FLAGS = (
     "-XOverloadedStrings",
     "-XTypeApplications",
     "-XTypeFamilies",
+    "-XDataKinds",
     "-XBlockArguments",
     "-XImportQualifiedPost",
     "-package",
@@ -32,7 +33,9 @@ CASES = (
     ("InboundEvent.hs", r"EventPart.*InboundPart"),
     ("WrongCommandTarget.hs", r"Couldn't match type.*StockEntity.*CartEntity"),
     ("WrongOutboundPayload.hs", r"Couldn't match type.*ItemAddedPayload.*CartEvent"),
-    ("WrongQuerySource.hs", r"No instance for.*QueryOf StockEntity CartSummary"),
+    ("WrongQuerySource.hs", r"Query source StockEntity is absent from EntitiesOf CartSummary"),
+    ("WrongPlannedQuerySource.hs", r"Query source StockEntity is absent from EntitiesOf PlannedView"),
+    ("WrongPlannedCommandTarget.hs", r"Couldn't match type.*SecondEntity.*FirstEntity"),
     ("UndeclaredInboundCommand.hs", r"Inbound worker emitted undeclared command ReserveStock"),
 )
 
