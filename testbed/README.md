@@ -99,6 +99,22 @@ nix develop --command .agents/skills/neohaskell-test/scripts/run-testbed --stric
 
 The runner builds and starts both testbed applications and the fake external services. It requires a PostgreSQL user that can create databases. Each run creates separate fresh databases for the two applications and prints their names for inspection. It retains those databases, runs every Hurl file, and stops the processes it started. Ports 8080 and 8081 must be free. The `save-iban.hurl` scenario posts to `/commands/save-iban` and reads the saved IBAN through the cart summary query.
 
+### Run the typed inbound example
+
+`Testbed.Integrations.TypedInboundExample` uses `Integration.typedInbound` and
+`Application.withInboundHandler` to emit a cart command and a stock command from
+one worker. Both commands use `InternalTransport`, and their services register
+them for integration dispatch. The Hurl scenario waits for new records in the
+cart and stock queries.
+
+The maintained suite runs `testbed/tests/integrations/typed-inbound.hurl`. To run
+that scenario alone, start the application as shown in the SaveIBAN instructions
+below. In another terminal, run:
+
+```sh
+nix develop --command hurl --test testbed/tests/integrations/typed-inbound.hurl
+```
+
 ### Run the public matcher example
 
 From the repository root, run the Haskell test suite for the `Test` matchers:

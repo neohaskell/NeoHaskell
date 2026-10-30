@@ -56,8 +56,9 @@ checks run and any unavailable coverage. A skipped required check is incomplete.
 
 ## Generated project contract
 
-Run from the repository root, or set `NEOHASKELL_ROOT` to the checked-out
-repository.
+Run from the repository root on the host, or set `NEOHASKELL_ROOT` to the
+checked-out repository. The full script invokes Nix for its build and generated
+project phases. Follow the [verification environment decision](../nix-haskell-tools/SKILL.md#choose-the-verification-environment).
 
 ```sh
 ./.agents/skills/neohaskell-consumer-verification/scripts/neo-consumer-contract --self-test
@@ -98,6 +99,11 @@ offline.
 revision for the CLI, starter and framework. Release preparation freezes the
 starter pins to its candidate framework revision before packaging the CLI.
 Cache population must use the corresponding tested source and binary.
+Run the full contract after committing the PR source, because its isolated Git
+snapshot reads `HEAD`. Record that revision and the result. Run it on a capable
+host or a Linux Actions runner at the same PR head if local capacity is
+insufficient. A script self-test or a 4 GiB Docker out-of-memory termination
+does not establish the generated-project result or waive the required gate.
 
 ## Embedded IDE bundle
 
@@ -168,18 +174,22 @@ checks fail until the current worktree has reviewed every ignored fragment.
 Run `agent-docs-check --prepare-reviews` to create a local draft with the
 current revision, worktree path, fragment hashes, and source hashes. Read each
 declared source and fragment, then fill its empty `reason` with the concrete
-review finding. Run the default check again. Preparing a draft alone never
+review finding. Preparing a draft alone never
 passes the gate. A new commit, changed fragment, changed source, or another
 worktree invalidates the receipt. Regenerate and review after the final commit.
 
 `--structure-only` provides quick feedback but does not compile examples.
-Run the default check for each affected PR. For a corpus-wide change or a
-change to the capability policy, run `--verify-evidence`. It also runs the
+Run the default check on the checked-out PR revision for each affected PR.
+For a corpus-wide change or a change to the capability policy, run
+`--verify-evidence` with PostgreSQL available. It also runs the
 service and auth specs, the maintained Hurl testbed, and the generated-project
 contract. For a narrower runtime change, run the affected maintained scenario
 or suite and record the command and result in the PR. Use a fresh PostgreSQL
 database for repeated local evidence runs. The testbed retains events across
-runs and uses in-memory query projections.
+runs and uses in-memory query projections. Run the full guide check in the host
+Nix shell or on a Linux Actions runner at the same revision. Keep it pending
+if the local environment cannot complete it. `--structure-only`, a prepared
+draft, and a resource-limited failure are not passing acceptance evidence.
 
 If you change the corpus validator, run its local cases with
 `python3 .agents/skills/neohaskell-consumer-verification/tests/test_agent_docs_check_cases.py`.

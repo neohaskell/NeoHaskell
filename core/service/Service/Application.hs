@@ -34,6 +34,7 @@ module Service.Application (
   withOutbound,
   withOutboundLifecycle,
   withInbound,
+  withInboundHandler,
   withIntegration,
   withAuth,
   withAuthOverrides,
@@ -138,6 +139,7 @@ import Service.Application.Integrations qualified as Integrations
 import Service.Application.Transports qualified as Transports
 import Service.Integration.Dispatcher qualified as Dispatcher
 import Service.OutboundIntegration.Core (OutboundIntegration (..))
+import Service.InboundIntegration.Core (InboundIntegration (..))
 import EventVariantOf (EventVariantOf)
 import Service.Integration.Types (OutboundRunner, OutboundLifecycleRunner)
 import Service.Transport (Transport (..), QueryEndpointHandler)
@@ -1560,6 +1562,18 @@ withInbound mkInbound app = do
     Nothing -> do
       let reg = MkDeferredInboundReg @config mkInbound
       app {deferredInboundRegs = app.deferredInboundRegs |> Array.push reg}
+
+
+-- | Register a typed inbound handler through the existing config and worker lifecycle.
+withInboundHandler ::
+  forall handler.
+  (InboundIntegration handler, Typeable (InboundConfigOf handler)) =>
+  Application ->
+  Application
+withInboundHandler app =
+  app
+    |> withInbound @(InboundConfigOf handler)
+      (\config -> workerImplFor @handler config |> Integration.asInbound)
 
 
 -- | Register an ADR-0055 outbound integration type.

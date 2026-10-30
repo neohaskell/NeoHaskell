@@ -22,6 +22,7 @@ import Testbed.Erasable.Query (ProtectedView)
 import Testbed.Erasable.Owned.Outbound (OwnedErasureOutbound)
 import Testbed.Erasable.Owned.Query (OwnedProtectedView)
 import Testbed.Erasable.Owned.Service qualified as OwnedErasableService
+import Testbed.Integrations.TypedInboundExample (TypedInboundExample)
 import Testbed.Service qualified
 import Testbed.Stock.Queries.StockLevel (StockLevel)
 import Text qualified
@@ -68,8 +69,9 @@ app httpPort =
     |> Application.withOutbound @OwnedErasureOutbound
     -- Outbound with lifecycle: count events per entity (demonstrates stateful integration)
     |> Application.withOutboundLifecycle @() @CartEntity (\_ -> EventCounter.eventCounterIntegration)
-    -- Inbound: create a cart every 30 seconds
+    -- Inbound: create a cart every 3 seconds
     |> Application.withInbound @() (\_ -> periodicCartCreator)
+    |> Application.withInboundHandler @TypedInboundExample
     -- File uploads with declarative config (initialized at runtime)
     |> Application.withFileUpload makeFileUploadConfig
 
