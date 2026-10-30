@@ -943,6 +943,35 @@
       "source_sha": "708848a109251d6665ced9324e90c2c6dcf60e33",
       "target_policy": "native-v2",
       "version": "0.14.0"
+    },
+    {
+      "base_sha": "56f92499a1650c1f59dec0c6798638bfde327fb7",
+      "base_tag": "neo-v0.14.0",
+      "base_version": "0.14.0",
+      "bootstrap": false,
+      "date": "2026-10-30",
+      "group": "platform",
+      "id": "348a3fed2cb769436da491cb27d7e1e45f2b4ac3181b8c92ecf27a26b7e7fd90",
+      "impact": "compatible",
+      "kind": "release",
+      "notes": [
+        {
+          "category": "Added",
+          "commit": "522a94bc2fe8e3187eb03a940231561656d56521",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "11b4537c231e5ad3e3de9b2013b9c758a4f8ab3ea13c2882310c27d2dbf6aa7a",
+          "impact": "compatible",
+          "path": ".changes/source-local-event-model-578.md",
+          "sections": {
+            "Summary": "An application can now describe its event flow in source-local Features. Export a Feature action beside its commands, queries, and integrations, then compose those actions in a named Event Model. The compiler checks typed event sources and command targets, and model evaluation checks each Slice has one primary shape. The description does not start workers yet. Existing application registration remains in place."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: compatible\ncategory: Added\n---\n\n## Summary\n\nAn application can now describe its event flow in source-local Features. Export a Feature action beside its commands, queries, and integrations, then compose those actions in a named Event Model. The compiler checks typed event sources and command targets, and model evaluation checks each Slice has one primary shape. The description does not start workers yet. Existing application registration remains in place.\n"
+        }
+      ],
+      "source_sha": "522a94bc2fe8e3187eb03a940231561656d56521",
+      "target_policy": "native-v2",
+      "version": "0.14.1"
     }
   ],
   "recoveries": [],
