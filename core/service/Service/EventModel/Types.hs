@@ -46,7 +46,6 @@ import GHC.TypeLits qualified as GHC
 import Maybe (Maybe)
 import Map (Map)
 import Prelude (Applicative (..), Functor (..), Monad (..))
-import Result (Result)
 import Service.Command.Core (Command)
 import Service.Entity.Core (Entity, EntityOf, EventOf)
 import Service.InboundIntegration.Core (InboundIntegration (..))
@@ -263,7 +262,7 @@ data OutcomePart context mode where
 
 data ModelPart
   = ModelName Text
-  | ModelFeatures [Result Text Feature]
+  | ModelFeatures [([Text], Feature)]
 
 
 primaryKind :: Primary context -> Text

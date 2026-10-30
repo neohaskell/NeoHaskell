@@ -104,7 +104,7 @@ import Uuid (Uuid)
 
 
 -- | Export one of these actions from a component's Feature module.
-type FeatureAction = Writer [Result Text Feature] ()
+type FeatureAction = Writer [([Text], Feature)] ()
 
 
 type EventModelAction = Writer [ModelPart] ()
@@ -259,16 +259,14 @@ eventModel builder =
   let parts = Writer.execWriter builder
       names = [name | ModelName name <- parts]
       featureResults = Prelude.concat [found | ModelFeatures found <- parts]
-      featureProblems = [problem | Err problem <- featureResults]
-      validFeatures = [selected | Ok selected <- featureResults]
+      featureProblems = [problem | (problems, _) <- featureResults, problem <- problems]
+      validFeatures = [selected | (_, selected) <- featureResults]
    in case names of
         [name] ->
           let model = EventModel {modelName = name, modelFeatures = validFeatures}
-              modelProblems = if Prelude.null validFeatures && Prelude.not (Prelude.null featureProblems)
-                then []
-                else case validateModel model of
-                  Ok _ -> []
-                  Err problem -> [problem]
+              modelProblems = case validateModel model of
+                Ok _ -> []
+                Err problem -> [problem]
               problems = featureProblems Prelude.++ modelProblems
            in case problems of
                 [] -> Ok model
@@ -284,31 +282,29 @@ features :: FeatureAction -> EventModelAction
 features builder = Writer.tell [ModelFeatures (Writer.execWriter builder)]
 
 
-feature :: Text -> Writer [Result Text Chapter] () -> FeatureAction
+feature :: Text -> Writer [([Text], Chapter)] () -> FeatureAction
 feature name builder = do
-  let found = Writer.execWriter builder |> collectResults
-  let result = case found of
-        Ok chapters -> Ok Feature {featureName = name, featureChapters = chapters}
-        Err problem -> Err [fmt|Feature "#{name}", #{problem}|]
-  Writer.tell [result]
+  let found = Writer.execWriter builder
+  let problems = [[fmt|Feature "#{name}", #{problem}|] | (chapterProblems, _) <- found, problem <- chapterProblems]
+  let empty = if Prelude.null found then [[fmt|Feature "#{name}" requires a Chapter|]] else []
+  let chapters = [selected | (_, selected) <- found]
+  Writer.tell [(empty Prelude.++ problems, Feature {featureName = name, featureChapters = chapters})]
 
 
-chapter :: Text -> Writer [Result Text Slice] () -> Writer [Result Text Chapter] ()
+chapter :: Text -> Writer [Result Text Slice] () -> Writer [([Text], Chapter)] ()
 chapter name builder = do
-  let found = Writer.execWriter builder |> collectResults
-  let result = case found of
-        Ok slices -> Ok Chapter {chapterName = name, chapterSlices = slices}
-        Err problem -> Err [fmt|Chapter "#{name}", #{problem}|]
-  Writer.tell [result]
+  let found = Writer.execWriter builder
+  let (sliceProblems, slices) = collectResults found
+  let problems = [[fmt|Chapter "#{name}", #{problem}|] | problem <- sliceProblems]
+  let empty = if Prelude.null found then [[fmt|Chapter "#{name}" requires a Slice|]] else []
+  Writer.tell [(empty Prelude.++ problems, Chapter {chapterName = name, chapterSlices = slices})]
 
 
-collectResults :: [Result Text value] -> Result Text [value]
+collectResults :: [Result Text value] -> ([Text], [value])
 collectResults results =
   let failures = [problem | Err problem <- results]
       values = [value | Ok value <- results]
-   in case failures of
-        [] -> Ok values
-        _ -> Err (Text.joinWith "\n" (Array.fromLinkedList failures))
+   in (failures, values)
 
 
 -- | Add one inline Slice with exactly one primary declaration.
@@ -428,11 +424,9 @@ validateModel :: EventModel -> Result Text EventModel
 validateModel model =
   let featuresFound = model.modelFeatures
       emptyModel = if Prelude.null featuresFound then ["eventModel requires at least one Feature"] else []
-      emptyFeatures = [[fmt|Feature "#{featureLabel}" requires a Chapter|] | selected <- featuresFound, let featureLabel = selected.featureName, Prelude.null selected.featureChapters]
-      emptyChapters = [[fmt|Feature "#{featureLabel}", Chapter "#{chapterLabel}" requires a Slice|] | selected <- featuresFound, let featureLabel = selected.featureName, chapter <- selected.featureChapters, let chapterLabel = chapter.chapterName, Prelude.null chapter.chapterSlices]
       paths = [(selected.featureName, chapter.chapterName, sliceValue) | selected <- featuresFound, chapter <- selected.featureChapters, sliceValue <- chapter.chapterSlices]
       (sliceProblems, _) = Prelude.foldl validatePath ([], []) paths
-      problems = emptyModel Prelude.++ emptyFeatures Prelude.++ emptyChapters Prelude.++ sliceProblems
+      problems = emptyModel Prelude.++ sliceProblems
    in case problems of
         [] -> Ok model
         _ -> Err (Text.joinWith "\n" (Array.fromLinkedList problems))

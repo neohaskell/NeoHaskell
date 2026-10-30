@@ -333,6 +333,34 @@ spec = do
           problem |> Text.contains "Slice \"Incomplete inbound\" omits inbound worker output InitializeStockInternal -> StockEntity" |> shouldBe True
         Ok _ -> False |> shouldBe True
 
+    it "reports structural and assembled failures across Features and Chapters" \_ -> do
+      let invalid = EventModel.eventModel do
+            EventModel.appName "Mixed failures"
+            EventModel.features do
+              EventModel.feature "Cart" do
+                EventModel.chapter "Integrations" do
+                  EventModel.slice "No primary" do
+                    pass
+                  EventModel.slice "Missing trigger" do
+                    EventModel.outboundIntegration @ReserveStockOnItemAdded do
+                      pass
+              EventModel.feature "Stock" do
+                EventModel.chapter "Commands" do
+                  EventModel.slice "No stock primary" do
+                    pass
+                EventModel.chapter "Notifications" do
+                  EventModel.slice "No notification trigger" do
+                    EventModel.outboundIntegration @ObserveItemAdded do
+                      pass
+      case invalid of
+        Err problem -> do
+          problem |> Text.contains "Feature \"Cart\", Chapter \"Integrations\", Slice \"No primary\" requires exactly one primary; found 0" |> shouldBe True
+          problem |> Text.contains "Feature \"Cart\", Chapter \"Integrations\", Slice \"Missing trigger\" requires exactly one outbound onEvent; found 0" |> shouldBe True
+          problem |> Text.contains "Feature \"Stock\", Chapter \"Commands\", Slice \"No stock primary\" requires exactly one primary; found 0" |> shouldBe True
+          problem |> Text.contains "Feature \"Stock\", Chapter \"Notifications\", Slice \"No notification trigger\" requires exactly one outbound onEvent; found 0" |> shouldBe True
+          problem |> Text.contains "requires a Slice" |> shouldBe False
+        Ok _ -> False |> shouldBe True
+
     it "keeps separate explicit subscriptions for a multi-entity query" \_ -> do
       let modelResult = EventModel.eventModel do
             EventModel.appName "Two sources"
