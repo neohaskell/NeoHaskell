@@ -102,6 +102,22 @@ below. In another terminal, run:
 nix develop --command hurl --test testbed/tests/integrations/typed-inbound.hurl
 ```
 
+### Run the source-local Event Model example
+
+`Testbed.Cart.Feature.cartFlow` and `Testbed.Stock.Feature.stockFlow` are exported Feature actions. `App.appEventModel` composes them as bare actions in a named `eventModel do` value. The model describes the cart and stock topology, including all four Slice shapes and each typed inbound command target. The existing `App.app` still starts the testbed until Event Model runtime wiring is implemented.
+
+From the repository root, run the maintained public API assertions:
+
+```sh
+nix develop --command cabal test --project-file=cabal.project.dev nhtestbed-spec-demo --test-show-details=direct
+```
+
+The `source-local Event Model` examples assert both Features, every Slice once, concrete query payload subscriptions, a query with two explicit entity sources, the outbound payload trigger, and each translation command's target entity. The existing Hurl testbed continues to exercise the cart, stock, outbound, and typed inbound runtime paths through `App.app`:
+
+```sh
+TESTBED_HTTP_PORT=18880 TESTBED_OAUTH_PORT=18881 TESTBED_FIXTURE_PORT=18882 nix develop --command .agents/skills/neohaskell-test/scripts/run-testbed --strict
+```
+
 ### Run the public matcher example
 
 From the repository root, run the Haskell test suite for the `Test` matchers:

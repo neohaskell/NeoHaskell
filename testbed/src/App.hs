@@ -1,13 +1,15 @@
-module App (app, makePostgresConfig) where
+module App (app, appEventModel, makePostgresConfig) where
 
 import Core
 import Service.Application (ApiInfo (..), Application)
 import Service.Application qualified as Application
+import Service.EventModel qualified as EventModel
 import Service.EventStore.Postgres (PostgresEventStore (..))
 import Service.FileUpload.Core (FileStateStoreBackend (..), FileUploadConfig (..))
 import Service.Infra.Postgres.ConnectionConfig qualified as ConnectionConfig
 import Service.Transport.Web qualified as WebTransport
 import Testbed.Cart.Core (CartEntity)
+import Testbed.Cart.Feature (cartFlow)
 import Testbed.Cart.Integrations (periodicCartCreator)
 import Testbed.Cart.Integrations.EventCounter qualified as EventCounter
 import Testbed.Cart.Integrations.ReserveStockOnItemAdded (ReserveStockOnItemAdded)
@@ -25,7 +27,16 @@ import Testbed.Erasable.Owned.Service qualified as OwnedErasableService
 import Testbed.Integrations.TypedInboundExample (TypedInboundExample)
 import Testbed.Service qualified
 import Testbed.Stock.Queries.StockLevel (StockLevel)
+import Testbed.Stock.Feature (stockFlow)
 import Text qualified
+
+
+appEventModel :: Result Text EventModel.EventModel
+appEventModel = EventModel.eventModel do
+  EventModel.appName "Testbed"
+  EventModel.features do
+    cartFlow
+    stockFlow
 
 
 -- | API metadata for the testbed application.

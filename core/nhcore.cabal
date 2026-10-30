@@ -239,6 +239,7 @@ library
     Service.EntityFetcher.Core
     Service.Error
     Service.Event
+    Service.EventModel
     Service.Event.TH
     Service.Event.EntityName
     Service.Event.EventMetadata
@@ -412,6 +413,7 @@ library
     Auth.UrlValidation.Dns.RecordType
     Auth.UrlValidation.Dns.Result
     Transaction.Internal
+    Service.EventModel.Types
   -- other-extensions:
   hs-source-dirs:
     auth

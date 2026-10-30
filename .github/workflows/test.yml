@@ -125,6 +125,10 @@ jobs:
             --test-show-details=direct | tee nhcore-test-core.report
       - name: Check outbound payload compiler diagnostics
         run: nix develop .#ci --command python3 core/test/Service/OutboundIntegration/check_compiler_rejections.py
+      - name: Check Event Model compiler diagnostics
+        run: nix develop .#ci --command python3 core/test/Service/EventModel/check_compiler_rejections.py
+      - name: Run source-local Event Model testbed assertions
+        run: nix develop .#ci --command cabal test nhtestbed-spec-demo --test-show-details=direct
       - uses: actions/upload-artifact@v7
         with:
           name: nhcore-test-core-report

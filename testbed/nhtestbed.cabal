@@ -64,6 +64,7 @@ library
     Testbed.Cart.Commands.RegisterCartByKey
     Testbed.Cart.Commands.SaveIBAN
     Testbed.Cart.Core
+    Testbed.Cart.Feature
     Testbed.Cart.Integrations
     Testbed.Cart.Integrations.EventCounter
     Testbed.Cart.Integrations.ReserveStockOnItemAdded
@@ -88,6 +89,7 @@ library
     Testbed.Stock.Commands.InitializeStockInternal
     Testbed.Stock.Commands.ReserveStock
     Testbed.Stock.Core
+    Testbed.Stock.Feature
     Testbed.Stock.Queries.StockLevel
     Testbed.Stock.Service
     Testbed.Examples.AiTranscription
@@ -138,7 +140,8 @@ test-suite nhtestbed-spec-demo
   build-depends:
     base,
     hspec,
-    nhcore
+    nhcore,
+    nhtestbed
   default-language: GHC2021
 
 test-suite nhtestbed-datetime-schema
