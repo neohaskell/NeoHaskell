@@ -209,8 +209,9 @@ spec = do
                   processEvent = \_maybeContext _eventStore _event -> Task.yield [payload]
                 }
         let captureSource :: DispatchHandler
-            captureSource sourceEventMetadata _requestContext _commandBytes _respond =
+            captureSource sourceEventMetadata _requestContext _commandBytes respond = do
               Channel.write sourceEventMetadata capturedSources
+              respond (Accepted {entityId = "entity-source"}, Json.encodeText ("accepted" :: Text.Text) |> Text.toBytes)
 
         eventStore <- InMemory.new |> Task.mapError toText
         context <- makeContext
@@ -332,8 +333,9 @@ spec = do
                   commandData = Json.encode ("ignored" :: Text.Text)
                 }
         let legacyHandler :: EndpointHandler
-            legacyHandler _requestContext _commandBytes _respond =
+            legacyHandler _requestContext _commandBytes respond = do
               dispatchCount |> ConcurrentVar.modify (+ 1)
+              respond (Accepted {entityId = "legacy-stream"}, Json.encodeText ("accepted" :: Text.Text) |> Text.toBytes)
         let legacyEndpoints :: Map.Map Text EndpointHandler
             legacyEndpoints = Map.empty |> Map.set "LegacyCommand" legacyHandler
         let runner =
