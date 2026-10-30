@@ -697,6 +697,10 @@ spec = do
         firstStore.close
         secondStore.close
         reconnected <- PostgresStore.new privateConfig
+        committedRetry <- reconnected.insertWithErasableKeys keys payload |> Task.asResult
+        case committedRetry of
+          Ok _ -> fail "A committed protected ID must not appear to append again after reconnect"
+          Err _ -> pass
         messages <- reconnected.readAllStreamEvents entityName streamId |> Task.mapError toText |> Task.andThen Stream.toArray
         Array.length (EventStore.collectStreamEvents messages) |> shouldBe 1
         connection <- Postgres.defaultOps.acquire privateConfig
