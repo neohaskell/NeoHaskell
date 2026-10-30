@@ -103,6 +103,12 @@
       "scenario": "testbed/tests/integrations/generic-http-side-effect.hurl",
       "evidence": []
     },
+    "typed-inbound-integration": {
+      "page": "advanced-typed-inbound.md",
+      "source": "core/service/Integration.hs",
+      "scenario": "testbed/tests/integrations/typed-inbound.hurl",
+      "evidence": []
+    },
     "external-oauth2-account": {
       "page": "advanced-oauth2.md",
       "source": "core/auth/Auth/OAuth2/Provider.hs",

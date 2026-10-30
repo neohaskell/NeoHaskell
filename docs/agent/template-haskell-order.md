@@ -29,3 +29,5 @@ Declare the row type, `canAccess`, and `canView` before `deriveQuery`. The marke
 `defineConfig` creates the config type itself from field declarations. Do not add a duplicate data declaration.
 
 `outboundIntegration ''HandlerType` follows the handler type, its `EntityOf` equation, a visible `EventVariantOf` mapping, and `handleEvent :: Entity -> Payload -> Integration.Outbound`. The marker infers the payload from that signature. For an existing handler that still accepts the full event type, add `import Service.OutboundIntegration.TH (outboundIntegrationFullEvent)` to its module and use `outboundIntegrationFullEvent`.
+
+`inboundIntegration ''HandlerType` follows the handler type and `workerImpl :: Config -> Integration.TypedInbound Outputs` in the same module. The marker records the config type and the complete command and target-entity output list. List each command's actual `EntityOf` target. Register the handler with `Application.withInboundHandler @HandlerType`.

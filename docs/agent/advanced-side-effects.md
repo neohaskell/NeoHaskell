@@ -48,6 +48,10 @@ Register the handler with `Application.withOutbound @Handler`. Register the call
 
 Keep networking outside `decide` and `update`. The command decision describes domain changes. The outbound action performs the remote effect after an event.
 
+## Inbound workers with more than one command
+
+Use [typed inbound workers](advanced-typed-inbound.md) when one worker emits commands to more than one entity.
+
 ## Retries and result validation
 
 Treat a retried remote operation as repeatable work. Use a provider-supported idempotency key when duplicate requests would cause duplicate effects. The HTTP executor has retry behavior and the dispatcher separately owns action execution. Neither establishes a transaction with the remote service.

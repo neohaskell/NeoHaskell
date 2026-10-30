@@ -32,6 +32,7 @@ import Integration qualified
 import Integration.Lifecycle qualified as Lifecycle
 import Json qualified
 import Map (Map)
+import Map qualified
 import Maybe (Maybe (..))
 import Maybe qualified
 import Result (Result (..))
@@ -281,6 +282,20 @@ startInboundWorkers inbounds commandEndpoints = do
   if Array.isEmpty inbounds
     then Task.yield Array.empty
     else do
+      inbounds
+        |> Task.forEach (\inboundWorker ->
+            case Integration.inboundCommandNames inboundWorker of
+              Nothing -> Task.yield unit
+              Just names ->
+                names
+                  |> Task.forEach (\name ->
+                      case Map.get name commandEndpoints of
+                        Just _ -> Task.yield unit
+                        Nothing -> Task.throw [fmt|Inbound worker declares command #{name}, but no receiving runtime is registered|]
+                    )
+                  |> Task.map (\_ -> unit)
+          )
+        |> Task.map (\_ -> unit)
       let workerCount = Array.length inbounds
       Log.withScope [("component", "Integration")] do
         Log.info [fmt|Starting #{workerCount} inbound worker(s)|]
