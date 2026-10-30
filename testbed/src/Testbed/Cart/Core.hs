@@ -1,6 +1,7 @@
 module Testbed.Cart.Core (
   CartEntity (..),
   CartEvent (..),
+  CartCreatedPayload (..),
   ItemAddedPayload (..),
   initialState,
 ) where
@@ -84,6 +85,34 @@ data ItemAddedPayload = ItemAddedPayload
     itemAddedStockId :: Uuid,
     itemAddedQuantity :: Int
   }
+
+
+type instance EntityOf ItemAddedPayload = CartEntity
+
+
+data CartCreatedPayload = CartCreatedPayload
+  { cartCreatedEntityId :: Uuid,
+    cartCreatedOwnerId :: Text
+  }
+
+
+type instance EntityOf CartCreatedPayload = CartEntity
+
+
+instance EventVariantOf CartEvent CartCreatedPayload where
+  fromVariant payload =
+    CartCreated
+      { entityId = payload.cartCreatedEntityId,
+        ownerId = payload.cartCreatedOwnerId
+      }
+  toVariant eventValue = case eventValue of
+    CartCreated {entityId, ownerId} ->
+      Just CartCreatedPayload
+        { cartCreatedEntityId = entityId,
+          cartCreatedOwnerId = ownerId
+        }
+    ItemAdded {} -> Nothing
+    IBANSaved {} -> Nothing
 
 
 instance EventVariantOf CartEvent ItemAddedPayload where

@@ -1,6 +1,7 @@
 module Testbed.Stock.Core (
   StockEntity (..),
   StockEvent (..),
+  StockInitializedPayload (..),
   initialState,
 ) where
 
@@ -55,6 +56,33 @@ data StockEvent
       , cartId :: Uuid
       }
   deriving (Generic, Show)
+
+
+data StockInitializedPayload = StockInitializedPayload
+  { initializedEntityId :: Uuid,
+    initializedProductId :: Uuid,
+    initializedAvailable :: Int
+  }
+
+
+type instance EntityOf StockInitializedPayload = StockEntity
+
+
+instance EventVariantOf StockEvent StockInitializedPayload where
+  fromVariant payload =
+    StockInitialized
+      { entityId = payload.initializedEntityId,
+        productId = payload.initializedProductId,
+        available = payload.initializedAvailable
+      }
+  toVariant eventValue = case eventValue of
+    StockInitialized {entityId, productId, available} ->
+      Just StockInitializedPayload
+        { initializedEntityId = entityId,
+          initializedProductId = productId,
+          initializedAvailable = available
+        }
+    StockReserved {} -> Nothing
 
 
 getEventEntityId :: StockEvent -> Uuid
