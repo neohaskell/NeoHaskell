@@ -197,7 +197,7 @@ def concurrent(database):
     print("Four concurrent application requests and explicit retries kept independent tombstones")
 
 
-def prepare(path, pause_after_commit=False, marker_path=None, selector_path=None):
+def prepare(path, database, pause_after_commit=False, marker_path=None, selector_path=None):
     token = owner_token()
     status, result = request("POST", f"{API}/commands/create-owned-protected", token, [])
     assert status == 200 and result["tag"] == "Accepted", (status, result)
@@ -206,6 +206,21 @@ def prepare(path, pause_after_commit=False, marker_path=None, selector_path=None
     reference = view["firstReference"]
     assert view["firstSecret"]["tag"] == "Available", view
     assert view["secondSecret"]["tag"] == "Available", view
+    expected = {"name": "Álvaro ñ 😀", "aliases": [None, "café"]}
+    assert view["firstSecret"]["contents"] == expected, view
+    assert view["secondSecret"]["contents"] == expected, view
+    safe_id = str(uuid.UUID(case_id))
+    command = ["psql", "-h", os.environ.get("DB_HOST", "localhost"),
+               "-p", os.environ.get("DB_PORT", "5432"),
+               "-U", os.environ.get("DB_USER", "neohaskell"),
+               "-d", database, "-At", "-c",
+               f"SELECT eventData::text FROM Events WHERE inlinedStreamId = '{safe_id}' "
+               "AND entity = 'OwnedProtectedEntity' ORDER BY localPosition LIMIT 1"]
+    event = json.loads(subprocess.check_output(command, text=True).strip())
+    assert event["tag"] == "OwnedProtectedCreated", event
+    first_reference = str(uuid.UUID(event["first"]["reference"]))
+    second_reference = str(uuid.UUID(event["second"]["reference"]))
+    assert first_reference == reference and first_reference != second_reference, event
     if pause_after_commit:
         selector_path.write_text(case_id)
     status, result = request("POST", f"{API}/commands/request-erasure", token, {
@@ -224,7 +239,9 @@ def prepare(path, pause_after_commit=False, marker_path=None, selector_path=None
             raise AssertionError("Erasure did not reach the committed-key pause")
     wait_for(case_id, token, lambda item: item["firstSecret"]["tag"] == "Erased" and item["erasureStatus"] == "pending")
     assert_erased_wire(view_for(case_id, token))
-    path.write_text(json.dumps({"caseId": case_id, "reference": reference, "ownerId": view["ownerId"], "caseStatus": view["caseStatus"]}))
+    path.write_text(json.dumps({"caseId": case_id, "reference": reference,
+                                "secondReference": second_reference,
+                                "ownerId": view["ownerId"], "caseStatus": view["caseStatus"]}))
     if pause_after_commit:
         print("Key deletion committed and the result callback is paused before process death")
     else:
@@ -265,8 +282,18 @@ def verify_completed(path, database):
     assert completed["caseStatus"] == state["caseStatus"] == "open", completed
     assert completed["firstSecret"]["tag"] == "Erased", completed
     assert completed["secondSecret"]["tag"] == "Available", completed
+    assert completed["secondSecret"]["contents"] == {"name": "Álvaro ñ 😀", "aliases": [None, "café"]}, completed
     assert completed["wasAlreadyErased"] is True, completed
     persisted_case(database, state["caseId"], state["reference"])
+    safe_reference = str(uuid.UUID(state["secondReference"]))
+    command = ["psql", "-h", os.environ.get("DB_HOST", "localhost"),
+               "-p", os.environ.get("DB_PORT", "5432"),
+               "-U", os.environ.get("DB_USER", "neohaskell"),
+               "-d", database, "-At", "-c",
+               f"SELECT count(*), count(*) FILTER (WHERE key_bytes IS NOT NULL) "
+               f"FROM erasable_keys WHERE reference = '{safe_reference}'"]
+    assert subprocess.check_output(command, text=True).strip() == "1|1", safe_reference
+    print("Equal protected values kept distinct references and only one was erased across restart")
     print("Reconstructed application completion and erased projection after second restart")
 
 
@@ -629,9 +656,9 @@ if __name__ == "__main__":
         concurrent(sys.argv[2])
     elif action == "prepare":
         state_path = sys.argv[2]
-        prepare(Path(state_path))
+        prepare(Path(state_path), sys.argv[3])
     elif action == "prepare-crash":
-        prepare(Path(sys.argv[2]), True, Path(sys.argv[3]), Path(sys.argv[4]))
+        prepare(Path(sys.argv[2]), sys.argv[5], True, Path(sys.argv[3]), Path(sys.argv[4]))
     elif action == "verify":
         state_path = sys.argv[2]
         verify(Path(state_path))

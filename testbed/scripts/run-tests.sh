@@ -237,7 +237,7 @@ bash testbed/scripts/verify-database-isolation.sh "$testbed_db" "$oauth_db"
 python3 testbed/scripts/verify-cryptoerasure-restart.py verify-other-owner-denial "$oauth_db"
 python3 testbed/scripts/verify-cryptoerasure-restart.py concurrent "$oauth_db"
 ERASURE_STATE_FILE=$(mktemp)
-python3 testbed/scripts/verify-cryptoerasure-restart.py prepare "$ERASURE_STATE_FILE"
+python3 testbed/scripts/verify-cryptoerasure-restart.py prepare "$ERASURE_STATE_FILE" "$oauth_db"
 python3 testbed/scripts/verify-cryptoerasure-restart.py verify-callback-log "$ERASURE_STATE_FILE" "$OAUTH_TESTBED_LOG"
 restart_oauth_testbed() {
 	if [ -n "$OAUTH_TESTBED_PID" ]; then
@@ -255,7 +255,7 @@ restart_oauth_testbed() {
 }
 restart_oauth_testbed
 python3 testbed/scripts/verify-cryptoerasure-restart.py verify "$ERASURE_STATE_FILE"
-python3 testbed/scripts/verify-cryptoerasure-restart.py prepare-crash "$ERASURE_STATE_FILE" "$ERASURE_COMMIT_MARKER" "$ERASURE_PAUSE_SELECTOR"
+python3 testbed/scripts/verify-cryptoerasure-restart.py prepare-crash "$ERASURE_STATE_FILE" "$ERASURE_COMMIT_MARKER" "$ERASURE_PAUSE_SELECTOR" "$oauth_db"
 rm -f "$ERASURE_PAUSE_SELECTOR"
 restart_oauth_testbed
 python3 testbed/scripts/verify-cryptoerasure-restart.py verify "$ERASURE_STATE_FILE"
