@@ -400,6 +400,89 @@ def verify_callback_exception(path, database):
     persisted_case(database, state["caseId"], state["reference"])
 
 
+def callback_db_command(database):
+    return ["psql", "-h", os.environ.get("DB_HOST", "localhost"),
+            "-p", os.environ.get("DB_PORT", "5432"),
+            "-U", os.environ.get("DB_USER", "neohaskell"),
+            "-d", database, "-v", "ON_ERROR_STOP=1", "-At", "-c"]
+
+
+def prepare_callback_death(path, database):
+    token = owner_token()
+    status, result = request("POST", f"{API}/commands/create-owned-protected", token, [])
+    assert status == 200 and result["tag"] == "Accepted", (status, result)
+    case_id = result["entityId"]
+    view = wait_for(case_id, token, lambda item: bool(item.get("firstReference")))
+    reference = view["firstReference"]
+    safe_id = str(uuid.UUID(case_id))
+    command = callback_db_command(database)
+    subprocess.check_call(command + [f"""
+        CREATE FUNCTION nh140_pause_result_callback() RETURNS trigger LANGUAGE plpgsql AS $$
+        BEGIN
+            IF NEW.entity = 'OwnedProtectedEntity'
+               AND NEW.inlinedstreamid = '{safe_id}'
+               AND NEW.eventdata->>'tag' = 'ErasureCompleted' THEN
+                PERFORM pg_sleep(120);
+            END IF;
+            RETURN NEW;
+        END
+        $$;
+        CREATE TRIGGER nh140_pause_result_callback BEFORE INSERT ON events
+        FOR EACH ROW EXECUTE FUNCTION nh140_pause_result_callback();
+    """])
+    status, result = request("POST", f"{API}/commands/request-erasure", token, {
+        "tag": "RequestFirstErasure", "caseId": case_id,
+        "reference": reference, "rejectResult": False,
+        "simulateUnknownReference": False,
+    })
+    assert status == 200 and result["tag"] == "Accepted", (status, result)
+    deadline = time.monotonic() + 15
+    while time.monotonic() < deadline:
+        active = subprocess.check_output(command + [
+            "SELECT pid FROM pg_stat_activity WHERE datname = current_database() "
+            "AND wait_event = 'PgSleep'"], text=True).splitlines()
+        if len(active) == 1:
+            backend_pid = int(active[0])
+            break
+        time.sleep(0.1)
+    else:
+        raise AssertionError(f"Result callback did not enter its database insert for {case_id}")
+    pending = wait_for(case_id, token, lambda item: item["erasureStatus"] == "pending")
+    assert_erased_wire(pending)
+    assert_key_tombstoned(database, reference)
+    committed = subprocess.check_output(command + [
+        f"SELECT count(*) FROM events WHERE inlinedstreamid = '{safe_id}' "
+        "AND eventdata->>'tag' = 'ErasureCompleted'"], text=True).strip()
+    assert committed == "0", (case_id, committed)
+    path.write_text(json.dumps({"caseId": case_id, "reference": reference,
+                                "ownerId": view["ownerId"], "caseStatus": view["caseStatus"],
+                                "backendPid": backend_pid}))
+    print("Result callback entered its event insert before process death")
+
+
+def clear_callback_death(path, database):
+    state = json.loads(path.read_text())
+    backend_pid = int(state["backendPid"])
+    command = callback_db_command(database)
+    stopped = subprocess.check_output(command + [
+        f"SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE pid = {backend_pid} "
+        "AND datname = current_database() AND wait_event = 'PgSleep'"], text=True).strip()
+    assert stopped in ("", "t"), stopped
+    subprocess.check_call(command + ["DROP TRIGGER nh140_pause_result_callback ON events; "
+                                     "DROP FUNCTION nh140_pause_result_callback()"])
+    safe_id = str(uuid.UUID(state["caseId"]))
+    committed = subprocess.check_output(command + [
+        f"SELECT count(*) FROM events WHERE inlinedstreamid = '{safe_id}' "
+        "AND eventdata->>'tag' = 'ErasureCompleted'"], text=True).strip()
+    assert committed == "0", (state["caseId"], committed)
+
+
+def verify_callback_death(path, database):
+    verify(path)
+    state = json.loads(path.read_text())
+    persisted_case(database, state["caseId"], state["reference"])
+
+
 def prepare_action_failure(path, selector_path, log_path, database):
     token = owner_token()
     status, result = request("POST", f"{API}/commands/create-owned-protected", token, [])
@@ -478,6 +561,12 @@ if __name__ == "__main__":
         prepare_callback_exception(Path(sys.argv[2]), Path(sys.argv[3]), Path(sys.argv[4]), sys.argv[5])
     elif action == "verify-callback-exception":
         verify_callback_exception(Path(sys.argv[2]), sys.argv[3])
+    elif action == "prepare-callback-death":
+        prepare_callback_death(Path(sys.argv[2]), sys.argv[3])
+    elif action == "clear-callback-death":
+        clear_callback_death(Path(sys.argv[2]), sys.argv[3])
+    elif action == "verify-callback-death":
+        verify_callback_death(Path(sys.argv[2]), sys.argv[3])
     elif action == "prepare-action-failure":
         prepare_action_failure(Path(sys.argv[2]), Path(sys.argv[3]), Path(sys.argv[4]), sys.argv[5])
     elif action == "verify-action-failure":

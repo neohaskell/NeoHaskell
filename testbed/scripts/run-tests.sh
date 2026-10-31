@@ -232,9 +232,11 @@ ERASURE_STATE_FILE=$(mktemp)
 python3 testbed/scripts/verify-cryptoerasure-restart.py prepare "$ERASURE_STATE_FILE"
 python3 testbed/scripts/verify-cryptoerasure-restart.py verify-callback-log "$ERASURE_STATE_FILE" "$OAUTH_TESTBED_LOG"
 restart_oauth_testbed() {
-	kill "$OAUTH_TESTBED_PID"
-	wait "$OAUTH_TESTBED_PID" 2>/dev/null || true
-	OAUTH_TESTBED_PID=""
+	if [ -n "$OAUTH_TESTBED_PID" ]; then
+		kill "$OAUTH_TESTBED_PID" 2>/dev/null || true
+		wait "$OAUTH_TESTBED_PID" 2>/dev/null || true
+		OAUTH_TESTBED_PID=""
+	fi
 	if is_oauth_testbed_ready; then
 		echo -e "${RED}Error: OAuth testbed still responds after its owned process stopped${NC}"
 		exit 1
@@ -259,6 +261,13 @@ python3 testbed/scripts/verify-cryptoerasure-restart.py prepare-callback-excepti
 rm -f "$ERASURE_CALLBACK_EXCEPTION_SELECTOR"
 restart_oauth_testbed
 python3 testbed/scripts/verify-cryptoerasure-restart.py verify-callback-exception "$ERASURE_STATE_FILE" "$oauth_db"
+python3 testbed/scripts/verify-cryptoerasure-restart.py prepare-callback-death "$ERASURE_STATE_FILE" "$oauth_db"
+kill -9 "$OAUTH_TESTBED_PID"
+wait "$OAUTH_TESTBED_PID" 2>/dev/null || true
+OAUTH_TESTBED_PID=""
+python3 testbed/scripts/verify-cryptoerasure-restart.py clear-callback-death "$ERASURE_STATE_FILE" "$oauth_db"
+restart_oauth_testbed
+python3 testbed/scripts/verify-cryptoerasure-restart.py verify-callback-death "$ERASURE_STATE_FILE" "$oauth_db"
 python3 testbed/scripts/verify-cryptoerasure-restart.py prepare-action-failure "$ERASURE_STATE_FILE" "$ERASURE_ACTION_FAILURE_SELECTOR" "$OAUTH_TESTBED_LOG" "$oauth_db"
 rm -f "$ERASURE_ACTION_FAILURE_SELECTOR"
 restart_oauth_testbed
