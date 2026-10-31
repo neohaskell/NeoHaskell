@@ -25,23 +25,26 @@ import Testbed.Erasable.Owned.ReplayGateStore (ReplayGateStoreConfig (..))
 import Testbed.Erasable.Owned.Service qualified as OwnedErasableService
 
 
-app :: Int -> Int -> Application
-app oauthPort fixturePort =
-  Application.new
-    |> Application.withConfig @TestbedConfig
-    |> Application.withEventStore makeOAuthPostgresConfig
-    |> Application.withTransport (WebTransport.server {WebTransport.port = oauthPort})
-    |> Application.withApiInfo @() (\_ -> oauthApiInfo)
-    |> Application.withService AccountConnectionService.service
-    |> Application.withService OwnedErasableService.service
-    |> Application.withQueryObjectStore ReplayGateStoreConfig
-    |> Application.withQuery @AccountConnectionSummary
-    |> Application.withQuery @OwnedProtectedView
-    |> Application.withAuth @() (\_ -> [fmt|http://127.0.0.1:#{fixturePort}/oidc|])
-    |> Application.withOAuth2StateKey "OAUTH2_TESTBED_STATE_KEY"
-    |> Application.withOAuth2Provider @() (\_ -> providerConfig oauthPort fixturePort)
-    |> Application.withOutbound @AccountTokenPresenceObserver
-    |> Application.withOutbound @OwnedErasureOutbound
+app :: Int -> Int -> Bool -> Application
+app oauthPort fixturePort queueTimeoutMode = do
+  let baseApp = Application.new
+        |> Application.withConfig @TestbedConfig
+        |> Application.withEventStore makeOAuthPostgresConfig
+        |> Application.withTransport (WebTransport.server {WebTransport.port = oauthPort})
+        |> Application.withApiInfo @() (\_ -> oauthApiInfo)
+        |> Application.withService AccountConnectionService.service
+        |> Application.withService OwnedErasableService.service
+        |> Application.withQueryObjectStore ReplayGateStoreConfig
+        |> Application.withQuery @AccountConnectionSummary
+        |> Application.withQuery @OwnedProtectedView
+        |> Application.withAuth @() (\_ -> [fmt|http://127.0.0.1:#{fixturePort}/oidc|])
+        |> Application.withOAuth2StateKey "OAUTH2_TESTBED_STATE_KEY"
+        |> Application.withOAuth2Provider @() (\_ -> providerConfig oauthPort fixturePort)
+        |> Application.withOutbound @AccountTokenPresenceObserver
+        |> Application.withOutbound @OwnedErasureOutbound
+  if queueTimeoutMode
+    then baseApp |> Application.withDispatcherConfig @() (\_ -> Application.defaultConfig {Application.workerChannelCapacity = 1, Application.channelWriteTimeoutMs = 250})
+    else baseApp
 
 
 makeOAuthPostgresConfig :: TestbedConfig -> PostgresEventStore
