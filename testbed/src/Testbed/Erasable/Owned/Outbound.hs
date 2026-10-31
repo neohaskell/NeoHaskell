@@ -43,17 +43,20 @@ requestAction entityId reference rejectResult simulateUnknownReference staleFirs
     pause <- shouldPause "CRYPTOERASURE_PAUSE_SELECTOR" entityId
     pauseBeforeAction <- shouldPause "CRYPTOERASURE_PRE_ACTION_SELECTOR" entityId
     throwResult <- shouldPause "CRYPTOERASURE_CALLBACK_EXCEPTION_SELECTOR" entityId
+    omitResult <- shouldPause "CRYPTOERASURE_MISSING_CALLBACK_SELECTOR" entityId
     failAction <- shouldPause "CRYPTOERASURE_ACTION_FAILURE_SELECTOR" entityId
     let target = erasureTarget entityId reference simulateUnknownReference
     let onResult = resultCommand entityId reference rejectResult throwResult staleFirst
     let onFailure = failureCommand entityId reference
     if failAction
       then Task.throw (Integration.UnexpectedError "Testbed erasure action failure")
-      else if pauseBeforeAction
-        then Integration.runAction context (pauseBeforeErase reference)
-        else if pause
-          then Integration.runAction context (pauseAfterCommittedErase target reference onResult onFailure)
-          else Integration.runAction context (Integration.outbound Erasure.Erase {target, onResult, onFailure})
+      else if omitResult
+        then Integration.runAction context (omitResultCallback target)
+        else if pauseBeforeAction
+          then Integration.runAction context (pauseBeforeErase reference)
+          else if pause
+            then Integration.runAction context (pauseAfterCommittedErase target reference onResult onFailure)
+            else Integration.runAction context (Integration.outbound Erasure.Erase {target, onResult, onFailure})
 
 
 shouldPause :: Text -> Uuid -> Task Integration.IntegrationError Bool
@@ -89,6 +92,13 @@ resultCommand entityId reference rejectResult throwResult staleFirst result = ca
 failureCommand :: Uuid -> Text -> Integration.IntegrationError -> RecordErasureResult
 failureCommand entityId reference _ =
   RecordErasureFailure {caseId = entityId, reference, reason = "operation failed"}
+
+
+omitResultCallback :: Erasure.ErasureTarget -> Integration.Action
+omitResultCallback target =
+  Integration.action \context -> case context.eraseErasableKey of
+    Nothing -> Task.throw (Integration.UnexpectedError "Erasable key store unavailable")
+    Just erase -> erase target |> Task.map (\_ -> Nothing)
 
 
 pauseBeforeErase :: Text -> Integration.Action

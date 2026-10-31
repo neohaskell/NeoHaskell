@@ -400,6 +400,62 @@ def verify_callback_exception(path, database):
     persisted_case(database, state["caseId"], state["reference"])
 
 
+def prepare_missing_callback(path, selector_path, log_path, database):
+    token = owner_token()
+    status, result = request("POST", f"{API}/commands/create-owned-protected", token, [])
+    assert status == 200 and result["tag"] == "Accepted", (status, result)
+    case_id = result["entityId"]
+    view = wait_for(case_id, token, lambda item: bool(item.get("firstReference")))
+    reference = view["firstReference"]
+    selector_path.write_text(case_id)
+    status, result = request("POST", f"{API}/commands/request-erasure", token, {
+        "tag": "RequestFirstErasure", "caseId": case_id,
+        "reference": reference, "rejectResult": False,
+        "simulateUnknownReference": False,
+    })
+    assert status == 200 and result["tag"] == "Accepted", (status, result)
+    safe_id = str(uuid.UUID(case_id))
+    requested_event = subprocess.check_output(callback_db_command(database) + [
+        f"SELECT eventid FROM events WHERE inlinedstreamid = '{safe_id}' "
+        "AND eventdata->>'tag' = 'ErasureRequested' ORDER BY localposition DESC LIMIT 1"], text=True).strip()
+    assert requested_event, case_id
+    deadline = time.monotonic() + 15
+    while time.monotonic() < deadline:
+        log_text = log_path.read_text()
+        assert "Álvaro" not in log_text and "\\u00c1lvaro" not in log_text, "Protected value appeared in application log"
+        assert "$erasable" not in log_text, "Protected envelope appeared in application log"
+        records = [json.loads(line) for line in log_text.splitlines()
+                   if line.startswith("{") and line.endswith("}")]
+        outcomes = [record for record in records
+                    if record.get("kind") == "integration_result"
+                    and record.get("eventId") == requested_event
+                    and record.get("runnerKind") == "outbound"
+                    and record.get("result") == "processed"]
+        if outcomes:
+            assert len(outcomes) == 1 and outcomes[0]["commandsEmitted"] == 0, outcomes
+            break
+        time.sleep(0.1)
+    else:
+        raise AssertionError(f"Missing result callback was not exercised for {case_id}")
+    assert_key_tombstoned(database, reference)
+    committed = subprocess.check_output(callback_db_command(database) + [
+        f"SELECT count(*) FROM events WHERE inlinedstreamid = '{safe_id}' "
+        "AND eventdata->>'tag' = 'ErasureCompleted'"], text=True).strip()
+    assert committed == "0", (case_id, committed)
+    pending = wait_for(case_id, token, lambda item: item["erasureStatus"] == "pending")
+    assert_erased_wire(pending)
+    assert pending["secondSecret"]["tag"] == "Available", pending
+    path.write_text(json.dumps({"caseId": case_id, "reference": reference,
+                                "ownerId": view["ownerId"], "caseStatus": view["caseStatus"]}))
+    print("Omitted result callback left a tombstone and pending application request")
+
+
+def verify_missing_callback(path, database):
+    verify(path)
+    state = json.loads(path.read_text())
+    persisted_case(database, state["caseId"], state["reference"])
+
+
 def callback_db_command(database):
     return ["psql", "-h", os.environ.get("DB_HOST", "localhost"),
             "-p", os.environ.get("DB_PORT", "5432"),
@@ -561,6 +617,10 @@ if __name__ == "__main__":
         prepare_callback_exception(Path(sys.argv[2]), Path(sys.argv[3]), Path(sys.argv[4]), sys.argv[5])
     elif action == "verify-callback-exception":
         verify_callback_exception(Path(sys.argv[2]), sys.argv[3])
+    elif action == "prepare-missing-callback":
+        prepare_missing_callback(Path(sys.argv[2]), Path(sys.argv[3]), Path(sys.argv[4]), sys.argv[5])
+    elif action == "verify-missing-callback":
+        verify_missing_callback(Path(sys.argv[2]), sys.argv[3])
     elif action == "prepare-callback-death":
         prepare_callback_death(Path(sys.argv[2]), sys.argv[3])
     elif action == "clear-callback-death":
