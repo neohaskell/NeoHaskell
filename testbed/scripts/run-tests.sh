@@ -239,7 +239,7 @@ restart_oauth_testbed() {
 		echo -e "${RED}Error: OAuth testbed still responds after its owned process stopped${NC}"
 		exit 1
 	fi
-	DB_NAME="$oauth_db" "$(cabal "${CABAL_GLOBAL_OPTIONS[@]}" list-bin "${CABAL_EXE_OPTIONS[@]}" exe:nhoauthtestbed)" >>"$OAUTH_TESTBED_LOG" 2>&1 &
+	DB_NAME="$oauth_db" TESTBED_ERASURE_QUEUE_TIMEOUT="${1:-0}" "$(cabal "${CABAL_GLOBAL_OPTIONS[@]}" list-bin "${CABAL_EXE_OPTIONS[@]}" exe:nhoauthtestbed)" >>"$OAUTH_TESTBED_LOG" 2>&1 &
 	OAUTH_TESTBED_PID=$!
 	wait_for_service "http://127.0.0.1:$TESTBED_OAUTH_PORT/health" "Restarted OAuth testbed" "$OAUTH_TESTBED_PID"
 }
@@ -263,6 +263,11 @@ python3 testbed/scripts/verify-cryptoerasure-restart.py prepare-action-failure "
 rm -f "$ERASURE_ACTION_FAILURE_SELECTOR"
 restart_oauth_testbed
 python3 testbed/scripts/verify-cryptoerasure-restart.py verify-action-failure "$ERASURE_STATE_FILE" "$oauth_db"
+restart_oauth_testbed 1
+python3 testbed/scripts/verify-cryptoerasure-restart.py prepare-queue-timeout "$ERASURE_STATE_FILE" "$ERASURE_PRE_ACTION_MARKER" "$ERASURE_PRE_ACTION_SELECTOR" "$OAUTH_TESTBED_LOG" "$oauth_db"
+rm -f "$ERASURE_PRE_ACTION_SELECTOR"
+restart_oauth_testbed
+python3 testbed/scripts/verify-cryptoerasure-restart.py verify-queue-timeout "$ERASURE_STATE_FILE" "$oauth_db"
 
 if [ "${CRYPTOERASURE_FAULT_TESTS:-0}" = "1" ]; then
 	: "${TESTBED_FAULT_HTTP_PORT:?Set a private fault HTTP port}"
