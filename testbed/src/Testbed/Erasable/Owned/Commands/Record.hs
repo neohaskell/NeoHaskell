@@ -25,6 +25,7 @@ data RecordErasureResult
         reference :: Text,
         wasAlreadyErased :: Bool,
         rejectResult :: Bool,
+        throwResult :: Bool,
         staleFirst :: Erasable SecretPayload
       }
   | RecordErasureFailure
@@ -56,10 +57,12 @@ decide command maybeEntity _ = case maybeEntity of
 
 recordPending :: RecordErasureResult -> Decision OwnedProtectedEvent
 recordPending command = case command of
-  RecordErasureSuccess {caseId, reference, wasAlreadyErased, rejectResult, staleFirst} ->
-    if rejectResult
-      then Decider.reject "Testbed rejected the result after key commit"
-      else Decider.acceptExisting [ErasureCompleted {entityId = caseId, reference, wasAlreadyErased, staleFirst}]
+  RecordErasureSuccess {caseId, reference, wasAlreadyErased, rejectResult, throwResult, staleFirst} ->
+    if throwResult
+      then panic "Testbed result callback exception"
+      else if rejectResult
+        then Decider.reject "Testbed rejected the result after key commit"
+        else Decider.acceptExisting [ErasureCompleted {entityId = caseId, reference, wasAlreadyErased, staleFirst}]
   RecordErasureFailure {caseId, reference, reason} ->
     Decider.acceptExisting [ErasureFailed {entityId = caseId, reference, failureReason = reason}]
 

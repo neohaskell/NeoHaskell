@@ -42,8 +42,9 @@ requestAction entityId reference rejectResult simulateUnknownReference staleFirs
   Integration.action \context -> do
     pause <- shouldPause "CRYPTOERASURE_PAUSE_SELECTOR" entityId
     pauseBeforeAction <- shouldPause "CRYPTOERASURE_PRE_ACTION_SELECTOR" entityId
+    throwResult <- shouldPause "CRYPTOERASURE_CALLBACK_EXCEPTION_SELECTOR" entityId
     let target = erasureTarget entityId reference simulateUnknownReference
-    let onResult = resultCommand entityId reference rejectResult staleFirst
+    let onResult = resultCommand entityId reference rejectResult throwResult staleFirst
     let onFailure = failureCommand entityId reference
     if pauseBeforeAction
       then Integration.runAction context (pauseBeforeErase reference)
@@ -75,10 +76,10 @@ erasureTarget entityId reference simulateUnknownReference =
     }
 
 
-resultCommand :: Uuid -> Text -> Bool -> Erasable SecretPayload -> Erasure.ErasureResult -> RecordErasureResult
-resultCommand entityId reference rejectResult staleFirst result = case result of
-  Erasure.ErasedNow -> RecordErasureSuccess {caseId = entityId, reference, wasAlreadyErased = False, rejectResult, staleFirst}
-  Erasure.AlreadyErased -> RecordErasureSuccess {caseId = entityId, reference, wasAlreadyErased = True, rejectResult, staleFirst}
+resultCommand :: Uuid -> Text -> Bool -> Bool -> Erasable SecretPayload -> Erasure.ErasureResult -> RecordErasureResult
+resultCommand entityId reference rejectResult throwResult staleFirst result = case result of
+  Erasure.ErasedNow -> RecordErasureSuccess {caseId = entityId, reference, wasAlreadyErased = False, rejectResult, throwResult, staleFirst}
+  Erasure.AlreadyErased -> RecordErasureSuccess {caseId = entityId, reference, wasAlreadyErased = True, rejectResult, throwResult, staleFirst}
   Erasure.UnknownReference -> RecordErasureFailure {caseId = entityId, reference, reason = "unknown reference"}
 
 
