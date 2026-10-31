@@ -24,6 +24,13 @@ FIXTURE_JWT = ".".join(
         "H08QidefVv5zqF69ZvJUzNsTyJuhzvh6ATmQMyYEtSvChwnn_s-GDvb_z7Sl20muQGTNHI7PEil2s7VED9zaG-KnDau02Yoy35t-AvQT7YNDaQZn5qj321Kr-CSXGrkA1SXeyGLcwzXwH4RMz8UuQt9gzNYNQaSxW0C1XNNmP5ccPxEMuW-1mf34bEl-GzHLjPgqZrMcQTjl59Tf0_GtyCpxn7VEm5XNIAVmKef-Y5-mehSJKtJTrdvKpjbVBf4fYQ90VpWhCJxkGuMIga3JIgH86NJ5ZQ7cO3BOasp4IdlRA1RE9Jrp5HJ6d41Bt0w6L5scmsnRd549khbitIRDng",
     )
 )
+OTHER_FIXTURE_JWT = ".".join(
+    (
+        "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6InRlc3RiZWQtb3RoZXItcnMyNTYifQ",
+        "eyJpc3MiOiJodHRwOi8vMTI3LjAuMC4xOjgxODEvb2lkYyIsInN1YiI6ImZpeHR1cmUtb3RoZXItdXNlciIsImlhdCI6MTc2NzIyNTYwMCwiZXhwIjo0MTAyNDQ0ODAwfQ",
+        "X7R-b5LTTfSa6xh9k5N8YzTFX9epqCpUe82Jiufz7CYUFx19JTMHh_AQhtEBlKyh8HdrMmqydb7sbk7BiavkLYgMotey9OxUKTqGmtWvdBSSy8r1l_Cg3OHYHXaGvkhMkQHOms5RIp9JVrI84nCqj_wVCzbjG47adZaipYD7iNqknxDpMXHP2QSArY9EDMQY_D8ONWdzKRjqmD9pA2e-YRm9eI7j5Y0C1phFTn7MgxhBdMxcH-wUxWjC9nSfzR4uxGqhvKkueoVl0M5Mt25Nru7XHW8u8iyNSn2LFcoOR_bmTQZGlPlHNXiyj1vGx7tsd7nCwKnhAdpq2RIKozFJFg",
+    )
+)
 JWKS = {
     "keys": [
         {
@@ -33,7 +40,15 @@ JWKS = {
             "kid": "testbed-rs256",
             "n": "opV9TGzqrFh0a7YMCPoTD2gE7AqbTMt422iCEHggApv2wGYZZNVDACdaOKdlE75h7zfMOS7M4Z1r1eEIUsGMlYrm9aQLj5Y4OFfKvyUusholiL6-Ree6BDFoeKyqOwXHRv9Fz5KeGeSKb3j9lzeL6fudss-kJhW8WB35l8W2eFfnZDDHtong8xqRh_mz2LacxktcwF4rBaxjw0xSbzx2iHJ7SiNzQu55rxRFgFq32Tpfr7VIrhKgHPwJ2-sS85w-69qJLTcLKjhbe9PlPYpnWxtfv5tuW_wgEMRdedZ1JWpcCXiyvg9h5C6btIqQIlLPNhRBFgFQAuDTY4sgGC1QQQ",
             "e": "AQAB",
-        }
+        },
+        {
+            "kty": "RSA",
+            "use": "sig",
+            "alg": "RS256",
+            "kid": "testbed-other-rs256",
+            "n": "3qlmtkme0nkTEOFEjib-F0z1bx1bM6BWCR7GZHTvtc3TXGeyTgLJiLKF34BwadbJ86rUAvAhxrEHf5-xmLX9t3INDVCYNNEyILcnpmImFo6WF7dGa4ONiVFoz-wBdRtxK6822qff1ggF5LTPRfhW6Wd-xy09VCzDmfiAdnQZZ1OkKixe6nCEuILI1NZTaQ6tO1kL0GOoZMfaXpSTTwpAqK9iJc80y13IBSQBdJ7v-KrctgINnmCsCngy6btCX0HEaO71QmzjbmT4BLkfzCUZ_rlvbbZpkV4GfZsZWNU-TFjXjAu7OnqVgKZzHFTWEZAvvHek64X5MOSqeZwIop0-fw",
+            "e": "AQAB",
+        },
     ]
 }
 
@@ -104,6 +119,8 @@ class FixtureHandler(BaseHTTPRequestHandler):
             self.send_json({"status": "ok", "fixture": "neohaskell-testbed"})
         elif path == "/fixture/jwt":
             self.send_json({"accessToken": FIXTURE_JWT})
+        elif path == "/fixture/other-jwt":
+            self.send_json({"accessToken": OTHER_FIXTURE_JWT})
         elif path == "/oidc/.well-known/openid-configuration":
             self.send_json(
                 {
