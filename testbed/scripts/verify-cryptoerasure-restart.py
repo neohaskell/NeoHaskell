@@ -281,6 +281,34 @@ def verify_pre_action(path, database):
     print("A pre-action crash left the key active, then explicit retry erased it")
 
 
+def prepare_callback_exception(path, selector_path, log_path):
+    token = owner_token()
+    status, result = request("POST", f"{API}/commands/create-owned-protected", token, [])
+    assert status == 200 and result["tag"] == "Accepted", (status, result)
+    case_id = result["entityId"]
+    view = wait_for(case_id, token, lambda item: bool(item.get("firstReference")))
+    reference = view["firstReference"]
+    selector_path.write_text(case_id)
+    status, result = request("POST", f"{API}/commands/request-erasure", token, {
+        "tag": "RequestFirstErasure", "caseId": case_id,
+        "reference": reference, "rejectResult": False,
+        "simulateUnknownReference": False,
+    })
+    assert status == 200 and result["tag"] == "Accepted", (status, result)
+    deadline = time.monotonic() + 15
+    while time.monotonic() < deadline:
+        if "Testbed result callback exception" in log_path.read_text():
+            break
+        time.sleep(0.1)
+    else:
+        raise AssertionError("Result callback exception was not observed")
+    pending = wait_for(case_id, token, lambda item: item["erasureStatus"] == "pending")
+    assert_erased_wire(pending)
+    assert pending["secondSecret"]["tag"] == "Available", pending
+    path.write_text(json.dumps({"caseId": case_id, "reference": reference, "ownerId": view["ownerId"], "caseStatus": view["caseStatus"]}))
+    print("Result callback exception left the committed erasure pending")
+
+
 if __name__ == "__main__":
     action = sys.argv[1]
     if action == "concurrent":
@@ -299,6 +327,8 @@ if __name__ == "__main__":
         prepare_pre_action(Path(sys.argv[2]), Path(sys.argv[3]), Path(sys.argv[4]))
     elif action == "verify-pre-action":
         verify_pre_action(Path(sys.argv[2]), sys.argv[3])
+    elif action == "prepare-callback-exception":
+        prepare_callback_exception(Path(sys.argv[2]), Path(sys.argv[3]), Path(sys.argv[4]))
     elif action == "verify-callback-log":
         verify_callback_log(Path(sys.argv[2]), Path(sys.argv[3]))
     else:
