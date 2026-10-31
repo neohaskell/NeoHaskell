@@ -324,10 +324,27 @@ spec = do
             Ok response -> do
               -- User-1 should see their 2 queries, not user-2's
               Array.length response.items |> shouldBe 2
+              response.total |> shouldBe 2
               -- Check no queries belong to other users (using any with negation)
               let hasOtherOwner = response.items |> Array.any (\q -> q.ownerId != "user-1")
               hasOtherOwner |> shouldBe False
             Err _err -> fail "Failed to decode result"
+          page <- Endpoint.createQueryEndpoint @OwnerOnlyQuery store (Just user1) Nothing (QueryPageRequest {limit = 1, offset = 0}) |> Task.mapError endpointErrorToText
+          nextPage <- Endpoint.createQueryEndpoint @OwnerOnlyQuery store (Just user1) Nothing (QueryPageRequest {limit = 1, offset = 1}) |> Task.mapError endpointErrorToText
+          case (Json.decodeText @(QueryPageResponse OwnerOnlyQuery) page, Json.decodeText @(QueryPageResponse OwnerOnlyQuery) nextPage) of
+            (Ok firstPage, Ok secondPage) -> do
+              Array.length firstPage.items |> shouldBe 1
+              firstPage.items |> Array.any (\item -> item.ownerId != "user-1") |> shouldBe False
+              firstPage.total |> shouldBe 2
+              firstPage.hasMore |> shouldBe True
+              firstPage.effectiveLimit |> shouldBe 1
+              Array.length secondPage.items |> shouldBe 1
+              secondPage.items |> shouldNotBe firstPage.items
+              secondPage.items |> Array.any (\item -> item.ownerId != "user-1") |> shouldBe False
+              secondPage.total |> shouldBe 2
+              secondPage.hasMore |> shouldBe False
+              secondPage.effectiveLimit |> shouldBe 1
+            _ -> fail "Failed to decode owner pages"
 
 
 -- | Convert QueryObjectStore Error to Text.

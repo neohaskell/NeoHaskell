@@ -302,10 +302,17 @@ spec = do
         let wrongStream = target {EventStore.streamId = Event.StreamId (Uuid.toText otherId)}
         wrongStreamResult <- store.eraseErasableKey wrongStream |> Task.asResult
         wrongStreamResult |> shouldSatisfy (\result -> case result of Err _ -> True; Ok _ -> False)
+        let wrongEntity = target {EventStore.entityName = Event.EntityName "other-entity"}
+        wrongEntityResult <- store.eraseErasableKey wrongEntity |> Task.asResult
+        wrongEntityResult |> shouldSatisfy (\result -> case result of Err _ -> True; Ok _ -> False)
         otherApplication <- PostgresStore.new (privateConfig {Postgres.erasableApplicationScope = "other-application"})
         wrongApplicationResult <- otherApplication.eraseErasableKey target |> Task.asResult
         wrongApplicationResult |> shouldSatisfy (\result -> case result of Err _ -> True; Ok _ -> False)
         otherApplication.close
+        missingScope <- PostgresStore.new (privateConfig {Postgres.erasableApplicationScope = ""})
+        missingScopeResult <- missingScope.eraseErasableKey target |> Task.asResult
+        missingScopeResult |> shouldSatisfy (\result -> case result of Err _ -> True; Ok _ -> False)
+        missingScope.close
         before <- store.renderProtectedJson (Json.toJSON first) |> Task.mapError toText
         Json.encodeText before |> shouldSatisfy (Text.contains "first")
         firstErasure <- store.eraseErasableKey target |> Task.mapError toText

@@ -227,6 +227,60 @@ def verify_completed(path, database):
     print("Reconstructed application completion and erased projection after second restart")
 
 
+def prepare_pre_action(path, marker_path, selector_path):
+    token = owner_token()
+    status, result = request("POST", f"{API}/commands/create-owned-protected", token, [])
+    assert status == 200 and result["tag"] == "Accepted", (status, result)
+    case_id = result["entityId"]
+    view = wait_for(case_id, token, lambda item: bool(item.get("firstReference")))
+    reference = view["firstReference"]
+    assert view["firstSecret"]["tag"] == "Available", view
+    selector_path.write_text(case_id)
+    status, result = request("POST", f"{API}/commands/request-erasure", token, {
+        "tag": "RequestFirstErasure", "caseId": case_id,
+        "reference": reference, "rejectResult": False,
+        "simulateUnknownReference": False,
+    })
+    assert status == 200 and result["tag"] == "Accepted", (status, result)
+    deadline = time.monotonic() + 15
+    while time.monotonic() < deadline:
+        if marker_path.exists() and marker_path.read_text() == reference:
+            break
+        time.sleep(0.1)
+    else:
+        raise AssertionError("Erasure did not pause before its key action")
+    pending = wait_for(case_id, token, lambda item: item["erasureStatus"] == "pending")
+    assert pending["firstSecret"]["tag"] == "Available", pending
+    path.write_text(json.dumps({"caseId": case_id, "reference": reference}))
+    print("Request persisted before the key action and process death")
+
+
+def verify_pre_action(path, database):
+    token = owner_token()
+    state = json.loads(path.read_text())
+    case_id = state["caseId"]
+    reference = state["reference"]
+    pending = wait_for(case_id, token, lambda item: item["erasureStatus"] == "pending")
+    assert pending["firstSecret"]["tag"] == "Available", pending
+    assert pending["secondSecret"]["tag"] == "Available", pending
+    safe_reference = str(uuid.UUID(reference))
+    command = ["psql", "-h", os.environ.get("DB_HOST", "localhost"),
+               "-p", os.environ.get("DB_PORT", "5432"),
+               "-U", os.environ.get("DB_USER", "neohaskell"),
+               "-d", database, "-At", "-c",
+               f"SELECT count(*) FROM erasable_keys WHERE reference = '{safe_reference}' AND key_bytes IS NOT NULL"]
+    assert subprocess.check_output(command, text=True).strip() == "1"
+    status, result = request("POST", f"{API}/commands/request-erasure", token, {
+        "tag": "RetryFirstErasure", "caseId": case_id,
+    })
+    assert status == 200 and result["tag"] == "Accepted", (status, result)
+    completed = wait_for(case_id, token, lambda item: item["erasureStatus"] == "completed")
+    assert completed["wasAlreadyErased"] is False, completed
+    assert_erased_wire(completed)
+    assert completed["secondSecret"]["tag"] == "Available", completed
+    print("A pre-action crash left the key active, then explicit retry erased it")
+
+
 if __name__ == "__main__":
     action = sys.argv[1]
     if action == "concurrent":
@@ -241,7 +295,11 @@ if __name__ == "__main__":
         verify(Path(state_path))
     elif action == "verify-completed":
         verify_completed(Path(sys.argv[2]), sys.argv[3])
+    elif action == "prepare-pre-action":
+        prepare_pre_action(Path(sys.argv[2]), Path(sys.argv[3]), Path(sys.argv[4]))
+    elif action == "verify-pre-action":
+        verify_pre_action(Path(sys.argv[2]), sys.argv[3])
     elif action == "verify-callback-log":
         verify_callback_log(Path(sys.argv[2]), Path(sys.argv[3]))
     else:
-        raise SystemExit("expected concurrent, prepare, prepare-crash, verify, verify-completed, or verify-callback-log")
+        raise SystemExit("unknown cryptoerasure restart assertion")

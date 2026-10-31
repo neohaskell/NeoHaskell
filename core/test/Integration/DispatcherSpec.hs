@@ -17,6 +17,7 @@ import Json qualified
 import LinkedList qualified
 import Map qualified
 import Maybe qualified
+import Prelude qualified as GhcPrelude
 import Service.Command.Core (NameOf)
 import Service.Event (Event (..), StreamPosition (..))
 import Service.Event.EntityName (EntityName (..))
@@ -626,6 +627,47 @@ spec = do
         let endpoints = Map.empty |> Map.set "ThrowingCallback" throwingDispatch
         failed <- Dispatcher.dispatchCommandWithSource endpoints Nothing payload |> Task.asResult
         failed |> shouldBe (Err "Command dispatch failed")
+
+      it "does not report success when a callback handler crashes" \_ -> do
+        let payload =
+              Integration.CommandPayload
+                { commandType = "CrashingCallback",
+                  commandData = Json.encode ("ignored" :: Text.Text)
+                }
+        let crashDispatch :: DispatchHandler
+            crashDispatch _source _context _bytes _respond =
+              Task.fromIO (GhcPrelude.ioError (GhcPrelude.userError "private-callback-sentinel"))
+        let endpoints = Map.empty |> Map.set "CrashingCallback" crashDispatch
+        child <- AsyncTask.run (Dispatcher.dispatchCommandWithSource endpoints Nothing payload)
+        outcome <- AsyncTask.waitOutcome child
+        case outcome of
+          AsyncTask.Crashed _ -> pass
+          _ -> fail "Callback handler crash must not return success"
+
+      it "does not respond after a callback handler is cancelled" \_ -> do
+        entered <- Channel.new
+        responded <- ConcurrentVar.containing False
+        let payload =
+              Integration.CommandPayload
+                { commandType = "CancelledCallback",
+                  commandData = Json.encode ("ignored" :: Text.Text)
+                }
+        let blockedDispatch :: DispatchHandler
+            blockedDispatch _source _context _bytes respond = do
+              Channel.write unit entered
+              AsyncTask.sleep 60000
+              responded |> ConcurrentVar.modify (\_ -> True)
+              respond (Accepted {entityId = "cancelled"}, Json.encodeText ("ignored" :: Text.Text) |> Text.toBytes)
+        let endpoints = Map.empty |> Map.set "CancelledCallback" blockedDispatch
+        child <- AsyncTask.runWithCancellationEnabled (Dispatcher.dispatchCommandWithSource endpoints Nothing payload)
+        Channel.read entered
+        AsyncTask.cancel child
+        outcome <- AsyncTask.waitOutcome child
+        case outcome of
+          AsyncTask.Interrupted -> pass
+          _ -> fail "Cancelled callback handler must stop"
+        wasResponded <- ConcurrentVar.peek responded
+        wasResponded |> shouldBe False
 
     describe "per-entity ordering" do
       it "processes events for the same entity in order" \_ -> do
