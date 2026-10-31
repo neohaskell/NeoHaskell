@@ -37,6 +37,38 @@ def owner_token():
     return body["accessToken"]
 
 
+def verify_other_owner_denial(database):
+    token = owner_token()
+    status, created = request("POST", f"{API}/commands/create-owned-protected", token, [])
+    assert status == 200 and created["tag"] == "Accepted", (status, created)
+    case_id = str(uuid.UUID(created["entityId"]))
+    owned = wait_for(case_id, token, lambda item: bool(item.get("firstReference")))
+    reference = str(uuid.UUID(owned["firstReference"]))
+
+    status, fixture = request("GET", f"{FIXTURE}/fixture/other-jwt")
+    assert status == 200, (status, fixture)
+    other_token = fixture["accessToken"]
+    status, other_page = request("GET", f"{API}/queries/owned-protected-view", other_token)
+    assert status == 200, (status, other_page)
+    assert all(item["caseId"] != case_id for item in other_page["items"]), other_page
+    status, rejected = request("POST", f"{API}/commands/request-erasure", other_token, {
+        "tag": "RequestFirstErasure", "caseId": case_id, "reference": reference,
+        "rejectResult": False, "simulateUnknownReference": False,
+    })
+    assert status == 400 and rejected["tag"] == "Rejected", (status, rejected)
+    unchanged = view_for(case_id, token)
+    assert unchanged["firstSecret"]["tag"] == "Available", unchanged
+    assert unchanged["erasureStatus"] == "not-requested", unchanged
+    command = ["psql", "-h", os.environ.get("DB_HOST", "localhost"),
+               "-p", os.environ.get("DB_PORT", "5432"),
+               "-U", os.environ.get("DB_USER", "neohaskell"),
+               "-d", database, "-At", "-c",
+               f"SELECT count(*), count(*) FILTER (WHERE key_bytes IS NOT NULL) "
+               f"FROM erasable_keys WHERE reference = '{reference}'"]
+    assert subprocess.check_output(command, text=True).strip() == "1|1", reference
+    print("A valid other user could neither read nor erase the owner's protected case")
+
+
 def view_for(case_id, token):
     status, body = request("GET", f"{API}/queries/owned-protected-view", token)
     assert status == 200, (status, body)
@@ -633,5 +665,7 @@ if __name__ == "__main__":
         verify_action_failure(Path(sys.argv[2]), sys.argv[3])
     elif action == "verify-callback-log":
         verify_callback_log(Path(sys.argv[2]), Path(sys.argv[3]))
+    elif action == "verify-other-owner-denial":
+        verify_other_owner_denial(sys.argv[2])
     else:
         raise SystemExit("unknown cryptoerasure restart assertion")

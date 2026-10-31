@@ -234,6 +234,7 @@ fi
 
 bash testbed/scripts/verify-database-isolation.sh "$testbed_db" "$oauth_db"
 
+python3 testbed/scripts/verify-cryptoerasure-restart.py verify-other-owner-denial "$oauth_db"
 python3 testbed/scripts/verify-cryptoerasure-restart.py concurrent "$oauth_db"
 ERASURE_STATE_FILE=$(mktemp)
 python3 testbed/scripts/verify-cryptoerasure-restart.py prepare "$ERASURE_STATE_FILE"
