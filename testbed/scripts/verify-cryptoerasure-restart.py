@@ -106,6 +106,17 @@ def persisted_case(database, case_id, reference):
     assert "Álvaro" not in events_text, (case_id, events_text)
 
 
+def assert_key_tombstoned(database, reference):
+    safe_reference = str(uuid.UUID(reference))
+    command = ["psql", "-h", os.environ.get("DB_HOST", "localhost"),
+               "-p", os.environ.get("DB_PORT", "5432"),
+               "-U", os.environ.get("DB_USER", "neohaskell"),
+               "-d", database, "-At", "-c",
+               f"SELECT count(*), count(*) FILTER (WHERE key_bytes IS NULL) "
+               f"FROM erasable_keys WHERE reference = '{safe_reference}'"]
+    assert subprocess.check_output(command, text=True).strip() == "1|1", reference
+
+
 def concurrent_case(token):
     status, result = request("POST", f"{API}/commands/create-owned-protected", token, [])
     assert status == 200 and result["tag"] == "Accepted", (status, result)
@@ -281,7 +292,7 @@ def verify_pre_action(path, database):
     print("A pre-action crash left the key active, then explicit retry erased it")
 
 
-def prepare_callback_exception(path, selector_path, log_path):
+def prepare_callback_exception(path, selector_path, log_path, database):
     token = owner_token()
     status, result = request("POST", f"{API}/commands/create-owned-protected", token, [])
     assert status == 200 and result["tag"] == "Accepted", (status, result)
@@ -297,16 +308,40 @@ def prepare_callback_exception(path, selector_path, log_path):
     assert status == 200 and result["tag"] == "Accepted", (status, result)
     deadline = time.monotonic() + 15
     while time.monotonic() < deadline:
-        if "Testbed result callback exception" in log_path.read_text():
+        records = [json.loads(line) for line in log_path.read_text().splitlines()
+                   if line.startswith("{") and line.endswith("}")]
+        dispatches = [record for record in records
+                      if record.get("kind") == "integration_result"
+                      and record.get("streamId") == case_id
+                      and record.get("errorClass") == "CallbackDispatchFailure"
+                      and record.get("failureStage") == "callback_dispatch"
+                      and record.get("result") == "failed"]
+        commands = [record for record in records
+                    if record.get("kind") == "command_result"
+                    and record.get("commandName") == "RecordErasureResult"
+                    and record.get("errorClass") == "SynchronousException"
+                    and record.get("failureStage") == "execution"
+                    and record.get("eventsAppended") == 0
+                    and record.get("result") == "execution_failed"]
+        if len(dispatches) == 1 and len([record for record in commands
+                                        if record.get("correlationId") == dispatches[0].get("correlationId")
+                                        and record.get("causationId") == dispatches[0].get("eventId")]) == 1:
             break
         time.sleep(0.1)
     else:
-        raise AssertionError("Result callback exception was not observed")
+        raise AssertionError(f"Result callback exception records were not observed for {case_id}")
     pending = wait_for(case_id, token, lambda item: item["erasureStatus"] == "pending")
     assert_erased_wire(pending)
     assert pending["secondSecret"]["tag"] == "Available", pending
+    assert_key_tombstoned(database, reference)
     path.write_text(json.dumps({"caseId": case_id, "reference": reference, "ownerId": view["ownerId"], "caseStatus": view["caseStatus"]}))
     print("Result callback exception left the committed erasure pending")
+
+
+def verify_callback_exception(path, database):
+    verify(path)
+    state = json.loads(path.read_text())
+    persisted_case(database, state["caseId"], state["reference"])
 
 
 if __name__ == "__main__":
@@ -328,7 +363,9 @@ if __name__ == "__main__":
     elif action == "verify-pre-action":
         verify_pre_action(Path(sys.argv[2]), sys.argv[3])
     elif action == "prepare-callback-exception":
-        prepare_callback_exception(Path(sys.argv[2]), Path(sys.argv[3]), Path(sys.argv[4]))
+        prepare_callback_exception(Path(sys.argv[2]), Path(sys.argv[3]), Path(sys.argv[4]), sys.argv[5])
+    elif action == "verify-callback-exception":
+        verify_callback_exception(Path(sys.argv[2]), sys.argv[3])
     elif action == "verify-callback-log":
         verify_callback_log(Path(sys.argv[2]), Path(sys.argv[3]))
     else:
