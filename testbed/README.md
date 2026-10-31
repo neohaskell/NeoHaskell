@@ -76,6 +76,8 @@ The runner creates private databases, runs `testbed/tests/integrations/cryptoera
 
 The same strict command checks that a rejected result command records a callback dispatch failure while the application request stays pending. It reads the private PostgreSQL tombstone, then checks that the authorized `Erased` response contains only `tag` and null `contents` for the erased value. The maintained runner also checks that its application log contains neither the protected value nor its storage envelope. The second protected value remains `Available`, and an explicit retry records completion without restoring the first value. Set `TESTBED_OAUTH_LOG_DIR` to retain the application log in a chosen directory; otherwise the runner uses the system temporary directory. A passing run prints `Rejected result command was logged as callback dispatch failure without protected data` and ends with `testbed: PASS`.
 
+The strict runner also injects a typed failure into the selected erasure action before key deletion. It requires a `RunnerProcessingFailure` record, an owner-visible pending request, and one active key in PostgreSQL. It restarts the application, retries the request, and checks that the key is tombstoned and the completion event persists. A passing run prints `A typed action failure left the key active, then explicit retry erased it`. Use the same strict command above with a private PostgreSQL instance and private testbed ports.
+
 To check that an integration command handler cannot return success without calling its response callback, run the focused dispatcher regression:
 
 ```sh

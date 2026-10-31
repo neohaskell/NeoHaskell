@@ -43,14 +43,17 @@ requestAction entityId reference rejectResult simulateUnknownReference staleFirs
     pause <- shouldPause "CRYPTOERASURE_PAUSE_SELECTOR" entityId
     pauseBeforeAction <- shouldPause "CRYPTOERASURE_PRE_ACTION_SELECTOR" entityId
     throwResult <- shouldPause "CRYPTOERASURE_CALLBACK_EXCEPTION_SELECTOR" entityId
+    failAction <- shouldPause "CRYPTOERASURE_ACTION_FAILURE_SELECTOR" entityId
     let target = erasureTarget entityId reference simulateUnknownReference
     let onResult = resultCommand entityId reference rejectResult throwResult staleFirst
     let onFailure = failureCommand entityId reference
-    if pauseBeforeAction
-      then Integration.runAction context (pauseBeforeErase reference)
-      else if pause
-        then Integration.runAction context (pauseAfterCommittedErase target reference onResult onFailure)
-        else Integration.runAction context (Integration.outbound Erasure.Erase {target, onResult, onFailure})
+    if failAction
+      then Task.throw (Integration.UnexpectedError "Testbed erasure action failure")
+      else if pauseBeforeAction
+        then Integration.runAction context (pauseBeforeErase reference)
+        else if pause
+          then Integration.runAction context (pauseAfterCommittedErase target reference onResult onFailure)
+          else Integration.runAction context (Integration.outbound Erasure.Erase {target, onResult, onFailure})
 
 
 shouldPause :: Text -> Uuid -> Task Integration.IntegrationError Bool

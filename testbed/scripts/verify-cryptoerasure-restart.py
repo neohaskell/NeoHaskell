@@ -266,7 +266,7 @@ def prepare_pre_action(path, marker_path, selector_path):
     print("Request persisted before the key action and process death")
 
 
-def verify_pre_action(path, database):
+def verify_pre_action(path, database, message="A pre-action crash left the key active, then explicit retry erased it"):
     token = owner_token()
     state = json.loads(path.read_text())
     case_id = state["caseId"]
@@ -289,7 +289,7 @@ def verify_pre_action(path, database):
     assert completed["wasAlreadyErased"] is False, completed
     assert_erased_wire(completed)
     assert completed["secondSecret"]["tag"] == "Available", completed
-    print("A pre-action crash left the key active, then explicit retry erased it")
+    print(message)
 
 
 def prepare_callback_exception(path, selector_path, log_path, database):
@@ -373,6 +373,9 @@ def prepare_action_failure(path, selector_path, log_path, database):
         time.sleep(0.1)
     else:
         raise AssertionError(f"Typed erasure action failure was not logged for {case_id}")
+    log_text = log_path.read_text()
+    assert "Álvaro" not in log_text and "\\u00c1lvaro" not in log_text, "Protected value appeared in application log"
+    assert "$erasable" not in log_text, "Protected envelope appeared in application log"
     pending = wait_for(case_id, token, lambda item: item["erasureStatus"] == "pending")
     assert pending["firstSecret"]["tag"] == "Available", pending
     assert pending["secondSecret"]["tag"] == "Available", pending
@@ -388,7 +391,7 @@ def prepare_action_failure(path, selector_path, log_path, database):
 
 
 def verify_action_failure(path, database):
-    verify_pre_action(path, database)
+    verify_pre_action(path, database, "A typed action failure left the key active, then explicit retry erased it")
     state = json.loads(path.read_text())
     persisted_case(database, state["caseId"], state["reference"])
 
