@@ -292,6 +292,44 @@ def verify_pre_action(path, database, message="A pre-action crash left the key a
     print(message)
 
 
+def prepare_queue_timeout(path, marker_path, selector_path, log_path, database):
+    prepare_pre_action(path, marker_path, selector_path)
+    state = json.loads(path.read_text())
+    case_id = state["caseId"]
+    token = owner_token()
+    for _ in range(2):
+        status, result = request("POST", f"{API}/commands/request-erasure", token, {
+            "tag": "RetryFirstErasure", "caseId": case_id,
+        })
+        assert status == 200 and result["tag"] == "Accepted", (status, result)
+    deadline = time.monotonic() + 10
+    timeout_line = f"Dropped event for stream {case_id} (channel write timeout)"
+    while time.monotonic() < deadline:
+        log_text = log_path.read_text()
+        assert "Álvaro" not in log_text and "\\u00c1lvaro" not in log_text, "Protected value appeared in application log"
+        assert "$erasable" not in log_text, "Protected envelope appeared in application log"
+        if timeout_line in log_text:
+            break
+        time.sleep(0.1)
+    else:
+        raise AssertionError(f"Protected erasure queue timeout was not observed for {case_id}")
+    pending = wait_for(case_id, token, lambda item: item["erasureStatus"] == "pending")
+    assert pending["firstSecret"]["tag"] == "Available", pending
+    assert pending["secondSecret"]["tag"] == "Available", pending
+    safe_id = str(uuid.UUID(case_id))
+    safe_reference = str(uuid.UUID(state["reference"]))
+    command = ["psql", "-h", os.environ.get("DB_HOST", "localhost"),
+               "-p", os.environ.get("DB_PORT", "5432"),
+               "-U", os.environ.get("DB_USER", "neohaskell"),
+               "-d", database, "-At", "-c",
+               f"SELECT (SELECT count(*) FROM Events WHERE inlinedStreamId = '{safe_id}' "
+               "AND eventData->>'tag' = 'ErasureRequested'), "
+               f"(SELECT count(*) FROM erasable_keys WHERE reference = '{safe_reference}' "
+               "AND key_bytes IS NOT NULL)"]
+    assert subprocess.check_output(command, text=True).strip() == "3|1", case_id
+    print("A full protected queue dropped one request while the key stayed active and the application stayed pending")
+
+
 def prepare_callback_exception(path, selector_path, log_path, database):
     token = owner_token()
     status, result = request("POST", f"{API}/commands/create-owned-protected", token, [])
@@ -412,6 +450,8 @@ if __name__ == "__main__":
         verify_completed(Path(sys.argv[2]), sys.argv[3])
     elif action == "prepare-pre-action":
         prepare_pre_action(Path(sys.argv[2]), Path(sys.argv[3]), Path(sys.argv[4]))
+    elif action == "prepare-queue-timeout":
+        prepare_queue_timeout(Path(sys.argv[2]), Path(sys.argv[3]), Path(sys.argv[4]), Path(sys.argv[5]), sys.argv[6])
     elif action == "verify-pre-action":
         verify_pre_action(Path(sys.argv[2]), sys.argv[3])
     elif action == "prepare-callback-exception":

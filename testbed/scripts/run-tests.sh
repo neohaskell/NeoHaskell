@@ -263,6 +263,10 @@ python3 testbed/scripts/verify-cryptoerasure-restart.py prepare-action-failure "
 rm -f "$ERASURE_ACTION_FAILURE_SELECTOR"
 restart_oauth_testbed
 python3 testbed/scripts/verify-cryptoerasure-restart.py verify-action-failure "$ERASURE_STATE_FILE" "$oauth_db"
+python3 testbed/scripts/verify-cryptoerasure-restart.py prepare-queue-timeout "$ERASURE_STATE_FILE" "$ERASURE_PRE_ACTION_MARKER" "$ERASURE_PRE_ACTION_SELECTOR" "$OAUTH_TESTBED_LOG" "$oauth_db"
+rm -f "$ERASURE_PRE_ACTION_SELECTOR"
+restart_oauth_testbed
+python3 testbed/scripts/verify-cryptoerasure-restart.py verify-pre-action "$ERASURE_STATE_FILE" "$oauth_db"
 
 if [ "${CRYPTOERASURE_FAULT_TESTS:-0}" = "1" ]; then
 	: "${TESTBED_FAULT_HTTP_PORT:?Set a private fault HTTP port}"
