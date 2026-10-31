@@ -91,7 +91,7 @@ nix develop --command .agents/skills/tdd/scripts/test-match 'reports a handler t
 nix develop --command .agents/skills/tdd/scripts/test-match 'callback handler' nhcore-test-integration
 ```
 
-The first focused run reports one example and zero failures. The second checks a handler exception and cancellation before its response callback. The PostgreSQL testbed above checks the application request, result callback, pending state, explicit retry, and authorized query; it does not inject callback omission into the application.
+The first focused run reports one example and zero failures. The second checks a handler exception and cancellation before its response callback. The private-port strict testbed command above also selects one application erasure action that deletes its key but emits no result command. The runner checks the exact outbound request log, the PostgreSQL tombstone, the absence of `ErasureCompleted`, and the owner's pending response. It restarts the application, retries the request, and requires `AlreadyErased` completion. A passing run prints `Omitted result callback left a tombstone and pending application request` and ends with `testbed: PASS`.
 
 To run the persisted fault cases with the maintained testbed, reserve two more private ports and set `CRYPTOERASURE_FAULT_TESTS=1`:
 
