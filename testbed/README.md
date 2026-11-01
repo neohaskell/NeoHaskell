@@ -179,6 +179,8 @@ The same spec verifies that the named model entry point rejects an inbound Slice
 
 The maintained Hurl testbed exercises the declared cart and stock commands, queries, outbound handler, and typed inbound worker through the named model. `stock-reservation.hurl` asserts that `AddItem` updates `CartSummary` from one item to two and that the declared outbound handler runs `ReserveStock`, changing `StockLevel` from 100 available and 0 reserved to 95 available and 5 reserved after the first item. `generic-http-side-effect.hurl` requires one request from each distinct outbound handler for each event. Run it with:
 
+`cart-stock-activity.hurl` checks the shared `CartStockActivity` projection. It observes cart creation and stock initialization in one row, then waits for the cart addition and stock reservation before checking that their undeclared payloads left the shared row unchanged. Run the maintained suite below, or run `nix develop --command hurl --test testbed/tests/scenarios/cart-stock-activity.hurl` while the testbed is running on the default HTTP port.
+
 ```sh
 TESTBED_HTTP_PORT=18880 TESTBED_OAUTH_PORT=18881 TESTBED_FIXTURE_PORT=8181 nix develop --command .agents/skills/neohaskell-test/scripts/run-testbed --strict
 ```

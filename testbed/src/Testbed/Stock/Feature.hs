@@ -3,6 +3,8 @@
 module Testbed.Stock.Feature (stockFlow) where
 
 import Service.EventModel
+import Testbed.Cart.Core (CartCreatedPayload, CartEntity)
+import Testbed.Cart.Queries.CartStockActivity (CartStockActivity)
 import Testbed.Stock.Commands.InitializeStock (InitializeStock)
 import Testbed.Stock.Commands.InitializeStockInternal (InitializeStockInternal)
 import Testbed.Stock.Commands.ReserveStock (ReserveStock)
@@ -33,3 +35,10 @@ stockFlow = feature "Stock flow" do
         readsFrom @StockEntity do
           onEvent @StockInitializedPayload
           onEvent @StockReservedPayload
+
+    slice "Show declared cart and stock activity" do
+      query @CartStockActivity do
+        readsFrom @CartEntity do
+          onEvent @CartCreatedPayload
+        readsFrom @StockEntity do
+          onEvent @StockInitializedPayload

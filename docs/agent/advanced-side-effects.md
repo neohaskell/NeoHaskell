@@ -60,7 +60,7 @@ Validate response status and payload before treating an HTTP response as a domai
 
 ## The separate adapter API
 
-`Service.Integration.Adapter.Integration request` defines associated `Response request`, `runReal`, and `runFake`. `Application.withIntegration @Request` registers this API for typed dispatch. Real, fake, and hybrid selection use application arguments such as `--integrations=fake`. Hybrid mode names fakes with `--fake=TypeName`.
+`Service.Integration.Adapter.Integration request` defines associated `Response request`, `runReal`, and `runFake`. `EventModel.withIntegration @Request` registers this API in the named model for typed dispatch. Direct `Application.withIntegration @Request` remains available to applications that use manual assembly. Real, fake, and hybrid selection use application arguments such as `--integrations=fake`. Hybrid mode names fakes with `--fake=TypeName`.
 
 Registering `withIntegration` does not replace the `ToAction` implementation for `Http.Request`. The built-in HTTP `ToAction` executes its HTTP path directly. Choose the owning API when designing a reusable package.
 

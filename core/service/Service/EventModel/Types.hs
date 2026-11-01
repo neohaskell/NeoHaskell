@@ -321,6 +321,7 @@ data OutcomePart context mode where
 data ModelPart
   = ModelName Text
   | ModelFeatures [([Text], Feature)]
+  | ModelConfigRegistration (Application -> Application)
   | ModelConfiguration (Application -> Application)
 
 

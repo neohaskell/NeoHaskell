@@ -69,6 +69,7 @@ library
     Testbed.Cart.Integrations.EventCounter
     Testbed.Cart.Integrations.ReserveStockOnItemAdded
     Testbed.Cart.Queries.CartSummary
+    Testbed.Cart.Queries.CartStockActivity
     Testbed.Document.Commands.CreateDocument
     Testbed.Document.Core
     Testbed.Document.Feature

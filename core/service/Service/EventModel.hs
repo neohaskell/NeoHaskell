@@ -46,6 +46,14 @@ module Service.EventModel (
   run,
   appName,
   withConfig,
+  withApplicationConfiguration,
+  withIntegration,
+  withSecretStore,
+  withAuthOverrides,
+  withCors,
+  withHealthCheck,
+  withoutHealthCheck,
+  useReadinessEndpoint,
   withEventStore,
   withQueryObjectStore,
   withTransport,
@@ -89,6 +97,8 @@ module Service.EventModel (
 
 import Array qualified
 import Auth.OAuth2.Provider (OAuth2ProviderConfig)
+import Auth.Config (AuthOverrides)
+import Auth.SecretStore (SecretStore)
 import Basics
 import Control.Monad.Trans.Writer.Strict (Writer)
 import Control.Monad.Trans.Writer.Strict qualified as Writer
@@ -150,6 +160,8 @@ import Service.EventModel.Types (
 import Service.EventModel.Types qualified as Types
 import Service.EventStore (EventStoreConfig)
 import Service.FileUpload.Core (FileUploadConfig)
+import Service.Integration.Adapter (Integration)
+import Service.Integration.Adapter qualified as Adapter
 import Service.InboundIntegration.Core (InboundIntegration (..))
 import Service.Integration.Dispatcher (DispatcherConfig)
 import Service.OutboundIntegration.Core (OutboundIntegration (..))
@@ -158,6 +170,7 @@ import Service.Query.Definition (EventSubscription (..), WireEntities)
 import Service.QueryObjectStore.Core (QueryObjectStoreConfig)
 import Service.ServiceDefinition.Core (RunnableCommand (..))
 import Service.Transport (Transport)
+import Service.Transport.Web qualified as Web
 import Task (Task)
 import Task qualified
 import Text (Text)
@@ -334,7 +347,12 @@ eventModel builder =
   let parts = Writer.execWriter builder
       names = [name | ModelName name <- parts]
       featureResults = Prelude.concat [found | ModelFeatures found <- parts]
-      configuration = [configure | ModelConfiguration configure <- parts]
+      configRegistrations = [configure | ModelConfigRegistration configure <- parts]
+      configuration = configRegistrations Prelude.++ [configure | ModelConfiguration configure <- parts]
+      configProblems =
+        if Prelude.length configRegistrations > 1
+          then ["eventModel allows at most one withConfig"]
+          else []
       featureProblems = [problem | (problems, _) <- featureResults, problem <- problems]
       validFeatures = [selected | (_, selected) <- featureResults]
   in  case names of
@@ -343,11 +361,11 @@ eventModel builder =
               modelProblems = case validateModel model of
                 Ok _ -> []
                 Err problem -> [problem]
-              problems = featureProblems Prelude.++ modelProblems
+              problems = featureProblems Prelude.++ configProblems Prelude.++ modelProblems
           in  case problems of
                 [] -> Ok model
                 _ -> Err (Text.joinWith "\n" (Array.fromLinkedList problems))
-        _ -> Err (Text.joinWith "\n" (Array.fromLinkedList ("eventModel requires exactly one appName" : featureProblems)))
+        _ -> Err (Text.joinWith "\n" (Array.fromLinkedList ("eventModel requires exactly one appName" : featureProblems Prelude.++ configProblems)))
 
 
 -- | Register every validated Slice with the existing Application runtime.
@@ -365,7 +383,48 @@ run modelResult = case modelResult of
 
 
 withConfig :: forall config. (HasParser config, Typeable config) => EventModelAction
-withConfig = Writer.tell [ModelConfiguration (Application.withConfig @config)]
+withConfig = Writer.tell [ModelConfigRegistration (Application.withConfig @config)]
+
+
+-- | Add an Application configuration operation inside the named model.
+-- Register the application's config type with 'withConfig' so duplicates fail preflight.
+withApplicationConfiguration :: (Application -> Application) -> EventModelAction
+withApplicationConfiguration configure = Writer.tell [ModelConfiguration configure]
+
+
+withIntegration ::
+  forall request.
+  ( Integration request,
+    Typeable request,
+    Typeable (Adapter.Response request),
+    TypeName.Inspectable request
+  ) =>
+  EventModelAction
+withIntegration = withApplicationConfiguration (Application.withIntegration @request)
+
+
+withSecretStore :: forall config. (Typeable config) => (config -> SecretStore) -> EventModelAction
+withSecretStore makeStore = withApplicationConfiguration (Application.withSecretStore makeStore)
+
+
+withAuthOverrides :: forall config. (Typeable config) => (config -> Text) -> AuthOverrides -> EventModelAction
+withAuthOverrides makeUrl overrides = withApplicationConfiguration (Application.withAuthOverrides makeUrl overrides)
+
+
+withCors :: forall config. (Typeable config) => (config -> Web.CorsConfig) -> EventModelAction
+withCors makeConfig = withApplicationConfiguration (Application.withCors makeConfig)
+
+
+withHealthCheck :: forall config. (Typeable config) => (config -> Text) -> EventModelAction
+withHealthCheck makePath = withApplicationConfiguration (Application.withHealthCheck makePath)
+
+
+withoutHealthCheck :: EventModelAction
+withoutHealthCheck = withApplicationConfiguration Application.withoutHealthCheck
+
+
+useReadinessEndpoint :: EventModelAction
+useReadinessEndpoint = withApplicationConfiguration Application.useReadinessEndpoint
 
 
 withEventStore ::
@@ -533,7 +592,7 @@ sourceSubscription (ReadSource (_ :: Proxy entity) events) = do
 
 matchesEvent :: forall entity. (Json.FromJSON (EventOf entity)) => [EventRef entity] -> Json.Value -> Bool
 matchesEvent events rawEvent = case Json.decode @(EventOf entity) rawEvent of
-  Err _ -> True
+  Err _ -> False
   Ok decoded -> Prelude.any (matchesPayload decoded) events
 
 
