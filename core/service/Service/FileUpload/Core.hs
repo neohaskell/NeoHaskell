@@ -340,88 +340,64 @@ instance Json.ToJSON FileStateStoreBackend where
 
 -- | Declarative configuration for file uploads.
 --
--- This is the user-facing configuration type. IO initialization is deferred
--- to 'Application.run', making application setup purely declarative.
+-- This is the user-facing configuration type, parameterized over a backend
+-- configuration that implements 'Service.FileUpload.BlobStore.BlobStoreConfig'
+-- (such as 'Service.FileUpload.BlobStore.Local.LocalBlobStoreConfig' or
+-- 'Service.FileUpload.BlobStore.S3.S3Config'). IO initialization is deferred
+-- to 'Application.run', making application setup declarative.
 --
--- == Basic Example
+-- == Local Storage Example
 --
 -- @
 -- app = Application.new
---   |> Application.withEventStore postgresConfig
---   |> Application.withFileUpload FileUploadConfig
---       { blobStoreDir = "./uploads"
---       , stateStoreBackend = InMemoryStateStore  -- For development
---       , maxFileSizeBytes = 10485760  -- 10 MB
---       , pendingTtlSeconds = 21600    -- 6 hours
---       , cleanupIntervalSeconds = 900 -- 15 minutes
+--   |> Application.withEventStore \@() (\\_ -> postgresConfig)
+--   |> Application.withFileUpload \@() (\\_ -> FileUploadConfig
+--       { blobStore = LocalBlobStoreConfig { rootDir = [Path.path|./uploads|] }
+--       , stateStoreBackend = InMemoryStateStore
+--       , maxFileSizeBytes = 10485760
+--       , pendingTtlSeconds = 21600
+--       , cleanupIntervalSeconds = 900
 --       , allowedContentTypes = Nothing
 --       , storeOriginalFilename = True
+--       })
+-- @
+--
+-- == S3 Storage Example
+--
+-- @
+-- makeFileUploadConfig :: AppConfig -> FileUploadConfig S3Config
+-- makeFileUploadConfig config = FileUploadConfig
+--   { blobStore = S3Config
+--       { endpoint = config.s3Endpoint
+--       , bucket = config.s3Bucket
+--       , region = config.s3Region
+--       , accessKeyId = config.s3AccessKeyId
+--       , secretAccessKey = config.s3SecretAccessKey
 --       }
--- @
---
--- == Reusing PostgreSQL Connection Parameters
---
--- For production, you can reuse the same connection parameters as your event store:
---
--- @
--- -- Define once
--- postgresConfig = PostgresEventStore
---   { host = "localhost", port = 5432, databaseName = "myapp"
---   , user = "myuser", password = "mypassword"
---   , erasableApplicationScope = "myapp"
---   }
---
--- -- Reuse for file state store
--- fileUploadConfig = FileUploadConfig
---   { blobStoreDir = "./uploads"
 --   , stateStoreBackend = PostgresStateStore
---       { pgHost = postgresConfig.host
---       , pgPort = postgresConfig.port
---       , pgDatabase = postgresConfig.databaseName
---       , pgUser = postgresConfig.user
---       , pgPassword = postgresConfig.password
+--       { pgHost = config.dbHost
+--       , pgPort = config.dbPort
+--       , pgDatabase = config.dbName
+--       , pgUser = config.dbUser
+--       , pgPassword = config.dbPassword
+--       , pgSslMode = SslModeUnset
+--       , pgSslRootCert = Nothing
 --       }
---   , ...
+--   , maxFileSizeBytes = 10485760
+--   , pendingTtlSeconds = 21600
+--   , cleanupIntervalSeconds = 900
+--   , allowedContentTypes = Nothing
+--   , storeOriginalFilename = True
 --   }
 --
 -- app = Application.new
---   |> Application.withEventStore postgresConfig
---   |> Application.withFileUpload fileUploadConfig
+--   |> Application.withConfig \@AppConfig
+--   |> Application.withEventStore makePostgresConfig
+--   |> Application.withFileUpload makeFileUploadConfig
 -- @
---
--- == Migration from Imperative Setup
---
--- If you previously used the Task-based setup:
---
--- @
--- -- OLD (imperative)
--- appTask :: Task Text Application
--- appTask = do
---   blobStore <- LocalBlobStore.createBlobStore config
---   stateStore <- PostgresFileStore.new postgresConfig
---   let setup = FileUpload.defaultFileUploadSetup blobStore stateStore
---   Task.yield (baseApp |> Application.withFileUpload setup)
---
--- -- NEW (declarative)
--- app :: Application
--- app = baseApp
---   |> Application.withFileUpload FileUploadConfig
---       { blobStoreDir = "./uploads"
---       , stateStoreBackend = PostgresStateStore {...}
---       , ...
---       }
--- @
---
--- For config-dependent values, pass a factory function to 'Application.withFileUpload':
---
--- @
--- Application.withFileUpload makeFileUploadConfig
--- @
---
--- The config type is inferred from the factory signature.
-data FileUploadConfig = FileUploadConfig
-  { blobStoreDir :: Text
-  -- ^ Directory for storing uploaded files (created if missing)
+data FileUploadConfig blobStore = FileUploadConfig
+  { blobStore :: blobStore
+  -- ^ Blob storage backend configuration (such as @LocalBlobStoreConfig@ or @S3Config@)
   , stateStoreBackend :: FileStateStoreBackend
   -- ^ Where to track file lifecycle state
   , maxFileSizeBytes :: Int64
@@ -437,8 +413,8 @@ data FileUploadConfig = FileUploadConfig
   }
   deriving (Generic, Eq, Show)
 
-instance Json.FromJSON FileUploadConfig
-instance Json.ToJSON FileUploadConfig
+instance (Json.FromJSON blobStore) => Json.FromJSON (FileUploadConfig blobStore)
+instance (Json.ToJSON blobStore) => Json.ToJSON (FileUploadConfig blobStore)
 
 
 -- | Internal configuration for file uploads (used after initialization).

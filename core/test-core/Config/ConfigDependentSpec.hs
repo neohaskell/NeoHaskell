@@ -20,12 +20,16 @@ import Core
 import Integration qualified
 import Integration.Lifecycle qualified as Lifecycle
 import Json qualified
+import "nhcore" Path qualified
 import Service.Application qualified as Application
 import Service.Application.Types (ApiInfo (..))
 import Service.Event (Event)
+import Service.EventStore (EventStoreConfig (..))
 import Service.EventStore.InMemory qualified as InMemory
 import Service.EventStore.Postgres (PostgresEventStore (..))
-import Service.FileUpload.Core (FileUploadConfig (..), FileStateStoreBackend (..))
+import Service.FileUpload.BlobStore.Local (LocalBlobStoreConfig (..))
+import Service.FileUpload.BlobStore.S3 (S3Config (..))
+import Service.FileUpload.Core (FileStateStoreBackend (..), FileUploadConfig (..))
 import Service.Integration.Dispatcher qualified as Dispatcher
 import Service.OutboundIntegration.TH (outboundIntegrationFullEvent)
 import Service.Transport.Web qualified as Web
@@ -33,6 +37,13 @@ import Task qualified
 import Test
 import Text qualified
 import Uuid qualified
+
+
+data TestEventStore = TestEventStore
+
+
+instance EventStoreConfig TestEventStore where
+  createEventStore _config = InMemory.new |> Task.mapError toText
 
 
 -- | Mock config type for testing.
@@ -56,10 +67,31 @@ makeEventStoreFactory cfg = def
   }
 
 
--- | Helper to create a FileUploadConfig factory for testing.
-makeFileUploadFactory :: MockConfig -> FileUploadConfig
-makeFileUploadFactory cfg = FileUploadConfig
-  { blobStoreDir = cfg.mockUploadDir
+makeFileUploadFactory :: MockConfig -> FileUploadConfig LocalBlobStoreConfig
+makeFileUploadFactory cfg = do
+  let rootDir = case Path.fromText cfg.mockUploadDir of
+        Just path -> path
+        Nothing -> [Path.path|./uploads|]
+  FileUploadConfig
+    { blobStore = LocalBlobStoreConfig {rootDir}
+    , stateStoreBackend = InMemoryStateStore
+    , maxFileSizeBytes = 10485760
+    , pendingTtlSeconds = 21600
+    , cleanupIntervalSeconds = 900
+    , allowedContentTypes = Nothing
+    , storeOriginalFilename = True
+    }
+
+
+makeS3FileUploadFactory :: MockConfig -> FileUploadConfig S3Config
+makeS3FileUploadFactory cfg = FileUploadConfig
+  { blobStore = S3Config
+      { endpoint = cfg.mockAuthServerUrl
+      , bucket = "mock-bucket"
+      , region = "us-east-1"
+      , accessKeyId = "mock-access-key"
+      , secretAccessKey = "mock-secret-key"
+      }
   , stateStoreBackend = InMemoryStateStore
   , maxFileSizeBytes = 10485760
   , pendingTtlSeconds = 21600
@@ -80,10 +112,27 @@ directPostgresConfig = def
   }
 
 
--- | Direct FileUploadConfig for testing backwards compatibility.
-directFileUploadConfig :: FileUploadConfig
+directFileUploadConfig :: FileUploadConfig LocalBlobStoreConfig
 directFileUploadConfig = FileUploadConfig
-  { blobStoreDir = "./uploads"
+  { blobStore = LocalBlobStoreConfig {rootDir = [Path.path|./uploads|]}
+  , stateStoreBackend = InMemoryStateStore
+  , maxFileSizeBytes = 10485760
+  , pendingTtlSeconds = 21600
+  , cleanupIntervalSeconds = 900
+  , allowedContentTypes = Nothing
+  , storeOriginalFilename = True
+  }
+
+
+directS3FileUploadConfig :: FileUploadConfig S3Config
+directS3FileUploadConfig = FileUploadConfig
+  { blobStore = S3Config
+      { endpoint = "https://s3.example.com"
+      , bucket = "direct-bucket"
+      , region = "us-east-1"
+      , accessKeyId = "direct-access-key"
+      , secretAccessKey = "direct-secret-key"
+      }
   , stateStoreBackend = InMemoryStateStore
   , maxFileSizeBytes = 10485760
   , pendingTtlSeconds = 21600
@@ -241,17 +290,23 @@ spec = do
       Application.hasEventStore app |> shouldBe True
 
   describe "Application.withFileUpload (unified API)" do
-    it "stores factory and sets hasFileUpload to True" \_ -> do
-      -- Same pattern as EventStore: factory is stored, not evaluated at build time
+    it "stores Local factory and sets hasFileUpload to True" \_ -> do
       let app = Application.new
             |> Application.withFileUpload makeFileUploadFactory
       Application.hasFileUpload app |> shouldBe True
 
-    it "works with static config using @() pattern" \_ -> do
-      -- For static configs that don't depend on app config, use @() pattern
+    it "stores S3 factory and sets hasFileUpload to True" \_ -> do
       let app = Application.new
-            |> Application.withFileUpload @() (\_ -> directFileUploadConfig)
+            |> Application.withFileUpload makeS3FileUploadFactory
       Application.hasFileUpload app |> shouldBe True
+
+    it "works with static Local and S3 configs using @() pattern" \_ -> do
+      let localApp = Application.new
+            |> Application.withFileUpload @() (\_ -> directFileUploadConfig)
+      Application.hasFileUpload localApp |> shouldBe True
+      let s3App = Application.new
+            |> Application.withFileUpload @() (\_ -> directS3FileUploadConfig)
+      Application.hasFileUpload s3App |> shouldBe True
 
   describe "Application.withAuth (unified API)" do
     it "stores factory and sets hasAuth to True" \_ -> do
@@ -292,30 +347,15 @@ spec = do
             |> Application.withEventStore @() (\_ -> directPostgresConfig)
       Application.hasEventStore app |> shouldBe True
 
-    it "second withFileUpload call overwrites first" \_ -> do
-      -- When withFileUpload is called multiple times, the last one wins.
-      let differentFactory :: MockConfig -> FileUploadConfig
-          differentFactory cfg = FileUploadConfig
-            { blobStoreDir = cfg.mockUploadDir  -- Uses config, different from directFileUploadConfig
-            , stateStoreBackend = InMemoryStateStore
-            , maxFileSizeBytes = 5242880  -- Different from directFileUploadConfig
-            , pendingTtlSeconds = 21600
-            , cleanupIntervalSeconds = 900
-            , allowedContentTypes = Nothing
-            , storeOriginalFilename = True
-            }
+    it "second withFileUpload call overwrites first across blob store backends" \_ -> do
       let app = Application.new
             |> Application.withFileUpload @() (\_ -> directFileUploadConfig)
-            |> Application.withFileUpload differentFactory
-      -- Both set hasFileUpload to True
+            |> Application.withFileUpload makeS3FileUploadFactory
       Application.hasFileUpload app |> shouldBe True
-      -- The second call wins (we can't easily verify which one
-      -- without running the app, but we document the behavior)
 
     it "static config overwrites dynamic factory for FileUpload" \_ -> do
-      -- Reverse order: static config after dynamic factory
       let app = Application.new
-            |> Application.withFileUpload makeFileUploadFactory
+            |> Application.withFileUpload makeS3FileUploadFactory
             |> Application.withFileUpload @() (\_ -> directFileUploadConfig)
       Application.hasFileUpload app |> shouldBe True
 
@@ -364,21 +404,18 @@ spec = do
         Err err -> err |> shouldSatisfy (Text.contains "withEventStore requires withConfig")
 
     it "DeferredFileUpload requires withConfig" \_ -> do
-      -- NOTE: Testing this error path requires a working EventStore to get past
-      -- the EventStore creation step. Since this unit test doesn't have Postgres,
-      -- we test via nhcore-test-service (which has Postgres) or testbed integration tests.
-      --
-      -- The error we're documenting: When Application.run encounters
-      -- DeferredFileUpload but no configSpec was set, it throws:
-      -- "withFileUpload requires withConfig when the factory uses the config parameter."
-      pending "requires Postgres - tested in nhcore-test-service and testbed"
+      let app = Application.new
+            |> Application.withEventStore @() (\_ -> TestEventStore)
+            |> Application.withFileUpload (\(_ :: MockConfig) -> panic "DeferredFileUpload evaluated without withConfig" :: FileUploadConfig S3Config)
+      result <- Application.run app |> Task.asResult
+      case result of
+        Ok _ -> fail "Expected error but got Ok"
+        Err err -> err |> shouldSatisfy (Text.contains "withFileUpload requires withConfig")
 
     it "runWith rejects DeferredFileUpload" \_ -> do
-      -- runWith doesn't support config-dependent factories at all, so it
-      -- rejects DeferredFileUpload with a clear error message.
       eventStore <- InMemory.new |> Task.mapError toText
       let app = Application.new
-            |> Application.withFileUpload makeFileUploadFactory
+            |> Application.withFileUpload (\(_ :: MockConfig) -> panic "DeferredFileUpload evaluated by runWith" :: FileUploadConfig S3Config)
       result <- Application.runWith eventStore app |> Task.asResult
       case result of
         Ok _ -> fail "Expected error but got Ok"
