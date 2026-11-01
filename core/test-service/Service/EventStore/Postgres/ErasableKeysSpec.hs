@@ -945,6 +945,61 @@ spec = do
         Array.length (EventStore.collectStreamEvents messages) |> shouldBe 1
         store.close
 
+      it "rolls back a fresh key and events when another key in the batch already exists" \_ -> do
+        databaseName <- privateDatabase
+        databasePort <- privatePort
+        let privateConfig = config databaseName databasePort
+        store <- PostgresStore.new privateConfig
+        entityId <- Uuid.generate
+        let streamId = Event.StreamId (Uuid.toText entityId)
+        let entityName = Event.EntityName "erasable-mixed-key-failure"
+        let existingDecision = do
+              protected <- Erasable.new ("existing secret" :: Text)
+              Accept Event.AnyStreamState [protected]
+        (existingOutcome, existingKeys) <- Decider.runDecisionWithKeys (DecisionContext {genUuid = Uuid.generate}) (\_ -> Task.throw "No stored key") existingDecision
+        existing <- case existingOutcome of
+          RejectCommand _ -> Task.throw "Expected existing protected value"
+          AcceptCommand _ values -> case Array.first values of
+            Nothing -> Task.throw "Expected existing protected value"
+            Just value -> Task.yield value
+        initialPayload <- Event.payloadFromEvents entityName streamId [Json.toJSON existing]
+        store.insertWithErasableKeys existingKeys initialPayload |> Task.mapError toText |> discard
+        let freshDecision = do
+              protected <- Erasable.new ("fresh secret" :: Text)
+              Accept Event.AnyStreamState [protected]
+        (freshOutcome, freshKeys) <- Decider.runDecisionWithKeys (DecisionContext {genUuid = Uuid.generate}) (\_ -> Task.throw "No stored key") freshDecision
+        fresh <- case freshOutcome of
+          RejectCommand _ -> Task.throw "Expected fresh protected value"
+          AcceptCommand _ values -> case Array.first values of
+            Nothing -> Task.throw "Expected fresh protected value"
+            Just value -> Task.yield value
+        mixedPayload <- Event.payloadFromEvents entityName streamId [Json.toJSON fresh, Json.toJSON existing]
+        failed <- store.insertWithErasableKeys (freshKeys |> Array.append existingKeys) mixedPayload |> Task.asResult
+        case failed of
+          Err (EventStore.InsertionError (Event.InsertionFailed error)) ->
+            error |> shouldSatisfy (Text.contains "23505")
+          _ -> fail "A duplicate key must reject the mixed batch"
+        store.close
+        observer <- PostgresStore.new privateConfig
+        connection <- Postgres.defaultOps.acquire privateConfig
+        freshState <- runReal connection (keyRecord (Erasable.reference fresh))
+        freshState |> shouldBe Nothing
+        existingState <- runReal connection (keyRecord (Erasable.reference existing))
+        existingState |> shouldSatisfy (\value -> case value of Just (Just _) -> True; _ -> False)
+        mixedPayload.insertions |> Task.mapArray (\insertion -> do
+          stored <- runReal connection (eventJsonText insertion.metadata.eventId)
+          stored |> shouldBe Nothing)
+          |> discard
+        Postgres.defaultOps.release connection
+        messages <- observer.readAllStreamEvents entityName streamId |> Task.mapError toText |> Task.andThen Stream.toArray
+        let events = EventStore.collectStreamEvents messages
+        Array.length events |> shouldBe 1
+        previous <- case Array.first events of
+          Nothing -> Task.throw "Expected original event"
+          Just event -> observer.renderProtectedJson event.event |> Task.mapError toText
+        Json.encodeText previous |> shouldSatisfy (Text.contains "existing secret")
+        observer.close
+
 
 eventJsonText :: Uuid -> Session.Session (Maybe Text)
 eventJsonText eventId = do
