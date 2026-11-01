@@ -3,14 +3,23 @@ Run this module through the @nhtestbed-erasure@ test suite.
 -}
 module Main (main) where
 
+import Array qualified
 import Core
+import Decider (Decision (..))
 import Decider qualified
+import Erasable qualified
+import Integration qualified
+import Json qualified
 import Service.Auth (UserClaims (..))
 import Service.Auth qualified as Auth
+import Task qualified
 import Test
 import Test.Hspec qualified as Hspec
+import Testbed.Erasable.Core (SecretPayload (..))
+import Testbed.Erasable.Owned.Commands.Record (RecordErasureResult (..))
 import Testbed.Erasable.Owned.Commands.Request qualified as Request
 import Testbed.Erasable.Owned.Core (OwnedProtectedEntity (..))
+import Text qualified
 import Uuid qualified
 
 
@@ -20,6 +29,41 @@ main = Hspec.hspec spec
 
 spec :: Spec Unit
 spec = do
+  describe "Protected erasure result command" do
+    it "keeps its protected payload out of Show" \_ -> do
+      let decision = do
+            value <- Erasable.new SecretPayload
+              { name = "private-command-value",
+                aliases = [Nothing]
+              }
+            Accept AnyStreamState [value]
+      (result, _) <- Decider.runDecisionWithKeys
+        (Decider.DecisionContext {genUuid = Uuid.generate})
+        (\_ -> Task.throw "No stored key")
+        decision
+      case result of
+        Decider.RejectCommand _ -> fail "Expected protected value"
+        Decider.AcceptCommand _ values -> case Array.first values of
+          Nothing -> fail "Expected protected value"
+          Just value -> do
+            let command = RecordErasureSuccess
+                  { caseId = Uuid.nil,
+                    reference = Erasable.reference value,
+                    wasAlreadyErased = False,
+                    rejectResult = False,
+                    throwResult = False,
+                    staleFirst = value
+                  }
+            let payload = Integration.makeCommandPayload command
+            let displayed = Text.fromLinkedList (show payload)
+            displayed |> shouldSatisfy (\text -> not (Text.contains (Erasable.reference value) text))
+            displayed |> shouldSatisfy (\text -> not (Text.contains "$erasable" text))
+            displayed |> shouldSatisfy (\text -> not (Text.contains "private-command-value" text))
+            payload.commandType |> shouldBe "RecordErasureResult"
+            case Json.decode @RecordErasureResult payload.commandData of
+              Err _ -> fail "Protected result command did not decode"
+              Ok _ -> pass
+
   describe "Owned protected erasure authorization" do
     it "rejects a different authenticated owner" \_ -> do
       let entity = (def :: OwnedProtectedEntity) {caseId = Uuid.nil, ownerId = "owner"}
