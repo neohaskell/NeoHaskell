@@ -25,7 +25,7 @@ DB_PORT = os.environ.get("DB_PORT", "5432")
 DB_USER = os.environ.get("DB_USER", "neohaskell")
 DB_PASSWORD = os.environ["DB_PASSWORD"]
 FAULT = sys.argv[1]
-assert FAULT in {"missing-key", "version", "tag", "missing-envelope", "bad-nonce", "bad-ciphertext", "unavailable-store", "swap-envelope"}, FAULT
+assert FAULT in {"missing-key", "version", "tag", "missing-envelope", "bad-nonce", "bad-ciphertext", "unavailable-store", "swap-envelope", "swap-context"}, FAULT
 MARKER = "Álvaro"
 MARKER_ENCODINGS = (MARKER, json.dumps(MARKER)[1:-1])
 
@@ -199,7 +199,7 @@ try:
             "bad-nonce": ("{first,envelope,nonce}", "to_jsonb('invalid-nonce'::text)"),
             "bad-ciphertext": ("{first,envelope,ciphertext}", "to_jsonb('invalid-ciphertext'::text)"),
         }
-        if FAULT == "swap-envelope":
+        if FAULT in {"swap-envelope", "swap-context"}:
             before_raw = sql(database, f"""
                 SELECT eventData::text FROM Events
                 WHERE entity = 'OwnedProtectedEntity'
@@ -215,11 +215,13 @@ try:
             assert first["envelope"] != second["envelope"], before_event
             assert first["envelope"]["nonce"] != second["envelope"]["nonce"], before_event
             (REPORT / "event-before.json").write_text(before_raw + "\n")
+            if FAULT == "swap-envelope":
+                replacement = "jsonb_set(jsonb_set(eventData, '{first,envelope}', eventData #> '{second,envelope}', false), '{second,envelope}', eventData #> '{first,envelope}', false)"
+            else:
+                replacement = "jsonb_set(eventData, '{first,context}', eventData #> '{second,context}', false)"
             changed = sql(database, f"""
                 UPDATE Events
-                SET eventData = jsonb_set(
-                    jsonb_set(eventData, '{{first,envelope}}', eventData #> '{{second,envelope}}', false),
-                    '{{second,envelope}}', eventData #> '{{first,envelope}}', false)
+                SET eventData = {replacement}
                 WHERE entity = 'OwnedProtectedEntity'
                   AND inlinedStreamId = '{case_id}'
                   AND eventData->>'tag' = 'OwnedProtectedCreated'
@@ -235,8 +237,11 @@ try:
             """)
             after_event = json.loads(after_raw)
             expected = copy.deepcopy(before_event)
-            expected["first"]["envelope"] = second["envelope"]
-            expected["second"]["envelope"] = first["envelope"]
+            if FAULT == "swap-envelope":
+                expected["first"]["envelope"] = second["envelope"]
+                expected["second"]["envelope"] = first["envelope"]
+            else:
+                expected["first"]["context"] = second["context"]
             assert after_event == expected, after_event
             (REPORT / "event-after.json").write_text(after_raw + "\n")
             second_key_active = sql(database, f"""
@@ -270,7 +275,7 @@ try:
                                stdout=app_log, stderr=subprocess.STDOUT)
         wait_health(f"{API}/health")
     replay_status, replay_body = wait_replay()
-    if FAULT == "missing-envelope":
+    if FAULT in {"missing-envelope", "swap-context"}:
         assert replay_status == 503 and json.loads(replay_body).get("status") == "failed", (replay_status, replay_body)
     else:
         assert replay_status == 200, (replay_status, replay_body)
@@ -305,7 +310,7 @@ result = {
     "database": database,
     "eventRowsChanged": event_rows_changed,
     "originalKeyActive": True,
-    "secondKeyActive": second_key_active == "1" if FAULT == "swap-envelope" else None,
+    "secondKeyActive": second_key_active == "1" if FAULT in {"swap-envelope", "swap-context"} else None,
     "missingKeyAbsent": True if FAULT == "missing-key" else None,
     "replayStatus": replay_status,
     "httpStatus": failure_status,

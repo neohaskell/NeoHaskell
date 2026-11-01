@@ -294,12 +294,12 @@ if [ "${CRYPTOERASURE_FAULT_TESTS:-0}" = "1" ]; then
 	: "${TESTBED_FAULT_HTTP_PORT:?Set a private fault HTTP port}"
 	: "${TESTBED_FAULT_FIXTURE_PORT:?Set a private fault fixture port}"
 	fault_count=0
-	for fault in missing-key version tag missing-envelope bad-nonce bad-ciphertext unavailable-store swap-envelope; do
+	for fault in missing-key version tag missing-envelope bad-nonce bad-ciphertext unavailable-store swap-envelope swap-context; do
 		DB_HOST="${DB_HOST:-127.0.0.1}" DB_PASSWORD="${DB_PASSWORD:-neohaskell}" \
 			python3 testbed/scripts/verify-cryptoerasure-faults.py "$fault"
 		fault_count=$((fault_count + 1))
 	done
-	test "$fault_count" -eq 8
+	test "$fault_count" -eq 9
 	echo "Cryptoerasure fault cases: $fault_count"
 	DB_HOST="${DB_HOST:-127.0.0.1}" DB_PASSWORD="${DB_PASSWORD:-neohaskell}" \
 		python3 testbed/scripts/verify-cryptoerasure-replay-overlap.py
