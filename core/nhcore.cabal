@@ -72,6 +72,7 @@ common common_cfg
     process,
     quickcheck-instances,
     random,
+    regex-tdfa,
     safe-coloured-text,
     should-not-typecheck,
     strict,
@@ -240,6 +241,7 @@ library
     Service.Error
     Service.Event
     Service.EventModel
+    Service.EventModel.RuleRunner
     Service.Event.TH
     Service.Event.EntityName
     Service.Event.EventMetadata

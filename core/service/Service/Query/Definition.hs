@@ -7,6 +7,7 @@ module Service.Query.Definition (
   createDefinitionWithStore,
   EventSubscription (..),
   restrictToSources,
+  restrictRegistryToSources,
   WireEntities (..),
 ) where
 
@@ -27,7 +28,7 @@ import Service.Event (Event (..))
 import Service.Event.EntityName (EntityName (..))
 import Service.EventStore.Core (EventStore)
 import Service.EventStore.Core qualified as EventStore
-import Service.Query.Core (EntitiesOf, Query, QueryOf)
+import Service.Query.Core (EntitiesOf, Query, QueryAction, QueryOf)
 import Service.Query.Endpoint qualified as Endpoint
 import Service.Query.Registry (QueryRegistry, QueryUpdater (..))
 import Service.Query.Registry qualified as Registry
@@ -41,6 +42,7 @@ import Task qualified
 import Text (Text)
 import Text qualified
 import ToText (toText)
+import Uuid (Uuid)
 import Prelude qualified
 
 
@@ -73,15 +75,19 @@ data EventSubscription = EventSubscription EntityName (Json.Value -> Bool)
 -- | Keep only the entity and payload subscriptions named by a query Slice.
 restrictToSources :: [EventSubscription] -> QueryDefinition -> QueryDefinition
 restrictToSources subscriptions definition = do
-  let predicates = Prelude.foldl addSubscription Map.empty subscriptions
   definition
     { wireQuery = \eventStore -> do
         (registry, endpoint) <- definition.wireQuery eventStore
-        let selected =
-              Registry.registeredEntityNames registry
-                |> Array.reduce (registerSelected registry predicates) Registry.empty
+        let selected = restrictRegistryToSources subscriptions registry
         Task.yield (selected, endpoint)
     }
+
+
+restrictRegistryToSources :: [EventSubscription] -> QueryRegistry -> QueryRegistry
+restrictRegistryToSources subscriptions registry = do
+  let predicates = Prelude.foldl addSubscription Map.empty subscriptions
+  Registry.registeredEntityNames registry
+    |> Array.reduce (registerSelected registry predicates) Registry.empty
 
 
 addSubscription ::
@@ -236,10 +242,20 @@ class WireEntities (entities :: [Type]) (query :: Type) where
     QueryObjectStore query ->
     Task Text QueryRegistry
 
+  wireEntitiesWithObserver ::
+    Text ->
+    EventStore Json.Value ->
+    QueryObjectStore query ->
+    Maybe (Uuid -> QueryAction query -> Task Text Unit) ->
+    Task Text QueryRegistry
+  wireEntitiesWithObserver queryName rawEventStore queryStore _ =
+    wireEntities @entities @query queryName rawEventStore queryStore
+
 
 -- | Base case: empty entity list produces empty registry.
 instance WireEntities '[] query where
   wireEntities _ _ _ = Task.yield Registry.empty
+  wireEntitiesWithObserver _ _ _ _ = Task.yield Registry.empty
 
 
 -- | Recursive case: wire the head entity, then combine with tail.
@@ -254,7 +270,9 @@ instance
   ) =>
   WireEntities (entity ': rest) query
   where
-  wireEntities queryNameText rawEventStore queryStore = do
+  wireEntities queryNameText rawEventStore queryStore =
+    wireEntitiesWithObserver @(entity ': rest) @query queryNameText rawEventStore queryStore Nothing
+  wireEntitiesWithObserver queryNameText rawEventStore queryStore observe = do
     -- Wire this entity
     let entityNameText =
           GHC.symbolVal (Record.Proxy @(NameOf entity))
@@ -276,11 +294,9 @@ instance
         |> Task.mapError toText
 
     -- Create QueryUpdater for entity -> query
-    let updater =
-          Updater.createUpdater @entity @query
-            queryNameText
-            entityFetcher
-            queryStore
+    let updater = case observe of
+          Nothing -> Updater.createUpdater @entity @query queryNameText entityFetcher queryStore
+          Just onAction -> Updater.createUpdaterWithAction @entity @query queryNameText entityFetcher queryStore onAction
 
     -- Create registry entry for this entity
     let thisRegistry =
@@ -288,7 +304,7 @@ instance
             |> Registry.register (EntityName entityNameText) updater
 
     -- Recursively wire remaining entities
-    restRegistry <- wireEntities @rest @query queryNameText rawEventStore queryStore
+    restRegistry <- wireEntitiesWithObserver @rest @query queryNameText rawEventStore queryStore observe
 
     -- Combine registries
     Task.yield (thisRegistry |> Registry.mergeInto restRegistry)

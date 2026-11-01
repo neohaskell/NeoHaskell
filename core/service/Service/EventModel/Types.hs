@@ -48,11 +48,13 @@ import Map (Map)
 import Maybe (Maybe)
 import Service.Application (Application)
 import Service.Command.Core (Command, NameOf)
-import Service.Entity.Core (Entity, EntityOf, EventOf)
+import Service.Entity.Core (Entity (..), EntityOf, Event (..), EventOf)
+import Service.Event.StreamId qualified as StreamId
 import Service.InboundIntegration.Core (InboundIntegration (..))
 import Service.OutboundIntegration.Core (OutboundIntegration (..))
 import Service.Query.Core (EntitiesOf, Query, QueryAction, QueryOf)
-import Service.ServiceDefinition.Core (ServiceRunner)
+import Service.Query.Definition (WireEntities)
+import Service.ServiceDefinition.Core (RunnableCommand, ServiceRunner)
 import Text (Text)
 import Text qualified
 import Type.Reflection (Typeable)
@@ -91,7 +93,7 @@ data Primary context where
   StateChange ::
     (Entity entity, Typeable entity) => Proxy entity -> CommandRoot entity command -> Primary ('Change entity command)
   StateView ::
-    (Query query, Typeable query) =>
+    (Query query, Typeable query, Json.ToJSON query, Json.FromJSON query, GHC.KnownSymbol (NameOf query), WireEntities (EntitiesOf query) query) =>
     Proxy query -> [ReadSource query] -> (Application -> Application) -> Primary ('View query)
   OutboundTranslation ::
     (OutboundIntegration handler, Typeable handler) =>
@@ -103,7 +105,7 @@ data Primary context where
 
 data CommandRoot entity command where
   CommandRoot ::
-    (Command command, EntityOf command ~ entity, Typeable command) =>
+    (RunnableCommand command, EntityOf command ~ entity, Json.ToJSON (EventOf entity), Typeable command) =>
     Proxy command -> [Produced entity] -> ServiceRunner -> CommandRoot entity command
 
 
@@ -238,14 +240,26 @@ data RuleCase context = RuleCase
 
 data RuleSample where
   ChangeSample ::
-    (Entity entity, Typeable entity, Command command, Typeable command, EntityOf command ~ entity) =>
+    (Entity entity, Typeable entity, RunnableCommand command, Json.ToJSON (EventOf entity), Typeable command, EntityOf command ~ entity) =>
     Proxy entity -> Proxy command -> Text -> RuleCase ('Change entity command) -> RuleSample
-  ViewSample :: (Query query, Typeable query) => Proxy query -> Text -> RuleCase ('View query) -> RuleSample
+  ViewSample ::
+    (Query query, Typeable query, Json.ToJSON query, Json.FromJSON query, GHC.KnownSymbol (NameOf query), WireEntities (EntitiesOf query) query) =>
+    Proxy query -> [ReadSource query] -> Text -> RuleCase ('View query) -> RuleSample
 
 
 data HistoricalEvent where
   HistoricalEvent ::
-    (Entity entity, EntityOf payload ~ entity, EventVariantOf (EventOf entity) payload, Typeable entity, Typeable payload) =>
+    ( Entity entity,
+      Event (EventOf entity),
+      EntityOf (EventOf entity) ~ entity,
+      EntityOf payload ~ entity,
+      EventVariantOf (EventOf entity) payload,
+      StreamId.ToStreamId (EntityIdType entity),
+      GHC.KnownSymbol (NameOf entity),
+      Json.ToJSON (EventOf entity),
+      Typeable entity,
+      Typeable payload
+    ) =>
     Proxy entity -> payload -> HistoricalEvent
 
 
@@ -253,8 +267,13 @@ data WhenValue context where
   CommandWhen :: command -> WhenValue ('Change entity command)
   EventWhen ::
     ( Entity entity,
+      Event (EventOf entity),
+      EntityOf (EventOf entity) ~ entity,
       EntityOf payload ~ entity,
       EventVariantOf (EventOf entity) payload,
+      StreamId.ToStreamId (EntityIdType entity),
+      GHC.KnownSymbol (NameOf entity),
+      Json.ToJSON (EventOf entity),
       QueryOf entity query,
       QuerySourceMember entity query (EntitiesOf query),
       Typeable entity,
@@ -278,7 +297,7 @@ data CommandExpectation entity
 
 data ExpectedOutcome context where
   CommandExpected :: CommandExpectation entity -> ExpectedOutcome ('Change entity command)
-  ViewExpected :: QueryAction query -> ExpectedOutcome ('View query)
+  ViewExpected :: Uuid -> QueryAction query -> ExpectedOutcome ('View query)
 
 
 newtype QuerySnapshot query = QuerySnapshot (Map Uuid query)
@@ -313,9 +332,9 @@ data OutcomePart context mode where
   OutcomeRejected :: Maybe Text -> OutcomePart ('Change entity command) 'Rejection
   OutcomeRejectedPattern :: Text -> OutcomePart ('Change entity command) 'Rejection
   OutcomeAcceptedWithoutEvents :: OutcomePart ('Change entity command) 'ZeroEvents
-  OutcomeUpdated :: query -> OutcomePart ('View query) 'ViewUpdate
-  OutcomeDeleted :: OutcomePart ('View query) 'ViewDelete
-  OutcomeNoOp :: OutcomePart ('View query) 'ViewNoOpMode
+  OutcomeUpdated :: Uuid -> query -> OutcomePart ('View query) 'ViewUpdate
+  OutcomeDeleted :: Uuid -> OutcomePart ('View query) 'ViewDelete
+  OutcomeNoOp :: Uuid -> OutcomePart ('View query) 'ViewNoOpMode
 
 
 data ModelPart

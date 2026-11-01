@@ -33,6 +33,7 @@ import Record qualified
 import Schema (FieldSchema (..), Schema)
 import Schema qualified
 import Service.Auth (RequestContext (..))
+import Service.Auth qualified as Auth
 import Service.Transport.Internal (InternalTransport)
 import Service.Transport (Transport (..), EndpointHandler, DispatchHandler, EndpointSchema (..))
 import Service.Command (EntityOf, EventOf)
@@ -598,6 +599,7 @@ toServiceRunner service =
 -- | Register one declared command through the existing service runtime.
 class (Command command) => RunnableCommand command where
   commandRunner :: ServiceRunner
+  runRuleCommand :: EventStore Json.Value -> command -> Task Text Response.CommandResponse
 
 
 instance
@@ -628,6 +630,19 @@ instance
   RunnableCommand command
   where
   commandRunner = toServiceRunner (command @command new)
+  runRuleCommand rawEventStore commandValue = do
+    requestContext <- Auth.trustedContext
+    let eventStore = rawEventStore |> EventStore.castEventStore @(EventOf (EntityOf command))
+    buildCommandResponseHandler
+      @command
+      @(EntityOf command)
+      @(EventOf (EntityOf command))
+      @(NameOf (EntityOf command))
+      eventStore
+      Nothing
+      Nothing
+      requestContext
+      commandValue
 
 
 -- | Build command endpoints for a service, grouped by transport name.

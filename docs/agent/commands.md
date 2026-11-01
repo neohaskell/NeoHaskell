@@ -26,7 +26,7 @@ Define `getEntityId`, `decide`, and the type equations before `command`. Define 
 
 ## Decisions and execution
 
-`decide` receives the command, `Maybe entity`, and `RequestContext`. Reject invalid transitions with `Decider.reject`. Use `Decider.acceptNew` for a new stream and `Decider.acceptExisting` for an existing stream. The executor loads the target history, runs the decision, and inserts accepted events.
+`decide` receives the command, `Maybe entity`, and `RequestContext`. Reject invalid transitions with `Decider.reject`. Use `Decider.acceptNew` for a new stream and `Decider.acceptExisting` for an existing stream. The executor loads the target history, runs the decision, and inserts accepted events. An accepted empty event list on an identified stream succeeds without an event-store insert.
 
 Do not use a read model as the authority for a command invariant. Queries update asynchronously. The command already receives its target's reconstructed state.
 

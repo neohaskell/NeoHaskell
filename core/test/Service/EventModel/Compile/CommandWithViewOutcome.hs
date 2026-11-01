@@ -19,4 +19,4 @@ invalid = feature "Cart" do
         givenNothing
         when AddItem {cartId = Uuid.nil, stockId = Uuid.nil, quantity = 1}
         therefore do
-          updatedTo CartSummary {cartSummaryId = Uuid.nil, ownerId = "", itemCount = 0, isEmpty = True, iban = Nothing}
+          updatedTo Uuid.nil CartSummary {cartSummaryId = Uuid.nil, ownerId = "", itemCount = 0, isEmpty = True, iban = Nothing}
