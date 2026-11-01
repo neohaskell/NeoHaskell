@@ -38,6 +38,12 @@ CRYPTOERASURE_TEST_DB="$private_db" nix develop --command .agents/skills/tdd/scr
 
 The Hurl scenario asserts a command-generated event, a reconstructed query, two independently protected values, a mapped copy, nested optional values, and Unicode `Available` content. The service fixture uses real PostgreSQL to assert encrypted event storage, restart, key/event rollback, and a private tombstone yielding `Erased`. It rejects equivalent and conflicting protected event ID retries, mixed batches, and concurrent retries through separate pools. Create the named private database before running the fixture. The fixture rejects names without the `nh_cryptoerasure_` prefix.
 
+The service fixture also submits two protected events with one fresh key and one key that already exists. PostgreSQL must reject the batch, leave the fresh key and both events absent, and retain the earlier key and event. Set `private_db` and `db_port` to the private database and port created for the fixture, then run:
+
+```sh
+CRYPTOERASURE_TEST_DB="$private_db" CRYPTOERASURE_TEST_DB_PORT="$db_port" nix develop --command .agents/skills/tdd/scripts/test-match 'rolls back a fresh key and events when another key in the batch already exists' nhcore-test-service
+```
+
 To check transaction faults against an isolated PostgreSQL instance, set its port in `db_port` and reserve another loopback port for the commit-response proxy. Start the proxy before the fixture. It drops one response only after PostgreSQL reports a completed key and event statement. The fixture also terminates a writer while that statement is blocked, forces two separate-pool writers to overlap at the SQL insert, and reads the durable event and key rows before retrying.
 
 ```sh
@@ -53,7 +59,7 @@ PGPASSWORD=neohaskell nix develop --command createdb -h 127.0.0.1 -p "$db_port" 
 )
 ```
 
-The fixture requires 11 passing examples. The proxy evidence file must contain `"dropped_after_commit": true`. Use a fresh proxy process for each run because it drops only the first completed statement response.
+The fixture requires 12 passing examples. The proxy evidence file must contain `"dropped_after_commit": true`. Use a fresh proxy process for each run because it drops only the first completed statement response.
 
 ### Application-owned erasure
 
