@@ -16,7 +16,9 @@ For application-owned key deletion, read [protected-value erasure](advanced-eras
 
 ## Query rows
 
-`Application.new` defaults to in-memory query storage. `withQuery @Row` captures the configured store factory at registration. Call `withQueryObjectStore` first.
+For a model-backed application, call `EventModel.withQueryObjectStore` before the Features that declare query Slices. Each `query @Row` Slice then registers against the selected store.
+
+For a legacy application assembled directly with `Application`, `Application.new` defaults to in-memory query storage. Call `Application.withQueryObjectStore` before `Application.withQuery @Row`, which captures the configured store factory at registration. This manual registration path remains supported and is not deprecated.
 
 `PostgresQueryObjectStoreConfig` has the same eight field names. The store distinguishes query types through the query name and instance identifier.
 

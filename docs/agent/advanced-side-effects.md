@@ -44,7 +44,9 @@ Define a handler type and its `EntityOf` equation. Write `handleEvent :: Entity 
 
 For an existing handler that still takes the full event type, add `import Service.OutboundIntegration.TH (outboundIntegrationFullEvent)` to its module and replace its marker with `outboundIntegrationFullEvent ''Handler`. This explicit compatibility path still sends every event to that handler. Move one event case into a concrete payload handler when you want payload-specific dispatch. For a handwritten event sum, define an `EventVariantOf` mapping for the payload without changing the stored event JSON.
 
-Register the handler with `Application.withOutbound @Handler`. Register the callback commands in their owning services. The callbacks need `Json.ToJSON` and `NameOf` to form command payloads. Their handlers still need valid routing and decisions.
+For a model-backed application, declare an outbound Slice with `outboundIntegration @Handler`, one `onEvent @Payload`, and each callback's `triggersCommand @Command do { onTargetEntity @Entity }`. Declare each callback command in its own state-change Slice with `entity @Entity` and `command @Command`. The Event Model registers the handler and commands from those Slices. See [source-local Event Models](event-model.md) for the full declaration order. The callbacks need `Json.ToJSON` and `NameOf` to form command payloads. Their handlers still need valid routing and decisions.
+
+For a legacy application assembled directly with `Application`, keep `Application.withOutbound @Handler` and register callback commands in their owning services. These manual registrations remain supported and are not deprecated.
 
 Keep networking outside `decide` and `update`. The command decision describes domain changes. The outbound action performs the remote effect after an event.
 

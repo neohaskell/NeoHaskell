@@ -34,4 +34,6 @@ For a second entity or a remote effect, emit an event and react through an integ
 
 `IsMultiTenant command = True` adds a tenant `Uuid` argument to both routing and decision functions. Authorization rules remain explicit.
 
-Register a command with `Service.command @CommandType`, then register the service with `Application.withService`.
+For a model-backed application, declare a source-local Slice with `entity @Entity do { command @CommandType do { produces @Payload } }`. The Event Model registers the command from that Slice. See [source-local Event Models](event-model.md) for the Feature and application entry point.
+
+For a legacy application assembled directly with `Application`, keep `Service.command @CommandType` in the owning service and register that service with `Application.withService`. This manual registration path remains supported and is not deprecated.
