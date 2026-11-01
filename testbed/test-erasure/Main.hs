@@ -55,7 +55,6 @@ spec = do
         Decider.AcceptCommand _ values -> case Array.first values of
           Nothing -> fail "Expected protected value"
           Just value -> do
-            let reference = Erasable.reference value
             let created = ProtectedCreated
                   { createdId = Uuid.nil,
                     createdFirst = value,
@@ -68,19 +67,19 @@ spec = do
               Ok decodedEvent -> do
                 case decodedEvent of
                   ProtectedEventProtectedCreated decoded -> do
-                    Erasable.reference decoded.createdFirst |> shouldBe reference
-                    Erasable.reference decoded.createdSecond |> shouldBe reference
-                    Erasable.reference decoded.createdMapped |> shouldBe reference
+                    expectProtectedField value decoded.createdFirst
+                    expectProtectedField value decoded.createdSecond
+                    expectProtectedField value decoded.createdMapped
                 let entity = Entity.updateImpl decodedEvent (Entity.initialStateImpl @ProtectedEntity)
-                expectProtectedFields entity.firstSecret entity.secondSecret entity.mappedSecret reference
+                expectProtectedFields entity.firstSecret entity.secondSecret entity.mappedSecret value
                 case Query.combine entity Nothing :: Query.QueryAction ProtectedView of
                   Query.Update view -> do
-                    expectProtectedFields view.firstSecret view.secondSecret view.mappedSecret reference
+                    expectProtectedFields view.firstSecret view.secondSecret view.mappedSecret value
                     let stored = Json.toJSON view
                     case Json.decode @ProtectedView stored of
                       Err _ -> fail "Generated query did not decode its protected fields"
                       Ok decoded -> do
-                        expectProtectedFields decoded.firstSecret decoded.secondSecret decoded.mappedSecret reference
+                        expectProtectedFields decoded.firstSecret decoded.secondSecret decoded.mappedSecret value
                         let displayed = Text.fromLinkedList (show decoded)
                         displayed |> shouldSatisfy (Text.contains "Erasable <REDACTED>")
                         displayed |> shouldSatisfy (\output -> not (Text.contains "nested-private-name" output))
@@ -158,11 +157,17 @@ spec = do
         Decider.AcceptCommand _ _ -> fail "A userless transport accepted the erasure request"
 
 
-expectProtectedFields :: Maybe (Erasable.Erasable SecretPayload) -> Maybe (Erasable.Erasable SecretPayload) -> Maybe (Erasable.Erasable SecretPayload) -> Text -> Task Text Unit
-expectProtectedFields first second mapped reference =
+expectProtectedFields :: Maybe (Erasable.Erasable SecretPayload) -> Maybe (Erasable.Erasable SecretPayload) -> Maybe (Erasable.Erasable SecretPayload) -> Erasable.Erasable SecretPayload -> Task Text Unit
+expectProtectedFields first second mapped original =
   case (first, second, mapped) of
     (Just firstValue, Just secondValue, Just mappedValue) -> do
-      Erasable.reference firstValue |> shouldBe reference
-      Erasable.reference secondValue |> shouldBe reference
-      Erasable.reference mappedValue |> shouldBe reference
+      expectProtectedField original firstValue
+      expectProtectedField original secondValue
+      expectProtectedField original mappedValue
     _ -> fail "A protected field was missing"
+
+
+expectProtectedField :: Erasable.Erasable SecretPayload -> Erasable.Erasable SecretPayload -> Task Text Unit
+expectProtectedField expected actual = do
+  Erasable.reference actual |> shouldBe (Erasable.reference expected)
+  (Json.toJSON actual == Json.toJSON expected) |> shouldBe True
