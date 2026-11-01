@@ -357,24 +357,46 @@ appendAcceptedEvents context authorized state (AcceptedDecision insertionType ev
     Just rejection -> Task.yield (Rejected state.attemptStream (insertionRejectionText rejection))
     Nothing -> do
       finalStreamId <- chooseStream authorized state events
-      let dependencies = context.services
-      payload <- Event.payloadFromEvents dependencies.entityName finalStreamId events
-      let finalInsertionType = insertionTypeForEntity insertionType state.attemptFetched
-      let attributedInsertions = payload.insertions |> Array.map (Source.attributeInsertionMetadata context.source)
-      let positionedInsertions = positionInsertions finalInsertionType attributedInsertions
-      let payloadWithType = payload {insertionType = finalInsertionType, insertions = positionedInsertions}
-      insertResult <-
-        (if Array.isEmpty newKeys
-          then dependencies.eventStore.insert payloadWithType
-          else dependencies.eventStore.insertWithErasableKeys newKeys payloadWithType)
-          |> Task.asResult
-      case insertResult of
-        Ok _ -> do
-          let metadata = positionedInsertions |> Array.map (\insertion -> insertion.metadata)
-          Task.yield (Accepted finalStreamId state.attemptRetries metadata)
-        Err (EventStore.InsertionError Event.ConsistencyCheckFailed) ->
-          handleConflict context authorized state finalStreamId
-        Err eventStoreError -> Task.yield (AppendFailed finalStreamId state.attemptRetries eventStoreError)
+      if Array.isEmpty events
+        then Task.yield (Accepted finalStreamId state.attemptRetries Array.empty)
+        else appendEventsToStore context authorized state (AcceptedDecision insertionType events newKeys) finalStreamId
+
+
+appendEventsToStore ::
+  forall entity event.
+  ( Event event,
+    Entity entity,
+    entity ~ EntityOf event,
+    ToStreamId (EntityIdType entity),
+    Eq (EntityIdType entity),
+    Show (EntityIdType entity),
+    Show event
+  ) =>
+  ExecutionContext entity event ->
+  AuthorizedCommand (EntityIdType entity) entity event ->
+  AttemptState entity ->
+  AcceptedDecision event ->
+  StreamId.StreamId ->
+  Task CommandExecutionFailure CommandOutcome
+appendEventsToStore context authorized state (AcceptedDecision insertionType events newKeys) finalStreamId = do
+  let dependencies = context.services
+  payload <- Event.payloadFromEvents dependencies.entityName finalStreamId events
+  let finalInsertionType = insertionTypeForEntity insertionType state.attemptFetched
+  let attributedInsertions = payload.insertions |> Array.map (Source.attributeInsertionMetadata context.source)
+  let positionedInsertions = positionInsertions finalInsertionType attributedInsertions
+  let payloadWithType = payload {insertionType = finalInsertionType, insertions = positionedInsertions}
+  insertResult <-
+    (if Array.isEmpty newKeys
+      then dependencies.eventStore.insert payloadWithType
+      else dependencies.eventStore.insertWithErasableKeys newKeys payloadWithType)
+      |> Task.asResult
+  case insertResult of
+    Ok _ -> do
+      let metadata = positionedInsertions |> Array.map (\insertion -> insertion.metadata)
+      Task.yield (Accepted finalStreamId state.attemptRetries metadata)
+    Err (EventStore.InsertionError Event.ConsistencyCheckFailed) ->
+      handleConflict context authorized state finalStreamId
+    Err eventStoreError -> Task.yield (AppendFailed finalStreamId state.attemptRetries eventStoreError)
 
 
 chooseStream ::

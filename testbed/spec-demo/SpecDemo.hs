@@ -3,15 +3,18 @@
 module Main (main, ObserveItemAdded (..), CrossEntityView (..)) where
 
 import Array qualified
+import AsyncTask qualified
 import Auth.Config qualified as AuthConfig
 import Auth.SecretStore.InMemory qualified as InMemorySecretStore
 import Core
 import Data.Dynamic qualified as Dynamic
 import Integration qualified
 import Map qualified
+import Prelude qualified
 import Service.AccessControl (AccessError, UserClaims)
 import Service.Application qualified as Application
 import Service.EventModel qualified as EventModel
+import Service.EventModel.RuleRunner qualified as RuleRunner
 import Service.Integration.Adapter (Integration (..))
 import Service.Integration.Selection (Selection (..))
 import Service.Integration.DispatchRegistry qualified as DispatchRegistry
@@ -19,17 +22,22 @@ import Service.Transport.Web qualified as WebTransport
 import Task qualified
 import Test
 import Test.Hspec qualified as Hspec
+import Test.QuickCheck qualified as QuickCheck
 import Testbed.Cart.Commands.AddItem (AddItem (..))
+import Testbed.Cart.Commands.AddTwoItems (AddTwoItems (..))
+import Testbed.Cart.Commands.ConfirmCart (ConfirmCart (..))
+import Testbed.Cart.Commands.OverfillCart (OverfillCart (..))
 import Testbed.Cart.Commands.CreateTypedInboundCart (CreateTypedInboundCart)
-import Testbed.Cart.Core (CartCreatedPayload (..), CartEntity (..), ItemAddedPayload (..))
+import Testbed.Cart.Core (CartCreatedPayload (..), CartEntity (..), IBANSavedPayload (..), ItemAddedPayload (..))
 import Testbed.Cart.Feature (cartFlow)
 import Testbed.Cart.Integrations.ReserveStockOnItemAdded (ReserveStockOnItemAdded)
 import Testbed.Cart.Queries.CartSummary (CartSummary (..))
+import Testbed.Cart.Queries.RuleProjection (RuleProjection (..), projectionId)
 import Testbed.Config (TestbedConfig)
 import Testbed.EventModel qualified as App
 import Testbed.Integrations.TypedInboundExample (TypedInboundExample)
 import Testbed.Stock.Commands.InitializeStockInternal (InitializeStockInternal)
-import Testbed.Stock.Core (StockEntity (..), StockInitializedPayload)
+import Testbed.Stock.Core (StockEntity (..), StockInitializedPayload (..))
 import Text qualified
 import Uuid qualified
 
@@ -84,7 +92,168 @@ main = Hspec.hspec spec
 
 spec :: Spec Unit
 spec = do
+  case App.appEventModel 8080 of
+    Err problem -> Hspec.it "assembles direct rules" do
+      Hspec.expectationFailure (Text.toLinkedList problem)
+    Ok model -> do
+      let generators = RuleRunner.emptyGenerators
+            |> RuleRunner.withGenerator @Int (QuickCheck.choose (1, 100)) toText
+      RuleRunner.specFor generators 583 3 model
+
   describe "source-local Event Model" do
+    it "retains generated cart and stock IDs across given, when and therefore" \_ -> do
+      case bindingRuleModel of
+        Err problem -> problem |> shouldBe "valid binding rule model"
+        Ok model -> do
+          let generators = RuleRunner.emptyGenerators
+                |> RuleRunner.withGenerator @Uuid (QuickCheck.elements [Uuid.nil, fixtureRowId]) Uuid.toText
+                |> RuleRunner.withGenerator @Int (QuickCheck.choose (1, 5)) toText
+          reports <- RuleRunner.runRules generators 223 3 model
+          reports |> Array.fromLinkedList |> Array.length |> shouldBe 3
+          let failures = [RuleRunner.reportText report | report <- reports, case report.result of Err _ -> True; Ok () -> False]
+          failures |> shouldBe []
+          reports |> Prelude.all (\report -> Prelude.length report.inputs == 3) |> shouldBe True
+
+    it "prints generated bindings and a replay seed on failure" \_ -> do
+      case generatedFailureModel of
+        Err problem -> problem |> shouldBe "valid generated failure model"
+        Ok model -> do
+          let generators = RuleRunner.emptyGenerators
+                |> RuleRunner.withGenerator @Int (QuickCheck.choose (1, 5)) toText
+          reports <- RuleRunner.runRules generators 211 1 model
+          case reports of
+            [report] -> do
+              let diagnostic = RuleRunner.reportText report
+              diagnostic |> Text.contains "Cart / Commands / Add / generated mismatch" |> shouldBe True
+              diagnostic |> Text.contains "seed=211" |> shouldBe True
+              diagnostic |> Text.contains "Int=" |> shouldBe True
+              diagnostic |> Text.contains "ordered events differ" |> shouldBe True
+            _ -> False |> shouldBe True
+
+    it "reports the underlying event-store failure with its rule identity" \_ -> do
+      case frameworkFailureModel of
+        Err problem -> problem |> shouldBe "valid framework failure model"
+        Ok model -> do
+          reports <- RuleRunner.runRules RuleRunner.emptyGenerators 67 1 model
+          case reports of
+            [report] -> do
+              let diagnostic = RuleRunner.reportText report
+              diagnostic |> Text.contains "Cart / Commands / Overfill / store failure" |> shouldBe True
+              diagnostic |> Text.contains "framework error" |> shouldBe True
+              diagnostic |> Text.contains "PayloadTooLarge" |> shouldBe True
+              diagnostic |> Text.contains "seed=67" |> shouldBe True
+            _ -> False |> shouldBe True
+
+    it "isolates overlapping command histories and query rows concurrently" \_ -> do
+      case (orderedRuleModel, viewRuleModel) of
+        (Ok commandModel, Ok queryModel) -> do
+          (commandFirst, commandSecond) <- AsyncTask.runConcurrently
+            (RuleRunner.runRules RuleRunner.emptyGenerators 103 2 commandModel, RuleRunner.runRules RuleRunner.emptyGenerators 103 2 commandModel)
+          let commandPasses reports = [report | report <- reports, Text.contains "ordered pass" report.identity, case report.result of Ok () -> True; Err _ -> False]
+          commandFirst |> commandPasses |> Array.fromLinkedList |> Array.length |> shouldBe 2
+          commandSecond |> commandPasses |> Array.fromLinkedList |> Array.length |> shouldBe 2
+          (queryFirst, querySecond) <- AsyncTask.runConcurrently
+            (RuleRunner.runRules RuleRunner.emptyGenerators 109 2 queryModel, RuleRunner.runRules RuleRunner.emptyGenerators 109 2 queryModel)
+          let queryFailures reports = [RuleRunner.reportText report | report <- reports, case report.result of Err _ -> True; Ok () -> False]
+          queryFirst |> queryFailures |> Array.fromLinkedList |> Array.length |> shouldBe 4
+          querySecond |> queryFailures |> Array.fromLinkedList |> Array.length |> shouldBe 4
+        _ -> False |> shouldBe True
+
+    it "checks ignored, exact and regex rejections and accepted no-event alternatives" \_ -> do
+      case rejectionRuleModel of
+        Err problem -> problem |> shouldBe "valid rejection rule model"
+        Ok model -> do
+          reports <- RuleRunner.runRules RuleRunner.emptyGenerators 29 1 model
+          reports |> Array.fromLinkedList |> Array.length |> shouldBe 7
+          let failures = [RuleRunner.reportText report | report <- reports, case report.result of Err _ -> True; Ok () -> False]
+          failures |> Array.fromLinkedList |> Array.length |> shouldBe 4
+          let wrong = ["wrong exact reason", "wrong regex reason", "rejection is not accepted without events", "emitted event is not accepted without events"] :: [Text]
+          wrong |> Prelude.all (\name -> failures |> Prelude.any (Text.contains name)) |> shouldBe True
+          failures |> Prelude.all (Text.contains "seed=") |> shouldBe True
+
+    it "detects missing, extra, reordered and unequal concrete events" \_ -> do
+      case orderedRuleModel of
+        Err problem -> problem |> shouldBe "valid ordered rule model"
+        Ok model -> do
+          reports <- RuleRunner.runRules RuleRunner.emptyGenerators 73 1 model
+          RuleRunner.declaredRules model |> Array.fromLinkedList |> Array.length |> shouldBe 5
+          reports |> Array.fromLinkedList |> Array.length |> shouldBe 5
+          let failures = [RuleRunner.reportText report | report <- reports, case report.result of Err _ -> True; Ok () -> False]
+          failures |> Array.fromLinkedList |> Array.length |> shouldBe 4
+          failures |> Prelude.all (\message -> Text.contains "ordered events differ" message && Text.contains "seed=" message && Text.contains "expected" message && Text.contains "actual" message) |> shouldBe True
+          let names = ["missing event", "extra event", "reordered events", "unequal event"] :: [Text]
+          names |> Prelude.all (\name -> failures |> Prelude.any (Text.contains name)) |> shouldBe True
+
+    it "observes updates, deletion, no-op and the full query diff" \_ -> do
+      fixtureRowId == Uuid.nil |> shouldBe False
+      case viewRuleModel of
+        Err problem -> problem |> shouldBe "valid view rule model"
+        Ok model -> do
+          reports <- RuleRunner.runRules RuleRunner.emptyGenerators 91 1 model
+          RuleRunner.declaredRules model |> Array.fromLinkedList |> Array.length |> shouldBe 5
+          reports |> Array.fromLinkedList |> Array.length |> shouldBe 5
+          let failures = [RuleRunner.reportText report | report <- reports, case report.result of Err _ -> True; Ok () -> False]
+          failures |> Array.fromLinkedList |> Array.length |> shouldBe 2
+          failures |> Array.fromLinkedList |> Array.any (Text.contains "update with unchanged row is not no-op") |> shouldBe True
+          failures |> Array.fromLinkedList |> Array.any (Text.contains "delete needs a prior row") |> shouldBe True
+          failures |> Prelude.all (Text.contains "query action or complete diff differs") |> shouldBe True
+
+    it "accepts an existing cart without appending an event" \_ -> do
+      let modelResult = EventModel.eventModel do
+            EventModel.appName "No event rule"
+            EventModel.features do
+              EventModel.feature "Cart" do
+                EventModel.chapter "Commands" do
+                  EventModel.slice "Confirm" do
+                    EventModel.entity @CartEntity do
+                      EventModel.command @ConfirmCart do
+                        pass
+                    EventModel.rule "A confirmation keeps the history" do
+                      EventModel.given do
+                        EventModel.event CartCreatedPayload {cartCreatedEntityId = Uuid.nil, cartCreatedOwnerId = "owner"}
+                      EventModel.when ConfirmCart {cartId = Uuid.nil}
+                      EventModel.therefore do
+                        EventModel.acceptedWithNoEvents
+      case modelResult of
+        Err problem -> problem |> shouldBe "valid Event Model"
+        Ok model -> do
+          reports <- RuleRunner.runRules RuleRunner.emptyGenerators 19 1 model
+          let failures = [RuleRunner.reportText report | report <- reports, case report.result of Err _ -> True; Ok () -> False]
+          failures |> shouldBe []
+
+    it "runs every direct cart rule through isolated service and query storage" \_ -> do
+      case App.appEventModel 8080 of
+        Err problem -> problem |> shouldBe "valid Event Model"
+        Ok model -> do
+          let generators = RuleRunner.emptyGenerators
+                |> RuleRunner.withGenerator @Int (QuickCheck.choose (1, 100)) toText
+          outcome <- RuleRunner.runRules generators 583 3 model |> Task.asResult
+          case outcome of
+            Err problem -> problem |> shouldBe "rule runner should start"
+            Ok reports -> do
+              reports |> Array.fromLinkedList |> Array.length |> shouldBe 15
+              let exercised = [report.identity | report <- reports, report.sampleIndex == 0]
+              exercised |> shouldBe (RuleRunner.declaredRules model)
+              let failures = [RuleRunner.reportText report | report <- reports, case report.result of Err _ -> True; Ok () -> False]
+              failures |> shouldBe []
+
+    it "generates no examples when the model has no direct rules" \_ -> do
+      let modelResult = EventModel.eventModel do
+            EventModel.appName "No direct rules"
+            EventModel.features do
+              EventModel.feature "Cart" do
+                EventModel.chapter "Commands" do
+                  EventModel.slice "Confirm" do
+                    EventModel.entity @CartEntity do
+                      EventModel.command @ConfirmCart do
+                        pass
+      case modelResult of
+        Err problem -> problem |> shouldBe "valid Event Model"
+        Ok model -> do
+          RuleRunner.declaredRules model |> shouldBe []
+          reports <- RuleRunner.runRules RuleRunner.emptyGenerators 31 3 model
+          reports |> Array.fromLinkedList |> Array.length |> shouldBe 0
+
     it "lowers declared components into the application" \_ -> do
       case App.appEventModel 8080 of
         Err problem -> problem |> shouldBe "valid Event Model"
@@ -617,3 +786,223 @@ modelSlices model =
     |> Array.fromLinkedList
     |> Array.flatMap (\selected -> selected |> EventModel.featureChapters |> Array.fromLinkedList)
     |> Array.flatMap (\selected -> selected |> EventModel.chapterSlices |> Array.fromLinkedList)
+
+
+orderedRuleModel :: Result Text EventModel.EventModel
+orderedRuleModel = EventModel.eventModel do
+  EventModel.appName "Ordered event rules"
+  EventModel.features do
+    EventModel.feature "Cart" do
+      EventModel.chapter "Commands" do
+        EventModel.slice "Add two items" do
+          EventModel.entity @CartEntity do
+            EventModel.command @AddTwoItems do
+              EventModel.produces @ItemAddedPayload
+
+          EventModel.rule "ordered pass" do
+            EventModel.given do
+              EventModel.event CartCreatedPayload {cartCreatedEntityId = Uuid.nil, cartCreatedOwnerId = "fixture-only owner"}
+            EventModel.when AddTwoItems {cartId = Uuid.nil, firstStockId = Uuid.nil, secondStockId = Uuid.nil}
+            EventModel.therefore do
+              EventModel.event ItemAddedPayload {itemAddedEntityId = Uuid.nil, itemAddedStockId = Uuid.nil, itemAddedQuantity = 1}
+              EventModel.event ItemAddedPayload {itemAddedEntityId = Uuid.nil, itemAddedStockId = Uuid.nil, itemAddedQuantity = 2}
+
+          EventModel.rule "missing event" do
+            EventModel.given do
+              EventModel.event CartCreatedPayload {cartCreatedEntityId = Uuid.nil, cartCreatedOwnerId = "fixture-only owner"}
+            EventModel.when AddTwoItems {cartId = Uuid.nil, firstStockId = Uuid.nil, secondStockId = Uuid.nil}
+            EventModel.therefore do
+              EventModel.event ItemAddedPayload {itemAddedEntityId = Uuid.nil, itemAddedStockId = Uuid.nil, itemAddedQuantity = 1}
+
+          EventModel.rule "extra event" do
+            EventModel.given do
+              EventModel.event CartCreatedPayload {cartCreatedEntityId = Uuid.nil, cartCreatedOwnerId = "fixture-only owner"}
+            EventModel.when AddTwoItems {cartId = Uuid.nil, firstStockId = Uuid.nil, secondStockId = Uuid.nil}
+            EventModel.therefore do
+              EventModel.event ItemAddedPayload {itemAddedEntityId = Uuid.nil, itemAddedStockId = Uuid.nil, itemAddedQuantity = 1}
+              EventModel.event ItemAddedPayload {itemAddedEntityId = Uuid.nil, itemAddedStockId = Uuid.nil, itemAddedQuantity = 2}
+              EventModel.event ItemAddedPayload {itemAddedEntityId = Uuid.nil, itemAddedStockId = Uuid.nil, itemAddedQuantity = 3}
+
+          EventModel.rule "reordered events" do
+            EventModel.given do
+              EventModel.event CartCreatedPayload {cartCreatedEntityId = Uuid.nil, cartCreatedOwnerId = "fixture-only owner"}
+            EventModel.when AddTwoItems {cartId = Uuid.nil, firstStockId = Uuid.nil, secondStockId = Uuid.nil}
+            EventModel.therefore do
+              EventModel.event ItemAddedPayload {itemAddedEntityId = Uuid.nil, itemAddedStockId = Uuid.nil, itemAddedQuantity = 2}
+              EventModel.event ItemAddedPayload {itemAddedEntityId = Uuid.nil, itemAddedStockId = Uuid.nil, itemAddedQuantity = 1}
+
+          EventModel.rule "unequal event" do
+            EventModel.given do
+              EventModel.event CartCreatedPayload {cartCreatedEntityId = Uuid.nil, cartCreatedOwnerId = "fixture-only owner"}
+            EventModel.when AddTwoItems {cartId = Uuid.nil, firstStockId = Uuid.nil, secondStockId = Uuid.nil}
+            EventModel.therefore do
+              EventModel.event ItemAddedPayload {itemAddedEntityId = Uuid.nil, itemAddedStockId = Uuid.nil, itemAddedQuantity = 1}
+              EventModel.event ItemAddedPayload {itemAddedEntityId = Uuid.nil, itemAddedStockId = Uuid.nil, itemAddedQuantity = 3}
+
+
+frameworkFailureModel :: Result Text EventModel.EventModel
+frameworkFailureModel = EventModel.eventModel do
+  EventModel.appName "Framework failure rule"
+  EventModel.features do
+    EventModel.feature "Cart" do
+      EventModel.chapter "Commands" do
+        EventModel.slice "Overfill" do
+          EventModel.entity @CartEntity do
+            EventModel.command @OverfillCart do
+              EventModel.produces @ItemAddedPayload
+          EventModel.rule "store failure" do
+            EventModel.given do
+              EventModel.event CartCreatedPayload {cartCreatedEntityId = Uuid.nil, cartCreatedOwnerId = "owner"}
+            EventModel.when OverfillCart {cartId = Uuid.nil}
+            EventModel.therefore do
+              EventModel.acceptedWithNoEvents
+
+
+generatedFailureModel :: Result Text EventModel.EventModel
+generatedFailureModel = EventModel.eventModel do
+  EventModel.appName "Generated input diagnostics"
+  EventModel.features do
+    EventModel.feature "Cart" do
+      EventModel.chapter "Commands" do
+        EventModel.slice "Add" do
+          EventModel.entity @CartEntity do
+            EventModel.command @AddItem do
+              EventModel.produces @ItemAddedPayload
+          EventModel.rule "generated mismatch" do
+            amount <- EventModel.requestValue @Int
+            EventModel.given do
+              EventModel.event CartCreatedPayload {cartCreatedEntityId = Uuid.nil, cartCreatedOwnerId = "owner"}
+            EventModel.when AddItem {cartId = Uuid.nil, stockId = Uuid.nil, quantity = amount}
+            EventModel.therefore do
+              EventModel.event ItemAddedPayload {itemAddedEntityId = Uuid.nil, itemAddedStockId = Uuid.nil, itemAddedQuantity = amount + 1}
+
+
+bindingRuleModel :: Result Text EventModel.EventModel
+bindingRuleModel = EventModel.eventModel do
+  EventModel.appName "Generated binding rule"
+  EventModel.features do
+    EventModel.feature "Cart" do
+      EventModel.chapter "Commands" do
+        EventModel.slice "Add" do
+          EventModel.entity @CartEntity do
+            EventModel.command @AddItem do
+              EventModel.produces @ItemAddedPayload
+          EventModel.rule "bound values stay paired" do
+            cartId <- EventModel.requestValue @Uuid
+            stockId <- EventModel.requestValue @Uuid
+            amount <- EventModel.requestValue @Int
+            EventModel.given do
+              EventModel.event CartCreatedPayload {cartCreatedEntityId = cartId, cartCreatedOwnerId = "owner"}
+            EventModel.when AddItem {cartId, stockId, quantity = amount}
+            EventModel.therefore do
+              EventModel.event ItemAddedPayload {itemAddedEntityId = cartId, itemAddedStockId = stockId, itemAddedQuantity = amount}
+
+
+rejectionRuleModel :: Result Text EventModel.EventModel
+rejectionRuleModel = EventModel.eventModel do
+  EventModel.appName "Rejection rules"
+  EventModel.features do
+    EventModel.feature "Cart" do
+      EventModel.chapter "Commands" do
+        EventModel.slice "Add an item" do
+          EventModel.entity @CartEntity do
+            EventModel.command @AddItem do
+              EventModel.produces @ItemAddedPayload
+
+          EventModel.rule "any rejection reason" do
+            EventModel.givenNothing
+            EventModel.when AddItem {cartId = Uuid.nil, stockId = Uuid.nil, quantity = 1}
+            EventModel.therefore do
+              EventModel.rejected
+
+          EventModel.rule "exact rejection reason" do
+            EventModel.givenNothing
+            EventModel.when AddItem {cartId = Uuid.nil, stockId = Uuid.nil, quantity = 1}
+            EventModel.therefore do
+              EventModel.rejectedWith "Cart not found!"
+
+          EventModel.rule "regex searches the reason" do
+            EventModel.givenNothing
+            EventModel.when AddItem {cartId = Uuid.nil, stockId = Uuid.nil, quantity = 1}
+            EventModel.therefore do
+              EventModel.rejectedMatches "not found"
+
+          EventModel.rule "wrong exact reason" do
+            EventModel.givenNothing
+            EventModel.when AddItem {cartId = Uuid.nil, stockId = Uuid.nil, quantity = 1}
+            EventModel.therefore do
+              EventModel.rejectedWith "Different reason"
+
+          EventModel.rule "wrong regex reason" do
+            EventModel.givenNothing
+            EventModel.when AddItem {cartId = Uuid.nil, stockId = Uuid.nil, quantity = 1}
+            EventModel.therefore do
+              EventModel.rejectedMatches "^Missing cart$"
+
+          EventModel.rule "rejection is not accepted without events" do
+            EventModel.givenNothing
+            EventModel.when AddItem {cartId = Uuid.nil, stockId = Uuid.nil, quantity = 1}
+            EventModel.therefore do
+              EventModel.acceptedWithNoEvents
+
+          EventModel.rule "emitted event is not accepted without events" do
+            EventModel.given do
+              EventModel.event CartCreatedPayload {cartCreatedEntityId = Uuid.nil, cartCreatedOwnerId = "owner"}
+            EventModel.when AddItem {cartId = Uuid.nil, stockId = Uuid.nil, quantity = 1}
+            EventModel.therefore do
+              EventModel.acceptedWithNoEvents
+
+
+viewRuleModel :: Result Text EventModel.EventModel
+viewRuleModel = EventModel.eventModel do
+  EventModel.appName "View action rules"
+  EventModel.features do
+    EventModel.feature "Cart" do
+      EventModel.chapter "Queries" do
+        EventModel.slice "Shared projection" do
+          EventModel.query @RuleProjection do
+            EventModel.readsFrom @CartEntity do
+              EventModel.onEvent @CartCreatedPayload
+              EventModel.onEvent @IBANSavedPayload
+            EventModel.readsFrom @StockEntity do
+              EventModel.onEvent @StockInitializedPayload
+
+          EventModel.rule "multi-entity update uses query row ID" do
+            EventModel.given do
+              EventModel.event StockInitializedPayload {initializedEntityId = Uuid.nil, initializedProductId = Uuid.nil, initializedAvailable = 5}
+            EventModel.when CartCreatedPayload {cartCreatedEntityId = Uuid.nil, cartCreatedOwnerId = "owner"}
+            EventModel.therefore do
+              EventModel.updatedTo RuleProjection {rowId = fixtureRowId, cartSeen = True, stockSeen = True, itemCount = 0, stockCount = 1}
+
+          EventModel.rule "delete existing projection" do
+            EventModel.given do
+              EventModel.event CartCreatedPayload {cartCreatedEntityId = Uuid.nil, cartCreatedOwnerId = "owner"}
+            EventModel.when IBANSavedPayload {ibanSavedEntityId = Uuid.nil, ibanSavedValue = "delete"}
+            EventModel.therefore do
+              EventModel.deleted @RuleProjection
+
+          EventModel.rule "no-op leaves projection unchanged" do
+            EventModel.given do
+              EventModel.event CartCreatedPayload {cartCreatedEntityId = Uuid.nil, cartCreatedOwnerId = "owner"}
+            EventModel.when IBANSavedPayload {ibanSavedEntityId = Uuid.nil, ibanSavedValue = "noop"}
+            EventModel.therefore do
+              EventModel.noOp @RuleProjection
+
+          EventModel.rule "update with unchanged row is not no-op" do
+            EventModel.given do
+              EventModel.event CartCreatedPayload {cartCreatedEntityId = Uuid.nil, cartCreatedOwnerId = "owner"}
+            EventModel.when IBANSavedPayload {ibanSavedEntityId = Uuid.nil, ibanSavedValue = "same"}
+            EventModel.therefore do
+              EventModel.noOp @RuleProjection
+
+          EventModel.rule "delete needs a prior row" do
+            EventModel.given do
+              EventModel.event CartCreatedPayload {cartCreatedEntityId = Uuid.nil, cartCreatedOwnerId = "owner"}
+              EventModel.event IBANSavedPayload {ibanSavedEntityId = Uuid.nil, ibanSavedValue = "delete"}
+            EventModel.when IBANSavedPayload {ibanSavedEntityId = Uuid.nil, ibanSavedValue = "delete"}
+            EventModel.therefore do
+              EventModel.deleted @RuleProjection
+
+
+fixtureRowId :: Uuid
+fixtureRowId = projectionId

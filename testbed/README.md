@@ -22,6 +22,24 @@ This testbed includes:
 
 ## Running the Testbed
 
+### Generated Event Model rules
+
+The `nhtestbed-spec-demo` suite runs each direct rule in `Testbed.EventModel` as a separate Hspec example. It registers an `Int` generator for the cart quantity rule and uses a fixed seed, so a failed sample can be replayed. The same suite checks intentionally failing ordered-event, rejection, and query-diff fixtures, plus concurrent samples with overlapping cart IDs.
+
+From the repository root, run the focused generated rules without PostgreSQL:
+
+```sh
+nix develop --command .agents/skills/tdd/scripts/test-match 'Cart flow / Manage carts' nhtestbed-spec-demo
+```
+
+Run the full executable fixture suite with:
+
+```sh
+nix develop --command cabal test nhtestbed:nhtestbed-spec-demo --project-file=cabal.project.dev -v0
+```
+
+The fixture declarations live in `testbed/spec-demo/SpecDemo.hs`. `Service.EventModel.RuleRunner.specFor` creates the named examples from the model, and `runRules` returns per-sample reports for failure checks.
+
 ### Protected PostgreSQL round trip
 
 From the repository root, start PostgreSQL with a test user that can create databases. Run the maintained testbed against private ports, then create another fresh database for the service fixture:

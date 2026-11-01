@@ -58,6 +58,9 @@ library
     Testbed.EventModel
     Testbed.Config
     Testbed.Cart.Commands.AddItem
+    Testbed.Cart.Commands.AddTwoItems
+    Testbed.Cart.Commands.ConfirmCart
+    Testbed.Cart.Commands.OverfillCart
     Testbed.Cart.Commands.CreateCart
     Testbed.Cart.Commands.CreateCartInternal
     Testbed.Cart.Commands.CreateTypedInboundCart
@@ -69,6 +72,7 @@ library
     Testbed.Cart.Integrations.EventCounter
     Testbed.Cart.Integrations.ReserveStockOnItemAdded
     Testbed.Cart.Queries.CartSummary
+    Testbed.Cart.Queries.RuleProjection
     Testbed.Cart.Queries.CartStockActivity
     Testbed.Document.Commands.CreateDocument
     Testbed.Document.Core
@@ -145,7 +149,8 @@ test-suite nhtestbed-spec-demo
     base,
     hspec,
     nhcore,
-    nhtestbed
+    nhtestbed,
+    QuickCheck
   default-language: GHC2021
 
 test-suite nhtestbed-datetime-schema

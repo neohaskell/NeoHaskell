@@ -21,6 +21,7 @@ module Service.EventModel (
   sliceEventTypes,
   sliceCommandTargets,
   sliceEventSources,
+  sourceSubscription,
   sliceRuleNames,
   sampleSliceRules,
   sampleRuleName,
@@ -121,7 +122,8 @@ import Service.Application (Application)
 import Service.Application qualified as Application
 import Service.Application.Types (ApiInfo)
 import Service.Command.Core (Command, NameOf)
-import Service.Entity.Core (Entity, EntityOf, EventOf)
+import Service.Entity.Core (Entity (..), EntityOf, Event (..), EventOf)
+import Service.Event.StreamId qualified as StreamId
 import Service.Event.EntityName (EntityName (..))
 import Service.EventModel.Types (
   Chapter (..),
@@ -241,7 +243,7 @@ sampleRules primary suppliedRules = case primary of
     [ do
         selectedCase <- sampleRule values selected
         validateViewSubscription selected.ruleName sources selectedCase
-        Ok (ViewSample queryProxy selected.ruleName selectedCase)
+        Ok (ViewSample queryProxy sources selected.ruleName selectedCase)
     | (values, selected) <- suppliedRules
     ]
   OutboundTranslation _ _ _ -> []
@@ -279,20 +281,20 @@ runRuleAction values action = case action of
 sampleRuleName :: RuleSample -> Text
 sampleRuleName sample = case sample of
   ChangeSample _ _ name _ -> name
-  ViewSample _ name _ -> name
+  ViewSample _ _ name _ -> name
 
 
 sampleRuleHistory :: RuleSample -> [Dynamic]
 sampleRuleHistory sample = case sample of
   ChangeSample _ _ _ selected -> [Dynamic.toDyn payload | HistoricalEvent _ payload <- selected.ruleHistory]
-  ViewSample _ _ selected -> [Dynamic.toDyn payload | HistoricalEvent _ payload <- selected.ruleHistory]
+  ViewSample _ _ _ selected -> [Dynamic.toDyn payload | HistoricalEvent _ payload <- selected.ruleHistory]
 
 
 sampleRuleWhen :: RuleSample -> Dynamic
 sampleRuleWhen sample = case sample of
   ChangeSample _ _ _ selected -> case selected.ruleWhen of
     CommandWhen value -> Dynamic.toDyn value
-  ViewSample _ _ selected -> case selected.ruleWhen of
+  ViewSample _ _ _ selected -> case selected.ruleWhen of
     EventWhen value -> Dynamic.toDyn value
 
 
@@ -300,7 +302,7 @@ sampleRuleOutcome :: RuleSample -> Dynamic
 sampleRuleOutcome sample = case sample of
   ChangeSample _ _ _ selected -> case selected.ruleExpected of
     CommandExpected expected -> Dynamic.toDyn expected
-  ViewSample _ _ selected -> case selected.ruleExpected of
+  ViewSample _ _ _ selected -> case selected.ruleExpected of
     ViewExpected expected -> Dynamic.toDyn expected
 
 
@@ -538,7 +540,7 @@ entity root = Writer.tell [SlicePrimary (StateChange (Proxy @entity) root)]
 
 command ::
   forall command entity.
-  (RunnableCommand command, EntityOf command ~ entity, Typeable command) =>
+  (RunnableCommand command, EntityOf command ~ entity, Json.ToJSON (EventOf entity), Typeable command) =>
   Writer [Produced entity] () -> CommandRoot entity command
 command builder = CommandRoot (Proxy @command) (Writer.execWriter builder) (commandRunner @command)
 
@@ -844,8 +846,13 @@ instance RuleInput ('Change entity command) command where
 
 instance
   ( Entity entity,
+    Event (EventOf entity),
+    EntityOf (EventOf entity) ~ entity,
     EntityOf payload ~ entity,
     EventVariantOf (EventOf entity) payload,
+    StreamId.ToStreamId (EntityIdType entity),
+    GHC.KnownSymbol (NameOf entity),
+    Json.ToJSON (EventOf entity),
     QueryOf entity query,
     QuerySourceMember entity query (EntitiesOf query),
     Typeable entity,
@@ -866,7 +873,12 @@ class RuleEventPart part payload where
 
 instance
   ( Entity (EntityOf payload),
+    Event (EventOf (EntityOf payload)),
+    EntityOf (EventOf (EntityOf payload)) ~ EntityOf payload,
     EventVariantOf (EventOf (EntityOf payload)) payload,
+    StreamId.ToStreamId (EntityIdType (EntityOf payload)),
+    GHC.KnownSymbol (NameOf (EntityOf payload)),
+    Json.ToJSON (EventOf (EntityOf payload)),
     Typeable (EntityOf payload),
     Typeable payload
   ) =>
