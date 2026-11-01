@@ -3,6 +3,8 @@
 module Main (main, ObserveItemAdded (..), CrossEntityView (..)) where
 
 import Array qualified
+import Auth.Config qualified as AuthConfig
+import Auth.SecretStore.InMemory qualified as InMemorySecretStore
 import Core
 import Data.Dynamic qualified as Dynamic
 import Integration qualified
@@ -10,13 +12,20 @@ import Map qualified
 import Service.AccessControl (AccessError, UserClaims)
 import Service.Application qualified as Application
 import Service.EventModel qualified as EventModel
+import Service.Integration.Adapter (Integration (..))
+import Service.Integration.Selection (Selection (..))
+import Service.Integration.DispatchRegistry qualified as DispatchRegistry
+import Service.Transport.Web qualified as WebTransport
+import Task qualified
 import Test
 import Test.Hspec qualified as Hspec
 import Testbed.Cart.Commands.AddItem (AddItem (..))
 import Testbed.Cart.Commands.CreateTypedInboundCart (CreateTypedInboundCart)
 import Testbed.Cart.Core (CartCreatedPayload (..), CartEntity (..), ItemAddedPayload (..))
+import Testbed.Cart.Feature (cartFlow)
 import Testbed.Cart.Integrations.ReserveStockOnItemAdded (ReserveStockOnItemAdded)
 import Testbed.Cart.Queries.CartSummary (CartSummary (..))
+import Testbed.Config (TestbedConfig)
 import Testbed.EventModel qualified as App
 import Testbed.Integrations.TypedInboundExample (TypedInboundExample)
 import Testbed.Stock.Commands.InitializeStockInternal (InitializeStockInternal)
@@ -26,6 +35,15 @@ import Uuid qualified
 
 
 data ObserveItemAdded = ObserveItemAdded
+
+
+data ProbeRequest = ProbeRequest
+
+
+instance Integration ProbeRequest where
+  type Response ProbeRequest = Unit
+  runReal _ = Task.yield unit
+  runFake _ = Task.yield unit
 
 
 type instance EntityOf ObserveItemAdded = CartEntity
@@ -73,10 +91,66 @@ spec = do
         Ok model -> do
           let application = EventModel.toApplication model
           Application.serviceRunnerCount application |> shouldBe 16
-          Application.queryDefinitionCount application |> shouldBe 5
+          Application.queryDefinitionCount application |> shouldBe 6
           Application.transportCount application |> shouldBe 1
           Application.hasConfig application |> shouldBe True
           Application.hasEventStore application |> shouldBe True
+
+    it "configures capabilities and typed adapters inside the named model" \_ -> do
+      store <- InMemorySecretStore.new
+      let modelResult = EventModel.eventModel do
+            EventModel.appName "Configured"
+            EventModel.withConfig @TestbedConfig
+            EventModel.withSecretStore @() (\_ -> store)
+            EventModel.withAuthOverrides @() (\_ -> "https://auth.example.test") AuthConfig.defaultOverrides
+            EventModel.withCors @() (\_ -> WebTransport.CorsConfig {WebTransport.allowedOrigins = ["https://example.test"], WebTransport.allowedMethods = ["GET"], WebTransport.allowedHeaders = [], WebTransport.maxAge = Nothing})
+            EventModel.withHealthCheck @() (\_ -> "live")
+            EventModel.useReadinessEndpoint
+            EventModel.withIntegration @ProbeRequest
+            EventModel.withApplicationConfiguration Application.withoutHealthCheck
+            EventModel.features do
+              cartFlow
+      case modelResult of
+        Err problem -> problem |> shouldBe "valid Event Model"
+        Ok model -> do
+          let application = EventModel.toApplication model
+          Application.hasConfig application |> shouldBe True
+          Application.hasAuth application |> shouldBe True
+          case application.secretStoreFactory of
+            Nothing -> False |> shouldBe True
+            Just _ -> pass
+          case application.corsFactory of
+            Nothing -> False |> shouldBe True
+            Just _ -> pass
+          case application.healthCheckConfig of
+            Just _ -> False |> shouldBe True
+            Nothing -> pass
+          case application.readinessConfig of
+            Nothing -> False |> shouldBe True
+            Just _ -> pass
+          let registry = application.integrationRegistrations |> Array.reduce (\entry current -> entry.registerInto Real current) DispatchRegistry.empty
+          DispatchRegistry.size registry |> shouldBe 1
+          case DispatchRegistry.lookup @ProbeRequest registry of
+            Nothing -> False |> shouldBe True
+            Just runProbe -> do
+              result <- runProbe ProbeRequest |> Task.asResult
+              result |> shouldBe (Ok unit)
+
+    it "rejects duplicate configuration before lowering or running effects" \_ -> do
+      let invalid = EventModel.eventModel do
+            EventModel.appName "Duplicate configuration"
+            EventModel.withConfig @TestbedConfig
+            EventModel.withConfig @TestbedConfig
+            EventModel.withApplicationConfiguration (\_ -> panic "lowering began")
+            EventModel.features do
+              cartFlow
+      case invalid of
+        Ok _ -> False |> shouldBe True
+        Err problem -> problem |> Text.contains "at most one withConfig" |> shouldBe True
+      result <- EventModel.run invalid |> Task.asResult
+      case result of
+        Ok _ -> False |> shouldBe True
+        Err problem -> problem |> Text.contains "at most one withConfig" |> shouldBe True
 
     it "composes executable Features and all four Slice shapes" \_ -> do
       case App.appEventModel 8080 of
@@ -100,9 +174,9 @@ spec = do
                 "Erase protected values"
               ]
           let allSlices = allChapters |> Array.flatMap (\selected -> selected |> EventModel.chapterSlices |> Array.fromLinkedList)
-          allSlices |> Array.length |> shouldBe 27
+          allSlices |> Array.length |> shouldBe 28
           allSlices |> Array.takeIf (\selected -> EventModel.sliceKind selected == "state-change") |> Array.length |> shouldBe 16
-          allSlices |> Array.takeIf (\selected -> EventModel.sliceKind selected == "state-view") |> Array.length |> shouldBe 5
+          allSlices |> Array.takeIf (\selected -> EventModel.sliceKind selected == "state-view") |> Array.length |> shouldBe 6
           allSlices |> Array.takeIf (\selected -> EventModel.sliceKind selected == "outbound") |> Array.length |> shouldBe 4
           allSlices |> Array.takeIf (\selected -> EventModel.sliceKind selected == "inbound") |> Array.length |> shouldBe 2
 

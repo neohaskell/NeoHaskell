@@ -38,7 +38,7 @@ CASES = (
     ("WrongQuerySource.hs", r"Query source StockEntity is absent from EntitiesOf CartSummary"),
     ("WrongViewPayload.hs", r"Couldn't match type.*StockEntity.*CartEntity"),
     ("MissingCommandImplementation.hs", r"No instance for.*Command MissingCommand"),
-    ("MissingQueryImplementation.hs", r"No instance for.*(Query|ToSchema) MissingView"),
+    ("MissingQueryImplementation.hs", r"No instance for.*Query MissingView"),
     ("MissingEventVariant.hs", r"No instance for.*EventVariantOf.*MissingPayload"),
     ("UndeclaredInboundCommand.hs", r"Inbound worker emitted undeclared command ReserveStock"),
     ("TwoPrimaryKinds.hs", r"Couldn't match type.*View CartSummary.*Change CartEntity AddItem"),
