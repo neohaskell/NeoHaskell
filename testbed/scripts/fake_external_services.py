@@ -252,8 +252,12 @@ class FixtureHandler(BaseHTTPRequestHandler):
             return
         effect_id = payload.get("effectId")
         idempotency_key = self.headers.get("Idempotency-Key")
+        handler_name = self.headers.get("X-Event-Model-Handler")
         if not isinstance(effect_id, str) or not effect_id or idempotency_key != effect_id:
             self.send_json({"error": "invalid effect identity"}, 400)
+            return
+        if handler_name not in ("primary", "audit"):
+            self.send_json({"error": "unknown effect handler"}, 400)
             return
         effects = self.server.fixture_state["effects"]
         external_id = f"test-effect-{effect_id}"
@@ -266,10 +270,12 @@ class FixtureHandler(BaseHTTPRequestHandler):
             "payload": payload,
             "idempotencyKey": idempotency_key,
             "requestCount": 0,
+            "handlerCounts": {"primary": 0, "audit": 0},
             "outcome": "rejected" if payload.get("description") == "force-failure" else "accepted",
             "httpStatus": 422 if payload.get("description") == "force-failure" else 201,
         }
         row["requestCount"] += 1
+        row["handlerCounts"][handler_name] += 1
         effects[effect_id] = row
         self.send_json(
             {"externalId": external_id},

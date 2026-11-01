@@ -2,12 +2,18 @@
 -- Export 'cartFlow' for the application Event Model.
 module Testbed.Cart.Feature (cartFlow) where
 
-import Basics (Bool (..), Int, (+), modBy)
+import Basics (Bool (..), Int, modBy, (+))
 import Maybe (Maybe (..))
 import Service.EventModel
 import Testbed.Cart.Commands.AddItem (AddItem (..))
+import Testbed.Cart.Commands.CreateCart (CreateCart)
+import Testbed.Cart.Commands.CreateCartInternal (CreateCartInternal)
 import Testbed.Cart.Commands.CreateTypedInboundCart (CreateTypedInboundCart)
-import Testbed.Cart.Core (CartCreatedPayload (..), CartEntity, ItemAddedPayload (..))
+import Testbed.Cart.Commands.RegisterCartByKey (RegisterCartByKey)
+import Testbed.Cart.Commands.SaveIBAN (SaveIBAN)
+import Testbed.Cart.Core (CartCreatedPayload (..), CartEntity, IBANSavedPayload, ItemAddedPayload (..))
+import Testbed.Cart.Integrations (PeriodicCartCreator)
+import Testbed.Cart.Integrations.EventCounter qualified as EventCounter
 import Testbed.Cart.Integrations.ReserveStockOnItemAdded (ReserveStockOnItemAdded)
 import Testbed.Cart.Queries.CartSummary (CartSummary (..))
 import Testbed.Integrations.TypedInboundExample (TypedInboundExample)
@@ -20,6 +26,26 @@ import Uuid qualified
 cartFlow :: FeatureAction
 cartFlow = feature "Cart flow" do
   chapter "Manage carts" do
+    slice "Create a cart" do
+      entity @CartEntity do
+        command @CreateCart do
+          produces @CartCreatedPayload
+
+    slice "Create a cart internally" do
+      entity @CartEntity do
+        command @CreateCartInternal do
+          produces @CartCreatedPayload
+
+    slice "Create a cart from typed inbound" do
+      entity @CartEntity do
+        command @CreateTypedInboundCart do
+          produces @CartCreatedPayload
+
+    slice "Register a cart by key" do
+      entity @CartEntity do
+        command @RegisterCartByKey do
+          produces @CartCreatedPayload
+
     slice "Add an item" do
       entity @CartEntity do
         command @AddItem do
@@ -51,6 +77,7 @@ cartFlow = feature "Cart flow" do
         readsFrom @CartEntity do
           onEvent @CartCreatedPayload
           onEvent @ItemAddedPayload
+          onEvent @IBANSavedPayload
 
       rule "A new cart has an empty summary" do
         givenNothing
@@ -65,11 +92,17 @@ cartFlow = feature "Cart flow" do
         therefore do
           updatedTo CartSummary {cartSummaryId = Uuid.nil, ownerId = "owner", itemCount = 1, isEmpty = False, iban = Nothing}
 
+    slice "Save a cart IBAN" do
+      entity @CartEntity do
+        command @SaveIBAN do
+          produces @IBANSavedPayload
+
     slice "Reserve stock after an item" do
       outboundIntegration @ReserveStockOnItemAdded do
         onEvent @ItemAddedPayload
         triggersCommand @ReserveStock do
           onTargetEntity @StockEntity
+        outboundLifecycle @() @CartEntity (\_ -> EventCounter.eventCounterIntegration)
 
     slice "Accept typed inbound commands" do
       inboundIntegration @TypedInboundExample do
@@ -77,3 +110,8 @@ cartFlow = feature "Cart flow" do
           onTargetEntity @CartEntity
         triggersCommand @InitializeStockInternal do
           onTargetEntity @StockEntity
+
+    slice "Create a cart periodically" do
+      inboundIntegration @PeriodicCartCreator do
+        triggersCommand @CreateCartInternal do
+          onTargetEntity @CartEntity

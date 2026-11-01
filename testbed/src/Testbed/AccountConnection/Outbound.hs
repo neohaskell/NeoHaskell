@@ -3,13 +3,14 @@
 module Testbed.AccountConnection.Outbound (
   AccountTokenPresenceObserver (..),
   handleEvent,
+  observeTokenStorage,
 ) where
 
 import Auth.SecretStore (SecretStore (..), TokenKey (..))
 import Basics
 import Core
 import Integration qualified
-import Service.OutboundIntegration.TH (outboundIntegrationFullEvent)
+import Service.OutboundIntegration.TH (outboundIntegration)
 import Task qualified
 import Testbed.AccountConnection.Commands.RecordAccountConnection (
   RecordAccountConnection (..),
@@ -25,11 +26,8 @@ data AccountTokenPresenceObserver = AccountTokenPresenceObserver
 type instance EntityOf AccountTokenPresenceObserver = AccountConnectionEntity
 
 
-handleEvent :: AccountConnectionEntity -> AccountConnectionEvent -> Integration.Outbound
-handleEvent _ event = case event of
-  AccountConnectionSucceeded {userId} -> observeTokenStorage userId
-  AccountConnectionRemoved {userId} -> observeTokenStorage userId
-  _ -> Integration.none
+handleEvent :: AccountConnectionEntity -> AccountConnectedPayload -> Integration.Outbound
+handleEvent _ payload = observeTokenStorage payload.connectedUserId
 
 
 observeTokenStorage :: Text -> Integration.Outbound
@@ -50,4 +48,4 @@ observeTokenStorage userId =
     ]
 
 
-outboundIntegrationFullEvent ''AccountTokenPresenceObserver
+outboundIntegration ''AccountTokenPresenceObserver

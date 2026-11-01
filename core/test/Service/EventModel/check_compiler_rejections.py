@@ -30,6 +30,7 @@ FLAGS = (
 CASES = (
     ("ValidModel.hs", None),
     ("ValidRuleForms.hs", None),
+    ("UndeclaredApplicationConfiguration.hs", r"not in scope.*withApplicationConfiguration|does not export.*withApplicationConfiguration"),
     ("TwoCommands.hs", r"No instance for.*Monad.*CommandRoot|Couldn't match.*CommandRoot"),
     ("InboundEvent.hs", r"EventPart.*InboundPart"),
     ("WrongCommandTarget.hs", r"Couldn't match type.*StockEntity.*CartEntity"),

@@ -2,11 +2,31 @@
 module Service.EventModel.Compile.MissingQueryImplementation where
 
 import Core
+import Json qualified
 import Service.EventModel
-import Testbed.Cart.Core (CartEntity)
+import Testbed.Cart.Core (CartEntity (..))
 
 
-data MissingView
+data MissingView = MissingView
+  deriving (Generic)
+
+
+type instance NameOf MissingView = "MissingView"
+
+
+instance Json.ToJSON MissingView
+
+
+instance Json.FromJSON MissingView
+
+
+instance ToSchema MissingView
+
+
+instance QueryOf CartEntity MissingView where
+  queryId cart = case cart of
+    CartEntity {cartId} -> cartId
+  combine _ _ = NoOp
 
 
 type instance EntitiesOf MissingView = '[CartEntity]

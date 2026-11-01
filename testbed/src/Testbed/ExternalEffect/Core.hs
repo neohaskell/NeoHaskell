@@ -1,6 +1,7 @@
 module Testbed.ExternalEffect.Core (
   ExternalEffectEntity (..),
   ExternalEffectEvent (..),
+  ExternalEffectRequestedPayload (..),
   ExternalEffectState (..),
   initialState,
 ) where
@@ -66,6 +67,35 @@ data ExternalEffectEvent
       { entityId :: Uuid
       }
   deriving (Eq, Generic, Ord, Show)
+
+
+data ExternalEffectRequestedPayload = ExternalEffectRequestedPayload
+  { requestedEntityId :: Uuid,
+    requestedDescription :: Text,
+    requestedAmount :: Int
+  }
+
+
+type instance EntityOf ExternalEffectRequestedPayload = ExternalEffectEntity
+
+
+instance EventVariantOf ExternalEffectEvent ExternalEffectRequestedPayload where
+  fromVariant payload =
+    ExternalEffectRequested
+      { entityId = payload.requestedEntityId,
+        description = payload.requestedDescription,
+        amount = payload.requestedAmount
+      }
+  toVariant eventValue = case eventValue of
+    ExternalEffectRequested {entityId, description, amount} ->
+      Just
+        ExternalEffectRequestedPayload
+          { requestedEntityId = entityId,
+            requestedDescription = description,
+            requestedAmount = amount
+          }
+    ExternalEffectDelivered {} -> Nothing
+    ExternalEffectFailed {} -> Nothing
 
 
 instance Json.FromJSON ExternalEffectEvent

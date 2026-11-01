@@ -6,15 +6,17 @@ External OAuth2 connects an authenticated application user to a provider API. In
 
 Configure inbound authentication first. `withAuth` needs an identity provider with `/.well-known/openid-configuration` and a reachable JWKS endpoint. The external API's authorization and token endpoints do not supply those identity requirements by themselves.
 
-This explanatory fragment adds OAuth2 builders to an application that already registers an event store, services, and Web transport. `persistentStore` is a consumer-supplied `SecretStore`. `providerConfig` is an `OAuth2ProviderConfig`.
+This explanatory fragment adds OAuth2 builders to the named model that owns the event store, Features, and Web transport. `persistentStore` is a consumer-supplied `SecretStore`. `providerConfig` is an `OAuth2ProviderConfig`.
 
 ```haskell ignore
-configuredApp =
-	baseApp
-		|> Application.withAuth @() (\_ -> "https://identity.example.com")
-		|> Application.withSecretStore @() (\_ -> persistentStore)
-		|> Application.withOAuth2StateKey "OAUTH2_STATE_KEY"
-		|> Application.withOAuth2Provider @() (\_ -> providerConfig)
+appEventModel = EventModel.eventModel do
+	EventModel.appName "Connected app"
+	EventModel.withAuth @() (\_ -> "https://identity.example.com")
+	EventModel.withSecretStore @() (\_ -> persistentStore)
+	EventModel.withOAuth2StateKey "OAUTH2_STATE_KEY"
+	EventModel.withOAuth2Provider @() (\_ -> providerConfig)
+	EventModel.features do
+		connectedAccountFlow
 ```
 
 `withSecretStore` takes a `config -> SecretStore` factory. It does not take a `Task` factory. Initialize effectful store resources in the consumer's owning startup code, then supply the resulting record. The config-dependent form requires the registered config type.

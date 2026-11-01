@@ -2,10 +2,10 @@ module Main where
 
 import Core
 import Environment qualified
-import OAuth2App (app)
-import Service.Application qualified as Application
+import Service.EventModel qualified as EventModel
 import Task qualified
 import Testbed.Config (readPort)
+import Testbed.OAuth2.EventModel (oauthEventModel)
 
 
 main :: IO ()
@@ -20,4 +20,4 @@ run = do
   let queueTimeoutMode = case timeoutMode of
         Ok "1" -> True
         _ -> False
-  Application.run (app oauthPort fixturePort queueTimeoutMode)
+  EventModel.run (oauthEventModel oauthPort fixturePort queueTimeoutMode)

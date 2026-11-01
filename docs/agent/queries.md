@@ -29,7 +29,9 @@ instance QueryOf CounterEntity CounterView where
 
 `canAccess` runs before storage access. `canView` filters individual fetched rows. Both functions precede `deriveQuery`. Use `authenticatedAccess`, `requirePermission`, or `publicAccess` for query access and `ownerOnly`, `tenantOnly`, or `publicView` for row visibility.
 
-`Application.withQuery @Row` registers the query and its entity subscriptions. On Web transport, the generated route is `GET /queries/{kebab-case-name}`.
+For a model-backed application, declare a source-local Slice with `query @Row`, `readsFrom @Entity`, and each subscribed `onEvent @Payload`. The Event Model registers the query and only the sources declared in that Slice. See [source-local Event Models](event-model.md) for a complete example.
+
+For a legacy application assembled directly with `Application`, `Application.withQuery @Row` remains supported and registers all entities in `EntitiesOf Row`. It is not deprecated. On Web transport, the generated route is `GET /queries/{kebab-case-name}`.
 
 Projection updates are asynchronous. A successful command response does not prove that its query row has caught up. Retry reads until the expected values appear when a test depends on the projection.
 
