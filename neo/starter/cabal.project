@@ -10,7 +10,7 @@ packages:
 source-repository-package
   type: git
   location: https://github.com/neohaskell/neohaskell.git
-  tag: cbdc45f1bb89c9c7bb8da9fbdb25343771d924ca
+  tag: ea75873fbd0da7da39124c82f328c2e70bdca629
   subdir: core
 
 
@@ -18,7 +18,7 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/neohaskell/neohaskell.git
-  tag: cbdc45f1bb89c9c7bb8da9fbdb25343771d924ca
+  tag: ea75873fbd0da7da39124c82f328c2e70bdca629
   subdir: integrations
 
 constraints:
