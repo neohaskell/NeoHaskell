@@ -33,6 +33,7 @@ module Service.EventModel.Types (
   QueryDiff (..),
   ViewObservation (..),
   QuerySourceMember,
+  KnownInboundTargets (..),
   primaryKind,
   typeName,
 ) where
@@ -45,10 +46,9 @@ import GHC.TypeLits qualified as GHC
 import Maybe (Maybe)
 import Map (Map)
 import Prelude (Applicative (..), Functor (..), Monad (..))
-import Result (Result)
 import Service.Command.Core (Command)
 import Service.Entity.Core (Entity, EntityOf, EventOf)
-import Service.InboundIntegration.Core (InboundIntegration)
+import Service.InboundIntegration.Core (InboundIntegration (..))
 import Service.OutboundIntegration.Core (OutboundIntegration (..))
 import Service.Query.Core (EntitiesOf, Query, QueryAction, QueryOf)
 import Text (Text)
@@ -87,7 +87,7 @@ data Primary context where
   StateChange :: (Entity entity, Typeable entity) => Proxy entity -> CommandRoot entity command -> Primary ('Change entity command)
   StateView :: (Query query, Typeable query) => Proxy query -> [ReadSource query] -> Primary ('View query)
   OutboundTranslation :: (OutboundIntegration handler, Typeable handler) => Proxy handler -> [OutboundPart handler] -> Primary ('Outbound handler)
-  InboundTranslation :: (InboundIntegration handler, Typeable handler) => Proxy handler -> [InboundPart handler] -> Primary ('Inbound handler)
+  InboundTranslation :: (InboundIntegration handler, KnownInboundTargets (InboundOutputsOf handler), Typeable handler) => Proxy handler -> [InboundPart handler] -> Primary ('Inbound handler)
 
 
 data CommandRoot entity command where
@@ -127,6 +127,32 @@ data OutboundPart handler where
 
 data InboundPart handler where
   InboundCommand :: CommandTarget -> InboundPart handler
+
+
+class KnownInboundTargets (outputs :: [(Type, Type)]) where
+  inboundTargets :: Proxy outputs -> [(Reflection.SomeTypeRep, Reflection.SomeTypeRep, Text, Text)]
+
+
+instance KnownInboundTargets '[] where
+  inboundTargets _ = []
+
+
+instance
+  ( Command command,
+    Entity entity,
+    EntityOf command ~ entity,
+    Typeable command,
+    Typeable entity,
+    KnownInboundTargets rest
+  ) =>
+  KnownInboundTargets ('(command, entity) ': rest)
+  where
+  inboundTargets _ =
+    ( Reflection.SomeTypeRep (Reflection.typeRep @command),
+      Reflection.SomeTypeRep (Reflection.typeRep @entity),
+      typeName (Proxy @command),
+      typeName (Proxy @entity)
+    ) : inboundTargets (Proxy @rest)
 
 
 data SlicePart context
@@ -236,7 +262,7 @@ data OutcomePart context mode where
 
 data ModelPart
   = ModelName Text
-  | ModelFeatures [Result Text Feature]
+  | ModelFeatures [([Text], Feature)]
 
 
 primaryKind :: Primary context -> Text

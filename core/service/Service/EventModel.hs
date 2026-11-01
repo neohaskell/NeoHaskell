@@ -75,6 +75,7 @@ module Service.EventModel (
 ) where
 
 import Basics
+import Array qualified
 import Control.Monad.Trans.Writer.Strict (Writer)
 import Control.Monad.Trans.Writer.Strict qualified as Writer
 import Data.Dynamic (Dynamic)
@@ -103,7 +104,7 @@ import Uuid (Uuid)
 
 
 -- | Export one of these actions from a component's Feature module.
-type FeatureAction = Writer [Result Text Feature] ()
+type FeatureAction = Writer [([Text], Feature)] ()
 
 
 type EventModelAction = Writer [ModelPart] ()
@@ -254,13 +255,23 @@ validateViewSubscription name sources selected = case selected.ruleWhen of
 -- | Assemble a named topology and reject malformed local structure.
 -- Evaluation does not derive Event ADTs or start application workers.
 eventModel :: EventModelAction -> Result Text EventModel
-eventModel builder = do
+eventModel builder =
   let parts = Writer.execWriter builder
-  let names = [name | ModelName name <- parts]
-  allFeatures <- Prelude.concat [found | ModelFeatures found <- parts] |> Prelude.sequence
-  case names of
-    [name] -> validateModel EventModel {modelName = name, modelFeatures = allFeatures}
-    _ -> Err "eventModel requires exactly one appName"
+      names = [name | ModelName name <- parts]
+      featureResults = Prelude.concat [found | ModelFeatures found <- parts]
+      featureProblems = [problem | (problems, _) <- featureResults, problem <- problems]
+      validFeatures = [selected | (_, selected) <- featureResults]
+   in case names of
+        [name] ->
+          let model = EventModel {modelName = name, modelFeatures = validFeatures}
+              modelProblems = case validateModel model of
+                Ok _ -> []
+                Err problem -> [problem]
+              problems = featureProblems Prelude.++ modelProblems
+           in case problems of
+                [] -> Ok model
+                _ -> Err (Text.joinWith "\n" (Array.fromLinkedList problems))
+        _ -> Err (Text.joinWith "\n" (Array.fromLinkedList ("eventModel requires exactly one appName" : featureProblems)))
 
 
 appName :: Text -> EventModelAction
@@ -271,22 +282,29 @@ features :: FeatureAction -> EventModelAction
 features builder = Writer.tell [ModelFeatures (Writer.execWriter builder)]
 
 
-feature :: Text -> Writer [Result Text Chapter] () -> FeatureAction
+feature :: Text -> Writer [([Text], Chapter)] () -> FeatureAction
 feature name builder = do
-  let found = Writer.execWriter builder |> Prelude.sequence
-  let result = case found of
-        Ok chapters -> Ok Feature {featureName = name, featureChapters = chapters}
-        Err problem -> Err [fmt|Feature "#{name}", #{problem}|]
-  Writer.tell [result]
+  let found = Writer.execWriter builder
+  let problems = [[fmt|Feature "#{name}", #{problem}|] | (chapterProblems, _) <- found, problem <- chapterProblems]
+  let empty = if Prelude.null found then [[fmt|Feature "#{name}" requires a Chapter|]] else []
+  let chapters = [selected | (_, selected) <- found]
+  Writer.tell [(empty Prelude.++ problems, Feature {featureName = name, featureChapters = chapters})]
 
 
-chapter :: Text -> Writer [Result Text Slice] () -> Writer [Result Text Chapter] ()
+chapter :: Text -> Writer [Result Text Slice] () -> Writer [([Text], Chapter)] ()
 chapter name builder = do
-  let found = Writer.execWriter builder |> Prelude.sequence
-  let result = case found of
-        Ok slices -> Ok Chapter {chapterName = name, chapterSlices = slices}
-        Err problem -> Err [fmt|Chapter "#{name}", #{problem}|]
-  Writer.tell [result]
+  let found = Writer.execWriter builder
+  let (sliceProblems, slices) = collectResults found
+  let problems = [[fmt|Chapter "#{name}", #{problem}|] | problem <- sliceProblems]
+  let empty = if Prelude.null found then [[fmt|Chapter "#{name}" requires a Slice|]] else []
+  Writer.tell [(empty Prelude.++ problems, Chapter {chapterName = name, chapterSlices = slices})]
+
+
+collectResults :: [Result Text value] -> ([Text], [value])
+collectResults results =
+  let failures = [problem | Err problem <- results]
+      values = [value | Ok value <- results]
+   in (failures, values)
 
 
 -- | Add one inline Slice with exactly one primary declaration.
@@ -299,7 +317,7 @@ slice name builder = do
   let primaryCount = Prelude.length primaries
   let result = case primaries of
         [primary] -> Ok (Slice name primary rules)
-        _ -> Err [fmt|Slice "#{name}" requires exactly one primary; found #{primaryCount}|]
+        _ -> Err [fmt|Slice "#{name}" requires exactly one primary; found #{primaryCount}: #{Text.joinWith ", " (Array.fromLinkedList (Prelude.map Types.primaryKind primaries))}|]
   Writer.tell [result]
 
 
@@ -344,7 +362,7 @@ outboundIntegration :: forall handler. (OutboundIntegration handler, Typeable ha
 outboundIntegration builder = Writer.tell [SlicePrimary (OutboundTranslation (Proxy @handler) (Writer.execWriter builder))]
 
 
-inboundIntegration :: forall handler. (InboundIntegration handler, Typeable handler) => Writer [InboundPart handler] () -> Writer [SlicePart ('Inbound handler)] ()
+inboundIntegration :: forall handler. (InboundIntegration handler, Types.KnownInboundTargets (InboundOutputsOf handler), Typeable handler) => Writer [InboundPart handler] () -> Writer [SlicePart ('Inbound handler)] ()
 inboundIntegration builder = Writer.tell [SlicePrimary (InboundTranslation (Proxy @handler) (Writer.execWriter builder))]
 
 
@@ -403,54 +421,57 @@ targetNames (CommandTarget commandProxy entityProxy) = (Types.typeName commandPr
 
 
 validateModel :: EventModel -> Result Text EventModel
-validateModel model = do
-  if Prelude.null model.modelFeatures then Err "eventModel requires at least one Feature" else Ok ()
-  validateFeatures model.modelFeatures []
-  Ok model
+validateModel model =
+  let featuresFound = model.modelFeatures
+      emptyModel = if Prelude.null featuresFound then ["eventModel requires at least one Feature"] else []
+      paths = [(selected.featureName, chapter.chapterName, sliceValue) | selected <- featuresFound, chapter <- selected.featureChapters, sliceValue <- chapter.chapterSlices]
+      (sliceProblems, _) = Prelude.foldl validatePath ([], []) paths
+      problems = emptyModel Prelude.++ sliceProblems
+   in case problems of
+        [] -> Ok model
+        _ -> Err (Text.joinWith "\n" (Array.fromLinkedList problems))
 
 
-validateFeatures :: [Feature] -> [Reflection.SomeTypeRep] -> Result Text ()
-validateFeatures remaining seen = case remaining of
-  [] -> Ok ()
-  selected : rest -> do
-    let featureLabel = selected.featureName
-    if Prelude.null selected.featureChapters then Err [fmt|Feature "#{featureLabel}" requires a Chapter|] else Ok ()
-    next <- validateChapters featureLabel selected.featureChapters seen
-    validateFeatures rest next
+validatePath :: ([Text], [(Reflection.SomeTypeRep, Text)]) -> (Text, Text, Slice) -> ([Text], [(Reflection.SomeTypeRep, Text)])
+validatePath (problems, seen) (featureLabel, chapterLabel, selected) =
+  let selectedName = sliceName selected
+      path = [fmt|Feature "#{featureLabel}", Chapter "#{chapterLabel}", Slice "#{selectedName}"|]
+      (found, next) = validateSlice path selected seen
+   in (problems Prelude.++ found, next)
 
 
-validateChapters :: Text -> [Chapter] -> [Reflection.SomeTypeRep] -> Result Text [Reflection.SomeTypeRep]
-validateChapters featureLabel remaining seen = case remaining of
-  [] -> Ok seen
-  selected : rest -> do
-    let chapterLabel = selected.chapterName
-    if Prelude.null selected.chapterSlices then Err [fmt|Feature "#{featureLabel}", Chapter "#{chapterLabel}" requires a Slice|] else Ok ()
-    next <- validateSlices featureLabel chapterLabel selected.chapterSlices seen
-    validateChapters featureLabel rest next
-
-
-validateSlices :: Text -> Text -> [Slice] -> [Reflection.SomeTypeRep] -> Result Text [Reflection.SomeTypeRep]
-validateSlices featureLabel chapterLabel remaining seen = case remaining of
-  [] -> Ok seen
-  selected : rest -> do
-    next <- validateSlice featureLabel chapterLabel selected seen
-    validateSlices featureLabel chapterLabel rest next
-
-
-validateSlice :: Text -> Text -> Slice -> [Reflection.SomeTypeRep] -> Result Text [Reflection.SomeTypeRep]
-validateSlice featureLabel chapterLabel selected@(Slice _ primary _) seen = case primary of
-  StateChange _ _ -> Ok seen
-  StateView _ _ -> Ok seen
-  InboundTranslation _ _ -> Ok seen
-  OutboundTranslation (proxy :: Proxy handler) parts -> do
+validateSlice :: Text -> Slice -> [(Reflection.SomeTypeRep, Text)] -> ([Text], [(Reflection.SomeTypeRep, Text)])
+validateSlice path (Slice _ primary _) seen = case primary of
+  StateChange _ _ -> ([], seen)
+  StateView _ _ -> ([], seen)
+  InboundTranslation (_ :: Proxy handler) parts ->
+    let handlerName = Types.typeName (Proxy @handler)
+        expected = Types.inboundTargets (Proxy @(InboundOutputsOf handler))
+        declared = [targetTypes target | InboundCommand target <- parts]
+        missing =
+          [ [fmt|#{path} omits inbound worker output #{commandName} -> #{entityName} of handler #{handlerName}|]
+          | (commandType, entityType, commandName, entityName) <- expected,
+            Prelude.notElem (commandType, entityType) declared
+          ]
+        repeated =
+          [ [fmt|#{path} repeats inbound worker output #{commandName} -> #{entityName} of handler #{handlerName}|]
+          | (commandType, entityType, commandName, entityName) <- expected,
+            Prelude.length (Prelude.filter (== (commandType, entityType)) declared) > 1
+          ]
+     in (missing Prelude.++ repeated, seen)
+  OutboundTranslation (proxy :: Proxy handler) parts ->
     let triggerCount = countOutboundEvents parts
-    let sliceLabel = sliceName selected
-    if triggerCount == 1 then Ok () else Err [fmt|Feature "#{featureLabel}", Chapter "#{chapterLabel}", Slice "#{sliceLabel}" requires exactly one outbound onEvent; found #{triggerCount}|]
-    let handlerType = Reflection.SomeTypeRep (Reflection.typeRep @handler)
-    let handlerName = Types.typeName proxy
-    if Prelude.elem handlerType seen
-      then Err [fmt|Feature "#{featureLabel}", Chapter "#{chapterLabel}", Slice "#{sliceLabel}" reuses outbound handler #{handlerName}|]
-      else Ok (handlerType : seen)
+        triggerProblems = if triggerCount == 1 then [] else [[fmt|#{path} requires exactly one outbound onEvent; found #{triggerCount}|]]
+        handlerType = Reflection.SomeTypeRep (Reflection.typeRep @handler)
+        handlerName = Types.typeName proxy
+        prior = [priorPath | (priorType, priorPath) <- seen, priorType == handlerType]
+        reuseProblems = if Prelude.null prior then [] else [[fmt|#{path} reuses outbound handler #{handlerName}; first declared at #{Text.joinWith ", " (Array.fromLinkedList prior)}|]]
+     in (triggerProblems Prelude.++ reuseProblems, (handlerType, path) : seen)
+
+
+targetTypes :: CommandTarget -> (Reflection.SomeTypeRep, Reflection.SomeTypeRep)
+targetTypes (CommandTarget (_ :: Proxy command) (_ :: Proxy entity)) =
+  (Reflection.SomeTypeRep (Reflection.typeRep @command), Reflection.SomeTypeRep (Reflection.typeRep @entity))
 
 
 countOutboundEvents :: [OutboundPart handler] -> Int

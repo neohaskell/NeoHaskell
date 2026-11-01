@@ -69,7 +69,7 @@ To use private loopback ports, set all three testbed ports before the same comma
 The fixture's signed JWT retains its fixed `http://127.0.0.1:8181/oidc` issuer claim; the discovery and key requests use the selected fixture port.
 
 ```sh
-TESTBED_HTTP_PORT=18880 TESTBED_OAUTH_PORT=18881 TESTBED_FIXTURE_PORT=18882 TESTBED_OAUTH_LOG_DIR=.agents-state/testbed nix develop --command .agents/skills/neohaskell-test/scripts/run-testbed --strict
+TESTBED_HTTP_PORT=18880 TESTBED_OAUTH_PORT=18881 TESTBED_FIXTURE_PORT=8181 TESTBED_OAUTH_LOG_DIR=.agents-state/testbed nix develop --command .agents/skills/neohaskell-test/scripts/run-testbed --strict
 ```
 
 The runner creates private databases, runs `testbed/tests/integrations/cryptoerasure-m2.hurl`, and restarts the OAuth testbed for `testbed/scripts/verify-cryptoerasure-restart.py`. One check rejects the result command after key deletion. A separate check pauses after the key transaction commits and before the result callback runs, stops the owned OAuth process, and restarts it. Both checks read the pending application state after restart, retry explicitly, and require `AlreadyErased` completion. The crash check restarts once more and reads back the completed event through the authorized query. A further check stops the process before the key action, verifies that the key remains active and the request remains pending after restart, then requires an explicit retry to record `ErasedNow`. The application must retain and retry pending requests; the framework does not promise automatic replay after a crash. The OAuth-enabled and disabled application setups both register the outbound handler; the authenticated scenario uses port 8081.
@@ -175,10 +175,12 @@ The `source-local Event Model` examples assert both executable Features, every S
 nix develop --command python3 core/test/Service/EventModel/check_compiler_rejections.py
 ```
 
+The same spec verifies that the named model entry point rejects an inbound Slice that omits one typed worker output. It also checks that multiple assembled errors include their Feature, Chapter, and Slice paths before `App.app` can start workers. The testbed retains both explicit inbound targets in `cartFlow`; removing either makes `App.appEventModel` return `Err`.
+
 The maintained Hurl testbed exercises the declared cart and stock commands, queries, outbound handler, and typed inbound worker through `App.app`. `stock-reservation.hurl` asserts that `AddItem` updates `CartSummary` from one item to two and that the declared outbound handler runs `ReserveStock`, changing `StockLevel` from 100 available and 0 reserved to 95 available and 5 reserved after the first item. Run it with:
 
 ```sh
-TESTBED_HTTP_PORT=18880 TESTBED_OAUTH_PORT=18881 TESTBED_FIXTURE_PORT=18882 nix develop --command .agents/skills/neohaskell-test/scripts/run-testbed --strict
+TESTBED_HTTP_PORT=18880 TESTBED_OAUTH_PORT=18881 TESTBED_FIXTURE_PORT=8181 nix develop --command .agents/skills/neohaskell-test/scripts/run-testbed --strict
 ```
 
 ### Run the public matcher example
