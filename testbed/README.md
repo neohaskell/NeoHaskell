@@ -89,6 +89,12 @@ The `nhtestbed-erasure` suite builds a `RecordErasureResult` command with a prot
 nix develop --command .agents/skills/tdd/scripts/test-match 'keeps its protected payload out of Show' nhtestbed-erasure
 ```
 
+The same suite reconstructs a `ProtectedEntity` from its generated event, projects a generated `ProtectedView`, and round-trips its protected fields through the query JSON codec. Its display check uses a nested list of optional values and rejects the protected name, alias, reference, and storage marker. Run this focused query display check without PostgreSQL:
+
+```sh
+nix develop --command .agents/skills/tdd/scripts/test-match 'redacts nested optional values' nhtestbed-erasure
+```
+
 Run the maintained suite from the repository root with PostgreSQL running and ports 8080, 8081, and 8181 free:
 
 ```sh
