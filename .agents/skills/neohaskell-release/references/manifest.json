@@ -1039,6 +1039,37 @@
       "source_sha": "a4d6a39d333029e329fc533afce67291cf24b069",
       "target_policy": "native-v2",
       "version": "0.15.0"
+    },
+    {
+      "base_sha": "e49435ce35e1060f81ba90ac15cfcf1252353f63",
+      "base_tag": "neo-v0.15.0",
+      "base_version": "0.15.0",
+      "bootstrap": false,
+      "date": "2026-11-01",
+      "group": "platform",
+      "id": "dda76cc60b03079c36794c0004586e5e6f77862d9622898a1c7767ca0255db07",
+      "impact": "breaking",
+      "kind": "release",
+      "notes": [
+        {
+          "category": "Breaking changes",
+          "commit": "eda8a1fa934478383bcc0cd26f43004781d100e2",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "24a6d860195d0cafcbc9f93f8b0769e980dae5cb69c2d5128e228b721b4f9981",
+          "impact": "breaking",
+          "path": ".changes/event-model-validation-581.md",
+          "sections": {
+            "Agent prompt": "```text\nFind each inboundIntegration Slice in my NeoHaskell application. Compare its triggersCommand and onTargetEntity pairs with the handler's InboundOutputsOf type. Add every missing pair and remove any repeated pair. Preserve Application.withInboundHandler registration until Event Model runtime wiring is available. Compile the application, evaluate its named eventModel, run its inbound integration tests, and report changed files and results.\n```",
+            "Migration": "For each `inboundIntegration @Handler` Slice, compare its `triggersCommand` and `onTargetEntity` declarations with the handler's `InboundOutputsOf` pairs. Add missing pairs and remove repeated pairs. Keep the existing `Application.withInboundHandler @Handler` registration until Event Model runtime wiring is available.\n\n### Verify\n\nCompile the application and evaluate its named `eventModel` before starting workers. In this repository, run `nix develop --command python3 core/test/Service/EventModel/check_compiler_rejections.py`, `nix develop --command cabal test --project-file=cabal.project.dev nhtestbed-spec-demo --test-show-details=direct`, and `nix develop --command .agents/skills/neohaskell-test/scripts/run-testbed --strict` against an isolated PostgreSQL database.",
+            "Summary": "An Event Model now rejects an inbound Slice that omits or repeats a command and target entity pair promised by its typed worker. Validation reports assembled Slice errors with their Feature, Chapter, and Slice paths before application workers start. Applications with incomplete inbound declarations must list every typed worker output once."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: breaking\ncategory: Breaking changes\n---\n\n## Summary\n\nAn Event Model now rejects an inbound Slice that omits or repeats a command and target entity pair promised by its typed worker. Validation reports assembled Slice errors with their Feature, Chapter, and Slice paths before application workers start. Applications with incomplete inbound declarations must list every typed worker output once.\n\n## Migration\n\nFor each `inboundIntegration @Handler` Slice, compare its `triggersCommand` and `onTargetEntity` declarations with the handler's `InboundOutputsOf` pairs. Add missing pairs and remove repeated pairs. Keep the existing `Application.withInboundHandler @Handler` registration until Event Model runtime wiring is available.\n\n### Verify\n\nCompile the application and evaluate its named `eventModel` before starting workers. In this repository, run `nix develop --command python3 core/test/Service/EventModel/check_compiler_rejections.py`, `nix develop --command cabal test --project-file=cabal.project.dev nhtestbed-spec-demo --test-show-details=direct`, and `nix develop --command .agents/skills/neohaskell-test/scripts/run-testbed --strict` against an isolated PostgreSQL database.\n\n## Agent prompt\n\n```text\nFind each inboundIntegration Slice in my NeoHaskell application. Compare its triggersCommand and onTargetEntity pairs with the handler's InboundOutputsOf type. Add every missing pair and remove any repeated pair. Preserve Application.withInboundHandler registration until Event Model runtime wiring is available. Compile the application, evaluate its named eventModel, run its inbound integration tests, and report changed files and results.\n```\n"
+        }
+      ],
+      "source_sha": "eda8a1fa934478383bcc0cd26f43004781d100e2",
+      "target_policy": "native-v2",
+      "version": "0.16.0"
     }
   ],
   "recoveries": [],
