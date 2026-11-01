@@ -1868,18 +1868,20 @@ withoutHealthCheck app =
 -- registered transport's host; 'Web.server' defaults to IPv4-preferred binding
 -- (@"*4"@, with IPv6 fallback, unchanged from the previous @Warp.run@).
 --
--- * @"127.0.0.1"@ (or any literal address such as @"::1"@): that address only.
---   Loopback-only suits a reverse proxy in the same network namespace (same
---   host or container, shared pod network). A proxy in a separate namespace
---   cannot reach a loopback listener; keep a non-loopback bind there.
+-- * @"127.0.0.1"@ (or any literal address such as @"::1"@ or @"[::1]"@): that
+--   address only. Loopback-only suits a reverse proxy in the same network
+--   namespace (same host or container, shared pod network). A proxy in a
+--   separate namespace cannot reach a loopback listener; keep a non-loopback
+--   bind there.
 -- * @"*"@: any interface; the selected address family is platform-dependent.
 -- * @"*4"@ / @"*6"@: any interface, preferring IPv4 / IPv6 with fallback.
 -- * @"!4"@ / @"!6"@: any interface in IPv4 / IPv6 only.
 --
 -- The value is checked when the server starts ('Web.validateBindHost'): an
--- empty host, a URL such as @"http://127.0.0.1"@, a @host:port@ pair or
--- whitespace fails 'run' with @Application.withHost: ...@ before any socket is
--- opened. An address this machine does not own fails at bind time with
+-- empty host, a URL such as @"http://127.0.0.1"@, a @host:port@ pair,
+-- malformed or non-IPv6 brackets, or whitespace fails 'run' with
+-- @Application.withHost: ...@ before any socket is opened. An address this
+-- machine does not own fails at bind time with
 -- @WebTransport could not bind <host>:<port>@.
 --
 -- Example:

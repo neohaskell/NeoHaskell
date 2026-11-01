@@ -49,9 +49,9 @@ No new product constants are introduced.
 
 C14 preserves the accepted `[::1]` input by removing IPv6 brackets when building
 Warp settings. The bare `::1` control must answer before the bracketed case runs.
-Both cases require the owned query handler to answer. Bracketed names such as
-`[]`, `[*]` and `[localhost]` remain unchanged and can still fail at address
-resolution. This is not a claim of complete early address validation.
+Both cases require the owned query handler to answer. Bracketed non-IPv6 values
+such as `[]`, `[*]` and `[localhost]` remain unwrapped in `hostPreference` and
+are rejected early by `validateBindHost`.
 
 Fresh native C1 receipt `a31fd74ad8e86d6f4546a9b3cad3ee314dee490a0322d64522471d197c079057`
 was recorded at clean successor head `e9aa116e8bc99c40a561d068a951a1e295173688`,

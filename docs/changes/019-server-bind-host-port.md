@@ -13,14 +13,16 @@ The default `"*4"` prefers IPv4 but may fall back to IPv6; `"*6"` prefers IPv6
 with fallback. `"!4"` and `"!6"` require their respective family. A wildcard
 preference is not a strict family-isolation guarantee.
 
-Input contract: the host is a Warp wildcard (`"*"`, `"*4"`, `"*6"`, `"!4"`, `"!6"`) or a bare
-literal address / hostname; the port is `1..65535`. An empty host, a URL or path
-in the host field, a `host:port` pair, whitespace, port `0` or an out-of-range
+Input contract: the host is a Warp wildcard (`"*"`, `"*4"`, `"*6"`, `"!4"`, `"!6"`), a bare
+literal address / hostname, or a bracketed IPv6 literal (`"[::1]"`); the port is `1..65535`. An empty host, a URL or path
+in the host field, a `host:port` pair, malformed or non-IPv6 brackets (`"[]"`, `"[localhost]"`, `"[::1"`), whitespace, port `0` or an out-of-range
 port is rejected before listener startup, with an error that names the
-builder (`Application.withHost: …` / `Application.withPort: …`). A bind the OS
+builder (`Application.withHost: ...` / `Application.withPort: ...`). A bind the OS
 refuses (port in use, address not owned) fails with
-`WebTransport could not bind <host>:<port>: …` instead of an uncaught
-`IOException`. Change027 separately proves the returned-bind-error cleanup of
+`WebTransport could not bind <host>:<port>: ...` instead of an uncaught
+`IOException`. `Service.EventModel` also exposes `withHost` and `withPort`
+delegating to `Application.withHost` and `Application.withPort`, exercised by
+`Testbed.EventModel` and `testbed/launcher/Launcher.hs`. Change027 separately proves the returned-bind-error cleanup of
 an already-started owned inbound socket. It does not establish cleanup for every
 resource or asynchronous startup phase.
 

@@ -35,8 +35,8 @@ import Basics
 import Bytes (Bytes)
 import Bytes qualified
 import ConcurrentVar qualified
-import Control.Exception (IOException)
 import Log qualified
+import System.IO.Error (IOError)
 import Data.Aeson qualified as Aeson
 import Data.ByteString qualified as GhcBS
 import Data.ByteString.Lazy qualified as GhcLBS
@@ -266,12 +266,14 @@ applyBindOverrides maybeHost maybePort transport =
 
 
 -- | Check a bind host before the server starts. Accepted forms are the Warp
--- wildcards (@"*"@, @"*4"@, @"*6"@, @"!4"@, @"!6"@) and a bare literal address or hostname
--- such as @"127.0.0.1"@, @"::1"@ or @"localhost"@.
+-- wildcards (@"*"@, @"*4"@, @"*6"@, @"!4"@, @"!6"@), a bare literal address or
+-- hostname such as @"127.0.0.1"@, @"::1"@ or @"localhost"@, and a bracketed
+-- IPv6 literal such as @"[::1]"@ (unwrapped by 'hostPreference').
 --
 -- The checks target the mistakes a hand-written or LLM-written config makes:
 -- an empty or blank host, whitespace anywhere (including a leading or
--- trailing space, tab or newline), a URL (@"http://127.0.0.1"@), a path, or a
+-- trailing space, tab or newline), a URL (@"http://127.0.0.1"@), a path,
+-- malformed or non-IPv6 brackets (@"[]"@, @"[localhost]"@, @"[::1"@), or a
 -- @host:port@ pair pasted into the host field. A single colon can only be a
 -- port suffix because a literal IPv6 address always contains at least two.
 -- Anything that passes is handed to Warp as a 'Warp.HostPreference'; an
@@ -279,7 +281,6 @@ applyBindOverrides maybeHost maybePort transport =
 -- @could not bind@ error from 'runTransport'.
 --
 -- Returns the reason the host is rejected, or 'Nothing' when these checks pass.
--- Bracketed IPv6 such as @"[::1]"@ is accepted and unwrapped by 'hostPreference'.
 validateBindHost :: Text -> Maybe Text
 validateBindHost hostText
   | Text.isEmpty (Text.trim hostText) =
@@ -291,18 +292,23 @@ validateBindHost hostText
   | Text.contains "]:" hostText || (hostText |> Text.indexes ":" |> Array.length) == 1 =
       Just [fmt|bind host "#{hostText}" carries a port; set the port with Application.withPort instead|]
   | hasMalformedBindBrackets hostText =
-      Just [fmt|bind host "#{hostText}" has malformed brackets; use a bare address and set the port with Application.withPort|]
+      Just [fmt|bind host "#{hostText}" has malformed brackets; brackets may only wrap an IPv6 literal such as "[::1]", and ports belong in Application.withPort|]
   | otherwise = Nothing
 
 
--- | Keep balanced bracket input intact while rejecting broken bracket structure.
+-- | Allow brackets only when a single outer pair wraps an IPv6 literal.
 hasMalformedBindBrackets :: Text -> Bool
 hasMalformedBindBrackets hostText = do
   let opening = hostText |> Text.indexes "[" |> Array.length
   let closing = hostText |> Text.indexes "]" |> Array.length
   let hasBrackets = opening > 0 || closing > 0
-  let balanced = opening == 1 && closing == 1 && Text.startsWith "[" hostText && Text.endsWith "]" hostText
-  hasBrackets && not balanced
+  let validBracketedIpv6 =
+        opening == 1
+          && closing == 1
+          && Text.startsWith "[" hostText
+          && Text.endsWith "]" hostText
+          && Text.contains ":" hostText
+  hasBrackets && not validBracketedIpv6
 
 
 -- | Check a bind port before the server starts. Only 1..65535 is accepted.
@@ -1330,7 +1336,7 @@ instance Transport WebTransport where
       Log.info [fmt|Starting WebTransport server on #{host}:#{port}|]
         |> Task.ignoreError
     Warp.runSettings (warpSettings transport) waiApp
-      |> Task.fromFailableIO @IOException
+      |> Task.fromFailableIO @IOError
       |> Task.mapError (\ioError -> [fmt|WebTransport could not bind #{host}:#{port}: #{show ioError}|])
 
 

@@ -1,30 +1,34 @@
 module Service.Transport.Web.BindSpec where
 
 import Array qualified
-import Control.Concurrent.MVar qualified as GhcMVar
-import Integration qualified
-import Service.CommandExecutor.TH (deriveKnownHash)
-import Service.Transport (Transport (..))
-import System.Timeout qualified as GhcTimeout
-import Bytes qualified
-import Json qualified
-import Service.EventStore (EventStore (..))
+import AtomicVar (AtomicVar)
+import AtomicVar qualified
 import AsyncTask qualified
+import Bytes qualified
+import Control.Concurrent.MVar qualified as GhcMVar
 import Core
+import Decider qualified
 import Http.Client qualified as Http
 import Http.Client.Internal qualified as HttpInternal
-import IO qualified
-import Data.IORef qualified as GhcIORef
-import Control.Exception qualified as GhcException
-import Network.Wai qualified as GhcWai
-import Network.HTTP.Types qualified as GhcHttp
+import Integration qualified
+import Json qualified
 import Maybe qualified
+import Network.HTTP.Types qualified as GhcHttp
 import Network.Socket qualified as GhcSocket
+import Network.Wai qualified as GhcWai
 import Network.Wai.Handler.Warp qualified as GhcWarp
 import Service.Application (Application (..))
 import Service.Application qualified as Application
+import Service.Auth (RequestContext)
+import Service.Command.Core (Event (..), TransportsOf)
+import Service.CommandExecutor.TH (deriveKnownHash)
+import Service.EventModel qualified as EventModel
+import Service.EventStore (EventStore (..))
 import Service.EventStore.InMemory qualified as InMemory
+import Service.Transport (Transport (..))
 import Service.Transport.Web (WebTransport (..), applyBindOverrides, hostPreference, server, validateBindHost, validateBindPort, warpSettings)
+import System.IO.Error (IOError)
+import System.Timeout qualified as GhcTimeout
 import Task qualified
 import Test
 import Text qualified
@@ -58,6 +62,68 @@ type instance NameOf ABindCleanupBarrier = "ABindCleanupBarrier"
 deriveKnownHash "ABindCleanupBarrier"
 
 
+data BindModelEntity = BindModelEntity
+  { bindModelEntityId :: Uuid
+  }
+  deriving (Eq, Show, Generic)
+
+
+instance Json.ToJSON BindModelEntity
+instance Json.FromJSON BindModelEntity
+
+
+data BindModelEvent = BindModelEventCreated Uuid
+  deriving (Eq, Show, Generic)
+
+
+instance Json.ToJSON BindModelEvent
+instance Json.FromJSON BindModelEvent
+
+
+type instance NameOf BindModelEntity = "BindModelEntity"
+type instance EventOf BindModelEntity = BindModelEvent
+type instance EntityOf BindModelEvent = BindModelEntity
+
+
+instance Entity BindModelEntity where
+  initialStateImpl = BindModelEntity {bindModelEntityId = Uuid.nil}
+  updateImpl ev _ = case ev of
+    BindModelEventCreated uid -> BindModelEntity {bindModelEntityId = uid}
+
+
+instance Event BindModelEvent where
+  getEventEntityIdImpl ev = case ev of
+    BindModelEventCreated uid -> uid
+
+
+data BindModelCommand = BindModelCommand
+  deriving (Generic)
+
+
+type instance EntityOf BindModelCommand = BindModelEntity
+type instance TransportsOf BindModelCommand = '[WebTransport]
+
+
+getEntityId :: BindModelCommand -> Maybe Uuid
+getEntityId _ = Nothing
+
+
+decide :: BindModelCommand -> Maybe BindModelEntity -> RequestContext -> Decision BindModelEvent
+decide _ _ _ = Decider.acceptNew [BindModelEventCreated Uuid.nil]
+
+
+deriveCommand ''BindModelCommand
+
+
+bindFixtureFeatures :: EventModel.FeatureAction
+bindFixtureFeatures = EventModel.feature "Bind" do
+  EventModel.chapter "Commands" do
+    EventModel.slice "Probe" do
+      EventModel.entity @BindModelEntity do
+        EventModel.command @BindModelCommand do
+          pass
+
+
 spec :: Spec Unit
 spec = do
   describe "WebTransport bind host and port" do
@@ -80,6 +146,35 @@ spec = do
       it "bind host and port are unset on a new Application" \_ -> do
         Application.new.bindHost |> shouldBe Nothing
         Application.new.bindPort |> shouldBe Nothing
+
+    describe "EventModel builders" do
+      it "EventModel.withHost and EventModel.withPort lower onto Application" \_ -> do
+        let assembled = EventModel.eventModel do
+              EventModel.appName "BindFixture"
+              EventModel.withTransport server
+              EventModel.withHost "127.0.0.1"
+              EventModel.withPort 9192
+              EventModel.features do
+                bindFixtureFeatures
+        case assembled of
+          Err problem -> fail [fmt|unexpected EventModel error: #{problem}|]
+          Ok model -> do
+            let app = EventModel.toApplication model
+            app.bindHost |> shouldBe (Just "127.0.0.1")
+            app.bindPort |> shouldBe (Just 9192)
+
+      it "binds loopback and custom port assembled through EventModel" \_ -> do
+        freePort <- getOwnedFreePort
+        let assembled = EventModel.eventModel do
+              EventModel.appName "BindRuntimeFixture"
+              EventModel.withTransport server
+              EventModel.withHost "127.0.0.1"
+              EventModel.withPort freePort
+              EventModel.features do
+                bindFixtureFeatures
+        case assembled of
+          Err problem -> fail [fmt|unexpected EventModel error: #{problem}|]
+          Ok model -> withOwnedBindAt freePort (EventModel.toApplication model)
 
     describe "hostPreference" do
       it "maps a literal IPv4 address to that host" \_ -> do
@@ -164,12 +259,13 @@ spec = do
 
       it "preserves balanced bracket hosts and strict-family wildcard validation" \_ -> do
         validateBindHost "[::1]" |> shouldBe Nothing
+        validateBindHost "[2001:db8::8]" |> shouldBe Nothing
         validateBindHost "!4" |> shouldBe Nothing
         validateBindHost "!6" |> shouldBe Nothing
 
       it "rejects malformed brackets and preserves bare IPv6" \_ -> do
         validateBindHost "fe80::1" |> shouldBe Nothing
-        let bracketed = ["[::1", "::1]", "[::1]trailing"]
+        let bracketed = ["[", "]", "[]", "[*]", "[!6]", "[localhost]", "[127.0.0.1]", "[::1", "::1]", "[::1]trailing"]
         let accepted = bracketed |> Array.takeIf (\candidate -> validateBindHost candidate == Nothing)
         accepted |> shouldBe []
 
@@ -305,9 +401,9 @@ spec = do
         (identified, hits, body) <- newIdentityApplication Application.new
         -- Even copying the expected body is insufficient to impersonate the
         -- owned query handler. The control must actually receive a request.
-        competitorHits <- GhcIORef.newIORef (0 :: Int) |> Task.fromIO
+        competitorHits <- AtomicVar.containing (0 :: Int)
         let competitor _ respond = do
-              GhcIORef.atomicModifyIORef' competitorHits (\n -> (n + 1, ()))
+              Task.runNoErrors (AtomicVar.modify (+ 1) competitorHits)
               respond (GhcWai.responseLBS GhcHttp.status200 []
                 (body |> Text.toBytes |> Bytes.toLazyLegacy))
         let exercise = do
@@ -326,9 +422,9 @@ spec = do
                       (Text.contains [fmt|could not bind 127.0.0.1:#{port}|])
                   owned <- probeOwnedInstance hits body port 0
                   owned |> shouldBe False
-                  count <- GhcIORef.readIORef hits |> Task.fromIO
+                  count <- AtomicVar.peek hits
                   count |> shouldBe 0
-                  received <- GhcIORef.readIORef competitorHits |> Task.fromIO
+                  received <- AtomicVar.peek competitorHits
                   received |> shouldSatisfy (\n -> n > 0)
               case outcome of
                 Err err -> Task.throw err
@@ -338,10 +434,10 @@ spec = do
     describe "Application returned bind failure owns inbound shutdown" do
       it "closes a started inbound socket before returning the bind error" \_ -> do
         eventStore <- InMemory.new |> Task.mapError toText
-        closeCalled <- GhcIORef.newIORef False |> Task.fromIO
+        closeCalled <- AtomicVar.containing False
         let callerStore = eventStore
               { close = do
-                  GhcIORef.writeIORef closeCalled True |> Task.fromIO
+                  AtomicVar.set True closeCalled
                   eventStore.close
               }
         let exercise = withWorkerFixture \fixture -> do
@@ -363,7 +459,7 @@ spec = do
                 passed <- GhcMVar.tryReadMVar fixture.barrierPassed |> Task.fromIO
                 passed |> shouldBe (Just unit)
                 -- Caller-owned EventStore closure is not the shutdown evidence.
-                closed <- GhcIORef.readIORef closeCalled |> Task.fromIO
+                closed <- AtomicVar.peek closeCalled
                 closed |> shouldBe False
                 assertWorkerStopped fixture
         exercise |> Task.finally callerStore.close
@@ -437,38 +533,31 @@ spec = do
         result |> shouldBe (Err "Application.withPort: bind port 0 asks the OS for a random port that nothing reports back; choose a fixed port between 1 and 65535")
 
       it "rejects invalid static bind before owned auth discovery" \_ -> do
-        requests <- GhcIORef.newIORef (0 :: Int) |> Task.fromIO
+        requests <- AtomicVar.containing (0 :: Int)
         let discovery _ respond = do
-              GhcIORef.modifyIORef' requests (+ 1)
+              Task.runNoErrors (AtomicVar.modify (+ 1) requests)
               respond (GhcWai.responseLBS GhcHttp.status200 [] "not-json")
-        (result, count) <- Task.fromIO do
-          GhcWarp.testWithApplication (pure discovery) \authPort -> do
-            outcome <- IO.try (Task.runResult do
-              -- The owned fixture is live before the invalid application starts.
-              status <- getHealthStatus "fixture-control" authPort 0
-              status |> shouldBe 200
-              GhcIORef.writeIORef requests 0 |> Task.fromIO
-              eventStore <- InMemory.new |> Task.mapError toText
-              let app =
-                    Application.new
-                      |> Application.withTransport server
-                      |> Application.withHost "http://127.0.0.1"
-                      |> Application.withAuth @() (\_ -> [fmt|http://127.0.0.1:#{authPort}|])
-              Application.runWith eventStore app |> Task.asResult)
-            case outcome of
-              Err err -> case GhcException.fromException err of
-                Just (asyncError :: GhcException.SomeAsyncException) -> GhcException.throwIO asyncError
-                Nothing -> pure ()
-              Ok _ -> pure ()
-            count <- GhcIORef.readIORef requests
-            pure (outcome, count)
+        (appOutcome, count) <- Task.fromIOResult do
+          GhcWarp.testWithApplication (pure discovery) \authPort -> Task.runResult do
+            -- The owned fixture is live before the invalid application starts.
+            status <- getHealthStatus "fixture-control" authPort 0
+            status |> shouldBe 200
+            AtomicVar.set 0 requests
+            eventStore <- InMemory.new |> Task.mapError toText
+            let app =
+                  Application.new
+                    |> Application.withTransport server
+                    |> Application.withHost "http://127.0.0.1"
+                    |> Application.withAuth @() (\_ -> [fmt|http://127.0.0.1:#{authPort}|])
+            outcome <- Application.runWith eventStore app |> Task.asResult |> Task.asResultSafe @Text
+            observed <- AtomicVar.peek requests
+            Task.yield (outcome, observed)
         case count of
           0 -> pass
           _ -> fail "REGRESSION_ASSERT:invalid-bind-contacted-auth"
-        case result of
-          Err err -> fail [fmt|unexpected startup exception: #{toText err}|]
-          Ok (Err err) -> fail [fmt|owned auth fixture failed: #{err}|]
-          Ok (Ok appResult) -> case appResult of
+        case appOutcome of
+          Err err -> fail [fmt|unexpected startup exception: #{err}|]
+          Ok appResult -> case appResult of
             Ok _ -> fail "runWith accepted an invalid host"
             Err err -> err |> shouldBe "Application.withHost: bind host \"http://127.0.0.1\" looks like a URL or path; use a bare address such as \"127.0.0.1\", not \"http://127.0.0.1\""
 
@@ -512,23 +601,23 @@ spec = do
 
 -- A successful response must have run this instance's handler. The body alone
 -- is not sufficient: the catch-all negative control deliberately copies it.
-newIdentityApplication :: Application -> Task Text (Application, GhcIORef.IORef Int, Text)
+newIdentityApplication :: Application -> Task Text (Application, AtomicVar Int, Text)
 newIdentityApplication app = do
   nonce <- uniqueHealthPath
-  hits <- GhcIORef.newIORef (0 :: Int) |> Task.fromIO
+  hits <- AtomicVar.containing (0 :: Int)
   let body = Json.encodeText nonce
   let handler _ _ _ = do
-        GhcIORef.atomicModifyIORef' hits (\n -> (n + 1, ())) |> Task.fromIO
+        AtomicVar.modify (+ 1) hits
         Task.yield body
   Task.yield (app |> Application.withQueryEndpoint "BindProbe" handler, hits, body)
 
 
-probeOwnedInstance :: GhcIORef.IORef Int -> Text -> Int -> Int -> Task Text Bool
+probeOwnedInstance :: AtomicVar Int -> Text -> Int -> Int -> Task Text Bool
 probeOwnedInstance hits expectedBody port attemptsLeft =
   probeOwnedInstanceAt "127.0.0.1" hits expectedBody port attemptsLeft
 
 
-probeOwnedInstanceAt :: Text -> GhcIORef.IORef Int -> Text -> Int -> Int -> Task Text Bool
+probeOwnedInstanceAt :: Text -> AtomicVar Int -> Text -> Int -> Int -> Task Text Bool
 probeOwnedInstanceAt host hits expectedBody port attemptsLeft = do
   result <-
     Http.request
@@ -538,7 +627,7 @@ probeOwnedInstanceAt host hits expectedBody port attemptsLeft = do
       |> Task.asResult
   case result of
     Ok response -> do
-      count <- GhcIORef.readIORef hits |> Task.fromIO
+      count <- AtomicVar.peek hits
       Task.yield
         ( response.statusCode == 200
             && Text.fromBytes response.body == expectedBody
@@ -588,36 +677,38 @@ withOwnedBindAt port configured = do
   run |> Task.finally eventStore.close
 
 
--- Use this rather than broad IO.try for NEW socket probes. Catch only IOException;
--- asynchronous cancellation must propagate through bracket, not become False.
+withAcquiredSocket :: (GhcSocket.Socket -> Task Text value) -> Task Text value
+withAcquiredSocket useSocket =
+  Task.withCancellationDeferred \restore -> do
+    sock <-
+      GhcSocket.socket GhcSocket.AF_INET GhcSocket.Stream GhcSocket.defaultProtocol
+        |> Task.fromFailableIO @IOError
+        |> Task.mapError toText
+    restore (useSocket sock)
+      |> Task.finally (GhcSocket.close sock |> Task.fromIO)
+
+
+-- Catch only IOError; asynchronous cancellation propagates while closing the socket.
 canBindAddress :: GhcSocket.HostAddress -> Int -> Task Text Bool
-canBindAddress address port = Task.fromIO do
-  GhcException.bracket
-    (GhcSocket.socket GhcSocket.AF_INET GhcSocket.Stream GhcSocket.defaultProtocol)
-    GhcSocket.close
-    \sock -> do
-      GhcException.catch @GhcException.IOException
-        (do
-          GhcSocket.bind sock (GhcSocket.SockAddrInet (fromIntegral port) address)
-          pure True)
-        (\_ -> pure False)
+canBindAddress address port =
+  withAcquiredSocket \sock -> do
+    outcome <-
+      GhcSocket.bind sock (GhcSocket.SockAddrInet (fromIntegral port) address)
+        |> Task.fromFailableIO @IOError
+        |> Task.asResult
+    case outcome of
+      Ok _ -> Task.yield True
+      Err _ -> Task.yield False
 
 
 -- The loopback port reservation is held throughout action.
 withHeldLoopbackPort :: GhcSocket.HostAddress -> (Int -> Task Text value) -> Task Text value
-withHeldLoopbackPort address action = do
-  result <- Task.fromIO do
-    GhcException.bracket
-      (GhcSocket.socket GhcSocket.AF_INET GhcSocket.Stream GhcSocket.defaultProtocol)
-      GhcSocket.close
-      \sock -> do
-        GhcSocket.bind sock (GhcSocket.SockAddrInet 0 address)
-        GhcSocket.listen sock 1
-        port <- GhcSocket.socketPort sock
-        Task.runResult (action (fromIntegral port))
-  case result of
-    Ok value -> Task.yield value
-    Err err -> Task.throw err
+withHeldLoopbackPort address action =
+  withAcquiredSocket \sock -> do
+    GhcSocket.bind sock (GhcSocket.SockAddrInet 0 address) |> Task.fromIO
+    GhcSocket.listen sock 1 |> Task.fromIO
+    port <- GhcSocket.socketPort sock |> Task.fromIO
+    action (fromIntegral port)
 
 
 getOwnedFreePort :: Task Text Int
@@ -662,18 +753,22 @@ bounded label task = do
 ownedInbound :: WorkerFixture -> Integration.Inbound
 ownedInbound fixture =
   Integration.inbound @CleanupProbeCommand Integration.InboundConfig
-    { run = \_emit -> Task.fromIO do
-        GhcException.bracket
-          (GhcSocket.socket GhcSocket.AF_INET GhcSocket.Stream GhcSocket.defaultProtocol)
-          (\sock -> do
-            GhcSocket.close sock
-            GhcMVar.putMVar fixture.stopped unit)
-          \sock -> do
-            GhcSocket.bind sock (GhcSocket.SockAddrInet 0 loopback)
-            GhcSocket.listen sock 1
-            port <- GhcSocket.socketPort sock
-            GhcMVar.putMVar fixture.started (fromIntegral port)
-            GhcMVar.readMVar fixture.release
+    { run = \_emit ->
+        Task.withCancellationDeferred \restore -> do
+          sock <-
+            GhcSocket.socket GhcSocket.AF_INET GhcSocket.Stream GhcSocket.defaultProtocol
+              |> Task.fromFailableIO @IOError
+              |> Task.mapError (toText .> Integration.UnexpectedError)
+          let cleanup = do
+                GhcSocket.close sock |> Task.fromIO
+                GhcMVar.putMVar fixture.stopped unit |> Task.fromIO
+          let runWorker = do
+                GhcSocket.bind sock (GhcSocket.SockAddrInet 0 loopback) |> Task.fromIO
+                GhcSocket.listen sock 1 |> Task.fromIO
+                port <- GhcSocket.socketPort sock |> Task.fromIO
+                GhcMVar.putMVar fixture.started (fromIntegral port) |> Task.fromIO
+                GhcMVar.readMVar fixture.release |> Task.fromIO
+          restore runWorker |> Task.finally cleanup
     }
 
 
@@ -786,13 +881,7 @@ nonLoopbackAddress = Task.fromIO do
 -- every address. Warp sets SO_REUSEADDR, so this probe discriminates on
 -- address, not on the reuse flag.
 canBindElsewhere :: GhcSocket.HostAddress -> Int -> Task Text Bool
-canBindElsewhere address port = Task.fromIO do
-  sock <- GhcSocket.socket GhcSocket.AF_INET GhcSocket.Stream GhcSocket.defaultProtocol
-  outcome <- GhcSocket.bind sock (GhcSocket.SockAddrInet (fromIntegral port) address) |> IO.try
-  GhcSocket.close sock
-  case outcome of
-    Ok _ -> pure True
-    Err _ -> pure False
+canBindElsewhere address port = canBindAddress address port
 
 
 -- | GET the health path on loopback, retrying while the server is still binding.

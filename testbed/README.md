@@ -198,7 +198,19 @@ nix develop --command hurl --test testbed/tests/integrations/typed-inbound.hurl
 
 ### Run the source-local Event Model example
 
-`Testbed.Cart.Feature.cartFlow` and `Testbed.Stock.Feature.stockFlow` are exported Feature actions. `Testbed.EventModel.appEventModel` composes them with the Document, ExternalEffect, Erasable, and Owned Features in one named `eventModel do` value. The value also declares configuration, PostgreSQL, transport, API metadata, and file upload before the Features. `Launcher` starts it with `EventModel.run`. Every declared command, query, outbound handler, and typed inbound worker is registered by its Slice; there is no separate authored `App.hs` registration list.
+`Testbed.Cart.Feature.cartFlow` and `Testbed.Stock.Feature.stockFlow` are exported Feature actions. `Testbed.EventModel.appEventModel` composes them with the Document, ExternalEffect, Erasable, and Owned Features in one named `eventModel do` value. The value also declares configuration, PostgreSQL, transport, bind host and port (`EventModel.withHost` and `EventModel.withPort`), API metadata, and file upload before the Features. `Launcher` reads `TESTBED_HTTP_HOST` (default `"127.0.0.1"`) and `TESTBED_HTTP_PORT` (default `8080`) and starts the model with `EventModel.run`. Every declared command, query, outbound handler, and typed inbound worker is registered by its Slice; there is no separate authored `App.hs` registration list.
+
+To start `exe:nhtestbed` directly on loopback with a custom port, run:
+
+```sh
+TESTBED_HTTP_HOST=127.0.0.1 TESTBED_HTTP_PORT=18880 nix develop --command cabal run exe:nhtestbed
+```
+
+The maintained runner also sets `TESTBED_HTTP_HOST` (default `"127.0.0.1"`) and `TESTBED_HTTP_PORT`, verifies that `/health` responds on loopback while non-loopback IPv4 interfaces keep that port free, and runs the full Hurl suite:
+
+```sh
+TESTBED_HTTP_HOST=127.0.0.1 TESTBED_HTTP_PORT=18880 TESTBED_OAUTH_PORT=18881 TESTBED_FIXTURE_PORT=8181 nix develop --command .agents/skills/neohaskell-test/scripts/run-testbed --strict
+```
 
 The Owned Feature declares `MapErasedSecret` and its `ErasedCopyRecorded` event. The strict restart check observes the rebuilt query after a fresh process starts.
 

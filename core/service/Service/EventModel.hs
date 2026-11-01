@@ -57,6 +57,8 @@ module Service.EventModel (
   withEventStore,
   withQueryObjectStore,
   withTransport,
+  withHost,
+  withPort,
   withApiInfo,
   withFileUpload,
   withAuth,
@@ -441,6 +443,18 @@ withTransport ::
   (Transport transport, transportName ~ NameOf transport, Record.KnownHash transportName, GHC.KnownSymbol transportName) =>
   transport -> EventModelAction
 withTransport transport = Writer.tell [ModelConfiguration (Application.withTransport transport)]
+
+
+-- | Set the interface the WebTransport binds.
+-- Delegates to 'Application.withHost'.
+withHost :: Text -> EventModelAction
+withHost host = Writer.tell [ModelConfiguration (Application.withHost host)]
+
+
+-- | Set the port the WebTransport binds.
+-- Delegates to 'Application.withPort'.
+withPort :: Int -> EventModelAction
+withPort port = Writer.tell [ModelConfiguration (Application.withPort port)]
 
 
 withApiInfo :: forall config. (Typeable config) => (config -> ApiInfo) -> EventModelAction
