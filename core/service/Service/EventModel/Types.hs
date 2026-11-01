@@ -297,7 +297,7 @@ data CommandExpectation entity
 
 data ExpectedOutcome context where
   CommandExpected :: CommandExpectation entity -> ExpectedOutcome ('Change entity command)
-  ViewExpected :: QueryAction query -> ExpectedOutcome ('View query)
+  ViewExpected :: Uuid -> QueryAction query -> ExpectedOutcome ('View query)
 
 
 newtype QuerySnapshot query = QuerySnapshot (Map Uuid query)
@@ -332,9 +332,9 @@ data OutcomePart context mode where
   OutcomeRejected :: Maybe Text -> OutcomePart ('Change entity command) 'Rejection
   OutcomeRejectedPattern :: Text -> OutcomePart ('Change entity command) 'Rejection
   OutcomeAcceptedWithoutEvents :: OutcomePart ('Change entity command) 'ZeroEvents
-  OutcomeUpdated :: query -> OutcomePart ('View query) 'ViewUpdate
-  OutcomeDeleted :: OutcomePart ('View query) 'ViewDelete
-  OutcomeNoOp :: OutcomePart ('View query) 'ViewNoOpMode
+  OutcomeUpdated :: Uuid -> query -> OutcomePart ('View query) 'ViewUpdate
+  OutcomeDeleted :: Uuid -> OutcomePart ('View query) 'ViewDelete
+  OutcomeNoOp :: Uuid -> OutcomePart ('View query) 'ViewNoOpMode
 
 
 data ModelPart

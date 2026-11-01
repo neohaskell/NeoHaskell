@@ -80,8 +80,14 @@ deriveQuery ''CrossEntityView [''CartEntity, ''StockEntity]
 
 
 instance QueryOf CartEntity CrossEntityView where
-  queryId cart = if cart.savedIBAN == Just "wrong-row" then wrongRowId else cart.cartId
-  combine cart _ = Update CrossEntityView {crossEntityId = cart.cartId, crossEntityCount = Array.length cart.items}
+  queryId cart =
+    if cart.savedIBAN == Just "wrong-row" || cart.savedIBAN == Just "wrong-delete" || cart.savedIBAN == Just "wrong-noop"
+      then wrongRowId
+      else cart.cartId
+  combine cart _ = case cart.savedIBAN of
+    Just "wrong-delete" -> Delete
+    Just "wrong-noop" -> NoOp
+    _ -> Update CrossEntityView {crossEntityId = cart.cartId, crossEntityCount = Array.length cart.items}
 
 
 instance QueryOf StockEntity CrossEntityView where
@@ -201,17 +207,16 @@ spec = do
           failures |> Array.fromLinkedList |> Array.any (Text.contains "delete needs a prior row") |> shouldBe True
           failures |> Prelude.all (Text.contains "query action or complete diff differs") |> shouldBe True
 
-    it "rejects a generated update to the wrong row among two projections" \_ -> do
+    it "rejects generated view actions on the wrong row among two projections" \_ -> do
       case twoRowViewRuleModel of
         Err problem -> problem |> shouldBe "valid two-row view model"
         Ok model -> do
           reports <- RuleRunner.runRules RuleRunner.emptyGenerators 97 1 model
           case reports of
-            [rightRow, wrongRow] -> do
+            [rightRow, wrongUpdate, wrongDelete, wrongNoOp] -> do
               rightRow.result |> shouldBe (Ok ())
-              case wrongRow.result of
-                Err problem -> problem |> Text.contains "query action or complete diff differs" |> shouldBe True
-                Ok () -> False |> shouldBe True
+              let wrong = [wrongUpdate, wrongDelete, wrongNoOp] :: [RuleRunner.RuleReport]
+              wrong |> Prelude.all (\report -> case report.result of Err problem -> Text.contains "query action or complete diff differs" problem; Ok () -> False) |> shouldBe True
             _ -> False |> shouldBe True
 
     it "accepts an existing cart without appending an event" \_ -> do
@@ -442,7 +447,7 @@ spec = do
                       EventModel.givenNothing
                       EventModel.when ItemAddedPayload {itemAddedEntityId = Uuid.nil, itemAddedStockId = Uuid.nil, itemAddedQuantity = 1}
                       EventModel.therefore do
-                        EventModel.noOp @CartSummary
+                        EventModel.noOp @CartSummary Uuid.nil
       case modelResult of
         Err problem -> problem |> shouldBe "valid Event Model"
         Ok model -> case Array.first (model |> modelSlices) of
@@ -988,28 +993,28 @@ viewRuleModel = EventModel.eventModel do
               EventModel.event StockInitializedPayload {initializedEntityId = Uuid.nil, initializedProductId = Uuid.nil, initializedAvailable = 5}
             EventModel.when CartCreatedPayload {cartCreatedEntityId = Uuid.nil, cartCreatedOwnerId = "owner"}
             EventModel.therefore do
-              EventModel.updatedTo RuleProjection {rowId = fixtureRowId, cartSeen = True, stockSeen = True, itemCount = 0, stockCount = 1}
+              EventModel.updatedTo fixtureRowId RuleProjection {rowId = fixtureRowId, cartSeen = True, stockSeen = True, itemCount = 0, stockCount = 1}
 
           EventModel.rule "delete existing projection" do
             EventModel.given do
               EventModel.event CartCreatedPayload {cartCreatedEntityId = Uuid.nil, cartCreatedOwnerId = "owner"}
             EventModel.when IBANSavedPayload {ibanSavedEntityId = Uuid.nil, ibanSavedValue = "delete"}
             EventModel.therefore do
-              EventModel.deleted @RuleProjection
+              EventModel.deleted @RuleProjection fixtureRowId
 
           EventModel.rule "no-op leaves projection unchanged" do
             EventModel.given do
               EventModel.event CartCreatedPayload {cartCreatedEntityId = Uuid.nil, cartCreatedOwnerId = "owner"}
             EventModel.when IBANSavedPayload {ibanSavedEntityId = Uuid.nil, ibanSavedValue = "noop"}
             EventModel.therefore do
-              EventModel.noOp @RuleProjection
+              EventModel.noOp @RuleProjection fixtureRowId
 
           EventModel.rule "update with unchanged row is not no-op" do
             EventModel.given do
               EventModel.event CartCreatedPayload {cartCreatedEntityId = Uuid.nil, cartCreatedOwnerId = "owner"}
             EventModel.when IBANSavedPayload {ibanSavedEntityId = Uuid.nil, ibanSavedValue = "same"}
             EventModel.therefore do
-              EventModel.noOp @RuleProjection
+              EventModel.noOp @RuleProjection fixtureRowId
 
           EventModel.rule "delete needs a prior row" do
             EventModel.given do
@@ -1017,7 +1022,7 @@ viewRuleModel = EventModel.eventModel do
               EventModel.event IBANSavedPayload {ibanSavedEntityId = Uuid.nil, ibanSavedValue = "delete"}
             EventModel.when IBANSavedPayload {ibanSavedEntityId = Uuid.nil, ibanSavedValue = "delete"}
             EventModel.therefore do
-              EventModel.deleted @RuleProjection
+              EventModel.deleted @RuleProjection fixtureRowId
 
 
 fixtureRowId :: Uuid
@@ -1046,7 +1051,7 @@ twoRowViewRuleModel = EventModel.eventModel do
               EventModel.event CartCreatedPayload {cartCreatedEntityId = wrongRowId, cartCreatedOwnerId = "owner"}
             EventModel.when IBANSavedPayload {ibanSavedEntityId = Uuid.nil, ibanSavedValue = "right-row"}
             EventModel.therefore do
-              EventModel.updatedTo CrossEntityView {crossEntityId = Uuid.nil, crossEntityCount = 0}
+              EventModel.updatedTo Uuid.nil CrossEntityView {crossEntityId = Uuid.nil, crossEntityCount = 0}
 
           EventModel.rule "rejects an update routed to the other row" do
             EventModel.given do
@@ -1054,4 +1059,20 @@ twoRowViewRuleModel = EventModel.eventModel do
               EventModel.event CartCreatedPayload {cartCreatedEntityId = wrongRowId, cartCreatedOwnerId = "owner"}
             EventModel.when IBANSavedPayload {ibanSavedEntityId = Uuid.nil, ibanSavedValue = "wrong-row"}
             EventModel.therefore do
-              EventModel.updatedTo CrossEntityView {crossEntityId = Uuid.nil, crossEntityCount = 0}
+              EventModel.updatedTo Uuid.nil CrossEntityView {crossEntityId = Uuid.nil, crossEntityCount = 0}
+
+          EventModel.rule "rejects a delete routed to the other row" do
+            EventModel.given do
+              EventModel.event CartCreatedPayload {cartCreatedEntityId = Uuid.nil, cartCreatedOwnerId = "owner"}
+              EventModel.event CartCreatedPayload {cartCreatedEntityId = wrongRowId, cartCreatedOwnerId = "owner"}
+            EventModel.when IBANSavedPayload {ibanSavedEntityId = Uuid.nil, ibanSavedValue = "wrong-delete"}
+            EventModel.therefore do
+              EventModel.deleted @CrossEntityView Uuid.nil
+
+          EventModel.rule "rejects a no-op routed to the other row" do
+            EventModel.given do
+              EventModel.event CartCreatedPayload {cartCreatedEntityId = Uuid.nil, cartCreatedOwnerId = "owner"}
+              EventModel.event CartCreatedPayload {cartCreatedEntityId = wrongRowId, cartCreatedOwnerId = "owner"}
+            EventModel.when IBANSavedPayload {ibanSavedEntityId = Uuid.nil, ibanSavedValue = "wrong-noop"}
+            EventModel.therefore do
+              EventModel.noOp @CrossEntityView Uuid.nil

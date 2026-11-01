@@ -83,14 +83,14 @@ cartFlow = feature "Cart flow" do
         givenNothing
         when CartCreatedPayload {cartCreatedEntityId = Uuid.nil, cartCreatedOwnerId = "owner"}
         therefore do
-          updatedTo CartSummary {cartSummaryId = Uuid.nil, ownerId = "owner", itemCount = 0, isEmpty = True, iban = Nothing}
+          updatedTo Uuid.nil CartSummary {cartSummaryId = Uuid.nil, ownerId = "owner", itemCount = 0, isEmpty = True, iban = Nothing}
 
       rule "An added item changes the summary" do
         given do
           event CartCreatedPayload {cartCreatedEntityId = Uuid.nil, cartCreatedOwnerId = "owner"}
         when ItemAddedPayload {itemAddedEntityId = Uuid.nil, itemAddedStockId = Uuid.nil, itemAddedQuantity = 1}
         therefore do
-          updatedTo CartSummary {cartSummaryId = Uuid.nil, ownerId = "owner", itemCount = 1, isEmpty = False, iban = Nothing}
+          updatedTo Uuid.nil CartSummary {cartSummaryId = Uuid.nil, ownerId = "owner", itemCount = 1, isEmpty = False, iban = Nothing}
 
     slice "Save a cart IBAN" do
       entity @CartEntity do

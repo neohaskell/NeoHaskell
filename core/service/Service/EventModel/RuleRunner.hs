@@ -380,14 +380,14 @@ executeView store sources selected = do
   after <- ConcurrentVar.peek rows
   actual <- ConcurrentVar.peek observed
   case selected.ruleExpected of
-    ViewExpected expected -> checkView expected before after actual
+    ViewExpected rowId expected -> checkView rowId expected before after actual
 
 
 checkView ::
   forall query.
   (Json.ToJSON query) =>
-  QueryAction query -> Map Uuid query -> Map Uuid query -> Maybe (Uuid, QueryAction query) -> Task Text ()
-checkView expected before after actual = case actual of
+  Uuid -> QueryAction query -> Map Uuid query -> Map Uuid query -> Maybe (Uuid, QueryAction query) -> Task Text ()
+checkView expectedRowId expected before after actual = case actual of
   Nothing ->
     Task.throw [fmt|query subscription produced no QueryAction; before #{snapshotText before}; after #{snapshotText after}|]
   Just (rowId, observed) -> do
@@ -397,17 +397,17 @@ checkView expected before after actual = case actual of
           (NoOp, NoOp) -> True
           _ -> False
     let expectedAfter = case expected of
-          Update wanted -> Just (Map.set rowId wanted before)
-          Delete -> case Map.get rowId before of
+          Update wanted -> Just (Map.set expectedRowId wanted before)
+          Delete -> case Map.get expectedRowId before of
             Nothing -> Nothing
-            Just _ -> Just (Map.remove rowId before)
+            Just _ -> Just (Map.remove expectedRowId before)
           NoOp -> Just before
     let diffMatches = case expectedAfter of
           Nothing -> False
           Just wanted -> snapshotJson wanted == snapshotJson after
-    Task.unless (actionMatches && diffMatches) do
+    Task.unless (rowId == expectedRowId && actionMatches && diffMatches) do
       Task.throw
-        [fmt|query action or complete diff differs for row #{rowId}; expected action #{actionText expected}; actual action #{actionText observed}; before #{snapshotText before}; after #{snapshotText after}; expected after #{showText (Prelude.fmap snapshotText expectedAfter)}|]
+        [fmt|query action or complete diff differs; expected row #{expectedRowId}; actual row #{rowId}; expected action #{actionText expected}; actual action #{actionText observed}; before #{snapshotText before}; after #{snapshotText after}; expected after #{showText (Prelude.fmap snapshotText expectedAfter)}|]
 
 
 snapshotJson :: (Json.ToJSON query) => Map Uuid query -> Map Uuid Json.Value

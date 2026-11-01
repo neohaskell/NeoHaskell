@@ -303,7 +303,7 @@ sampleRuleOutcome sample = case sample of
   ChangeSample _ _ _ selected -> case selected.ruleExpected of
     CommandExpected expected -> Dynamic.toDyn expected
   ViewSample _ _ _ selected -> case selected.ruleExpected of
-    ViewExpected expected -> Dynamic.toDyn expected
+    ViewExpected _ expected -> Dynamic.toDyn expected
 
 
 expectedEventValue :: ExpectedEvent entity -> Dynamic
@@ -924,19 +924,19 @@ instance RuleOutcome ('Change entity command) 'Types.ZeroEvents where
 
 instance RuleOutcome ('View query) 'Types.ViewUpdate where
   makeExpected parts = case parts of
-    [OutcomeUpdated value] -> Ok (ViewExpected (Update value))
+    [OutcomeUpdated rowId value] -> Ok (ViewExpected rowId (Update value))
     _ -> Err "view update outcome requires exactly one updatedTo assertion"
 
 
 instance RuleOutcome ('View query) 'Types.ViewDelete where
   makeExpected parts = case parts of
-    [OutcomeDeleted] -> Ok (ViewExpected Delete)
+    [OutcomeDeleted rowId] -> Ok (ViewExpected rowId Delete)
     _ -> Err "view delete outcome requires exactly one deleted assertion"
 
 
 instance RuleOutcome ('View query) 'Types.ViewNoOpMode where
   makeExpected parts = case parts of
-    [OutcomeNoOp] -> Ok (ViewExpected NoOp)
+    [OutcomeNoOp rowId] -> Ok (ViewExpected rowId NoOp)
     _ -> Err "view no-op outcome requires exactly one noOp assertion"
 
 
@@ -973,16 +973,16 @@ acceptedWithNoEvents :: Writer [OutcomePart ('Change entity command) 'Types.Zero
 acceptedWithNoEvents = Writer.tell [OutcomeAcceptedWithoutEvents]
 
 
-updatedTo :: query -> Writer [OutcomePart ('View query) 'Types.ViewUpdate] ()
-updatedTo value = Writer.tell [OutcomeUpdated value]
+updatedTo :: Uuid -> query -> Writer [OutcomePart ('View query) 'Types.ViewUpdate] ()
+updatedTo rowId value = Writer.tell [OutcomeUpdated rowId value]
 
 
-deleted :: forall query. Writer [OutcomePart ('View query) 'Types.ViewDelete] ()
-deleted = Writer.tell [OutcomeDeleted]
+deleted :: forall query. Uuid -> Writer [OutcomePart ('View query) 'Types.ViewDelete] ()
+deleted rowId = Writer.tell [OutcomeDeleted rowId]
 
 
-noOp :: forall query. Writer [OutcomePart ('View query) 'Types.ViewNoOpMode] ()
-noOp = Writer.tell [OutcomeNoOp]
+noOp :: forall query. Uuid -> Writer [OutcomePart ('View query) 'Types.ViewNoOpMode] ()
+noOp rowId = Writer.tell [OutcomeNoOp rowId]
 
 
 ruleCase :: Text -> [RulePart context] -> Result Text (RuleCase context)

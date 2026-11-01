@@ -37,7 +37,7 @@ cartFlow = feature "Cart flow" do
 					event CartCreatedPayload {cartCreatedEntityId = cartId, cartCreatedOwnerId = "owner"}
 				when ItemAddedPayload {itemAddedEntityId = cartId, itemAddedStockId = stockId, itemAddedQuantity = 1}
 				therefore do
-					updatedTo CartSummary {cartSummaryId = cartId, ownerId = "owner", itemCount = 1, isEmpty = False, iban = Nothing}
+					updatedTo cartId CartSummary {cartSummaryId = cartId, ownerId = "owner", itemCount = 1, isEmpty = False, iban = Nothing}
 ```
 
 ## Compose the application Event Model
@@ -62,7 +62,7 @@ State-change and state-view Slices accept zero or more direct `rule "..." do` ch
 
 In an Hspec suite, import `Service.EventModel.RuleRunner`. Start with `emptyGenerators` and register each requested type through `withGenerator @Type gen render`. Pass the validated model, a base seed, and a positive sample count to `specFor`. It creates one named example per direct rule and runs each generated case against a fresh in-memory event store. View cases also get a fresh query projection. `runRules` returns `RuleReport` values when a test needs to inspect outcomes directly. Failed reports include the Feature, Chapter, Slice, rule, generated bindings, seed, expected and actual values, and framework errors. Translation Slices create no GWT examples. Keep integration tests for their own runtime behavior.
 
-For a command, `therefore do` contains the complete ordered event list, `rejected`, `rejectedWith "reason"`, `rejectedMatches [regex|pattern|]`, or `acceptedWithNoEvents`. The regex searches within the reason unless you add `^` and `$` anchors. These alternatives cannot share one `therefore` block. For a view, use `updatedTo value`, `deleted @Query`, or `noOp @Query`. A view check compares the observed `QueryAction` and the complete before and after snapshots for that query type. A `Delete` check requires a row to be removed. `givenNothing` says only that the case has no prior events.
+For a command, `therefore do` contains the complete ordered event list, `rejected`, `rejectedWith "reason"`, `rejectedMatches [regex|pattern|]`, or `acceptedWithNoEvents`. The regex searches within the reason unless you add `^` and `$` anchors. These alternatives cannot share one `therefore` block. For a view, use `updatedTo expectedRowId value`, `deleted @Query expectedRowId`, or `noOp @Query expectedRowId`. Supply the expected query row ID from the rule's authored or generated inputs. It may differ from the event entity ID. A view check compares that ID, the observed `QueryAction`, and the complete before and after snapshots for that query type. A `Delete` check requires the named row to be removed. `givenNothing` says only that the case has no prior events.
 
 If the Feature module imports `Core`, use `import Core hiding (event)` before importing `Service.EventModel`. `Core.event` wraps a payload in an Event ADT; the rule's `event` records a concrete fixture or expected payload.
 

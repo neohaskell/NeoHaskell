@@ -30,7 +30,7 @@ viewDeleteForm = do
   givenNothing
   when CartCreatedPayload {cartCreatedEntityId = Uuid.nil, cartCreatedOwnerId = "owner"}
   therefore do
-    deleted @CartSummary
+    deleted @CartSummary Uuid.nil
 
 
 viewNoOpForm :: RuleAction ('View CartSummary) ()
@@ -38,4 +38,4 @@ viewNoOpForm = do
   givenNothing
   when CartCreatedPayload {cartCreatedEntityId = Uuid.nil, cartCreatedOwnerId = "owner"}
   therefore do
-    noOp @CartSummary
+    noOp @CartSummary Uuid.nil

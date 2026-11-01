@@ -17,4 +17,4 @@ invalid = feature "Cart" do
         givenNothing
         when StockInitializedPayload {initializedEntityId = Uuid.nil, initializedProductId = Uuid.nil, initializedAvailable = 1}
         therefore do
-          noOp @CartSummary
+          noOp @CartSummary Uuid.nil
