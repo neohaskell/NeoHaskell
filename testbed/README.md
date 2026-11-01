@@ -76,6 +76,15 @@ The runner creates private databases, runs `testbed/tests/integrations/cryptoera
 
 The owned example creates two protected values with identical Unicode content in one command. The strict runner compares both authorized responses, reads their distinct references from the persisted event, erases the first, and restarts the application. It then checks that the first key is tombstoned while the second key and authorized `Available` value survive. A passing run prints `Equal protected values kept distinct references and only one was erased across restart`.
 
+The owned example also creates a separately protected derivative with a third reference. After erasure, `MapErasedSecret` copies the erased first value through `Erasable.map` with a transform that fails if evaluated. The runner restarts the application, reads the rebuilt owner query, and checks the complete persisted event sequence. The first value, its copied reference, and the mapped copy remain `Erased`. The second value and derivative remain `Available`. The case status remains `open` under this example's explicit retained-state policy.
+
+To run this reconstruction check with a private PostgreSQL server already listening on port 19540, use a role named `neohaskell` that can create databases and run the maintained suite from the repository root:
+
+```sh
+mkdir -p .agents-state/nh140-cell10
+DB_HOST=127.0.0.1 DB_PORT=19540 DB_USER=neohaskell DB_PASSWORD=neohaskell PGPASSWORD=neohaskell TESTBED_HTTP_PORT=19550 TESTBED_OAUTH_PORT=19551 TESTBED_FIXTURE_PORT=19552 TESTBED_OAUTH_LOG_DIR=.agents-state/nh140-cell10 TESTBED_CABAL_BUILDDIR=.agents-state/nh140-cell10/testbed-build CABAL_BUILD_JOBS=1 nix develop --command .agents/skills/neohaskell-test/scripts/run-testbed --strict --timeout 1200 --transcript .agents-state/nh140-cell10/reconstruction.log
+```
+
 The strict runner also issues a signed token for a second user. That user cannot read or erase the owner's case even when it submits the known reference. The runner checks the owner response and active PostgreSQL key after denial. The private PostgreSQL command in the callback-death section below runs this assertion. A passing run prints `A valid other user could neither read nor erase the owner's protected case`.
 
 The same strict command checks that a rejected result command records a callback dispatch failure while the application request stays pending. It reads the private PostgreSQL tombstone, then checks that the authorized `Erased` response contains only `tag` and null `contents` for the erased value. The maintained runner also checks that its application log contains neither the protected value nor its storage envelope. The second protected value remains `Available`, and an explicit retry records completion without restoring the first value. Set `TESTBED_OAUTH_LOG_DIR` to retain the application log in a chosen directory; otherwise the runner uses the system temporary directory. A passing run prints `Rejected result command was logged as callback dispatch failure without protected data` and ends with `testbed: PASS`.

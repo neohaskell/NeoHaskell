@@ -34,8 +34,10 @@ decide _ maybeEntity context = case (maybeEntity, context.user) of
     let payload = SecretPayload {name = "Álvaro ñ 😀", aliases = [Nothing, Just "café"]}
     first <- Erasable.new payload
     second <- Erasable.new payload
+    let derivedPayload = SecretPayload {name = "Derived Álvaro ñ 😀", aliases = [Nothing, Just "東京"]}
+    derivative <- Erasable.new derivedPayload
     Decider.acceptNew
-      [OwnedProtectedCreated {entityId = caseId, owner = user.sub, caseStatus = "open", first, second}]
+      [OwnedProtectedCreated {entityId = caseId, owner = user.sub, caseStatus = "open", first, second, derivative}]
 
 
 type instance EntityOf CreateOwnedProtected = OwnedProtectedEntity
