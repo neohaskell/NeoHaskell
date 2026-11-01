@@ -297,6 +297,52 @@ def verify_completed(path, database):
     print("Reconstructed application completion and erased projection after second restart")
 
 
+def prepare_erased_reconstruction(path):
+    token = owner_token()
+    state = json.loads(path.read_text())
+    case_id = state["caseId"]
+    completed = wait_for(case_id, token, lambda item: item["erasureStatus"] == "completed")
+    derivative = completed["derivedSecret"]
+    assert derivative == {"tag": "Available", "contents": {"name": "Derived Álvaro ñ 😀", "aliases": [None, "東京"]}}, completed
+    status, result = request("POST", f"{API}/commands/map-erased-secret", token, {"caseId": case_id})
+    assert status == 200 and result["tag"] == "Accepted", (status, result)
+    mapped = wait_for(case_id, token, lambda item: item.get("mappedErasedSecret") is not None)
+    assert mapped["mappedErasedSecret"] == {"tag": "Erased", "contents": None}, mapped
+    assert mapped["staleSecret"] == {"tag": "Erased", "contents": None}, mapped
+    assert mapped["secondSecret"]["tag"] == "Available", mapped
+    print("Mapping an erased copied reference completed without evaluating its transform")
+
+
+def verify_erased_reconstruction(path, database):
+    token = owner_token()
+    state = json.loads(path.read_text())
+    case_id = state["caseId"]
+    rebuilt = wait_for(case_id, token, lambda item: item.get("mappedErasedSecret") is not None)
+    assert rebuilt["ownerId"] == state["ownerId"] and rebuilt["caseStatus"] == "open", rebuilt
+    assert rebuilt["firstReference"] == state["reference"], rebuilt
+    assert rebuilt["firstSecret"] == {"tag": "Erased", "contents": None}, rebuilt
+    assert rebuilt["staleSecret"] == {"tag": "Erased", "contents": None}, rebuilt
+    assert rebuilt["mappedErasedSecret"] == {"tag": "Erased", "contents": None}, rebuilt
+    assert rebuilt["secondSecret"] == {"tag": "Available", "contents": {"name": "Álvaro ñ 😀", "aliases": [None, "café"]}}, rebuilt
+    assert rebuilt["derivedSecret"] == {"tag": "Available", "contents": {"name": "Derived Álvaro ñ 😀", "aliases": [None, "東京"]}}, rebuilt
+    safe_id = str(uuid.UUID(case_id))
+    command = ["psql", "-h", os.environ.get("DB_HOST", "localhost"),
+               "-p", os.environ.get("DB_PORT", "5432"),
+               "-U", os.environ.get("DB_USER", "neohaskell"),
+               "-d", database, "-At", "-c",
+               f"SELECT eventData::text FROM Events WHERE inlinedStreamId = '{safe_id}' "
+               "AND entity = 'OwnedProtectedEntity' ORDER BY localPosition"]
+    events = [json.loads(line) for line in subprocess.check_output(command, text=True).splitlines()]
+    assert [event["tag"] for event in events] == ["OwnedProtectedCreated", "ErasureRequested", "ErasureRequested", "ErasureCompleted", "ErasedCopyRecorded"], events
+    first, copied = events[0], events[-1]
+    assert first["first"]["reference"] == state["reference"], first
+    assert first["second"]["reference"] == state["secondReference"], first
+    assert first["derivative"]["reference"] not in (state["reference"], state["secondReference"]), first
+    assert copied["mappedErased"]["reference"] == state["reference"], copied
+    assert_key_tombstoned(database, state["reference"])
+    print("Fresh process rebuilt every persisted event, retained state, erased copies, and independent derivative")
+
+
 def prepare_pre_action(path, marker_path, selector_path):
     token = owner_token()
     status, result = request("POST", f"{API}/commands/create-owned-protected", token, [])
@@ -664,6 +710,10 @@ if __name__ == "__main__":
         verify(Path(state_path))
     elif action == "verify-completed":
         verify_completed(Path(sys.argv[2]), sys.argv[3])
+    elif action == "prepare-erased-reconstruction":
+        prepare_erased_reconstruction(Path(sys.argv[2]))
+    elif action == "verify-erased-reconstruction":
+        verify_erased_reconstruction(Path(sys.argv[2]), sys.argv[3])
     elif action == "prepare-pre-action":
         prepare_pre_action(Path(sys.argv[2]), Path(sys.argv[3]), Path(sys.argv[4]))
     elif action == "prepare-queue-timeout":

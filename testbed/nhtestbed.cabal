@@ -79,6 +79,7 @@ library
     Testbed.Erasable.Service
     Testbed.Erasable.Owned.Core
     Testbed.Erasable.Owned.Commands.Create
+    Testbed.Erasable.Owned.Commands.MapErased
     Testbed.Erasable.Owned.Commands.Request
     Testbed.Erasable.Owned.Commands.Record
     Testbed.Erasable.Owned.Outbound
