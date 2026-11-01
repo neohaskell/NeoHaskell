@@ -39,7 +39,7 @@
     "source-local-event-model": {
       "page": "event-model.md",
       "source": "core/service/Service/EventModel.hs",
-      "scenario": "testbed/tests/scenarios/stock-reservation.hurl",
+      "scenario": "testbed/tests/scenarios/cart-stock-activity.hurl",
       "evidence": []
     },
     "application-configuration": {
@@ -171,7 +171,7 @@
     {
       "page": "advanced-oauth2.md",
       "ordinal": 1,
-      "source": "core/service/Service/Application.hs"
+      "source": "core/service/Service/EventModel.hs"
     },
     {
       "page": "advanced-oauth2.md",
