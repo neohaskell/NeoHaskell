@@ -63,6 +63,9 @@ instance OutboundIntegration ObserveItemAdded where
 
 
 data CrossEntityView = CrossEntityView
+  { crossEntityId :: Uuid,
+    crossEntityCount :: Int
+  }
 
 
 canAccess :: Maybe UserClaims -> Maybe AccessError
@@ -77,8 +80,8 @@ deriveQuery ''CrossEntityView [''CartEntity, ''StockEntity]
 
 
 instance QueryOf CartEntity CrossEntityView where
-  queryId cart = cart.cartId
-  combine _ _ = NoOp
+  queryId cart = if cart.savedIBAN == Just "wrong-row" then wrongRowId else cart.cartId
+  combine cart _ = Update CrossEntityView {crossEntityId = cart.cartId, crossEntityCount = Array.length cart.items}
 
 
 instance QueryOf StockEntity CrossEntityView where
@@ -197,6 +200,19 @@ spec = do
           failures |> Array.fromLinkedList |> Array.any (Text.contains "update with unchanged row is not no-op") |> shouldBe True
           failures |> Array.fromLinkedList |> Array.any (Text.contains "delete needs a prior row") |> shouldBe True
           failures |> Prelude.all (Text.contains "query action or complete diff differs") |> shouldBe True
+
+    it "rejects a generated update to the wrong row among two projections" \_ -> do
+      case twoRowViewRuleModel of
+        Err problem -> problem |> shouldBe "valid two-row view model"
+        Ok model -> do
+          reports <- RuleRunner.runRules RuleRunner.emptyGenerators 97 1 model
+          case reports of
+            [rightRow, wrongRow] -> do
+              rightRow.result |> shouldBe (Ok ())
+              case wrongRow.result of
+                Err problem -> problem |> Text.contains "query action or complete diff differs" |> shouldBe True
+                Ok () -> False |> shouldBe True
+            _ -> False |> shouldBe True
 
     it "accepts an existing cart without appending an event" \_ -> do
       let modelResult = EventModel.eventModel do
@@ -1006,3 +1022,36 @@ viewRuleModel = EventModel.eventModel do
 
 fixtureRowId :: Uuid
 fixtureRowId = projectionId
+
+
+wrongRowId :: Uuid
+wrongRowId = Uuid.generateV5 Uuid.nil "wrong-row-B"
+
+
+twoRowViewRuleModel :: Result Text EventModel.EventModel
+twoRowViewRuleModel = EventModel.eventModel do
+  EventModel.appName "Two-row view rules"
+  EventModel.features do
+    EventModel.feature "Cart" do
+      EventModel.chapter "Queries" do
+        EventModel.slice "Two rows" do
+          EventModel.query @CrossEntityView do
+            EventModel.readsFrom @CartEntity do
+              EventModel.onEvent @CartCreatedPayload
+              EventModel.onEvent @IBANSavedPayload
+
+          EventModel.rule "updates the authored row" do
+            EventModel.given do
+              EventModel.event CartCreatedPayload {cartCreatedEntityId = Uuid.nil, cartCreatedOwnerId = "owner"}
+              EventModel.event CartCreatedPayload {cartCreatedEntityId = wrongRowId, cartCreatedOwnerId = "owner"}
+            EventModel.when IBANSavedPayload {ibanSavedEntityId = Uuid.nil, ibanSavedValue = "right-row"}
+            EventModel.therefore do
+              EventModel.updatedTo CrossEntityView {crossEntityId = Uuid.nil, crossEntityCount = 0}
+
+          EventModel.rule "rejects an update routed to the other row" do
+            EventModel.given do
+              EventModel.event CartCreatedPayload {cartCreatedEntityId = Uuid.nil, cartCreatedOwnerId = "owner"}
+              EventModel.event CartCreatedPayload {cartCreatedEntityId = wrongRowId, cartCreatedOwnerId = "owner"}
+            EventModel.when IBANSavedPayload {ibanSavedEntityId = Uuid.nil, ibanSavedValue = "wrong-row"}
+            EventModel.therefore do
+              EventModel.updatedTo CrossEntityView {crossEntityId = Uuid.nil, crossEntityCount = 0}
