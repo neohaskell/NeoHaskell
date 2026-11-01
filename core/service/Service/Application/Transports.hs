@@ -21,6 +21,7 @@ import Service.AccessControl qualified as AccessControl
 import Service.ServiceDefinition.Core (TransportValue (..))
 import Service.Transport (Transport (..), QueryEndpointHandler, EndpointHandler, Endpoints (..), EndpointSchema (..))
 import Service.Transport.Web (WebTransport (..), AuthEnabled, OAuth2Config, FileUploadEnabled (..), CorsConfig, HealthCheckConfig, IntegrationStatus)
+import Service.Transport.Web qualified as Web
 import Service.Transport.Web.Readiness (ReadinessConfig)
 import Service.Application.Types (ApiInfo)
 import Service.Query.Subscriber (QuerySubscriber)
@@ -62,10 +63,14 @@ runTransports ::
   -- ^ Optional integration selection status for /health reporting
   Maybe ReadinessConfig ->
   -- ^ Optional readiness endpoint configuration for WebTransport
+  Maybe Text ->
+  -- ^ Optional bind host override for WebTransport (Application.withHost)
+  Maybe Int ->
+  -- ^ Optional bind port override for WebTransport (Application.withPort)
   QuerySubscriber ->
   -- ^ The live subscriber whose readiness state /ready will reflect
   Task Text Unit
-runTransports transportsMap endpointsByTransport schemasByTransport queryEndpoints querySchemas maybeWebAuth maybeOAuth2 maybeFileUpload maybeApiInfo maybeCors maybeHealthCheck maybeIntegrationStatus maybeReadinessConfig subscriber = do
+runTransports transportsMap endpointsByTransport schemasByTransport queryEndpoints querySchemas maybeWebAuth maybeOAuth2 maybeFileUpload maybeApiInfo maybeCors maybeHealthCheck maybeIntegrationStatus maybeReadinessConfig maybeHost maybePort subscriber = do
   transportsMap
     |> Map.entries
     |> Task.forEach \(transportName, transportVal) -> do
@@ -88,7 +93,7 @@ runTransports transportsMap endpointsByTransport schemasByTransport queryEndpoin
 
         -- Handle WebTransport specially to configure auth, OAuth2, and file uploads
         case transportName of
-          "WebTransport" -> runWebTransport transportVal commandEndpointsForTransport commandSchemasForTransport queryEndpoints querySchemas maybeWebAuth maybeOAuth2 maybeFileUpload maybeApiInfo maybeCors maybeHealthCheck maybeIntegrationStatus maybeReadinessConfig subscriber
+          "WebTransport" -> runWebTransport transportVal commandEndpointsForTransport commandSchemasForTransport queryEndpoints querySchemas maybeWebAuth maybeOAuth2 maybeFileUpload maybeApiInfo maybeCors maybeHealthCheck maybeIntegrationStatus maybeReadinessConfig maybeHost maybePort subscriber
           _ -> runGenericTransport transportVal commandEndpointsForTransport commandSchemasForTransport queryEndpoints querySchemas
 
 
@@ -114,9 +119,11 @@ runWebTransport ::
   Maybe HealthCheckConfig ->
   Maybe IntegrationStatus ->
   Maybe ReadinessConfig ->
+  Maybe Text ->
+  Maybe Int ->
   QuerySubscriber ->
   Task Text Unit
-runWebTransport transportVal commandEndpoints commandSchemas queryEndpoints querySchemas maybeAuth maybeOAuth2 maybeFileUpload maybeApiInfo maybeCors maybeHealthCheck maybeIntegrationStatus maybeReadinessConfig subscriber = do
+runWebTransport transportVal commandEndpoints commandSchemas queryEndpoints querySchemas maybeAuth maybeOAuth2 maybeFileUpload maybeApiInfo maybeCors maybeHealthCheck maybeIntegrationStatus maybeReadinessConfig maybeHost maybePort subscriber = do
   case transportVal of
     TransportValue transport -> do
       let guardedQueryEndpoints =
@@ -155,6 +162,15 @@ runWebTransport transportVal commandEndpoints commandSchemas queryEndpoints quer
             , readinessConfig = maybeReadinessConfig
             , readinessProbe = Just (Subscriber.readinessOf subscriber)
             }
+            |> Web.applyBindOverrides maybeHost maybePort
+      -- Reject an unusable host or port here, before any socket is opened:
+      -- the error names the setting and reaches Application.run's caller.
+      case Web.validateBindHost webTransportWithConfig.host of
+        Just reason -> Task.throw [fmt|Application.withHost: #{reason}|]
+        Nothing -> pass
+      case Web.validateBindPort webTransportWithConfig.port of
+        Just reason -> Task.throw [fmt|Application.withPort: #{reason}|]
+        Nothing -> pass
       -- Build endpoints with the configured transport
       let endpoints :: Endpoints WebTransport =
             Endpoints

@@ -50,6 +50,8 @@ appEventModel = eventModel do
 	withConfig @AppConfig
 	withEventStore makeEventStoreConfig
 	withTransport WebTransport.server
+	withHost "127.0.0.1"
+	withPort 8080
 	features do
 		cartFlow
 
@@ -70,7 +72,7 @@ The compiler requires an `Entity` instance, a `Command` instance, and a `Query` 
 
 Generate an entity's Event ADT separately with `deriveEntityEvents`. Evaluating `eventModel` validates the assembled model without starting workers. `EventModel.toApplication` lowers a validated model to `Application`; `EventModel.run` rejects an `Err` before starting the application. The model registers every declared command, query, outbound handler, and typed inbound worker. A query subscribes only to its declared `readsFrom` entities and `onEvent` payloads. A query with multiple sources receives updates from each declared entity. Distinct outbound handler types may subscribe to the same payload and both run.
 
-The model also accepts `withQueryObjectStore`, `withApiInfo`, `withFileUpload`, `withAuth`, `withAuthOverrides`, `withSecretStore`, `withCors`, `withHealthCheck`, `withoutHealthCheck`, `useReadinessEndpoint`, `withIntegration @Request`, `withOAuth2StateKey`, `withOAuth2Provider`, and `withDispatcherConfig`. Use the named builders for configuration. The Event Model exposes no arbitrary `Application -> Application` callback because it could register a command or bypass the duplicate `withConfig` check. Put `withQueryObjectStore` before query Features and `withOAuth2StateKey` before `withOAuth2Provider`. Attach a lifecycle worker to its outbound Slice with `outboundLifecycle`.
+The model also accepts `withHost`, `withPort`, `withQueryObjectStore`, `withApiInfo`, `withFileUpload`, `withAuth`, `withAuthOverrides`, `withSecretStore`, `withCors`, `withHealthCheck`, `withoutHealthCheck`, `useReadinessEndpoint`, `withIntegration @Request`, `withOAuth2StateKey`, `withOAuth2Provider`, and `withDispatcherConfig`. Use the named builders for configuration. The Event Model exposes no arbitrary `Application -> Application` callback because it could register a command or bypass the duplicate `withConfig` check. Put `withQueryObjectStore` before query Features and `withOAuth2StateKey` before `withOAuth2Provider`. Attach a lifecycle worker to its outbound Slice with `outboundLifecycle`.
 
 Direct `Application` assembly remains a supported legacy path. Its manual registration builders, including `withService`, `withQuery`, and `withOutbound`, are not deprecated and have no announced removal schedule. A model-backed executable needs no separate authored registration list.
 

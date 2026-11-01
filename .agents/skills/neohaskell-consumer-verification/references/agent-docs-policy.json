@@ -60,6 +60,10 @@
         {
           "kind": "service-spec",
           "path": "core/test/Service/Transport/McpSpec.hs"
+        },
+        {
+          "kind": "service-spec",
+          "path": "core/test/Service/Transport/Web/BindSpec.hs"
         }
       ]
     },

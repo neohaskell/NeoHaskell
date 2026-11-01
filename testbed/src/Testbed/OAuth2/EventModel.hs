@@ -18,7 +18,9 @@ oauthEventModel oauthPort fixturePort queueTimeoutMode = EventModel.eventModel d
   EventModel.appName "OAuth2 testbed"
   EventModel.withConfig @TestbedConfig
   EventModel.withEventStore makeOAuthPostgresConfig
-  EventModel.withTransport (WebTransport.server {WebTransport.port = oauthPort})
+  EventModel.withTransport WebTransport.server
+  EventModel.withHost "127.0.0.1"
+  EventModel.withPort oauthPort
   EventModel.withApiInfo @() (\_ -> oauthApiInfo)
   EventModel.withQueryObjectStore ReplayGateStoreConfig
   EventModel.withAuth @() (\_ -> [fmt|http://127.0.0.1:#{fixturePort}/oidc|])
