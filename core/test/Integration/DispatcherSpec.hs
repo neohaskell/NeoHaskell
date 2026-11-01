@@ -17,6 +17,7 @@ import Json qualified
 import LinkedList qualified
 import Map qualified
 import Maybe qualified
+import Prelude qualified as GhcPrelude
 import Service.Command.Core (NameOf)
 import Service.Event (Event (..), StreamPosition (..))
 import Service.Event.EntityName (EntityName (..))
@@ -29,6 +30,8 @@ import Service.Application.Integrations qualified as Integrations
 import Service.Integration.Dispatcher qualified as Dispatcher
 import Service.Integration.DispatchRegistry qualified as DispatchRegistry
 import Service qualified
+import Service.AccessControl (AccessError (..))
+import Service.Response (CommandResponse (..))
 import Service.Transport (DispatchHandler, EndpointHandler)
 import Service.Transport.InternalSpec qualified as InternalCommand
 import Stream qualified
@@ -207,8 +210,9 @@ spec = do
                   processEvent = \_maybeContext _eventStore _event -> Task.yield [payload]
                 }
         let captureSource :: DispatchHandler
-            captureSource sourceEventMetadata _requestContext _commandBytes _respond =
+            captureSource sourceEventMetadata _requestContext _commandBytes respond = do
               Channel.write sourceEventMetadata capturedSources
+              respond (Accepted {entityId = "entity-source"}, Json.encodeText ("accepted" :: Text.Text) |> Text.toBytes)
 
         eventStore <- InMemory.new |> Task.mapError toText
         context <- makeContext
@@ -330,8 +334,9 @@ spec = do
                   commandData = Json.encode ("ignored" :: Text.Text)
                 }
         let legacyHandler :: EndpointHandler
-            legacyHandler _requestContext _commandBytes _respond =
+            legacyHandler _requestContext _commandBytes respond = do
               dispatchCount |> ConcurrentVar.modify (+ 1)
+              respond (Accepted {entityId = "legacy-stream"}, Json.encodeText ("accepted" :: Text.Text) |> Text.toBytes)
         let legacyEndpoints :: Map.Map Text EndpointHandler
             legacyEndpoints = Map.empty |> Map.set "LegacyCommand" legacyHandler
         let runner =
@@ -505,15 +510,15 @@ spec = do
         wasLaterRunnerStarted <- ConcurrentVar.peek laterRunnerStarted
         wasLaterRunnerStarted |> shouldBe False
 
-      it "reports every matching runner when callback dispatch fails" \_ -> do
+      it "stops later runners when a handler omits its callback" \_ -> do
         dispatchCount <- ConcurrentVar.containing (0 :: Int)
         laterRunnerStarted <- ConcurrentVar.containing False
         let payload =
               Integration.CommandPayload
-                { commandType = "FailCommand",
+                { commandType = "OmitCommand",
                   commandData = Json.encode ("ignored" :: Text.Text)
                 }
-        let failingRunner =
+        let omittingRunner =
               Dispatcher.OutboundRunner
                 { entityTypeName = "TestEntity",
                   processEvent = \_context _store _event -> Task.yield [payload]
@@ -525,10 +530,10 @@ spec = do
                     laterRunnerStarted |> ConcurrentVar.modify (\_ -> True)
                     Task.yield Array.empty
                 }
-        let failDispatch :: DispatchHandler
-            failDispatch _sourceEventMetadata _requestContext _commandBytes _respond = do
+        let omitDispatch :: DispatchHandler
+            omitDispatch _sourceEventMetadata _requestContext _commandBytes _respond = do
               dispatchCount |> ConcurrentVar.modify (+ 1)
-              Task.throw "private-dispatch-error-sentinel"
+              Task.yield unit
 
         eventStore <- InMemory.new |> Task.mapError toText
         context <- makeContext
@@ -537,9 +542,9 @@ spec = do
             Dispatcher.Setup
               { settings = Dispatcher.defaultConfig,
                 eventStore = eventStore,
-                outboundRunners = [failingRunner, laterRunner],
+                outboundRunners = [omittingRunner, laterRunner],
                 lifecycleRunners = [],
-                commandEndpoints = (Map.empty |> Map.set "FailCommand" failDispatch),
+                commandEndpoints = (Map.empty |> Map.set "OmitCommand" omitDispatch),
                 actionContext = context
               }
         event <- makeTestEvent "dispatch-failure-stream" 1 1
@@ -550,6 +555,119 @@ spec = do
         dispatchAttempts |> shouldBe 1
         wasLaterRunnerStarted <- ConcurrentVar.peek laterRunnerStarted
         wasLaterRunnerStarted |> shouldBe False
+
+      it "reports rejected callback commands without exposing their reason" \_ -> do
+        let payload =
+              Integration.CommandPayload
+                { commandType = "RejectedCallback",
+                  commandData = Json.encode ("ignored" :: Text.Text)
+                }
+        let rejectDispatch :: DispatchHandler
+            rejectDispatch _source _context _bytes respond =
+              respond (Rejected {reason = "private-callback-sentinel"}, Json.encodeText ("ignored" :: Text.Text) |> Text.toBytes)
+        let endpoints = Map.empty |> Map.set "RejectedCallback" rejectDispatch
+        rejected <- Dispatcher.dispatchCommandWithSource endpoints Nothing payload |> Task.asResult
+        rejected |> shouldBe (Err "Command dispatch failed")
+
+      it "reports failed callback commands without exposing their error" \_ -> do
+        let payload =
+              Integration.CommandPayload
+                { commandType = "FailedCallback",
+                  commandData = Json.encode ("ignored" :: Text.Text)
+                }
+        let failDispatch :: DispatchHandler
+            failDispatch _source _context _bytes respond =
+              respond (Failed {error = "private-callback-sentinel"}, Json.encodeText ("ignored" :: Text.Text) |> Text.toBytes)
+        let endpoints = Map.empty |> Map.set "FailedCallback" failDispatch
+        failed <- Dispatcher.dispatchCommandWithSource endpoints Nothing payload |> Task.asResult
+        failed |> shouldBe (Err "Command dispatch failed")
+
+      it "reports a missing callback command handler" \_ -> do
+        let payload =
+              Integration.CommandPayload
+                { commandType = "MissingCallback",
+                  commandData = Json.encode ("ignored" :: Text.Text)
+                }
+        missing <- Dispatcher.dispatchCommandWithSource Map.empty Nothing payload |> Task.asResult
+        missing |> shouldBe (Err "Command dispatch handler unavailable")
+
+      it "reports a handler that omits its callback" \_ -> do
+        let payload =
+              Integration.CommandPayload
+                { commandType = "OmittedCallback",
+                  commandData = Json.encode ("ignored" :: Text.Text)
+                }
+        let omitCallback :: DispatchHandler
+            omitCallback _source _context _bytes _respond = Task.yield unit
+        let endpoints = Map.empty |> Map.set "OmittedCallback" omitCallback
+        omitted <- Dispatcher.dispatchCommandWithSource endpoints Nothing payload |> Task.asResult
+        omitted |> shouldBe (Err "Command dispatch failed")
+
+      it "reports unauthorized callback commands without exposing their response" \_ -> do
+        let payload =
+              Integration.CommandPayload
+                { commandType = "UnauthorizedCallback",
+                  commandData = Json.encode ("ignored" :: Text.Text)
+                }
+        let unauthorizedDispatch :: DispatchHandler
+            unauthorizedDispatch _source _context _bytes respond =
+              respond (Unauthorized {authError = Unauthenticated}, Json.encodeText ("private-callback-sentinel" :: Text.Text) |> Text.toBytes)
+        let endpoints = Map.empty |> Map.set "UnauthorizedCallback" unauthorizedDispatch
+        unauthorized <- Dispatcher.dispatchCommandWithSource endpoints Nothing payload |> Task.asResult
+        unauthorized |> shouldBe (Err "Command dispatch failed")
+
+      it "does not expose a callback handler failure" \_ -> do
+        let payload =
+              Integration.CommandPayload
+                { commandType = "ThrowingCallback",
+                  commandData = Json.encode ("ignored" :: Text.Text)
+                }
+        let throwingDispatch :: DispatchHandler
+            throwingDispatch _source _context _bytes _respond = Task.throw "private-callback-sentinel"
+        let endpoints = Map.empty |> Map.set "ThrowingCallback" throwingDispatch
+        failed <- Dispatcher.dispatchCommandWithSource endpoints Nothing payload |> Task.asResult
+        failed |> shouldBe (Err "Command dispatch failed")
+
+      it "does not report success when a callback handler crashes" \_ -> do
+        let payload =
+              Integration.CommandPayload
+                { commandType = "CrashingCallback",
+                  commandData = Json.encode ("ignored" :: Text.Text)
+                }
+        let crashDispatch :: DispatchHandler
+            crashDispatch _source _context _bytes _respond =
+              Task.fromIO (GhcPrelude.ioError (GhcPrelude.userError "private-callback-sentinel"))
+        let endpoints = Map.empty |> Map.set "CrashingCallback" crashDispatch
+        child <- AsyncTask.run (Dispatcher.dispatchCommandWithSource endpoints Nothing payload)
+        outcome <- AsyncTask.waitOutcome child
+        case outcome of
+          AsyncTask.Crashed _ -> pass
+          _ -> fail "Callback handler crash must not return success"
+
+      it "does not respond after a callback handler is cancelled" \_ -> do
+        entered <- Channel.new
+        responded <- ConcurrentVar.containing False
+        let payload =
+              Integration.CommandPayload
+                { commandType = "CancelledCallback",
+                  commandData = Json.encode ("ignored" :: Text.Text)
+                }
+        let blockedDispatch :: DispatchHandler
+            blockedDispatch _source _context _bytes respond = do
+              Channel.write unit entered
+              AsyncTask.sleep 60000
+              responded |> ConcurrentVar.modify (\_ -> True)
+              respond (Accepted {entityId = "cancelled"}, Json.encodeText ("ignored" :: Text.Text) |> Text.toBytes)
+        let endpoints = Map.empty |> Map.set "CancelledCallback" blockedDispatch
+        child <- AsyncTask.runWithCancellationEnabled (Dispatcher.dispatchCommandWithSource endpoints Nothing payload)
+        Channel.read entered
+        AsyncTask.cancel child
+        outcome <- AsyncTask.waitOutcome child
+        case outcome of
+          AsyncTask.Interrupted -> pass
+          _ -> fail "Cancelled callback handler must stop"
+        wasResponded <- ConcurrentVar.peek responded
+        wasResponded |> shouldBe False
 
     describe "per-entity ordering" do
       it "processes events for the same entity in order" \_ -> do

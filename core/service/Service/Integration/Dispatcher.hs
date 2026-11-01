@@ -1127,20 +1127,32 @@ dispatchCommandWithSource endpoints sourceEventMetadata payload = do
       -- authenticatedAccess gate.
       requestContext <- Auth.trustedContext
       let cmdBytes = Json.encodeText payload.commandData |> Text.toBytes
+      callbackAccepted <- ConcurrentVar.containing False
       let responseCallback (response, _) = do
             case response of
-              Failed {} ->
+              Failed {} -> do
                 Log.warn "Command dispatch failed" |> Task.ignoreError
-              Rejected {} ->
+                Task.throw "Command dispatch failed"
+              Rejected {} -> do
                 Log.warn "Command dispatch rejected" |> Task.ignoreError
-              _ ->
+                Task.throw "Command dispatch failed"
+              Unauthorized {} -> do
+                Log.warn "Command dispatch unauthorized" |> Task.ignoreError
+                Task.throw "Command dispatch failed"
+              Accepted {} -> do
+                callbackAccepted |> ConcurrentVar.modify (\_ -> True)
                 Log.debug [fmt|Command dispatched successfully: #{cmdType}|] |> Task.ignoreError
-            Task.yield unit
+                Task.yield unit
       handler sourceEventMetadata requestContext cmdBytes responseCallback
-        |> Task.mapError (\err -> [fmt|Command dispatch failed for #{cmdType}: #{err}|])
+        |> Task.mapError (\_ -> "Command dispatch failed")
+      wasAccepted <- callbackAccepted |> ConcurrentVar.peek
+      Task.unless wasAccepted do
+        Log.warn "Command dispatch callback unavailable" |> Task.ignoreError
+        Task.throw "Command dispatch failed"
     Nothing -> do
-      Log.warn [fmt|No handler found for command: #{cmdType}|]
+      Log.warn "Command dispatch handler unavailable"
         |> Task.ignoreError
+      Task.throw "Command dispatch handler unavailable"
 
 
 startReaper ::

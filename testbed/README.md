@@ -69,10 +69,33 @@ To use private loopback ports, set all three testbed ports before the same comma
 The fixture's signed JWT retains its fixed `http://127.0.0.1:8181/oidc` issuer claim; the discovery and key requests use the selected fixture port.
 
 ```sh
-TESTBED_HTTP_PORT=18880 TESTBED_OAUTH_PORT=18881 TESTBED_FIXTURE_PORT=8181 nix develop --command .agents/skills/neohaskell-test/scripts/run-testbed --strict
+TESTBED_HTTP_PORT=18880 TESTBED_OAUTH_PORT=18881 TESTBED_FIXTURE_PORT=8181 TESTBED_OAUTH_LOG_DIR=.agents-state/testbed nix develop --command .agents/skills/neohaskell-test/scripts/run-testbed --strict
 ```
 
-The runner creates private databases, runs `testbed/tests/integrations/cryptoerasure-m2.hurl`, and restarts the OAuth testbed for `testbed/scripts/verify-cryptoerasure-restart.py`. One check rejects the result command after key deletion. A separate check pauses after the key transaction commits and before the result callback runs, stops the owned OAuth process, and restarts it. Both checks read the pending application state after restart, retry explicitly, and require `AlreadyErased` completion. The crash check restarts once more and reads back the completed event through the authorized query. The application must retain and retry pending requests; the framework does not promise automatic replay after a crash. The OAuth-enabled and disabled application setups both register the outbound handler; the authenticated scenario uses port 8081.
+The runner creates private databases, runs `testbed/tests/integrations/cryptoerasure-m2.hurl`, and restarts the OAuth testbed for `testbed/scripts/verify-cryptoerasure-restart.py`. One check rejects the result command after key deletion. A separate check pauses after the key transaction commits and before the result callback runs, stops the owned OAuth process, and restarts it. Both checks read the pending application state after restart, retry explicitly, and require `AlreadyErased` completion. The crash check restarts once more and reads back the completed event through the authorized query. A further check stops the process before the key action, verifies that the key remains active and the request remains pending after restart, then requires an explicit retry to record `ErasedNow`. The application must retain and retry pending requests; the framework does not promise automatic replay after a crash. The OAuth-enabled and disabled application setups both register the outbound handler; the authenticated scenario uses port 8081.
+
+The owned example creates two protected values with identical Unicode content in one command. The strict runner compares both authorized responses, reads their distinct references from the persisted event, erases the first, and restarts the application. It then checks that the first key is tombstoned while the second key and authorized `Available` value survive. A passing run prints `Equal protected values kept distinct references and only one was erased across restart`.
+
+The strict runner also issues a signed token for a second user. That user cannot read or erase the owner's case even when it submits the known reference. The runner checks the owner response and active PostgreSQL key after denial. The private PostgreSQL command in the callback-death section below runs this assertion. A passing run prints `A valid other user could neither read nor erase the owner's protected case`.
+
+The same strict command checks that a rejected result command records a callback dispatch failure while the application request stays pending. It reads the private PostgreSQL tombstone, then checks that the authorized `Erased` response contains only `tag` and null `contents` for the erased value. The maintained runner also checks that its application log contains neither the protected value nor its storage envelope. The second protected value remains `Available`, and an explicit retry records completion without restoring the first value. Set `TESTBED_OAUTH_LOG_DIR` to retain the application log in a chosen directory; otherwise the runner uses the system temporary directory. A passing run prints `Rejected result command was logged as callback dispatch failure without protected data` and ends with `testbed: PASS`.
+
+The strict runner also kills its owned OAuth application while PostgreSQL is inserting the result callback's `ErasureCompleted` event. A private trigger pauses that insert after the key deletion commits. The runner checks that the key is tombstoned and the application request is still pending, kills the application, clears the trigger, and restarts it. The completed event must be absent after the crash. An explicit retry then records `AlreadyErased` without restoring the key. The private trigger is scoped to one case in the runner's fresh database and is removed before retry. To run this cell against a PostgreSQL instance already listening on private port 19440, use:
+
+```sh
+DB_HOST=127.0.0.1 DB_PORT=19440 DB_USER=neohaskell DB_PASSWORD=neohaskell TESTBED_HTTP_PORT=19450 TESTBED_OAUTH_PORT=19451 TESTBED_FIXTURE_PORT=19452 TESTBED_OAUTH_LOG_DIR=.agents-state/nh140-matrix TESTBED_CABAL_BUILDDIR=.agents-state/nh140-matrix/testbed-build CABAL_BUILD_JOBS=1 nix develop --command .agents/skills/neohaskell-test/scripts/run-testbed --strict --timeout 1200 --transcript .agents-state/nh140-matrix/callback-death-green.log
+```
+
+The strict runner also injects a typed failure into the selected erasure action before key deletion. It requires a `RunnerProcessingFailure` record, an owner-visible pending request, and one active key in PostgreSQL. It restarts the application, retries the request, and checks that the key is tombstoned and the completion event persists. A passing run prints `A typed action failure left the key active, then explicit retry erased it`. Use the same strict command above with a private PostgreSQL instance and private testbed ports.
+
+To check that an integration command handler cannot return success without calling its response callback, run the focused dispatcher regression:
+
+```sh
+nix develop --command .agents/skills/tdd/scripts/test-match 'reports a handler that omits its callback' nhcore-test-integration
+nix develop --command .agents/skills/tdd/scripts/test-match 'callback handler' nhcore-test-integration
+```
+
+The first focused run reports one example and zero failures. The second checks a handler exception and cancellation before its response callback. The private-port strict testbed command above also selects one application erasure action that deletes its key but emits no result command. The runner checks the exact outbound request log, the PostgreSQL tombstone, the absence of `ErasureCompleted`, and the owner's pending response. It restarts the application, retries the request, and requires `AlreadyErased` completion. A passing run prints `Omitted result callback left a tombstone and pending application request` and ends with `testbed: PASS`.
 
 To run the persisted fault cases with the maintained testbed, reserve two more private ports and set `CRYPTOERASURE_FAULT_TESTS=1`:
 
@@ -155,7 +178,7 @@ The same spec verifies that the named model entry point rejects an inbound Slice
 The maintained Hurl testbed exercises the declared cart and stock commands, queries, outbound handler, and typed inbound worker through `App.app`. `stock-reservation.hurl` asserts that `AddItem` updates `CartSummary` from one item to two and that the declared outbound handler runs `ReserveStock`, changing `StockLevel` from 100 available and 0 reserved to 95 available and 5 reserved after the first item. Run it with:
 
 ```sh
-TESTBED_HTTP_PORT=18880 TESTBED_OAUTH_PORT=18881 TESTBED_FIXTURE_PORT=18882 nix develop --command .agents/skills/neohaskell-test/scripts/run-testbed --strict
+TESTBED_HTTP_PORT=18880 TESTBED_OAUTH_PORT=18881 TESTBED_FIXTURE_PORT=8181 nix develop --command .agents/skills/neohaskell-test/scripts/run-testbed --strict
 ```
 
 ### Run the public matcher example

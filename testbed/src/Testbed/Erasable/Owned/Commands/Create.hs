@@ -31,8 +31,9 @@ decide _ maybeEntity context = case (maybeEntity, context.user) of
   (_, Nothing) -> Decider.reject "Authentication required"
   (Nothing, Just user) -> do
     caseId <- Decider.generateUuid
-    first <- Erasable.new SecretPayload {name = "Álvaro ñ 😀", aliases = [Nothing, Just "café"]}
-    second <- Erasable.new SecretPayload {name = "Álvaro ñ 😀", aliases = [Nothing, Just "東京"]}
+    let payload = SecretPayload {name = "Álvaro ñ 😀", aliases = [Nothing, Just "café"]}
+    first <- Erasable.new payload
+    second <- Erasable.new payload
     Decider.acceptNew
       [OwnedProtectedCreated {entityId = caseId, owner = user.sub, caseStatus = "open", first, second}]
 

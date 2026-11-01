@@ -15,6 +15,12 @@ FAKE_SERVICES_PID=""
 ERASURE_STATE_FILE=""
 ERASURE_COMMIT_MARKER=""
 ERASURE_PAUSE_SELECTOR=""
+ERASURE_PRE_ACTION_SELECTOR=""
+ERASURE_PRE_ACTION_MARKER=""
+ERASURE_CALLBACK_EXCEPTION_SELECTOR=""
+ERASURE_MISSING_CALLBACK_SELECTOR=""
+ERASURE_ACTION_FAILURE_SELECTOR=""
+OAUTH_TESTBED_LOG=""
 HURL_TEMP_DIR=""
 TESTBED_HTTP_PORT="${TESTBED_HTTP_PORT:-8080}"
 TESTBED_OAUTH_PORT="${TESTBED_OAUTH_PORT:-8081}"
@@ -39,6 +45,21 @@ cleanup() {
 	fi
 	if [ -n "$ERASURE_PAUSE_SELECTOR" ]; then
 		rm -f "$ERASURE_PAUSE_SELECTOR"
+	fi
+	if [ -n "$ERASURE_PRE_ACTION_SELECTOR" ]; then
+		rm -f "$ERASURE_PRE_ACTION_SELECTOR"
+	fi
+	if [ -n "$ERASURE_PRE_ACTION_MARKER" ]; then
+		rm -f "$ERASURE_PRE_ACTION_MARKER"
+	fi
+	if [ -n "$ERASURE_CALLBACK_EXCEPTION_SELECTOR" ]; then
+		rm -f "$ERASURE_CALLBACK_EXCEPTION_SELECTOR"
+	fi
+	if [ -n "$ERASURE_MISSING_CALLBACK_SELECTOR" ]; then
+		rm -f "$ERASURE_MISSING_CALLBACK_SELECTOR"
+	fi
+	if [ -n "$ERASURE_ACTION_FAILURE_SELECTOR" ]; then
+		rm -f "$ERASURE_ACTION_FAILURE_SELECTOR"
 	fi
 	if [ -n "$HURL_TEMP_DIR" ]; then
 		rm -rf "$HURL_TEMP_DIR"
@@ -142,6 +163,21 @@ export CRYPTOERASURE_COMMIT_MARKER="$ERASURE_COMMIT_MARKER"
 ERASURE_PAUSE_SELECTOR=$(mktemp)
 rm -f "$ERASURE_PAUSE_SELECTOR"
 export CRYPTOERASURE_PAUSE_SELECTOR="$ERASURE_PAUSE_SELECTOR"
+ERASURE_PRE_ACTION_SELECTOR=$(mktemp)
+rm -f "$ERASURE_PRE_ACTION_SELECTOR"
+export CRYPTOERASURE_PRE_ACTION_SELECTOR="$ERASURE_PRE_ACTION_SELECTOR"
+ERASURE_PRE_ACTION_MARKER=$(mktemp)
+rm -f "$ERASURE_PRE_ACTION_MARKER"
+export CRYPTOERASURE_PRE_ACTION_MARKER="$ERASURE_PRE_ACTION_MARKER"
+ERASURE_CALLBACK_EXCEPTION_SELECTOR=$(mktemp)
+rm -f "$ERASURE_CALLBACK_EXCEPTION_SELECTOR"
+export CRYPTOERASURE_CALLBACK_EXCEPTION_SELECTOR="$ERASURE_CALLBACK_EXCEPTION_SELECTOR"
+ERASURE_MISSING_CALLBACK_SELECTOR=$(mktemp)
+rm -f "$ERASURE_MISSING_CALLBACK_SELECTOR"
+export CRYPTOERASURE_MISSING_CALLBACK_SELECTOR="$ERASURE_MISSING_CALLBACK_SELECTOR"
+ERASURE_ACTION_FAILURE_SELECTOR=$(mktemp)
+rm -f "$ERASURE_ACTION_FAILURE_SELECTOR"
+export CRYPTOERASURE_ACTION_FAILURE_SELECTOR="$ERASURE_ACTION_FAILURE_SELECTOR"
 
 export PGPASSWORD="${DB_PASSWORD:-neohaskell}"
 database_suffix=$(python3 -c 'import uuid; print(uuid.uuid4().hex[:12])')
@@ -158,7 +194,10 @@ wait_for_service "http://127.0.0.1:$TESTBED_HTTP_PORT/health" "Testbed" "$TESTBE
 echo ""
 
 echo -e "${YELLOW}Starting OAuth testbed...${NC}"
-DB_NAME="$oauth_db" "$(cabal "${CABAL_GLOBAL_OPTIONS[@]}" list-bin "${CABAL_EXE_OPTIONS[@]}" exe:nhoauthtestbed)" &
+oauth_log_dir="${TESTBED_OAUTH_LOG_DIR:-${TMPDIR:-/tmp}}"
+mkdir -p "$oauth_log_dir"
+OAUTH_TESTBED_LOG=$(mktemp "$oauth_log_dir/oauth-cryptoerasure-XXXXXX")
+DB_NAME="$oauth_db" "$(cabal "${CABAL_GLOBAL_OPTIONS[@]}" list-bin "${CABAL_EXE_OPTIONS[@]}" exe:nhoauthtestbed)" >>"$OAUTH_TESTBED_LOG" 2>&1 &
 OAUTH_TESTBED_PID=$!
 wait_for_service "http://127.0.0.1:$TESTBED_OAUTH_PORT/health" "OAuth testbed" "$OAUTH_TESTBED_PID"
 
@@ -195,29 +234,61 @@ fi
 
 bash testbed/scripts/verify-database-isolation.sh "$testbed_db" "$oauth_db"
 
+python3 testbed/scripts/verify-cryptoerasure-restart.py verify-other-owner-denial "$oauth_db"
 python3 testbed/scripts/verify-cryptoerasure-restart.py concurrent "$oauth_db"
 ERASURE_STATE_FILE=$(mktemp)
-python3 testbed/scripts/verify-cryptoerasure-restart.py prepare "$ERASURE_STATE_FILE"
+python3 testbed/scripts/verify-cryptoerasure-restart.py prepare "$ERASURE_STATE_FILE" "$oauth_db"
+python3 testbed/scripts/verify-cryptoerasure-restart.py verify-callback-log "$ERASURE_STATE_FILE" "$OAUTH_TESTBED_LOG"
 restart_oauth_testbed() {
-	kill "$OAUTH_TESTBED_PID"
-	wait "$OAUTH_TESTBED_PID" 2>/dev/null || true
-	OAUTH_TESTBED_PID=""
+	if [ -n "$OAUTH_TESTBED_PID" ]; then
+		kill "$OAUTH_TESTBED_PID" 2>/dev/null || true
+		wait "$OAUTH_TESTBED_PID" 2>/dev/null || true
+		OAUTH_TESTBED_PID=""
+	fi
 	if is_oauth_testbed_ready; then
 		echo -e "${RED}Error: OAuth testbed still responds after its owned process stopped${NC}"
 		exit 1
 	fi
-	DB_NAME="$oauth_db" "$(cabal "${CABAL_GLOBAL_OPTIONS[@]}" list-bin "${CABAL_EXE_OPTIONS[@]}" exe:nhoauthtestbed)" &
+	DB_NAME="$oauth_db" TESTBED_ERASURE_QUEUE_TIMEOUT="${1:-0}" "$(cabal "${CABAL_GLOBAL_OPTIONS[@]}" list-bin "${CABAL_EXE_OPTIONS[@]}" exe:nhoauthtestbed)" >>"$OAUTH_TESTBED_LOG" 2>&1 &
 	OAUTH_TESTBED_PID=$!
 	wait_for_service "http://127.0.0.1:$TESTBED_OAUTH_PORT/health" "Restarted OAuth testbed" "$OAUTH_TESTBED_PID"
 }
 restart_oauth_testbed
 python3 testbed/scripts/verify-cryptoerasure-restart.py verify "$ERASURE_STATE_FILE"
-python3 testbed/scripts/verify-cryptoerasure-restart.py prepare-crash "$ERASURE_STATE_FILE" "$ERASURE_COMMIT_MARKER" "$ERASURE_PAUSE_SELECTOR"
+python3 testbed/scripts/verify-cryptoerasure-restart.py prepare-crash "$ERASURE_STATE_FILE" "$ERASURE_COMMIT_MARKER" "$ERASURE_PAUSE_SELECTOR" "$oauth_db"
 rm -f "$ERASURE_PAUSE_SELECTOR"
 restart_oauth_testbed
 python3 testbed/scripts/verify-cryptoerasure-restart.py verify "$ERASURE_STATE_FILE"
 restart_oauth_testbed
 python3 testbed/scripts/verify-cryptoerasure-restart.py verify-completed "$ERASURE_STATE_FILE" "$oauth_db"
+python3 testbed/scripts/verify-cryptoerasure-restart.py prepare-pre-action "$ERASURE_STATE_FILE" "$ERASURE_PRE_ACTION_MARKER" "$ERASURE_PRE_ACTION_SELECTOR"
+rm -f "$ERASURE_PRE_ACTION_SELECTOR"
+restart_oauth_testbed
+python3 testbed/scripts/verify-cryptoerasure-restart.py verify-pre-action "$ERASURE_STATE_FILE" "$oauth_db"
+python3 testbed/scripts/verify-cryptoerasure-restart.py prepare-callback-exception "$ERASURE_STATE_FILE" "$ERASURE_CALLBACK_EXCEPTION_SELECTOR" "$OAUTH_TESTBED_LOG" "$oauth_db"
+rm -f "$ERASURE_CALLBACK_EXCEPTION_SELECTOR"
+restart_oauth_testbed
+python3 testbed/scripts/verify-cryptoerasure-restart.py verify-callback-exception "$ERASURE_STATE_FILE" "$oauth_db"
+python3 testbed/scripts/verify-cryptoerasure-restart.py prepare-missing-callback "$ERASURE_STATE_FILE" "$ERASURE_MISSING_CALLBACK_SELECTOR" "$OAUTH_TESTBED_LOG" "$oauth_db"
+rm -f "$ERASURE_MISSING_CALLBACK_SELECTOR"
+restart_oauth_testbed
+python3 testbed/scripts/verify-cryptoerasure-restart.py verify-missing-callback "$ERASURE_STATE_FILE" "$oauth_db"
+python3 testbed/scripts/verify-cryptoerasure-restart.py prepare-callback-death "$ERASURE_STATE_FILE" "$oauth_db"
+kill -9 "$OAUTH_TESTBED_PID"
+wait "$OAUTH_TESTBED_PID" 2>/dev/null || true
+OAUTH_TESTBED_PID=""
+python3 testbed/scripts/verify-cryptoerasure-restart.py clear-callback-death "$ERASURE_STATE_FILE" "$oauth_db"
+restart_oauth_testbed
+python3 testbed/scripts/verify-cryptoerasure-restart.py verify-callback-death "$ERASURE_STATE_FILE" "$oauth_db"
+python3 testbed/scripts/verify-cryptoerasure-restart.py prepare-action-failure "$ERASURE_STATE_FILE" "$ERASURE_ACTION_FAILURE_SELECTOR" "$OAUTH_TESTBED_LOG" "$oauth_db"
+rm -f "$ERASURE_ACTION_FAILURE_SELECTOR"
+restart_oauth_testbed
+python3 testbed/scripts/verify-cryptoerasure-restart.py verify-action-failure "$ERASURE_STATE_FILE" "$oauth_db"
+restart_oauth_testbed 1
+python3 testbed/scripts/verify-cryptoerasure-restart.py prepare-queue-timeout "$ERASURE_STATE_FILE" "$ERASURE_PRE_ACTION_MARKER" "$ERASURE_PRE_ACTION_SELECTOR" "$OAUTH_TESTBED_LOG" "$oauth_db"
+rm -f "$ERASURE_PRE_ACTION_SELECTOR"
+restart_oauth_testbed
+python3 testbed/scripts/verify-cryptoerasure-restart.py verify-queue-timeout "$ERASURE_STATE_FILE" "$oauth_db"
 
 if [ "${CRYPTOERASURE_FAULT_TESTS:-0}" = "1" ]; then
 	: "${TESTBED_FAULT_HTTP_PORT:?Set a private fault HTTP port}"

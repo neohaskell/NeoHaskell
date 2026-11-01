@@ -40,18 +40,28 @@ handleEvent _ event = case event of
 requestAction :: Uuid -> Text -> Bool -> Bool -> Erasable SecretPayload -> Integration.Action
 requestAction entityId reference rejectResult simulateUnknownReference staleFirst =
   Integration.action \context -> do
-    pause <- shouldPause entityId
+    pause <- shouldPause "CRYPTOERASURE_PAUSE_SELECTOR" entityId
+    pauseBeforeAction <- shouldPause "CRYPTOERASURE_PRE_ACTION_SELECTOR" entityId
+    throwResult <- shouldPause "CRYPTOERASURE_CALLBACK_EXCEPTION_SELECTOR" entityId
+    omitResult <- shouldPause "CRYPTOERASURE_MISSING_CALLBACK_SELECTOR" entityId
+    failAction <- shouldPause "CRYPTOERASURE_ACTION_FAILURE_SELECTOR" entityId
     let target = erasureTarget entityId reference simulateUnknownReference
-    let onResult = resultCommand entityId reference rejectResult staleFirst
+    let onResult = resultCommand entityId reference rejectResult throwResult staleFirst
     let onFailure = failureCommand entityId reference
-    if pause
-      then Integration.runAction context (pauseAfterCommittedErase target reference onResult onFailure)
-      else Integration.runAction context (Integration.outbound Erasure.Erase {target, onResult, onFailure})
+    if failAction
+      then Task.throw (Integration.UnexpectedError "Testbed erasure action failure")
+      else if omitResult
+        then Integration.runAction context (omitResultCallback target)
+        else if pauseBeforeAction
+          then Integration.runAction context (pauseBeforeErase reference)
+          else if pause
+            then Integration.runAction context (pauseAfterCommittedErase target reference onResult onFailure)
+            else Integration.runAction context (Integration.outbound Erasure.Erase {target, onResult, onFailure})
 
 
-shouldPause :: Uuid -> Task Integration.IntegrationError Bool
-shouldPause entityId = do
-  selector <- Environment.getVariable "CRYPTOERASURE_PAUSE_SELECTOR" |> Task.asResult
+shouldPause :: Text -> Uuid -> Task Integration.IntegrationError Bool
+shouldPause selectorVariable entityId = do
+  selector <- Environment.getVariable selectorVariable |> Task.asResult
   case selector of
     Err _ -> Task.yield False
     Ok selectorText -> case Path.fromText selectorText of
@@ -72,16 +82,35 @@ erasureTarget entityId reference simulateUnknownReference =
     }
 
 
-resultCommand :: Uuid -> Text -> Bool -> Erasable SecretPayload -> Erasure.ErasureResult -> RecordErasureResult
-resultCommand entityId reference rejectResult staleFirst result = case result of
-  Erasure.ErasedNow -> RecordErasureSuccess {caseId = entityId, reference, wasAlreadyErased = False, rejectResult, staleFirst}
-  Erasure.AlreadyErased -> RecordErasureSuccess {caseId = entityId, reference, wasAlreadyErased = True, rejectResult, staleFirst}
+resultCommand :: Uuid -> Text -> Bool -> Bool -> Erasable SecretPayload -> Erasure.ErasureResult -> RecordErasureResult
+resultCommand entityId reference rejectResult throwResult staleFirst result = case result of
+  Erasure.ErasedNow -> RecordErasureSuccess {caseId = entityId, reference, wasAlreadyErased = False, rejectResult, throwResult, staleFirst}
+  Erasure.AlreadyErased -> RecordErasureSuccess {caseId = entityId, reference, wasAlreadyErased = True, rejectResult, throwResult, staleFirst}
   Erasure.UnknownReference -> RecordErasureFailure {caseId = entityId, reference, reason = "unknown reference"}
 
 
 failureCommand :: Uuid -> Text -> Integration.IntegrationError -> RecordErasureResult
 failureCommand entityId reference _ =
   RecordErasureFailure {caseId = entityId, reference, reason = "operation failed"}
+
+
+omitResultCallback :: Erasure.ErasureTarget -> Integration.Action
+omitResultCallback target =
+  Integration.action \context -> case context.eraseErasableKey of
+    Nothing -> Task.throw (Integration.UnexpectedError "Erasable key store unavailable")
+    Just erase -> erase target |> Task.map (\_ -> Nothing)
+
+
+pauseBeforeErase :: Text -> Integration.Action
+pauseBeforeErase reference =
+  Integration.action \_ -> do
+    marker <- Environment.getVariable "CRYPTOERASURE_PRE_ACTION_MARKER" |> Task.mapError Integration.UnexpectedError
+    path <- case Path.fromText marker of
+      Nothing -> Task.throw (Integration.UnexpectedError "Invalid pre-action marker path")
+      Just value -> Task.yield value
+    File.writeText path reference |> Task.mapError (\_ -> Integration.UnexpectedError "Pre-action marker could not be written")
+    AsyncTask.sleep 60000
+    Task.throw (Integration.UnexpectedError "Expected testbed process to stop before key action")
 
 
 pauseAfterCommittedErase :: Erasure.ErasureTarget -> Text -> (Erasure.ErasureResult -> RecordErasureResult) -> (Integration.IntegrationError -> RecordErasureResult) -> Integration.Action

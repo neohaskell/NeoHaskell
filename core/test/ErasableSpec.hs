@@ -9,6 +9,8 @@ import Decider (Decision (..), DecisionContext (..))
 import Decider qualified
 import Erasable qualified
 import Json qualified
+import Schema qualified
+import Schema.JsonSchema qualified
 import Task qualified
 import Test
 import Text qualified
@@ -18,6 +20,22 @@ import Uuid qualified
 spec :: Spec Unit
 spec = parallel do
   describe "Erasable.new" do
+    it "advertises only public availability states" \_ -> do
+      let entry tag contents =
+            Json.object
+              [ ("type", Json.toJSON ("object" :: Text))
+              , ("properties", Json.object
+                  [ ("tag", Json.object [("const", Json.toJSON (tag :: Text))])
+                  , ("contents", Json.object [("type", Json.toJSON (contents :: Text))])
+                  ])
+              , ("required", Json.toJSON (["tag", "contents"] :: [Text]))
+              , ("additionalProperties", Json.toJSON False)
+              ]
+      let expected = Json.object
+            [("oneOf", Json.toJSON ([entry "Available" "string", entry "Erased" "null"] :: [Json.Value]))]
+      let schema = Schema.JsonSchema.toJsonSchema (Schema.toSchema @(Erasable.Erasable Text))
+      schema |> shouldBe expected
+
     it "creates independent references for equal values in one command" \_ -> do
       let marker = "Álvaro ñ 😀"
       let decision = do
