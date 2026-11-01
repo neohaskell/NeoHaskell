@@ -214,7 +214,11 @@ data CommandPayload = CommandPayload
   { commandType :: Text
   , commandData :: Json.Value
   }
-  deriving (Eq, Show, Generic)
+  deriving (Eq, Generic)
+
+
+instance Show CommandPayload where
+  show _ = "CommandPayload <REDACTED>"
 
 
 instance Json.FromJSON CommandPayload
