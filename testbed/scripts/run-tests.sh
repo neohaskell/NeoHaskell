@@ -261,6 +261,9 @@ restart_oauth_testbed
 python3 testbed/scripts/verify-cryptoerasure-restart.py verify "$ERASURE_STATE_FILE"
 restart_oauth_testbed
 python3 testbed/scripts/verify-cryptoerasure-restart.py verify-completed "$ERASURE_STATE_FILE" "$oauth_db"
+python3 testbed/scripts/verify-cryptoerasure-restart.py prepare-erased-reconstruction "$ERASURE_STATE_FILE"
+restart_oauth_testbed
+python3 testbed/scripts/verify-cryptoerasure-restart.py verify-erased-reconstruction "$ERASURE_STATE_FILE" "$oauth_db"
 python3 testbed/scripts/verify-cryptoerasure-restart.py prepare-pre-action "$ERASURE_STATE_FILE" "$ERASURE_PRE_ACTION_MARKER" "$ERASURE_PRE_ACTION_SELECTOR"
 rm -f "$ERASURE_PRE_ACTION_SELECTOR"
 restart_oauth_testbed

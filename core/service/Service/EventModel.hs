@@ -46,7 +46,6 @@ module Service.EventModel (
   run,
   appName,
   withConfig,
-  withApplicationConfiguration,
   withIntegration,
   withSecretStore,
   withAuthOverrides,
@@ -386,8 +385,6 @@ withConfig :: forall config. (HasParser config, Typeable config) => EventModelAc
 withConfig = Writer.tell [ModelConfigRegistration (Application.withConfig @config)]
 
 
--- | Add an Application configuration operation inside the named model.
--- Register the application's config type with 'withConfig' so duplicates fail preflight.
 withApplicationConfiguration :: (Application -> Application) -> EventModelAction
 withApplicationConfiguration configure = Writer.tell [ModelConfiguration configure]
 

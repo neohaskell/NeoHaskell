@@ -4,6 +4,7 @@ module Testbed.Erasable.Owned.Feature (ownedErasureFlow) where
 
 import Service.EventModel
 import Testbed.Erasable.Owned.Commands.Create (CreateOwnedProtected)
+import Testbed.Erasable.Owned.Commands.MapErased (MapErasedSecret)
 import Testbed.Erasable.Owned.Commands.Record (RecordErasureResult)
 import Testbed.Erasable.Owned.Commands.Request (RequestErasure)
 import Testbed.Erasable.Owned.Core (ErasureRequestedPayload, OwnedProtectedEntity, OwnedProtectedEvent)
@@ -27,6 +28,11 @@ ownedErasureFlow = feature "Owned erasure flow" do
     slice "Record erasure result" do
       entity @OwnedProtectedEntity do
         command @RecordErasureResult do
+          produces @OwnedProtectedEvent
+
+    slice "Map an erased secret" do
+      entity @OwnedProtectedEntity do
+        command @MapErasedSecret do
           produces @OwnedProtectedEvent
 
     slice "Show owned protected values" do

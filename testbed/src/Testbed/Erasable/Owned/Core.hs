@@ -31,7 +31,9 @@ data OwnedProtectedEntity = OwnedProtectedEntity
     caseStatus :: Text,
     firstSecret :: Maybe (Erasable SecretPayload),
     secondSecret :: Maybe (Erasable SecretPayload),
+    derivedSecret :: Maybe (Erasable SecretPayload),
     staleSecret :: Maybe (Erasable SecretPayload),
+    mappedErasedSecret :: Maybe (Erasable SecretPayload),
     erasureState :: ErasureState
   }
   deriving (Generic)
@@ -54,7 +56,9 @@ instance Default OwnedProtectedEntity where
         caseStatus = "",
         firstSecret = Nothing,
         secondSecret = Nothing,
+        derivedSecret = Nothing,
         staleSecret = Nothing,
+        mappedErasedSecret = Nothing,
         erasureState = NotRequested
       }
 
@@ -65,7 +69,8 @@ data OwnedProtectedEvent
         owner :: Text,
         caseStatus :: Text,
         first :: Erasable SecretPayload,
-        second :: Erasable SecretPayload
+        second :: Erasable SecretPayload,
+        derivative :: Erasable SecretPayload
       }
   | ErasureRequested
       { entityId :: Uuid,
@@ -84,6 +89,10 @@ data OwnedProtectedEvent
       { entityId :: Uuid,
         reference :: Text,
         failureReason :: Text
+      }
+  | ErasedCopyRecorded
+      { entityId :: Uuid,
+        mappedErased :: Erasable SecretPayload
       }
   deriving (Generic, Show)
 
@@ -122,6 +131,7 @@ instance EventVariantOf OwnedProtectedEvent ErasureRequestedPayload where
     OwnedProtectedCreated {} -> Nothing
     ErasureCompleted {} -> Nothing
     ErasureFailed {} -> Nothing
+    ErasedCopyRecorded {} -> Nothing
 
 
 instance Json.ToJSON OwnedProtectedEvent
@@ -143,16 +153,19 @@ instance Event OwnedProtectedEvent where
 instance Entity OwnedProtectedEntity where
   initialStateImpl = def
   updateImpl event entity = case event of
-    OwnedProtectedCreated {entityId, owner, caseStatus, first, second} ->
+    OwnedProtectedCreated {entityId, owner, caseStatus, first, second, derivative} ->
       entity
         { caseId = entityId,
           ownerId = owner,
           caseStatus,
           firstSecret = Just first,
           secondSecret = Just second,
+          derivedSecret = Just derivative,
           staleSecret = Nothing,
+          mappedErasedSecret = Nothing,
           erasureState = NotRequested
         }
     ErasureRequested {} -> entity {erasureState = Pending}
     ErasureCompleted {wasAlreadyErased, staleFirst} -> entity {erasureState = Completed wasAlreadyErased, staleSecret = Just staleFirst}
     ErasureFailed {failureReason} -> entity {erasureState = Failed failureReason}
+    ErasedCopyRecorded {mappedErased} -> entity {mappedErasedSecret = Just mappedErased}
