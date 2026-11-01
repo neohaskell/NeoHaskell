@@ -1,3 +1,4 @@
+import copy
 import json
 import os
 import platform
@@ -24,7 +25,7 @@ DB_PORT = os.environ.get("DB_PORT", "5432")
 DB_USER = os.environ.get("DB_USER", "neohaskell")
 DB_PASSWORD = os.environ["DB_PASSWORD"]
 FAULT = sys.argv[1]
-assert FAULT in {"missing-key", "version", "tag", "missing-envelope", "bad-nonce", "bad-ciphertext", "unavailable-store"}, FAULT
+assert FAULT in {"missing-key", "version", "tag", "missing-envelope", "bad-nonce", "bad-ciphertext", "unavailable-store", "swap-envelope"}, FAULT
 MARKER = "Álvaro"
 MARKER_ENCODINGS = (MARKER, json.dumps(MARKER)[1:-1])
 
@@ -172,6 +173,7 @@ try:
         assert case_id not in denied_body and all(marker not in denied_body for marker in MARKER_ENCODINGS), denied_body
 
     event_rows_changed = 0
+    second_key_active = None
     if FAULT == "unavailable-store":
         renamed = sql(database, "ALTER TABLE erasable_keys RENAME TO erasable_keys_unavailable")
         assert renamed == "ALTER TABLE", renamed
@@ -197,17 +199,63 @@ try:
             "bad-nonce": ("{first,envelope,nonce}", "to_jsonb('invalid-nonce'::text)"),
             "bad-ciphertext": ("{first,envelope,ciphertext}", "to_jsonb('invalid-ciphertext'::text)"),
         }
-        path, replacement = changes[FAULT]
-        changed = sql(database, f"""
-            UPDATE Events
-            SET eventData = jsonb_set(eventData, '{path}', {replacement}, false)
-            WHERE entity = 'OwnedProtectedEntity'
-              AND inlinedStreamId = '{case_id}'
-              AND eventData->>'tag' = 'OwnedProtectedCreated'
-            RETURNING eventId
-        """)
-        changed_lines = changed.splitlines()
-        assert len(changed_lines) == 2 and changed_lines[1] == "UPDATE 1", changed
+        if FAULT == "swap-envelope":
+            before_raw = sql(database, f"""
+                SELECT eventData::text FROM Events
+                WHERE entity = 'OwnedProtectedEntity'
+                  AND inlinedStreamId = '{case_id}'
+                  AND eventData->>'tag' = 'OwnedProtectedCreated'
+            """)
+            before_event = json.loads(before_raw)
+            first = before_event["first"]
+            second = before_event["second"]
+            assert first["reference"] == original_reference, first
+            assert first["reference"] != second["reference"], before_event
+            assert first["context"] != second["context"], before_event
+            assert first["envelope"] != second["envelope"], before_event
+            assert first["envelope"]["nonce"] != second["envelope"]["nonce"], before_event
+            (REPORT / "event-before.json").write_text(before_raw + "\n")
+            changed = sql(database, f"""
+                UPDATE Events
+                SET eventData = jsonb_set(
+                    jsonb_set(eventData, '{{first,envelope}}', eventData #> '{{second,envelope}}', false),
+                    '{{second,envelope}}', eventData #> '{{first,envelope}}', false)
+                WHERE entity = 'OwnedProtectedEntity'
+                  AND inlinedStreamId = '{case_id}'
+                  AND eventData->>'tag' = 'OwnedProtectedCreated'
+                RETURNING eventId
+            """)
+            changed_lines = changed.splitlines()
+            assert len(changed_lines) == 2 and changed_lines[1] == "UPDATE 1", changed
+            after_raw = sql(database, f"""
+                SELECT eventData::text FROM Events
+                WHERE entity = 'OwnedProtectedEntity'
+                  AND inlinedStreamId = '{case_id}'
+                  AND eventData->>'tag' = 'OwnedProtectedCreated'
+            """)
+            after_event = json.loads(after_raw)
+            expected = copy.deepcopy(before_event)
+            expected["first"]["envelope"] = second["envelope"]
+            expected["second"]["envelope"] = first["envelope"]
+            assert after_event == expected, after_event
+            (REPORT / "event-after.json").write_text(after_raw + "\n")
+            second_key_active = sql(database, f"""
+                SELECT count(*) FROM erasable_keys
+                WHERE reference = '{second['reference']}' AND key_bytes IS NOT NULL
+            """)
+            assert second_key_active == "1", second_key_active
+        else:
+            path, replacement = changes[FAULT]
+            changed = sql(database, f"""
+                UPDATE Events
+                SET eventData = jsonb_set(eventData, '{path}', {replacement}, false)
+                WHERE entity = 'OwnedProtectedEntity'
+                  AND inlinedStreamId = '{case_id}'
+                  AND eventData->>'tag' = 'OwnedProtectedCreated'
+                RETURNING eventId
+            """)
+            changed_lines = changed.splitlines()
+            assert len(changed_lines) == 2 and changed_lines[1] == "UPDATE 1", changed
         key_states = sql(database, f"""
             SELECT
               (SELECT count(*) FROM erasable_keys WHERE reference = '{original_reference}' AND key_bytes IS NOT NULL),
@@ -257,6 +305,7 @@ result = {
     "database": database,
     "eventRowsChanged": event_rows_changed,
     "originalKeyActive": True,
+    "secondKeyActive": second_key_active == "1" if FAULT == "swap-envelope" else None,
     "missingKeyAbsent": True if FAULT == "missing-key" else None,
     "replayStatus": replay_status,
     "httpStatus": failure_status,
