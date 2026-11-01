@@ -27,6 +27,7 @@ module Service.Application (
   withEventStore,
   withQueryObjectStore,
   withQuery,
+  withQuerySources,
   withQueryEndpoint,
   withServiceRunner,
   withService,
@@ -589,12 +590,47 @@ withQuery ::
   ) =>
   Application ->
   Application
-withQuery app = do
+withQuery app = addQueryDefinition @query (\definition -> definition) app
+
+
+-- | Register a query for only the entity and payload sources in its Slice.
+withQuerySources ::
+  forall query queryName entities.
+  ( Query query,
+    Schema.ToSchema query,
+    Json.ToJSON query,
+    Json.FromJSON query,
+    queryName ~ NameOf query,
+    entities ~ EntitiesOf query,
+    GHC.KnownSymbol queryName,
+    WireEntities entities query
+  ) =>
+  [Definition.EventSubscription] ->
+  Application ->
+  Application
+withQuerySources subscriptions app = addQueryDefinition @query (Definition.restrictToSources subscriptions) app
+
+
+addQueryDefinition ::
+  forall query queryName entities.
+  ( Query query,
+    Schema.ToSchema query,
+    Json.ToJSON query,
+    Json.FromJSON query,
+    queryName ~ NameOf query,
+    entities ~ EntitiesOf query,
+    GHC.KnownSymbol queryName,
+    WireEntities entities query
+  ) =>
+  (QueryDefinition -> QueryDefinition) ->
+  Application ->
+  Application
+addQueryDefinition adjust app = do
   let storeFactory = case app.queryObjectStoreConfig of
         Just (QueryObjectStoreConfigValue config) -> createQueryObjectStore config
         Nothing -> \_ -> InMemory.new |> Task.mapError toText
   let definition = Definition.createDefinitionWithStore @query storeFactory
-  app {queryDefinitions = app.queryDefinitions |> Array.push definition}
+  app {queryDefinitions = app.queryDefinitions |> Array.push (adjust definition)}
 
 
 -- | Check if any query definitions have been registered.

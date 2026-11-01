@@ -3,6 +3,7 @@ module Testbed.Cart.Core (
   CartEvent (..),
   CartCreatedPayload (..),
   ItemAddedPayload (..),
+  IBANSavedPayload (..),
   initialState,
 ) where
 
@@ -99,6 +100,15 @@ data CartCreatedPayload = CartCreatedPayload
 type instance EntityOf CartCreatedPayload = CartEntity
 
 
+data IBANSavedPayload = IBANSavedPayload
+  { ibanSavedEntityId :: Uuid,
+    ibanSavedValue :: Text
+  }
+
+
+type instance EntityOf IBANSavedPayload = CartEntity
+
+
 instance EventVariantOf CartEvent CartCreatedPayload where
   fromVariant payload =
     CartCreated
@@ -107,10 +117,11 @@ instance EventVariantOf CartEvent CartCreatedPayload where
       }
   toVariant eventValue = case eventValue of
     CartCreated {entityId, ownerId} ->
-      Just CartCreatedPayload
-        { cartCreatedEntityId = entityId,
-          cartCreatedOwnerId = ownerId
-        }
+      Just
+        CartCreatedPayload
+          { cartCreatedEntityId = entityId,
+            cartCreatedOwnerId = ownerId
+          }
     ItemAdded {} -> Nothing
     IBANSaved {} -> Nothing
 
@@ -124,13 +135,31 @@ instance EventVariantOf CartEvent ItemAddedPayload where
       }
   toVariant eventValue = case eventValue of
     ItemAdded {entityId, stockId, quantity} ->
-      Just ItemAddedPayload
-        { itemAddedEntityId = entityId,
-          itemAddedStockId = stockId,
-          itemAddedQuantity = quantity
-        }
+      Just
+        ItemAddedPayload
+          { itemAddedEntityId = entityId,
+            itemAddedStockId = stockId,
+            itemAddedQuantity = quantity
+          }
     CartCreated {} -> Nothing
     IBANSaved {} -> Nothing
+
+
+instance EventVariantOf CartEvent IBANSavedPayload where
+  fromVariant payload =
+    IBANSaved
+      { entityId = payload.ibanSavedEntityId,
+        iban = payload.ibanSavedValue
+      }
+  toVariant eventValue = case eventValue of
+    IBANSaved {entityId, iban} ->
+      Just
+        IBANSavedPayload
+          { ibanSavedEntityId = entityId,
+            ibanSavedValue = iban
+          }
+    CartCreated {} -> Nothing
+    ItemAdded {} -> Nothing
 
 
 getEventEntityId :: CartEvent -> Uuid

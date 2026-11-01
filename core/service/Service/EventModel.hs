@@ -42,7 +42,20 @@ module Service.EventModel (
   QueryDiff (..),
   ViewObservation (..),
   eventModel,
+  toApplication,
+  run,
   appName,
+  withConfig,
+  withEventStore,
+  withQueryObjectStore,
+  withTransport,
+  withApiInfo,
+  withFileUpload,
+  withAuth,
+  withOAuth2StateKey,
+  withOAuth2Provider,
+  withDispatcherConfig,
+  outboundLifecycle,
   features,
   feature,
   chapter,
@@ -74,33 +87,86 @@ module Service.EventModel (
   noOp,
 ) where
 
-import Basics
 import Array qualified
+import Auth.OAuth2.Provider (OAuth2ProviderConfig)
+import Basics
 import Control.Monad.Trans.Writer.Strict (Writer)
 import Control.Monad.Trans.Writer.Strict qualified as Writer
 import Data.Dynamic (Dynamic)
 import Data.Dynamic qualified as Dynamic
 import Data.Proxy (Proxy (..))
-import EventVariantOf (EventVariantOf)
+import Default (Default)
+import EventVariantOf (EventVariantOf (..))
+import GHC.TypeLits qualified as GHC
 import Integration qualified
+import Integration.Lifecycle qualified as Lifecycle
+import Json qualified
 import Language.Haskell.TH.Quote (QuasiQuoter (..))
-import Maybe (Maybe (..))
 import Map qualified
-import Prelude qualified
+import Maybe (Maybe (..))
+import OptEnvConf (HasParser)
+import Record qualified
 import Result (Result (..))
-import Service.Command.Core (Command)
+import Schema qualified
+import Service.Application (Application)
+import Service.Application qualified as Application
+import Service.Application.Types (ApiInfo)
+import Service.Command.Core (Command, NameOf)
 import Service.Entity.Core (Entity, EntityOf, EventOf)
-import Service.EventModel.Types (Chapter (..), CommandExpectation (..), CommandRoot (..), CommandTarget (..), CommandTargetFor (..), EventModel (..), EventRef (..), ExpectedEvent (..), ExpectedOutcome (..), Feature (..), HistoricalEvent (..), InboundPart (..), ModelPart (..), OutcomePart (..), OutboundPart (..), Primary (..), Produced (..), QueryDiff (..), QuerySnapshot (..), QuerySourceMember, ReadSource (..), Rule (..), RuleAction (..), RuleCase (..), RulePart (..), RuleSample (..), Slice (..), SliceContext (..), SlicePart (..), ViewObservation (..), WhenValue (..))
+import Service.Event.EntityName (EntityName (..))
+import Service.EventModel.Types (
+  Chapter (..),
+  CommandExpectation (..),
+  CommandRoot (..),
+  CommandTarget (..),
+  CommandTargetFor (..),
+  EventModel (..),
+  EventRef (..),
+  ExpectedEvent (..),
+  ExpectedOutcome (..),
+  Feature (..),
+  HistoricalEvent (..),
+  InboundPart (..),
+  ModelPart (..),
+  OutboundPart (..),
+  OutcomePart (..),
+  Primary (..),
+  Produced (..),
+  QueryDiff (..),
+  QuerySnapshot (..),
+  QuerySourceMember,
+  ReadSource (..),
+  Rule (..),
+  RuleAction (..),
+  RuleCase (..),
+  RulePart (..),
+  RuleSample (..),
+  Slice (..),
+  SliceContext (..),
+  SlicePart (..),
+  ViewObservation (..),
+  WhenValue (..),
+ )
 import Service.EventModel.Types qualified as Types
+import Service.EventStore (EventStoreConfig)
+import Service.FileUpload.Core (FileUploadConfig)
 import Service.InboundIntegration.Core (InboundIntegration (..))
+import Service.Integration.Dispatcher (DispatcherConfig)
 import Service.OutboundIntegration.Core (OutboundIntegration (..))
-import Service.Query.Core (EntitiesOf, Query, QueryOf)
-import Service.Query.Core (QueryAction (..))
+import Service.Query.Core (EntitiesOf, Query, QueryAction (..), QueryOf)
+import Service.Query.Definition (EventSubscription (..), WireEntities)
+import Service.QueryObjectStore.Core (QueryObjectStoreConfig)
+import Service.ServiceDefinition.Core (RunnableCommand (..))
+import Service.Transport (Transport)
+import Task (Task)
+import Task qualified
 import Text (Text)
 import Text qualified
 import Type.Reflection (Typeable)
 import Type.Reflection qualified as Reflection
+import TypeName qualified
 import Uuid (Uuid)
+import Prelude qualified
 
 
 -- | Export one of these actions from a component's Feature module.
@@ -153,19 +219,21 @@ sampleSliceRules valueLists (Slice name primary rules) =
 
 sampleRules :: Primary context -> [([Dynamic], Rule context)] -> [Result Text RuleSample]
 sampleRules primary suppliedRules = case primary of
-  StateChange entityProxy (CommandRoot commandProxy _) ->
-    [do
-      selectedCase <- sampleRule values selected
-      Ok (ChangeSample entityProxy commandProxy selected.ruleName selectedCase)
-    | (values, selected) <- suppliedRules]
-  StateView queryProxy sources ->
-    [do
-      selectedCase <- sampleRule values selected
-      validateViewSubscription selected.ruleName sources selectedCase
-      Ok (ViewSample queryProxy selected.ruleName selectedCase)
-    | (values, selected) <- suppliedRules]
-  OutboundTranslation _ _ -> []
-  InboundTranslation _ _ -> []
+  StateChange entityProxy (CommandRoot commandProxy _ _) ->
+    [ do
+        selectedCase <- sampleRule values selected
+        Ok (ChangeSample entityProxy commandProxy selected.ruleName selectedCase)
+    | (values, selected) <- suppliedRules
+    ]
+  StateView queryProxy sources _ ->
+    [ do
+        selectedCase <- sampleRule values selected
+        validateViewSubscription selected.ruleName sources selectedCase
+        Ok (ViewSample queryProxy selected.ruleName selectedCase)
+    | (values, selected) <- suppliedRules
+    ]
+  OutboundTranslation _ _ _ -> []
+  InboundTranslation _ _ _ -> []
 
 
 sampleRule :: [Dynamic] -> Rule context -> Result Text (RuleCase context)
@@ -178,7 +246,8 @@ sampleRule values selected = do
   ruleCase name parts
 
 
-runRuleAction :: forall context value. [Dynamic] -> RuleAction context value -> Result Text (value, [Dynamic], [RulePart context])
+runRuleAction ::
+  forall context value. [Dynamic] -> RuleAction context value -> Result Text (value, [Dynamic], [RulePart context])
 runRuleAction values action = case action of
   RuleDone value -> Ok (value, values, [])
   RuleBind first next -> do
@@ -245,11 +314,17 @@ verifyViewObservation queryId expected observed = do
 validateViewSubscription :: Text -> [ReadSource query] -> RuleCase ('View query) -> Result Text ()
 validateViewSubscription name sources selected = case selected.ruleWhen of
   EventWhen (_ :: payload) -> do
-    let declared = [Reflection.SomeTypeRep (Reflection.typeRep @eventPayload) | ReadSource _ events <- sources, EventRef (_ :: Proxy eventPayload) <- events]
+    let declared =
+          [ Reflection.SomeTypeRep (Reflection.typeRep @eventPayload)
+          | ReadSource _ events <- sources,
+            EventRef (_ :: Proxy eventPayload) <- events
+          ]
     let incoming = Reflection.SomeTypeRep (Reflection.typeRep @payload)
     if Prelude.elem incoming declared
       then Ok ()
-      else Err [fmt|Rule "#{name}" when payload #{Types.typeName (Proxy @payload)} is not listed by the query's onEvent subscriptions|]
+      else
+        Err
+          [fmt|Rule "#{name}" when payload #{Types.typeName (Proxy @payload)} is not listed by the query's onEvent subscriptions|]
 
 
 -- | Assemble a named topology and reject malformed local structure.
@@ -259,19 +334,95 @@ eventModel builder =
   let parts = Writer.execWriter builder
       names = [name | ModelName name <- parts]
       featureResults = Prelude.concat [found | ModelFeatures found <- parts]
+      configuration = [configure | ModelConfiguration configure <- parts]
       featureProblems = [problem | (problems, _) <- featureResults, problem <- problems]
       validFeatures = [selected | (_, selected) <- featureResults]
-   in case names of
+  in  case names of
         [name] ->
-          let model = EventModel {modelName = name, modelFeatures = validFeatures}
+          let model = EventModel {modelName = name, modelFeatures = validFeatures, modelConfiguration = configuration}
               modelProblems = case validateModel model of
                 Ok _ -> []
                 Err problem -> [problem]
               problems = featureProblems Prelude.++ modelProblems
-           in case problems of
+          in  case problems of
                 [] -> Ok model
                 _ -> Err (Text.joinWith "\n" (Array.fromLinkedList problems))
         _ -> Err (Text.joinWith "\n" (Array.fromLinkedList ("eventModel requires exactly one appName" : featureProblems)))
+
+
+-- | Register every validated Slice with the existing Application runtime.
+toApplication :: EventModel -> Application
+toApplication model = do
+  let configured = Prelude.foldl (\application configure -> configure application) Application.new model.modelConfiguration
+  Prelude.foldl registerFeature configured model.modelFeatures
+
+
+-- | Validate the named model before starting application effects.
+run :: Result Text EventModel -> Task Text Unit
+run modelResult = case modelResult of
+  Err problem -> Task.throw problem
+  Ok model -> Application.run (toApplication model)
+
+
+withConfig :: forall config. (HasParser config, Typeable config) => EventModelAction
+withConfig = Writer.tell [ModelConfiguration (Application.withConfig @config)]
+
+
+withEventStore ::
+  forall config eventStoreConfig.
+  (Typeable config, EventStoreConfig eventStoreConfig) => (config -> eventStoreConfig) -> EventModelAction
+withEventStore makeConfig = Writer.tell [ModelConfiguration (Application.withEventStore makeConfig)]
+
+
+withQueryObjectStore :: forall config. (QueryObjectStoreConfig config) => config -> EventModelAction
+withQueryObjectStore config = Writer.tell [ModelConfiguration (Application.withQueryObjectStore config)]
+
+
+withTransport ::
+  forall transport transportName.
+  (Transport transport, transportName ~ NameOf transport, Record.KnownHash transportName, GHC.KnownSymbol transportName) =>
+  transport -> EventModelAction
+withTransport transport = Writer.tell [ModelConfiguration (Application.withTransport transport)]
+
+
+withApiInfo :: forall config. (Typeable config) => (config -> ApiInfo) -> EventModelAction
+withApiInfo makeInfo = Writer.tell [ModelConfiguration (Application.withApiInfo makeInfo)]
+
+
+withFileUpload :: forall config. (Typeable config) => (config -> FileUploadConfig) -> EventModelAction
+withFileUpload makeConfig = Writer.tell [ModelConfiguration (Application.withFileUpload makeConfig)]
+
+
+withAuth :: forall config. (Typeable config) => (config -> Text) -> EventModelAction
+withAuth makeUrl = Writer.tell [ModelConfiguration (Application.withAuth makeUrl)]
+
+
+withOAuth2StateKey :: Text -> EventModelAction
+withOAuth2StateKey name = Writer.tell [ModelConfiguration (Application.withOAuth2StateKey name)]
+
+
+withOAuth2Provider :: forall config. (Typeable config) => (config -> OAuth2ProviderConfig) -> EventModelAction
+withOAuth2Provider makeConfig = Writer.tell [ModelConfiguration (Application.withOAuth2Provider makeConfig)]
+
+
+withDispatcherConfig :: forall config. (Typeable config) => (config -> DispatcherConfig) -> EventModelAction
+withDispatcherConfig makeConfig = Writer.tell [ModelConfiguration (Application.withDispatcherConfig makeConfig)]
+
+
+registerFeature :: Application -> Feature -> Application
+registerFeature application selected = Prelude.foldl registerChapter application selected.featureChapters
+
+
+registerChapter :: Application -> Chapter -> Application
+registerChapter application selected = Prelude.foldl registerSlice application selected.chapterSlices
+
+
+registerSlice :: Application -> Slice -> Application
+registerSlice application (Slice _ primary _) = case primary of
+  StateChange _ (CommandRoot _ _ runner) -> Application.withServiceRunner runner application
+  StateView _ _ register -> register application
+  OutboundTranslation _ _ register -> register application
+  InboundTranslation _ _ register -> register application
 
 
 appName :: Text -> EventModelAction
@@ -304,7 +455,7 @@ collectResults :: [Result Text value] -> ([Text], [value])
 collectResults results =
   let failures = [problem | Err problem <- results]
       values = [value | Ok value <- results]
-   in (failures, values)
+  in  (failures, values)
 
 
 -- | Add one inline Slice with exactly one primary declaration.
@@ -317,39 +468,100 @@ slice name builder = do
   let primaryCount = Prelude.length primaries
   let result = case primaries of
         [primary] -> Ok (Slice name primary rules)
-        _ -> Err [fmt|Slice "#{name}" requires exactly one primary; found #{primaryCount}: #{Text.joinWith ", " (Array.fromLinkedList (Prelude.map Types.primaryKind primaries))}|]
+        _ ->
+          Err
+            [fmt|Slice "#{name}" requires exactly one primary; found #{primaryCount}: #{Text.joinWith ", " (Array.fromLinkedList (Prelude.map Types.primaryKind primaries))}|]
   Writer.tell [result]
 
 
-entity :: forall entity command. (Entity entity, Typeable entity) => CommandRoot entity command -> Writer [SlicePart ('Change entity command)] ()
+entity ::
+  forall entity command.
+  (Entity entity, Typeable entity) => CommandRoot entity command -> Writer [SlicePart ('Change entity command)] ()
 entity root = Writer.tell [SlicePrimary (StateChange (Proxy @entity) root)]
 
 
-command :: forall command entity. (Command command, EntityOf command ~ entity, Typeable command) => Writer [Produced entity] () -> CommandRoot entity command
-command builder = CommandRoot (Proxy @command) (Writer.execWriter builder)
+command ::
+  forall command entity.
+  (RunnableCommand command, EntityOf command ~ entity, Typeable command) =>
+  Writer [Produced entity] () -> CommandRoot entity command
+command builder = CommandRoot (Proxy @command) (Writer.execWriter builder) (commandRunner @command)
 
 
-produces :: forall payload entity. (EntityOf payload ~ entity, EventVariantOf (EventOf entity) payload, Typeable payload) => Writer [Produced entity] ()
+produces ::
+  forall payload entity.
+  (EntityOf payload ~ entity, EventVariantOf (EventOf entity) payload, Typeable payload) => Writer [Produced entity] ()
 produces = Writer.tell [Produced (Proxy @payload)]
 
 
-query :: forall query. (Query query, Typeable query) => Writer [ReadSource query] () -> Writer [SlicePart ('View query)] ()
-query builder = Writer.tell [SlicePrimary (StateView (Proxy @query) (Writer.execWriter builder))]
+query ::
+  forall query queryName entities.
+  ( Query query,
+    Typeable query,
+    Schema.ToSchema query,
+    Json.ToJSON query,
+    Json.FromJSON query,
+    queryName ~ NameOf query,
+    entities ~ EntitiesOf query,
+    GHC.KnownSymbol queryName,
+    WireEntities entities query
+  ) =>
+  Writer [ReadSource query] () -> Writer [SlicePart ('View query)] ()
+query builder = do
+  let sources = Writer.execWriter builder
+  let subscriptions = Prelude.map sourceSubscription sources
+  Writer.tell [SlicePrimary (StateView (Proxy @query) sources (Application.withQuerySources @query subscriptions))]
 
 
-readsFrom :: forall entity query. (Entity entity, QueryOf entity query, QuerySourceMember entity query (EntitiesOf query), Typeable entity) => Writer [EventRef entity] () -> Writer [ReadSource query] ()
+readsFrom ::
+  forall entity query.
+  ( Entity entity,
+    QueryOf entity query,
+    QuerySourceMember entity query (EntitiesOf query),
+    Typeable entity,
+    GHC.KnownSymbol (NameOf entity),
+    Json.FromJSON (EventOf entity)
+  ) =>
+  Writer [EventRef entity] () -> Writer [ReadSource query] ()
 readsFrom builder = Writer.tell [ReadSource (Proxy @entity) (Writer.execWriter builder)]
+
+
+sourceSubscription :: ReadSource query -> EventSubscription
+sourceSubscription (ReadSource (_ :: Proxy entity) events) = do
+  let name = GHC.symbolVal (Proxy @(NameOf entity)) |> Text.fromLinkedList
+  EventSubscription (EntityName name) (matchesEvent @entity events)
+
+
+matchesEvent :: forall entity. (Json.FromJSON (EventOf entity)) => [EventRef entity] -> Json.Value -> Bool
+matchesEvent events rawEvent = case Json.decode @(EventOf entity) rawEvent of
+  Err _ -> True
+  Ok decoded -> Prelude.any (matchesPayload decoded) events
+
+
+matchesPayload :: forall entity. EventOf entity -> EventRef entity -> Bool
+matchesPayload decoded (EventRef (_ :: Proxy payload)) = case toVariant @(EventOf entity) @payload decoded of
+  Just _ -> True
+  Nothing -> False
 
 
 class EventPart part payload where
   makeEventPart :: Proxy payload -> part
 
 
-instance (EntityOf payload ~ entity, EventVariantOf (EventOf entity) payload, Typeable payload) => EventPart (EventRef entity) payload where
+instance
+  (EntityOf payload ~ entity, EventVariantOf (EventOf entity) payload, Typeable payload) =>
+  EventPart (EventRef entity) payload
+  where
   makeEventPart _ = EventRef (Proxy @payload)
 
 
-instance (EntityOf payload ~ EntityOf handler, HandledEvent handler ~ payload, EventVariantOf (EventOf (EntityOf handler)) payload, Typeable payload) => EventPart (OutboundPart handler) payload where
+instance
+  ( EntityOf payload ~ EntityOf handler,
+    HandledEvent handler ~ payload,
+    EventVariantOf (EventOf (EntityOf handler)) payload,
+    Typeable payload
+  ) =>
+  EventPart (OutboundPart handler) payload
+  where
   makeEventPart _ = OutboundEvent (Proxy @payload)
 
 
@@ -358,12 +570,53 @@ onEvent :: forall payload part. (EventPart part payload) => Writer [part] ()
 onEvent = Writer.tell [makeEventPart @part @payload Proxy]
 
 
-outboundIntegration :: forall handler. (OutboundIntegration handler, Typeable handler) => Writer [OutboundPart handler] () -> Writer [SlicePart ('Outbound handler)] ()
-outboundIntegration builder = Writer.tell [SlicePrimary (OutboundTranslation (Proxy @handler) (Writer.execWriter builder))]
+outboundIntegration ::
+  forall handler entity event.
+  ( OutboundIntegration handler,
+    Typeable handler,
+    entity ~ EntityOf handler,
+    event ~ EventOf entity,
+    EventVariantOf event (HandledEvent handler),
+    Json.FromJSON entity,
+    Json.FromJSON event,
+    TypeName.Inspectable entity,
+    Default entity,
+    Entity entity
+  ) =>
+  Writer [OutboundPart handler] () -> Writer [SlicePart ('Outbound handler)] ()
+outboundIntegration builder = do
+  let parts = Writer.execWriter builder
+  let register application = Prelude.foldl registerLifecycle (Application.withOutbound @handler application) parts
+  Writer.tell [SlicePrimary (OutboundTranslation (Proxy @handler) parts register)]
 
 
-inboundIntegration :: forall handler. (InboundIntegration handler, Types.KnownInboundTargets (InboundOutputsOf handler), Typeable handler) => Writer [InboundPart handler] () -> Writer [SlicePart ('Inbound handler)] ()
-inboundIntegration builder = Writer.tell [SlicePrimary (InboundTranslation (Proxy @handler) (Writer.execWriter builder))]
+registerLifecycle :: Application -> OutboundPart handler -> Application
+registerLifecycle application part = case part of
+  OutboundLifecycle register -> register application
+  OutboundEvent _ -> application
+  OutboundCommand _ -> application
+
+
+-- | Attach a configured lifecycle worker to the owning outbound Slice.
+outboundLifecycle ::
+  forall config (entity :: Type) state handler.
+  (Typeable config, entity ~ EntityOf handler, TypeName.Inspectable entity) =>
+  (config -> Lifecycle.OutboundConfig state) -> Writer [OutboundPart handler] ()
+outboundLifecycle makeConfig = Writer.tell [OutboundLifecycle (Application.withOutboundLifecycle @config @entity makeConfig)]
+
+
+inboundIntegration ::
+  forall handler.
+  ( InboundIntegration handler,
+    Types.KnownInboundTargets (InboundOutputsOf handler),
+    Typeable handler,
+    Typeable (InboundConfigOf handler)
+  ) =>
+  Writer [InboundPart handler] () -> Writer [SlicePart ('Inbound handler)] ()
+inboundIntegration builder =
+  Writer.tell
+    [ SlicePrimary (InboundTranslation (Proxy @handler) (Writer.execWriter builder) (Application.withInboundHandler @handler))
+    ]
 
 
 class CommandPart part command where
@@ -374,7 +627,10 @@ instance CommandPart (OutboundPart handler) command where
   makeCommandPart _ target = OutboundCommand target
 
 
-instance (InboundIntegration handler, Integration.AllowedOutput command (InboundOutputsOf handler)) => CommandPart (InboundPart handler) command where
+instance
+  (InboundIntegration handler, Integration.AllowedOutput command (InboundOutputsOf handler)) =>
+  CommandPart (InboundPart handler) command
+  where
   makeCommandPart _ target = InboundCommand target
 
 
@@ -382,7 +638,10 @@ triggersCommand :: forall command part. (CommandPart part command) => CommandTar
 triggersCommand (CommandTargetFor (entityProxy :: Proxy entity)) = Writer.tell [makeCommandPart @part @command (Proxy @command) (CommandTarget (Proxy @command) entityProxy)]
 
 
-onTargetEntity :: forall entity command. (Command command, Entity entity, EntityOf command ~ entity, Typeable command, Typeable entity) => CommandTargetFor command
+onTargetEntity ::
+  forall entity command.
+  (Command command, Entity entity, EntityOf command ~ entity, Typeable command, Typeable entity) =>
+  CommandTargetFor command
 onTargetEntity = CommandTargetFor (Proxy @entity)
 
 
@@ -392,23 +651,23 @@ sliceKind (Slice _ primary _) = Types.primaryKind primary
 
 sliceEventTypes :: Slice -> [Text]
 sliceEventTypes (Slice _ primary _) = case primary of
-  StateChange _ (CommandRoot _ produced) -> [Types.typeName payload | Produced payload <- produced]
-  StateView _ sources -> Prelude.concat [eventNames events | ReadSource _ events <- sources]
-  OutboundTranslation _ parts -> [Types.typeName payload | OutboundEvent payload <- parts]
-  InboundTranslation _ _ -> []
+  StateChange _ (CommandRoot _ produced _) -> [Types.typeName payload | Produced payload <- produced]
+  StateView _ sources _ -> Prelude.concat [eventNames events | ReadSource _ events <- sources]
+  OutboundTranslation _ parts _ -> [Types.typeName payload | OutboundEvent payload <- parts]
+  InboundTranslation _ _ _ -> []
 
 
 sliceCommandTargets :: Slice -> [(Text, Text)]
 sliceCommandTargets (Slice _ primary _) = case primary of
-  StateChange entityProxy (CommandRoot commandProxy _) -> [(Types.typeName commandProxy, Types.typeName entityProxy)]
-  StateView _ _ -> []
-  OutboundTranslation _ parts -> [targetNames target | OutboundCommand target <- parts]
-  InboundTranslation _ parts -> [targetNames target | InboundCommand target <- parts]
+  StateChange entityProxy (CommandRoot commandProxy _ _) -> [(Types.typeName commandProxy, Types.typeName entityProxy)]
+  StateView _ _ _ -> []
+  OutboundTranslation _ parts _ -> [targetNames target | OutboundCommand target <- parts]
+  InboundTranslation _ parts _ -> [targetNames target | InboundCommand target <- parts]
 
 
 sliceEventSources :: Slice -> [(Text, [Text])]
 sliceEventSources (Slice _ primary _) = case primary of
-  StateView _ sources -> [(Types.typeName entityProxy, eventNames events) | ReadSource entityProxy events <- sources]
+  StateView _ sources _ -> [(Types.typeName entityProxy, eventNames events) | ReadSource entityProxy events <- sources]
   _ -> []
 
 
@@ -424,27 +683,33 @@ validateModel :: EventModel -> Result Text EventModel
 validateModel model =
   let featuresFound = model.modelFeatures
       emptyModel = if Prelude.null featuresFound then ["eventModel requires at least one Feature"] else []
-      paths = [(selected.featureName, chapter.chapterName, sliceValue) | selected <- featuresFound, chapter <- selected.featureChapters, sliceValue <- chapter.chapterSlices]
+      paths =
+        [ (selected.featureName, chapter.chapterName, sliceValue)
+        | selected <- featuresFound,
+          chapter <- selected.featureChapters,
+          sliceValue <- chapter.chapterSlices
+        ]
       (sliceProblems, _) = Prelude.foldl validatePath ([], []) paths
       problems = emptyModel Prelude.++ sliceProblems
-   in case problems of
+  in  case problems of
         [] -> Ok model
         _ -> Err (Text.joinWith "\n" (Array.fromLinkedList problems))
 
 
-validatePath :: ([Text], [(Reflection.SomeTypeRep, Text)]) -> (Text, Text, Slice) -> ([Text], [(Reflection.SomeTypeRep, Text)])
+validatePath ::
+  ([Text], [(Reflection.SomeTypeRep, Text)]) -> (Text, Text, Slice) -> ([Text], [(Reflection.SomeTypeRep, Text)])
 validatePath (problems, seen) (featureLabel, chapterLabel, selected) =
   let selectedName = sliceName selected
       path = [fmt|Feature "#{featureLabel}", Chapter "#{chapterLabel}", Slice "#{selectedName}"|]
       (found, next) = validateSlice path selected seen
-   in (problems Prelude.++ found, next)
+  in  (problems Prelude.++ found, next)
 
 
 validateSlice :: Text -> Slice -> [(Reflection.SomeTypeRep, Text)] -> ([Text], [(Reflection.SomeTypeRep, Text)])
 validateSlice path (Slice _ primary _) seen = case primary of
   StateChange _ _ -> ([], seen)
-  StateView _ _ -> ([], seen)
-  InboundTranslation (_ :: Proxy handler) parts ->
+  StateView _ _ _ -> ([], seen)
+  InboundTranslation (_ :: Proxy handler) parts _ ->
     let handlerName = Types.typeName (Proxy @handler)
         expected = Types.inboundTargets (Proxy @(InboundOutputsOf handler))
         declared = [targetTypes target | InboundCommand target <- parts]
@@ -458,15 +723,20 @@ validateSlice path (Slice _ primary _) seen = case primary of
           | (commandType, entityType, commandName, entityName) <- expected,
             Prelude.length (Prelude.filter (== (commandType, entityType)) declared) > 1
           ]
-     in (missing Prelude.++ repeated, seen)
-  OutboundTranslation (proxy :: Proxy handler) parts ->
+    in  (missing Prelude.++ repeated, seen)
+  OutboundTranslation (proxy :: Proxy handler) parts _ ->
     let triggerCount = countOutboundEvents parts
         triggerProblems = if triggerCount == 1 then [] else [[fmt|#{path} requires exactly one outbound onEvent; found #{triggerCount}|]]
         handlerType = Reflection.SomeTypeRep (Reflection.typeRep @handler)
         handlerName = Types.typeName proxy
         prior = [priorPath | (priorType, priorPath) <- seen, priorType == handlerType]
-        reuseProblems = if Prelude.null prior then [] else [[fmt|#{path} reuses outbound handler #{handlerName}; first declared at #{Text.joinWith ", " (Array.fromLinkedList prior)}|]]
-     in (triggerProblems Prelude.++ reuseProblems, (handlerType, path) : seen)
+        reuseProblems =
+          if Prelude.null prior
+            then []
+            else
+              [ [fmt|#{path} reuses outbound handler #{handlerName}; first declared at #{Text.joinWith ", " (Array.fromLinkedList prior)}|]
+              ]
+    in  (triggerProblems Prelude.++ reuseProblems, (handlerType, path) : seen)
 
 
 targetTypes :: CommandTarget -> (Reflection.SomeTypeRep, Reflection.SomeTypeRep)
@@ -479,6 +749,7 @@ countOutboundEvents parts = case parts of
   [] -> 0
   OutboundEvent _ : rest -> 1 + countOutboundEvents rest
   OutboundCommand _ : rest -> countOutboundEvents rest
+  OutboundLifecycle _ : rest -> countOutboundEvents rest
 
 
 -- | Keep each case as one typed script with shared bindings.
@@ -515,7 +786,17 @@ instance RuleInput ('Change entity command) command where
   makeWhen value = CommandWhen value
 
 
-instance (Entity entity, EntityOf payload ~ entity, EventVariantOf (EventOf entity) payload, QueryOf entity query, QuerySourceMember entity query (EntitiesOf query), Typeable entity, Typeable payload) => RuleInput ('View query) payload where
+instance
+  ( Entity entity,
+    EntityOf payload ~ entity,
+    EventVariantOf (EventOf entity) payload,
+    QueryOf entity query,
+    QuerySourceMember entity query (EntitiesOf query),
+    Typeable entity,
+    Typeable payload
+  ) =>
+  RuleInput ('View query) payload
+  where
   makeWhen value = EventWhen value
 
 
@@ -527,11 +808,21 @@ class RuleEventPart part payload where
   makeRuleEvent :: payload -> part
 
 
-instance (Entity (EntityOf payload), EventVariantOf (EventOf (EntityOf payload)) payload, Typeable (EntityOf payload), Typeable payload) => RuleEventPart HistoricalEvent payload where
+instance
+  ( Entity (EntityOf payload),
+    EventVariantOf (EventOf (EntityOf payload)) payload,
+    Typeable (EntityOf payload),
+    Typeable payload
+  ) =>
+  RuleEventPart HistoricalEvent payload
+  where
   makeRuleEvent value = HistoricalEvent (Proxy @(EntityOf payload)) value
 
 
-instance (mode ~ 'Types.Events, EntityOf payload ~ entity, EventVariantOf (EventOf entity) payload, Typeable payload) => RuleEventPart (OutcomePart ('Change entity command) mode) payload where
+instance
+  (mode ~ 'Types.Events, EntityOf payload ~ entity, EventVariantOf (EventOf entity) payload, Typeable payload) =>
+  RuleEventPart (OutcomePart ('Change entity command) mode) payload
+  where
   makeRuleEvent value = OutcomeEvent (ExpectedEvent value)
 
 
@@ -581,7 +872,8 @@ instance RuleOutcome ('View query) 'Types.ViewNoOpMode where
     _ -> Err "view no-op outcome requires exactly one noOp assertion"
 
 
-therefore :: forall context mode. (RuleOutcome context mode) => Writer [OutcomePart context mode] () -> RuleAction context ()
+therefore ::
+  forall context mode. (RuleOutcome context mode) => Writer [OutcomePart context mode] () -> RuleAction context ()
 therefore builder = case makeExpected (Writer.execWriter builder) of
   Ok expected -> RuleRecord (ThereforePart expected)
   Err problem -> RuleRecord (InvalidOutcome problem)
@@ -600,12 +892,13 @@ rejectedMatches patternText = Writer.tell [OutcomeRejectedPattern patternText]
 
 
 regex :: QuasiQuoter
-regex = QuasiQuoter
-  { quoteExp = \source -> [| Text.fromLinkedList source |],
-    quotePat = \_ -> Prelude.fail "regex is an expression",
-    quoteType = \_ -> Prelude.fail "regex is an expression",
-    quoteDec = \_ -> Prelude.fail "regex is an expression"
-  }
+regex =
+  QuasiQuoter
+    { quoteExp = \source -> [|Text.fromLinkedList source|],
+      quotePat = \_ -> Prelude.fail "regex is an expression",
+      quoteType = \_ -> Prelude.fail "regex is an expression",
+      quoteDec = \_ -> Prelude.fail "regex is an expression"
+    }
 
 
 acceptedWithNoEvents :: Writer [OutcomePart ('Change entity command) 'Types.ZeroEvents] ()

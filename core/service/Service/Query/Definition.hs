@@ -5,36 +5,43 @@ module Service.Query.Definition (
   QueryDefinition (..),
   createDefinition,
   createDefinitionWithStore,
+  EventSubscription (..),
+  restrictToSources,
   WireEntities (..),
 ) where
 
+import Array qualified
 import Basics
 import GHC.TypeLits qualified as GHC
 import Json qualified
+import Map qualified
+import Maybe (Maybe (..))
+import Maybe qualified
 import Record qualified
 import Schema (Schema)
 import Schema qualified
-import Service.Command.Core (Entity (..), EventOf, NameOf)
 import Service.AccessControl qualified as Auth
+import Service.Command.Core (Entity (..), EventOf, NameOf)
 import Service.EntityFetcher.Core qualified as EntityFetcher
+import Service.Event (Event (..))
 import Service.Event.EntityName (EntityName (..))
 import Service.EventStore.Core (EventStore)
 import Service.EventStore.Core qualified as EventStore
 import Service.Query.Core (EntitiesOf, Query, QueryOf)
 import Service.Query.Endpoint qualified as Endpoint
-import Service.Query.Registry (QueryRegistry)
+import Service.Query.Registry (QueryRegistry, QueryUpdater (..))
 import Service.Query.Registry qualified as Registry
 import Service.Query.Updater qualified as Updater
 import Service.QueryObjectStore.Core (QueryObjectStore)
 import Service.QueryObjectStore.InMemory qualified as InMemory
 import Service.SnapshotCache.InMemory qualified as SnapshotCache
-import Service.Transport (QueryEndpointHandler, EndpointSchema (..))
-import Maybe (Maybe (..))
+import Service.Transport (EndpointSchema (..), QueryEndpointHandler)
 import Task (Task)
 import Task qualified
 import Text (Text)
 import Text qualified
 import ToText (toText)
+import Prelude qualified
 
 
 -- | Captures how to wire a query type at runtime.
@@ -58,6 +65,48 @@ data QueryDefinition = QueryDefinition
       EventStore Json.Value ->
       Task Text (QueryRegistry, (Text, QueryEndpointHandler, EndpointSchema))
   }
+
+
+data EventSubscription = EventSubscription EntityName (Json.Value -> Bool)
+
+
+-- | Keep only the entity and payload subscriptions named by a query Slice.
+restrictToSources :: [EventSubscription] -> QueryDefinition -> QueryDefinition
+restrictToSources subscriptions definition = do
+  let predicates = Prelude.foldl addSubscription Map.empty subscriptions
+  definition
+    { wireQuery = \eventStore -> do
+        (registry, endpoint) <- definition.wireQuery eventStore
+        let selected =
+              Registry.registeredEntityNames registry
+                |> Array.reduce (registerSelected registry predicates) Registry.empty
+        Task.yield (selected, endpoint)
+    }
+
+
+addSubscription ::
+  Map.Map EntityName [Json.Value -> Bool] -> EventSubscription -> Map.Map EntityName [Json.Value -> Bool]
+addSubscription predicates (EventSubscription entityName accepts) = do
+  let existing = predicates |> Map.get entityName |> Maybe.withDefault []
+  predicates |> Map.set entityName (accepts : existing)
+
+
+registerSelected ::
+  QueryRegistry -> Map.Map EntityName [Json.Value -> Bool] -> EntityName -> QueryRegistry -> QueryRegistry
+registerSelected registry predicates entityName selected = case predicates |> Map.get entityName of
+  Nothing -> selected
+  Just accepted -> do
+    let updaters = Registry.getUpdatersForEntity entityName registry
+    updaters
+      |> Array.reduce (\updater current -> current |> Registry.register entityName (filterUpdater accepted updater)) selected
+
+
+filterUpdater :: [Json.Value -> Bool] -> QueryUpdater -> QueryUpdater
+filterUpdater accepted updater =
+  updater
+    { updateQuery = \rawEvent ->
+        Task.when (Prelude.any (\accepts -> accepts rawEvent.event) accepted) (updater.updateQuery rawEvent)
+    }
 
 
 -- | Create a QueryDefinition for a query type using in-memory storage.
@@ -132,20 +181,22 @@ createDefinitionWithStore storeFactory = do
 
   let schema = Schema.toSchema @query
 
-  let pageSchema = Schema.SObject
-        [ Schema.FieldSchema "items" (Schema.SArray schema) True ""
-        , Schema.FieldSchema "total" Schema.SInt True ""
-        , Schema.FieldSchema "hasMore" Schema.SBool True ""
-        , Schema.FieldSchema "effectiveLimit" Schema.SInt True ""
-        ]
+  let pageSchema =
+        Schema.SObject
+          [ Schema.FieldSchema "items" (Schema.SArray schema) True "",
+            Schema.FieldSchema "total" Schema.SInt True "",
+            Schema.FieldSchema "hasMore" Schema.SBool True "",
+            Schema.FieldSchema "effectiveLimit" Schema.SInt True ""
+          ]
 
-  let endpointSchema = EndpointSchema
-        { requestSchema = Nothing  -- Queries have no request body (GET)
-        , responseSchema = pageSchema
-        , description = ""
-        , deprecated = False
-        , entityName = Nothing  -- Queries grouped under fixed "Queries" tag
-        }
+  let endpointSchema =
+        EndpointSchema
+          { requestSchema = Nothing, -- Queries have no request body (GET)
+            responseSchema = pageSchema,
+            description = "",
+            deprecated = False,
+            entityName = Nothing -- Queries grouped under fixed "Queries" tag
+          }
 
   QueryDefinition
     { queryName = queryNameText,
@@ -161,9 +212,14 @@ createDefinitionWithStore storeFactory = do
         -- 3. Create endpoint handler (lambda accepts Maybe UserClaims, Maybe NeoQL.Expr, and QueryPageRequest)
         let endpoint userClaims maybeExpr pageRequest =
               Endpoint.createQueryEndpointWithProtection
-                (\jsonValue -> rawEventStore.renderProtectedJson jsonValue
-                  |> Task.mapError (\_ -> Auth.StorageError "Protected response resolution failed"))
-                queryStore userClaims maybeExpr pageRequest
+                ( \jsonValue ->
+                    rawEventStore.renderProtectedJson jsonValue
+                      |> Task.mapError (\_ -> Auth.StorageError "Protected response resolution failed")
+                )
+                queryStore
+                userClaims
+                maybeExpr
+                pageRequest
 
         Task.yield (registry, (queryNameText, endpoint, endpointSchema))
     }

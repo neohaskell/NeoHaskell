@@ -146,7 +146,7 @@
     {
       "page": "configuration-and-wiring.md",
       "ordinal": 1,
-      "source": "neo/starter/src/App.hs"
+      "source": "testbed/src/Testbed/EventModel.hs"
     },
     {
       "page": "event-model.md",
@@ -156,7 +156,7 @@
     {
       "page": "event-model.md",
       "ordinal": 2,
-      "source": "testbed/src/App.hs"
+      "source": "testbed/src/Testbed/EventModel.hs"
     },
     {
       "page": "transports.md",

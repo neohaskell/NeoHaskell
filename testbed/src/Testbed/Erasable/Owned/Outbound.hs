@@ -1,13 +1,12 @@
-{-| Run one scoped erasure action for each application request event.
-The action returns a result command; the request stays pending until that command commits.
--}
+-- | Run one scoped erasure action for each application request event.
+-- The action returns a result command; the request stays pending until that command commits.
 module Testbed.Erasable.Owned.Outbound (
   OwnedErasureOutbound (..),
   handleEvent,
 ) where
 
-import Core
 import AsyncTask qualified
+import Core
 import Environment qualified
 import Erasable (Erasable)
 import File qualified
@@ -15,7 +14,7 @@ import Integration qualified
 import Integration.Erasable qualified as Erasure
 import Path qualified
 import Service.Event.EntityName (EntityName (..))
-import Service.OutboundIntegration.TH (outboundIntegrationFullEvent)
+import Service.OutboundIntegration.TH (outboundIntegration)
 import Task qualified
 import Testbed.Erasable.Core (SecretPayload)
 import Testbed.Erasable.Owned.Commands.Record (RecordErasureResult (..))
@@ -30,11 +29,16 @@ data OwnedErasureOutbound = OwnedErasureOutbound
 type instance EntityOf OwnedErasureOutbound = OwnedProtectedEntity
 
 
-handleEvent :: OwnedProtectedEntity -> OwnedProtectedEvent -> Integration.Outbound
-handleEvent _ event = case event of
-  ErasureRequested {entityId, reference, rejectResult, simulateUnknownReference, staleFirst} ->
-    Integration.batch [requestAction entityId reference rejectResult simulateUnknownReference staleFirst]
-  _ -> Integration.none
+handleEvent :: OwnedProtectedEntity -> ErasureRequestedPayload -> Integration.Outbound
+handleEvent _ payload =
+  Integration.batch
+    [ requestAction
+        payload.requestedEntityId
+        payload.requestedReference
+        payload.requestedRejectResult
+        payload.requestedSimulateUnknownReference
+        payload.requestedStaleFirst
+    ]
 
 
 requestAction :: Uuid -> Text -> Bool -> Bool -> Erasable SecretPayload -> Integration.Action
@@ -50,13 +54,16 @@ requestAction entityId reference rejectResult simulateUnknownReference staleFirs
     let onFailure = failureCommand entityId reference
     if failAction
       then Task.throw (Integration.UnexpectedError "Testbed erasure action failure")
-      else if omitResult
-        then Integration.runAction context (omitResultCallback target)
-        else if pauseBeforeAction
-          then Integration.runAction context (pauseBeforeErase reference)
-          else if pause
-            then Integration.runAction context (pauseAfterCommittedErase target reference onResult onFailure)
-            else Integration.runAction context (Integration.outbound Erasure.Erase {target, onResult, onFailure})
+      else
+        if omitResult
+          then Integration.runAction context (omitResultCallback target)
+          else
+            if pauseBeforeAction
+              then Integration.runAction context (pauseBeforeErase reference)
+              else
+                if pause
+                  then Integration.runAction context (pauseAfterCommittedErase target reference onResult onFailure)
+                  else Integration.runAction context (Integration.outbound Erasure.Erase {target, onResult, onFailure})
 
 
 shouldPause :: Text -> Uuid -> Task Integration.IntegrationError Bool
@@ -108,12 +115,18 @@ pauseBeforeErase reference =
     path <- case Path.fromText marker of
       Nothing -> Task.throw (Integration.UnexpectedError "Invalid pre-action marker path")
       Just value -> Task.yield value
-    File.writeText path reference |> Task.mapError (\_ -> Integration.UnexpectedError "Pre-action marker could not be written")
+    File.writeText path reference
+      |> Task.mapError (\_ -> Integration.UnexpectedError "Pre-action marker could not be written")
     AsyncTask.sleep 60000
     Task.throw (Integration.UnexpectedError "Expected testbed process to stop before key action")
 
 
-pauseAfterCommittedErase :: Erasure.ErasureTarget -> Text -> (Erasure.ErasureResult -> RecordErasureResult) -> (Integration.IntegrationError -> RecordErasureResult) -> Integration.Action
+pauseAfterCommittedErase ::
+  Erasure.ErasureTarget ->
+  Text ->
+  (Erasure.ErasureResult -> RecordErasureResult) ->
+  (Integration.IntegrationError -> RecordErasureResult) ->
+  Integration.Action
 pauseAfterCommittedErase target reference onResult onFailure =
   Integration.action \context -> case context.eraseErasableKey of
     Nothing -> Integration.emitCommand (onFailure (Integration.UnexpectedError "Erasable key store unavailable"))
@@ -132,4 +145,4 @@ pauseAfterCommittedErase target reference onResult onFailure =
         Ok result -> Integration.emitCommand (onResult result)
 
 
-outboundIntegrationFullEvent ''OwnedErasureOutbound
+outboundIntegration ''OwnedErasureOutbound

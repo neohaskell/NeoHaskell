@@ -1,9 +1,9 @@
-{-| Keep an application's protected value and erasure request state in one entity.
-Commands append these events; the query and outbound handler read the reconstructed entity.
--}
+-- | Keep an application's protected value and erasure request state in one entity.
+-- Commands append these events; the query and outbound handler read the reconstructed entity.
 module Testbed.Erasable.Owned.Core (
   OwnedProtectedEntity (..),
   OwnedProtectedEvent (..),
+  ErasureRequestedPayload (..),
   ErasureState (..),
 ) where
 
@@ -20,6 +20,8 @@ data ErasureState = NotRequested | Pending | Failed Text | Completed Bool
 
 
 instance Json.ToJSON ErasureState
+
+
 instance Json.FromJSON ErasureState
 
 
@@ -36,6 +38,8 @@ data OwnedProtectedEntity = OwnedProtectedEntity
 
 
 instance Json.ToJSON OwnedProtectedEntity
+
+
 instance Json.FromJSON OwnedProtectedEntity
 
 
@@ -43,15 +47,16 @@ type instance NameOf OwnedProtectedEntity = "OwnedProtectedEntity"
 
 
 instance Default OwnedProtectedEntity where
-  def = OwnedProtectedEntity
-    { caseId = Uuid.nil,
-      ownerId = "",
-      caseStatus = "",
-      firstSecret = Nothing,
-      secondSecret = Nothing,
-      staleSecret = Nothing,
-      erasureState = NotRequested
-    }
+  def =
+    OwnedProtectedEntity
+      { caseId = Uuid.nil,
+        ownerId = "",
+        caseStatus = "",
+        firstSecret = Nothing,
+        secondSecret = Nothing,
+        staleSecret = Nothing,
+        erasureState = NotRequested
+      }
 
 
 data OwnedProtectedEvent
@@ -83,11 +88,51 @@ data OwnedProtectedEvent
   deriving (Generic, Show)
 
 
+data ErasureRequestedPayload = ErasureRequestedPayload
+  { requestedEntityId :: Uuid,
+    requestedReference :: Text,
+    requestedRejectResult :: Bool,
+    requestedSimulateUnknownReference :: Bool,
+    requestedStaleFirst :: Erasable SecretPayload
+  }
+
+
+type instance EntityOf ErasureRequestedPayload = OwnedProtectedEntity
+
+
+instance EventVariantOf OwnedProtectedEvent ErasureRequestedPayload where
+  fromVariant payload =
+    ErasureRequested
+      { entityId = payload.requestedEntityId,
+        reference = payload.requestedReference,
+        rejectResult = payload.requestedRejectResult,
+        simulateUnknownReference = payload.requestedSimulateUnknownReference,
+        staleFirst = payload.requestedStaleFirst
+      }
+  toVariant eventValue = case eventValue of
+    ErasureRequested {entityId, reference, rejectResult, simulateUnknownReference, staleFirst} ->
+      Just
+        ErasureRequestedPayload
+          { requestedEntityId = entityId,
+            requestedReference = reference,
+            requestedRejectResult = rejectResult,
+            requestedSimulateUnknownReference = simulateUnknownReference,
+            requestedStaleFirst = staleFirst
+          }
+    OwnedProtectedCreated {} -> Nothing
+    ErasureCompleted {} -> Nothing
+    ErasureFailed {} -> Nothing
+
+
 instance Json.ToJSON OwnedProtectedEvent
+
+
 instance Json.FromJSON OwnedProtectedEvent
 
 
 type instance EventOf OwnedProtectedEntity = OwnedProtectedEvent
+
+
 type instance EntityOf OwnedProtectedEvent = OwnedProtectedEntity
 
 

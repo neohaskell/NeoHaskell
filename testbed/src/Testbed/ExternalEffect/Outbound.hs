@@ -3,6 +3,7 @@
 module Testbed.ExternalEffect.Outbound (
   ExternalEffectOutbound (..),
   handleEvent,
+  deliverEffect,
 ) where
 
 import Core
@@ -11,11 +12,11 @@ import Integration qualified
 import Integration.Http qualified as Http
 import Json qualified
 import Result qualified as Result
-import Service.OutboundIntegration.TH (outboundIntegrationFullEvent)
+import Service.OutboundIntegration.TH (outboundIntegration)
+import Task qualified
 import Testbed.ExternalEffect.Commands.RecordExternalEffect (RecordExternalEffect (..))
 import Testbed.ExternalEffect.Core
 import Testbed.Integrations.JsonSideEffect qualified as JsonSideEffect
-import Task qualified
 import Text qualified
 import Uuid qualified
 
@@ -47,32 +48,41 @@ data ExternalEffectResponse = ExternalEffectResponse
 instance Json.FromJSON ExternalEffectResponse
 
 
-handleEvent :: ExternalEffectEntity -> ExternalEffectEvent -> Integration.Outbound
-handleEvent _ event = case event of
-  ExternalEffectRequested {entityId, description, amount} ->
-    Integration.batch [Integration.action \context -> do
+handleEvent :: ExternalEffectEntity -> ExternalEffectRequestedPayload -> Integration.Outbound
+handleEvent _ payload = deliverEffect "primary" True payload
+
+
+deliverEffect :: Text -> Bool -> ExternalEffectRequestedPayload -> Integration.Outbound
+deliverEffect handlerName emitOutcome payload =
+  Integration.batch
+    [ Integration.action \context -> do
         configured <- Environment.getVariable "TESTBED_FIXTURE_PORT" |> Task.asResult
         let fixturePort = case configured of
               Err _ -> "8181"
               Ok value -> value
-        Integration.runAction context (Integration.outbound
-          JsonSideEffect.JsonSideEffect
-            { method = Http.POST,
-              url = [fmt|http://127.0.0.1:#{fixturePort}/external/effects|],
-              headers = [("Idempotency-Key", Uuid.toText entityId)],
-              payload =
-                ExternalEffectPayload
-                  { effectId = Uuid.toText entityId,
-                    description = description,
-                    amount = amount
-                  },
-              auth = Http.NoAuth,
-              retry = Http.noRetry,
-              timeoutSeconds = 5,
-              onSuccess = mapSuccess entityId,
-              onError = \_ -> RecordEffectFailure {effectId = entityId}
-            })]
-  _ -> Integration.none
+        result <-
+          Integration.runAction
+            context
+            ( Integration.outbound
+                JsonSideEffect.JsonSideEffect
+                  { method = Http.POST,
+                    url = [fmt|http://127.0.0.1:#{fixturePort}/external/effects|],
+                    headers = [("Idempotency-Key", Uuid.toText payload.requestedEntityId), ("X-Event-Model-Handler", handlerName)],
+                    payload =
+                      ExternalEffectPayload
+                        { effectId = Uuid.toText payload.requestedEntityId,
+                          description = payload.requestedDescription,
+                          amount = payload.requestedAmount
+                        },
+                    auth = Http.NoAuth,
+                    retry = Http.noRetry,
+                    timeoutSeconds = 5,
+                    onSuccess = mapSuccess payload.requestedEntityId,
+                    onError = \_ -> RecordEffectFailure {effectId = payload.requestedEntityId}
+                  }
+            )
+        if emitOutcome then Task.yield result else Task.yield Nothing
+    ]
 
 
 mapSuccess :: Uuid -> Http.Response -> RecordExternalEffect
@@ -88,4 +98,4 @@ mapSuccess effectId response =
         RecordEffectFailure {effectId = effectId}
 
 
-outboundIntegrationFullEvent ''ExternalEffectOutbound
+outboundIntegration ''ExternalEffectOutbound

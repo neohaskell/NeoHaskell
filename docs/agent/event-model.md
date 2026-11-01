@@ -42,13 +42,18 @@ cartFlow = feature "Cart flow" do
 
 ## Compose the application Event Model
 
-Import the Feature action into `src/App.hs`, then compose it as a bare action.
+Import the Feature action into a named model module, then compose it as a bare action. Register shared configuration before the Features so each integration receives the loaded configuration at startup.
 
 ```haskell ignore
 appEventModel = eventModel do
 	appName "Cart"
+	withConfig @AppConfig
+	withEventStore makeEventStoreConfig
+	withTransport WebTransport.server
 	features do
 		cartFlow
+
+main = EventModel.run appEventModel |> Task.runOrPanic
 ```
 
 Import `Service.EventModel` for these builders. Each Slice has one primary declaration. Use `entity` for one initiating `command`, `query` for a view, `outboundIntegration` for one payload trigger, or `inboundIntegration` for a worker. An inbound Slice lists every command and target entity pair in the worker's `InboundOutputsOf` type exactly once. `readsFrom` may repeat for each entity listed in the query's `EntitiesOf` type family. A query source lists each subscribed payload with `onEvent`.
@@ -61,6 +66,8 @@ If the Feature module imports `Core`, use `import Core hiding (event)` before im
 
 The compiler requires an `Entity` instance, a `Command` instance, and a `Query` instance for declarations that use them. It checks `EntityOf` for commands and payloads, `EntitiesOf` and `QueryOf` for query sources, and `EventVariantOf` for event payloads. Define the real behavior before adding its Slice. A missing implementation or ownership mismatch fails compilation. There is no topology-only declaration.
 
-Generate an entity's Event ADT separately with `deriveEntityEvents`. Evaluating `eventModel` does not generate types or start workers. Until Event Model application wiring is available, register the same implemented services, queries, and integrations in `Application` as described in [configuration and wiring](configuration-and-wiring.md).
+Generate an entity's Event ADT separately with `deriveEntityEvents`. Evaluating `eventModel` assembles registrations without starting workers. `EventModel.toApplication` validates the model and returns the wired `Application`; `EventModel.run` validates it and starts the application. The model registers every declared command, query, outbound handler, and typed inbound worker. A query subscribes only to its declared `readsFrom` entities and `onEvent` payloads. Distinct outbound handler types may subscribe to the same payload and both run.
+
+The model also accepts `withQueryObjectStore`, `withApiInfo`, `withFileUpload`, `withAuth`, `withOAuth2StateKey`, `withOAuth2Provider`, and `withDispatcherConfig`. Put `withQueryObjectStore` before query Features and `withOAuth2StateKey` before `withOAuth2Provider`. Attach a lifecycle worker to its outbound Slice with `outboundLifecycle`. Direct `Application` assembly remains available for existing programs, but a model-backed executable needs no separate authored registration list.
 
 Evaluate the `eventModel` result and handle an `Err` before startup. Validation reports every residual Slice failure with its Feature, Chapter, and Slice path. It rejects empty Features or Chapters, outbound Slices with the wrong number of triggers, reuse of one outbound handler type, and inbound Slices that omit a typed worker output. Two distinct outbound handler types may subscribe to one payload.

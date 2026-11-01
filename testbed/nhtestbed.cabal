@@ -55,7 +55,7 @@ common common_cfg
 library
   import: common_cfg
   exposed-modules:
-    App
+    Testbed.EventModel
     Testbed.Config
     Testbed.Cart.Commands.AddItem
     Testbed.Cart.Commands.CreateCart
@@ -69,48 +69,49 @@ library
     Testbed.Cart.Integrations.EventCounter
     Testbed.Cart.Integrations.ReserveStockOnItemAdded
     Testbed.Cart.Queries.CartSummary
-    Testbed.Cart.Service
     Testbed.Document.Commands.CreateDocument
     Testbed.Document.Core
-    Testbed.Document.Service
+    Testbed.Document.Feature
     Testbed.Erasable.Core
+    Testbed.Erasable.Feature
     Testbed.Erasable.Commands.CreateProtected
     Testbed.Erasable.Query
-    Testbed.Erasable.Service
     Testbed.Erasable.Owned.Core
+    Testbed.Erasable.Owned.Feature
     Testbed.Erasable.Owned.Commands.Create
     Testbed.Erasable.Owned.Commands.Request
     Testbed.Erasable.Owned.Commands.Record
     Testbed.Erasable.Owned.Outbound
     Testbed.Erasable.Owned.Query
     Testbed.Erasable.Owned.ReplayGateStore
-    Testbed.Erasable.Owned.Service
-    Testbed.Service
     Testbed.Stock.Commands.InitializeStock
     Testbed.Stock.Commands.InitializeStockInternal
     Testbed.Stock.Commands.ReserveStock
     Testbed.Stock.Core
     Testbed.Stock.Feature
     Testbed.Stock.Queries.StockLevel
-    Testbed.Stock.Service
     Testbed.Examples.AiTranscription
     Testbed.Examples.HttpIntegration
     Testbed.Examples.OpenRouterIntegration
     Testbed.Examples.PdfExtraction
     Testbed.Integrations.JsonSideEffect
+    Testbed.Infrastructure
     Testbed.Integrations.TypedInboundExample
     Testbed.ExternalEffect.Core
+    Testbed.ExternalEffect.AuditOutbound
+    Testbed.ExternalEffect.Feature
     Testbed.ExternalEffect.Commands.RecordExternalEffect
     Testbed.ExternalEffect.Commands.RequestExternalEffect
     Testbed.ExternalEffect.Outbound
     Testbed.ExternalEffect.Query
-    Testbed.ExternalEffect.Service
     Testbed.AccountConnection.Core
+    Testbed.AccountConnection.Feature
     Testbed.AccountConnection.Commands.RecordAccountConnection
     Testbed.AccountConnection.Outbound
+    Testbed.AccountConnection.RemovalOutbound
     Testbed.AccountConnection.Query
-    Testbed.AccountConnection.Service
-    OAuth2App
+    Testbed.OAuth2.Configuration
+    Testbed.OAuth2.EventModel
 
   hs-source-dirs: src
   default-language: GHC2021

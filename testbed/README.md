@@ -143,11 +143,11 @@ The runner builds and starts both testbed applications and the fake external ser
 
 ### Run the typed inbound example
 
-`Testbed.Integrations.TypedInboundExample` uses `Integration.typedInbound` and
-`Application.withInboundHandler` to emit a cart command and a stock command from
-one worker. Both commands use `InternalTransport`, and their services register
-them for integration dispatch. The Hurl scenario waits for new records in the
-cart and stock queries.
+`Testbed.Integrations.TypedInboundExample` uses `Integration.typedInbound` to
+emit a cart command and a stock command from one worker. The cart Feature
+declares both command targets in its inbound Slice, and the model registers the
+worker. Both commands use `InternalTransport`. The Hurl scenario waits for new
+records in the cart and stock queries.
 
 The maintained suite runs `testbed/tests/integrations/typed-inbound.hurl`. To run
 that scenario alone, start the application as shown in the SaveIBAN instructions
@@ -159,7 +159,7 @@ nix develop --command hurl --test testbed/tests/integrations/typed-inbound.hurl
 
 ### Run the source-local Event Model example
 
-`Testbed.Cart.Feature.cartFlow` and `Testbed.Stock.Feature.stockFlow` are exported Feature actions. `App.appEventModel` composes them as bare actions in a named `eventModel do` value. Every declared entity, command, event payload, query, and integration has a concrete implementation. The Features describe all four Slice shapes and each typed inbound command target. `App.app` registers and starts these implementations while Event Model runtime wiring remains a separate delivery.
+`Testbed.Cart.Feature.cartFlow` and `Testbed.Stock.Feature.stockFlow` are exported Feature actions. `Testbed.EventModel.appEventModel` composes them with the Document, ExternalEffect, Erasable, and Owned Features in one named `eventModel do` value. The value also declares configuration, PostgreSQL, transport, API metadata, and file upload before the Features. `Launcher` starts it with `EventModel.run`. Every declared command, query, outbound handler, and typed inbound worker is registered by its Slice; there is no separate authored `App.hs` registration list.
 
 The cart Feature also declares three direct state-change rules and two direct state-view rules. The first command rule requests a typed quantity, makes it positive, uses it in `when AddItem`, and expects the same concrete quantity in its emitted `ItemAddedPayload`. The spec supplies a value of -3 and checks the normalized quantity of 8, ordered historical fixtures, emitted event, rejection reason, regex pattern, query actions, and full snapshot differences. Rule generation and isolated case execution belong to the separate generated-test delivery; the maintained Hurl scenario runs the cart and stock behavior now.
 
@@ -169,15 +169,15 @@ From the repository root, run the maintained public API assertions:
 nix develop --command cabal test --project-file=cabal.project.dev nhtestbed-spec-demo --test-show-details=direct
 ```
 
-The `source-local Event Model` examples assert both executable Features, every Slice once, direct rules, concrete query payload subscriptions, a query with two explicit entity sources, the outbound payload trigger, and each translation command's target entity. The compiler fixture runner accepts the complete testbed model and the remaining typed outcome forms. It rejects missing implementations, wrong ownership, invalid rule contexts, mixed command outcomes, and rules in translation Slices:
+The source-local Event Model spec asserts that `toApplication` contains every declared command, query, outbound handler, and inbound worker. It checks explicit query payload subscriptions, a query with two entity sources, the two distinct outbound handlers subscribed to `ExternalEffectRequestedPayload`, and each translation command's target entity. The compiler fixture runner accepts the complete testbed model and the remaining typed outcome forms. It rejects missing implementations, wrong ownership, invalid rule contexts, mixed command outcomes, and rules in translation Slices:
 
 ```sh
 nix develop --command python3 core/test/Service/EventModel/check_compiler_rejections.py
 ```
 
-The same spec verifies that the named model entry point rejects an inbound Slice that omits one typed worker output. It also checks that multiple assembled errors include their Feature, Chapter, and Slice paths before `App.app` can start workers. The testbed retains both explicit inbound targets in `cartFlow`; removing either makes `App.appEventModel` return `Err`.
+The same spec verifies that the named model entry point rejects an inbound Slice that omits one typed worker output. It also checks that multiple assembled errors include their Feature, Chapter, and Slice paths before startup can start workers. The testbed retains both explicit inbound targets in `cartFlow`; removing either makes `appEventModel` return `Err`.
 
-The maintained Hurl testbed exercises the declared cart and stock commands, queries, outbound handler, and typed inbound worker through `App.app`. `stock-reservation.hurl` asserts that `AddItem` updates `CartSummary` from one item to two and that the declared outbound handler runs `ReserveStock`, changing `StockLevel` from 100 available and 0 reserved to 95 available and 5 reserved after the first item. Run it with:
+The maintained Hurl testbed exercises the declared cart and stock commands, queries, outbound handler, and typed inbound worker through the named model. `stock-reservation.hurl` asserts that `AddItem` updates `CartSummary` from one item to two and that the declared outbound handler runs `ReserveStock`, changing `StockLevel` from 100 available and 0 reserved to 95 available and 5 reserved after the first item. `generic-http-side-effect.hurl` requires one request from each distinct outbound handler for each event. Run it with:
 
 ```sh
 TESTBED_HTTP_PORT=18880 TESTBED_OAUTH_PORT=18881 TESTBED_FIXTURE_PORT=8181 nix develop --command .agents/skills/neohaskell-test/scripts/run-testbed --strict

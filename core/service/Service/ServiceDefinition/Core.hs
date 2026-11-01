@@ -7,6 +7,7 @@ module Service.ServiceDefinition.Core (
   new,
   command,
   toServiceRunner,
+  RunnableCommand (..),
   ServiceRunner (..),
   TransportValue (..),
 
@@ -592,6 +593,41 @@ toServiceRunner service =
               service.commandDefinitions
               transportsMap
     }
+
+
+-- | Register one declared command through the existing service runtime.
+class (Command command) => RunnableCommand command where
+  commandRunner :: ServiceRunner
+
+
+instance
+  ( Command command,
+    Schema.ToSchema command,
+    Json.FromJSON command,
+    Entity (EntityOf command),
+    Event (EventOf (EntityOf command)),
+    EntityOf (EventOf (EntityOf command)) ~ EntityOf command,
+    StreamId.ToStreamId (EntityIdType (EntityOf command)),
+    Eq (EntityIdType (EntityOf command)),
+    Ord (EntityIdType (EntityOf command)),
+    Show (EntityIdType (EntityOf command)),
+    Show (EventOf (EntityOf command)),
+    Json.FromJSON (EventOf (EntityOf command)),
+    Json.ToJSON (EventOf (EntityOf command)),
+    Json.FromJSON (EntityOf command),
+    Json.ToJSON (EntityOf command),
+    BuildHandlersForTransports (PublicTransports (TransportsOf command)),
+    KnownBool (IncludesInternalTransport (TransportsOf command)),
+    AssertNoMixedTransports (TransportsOf command),
+    AllKnownSymbols (NamesOf (PublicTransports (TransportsOf command))),
+    KnownMultiTenant (IsMultiTenant command),
+    Record.KnownSymbol (NameOf command),
+    Record.KnownHash (NameOf command),
+    Record.KnownSymbol (NameOf (EntityOf command))
+  ) =>
+  RunnableCommand command
+  where
+  commandRunner = toServiceRunner (command @command new)
 
 
 -- | Build command endpoints for a service, grouped by transport name.

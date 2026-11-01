@@ -2,11 +2,11 @@
 -- The fixture references the testbed Feature actions without registering runtime workers.
 module Service.EventModel.Compile.ValidModel where
 
-import App qualified
 import Core
 import Service.Application (Application)
 import Service.EventModel qualified as EventModel
 import Testbed.Cart.Feature (cartFlow)
+import Testbed.EventModel qualified as App
 import Testbed.Stock.Feature (stockFlow)
 
 
@@ -19,4 +19,6 @@ valid = EventModel.eventModel do
 
 
 existingApplication :: Int -> Application
-existingApplication port = App.app port
+existingApplication port = case App.appEventModel port of
+  Err problem -> panic problem
+  Ok model -> EventModel.toApplication model

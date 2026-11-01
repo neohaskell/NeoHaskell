@@ -1,6 +1,8 @@
 module Testbed.AccountConnection.Core (
   AccountConnectionEntity (..),
   AccountConnectionEvent (..),
+  AccountConnectedPayload (..),
+  AccountRemovedPayload (..),
   AccountConnectionState (..),
   accountConnectionIdFor,
   initialState,
@@ -76,6 +78,63 @@ data AccountConnectionEvent
         tokenStored :: Bool
       }
   deriving (Eq, Generic, Ord, Show)
+
+
+data AccountConnectedPayload = AccountConnectedPayload
+  { connectedEntityId :: Uuid,
+    connectedUserId :: Text,
+    connectedTokenKeyMatches :: Bool
+  }
+
+
+type instance EntityOf AccountConnectedPayload = AccountConnectionEntity
+
+
+instance EventVariantOf AccountConnectionEvent AccountConnectedPayload where
+  fromVariant payload =
+    AccountConnectionSucceeded
+      { entityId = payload.connectedEntityId,
+        userId = payload.connectedUserId,
+        tokenKeyMatches = payload.connectedTokenKeyMatches
+      }
+  toVariant eventValue = case eventValue of
+    AccountConnectionSucceeded {entityId, userId, tokenKeyMatches} ->
+      Just
+        AccountConnectedPayload
+          { connectedEntityId = entityId,
+            connectedUserId = userId,
+            connectedTokenKeyMatches = tokenKeyMatches
+          }
+    AccountConnectionFailedEvent {} -> Nothing
+    AccountConnectionRemoved {} -> Nothing
+    AccountTokenPresenceObserved {} -> Nothing
+
+
+data AccountRemovedPayload = AccountRemovedPayload
+  { removedEntityId :: Uuid,
+    removedUserId :: Text
+  }
+
+
+type instance EntityOf AccountRemovedPayload = AccountConnectionEntity
+
+
+instance EventVariantOf AccountConnectionEvent AccountRemovedPayload where
+  fromVariant payload =
+    AccountConnectionRemoved
+      { entityId = payload.removedEntityId,
+        userId = payload.removedUserId
+      }
+  toVariant eventValue = case eventValue of
+    AccountConnectionRemoved {entityId, userId} ->
+      Just
+        AccountRemovedPayload
+          { removedEntityId = entityId,
+            removedUserId = userId
+          }
+    AccountConnectionSucceeded {} -> Nothing
+    AccountConnectionFailedEvent {} -> Nothing
+    AccountTokenPresenceObserved {} -> Nothing
 
 
 instance Json.FromJSON AccountConnectionEvent

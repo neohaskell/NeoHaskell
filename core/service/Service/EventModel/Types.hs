@@ -43,24 +43,28 @@ import Data.Kind (Constraint)
 import Data.Proxy (Proxy (..))
 import EventVariantOf (EventVariantOf)
 import GHC.TypeLits qualified as GHC
-import Maybe (Maybe)
+import Json qualified
 import Map (Map)
-import Prelude (Applicative (..), Functor (..), Monad (..))
-import Service.Command.Core (Command)
+import Maybe (Maybe)
+import Service.Application (Application)
+import Service.Command.Core (Command, NameOf)
 import Service.Entity.Core (Entity, EntityOf, EventOf)
 import Service.InboundIntegration.Core (InboundIntegration (..))
 import Service.OutboundIntegration.Core (OutboundIntegration (..))
 import Service.Query.Core (EntitiesOf, Query, QueryAction, QueryOf)
+import Service.ServiceDefinition.Core (ServiceRunner)
 import Text (Text)
 import Text qualified
 import Type.Reflection (Typeable)
 import Type.Reflection qualified as Reflection
 import Uuid (Uuid)
+import Prelude (Applicative (..), Functor (..), Monad (..))
 
 
 data EventModel = EventModel
   { modelName :: Text,
-    modelFeatures :: [Feature]
+    modelFeatures :: [Feature],
+    modelConfiguration :: [Application -> Application]
   }
 
 
@@ -84,45 +88,83 @@ data SliceContext = Change Type Type | View Type | Outbound Type | Inbound Type
 
 
 data Primary context where
-  StateChange :: (Entity entity, Typeable entity) => Proxy entity -> CommandRoot entity command -> Primary ('Change entity command)
-  StateView :: (Query query, Typeable query) => Proxy query -> [ReadSource query] -> Primary ('View query)
-  OutboundTranslation :: (OutboundIntegration handler, Typeable handler) => Proxy handler -> [OutboundPart handler] -> Primary ('Outbound handler)
-  InboundTranslation :: (InboundIntegration handler, KnownInboundTargets (InboundOutputsOf handler), Typeable handler) => Proxy handler -> [InboundPart handler] -> Primary ('Inbound handler)
+  StateChange ::
+    (Entity entity, Typeable entity) => Proxy entity -> CommandRoot entity command -> Primary ('Change entity command)
+  StateView ::
+    (Query query, Typeable query) =>
+    Proxy query -> [ReadSource query] -> (Application -> Application) -> Primary ('View query)
+  OutboundTranslation ::
+    (OutboundIntegration handler, Typeable handler) =>
+    Proxy handler -> [OutboundPart handler] -> (Application -> Application) -> Primary ('Outbound handler)
+  InboundTranslation ::
+    (InboundIntegration handler, KnownInboundTargets (InboundOutputsOf handler), Typeable handler) =>
+    Proxy handler -> [InboundPart handler] -> (Application -> Application) -> Primary ('Inbound handler)
 
 
 data CommandRoot entity command where
-  CommandRoot :: (Command command, EntityOf command ~ entity, Typeable command) => Proxy command -> [Produced entity] -> CommandRoot entity command
+  CommandRoot ::
+    (Command command, EntityOf command ~ entity, Typeable command) =>
+    Proxy command -> [Produced entity] -> ServiceRunner -> CommandRoot entity command
 
 
 data Produced entity where
-  Produced :: (EntityOf payload ~ entity, EventVariantOf (EventOf entity) payload, Typeable payload) => Proxy payload -> Produced entity
+  Produced ::
+    (EntityOf payload ~ entity, EventVariantOf (EventOf entity) payload, Typeable payload) =>
+    Proxy payload -> Produced entity
 
 
 data ReadSource query where
-  ReadSource :: (Entity entity, QueryOf entity query, QuerySourceMember entity query (EntitiesOf query), Typeable entity) => Proxy entity -> [EventRef entity] -> ReadSource query
+  ReadSource ::
+    ( Entity entity,
+      QueryOf entity query,
+      QuerySourceMember entity query (EntitiesOf query),
+      Typeable entity,
+      GHC.KnownSymbol (NameOf entity),
+      Json.FromJSON (EventOf entity)
+    ) =>
+    Proxy entity -> [EventRef entity] -> ReadSource query
 
 
 data EventRef entity where
-  EventRef :: (EntityOf payload ~ entity, EventVariantOf (EventOf entity) payload, Typeable payload) => Proxy payload -> EventRef entity
+  EventRef ::
+    (EntityOf payload ~ entity, EventVariantOf (EventOf entity) payload, Typeable payload) =>
+    Proxy payload -> EventRef entity
 
 
 type family QuerySourceMember (entity :: Type) (query :: Type) (entities :: [Type]) :: Constraint where
-  QuerySourceMember entity query '[] = GHC.TypeError (GHC.Text "Query source " GHC.:<>: GHC.ShowType entity GHC.:<>: GHC.Text " is absent from EntitiesOf " GHC.:<>: GHC.ShowType query)
+  QuerySourceMember entity query '[] =
+    GHC.TypeError
+      ( GHC.Text "Query source "
+          GHC.:<>: GHC.ShowType entity
+          GHC.:<>: GHC.Text " is absent from EntitiesOf "
+          GHC.:<>: GHC.ShowType query
+      )
   QuerySourceMember entity query (entity ': rest) = ()
   QuerySourceMember entity query (other ': rest) = QuerySourceMember entity query rest
 
 
 data CommandTarget where
-  CommandTarget :: (Command command, Entity entity, EntityOf command ~ entity, Typeable command, Typeable entity) => Proxy command -> Proxy entity -> CommandTarget
+  CommandTarget ::
+    (Command command, Entity entity, EntityOf command ~ entity, Typeable command, Typeable entity) =>
+    Proxy command -> Proxy entity -> CommandTarget
 
 
 data CommandTargetFor command where
-  CommandTargetFor :: (Command command, Entity entity, EntityOf command ~ entity, Typeable command, Typeable entity) => Proxy entity -> CommandTargetFor command
+  CommandTargetFor ::
+    (Command command, Entity entity, EntityOf command ~ entity, Typeable command, Typeable entity) =>
+    Proxy entity -> CommandTargetFor command
 
 
 data OutboundPart handler where
-  OutboundEvent :: (EntityOf payload ~ EntityOf handler, HandledEvent handler ~ payload, EventVariantOf (EventOf (EntityOf handler)) payload, Typeable payload) => Proxy payload -> OutboundPart handler
+  OutboundEvent ::
+    ( EntityOf payload ~ EntityOf handler,
+      HandledEvent handler ~ payload,
+      EventVariantOf (EventOf (EntityOf handler)) payload,
+      Typeable payload
+    ) =>
+    Proxy payload -> OutboundPart handler
   OutboundCommand :: CommandTarget -> OutboundPart handler
+  OutboundLifecycle :: (Application -> Application) -> OutboundPart handler
 
 
 data InboundPart handler where
@@ -152,7 +194,8 @@ instance
       Reflection.SomeTypeRep (Reflection.typeRep @entity),
       typeName (Proxy @command),
       typeName (Proxy @entity)
-    ) : inboundTargets (Proxy @rest)
+    )
+      : inboundTargets (Proxy @rest)
 
 
 data SlicePart context
@@ -194,21 +237,36 @@ data RuleCase context = RuleCase
 
 
 data RuleSample where
-  ChangeSample :: (Entity entity, Typeable entity, Command command, Typeable command, EntityOf command ~ entity) => Proxy entity -> Proxy command -> Text -> RuleCase ('Change entity command) -> RuleSample
+  ChangeSample ::
+    (Entity entity, Typeable entity, Command command, Typeable command, EntityOf command ~ entity) =>
+    Proxy entity -> Proxy command -> Text -> RuleCase ('Change entity command) -> RuleSample
   ViewSample :: (Query query, Typeable query) => Proxy query -> Text -> RuleCase ('View query) -> RuleSample
 
 
 data HistoricalEvent where
-  HistoricalEvent :: (Entity entity, EntityOf payload ~ entity, EventVariantOf (EventOf entity) payload, Typeable entity, Typeable payload) => Proxy entity -> payload -> HistoricalEvent
+  HistoricalEvent ::
+    (Entity entity, EntityOf payload ~ entity, EventVariantOf (EventOf entity) payload, Typeable entity, Typeable payload) =>
+    Proxy entity -> payload -> HistoricalEvent
 
 
 data WhenValue context where
   CommandWhen :: command -> WhenValue ('Change entity command)
-  EventWhen :: (Entity entity, EntityOf payload ~ entity, EventVariantOf (EventOf entity) payload, QueryOf entity query, QuerySourceMember entity query (EntitiesOf query), Typeable entity, Typeable payload) => payload -> WhenValue ('View query)
+  EventWhen ::
+    ( Entity entity,
+      EntityOf payload ~ entity,
+      EventVariantOf (EventOf entity) payload,
+      QueryOf entity query,
+      QuerySourceMember entity query (EntitiesOf query),
+      Typeable entity,
+      Typeable payload
+    ) =>
+    payload -> WhenValue ('View query)
 
 
 data ExpectedEvent entity where
-  ExpectedEvent :: (EntityOf payload ~ entity, EventVariantOf (EventOf entity) payload, Typeable payload) => payload -> ExpectedEvent entity
+  ExpectedEvent ::
+    (EntityOf payload ~ entity, EventVariantOf (EventOf entity) payload, Typeable payload) =>
+    payload -> ExpectedEvent entity
 
 
 data CommandExpectation entity
@@ -263,14 +321,15 @@ data OutcomePart context mode where
 data ModelPart
   = ModelName Text
   | ModelFeatures [([Text], Feature)]
+  | ModelConfiguration (Application -> Application)
 
 
 primaryKind :: Primary context -> Text
 primaryKind primary = case primary of
   StateChange _ _ -> "state-change"
-  StateView _ _ -> "state-view"
-  OutboundTranslation _ _ -> "outbound"
-  InboundTranslation _ _ -> "inbound"
+  StateView _ _ _ -> "state-view"
+  OutboundTranslation _ _ _ -> "outbound"
+  InboundTranslation _ _ _ -> "inbound"
 
 
 typeName :: forall value. (Typeable value) => Proxy value -> Text
