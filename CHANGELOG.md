@@ -1,5 +1,41 @@
 # Changelog
 
+## 0.16.0 — 2026-11-01
+
+### Breaking changes
+
+- **Framework**: An Event Model now rejects an inbound Slice that omits or repeats a command and target entity pair promised by its typed worker. Validation reports assembled Slice errors with their Feature, Chapter, and Slice paths before application workers start. Applications with incomplete inbound declarations must list every typed worker output once. ([change](https://github.com/neohaskell/NeoHaskell/commit/eda8a1fa934478383bcc0cd26f43004781d100e2))
+
+### Added
+
+- **Framework**: An application can now start from one named Event Model. Its Features register the declared commands, queries, outbound handlers, and typed inbound workers, while the same model supplies configuration and transport. Existing applications that assemble `Application` directly can keep doing so. For a model-backed application, `EventModel.run appEventModel` replaces a second authored registration list, and each query receives events only from its declared sources and payloads. ([change](https://github.com/neohaskell/NeoHaskell/commit/ee513c56f6118cc9c35dd24e6679dcec2d89c8f2))
+
+### Fixed
+
+- **Framework**: Displaying an integration command payload now hides its data. This prevents a protected value's encrypted envelope and reference from appearing when an app logs the payload. Apps do not need to change their commands. ([change](https://github.com/neohaskell/NeoHaskell/commit/53452b9c2055bad027469f3c0eb816473e2a8def))
+
+### Migration from 0.15.0
+
+#### Framework
+
+For each `inboundIntegration @Handler` Slice, compare its `triggersCommand` and `onTargetEntity` declarations with the handler's `InboundOutputsOf` pairs. Add missing pairs and remove repeated pairs. Keep the existing `Application.withInboundHandler @Handler` registration until Event Model runtime wiring is available.
+
+### Verify
+
+Compile the application and evaluate its named `eventModel` before starting workers. In this repository, run `nix develop --command python3 core/test/Service/EventModel/check_compiler_rejections.py`, `nix develop --command cabal test --project-file=cabal.project.dev nhtestbed-spec-demo --test-show-details=direct`, and `nix develop --command .agents/skills/neohaskell-test/scripts/run-testbed --strict` against an isolated PostgreSQL database.
+
+<details>
+<summary>Copy this prompt to your coding agent</summary>
+
+```text
+Migrate Framework from NeoHaskell 0.15.0 to 0.16.0.
+Find each inboundIntegration Slice in my NeoHaskell application. Compare its triggersCommand and onTargetEntity pairs with the handler's InboundOutputsOf type. Add every missing pair and remove any repeated pair. Preserve Application.withInboundHandler registration until Event Model runtime wiring is available. Compile the application, evaluate its named eventModel, run its inbound integration tests, and report changed files and results.
+```
+
+</details>
+
+[Compare changes](https://github.com/neohaskell/NeoHaskell/compare/neo-v0.15.0...neo-v0.16.0)
+
 ## 0.15.0 — 2026-10-30
 
 ### Breaking changes
