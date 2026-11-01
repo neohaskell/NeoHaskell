@@ -45,7 +45,15 @@ spec = do
                   then payload
                   else panic "Nested alias was missing from the protected payload")
               value
-            Accept AnyStreamState [checked]
+            verified <- Erasable.map
+              (\payload ->
+                if payload.name != "nested-private-name"
+                  then panic "Mapped protected name was missing"
+                  else if payload.aliases != [Nothing, Just "nested-private-alias"]
+                    then panic "Mapped nested alias was missing"
+                    else payload)
+              checked
+            Accept AnyStreamState [verified]
       (result, _) <- Decider.runDecisionWithKeys
         (Decider.DecisionContext {genUuid = Uuid.generate})
         (\_ -> Task.throw "No stored key")
