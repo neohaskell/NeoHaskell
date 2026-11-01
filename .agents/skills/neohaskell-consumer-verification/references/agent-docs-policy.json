@@ -67,7 +67,12 @@
       "page": "storage.md",
       "source": "core/service/Service/EventStore/Core.hs",
       "scenario": "testbed/tests/scenarios/query-idempotency.hurl",
-      "evidence": []
+      "evidence": [
+        {
+          "kind": "service-spec",
+          "path": "core/test/Service/FileUpload/BlobStore/S3Spec.hs"
+        }
+      ]
     },
     "protected-value-erasure": {
       "page": "advanced-erasure.md",

@@ -82,4 +82,25 @@ defineConfig
       |> Config.doc "Directory for file uploads"
       |> Config.defaultsTo ("./uploads" :: Text)
       |> Config.envVar "UPLOAD_DIR"
+  , Config.field @Text "s3Endpoint"
+      |> Config.doc "S3 endpoint URL when running the S3 file upload example"
+      |> Config.defaultsTo ("" :: Text)
+      |> Config.envVar "S3_ENDPOINT"
+  , Config.field @Text "s3Bucket"
+      |> Config.doc "S3 bucket name for file uploads"
+      |> Config.defaultsTo ("testbed-s3-bucket" :: Text)
+      |> Config.envVar "S3_BUCKET"
+  , Config.field @Text "s3Region"
+      |> Config.doc "S3 SigV4 signing region"
+      |> Config.defaultsTo ("us-east-1" :: Text)
+      |> Config.envVar "S3_REGION"
+  , Config.field @Text "s3AccessKeyId"
+      |> Config.doc "S3 access key identifier"
+      |> Config.defaultsTo ("testbed-s3-access-key" :: Text)
+      |> Config.envVar "S3_ACCESS_KEY_ID"
+  , Config.field @Text "s3SecretAccessKey"
+      |> Config.doc "S3 secret signing key"
+      |> Config.defaultsTo ("testbed-s3-secret-key" :: Text)
+      |> Config.envVar "S3_SECRET_ACCESS_KEY"
+      |> Config.secret
   ]

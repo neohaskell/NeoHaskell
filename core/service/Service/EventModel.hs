@@ -160,6 +160,7 @@ import Service.EventModel.Types (
  )
 import Service.EventModel.Types qualified as Types
 import Service.EventStore (EventStoreConfig)
+import Service.FileUpload.BlobStore (BlobStoreConfig)
 import Service.FileUpload.Core (FileUploadConfig)
 import Service.Integration.Adapter (Integration)
 import Service.Integration.Adapter qualified as Adapter
@@ -447,7 +448,11 @@ withApiInfo :: forall config. (Typeable config) => (config -> ApiInfo) -> EventM
 withApiInfo makeInfo = Writer.tell [ModelConfiguration (Application.withApiInfo makeInfo)]
 
 
-withFileUpload :: forall config. (Typeable config) => (config -> FileUploadConfig) -> EventModelAction
+withFileUpload ::
+  forall config blobStoreConfig.
+  (Typeable config, BlobStoreConfig blobStoreConfig) =>
+  (config -> FileUploadConfig blobStoreConfig) ->
+  EventModelAction
 withFileUpload makeConfig = Writer.tell [ModelConfiguration (Application.withFileUpload makeConfig)]
 
 

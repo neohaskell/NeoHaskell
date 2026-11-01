@@ -2,7 +2,10 @@ module Service.FileUpload.CoreSpec where
 
 import Core
 import Json qualified
+import "nhcore" Path qualified
 import Result qualified
+import Service.FileUpload.BlobStore.Local (LocalBlobStoreConfig (..))
+import Service.FileUpload.BlobStore.S3 (S3Config (..))
 import Service.FileUpload.Core (
   BlobKey (..),
   ContentHash (..),
@@ -281,22 +284,24 @@ spec = do
     -- FileUploadConfig Type (User-facing declarative config)
     -- ==========================================================================
     describe "FileUploadConfig" do
-      it "can be constructed with in-memory state store" \_ -> do
+      it "can be constructed with LocalBlobStoreConfig and in-memory state store" \_ -> do
+        let localStore = LocalBlobStoreConfig {rootDir = [Path.path|./uploads|]}
         let config = FileUploadConfig
-              { blobStoreDir = "./uploads"
+              { blobStore = localStore
               , stateStoreBackend = InMemoryStateStore
-              , maxFileSizeBytes = 10485760  -- 10 MB
-              , pendingTtlSeconds = 21600  -- 6 hours
-              , cleanupIntervalSeconds = 900  -- 15 minutes
+              , maxFileSizeBytes = 10485760
+              , pendingTtlSeconds = 21600
+              , cleanupIntervalSeconds = 900
               , allowedContentTypes = Just ["application/pdf", "image/png"]
               , storeOriginalFilename = True
               }
-        config.blobStoreDir |> shouldBe "./uploads"
+        config.blobStore |> shouldBe localStore
         config.maxFileSizeBytes |> shouldBe 10485760
 
-      it "can be constructed with postgres state store" \_ -> do
+      it "can be constructed with LocalBlobStoreConfig and postgres state store" \_ -> do
+        let localStore = LocalBlobStoreConfig {rootDir = [Path.path|./uploads|]}
         let config = FileUploadConfig
-              { blobStoreDir = "./uploads"
+              { blobStore = localStore
               , stateStoreBackend = PostgresStateStore
                   { pgHost = "localhost"
                   , pgPort = 5432
@@ -312,7 +317,39 @@ spec = do
               , allowedContentTypes = Nothing
               , storeOriginalFilename = True
               }
-        config.blobStoreDir |> shouldBe "./uploads"
+        config.blobStore |> shouldBe localStore
+
+      it "can be constructed with S3Config" \_ -> do
+        let s3Store = S3Config
+              { endpoint = "https://s3.example.com"
+              , bucket = "uploads-bucket"
+              , region = "us-east-1"
+              , accessKeyId = "test-access-key"
+              , secretAccessKey = "test-secret-key"
+              }
+        let config = FileUploadConfig
+              { blobStore = s3Store
+              , stateStoreBackend = InMemoryStateStore
+              , maxFileSizeBytes = 10485760
+              , pendingTtlSeconds = 21600
+              , cleanupIntervalSeconds = 900
+              , allowedContentTypes = Nothing
+              , storeOriginalFilename = True
+              }
+        config.blobStore.bucket |> shouldBe "uploads-bucket"
+
+      it "roundtrips FileUploadConfig LocalBlobStoreConfig through JSON" \_ -> do
+        let config = FileUploadConfig
+              { blobStore = LocalBlobStoreConfig {rootDir = [Path.path|./uploads|]}
+              , stateStoreBackend = InMemoryStateStore
+              , maxFileSizeBytes = 10485760
+              , pendingTtlSeconds = 21600
+              , cleanupIntervalSeconds = 900
+              , allowedContentTypes = Just ["text/plain"]
+              , storeOriginalFilename = True
+              }
+        let encoded = Json.encodeText config
+        Json.decodeText @(FileUploadConfig LocalBlobStoreConfig) encoded |> shouldBe (Ok config)
 
     -- ==========================================================================
     -- InternalFileUploadConfig Type (Runtime config after initialization)

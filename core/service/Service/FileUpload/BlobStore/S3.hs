@@ -1,0 +1,305 @@
+-- | Store uploaded blobs in an S3-compatible object store using path-style SigV4 requests.
+-- Pass 'S3Config' in 'Service.FileUpload.Core.FileUploadConfig' to @withFileUpload@, or call 'createBlobStore' directly.
+--
+-- The bucket must already exist. HTTPS is required unless the endpoint host is
+-- @127.0.0.1@, @[::1]@, or @localhost@. Redirects are not followed and writes are
+-- not retried, so a transport failure during @PUT@ surfaces as 'StorageError'.
+module Service.FileUpload.BlobStore.S3 (
+  -- * Configuration
+  S3Config (..),
+
+  -- * Constructor
+  createBlobStore,
+) where
+
+import Array (Array)
+import Array qualified
+import Basics
+import Bytes (Bytes)
+import Bytes qualified
+import Char (Char)
+import Char qualified
+import DateTime (DateTime)
+import DateTime qualified
+import Http.Client (Method (..), Request, Response)
+import Http.Client qualified as Http
+import Http.Client.Internal qualified as HttpInternal
+import Maybe (Maybe (..))
+import Network.URI qualified as URI
+import Result (Result (..))
+import Service.FileUpload.BlobStore (BlobStore (..), BlobStoreError (..))
+import Service.FileUpload.BlobStore qualified as BlobStore
+import Service.FileUpload.BlobStore.S3.SigV4 (CanonicalRequest (..), Credentials (..))
+import Service.FileUpload.BlobStore.S3.SigV4 qualified as SigV4
+import Service.FileUpload.Core (BlobKey (..))
+import Task (Task)
+import Task qualified
+import Text (Text)
+import Text qualified
+
+
+-- | Configuration for an S3-compatible blob store.
+--
+-- Read credentials through your application's typed configuration and pass this
+-- record in 'Service.FileUpload.Core.FileUploadConfig'. 'S3Config' intentionally
+-- omits 'Show' so secrets cannot reach logs.
+data S3Config = S3Config
+  { endpoint :: Text
+  -- ^ Scheme, host, and optional port only, such as @https://s3.eu-central-1.amazonaws.com@
+  -- or @http://127.0.0.1:9000@, with no path, query, fragment, or userinfo.
+  , bucket :: Text
+  -- ^ Existing DNS-style bucket name (3-63 characters of @a-z 0-9 - .@).
+  , region :: Text
+  -- ^ SigV4 region such as @us-east-1@ (R2, B2, and MinIO accept @auto@ or @us-east-1@).
+  , accessKeyId :: Text
+  , secretAccessKey :: Text
+  }
+
+
+instance BlobStore.BlobStoreConfig S3Config where
+  createBlobStore = createS3BlobStore
+
+
+data S3Store = S3Store
+  { baseUrl :: Text
+  , hostHeader :: Text
+  , secure :: Bool
+  , bucketName :: Text
+  , credentials :: Credentials
+  }
+
+
+-- | Create an S3 blob store after validating 'S3Config' without contacting the endpoint.
+createBlobStore :: S3Config -> Task Text BlobStore
+createBlobStore = createS3BlobStore
+
+
+createS3BlobStore :: S3Config -> Task Text BlobStore
+createS3BlobStore config = do
+  store <- validateConfig config
+  Task.yield
+    BlobStore
+      { store = storeImpl store
+      , retrieve = retrieveImpl store
+      , delete = deleteImpl store
+      , exists = existsImpl store
+      }
+
+
+validateConfig :: S3Config -> Task Text S3Store
+validateConfig config = do
+  Task.when
+    (Text.isEmpty config.bucket || Text.isEmpty config.region || Text.isEmpty config.accessKeyId || Text.isEmpty config.secretAccessKey)
+    (Task.throw "S3 configuration fields must not be empty")
+  Task.unless (isDnsBucketName config.bucket) (Task.throw "S3 bucket must be a DNS-style bucket name")
+  Task.when
+    (Text.any isHeaderControl config.region || Text.any isHeaderControl config.accessKeyId)
+    (Task.throw "S3 header-bound configuration must not contain control characters")
+  endpoint <- parseEndpoint config.endpoint
+  Task.yield
+    S3Store
+      { baseUrl = endpoint.url
+      , hostHeader = endpoint.hostHeader
+      , secure = endpoint.secure
+      , bucketName = config.bucket
+      , credentials =
+          Credentials
+            { accessKeyId = config.accessKeyId
+            , secretAccessKey = config.secretAccessKey
+            , region = config.region
+            }
+      }
+
+
+-- Path-style S3 bucket grammar: 3 to 63 lowercase ASCII letters, digits, hyphens,
+-- and dots, where every dot-separated label is non-empty and starts and ends with
+-- a letter or digit.
+isDnsBucketName :: Text -> Bool
+isDnsBucketName name = do
+  let validChar char = (Char.isLower char && Char.toCode char < 128) || Char.isDigit char || char == '-' || char == '.'
+  let invalidLabel label = Text.isEmpty label || Text.startsWith "-" label || Text.endsWith "-" label
+  Text.length name >= 3
+    && Text.length name <= 63
+    && Text.all validChar name
+    && not (name |> Text.split "." |> Array.any invalidLabel)
+
+
+data Endpoint = Endpoint
+  { url :: Text
+  , hostHeader :: Text
+  , secure :: Bool
+  }
+
+
+parseEndpoint :: Text -> Task Text Endpoint
+parseEndpoint raw = do
+  Task.when (Text.any isHeaderControl raw) (Task.throw "S3 endpoint must not contain control characters")
+  let trimmed = raw |> Text.trim |> stripTrailingSlash
+  (isSecure, authority) <-
+    if Text.startsWith "https://" trimmed
+      then Task.yield (True, Text.dropLeft 8 trimmed)
+      else
+        if Text.startsWith "http://" trimmed
+          then Task.yield (False, Text.dropLeft 7 trimmed)
+          else Task.throw "S3 endpoint must start with https:// or http://"
+  Task.when
+    (Text.isEmpty authority || Text.any (\char -> char == '/' || char == '?' || char == '#' || char == '@' || char == ' ') authority)
+    (Task.throw "S3 endpoint must not contain credentials, path, query or fragment")
+  host <- validateAuthority trimmed
+  Task.unless (isSecure || isLoopback host) (Task.throw "S3 requires HTTPS outside literal loopback")
+  let defaultPort = if isSecure then ":443" else ":80"
+  let hostHeader = if Text.endsWith defaultPort authority then host else authority
+  Task.yield Endpoint {url = trimmed, hostHeader, secure = isSecure}
+
+
+stripTrailingSlash :: Text -> Text
+stripTrailingSlash text = if Text.endsWith "/" text then Text.dropRight 1 text else text
+
+
+isHeaderControl :: Char -> Bool
+isHeaderControl char = Char.toCode char < 32 || Char.toCode char == 127
+
+
+validateAuthority :: Text -> Task Text Text
+validateAuthority endpoint = do
+  uri <- case URI.parseURI (Text.toLinkedList endpoint) of
+    Nothing -> Task.throw "S3 endpoint authority is malformed"
+    Just parsed -> Task.yield parsed
+  authority <- case URI.uriAuthority uri of
+    Nothing -> Task.throw "S3 endpoint authority is malformed"
+    Just parsed -> Task.yield parsed
+  let host = URI.uriRegName authority |> Array.fromLinkedList |> Text.fromArray
+  Task.when (Text.isEmpty host) (Task.throw "S3 endpoint host must not be empty")
+  validatePort (URI.uriPort authority |> Array.fromLinkedList |> Text.fromArray)
+  Task.yield host
+
+
+validatePort :: Text -> Task Text Unit
+validatePort port = do
+  Task.when (not (Text.isEmpty port)) do
+    let digits = Text.dropLeft 1 port
+    Task.when (Text.isEmpty digits || not (Text.all (\char -> char >= '0' && char <= '9') digits))
+      (Task.throw "S3 endpoint port must be between 1 and 65535")
+    let significantDigits = digits |> Text.toArray |> Array.dropWhile (\char -> char == '0') |> Text.fromArray
+    Task.when (Text.length significantDigits > 5) (Task.throw "S3 endpoint port must be between 1 and 65535")
+    case Text.toInt significantDigits of
+      Just value -> Task.when (value < 1 || value > 65535) (Task.throw "S3 endpoint port must be between 1 and 65535")
+      Nothing -> Task.throw "S3 endpoint port must be between 1 and 65535"
+
+
+isLoopback :: Text -> Bool
+isLoopback host = host == "127.0.0.1" || host == "localhost" || host == "[::1]"
+
+
+storeImpl :: S3Store -> BlobKey -> Bytes -> Task BlobStoreError Unit
+storeImpl store blobKey bytes = do
+  response <- sendObject store Put blobKey bytes
+  Task.unless (response.statusCode == 200) (Task.throw (statusError response))
+
+
+retrieveImpl :: S3Store -> BlobKey -> Task BlobStoreError Bytes
+retrieveImpl store blobKey = do
+  response <- sendObject store Get blobKey Bytes.empty
+  if response.statusCode == 200
+    then Task.yield response.body
+    else
+      if response.statusCode == 404
+        then Task.throw (NotFound blobKey)
+        else Task.throw (statusError response)
+
+
+-- AWS S3 returns 204 for DELETE regardless of existence; some S3-compatible servers return 200 or 404.
+deleteImpl :: S3Store -> BlobKey -> Task BlobStoreError Unit
+deleteImpl store blobKey = do
+  response <- sendObject store Delete blobKey Bytes.empty
+  let gone = response.statusCode == 204 || response.statusCode == 200 || response.statusCode == 404
+  Task.unless gone (Task.throw (statusError response))
+
+
+existsImpl :: S3Store -> BlobKey -> Task BlobStoreError Bool
+existsImpl store blobKey = do
+  response <- sendObject store Head blobKey Bytes.empty
+  if response.statusCode == 200
+    then Task.yield True
+    else
+      if response.statusCode == 404
+        then Task.yield False
+        else Task.throw (statusError response)
+
+
+-- S3 XML error responses echo request details and canonical string-to-sign data on 403.
+statusError :: Response Bytes -> BlobStoreError
+statusError response = do
+  let status = response.statusCode
+  StorageError [fmt|S3 HTTP #{status}|]
+
+
+sendObject :: S3Store -> Method -> BlobKey -> Bytes -> Task BlobStoreError (Response Bytes)
+sendObject store method blobKey body = do
+  path <- case objectPath store blobKey of
+    Err err -> Task.throw err
+    Ok validPath -> Task.yield validPath
+  now <- DateTime.now
+  let request = signedRequest store method path body now
+  let send = if store.secure then Http.sendSecure else HttpInternal.sendRaw
+  send method request body
+    |> Task.mapError transportError
+
+
+transportError :: Http.Error -> BlobStoreError
+transportError err = case err of
+  Http.ResponseTooLarge limit -> StorageError [fmt|S3 response exceeded #{limit} bytes|]
+  Http.InvalidUrl _ -> StorageError "S3 endpoint rejected by the HTTP client"
+  Http.Error _ -> StorageError "S3 transport failure (write outcome may be unknown)"
+
+
+signedRequest :: S3Store -> Method -> Text -> Bytes -> DateTime -> Request
+signedRequest store method path body now = do
+  let payloadHash = SigV4.sha256Hex body
+  let headers =
+        [ ("host", store.hostHeader)
+        , ("x-amz-content-sha256", payloadHash)
+        , ("x-amz-date", SigV4.formatAmzDate now)
+        ]
+  let canonical =
+        CanonicalRequest
+          { method = Http.methodName method
+          , path
+          , query = Array.empty
+          , headers
+          , payloadHash
+          }
+  let authorization = SigV4.authorizationHeader store.credentials now canonical
+  let baseUrl = store.baseUrl
+  Http.request
+    |> Http.withUrl [fmt|#{baseUrl}#{path}|]
+    |> Http.withTimeout 30
+    |> withHeaders headers
+    |> Http.addHeader "Authorization" authorization
+    |> Http.withMaxResponseSize maxObjectBytes
+
+
+maxObjectBytes :: Int
+maxObjectBytes = 256 * 1024 * 1024
+
+
+withHeaders :: Array (Text, Text) -> Request -> Request
+withHeaders headers request =
+  headers
+    |> Array.foldl (\(name, value) acc -> Http.addHeader name value acc) request
+
+
+-- Reject empty or dot path segments so HTTP intermediaries cannot normalize a request to another key.
+objectPath :: S3Store -> BlobKey -> Result BlobStoreError Text
+objectPath store (BlobKey key) = do
+  let byteLength = key |> Text.toBytes |> Bytes.length
+  let segments = Text.split "/" key
+  if byteLength == 0 || byteLength > 1024
+    then Err (InvalidBlobKey "S3 key must contain 1 to 1024 UTF-8 bytes")
+    else
+      if Array.any (\segment -> segment == "." || segment == ".." || Text.isEmpty segment) segments
+        then Err (InvalidBlobKey "S3 key must not contain empty or dot path segments")
+        else do
+          let encoded = segments |> Array.map SigV4.uriEncode |> Text.joinWith "/"
+          let bucket = store.bucketName
+          Ok [fmt|/#{bucket}/#{encoded}|]

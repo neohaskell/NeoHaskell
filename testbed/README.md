@@ -248,6 +248,32 @@ nix develop --command cabal run exe:nhtestbed
 nix develop --command hurl --test testbed/tests/commands/save-iban.hurl
 ```
 
+### Run the S3 file upload example
+
+`Testbed.Infrastructure.makeS3FileUploadConfig` builds a `FileUploadConfig S3Config` from `TestbedConfig`, and `Testbed.EventModel.s3AppEventModel` wires it through `EventModel.withFileUpload`. When `S3_ENDPOINT` is non-empty, `Launcher` starts `s3AppEventModel`; otherwise `Launcher` starts `appEventModel` with `LocalBlobStoreConfig`.
+
+`testbed/scripts/fake_external_services.py` serves a path-style S3 bucket on `/testbed-s3-bucket/` and verifies AWS Signature Version 4 headers independently. `testbed/tests/s3/s3-file-upload.hurl` checks that unsigned requests return HTTP 403, uploads a binary PNG through `/files/upload`, verifies the signed `PUT` and `GET` counts on `/s3/observations`, downloads the exact bytes from `/files/{fileRef}`, and checks content deduplication.
+
+The maintained runner executes both the default local upload scenarios and the S3 upload scenario automatically:
+
+```bash
+nix develop --command .agents/skills/neohaskell-test/scripts/run-testbed --strict
+```
+
+To run the S3 upload scenario alone with PostgreSQL running locally, start the fake services and the S3-configured testbed in two terminals, then run Hurl in a third terminal:
+
+```bash
+python3 testbed/scripts/fake_external_services.py
+```
+
+```bash
+S3_ENDPOINT=http://127.0.0.1:8181 nix develop --command cabal run exe:nhtestbed
+```
+
+```bash
+nix develop --command hurl --test testbed/tests/s3/s3-file-upload.hurl
+```
+
 ### Check timestamped records
 
 The `nhtestbed-datetime-schema` suite defines a `ShipmentTimeline` record with a required `DateTime` and an optional `Maybe DateTime`. It checks that both fields lower to JSON Schema strings and that a real shipment encodes its timestamp as a JSON string.

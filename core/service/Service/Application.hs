@@ -145,16 +145,14 @@ import EventVariantOf (EventVariantOf)
 import Service.Integration.Types (OutboundRunner, OutboundLifecycleRunner)
 import Service.Transport (Transport (..), QueryEndpointHandler)
 import Service.Transport.Web qualified as Web
-import Path qualified
 import Service.EventStore.Postgres.Internal ()  -- instance-only: Default PostgresEventStore for the FileUpload pool fallback
-import Service.FileUpload.BlobStore.Local qualified as LocalBlobStore
-import Service.FileUpload.BlobStore.Local (LocalBlobStoreConfig (..))
 import Service.FileUpload.Core (FileUploadConfig (..), FileStateStoreBackend (..), InternalFileUploadConfig (..))
 import Hasql.Pool qualified as HasqlPool
 import Service.FileUpload.FileStateStore.Postgres qualified as PostgresFileStore
 import Service.FileUpload.Web (FileUploadSetup (..))
 import Service.FileUpload.Web qualified as FileUpload
-import Service.FileUpload.BlobStore (BlobStore (..))
+import Service.FileUpload.BlobStore (BlobStore (..), BlobStoreConfig)
+import Service.FileUpload.BlobStore qualified as BlobStore
 import Service.FileUpload.Core qualified as FileUploadCore
 import Service.FileUpload.Lifecycle qualified as FileLifecycle
 import Config qualified
@@ -283,9 +281,9 @@ data EventStoreFactory where
 -- 'Application.run' after config is loaded (if needed).
 data FileUploadFactory where
   -- | FileUpload config evaluated at build time (when config type is ())
-  EvaluatedFileUpload :: !FileUploadConfig -> FileUploadFactory
+  EvaluatedFileUpload :: (BlobStoreConfig blobStoreConfig) => !(FileUploadConfig blobStoreConfig) -> FileUploadFactory
   -- | FileUpload config deferred to run time (requires withConfig)
-  DeferredFileUpload :: (Typeable cfg) => (cfg -> FileUploadConfig) -> FileUploadFactory
+  DeferredFileUpload :: (Typeable config, BlobStoreConfig blobStoreConfig) => (config -> FileUploadConfig blobStoreConfig) -> FileUploadFactory
 
 
 -- | Factory for creating WebAuth configuration.
@@ -787,7 +785,11 @@ serviceRunnerCount app = Array.length app.serviceRunners
 --
 -- This extracts the common initialization pattern used in both 'run' and 'runWith'
 -- to avoid code duplication.
-initAndWrapFileUpload :: FileUploadConfig -> Task Text (Maybe FileUploadSetup, Task Text ())
+initAndWrapFileUpload ::
+  forall blobStoreConfig.
+  (BlobStoreConfig blobStoreConfig) =>
+  FileUploadConfig blobStoreConfig ->
+  Task Text (Maybe FileUploadSetup, Task Text ())
 initAndWrapFileUpload fileConfig = do
   Log.info "Initializing file upload..."
     |> Task.ignoreError
@@ -2007,7 +2009,9 @@ withOAuth2Provider mkConfig app = do
 -- * @POST /files/upload@ - Upload a file (multipart form)
 -- * @GET /files/{fileRef}@ - Download a file
 --
--- The factory takes a function from your config type to FileUploadConfig.
+-- The factory takes a function from your config type to @FileUploadConfig blobStoreConfig@,
+-- where @blobStoreConfig@ implements 'BlobStoreConfig' (such as
+-- @LocalBlobStoreConfig@ or @S3Config@).
 -- If you don't need app config, use @()@ as the config type:
 --
 -- @
@@ -2025,9 +2029,9 @@ withOAuth2Provider mkConfig app = do
 -- no 'withConfig' is required. Otherwise, 'withConfig' must be called first
 -- and the factory is evaluated during 'Application.run'.
 withFileUpload ::
-  forall config.
-  (Typeable config) =>
-  (config -> FileUploadConfig) ->
+  forall config blobStoreConfig.
+  (Typeable config, BlobStoreConfig blobStoreConfig) =>
+  (config -> FileUploadConfig blobStoreConfig) ->
   Application ->
   Application
 withFileUpload mkConfig app = do
@@ -2048,44 +2052,31 @@ hasFileUpload app = case app.fileUploadFactory of
 --
 -- This performs the IO required to set up file uploads:
 --
--- * Validates configuration parameters
--- * Creates the blob store directory if it doesn't exist
+-- * Validates shared upload limits before creating the blob store
+-- * Initializes the selected 'BlobStore' through 'BlobStoreConfig'
 -- * Initializes the state store connection (PostgreSQL or in-memory)
---
--- If state store initialization fails after blob store creation, the blob store
--- directory is left in place (it may contain data from previous runs).
 --
 -- Returns a tuple of (setup, cleanup action). The cleanup action releases
 -- any database connection pools and should be called during shutdown.
 --
 -- This is called internally by 'Application.run' - users should not call this directly.
-initializeFileUpload :: FileUploadConfig -> Task Text (FileUploadSetup, Task Text ())
+initializeFileUpload ::
+  forall blobStoreConfig.
+  (BlobStoreConfig blobStoreConfig) =>
+  FileUploadConfig blobStoreConfig ->
+  Task Text (FileUploadSetup, Task Text ())
 initializeFileUpload fileConfig = do
-  -- Extract config fields (needed for fmt quasiquoter compatibility)
-  let blobDir = fileConfig.blobStoreDir
   let maxSize = fileConfig.maxFileSizeBytes
   let pendingTtl = fileConfig.pendingTtlSeconds
   let cleanupInterval = fileConfig.cleanupIntervalSeconds
 
-  -- 1. Validate configuration
-  validateFileUploadConfig blobDir maxSize pendingTtl cleanupInterval
+  validateFileUploadConfig maxSize pendingTtl cleanupInterval
 
-  -- 2. Create blob store from directory path
-  blobStorePath <- case Path.fromText blobDir of
-    Just path -> Task.yield path
-    Nothing -> Task.throw [fmt|Invalid blob store directory path: #{blobDir}|]
+  blobStore <- BlobStore.createBlobStore fileConfig.blobStore
 
-  blobStore <- LocalBlobStore.createBlobStore LocalBlobStoreConfig
-    { rootDir = blobStorePath
-    }
-
-  -- 3. Create state store based on backend configuration
-  -- If this fails, the blob store directory remains (may have existing data)
-  -- Returns the store and an optional cleanup action for releasing the connection pool
   (stateStore, cleanupAction) <- case fileConfig.stateStoreBackend of
     InMemoryStateStore -> do
       inMemoryStore <- FileUpload.newInMemoryFileStateStore
-      -- No cleanup needed for in-memory store
       Task.yield (FileUpload.inMemoryFileStateStore inMemoryStore, Task.yield ())
 
     backend@(PostgresStateStore {}) -> do
@@ -2100,7 +2091,6 @@ initializeFileUpload fileConfig = do
         Nothing -> Task.throw "unreachable: non-Postgres FileStateStoreBackend in Postgres path"
       (store, pool) <- PostgresFileStore.newWithCleanup postgresConfig
         |> Task.mapError (\err -> [fmt|Failed to initialize PostgreSQL file state store: #{err}|])
-      -- Cleanup action releases the connection pool
       let cleanup = do
             Log.debug "Releasing PostgreSQL connection pool..."
               |> Task.ignoreError
@@ -2108,7 +2098,6 @@ initializeFileUpload fileConfig = do
               |> Task.fromIO
       Task.yield (store, cleanup)
 
-  -- 4. Build internal config
   let internalConfig = InternalFileUploadConfig
         { pendingTtlSeconds = pendingTtl
         , cleanupIntervalSeconds = cleanupInterval
@@ -2117,7 +2106,6 @@ initializeFileUpload fileConfig = do
         , storeOriginalFilename = fileConfig.storeOriginalFilename
         }
 
-  -- 5. Return the setup and cleanup action
   let setup = FileUploadSetup
         { config = internalConfig
         , blobStore = blobStore
@@ -2129,30 +2117,21 @@ initializeFileUpload fileConfig = do
 -- | Validate file upload configuration parameters.
 --
 -- Checks:
--- * blobStoreDir is not empty
 -- * maxFileSizeBytes is positive
 -- * pendingTtlSeconds is positive
 -- * cleanupIntervalSeconds is positive
 -- * cleanupIntervalSeconds < pendingTtlSeconds (cleanup must run before TTL expires)
-validateFileUploadConfig :: Text -> Int64 -> Int64 -> Int64 -> Task Text ()
-validateFileUploadConfig blobDir maxSize pendingTtl cleanupInterval = do
-  -- Validate blob store directory path
-  Task.when (Text.isEmpty blobDir) do
-    Task.throw "blobStoreDir cannot be empty"
-
-  -- Validate size limit
+validateFileUploadConfig :: Int64 -> Int64 -> Int64 -> Task Text ()
+validateFileUploadConfig maxSize pendingTtl cleanupInterval = do
   Task.when (maxSize <= 0) do
     Task.throw [fmt|maxFileSizeBytes must be positive, got: #{maxSize}|]
 
-  -- Validate TTL
   Task.when (pendingTtl <= 0) do
     Task.throw [fmt|pendingTtlSeconds must be positive, got: #{pendingTtl}|]
 
-  -- Validate cleanup interval
   Task.when (cleanupInterval <= 0) do
     Task.throw [fmt|cleanupIntervalSeconds must be positive, got: #{cleanupInterval}|]
 
-  -- Validate cleanup runs before TTL expires (otherwise files could expire without cleanup)
   Task.when (cleanupInterval >= pendingTtl) do
     Task.throw [fmt|cleanupIntervalSeconds (#{cleanupInterval}) must be less than pendingTtlSeconds (#{pendingTtl})|]
 
