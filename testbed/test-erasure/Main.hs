@@ -17,8 +17,8 @@ import Service.Query.Core qualified as Query
 import Task qualified
 import Test
 import Test.Hspec qualified as Hspec
-import Testbed.Erasable.Core (ProtectedCreated (..), ProtectedEntity, ProtectedEvent (..), SecretPayload (..))
-import Testbed.Erasable.Query (ProtectedView)
+import Testbed.Erasable.Core (ProtectedCreated (..), ProtectedEntity (..), ProtectedEvent (..), SecretPayload (..))
+import Testbed.Erasable.Query (ProtectedView (..))
 import Testbed.Erasable.Owned.Commands.Record (RecordErasureResult (..))
 import Testbed.Erasable.Owned.Commands.Request qualified as Request
 import Testbed.Erasable.Owned.Core (OwnedProtectedEntity (..))
@@ -39,7 +39,13 @@ spec = do
               { name = "nested-private-name",
                 aliases = [Nothing, Just "nested-private-alias"]
               }
-            Accept AnyStreamState [value]
+            checked <- Erasable.map
+              (\payload ->
+                if payload.name == "nested-private-name" && payload.aliases == [Nothing, Just "nested-private-alias"]
+                  then payload
+                  else panic "Nested alias was missing from the protected payload")
+              value
+            Accept AnyStreamState [checked]
       (result, _) <- Decider.runDecisionWithKeys
         (Decider.DecisionContext {genUuid = Uuid.generate})
         (\_ -> Task.throw "No stored key")
@@ -49,27 +55,40 @@ spec = do
         Decider.AcceptCommand _ values -> case Array.first values of
           Nothing -> fail "Expected protected value"
           Just value -> do
+            let reference = Erasable.reference value
             let created = ProtectedCreated
                   { createdId = Uuid.nil,
                     createdFirst = value,
                     createdSecond = value,
                     createdMapped = value
                   }
-            let entity = Entity.updateImpl (ProtectedEventProtectedCreated created) (Entity.initialStateImpl @ProtectedEntity)
-            case Query.combine entity Nothing :: Query.QueryAction ProtectedView of
-              Query.Update view -> do
-                let stored = Json.toJSON view
-                case Json.decode @ProtectedView stored of
-                  Err _ -> fail "Generated query did not decode its protected fields"
-                  Ok decoded -> do
-                    let displayed = Text.fromLinkedList (show decoded)
-                    displayed |> shouldSatisfy (Text.contains "Erasable <REDACTED>")
-                    displayed |> shouldSatisfy (\output -> not (Text.contains "nested-private-name" output))
-                    displayed |> shouldSatisfy (\output -> not (Text.contains "nested-private-alias" output))
-                    displayed |> shouldSatisfy (\output -> not (Text.contains (Erasable.reference value) output))
-                    displayed |> shouldSatisfy (\output -> not (Text.contains "$erasable" output))
-              Query.Delete -> fail "Protected query was deleted"
-              Query.NoOp -> fail "Protected query was not updated"
+            let event = ProtectedEventProtectedCreated created
+            case Json.decode @ProtectedEvent (Json.toJSON event) of
+              Err _ -> fail "Generated event did not decode its protected fields"
+              Ok decodedEvent -> do
+                case decodedEvent of
+                  ProtectedEventProtectedCreated decoded -> do
+                    Erasable.reference decoded.createdFirst |> shouldBe reference
+                    Erasable.reference decoded.createdSecond |> shouldBe reference
+                    Erasable.reference decoded.createdMapped |> shouldBe reference
+                let entity = Entity.updateImpl decodedEvent (Entity.initialStateImpl @ProtectedEntity)
+                expectProtectedFields entity.firstSecret entity.secondSecret entity.mappedSecret reference
+                case Query.combine entity Nothing :: Query.QueryAction ProtectedView of
+                  Query.Update view -> do
+                    expectProtectedFields view.firstSecret view.secondSecret view.mappedSecret reference
+                    let stored = Json.toJSON view
+                    case Json.decode @ProtectedView stored of
+                      Err _ -> fail "Generated query did not decode its protected fields"
+                      Ok decoded -> do
+                        expectProtectedFields decoded.firstSecret decoded.secondSecret decoded.mappedSecret reference
+                        let displayed = Text.fromLinkedList (show decoded)
+                        displayed |> shouldSatisfy (Text.contains "Erasable <REDACTED>")
+                        displayed |> shouldSatisfy (\output -> not (Text.contains "nested-private-name" output))
+                        displayed |> shouldSatisfy (\output -> not (Text.contains "nested-private-alias" output))
+                        displayed |> shouldSatisfy (\output -> not (Text.contains (Erasable.reference value) output))
+                        displayed |> shouldSatisfy (\output -> not (Text.contains "$erasable" output))
+                  Query.Delete -> fail "Protected query was deleted"
+                  Query.NoOp -> fail "Protected query was not updated"
 
   describe "Protected erasure result command" do
     it "keeps its protected payload out of Show" \_ -> do
@@ -137,3 +156,13 @@ spec = do
       case result of
         Decider.RejectCommand reason -> reason |> shouldBe "Authentication required"
         Decider.AcceptCommand _ _ -> fail "A userless transport accepted the erasure request"
+
+
+expectProtectedFields :: Maybe (Erasable.Erasable SecretPayload) -> Maybe (Erasable.Erasable SecretPayload) -> Maybe (Erasable.Erasable SecretPayload) -> Text -> Task Text Unit
+expectProtectedFields first second mapped reference =
+  case (first, second, mapped) of
+    (Just firstValue, Just secondValue, Just mappedValue) -> do
+      Erasable.reference firstValue |> shouldBe reference
+      Erasable.reference secondValue |> shouldBe reference
+      Erasable.reference mappedValue |> shouldBe reference
+    _ -> fail "A protected field was missing"
