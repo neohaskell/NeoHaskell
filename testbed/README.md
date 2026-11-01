@@ -65,6 +65,12 @@ The fixture requires 12 passing examples. The proxy evidence file must contain `
 
 The `OwnedProtectedEntity` example in `testbed/src/Testbed/Erasable/Owned/` shows an application accepting a request from the owner of a protected record. Its `RequestErasure` command checks the owner and reference, then records a pending request. `OwnedErasureOutbound` erases one reference through `Integration.Erasable.Erase` and sends a result to the application's internal `RecordErasureResult` command. The query exposes completion separately from the protected value's `Erased` state. A second protected value stays available. The event records a case status of `open` as an illustrative retained business fact; the query rebuilds it from events after restart without reading the erased name. The example also retains the owner ID to authorize retries. Applications must review whether their own owner IDs and other metadata may be retained.
 
+The `nhtestbed-erasure` suite builds a `RecordErasureResult` command with a protected value. It checks that displaying the integration command payload hides its reference and encrypted envelope while the JSON command still decodes. Run that check from the repository root without PostgreSQL:
+
+```sh
+nix develop --command .agents/skills/tdd/scripts/test-match 'keeps its protected payload out of Show' nhtestbed-erasure
+```
+
 Run the maintained suite from the repository root with PostgreSQL running and ports 8080, 8081, and 8181 free:
 
 ```sh
