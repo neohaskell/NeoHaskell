@@ -18,6 +18,8 @@ import Service.EventStore.Postgres.SubscriptionStoreSpec qualified
 import Service.EventStore.Postgres.NotificationsSpec qualified
 import Service.EventStore.PostgresSpec qualified
 import Service.FileUpload.BlobStore.LocalSpec qualified
+import Service.FileUpload.BlobStore.S3.SigV4Spec qualified
+import Service.FileUpload.BlobStore.S3Spec qualified
 import Service.FileUpload.ContentDedupSpec qualified
 import Service.FileUpload.CoreSpec qualified
 import Service.FileUpload.DownloadSpec qualified
@@ -84,6 +86,8 @@ serviceSpecs = do
   Hspec.describe "Service.EventStore.Postgres" Service.EventStore.PostgresSpec.spec
   Hspec.describe "Service.EventStore.Postgres.Notifications" Service.EventStore.Postgres.NotificationsSpec.spec
   Hspec.describe "Service.FileUpload.BlobStore.Local" Service.FileUpload.BlobStore.LocalSpec.spec
+  Hspec.describe "Service.FileUpload.BlobStore.S3" Service.FileUpload.BlobStore.S3Spec.spec
+  Hspec.describe "Service.FileUpload.BlobStore.S3.SigV4" Service.FileUpload.BlobStore.S3.SigV4Spec.spec
   Hspec.describe "Service.FileUpload.ContentDedup" Service.FileUpload.ContentDedupSpec.spec
   Hspec.describe "Service.FileUpload.Core" Service.FileUpload.CoreSpec.spec
   Hspec.describe "Service.FileUpload.Download" Service.FileUpload.DownloadSpec.spec

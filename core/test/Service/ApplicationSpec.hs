@@ -4,13 +4,19 @@ import Array qualified
 import AsyncTask qualified
 import ConcurrentVar qualified
 import Core
+import Directory qualified
 import Map qualified
+import "nhcore" Path qualified
+import Result qualified
 import Service.Application (Application (..), ServiceRunner (..))
 import Service.Application qualified as Application
 import Service.Application.Transports qualified as Transports
 import Service.AccessControl qualified as AccessControl
 import Service.Event.EntityName (EntityName (..))
 import Service.EventStore.InMemory qualified as InMemory
+import Service.FileUpload.BlobStore (BlobStore (..), BlobStoreConfig (..), BlobStoreError (..))
+import Service.FileUpload.BlobStore.Local (LocalBlobStoreConfig (..))
+import Service.FileUpload.Core (FileStateStoreBackend (..), FileUploadConfig (..))
 import Service.MockTransport qualified as MockTransport
 import Service.Query.Pagination (QueryPageRequest (..))
 import Service.Query.Registry (QueryUpdater (..))
@@ -20,6 +26,7 @@ import Service.TestHelpers (insertTestEvent)
 import System.IO qualified as GhcIO
 import Task qualified
 import Test
+import Text qualified
 
 
 -- ============================================================================
@@ -259,6 +266,82 @@ spec = do
         count <- ConcurrentVar.peek liveEventCount
         count |> shouldBe 1
 
+    describe "file upload backend selection" do
+      it "creates the selected blob store once per startup" \_ -> do
+        count <- ConcurrentVar.containing (0 :: Int)
+        let customBackend = CustomBlobStoreConfig \_ -> do
+              ConcurrentVar.modify (\n -> n + 1) count
+              Task.yield unusedBlobStore
+        eventStore <- InMemory.new |> Task.mapError toText
+        let app = Application.new
+              |> Application.withFileUpload @() (\_ -> uploadConfig customBackend)
+        Application.hasFileUpload app |> shouldBe True
+        [(), ()] |> Task.forEach (\_ -> do
+          before <- ConcurrentVar.peek count
+          Application.runWith eventStore app
+          after <- ConcurrentVar.peek count
+          after |> shouldBe (before + 1))
+        ConcurrentVar.peek count |> Task.andThen (shouldBe 2)
+
+      it "validates every shared limit before creating the blob store" \_ -> do
+        eventStore <- InMemory.new |> Task.mapError toText
+        let config = uploadConfig (CustomBlobStoreConfig (\_ -> panic "blob store created before validation"))
+        let invalid =
+              [ (config {maxFileSizeBytes = 0}, "maxFileSizeBytes")
+              , (config {pendingTtlSeconds = 0}, "pendingTtlSeconds")
+              , (config {cleanupIntervalSeconds = 0}, "cleanupIntervalSeconds")
+              , (config {cleanupIntervalSeconds = 60}, "must be less")
+              , (config {cleanupIntervalSeconds = 61}, "must be less")
+              ]
+        invalid |> Task.forEach (\(fileConfig, expected) -> do
+          let app = Application.new
+                |> Application.withFileUpload @() (\_ -> fileConfig)
+          Application.hasFileUpload app |> shouldBe True
+          result <- Application.runWith eventStore app |> Task.asResult
+          case result of
+            Err message -> Text.contains expected message |> shouldBe True
+            Ok _ -> fail "Invalid upload limits accepted")
+
+      it "propagates blob store failure without creating Local storage" \_ -> do
+        Directory.withTemporaryFolder toText \parentDir -> do
+          let uploadDir = parentDir |> Path.append [Path.path|uploads|]
+          eventStore <- InMemory.new |> Task.mapError toText
+          let app = Application.new
+                |> Application.withFileUpload @() (\_ -> uploadConfig (CustomBlobStoreConfig (\_ -> Task.throw "custom backend unavailable")))
+          result <- Application.runWith eventStore app |> Task.asResult
+          result |> shouldBe (Err "custom backend unavailable")
+          walked <- Directory.walk uploadDir |> Task.asResult
+          Result.isErr walked |> shouldBe True
+
+      it "lets the last builder select Local or custom storage" \_ -> do
+        Directory.withTemporaryFolder toText \parentDir -> do
+          let uploadDir = parentDir |> Path.append [Path.path|uploads|]
+          eventStore <- InMemory.new |> Task.mapError toText
+          let localConfig = uploadConfig LocalBlobStoreConfig {rootDir = uploadDir}
+          let custom = Application.new
+                |> Application.withFileUpload @() (\_ -> localConfig)
+                |> Application.withFileUpload @() (\_ -> uploadConfig (CustomBlobStoreConfig (\_ -> Task.yield unusedBlobStore)))
+          Application.runWith eventStore custom
+          customWalked <- Directory.walk uploadDir |> Task.asResult
+          Result.isErr customWalked |> shouldBe True
+          let local = Application.new
+                |> Application.withFileUpload @() (\_ -> uploadConfig (CustomBlobStoreConfig (\_ -> panic "replaced backend created")))
+                |> Application.withFileUpload @() (\_ -> localConfig)
+          Application.runWith eventStore local
+          localWalked <- Directory.walk uploadDir |> Task.mapError toText
+          localWalked |> shouldBe []
+
+      it "rejects an empty or blank Local directory" \_ -> do
+        eventStore <- InMemory.new |> Task.mapError toText
+        let emptyApp = Application.new
+              |> Application.withFileUpload @() (\_ -> uploadConfig LocalBlobStoreConfig {rootDir = [Path.path||]})
+        emptyResult <- Application.runWith eventStore emptyApp |> Task.asResult
+        emptyResult |> shouldBe (Err "Local blob store rootDir cannot be empty")
+        let blankApp = Application.new
+              |> Application.withFileUpload @() (\_ -> uploadConfig LocalBlobStoreConfig {rootDir = [Path.path|   |]})
+        blankResult <- Application.runWith eventStore blankApp |> Task.asResult
+        blankResult |> shouldBe (Err "Local blob store rootDir cannot be empty")
+
     describe "isEmpty with service runners" do
       it "returns False when service runners are added" \_ -> do
         let app =
@@ -324,3 +407,31 @@ mockServiceRunner =
   ServiceRunner
     { getEndpointsByTransport = \_ _ -> Task.yield (Map.empty, Map.empty, Map.empty)
     }
+
+
+newtype CustomBlobStoreConfig = CustomBlobStoreConfig (() -> Task Text BlobStore)
+
+
+instance BlobStoreConfig CustomBlobStoreConfig where
+  createBlobStore (CustomBlobStoreConfig create) = create ()
+
+
+uploadConfig :: forall blobStore. blobStore -> FileUploadConfig blobStore
+uploadConfig blobStore = FileUploadConfig
+  { blobStore
+  , stateStoreBackend = InMemoryStateStore
+  , maxFileSizeBytes = 4096
+  , pendingTtlSeconds = 60
+  , cleanupIntervalSeconds = 59
+  , allowedContentTypes = Nothing
+  , storeOriginalFilename = True
+  }
+
+
+unusedBlobStore :: BlobStore
+unusedBlobStore = BlobStore
+  { store = \_ _ -> Task.throw (StorageError "unexpected store")
+  , retrieve = \_ -> Task.throw (StorageError "unexpected retrieve")
+  , delete = \_ -> Task.throw (StorageError "unexpected delete")
+  , exists = \_ -> Task.throw (StorageError "unexpected exists")
+  }
