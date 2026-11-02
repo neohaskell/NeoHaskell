@@ -53,7 +53,31 @@ spec = do
                     then panic "Mapped nested alias was missing"
                     else payload)
               checked
-            Accept AnyStreamState [verified]
+            let probe = ProtectedCreated
+                  { createdId = Uuid.nil,
+                    createdFirst = verified,
+                    createdSecond = verified,
+                    createdMapped = verified
+                  }
+            let probeEntity = Entity.updateImpl (ProtectedEventProtectedCreated probe) (Entity.initialStateImpl @ProtectedEntity)
+            case Query.combine probeEntity Nothing :: Query.QueryAction ProtectedView of
+              Query.Update view ->
+                case Json.decode @ProtectedView (Json.toJSON view) of
+                  Err _ -> panic "Generated query did not decode its protected fields"
+                  Ok decoded ->
+                    case decoded.firstSecret of
+                      Nothing -> panic "Generated query lost its first protected field"
+                      Just protected -> do
+                        _ <- Erasable.map
+                          (\payload ->
+                            if payload.name != "nested-private-name"
+                              then panic "Generated query lost the protected name"
+                              else if payload.aliases != [Nothing, Just "nested-private-alias"]
+                                then panic "Generated query lost the nested alias"
+                                else payload)
+                          protected
+                        Accept AnyStreamState [verified]
+              _ -> panic "Generated query was not updated"
       (result, _) <- Decider.runDecisionWithKeys
         (Decider.DecisionContext {genUuid = Uuid.generate})
         (\_ -> Task.throw "No stored key")
