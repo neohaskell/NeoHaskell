@@ -65,7 +65,7 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0
-      - uses: DeterminateSystems/determinate-nix-action@f296148a827001a9a82d3685b53210c06e5d3b67 # v3.24.0
+      - uses: DeterminateSystems/determinate-nix-action@92957199488000b908fdad19f63711000965d8f3 # v3.24.1
         with:
           extra-conf: |
             accept-flake-config = true
