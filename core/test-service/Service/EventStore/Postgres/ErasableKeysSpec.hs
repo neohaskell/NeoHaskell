@@ -426,6 +426,8 @@ spec = do
           Just value -> Task.yield value
         eventText |> shouldSatisfy (\value -> not (Text.contains marker value))
         queryText |> shouldSatisfy (\value -> not (Text.contains marker value))
+        eventText |> shouldSatisfy (\value -> not (Text.contains "copied secret" value))
+        queryText |> shouldSatisfy (\value -> not (Text.contains "copied secret" value))
         eventCopies <- case Json.decodeText @StoredCopies eventText of
           Err reason -> Task.throw reason
           Ok value -> Task.yield value
