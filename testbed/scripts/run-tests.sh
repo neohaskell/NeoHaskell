@@ -250,6 +250,12 @@ if [ -d "$HURL_TEST_ROOT/scenarios" ] && [ "$(ls -A "$HURL_TEST_ROOT"/scenarios/
 	echo ""
 fi
 
+if [ -d "$HURL_TEST_ROOT/files" ] && [ "$(ls -A "$HURL_TEST_ROOT"/files/*.hurl 2>/dev/null)" ]; then
+	echo -e "${GREEN}Running file tests...${NC}"
+	hurl --test "$HURL_TEST_ROOT"/files/*.hurl
+	echo ""
+fi
+
 # Run integration tests (PDF extraction, etc.)
 if [ -d "$HURL_TEST_ROOT/integrations" ] && [ "$(ls -A "$HURL_TEST_ROOT"/integrations/*.hurl 2>/dev/null)" ]; then
 	echo -e "${GREEN}Running integration tests...${NC}"

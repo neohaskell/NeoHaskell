@@ -324,7 +324,7 @@ jobs:
           CRYPTOERASURE_FAULT_TESTS: "1"
           TESTBED_FAULT_HTTP_PORT: "19153"
           TESTBED_FAULT_FIXTURE_PORT: "19154"
-        run: nix develop --command ./testbed/scripts/run-tests.sh
+        run: .agents/skills/neohaskell-test/scripts/run-testbed --strict --timeout 2400
       - name: Prove cold-start health stays flat through 100k events
         run: nix develop --command ./testbed/scripts/cold-start-readiness.sh
 
