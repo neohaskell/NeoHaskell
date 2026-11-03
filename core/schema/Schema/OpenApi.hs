@@ -130,6 +130,7 @@ toOpenApiSchema schema = case schema of
                      |> Array.toLinkedList
                      |> InsOrdHashMap.fromList
                let required = contentsRequired
+                     |> Array.takeIf (\fieldName -> fieldName != "tag")
                      |> Array.prepend (Array.fromLinkedList ["tag"])
                      |> Array.toLinkedList
                GhcMonoid.mempty
