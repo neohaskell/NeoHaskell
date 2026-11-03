@@ -141,6 +141,11 @@ toOpenApiSchema schema = case schema of
           |> Array.toLinkedList
     GhcMonoid.mempty
       |> Lens.set OpenApiLens.oneOf (Just (variantSchemas |> LinkedList.map OpenApi.Inline))
+
+  SUnionWithContents variants ->
+    toOpenApiSchema
+      (SUnion (variants |> Array.map (\(name, contentsSchema) ->
+        (name, SObject [FieldSchema "contents" contentsSchema True ""]))))
   
   SRef refName -> do
     -- Note: Schema references in OpenAPI are handled at the usage site via Referenced type,

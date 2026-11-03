@@ -389,9 +389,11 @@ spec = do
         let privateQueryConfig = queryConfig databaseName databasePort
         store <- PostgresStore.new privateConfig
         entityId <- Uuid.generate
+        otherEntityId <- Uuid.generate
         queryId <- Uuid.generate
         queryNameId <- Uuid.generate
         let streamId = Event.StreamId (Uuid.toText entityId)
+        let otherStreamId = Event.StreamId (Uuid.toText otherEntityId)
         let entityName = Event.EntityName "erasable-copy-nonce"
         let marker = "Álvaro ñ 😀 copied secret"
         let decision = do
@@ -412,23 +414,36 @@ spec = do
           Nothing -> Task.throw "Expected event insertion"
           Just insertion -> Task.yield insertion.metadata.eventId
         store.insertWithErasableKeys keys (payload {Event.insertionType = Event.StreamCreation}) |> Task.mapError toText |> discard
+        otherPayload <- Event.payloadFromEvents entityName otherStreamId [Json.toJSON protected]
+        otherEventId <- case Array.first otherPayload.insertions of
+          Nothing -> Task.throw "Expected copied stream insertion"
+          Just insertion -> Task.yield insertion.metadata.eventId
+        store.insert (otherPayload {Event.insertionType = Event.StreamCreation}) |> Task.mapError toText |> discard
         let queryName = [fmt|erasable-copy-nonce-#{Uuid.toText queryNameId}|]
         queryWriter <- QueryStore.newFromConfig @ProtectedRead privateQueryConfig queryName |> Task.mapError toText
         queryWriter.atomicUpdate queryId (\_ -> Just (ProtectedRead {secret = protected})) |> Task.mapError toText
         connection <- Postgres.defaultOps.acquire privateConfig
         rawEvent <- runReal connection (eventJsonText eventId)
+        rawOtherEvent <- runReal connection (eventJsonText otherEventId)
         rawQuery <- runReal connection (queryJsonText queryId)
         eventText <- case rawEvent of
           Nothing -> Task.throw "Expected stored event JSON"
+          Just value -> Task.yield value
+        otherEventText <- case rawOtherEvent of
+          Nothing -> Task.throw "Expected copied stream event JSON"
           Just value -> Task.yield value
         queryText <- case rawQuery of
           Nothing -> Task.throw "Expected stored query JSON"
           Just value -> Task.yield value
         eventText |> shouldSatisfy (\value -> not (Text.contains marker value))
+        otherEventText |> shouldSatisfy (\value -> not (Text.contains marker value))
         queryText |> shouldSatisfy (\value -> not (Text.contains marker value))
         eventText |> shouldSatisfy (\value -> not (Text.contains "copied secret" value))
         queryText |> shouldSatisfy (\value -> not (Text.contains "copied secret" value))
         eventCopies <- case Json.decodeText @StoredCopies eventText of
+          Err reason -> Task.throw reason
+          Ok value -> Task.yield value
+        otherCopy <- case Json.decodeText @StoredEnvelope otherEventText of
           Err reason -> Task.throw reason
           Ok value -> Task.yield value
         queryCopy <- case Json.decodeText @StoredQueryCopy queryText of
@@ -436,26 +451,35 @@ spec = do
           Ok value -> Task.yield value.storedSecret
         eventNonce <- storedNonceBytes eventCopies.eventCopy.envelope
         otherNonce <- storedNonceBytes eventCopies.otherCopy.envelope
+        otherStreamNonce <- storedNonceBytes otherCopy.envelope
         queryNonce <- storedNonceBytes queryCopy.envelope
         eventCopies.eventCopy.reference |> shouldBe (Erasable.reference protected)
         eventCopies.otherCopy.reference |> shouldBe eventCopies.eventCopy.reference
+        otherCopy.reference |> shouldBe eventCopies.eventCopy.reference
         queryCopy.reference |> shouldBe eventCopies.eventCopy.reference
         eventCopies.eventCopy.context |> shouldNotBe eventCopies.otherCopy.context
         queryCopy.context |> shouldNotBe eventCopies.eventCopy.context
         queryCopy.context |> shouldNotBe eventCopies.otherCopy.context
+        otherCopy.context |> shouldNotBe eventCopies.eventCopy.context
         eventNonce |> shouldNotBe otherNonce
+        otherStreamNonce |> shouldNotBe eventNonce
         queryNonce |> shouldNotBe eventNonce
         queryNonce |> shouldNotBe otherNonce
         eventValue <- case Json.decodeText @Json.Value eventText of
+          Err reason -> Task.throw reason
+          Ok value -> Task.yield value
+        otherEventValue <- case Json.decodeText @Json.Value otherEventText of
           Err reason -> Task.throw reason
           Ok value -> Task.yield value
         queryValue <- case Json.decodeText @Json.Value queryText of
           Err reason -> Task.throw reason
           Ok value -> Task.yield value
         beforeEvent <- store.renderProtectedJson eventValue |> Task.mapError toText
+        beforeOtherEvent <- store.renderProtectedJson otherEventValue |> Task.mapError toText
         beforeQuery <- store.renderProtectedJson queryValue |> Task.mapError toText
         Json.encodeText beforeEvent |> shouldSatisfy (Text.contains marker)
         Json.encodeText beforeEvent |> shouldSatisfy (Text.contains "Available")
+        Json.encodeText beforeOtherEvent |> shouldSatisfy (Text.contains marker)
         Json.encodeText beforeQuery |> shouldSatisfy (Text.contains marker)
         Json.encodeText beforeQuery |> shouldSatisfy (Text.contains "Available")
         let target = EventStore.ErasureTarget
@@ -463,6 +487,8 @@ spec = do
                 entityName,
                 streamId
               }
+        wrongStream <- store.eraseErasableKey (target {EventStore.streamId = otherStreamId}) |> Task.asResult
+        wrongStream |> shouldSatisfy (\result -> case result of Err _ -> True; Ok _ -> False)
         erasedNow <- store.eraseErasableKey target |> Task.mapError toText
         erasedNow |> shouldBe EventStore.ErasedNow
         tombstone <- runReal connection (keyRecord (Erasable.reference protected))
@@ -471,9 +497,12 @@ spec = do
         store.close
         reconnected <- PostgresStore.new privateConfig
         afterEvent <- reconnected.renderProtectedJson eventValue |> Task.mapError toText
+        afterOtherEvent <- reconnected.renderProtectedJson otherEventValue |> Task.mapError toText
         afterQuery <- reconnected.renderProtectedJson queryValue |> Task.mapError toText
         Json.encodeText afterEvent |> shouldSatisfy (Text.contains "Erased")
         Json.encodeText afterEvent |> shouldSatisfy (\value -> not (Text.contains marker value))
+        Json.encodeText afterOtherEvent |> shouldSatisfy (\value -> not (Text.contains marker value))
+        Json.encodeText afterOtherEvent |> shouldSatisfy (Text.contains "Erased")
         Json.encodeText afterQuery |> shouldSatisfy (Text.contains "Erased")
         Json.encodeText afterQuery |> shouldSatisfy (\value -> not (Text.contains marker value))
         reconnected.close
@@ -1049,7 +1078,7 @@ spec = do
         Postgres.defaultOps.release finalConnection
         reconnected.close
 
-      it "does not insert an event when its key write fails" \_ -> do
+      it "rejects a changed envelope with a duplicate reference" \_ -> do
         databaseName <- privateDatabase
         databasePort <- privatePort
         let privateConfig = config databaseName databasePort
@@ -1068,7 +1097,21 @@ spec = do
             Just value -> Task.yield value
         firstPayload <- Event.payloadFromEvents entityName streamId [Json.toJSON protected]
         store.insertWithErasableKeys keys firstPayload |> Task.mapError toText |> discard
-        secondPayload <- Event.payloadFromEvents entityName streamId [Json.toJSON protected]
+        let changedDecision = do
+              changed <- Erasable.map (\_ -> ("changed private value" :: Text)) protected
+              Accept Event.AnyStreamState [changed]
+        (changedOutcome, _) <- Decider.runDecisionWithKeys
+          (DecisionContext {genUuid = Uuid.generate})
+          (\reference -> store.readErasableKey reference |> Task.mapError toText)
+          changedDecision
+        changed <- case changedOutcome of
+          RejectCommand _ -> Task.throw "Expected changed protected value"
+          AcceptCommand _ values -> case Array.first values of
+            Nothing -> Task.throw "Expected changed protected value"
+            Just value -> Task.yield value
+        Erasable.reference changed |> shouldBe (Erasable.reference protected)
+        Json.encodeText changed |> shouldNotBe (Json.encodeText protected)
+        secondPayload <- Event.payloadFromEvents entityName streamId [Json.toJSON changed]
         failed <- store.insertWithErasableKeys keys secondPayload |> Task.asResult
         case failed of
           Ok _ -> fail "A duplicate key write must reject the new event"
