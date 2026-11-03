@@ -46,6 +46,15 @@ makeEndpointSchema reqSchema respSchema = do
     }
 
 
+queryPageSchema :: Schema -> Schema
+queryPageSchema rowSchema = SObject (Array.fromLinkedList
+  [ FieldSchema "items" (SArray rowSchema) True ""
+  , FieldSchema "total" SInt True ""
+  , FieldSchema "hasMore" SBool True ""
+  , FieldSchema "effectiveLimit" SInt True ""
+  ])
+
+
 -- | Extract the inline response schema from an OpenAPI spec at a given path and HTTP method.
 -- Fails with descriptive messages if any step in the traversal is missing.
 extractResponseSchema ::
@@ -197,7 +206,34 @@ spec = do
       oneOf |> shouldSatisfy (\x -> case x of { Just _ -> True; Nothing -> False })
       let encoded = Json.encodeText (Json.toJSON schema)
       encoded |> shouldSatisfy (Text.contains "\"tag\"")
-      encoded |> shouldSatisfy (Text.contains "\"contents\"")
+      encoded |> shouldSatisfy (Text.contains "\"radius\"")
+
+    it "publishes record union fields beside the tag" \_ -> do
+      let variants = Array.fromLinkedList
+            [ ("Accepted", SObject (Array.fromLinkedList [FieldSchema "entityId" SText True ""]))
+            , ("Rejected", SObject (Array.fromLinkedList [FieldSchema "reason" SText True ""]))
+            , ("Failed", SObject (Array.fromLinkedList [FieldSchema "error" SText True ""]))
+            ]
+      let schema = OpenApiGen.toOpenApiSchema (SUnion variants)
+      case schema |> Lens.view OpenApi.oneOf of
+        Nothing -> Test.fail "Expected command variants"
+        Just [OpenApi.Inline accepted, OpenApi.Inline rejected, OpenApi.Inline failed] -> do
+          let matches :: OpenApi.Schema -> Text -> Text -> Bool
+              matches branch tag field = do
+                let properties = branch |> Lens.view OpenApi.properties
+                let tagMatches = case InsOrdHashMap.lookup "tag" properties of
+                      Just (OpenApi.Inline tagSchema) -> (tagSchema |> Lens.view OpenApi.enum_) == Just [Json.toJSON tag]
+                      _ -> False
+                let fieldMatches = case InsOrdHashMap.lookup field properties of
+                      Just (OpenApi.Inline fieldSchema) -> (fieldSchema |> Lens.view OpenApi.type_) == Just OpenApi.OpenApiString
+                      _ -> False
+                let required = branch |> Lens.view OpenApi.required
+                tagMatches && fieldMatches && InsOrdHashMap.size properties == 2
+                  && required == ["tag", field]
+          matches accepted "Accepted" "entityId" |> shouldBe True
+          matches rejected "Rejected" "reason" |> shouldBe True
+          matches failed "Failed" "error" |> shouldBe True
+        Just _ -> Test.fail "Expected three inline command variants"
 
   describe "toOpenApiSchema - Reference Types" do
     it "converts SRef to schema with title as reference" \_ -> do
@@ -234,7 +270,7 @@ spec = do
       let apiInfo = ApiInfo "Test API" "1.0.0" ""
       let commandSchemas = Map.empty
       let querySchemas = Map.fromArray (Array.fromLinkedList
-            [ ("GetUser", makeEndpointSchema Nothing SText)
+            [ ("GetUser", makeEndpointSchema Nothing (queryPageSchema SText))
             ])
       let openApiSpec = OpenApiGen.toOpenApiSpec apiInfo commandSchemas querySchemas Map.empty Map.empty
       -- Verify paths are generated
@@ -245,7 +281,7 @@ spec = do
       let apiInfo = ApiInfo "Test API" "1.0.0" ""
       let commandSchemas = Map.empty
       let querySchemas = Map.fromArray (Array.fromLinkedList
-            [ ("GetUser", makeEndpointSchema Nothing SText)
+            [ ("GetUser", makeEndpointSchema Nothing (queryPageSchema SText))
             ])
       let openApiSpec = OpenApiGen.toOpenApiSpec apiInfo commandSchemas querySchemas Map.empty Map.empty
       extractResponseSchema "/queries/get-user" OpenApi.get openApiSpec (\schema -> do
@@ -253,10 +289,30 @@ spec = do
         typeValue |> shouldBe (Just OpenApi.OpenApiObject)
         )
 
+    it "publishes one query page envelope whose items have row fields" \_ -> do
+      let rowSchema = SObject (Array.fromLinkedList [FieldSchema "rowName" SText True ""])
+      let pageSchema = queryPageSchema rowSchema
+      let querySchemas = Map.fromArray (Array.fromLinkedList
+            [ ("GetUser", makeEndpointSchema Nothing pageSchema)
+            ])
+      let openApiSpec = OpenApiGen.toOpenApiSpec (ApiInfo "Test API" "1.0.0" "") Map.empty querySchemas Map.empty Map.empty
+      extractResponseSchema "/queries/get-user" OpenApi.get openApiSpec (\schema -> do
+        let properties = schema |> Lens.view OpenApi.properties
+        InsOrdHashMap.size properties |> shouldBe 4
+        case InsOrdHashMap.lookup "items" properties of
+          Just (OpenApi.Inline itemsSchema) -> case itemsSchema |> Lens.view OpenApi.items of
+            Just (OpenApi.OpenApiItemsObject (OpenApi.Inline row)) -> do
+              let rowProperties = row |> Lens.view OpenApi.properties
+              InsOrdHashMap.size rowProperties |> shouldBe 1
+              InsOrdHashMap.member "rowName" rowProperties |> shouldBe True
+            _ -> Test.fail "Expected inline row items"
+          _ -> Test.fail "Expected items property"
+        )
+
     it "query endpoint response has all four required properties" \_ -> do
       let apiInfo = ApiInfo "Test API" "1.0.0" ""
       let querySchemas = Map.fromArray (Array.fromLinkedList
-            [ ("GetUser", makeEndpointSchema Nothing SText)
+            [ ("GetUser", makeEndpointSchema Nothing (queryPageSchema SText))
             ])
       let openApiSpec = OpenApiGen.toOpenApiSpec apiInfo Map.empty querySchemas Map.empty Map.empty
       extractResponseSchema "/queries/get-user" OpenApi.get openApiSpec (\schema -> do
@@ -271,7 +327,7 @@ spec = do
     it "query endpoint response requires all four properties" \_ -> do
       let apiInfo = ApiInfo "Test API" "1.0.0" ""
       let querySchemas = Map.fromArray (Array.fromLinkedList
-            [ ("GetUser", makeEndpointSchema Nothing SText)
+            [ ("GetUser", makeEndpointSchema Nothing (queryPageSchema SText))
             ])
       let openApiSpec = OpenApiGen.toOpenApiSpec apiInfo Map.empty querySchemas Map.empty Map.empty
       extractResponseSchema "/queries/get-user" OpenApi.get openApiSpec (\schema -> do
@@ -286,7 +342,7 @@ spec = do
     it "query items property is array of item schema" \_ -> do
       let apiInfo = ApiInfo "Test API" "1.0.0" ""
       let querySchemas = Map.fromArray (Array.fromLinkedList
-            [ ("GetUser", makeEndpointSchema Nothing SText)
+            [ ("GetUser", makeEndpointSchema Nothing (queryPageSchema SText))
             ])
       let openApiSpec = OpenApiGen.toOpenApiSpec apiInfo Map.empty querySchemas Map.empty Map.empty
       extractResponseSchema "/queries/get-user" OpenApi.get openApiSpec (\schema -> do
@@ -304,7 +360,7 @@ spec = do
     it "query total property is integer" \_ -> do
       let apiInfo = ApiInfo "Test API" "1.0.0" ""
       let querySchemas = Map.fromArray (Array.fromLinkedList
-            [ ("GetUser", makeEndpointSchema Nothing SText)
+            [ ("GetUser", makeEndpointSchema Nothing (queryPageSchema SText))
             ])
       let openApiSpec = OpenApiGen.toOpenApiSpec apiInfo Map.empty querySchemas Map.empty Map.empty
       extractResponseSchema "/queries/get-user" OpenApi.get openApiSpec (\schema -> do
@@ -320,7 +376,7 @@ spec = do
     it "query hasMore property is boolean" \_ -> do
       let apiInfo = ApiInfo "Test API" "1.0.0" ""
       let querySchemas = Map.fromArray (Array.fromLinkedList
-            [ ("GetUser", makeEndpointSchema Nothing SText)
+            [ ("GetUser", makeEndpointSchema Nothing (queryPageSchema SText))
             ])
       let openApiSpec = OpenApiGen.toOpenApiSpec apiInfo Map.empty querySchemas Map.empty Map.empty
       extractResponseSchema "/queries/get-user" OpenApi.get openApiSpec (\schema -> do
@@ -336,7 +392,7 @@ spec = do
     it "query effectiveLimit property is integer" \_ -> do
       let apiInfo = ApiInfo "Test API" "1.0.0" ""
       let querySchemas = Map.fromArray (Array.fromLinkedList
-            [ ("GetUser", makeEndpointSchema Nothing SText)
+            [ ("GetUser", makeEndpointSchema Nothing (queryPageSchema SText))
             ])
       let openApiSpec = OpenApiGen.toOpenApiSpec apiInfo Map.empty querySchemas Map.empty Map.empty
       extractResponseSchema "/queries/get-user" OpenApi.get openApiSpec (\schema -> do
@@ -367,7 +423,7 @@ spec = do
             [ ("CreateUser", makeEndpointSchema (Just SText) SText)
             ])
       let querySchemas = Map.fromArray (Array.fromLinkedList
-            [ ("GetUser", makeEndpointSchema Nothing SText)
+            [ ("GetUser", makeEndpointSchema Nothing (queryPageSchema SText))
             ])
       let openApiSpec = OpenApiGen.toOpenApiSpec apiInfo commandSchemas querySchemas Map.empty Map.empty
       -- Verify both paths are present
@@ -593,14 +649,14 @@ spec = do
               hasQ |> shouldBe True
 
   describe "toOpenApiSpec - Query Edge Cases" do
-    it "query with complex object item schema wraps correctly in envelope" \_ -> do
+    it "query with complex object item schema keeps its envelope" \_ -> do
       let apiInfo = ApiInfo "Test API" "1.0.0" ""
       let fields = Array.fromLinkedList
             [ FieldSchema "name" SText True "User name"
             , FieldSchema "age" SInt True "User age"
             ]
       let querySchemas = Map.fromArray (Array.fromLinkedList
-            [ ("GetUser", makeEndpointSchema Nothing (SObject fields))
+            [ ("GetUser", makeEndpointSchema Nothing (queryPageSchema (SObject fields)))
             ])
       let openApiSpec = OpenApiGen.toOpenApiSpec apiInfo Map.empty querySchemas Map.empty Map.empty
       extractResponseSchema "/queries/get-user" OpenApi.get openApiSpec (\schema -> do
@@ -618,8 +674,8 @@ spec = do
     it "multiple query endpoints each get paginated schema" \_ -> do
       let apiInfo = ApiInfo "Test API" "1.0.0" ""
       let querySchemas = Map.fromArray (Array.fromLinkedList
-            [ ("GetUser", makeEndpointSchema Nothing SText)
-            , ("GetOrder", makeEndpointSchema Nothing SInt)
+            [ ("GetUser", makeEndpointSchema Nothing (queryPageSchema SText))
+            , ("GetOrder", makeEndpointSchema Nothing (queryPageSchema SInt))
             ])
       let openApiSpec = OpenApiGen.toOpenApiSpec apiInfo Map.empty querySchemas Map.empty Map.empty
       extractResponseSchema "/queries/get-user" OpenApi.get openApiSpec (\schema -> do
