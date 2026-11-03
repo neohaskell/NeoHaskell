@@ -105,19 +105,38 @@ toOpenApiSchema schema = case schema of
   
   SUnion variants -> do
     let variantSchemas = variants
-          |> Array.map (\(name, contentsSchema) ->
+          |> Array.map (\(name, contentsSchema) -> do
                let tagSchema = GhcMonoid.mempty
                      |> Lens.set OpenApiLens.type_ (Just OpenApi.OpenApiString)
                      |> Lens.set OpenApiLens.enum_ (Just [Json.toJSON name])
-                in GhcMonoid.mempty
-                     |> Lens.set OpenApiLens.type_ (Just OpenApi.OpenApiObject)
-                     |> Lens.set OpenApiLens.title (Just name)
-                     |> Lens.set OpenApiLens.properties
-                          (InsOrdHashMap.fromList
-                            [ ("tag", OpenApi.Inline tagSchema)
-                            , ("contents", OpenApi.Inline (toOpenApiSchema contentsSchema))
-                            ])
-                     |> Lens.set OpenApiLens.required ["tag", "contents"])
+               let wrappedContents =
+                     ( Array.fromLinkedList [("contents", OpenApi.Inline (toOpenApiSchema contentsSchema))]
+                     , Array.fromLinkedList ["contents"]
+                     )
+               let (contentsProperties, contentsRequired) = case contentsSchema of
+                     SObject fields -> do
+                       if Array.any (\field -> Text.isEmpty field.fieldName) fields
+                         then wrappedContents
+                         else do
+                           let fieldProperties = fields
+                                 |> Array.map (\field -> (field.fieldName, OpenApi.Inline (toOpenApiSchema field.fieldSchema)))
+                           let fieldRequired = fields
+                                 |> Array.takeIf (\field -> field.fieldRequired)
+                                 |> Array.map (\field -> field.fieldName)
+                           (fieldProperties, fieldRequired)
+                     _ -> wrappedContents
+               let properties = contentsProperties
+                     |> Array.prepend (Array.fromLinkedList [("tag", OpenApi.Inline tagSchema)])
+                     |> Array.toLinkedList
+                     |> InsOrdHashMap.fromList
+               let required = contentsRequired
+                     |> Array.prepend (Array.fromLinkedList ["tag"])
+                     |> Array.toLinkedList
+               GhcMonoid.mempty
+                 |> Lens.set OpenApiLens.type_ (Just OpenApi.OpenApiObject)
+                 |> Lens.set OpenApiLens.title (Just name)
+                 |> Lens.set OpenApiLens.properties properties
+                 |> Lens.set OpenApiLens.required required)
           |> Array.toLinkedList
     GhcMonoid.mempty
       |> Lens.set OpenApiLens.oneOf (Just (variantSchemas |> LinkedList.map OpenApi.Inline))
@@ -296,30 +315,9 @@ makeQueryPath name schema = do
   let kebabName = name |> Text.toKebabCase
   let path = [fmt|/queries/#{kebabName}|]
 
-  -- Build the paginated envelope schema matching QueryPageResponse
-  let itemsArraySchema = toOpenApiSchema (SArray schema.responseSchema)
-  let totalSchema = GhcMonoid.mempty
-        |> Lens.set OpenApiLens.type_ (Just OpenApi.OpenApiInteger)
-        |> Lens.set OpenApiLens.description (Just "Total matching items after authorization filtering")
-  let hasMoreSchema = GhcMonoid.mempty
-        |> Lens.set OpenApiLens.type_ (Just OpenApi.OpenApiBoolean)
-        |> Lens.set OpenApiLens.description (Just "Whether more items exist beyond this page")
-  let effectiveLimitSchema = GhcMonoid.mempty
-        |> Lens.set OpenApiLens.type_ (Just OpenApi.OpenApiInteger)
-        |> Lens.set OpenApiLens.description (Just "Actual page size limit applied (may be lower than requested)")
-  let envelopeSchema = GhcMonoid.mempty
-        |> Lens.set OpenApiLens.type_ (Just OpenApi.OpenApiObject)
-        |> Lens.set OpenApiLens.properties (InsOrdHashMap.fromList
-              [ ("items", OpenApi.Inline itemsArraySchema)
-              , ("total", OpenApi.Inline totalSchema)
-              , ("hasMore", OpenApi.Inline hasMoreSchema)
-              , ("effectiveLimit", OpenApi.Inline effectiveLimitSchema)
-              ])
-        |> Lens.set OpenApiLens.required ["items", "total", "hasMore", "effectiveLimit"]
-
   let responseContent = InsOrdHashMap.fromList
         [ ("application/json", GhcMonoid.mempty
-            |> Lens.set OpenApiLens.schema (Just (OpenApi.Inline envelopeSchema))
+            |> Lens.set OpenApiLens.schema (Just (OpenApi.Inline (toOpenApiSchema schema.responseSchema)))
           )
         ]
 
