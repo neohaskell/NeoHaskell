@@ -4,6 +4,15 @@ HTTP/1.1 200
 [Captures]
 jwt: jsonpath "$.accessToken"
 
+GET http://127.0.0.1:8081/openapi.json
+
+HTTP/1.1 200
+[Asserts]
+jsonpath "$.paths['/queries/owned-protected-view'].get.responses['200'].content['application/json'].schema.properties.items.items.properties.firstSecret.oneOf[0].properties.contents.properties.name.type" == "string"
+jsonpath "$.paths['/queries/owned-protected-view'].get.responses['200'].content['application/json'].schema.properties.items.items.properties.firstSecret.oneOf[0].properties.contents.properties.aliases.type" == "array"
+jsonpath "$.paths['/queries/owned-protected-view'].get.responses['200'].content['application/json'].schema.properties.items.items.properties.firstSecret.oneOf[0].required[1]" == "contents"
+jsonpath "$.paths['/queries/owned-protected-view'].get.responses['200'].content['application/json'].schema.properties.items.items.properties.firstSecret.oneOf[0].properties.name" not exists
+
 POST http://127.0.0.1:8081/commands/create-owned-protected
 Authorization: Bearer {{jwt}}
 []
@@ -25,6 +34,9 @@ HTTP/1.1 200
 reference: jsonpath "$.items[?(@.caseId == '{{case_id}}')].firstReference" nth 0
 [Asserts]
 jsonpath "$.items[?(@.caseId == '{{case_id}}')].firstSecret.tag" nth 0 == "Available"
+jsonpath "$.items[?(@.caseId == '{{case_id}}')].firstSecret.contents.name" nth 0 == "Álvaro ñ 😀"
+jsonpath "$.items[?(@.caseId == '{{case_id}}')].firstSecret.contents.aliases[0]" nth 0 == null
+jsonpath "$.items[?(@.caseId == '{{case_id}}')].firstSecret.contents.aliases[1]" nth 0 == "café"
 jsonpath "$.items[?(@.caseId == '{{case_id}}')].caseStatus" nth 0 == "open"
 jsonpath "$.items[?(@.caseId == '{{case_id}}')].secondSecret.tag" nth 0 == "Available"
 jsonpath "$.items[?(@.caseId == '{{case_id}}')].erasureStatus" nth 0 == "not-requested"
