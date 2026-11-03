@@ -34,6 +34,21 @@ instance Json.ToJSON OpenApiEnumFixture
 instance ToSchema OpenApiEnumFixture
 
 
+data OpenApiTagCollisionFixture
+  = OtherOpenApiTagCollisionFixture
+  | OpenApiTagCollisionFixture
+      { collisionPayload :: Text
+      , tag :: Text
+      }
+  deriving (Generic)
+
+
+instance Json.ToJSON OpenApiTagCollisionFixture
+
+
+instance ToSchema OpenApiTagCollisionFixture
+
+
 -- | Helper to create a simple EndpointSchema for testing
 makeEndpointSchema :: Maybe Schema -> Schema -> EndpointSchema
 makeEndpointSchema reqSchema respSchema = do
@@ -234,6 +249,48 @@ spec = do
           matches rejected "Rejected" "reason" |> shouldBe True
           matches failed "Failed" "error" |> shouldBe True
         Just _ -> Test.fail "Expected three inline command variants"
+
+    it "keeps the generic JSON encoding when a record payload has a tag field" \_ -> do
+      let wireValue = OpenApiTagCollisionFixture
+            { collisionPayload = "payload"
+            , tag = "payload-tag"
+            }
+      Json.encodeText wireValue
+        |> shouldBe "{\"collisionPayload\":\"payload\",\"tag\":\"payload-tag\"}"
+
+    it "keeps required names unique when a record payload has a tag field" \_ -> do
+      let schema = OpenApiGen.toOpenApiSchema (toSchema @OpenApiTagCollisionFixture)
+      case schema |> Lens.view OpenApi.oneOf of
+        Just [OpenApi.Inline branch, OpenApi.Inline _] -> do
+          let properties = branch |> Lens.view OpenApi.properties
+          case InsOrdHashMap.lookup "tag" properties of
+            Just (OpenApi.Inline tagSchema) -> do
+              tagSchema |> Lens.view OpenApi.type_ |> shouldBe (Just OpenApi.OpenApiString)
+              tagSchema |> Lens.view OpenApi.enum_ |> shouldBe Nothing
+            _ -> Test.fail "Expected the payload tag schema"
+          branch |> Lens.view OpenApi.required |> shouldBe ["tag", "collisionPayload"]
+        _ -> Test.fail "Expected the tag-collision variant and its sibling"
+
+    it "keeps an optional record payload tag nullable" \_ -> do
+      let variants = Array.fromLinkedList
+            [ ( "OptionalTagCollision"
+              , SObject (Array.fromLinkedList
+                  [ FieldSchema "tag" (SOptional SText) False ""
+                  , FieldSchema "optionalPayload" SText True ""
+                  ])
+              )
+            ]
+      let schema = OpenApiGen.toOpenApiSchema (SUnion variants)
+      case schema |> Lens.view OpenApi.oneOf of
+        Just [OpenApi.Inline branch] -> do
+          let properties = branch |> Lens.view OpenApi.properties
+          case InsOrdHashMap.lookup "tag" properties of
+            Just (OpenApi.Inline tagSchema) -> do
+              tagSchema |> Lens.view OpenApi.nullable |> shouldBe (Just True)
+              tagSchema |> Lens.view OpenApi.enum_ |> shouldBe Nothing
+            _ -> Test.fail "Expected the optional payload tag schema"
+          branch |> Lens.view OpenApi.required |> shouldBe ["tag", "optionalPayload"]
+        _ -> Test.fail "Expected one optional tag-collision variant"
 
   describe "toOpenApiSchema - Reference Types" do
     it "converts SRef to schema with title as reference" \_ -> do
