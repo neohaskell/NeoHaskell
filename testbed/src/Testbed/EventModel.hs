@@ -16,12 +16,14 @@ import Testbed.Infrastructure (makeFileUploadConfig, makePostgresConfig)
 import Testbed.Stock.Feature (stockFlow)
 
 
-appEventModel :: Int -> Result Text EventModel.EventModel
-appEventModel httpPort = EventModel.eventModel do
+appEventModel :: Text -> Int -> Result Text EventModel.EventModel
+appEventModel httpHost httpPort = EventModel.eventModel do
   EventModel.appName "Testbed"
   EventModel.withConfig @TestbedConfig
   EventModel.withEventStore makePostgresConfig
-  EventModel.withTransport (WebTransport.server {WebTransport.port = httpPort})
+  EventModel.withTransport WebTransport.server
+  EventModel.withHost httpHost
+  EventModel.withPort httpPort
   EventModel.withApiInfo @() (\_ -> testbedApiInfo)
   EventModel.withFileUpload makeFileUploadConfig
   EventModel.features do

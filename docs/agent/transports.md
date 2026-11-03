@@ -4,7 +4,13 @@ A transport exposes registered commands through an interface. `TransportsOf comm
 
 ## Web
 
-`Service.Transport.Web.server` supplies the Web configuration. Commands use `POST /commands/{kebab-case-name}`. Registered queries use `GET /queries/{kebab-case-name}`.
+`Service.Transport.Web.server` supplies the default Web configuration with `port = 8080` and `host = "*4"` (IPv4 preferred with IPv6 fallback). Commands use `POST /commands/{kebab-case-name}`. Registered queries use `GET /queries/{kebab-case-name}`.
+
+Use `EventModel.withHost` and `EventModel.withPort`, or `Application.withHost` and `Application.withPort` in direct `Application` assembly, to override the registered Web listener. Overrides apply whether they appear before or after `withTransport`. Omitting an override preserves the `WebTransport` record's own `host` or `port`.
+
+`WebTransport.host` accepts `"*"`, the family preferences `"*4"` and `"*6"`, strict-family `"!4"` and `"!6"`, a bare address or hostname such as `"127.0.0.1"`, `"::1"`, or `"localhost"`, or a bracketed IPv6 literal such as `"[::1]"`. Loopback (`"127.0.0.1"` or `"::1"`) accepts connections only from the same network namespace. Keep a non-loopback bind when a reverse proxy runs in a separate container or host.
+
+Startup validates bind settings before opening sockets. Empty hosts, whitespace, URLs or paths, `host:port` pairs, malformed or non-IPv6 brackets, port `0`, and ports outside `1..65535` fail with `Application.withHost: ...` or `Application.withPort: ...`. A port already in use or an unowned address fails with `WebTransport could not bind <host>:<port>: ...`.
 
 The Web transport also exposes configured authentication, OAuth2 connection routes, upload routes, and generated API descriptions. Adding a transport alone does not configure those features. Use their application builders.
 

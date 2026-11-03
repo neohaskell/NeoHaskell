@@ -22,10 +22,11 @@ ERASURE_MISSING_CALLBACK_SELECTOR=""
 ERASURE_ACTION_FAILURE_SELECTOR=""
 OAUTH_TESTBED_LOG=""
 HURL_TEMP_DIR=""
+TESTBED_HTTP_HOST="${TESTBED_HTTP_HOST:-127.0.0.1}"
 TESTBED_HTTP_PORT="${TESTBED_HTTP_PORT:-8080}"
 TESTBED_OAUTH_PORT="${TESTBED_OAUTH_PORT:-8081}"
 TESTBED_FIXTURE_PORT="${TESTBED_FIXTURE_PORT:-8181}"
-export TESTBED_OAUTH_PORT TESTBED_FIXTURE_PORT
+export TESTBED_HTTP_HOST TESTBED_HTTP_PORT TESTBED_OAUTH_PORT TESTBED_FIXTURE_PORT
 HURL_TEST_ROOT="testbed/tests"
 CABAL_EXE_OPTIONS=()
 CABAL_GLOBAL_OPTIONS=()
@@ -191,6 +192,33 @@ echo -e "${YELLOW}Starting testbed...${NC}"
 DB_NAME="$testbed_db" "$(cabal "${CABAL_GLOBAL_OPTIONS[@]}" list-bin "${CABAL_EXE_OPTIONS[@]}" exe:nhtestbed)" &
 TESTBED_PID=$!
 wait_for_service "http://127.0.0.1:$TESTBED_HTTP_PORT/health" "Testbed" "$TESTBED_PID"
+if [ "$TESTBED_HTTP_HOST" = "127.0.0.1" ]; then
+	python3 - "$TESTBED_HTTP_PORT" <<'PY'
+import socket
+import sys
+
+port = int(sys.argv[1])
+udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+try:
+    udp.connect(("10.255.255.255", 9))
+    local_ip = udp.getsockname()[0]
+except OSError:
+    local_ip = "127.0.0.1"
+finally:
+    udp.close()
+
+if not local_ip.startswith(("127.", "0.")):
+    probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        probe.bind((local_ip, port))
+    except OSError as error:
+        raise SystemExit(
+            f"Expected loopback-only bind on 127.0.0.1:{port}, but {local_ip}:{port} could not bind: {error}"
+        ) from error
+    finally:
+        probe.close()
+PY
+fi
 echo ""
 
 echo -e "${YELLOW}Starting OAuth testbed...${NC}"
