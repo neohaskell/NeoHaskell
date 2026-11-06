@@ -232,27 +232,27 @@ wait_for_service "http://127.0.0.1:$TESTBED_OAUTH_PORT/health" "OAuth testbed" "
 # Run command tests
 if [ -d "$HURL_TEST_ROOT/commands" ] && [ "$(ls -A "$HURL_TEST_ROOT"/commands/*.hurl 2>/dev/null)" ]; then
 	echo -e "${GREEN}Running command tests...${NC}"
-	hurl --test "$HURL_TEST_ROOT"/commands/*.hurl
+	hurl --test --error-format long "$HURL_TEST_ROOT"/commands/*.hurl
 	echo ""
 fi
 
 # Run query tests
 if [ -d "$HURL_TEST_ROOT/queries" ] && [ "$(ls -A "$HURL_TEST_ROOT"/queries/*.hurl 2>/dev/null)" ]; then
 	echo -e "${GREEN}Running query tests...${NC}"
-	hurl --test "$HURL_TEST_ROOT"/queries/*.hurl
+	hurl --test --error-format long "$HURL_TEST_ROOT"/queries/*.hurl
 	echo ""
 fi
 
 # Run scenario tests
 if [ -d "$HURL_TEST_ROOT/scenarios" ] && [ "$(ls -A "$HURL_TEST_ROOT"/scenarios/*.hurl 2>/dev/null)" ]; then
 	echo -e "${GREEN}Running scenario tests...${NC}"
-	hurl --test "$HURL_TEST_ROOT"/scenarios/*.hurl
+	hurl --test --error-format long "$HURL_TEST_ROOT"/scenarios/*.hurl
 	echo ""
 fi
 
 if [ -d "$HURL_TEST_ROOT/files" ] && [ "$(ls -A "$HURL_TEST_ROOT"/files/*.hurl 2>/dev/null)" ]; then
 	echo -e "${GREEN}Running file tests...${NC}"
-	hurl --test "$HURL_TEST_ROOT"/files/*.hurl
+	hurl --test --error-format long "$HURL_TEST_ROOT"/files/*.hurl
 	echo ""
 fi
 
@@ -262,7 +262,7 @@ if [ -d "$HURL_TEST_ROOT/integrations" ] && [ "$(ls -A "$HURL_TEST_ROOT"/integra
 	delivered_effect_id=$(python3 -c 'import uuid; print(uuid.uuid4())')
 	failed_effect_id=$(python3 -c 'import uuid; print(uuid.uuid4())')
 	echo "Generic HTTP effect IDs: $delivered_effect_id $failed_effect_id"
-	hurl --test --variable "delivered_effect_id=$delivered_effect_id" --variable "failed_effect_id=$failed_effect_id" "$HURL_TEST_ROOT"/integrations/*.hurl
+	hurl --test --error-format long --variable "delivered_effect_id=$delivered_effect_id" --variable "failed_effect_id=$failed_effect_id" "$HURL_TEST_ROOT"/integrations/*.hurl
 	echo ""
 fi
 
