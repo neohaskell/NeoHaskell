@@ -18,6 +18,7 @@ import Service.FileUpload.Core (
   FileDeletionReason (..),
   FileRef (..),
   FileStateStoreBackend (..),
+  FileUploadedData (..),
   FileUploadEvent (..),
   OwnerHash (..),
  )
@@ -202,6 +203,51 @@ spec = do
                   store.publishRetained creation
           Task.yield FileStateStore {getState, setState, updateState, findByContentHash, reserveCreation, publishRetained}
     FileStateStoreSpec.spec newStore
+    it "rolls back a rejected update before reusing the same one-connection pool" \_ -> do
+      databaseName <- privateDatabase
+      let config = (testConfig databaseName) {poolSize = 1}
+      (_, setupPool) <- PostgresFileStore.newWithCleanup config
+      Task.finally
+        (HasqlPool.release setupPool |> Task.fromIO)
+        (dropTable setupPool)
+      (store, pool) <- PostgresFileStore.newWithCleanup config
+      Task.finally
+        (HasqlPool.release pool |> Task.fromIO)
+        do
+          let owner = OwnerHash "transaction-cleanup-owner"
+          let duplicateHash = ContentHash "transaction-cleanup-duplicate"
+          let firstRef = FileRef "transaction-cleanup-first"
+          let rejectedRef = FileRef "transaction-cleanup-rejected"
+          let laterRef = FileRef "transaction-cleanup-later"
+          let uploaded fileRef contentHash = FileUploaded FileUploadedData
+                { fileRef = fileRef
+                , ownerHash = owner
+                , contentHash = contentHash
+                , filename = "transaction-cleanup.txt"
+                , contentType = "text/plain"
+                , sizeBytes = 36
+                , blobKey = BlobKey "transaction-cleanup-blob"
+                , expiresAt = 2000000000
+                , uploadedAt = 1700000000
+                }
+          store.updateState firstRef (uploaded firstRef duplicateHash)
+          rejectedResult <- store.updateState rejectedRef (uploaded rejectedRef duplicateHash) |> Task.asResult
+          case rejectedResult of
+            Err err -> Text.contains "23505" err |> shouldBe True
+            Ok _ -> fail "Expected duplicate owner/content state to be rejected"
+          firstStateResult <- store.getState firstRef |> Task.asResult
+          case firstStateResult of
+            Ok (Just (Pending _)) -> pass
+            Err err -> fail [fmt|The first pending state became unreadable after rejection: #{err}|]
+            _ -> fail "The first pending state must survive a rejected duplicate update"
+          rejectedStateResult <- store.getState rejectedRef |> Task.asResult
+          rejectedStateResult |> shouldBe (Ok Nothing)
+          laterWriteResult <- store.updateState laterRef (uploaded laterRef (ContentHash "transaction-cleanup-later")) |> Task.asResult
+          laterWriteResult |> shouldBe (Ok ())
+          laterStateResult <- store.getState laterRef |> Task.asResult
+          case laterStateResult of
+            Ok (Just (Pending _)) -> pass
+            _ -> fail "A distinct update must succeed after the rejected duplicate"
     it "keeps one reservation across concurrent PostgreSQL writers, reopen, and pending cleanup" \_ -> do
       databaseName <- privateDatabase
       let config = testConfig databaseName
