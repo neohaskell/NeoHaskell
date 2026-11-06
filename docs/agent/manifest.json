@@ -16,6 +16,7 @@
     "testing.md",
     "template-haskell-order.md",
     "advanced-side-effects.md",
+    "advanced-file-storage.md",
     "advanced-typed-inbound.md",
     "advanced-oauth2.md"
   ]

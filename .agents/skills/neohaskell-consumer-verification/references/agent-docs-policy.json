@@ -114,7 +114,7 @@
       "evidence": []
     },
     "server-created-files": {
-      "page": "advanced-side-effects.md",
+      "page": "advanced-file-storage.md",
       "source": "core/service/Service/FileUpload/Create.hs",
       "scenario": "testbed/tests/integrations/generated-pdf.hurl",
       "evidence": []
@@ -179,8 +179,8 @@
       "source": "integrations/Integration/Http/Request.hs"
     },
     {
-      "page": "advanced-side-effects.md",
-      "ordinal": 2,
+      "page": "advanced-file-storage.md",
+      "ordinal": 1,
       "source": "testbed/src/Testbed/GeneratedPdf/Outbound.hs"
     },
     {
