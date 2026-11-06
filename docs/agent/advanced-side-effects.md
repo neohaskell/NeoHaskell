@@ -50,6 +50,10 @@ For a legacy application assembled directly with `Application`, keep `Applicatio
 
 Keep networking outside `decide` and `update`. The command decision describes domain changes. The outbound action performs the remote effect after an event.
 
+## Server-created files
+
+Use [server-created files](advanced-file-storage.md) when an integration produces a PDF or another retained document.
+
 ## Inbound workers with more than one command
 
 Use [typed inbound workers](advanced-typed-inbound.md) when one worker emits commands to more than one entity.

@@ -127,6 +127,8 @@ common common_cfg
 
 library
   import: common_cfg
+  build-depends:
+    mtl,
   exposed-modules:
     Accumulator
     Appendable
@@ -289,6 +291,7 @@ library
     Service.FileUpload.Lifecycle
     Service.FileUpload.BlobStore
     Service.FileUpload.BlobStore.Local
+    Service.FileUpload.Create
     Service.FileUpload.FileStateStore.Postgres
     Service.FileUpload.Routes
     Service.FileUpload.Resolver
@@ -533,6 +536,7 @@ test-suite nhcore-test
     Service.FileUpload.ContentDedupSpec
     Service.FileUpload.CoreSpec
     Service.FileUpload.LifecycleSpec
+    Service.FileUpload.CreateSpec
     Service.FileUpload.BlobStore.LocalSpec
     Service.FileUpload.RoutesSpec
     Service.FileUpload.ResolverSpec
@@ -691,6 +695,7 @@ test-suite nhcore-test-service
     Service.FileUpload.BlobStore.LocalSpec
     Service.FileUpload.ContentDedupSpec
     Service.FileUpload.CoreSpec
+    Service.FileUpload.CreateSpec
     Service.FileUpload.DownloadSpec
     Service.FileUpload.FileStateStore.InMemorySpec
     Service.FileUpload.FileStateStore.PostgresSpec

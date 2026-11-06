@@ -20,6 +20,7 @@ import Service.EventStore.PostgresSpec qualified
 import Service.FileUpload.BlobStore.LocalSpec qualified
 import Service.FileUpload.ContentDedupSpec qualified
 import Service.FileUpload.CoreSpec qualified
+import Service.FileUpload.CreateSpec qualified
 import Service.FileUpload.DownloadSpec qualified
 import Service.FileUpload.FileStateStore.InMemorySpec qualified
 import Service.FileUpload.FileStateStore.PostgresSpec qualified
@@ -87,6 +88,7 @@ serviceSpecs = do
   Hspec.describe "Service.FileUpload.BlobStore.Local" Service.FileUpload.BlobStore.LocalSpec.spec
   Hspec.describe "Service.FileUpload.ContentDedup" Service.FileUpload.ContentDedupSpec.spec
   Hspec.describe "Service.FileUpload.Core" Service.FileUpload.CoreSpec.spec
+  Hspec.describe "Service.FileUpload.Create" Service.FileUpload.CreateSpec.spec
   Hspec.describe "Service.FileUpload.Download" Service.FileUpload.DownloadSpec.spec
   Hspec.describe "Service.FileUpload.FileStateStore.InMemory" Service.FileUpload.FileStateStore.InMemorySpec.spec
   Hspec.describe "Service.FileUpload.FileStateStore.Postgres" Service.FileUpload.FileStateStore.PostgresSpec.spec

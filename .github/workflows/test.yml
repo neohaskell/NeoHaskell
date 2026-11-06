@@ -257,6 +257,11 @@ jobs:
           fi
         env:
           PGPASSWORD: neohaskell
+      - name: Create isolated FileUpload test database
+        run: |
+          private_db="nh_file_upload_ci_${GITHUB_RUN_ID}_${GITHUB_RUN_ATTEMPT}"
+          docker exec neohaskell_postgres createdb -U neohaskell "$private_db"
+          echo "FILE_UPLOAD_TEST_DB=$private_db" >> "$GITHUB_ENV"
       - name: Run nhcore-test-service
         env:
           POSTGRES_AVAILABLE: "true"

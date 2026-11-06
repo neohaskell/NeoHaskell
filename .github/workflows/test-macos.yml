@@ -78,5 +78,12 @@ jobs:
       - name: Build the project with cabal
         run: nix develop --command cabal build all --disable-documentation
 
+      - name: Create isolated FileUpload test database
+        if: matrix.test-suite == 'nhcore-test-service'
+        run: |
+          private_db="nh_file_upload_ci_${GITHUB_RUN_ID}_${GITHUB_RUN_ATTEMPT}"
+          /opt/homebrew/opt/postgresql@16/bin/createdb -U neohaskell "$private_db"
+          echo "FILE_UPLOAD_TEST_DB=$private_db" >> "$GITHUB_ENV"
+
       - name: Run ${{ matrix.test-suite }}
         run: nix develop --command cabal test ${{ matrix.test-suite }}
