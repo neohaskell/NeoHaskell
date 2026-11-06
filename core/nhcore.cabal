@@ -127,6 +127,8 @@ common common_cfg
 
 library
   import: common_cfg
+  build-depends:
+    mtl,
   exposed-modules:
     Accumulator
     Appendable

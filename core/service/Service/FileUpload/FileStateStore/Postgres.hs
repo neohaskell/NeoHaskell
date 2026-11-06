@@ -52,6 +52,7 @@ module Service.FileUpload.FileStateStore.Postgres (
 
 import Basics
 import Bytes qualified
+import Control.Monad.Except (catchError, throwError)
 import Core
 import Data.Functor.Contravariant ((>$<))
 import Data.Semigroup ((<>))
@@ -689,8 +690,14 @@ upsertStateSession row = do
 -- Uses a transaction with SELECT FOR UPDATE to prevent race conditions.
 -- Returns an error if the existing row has corrupted/invalid state.
 updateStateAtomicSession :: Text -> FileUploadEvent -> Session.Session (Result Text ())
-updateStateAtomicSession fileRefText event = do
-  -- Start transaction
+updateStateAtomicSession fileRefText event =
+  catchError
+    (updateStateAtomicTransaction fileRefText event)
+    rollbackFailedUpdateStateTransaction
+
+
+updateStateAtomicTransaction :: Text -> FileUploadEvent -> Session.Session (Result Text ())
+updateStateAtomicTransaction fileRefText event = do
   Session.sql "BEGIN"
   
   -- Ensure row exists (INSERT ... ON CONFLICT DO NOTHING) so SELECT FOR UPDATE has something to lock.
@@ -720,6 +727,12 @@ updateStateAtomicSession fileRefText event = do
           -- Commit transaction
           Session.sql "COMMIT"
           pure (Ok ())
+
+
+rollbackFailedUpdateStateTransaction :: Session.SessionError -> Session.Session (Result Text ())
+rollbackFailedUpdateStateTransaction sessionError = do
+  Session.sql "ROLLBACK"
+  throwError sessionError
 
 
 -- | Ensure a row exists for the given file_ref.
