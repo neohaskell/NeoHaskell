@@ -113,6 +113,12 @@
       "scenario": "testbed/tests/integrations/generic-http-side-effect.hurl",
       "evidence": []
     },
+    "server-created-files": {
+      "page": "advanced-side-effects.md",
+      "source": "core/service/Service/FileUpload/Create.hs",
+      "scenario": "testbed/tests/integrations/generated-pdf.hurl",
+      "evidence": []
+    },
     "typed-inbound-integration": {
       "page": "advanced-typed-inbound.md",
       "source": "core/service/Integration.hs",
@@ -171,6 +177,11 @@
       "page": "advanced-side-effects.md",
       "ordinal": 1,
       "source": "integrations/Integration/Http/Request.hs"
+    },
+    {
+      "page": "advanced-side-effects.md",
+      "ordinal": 2,
+      "source": "testbed/src/Testbed/GeneratedPdf/Outbound.hs"
     },
     {
       "page": "advanced-oauth2.md",

@@ -22,6 +22,36 @@ This testbed includes:
 
 ## Running the Testbed
 
+### Generate and download an owned PDF
+
+The `Testbed.GeneratedPdf` example captures the authenticated owner in its request event. Its outbound integration calls `fileAccess.createFile` through `Integration.action` and records a completion command containing the returned `FileRef`. The OAuth Event Model enables file storage and registers the request, result, query, and integration.
+
+The maintained `testbed/tests/integrations/generated-pdf.hurl` scenario requests a document, waits for completion, and downloads the owner's PDF. It asserts the exact binary SHA-256, byte count, PDF content type, and attachment filename. Another user's query returns no items, and that user cannot download the file. A second completed request for the same document must return the same reference.
+
+From the repository root, start PostgreSQL on port 5432 with a `neohaskell` user and password. The user must be able to create databases. Run the maintained suite with three free loopback ports:
+
+```sh
+DB_HOST=127.0.0.1 TESTBED_HTTP_PORT=19150 TESTBED_OAUTH_PORT=19151 TESTBED_FIXTURE_PORT=19152 nix develop --command .agents/skills/neohaskell-test/scripts/run-testbed --strict
+```
+
+The runner creates fresh private databases for both testbed applications and rewrites the scenario ports. The scenario requires a fresh database because it checks the first and second completion counts.
+
+Run the focused creation checks without PostgreSQL:
+
+```sh
+nix develop --command .agents/skills/tdd/scripts/test-match 'Service.FileUpload.Create' nhcore-test-service
+```
+
+For the PostgreSQL file-state fixture, create a separate disposable database before each run. The fixture resets its file-state tables. It rejects a missing `FILE_UPLOAD_TEST_DB` or the shared `neohaskell` database. Its connection uses `localhost:5432` and the `neohaskell` user and password.
+
+```sh
+private_db="nh_file_upload_$(python3 -c 'import uuid; print(uuid.uuid4().hex[:12])')"
+PGPASSWORD=neohaskell nix develop --command createdb -h localhost -p 5432 -U neohaskell "$private_db"
+FILE_UPLOAD_TEST_DB="$private_db" nix develop --command .agents/skills/tdd/scripts/test-match 'PostgresFileStateStore' nhcore-test-service
+```
+
+The fixture checks the shared file-state contract and retained creation across concurrent writers, reopened connections, and pending-upload cleanup.
+
 ### Generated Event Model rules
 
 The `nhtestbed-spec-demo` suite runs each direct rule in `Testbed.EventModel` as a separate Hspec example. It registers an `Int` generator for the cart quantity rule and uses a fixed seed, so a failed sample can be replayed. The same suite checks intentionally failing ordered-event, rejection, and query-diff fixtures, plus concurrent samples with overlapping cart IDs.

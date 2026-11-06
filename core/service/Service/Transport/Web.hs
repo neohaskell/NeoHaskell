@@ -28,7 +28,7 @@ import Auth.Jwks (JwksManager)
 import Auth.Middleware qualified as Middleware
 import Auth.OAuth2.Provider (OAuth2Action (..))
 import Auth.OAuth2.Routes (OAuth2Routes (..), OAuth2RouteError (..))
-import Auth.Options (AuthOptions (Authenticated, Everyone))
+import Auth.Options (AuthOptions (Authenticated))
 import Array (Array)
 import Array qualified
 import Basics
@@ -1174,12 +1174,10 @@ instance Transport WebTransport where
           Maybe.Just fileUpload -> do
             let fileRef = FileRef fileRefText
             -- Extract owner identity from auth context
-            -- Use Everyone auth option to allow both anonymous and authenticated downloads
             ownerHashResult <- case webTransport.authEnabled of
               Maybe.Nothing -> Task.yield "anonymous"
               Maybe.Just auth -> do
-                -- Check for JWT but don't require it (Everyone allows anonymous)
-                authResult <- Middleware.checkAuth (Maybe.Just auth.jwksManager) auth.authConfig Everyone request
+                authResult <- Middleware.checkAuth (Maybe.Just auth.jwksManager) auth.authConfig Authenticated request
                 case authResult of
                   Result.Err _ -> Task.yield "anonymous"  -- No valid token, treat as anonymous
                   Result.Ok authContext -> case authContext.claims of

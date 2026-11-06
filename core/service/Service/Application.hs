@@ -152,6 +152,7 @@ import Path qualified
 import Service.EventStore.Postgres.Internal ()  -- instance-only: Default PostgresEventStore for the FileUpload pool fallback
 import Service.FileUpload.BlobStore.Local qualified as LocalBlobStore
 import Service.FileUpload.BlobStore.Local (LocalBlobStoreConfig (..))
+import Service.FileUpload.Create qualified as FileCreation
 import Service.FileUpload.Core (FileUploadConfig (..), FileStateStoreBackend (..), InternalFileUploadConfig (..))
 import Hasql.Pool qualified as HasqlPool
 import Service.FileUpload.FileStateStore.Postgres qualified as PostgresFileStore
@@ -2250,8 +2251,6 @@ validateFileUploadConfig blobDir maxSize pendingTtl cleanupInterval = do
 
 -- | Create a FileAccessContext from FileUploadSetup.
 --
--- This wires the file upload infrastructure into the integration context,
--- allowing integrations to retrieve uploaded files by FileRef.
 --
 -- __Important semantics__:
 --
@@ -2297,6 +2296,7 @@ createFileAccessContext setup = do
                 , FileUploadCore.contentType = lifecycleMeta.contentType
                 , FileUploadCore.sizeBytes = lifecycleMeta.sizeBytes
                 }
+    , Integration.createFile = FileCreation.create setup
     }
 
 

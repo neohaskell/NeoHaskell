@@ -69,6 +69,7 @@ import Service.EventStore.Postgres (PostgresEventStore (..))
 import Service.FileUpload.Core (
   BlobKey (..),
   ContentHash (..),
+  FileCreation (..),
   FileRef (..),
   FileStateStoreBackend,
   FileUploadEvent (..),
@@ -156,6 +157,8 @@ newWithCleanup config = do
         , setState = setStateImpl pool
         , updateState = updateStateImpl pool
         , findByContentHash = findByContentHashImpl pool
+      , reserveCreation = reserveCreationImpl pool
+      , publishRetained = publishRetainedImpl pool
         }
   Task.yield (store, pool)
 
@@ -272,6 +275,26 @@ findByContentHashImpl pool (OwnerHash ownerHashText) (ContentHash contentHashTex
     Just fileRefText -> Task.yield (Just (FileRef fileRefText))
 
 
+reserveCreationImpl :: HasqlPool.Pool -> FileCreation -> Task Text FileCreation
+reserveCreationImpl pool candidate = do
+  let session = reserveCreationSession candidate
+  maybeCreation <- runPool pool session
+    |> Task.mapError (\err -> [fmt|Database error: #{show err}|])
+  case maybeCreation of
+    Nothing -> Task.throw "Failed to read reserved file creation"
+    Just creation -> Task.yield creation
+
+
+publishRetainedImpl :: HasqlPool.Pool -> FileCreation -> Task Text ()
+publishRetainedImpl pool creation = do
+  let session = publishRetainedSession creation
+  result <- runPool pool session
+    |> Task.mapError (\err -> [fmt|Database error: #{show err}|])
+  case result of
+    Err err -> Task.throw err
+    Ok _ -> Task.yield ()
+
+
 -- ==========================================================================
 -- Cleanup Queries (for external cleanup workers)
 -- ==========================================================================
@@ -299,7 +322,10 @@ findExpiredPendingFiles pool currentTime = do
     |> Task.mapError (\err -> [fmt|Database error: #{show err}|])
 
 
--- | Delete a file state record.
+-- | Delete file state that has no canonical creation identity.
+--
+-- Canonical creation lifecycles and deletion tombstones are preserved so a
+-- cleanup worker cannot erase the identity needed to prevent resurrection.
 --
 -- IMPORTANT: Use the pool from 'newWithCleanup'. Do NOT create pools per-call.
 deleteFileState :: HasqlPool.Pool -> FileRef -> Task Text ()
@@ -371,6 +397,19 @@ serializeState fileRefText state = case state of
     , expiresAt = Nothing
     , confirmedByRequestId = Just confirmed.confirmedByRequestId
     , contentHash = Just (unwrapContentHash confirmed.metadata.contentHash)
+    }
+  Retained retained -> FileStateRow
+    { fileRef = fileRefText
+    , status = "retained"
+    , blobKey = Just (unwrapBlobKey retained.metadata.blobKey)
+    , ownerHash = Just (unwrapOwnerHash retained.ownerHash)
+    , filename = Just retained.metadata.filename
+    , contentType = Just retained.metadata.contentType
+    , sizeBytes = Just retained.metadata.sizeBytes
+    , uploadedAt = Just retained.metadata.uploadedAt
+    , expiresAt = Nothing
+    , confirmedByRequestId = Nothing
+    , contentHash = Just (unwrapContentHash retained.metadata.contentHash)
     }
   Deleted -> FileStateRow
     { fileRef = fileRefText
@@ -448,6 +487,26 @@ deserializeState row = case row.status of
       , ownerHash = OwnerHash ownerHash
       , confirmedByRequestId = confirmedBy
       })
+  "retained" -> do
+    blobKey <- requireField "blob_key" row.blobKey
+    ownerHash <- requireField "owner_hash" row.ownerHash
+    filename <- requireField "filename" row.filename
+    contentType <- requireField "content_type" row.contentType
+    sizeBytes <- requireField "size_bytes" row.sizeBytes
+    uploadedAt <- requireField "uploaded_at" row.uploadedAt
+    contentHash <- requireField "content_hash" row.contentHash
+    Ok (Retained Lifecycle.RetainedFile
+      { metadata = Lifecycle.FileMetadata
+          { ref = FileRef row.fileRef
+          , filename = filename
+          , contentType = contentType
+          , sizeBytes = sizeBytes
+          , blobKey = BlobKey blobKey
+          , uploadedAt = uploadedAt
+          , contentHash = ContentHash contentHash
+          }
+      , ownerHash = OwnerHash ownerHash
+      })
   other -> Err [fmt|Unknown status: #{other}|]
 
 
@@ -461,6 +520,11 @@ requireField fieldName maybeVal = case maybeVal of
 -- | Unwrap BlobKey
 unwrapBlobKey :: BlobKey -> Text
 unwrapBlobKey (BlobKey t) = t
+
+
+unwrapFileRef :: FileRef -> Text
+unwrapFileRef fileRef = case fileRef of
+  FileRef text -> text
 
 
 -- | Unwrap OwnerHash
@@ -526,6 +590,19 @@ createTableSession =
         ON file_upload_state(owner_hash, content_hash)
         WHERE status IN ('pending', 'confirmed')
           AND content_hash IS NOT NULL;
+
+      CREATE TABLE IF NOT EXISTS file_creation (
+        owner_hash VARCHAR(255) NOT NULL,
+        creation_key VARCHAR(255) NOT NULL,
+        file_ref VARCHAR(255) NOT NULL UNIQUE,
+        blob_key VARCHAR(500) NOT NULL UNIQUE,
+        filename VARCHAR(1000) NOT NULL,
+        content_type VARCHAR(255) NOT NULL,
+        size_bytes BIGINT NOT NULL,
+        content_hash VARCHAR(64) NOT NULL,
+        created_at BIGINT NOT NULL,
+        PRIMARY KEY (owner_hash, creation_key)
+      );
     |]
 
 
@@ -703,6 +780,128 @@ findByContentHashSession ownerHashText contentHashText = do
   Session.statement (ownerHashText, contentHashText) statement
 
 
+reserveCreationSession :: FileCreation -> Session.Session (Maybe FileCreation)
+reserveCreationSession candidate = do
+  let insertSql =
+        "INSERT INTO file_creation \
+        \(owner_hash, creation_key, file_ref, blob_key, filename, content_type, size_bytes, content_hash, created_at) \
+        \VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) \
+        \ON CONFLICT (owner_hash, creation_key) DO NOTHING"
+  let insertEncoder =
+        ((\creation -> unwrapOwnerHash creation.ownerHash) >$< Encoders.param (Encoders.nonNullable Encoders.text))
+        <> ((\creation -> creation.creationKey) >$< Encoders.param (Encoders.nonNullable Encoders.text))
+        <> ((\creation -> unwrapFileRef creation.fileRef) >$< Encoders.param (Encoders.nonNullable Encoders.text))
+        <> ((\creation -> unwrapBlobKey creation.blobKey) >$< Encoders.param (Encoders.nonNullable Encoders.text))
+        <> ((\creation -> creation.filename) >$< Encoders.param (Encoders.nonNullable Encoders.text))
+        <> ((\creation -> creation.contentType) >$< Encoders.param (Encoders.nonNullable Encoders.text))
+        <> ((\creation -> creation.sizeBytes) >$< Encoders.param (Encoders.nonNullable Encoders.int8))
+        <> ((\creation -> unwrapContentHash creation.contentHash) >$< Encoders.param (Encoders.nonNullable Encoders.text))
+        <> ((\creation -> creation.createdAt) >$< Encoders.param (Encoders.nonNullable Encoders.int8))
+  let insertStatement = Statement (Text.toBytes insertSql |> Bytes.unwrap) insertEncoder Decoders.noResult True
+  Session.statement candidate insertStatement
+  let selectSql =
+        "SELECT owner_hash, creation_key, file_ref, blob_key, filename, content_type, size_bytes, content_hash, created_at \
+        \FROM file_creation WHERE owner_hash = $1 AND creation_key = $2"
+  let selectEncoder =
+        (Prelude.fst >$< Encoders.param (Encoders.nonNullable Encoders.text))
+        <> (Prelude.snd >$< Encoders.param (Encoders.nonNullable Encoders.text))
+  let selectDecoder = Decoders.rowMaybe fileCreationDecoder
+  let selectStatement = Statement (Text.toBytes selectSql |> Bytes.unwrap) selectEncoder selectDecoder True
+  Session.statement (unwrapOwnerHash candidate.ownerHash, candidate.creationKey) selectStatement
+
+
+fileCreationDecoder :: Decoders.Row FileCreation
+fileCreationDecoder = do
+  ownerHash <- Decoders.column (Decoders.nonNullable Decoders.text)
+  creationKey <- Decoders.column (Decoders.nonNullable Decoders.text)
+  fileRef <- Decoders.column (Decoders.nonNullable Decoders.text)
+  blobKey <- Decoders.column (Decoders.nonNullable Decoders.text)
+  filename <- Decoders.column (Decoders.nonNullable Decoders.text)
+  contentType <- Decoders.column (Decoders.nonNullable Decoders.text)
+  sizeBytes <- Decoders.column (Decoders.nonNullable Decoders.int8)
+  contentHash <- Decoders.column (Decoders.nonNullable Decoders.text)
+  createdAt <- Decoders.column (Decoders.nonNullable Decoders.int8)
+  pure FileCreation
+    { ownerHash = OwnerHash ownerHash
+    , creationKey = creationKey
+    , fileRef = FileRef fileRef
+    , blobKey = BlobKey blobKey
+    , filename = filename
+    , contentType = contentType
+    , sizeBytes = sizeBytes
+    , contentHash = ContentHash contentHash
+    , createdAt = createdAt
+    }
+
+
+publishRetainedSession :: FileCreation -> Session.Session (Result Text ())
+publishRetainedSession creation = do
+  let fileRefText = unwrapFileRef creation.fileRef
+  let row = serializeState fileRefText (retainedState creation)
+  let sql =
+        "INSERT INTO file_upload_state \
+        \(file_ref, status, blob_key, owner_hash, filename, content_type, \
+        \size_bytes, uploaded_at, expires_at, confirmed_by_request_id, content_hash, updated_at) \
+        \VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW()) \
+        \ON CONFLICT (file_ref) DO UPDATE SET \
+        \status = EXCLUDED.status, \
+        \blob_key = EXCLUDED.blob_key, \
+        \owner_hash = EXCLUDED.owner_hash, \
+        \filename = EXCLUDED.filename, \
+        \content_type = EXCLUDED.content_type, \
+        \size_bytes = EXCLUDED.size_bytes, \
+        \uploaded_at = EXCLUDED.uploaded_at, \
+        \expires_at = EXCLUDED.expires_at, \
+        \confirmed_by_request_id = EXCLUDED.confirmed_by_request_id, \
+        \content_hash = EXCLUDED.content_hash, \
+        \updated_at = NOW() \
+        \WHERE file_upload_state.status = 'initial'"
+  let encoder =
+        ((\r -> r.fileRef) >$< Encoders.param (Encoders.nonNullable Encoders.text))
+        <> ((\r -> r.status) >$< Encoders.param (Encoders.nonNullable Encoders.text))
+        <> ((\r -> r.blobKey) >$< Encoders.param (Encoders.nullable Encoders.text))
+        <> ((\r -> r.ownerHash) >$< Encoders.param (Encoders.nullable Encoders.text))
+        <> ((\r -> r.filename) >$< Encoders.param (Encoders.nullable Encoders.text))
+        <> ((\r -> r.contentType) >$< Encoders.param (Encoders.nullable Encoders.text))
+        <> ((\r -> r.sizeBytes) >$< Encoders.param (Encoders.nullable Encoders.int8))
+        <> ((\r -> r.uploadedAt) >$< Encoders.param (Encoders.nullable Encoders.int8))
+        <> ((\r -> r.expiresAt) >$< Encoders.param (Encoders.nullable Encoders.int8))
+        <> ((\r -> r.confirmedByRequestId) >$< Encoders.param (Encoders.nullable Encoders.text))
+        <> ((\r -> r.contentHash) >$< Encoders.param (Encoders.nullable Encoders.text))
+  let statement = Statement (Text.toBytes sql |> Bytes.unwrap) encoder Decoders.noResult True
+  Session.statement row statement
+  maybeRow <- selectStateSession fileRefText
+  case maybeRow of
+    Nothing -> pure (Err "File state row is missing")
+    Just stateRow -> case deserializeState stateRow of
+      Err err -> pure (Err err)
+      Ok Deleted -> pure (Err "Deleted file cannot be restored")
+      Ok (Retained current) ->
+        if current == retainedFileFromCreation creation
+          then pure (Ok ())
+          else pure (Err "File reference already belongs to another retained file")
+      Ok _ -> pure (Err "File reference already has another lifecycle state")
+
+
+retainedState :: FileCreation -> FileUploadState
+retainedState creation = Retained (retainedFileFromCreation creation)
+
+
+retainedFileFromCreation :: FileCreation -> Lifecycle.RetainedFile
+retainedFileFromCreation creation = Lifecycle.RetainedFile
+  { metadata = Lifecycle.FileMetadata
+      { ref = creation.fileRef
+      , filename = creation.filename
+      , contentType = creation.contentType
+      , sizeBytes = creation.sizeBytes
+      , blobKey = creation.blobKey
+      , uploadedAt = creation.createdAt
+      , contentHash = creation.contentHash
+      }
+  , ownerHash = creation.ownerHash
+  }
+
+
 -- | Select expired pending files for cleanup
 selectExpiredPendingSession :: Int64 -> Session.Session [(FileRef, BlobKey)]
 selectExpiredPendingSession currentTime = do
@@ -721,7 +920,13 @@ selectExpiredPendingSession currentTime = do
 -- | Delete a file state record
 deleteStateSession :: Text -> Session.Session ()
 deleteStateSession fileRefText = do
-  let sql = "DELETE FROM file_upload_state WHERE file_ref = $1"
+  let sql =
+        "DELETE FROM file_upload_state \
+        \WHERE file_ref = $1 \
+        \AND NOT EXISTS (\
+        \  SELECT 1 FROM file_creation \
+        \  WHERE file_creation.file_ref = file_upload_state.file_ref\
+        \)"
   let encoder = Encoders.param (Encoders.nonNullable Encoders.text)
   let decoder = Decoders.noResult
   let statement = Statement (Text.toBytes sql |> Bytes.unwrap) encoder decoder True
