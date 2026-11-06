@@ -1205,6 +1205,35 @@
       "source_sha": "b9b3491476b87da7f3f60fe2ca9c5ad65febb0ba",
       "target_policy": "native-v2",
       "version": "0.17.0"
+    },
+    {
+      "base_sha": "f09b360025d842e5ad9bc471f46af91e43cbdab7",
+      "base_tag": "neo-v0.17.0",
+      "base_version": "0.17.0",
+      "bootstrap": false,
+      "date": "2026-11-06",
+      "group": "platform",
+      "id": "77901112075852b7c71839f074bbc27878ffa3872bcfd1ed168b1e3af291eab9",
+      "impact": "compatible",
+      "kind": "release",
+      "notes": [
+        {
+          "category": "Added",
+          "commit": "cc619bb61906fcb79f78b85a8e8b6dd9ec2beb69",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "bffc7eb473fb7a66a80ce932b33f3d1fa219eaa140cb2a792a8f82766a6d3a2c",
+          "impact": "compatible",
+          "path": ".changes/create-integration-files.md",
+          "sections": {
+            "Summary": "Integrations can save generated PDFs and other documents as owned files with `fileAccess.createFile`. Pass the owner captured by an authorized command, a stable document job key, and the document bytes. The returned `FileRef` works with the existing authenticated download route and has no temporary-upload expiry.\n\nRetrying a completed job with the same owner, key, and metadata returns the same reference and preserves its first completed bytes. An unfinished job or a missing stored file requires the original bytes. Applications must explicitly reconcile abandoned jobs because file creation and the command that records its reference are separate operations.\n\nExisting applications configured with `withFileUpload` keep their setup. To use the feature, create the file inside `Integration.action` and save its reference through a completion command. Verify that the owner can download the document and a retried job returns the same reference."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: compatible\ncategory: Added\n---\n\n## Summary\n\nIntegrations can save generated PDFs and other documents as owned files with `fileAccess.createFile`. Pass the owner captured by an authorized command, a stable document job key, and the document bytes. The returned `FileRef` works with the existing authenticated download route and has no temporary-upload expiry.\n\nRetrying a completed job with the same owner, key, and metadata returns the same reference and preserves its first completed bytes. An unfinished job or a missing stored file requires the original bytes. Applications must explicitly reconcile abandoned jobs because file creation and the command that records its reference are separate operations.\n\nExisting applications configured with `withFileUpload` keep their setup. To use the feature, create the file inside `Integration.action` and save its reference through a completion command. Verify that the owner can download the document and a retried job returns the same reference.\n"
+        }
+      ],
+      "source_sha": "d986ae7789405ce8bf11e85832418014ef849ba3",
+      "target_policy": "native-v2",
+      "version": "0.17.1"
     }
   ],
   "recoveries": [],
