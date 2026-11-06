@@ -22,10 +22,11 @@ ERASURE_MISSING_CALLBACK_SELECTOR=""
 ERASURE_ACTION_FAILURE_SELECTOR=""
 OAUTH_TESTBED_LOG=""
 HURL_TEMP_DIR=""
+TESTBED_HTTP_HOST="${TESTBED_HTTP_HOST:-127.0.0.1}"
 TESTBED_HTTP_PORT="${TESTBED_HTTP_PORT:-8080}"
 TESTBED_OAUTH_PORT="${TESTBED_OAUTH_PORT:-8081}"
 TESTBED_FIXTURE_PORT="${TESTBED_FIXTURE_PORT:-8181}"
-export TESTBED_OAUTH_PORT TESTBED_FIXTURE_PORT
+export TESTBED_HTTP_HOST TESTBED_HTTP_PORT TESTBED_OAUTH_PORT TESTBED_FIXTURE_PORT
 HURL_TEST_ROOT="testbed/tests"
 CABAL_EXE_OPTIONS=()
 CABAL_GLOBAL_OPTIONS=()
@@ -191,6 +192,33 @@ echo -e "${YELLOW}Starting testbed...${NC}"
 DB_NAME="$testbed_db" "$(cabal "${CABAL_GLOBAL_OPTIONS[@]}" list-bin "${CABAL_EXE_OPTIONS[@]}" exe:nhtestbed)" &
 TESTBED_PID=$!
 wait_for_service "http://127.0.0.1:$TESTBED_HTTP_PORT/health" "Testbed" "$TESTBED_PID"
+if [ "$TESTBED_HTTP_HOST" = "127.0.0.1" ]; then
+	python3 - "$TESTBED_HTTP_PORT" <<'PY'
+import socket
+import sys
+
+port = int(sys.argv[1])
+udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+try:
+    udp.connect(("10.255.255.255", 9))
+    local_ip = udp.getsockname()[0]
+except OSError:
+    local_ip = "127.0.0.1"
+finally:
+    udp.close()
+
+if not local_ip.startswith(("127.", "0.")):
+    probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        probe.bind((local_ip, port))
+    except OSError as error:
+        raise SystemExit(
+            f"Expected loopback-only bind on 127.0.0.1:{port}, but {local_ip}:{port} could not bind: {error}"
+        ) from error
+    finally:
+        probe.close()
+PY
+fi
 echo ""
 
 echo -e "${YELLOW}Starting OAuth testbed...${NC}"
@@ -204,21 +232,27 @@ wait_for_service "http://127.0.0.1:$TESTBED_OAUTH_PORT/health" "OAuth testbed" "
 # Run command tests
 if [ -d "$HURL_TEST_ROOT/commands" ] && [ "$(ls -A "$HURL_TEST_ROOT"/commands/*.hurl 2>/dev/null)" ]; then
 	echo -e "${GREEN}Running command tests...${NC}"
-	hurl --test "$HURL_TEST_ROOT"/commands/*.hurl
+	hurl --test --error-format long "$HURL_TEST_ROOT"/commands/*.hurl
 	echo ""
 fi
 
 # Run query tests
 if [ -d "$HURL_TEST_ROOT/queries" ] && [ "$(ls -A "$HURL_TEST_ROOT"/queries/*.hurl 2>/dev/null)" ]; then
 	echo -e "${GREEN}Running query tests...${NC}"
-	hurl --test "$HURL_TEST_ROOT"/queries/*.hurl
+	hurl --test --error-format long "$HURL_TEST_ROOT"/queries/*.hurl
 	echo ""
 fi
 
 # Run scenario tests
 if [ -d "$HURL_TEST_ROOT/scenarios" ] && [ "$(ls -A "$HURL_TEST_ROOT"/scenarios/*.hurl 2>/dev/null)" ]; then
 	echo -e "${GREEN}Running scenario tests...${NC}"
-	hurl --test "$HURL_TEST_ROOT"/scenarios/*.hurl
+	hurl --test --error-format long "$HURL_TEST_ROOT"/scenarios/*.hurl
+	echo ""
+fi
+
+if [ -d "$HURL_TEST_ROOT/files" ] && [ "$(ls -A "$HURL_TEST_ROOT"/files/*.hurl 2>/dev/null)" ]; then
+	echo -e "${GREEN}Running file tests...${NC}"
+	hurl --test --error-format long "$HURL_TEST_ROOT"/files/*.hurl
 	echo ""
 fi
 
@@ -228,7 +262,7 @@ if [ -d "$HURL_TEST_ROOT/integrations" ] && [ "$(ls -A "$HURL_TEST_ROOT"/integra
 	delivered_effect_id=$(python3 -c 'import uuid; print(uuid.uuid4())')
 	failed_effect_id=$(python3 -c 'import uuid; print(uuid.uuid4())')
 	echo "Generic HTTP effect IDs: $delivered_effect_id $failed_effect_id"
-	hurl --test --variable "delivered_effect_id=$delivered_effect_id" --variable "failed_effect_id=$failed_effect_id" "$HURL_TEST_ROOT"/integrations/*.hurl
+	hurl --test --error-format long --variable "delivered_effect_id=$delivered_effect_id" --variable "failed_effect_id=$failed_effect_id" "$HURL_TEST_ROOT"/integrations/*.hurl
 	echo ""
 fi
 

@@ -18,7 +18,7 @@ valid = EventModel.eventModel do
     stockFlow
 
 
-existingApplication :: Int -> Application
-existingApplication port = case App.appEventModel port of
+existingApplication :: Text -> Int -> Application
+existingApplication host port = case App.appEventModel host port of
   Err problem -> panic problem
   Ok model -> EventModel.toApplication model

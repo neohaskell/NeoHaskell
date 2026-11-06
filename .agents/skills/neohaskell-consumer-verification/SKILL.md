@@ -144,6 +144,15 @@ private policy at `references/agent-docs-policy.json`. Keep review receipts in
 the ignored `.agents-state/neohaskell-consumer-verification/agent-docs-reviews.json`
 of the current worktree.
 
+Before `--verify-evidence`, complete the
+[service-suite PostgreSQL setup](../neohaskell-test/SKILL.md#prepare-postgresql-for-service-suites).
+Use an owned disposable instance at `localhost:5432`, with the `neohaskell`
+database and a `neohaskell` role with password `neohaskell` and database creation
+permission. Create a separate disposable file-state database and export
+`FILE_UPLOAD_TEST_DB` for the entire guide command. The fixture rejects an unset
+name or `neohaskell`. Other service specs still use the `neohaskell` database.
+Keep `PGOPTIONS` unset so the testbed can use its fresh databases.
+
 Run the local corpus check from the repository root inside the pinned Nix shell:
 
 ```sh

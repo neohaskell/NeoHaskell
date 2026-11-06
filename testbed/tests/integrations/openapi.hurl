@@ -19,6 +19,11 @@ jsonpath "$.paths" exists
 # Verify command paths exist
 jsonpath "$.paths['/commands/create-cart']" exists
 jsonpath "$.paths['/commands/save-iban']" exists
+jsonpath "$.paths['/queries/cart-summary'].get.responses['200'].content['application/json'].schema.properties.items.items.properties.cartSummaryId" exists
+jsonpath "$.paths['/queries/cart-summary'].get.responses['200'].content['application/json'].schema.properties.items.items.properties.items" not exists
+jsonpath "$.paths['/commands/create-cart'].post.responses['200'].content['application/json'].schema.oneOf[0].properties.entityId" exists
+jsonpath "$.paths['/commands/create-cart'].post.responses['200'].content['application/json'].schema.oneOf[0].properties.contents" not exists
+jsonpath "$.paths['/commands/create-cart'].post.responses['200'].content['application/json'].schema.oneOf[0].properties.events" not exists
 
 
 # Test 2: /openapi.yaml returns valid YAML spec

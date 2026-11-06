@@ -8,9 +8,12 @@ module Service.FileUpload.Core (
   -- * File Metadata
   FileMetadata (..),
   ResolvedFile (..),
+  CreateFileRequest (..),
+  FileCreation (..),
 
   -- * Errors
   FileAccessError (..),
+  FileCreationError (..),
 
   -- * Events
   FileUploadEvent (..),
@@ -29,6 +32,7 @@ module Service.FileUpload.Core (
 
 import Array (Array)
 import Basics
+import Bytes (Bytes)
 import Data.Aeson qualified as GhcAeson
 import Data.Hashable qualified as GhcHashable
 import Json qualified
@@ -99,6 +103,45 @@ instance Show ContentHash where
 
 instance Json.FromJSON ContentHash
 instance Json.ToJSON ContentHash
+
+
+-- | A request to create an application-owned retained file.
+--
+-- Supply an owner established by an authenticated, authorized command and a
+-- stable key for that document job or revision. The file bytes are never
+-- included in event payloads.
+data CreateFileRequest = CreateFileRequest
+  { owner :: Text
+  , creationKey :: Text
+  , filename :: Text
+  , contentType :: Text
+  , content :: Bytes
+  }
+
+instance Show CreateFileRequest where
+  show _ = "CreateFileRequest <REDACTED>"
+
+
+-- | Immutable canonical identity and metadata for one logical file creation.
+--
+-- The file-state store reserves this shape before writing bytes. Retries use
+-- the same reference and blob key, while the first successfully retained
+-- bytes remain authoritative.
+data FileCreation = FileCreation
+  { ownerHash :: OwnerHash
+  , creationKey :: Text
+  , fileRef :: FileRef
+  , blobKey :: BlobKey
+  , filename :: Text
+  , contentType :: Text
+  , sizeBytes :: Int64
+  , contentHash :: ContentHash
+  , createdAt :: Int64
+  }
+  deriving (Generic, Eq)
+
+instance Show FileCreation where
+  show _ = "FileCreation <REDACTED>"
 
 
 -- ==========================================================================
@@ -247,6 +290,30 @@ instance Show FileAccessError where
 
 instance Json.FromJSON FileAccessError
 instance Json.ToJSON FileAccessError
+
+
+-- | Redacted failures from retained file creation.
+data FileCreationError
+  = InvalidFileOwner
+  | InvalidCreationKey
+  | InvalidFileMetadata
+  | FileCreationTooLarge
+  | FileCreationConflict
+  | FileCreationDeleted
+  | FileCreationStorageFailure
+  | FileCreationStateFailure
+  deriving (Generic, Eq)
+
+instance Show FileCreationError where
+  show err = case err of
+    InvalidFileOwner -> "InvalidFileOwner"
+    InvalidCreationKey -> "InvalidCreationKey"
+    InvalidFileMetadata -> "InvalidFileMetadata"
+    FileCreationTooLarge -> "FileCreationTooLarge"
+    FileCreationConflict -> "FileCreationConflict"
+    FileCreationDeleted -> "FileCreationDeleted"
+    FileCreationStorageFailure -> "FileCreationStorageFailure"
+    FileCreationStateFailure -> "FileCreationStateFailure"
 
 
 -- ==========================================================================

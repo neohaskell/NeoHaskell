@@ -20,6 +20,8 @@ appEventModel = EventModel.eventModel do
 	EventModel.withConfig @AppConfig
 	EventModel.withEventStore makeEventStoreConfig
 	EventModel.withTransport WebTransport.server
+	EventModel.withHost "127.0.0.1"
+	EventModel.withPort 9090
 	EventModel.features do
 		counterFlow
 
@@ -27,6 +29,8 @@ main = EventModel.run appEventModel |> Task.runOrPanic
 ```
 
 `withEventStore` takes a `config -> eventStoreConfig` factory. For static configuration, use `withEventStore @() (\_ -> storeConfig)`. For application configuration, register `withConfig @AppConfig` and use a factory whose argument is `AppConfig`. The factory runs after startup loads configuration. The source-local `counterFlow` Feature declares its command and query Slices; the model registers them.
+
+`withHost` and `withPort` override `WebTransport.host` and `WebTransport.port` on the registered Web transport, regardless of order relative to `withTransport`. Direct `Application` assembly provides the matching `Application.withHost` and `Application.withPort` builders. Omitting either override preserves the transport's own field, and invalid static values fail before startup acquires external resources. Read [transports](transports.md#web) for accepted host and port forms.
 
 `withAuth`, `withAuthOverrides`, `withSecretStore`, `withCors`, `withHealthCheck`, `withOAuth2Provider`, and `withFileUpload` take configuration-dependent factories. `withIntegration @Request` registers a typed adapter. `withoutHealthCheck` disables the default health route, and `useReadinessEndpoint` enables the readiness route. `withQueryObjectStore` takes a concrete configuration value and captures the choice when `withQuery` runs. Use the named Event Model builders for configuration so model validation owns duplicate config registration and Slice declarations own runtime components. Read [authorization](authorization.md), [external OAuth2](advanced-oauth2.md), and [side effects](advanced-side-effects.md) for those features.
 

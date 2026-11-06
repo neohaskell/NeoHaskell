@@ -38,6 +38,10 @@ module Integration (
   Action,
   ActionContext (..),
   FileAccessContext (..),
+  CreateFileRequest (..),
+  FileCreationError (..),
+  FileMetadata (..),
+  FileRef,
 
   -- * Provider Registry
   ImmutableProviderRegistry,
@@ -107,7 +111,13 @@ import Map qualified
 import Maybe (Maybe (..))
 import Service.Command.Core (NameOf)
 import Service.Entity.Core (EntityOf)
-import Service.FileUpload.Core (FileAccessError, FileMetadata, FileRef)
+import Service.FileUpload.Core (
+  CreateFileRequest (..),
+  FileAccessError,
+  FileCreationError (..),
+  FileMetadata (..),
+  FileRef,
+ )
 import Service.EventStore.Core (ErasureResult, ErasureTarget)
 import Service.Integration.DispatchRegistry (DispatchRegistry)
 import Task (Task)
@@ -183,10 +193,10 @@ data ActionContext = ActionContext
   }
 
 
--- | Context for accessing uploaded files from integrations.
+-- | Context for file access from integrations.
 --
--- This allows integrations to retrieve file content and metadata
--- for processing (e.g., PDF text extraction, image analysis).
+-- This allows integrations to retrieve file content and metadata and create
+-- application-owned retained files.
 --
 -- The context is populated by 'Application.run' when file uploads
 -- are enabled via 'Application.withFileUpload'.
@@ -202,10 +212,13 @@ data ActionContext = ActionContext
 -- @
 data FileAccessContext = FileAccessContext
   { retrieveFile :: FileRef -> Task FileAccessError Bytes
-  -- ^ Retrieve file content by FileRef.
-  -- Validates ownership internally based on request context.
+  -- ^ Retrieve file content by FileRef. Integration actions are privileged
+  -- and this operation does not check the file owner.
   , getFileMetadata :: FileRef -> Task FileAccessError FileMetadata
   -- ^ Get file metadata (filename, content type, size) without retrieving bytes.
+  , createFile :: CreateFileRequest -> Task FileCreationError FileRef
+  -- ^ Create or recover a retained file. This privileged operation trusts the
+  -- supplied owner. Capture it from an authenticated, authorized command.
   }
 
 

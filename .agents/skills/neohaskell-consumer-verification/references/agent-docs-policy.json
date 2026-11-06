@@ -60,6 +60,10 @@
         {
           "kind": "service-spec",
           "path": "core/test/Service/Transport/McpSpec.hs"
+        },
+        {
+          "kind": "service-spec",
+          "path": "core/test/Service/Transport/Web/BindSpec.hs"
         }
       ]
     },
@@ -107,6 +111,12 @@
       "page": "advanced-side-effects.md",
       "source": "integrations/Integration/Http/Request.hs",
       "scenario": "testbed/tests/integrations/generic-http-side-effect.hurl",
+      "evidence": []
+    },
+    "server-created-files": {
+      "page": "advanced-file-storage.md",
+      "source": "core/service/Service/FileUpload/Create.hs",
+      "scenario": "testbed/tests/integrations/generated-pdf.hurl",
       "evidence": []
     },
     "typed-inbound-integration": {
@@ -167,6 +177,11 @@
       "page": "advanced-side-effects.md",
       "ordinal": 1,
       "source": "integrations/Integration/Http/Request.hs"
+    },
+    {
+      "page": "advanced-file-storage.md",
+      "ordinal": 1,
+      "source": "testbed/src/Testbed/GeneratedPdf/Outbound.hs"
     },
     {
       "page": "advanced-oauth2.md",

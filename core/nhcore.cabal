@@ -1,6 +1,6 @@
 cabal-version: 3.4
 name: nhcore
-version: 0.16.0
+version: 0.17.1
 synopsis: Core Library for NeoHaskell
 description: NeoHaskell is a dialect of Haskell that is focused on newcomer-friendliness and productivity.
 homepage: https://neohaskell.org
@@ -127,6 +127,8 @@ common common_cfg
 
 library
   import: common_cfg
+  build-depends:
+    mtl,
   exposed-modules:
     Accumulator
     Appendable
@@ -289,6 +291,7 @@ library
     Service.FileUpload.Lifecycle
     Service.FileUpload.BlobStore
     Service.FileUpload.BlobStore.Local
+    Service.FileUpload.Create
     Service.FileUpload.FileStateStore.Postgres
     Service.FileUpload.Routes
     Service.FileUpload.Resolver
@@ -517,6 +520,7 @@ test-suite nhcore-test
     Service.Transport.Mcp.ResponseSpec
     Service.Transport.WebSpec
     Service.Transport.Web.SwaggerUISpec
+    Service.Transport.Web.BindSpec
     Service.Transport.Web.HealthCheckSpec
     Service.Transport.Web.ReadinessRouteSpec
     Service.QueryObjectStore.InMemorySpec
@@ -532,6 +536,7 @@ test-suite nhcore-test
     Service.FileUpload.ContentDedupSpec
     Service.FileUpload.CoreSpec
     Service.FileUpload.LifecycleSpec
+    Service.FileUpload.CreateSpec
     Service.FileUpload.BlobStore.LocalSpec
     Service.FileUpload.RoutesSpec
     Service.FileUpload.ResolverSpec
@@ -690,6 +695,7 @@ test-suite nhcore-test-service
     Service.FileUpload.BlobStore.LocalSpec
     Service.FileUpload.ContentDedupSpec
     Service.FileUpload.CoreSpec
+    Service.FileUpload.CreateSpec
     Service.FileUpload.DownloadSpec
     Service.FileUpload.FileStateStore.InMemorySpec
     Service.FileUpload.FileStateStore.PostgresSpec
@@ -721,6 +727,7 @@ test-suite nhcore-test-service
     Service.Transport.Mcp.ResponseSpec
     Service.MultiTenantSpec
     Service.Transport.WebSpec
+    Service.Transport.Web.BindSpec
     Service.Transport.Web.HealthCheckSpec
     Service.Transport.Web.ReadinessRouteSpec
     Service.Command.AuthSpec

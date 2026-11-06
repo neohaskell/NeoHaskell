@@ -1,6 +1,6 @@
 cabal-version: 3.4
 name: nhtestbed
-version: 0.16.0
+version: 0.17.1
 synopsis: End-to-End Testbed for NeoHaskell
 description: A real NeoHaskell application that demonstrates features and runs blackbox acceptance tests.
 homepage: https://neohaskell.org
@@ -118,6 +118,12 @@ library
     Testbed.AccountConnection.Query
     Testbed.OAuth2.Configuration
     Testbed.OAuth2.EventModel
+    Testbed.GeneratedPdf.Core
+    Testbed.GeneratedPdf.Commands.Request
+    Testbed.GeneratedPdf.Commands.Record
+    Testbed.GeneratedPdf.Outbound
+    Testbed.GeneratedPdf.Query
+    Testbed.GeneratedPdf.Feature
 
   hs-source-dirs: src
   default-language: GHC2021
