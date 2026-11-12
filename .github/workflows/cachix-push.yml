@@ -10,12 +10,37 @@ on:
       - "integrations/**"
       - "nix/**"
       - ".github/workflows/**"
+      - "flake.nix"
+      - "flake.lock"
+      - "cabal.project*"
+      - "**/*.cabal"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cachix-push
+  cancel-in-progress: false
 
 jobs:
   cachix-push:
-    runs-on: ubuntu-latest
+    if: ${{ github.repository == 'neohaskell/NeoHaskell' && github.ref == 'refs/heads/main' }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            profiles: "ci default"
+          - runner: macos-latest
+            profiles: default
     steps:
       - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
       - uses: DeterminateSystems/determinate-nix-action@v3.24.0
         with:
           extra-conf: |
@@ -25,6 +50,43 @@ jobs:
       - uses: cachix/cachix-action@v17
         with:
           name: neohaskell
-          authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
-      - name: Build to populate cache
-        run: nix develop --command cabal build all --disable-documentation
+          skipPush: true
+      - name: Realize ${{ matrix.profiles }} shell profiles
+        shell: bash
+        env:
+          SHELL_PROFILES: ${{ matrix.profiles }}
+        run: |
+          set -euo pipefail
+          read -r -a profiles <<< "$SHELL_PROFILES"
+          for profile in "${profiles[@]}"; do
+            nix develop ".#$profile" --profile "$RUNNER_TEMP/$profile-profile" --command true
+          done
+      - name: Push shell profiles to Cachix
+        timeout-minutes: 15
+        shell: bash
+        env:
+          CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
+          SHELL_PROFILES: ${{ matrix.profiles }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${CACHIX_AUTH_TOKEN:-}" ]]; then
+            echo "::error::CACHIX_AUTH_TOKEN is required to publish the trusted shell profile."
+            exit 1
+          fi
+          read -r -a profiles <<< "$SHELL_PROFILES"
+          profile_paths=()
+          for profile in "${profiles[@]}"; do
+            profile_paths+=("$RUNNER_TEMP/$profile-profile")
+          done
+          cachix push neohaskell "${profile_paths[@]}"
+      - name: Verify recursive shell closures in Cachix
+        shell: bash
+        env:
+          SHELL_PROFILES: ${{ matrix.profiles }}
+        run: |
+          set -euo pipefail
+          read -r -a profiles <<< "$SHELL_PROFILES"
+          for profile in "${profiles[@]}"; do
+            profile_path="$(nix path-info "$RUNNER_TEMP/$profile-profile")"
+            nix path-info --recursive --store https://neohaskell.cachix.org "$profile_path"
+          done
