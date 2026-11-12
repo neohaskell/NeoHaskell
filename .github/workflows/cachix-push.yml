@@ -79,7 +79,8 @@ jobs:
             profile_paths+=("$RUNNER_TEMP/$profile-profile")
           done
           cachix push neohaskell "${profile_paths[@]}"
-      - name: Verify recursive shell closures in Cachix
+      - name: Verify shell profiles and closures in public caches
+        timeout-minutes: 15
         shell: bash
         env:
           SHELL_PROFILES: ${{ matrix.profiles }}
@@ -88,5 +89,23 @@ jobs:
           read -r -a profiles <<< "$SHELL_PROFILES"
           for profile in "${profiles[@]}"; do
             profile_path="$(nix path-info "$RUNNER_TEMP/$profile-profile")"
-            nix path-info --recursive --store https://neohaskell.cachix.org "$profile_path"
+            if ! nix-store --option narinfo-cache-negative-ttl 0 --query --hash --store https://neohaskell.cachix.org "$profile_path" >/dev/null; then
+              echo "::error::Profile root is missing from the NeoHaskell cache: $profile_path" >&2
+              exit 1
+            fi
+            # shellcheck disable=SC2016
+            nix path-info --recursive "$profile_path" | xargs -n 1 -P 16 bash -c '
+              set -euo pipefail
+              store_path="$1"
+              lookup_errors=()
+              for cache in https://neohaskell.cachix.org https://cache.nixos.org https://cache.iog.io; do
+                if error="$(nix-store --option narinfo-cache-negative-ttl 0 --query --hash --store "$cache" "$store_path" 2>&1 >/dev/null)"; then
+                  exit 0
+                fi
+                lookup_errors+=("$cache: ${error:-No diagnostic output}")
+              done
+              echo "::error::Store path is unavailable from all public caches: $store_path" >&2
+              printf "%s\n" "${lookup_errors[@]}" >&2
+              exit 1
+            ' _
           done
