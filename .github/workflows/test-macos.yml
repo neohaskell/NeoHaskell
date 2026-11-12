@@ -1,12 +1,35 @@
 name: "Test macOS"
 
 on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "nix/**"
+      - ".github/workflows/cachix-push.yml"
+      - ".github/workflows/test.yml"
+      - ".github/workflows/test-macos.yml"
+      - ".github/workflows/nightly-bench.yml"
+      - "flake.nix"
+      - "flake.lock"
+      - "cabal.project*"
+      - "**/*.cabal"
   push:
     branches:
       - main
     paths:
       - "core/**"
       - "nix/**"
+      - "integrations/**"
+      - "testbed/**"
+      - ".github/workflows/cachix-push.yml"
+      - ".github/workflows/test.yml"
+      - ".github/workflows/test-macos.yml"
+      - ".github/workflows/nightly-bench.yml"
+      - "flake.nix"
+      - "flake.lock"
+      - "cabal.project*"
+      - "**/*.cabal"
 
 jobs:
   tests-macos:
@@ -67,7 +90,6 @@ jobs:
             extra-substituters = https://cache.iog.io https://neohaskell.cachix.org
             extra-trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= neohaskell.cachix.org-1:mo2cLaGbwqbrxs9xhqKK8jeNsn3osi7t6XoAmxSZssc=
 
-      - uses: DeterminateSystems/magic-nix-cache-action@v14
       - uses: actions/cache@v6.1.0
         with:
           path: dist-newstyle

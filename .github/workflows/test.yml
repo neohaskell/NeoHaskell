@@ -81,7 +81,6 @@ jobs:
             http2 = false
             extra-substituters = https://neohaskell.cachix.org?priority=30 https://cache.iog.io
             extra-trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= neohaskell.cachix.org-1:mo2cLaGbwqbrxs9xhqKK8jeNsn3osi7t6XoAmxSZssc=
-      - uses: DeterminateSystems/magic-nix-cache-action@v14
       - uses: actions/cache@v6.1.0
         with:
           path: dist-newstyle
@@ -113,7 +112,6 @@ jobs:
             http2 = false
             extra-substituters = https://neohaskell.cachix.org?priority=30 https://cache.iog.io
             extra-trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= neohaskell.cachix.org-1:mo2cLaGbwqbrxs9xhqKK8jeNsn3osi7t6XoAmxSZssc=
-      - uses: DeterminateSystems/magic-nix-cache-action@v14
       - uses: actions/download-artifact@v8
         with:
           name: dist-newstyle
@@ -148,7 +146,6 @@ jobs:
             accept-flake-config = true
             extra-substituters = https://cache.iog.io https://neohaskell.cachix.org
             extra-trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= neohaskell.cachix.org-1:mo2cLaGbwqbrxs9xhqKK8jeNsn3osi7t6XoAmxSZssc=
-      - uses: DeterminateSystems/magic-nix-cache-action@v14
       - uses: actions/download-artifact@v8
         with:
           name: dist-newstyle
@@ -192,7 +189,6 @@ jobs:
             http2 = false
             extra-substituters = https://neohaskell.cachix.org?priority=30 https://cache.iog.io
             extra-trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= neohaskell.cachix.org-1:mo2cLaGbwqbrxs9xhqKK8jeNsn3osi7t6XoAmxSZssc=
-      - uses: DeterminateSystems/magic-nix-cache-action@v14
       - uses: actions/download-artifact@v8
         with:
           name: dist-newstyle
@@ -213,7 +209,6 @@ jobs:
             http2 = false
             extra-substituters = https://neohaskell.cachix.org?priority=30 https://cache.iog.io
             extra-trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= neohaskell.cachix.org-1:mo2cLaGbwqbrxs9xhqKK8jeNsn3osi7t6XoAmxSZssc=
-      - uses: DeterminateSystems/magic-nix-cache-action@v14
       - uses: actions/download-artifact@v8
         with:
           name: dist-newstyle
@@ -234,7 +229,6 @@ jobs:
             http2 = false
             extra-substituters = https://neohaskell.cachix.org?priority=30 https://cache.iog.io
             extra-trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= neohaskell.cachix.org-1:mo2cLaGbwqbrxs9xhqKK8jeNsn3osi7t6XoAmxSZssc=
-      - uses: DeterminateSystems/magic-nix-cache-action@v14
       - uses: actions/download-artifact@v8
         with:
           name: dist-newstyle
@@ -287,7 +281,6 @@ jobs:
             accept-flake-config = true
             extra-substituters = https://cache.iog.io https://neohaskell.cachix.org
             extra-trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= neohaskell.cachix.org-1:mo2cLaGbwqbrxs9xhqKK8jeNsn3osi7t6XoAmxSZssc=
-      - uses: DeterminateSystems/magic-nix-cache-action@v14
       - uses: actions/download-artifact@v8
         with:
           name: dist-newstyle
@@ -312,14 +305,6 @@ jobs:
           fi
         env:
           PGPASSWORD: neohaskell
-      - name: Install hurl (pinned binary + checksum)
-        run: |
-          curl -fsSL --retry 5 --retry-delay 5 --retry-all-errors \
-            --connect-timeout 20 --max-time 120 --retry-max-time 300 \
-            -o hurl.deb \
-            https://github.com/Orange-OpenSource/hurl/releases/download/6.0.0/hurl_6.0.0_amd64.deb
-          echo "2686f605adfdceca18579a941b317262a4185915e6fda1f8deaab201da22e9cf  hurl.deb" | sha256sum -c -
-          sudo dpkg -i hurl.deb
       - name: Install poppler-utils (for PDF extraction tests)
         run: sudo apt-get update && sudo apt-get install -y poppler-utils
       - name: Run integration tests
