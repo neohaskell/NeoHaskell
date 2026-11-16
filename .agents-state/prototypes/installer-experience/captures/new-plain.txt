@@ -1,0 +1,18 @@
+PROTOTYPE. All results are simulated. No system changes.
+Install official Nix.
+Configure Nix and both caches. Install neo and neoctl.
+Working. Prepare Nix
+  DONE  Prepare Nix
+Working. Configure Nix
+  DONE  Configure Nix
+Working. Connect binary caches
+  DONE  Connect binary caches
+Working. Download neo
+  DONE  Download neo
+Working. Download neoctl
+  DONE  Download neoctl
+Working. Check your setup
+  DONE  Check your setup
+NeoHaskell is ready. neo and neoctl are available.
+Next. neo new my-app
+Simulated result. No tools were installed.

@@ -1,0 +1,1 @@
+PASS. Three PTY flows, details, failure and retry, Ctrl-C, narrow terminal, five plain scenarios, missing consent.

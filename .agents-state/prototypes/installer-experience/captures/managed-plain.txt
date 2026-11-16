@@ -1,0 +1,7 @@
+Setup needs attention
+Cannot locate the nix-darwin configuration source.
+
+Ask the administrator for access to the declarative source, then run the 
+installer again.
+
+Nothing changed. Neither tool was installed.

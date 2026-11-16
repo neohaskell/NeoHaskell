@@ -1,0 +1,20 @@
+PROTOTYPE. All results are simulated. No system changes.
+Install official Nix.
+Configure Nix and both caches. Install neo and neoctl.
+Working. Prepare Nix
+  DONE  Prepare Nix
+Working. Configure Nix
+  DONE  Configure Nix
+Working. Connect binary caches
+  DONE  Connect binary caches
+Working. Download neo
+  DONE  Download neo
+Working. Download neoctl
+Let's get you unstuck
+neoctl download interrupted.
+
+Your connection dropped. Setup is not complete.
+Nix and caches are configured. neo is downloaded.
+
+Check your connection, then retry.
+R retry simulation    Q quit

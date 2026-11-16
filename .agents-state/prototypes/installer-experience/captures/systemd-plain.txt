@@ -1,0 +1,7 @@
+Setup needs attention
+WSL2 needs active systemd.
+
+Enable systemd in your distribution, restart it from Windows, then run the 
+installer again.
+
+Nothing changed. Neither tool was installed.
