@@ -1,0 +1,32 @@
+# Referencias de experiencia para el instalador de NeoHaskell
+
+Fuentes consultadas el 2026-11-16. Base local `033ae4a570686cd885ca14c6595997d9498d5287`. Alcance Linux, macOS y WSL, sin Windows nativo.
+
+Revisé documentación, código, capturas y demos oficiales actuales. No ejecuté instaladores. La comparación describe lo documentado, no mide popularidad ni satisfacción.
+
+## Referencias actuales
+
+| Referencia y evidencia primaria | Bienvenida y selección | Progreso, fallos y recuperación |
+| --- | --- | --- |
+| [Determinate Nix Installer, README y código](https://github.com/DeterminateSystems/nix-installer) | El comando de instalación es corto. El instalador crea un plan que se puede revisar y explicar antes de aplicarlo. Pide confirmación por defecto; `--no-confirm` sirve para scripts sin interacción. | Publica planes por plataforma, ofrece logs `--verbose` y documenta una reversión de mejor esfuerzo ante fallos. Mantiene un recibo para desinstalar y una guía de solución de problemas. No encontré una reanudación de una instalación interrumpida documentada en el README. [README](https://github.com/DeterminateSystems/nix-installer/blob/main/README.md) |
+| [rustup, guía y script de instalación](https://rust-lang.github.io/rustup/installation/index.html) | El script descarga y ejecuta el binario adecuado. La guía muestra el cierre `Rust is installed now. Great!`. `-y` omite la confirmación; el script también evita abrir `/dev/tty` con esa opción. | `-q` desactiva el progreso y `-v` da más detalle. La guía resuelve algunos casos en dos pasos, por ejemplo instalar el gestor y luego un toolchain con los componentes requeridos. No encontré una reanudación o reversión documentada para fallos parciales. [Fuente de `rustup-init.sh`](https://github.com/rust-lang/rustup/blob/main/rustup-init.sh) |
+| [uv, instalación y opciones del instalador](https://docs.astral.sh/uv/getting-started/installation/) | La ruta con `curl` no muestra preguntas. El instalador permite elegir directorio y evitar cambios al `PATH`; `UV_UNMANAGED_INSTALL` desactiva cambios del entorno para CI. | Una captura en un [issue del repositorio](https://github.com/astral-sh/uv/issues/11849) muestra versión, plataforma, destino, binarios instalados y éxito. El mismo reporte muestra que el fallo identifica el URL descargado y da una causa posible. La captura es un reporte de usuario dentro del proyecto, no una demo oficial. No encontré reanudación ni guía de accesibilidad documentadas en la página de instalación. [Opciones](https://docs.astral.sh/uv/reference/installer/) |
+| [Astro `create-astro`, README y código](https://github.com/withastro/astro/tree/main/packages/create-astro) | Es un asistente de creación de proyectos, no un instalador de sistema. Corre de forma interactiva por defecto. Acepta `--yes`, `--dry-run` y `--skip-houston`; el código separa verificación, introducción, nombre, plantilla, dependencias, Git y pasos finales. | El código presenta tareas como `Project initializing...` y `Project initialized!`. El changelog registra mejoras a errores de instalación de dependencias y una espera limitada para consultas lentas al registro. No encontré una función de reanudación documentada. [README](https://github.com/withastro/astro/blob/main/packages/create-astro/README.md) · [flujo actual](https://github.com/withastro/astro/blob/main/packages/create-astro/src/index.ts) · [changelog](https://github.com/withastro/astro/blob/main/packages/create-astro/CHANGELOG.md) |
+
+## Bibliotecas y herramientas, no instaladores
+
+- [Ratatui](https://ratatui.rs/) es una biblioteca Rust para dibujar interfaces de terminal. Su [FAQ](https://www.ratatui.rs/faq/) dice que la aplicación decide el resto del flujo. No aporta por sí sola detección de Nix, instalación, manejo de fallos ni reanudación.
+- [Gum](https://github.com/charmbracelet/gum) es una herramienta para combinar entradas, selecciones, estilos y spinners en scripts de shell. Su README enlaza una [captura animada](https://vhs.charm.sh/vhs-1qY57RrQlXCuydsEgDp68G.gif) y el [script que la produce](https://github.com/charmbracelet/gum/blob/main/examples/demo.sh). `gum spin` puede mostrar la salida del comando. Inferencia de la API, el spinner comunica espera; el script debe medir el progreso por separado.
+- [Clack Prompts](https://github.com/bombshell-dev/clack/blob/main/packages/prompts/README.md) es una biblioteca de prompts para JavaScript. Documenta introducción y cierre, selección, cancelación, spinner, barra de progreso, grupos de tareas y salida continua de procesos hijos. Inferencia de la API, la barra solo representa progreso real si el proceso aporta avances reales.
+
+## Comparación útil para un prototipo
+
+La evidencia favorece tres ejes a probar, sin decidir aquí un diseño. Para accesibilidad, scrollback y copia de logs, las páginas revisadas no demuestran compatibilidad con lectores de pantalla ni conservación de salida en un TUI. Hay evidencia explícita de modo no interactivo en Determinate, `rustup` y Astro. `uv` ofrece configuración de CI sin cambios al entorno. Las demás garantías de TTY deben verificarse con una prueba.
+
+1. **Transcripción breve.** Inspirarse en `rustup` y `uv`. Mostrar bienvenida, comprobaciones, pasos terminados, el error completo y el comando de recuperación. Tiene menos estado de terminal y deja texto copiable. Puede sentirse menos visual.
+2. **Asistente corto con salida permanente.** Inspirarse en Astro y Clack. Saludar una vez, pedir solo elecciones que cambien la instalación y luego dejar cada paso en scrollback. Mantener una ruta `--yes` con los mismos valores por defecto. Hay que comprobar el flujo no interactivo y la claridad de cada elección.
+3. **Panel TUI con modo de texto equivalente.** Probar Ratatui para presentar los pasos y el detalle del activo. Conserva el estado visible mientras corre. Añade una segunda ruta visual que debe probarse por separado con salida redirigida, terminal estrecha, lector de pantalla y copia de errores.
+
+**Punto local de comparación.** Una versión anterior del instalador NeoHaskell mostró tres etapas, ocultó el spinner si stderr no era TTY y reservó el detalle de pasos para `--verbose`. La evidencia está en [`installer/src/ui.rs` en el commit `7bd77c0`](https://github.com/neohaskell/NeoHaskell/blob/7bd77c0fd88a4b56091fc015388df85837e97d96/installer/src/ui.rs). Es precedente histórico, no una recomendación de rescatar el diseño.
+
+**throughput checkpoint:** n/a, investigación de solo lectura.
