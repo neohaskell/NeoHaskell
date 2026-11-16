@@ -1234,6 +1234,89 @@
       "source_sha": "d986ae7789405ce8bf11e85832418014ef849ba3",
       "target_policy": "native-v2",
       "version": "0.17.1"
+    },
+    {
+      "base_sha": "cacc8069070721539ae0aac53286ce9492e906a5",
+      "base_tag": "neo-v0.17.1",
+      "base_version": "0.17.1",
+      "bootstrap": false,
+      "date": "2026-11-16",
+      "group": "platform",
+      "id": "61d938e509523e4dcf8c1b8584ffe937c257e25a36773156ff8c63c2a0bb8554",
+      "impact": "breaking",
+      "kind": "release",
+      "notes": [
+        {
+          "category": "Improved",
+          "commit": "d4b93daff3115ffd186d403db252631b8056456e",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "13e63ca3084a89f47202acb23d6509b44a6413335d6a0c7650c26539fb380c16",
+          "impact": "none",
+          "path": ".changes/issue-99-cache-publisher.md",
+          "sections": {
+            "Summary": "Framework users need no app changes. A trusted main-branch workflow now realizes and publishes the Linux CI and default shells and the macOS default shell to Cachix. Framework contributors can list local test jobs and run the documented ADR index check through the Nix-packaged `act` command. The testbed job uses its existing Nix-provided Hurl and no longer installs an unused system package that fails on Ubuntu 26.04. These CI and contributor-tool changes do not affect application behavior or public APIs."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: none\ncategory: Improved\n---\n\n## Summary\n\nFramework users need no app changes. A trusted main-branch workflow now realizes and publishes the Linux CI and default shells and the macOS default shell to Cachix. Framework contributors can list local test jobs and run the documented ADR index check through the Nix-packaged `act` command. The testbed job uses its existing Nix-provided Hurl and no longer installs an unused system package that fails on Ubuntu 26.04. These CI and contributor-tool changes do not affect application behavior or public APIs.\n"
+        },
+        {
+          "category": "Improved",
+          "commit": "d65f5e5256f136914649ffcd9eb7d696a1597ab8",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "ba81f147de99234269825971de00fed330213da41257f134d462f7f6e5e30a33",
+          "impact": "none",
+          "path": ".changes/issue-99-cache-closure-check.md",
+          "sections": {
+            "Summary": "Framework users need no app changes. Cache publication verification accounts for dependencies served by the configured upstream public caches. Cachix avoids storing duplicate upstream dependencies, so checking only its recursive metadata rejected a successful publication. This changes CI verification without changing application behavior or public APIs."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: none\ncategory: Improved\n---\n\n## Summary\n\nFramework users need no app changes. Cache publication verification accounts for dependencies served by the configured upstream public caches. Cachix avoids storing duplicate upstream dependencies, so checking only its recursive metadata rejected a successful publication. This changes CI verification without changing application behavior or public APIs.\n"
+        },
+        {
+          "category": "Improved",
+          "commit": "8b36dbce69c932bd53262c080094a3fbce9b5fcf",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "6055953f4e28b3205866d72516dee6032353d1789c2b82f6dbd5e06beb0792b4",
+          "impact": "none",
+          "path": ".changes/issue-99-cache-workers.md",
+          "sections": {
+            "Summary": "Framework test jobs no longer upload their local Nix stores through Magic. They read the configured public Cachix and IOG caches and build cache misses normally. Test macOS also runs on pull requests that change Nix, Cabal, or relevant workflow files. Application behavior, public APIs, and test workloads stay the same."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: none\ncategory: Improved\n---\n\n## Summary\n\nFramework test jobs no longer upload their local Nix stores through Magic. They read the configured public Cachix and IOG caches and build cache misses normally. Test macOS also runs on pull requests that change Nix, Cabal, or relevant workflow files. Application behavior, public APIs, and test workloads stay the same.\n"
+        },
+        {
+          "category": "Added",
+          "commit": "adf0b6c1332c9683c6c5e52fa865e299e088c95d",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "8230eff3713cc1ad23a98a43c5ac3a76781b80650c534b1277be6a8699692ff0",
+          "impact": "compatible",
+          "path": ".changes/query-by-id.md",
+          "sections": {
+            "Summary": "Read one query row with `GET /queries/{query-name}/{id}` using the UUID chosen by the query's `queryId`. A successful read returns the row as JSON. Missing rows and rows hidden by `canView` return the same HTTP 404 response. Query access checks still run before storage access. Existing query declarations need no changes, and collection endpoints remain available."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: compatible\ncategory: Added\n---\n\n## Summary\n\nRead one query row with `GET /queries/{query-name}/{id}` using the UUID chosen by the query's `queryId`. A successful read returns the row as JSON. Missing rows and rows hidden by `canView` return the same HTTP 404 response. Query access checks still run before storage access. Existing query declarations need no changes, and collection endpoints remain available.\n"
+        },
+        {
+          "category": "Breaking changes",
+          "commit": "196e4dfff0d7d5015dd4385e7f329c71d0524a49",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "a9e6b9beee62e4af107054800a64ca7ead7a5eba5ed75bb46c8ccedbbb6cac2e",
+          "impact": "breaking",
+          "path": ".changes/request-context-origin.md",
+          "sections": {
+            "Agent prompt": "```text\nUpdate this NeoHaskell app for the request-origin API. Find any complete WebTransport record construction and add trustedProxyAddresses. Use Set.empty to preserve the default behavior. Configure only exact proxy IP addresses with trustedProxyAddressFromText when this app has an explicit trusted proxy. Find any complete RequestContext construction and add origin = Nothing for internal contexts. Keep raw client addresses and User-Agent values out of events and logs unless the app has a reviewed privacy and retention purpose. Build the app, run the Web request-origin Hspec selection, and run the strict testbed suite. Report changed files, commands, results, and any unresolved record construction.\n```",
+            "Migration": "If your app constructs every `WebTransport` field directly, add `trustedProxyAddresses = Set.empty` to keep the socket address as the client address. To accept `X-Forwarded-For`, configure exact proxy addresses with `trustedProxyAddressFromText`. The set stays empty by default.\n\nIf your code constructs a complete `RequestContext` record directly, add `origin = Nothing` for an internal context. The `emptyContext`, `anonymousContext`, `authenticatedContext`, and `trustedContext` helpers already set it.\n\n### Verify\n\nBuild the app and run the focused Web-origin tests and strict testbed suite:\n\n```sh\nnix develop --command .agents/skills/tdd/scripts/test-match 'Web request origin' nhcore-test\nnix develop --command .agents/skills/neohaskell-test/scripts/run-testbed --strict\n```",
+            "Summary": "Web commands can read the socket client address and User-Agent through `RequestContext.origin`. `Text.fromBytesIfValid` decodes valid UTF-8 bytes without throwing. Applications that build a `WebTransport` record directly must add the new trusted proxy field. Apps using `WebTransport.server` need no change."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: breaking\ncategory: Breaking changes\n---\n\n## Summary\n\nWeb commands can read the socket client address and User-Agent through `RequestContext.origin`. `Text.fromBytesIfValid` decodes valid UTF-8 bytes without throwing. Applications that build a `WebTransport` record directly must add the new trusted proxy field. Apps using `WebTransport.server` need no change.\n\n## Migration\n\nIf your app constructs every `WebTransport` field directly, add `trustedProxyAddresses = Set.empty` to keep the socket address as the client address. To accept `X-Forwarded-For`, configure exact proxy addresses with `trustedProxyAddressFromText`. The set stays empty by default.\n\nIf your code constructs a complete `RequestContext` record directly, add `origin = Nothing` for an internal context. The `emptyContext`, `anonymousContext`, `authenticatedContext`, and `trustedContext` helpers already set it.\n\n### Verify\n\nBuild the app and run the focused Web-origin tests and strict testbed suite:\n\n```sh\nnix develop --command .agents/skills/tdd/scripts/test-match 'Web request origin' nhcore-test\nnix develop --command .agents/skills/neohaskell-test/scripts/run-testbed --strict\n```\n\n## Agent prompt\n\n```text\nUpdate this NeoHaskell app for the request-origin API. Find any complete WebTransport record construction and add trustedProxyAddresses. Use Set.empty to preserve the default behavior. Configure only exact proxy IP addresses with trustedProxyAddressFromText when this app has an explicit trusted proxy. Find any complete RequestContext construction and add origin = Nothing for internal contexts. Keep raw client addresses and User-Agent values out of events and logs unless the app has a reviewed privacy and retention purpose. Build the app, run the Web request-origin Hspec selection, and run the strict testbed suite. Report changed files, commands, results, and any unresolved record construction.\n```\n"
+        }
+      ],
+      "source_sha": "196e4dfff0d7d5015dd4385e7f329c71d0524a49",
+      "target_policy": "native-v2",
+      "version": "0.18.0"
     }
   ],
   "recoveries": [],
