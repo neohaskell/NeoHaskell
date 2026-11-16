@@ -1,0 +1,72 @@
+cabal-version: 3.4
+name: neoctl
+version: 0.17.1
+synopsis: NeoHaskell control tool help and version
+description: Display usage and packaged version information for neoctl.
+homepage: https://neohaskell.org
+license: MIT
+author: NeoHaskell contributors
+category: Development
+build-type: Simple
+
+common common_cfg
+  ghc-options:
+    -Wall
+    -Wno-orphans
+    -threaded
+    -fno-warn-partial-type-signatures
+    -fno-warn-name-shadowing
+    -Werror
+
+  default-extensions:
+    ApplicativeDo
+    BlockArguments
+    DataKinds
+    DeriveDataTypeable
+    DerivingStrategies
+    DuplicateRecordFields
+    ImportQualifiedPost
+    ImpredicativeTypes
+    NamedFieldPuns
+    NoFieldSelectors
+    NoImplicitPrelude
+    OverloadedLabels
+    OverloadedLists
+    OverloadedRecordDot
+    OverloadedStrings
+    PackageImports
+    PartialTypeSignatures
+    QualifiedDo
+    QuasiQuotes
+    Strict
+    TemplateHaskell
+    TypeApplications
+    TypeFamilies
+    TypeOperators
+
+  build-depends:
+    base,
+    nhcore
+
+library
+  import: common_cfg
+  autogen-modules: Paths_neoctl
+  other-modules:
+    Neoctl.Feature
+    Neoctl.Invocation
+    Neoctl.Placeholder
+    Neoctl.Transport
+    Paths_neoctl
+  exposed-modules:
+    App
+  hs-source-dirs: src
+  default-language: GHC2021
+
+executable neoctl
+  import: common_cfg
+  main-is: Launcher.hs
+  build-depends:
+    base,
+    neoctl
+  hs-source-dirs: launcher
+  default-language: GHC2021

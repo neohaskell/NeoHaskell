@@ -27,6 +27,7 @@ def find_root():
 ROOT = find_root()
 SKILL_ROOT = Path(__file__).resolve().parents[2]
 CONFIG_PATH = ".agents/skills/neohaskell-release/references/config.json"
+LIVE_LEGACY_CONFIG_PATH = "scripts/releases/config.json"
 LEDGER_PATH = ".agents/skills/neohaskell-release/references/manifest.json"
 LIVE_LEGACY_LEDGER_PATH = "scripts/releases/manifest.json"
 CONFIG = json.loads((SKILL_ROOT / "references/config.json").read_text())
@@ -694,11 +695,29 @@ def append_changelog(old, section, first):
     return "# Changelog\n\n" + section + "\n" + old
 
 
+def source_group_config(repo, source, group):
+    group_config(group)
+    text = repo.read(source, CONFIG_PATH)
+    if text is None:
+        text = repo.read(source, LIVE_LEGACY_CONFIG_PATH)
+    if text is None:
+        raise ValueError("Release source is missing its configuration")
+    try:
+        config = json.loads(text)
+    except (TypeError, json.JSONDecodeError) as error:
+        raise ValueError("Malformed source release configuration") from error
+    groups = config.get("groups") if isinstance(config, dict) else None
+    profile = groups.get(group) if isinstance(groups, dict) else None
+    if not isinstance(profile, dict) or not isinstance(profile.get("packages"), dict) or not isinstance(profile.get("locks"), dict) or not isinstance(profile.get("changelog"), str):
+        raise ValueError("Malformed source release group configuration")
+    return profile
+
+
 def expected_edits(repo, plan, *, ledger_path=LEDGER_PATH):
     validate_source_policy(repo, plan)
     source, group = plan["source_sha"], plan["group"]
     ledger = repo.ledger(source)
-    profile = group_config(group)
+    profile = source_group_config(repo, source, group)
     if plan["kind"] == "release":
         if plan["id"] in {p["id"] for p in ledger["attempts"]}:
             raise ValueError("Attempt already prepared")

@@ -40,7 +40,10 @@
         "flake.lock",
         "nix/neo-package.nix",
         "neo/flake.nix",
-        "neo/flake.lock"
+        "neo/flake.lock",
+        "cabal.project",
+        "nix/hix.nix",
+        "core/nhcore.cabal"
       ]
     },
     {
@@ -72,9 +75,28 @@
     "description": "Exclude development-shell bindings only for an explicitly reviewed root projection and exact package recipe. Unknown structures or changed package dependencies retain all root tokens. Revalidate independence before updating approved shapes.",
     "independent_shapes": [
       {
-        "projection_sha256": "7021f1a0de821155397b5fa7b40d4bc06b2997e0db1c05eaada1b86dd5010d1d",
+        "projection_sha256": "9895e74304aa35fa7e14b413830f77ea2619c4f9a6a7296d0a5497fc6d0510b4",
         "dependencies": {
-          "nix/neo-package.nix": "4a6d443430d789d303dd9f59f02eafd20946059e19a96d5e1e7106ef1603036c"
+          "nix/neo-package.nix": "4a6d443430d789d303dd9f59f02eafd20946059e19a96d5e1e7106ef1603036c",
+          "flake.lock": "1effc4277140756e9669e68a4585ae4694e5dabe6bba3d586cf2128a5adf3621"
+        },
+        "projected_dependencies": {
+          "nix/hix.nix": "fabe9af2447fca16c221a18a6b389b04d0996726877167ce0393bcd8b9dae309"
+        }
+      }
+    ]
+  },
+  "hix_projection": {
+    "path": "nix/hix.nix",
+    "description": "Exclude known shell-only settings only for this reviewed package configuration and exact Haskell.nix lock. Compiler, modules, unknown configuration and dependency changes retain all tokens.",
+    "independent_shapes": [
+      {
+        "projection_sha256": "fabe9af2447fca16c221a18a6b389b04d0996726877167ce0393bcd8b9dae309",
+        "dependencies": {
+          "flake.lock": "1effc4277140756e9669e68a4585ae4694e5dabe6bba3d586cf2128a5adf3621"
+        },
+        "projected_dependencies": {
+          "flake.nix": "9895e74304aa35fa7e14b413830f77ea2619c4f9a6a7296d0a5497fc6d0510b4"
         }
       }
     ]

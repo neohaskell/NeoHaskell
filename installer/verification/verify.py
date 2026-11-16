@@ -149,15 +149,18 @@ def read_policy(policy_dir: Path) -> tuple[dict[str, Any], dict[str, Any], str]:
     coverage = strict_json(coverage_raw, "coverage.json")
     if inputs.get("schema_version") != 1 or not isinstance(inputs.get("rules"), list):
         raise VerificationError("inputs.json has an unsupported schema")
-    projection = inputs.get("flake_projection")
-    if not isinstance(projection, dict) or not isinstance(projection.get("independent_shapes"), list):
-        raise VerificationError("inputs.json must define approved shared-file shapes")
-    for shape in projection["independent_shapes"]:
-        if not isinstance(shape, dict) or set(shape) != {"projection_sha256", "dependencies"} or not HEX.fullmatch(str(shape["projection_sha256"])):
-            raise VerificationError("inputs.json has a malformed approved shared-file shape")
-        dependencies = shape["dependencies"]
-        if not isinstance(dependencies, dict) or any(not isinstance(path, str) or Path(path).is_absolute() or ".." in Path(path).parts or not HEX.fullmatch(str(value)) for path, value in dependencies.items()):
-            raise VerificationError("inputs.json has malformed shared-file dependencies")
+    for name in ("flake_projection", "hix_projection"):
+        projection = inputs.get(name)
+        if not isinstance(projection, dict) or not isinstance(projection.get("independent_shapes"), list):
+            raise VerificationError("inputs.json must define approved shared-file shapes")
+        for shape in projection["independent_shapes"]:
+            if not isinstance(shape, dict) or set(shape) not in ({"projection_sha256", "dependencies"}, {"projection_sha256", "dependencies", "projected_dependencies"}) or not HEX.fullmatch(str(shape["projection_sha256"])):
+                raise VerificationError("inputs.json has a malformed approved shared-file shape")
+            for dependencies in (shape["dependencies"], shape.get("projected_dependencies", {})):
+                if not isinstance(dependencies, dict) or any(not isinstance(path, str) or Path(path).is_absolute() or ".." in Path(path).parts or not HEX.fullmatch(str(value)) for path, value in dependencies.items()):
+                    raise VerificationError("inputs.json has malformed shared-file dependencies")
+            if any(path not in {"flake.nix", "nix/hix.nix"} for path in shape.get("projected_dependencies", {})):
+                raise VerificationError("inputs.json names an unsupported projected dependency")
     if coverage.get("schema_version") != 1:
         raise VerificationError("coverage.json has an unsupported schema")
     validate_coverage(coverage)
@@ -268,7 +271,7 @@ def tokenize_nix(source: str) -> list[str]:
             start = index
             index += 2
             while index < len(source):
-                if source.startswith("'''", index):
+                if source.startswith("''$", index) or source.startswith("'''", index):
                     index += 3
                 elif source.startswith("''", index):
                     index += 2
@@ -343,7 +346,7 @@ def split_bindings(tokens: list[str], start: int, end: int) -> list[tuple[int, i
     return result
 
 
-def flake_projection(source: str, policy: dict[str, Any], dependencies: dict[str, str]) -> bytes:
+def proposed_flake_projection(source: str, policy: dict[str, Any]) -> bytes:
     tokens = tokenize_nix(source)
     markers = [i for i in range(len(tokens) - 2) if tokens[i : i + 3] == ["in", "flake", "//"]]
     output_sets = [i + 3 for i in markers if i + 3 < len(tokens) and tokens[i + 3] == "{"]
@@ -412,11 +415,48 @@ def flake_projection(source: str, policy: dict[str, Any], dependencies: dict[str
                         else:
                             binding_end += 1
                     excluded.update(range(declaration, binding_end))
-    projected = canonical_json([token for i, token in enumerate(tokens) if i not in excluded])
+    return canonical_json([token for i, token in enumerate(tokens) if i not in excluded])
+
+
+def flake_projection(source: str, policy: dict[str, Any], dependencies: dict[str, str], projected_dependencies: dict[str, str] | None = None) -> bytes:
+    projected = proposed_flake_projection(source, policy)
     for shape in policy["flake_projection"].get("independent_shapes", []):
-        if shape["projection_sha256"] == digest_bytes(projected) and shape["dependencies"] == dependencies:
+        guards_match = all((projected_dependencies or {}).get(path) == value for path, value in shape.get("projected_dependencies", {}).items())
+        if shape["projection_sha256"] == digest_bytes(projected) and all(dependencies.get(path) == value for path, value in shape["dependencies"].items()) and guards_match:
             return projected
-    return canonical_json(tokens)
+    return canonical_json(tokenize_nix(source))
+
+
+def proposed_hix_projection(source: str) -> bytes:
+    tokens = tokenize_nix(source)
+    if not tokens or tokens[0] != "{":
+        raise VerificationError("cannot identify the Hix configuration function")
+    parameter_end = matching(tokens, 0)
+    opening = parameter_end + 2
+    if tokens[parameter_end + 1:opening + 1] != [":", "{"]:
+        raise VerificationError("cannot identify the Hix configuration attribute set")
+    closing = matching(tokens, opening)
+    excluded = set()
+    seen = set()
+    for start, end in split_bindings(tokens, opening + 1, closing):
+        if tokens[start:start + 2] == ["shell", "."] and tokens[start + 2:start + 4] in [
+            ["tools", "="], ["withHoogle", "="], ["shellHook", "="], ["buildInputs", "="],
+        ]:
+            name = tokens[start + 2]
+            if name in seen:
+                raise VerificationError("Hix configuration has duplicate shell bindings")
+            seen.add(name)
+            excluded.update(range(start, end))
+    return canonical_json([token for index, token in enumerate(tokens) if index not in excluded])
+
+
+def hix_projection(source: str, policy: dict[str, Any], dependencies: dict[str, str], projected_dependencies: dict[str, str] | None = None) -> bytes:
+    projected = proposed_hix_projection(source)
+    for shape in policy["hix_projection"]["independent_shapes"]:
+        guards_match = all((projected_dependencies or {}).get(path) == value for path, value in shape.get("projected_dependencies", {}).items())
+        if shape["projection_sha256"] == digest_bytes(projected) and all(dependencies.get(path) == value for path, value in shape["dependencies"].items()) and guards_match:
+            return projected
+    return canonical_json(tokenize_nix(source))
 
 
 def rules_for_path(inputs: dict[str, Any], path: str) -> str | None:
@@ -431,16 +471,27 @@ def rules_for_path(inputs: dict[str, Any], path: str) -> str | None:
 def tree_inputs(repo: Path, commit: str, policy_dir: Path) -> tuple[InputIdentity, dict[str, InputEntry]]:
     inputs, coverage, policy_digest = read_policy(policy_dir)
     output = git(repo, "ls-tree", "-r", "-z", "--full-tree", commit).stdout
-    dependency_paths = {path for shape in inputs["flake_projection"].get("independent_shapes", []) for path in shape["dependencies"]}
+    projections = {name: inputs[name] for name in ("flake_projection", "hix_projection")}
+    projection_dependencies = {
+        name: {path for shape in projection["independent_shapes"] for path in shape["dependencies"]}
+        for name, projection in projections.items()
+    }
+    dependency_paths = set().union(*projection_dependencies.values())
     dependencies = {}
+    projected_dependencies = {}
     for record in output.split(b"\0"):
         if not record:
             continue
         header, raw_path = record.split(b"\t", 1)
         path = os.fsdecode(raw_path)
         mode, kind, oid = header.decode().split(" ")
-        if path in dependency_paths and kind == "blob" and mode in {"100644", "100755"}:
-            dependencies[path] = digest_bytes(git(repo, "cat-file", "blob", oid).stdout)
+        if kind == "blob" and mode in {"100644", "100755"}:
+            if path in dependency_paths:
+                dependencies[path] = digest_bytes(git(repo, "cat-file", "blob", oid).stdout)
+            if path == "flake.nix":
+                projected_dependencies[path] = digest_bytes(proposed_flake_projection(git(repo, "cat-file", "blob", oid).stdout.decode(), inputs))
+            elif path == "nix/hix.nix":
+                projected_dependencies[path] = digest_bytes(proposed_hix_projection(git(repo, "cat-file", "blob", oid).stdout.decode()))
     entries: dict[str, InputEntry] = {}
     for record in output.split(b"\0"):
         if not record:
@@ -454,7 +505,11 @@ def tree_inputs(repo: Path, commit: str, policy_dir: Path) -> tuple[InputIdentit
         if kind != "blob" or mode == "120000":
             raise VerificationError(f"installer-owned input {path} is a symlink or submodule; source identity refuses indirect content")
         data = git(repo, "cat-file", "blob", oid).stdout
-        projected = flake_projection(data.decode(), inputs, dependencies) if path == inputs["flake_projection"]["path"] else data
+        projected = data
+        for name, project in (("flake_projection", flake_projection), ("hix_projection", hix_projection)):
+            if path == projections[name]["path"]:
+                selected = {key: value for key, value in dependencies.items() if key in projection_dependencies[name]}
+                projected = project(data.decode(), inputs, selected, projected_dependencies)
         entries[path] = InputEntry(family, path, mode, digest_bytes(projected))
     identity = InputIdentity(policy_digest, tuple(entries[path] for path in sorted(entries)))
     return identity, entries

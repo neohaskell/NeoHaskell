@@ -46,7 +46,7 @@ class GitFixture:
         policy = json.loads((self.policy / "inputs.json").read_text())
         policy["flake_projection"]["independent_shapes"].append({
             "projection_sha256": "e044e408cd79adfa9de31c6dbf294b5c56c8f6ef7956a95d80061655137ea7d7",
-            "dependencies": policy["flake_projection"]["independent_shapes"][0]["dependencies"],
+            "dependencies": {"nix/neo-package.nix": policy["flake_projection"]["independent_shapes"][0]["dependencies"]["nix/neo-package.nix"]},
         })
         (self.policy / "inputs.json").write_text(json.dumps(policy))
         recipe = POLICY.parents[1] / "nix/neo-package.nix"
@@ -326,6 +326,46 @@ class GateTests(unittest.TestCase):
         path.write_text(original)
         f.setup()
 
+    def test_shared_configuration_guards_follow_both_files(self):
+        f = self.fixture()
+        root = POLICY.parents[1]
+        flake = (root / "flake.nix").read_text()
+        hix = (root / "nix/hix.nix").read_text()
+        f.write("flake.nix", flake)
+        f.write("nix/hix.nix", hix)
+        f.write("flake.lock", (root / "flake.lock").read_text())
+        f.commit("reviewed configuration")
+        f.write("flake.nix", flake.replace('neoctl = flake.packages."neoctl:exe:neoctl";', 'neoctl = pkgs.hixProject.shell;'))
+        root_change = f.commit("package depends on shell")
+        f.write("nix/hix.nix", hix.replace('hlint = "latest";', 'hlint = "3.8";'))
+        tooling = f.commit("changed dependent shell tool")
+        self.assertEqual(f.classify(root_change, tooling), ["nix-packaging"])
+        f.write("flake.nix", flake)
+        f.write("nix/hix.nix", hix.replace('name = "neohaskell";', 'name = builtins.hashString "sha256" (builtins.readFile ../flake.nix);'))
+        hix_change = f.commit("Hix reads root configuration")
+        f.write("flake.nix", flake.replace('doctest = "latest";', 'doctest = "3.8";'))
+        root_tooling = f.commit("changed root shell tool")
+        self.assertEqual(f.classify(hix_change, root_tooling), ["nix-packaging"])
+
+    def test_haskell_package_graph_and_compiler_inputs(self):
+        f = self.fixture()
+        root = POLICY.parents[1]
+        hix = (root / "nix/hix.nix").read_text()
+        f.write("nix/hix.nix", hix)
+        f.write("flake.nix", (root / "flake.nix").read_text())
+        f.write("flake.lock", (root / "flake.lock").read_text())
+        f.write("cabal.project", "packages: core/*.cabal neoctl/*.cabal\n")
+        baseline = f.commit("Haskell package inputs")
+        f.write("nix/hix.nix", hix.replace('hlint = "latest";', 'hlint = "candidate";'))
+        tooling = f.commit("unrelated shell tool")
+        self.assertEqual(f.classify(baseline, tooling), [])
+        f.write("nix/hix.nix", hix.replace('compiler-nix-name = "ghc98";', 'compiler-nix-name = "ghc96";'))
+        compiler = f.commit("tool compiler")
+        self.assertEqual(f.classify(tooling, compiler), ["nix-packaging"])
+        f.write("cabal.project", "packages: core/*.cabal\n")
+        membership = f.commit("remove tool package")
+        self.assertEqual(f.classify(compiler, membership), ["nix-packaging"])
+
     def test_flake_dependencies_docs_renames_and_owned_additions(self):
         f = self.fixture()
         f.write("flake.nix", FLAKE.replace('doctest = "latest";', 'doctest = "latest"; hoogle = "latest";'))
@@ -431,6 +471,74 @@ class GateTests(unittest.TestCase):
         f.git("commit", "--quiet", "-m", "new linked docs", cwd=linked)
         pushed = f.git("push", "origin", "new-linked", cwd=linked, check=False)
         self.assertEqual(pushed.returncode, 0, pushed.stderr)
+
+
+class RootFlakeProjectionTests(unittest.TestCase):
+    def test_hix_shell_tools_skip_but_compiler_and_unknown_structure_require_evidence(self):
+        root = POLICY.parents[1]
+        policy = json.loads((POLICY / "inputs.json").read_text())
+        guards = {
+            "flake.nix": VERIFY.digest_bytes(VERIFY.proposed_flake_projection((root / "flake.nix").read_text(), policy)),
+            "nix/hix.nix": VERIFY.digest_bytes(VERIFY.proposed_hix_projection((root / "nix/hix.nix").read_text())),
+        }
+        source = (root / "nix/hix.nix").read_text()
+        dependencies = {"flake.lock": VERIFY.digest_bytes((root / "flake.lock").read_bytes())}
+        tooling = source.replace('hlint = "latest";', 'hlint = "candidate";')
+        self.assertNotEqual(source, tooling)
+        self.assertEqual(VERIFY.hix_projection(source, policy, dependencies, guards),
+                         VERIFY.hix_projection(tooling, policy, dependencies, guards))
+        compiler = source.replace('compiler-nix-name = "ghc98";', 'compiler-nix-name = "ghc96";')
+        self.assertNotEqual(source, compiler)
+        self.assertNotEqual(VERIFY.hix_projection(source, policy, dependencies, guards),
+                            VERIFY.hix_projection(compiler, policy, dependencies, guards))
+        unknown = source.replace('name = "neohaskell";', 'name = "other";')
+        unknown_tooling = unknown.replace('hlint = "latest";', 'hlint = "candidate";')
+        self.assertNotEqual(VERIFY.hix_projection(unknown, policy, dependencies, guards),
+                            VERIFY.hix_projection(unknown_tooling, policy, dependencies, guards))
+        changed_dependencies = {"flake.lock": "0" * 64}
+        self.assertNotEqual(VERIFY.hix_projection(source, policy, changed_dependencies, guards),
+                            VERIFY.hix_projection(tooling, policy, changed_dependencies, guards))
+        self.assertEqual(VERIFY.rules_for_path(policy, "cabal.project"), "nix-packaging")
+        self.assertEqual(VERIFY.rules_for_path(policy, "nix/hix.nix"), "nix-packaging")
+        self.assertIsNone(VERIFY.rules_for_path(policy, "cabal.project.dev"))
+
+    def test_cross_file_structure_changes_disable_shell_exemptions(self):
+        root = POLICY.parents[1]
+        policy = json.loads((POLICY / "inputs.json").read_text())
+        flake = (root / "flake.nix").read_text()
+        hix = (root / "nix/hix.nix").read_text()
+        lock = VERIFY.digest_bytes((root / "flake.lock").read_bytes())
+        hix_dependencies = {"flake.lock": lock}
+        root_dependencies = {"flake.lock": lock, "nix/neo-package.nix": VERIFY.digest_bytes((root / "nix/neo-package.nix").read_bytes())}
+        changed_root = flake.replace('neoctl:exe:neoctl', 'neoctl:exe:other')
+        changed_hix = hix.replace('compiler-nix-name = "ghc98";', 'compiler-nix-name = "ghc96";')
+        root_guard = {"flake.nix": VERIFY.digest_bytes(VERIFY.proposed_flake_projection(changed_root, policy))}
+        hix_guard = {"nix/hix.nix": VERIFY.digest_bytes(VERIFY.proposed_hix_projection(changed_hix))}
+        self.assertNotEqual(VERIFY.hix_projection(hix, policy, hix_dependencies, root_guard),
+                            VERIFY.hix_projection(hix.replace('hlint = "latest";', 'hlint = "3.8";'), policy, hix_dependencies, root_guard))
+        self.assertNotEqual(VERIFY.flake_projection(flake, policy, root_dependencies, hix_guard),
+                            VERIFY.flake_projection(flake.replace('doctest = "latest";', 'doctest = "candidate";'), policy, root_dependencies, hix_guard))
+
+    def test_current_tooling_edit_is_independent_but_package_edit_is_not(self):
+        root = POLICY.parents[1]
+        policy = json.loads((POLICY / "inputs.json").read_text())
+        guards = {
+            "flake.nix": VERIFY.digest_bytes(VERIFY.proposed_flake_projection((root / "flake.nix").read_text(), policy)),
+            "nix/hix.nix": VERIFY.digest_bytes(VERIFY.proposed_hix_projection((root / "nix/hix.nix").read_text())),
+        }
+        source = (root / "flake.nix").read_text()
+        dependencies = {"nix/neo-package.nix": VERIFY.digest_bytes((root / "nix/neo-package.nix").read_bytes()),
+                        "flake.lock": VERIFY.digest_bytes((root / "flake.lock").read_bytes())}
+        baseline = VERIFY.flake_projection(source, policy, dependencies, guards)
+        tooling = source.replace('doctest = "latest";', 'doctest = "candidate";')
+        self.assertNotEqual(source, tooling)
+        self.assertEqual(baseline, VERIFY.flake_projection(tooling, policy, dependencies, guards))
+        package = source.replace('neoctl:exe:neoctl', 'neoctl:exe:other')
+        self.assertNotEqual(source, package)
+        self.assertNotEqual(baseline, VERIFY.flake_projection(package, policy, dependencies, guards))
+        changed_dependencies = {"nix/neo-package.nix": "0" * 64}
+        self.assertNotEqual(VERIFY.flake_projection(source, policy, changed_dependencies, guards),
+                            VERIFY.flake_projection(tooling, policy, changed_dependencies, guards))
 
 
 if __name__ == "__main__":

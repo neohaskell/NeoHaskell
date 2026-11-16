@@ -37,6 +37,7 @@
         # an independent crate (own Cargo.toml/Cargo.lock, own version; no root
         # workspace, no coupling to the NeoHaskell library outputs below).
         neo = pkgs.callPackage ./nix/neo-package.nix { };
+        neoctl = flake.packages."neoctl:exe:neoctl";
       in flake // {
         devShells = flake.devShells // {
           ci = ciProject.shell;
@@ -44,11 +45,15 @@
         legacyPackages = pkgs;
         # Merge alongside the existing hix outputs; the default NeoHaskell
         # package/app is untouched; `neo` is purely additive.
-        packages = flake.packages // { inherit neo; };
+        packages = flake.packages // { inherit neo neoctl; };
         apps = (flake.apps or { }) // {
           neo = {
             type = "app";
             program = "${neo}/bin/neo";
+          };
+          neoctl = {
+            type = "app";
+            program = "${neoctl}/bin/neoctl";
           };
         };
       });

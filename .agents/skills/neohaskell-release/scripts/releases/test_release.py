@@ -7,6 +7,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).parent))
 import engine as release
@@ -847,6 +848,23 @@ class ArchivedTargetCompatibility(unittest.TestCase):
 
 
 class Prepare(History):
+    def test_new_live_package_does_not_change_frozen_preparation(self):
+        self.note()
+        plan = release.plan_release(self.repo, "HEAD", "platform", {}, "2026-09-15", ("neo-v0.4.1", "0.4.2"))
+        with patch.dict(release.CONFIG["groups"]["platform"]["packages"], {"future/future.cabal": "future"}):
+            edits = release.expected_edits(self.repo, plan)
+        self.assertNotIn("future/future.cabal", edits)
+        self.assertIn("version: 0.4.2", edits["core/nhcore.cabal"])
+
+    def test_package_required_by_source_cannot_be_omitted(self):
+        config = json.loads(self.repo.read("HEAD", release.CONFIG_PATH))
+        config["groups"]["platform"]["packages"]["future/future.cabal"] = "future"
+        self.write(release.CONFIG_PATH, release.canonical(config))
+        self.note()
+        plan = release.plan_release(self.repo, "HEAD", "platform", {}, "2026-09-15", ("neo-v0.4.1", "0.4.2"))
+        with self.assertRaisesRegex(ValueError, "Missing version input: future/future.cabal"):
+            release.expected_edits(self.repo, plan)
+
     def test_dependency_only_action_update_needs_no_platform_release(self):
         first, baseline = self.publish_bootstrap()
         workflow = ".github/workflows/semantic-release.yml"

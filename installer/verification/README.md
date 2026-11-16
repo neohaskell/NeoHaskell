@@ -71,4 +71,14 @@ Inventory configured runners and adapters during implementation. Record unavaila
 The development-shell exemption recognizes reviewed root-flake projections and
 exact package recipes in `inputs.json`. A changed structure or recipe retains all
 root-flake tokens. Recheck package independence before approving another shape.
+The Hix configuration similarly exempts known shell-only settings only for its
+reviewed shape and exact dependency lock. Compiler and module settings remain
+installation inputs. The root Cabal project is an input because it selects the
+package graph used to build neoctl. The development-only Cabal project is not an
+installation input. Both exemptions check the other file's reviewed package
+structure. A structural change disables the opposite exemption until reviewed.
+The nhcore Cabal manifest is also a direct package-build input. Ordinary framework
+source edits remain outside this classifier. New candidate artifacts still need
+their own matching acceptance record.
+
 Changing the classifier, registry, runners, or fixtures requires fresh evidence.

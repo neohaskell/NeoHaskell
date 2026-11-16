@@ -1,0 +1,13 @@
+dist-newstyle/
+dist/
+result
+result-*
+.direnv/
+.neo/
+.env
+*.swp
+*~
+.DS_Store
+.idea/
+uploads/
+!*.cabal
