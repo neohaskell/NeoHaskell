@@ -22,6 +22,28 @@ This testbed includes:
 
 ## Running the Testbed
 
+### Read a query by ID
+
+`Testbed.Cart.Queries.CartSummary` uses the cart UUID as its stored row key. The generated `GET /queries/cart-summary/{id}` endpoint returns that row directly. The maintained `testbed/tests/queries/query-by-id.hurl` scenario creates a cart and reads its summary using the returned UUID.
+
+Create a PostgreSQL database named `neohaskell` on `localhost:5432` with user `neohaskell` and password `neohaskell`. Start the example from the repository root:
+
+```sh
+nix develop --command cabal run exe:nhtestbed --project-file=cabal.project.dev
+```
+
+Run the scenario in another terminal:
+
+```sh
+nix develop --command hurl --test testbed/tests/queries/query-by-id.hurl
+```
+
+Stop the manually started application with Ctrl+C. Give the PostgreSQL user permission to create databases, then run the complete maintained testbed with fresh databases:
+
+```sh
+nix develop --command .agents/skills/neohaskell-test/scripts/run-testbed --strict
+```
+
 ### Generate and download an owned PDF
 
 The `Testbed.GeneratedPdf` example captures the authenticated owner in its request event. Its outbound integration calls `fileAccess.createFile` through `Integration.action` and records a completion command containing the returned `FileRef`. The OAuth Event Model enables file storage and registers the request, result, query, and integration.
