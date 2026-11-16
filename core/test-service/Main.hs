@@ -6,6 +6,7 @@ import Log qualified
 import Task qualified
 
 import Service.ApplicationSpec qualified
+import Service.AuthSpec qualified
 import Service.CommandExecutor.THSpec qualified
 import Service.CommandHandlerSpec qualified
 import Service.CommandSpec qualified
@@ -74,6 +75,7 @@ main = IO.finally (Hspec.hspec serviceSpecs) (Task.runOrPanic Log.finish)
 serviceSpecs :: Hspec.Spec
 serviceSpecs = do
   Hspec.describe "Service.Application" Service.ApplicationSpec.spec
+  Hspec.describe "Service.Auth" Service.AuthSpec.spec
   Hspec.describe "Service.CommandExecutor.TH" Service.CommandExecutor.THSpec.spec
   Hspec.describe "Service.CommandHandler" Service.CommandHandlerSpec.spec
   Hspec.describe "Service.Command" Service.CommandSpec.spec

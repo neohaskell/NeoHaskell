@@ -1,5 +1,7 @@
 module Service.Transport.Web (
   WebTransport (..),
+  TrustedProxyAddress,
+  trustedProxyAddressFromText,
   AuthEnabled (..),
   OAuth2Config (..),
   FileUploadEnabled (..),
@@ -40,7 +42,9 @@ import System.IO.Error (IOError)
 import Data.Aeson qualified as Aeson
 import Data.ByteString qualified as GhcBS
 import Data.ByteString.Lazy qualified as GhcLBS
+import Data.IP qualified as IP
 import Data.List qualified as GhcList
+import Data.Word qualified as GhcWord
 import Data.Yaml qualified as Yaml
 import GHC.TypeLits qualified as GHC
 import Json qualified
@@ -53,6 +57,7 @@ import Network.HTTP.Types.Method qualified as GhcMethod
 import Network.HTTP.Types.Status qualified as HTTP
 import Network.Wai qualified as Wai
 import Network.Wai.Handler.Warp qualified as Warp
+import Network.Socket qualified as Socket
 import Record (KnownHash (..))
 import Record qualified
 import Result (Result (..))
@@ -76,6 +81,8 @@ import Service.Transport.Web.BuiltinSchemas qualified as BuiltinSchemas
 import Service.Transport.Web.Readiness (ReadinessConfig)
 import Service.Transport.Web.Readiness qualified as Readiness
 import Service.Transport.Web.SwaggerUI qualified as SwaggerUI
+import Set (Set)
+import Set qualified
 import Service.Query.Subscriber (Readiness)
 import Service.Query.Subscriber qualified as Subscriber
 import Task (Task)
@@ -83,6 +90,7 @@ import Task qualified
 import Var qualified
 import Text (Text)
 import Text qualified
+import Text.Read qualified as GhcRead
 import ToText (toText)
 import NeoQL qualified
 import Uuid qualified
@@ -154,6 +162,29 @@ data IntegrationStatus = IntegrationStatus
   }
 
 
+-- | An exact IPv4 or IPv6 address trusted to forward request metadata.
+data TrustedProxyAddress
+  = TrustedProxyIPv4 IP.IPv4
+  | TrustedProxyIPv6 IP.IPv6
+  deriving (Eq, Ord)
+
+
+-- | Parse an exact IPv4 or IPv6 literal for the Web transport's trusted proxy set.
+-- The parser rejects hostnames, CIDR ranges, brackets, and whitespace.
+-- Returns 'Result.Err' for any value other than a bare IP literal.
+trustedProxyAddressFromText :: Text -> Result Text TrustedProxyAddress
+trustedProxyAddressFromText addressText =
+  if Text.words addressText != Array.wrap addressText
+    then Result.Err "trusted proxy address must be an exact IPv4 or IPv6 literal"
+    else
+      case GhcRead.readMaybe @IP.IPv4 (Text.toLinkedList addressText) of
+        Maybe.Just ipv4 -> Result.Ok (TrustedProxyIPv4 ipv4)
+        Maybe.Nothing ->
+          case GhcRead.readMaybe @IP.IPv6 (Text.toLinkedList addressText) of
+            Maybe.Just ipv6 -> Result.Ok (TrustedProxyIPv6 ipv6)
+            Maybe.Nothing -> Result.Err "trusted proxy address must be an exact IPv4 or IPv6 literal"
+
+
 -- | HTTP/JSON transport using WAI/Warp.
 data WebTransport = WebTransport
   { port :: Int,
@@ -191,7 +222,10 @@ data WebTransport = WebTransport
     readinessConfig :: Maybe ReadinessConfig,
     -- | Readiness probe closure. Built from the live Subscriber in Application.run.
     -- When Nothing, GET /ready returns 404.
-    readinessProbe :: Maybe (Task Text Readiness)
+    readinessProbe :: Maybe (Task Text Readiness),
+    -- | Exact proxy IP addresses trusted as an immediate peer for X-Forwarded-For.
+    -- Empty by default. Parse entries with 'trustedProxyAddressFromText'.
+    trustedProxyAddresses :: Set TrustedProxyAddress
   }
 
 
@@ -204,6 +238,7 @@ deriveKnownHash "WebTransport"
 -- | Default WebTransport configuration.
 -- Port defaults to 8080.
 -- Host defaults to "*4" (IPv4 preferred, IPv6 fallback, unchanged from Warp.run).
+-- X-Forwarded-For cannot override the socket peer unless a trusted proxy is configured.
 -- Use Application.withHost "127.0.0.1" to bind IPv4 loopback only.
 -- Max body size defaults to 1MB (1048576 bytes) to prevent DoS attacks.
 -- Auth is disabled by default - use Application.withAuth to enable.
@@ -224,8 +259,142 @@ server =
       healthCheck = Just HealthCheckConfig {healthPath = "health"},
       integrationStatus = Nothing,
       readinessConfig = Nothing,
-      readinessProbe = Nothing
+      readinessProbe = Nothing,
+      trustedProxyAddresses = Set.empty
     }
+
+
+requestOrigin :: Set TrustedProxyAddress -> Wai.Request -> Auth.RequestOrigin
+requestOrigin trustedProxyAddresses request = do
+  let clientAddress = requestClientAddress trustedProxyAddresses request
+  let userAgent = requestUserAgent request
+  Auth.RequestOrigin
+    { Auth.clientAddress = clientAddress
+    , Auth.userAgent = userAgent
+    }
+
+
+requestClientAddress :: Set TrustedProxyAddress -> Wai.Request -> Maybe Text
+requestClientAddress trustedProxyAddresses request =
+  case socketPeerAddress request of
+    Maybe.Nothing -> Maybe.Nothing
+    Maybe.Just peerAddress -> do
+      let forwardedAddress =
+            if Set.contains peerAddress trustedProxyAddresses
+              then requestForwardedAddress trustedProxyAddresses request
+              else Maybe.Nothing
+      let clientAddress = Maybe.withDefault peerAddress forwardedAddress
+      Maybe.Just (trustedProxyAddressText clientAddress)
+
+
+requestUserAgent :: Wai.Request -> Maybe Text
+requestUserAgent request =
+  case uniqueHeaderValue HTTP.hUserAgent request of
+    Maybe.Nothing -> Maybe.Nothing
+    Maybe.Just headerValue -> decodeHeaderText headerValue
+
+
+requestForwardedAddress :: Set TrustedProxyAddress -> Wai.Request -> Maybe TrustedProxyAddress
+requestForwardedAddress trustedProxyAddresses request =
+  case uniqueHeaderValue "X-Forwarded-For" request of
+    Maybe.Nothing -> Maybe.Nothing
+    Maybe.Just headerValue ->
+      case parseForwardedAddresses headerValue of
+        Maybe.Nothing -> Maybe.Nothing
+        Maybe.Just addresses -> nearestUntrustedAddress trustedProxyAddresses addresses
+
+
+uniqueHeaderValue :: HTTP.HeaderName -> Wai.Request -> Maybe GhcBS.ByteString
+uniqueHeaderValue headerName request =
+  case
+    request.requestHeaders
+      |> GhcList.filter (\(name, _) -> name == headerName)
+      |> GhcList.map (\(_, value) -> value)
+  of
+    [] -> Maybe.Nothing
+    [headerValue] -> Maybe.Just headerValue
+    _ -> Maybe.Nothing
+
+
+parseForwardedAddresses :: GhcBS.ByteString -> Maybe [TrustedProxyAddress]
+parseForwardedAddresses headerValue =
+  if GhcBS.length headerValue > maxForwardedHeaderBytes
+    then Maybe.Nothing
+    else do
+      let addressValues = GhcBS.split 44 headerValue
+      if GhcList.length addressValues > maxForwardedHops
+        then Maybe.Nothing
+        else parseForwardedAddressValues addressValues
+
+
+parseForwardedAddressValues :: [GhcBS.ByteString] -> Maybe [TrustedProxyAddress]
+parseForwardedAddressValues addressValues =
+  case addressValues of
+    [] -> Maybe.Just []
+    addressValue : remainingValues -> do
+      address <- parseForwardedAddress addressValue
+      remainingAddresses <- parseForwardedAddressValues remainingValues
+      Maybe.Just (address : remainingAddresses)
+
+
+parseForwardedAddress :: GhcBS.ByteString -> Maybe TrustedProxyAddress
+parseForwardedAddress rawAddress = do
+  let addressValue = rawAddress |> GhcBS.dropWhile isHeaderWhitespace |> GhcBS.dropWhileEnd isHeaderWhitespace
+  addressText <- decodeHeaderText addressValue
+  case trustedProxyAddressFromText addressText of
+    Result.Ok address -> Maybe.Just address
+    Result.Err _ -> Maybe.Nothing
+
+
+decodeHeaderText :: GhcBS.ByteString -> Maybe Text
+decodeHeaderText headerValue =
+  headerValue
+    |> Bytes.fromLegacy
+    |> Text.fromBytesIfValid
+
+
+isHeaderWhitespace :: GhcWord.Word8 -> Bool
+isHeaderWhitespace byte = byte == 32 || byte == 9
+
+
+nearestUntrustedAddress :: Set TrustedProxyAddress -> [TrustedProxyAddress] -> Maybe TrustedProxyAddress
+nearestUntrustedAddress trustedProxyAddresses addresses =
+  findNearestUntrusted trustedProxyAddresses (GhcList.reverse addresses)
+
+
+findNearestUntrusted :: Set TrustedProxyAddress -> [TrustedProxyAddress] -> Maybe TrustedProxyAddress
+findNearestUntrusted trustedProxyAddresses addresses =
+  case addresses of
+    [] -> Maybe.Nothing
+    address : remainingAddresses ->
+      if Set.contains address trustedProxyAddresses
+        then findNearestUntrusted trustedProxyAddresses remainingAddresses
+        else Maybe.Just address
+
+
+socketPeerAddress :: Wai.Request -> Maybe TrustedProxyAddress
+socketPeerAddress request =
+  case Wai.remoteHost request of
+    Socket.SockAddrInet _ hostAddress ->
+      Maybe.Just (TrustedProxyIPv4 (IP.fromHostAddress hostAddress))
+    Socket.SockAddrInet6 _ _ hostAddress _ ->
+      Maybe.Just (TrustedProxyIPv6 (IP.fromHostAddress6 hostAddress))
+    _ -> Maybe.Nothing
+
+
+trustedProxyAddressText :: TrustedProxyAddress -> Text
+trustedProxyAddressText proxyAddress =
+  case proxyAddress of
+    TrustedProxyIPv4 ipv4 -> show ipv4 |> Text.fromLinkedList
+    TrustedProxyIPv6 ipv6 -> show ipv6 |> Text.fromLinkedList
+
+
+maxForwardedHeaderBytes :: Int
+maxForwardedHeaderBytes = 4096
+
+
+maxForwardedHops :: Int
+maxForwardedHops = 32
 
 
 -- | Convert a 'WebTransport' host setting into a Warp 'Warp.HostPreference'.
@@ -785,20 +954,24 @@ instance Transport WebTransport where
                 routeResultState <- Var.new CommandRouteAuthenticationPending
                 let processCommandWithContext :: RequestContext -> Task Text Wai.ResponseReceived
                     processCommandWithContext requestContext = do
-                      Var.set (CommandRouteBodyRequest requestContext CommandRequestBodyInProgress) routeResultState
+                      let requestContextWithOrigin =
+                            requestContext
+                              { Auth.origin = Just (requestOrigin webTransport.trustedProxyAddresses request)
+                              }
+                      Var.set (CommandRouteBodyRequest requestContextWithOrigin CommandRequestBodyInProgress) routeResultState
                       CommandResultReceipt.setRelatedUserSub
                         requestId
-                        (requestContext.user |> Maybe.map (\claims -> claims.sub))
+                        (requestContextWithOrigin.user |> Maybe.map (\claims -> claims.sub))
                       safeBodyResult <- readBodyWithLimit maxBodySize request |> Task.asResultSafe @Text
                       bodyResult <- case safeBodyResult of
                         Result.Err _ -> do
-                          Var.set (CommandRouteBodyRequest requestContext CommandRequestBodyFailed) routeResultState
+                          Var.set (CommandRouteBodyRequest requestContextWithOrigin CommandRequestBodyFailed) routeResultState
                           Task.yield CommandRequestBodyReadFailed
                         Result.Ok (Result.Err errorMessage) -> do
-                          Var.set (CommandRouteBodyRequest requestContext CommandRequestBodyTooLarge) routeResultState
+                          Var.set (CommandRouteBodyRequest requestContextWithOrigin CommandRequestBodyTooLarge) routeResultState
                           Task.yield (CommandRequestBodyRejected errorMessage)
                         Result.Ok (Result.Ok bodyBytes) -> do
-                          Var.set (CommandRouteBodyRequest requestContext CommandRequestBodySucceeded) routeResultState
+                          Var.set (CommandRouteBodyRequest requestContextWithOrigin CommandRequestBodySucceeded) routeResultState
                           Task.yield (CommandRequestBodyBytes bodyBytes)
                       case bodyResult of
                         CommandRequestBodyRejected errorMessage -> do
@@ -807,9 +980,9 @@ instance Transport WebTransport where
                           internalError "Internal server error"
                         CommandRequestBodyBytes bodyBytes -> do
                           respondVar <- ConcurrentVar.new
-                          Var.set (CommandRouteHandlerOwnsResult requestContext) routeResultState
+                          Var.set (CommandRouteHandlerOwnsResult requestContextWithOrigin) routeResultState
                           handler
-                            requestContext
+                            requestContextWithOrigin
                             bodyBytes
                             ( \(commandResponse, responseBytes) -> do
                                 let httpStatus = commandResponseToHttpStatus commandResponse

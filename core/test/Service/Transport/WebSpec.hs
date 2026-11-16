@@ -6,33 +6,42 @@ import Auth.Middleware (extractToken)
 import Bytes qualified
 import ConcurrentVar qualified
 import Core
+import Data.ByteString qualified as GhcBS
 import Data.Text.Encoding qualified as GhcTextEncoding
+import Data.Word qualified as GhcWord
 import Json qualified
 import LinkedList qualified
 import Map qualified
 import Network.HTTP.Types.Header qualified as HTTP
+import Network.HTTP.Types.Method qualified as HTTPMethod
 import Network.HTTP.Types.Status qualified as HTTPStatus
+import Network.Socket qualified as Socket
 import Network.Wai qualified as Wai
 import Network.Wai.Internal qualified as WaiInternal
 import Network.Wai.Test qualified as WaiTest
+import Result qualified
 import Service.Application.Transports qualified as Transports
 import Service.AccessControl (AccessError (..))
 import Service.AccessControl qualified as Auth
+import Service.Auth (RequestContext (..), RequestOrigin (..))
 import Service.Query.Core qualified
 import Service.Query.Endpoint qualified as Endpoint
 import Service.Query.Pagination (QueryPageRequest (..), absoluteMaxLimit)
 import Service.Query.Subscriber qualified as Subscriber
 import Service.QueryObjectStore.Core (Error (..), QueryObjectStore (..))
 import Service.QueryObjectStore.InMemory qualified as InMemoryStore
-import Service.Transport (EndpointSchema (..), QueryByIdEndpoint (..), QueryByIdEndpointHandler)
+import Service.Transport (EndpointHandler, EndpointSchema (..), QueryByIdEndpoint (..), QueryByIdEndpointHandler)
 import Service.Transport qualified as Transport
 import Service.Transport.Web qualified as Web
+import Service.Response qualified as Response
+import Set qualified as Set
 import Task qualified
 import Test
 import Test.Auth.Jwt.Core qualified as Jwt
 import Text qualified
 import ToText qualified
 import Uuid qualified
+import Var qualified
 
 
 -- ============================================================================
@@ -143,6 +152,112 @@ spec = do
       failedStatus |> shouldBe HTTPStatus.status503
       readyStatus |> shouldBe HTTPStatus.status200
 
+  describe "Web request origin" do
+    it "defaults to no trusted proxies and parses only exact IP literals" \_ -> do
+      Web.server.trustedProxyAddresses |> Set.isEmpty |> shouldBe True
+      case Web.trustedProxyAddressFromText "203.0.113.9" of
+        Result.Ok _ -> pass
+        Result.Err errorMessage -> fail errorMessage
+      case Web.trustedProxyAddressFromText "2001:db8::9" of
+        Result.Ok _ -> pass
+        Result.Err errorMessage -> fail errorMessage
+      case Web.trustedProxyAddressFromText "proxy.example" of
+        Result.Err _ -> pass
+        Result.Ok _ -> fail "Expected a hostname to fail exact proxy parsing"
+      case Web.trustedProxyAddressFromText "203.0.113.9/32" of
+        Result.Err _ -> pass
+        Result.Ok _ -> fail "Expected a CIDR range to fail exact proxy parsing"
+
+    it "uses the socket peer when no proxy is trusted" \_ -> do
+      let request = originRequest [("X-Forwarded-For", headerValue "198.51.100.10")]
+      requestContext <- runOriginProbe Web.server request
+      requestContext.origin
+        |> shouldBe (Just RequestOrigin {clientAddress = Just "127.0.0.1", userAgent = Nothing})
+
+    it "selects the nearest untrusted X-Forwarded-For address through trusted proxies" \_ -> do
+      immediateProxy <- trustedProxyAddressForTest "127.0.0.1"
+      innerProxy <- trustedProxyAddressForTest "127.0.0.2"
+      intermediateAddress <- trustedProxyAddressForTest "192.0.2.50"
+      let trustedProxyAddresses = [immediateProxy, innerProxy] |> Set.fromArray
+      Set.contains intermediateAddress trustedProxyAddresses |> shouldBe False
+      let transport = Web.server {Web.trustedProxyAddresses = trustedProxyAddresses}
+      let intermediateRequest = originRequest [("X-Forwarded-For", headerValue "192.0.2.50")]
+      let request =
+            originRequest
+              [ ("X-Forwarded-For", headerValue "198.51.100.10, 192.0.2.50, 127.0.0.2")
+              , (HTTP.hUserAgent, headerValue "origin-test-agent")
+              ]
+      intermediateContext <- runOriginProbe transport intermediateRequest
+      requestContext <- runOriginProbe transport request
+      intermediateContext.origin
+        |> shouldBe (Just RequestOrigin {clientAddress = Just "192.0.2.50", userAgent = Nothing})
+      requestContext.origin
+        |> shouldBe
+          ( Just
+              RequestOrigin
+                { clientAddress = Just "192.0.2.50"
+                , userAgent = Just "origin-test-agent"
+                }
+          )
+
+    it "ignores X-Forwarded-For from an untrusted socket peer" \_ -> do
+      trustedProxy <- trustedProxyAddressForTest "127.0.0.1"
+      let transport = Web.server {Web.trustedProxyAddresses = Set.singleton trustedProxy}
+      let request =
+            ( originRequest
+                [ ("X-Forwarded-For", headerValue "198.51.100.10")
+                , (HTTP.hUserAgent, headerValue "independent-user-agent")
+                ]
+            )
+              { Wai.remoteHost = socketAddress (192, 0, 2, 9)
+              }
+      requestContext <- runOriginProbe transport request
+      requestContext.origin
+        |> shouldBe (Just RequestOrigin {clientAddress = Just "192.0.2.9", userAgent = Just "independent-user-agent"})
+
+    it "falls back to the socket peer for malformed, duplicate, and oversized forwarding input" \_ -> do
+      trustedProxy <- trustedProxyAddressForTest "127.0.0.1"
+      let transport = Web.server {Web.trustedProxyAddresses = Set.singleton trustedProxy}
+      let malformedRequest = originRequest [("X-Forwarded-For", headerValue "198.51.100.10, invalid")]
+      let duplicateRequest =
+            originRequest
+              [ ("X-Forwarded-For", headerValue "198.51.100.10")
+              , ("X-Forwarded-For", headerValue "198.51.100.11")
+              , (HTTP.hUserAgent, headerValue "first-agent")
+              , (HTTP.hUserAgent, headerValue "second-agent")
+              ]
+      let oversizedRequest =
+            originRequest [("X-Forwarded-For", GhcBS.replicate 4097 120)]
+      malformedContext <- runOriginProbe transport malformedRequest
+      duplicateContext <- runOriginProbe transport duplicateRequest
+      oversizedContext <- runOriginProbe transport oversizedRequest
+      malformedContext.origin |> shouldBe (Just RequestOrigin {clientAddress = Just "127.0.0.1", userAgent = Nothing})
+      duplicateContext.origin |> shouldBe (Just RequestOrigin {clientAddress = Just "127.0.0.1", userAgent = Nothing})
+      oversizedContext.origin |> shouldBe (Just RequestOrigin {clientAddress = Just "127.0.0.1", userAgent = Nothing})
+
+    it "falls back to the socket peer for non-UTF-8 forwarding input" \_ -> do
+      trustedProxy <- trustedProxyAddressForTest "127.0.0.1"
+      let transport = Web.server {Web.trustedProxyAddresses = Set.singleton trustedProxy}
+      let forwardedHeader = GhcBS.append (headerValue "198.51.100.10, ") invalidUtf8HeaderValue
+      let request = originRequest [("X-Forwarded-For", forwardedHeader)]
+      requestContext <- runOriginProbe transport request
+      requestContext.origin
+        |> shouldBe (Just RequestOrigin {clientAddress = Just "127.0.0.1", userAgent = Nothing})
+
+    it "omits a non-UTF-8 User-Agent without failing the command" \_ -> do
+      let request = originRequest [(HTTP.hUserAgent, invalidUtf8HeaderValue)]
+      requestContext <- runOriginProbe Web.server request
+      requestContext.origin
+        |> shouldBe (Just RequestOrigin {clientAddress = Just "127.0.0.1", userAgent = Nothing})
+
+    it "falls back to the socket peer when the forwarding chain exceeds the hop limit" \_ -> do
+      trustedProxy <- trustedProxyAddressForTest "127.0.0.1"
+      let transport = Web.server {Web.trustedProxyAddresses = Set.singleton trustedProxy}
+      let forwardedHeader = forwardedChainForTest 32 "198.51.100.10"
+      let request = originRequest [("X-Forwarded-For", forwardedHeader)]
+      requestContext <- runOriginProbe transport request
+      requestContext.origin
+        |> shouldBe (Just RequestOrigin {clientAddress = Just "127.0.0.1", userAgent = Nothing})
   describe "query by ID routes" do
     it "returns one anonymous query object by its UUID and ignores collection parameters" \_ -> do
       store <- InMemoryStore.new @WebQueryByIdFixture |> Task.mapError toText
@@ -564,3 +679,75 @@ errorToText :: Error -> Text
 errorToText err = case err of
   Service.QueryObjectStore.Core.StorageError msg -> msg
   SerializationError msg -> msg
+
+
+trustedProxyAddressForTest :: Text -> Task.Task Text Web.TrustedProxyAddress
+trustedProxyAddressForTest addressText =
+  case Web.trustedProxyAddressFromText addressText of
+    Result.Ok address -> Task.yield address
+    Result.Err errorMessage -> Task.throw errorMessage
+
+
+forwardedChainForTest :: Int -> GhcBS.ByteString -> GhcBS.ByteString
+forwardedChainForTest remainingHops address =
+  if remainingHops == 0
+    then address
+    else GhcBS.append address (GhcBS.append ", " (forwardedChainForTest (remainingHops - 1) address))
+
+
+runOriginProbe :: Web.WebTransport -> Wai.Request -> Task.Task Text RequestContext
+runOriginProbe webTransport request = do
+  observedContext <- Var.new Nothing
+  let application = originProbeApplication webTransport observedContext
+  _ <- WaiTest.runSession (WaiTest.request request) application |> Task.fromIO
+  maybeContext <- Var.get observedContext
+  case maybeContext of
+    Nothing -> Task.throw "Web command handler did not receive a request context"
+    Just requestContext -> Task.yield requestContext
+
+
+originProbeApplication :: Web.WebTransport -> Var.Var (Maybe RequestContext) -> Wai.Application
+originProbeApplication webTransport observedContext request respond = do
+  let endpoints =
+        Transport.Endpoints
+          { Transport.transport = webTransport
+          , Transport.commandEndpoints = Map.fromArray [("origin-probe", originProbeHandler observedContext)]
+          , Transport.queryEndpoints = Map.empty
+          , Transport.queryByIdEndpoints = Map.empty
+          , Transport.commandSchemas = Map.empty
+          , Transport.querySchemas = Map.empty
+          }
+  let runnableTransport = Transport.assembleTransport endpoints
+  runnableTransport request (\response -> Task.fromIO (respond response))
+    |> Task.runOrPanic
+
+
+originProbeHandler :: Var.Var (Maybe RequestContext) -> EndpointHandler
+originProbeHandler observedContext requestContext _body respond = do
+  Var.set (Just requestContext) observedContext
+  let commandResponse = Response.Accepted {entityId = "origin-probe"}
+  let responseBody = Json.encodeText commandResponse |> Text.toBytes
+  respond (commandResponse, responseBody)
+
+
+originRequest :: [(HTTP.HeaderName, GhcBS.ByteString)] -> Wai.Request
+originRequest headers =
+  Wai.defaultRequest
+    { Wai.requestMethod = HTTPMethod.methodPost
+    , Wai.rawPathInfo = "/commands/origin-probe"
+    , Wai.pathInfo = ["commands", "origin-probe"]
+    , Wai.remoteHost = socketAddress (127, 0, 0, 1)
+    , Wai.requestHeaders = headers
+    }
+
+
+socketAddress :: (GhcWord.Word8, GhcWord.Word8, GhcWord.Word8, GhcWord.Word8) -> Socket.SockAddr
+socketAddress octets = Socket.SockAddrInet 12345 (Socket.tupleToHostAddress octets)
+
+
+headerValue :: Text -> GhcBS.ByteString
+headerValue headerText = headerText |> Text.toBytes |> Bytes.unwrap
+
+
+invalidUtf8HeaderValue :: GhcBS.ByteString
+invalidUtf8HeaderValue = GhcBS.pack [255]

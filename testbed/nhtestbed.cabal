@@ -57,6 +57,7 @@ library
   exposed-modules:
     Testbed.EventModel
     Testbed.Config
+    Testbed.RequestOrigin
     Testbed.Cart.Commands.AddItem
     Testbed.Cart.Commands.AddTwoItems
     Testbed.Cart.Commands.ConfirmCart

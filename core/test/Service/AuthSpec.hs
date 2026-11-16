@@ -23,6 +23,26 @@ spec = do
         ctx.files |> shouldBe Map.empty
         ctx.requestId |> shouldBe Uuid.nil
 
+      it "leaves origin absent in non-Web contexts" \_ -> do
+        let empty = Auth.emptyContext
+        anonymous <- Auth.anonymousContext
+        authenticated <- Auth.authenticatedContext (testUser "user-123")
+        trusted <- Auth.trustedContext
+        empty.origin |> shouldBe Nothing
+        anonymous.origin |> shouldBe Nothing
+        authenticated.origin |> shouldBe Nothing
+        trusted.origin |> shouldBe Nothing
+
+      it "preserves origin when files are added" \_ -> do
+        let requestOrigin =
+              Auth.RequestOrigin
+                { Auth.clientAddress = Just "192.0.2.9"
+                , Auth.userAgent = Just "test-agent"
+                }
+        let ctx = Auth.emptyContext {origin = Just requestOrigin}
+        let updated = Auth.withFiles Map.empty ctx
+        updated.origin |> shouldBe (Just requestOrigin)
+
       it "timestamp field is exactly DateTime.fromEpochSeconds 0" \_ -> do
         -- Edge case: the timestamp value is Unix epoch (1970-01-01T00:00:00Z).
         -- What this case proves: emptyContext.timestamp is the epoch constant, not an arbitrary time.
@@ -137,4 +157,5 @@ testHelperAuthContext userId =
     , requestId = Uuid.nil
     , timestamp = DateTime.fromEpochSeconds 0
     , trustedBypass = False
+    , origin = Nothing
     }
