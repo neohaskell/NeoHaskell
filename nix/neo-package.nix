@@ -1,9 +1,6 @@
-# Canonical Nix packaging for the Rust Neo CLI that lives at `neo/`.
+# Canonical Nix packaging for the Rust commands under `neo/`.
 #
-# This is the ONE source of truth for building `neo` as a first-class monorepo
-# output. The repo-root `flake.nix` calls it to expose `packages.neo` and
-# `apps.neo`; a component CI workflow (`.github/workflows/neo-ci.yml`) builds it
-# on Linux and macOS.
+# Shared filtering and vendoring keep both commands on the same Rust source tree.
 #
 # Cargo boundaries:
 #   - `src` stays scoped to `neo/`. The nested lifecycle package remains inside
@@ -37,10 +34,13 @@
 , git
 , nix
 , bash
+, command ? "neo"
 }:
 
 let
   cargoToml = lib.importTOML ../neo/Cargo.toml;
+  isInstaller = command == "neo-installer";
+  cargoPackage = if isInstaller then "neo-lifecycle" else "neo";
 
   # Only the crate sources. Drop build outputs and scratch dirs so the hash is
   # stable and the sandbox copy is small. `assets/ide/dist/` is KEPT on purpose
@@ -57,8 +57,9 @@ let
       ]);
   };
 in
+assert builtins.elem command [ "neo" "neo-installer" ];
 rustPlatform.buildRustPackage {
-  pname = "neo";
+  pname = command;
   version = cargoToml.package.version;
   inherit src;
 
@@ -82,17 +83,19 @@ rustPlatform.buildRustPackage {
       "$NIX_BUILD_TOP/.cargo/config.toml"
   '';
 
-  cargoBuildFlags = [ "--package" "neo" "--bin" "neo" ];
+  cargoBuildFlags = [ "--package" cargoPackage "--bin" command ];
 
   postInstall = ''
-    test -x "$out/bin/neo"
+    test -x "$out/bin/${command}"
     for installed in "$out/bin/"*; do
-      test "$installed" = "$out/bin/neo"
+      test "$installed" = "$out/bin/${command}"
     done
   '';
 
   doCheck = true;
-  cargoTestFlags = [ "--workspace" "--lib" "--bins" ];
+  cargoTestFlags =
+    (if isInstaller then [ "--package" cargoPackage ] else [ "--workspace" ])
+    ++ [ "--lib" "--bins" ];
 
   # In-crate tests need Git, Nix, and a POSIX shell for immutable fixture
   # commands. None of them touch the network (`test_dispatch_new` sets
@@ -112,8 +115,10 @@ rustPlatform.buildRustPackage {
   checkFlags = [ "--skip=ide::methods::heal_event_model" ];
 
   meta = {
-    description = "The NeoHaskell CLI (scaffold, build, run and test NeoHaskell projects)";
-    mainProgram = "neo";
+    description = if isInstaller
+      then "The native NeoHaskell installer"
+      else "The NeoHaskell CLI (scaffold, build, run and test NeoHaskell projects)";
+    mainProgram = command;
     license = lib.licenses.mit;
   };
 }

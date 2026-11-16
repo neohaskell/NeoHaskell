@@ -76,9 +76,9 @@
     "description": "Exclude development-shell bindings only for an explicitly reviewed root projection and exact package recipe. Unknown structures or changed package dependencies retain all root tokens. Revalidate independence before updating approved shapes.",
     "independent_shapes": [
       {
-        "projection_sha256": "9895e74304aa35fa7e14b413830f77ea2619c4f9a6a7296d0a5497fc6d0510b4",
+        "projection_sha256": "2fd04e0fe4a8b3d4fc976d9b730c45d36736f8b7e3099e9dedd183b136472ac7",
         "dependencies": {
-          "nix/neo-package.nix": "bbdaaee83c1a7be5528ab4f9bccbb808aba3d054ba2f1cd09cd1db3cc8ed3761",
+          "nix/neo-package.nix": "8fc783f2c196e06f40f9173075cb677e5e386f2c240681edf78926def9ddafb9",
           "flake.lock": "1effc4277140756e9669e68a4585ae4694e5dabe6bba3d586cf2128a5adf3621"
         },
         "projected_dependencies": {
@@ -97,7 +97,7 @@
           "flake.lock": "1effc4277140756e9669e68a4585ae4694e5dabe6bba3d586cf2128a5adf3621"
         },
         "projected_dependencies": {
-          "flake.nix": "9895e74304aa35fa7e14b413830f77ea2619c4f9a6a7296d0a5497fc6d0510b4"
+          "flake.nix": "2fd04e0fe4a8b3d4fc976d9b730c45d36736f8b7e3099e9dedd183b136472ac7"
         }
       }
     ]

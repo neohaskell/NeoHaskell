@@ -32,20 +32,34 @@
           };
         });
 
-        # The Rust Neo CLI (neo/) exposed as a first-class monorepo output.
-        # Defined in nix/neo-package.nix as the single source of truth; it stays
-        # an independent crate (own Cargo.toml/Cargo.lock, own version; no root
-        # workspace, no coupling to the NeoHaskell library outputs below).
         neo = pkgs.callPackage ./nix/neo-package.nix { };
         neoctl = flake.packages."neoctl:exe:neoctl";
+        neo-installer = pkgs.callPackage ./nix/neo-package.nix {
+          command = "neo-installer";
+        };
+        neo-pair = pkgs.symlinkJoin {
+          name = "neo-pair-${neo.version}";
+          paths = [ neo neoctl ];
+          postBuild = ''
+            test -x "$out/bin/neo"
+            test -x "$out/bin/neoctl"
+            for installed in "$out/bin/"*; do
+              case "$installed" in
+                "$out/bin/neo"|"$out/bin/neoctl") ;;
+                *) exit 1 ;;
+              esac
+            done
+          '';
+        };
       in flake // {
         devShells = flake.devShells // {
           ci = ciProject.shell;
         };
         legacyPackages = pkgs;
-        # Merge alongside the existing hix outputs; the default NeoHaskell
-        # package/app is untouched; `neo` is purely additive.
-        packages = flake.packages // { inherit neo neoctl; };
+        packages = flake.packages // { inherit neo neoctl; }
+          // pkgs.lib.optionalAttrs (system != "x86_64-darwin") {
+            inherit neo-installer neo-pair;
+          };
         apps = (flake.apps or { }) // {
           neo = {
             type = "app";
@@ -54,6 +68,11 @@
           neoctl = {
             type = "app";
             program = "${neoctl}/bin/neoctl";
+          };
+        } // pkgs.lib.optionalAttrs (system != "x86_64-darwin") {
+          neo-installer = {
+            type = "app";
+            program = "${neo-installer}/bin/neo-installer";
           };
         };
       });
