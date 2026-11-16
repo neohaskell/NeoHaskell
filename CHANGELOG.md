@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.17.2 — 2026-11-16
+
+### Added
+
+- **Framework**: Read one query row with `GET /queries/{query-name}/{id}` using the UUID chosen by the query's `queryId`. A successful read returns the row as JSON. Missing rows and rows hidden by `canView` return the same HTTP 404 response. Query access checks still run before storage access. Existing query declarations need no changes, and collection endpoints remain available. ([change](https://github.com/neohaskell/NeoHaskell/commit/adf0b6c1332c9683c6c5e52fa865e299e088c95d))
+
+[Compare changes](https://github.com/neohaskell/NeoHaskell/compare/neo-v0.17.1...neo-v0.17.2)
+
 ## 0.17.1 — 2026-11-06
 
 ### Added
