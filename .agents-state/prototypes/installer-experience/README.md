@@ -28,9 +28,15 @@ Nick chose Dashboard after trying the alternatives, and confirmed that no furthe
 
 The installer shows one short review before system changes. Scripts require explicit noninteractive consent. Normal output stays brief with technical logs behind Details. Errors show their cause, partial state and recovery action. Motion stays within the active task. A still mode and equivalent plain output remain available. Byte progress requires measurable data. An overall percentage must not be invented.
 
-Charm.land is the visual quality reference. Python and Rich are prototype tools, not selected production dependencies. Ratatui and Charm libraries remain implementation options. Distribution, update and uninstall mechanisms belong to the next decision. The retry fixture does not settle resumability or rollback semantics.
+Charm.land is the visual quality reference. The production installer must use Rust. Python and Rich are disposable prototype tools only. The Rust terminal library remains an implementation choice. Distribution, update and uninstall mechanisms belong to the next decision. Native Windows must direct the user into the supported WSL2 route. The exact entrypoint and routing mechanism belong to that decision. The retry fixture does not settle resumability or rollback semantics.
 
 The prototype applies the accepted official-Nix and existing-Nix coexistence requirements. It does not test them. The independent comment review found no Python comments and requested no changes.
+
+## Verification requirement added by Nick
+
+Provide a maintained verification script that runs when installer changes affect the installation flow, not on every pull request. It must check real behavior on Linux x86-64, Linux ARM64, macOS Apple silicon, and WSL2 on both Linux architectures. It must also verify that native Windows directs the user to WSL2. Cross-compilation alone does not establish these behaviors.
+
+The final acceptance decision must define the change gate, relevant installer inputs, runner coverage, clean-client evidence and failure cases. The existing platform resolution still owns Nix prerequisites and cache-use obligations.
 
 ## Decision records
 
