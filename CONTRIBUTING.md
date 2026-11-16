@@ -32,3 +32,14 @@ runner image on first use. Run Haskell suites directly
 through the host Nix shell using the [test instructions](.agents/skills/neohaskell-test/SKILL.md).
 Local jobs do not prove native macOS runner behavior, GitHub permissions, or cache
 downloads on a fresh hosted runner. Keep those checks on GitHub Actions.
+
+## Verify installer changes locally
+
+The installer verification entrypoint is `python3 installer/verification/verify.py`.
+The maintained [verification guide](installer/verification/README.md) describes
+input classification, local evidence, and repository hook setup. The full
+installer matrix runs on suitable local environments. It does not run in hosted CI.
+
+Fixture checks prove the verifier and Git gate. They do not establish installer
+compatibility. Missing native Windows or macOS coverage remains incomplete.
+The existing generated-project and component checks still apply.

@@ -1,0 +1,82 @@
+{
+  "schema_version": 1,
+  "rules": [
+    {
+      "family": "installer-product",
+      "paths": [
+        "installer/**"
+      ]
+    },
+    {
+      "family": "installer-rust",
+      "paths": [
+        "neo/src/installer/**",
+        "neo/src/commands/update.rs",
+        "neo/src/commands/uninstall.rs",
+        "neo/src/commands/rollback.rs",
+        "neo/src/cli.rs",
+        "neo/src/app.rs",
+        "neo/src/main.rs",
+        "neo/src/prereqs.rs",
+        "neo/src/config.rs",
+        "neo/src/output.rs",
+        "neo/src/theme.rs",
+        "neo/src/tui/**",
+        "neo/Cargo.toml",
+        "neo/Cargo.lock"
+      ]
+    },
+    {
+      "family": "neoctl-candidate",
+      "paths": [
+        "neoctl/**",
+        "nix/neoctl-package.nix"
+      ]
+    },
+    {
+      "family": "nix-packaging",
+      "paths": [
+        "flake.nix",
+        "flake.lock",
+        "nix/neo-package.nix",
+        "neo/flake.nix",
+        "neo/flake.lock"
+      ]
+    },
+    {
+      "family": "embedded-candidate",
+      "paths": [
+        "neo/starter/**",
+        "neo/assets/installer/**"
+      ]
+    },
+    {
+      "family": "release-and-cache",
+      "paths": [
+        ".github/workflows/semantic-release.yml",
+        ".github/workflows/neo-release.yml",
+        ".github/workflows/cachix-push.yml",
+        ".agents/skills/neohaskell-release/references/config.json",
+        ".agents/skills/neohaskell-release/references/required-checks.json",
+        ".agents/skills/neohaskell-release/scripts/neo-release",
+        ".agents/skills/neohaskell-release/scripts/semantic-release",
+        ".agents/skills/neohaskell-release/scripts/cache-prime",
+        ".agents/skills/neohaskell-release/scripts/releases/**"
+      ]
+    }
+  ],
+  "flake_projection": {
+    "path": "flake.nix",
+    "excluded_output_attribute": "devShells",
+    "excluded_tooling_binding": "ciProject",
+    "description": "Exclude development-shell bindings only for an explicitly reviewed root projection and exact package recipe. Unknown structures or changed package dependencies retain all root tokens. Revalidate independence before updating approved shapes.",
+    "independent_shapes": [
+      {
+        "projection_sha256": "7021f1a0de821155397b5fa7b40d4bc06b2997e0db1c05eaada1b86dd5010d1d",
+        "dependencies": {
+          "nix/neo-package.nix": "4a6d443430d789d303dd9f59f02eafd20946059e19a96d5e1e7106ef1603036c"
+        }
+      }
+    ]
+  }
+}
