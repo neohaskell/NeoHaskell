@@ -289,8 +289,9 @@ requestClientAddress trustedProxyAddresses request =
 
 requestUserAgent :: Wai.Request -> Maybe Text
 requestUserAgent request =
-  uniqueHeaderValue HTTP.hUserAgent request
-    |> Maybe.map (\headerValue -> Bytes.fromLegacy headerValue |> Text.fromBytes)
+  case uniqueHeaderValue HTTP.hUserAgent request of
+    Maybe.Nothing -> Maybe.Nothing
+    Maybe.Just headerValue -> decodeHeaderText headerValue
 
 
 requestForwardedAddress :: Set TrustedProxyAddress -> Wai.Request -> Maybe TrustedProxyAddress
@@ -339,10 +340,17 @@ parseForwardedAddressValues addressValues =
 parseForwardedAddress :: GhcBS.ByteString -> Maybe TrustedProxyAddress
 parseForwardedAddress rawAddress = do
   let addressValue = rawAddress |> GhcBS.dropWhile isHeaderWhitespace |> GhcBS.dropWhileEnd isHeaderWhitespace
-  let addressText = Bytes.fromLegacy addressValue |> Text.fromBytes
+  addressText <- decodeHeaderText addressValue
   case trustedProxyAddressFromText addressText of
     Result.Ok address -> Maybe.Just address
     Result.Err _ -> Maybe.Nothing
+
+
+decodeHeaderText :: GhcBS.ByteString -> Maybe Text
+decodeHeaderText headerValue =
+  headerValue
+    |> Bytes.fromLegacy
+    |> Text.fromBytesIfValid
 
 
 isHeaderWhitespace :: GhcWord.Word8 -> Bool

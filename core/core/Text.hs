@@ -78,6 +78,7 @@ module Text (
   -- * Bytes Conversions
   toBytes,
   fromBytes,
+  fromBytesIfValid,
   convert,
 
   -- * Casing Conversions
@@ -112,6 +113,7 @@ import Data.Text.Manipulate qualified as Manipulate
 import Language.Haskell.TH.Quote qualified as Quote
 import LinkedList (LinkedList)
 import Maybe (Maybe)
+import Result qualified
 import Text.Read qualified
 import Prelude qualified
 
@@ -629,6 +631,15 @@ fromBytes :: Bytes -> Text
 fromBytes (Bytes.INTERNAL_CORE_BYTES_CONSTRUCTOR bytes) =
   bytes
     |> Data.Text.Encoding.decodeUtf8
+
+
+-- | Decode UTF-8 bytes when the byte sequence is valid.
+-- Returns 'Nothing' for invalid UTF-8.
+fromBytesIfValid :: Bytes -> Maybe Text
+fromBytesIfValid (Bytes.INTERNAL_CORE_BYTES_CONSTRUCTOR bytes) =
+  Data.Text.Encoding.decodeUtf8' bytes
+    |> Result.fromEither
+    |> Result.toMaybe
 
 
 convert :: (IsString s) => Text -> s

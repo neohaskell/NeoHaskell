@@ -122,6 +122,12 @@ spec = do
         Result.Err _ -> pass
         Result.Ok _ -> fail "Expected a CIDR range to fail exact proxy parsing"
 
+    it "uses the socket peer when no proxy is trusted" \_ -> do
+      let request = originRequest [("X-Forwarded-For", headerValue "198.51.100.10")]
+      requestContext <- runOriginProbe Web.server request
+      requestContext.origin
+        |> shouldBe (Just RequestOrigin {clientAddress = Just "127.0.0.1", userAgent = Nothing})
+
     it "selects the nearest untrusted X-Forwarded-For address through trusted proxies" \_ -> do
       immediateProxy <- trustedProxyAddressForTest "127.0.0.1"
       innerProxy <- trustedProxyAddressForTest "127.0.0.2"
@@ -182,6 +188,21 @@ spec = do
       malformedContext.origin |> shouldBe (Just RequestOrigin {clientAddress = Just "127.0.0.1", userAgent = Nothing})
       duplicateContext.origin |> shouldBe (Just RequestOrigin {clientAddress = Just "127.0.0.1", userAgent = Nothing})
       oversizedContext.origin |> shouldBe (Just RequestOrigin {clientAddress = Just "127.0.0.1", userAgent = Nothing})
+
+    it "falls back to the socket peer for non-UTF-8 forwarding input" \_ -> do
+      trustedProxy <- trustedProxyAddressForTest "127.0.0.1"
+      let transport = Web.server {Web.trustedProxyAddresses = Set.singleton trustedProxy}
+      let forwardedHeader = GhcBS.append (headerValue "198.51.100.10, ") invalidUtf8HeaderValue
+      let request = originRequest [("X-Forwarded-For", forwardedHeader)]
+      requestContext <- runOriginProbe transport request
+      requestContext.origin
+        |> shouldBe (Just RequestOrigin {clientAddress = Just "127.0.0.1", userAgent = Nothing})
+
+    it "omits a non-UTF-8 User-Agent without failing the command" \_ -> do
+      let request = originRequest [(HTTP.hUserAgent, invalidUtf8HeaderValue)]
+      requestContext <- runOriginProbe Web.server request
+      requestContext.origin
+        |> shouldBe (Just RequestOrigin {clientAddress = Just "127.0.0.1", userAgent = Nothing})
 
     it "falls back to the socket peer when the forwarding chain exceeds the hop limit" \_ -> do
       trustedProxy <- trustedProxyAddressForTest "127.0.0.1"
@@ -412,3 +433,7 @@ socketAddress octets = Socket.SockAddrInet 12345 (Socket.tupleToHostAddress octe
 
 headerValue :: Text -> GhcBS.ByteString
 headerValue headerText = headerText |> Text.toBytes |> Bytes.unwrap
+
+
+invalidUtf8HeaderValue :: GhcBS.ByteString
+invalidUtf8HeaderValue = GhcBS.pack [255]

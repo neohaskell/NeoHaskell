@@ -7,7 +7,7 @@ category: Breaking changes
 
 ## Summary
 
-Web commands can read the socket client address and User-Agent through `RequestContext.origin`. Applications that build a `WebTransport` record directly must add the new trusted proxy field. Apps using `WebTransport.server` need no change.
+Web commands can read the socket client address and User-Agent through `RequestContext.origin`. `Text.fromBytesIfValid` decodes valid UTF-8 bytes without throwing. Applications that build a `WebTransport` record directly must add the new trusted proxy field. Apps using `WebTransport.server` need no change.
 
 ## Migration
 
