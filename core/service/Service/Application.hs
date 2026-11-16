@@ -1113,12 +1113,16 @@ runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup maybeWebAuthSe
   -- 3. Combine all query endpoints from definitions with manual endpoints
   let combinedQueryEndpoints =
         wiredQueries
-          |> Array.reduce (\(_reg, (name, handler, _schema)) acc -> acc |> Map.set name handler) app.queryEndpoints
+          |> Array.reduce (\(_reg, wired) acc -> acc |> Map.set wired.wiredQueryName wired.wiredCollectionHandler) app.queryEndpoints
 
   -- 3b. Collect all query schemas
   let combinedQuerySchemas =
         wiredQueries
-          |> Array.reduce (\(_reg, (name, _handler, schema)) acc -> acc |> Map.set name schema) Map.empty
+          |> Array.reduce (\(_reg, wired) acc -> acc |> Map.set wired.wiredQueryName wired.wiredCollectionSchema) Map.empty
+
+  let combinedQueryByIdEndpoints =
+        wiredQueries
+          |> Array.reduce (\(_reg, wired) acc -> acc |> Map.set wired.wiredQueryName wired.wiredQueryById) Map.empty
 
   -- 4. Collect command endpoints and schemas from all services, grouped by transport
   endpointsAndSchemasByTransport <-
@@ -1378,7 +1382,7 @@ runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup maybeWebAuthSe
   -- When transports complete (or fail), cancel inbound workers for clean shutdown
   -- Use Task.finally to ensure cleanup always runs even if runTransports fails
   result <-
-    Transports.runTransports app.transports combinedEndpointsByTransport combinedSchemasByTransport combinedQueryEndpoints combinedQuerySchemas maybeAuthEnabled maybeOAuth2Config maybeFileUploadEnabled app.apiInfo app.corsConfig app.healthCheckConfig maybeIntegrationStatus app.readinessConfig app.bindHost app.bindPort subscriber
+    Transports.runTransports app.transports combinedEndpointsByTransport combinedSchemasByTransport combinedQueryEndpoints combinedQueryByIdEndpoints combinedQuerySchemas maybeAuthEnabled maybeOAuth2Config maybeFileUploadEnabled app.apiInfo app.corsConfig app.healthCheckConfig maybeIntegrationStatus app.readinessConfig app.bindHost app.bindPort subscriber
       |> Task.finally cleanupAll
       |> Task.asResult
 

@@ -206,6 +206,10 @@ createTableSession =
     |]
 
 
+checkpointId :: Uuid
+checkpointId = Uuid.nil
+
+
 -- | Get a single query instance by UUID.
 --
 -- Looks up state under the store's own query name (@NameOf query@), so distinct
@@ -225,15 +229,18 @@ getImpl pool queryName uuid = do
   let rawUuid = Uuid.toLegacy uuid
   result <- runPool pool (selectJsonSession queryName rawUuid)
     |> Task.mapError (\e -> StorageError (toText (show e)))
-  case result of
-    Nothing -> Task.yield Nothing
-    Just jsonVal -> do
-      case Erasable.validateStorageContext [fmt|query:#{queryName}:#{UUID.toText rawUuid}|] jsonVal of
-        Err err -> Task.throw (SerializationError err)
-        Ok _ -> pass
-      case Json.decode jsonVal of
-        Err err -> Task.throw (SerializationError err)
-        Ok val -> Task.yield (Just val)
+  if uuid == checkpointId
+    then Task.yield Nothing
+    else
+      case result of
+        Nothing -> Task.yield Nothing
+        Just jsonVal -> do
+          case Erasable.validateStorageContext [fmt|query:#{queryName}:#{UUID.toText rawUuid}|] jsonVal of
+            Err err -> Task.throw (SerializationError err)
+            Ok _ -> pass
+          case Json.decode jsonVal of
+            Err err -> Task.throw (SerializationError err)
+            Ok val -> Task.yield (Just val)
 
 
 -- | Atomically update a query instance, keyed by the store's own query name

@@ -7,6 +7,7 @@ module Service.Application.Transports (
   -- * Runtime
   runTransports,
   guardQueryEndpoint,
+  guardQueryByIdEndpoint,
 ) where
 
 import Array qualified
@@ -19,7 +20,7 @@ import Maybe qualified
 import Result (Result (..))
 import Service.AccessControl qualified as AccessControl
 import Service.ServiceDefinition.Core (TransportValue (..))
-import Service.Transport (Transport (..), QueryEndpointHandler, EndpointHandler, Endpoints (..), EndpointSchema (..))
+import Service.Transport (Transport (..), QueryEndpointHandler, QueryByIdEndpointHandler, QueryByIdEndpoint (..), EndpointHandler, Endpoints (..), EndpointSchema (..))
 import Service.Transport.Web (WebTransport (..), AuthEnabled, OAuth2Config, FileUploadEnabled (..), CorsConfig, HealthCheckConfig, IntegrationStatus)
 import Service.Transport.Web qualified as Web
 import Service.Transport.Web.Readiness (ReadinessConfig)
@@ -46,6 +47,7 @@ runTransports ::
   Map Text (Map Text EndpointHandler) ->
   Map Text (Map Text Service.Transport.EndpointSchema) ->
   Map Text QueryEndpointHandler ->
+  Map Text QueryByIdEndpoint ->
   Map Text Service.Transport.EndpointSchema ->
   Maybe AuthEnabled ->
   -- ^ Optional authentication configuration for WebTransport
@@ -70,7 +72,7 @@ runTransports ::
   QuerySubscriber ->
   -- ^ The live subscriber whose readiness state /ready will reflect
   Task Text Unit
-runTransports transportsMap endpointsByTransport schemasByTransport queryEndpoints querySchemas maybeWebAuth maybeOAuth2 maybeFileUpload maybeApiInfo maybeCors maybeHealthCheck maybeIntegrationStatus maybeReadinessConfig maybeHost maybePort subscriber = do
+runTransports transportsMap endpointsByTransport schemasByTransport queryEndpoints queryByIdEndpoints querySchemas maybeWebAuth maybeOAuth2 maybeFileUpload maybeApiInfo maybeCors maybeHealthCheck maybeIntegrationStatus maybeReadinessConfig maybeHost maybePort subscriber = do
   transportsMap
     |> Map.entries
     |> Task.forEach \(transportName, transportVal) -> do
@@ -93,7 +95,7 @@ runTransports transportsMap endpointsByTransport schemasByTransport queryEndpoin
 
         -- Handle WebTransport specially to configure auth, OAuth2, and file uploads
         case transportName of
-          "WebTransport" -> runWebTransport transportVal commandEndpointsForTransport commandSchemasForTransport queryEndpoints querySchemas maybeWebAuth maybeOAuth2 maybeFileUpload maybeApiInfo maybeCors maybeHealthCheck maybeIntegrationStatus maybeReadinessConfig maybeHost maybePort subscriber
+          "WebTransport" -> runWebTransport transportVal commandEndpointsForTransport commandSchemasForTransport queryEndpoints queryByIdEndpoints querySchemas maybeWebAuth maybeOAuth2 maybeFileUpload maybeApiInfo maybeCors maybeHealthCheck maybeIntegrationStatus maybeReadinessConfig maybeHost maybePort subscriber
           _ -> runGenericTransport transportVal commandEndpointsForTransport commandSchemasForTransport queryEndpoints querySchemas
 
 
@@ -110,6 +112,7 @@ runWebTransport ::
   Map Text EndpointHandler ->
   Map Text Service.Transport.EndpointSchema ->
   Map Text QueryEndpointHandler ->
+  Map Text QueryByIdEndpoint ->
   Map Text Service.Transport.EndpointSchema ->
   Maybe AuthEnabled ->
   Maybe OAuth2Config ->
@@ -123,7 +126,7 @@ runWebTransport ::
   Maybe Int ->
   QuerySubscriber ->
   Task Text Unit
-runWebTransport transportVal commandEndpoints commandSchemas queryEndpoints querySchemas maybeAuth maybeOAuth2 maybeFileUpload maybeApiInfo maybeCors maybeHealthCheck maybeIntegrationStatus maybeReadinessConfig maybeHost maybePort subscriber = do
+runWebTransport transportVal commandEndpoints commandSchemas queryEndpoints queryByIdEndpoints querySchemas maybeAuth maybeOAuth2 maybeFileUpload maybeApiInfo maybeCors maybeHealthCheck maybeIntegrationStatus maybeReadinessConfig maybeHost maybePort subscriber = do
   case transportVal of
     TransportValue transport -> do
       let guardedQueryEndpoints =
@@ -137,6 +140,23 @@ runWebTransport transportVal commandEndpoints commandSchemas queryEndpoints quer
                             |> Task.mapError (\_ -> AccessControl.StorageError "Query readiness unavailable")
                         )
                         handler
+                    )
+                )
+              |> Map.fromArray
+      let guardedQueryByIdEndpoints =
+            queryByIdEndpoints
+              |> Map.entries
+              |> Array.map
+                ( \(queryName, endpoint) ->
+                    ( queryName,
+                      endpoint
+                        { byIdHandler =
+                            guardQueryByIdEndpoint
+                              ( Subscriber.readinessOfQuery subscriber queryName
+                                  |> Task.mapError (\_ -> AccessControl.StorageError "Query readiness unavailable")
+                              )
+                              endpoint.byIdHandler
+                        }
                     )
                 )
               |> Map.fromArray
@@ -177,6 +197,7 @@ runWebTransport transportVal commandEndpoints commandSchemas queryEndpoints quer
               { transport = webTransportWithConfig,
                 commandEndpoints = commandEndpoints,
                 queryEndpoints = guardedQueryEndpoints,
+                queryByIdEndpoints = guardedQueryByIdEndpoints,
                 commandSchemas = commandSchemas,
                 querySchemas = querySchemas
               }
@@ -191,6 +212,20 @@ guardQueryEndpoint ::
 guardQueryEndpoint queryReadiness handler userClaims maybeExpr pageRequest = do
   before <- queryReadiness |> Task.asResult
   response <- handler userClaims maybeExpr pageRequest
+  after <- queryReadiness |> Task.asResult
+  case (before, after) of
+    (Ok Nothing, Ok Nothing) -> Task.yield response
+    (Ok (Just Subscriber.Ready), Ok (Just Subscriber.Ready)) -> Task.yield response
+    _ -> Task.throw (AccessControl.StorageError "Query projection unavailable")
+
+
+guardQueryByIdEndpoint ::
+  Task AccessControl.QueryEndpointError (Maybe Subscriber.Readiness) ->
+  QueryByIdEndpointHandler ->
+  QueryByIdEndpointHandler
+guardQueryByIdEndpoint queryReadiness handler userClaims queryId = do
+  before <- queryReadiness |> Task.asResult
+  response <- handler userClaims queryId
   after <- queryReadiness |> Task.asResult
   case (before, after) of
     (Ok Nothing, Ok Nothing) -> Task.yield response
@@ -214,6 +249,7 @@ runGenericTransport transportVal commandEndpoints commandSchemas queryEndpoints 
               { transport = transport,
                 commandEndpoints = commandEndpoints,
                 queryEndpoints = queryEndpoints,
+                queryByIdEndpoints = Map.empty,
                 commandSchemas = commandSchemas,
                 querySchemas = querySchemas
               }

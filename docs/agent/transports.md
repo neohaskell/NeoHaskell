@@ -4,7 +4,7 @@ A transport exposes registered commands through an interface. `TransportsOf comm
 
 ## Web
 
-`Service.Transport.Web.server` supplies the default Web configuration with `port = 8080` and `host = "*4"` (IPv4 preferred with IPv6 fallback). Commands use `POST /commands/{kebab-case-name}`. Registered queries use `GET /queries/{kebab-case-name}`.
+`Service.Transport.Web.server` supplies the default Web configuration with `port = 8080` and `host = "*4"` (IPv4 preferred with IPv6 fallback). Commands use `POST /commands/{kebab-case-name}`. Registered queries provide collection reads at `GET /queries/{kebab-case-name}` and keyed reads at `GET /queries/{kebab-case-name}/{id}`. See [queries](queries.md) for authorization and response behavior.
 
 Use `EventModel.withHost` and `EventModel.withPort`, or `Application.withHost` and `Application.withPort` in direct `Application` assembly, to override the registered Web listener. Overrides apply whether they appear before or after `withTransport`. Omitting an override preserves the `WebTransport` record's own `host` or `port`.
 
