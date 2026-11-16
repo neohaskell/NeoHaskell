@@ -594,6 +594,7 @@ def candidate_artifacts(items: Any, manifest_dir: Path, label: str) -> tuple[Art
         raise VerificationError(f"candidate {label} must contain at least one artifact")
     result = []
     names = set()
+    manifest_root = manifest_dir.resolve()
     for item in items:
         if not isinstance(item, dict) or set(item) != {"name", "path", "sha256", "size"}:
             raise VerificationError(f"candidate {label} has a malformed artifact entry")
@@ -602,9 +603,14 @@ def candidate_artifacts(items: Any, manifest_dir: Path, label: str) -> tuple[Art
             raise VerificationError(f"candidate {label} has an invalid artifact identity")
         names.add(name)
         path = manifest_dir / relative
-        if Path(relative).is_absolute() or ".." in Path(relative).parts or path.is_symlink() or not path.is_file():
+        try:
+            resolved_path = path.resolve(strict=True)
+            resolved_path.relative_to(manifest_root)
+        except (OSError, RuntimeError, ValueError):
+            raise VerificationError(f"candidate artifact {name} is missing or outside the manifest directory") from None
+        if Path(relative).is_absolute() or ".." in Path(relative).parts or path.is_symlink() or not resolved_path.is_file():
             raise VerificationError(f"candidate artifact {name} is missing or outside the manifest directory")
-        data = path.read_bytes()
+        data = resolved_path.read_bytes()
         if digest_bytes(data) != expected or len(data) != size:
             raise VerificationError(f"candidate artifact {name} does not match its declared digest and size")
         result.append(ArtifactIdentity(name, expected, size))
