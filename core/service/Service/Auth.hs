@@ -32,6 +32,7 @@
 module Service.Auth (
   -- * Request Context
   RequestContext (..),
+  RequestOrigin (..),
 
   -- * User Identity (re-exported from Auth.Claims)
   UserClaims (..),
@@ -55,8 +56,22 @@ import Service.FileUpload.Core (FileRef)
 import Service.FileUpload.Resolver (ResolvedFile)
 import Task (Task)
 import Task qualified
+import Text (Text)
 import Uuid (Uuid)
 import Uuid qualified
+
+
+-- | Origin metadata from a Web request.
+--
+-- Both fields are optional because a transport may not receive one or both
+-- values. The values are untrusted metadata, not authenticated identity.
+data RequestOrigin = RequestOrigin
+  { clientAddress :: Maybe Text
+  -- ^ Client IP address reported by the Web transport.
+  , userAgent :: Maybe Text
+  -- ^ User-Agent header reported by the Web transport.
+  }
+  deriving (Eq, Generic, Show)
 
 
 -- | Context for command execution.
@@ -80,6 +95,9 @@ data RequestContext = RequestContext
   -- "no-auth deployment" semantics where every command was reachable
   -- regardless of its 'canAccess' declaration. False on every other
   -- constructor.
+  , origin :: Maybe RequestOrigin
+  -- ^ HTTP request origin when a Web command supplies it. Internal contexts
+  -- have no request origin.
   }
   deriving (Generic, Show)
 
@@ -94,6 +112,7 @@ emptyContext =
     , requestId = Uuid.nil
     , timestamp = DateTime.fromEpochSeconds 0
     , trustedBypass = False
+    , origin = Nothing
     }
 
 
@@ -109,6 +128,7 @@ anonymousContext = do
       , requestId = reqId
       , timestamp = now
       , trustedBypass = False
+      , origin = Nothing
       }
 
 
@@ -124,6 +144,7 @@ authenticatedContext claims = do
       , requestId = reqId
       , timestamp = now
       , trustedBypass = False
+      , origin = Nothing
       }
 
 
@@ -149,6 +170,7 @@ trustedContext = do
       , requestId = reqId
       , timestamp = now
       , trustedBypass = True
+      , origin = Nothing
       }
 
 
