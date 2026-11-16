@@ -141,28 +141,51 @@ def stop_process(process: subprocess.Popen[bytes]) -> None:
     if os.name == "nt":
         if process.poll() is None:
             process.terminate()
-    else:
         try:
-            os.killpg(process.pid, signal.SIGTERM)
-        except ProcessLookupError:
+            process.wait(timeout=TERMINATION_GRACE_SECONDS)
+        except subprocess.TimeoutExpired:
             if process.poll() is None:
-                return
+                process.kill()
+            process.wait(timeout=TERMINATION_GRACE_SECONDS)
+        return
+
+    process_group_id = process.pid
+    try:
+        os.killpg(process_group_id, signal.SIGTERM)
+    except ProcessLookupError:
+        if process.poll() is None:
+            try:
+                process.wait(timeout=TERMINATION_GRACE_SECONDS)
+            except subprocess.TimeoutExpired:
+                process.terminate()
+                process.wait(timeout=TERMINATION_GRACE_SECONDS)
+        return
+
+    deadline = time.monotonic() + TERMINATION_GRACE_SECONDS
     try:
         process.wait(timeout=TERMINATION_GRACE_SECONDS)
-        return
     except subprocess.TimeoutExpired:
         pass
-    if os.name == "nt":
-        if process.poll() is None:
-            process.kill()
-    else:
-        try:
-            os.killpg(process.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            if process.poll() is None:
-                return
+    try:
+        os.killpg(process_group_id, 0)
+    except ProcessLookupError:
+        return
+
+    remaining = deadline - time.monotonic()
+    if remaining > 0:
+        time.sleep(remaining)
+    try:
+        os.killpg(process_group_id, 0)
+    except ProcessLookupError:
+        return
+
+    try:
+        os.killpg(process_group_id, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
     if process.poll() is None:
         process.wait(timeout=TERMINATION_GRACE_SECONDS)
+
 
 def run_process(case: Case, working_directory: Path, timeout: float) -> dict[str, Any]:
     command = [str(case.program), *case.arguments]
