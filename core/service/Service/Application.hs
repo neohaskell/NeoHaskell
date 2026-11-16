@@ -1381,8 +1381,27 @@ runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup maybeWebAuthSe
   -- 16. Run each transport once with combined endpoints from all services
   -- When transports complete (or fail), cancel inbound workers for clean shutdown
   -- Use Task.finally to ensure cleanup always runs even if runTransports fails
+  let webConfig = Transports.WebRuntimeConfig
+        { Transports.authEnabled = maybeAuthEnabled
+        , Transports.oauth2Config = maybeOAuth2Config
+        , Transports.fileUploadEnabled = maybeFileUploadEnabled
+        , Transports.apiInfo = app.apiInfo
+        , Transports.corsConfig = app.corsConfig
+        , Transports.healthCheck = app.healthCheckConfig
+        , Transports.integrationStatus = maybeIntegrationStatus
+        , Transports.readinessConfig = app.readinessConfig
+        , Transports.bindHost = app.bindHost
+        , Transports.bindPort = app.bindPort
+        }
+  let endpointRegistry = Transports.EndpointRegistry
+        { Transports.commandEndpointsByTransport = combinedEndpointsByTransport
+        , Transports.commandSchemasByTransport = combinedSchemasByTransport
+        , Transports.queryEndpoints = combinedQueryEndpoints
+        , Transports.queryByIdEndpoints = combinedQueryByIdEndpoints
+        , Transports.querySchemas = combinedQuerySchemas
+        }
   result <-
-    Transports.runTransports app.transports combinedEndpointsByTransport combinedSchemasByTransport combinedQueryEndpoints combinedQueryByIdEndpoints combinedQuerySchemas maybeAuthEnabled maybeOAuth2Config maybeFileUploadEnabled app.apiInfo app.corsConfig app.healthCheckConfig maybeIntegrationStatus app.readinessConfig app.bindHost app.bindPort subscriber
+    Transports.runTransports webConfig subscriber endpointRegistry app.transports
       |> Task.finally cleanupAll
       |> Task.asResult
 

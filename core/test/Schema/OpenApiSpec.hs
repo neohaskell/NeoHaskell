@@ -342,14 +342,17 @@ spec = do
       let queryByIdSchemas = Map.fromArray (Array.fromLinkedList
             [ ("GetUser", makeEndpointSchema Nothing objectSchema)
             ])
+      let endpointSchemas = OpenApiGen.EndpointSchemas
+            { OpenApiGen.commandSchemas = Map.empty
+            , OpenApiGen.querySchemas = Map.empty
+            , OpenApiGen.queryByIdSchemas = queryByIdSchemas
+            , OpenApiGen.oauth2Schemas = Map.empty
+            , OpenApiGen.fileSchemas = Map.empty
+            }
       let openApiSpec =
             OpenApiGen.toOpenApiSpecWithQueryById
               (ApiInfo "Test API" "1.0.0" "")
-              Map.empty
-              Map.empty
-              queryByIdSchemas
-              Map.empty
-              Map.empty
+              endpointSchemas
       let paths = openApiSpec |> Lens.view OpenApi.paths
       case InsOrdHashMap.lookup "/queries/get-user/{id}" paths of
         Nothing -> Test.fail "Expected the UUID-keyed query path"

@@ -1254,8 +1254,15 @@ instance Transport WebTransport where
                 |> Map.entries
                 |> Array.map (\(name, endpoint) -> (name, endpoint.byIdSchema))
                 |> Map.fromArray
+        let endpointSchemas = OpenApi.EndpointSchemas
+              { OpenApi.commandSchemas = endpoints.commandSchemas
+              , OpenApi.querySchemas = endpoints.querySchemas
+              , OpenApi.queryByIdSchemas = queryByIdSchemas
+              , OpenApi.oauth2Schemas = oauth2Schemas
+              , OpenApi.fileSchemas = fileSchemas
+              }
         -- Generate OpenAPI spec from endpoint schemas
-        let spec = OpenApi.toOpenApiSpecWithQueryById apiInfo endpoints.commandSchemas endpoints.querySchemas queryByIdSchemas oauth2Schemas fileSchemas
+        let spec = OpenApi.toOpenApiSpecWithQueryById apiInfo endpointSchemas
         -- Encode to JSON and return with cache headers
         let jsonText = Json.encodeText spec
         let jsonBytes = jsonText |> Text.toBytes |> Bytes.toLazyLegacy
@@ -1287,8 +1294,15 @@ instance Transport WebTransport where
                 |> Map.entries
                 |> Array.map (\(name, endpoint) -> (name, endpoint.byIdSchema))
                 |> Map.fromArray
+        let endpointSchemas = OpenApi.EndpointSchemas
+              { OpenApi.commandSchemas = endpoints.commandSchemas
+              , OpenApi.querySchemas = endpoints.querySchemas
+              , OpenApi.queryByIdSchemas = queryByIdSchemas
+              , OpenApi.oauth2Schemas = oauth2Schemas
+              , OpenApi.fileSchemas = fileSchemas
+              }
         -- Generate OpenAPI spec from endpoint schemas
-        let spec = OpenApi.toOpenApiSpecWithQueryById apiInfo endpoints.commandSchemas endpoints.querySchemas queryByIdSchemas oauth2Schemas fileSchemas
+        let spec = OpenApi.toOpenApiSpecWithQueryById apiInfo endpointSchemas
         -- Encode to YAML with cache headers
         let yamlBytes = Yaml.encode spec
         -- Cache headers - spec changes only on deployment

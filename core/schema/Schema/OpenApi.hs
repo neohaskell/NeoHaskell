@@ -21,6 +21,7 @@
 -- @
 module Schema.OpenApi (
   toOpenApiSchema,
+  EndpointSchemas (..),
   toOpenApiSpec,
   toOpenApiSpecWithQueryById,
 ) where
@@ -156,6 +157,19 @@ toOpenApiSchema schema = case schema of
       |> Lens.set OpenApiLens.description (Just [fmt|Reference to: {refName}|])
 
 
+-- | The endpoint schema groups included in an OpenAPI specification.
+--
+-- Query-by-ID schemas produce UUID-keyed query paths. OAuth2 and file schemas
+-- describe the built-in routes when those features are enabled.
+data EndpointSchemas = EndpointSchemas
+  { commandSchemas :: Map Text EndpointSchema
+  , querySchemas :: Map Text EndpointSchema
+  , queryByIdSchemas :: Map Text EndpointSchema
+  , oauth2Schemas :: Map Text EndpointSchema
+  , fileSchemas :: Map Text EndpointSchema
+  }
+
+
 -- | Generate OpenAPI 3.0 specification from endpoint schemas.
 --
 -- Creates a complete OpenAPI spec with:
@@ -165,6 +179,9 @@ toOpenApiSchema schema = case schema of
 -- - Paths for all endpoint types
 -- - Request/response schemas
 -- - Standard HTTP status codes
+--
+-- This five-argument function remains available for callers without
+-- query-by-ID schemas.
 toOpenApiSpec ::
   ApiInfo ->
   Map Text EndpointSchema ->  -- ^ Command schemas (tagged by entity name)
@@ -173,19 +190,29 @@ toOpenApiSpec ::
   Map Text EndpointSchema ->  -- ^ File upload schemas (tagged "Files")
   OpenApi.OpenApi
 toOpenApiSpec apiInfo commandSchemas querySchemas oauth2Schemas fileSchemas =
-  toOpenApiSpecWithQueryById apiInfo commandSchemas querySchemas Map.empty oauth2Schemas fileSchemas
+  toOpenApiSpecWithQueryById apiInfo
+    EndpointSchemas
+      { commandSchemas = commandSchemas
+      , querySchemas = querySchemas
+      , queryByIdSchemas = Map.empty
+      , oauth2Schemas = oauth2Schemas
+      , fileSchemas = fileSchemas
+      }
 
 
 -- | Generate an OpenAPI spec with collection and UUID-keyed query operations.
+--
+-- The legacy 'toOpenApiSpec' API omits the query-by-ID schema family.
 toOpenApiSpecWithQueryById ::
   ApiInfo ->
-  Map Text EndpointSchema ->
-  Map Text EndpointSchema ->
-  Map Text EndpointSchema ->
-  Map Text EndpointSchema ->
-  Map Text EndpointSchema ->
+  EndpointSchemas ->
   OpenApi.OpenApi
-toOpenApiSpecWithQueryById apiInfo commandSchemas querySchemas queryByIdSchemas oauth2Schemas fileSchemas = do
+toOpenApiSpecWithQueryById apiInfo endpointSchemas = do
+  let commandSchemas = endpointSchemas.commandSchemas
+  let querySchemas = endpointSchemas.querySchemas
+  let queryByIdSchemas = endpointSchemas.queryByIdSchemas
+  let oauth2Schemas = endpointSchemas.oauth2Schemas
+  let fileSchemas = endpointSchemas.fileSchemas
   let info = GhcMonoid.mempty
         |> Lens.set OpenApiLens.title apiInfo.apiTitle
         |> Lens.set OpenApiLens.version apiInfo.apiVersion
