@@ -667,6 +667,7 @@ test-suite nhcore-test-service
 
   other-modules:
     Service.ApplicationSpec
+    Service.AuthSpec
     Service.CommandExecutor.THSpec
     Service.CommandExecutor.TH.AlreadyDerivedCommandFixture
     Service.CommandExecutor.TH.FreshCommandFixture
