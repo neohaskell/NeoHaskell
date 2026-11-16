@@ -23,7 +23,8 @@
         "neo/src/theme.rs",
         "neo/src/tui/**",
         "neo/Cargo.toml",
-        "neo/Cargo.lock"
+        "neo/Cargo.lock",
+        "neo/lifecycle/**"
       ]
     },
     {
@@ -77,7 +78,7 @@
       {
         "projection_sha256": "9895e74304aa35fa7e14b413830f77ea2619c4f9a6a7296d0a5497fc6d0510b4",
         "dependencies": {
-          "nix/neo-package.nix": "4a6d443430d789d303dd9f59f02eafd20946059e19a96d5e1e7106ef1603036c",
+          "nix/neo-package.nix": "bbdaaee83c1a7be5528ab4f9bccbb808aba3d054ba2f1cd09cd1db3cc8ed3761",
           "flake.lock": "1effc4277140756e9669e68a4585ae4694e5dabe6bba3d586cf2128a5adf3621"
         },
         "projected_dependencies": {

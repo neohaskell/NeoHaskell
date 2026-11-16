@@ -1,0 +1,5 @@
+{
+  "help": "NeoHaskell native installer\n\nThis build provides help and version only. Lifecycle operations are not available in this build.\n\nUsage:\n  neo-installer [--help | --version]\n\nOptions:\n  -h, --help       Show this help.\n  -V, --version    Show the product and build identity.",
+  "version": "neo-installer {version} ({revision}, {target})",
+  "invalid_arguments": "This build supports only --help and --version. Run neo-installer --help for details."
+}

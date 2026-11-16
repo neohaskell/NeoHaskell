@@ -347,6 +347,15 @@ class GateTests(unittest.TestCase):
         root_tooling = f.commit("changed root shell tool")
         self.assertEqual(f.classify(hix_change, root_tooling), ["nix-packaging"])
 
+    def test_lifecycle_package_code_and_language_changes_require_evidence(self):
+        f = self.fixture()
+        f.write("neo/lifecycle/src/lib.rs", "pub fn lifecycle() {}\n")
+        source = f.commit("lifecycle code")
+        self.assertEqual(f.classify(f.base, source), ["installer-rust"])
+        f.write("neo/lifecycle/src/english.json", '{"help":"Fixture usage"}\n')
+        language = f.commit("installer language")
+        self.assertEqual(f.classify(source, language), ["installer-rust"])
+
     def test_haskell_package_graph_and_compiler_inputs(self):
         f = self.fixture()
         root = POLICY.parents[1]

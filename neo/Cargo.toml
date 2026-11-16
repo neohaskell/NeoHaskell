@@ -3,7 +3,14 @@ name = "neo"
 version = "0.17.1"
 edition = "2024"
 
+[workspace]
+members = ["lifecycle"]
+default-members = ["."]
+resolver = "3"
+
 [dependencies]
+neo-lifecycle = { path = "lifecycle" }
+
 # CLI parsing
 clap = { version = "4", features = ["derive", "env"] }
 
