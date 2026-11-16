@@ -71,7 +71,7 @@ import Service.AccessControl (AccessError (..), QueryEndpointError (..))
 import Service.Query.Pagination qualified as Pagination
 import Service.Response (CommandResponse)
 import Service.Response qualified as Response
-import Service.Transport (EndpointHandler, Endpoints (..), Transport (..))
+import Service.Transport (EndpointHandler, Endpoints (..), QueryByIdEndpoint (..), Transport (..))
 import Service.Transport.Web.BuiltinSchemas qualified as BuiltinSchemas
 import Service.Transport.Web.Readiness (ReadinessConfig)
 import Service.Transport.Web.Readiness qualified as Readiness
@@ -703,6 +703,19 @@ instance Transport WebTransport where
                   |> Wai.responseLBS HTTP.status400 [(HTTP.hContentType, "application/json")]
           respondFn response400
 
+    let respondToQueryResult result =
+          case result of
+            Result.Ok responseText -> okJson responseText
+            Result.Err endpointError ->
+              case endpointError of
+                AuthorizationError authErr ->
+                  case authErr of
+                    Unauthenticated -> unauthorized "Authentication required"
+                    Forbidden -> forbidden "Access denied"
+                    InsufficientPermissions _ -> forbidden "Insufficient permissions"
+                QueryNotFound -> notFound "{\"error\":\"Query object not found\"}"
+                StorageError _ -> internalError "Internal server error"
+
     -- Helper function for 302 redirect with configurable extra headers.
     -- SECURITY: Sanitize URL to prevent header injection (CRLF attacks)
     let redirectWithHeaders extraHeaders url respondFn = do
@@ -961,20 +974,7 @@ instance Transport WebTransport where
                       -- Execute the query handler with error recovery
                       -- Handler performs internal canAccess/canView checks
                       result <- handler userClaims maybeExpr pageRequest |> Task.asResult
-                      case result of
-                        Result.Ok responseText -> okJson responseText
-                        Result.Err endpointError ->
-                          -- Pattern match on typed error for proper HTTP status
-                          case endpointError of
-                            AuthorizationError authErr ->
-                              case authErr of
-                                Unauthenticated -> unauthorized "Authentication required"
-                                Forbidden -> forbidden "Access denied"
-                                InsufficientPermissions _ -> forbidden "Insufficient permissions"
-                            StorageError _msg ->
-                              -- Don't expose internal error details to client
-                              -- The msg is logged server-side by the transport layer
-                              internalError "Internal server error"
+                      respondToQueryResult result
 
                 -- The query's canAccessImpl decides if authentication is
                 -- required; we only need to hand it the resolved claims.
@@ -985,6 +985,24 @@ instance Transport WebTransport where
                   Maybe.Just auth -> withResolvedClaims auth request respond (\_ -> Task.yield ()) processQueryWithClaims
           Maybe.Nothing ->
             notFound [fmt|Query not found: #{queryName}|]
+      ["queries", queryNameKebab, queryIdText] -> do
+        if Wai.requestMethod request != "GET"
+          then notFound "Not found"
+          else do
+            let queryName = queryNameKebab |> Text.toPascalCase
+            case Map.get queryName endpoints.queryByIdEndpoints of
+              Maybe.Nothing -> notFound [fmt|Query not found: #{queryName}|]
+              Maybe.Just endpoint ->
+                case Uuid.fromText queryIdText of
+                  Maybe.Nothing -> badRequest "{\"error\":\"Invalid query ID\"}" respond
+                  Maybe.Just queryId -> do
+                    let processQueryByIdWithClaims userClaims = do
+                          result <- endpoint.byIdHandler userClaims queryId |> Task.asResult
+                          respondToQueryResult result
+                    case webTransport.authEnabled of
+                      Maybe.Nothing -> processQueryByIdWithClaims Maybe.Nothing
+                      Maybe.Just auth ->
+                        withResolvedClaims auth request respond (\_ -> Task.yield ()) processQueryByIdWithClaims
       -- OAuth2 routes: /connect/{provider}, /callback/{provider}, /disconnect/{provider}
       ["connect", providerName] -> do
         case webTransport.oauth2Config of
@@ -1231,8 +1249,20 @@ instance Transport WebTransport where
         -- Generate builtin endpoint schemas
         let oauth2Schemas = BuiltinSchemas.oauth2EndpointSchemas isOAuth2Enabled
         let fileSchemas = BuiltinSchemas.fileUploadEndpointSchemas isFileUploadEnabled
+        let queryByIdSchemas =
+              endpoints.queryByIdEndpoints
+                |> Map.entries
+                |> Array.map (\(name, endpoint) -> (name, endpoint.byIdSchema))
+                |> Map.fromArray
+        let endpointSchemas = OpenApi.EndpointSchemas
+              { OpenApi.commandSchemas = endpoints.commandSchemas
+              , OpenApi.querySchemas = endpoints.querySchemas
+              , OpenApi.queryByIdSchemas = queryByIdSchemas
+              , OpenApi.oauth2Schemas = oauth2Schemas
+              , OpenApi.fileSchemas = fileSchemas
+              }
         -- Generate OpenAPI spec from endpoint schemas
-        let spec = OpenApi.toOpenApiSpec apiInfo endpoints.commandSchemas endpoints.querySchemas oauth2Schemas fileSchemas
+        let spec = OpenApi.toOpenApiSpecWithQueryById apiInfo endpointSchemas
         -- Encode to JSON and return with cache headers
         let jsonText = Json.encodeText spec
         let jsonBytes = jsonText |> Text.toBytes |> Bytes.toLazyLegacy
@@ -1259,8 +1289,20 @@ instance Transport WebTransport where
         -- Generate builtin endpoint schemas
         let oauth2Schemas = BuiltinSchemas.oauth2EndpointSchemas isOAuth2Enabled
         let fileSchemas = BuiltinSchemas.fileUploadEndpointSchemas isFileUploadEnabled
+        let queryByIdSchemas =
+              endpoints.queryByIdEndpoints
+                |> Map.entries
+                |> Array.map (\(name, endpoint) -> (name, endpoint.byIdSchema))
+                |> Map.fromArray
+        let endpointSchemas = OpenApi.EndpointSchemas
+              { OpenApi.commandSchemas = endpoints.commandSchemas
+              , OpenApi.querySchemas = endpoints.querySchemas
+              , OpenApi.queryByIdSchemas = queryByIdSchemas
+              , OpenApi.oauth2Schemas = oauth2Schemas
+              , OpenApi.fileSchemas = fileSchemas
+              }
         -- Generate OpenAPI spec from endpoint schemas
-        let spec = OpenApi.toOpenApiSpec apiInfo endpoints.commandSchemas endpoints.querySchemas oauth2Schemas fileSchemas
+        let spec = OpenApi.toOpenApiSpecWithQueryById apiInfo endpointSchemas
         -- Encode to YAML with cache headers
         let yamlBytes = Yaml.encode spec
         -- Cache headers - spec changes only on deployment

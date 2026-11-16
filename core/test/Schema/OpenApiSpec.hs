@@ -334,6 +334,57 @@ spec = do
       let paths = openApiSpec |> Lens.view OpenApi.paths
       InsOrdHashMap.size paths |> shouldSatisfy (\n -> n > 0)
 
+    it "generates a UUID-keyed query operation with a single object response" \_ -> do
+      let objectSchema = SObject (Array.fromLinkedList
+            [ FieldSchema "rowId" SText True ""
+            , FieldSchema "rowValue" SText True ""
+            ])
+      let queryByIdSchemas = Map.fromArray (Array.fromLinkedList
+            [ ("GetUser", makeEndpointSchema Nothing objectSchema)
+            ])
+      let endpointSchemas = OpenApiGen.EndpointSchemas
+            { OpenApiGen.commandSchemas = Map.empty
+            , OpenApiGen.querySchemas = Map.empty
+            , OpenApiGen.queryByIdSchemas = queryByIdSchemas
+            , OpenApiGen.oauth2Schemas = Map.empty
+            , OpenApiGen.fileSchemas = Map.empty
+            }
+      let openApiSpec =
+            OpenApiGen.toOpenApiSpecWithQueryById
+              (ApiInfo "Test API" "1.0.0" "")
+              endpointSchemas
+      let paths = openApiSpec |> Lens.view OpenApi.paths
+      case InsOrdHashMap.lookup "/queries/get-user/{id}" paths of
+        Nothing -> Test.fail "Expected the UUID-keyed query path"
+        Just pathItem ->
+          case pathItem |> Lens.view OpenApi.get of
+            Nothing -> Test.fail "Expected a GET operation"
+            Just operation -> do
+              let parameters = operation |> Lens.view OpenApi.parameters
+              LinkedList.length parameters |> shouldBe 1
+              case Array.fromLinkedList parameters |> Array.get 0 of
+                Just (OpenApi.Inline parameter) -> do
+                  parameter |> Lens.view OpenApi.name |> shouldBe "id"
+                  parameter |> Lens.view OpenApi.in_ |> shouldBe OpenApi.ParamPath
+                  parameter |> Lens.view OpenApi.required |> shouldBe (Just True)
+                  case parameter |> Lens.view OpenApi.schema of
+                    Just (OpenApi.Inline schema) -> do
+                      schema |> Lens.view OpenApi.type_ |> shouldBe (Just OpenApi.OpenApiString)
+                      schema |> Lens.view OpenApi.format |> shouldBe (Just "uuid")
+                    _ -> Test.fail "Expected the UUID parameter schema"
+                  let responses = operation |> Lens.view OpenApi.responses |> Lens.view OpenApi.responses
+                  let requiredStatuses = Array.fromLinkedList [200, 400, 401, 403, 404, 500]
+                  let missingStatuses = requiredStatuses |> Array.takeIf (\statusCode -> not (InsOrdHashMap.member statusCode responses))
+                  Array.isEmpty missingStatuses |> shouldBe True
+                _ -> Test.fail "Expected one inline path parameter"
+      extractResponseSchema "/queries/get-user/{id}" OpenApi.get openApiSpec (\schema -> do
+        schema |> Lens.view OpenApi.type_ |> shouldBe (Just OpenApi.OpenApiObject)
+        let properties = schema |> Lens.view OpenApi.properties
+        InsOrdHashMap.member "rowId" properties |> shouldBe True
+        InsOrdHashMap.member "rowValue" properties |> shouldBe True
+        InsOrdHashMap.member "items" properties |> shouldBe False
+        )
+
     it "query endpoint response schema is paginated object" \_ -> do
       let apiInfo = ApiInfo "Test API" "1.0.0" ""
       let commandSchemas = Map.empty
