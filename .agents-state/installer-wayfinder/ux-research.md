@@ -19,6 +19,10 @@ Revisé documentación, código, capturas y demos oficiales actuales. No ejecut�
 - [Gum](https://github.com/charmbracelet/gum) es una herramienta para combinar entradas, selecciones, estilos y spinners en scripts de shell. Su README enlaza una [captura animada](https://vhs.charm.sh/vhs-1qY57RrQlXCuydsEgDp68G.gif) y el [script que la produce](https://github.com/charmbracelet/gum/blob/main/examples/demo.sh). `gum spin` puede mostrar la salida del comando. Inferencia de la API, el spinner comunica espera; el script debe medir el progreso por separado.
 - [Clack Prompts](https://github.com/bombshell-dev/clack/blob/main/packages/prompts/README.md) es una biblioteca de prompts para JavaScript. Documenta introducción y cierre, selección, cancelación, spinner, barra de progreso, grupos de tareas y salida continua de procesos hijos. Inferencia de la API, la barra solo representa progreso real si el proceso aporta avances reales.
 
+## Mantenimiento observable
+
+Determinate documenta un binario estático con planificadores por plataforma. El script de `rustup` dice que se limita a detectar la plataforma, descargar y ejecutar el binario. Astro separa cada acción del asistente en módulos y registra correcciones del flujo en su changelog. Estos son límites de código visibles, no medidas comparables del esfuerzo de mantenimiento. [Determinate](https://github.com/DeterminateSystems/nix-installer/blob/main/README.md) · [`rustup-init.sh`](https://github.com/rust-lang/rustup/blob/main/rustup-init.sh) · [Astro](https://github.com/withastro/astro/blob/main/packages/create-astro/src/index.ts) · [changelog](https://github.com/withastro/astro/blob/main/packages/create-astro/CHANGELOG.md)
+
 ## Comparación útil para un prototipo
 
 La evidencia favorece tres ejes a probar, sin decidir aquí un diseño. Para accesibilidad, scrollback y copia de logs, las páginas revisadas no demuestran compatibilidad con lectores de pantalla ni conservación de salida en un TUI. Hay evidencia explícita de modo no interactivo en Determinate, `rustup` y Astro. `uv` ofrece configuración de CI sin cambios al entorno. Las demás garantías de TTY deben verificarse con una prueba.
