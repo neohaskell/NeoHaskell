@@ -37,7 +37,6 @@ STARTUP_TIMEOUT_SECONDS = 180
 ROOT = Path(__file__).resolve().parents[4]
 RUNNER = Path(__file__).resolve().parent
 DOCKERFILE = RUNNER / "Dockerfile"
-EVIDENCE = ROOT / ".agents-state/installer-implementation/linux-runner"
 
 
 def now() -> str:
@@ -315,7 +314,9 @@ def main() -> int:
         action="append",
         help="Run one lane. Repeat this option to run both. The default runs both.",
     )
+    parser.add_argument("--evidence-dir", type=Path, required=True, help="Private directory for operation and result records.")
     args = parser.parse_args()
+    evidence_dir = args.evidence_dir.resolve()
     if shutil.which("docker") is None:
         parser.error("Docker CLI is not available in PATH")
 
@@ -323,8 +324,8 @@ def main() -> int:
     revision = output(["git", "-C", str(ROOT), "rev-parse", "HEAD"])
     files = (Path(__file__).resolve(), DOCKERFILE)
     hashes = {path.name: hashlib.sha256(path.read_bytes()).hexdigest() for path in files}
-    result_path = EVIDENCE / f"result-{run_id}.json"
-    operation_path = EVIDENCE / f"operation-{run_id}.json"
+    result_path = evidence_dir / f"result-{run_id}.json"
+    operation_path = evidence_dir / f"operation-{run_id}.json"
     state: dict[str, Any] = {
         "operation_id": run_id,
         "source_revision": revision,
