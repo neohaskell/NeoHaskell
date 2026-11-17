@@ -867,6 +867,8 @@ class Prepare(History):
             release.check_checkout(self.repo, owning_base, "fix(deps): bump cachix/install-nix-action"),
             "release fragments valid",
         )
+        self.repo.git("reset", "--soft", owning_base)
+        self.commit("fix(deps): bump cachix/install-nix-action")
         self.assertIsNone(
             release.plan_release(self.repo, "HEAD", "platform", {first["id"]: baseline}, "2026-09-16")
         )
