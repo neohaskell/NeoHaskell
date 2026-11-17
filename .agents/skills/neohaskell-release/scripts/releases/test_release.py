@@ -11,6 +11,8 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).parent))
 import engine as release
+from candidate_contract_tests import CandidateContract
+from candidate_contract_tests.test_runtime import RuntimeContract
 
 ROOT = release.ROOT
 SKILL_ROOT = release.SKILL_ROOT
@@ -1867,6 +1869,8 @@ GROUPS = {
     "workflow": Workflow,
     "ledger": LedgerLocations,
     "bootstrap": Bootstrap,
+    "candidate-contract": CandidateContract,
+    "candidate-runtime": RuntimeContract,
 }
 
 
