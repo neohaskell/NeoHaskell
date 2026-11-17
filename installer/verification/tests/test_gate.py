@@ -356,6 +356,12 @@ class GateTests(unittest.TestCase):
         language = f.commit("installer language")
         self.assertEqual(f.classify(source, language), ["installer-rust"])
 
+    def test_candidate_registry_changes_require_release_evidence(self):
+        f = self.fixture()
+        f.write(".agents/skills/neohaskell-release/references/installer-contract.json", '{"schema_version":2}\n')
+        registry = f.commit("candidate registry")
+        self.assertEqual(f.classify(f.base, registry), ["release-and-cache"])
+
     def test_haskell_package_graph_and_compiler_inputs(self):
         f = self.fixture()
         root = POLICY.parents[1]

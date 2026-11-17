@@ -61,6 +61,7 @@
         ".github/workflows/neo-release.yml",
         ".github/workflows/cachix-push.yml",
         ".agents/skills/neohaskell-release/references/config.json",
+        ".agents/skills/neohaskell-release/references/installer-contract.json",
         ".agents/skills/neohaskell-release/references/required-checks.json",
         ".agents/skills/neohaskell-release/scripts/neo-release",
         ".agents/skills/neohaskell-release/scripts/semantic-release",
