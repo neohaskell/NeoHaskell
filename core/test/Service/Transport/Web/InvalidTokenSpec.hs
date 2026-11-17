@@ -125,6 +125,7 @@ invalidTokenEndpoints transport =
     { Transport.transport = transport
     , Transport.commandEndpoints = Map.fromArray [("auth-probe", rejectInvalidToken)]
     , Transport.queryEndpoints = Map.empty
+    , Transport.queryByIdEndpoints = Map.empty
     , Transport.commandSchemas = Map.empty
     , Transport.querySchemas = Map.empty
     }

@@ -463,6 +463,21 @@ postgresTests = do
             fail [fmt|getAll dropped the real instance row: #{toText (show rows)}|]
         Err err -> fail [fmt|getAll failed: #{err}|]
 
+    it "get excludes the reserved nil-uuid checkpoint marker row" \_ -> do
+      store <- mkStoreNamed testConfig "get-nil-marker-exclusion-query" |> Task.mapError mkErrorToText
+      let markerRow = simpleState "marker-hidden-from-keyed-read"
+      store.atomicUpdate Uuid.nil (\_ -> Just markerRow)
+        |> Task.mapError storeErrorToText
+        |> discard
+      result <-
+        store.get Uuid.nil
+          |> Task.mapError storeErrorToText
+          |> Task.asResult
+      case result of
+        Ok Nothing -> pass
+        Ok (Just value) -> fail [fmt|get exposed the nil-uuid checkpoint marker: #{toText (show value)}|]
+        Err err -> fail [fmt|get failed instead of hiding the checkpoint marker: #{err}|]
+
   describe "concurrent atomicUpdate is lost-update safe (#739)" do
     it "N concurrent read-modify-write increments on one key all apply (#739)" \_ -> do
       -- Regression for the CodeRabbit finding on PR #739: atomicUpdate performed

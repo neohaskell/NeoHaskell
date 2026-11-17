@@ -27,8 +27,17 @@
     "commands": {
       "page": "commands.md",
       "source": "core/service/Service/Command/Core.hs",
-      "scenario": "testbed/tests/commands/register-cart-by-key.hurl",
-      "evidence": []
+      "scenario": "testbed/tests/commands/request-origin.hurl",
+      "evidence": [
+        {
+          "kind": "service-spec",
+          "path": "core/test/Service/AuthSpec.hs"
+        },
+        {
+          "kind": "service-spec",
+          "path": "core/test/Service/Transport/WebSpec.hs"
+        }
+      ]
     },
     "queries": {
       "page": "queries.md",

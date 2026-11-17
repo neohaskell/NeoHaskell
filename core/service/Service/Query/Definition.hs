@@ -3,6 +3,7 @@
 
 module Service.Query.Definition (
   QueryDefinition (..),
+  WiredQueryEndpoint (..),
   createDefinition,
   createDefinitionWithStore,
   EventSubscription (..),
@@ -36,7 +37,7 @@ import Service.Query.Updater qualified as Updater
 import Service.QueryObjectStore.Core (QueryObjectStore)
 import Service.QueryObjectStore.InMemory qualified as InMemory
 import Service.SnapshotCache.InMemory qualified as SnapshotCache
-import Service.Transport (EndpointSchema (..), QueryEndpointHandler)
+import Service.Transport (EndpointSchema (..), QueryByIdEndpoint (..), QueryEndpointHandler)
 import Task (Task)
 import Task qualified
 import Text (Text)
@@ -62,10 +63,19 @@ data QueryDefinition = QueryDefinition
     querySchema :: Schema,
     -- | Given an EventStore, creates the query infrastructure and returns:
     -- - QueryRegistry entries for this query's entities
-    -- - The query endpoint name, handler, and schema
+    -- - Its collection and UUID handlers with their schemas
     wireQuery ::
       EventStore Json.Value ->
-      Task Text (QueryRegistry, (Text, QueryEndpointHandler, EndpointSchema))
+      Task Text (QueryRegistry, WiredQueryEndpoint)
+  }
+
+
+-- | A declarative query's collection and UUID endpoints with their schemas.
+data WiredQueryEndpoint = WiredQueryEndpoint
+  { wiredQueryName :: Text
+  , wiredCollectionHandler :: QueryEndpointHandler
+  , wiredCollectionSchema :: EndpointSchema
+  , wiredQueryById :: QueryByIdEndpoint
   }
 
 
@@ -215,19 +225,28 @@ createDefinitionWithStore storeFactory = do
         -- 2. Wire all entities and collect their registries
         registry <- wireEntities @entities @query queryNameText rawEventStore queryStore
 
-        -- 3. Create endpoint handler (lambda accepts Maybe UserClaims, Maybe NeoQL.Expr, and QueryPageRequest)
+        let renderProtected jsonValue =
+              rawEventStore.renderProtectedJson jsonValue
+                |> Task.mapError (\_ -> Auth.StorageError "Protected response resolution failed")
         let endpoint userClaims maybeExpr pageRequest =
               Endpoint.createQueryEndpointWithProtection
-                ( \jsonValue ->
-                    rawEventStore.renderProtectedJson jsonValue
-                      |> Task.mapError (\_ -> Auth.StorageError "Protected response resolution failed")
-                )
+                renderProtected
                 queryStore
                 userClaims
                 maybeExpr
                 pageRequest
+        let byIdEndpoint = QueryByIdEndpoint
+              { byIdHandler = Endpoint.createQueryByIdEndpointWithProtection renderProtected queryStore
+              , byIdSchema = endpointSchema {responseSchema = schema}
+              }
+        let wiredEndpoint = WiredQueryEndpoint
+              { wiredQueryName = queryNameText
+              , wiredCollectionHandler = endpoint
+              , wiredCollectionSchema = endpointSchema
+              , wiredQueryById = byIdEndpoint
+              }
 
-        Task.yield (registry, (queryNameText, endpoint, endpointSchema))
+        Task.yield (registry, wiredEndpoint)
     }
 
 

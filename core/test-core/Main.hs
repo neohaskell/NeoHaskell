@@ -50,6 +50,7 @@ import Parser.ErrorSpec qualified
 import Parser.WhitespaceSpec qualified
 import Parser.FileSpec qualified
 import TaskSpec qualified
+import TextSpec qualified
 import Test.Hspec qualified as Hspec
 
 
@@ -103,3 +104,4 @@ main = Hspec.hspec do
   Hspec.describe "Parser.Whitespace" Parser.WhitespaceSpec.spec
   Hspec.describe "Parser.File" Parser.FileSpec.spec
   Hspec.describe "Task" TaskSpec.spec
+  Hspec.describe "Text" TextSpec.spec

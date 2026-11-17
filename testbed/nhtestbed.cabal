@@ -1,6 +1,6 @@
 cabal-version: 3.4
 name: nhtestbed
-version: 0.17.1
+version: 0.18.0
 synopsis: End-to-End Testbed for NeoHaskell
 description: A real NeoHaskell application that demonstrates features and runs blackbox acceptance tests.
 homepage: https://neohaskell.org
@@ -57,6 +57,7 @@ library
   exposed-modules:
     Testbed.EventModel
     Testbed.Config
+    Testbed.RequestOrigin
     Testbed.Cart.Commands.AddItem
     Testbed.Cart.Commands.AddTwoItems
     Testbed.Cart.Commands.ConfirmCart

@@ -82,6 +82,8 @@ instance Json.FromJSON AccessError
 data QueryEndpointError
   = -- | Authorization failed (maps to 401 or 403)
     AuthorizationError AccessError
+  | -- | The query object is missing or is not visible to the caller.
+    QueryNotFound
   | -- | Storage/serialization failed (maps to 500)
     StorageError Text
   deriving (Generic, Eq, Show)
