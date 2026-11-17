@@ -13,6 +13,11 @@ name = "neo-installer"
 path = "src/bin/neo-installer.rs"
 
 [dependencies]
+base64 = "0.22.1"
+ring = "0.17.14"
+reqwest = { version = "0.12", features = ["blocking", "json", "rustls-tls"], default-features = false }
+sha2 = "0.10.9"
+regex = "1.12.3"
 fs2 = "0.4"
 libc = "0.2"
 semver = "1"

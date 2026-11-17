@@ -1,26 +1,44 @@
+mod coordinator;
+mod filesystem;
+mod nix;
+pub(crate) mod nix_owner;
 pub(crate) mod process;
+pub(crate) mod release;
+mod resource_io;
+mod resources;
+mod review;
+mod runtime;
+mod snapshot;
+mod verification;
+use coordinator::{Effects, SettlementKind};
+pub(crate) use coordinator::{
+    RecoveryPending, ReviewOperation, ReviewSummary, ReviewedChange, RunOutcome, StopObservation,
+    UnadmittedReason, run,
+};
+use filesystem::{FilesystemJob, FilesystemResult};
+pub(crate) use runtime::Executor;
+pub(crate) use snapshot::Request;
 
 use fs2::FileExt;
 use serde::{Deserialize, Serialize};
 use std::fs::{self, File, Metadata, OpenOptions};
-use std::io::{Read, Write};
-use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt, symlink};
+use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-const STATE_SCHEMA: u32 = 1;
+const STATE_SCHEMA: u32 = 2;
 const MAX_STATE_BYTES: u64 = 64 * 1024;
-const RECEIPT_NAME: &str = "receipt.json";
-const INTENT_NAME: &str = "intent.json";
+const STATE_NAME: &str = "installation.json";
 const LOCK_NAME: &str = "lock";
 const ACTIVE_NAME: &str = "active";
 const ACTIVE_NEXT_NAME: &str = "active.next";
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(deny_unknown_fields)]
-struct PairIdentity {
-    version: String,
+pub(crate) struct PairIdentity {
+    pub(crate) version: String,
     output: PathBuf,
+    selection: Option<release::PinnedSelection>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
@@ -50,6 +68,39 @@ struct Intent {
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(deny_unknown_fields)]
+struct InstallationRecord {
+    schema: u32,
+    committed: Option<Receipt>,
+    activation: Option<Intent>,
+    pinned: Option<release::PinnedSelection>,
+    resources: resources::ResourceLedger,
+    previous_observation: PriorObservation,
+    snapshot_files: std::collections::BTreeMap<String, Vec<crate::candidate::FileIdentity>>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum PriorObservation {
+    NotChecked,
+    MissingOutput,
+}
+
+impl Default for InstallationRecord {
+    fn default() -> Self {
+        Self {
+            schema: STATE_SCHEMA,
+            committed: None,
+            activation: None,
+            pinned: None,
+            resources: resources::ResourceLedger::default(),
+            previous_observation: PriorObservation::NotChecked,
+            snapshot_files: std::collections::BTreeMap::new(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum InstallSelection {
     LatestCompleteStable,
@@ -67,14 +118,22 @@ pub(crate) enum Operation {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum TransactionError {
     Io,
+    StopRequested,
+    CleanupUnknown,
+    ActivationRecoveryFailed {
+        primary: Box<TransactionError>,
+        recovery: Box<TransactionError>,
+    },
     Busy,
     UnsafePath,
-    InvalidPreparedPair,
+    InvalidPair,
     InvalidState(&'static str),
     CommandLinkConflict,
     ForeignActiveTarget,
     NoInstallation,
     NoPreviousPair,
+    Verification(&'static str),
+    NixBlocked(nix_owner::NixBlock),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -99,12 +158,8 @@ impl Layout {
         self.state_directory.join(ACTIVE_NEXT_NAME)
     }
 
-    fn receipt(&self) -> PathBuf {
-        self.state_directory.join(RECEIPT_NAME)
-    }
-
-    fn intent(&self) -> PathBuf {
-        self.state_directory.join(INTENT_NAME)
+    fn record(&self) -> PathBuf {
+        self.state_directory.join(STATE_NAME)
     }
 
     fn lock(&self) -> PathBuf {
@@ -124,21 +179,31 @@ impl Layout {
 
     fn validate(&self) -> Result<(), TransactionError> {
         validate_directory(&self.state_directory, true)?;
-        validate_directory(&self.command_directory, false)
+        let mut directory = self.command_directory.as_path();
+        while path_kind(directory)?.is_none() {
+            directory = directory.parent().ok_or(TransactionError::UnsafePath)?;
+        }
+        validate_directory(directory, false)
     }
 }
 
+#[cfg(test)]
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct PreparedPair {
+struct FixturePair {
     identity: PairIdentity,
 }
 
-impl PreparedPair {
-    pub(crate) fn from_prepared_output(
+#[cfg(test)]
+impl FixturePair {
+    pub(crate) fn from_fixture_output(
         version: String,
         output: PathBuf,
     ) -> Result<Self, TransactionError> {
-        let identity = PairIdentity { version, output };
+        let identity = PairIdentity {
+            version,
+            output,
+            selection: None,
+        };
         validate_pair(&identity)?;
         Ok(Self { identity })
     }
@@ -146,22 +211,42 @@ impl PreparedPair {
 
 pub(crate) struct InstallationOwner {
     layout: Layout,
+    effects: Effects,
+    #[cfg(test)]
+    fixture: bool,
 }
 
 impl InstallationOwner {
+    #[cfg(test)]
     pub(crate) fn new(layout: Layout) -> Self {
-        Self { layout }
+        Self {
+            layout,
+            effects: Effects::for_tests(),
+            #[cfg(test)]
+            fixture: false,
+        }
     }
 
-    pub(crate) fn install_prepared_pair(
+    #[cfg(test)]
+    fn owned_fixture(layout: Layout) -> Self {
+        Self {
+            layout,
+            effects: Effects::for_tests(),
+            fixture: true,
+        }
+    }
+
+    #[cfg(test)]
+    fn install_fixture_pair(
         &self,
-        pair: PreparedPair,
+        pair: FixturePair,
         operation: Operation,
     ) -> Result<(), TransactionError> {
-        self.with_lock(|| {
-            let current = self.recover_locked()?;
+        self.with_fixture_lease(|| async {
+            let current = self.recover_locked().await?;
             match (&operation, current.as_ref()) {
-                (Operation::Install(InstallSelection::LatestCompleteStable), Some(_)) => {
+                (Operation::Install(InstallSelection::LatestCompleteStable), Some(receipt)) => {
+                    validate_pair(&receipt.active)?;
                     return Ok(());
                 }
                 (Operation::Update(_), None) => return Err(TransactionError::NoInstallation),
@@ -173,19 +258,22 @@ impl InstallationOwner {
             }
 
             let after = self.next_receipt(current.as_ref(), pair.identity);
-            self.switch_pair(current, after, operation)
+            self.switch_pair(current, after, operation).await
         })
     }
 
+    #[cfg(test)]
     pub(crate) fn rollback(&self) -> Result<(), TransactionError> {
-        self.with_lock(|| {
+        self.with_fixture_lease(|| async {
             let current = self
-                .recover_locked()?
+                .recover_locked()
+                .await?
                 .ok_or(TransactionError::NoInstallation)?;
             let previous = current
                 .previous
                 .clone()
                 .ok_or(TransactionError::NoPreviousPair)?;
+            validate_pair(&previous)?;
             let after = Receipt {
                 schema: STATE_SCHEMA,
                 installation_id: current.installation_id.clone(),
@@ -194,20 +282,23 @@ impl InstallationOwner {
                 links: current.links.clone(),
             };
             self.switch_pair(Some(current), after, Operation::Rollback)
+                .await
         })
     }
 
+    #[cfg(test)]
     pub(crate) fn reconcile(&self) -> Result<(), TransactionError> {
-        self.with_lock(|| self.recover_locked().map(|_| ()))
+        self.with_fixture_lease(|| async { self.recover_locked().await.map(|_| ()) })
     }
 
-    fn with_lock<T>(
+    #[cfg(test)]
+    fn with_fixture_lease<T, F: std::future::Future<Output = Result<T, TransactionError>>>(
         &self,
-        action: impl FnOnce() -> Result<T, TransactionError>,
+        action: impl FnOnce() -> F,
     ) -> Result<T, TransactionError> {
         self.layout.validate()?;
-        let _lock = StateLock::acquire(&self.layout.lock())?;
-        action()
+        let lock = RootLease::acquire(&self.layout.lock())?;
+        coordinator::test_with(&self.effects, &lock, action())
     }
 
     fn next_receipt(&self, before: Option<&Receipt>, active: PairIdentity) -> Receipt {
@@ -222,14 +313,14 @@ impl InstallationOwner {
         }
     }
 
-    fn switch_pair(
+    async fn switch_pair(
         &self,
         before: Option<Receipt>,
         after: Receipt,
         operation: Operation,
     ) -> Result<(), TransactionError> {
         self.validate_receipt(&after)?;
-        self.validate_before_links(before.as_ref(), &after)?;
+        self.validate_before_links(before.as_ref(), &after).await?;
         let intent = Intent {
             schema: STATE_SCHEMA,
             operation,
@@ -237,53 +328,116 @@ impl InstallationOwner {
             after: after.clone(),
         };
         self.validate_intent(&intent)?;
-        self.write_json_atomic(&self.layout.intent(), &intent)?;
+        let mut record = self.read_record().await?;
+        record.activation = Some(intent);
         #[cfg(test)]
-        pause_after("after_intent");
+        self.effects.hit("before_intent");
+        let publication = self.write_record(&record, false).await;
+        if publication == Err(TransactionError::StopRequested) {
+            return publication;
+        }
+        let settlement = match &publication {
+            Ok(()) => self.effects.settlement(SettlementKind::Activation)?,
+            Err(primary) => match self
+                .effects
+                .recover_failed_publication(SettlementKind::Activation, &self.layout)
+                .await
+            {
+                Ok(settlement) => settlement,
+                Err(recovery) => {
+                    return Err(TransactionError::ActivationRecoveryFailed {
+                        primary: Box::new(primary.clone()),
+                        recovery: Box::new(recovery),
+                    });
+                }
+            },
+        };
+        let owner = self.with_effects(settlement.clone());
+        let publication_failed = publication.is_err();
+        let result = match publication {
+            Ok(()) => {
+                #[cfg(test)]
+                {
+                    self.effects.hit("after_intent");
+                    pause_after("after_intent");
+                }
+                owner.finish_activation(before, after, record).await
+            }
+            Err(error) => Err(error),
+        };
+        if let Err(primary) = result {
+            let recovered = if publication_failed {
+                owner.recover_failed_journal().await
+            } else {
+                owner.recover_locked().await.map(|_| ())
+            };
+            if let Err(recovery) = recovered {
+                return Err(TransactionError::ActivationRecoveryFailed {
+                    primary: Box::new(primary),
+                    recovery: Box::new(recovery),
+                });
+            }
+            settlement.finish_settlement()?;
+            return Err(primary);
+        }
+        settlement.finish_settlement()?;
+        self.effects.checkpoint()
+    }
 
-        self.ensure_command_links(&after)?;
-        if self.read_active_target()?
+    async fn finish_activation(
+        &self,
+        before: Option<Receipt>,
+        after: Receipt,
+        mut record: InstallationRecord,
+    ) -> Result<(), TransactionError> {
+        self.ensure_command_links(&after).await?;
+        if self.read_active_target().await?
             != before.as_ref().map(|receipt| receipt.active.output.clone())
         {
             return Err(TransactionError::ForeignActiveTarget);
         }
-        self.create_active_next(&after.active.output)?;
-        fs::rename(self.layout.active_next_link(), self.layout.active_link())
-            .map_err(|_| TransactionError::Io)?;
-        sync_directory(&self.layout.state_directory)?;
-        #[cfg(test)]
-        pause_after("after_activation_rename");
+        self.create_active_next(&after.active.output).await?;
+        self.effects
+            .filesystem(FilesystemJob::RenameActiveLink {
+                layout: self.layout.clone(),
+                expected: before.as_ref().map(|receipt| receipt.active.output.clone()),
+                target: after.active.output.clone(),
+            })
+            .await?;
 
-        if self.read_active_target()?.as_ref() != Some(&after.active.output) {
+        if self.read_active_target().await?.as_ref() != Some(&after.active.output) {
             return Err(TransactionError::ForeignActiveTarget);
         }
-        self.write_json_atomic(&self.layout.receipt(), &after)?;
-        if self.read_active_target()?.as_ref() != Some(&after.active.output) {
+        record.committed = Some(after.clone());
+        self.write_record(&record, true).await?;
+        if self.read_active_target().await?.as_ref() != Some(&after.active.output) {
             return Err(TransactionError::ForeignActiveTarget);
         }
-        self.remove_intent()?;
+        self.remove_intent().await?;
         Ok(())
     }
 
-    fn recover_locked(&self) -> Result<Option<Receipt>, TransactionError> {
-        let receipt = self.read_receipt()?;
-        let intent = self.read_intent()?;
-        let active = self.read_active_target()?;
-        let next = self.read_next_target()?;
+    async fn recover_locked(&self) -> Result<Option<Receipt>, TransactionError> {
+        let mut record = self.read_record().await?;
+        let receipt = record.committed.clone();
+        let intent = record.activation.clone();
+        let active = self.read_active_target().await?;
+        let next = self.read_next_target().await?;
 
         if let Some(intent) = intent {
             let before_target = intent.before.as_ref().map(|receipt| &receipt.active.output);
             let after_target = &intent.after.active.output;
             if active.as_ref() == Some(after_target) {
-                self.remove_next_if(after_target, next.as_ref())?;
-                self.ensure_command_links(&intent.after)?;
+                self.remove_next_if(after_target, next.as_ref()).await?;
+                self.ensure_command_links(&intent.after).await?;
                 if receipt.as_ref() != Some(&intent.after) {
-                    self.write_json_atomic(&self.layout.receipt(), &intent.after)?;
+                    record.committed = Some(intent.after.clone());
+                    self.write_record(&record, true).await?;
                 }
-                if self.read_active_target()?.as_ref() != Some(after_target) {
+                if self.read_active_target().await?.as_ref() != Some(after_target) {
                     return Err(TransactionError::ForeignActiveTarget);
                 }
-                self.remove_intent()?;
+                self.remove_intent().await?;
                 return Ok(Some(intent.after));
             }
             if active.as_ref() == before_target {
@@ -292,13 +446,13 @@ impl InstallationOwner {
                         "receipt differs from journal before state",
                     ));
                 }
-                self.remove_next_if(after_target, next.as_ref())?;
+                self.remove_next_if(after_target, next.as_ref()).await?;
                 if let Some(before) = &intent.before {
-                    self.ensure_command_links(before)?;
+                    self.ensure_command_links(before).await?;
                 } else {
-                    self.remove_first_install_links(&intent.after)?;
+                    self.remove_first_install_links(&intent.after).await?;
                 }
-                self.remove_intent()?;
+                self.remove_intent().await?;
                 return Ok(intent.before);
             }
             return Err(TransactionError::ForeignActiveTarget);
@@ -314,242 +468,279 @@ impl InstallationOwner {
                 if active.as_ref() != Some(&receipt.active.output) {
                     return Err(TransactionError::ForeignActiveTarget);
                 }
-                self.ensure_command_links(&receipt)?;
+                self.ensure_command_links(&receipt).await?;
                 Ok(Some(receipt))
             }
             None => {
                 if active.is_some() {
                     return Err(TransactionError::ForeignActiveTarget);
                 }
-                self.require_absent_command_links()?;
+                self.require_absent_command_links().await?;
                 Ok(None)
             }
         }
     }
 
-    fn validate_before_links(
+    async fn validate_before_links(
         &self,
         before: Option<&Receipt>,
         after: &Receipt,
     ) -> Result<(), TransactionError> {
         match before {
-            Some(receipt) => self.validate_command_links(&receipt.links),
-            None => self.require_absent_links(&after.links),
+            Some(receipt) => self.validate_command_links(&receipt.links).await,
+            None => self.require_absent_links(&after.links).await,
         }
     }
 
-    fn validate_command_links(&self, links: &OwnedLinks) -> Result<(), TransactionError> {
+    async fn validate_command_links(&self, links: &OwnedLinks) -> Result<(), TransactionError> {
         if links != &self.layout.owned_links() {
             return Err(TransactionError::InvalidState("receipt command-link paths"));
         }
-        self.validate_link(&links.neo, &self.layout.expected_command_target("neo"))?;
+        self.validate_link(&links.neo, &self.layout.expected_command_target("neo"))
+            .await?;
         self.validate_link(
             &links.neoctl,
             &self.layout.expected_command_target("neoctl"),
         )
+        .await
     }
 
-    fn validate_link(&self, path: &Path, target: &Path) -> Result<(), TransactionError> {
-        match read_owned_link(path).map_err(|_| TransactionError::CommandLinkConflict)? {
+    async fn validate_link(&self, path: &Path, target: &Path) -> Result<(), TransactionError> {
+        match self
+            .inspect_link(path.to_owned())
+            .await
+            .map_err(|error| error.preserve_stop(TransactionError::CommandLinkConflict))?
+        {
             Some(actual) if actual == target => Ok(()),
             Some(_) => Err(TransactionError::CommandLinkConflict),
             None => Ok(()),
         }
     }
 
-    fn require_absent_links(&self, links: &OwnedLinks) -> Result<(), TransactionError> {
+    async fn require_absent_links(&self, links: &OwnedLinks) -> Result<(), TransactionError> {
         if links != &self.layout.owned_links() {
             return Err(TransactionError::InvalidState("journal command-link paths"));
         }
-        self.require_absent_command_links()
+        self.require_absent_command_links().await
     }
 
-    fn require_absent_command_links(&self) -> Result<(), TransactionError> {
+    async fn require_absent_command_links(&self) -> Result<(), TransactionError> {
         for path in [
             self.layout.command_directory.join("neo"),
             self.layout.command_directory.join("neoctl"),
         ] {
-            if path_kind(&path)?.is_some() {
+            if self.inspect_path(path).await?.is_some() {
                 return Err(TransactionError::CommandLinkConflict);
             }
         }
         Ok(())
     }
 
-    fn ensure_command_links(&self, receipt: &Receipt) -> Result<(), TransactionError> {
+    async fn ensure_command_links(&self, receipt: &Receipt) -> Result<(), TransactionError> {
         self.validate_receipt(receipt)?;
         self.ensure_command_link(
             &receipt.links.neo,
             &self.layout.expected_command_target("neo"),
-        )?;
+        )
+        .await?;
         #[cfg(test)]
-        pause_after("after_neo_link");
+        {
+            self.effects.hit("after_neo_link");
+            pause_after("after_neo_link");
+        }
         self.ensure_command_link(
             &receipt.links.neoctl,
             &self.layout.expected_command_target("neoctl"),
         )
+        .await
     }
 
-    fn ensure_command_link(&self, path: &Path, target: &Path) -> Result<(), TransactionError> {
-        match read_owned_link(path).map_err(|_| TransactionError::CommandLinkConflict)? {
-            Some(actual) if actual == target => Ok(()),
-            Some(_) => Err(TransactionError::CommandLinkConflict),
-            None => {
-                symlink(target, path).map_err(|_| TransactionError::CommandLinkConflict)?;
-                sync_directory(&self.layout.command_directory)
-            }
-        }
+    async fn ensure_command_link(
+        &self,
+        path: &Path,
+        target: &Path,
+    ) -> Result<(), TransactionError> {
+        self.effects
+            .filesystem(FilesystemJob::EnsureCommandLink {
+                path: path.to_owned(),
+                target: target.to_owned(),
+            })
+            .await?;
+        Ok(())
     }
 
-    fn remove_first_install_links(&self, receipt: &Receipt) -> Result<(), TransactionError> {
+    async fn remove_first_install_links(&self, receipt: &Receipt) -> Result<(), TransactionError> {
         self.remove_owned_link(
             &receipt.links.neo,
             &self.layout.expected_command_target("neo"),
-        )?;
+        )
+        .await?;
         self.remove_owned_link(
             &receipt.links.neoctl,
             &self.layout.expected_command_target("neoctl"),
         )
+        .await
     }
 
-    fn remove_owned_link(&self, path: &Path, target: &Path) -> Result<(), TransactionError> {
-        match read_owned_link(path).map_err(|_| TransactionError::CommandLinkConflict)? {
-            Some(actual) if actual == target => {
-                fs::remove_file(path).map_err(|_| TransactionError::Io)?;
-                sync_directory(self.layout.command_directory.as_path())
-            }
-            Some(_) => Err(TransactionError::CommandLinkConflict),
-            None => Ok(()),
-        }
-    }
-
-    fn create_active_next(&self, target: &Path) -> Result<(), TransactionError> {
-        if path_kind(&self.layout.active_next_link())?.is_some() {
-            return Err(TransactionError::InvalidState(
-                "activation temporary already exists",
-            ));
-        }
-        symlink(target, self.layout.active_next_link()).map_err(|_| TransactionError::Io)?;
-        sync_directory(&self.layout.state_directory)?;
-        #[cfg(test)]
-        pause_after("after_active_next_creation");
+    async fn remove_owned_link(&self, path: &Path, target: &Path) -> Result<(), TransactionError> {
+        self.effects
+            .filesystem(FilesystemJob::RemoveCommandLink {
+                path: path.to_owned(),
+                target: target.to_owned(),
+            })
+            .await?;
         Ok(())
     }
 
-    fn read_active_target(&self) -> Result<Option<PathBuf>, TransactionError> {
-        read_owned_link(&self.layout.active_link())
-            .map_err(|_| TransactionError::ForeignActiveTarget)
+    async fn create_active_next(&self, target: &Path) -> Result<(), TransactionError> {
+        self.effects
+            .filesystem(FilesystemJob::PrepareActiveLink {
+                layout: self.layout.clone(),
+                target: target.to_owned(),
+            })
+            .await?;
+        Ok(())
     }
 
-    fn read_next_target(&self) -> Result<Option<PathBuf>, TransactionError> {
-        read_owned_link(&self.layout.active_next_link())
-            .map_err(|_| TransactionError::ForeignActiveTarget)
+    async fn read_active_target(&self) -> Result<Option<PathBuf>, TransactionError> {
+        self.inspect_link(self.layout.active_link())
+            .await
+            .map_err(|error| error.preserve_stop(TransactionError::ForeignActiveTarget))
     }
 
-    fn remove_next_if(
+    async fn read_next_target(&self) -> Result<Option<PathBuf>, TransactionError> {
+        self.inspect_link(self.layout.active_next_link())
+            .await
+            .map_err(|error| error.preserve_stop(TransactionError::ForeignActiveTarget))
+    }
+
+    async fn remove_next_if(
         &self,
         expected: &Path,
         actual: Option<&PathBuf>,
     ) -> Result<(), TransactionError> {
         match actual {
             Some(actual) if actual == expected => {
-                fs::remove_file(self.layout.active_next_link())
-                    .map_err(|_| TransactionError::Io)?;
-                sync_directory(&self.layout.state_directory)
+                self.effects
+                    .filesystem(FilesystemJob::RemoveNextLink {
+                        layout: self.layout.clone(),
+                        expected: expected.to_owned(),
+                    })
+                    .await?;
+                Ok(())
             }
             Some(_) => Err(TransactionError::ForeignActiveTarget),
             None => Ok(()),
         }
     }
 
-    fn read_receipt(&self) -> Result<Option<Receipt>, TransactionError> {
-        let receipt: Option<Receipt> = self.read_json(&self.layout.receipt())?;
-        if let Some(receipt) = &receipt {
-            self.validate_receipt(receipt)?;
-        }
-        Ok(receipt)
-    }
-
-    fn read_intent(&self) -> Result<Option<Intent>, TransactionError> {
-        let intent: Option<Intent> = self.read_json(&self.layout.intent())?;
-        if let Some(intent) = &intent {
-            self.validate_intent(intent)?;
-        }
-        Ok(intent)
-    }
-
-    fn read_json<T: for<'de> Deserialize<'de>>(
-        &self,
-        path: &Path,
-    ) -> Result<Option<T>, TransactionError> {
-        let Some(mut file) = open_owned_file(path, true, false)? else {
-            return Ok(None);
+    async fn read_record(&self) -> Result<InstallationRecord, TransactionError> {
+        let FilesystemResult::Bytes(bytes) = self
+            .effects
+            .filesystem(FilesystemJob::ReadRecord(self.layout.clone()))
+            .await?
+        else {
+            return Err(TransactionError::InvalidState("record completion type"));
         };
-        let mut bytes = Vec::new();
-        Read::by_ref(&mut file)
-            .take(MAX_STATE_BYTES + 1)
-            .read_to_end(&mut bytes)
-            .map_err(|_| TransactionError::Io)?;
-        if bytes.len() as u64 > MAX_STATE_BYTES {
+        self.decode_record(bytes.as_deref())
+    }
+
+    fn decode_record(&self, bytes: Option<&[u8]>) -> Result<InstallationRecord, TransactionError> {
+        let record: InstallationRecord = bytes
+            .map(|bytes| {
+                serde_json::from_slice(&bytes).map_err(|_| {
+                    TransactionError::InvalidState("state record does not match its schema")
+                })
+            })
+            .transpose()?
+            .unwrap_or_default();
+        if record.schema != STATE_SCHEMA {
             return Err(TransactionError::InvalidState(
-                "state record exceeds the size limit",
+                "unsupported installation schema",
             ));
         }
-        serde_json::from_slice(&bytes)
-            .map(Some)
-            .map_err(|_| TransactionError::InvalidState("state record does not match its schema"))
+        if let Some(receipt) = &record.committed {
+            self.validate_receipt(receipt)?;
+        }
+        if let Some(intent) = &record.activation {
+            self.validate_intent(intent)?;
+            if record.committed != intent.before && record.committed.as_ref() != Some(&intent.after)
+            {
+                return Err(TransactionError::InvalidState(
+                    "committed roles differ from both activation states",
+                ));
+            }
+        }
+        if let Some(selected) = &record.pinned {
+            validate_selection(selected)?;
+        }
+        let maximum = crate::candidate::snapshot_descriptor_limit()
+            .map_err(|_| TransactionError::InvalidState("snapshot descriptor contract"))?;
+        if record.snapshot_files.len() > 3 {
+            return Err(TransactionError::InvalidState(
+                "too many retained snapshots",
+            ));
+        }
+        for (id, files) in &record.snapshot_files {
+            if !candidate_id(id)
+                || files.is_empty()
+                || files.len() > maximum
+                || !files.windows(2).all(|pair| pair[0].name < pair[1].name)
+            {
+                return Err(TransactionError::InvalidState("snapshot descriptor shape"));
+            }
+            for file in files {
+                if file.name.is_empty()
+                    || file.name.len() > 512
+                    || !file.name.as_bytes()[0].is_ascii_alphanumeric()
+                    || !file
+                        .name
+                        .bytes()
+                        .all(|b| b.is_ascii_alphanumeric() || b"._+-".contains(&b))
+                    || !candidate_id(&file.sha)
+                    || file.size == 0
+                    || file.size > 32 * 1024 * 1024
+                {
+                    return Err(TransactionError::InvalidState("snapshot file descriptor"));
+                }
+            }
+            if !files.iter().any(|file| {
+                file.name == "candidate.json" && &file.sha == id && file.size <= 2 * 1024 * 1024
+            }) {
+                return Err(TransactionError::InvalidState("snapshot core descriptor"));
+            }
+        }
+        Ok(record)
     }
 
-    fn write_json_atomic<T: Serialize>(
+    async fn write_record(
         &self,
-        path: &Path,
-        value: &T,
+        record: &InstallationRecord,
+        committing: bool,
     ) -> Result<(), TransactionError> {
-        let bytes = serde_json::to_vec(value)
+        let bytes = serde_json::to_vec(record)
             .map_err(|_| TransactionError::InvalidState("could not encode state record"))?;
         if bytes.len() as u64 > MAX_STATE_BYTES {
             return Err(TransactionError::InvalidState(
                 "state record exceeds the size limit",
             ));
         }
-        let parent = path.parent().ok_or(TransactionError::UnsafePath)?;
-        let name = path
-            .file_name()
-            .and_then(|name| name.to_str())
-            .ok_or(TransactionError::UnsafePath)?;
-        let temporary = parent.join(format!(".{name}.tmp"));
-        remove_owned_file_if_present(&temporary)?;
-        let _existing_target = open_owned_file(path, false, false)?;
-        let mut file = OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .mode(0o600)
-            .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC)
-            .open(&temporary)
-            .map_err(|_| TransactionError::Io)?;
-        file.set_permissions(fs::Permissions::from_mode(0o600))
-            .map_err(|_| TransactionError::Io)?;
-        file.write_all(&bytes).map_err(|_| TransactionError::Io)?;
-        file.sync_all().map_err(|_| TransactionError::Io)?;
-        drop(file);
-
-        #[cfg(test)]
-        if path.file_name().is_some_and(|name| name == RECEIPT_NAME) {
-            pause_after("before_receipt_rename");
-        }
-
-        fs::rename(&temporary, path).map_err(|_| TransactionError::Io)?;
-        sync_directory(parent)?;
-
-        #[cfg(test)]
-        if path.file_name().is_some_and(|name| name == RECEIPT_NAME) {
-            pause_after("after_receipt_rename");
-        }
+        self.effects
+            .filesystem(FilesystemJob::PublishRecord {
+                path: self.layout.record(),
+                bytes,
+                committing,
+            })
+            .await?;
         Ok(())
     }
 
-    fn remove_intent(&self) -> Result<(), TransactionError> {
-        remove_owned_file_if_present(&self.layout.intent())
+    async fn remove_intent(&self) -> Result<(), TransactionError> {
+        let mut record = self.read_record().await?;
+        #[cfg(test)]
+        self.effects.hit("before_intent_removal");
+        record.activation = None;
+        self.write_record(&record, false).await
     }
 
     fn validate_receipt(&self, receipt: &Receipt) -> Result<(), TransactionError> {
@@ -569,9 +760,9 @@ impl InstallationOwner {
                 "receipt identity or ownership invariant",
             ));
         }
-        validate_pair(&receipt.active)?;
+        validate_pair_identity(&receipt.active)?;
         if let Some(previous) = &receipt.previous {
-            validate_pair(previous)?;
+            validate_pair_identity(previous)?;
         }
         Ok(())
     }
@@ -607,18 +798,18 @@ impl InstallationOwner {
     }
 
     #[cfg(test)]
-    fn hold_lock_for_test(&self) -> Result<StateLock, TransactionError> {
+    fn hold_lock_for_test(&self) -> Result<RootLease, TransactionError> {
         self.layout.validate()?;
-        StateLock::acquire(&self.layout.lock())
+        RootLease::acquire(&self.layout.lock())
     }
 }
 
-struct StateLock {
+struct RootLease {
     file: File,
     path: PathBuf,
 }
 
-impl StateLock {
+impl RootLease {
     fn acquire(path: &Path) -> Result<Self, TransactionError> {
         let file = open_or_create_lock(path)?;
         FileExt::try_lock_exclusive(&file).map_err(|error| {
@@ -730,36 +921,94 @@ fn validate_directory(path: &Path, private: bool) -> Result<(), TransactionError
     Ok(())
 }
 
+fn candidate_id(id: &str) -> bool {
+    id.len() == 64
+        && id
+            .bytes()
+            .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
+}
+
+fn validate_selection(selected: &release::PinnedSelection) -> Result<(), TransactionError> {
+    let version = semver::Version::parse(&selected.version)
+        .map_err(|_| TransactionError::InvalidState("candidate version"))?;
+    if version.to_string() != selected.version
+        || !version.pre.is_empty()
+        || !version.build.is_empty()
+        || selected.candidate_id.len() != 64
+        || !selected
+            .candidate_id
+            .bytes()
+            .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
+    {
+        return Err(TransactionError::InvalidState("candidate identity"));
+    }
+    Ok(())
+}
+
+fn validate_pair_identity(pair: &PairIdentity) -> Result<(), TransactionError> {
+    if let Some(selection) = &pair.selection {
+        validate_selection(selection)?;
+        if selection.version != pair.version {
+            return Err(TransactionError::InvalidState(
+                "pair version differs from candidate",
+            ));
+        }
+    }
+    #[cfg(not(test))]
+    {
+        if pair.selection.is_none() {
+            return Err(TransactionError::InvalidState(
+                "pair metadata identity is missing",
+            ));
+        }
+        crate::candidate::OutputPath::parse(
+            pair.output.to_str().ok_or(TransactionError::InvalidPair)?,
+        )
+        .map_err(|_| TransactionError::InvalidPair)?;
+    }
+    if semver::Version::parse(&pair.version).is_err()
+        || !pair.output.is_absolute()
+        || pair.output.components().any(|component| {
+            matches!(
+                component,
+                std::path::Component::ParentDir | std::path::Component::CurDir
+            )
+        })
+    {
+        return Err(TransactionError::InvalidPair);
+    }
+    Ok(())
+}
+
+#[cfg(test)]
 fn validate_pair(pair: &PairIdentity) -> Result<(), TransactionError> {
     if semver::Version::parse(&pair.version).is_err()
         || !pair.output.is_absolute()
         || pair
             .output
             .canonicalize()
-            .map_err(|_| TransactionError::InvalidPreparedPair)?
+            .map_err(|_| TransactionError::InvalidPair)?
             != pair.output
     {
-        return Err(TransactionError::InvalidPreparedPair);
+        return Err(TransactionError::InvalidPair);
     }
-    let output =
-        fs::symlink_metadata(&pair.output).map_err(|_| TransactionError::InvalidPreparedPair)?;
+    let output = fs::symlink_metadata(&pair.output).map_err(|_| TransactionError::InvalidPair)?;
     if !output.is_dir() || output.file_type().is_symlink() || output.mode() & 0o222 != 0 {
-        return Err(TransactionError::InvalidPreparedPair);
+        return Err(TransactionError::InvalidPair);
     }
     let bin = pair.output.join("bin");
-    let bin_metadata =
-        fs::symlink_metadata(&bin).map_err(|_| TransactionError::InvalidPreparedPair)?;
+    let bin_metadata = fs::symlink_metadata(&bin).map_err(|_| TransactionError::InvalidPair)?;
     if !bin_metadata.is_dir()
         || bin_metadata.file_type().is_symlink()
         || bin_metadata.mode() & 0o222 != 0
     {
-        return Err(TransactionError::InvalidPreparedPair);
+        return Err(TransactionError::InvalidPair);
     }
     for command in ["neo", "neoctl"] {
         let metadata =
-            fs::metadata(bin.join(command)).map_err(|_| TransactionError::InvalidPreparedPair)?;
+            fs::metadata(bin.join(command)).map_err(|_| TransactionError::InvalidPair)?;
         if !metadata.is_file() || metadata.mode() & 0o111 == 0 {
-            return Err(TransactionError::InvalidPreparedPair);
+            return Err(TransactionError::InvalidPair);
         }
     }
     Ok(())
@@ -814,10 +1063,89 @@ fn pause_after(point: &str) {
     }
 }
 
+impl TransactionError {
+    fn preserve_stop(self, ordinary: Self) -> Self {
+        match self {
+            Self::StopRequested | Self::CleanupUnknown => self,
+            _ => ordinary,
+        }
+    }
+}
+
+impl InstallationOwner {
+    fn with_effects(&self, effects: Effects) -> Self {
+        Self {
+            layout: self.layout.clone(),
+            effects,
+            #[cfg(test)]
+            fixture: self.fixture,
+        }
+    }
+
+    async fn inspect_link(&self, path: PathBuf) -> Result<Option<PathBuf>, TransactionError> {
+        match self
+            .effects
+            .filesystem(FilesystemJob::InspectLink(path))
+            .await?
+        {
+            FilesystemResult::Link(value) => Ok(value),
+            _ => Err(TransactionError::InvalidState("link completion type")),
+        }
+    }
+
+    async fn inspect_path(&self, path: PathBuf) -> Result<Option<Metadata>, TransactionError> {
+        match self
+            .effects
+            .filesystem(FilesystemJob::InspectPath(path))
+            .await?
+        {
+            FilesystemResult::Path(value) => Ok(value),
+            _ => Err(TransactionError::InvalidState("path completion type")),
+        }
+    }
+
+    async fn read_snapshot(
+        &self,
+        path: PathBuf,
+        maximum: usize,
+    ) -> Result<Option<Vec<u8>>, TransactionError> {
+        match self
+            .effects
+            .filesystem(FilesystemJob::ReadSnapshot { path, maximum })
+            .await?
+        {
+            FilesystemResult::Bytes(value) => Ok(value),
+            _ => Err(TransactionError::InvalidState("snapshot completion type")),
+        }
+    }
+
+    async fn observe_stopped(&self) -> Result<coordinator::StopObservation, TransactionError> {
+        let effects = self.effects.settlement(SettlementKind::Observation)?;
+        let owner = self.with_effects(effects.clone());
+        let record = owner.read_record().await?;
+        let target = owner.read_active_target().await?;
+        if record.activation.is_some() || record.resources.pending.is_some() {
+            return Err(TransactionError::InvalidState(
+                "stopped operation has a pending journal",
+            ));
+        }
+        let observation = match (record.committed, target) {
+            (None, None) => coordinator::StopObservation::ObservedNoPair,
+            (Some(receipt), Some(target)) if receipt.active.output == target => {
+                coordinator::StopObservation::ObservedPair(receipt.active)
+            }
+            _ => return Err(TransactionError::ForeignActiveTarget),
+        };
+        effects.finish_settlement()?;
+        Ok(observation)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::os::unix::fs::{PermissionsExt, symlink};
+    use std::os::unix::fs::PermissionsExt;
+    use std::os::unix::fs::symlink;
     use std::process::{Child, Command, ExitStatus, Output};
     use std::time::{Duration, Instant};
     use tempfile::TempDir;
@@ -857,13 +1185,14 @@ mod tests {
             request.state_directory,
             request.command_directory,
         ));
+        owner.effects.accept_fixture_review();
         let result = match request.action {
             ChildAction::Install {
                 version,
                 output,
                 operation,
-            } => PreparedPair::from_prepared_output(version, output)
-                .and_then(|pair| owner.install_prepared_pair(pair, operation)),
+            } => FixturePair::from_fixture_output(version, output)
+                .and_then(|pair| owner.install_fixture_pair(pair, operation)),
             ChildAction::Rollback => owner.rollback(),
             ChildAction::Reconcile => owner.reconcile(),
             ChildAction::HoldLock => {
@@ -902,7 +1231,7 @@ mod tests {
             },
         ));
         assert_versions(&commands, "0.17.1");
-        let receipt_path = state.join(RECEIPT_NAME);
+        let receipt_path = state.join(STATE_NAME);
         let initial_receipt = fs::read(&receipt_path).expect("read the initial receipt");
 
         assert_child_success(run_action(
@@ -931,17 +1260,13 @@ mod tests {
             },
         ));
         assert_versions(&commands, "0.17.2");
-        let updated: Receipt =
-            serde_json::from_slice(&fs::read(&receipt_path).expect("read the updated receipt"))
-                .expect("parse the updated receipt");
+        let updated = saved_record(&state).committed.unwrap();
         assert_eq!(updated.active.version, "0.17.2");
         assert_eq!(updated.previous.as_ref().unwrap().version, "0.17.1");
 
         assert_child_success(run_action(&temp, &state, &commands, ChildAction::Rollback));
         assert_versions(&commands, "0.17.1");
-        let rolled_back: Receipt =
-            serde_json::from_slice(&fs::read(&receipt_path).expect("read the rollback receipt"))
-                .expect("parse the rollback receipt");
+        let rolled_back = saved_record(&state).committed.unwrap();
         assert_eq!(rolled_back.active.version, "0.17.1");
         assert_eq!(rolled_back.previous.as_ref().unwrap().version, "0.17.2");
         assert_eq!(fs::read_to_string(unrelated).unwrap(), "preserve");
@@ -990,22 +1315,16 @@ mod tests {
                 "the interrupted child unexpectedly succeeded"
             );
 
-            let before_recovery: Receipt = serde_json::from_slice(
-                &fs::read(state.join(RECEIPT_NAME)).expect("read receipt before recovery"),
-            )
-            .expect("parse receipt before recovery");
+            let before_recovery = saved_record(&state).committed.unwrap();
             assert_eq!(before_recovery.active.version, receipt_version, "{cut}");
             assert!(
-                state.join(INTENT_NAME).exists(),
+                saved_record(&state).activation.is_some(),
                 "{cut} lost the durable intent"
             );
 
             assert_child_success(run_action(&temp, &state, &commands, ChildAction::Reconcile));
             assert_versions(&commands, expected_version);
-            let recovered: Receipt = serde_json::from_slice(
-                &fs::read(state.join(RECEIPT_NAME)).expect("read recovered receipt"),
-            )
-            .expect("parse recovered receipt");
+            let recovered = saved_record(&state).committed.unwrap();
             assert_eq!(recovered.active.version, expected_version, "{cut}");
             if expected_version == "0.17.1" {
                 assert!(
@@ -1027,7 +1346,7 @@ mod tests {
                 assert_eq!(recovered.previous.as_ref().unwrap().version, "0.17.1");
             }
             assert!(
-                !state.join(INTENT_NAME).exists(),
+                !saved_record(&state).activation.is_some(),
                 "{cut} left a resolved intent"
             );
             assert!(
@@ -1071,8 +1390,14 @@ mod tests {
                 "{cut} was not interrupted"
             );
 
-            assert!(state.join(INTENT_NAME).exists(), "{cut} lost its intent");
-            assert!(!state.join(RECEIPT_NAME).exists(), "{cut} committed early");
+            assert!(
+                saved_record(&state).activation.is_some(),
+                "{cut} lost its intent"
+            );
+            assert!(
+                saved_record(&state).committed.is_none(),
+                "{cut} committed early"
+            );
             assert_eq!(
                 usize::from(path_is_present(&commands.join("neo")))
                     + usize::from(path_is_present(&commands.join("neoctl"))),
@@ -1092,7 +1417,7 @@ mod tests {
 
             assert_child_success(run_action(&temp, &state, &commands, ChildAction::Reconcile));
             assert!(
-                !state.join(INTENT_NAME).exists(),
+                !saved_record(&state).activation.is_some(),
                 "{cut} kept its resolved intent"
             );
             assert!(
@@ -1105,14 +1430,11 @@ mod tests {
 
             if activated {
                 assert_versions(&commands, "0.17.1");
-                let recovered: Receipt = serde_json::from_slice(
-                    &fs::read(state.join(RECEIPT_NAME)).expect("read recovered first receipt"),
-                )
-                .expect("parse recovered first receipt");
+                let recovered = saved_record(&state).committed.unwrap();
                 assert_eq!(recovered.active.version, "0.17.1");
             } else {
                 assert!(
-                    !state.join(RECEIPT_NAME).exists(),
+                    saved_record(&state).committed.is_none(),
                     "{cut} invented a receipt"
                 );
                 assert!(
@@ -1171,7 +1493,7 @@ mod tests {
         );
         wait_for_marker(&marker, &mut holder);
 
-        let receipt_before = fs::read(state.join(RECEIPT_NAME)).unwrap();
+        let receipt_before = fs::read(state.join(STATE_NAME)).unwrap();
         let refused = run_action(
             &temp,
             &state,
@@ -1188,7 +1510,7 @@ mod tests {
             "second transaction did not report busy"
         );
         assert_versions(&commands, "0.17.1");
-        assert_eq!(fs::read(state.join(RECEIPT_NAME)).unwrap(), receipt_before);
+        assert_eq!(fs::read(state.join(STATE_NAME)).unwrap(), receipt_before);
         assert_eq!(fs::metadata(&lock_path).unwrap().ino(), lock_inode);
 
         holder.kill_and_reap();
@@ -1222,7 +1544,7 @@ mod tests {
         );
         fs::remove_file(commands.join("neo")).expect("remove the owned test link");
         symlink(&foreign, commands.join("neo")).expect("install a foreign test link");
-        let receipt_before = fs::read(state.join(RECEIPT_NAME)).unwrap();
+        let receipt_before = fs::read(state.join(STATE_NAME)).unwrap();
         let active_before = fs::read_link(state.join(ACTIVE_NAME)).unwrap();
 
         let refused = run_action(
@@ -1245,7 +1567,7 @@ mod tests {
             fs::read_link(state.join(ACTIVE_NAME)).unwrap(),
             active_before
         );
-        assert_eq!(fs::read(state.join(RECEIPT_NAME)).unwrap(), receipt_before);
+        assert_eq!(fs::read(state.join(STATE_NAME)).unwrap(), receipt_before);
         assert_eq!(command_version(&commands.join("neoctl")), "neoctl 0.17.1");
     }
 
@@ -1284,8 +1606,8 @@ mod tests {
         interrupted.kill_and_reap();
         fs::remove_file(state.join(ACTIVE_NAME)).expect("replace the active link in the fixture");
         symlink(&pair_c, state.join(ACTIVE_NAME)).expect("point activation at a third fixture");
-        let receipt_before = fs::read(state.join(RECEIPT_NAME)).unwrap();
-        let intent_before = fs::read(state.join(INTENT_NAME)).unwrap();
+        let receipt_before = fs::read(state.join(STATE_NAME)).unwrap();
+        let intent_before = saved_record(&state).activation;
 
         let refused = run_action(&temp, &state, &commands, ChildAction::Reconcile);
         assert_eq!(
@@ -1294,10 +1616,45 @@ mod tests {
             "a third target was accepted"
         );
         assert_eq!(fs::read_link(state.join(ACTIVE_NAME)).unwrap(), pair_c);
-        assert_eq!(fs::read(state.join(RECEIPT_NAME)).unwrap(), receipt_before);
-        assert_eq!(fs::read(state.join(INTENT_NAME)).unwrap(), intent_before);
+        assert_eq!(fs::read(state.join(STATE_NAME)).unwrap(), receipt_before);
+        assert_eq!(saved_record(&state).activation, intent_before);
         assert!(pair_a.exists() && pair_b.exists() && pair_c.exists());
         assert_eq!(command_version(&commands.join("neo")), "neo 0.17.3");
+    }
+
+    #[test]
+    fn rollback_does_not_execute_or_require_damaged_current_pair() {
+        let (temp, state, commands) = workspace();
+        let pair_a = fixture_pair(&temp, "0.17.1");
+        let _cleanup_a = FixtureCleanup(pair_a.clone());
+        let pair_b = fixture_pair(&temp, "0.17.2");
+        let _cleanup_b = FixtureCleanup(pair_b.clone());
+        for (version, output) in [("0.17.1", &pair_a), ("0.17.2", &pair_b)] {
+            assert_child_success(run_action(
+                &temp,
+                &state,
+                &commands,
+                ChildAction::Install {
+                    version: version.into(),
+                    output: output.clone(),
+                    operation: Operation::Install(InstallSelection::ExactVersion),
+                },
+            ));
+        }
+        fs::set_permissions(pair_b.join("bin"), fs::Permissions::from_mode(0o755)).unwrap();
+        fs::remove_file(pair_b.join("bin/neo")).unwrap();
+        assert_child_success(run_action(&temp, &state, &commands, ChildAction::Rollback));
+        assert_versions(&commands, "0.17.1");
+    }
+
+    fn saved_record(state: &Path) -> InstallationRecord {
+        match fs::read(state.join(STATE_NAME)) {
+            Ok(bytes) => serde_json::from_slice(&bytes).unwrap(),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                InstallationRecord::default()
+            }
+            Err(error) => panic!("read installation record: {error}"),
+        }
     }
 
     fn workspace() -> (TempDir, PathBuf, PathBuf) {
