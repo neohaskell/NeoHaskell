@@ -15,10 +15,12 @@ import Service.Event.StreamPosition (StreamPosition (..))
 import Service.Event.TH (event)
 import Service.EventStore.Core (EventStore (..), ReadStreamMessage (..))
 import Service.EventStore.InMemory qualified as EventStoreInMemory
-import Service.Query.Definition (QueryDefinition (..), createDefinitionWithStore)
+import Service.Query.Definition (QueryDefinition (..), WiredQueryEndpoint (..), createDefinitionWithStore)
 import Service.Query.Registry qualified as Registry
-import Service.QueryObjectStore.Core (QueryObjectStore)
+import Service.QueryObjectStore.Core (QueryObjectStore (..))
 import Service.QueryObjectStore.InMemory qualified as QOSInMemory
+import Service.Query.Pagination (QueryPageRequest (..), QueryPageResponse (..))
+import Service.Transport (EndpointSchema (..), QueryByIdEndpoint (..))
 import Stream qualified
 import Task qualified
 import Test
@@ -148,6 +150,45 @@ spec = do
         fail [fmt|definition exposed queryName "#{exposedName}"; expected "#{expectedName}"|]
       Task.unless (capturedName == expectedName && capturedName != "__trait__" && capturedName != "") do
         fail [fmt|store factory received "#{capturedName}"; expected the query's own name "#{expectedName}" (not the "__trait__" sentinel)|]
+
+    it "wires the collection and UUID handlers with one store and protected renderer" \_ -> do
+      queryStore <- QOSInMemory.new @StoreWiringQuery |> Task.mapError toText
+      queryId <- Uuid.generate
+      let query = StoreWiringQuery {probeId = queryId, probe = 42}
+      queryStore.atomicUpdate queryId (\_ -> Just query) |> Task.mapError toText
+      storeFactoryCalls <- ConcurrentVar.containing (0 :: Int)
+      rendererCalls <- ConcurrentVar.containing (0 :: Int)
+      let storeFactory _ = do
+            storeFactoryCalls |> ConcurrentVar.modify (\count -> count + 1)
+            Task.yield queryStore
+      baseEventStore <- EventStoreInMemory.new |> Task.mapError toText
+      let eventStore = baseEventStore
+            { renderProtectedJson = \value -> do
+                rendererCalls |> ConcurrentVar.modify (\count -> count + 1)
+                Task.yield value
+            }
+      let definition = createDefinitionWithStore @StoreWiringQuery storeFactory
+      (_registry, wired) <- definition.wireQuery eventStore
+      let pageRequest = QueryPageRequest {limit = 10, offset = 0}
+      keyedText <- wired.wiredQueryById.byIdHandler Nothing queryId |> Task.mapError toText
+      collectionText <- wired.wiredCollectionHandler Nothing Nothing pageRequest |> Task.mapError toText
+      observedFactoryCalls <- storeFactoryCalls |> ConcurrentVar.peek
+      observedRendererCalls <- rendererCalls |> ConcurrentVar.peek
+      observedFactoryCalls |> shouldBe 1
+      observedRendererCalls |> shouldBe 2
+      wired.wiredQueryById.byIdSchema.responseSchema |> shouldBe definition.querySchema
+      case Json.decodeText @StoreWiringQuery keyedText of
+        Ok decoded -> do
+          decoded.probeId |> shouldBe queryId
+          decoded.probe |> shouldBe 42
+        Err _ -> fail "Expected the UUID handler to return one query object"
+      case Json.decodeText @(QueryPageResponse StoreWiringQuery) collectionText of
+        Ok response -> do
+          Array.length response.items |> shouldBe 1
+          case Array.get 0 response.items of
+            Just decoded -> decoded.probeId |> shouldBe queryId
+            Nothing -> fail "Expected the collection handler to return the same stored query"
+        Err _ -> fail "Expected the collection handler to return its page envelope"
 
     it "automatic query wiring reuses entity snapshots during replay" \_ -> do
       baseStore <- EventStoreInMemory.new |> Task.mapError toText

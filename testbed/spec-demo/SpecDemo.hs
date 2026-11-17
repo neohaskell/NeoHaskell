@@ -280,7 +280,7 @@ spec = do
         Err problem -> problem |> shouldBe "valid Event Model"
         Ok model -> do
           let application = EventModel.toApplication model
-          Application.serviceRunnerCount application |> shouldBe 17
+          Application.serviceRunnerCount application |> shouldBe 18
           Application.queryDefinitionCount application |> shouldBe 6
           Application.transportCount application |> shouldBe 1
           Application.hasConfig application |> shouldBe True
@@ -353,7 +353,14 @@ spec = do
           foundFeatures
             |> Array.map EventModel.featureName
             |> shouldBe
-              ["Cart flow", "Stock flow", "Document flow", "External effect flow", "Protected record flow", "Owned erasure flow"]
+              [ "Cart flow",
+                "Stock flow",
+                "Document flow",
+                "External effect flow",
+                "Protected record flow",
+                "Owned erasure flow",
+                "Request origin"
+              ]
           let allChapters = foundFeatures |> Array.flatMap (\selected -> selected |> EventModel.featureChapters |> Array.fromLinkedList)
           allChapters
             |> Array.map EventModel.chapterName
@@ -363,11 +370,12 @@ spec = do
                 "Manage documents",
                 "Deliver effects",
                 "Store protected values",
-                "Erase protected values"
+                "Erase protected values",
+                "Read Web request metadata"
               ]
           let allSlices = allChapters |> Array.flatMap (\selected -> selected |> EventModel.chapterSlices |> Array.fromLinkedList)
-          allSlices |> Array.length |> shouldBe 29
-          allSlices |> Array.takeIf (\selected -> EventModel.sliceKind selected == "state-change") |> Array.length |> shouldBe 17
+          allSlices |> Array.length |> shouldBe 30
+          allSlices |> Array.takeIf (\selected -> EventModel.sliceKind selected == "state-change") |> Array.length |> shouldBe 18
           allSlices |> Array.takeIf (\selected -> EventModel.sliceKind selected == "state-view") |> Array.length |> shouldBe 6
           allSlices |> Array.takeIf (\selected -> EventModel.sliceKind selected == "outbound") |> Array.length |> shouldBe 4
           allSlices |> Array.takeIf (\selected -> EventModel.sliceKind selected == "inbound") |> Array.length |> shouldBe 2

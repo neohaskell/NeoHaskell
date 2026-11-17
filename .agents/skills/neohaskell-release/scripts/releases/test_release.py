@@ -847,8 +847,8 @@ class ArchivedTargetCompatibility(unittest.TestCase):
 
 
 class Prepare(History):
-    def test_dependency_only_action_update_needs_no_platform_release(self):
-        first, baseline = self.publish_bootstrap()
+    def split_action_update(self):
+        first, release_baseline = self.publish_bootstrap()
         workflow = ".github/workflows/semantic-release.yml"
         fixture = ".agents/skills/neohaskell-release/scripts/releases/test_release.py"
         self.write(workflow, "      - uses: cachix/install-nix-action@" + "a" * 40 + " # v31.11.2; supports Intel macOS\n")
@@ -857,15 +857,54 @@ class Prepare(History):
         owning_base = self.git("rev-parse", "HEAD")
         self.write(workflow, "      - uses: cachix/install-nix-action@" + "b" * 40 + " # 31.11.3; supports Intel macOS\n")
         self.commit("fix(deps): bump cachix/install-nix-action")
+        return first, release_baseline, owning_base, fixture
+
+    def test_dependency_only_action_update_needs_no_platform_release(self):
+        first, baseline, owning_base, fixture = self.split_action_update()
         self.write(fixture, 'self.assertIn("cachix/install-nix-action@' + "b" * 40 + '", native)\n')
-        self.commit("chore(release): sync installer pin assertion")
+        self.commit("fix(deps): sync installer pin assertion")
         self.assertEqual(
             release.check_checkout(self.repo, owning_base, "fix(deps): bump cachix/install-nix-action"),
             "release fragments valid",
         )
+        self.repo.git("reset", "--soft", owning_base)
+        self.commit("fix(deps): bump cachix/install-nix-action")
         self.assertIsNone(
             release.plan_release(self.repo, "HEAD", "platform", {first["id"]: baseline}, "2026-09-16")
         )
+
+    def test_split_dependency_update_with_app_change_needs_fragment(self):
+        _, _, owning_base, fixture = self.split_action_update()
+        self.write(fixture, 'self.assertIn("cachix/install-nix-action@' + "b" * 40 + '", native)\n')
+        self.write("source.txt", "changed app behavior")
+        self.commit("fix(deps): sync installer assertion")
+        with self.assertRaisesRegex(ValueError, "fragment"):
+            release.check_checkout(self.repo, owning_base, "fix(deps): bump cachix/install-nix-action")
+
+    def test_non_dependency_commit_in_dependency_update_needs_fragment(self):
+        _, _, owning_base, fixture = self.split_action_update()
+        self.write(fixture, 'self.assertIn("cachix/install-nix-action@' + "b" * 40 + '", native)\n')
+        self.commit("feat(release): sync installer assertion")
+        with self.assertRaisesRegex(ValueError, "fragment"):
+            release.check_checkout(self.repo, owning_base, "fix(deps): bump cachix/install-nix-action")
+
+    def test_breaking_commit_in_dependency_update_needs_fragment(self):
+        _, _, owning_base, fixture = self.split_action_update()
+        self.write(fixture, 'self.assertIn("cachix/install-nix-action@' + "b" * 40 + '", native)\n')
+        self.commit("fix(deps)!: sync installer assertion")
+        with self.assertRaisesRegex(ValueError, "fragment"):
+            release.check_checkout(self.repo, owning_base, "fix(deps): bump cachix/install-nix-action")
+
+    def test_breaking_pr_body_in_dependency_update_needs_fragment(self):
+        _, _, owning_base, fixture = self.split_action_update()
+        self.write(fixture, 'self.assertIn("cachix/install-nix-action@' + "b" * 40 + '", native)\n')
+        self.commit("fix(deps): sync installer assertion")
+        with self.assertRaisesRegex(ValueError, "fragment"):
+            release.check_checkout(
+                self.repo,
+                owning_base,
+                "fix(deps): bump cachix/install-nix-action\n\nBREAKING CHANGE: incompatible toolchain",
+            )
 
     def test_dev_only_lockfile_update_needs_no_platform_release(self):
         first, baseline = self.publish_bootstrap()
