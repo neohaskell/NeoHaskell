@@ -1,3 +1,5 @@
+pub(crate) mod process;
+
 use fs2::FileExt;
 use serde::{Deserialize, Serialize};
 use std::fs::{self, File, Metadata, OpenOptions};
@@ -613,6 +615,7 @@ impl InstallationOwner {
 
 struct StateLock {
     file: File,
+    path: PathBuf,
 }
 
 impl StateLock {
@@ -625,13 +628,10 @@ impl StateLock {
                 TransactionError::Io
             }
         })?;
-        Ok(Self { file })
-    }
-}
-
-impl Drop for StateLock {
-    fn drop(&mut self) {
-        let _ = FileExt::unlock(&self.file);
+        Ok(Self {
+            file,
+            path: path.to_owned(),
+        })
     }
 }
 

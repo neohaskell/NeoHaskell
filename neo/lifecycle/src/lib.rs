@@ -20,6 +20,12 @@ impl Exit {
 pub fn run() -> Exit {
     let identity = identity::BuildIdentity::current();
     let arguments: Vec<_> = std::env::args_os().skip(1).collect();
+    #[cfg(unix)]
+    if arguments.as_slice() == [std::ffi::OsString::from(installation::process::WORKER_ARGUMENT)] {
+        return Exit {
+            code: installation::process::run_worker(),
+        };
+    }
     let english = english();
 
     let code = match arguments.as_slice() {
