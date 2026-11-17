@@ -110,7 +110,7 @@ jobs:
           persist-credentials: false
       - uses: DeterminateSystems/determinate-nix-action@v3.24.1
         if: matrix.reuse != true && matrix.target != 'x86_64-apple-darwin'
-      - uses: cachix/install-nix-action@3dc140bfc76c49fbd4dd958429132e3746bcb086 # 31.11.3; supports Intel macOS
+      - uses: cachix/install-nix-action@3dc140bfc76c49fbd4dd958429132e3746bcb086 # 31.11.5; supports Intel macOS
         if: matrix.reuse != true && matrix.target == 'x86_64-apple-darwin'
       - uses: dtolnay/rust-toolchain@1.94.0
         if: matrix.reuse != true
