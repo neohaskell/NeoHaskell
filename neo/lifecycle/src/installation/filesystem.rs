@@ -147,6 +147,7 @@ pub(super) enum FilesystemJob {
         maximum: u64,
     },
     NixProcessName,
+    NixConfigurationInput,
     OpenResourceDirectory(PathBuf),
     ResourceInventory {
         directory: ResourceDirectory,
@@ -161,6 +162,7 @@ pub(super) enum FilesystemJob {
 }
 
 pub(super) enum FilesystemResult {
+    ConfigurationInput(super::nix_owner::ConfigurationObservation),
     UninstallIntent(super::uninstall::UninstallIntent),
     ShellRemovalPlan(super::shell::RemovalPlan),
     ShellPreimage(Option<super::shell::ProfilePreimage>),
@@ -236,6 +238,7 @@ impl FilesystemJob {
             | Self::NixClient
             | Self::ProtectedPath(_)
             | Self::BoundedDigest { .. }
+            | Self::NixConfigurationInput
             | Self::NixProcessName
             | Self::ResourceInventory { .. }
             | Self::ObservePath(_)
@@ -453,7 +456,7 @@ impl ReadPolicy {
 }
 
 fn read_bounded(
-    mut file: File,
+    mut file: impl Read,
     maximum: usize,
     size_limit_error: TransactionError,
     policy: &ReadPolicy,
@@ -855,6 +858,19 @@ fn execute(job: FilesystemJob, policy: &ReadPolicy) -> Result<FilesystemResult, 
                     policy,
                 )?)
             )))
+        }
+        Job::NixConfigurationInput => {
+            policy.check()?;
+            Ok(Result::ConfigurationInput(
+                super::nix_owner::configuration_input(Path::new("/etc/nix/nix.conf"), |file| {
+                    read_bounded(
+                        file,
+                        128 * 1024,
+                        TransactionError::Verification("file size limit"),
+                        policy,
+                    )
+                })?,
+            ))
         }
         Job::NixProcessName => Ok(Result::Bytes(Some(read_bounded(
             File::open("/proc/1/comm").map_err(|_| TransactionError::Io)?,

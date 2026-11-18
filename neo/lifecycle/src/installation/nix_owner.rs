@@ -1,9 +1,10 @@
 use super::{InstallationOwner, TransactionError, process};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
-use std::fs;
+use std::fs::{self, File, OpenOptions};
 use std::io;
-use std::os::unix::fs::{FileTypeExt, MetadataExt};
+use std::os::unix::fs::{FileTypeExt, MetadataExt, OpenOptionsExt};
 use std::path::{Path, PathBuf};
 
 pub(super) const CLIENT: &str = "/nix/var/nix/profiles/default/bin/nix";
@@ -77,9 +78,172 @@ struct ServiceObservation {
     started: u64,
 }
 
-#[derive(Debug, PartialEq, Eq, Serialize)]
-struct ConfigurationObservation {
-    digest: Option<String>,
+#[derive(PartialEq, Eq)]
+pub(super) enum ConfigurationObservation {
+    Missing {
+        ancestors: Vec<Option<InputIdentity>>,
+        resolved_parent: PathBuf,
+        resolved_ancestors: Vec<Option<InputIdentity>>,
+    },
+    Present {
+        entry: ConfigurationEntry,
+        ancestors: Vec<Option<InputIdentity>>,
+        resolved: PathBuf,
+        resolved_ancestors: Vec<Option<InputIdentity>>,
+        file: InputIdentity,
+        digest: String,
+    },
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub(super) enum ConfigurationEntry {
+    Direct,
+    Indirect,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub(super) struct InputIdentity {
+    device: u64,
+    inode: u64,
+    mode: u32,
+    uid: u32,
+    gid: u32,
+    size: u64,
+    modified: (i64, i64),
+    changed: (i64, i64),
+}
+
+impl InputIdentity {
+    fn of(metadata: &fs::Metadata) -> Self {
+        Self {
+            device: metadata.dev(),
+            inode: metadata.ino(),
+            mode: metadata.mode(),
+            uid: metadata.uid(),
+            gid: metadata.gid(),
+            size: if metadata.is_dir() { 0 } else { metadata.len() },
+            modified: if metadata.is_dir() {
+                (0, 0)
+            } else {
+                (metadata.mtime(), metadata.mtime_nsec())
+            },
+            changed: if metadata.is_dir() {
+                (0, 0)
+            } else {
+                (metadata.ctime(), metadata.ctime_nsec())
+            },
+        }
+    }
+}
+
+impl std::fmt::Debug for ConfigurationObservation {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Missing { .. } => formatter.write_str("MissingConfigurationInput"),
+            Self::Present { entry, digest, .. } => formatter
+                .debug_struct("ConfigurationInput")
+                .field("entry", entry)
+                .field("digest", digest)
+                .finish(),
+        }
+    }
+}
+
+impl Serialize for ConfigurationObservation {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeStruct;
+        let mut value = serializer.serialize_struct("ConfigurationObservation", 1)?;
+        let digest = match self {
+            Self::Missing { .. } => None,
+            Self::Present { digest, .. } => Some(digest),
+        };
+        value.serialize_field("digest", &digest)?;
+        value.end()
+    }
+}
+
+fn input_ancestors(path: &Path) -> io::Result<Vec<Option<InputIdentity>>> {
+    path.ancestors()
+        .map(|ancestor| match fs::symlink_metadata(ancestor) {
+            Ok(metadata) => Ok(Some(InputIdentity::of(&metadata))),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
+            Err(error) => Err(error),
+        })
+        .collect()
+}
+
+pub(super) fn configuration_input(
+    path: &Path,
+    read: impl FnOnce(&mut File) -> Result<Vec<u8>, TransactionError>,
+) -> Result<ConfigurationObservation, TransactionError> {
+    configuration_input_with(path, protected_path, read)
+}
+
+fn configuration_input_with(
+    path: &Path,
+    protect: impl Fn(&Path) -> io::Result<PathBuf>,
+    read: impl FnOnce(&mut File) -> Result<Vec<u8>, TransactionError>,
+) -> Result<ConfigurationObservation, TransactionError> {
+    let io = |_| TransactionError::Io;
+    let ancestors = input_ancestors(path).map_err(io)?;
+    if ancestors.first() == Some(&None) {
+        let existing = path
+            .ancestors()
+            .zip(&ancestors)
+            .find_map(|(path, identity)| identity.as_ref().map(|_| path))
+            .ok_or(TransactionError::Io)?;
+        let resolved = protect(existing).map_err(io)?;
+        let protected = input_ancestors(&resolved).map_err(io)?;
+        if ancestors != input_ancestors(path).map_err(io)?
+            || protect(existing).map_err(io)? != resolved
+            || protected != input_ancestors(&resolved).map_err(io)?
+        {
+            return Err(TransactionError::Io);
+        }
+        return Ok(ConfigurationObservation::Missing {
+            ancestors,
+            resolved_parent: resolved,
+            resolved_ancestors: protected,
+        });
+    }
+    let resolved = protect(path).map_err(io)?;
+    let resolved_ancestors = input_ancestors(&resolved).map_err(io)?;
+    let mut descriptor = OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK | libc::O_CLOEXEC)
+        .open(&resolved)
+        .map_err(io)?;
+    let metadata = descriptor.metadata().map_err(io)?;
+    if !metadata.is_file() || metadata.len() > 128 * 1024 {
+        return Err(TransactionError::Io);
+    }
+    let file = InputIdentity::of(&metadata);
+    if resolved_ancestors.first().and_then(Option::as_ref) != Some(&file) {
+        return Err(TransactionError::Io);
+    }
+    let bytes = read(&mut descriptor)?;
+    if bytes.len() > 128 * 1024
+        || bytes.len() as u64 != metadata.len()
+        || file != InputIdentity::of(&descriptor.metadata().map_err(io)?)
+        || ancestors != input_ancestors(path).map_err(io)?
+        || resolved_ancestors != input_ancestors(&resolved).map_err(io)?
+        || protect(path).map_err(io)? != resolved
+    {
+        return Err(TransactionError::Io);
+    }
+    let entry = if path == resolved {
+        ConfigurationEntry::Direct
+    } else {
+        ConfigurationEntry::Indirect
+    };
+    Ok(ConfigurationObservation::Present {
+        entry,
+        ancestors,
+        resolved,
+        resolved_ancestors,
+        file,
+        digest: format!("{:x}", Sha256::digest(bytes)),
+    })
 }
 
 impl ObservedNixBase {
@@ -113,27 +277,7 @@ impl InstallationOwner {
         if client_digest != identity.client_sha256 {
             return Err(blocked(NixBlock::UnprovedClient));
         }
-        let configuration = ConfigurationObservation {
-            digest: if self
-                .inspect_path(PathBuf::from("/etc/nix/nix.conf"))
-                .await
-                .map_err(|error| error.preserve_stop(blocked(NixBlock::ConfigurationOwnerUnknown)))?
-                .is_some()
-            {
-                let path = self
-                    .nix_protected(
-                        PathBuf::from("/etc/nix/nix.conf"),
-                        NixBlock::ConfigurationOwnerUnknown,
-                    )
-                    .await?;
-                Some(
-                    self.nix_digest(path, 128 * 1024, NixBlock::ConfigurationOwnerUnknown)
-                        .await?,
-                )
-            } else {
-                None
-            },
-        };
+        let configuration = self.nix_configuration_input().await?;
         match self.effects.filesystem(Job::NixProcessName).await {
             Ok(Result::Bytes(Some(bytes))) if bytes == b"systemd\n" => {}
             Err(error) => return Err(error.preserve_stop(blocked(NixBlock::InactiveService))),
@@ -224,12 +368,32 @@ impl InstallationOwner {
         if service != repeated || self.nix_client().await? != client {
             return Err(blocked(NixBlock::DaemonMismatch));
         }
+        if configuration != self.nix_configuration_input().await? {
+            return Err(blocked(NixBlock::ConfigurationOwnerUnknown));
+        }
         Ok(ObservedNixBase {
             client_digest,
             daemon,
             service,
             configuration,
         })
+    }
+
+    async fn nix_configuration_input(&self) -> Result<ConfigurationObservation, TransactionError> {
+        match self
+            .effects
+            .filesystem(super::FilesystemJob::NixConfigurationInput)
+            .await
+            .map_err(|error| {
+                error.preserve_stop(TransactionError::NixBlocked(
+                    NixBlock::ConfigurationOwnerUnknown,
+                ))
+            })? {
+            super::FilesystemResult::ConfigurationInput(value) => Ok(value),
+            _ => Err(TransactionError::InvalidState(
+                "Nix configuration completion type",
+            )),
+        }
     }
 
     async fn nix_client(&self) -> Result<PathBuf, TransactionError> {
@@ -435,6 +599,184 @@ mod tests {
     use super::*;
     use std::os::unix::fs::PermissionsExt;
 
+    fn fixture_input(path: &Path) -> Result<ConfigurationObservation, TransactionError> {
+        configuration_input_with(
+            path,
+            |path| path.canonicalize(),
+            |file| {
+                use std::io::Read;
+                let mut bytes = Vec::new();
+                file.take(128 * 1024 + 1)
+                    .read_to_end(&mut bytes)
+                    .map_err(|_| TransactionError::Io)?;
+                Ok(bytes)
+            },
+        )
+    }
+
+    fn test_configuration(bytes: &[u8]) -> ConfigurationObservation {
+        let temporary = tempfile::tempdir().unwrap();
+        let path = temporary.path().canonicalize().unwrap().join("nix.conf");
+        fs::write(&path, bytes).unwrap();
+        fixture_input(&path).unwrap()
+    }
+
+    #[test]
+    fn configuration_input_records_missing_direct_and_indirect_entries() {
+        use std::os::unix::fs::symlink;
+        let temporary = tempfile::tempdir().unwrap();
+        let base = temporary.path().canonicalize().unwrap();
+        let path = base.join("nix.conf");
+        let missing = fixture_input(&path).unwrap();
+        assert!(matches!(missing, ConfigurationObservation::Missing { .. }));
+        assert_eq!(
+            serde_json::to_value(missing).unwrap(),
+            serde_json::json!({"digest": null})
+        );
+        fs::write(&path, b"private source contents").unwrap();
+        let direct = fixture_input(&path).unwrap();
+        assert!(matches!(
+            direct,
+            ConfigurationObservation::Present {
+                entry: ConfigurationEntry::Direct,
+                ..
+            }
+        ));
+        let link = base.join("linked.conf");
+        symlink(&path, &link).unwrap();
+        let indirect = fixture_input(&link).unwrap();
+        assert!(matches!(
+            indirect,
+            ConfigurationObservation::Present {
+                entry: ConfigurationEntry::Indirect,
+                ..
+            }
+        ));
+        assert_eq!(
+            serde_json::to_value(&direct).unwrap(),
+            serde_json::to_value(&indirect).unwrap()
+        );
+        let debug = format!("{indirect:?}");
+        assert!(!debug.contains("private source") && !debug.contains("linked.conf"));
+        let public = serde_json::to_string(&indirect).unwrap();
+        assert!(!public.contains("private") && !public.contains("linked.conf"));
+        assert_eq!(
+            serde_json::to_value(indirect)
+                .unwrap()
+                .as_object()
+                .unwrap()
+                .len(),
+            1
+        );
+    }
+
+    #[test]
+    fn byte_identical_replacement_and_link_retargeting_change_the_preimage() {
+        use std::os::unix::fs::symlink;
+        let temporary = tempfile::tempdir().unwrap();
+        let base = temporary.path().canonicalize().unwrap();
+        let path = base.join("nix.conf");
+        fs::write(&path, b"same bytes").unwrap();
+        let before = fixture_input(&path).unwrap();
+        let replacement = base.join("replacement");
+        fs::write(&replacement, b"same bytes").unwrap();
+        fs::rename(&replacement, &path).unwrap();
+        let after = fixture_input(&path).unwrap();
+        assert_ne!(before, after);
+        assert_eq!(
+            serde_json::to_value(before).unwrap(),
+            serde_json::to_value(after).unwrap()
+        );
+        let link = base.join("linked.conf");
+        symlink(&path, &link).unwrap();
+        let before = fixture_input(&link).unwrap();
+        fs::write(&replacement, b"same bytes").unwrap();
+        let new_link = base.join("new-link");
+        symlink(&replacement, &new_link).unwrap();
+        fs::rename(&new_link, &link).unwrap();
+        let after = fixture_input(&link).unwrap();
+        assert_ne!(before, after);
+        assert_eq!(
+            serde_json::to_value(before).unwrap(),
+            serde_json::to_value(after).unwrap()
+        );
+    }
+
+    #[test]
+    fn configuration_input_refuses_replacement_during_descriptor_read() {
+        use std::io::Read;
+        let temporary = tempfile::tempdir().unwrap();
+        let base = temporary.path().canonicalize().unwrap();
+        let path = base.join("nix.conf");
+        fs::write(&path, b"same bytes").unwrap();
+        let result = configuration_input_with(
+            &path,
+            |path| path.canonicalize(),
+            |file| {
+                let mut bytes = Vec::new();
+                file.read_to_end(&mut bytes).unwrap();
+                let replacement = base.join("replacement");
+                fs::write(&replacement, &bytes).unwrap();
+                fs::rename(replacement, &path).unwrap();
+                Ok(bytes)
+            },
+        );
+        assert!(matches!(result, Err(TransactionError::Io)));
+    }
+
+    #[test]
+    fn missing_configuration_tracks_indirect_parent_replacement() {
+        use std::os::unix::fs::symlink;
+        let temporary = tempfile::tempdir().unwrap();
+        let base = temporary.path().canonicalize().unwrap();
+        let first = base.join("first");
+        let second = base.join("second");
+        fs::create_dir(&first).unwrap();
+        fs::create_dir(&second).unwrap();
+        let parent = base.join("parent");
+        symlink(&first, &parent).unwrap();
+        let path = parent.join("nix.conf");
+        let before = fixture_input(&path).unwrap();
+        let replacement = base.join("replacement");
+        symlink(&second, &replacement).unwrap();
+        fs::rename(replacement, parent).unwrap();
+        let after = fixture_input(&path).unwrap();
+        assert_ne!(before, after);
+        assert_eq!(
+            serde_json::to_value(before).unwrap(),
+            serde_json::to_value(after).unwrap()
+        );
+    }
+
+    #[test]
+    fn configuration_read_preserves_cancellation() {
+        let temporary = tempfile::tempdir().unwrap();
+        let path = temporary.path().canonicalize().unwrap().join("nix.conf");
+        fs::write(&path, b"configured").unwrap();
+        assert!(matches!(
+            configuration_input_with(
+                &path,
+                |path| path.canonicalize(),
+                |_| Err(TransactionError::StopRequested)
+            ),
+            Err(TransactionError::StopRequested)
+        ));
+    }
+
+    #[test]
+    fn configuration_input_refuses_nonregular_oversized_and_dangling_entries() {
+        use std::os::unix::fs::symlink;
+        let temporary = tempfile::tempdir().unwrap();
+        let base = temporary.path().canonicalize().unwrap();
+        assert!(fixture_input(&base).is_err());
+        let oversized = base.join("oversized");
+        fs::write(&oversized, vec![0; 128 * 1024 + 1]).unwrap();
+        assert!(fixture_input(&oversized).is_err());
+        let dangling = base.join("dangling");
+        symlink(base.join("absent"), &dangling).unwrap();
+        assert!(fixture_input(&dangling).is_err());
+    }
+
     #[test]
     fn daemon_response_requires_exact_standard_store_and_version() {
         assert_eq!(
@@ -547,7 +889,16 @@ NeedDaemonReload=no
 
     #[test]
     fn a_configuration_digest_never_grants_authority() {
-        for digest in [None, Some("a".repeat(64))] {
+        let temporary = tempfile::tempdir().unwrap();
+        let path = temporary.path().canonicalize().unwrap().join("nix.conf");
+        fs::write(&path, b"configured").unwrap();
+        let link = path.with_extension("link");
+        std::os::unix::fs::symlink(&path, &link).unwrap();
+        for configuration in [
+            fixture_input(&path.with_extension("absent")).unwrap(),
+            test_configuration(b"configured"),
+            fixture_input(&link).unwrap(),
+        ] {
             let base = ObservedNixBase {
                 client_digest: ARM64_IDENTITY.client_sha256.into(),
                 daemon: DaemonObservation { trusted: false },
@@ -555,7 +906,7 @@ NeedDaemonReload=no
                     main_pid: 91,
                     started: 1234,
                 },
-                configuration: ConfigurationObservation { digest },
+                configuration,
             };
             assert_eq!(
                 base.require_configuration_authority(),
