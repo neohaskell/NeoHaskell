@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 
 pub(super) const CLIENT: &str = "/nix/var/nix/profiles/default/bin/nix";
 const SOCKET: &str = "/nix/var/nix/daemon-socket/socket";
+const MAX_CONFIGURATION_BYTES: usize = 128 * 1024;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct NixTargetIdentity {
@@ -92,7 +93,117 @@ pub(super) enum ConfigurationObservation {
         resolved_ancestors: Vec<Option<InputIdentity>>,
         file: InputIdentity,
         digest: String,
+        preparation: NixIncludePreparation,
     },
+}
+
+const POLICY_LEAF: &str = "neohaskell-cache-policy.conf";
+const POLICY_REFERENCE: &str = "include neohaskell-cache-policy.conf";
+
+#[derive(PartialEq, Eq)]
+pub(super) enum NixIncludePreparation {
+    Unresolved,
+    Conflict,
+    Append(DesiredNixInclude),
+    ExistingReference(DesiredNixInclude),
+}
+
+#[derive(PartialEq, Eq)]
+pub(super) struct DesiredNixInclude {
+    observed_digest: String,
+    source: Vec<u8>,
+    leaf: Vec<u8>,
+}
+
+impl std::fmt::Debug for NixIncludePreparation {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(match self {
+            Self::Unresolved => "UnresolvedInclude",
+            Self::Conflict => "ConflictingInclude",
+            Self::Append(_) => "AppendInclude",
+            Self::ExistingReference(_) => "ExistingIncludeReference",
+        })
+    }
+}
+
+impl NixIncludePreparation {
+    fn from_input(entry: &ConfigurationEntry, digest: &str, bytes: &[u8]) -> Self {
+        if *entry != ConfigurationEntry::Direct || format!("{:x}", Sha256::digest(bytes)) != digest
+        {
+            return Self::Unresolved;
+        }
+        let Ok(text) = std::str::from_utf8(bytes) else {
+            return Self::Unresolved;
+        };
+        if text
+            .bytes()
+            .any(|byte| byte.is_ascii_control() && !b"\t\r\n".contains(&byte))
+        {
+            return Self::Unresolved;
+        }
+        let mut reference = false;
+        for line in text.lines() {
+            let line = line
+                .split('#')
+                .next()
+                .unwrap_or_default()
+                .trim_matches([' ', '\t', '\r']);
+            if line.is_empty() {
+                continue;
+            }
+            if reference {
+                return Self::Conflict;
+            }
+            let words: Vec<_> = line.split_ascii_whitespace().collect();
+            if matches!(words.first(), Some(&"include" | &"!include")) {
+                if words.len() != 2 {
+                    return Self::Conflict;
+                }
+                if words[1].contains(POLICY_LEAF) {
+                    if line != POLICY_REFERENCE {
+                        return Self::Conflict;
+                    }
+                    reference = true;
+                }
+            } else {
+                if words.get(1) != Some(&"=") {
+                    return Self::Unresolved;
+                }
+                let name = words[0];
+                if name.is_empty() || !name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
+                {
+                    return Self::Unresolved;
+                }
+            }
+        }
+        let Ok(leaf) = crate::candidate::nix_cache_policy() else {
+            return Self::Unresolved;
+        };
+        let mut source = bytes.to_vec();
+        if !reference {
+            let terminal_lf = bytes.is_empty() || bytes.ends_with(b"\n");
+            if !bytes.is_empty() && !terminal_lf {
+                source.push(b'\n');
+            }
+            source.extend_from_slice(POLICY_REFERENCE.as_bytes());
+            if terminal_lf {
+                source.push(b'\n');
+            }
+        }
+        if source.len() > MAX_CONFIGURATION_BYTES || leaf.len() > MAX_CONFIGURATION_BYTES {
+            return Self::Unresolved;
+        }
+        let desired = DesiredNixInclude {
+            observed_digest: digest.to_owned(),
+            source,
+            leaf: leaf.into_bytes(),
+        };
+        if reference {
+            Self::ExistingReference(desired)
+        } else {
+            Self::Append(desired)
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -214,7 +325,7 @@ fn configuration_input_with(
         .open(&resolved)
         .map_err(io)?;
     let metadata = descriptor.metadata().map_err(io)?;
-    if !metadata.is_file() || metadata.len() > 128 * 1024 {
+    if !metadata.is_file() || metadata.len() > MAX_CONFIGURATION_BYTES as u64 {
         return Err(TransactionError::Io);
     }
     let file = InputIdentity::of(&metadata);
@@ -222,7 +333,7 @@ fn configuration_input_with(
         return Err(TransactionError::Io);
     }
     let bytes = read(&mut descriptor)?;
-    if bytes.len() > 128 * 1024
+    if bytes.len() > MAX_CONFIGURATION_BYTES
         || bytes.len() as u64 != metadata.len()
         || file != InputIdentity::of(&descriptor.metadata().map_err(io)?)
         || ancestors != input_ancestors(path).map_err(io)?
@@ -236,13 +347,16 @@ fn configuration_input_with(
     } else {
         ConfigurationEntry::Indirect
     };
+    let digest = format!("{:x}", Sha256::digest(&bytes));
+    let preparation = NixIncludePreparation::from_input(&entry, &digest, &bytes);
     Ok(ConfigurationObservation::Present {
         entry,
         ancestors,
         resolved,
         resolved_ancestors,
         file,
-        digest: format!("{:x}", Sha256::digest(bytes)),
+        digest,
+        preparation,
     })
 }
 
@@ -621,6 +735,178 @@ mod tests {
         fixture_input(&path).unwrap()
     }
 
+    fn preparation(bytes: &[u8]) -> NixIncludePreparation {
+        let ConfigurationObservation::Present { preparation, .. } = test_configuration(bytes)
+        else {
+            panic!("present configuration expected")
+        };
+        preparation
+    }
+
+    #[test]
+    fn fixed_include_preserves_every_source_byte_and_terminal_newline() {
+        for source in [
+            b"".as_slice(),
+            b"# private sentinel",
+            b"keep-outputs = true\n",
+            b"# secret\r\nkeep-outputs = true\r\n",
+        ] {
+            let NixIncludePreparation::Append(desired) = preparation(source) else {
+                panic!("append expected")
+            };
+            assert!(desired.source.starts_with(source));
+            let separator = if source.is_empty() || source.ends_with(b"\n") {
+                ""
+            } else {
+                "\n"
+            };
+            let terminator = if source.is_empty() || source.ends_with(b"\n") {
+                "\n"
+            } else {
+                ""
+            };
+            assert_eq!(
+                &desired.source[source.len()..],
+                format!("{separator}{POLICY_REFERENCE}{terminator}").as_bytes()
+            );
+            assert_eq!(
+                desired.observed_digest,
+                format!("{:x}", Sha256::digest(source))
+            );
+            assert_eq!(desired.leaf, b"extra-experimental-features = nix-command flakes\nextra-substituters = https://neohaskell.cachix.org https://cache.iog.io\nextra-trusted-public-keys = neohaskell.cachix.org-1:mo2cLaGbwqbrxs9xhqKK8jeNsn3osi7t6XoAmxSZssc= hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ=\n");
+        }
+    }
+
+    #[test]
+    fn proposed_include_keeps_the_configuration_readable_within_its_bound() {
+        let mut source = vec![b'#'; MAX_CONFIGURATION_BYTES - POLICY_REFERENCE.len() - 1];
+        let NixIncludePreparation::Append(desired) = preparation(&source) else {
+            panic!("append within the size bound expected")
+        };
+        assert_eq!(desired.source.len(), MAX_CONFIGURATION_BYTES);
+        source.push(b'#');
+        assert_eq!(preparation(&source), NixIncludePreparation::Unresolved);
+    }
+
+    #[test]
+    fn reserved_references_are_never_repaired_or_reordered() {
+        for source in [
+            "include ./neohaskell-cache-policy.conf",
+            "include /etc/nix/neohaskell-cache-policy.conf",
+            "include ../nix/neohaskell-cache-policy.conf",
+            "!include neohaskell-cache-policy.conf",
+            "include neohaskell-cache-policy.conf\ninclude neohaskell-cache-policy.conf",
+            "include neohaskell-cache-policy.conf\nkeep-outputs = true",
+            "include neohaskell-cache-policy.conf extra",
+        ] {
+            assert!(matches!(
+                preparation(source.as_bytes()),
+                NixIncludePreparation::Conflict
+            ));
+        }
+        let source = b"keep-outputs = true\ninclude neohaskell-cache-policy.conf\n# private ending";
+        let NixIncludePreparation::ExistingReference(desired) = preparation(source) else {
+            panic!("existing reference expected")
+        };
+        assert_eq!(desired.source, source);
+    }
+
+    #[test]
+    fn uncertain_inputs_and_digest_mismatches_have_no_desired_source() {
+        for source in [
+            b"malformed".as_slice(),
+            b"bad name = value",
+            b"key=value",
+            b"key = value\0",
+            b"\xff",
+        ] {
+            assert!(matches!(
+                preparation(source),
+                NixIncludePreparation::Unresolved
+            ));
+        }
+        let bytes = b"keep-outputs = true";
+        let digest = format!("{:x}", Sha256::digest(bytes));
+        assert!(matches!(
+            NixIncludePreparation::from_input(&ConfigurationEntry::Indirect, &digest, bytes),
+            NixIncludePreparation::Unresolved
+        ));
+        assert!(matches!(
+            NixIncludePreparation::from_input(
+                &ConfigurationEntry::Direct,
+                &digest,
+                b"keep-outputs = false"
+            ),
+            NixIncludePreparation::Unresolved
+        ));
+    }
+
+    #[test]
+    fn preparation_is_private_and_grants_no_configuration_authority() {
+        for source in [
+            b"# private sentinel\nkeep-outputs = true".as_slice(),
+            POLICY_REFERENCE.as_bytes(),
+        ] {
+            let configuration = test_configuration(source);
+            let ConfigurationObservation::Present { preparation, .. } = &configuration else {
+                unreachable!()
+            };
+            assert!(!format!("{preparation:?}").contains("private sentinel"));
+            assert!(!format!("{configuration:?}").contains(POLICY_LEAF));
+            let json = serde_json::to_value(&configuration).unwrap();
+            assert_eq!(json.as_object().unwrap().len(), 1);
+            assert_eq!(json["digest"], format!("{:x}", Sha256::digest(source)));
+            let base = ObservedNixBase {
+                client_digest: ARM64_IDENTITY.client_sha256.into(),
+                daemon: DaemonObservation { trusted: false },
+                service: ServiceObservation {
+                    main_pid: 91,
+                    started: 1234,
+                },
+                configuration,
+            };
+            assert_eq!(
+                base.require_configuration_authority(),
+                Err(TransactionError::NixBlocked(
+                    NixBlock::ConfigurationOwnerUnknown
+                ))
+            );
+        }
+    }
+
+    #[test]
+    #[ignore]
+    fn synthetic_include_preparation() {
+        let directory = PathBuf::from(
+            std::env::var_os("NEO_SYNTHETIC_NIX_FIXTURE_DIR")
+                .expect("explicit synthetic fixture required"),
+        );
+        assert_eq!(
+            fs::read(directory.join("SYNTHETIC_FIXTURE")).unwrap(),
+            b"disposable synthetic Nix configuration\n"
+        );
+        let configuration =
+            fixture_input(&directory.canonicalize().unwrap().join("nix.conf")).unwrap();
+        let ConfigurationObservation::Present { preparation, .. } = configuration else {
+            panic!("fixture file required")
+        };
+        let (kind, desired) = match preparation {
+            NixIncludePreparation::Append(desired) => ("append", desired),
+            NixIncludePreparation::ExistingReference(desired) => ("existing", desired),
+            _ => panic!("fixture is unresolved or conflicting"),
+        };
+        println!(
+            "SYNTHETIC_INCLUDE={}",
+            serde_json::json!({
+                "kind": kind,
+                "observed_digest": desired.observed_digest,
+                "source": String::from_utf8(desired.source).unwrap(),
+                "leaf_name": POLICY_LEAF,
+                "leaf": String::from_utf8(desired.leaf).unwrap(),
+            })
+        );
+    }
+
     #[test]
     fn configuration_input_records_missing_direct_and_indirect_entries() {
         use std::os::unix::fs::symlink;
@@ -649,6 +935,7 @@ mod tests {
             indirect,
             ConfigurationObservation::Present {
                 entry: ConfigurationEntry::Indirect,
+                preparation: NixIncludePreparation::Unresolved,
                 ..
             }
         ));

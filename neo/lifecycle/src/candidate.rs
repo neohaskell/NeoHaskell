@@ -119,6 +119,34 @@ pub(crate) fn declared_cache(index: usize) -> Result<DeclaredCache> {
     })
 }
 
+pub(crate) fn nix_cache_policy() -> Result<String> {
+    let contract = Contract::load()?;
+    let entries = array(&contract.registry()["trusted_cache_keys"])?;
+    let mut urls = Vec::new();
+    let mut keys = Vec::new();
+    for entry in entries {
+        let url = string(&entry["cache"])?;
+        let key = string(&entry["key"])?;
+        ensure(
+            !url.is_empty()
+                && !key.is_empty()
+                && !url
+                    .bytes()
+                    .chain(key.bytes())
+                    .any(|byte| byte.is_ascii_whitespace() || byte == b'#'),
+            MetadataError::Identity,
+        )?;
+        urls.push(url);
+        keys.push(key);
+    }
+    ensure(!entries.is_empty(), MetadataError::Identity)?;
+    Ok(format!(
+        "extra-experimental-features = nix-command flakes\nextra-substituters = {}\nextra-trusted-public-keys = {}\n",
+        urls.join(" "),
+        keys.join(" ")
+    ))
+}
+
 impl CacheWitness {
     pub(crate) fn cache(&self) -> &DeclaredCache {
         &self.cache
