@@ -1398,6 +1398,12 @@ mod tests {
 
     pub(super) fn fixture_command(name: &str) -> io::Result<Command> {
         let test = match name {
+            "dashboard-private-success" => {
+                "installation::process::tests::dashboard_private_success"
+            }
+            "dashboard-private-resistant" => {
+                "installation::process::tests::dashboard_private_resistant"
+            }
             "success" => "installation::process::tests::fixture_success",
             "resistant" => "installation::process::tests::fixture_resistant",
             "leader" => "installation::process::tests::fixture_leader",
@@ -1410,6 +1416,33 @@ mod tests {
         let mut command = Command::new(std::env::current_exe()?);
         command.args(["--exact", test, "--ignored", "--nocapture", "--quiet"]);
         Ok(command)
+    }
+
+    #[test]
+    #[ignore]
+    fn dashboard_private_success() {
+        println!(
+            "PRIVATE-DASHBOARD-STDOUT {}",
+            std::env::var("HOME").unwrap()
+        );
+        eprintln!(
+            "PRIVATE-DASHBOARD-STDERR PRIVATE-DASHBOARD-ENV {}",
+            std::env::var("HOME").unwrap()
+        );
+    }
+
+    #[test]
+    #[ignore]
+    fn dashboard_private_resistant() {
+        unsafe {
+            libc::signal(libc::SIGTERM, libc::SIG_IGN);
+        }
+        dashboard_private_success();
+        fs::write("dashboard-client-pid.tmp", std::process::id().to_string()).unwrap();
+        fs::rename("dashboard-client-pid.tmp", "dashboard-client-pid").unwrap();
+        loop {
+            std::thread::park();
+        }
     }
 
     fn setup() -> (TempDir, RootLease) {
@@ -1493,7 +1526,8 @@ mod tests {
         unsafe {
             libc::signal(libc::SIGTERM, libc::SIG_IGN);
         }
-        fs::write("client-pid", std::process::id().to_string()).unwrap();
+        fs::write("client-pid.tmp", std::process::id().to_string()).unwrap();
+        fs::rename("client-pid.tmp", "client-pid").unwrap();
         let mut marker = OpenOptions::new()
             .create(true)
             .append(true)
@@ -2340,5 +2374,15 @@ mod tests {
             }
             assert!(!busy(&path));
         }
+    }
+}
+
+#[cfg(test)]
+impl OperationOwner {
+    pub(super) fn dashboard_kill_worker(&mut self) -> u32 {
+        let worker = self.worker.as_mut().unwrap();
+        let pid = worker.child.id();
+        worker.child.kill().unwrap();
+        pid
     }
 }

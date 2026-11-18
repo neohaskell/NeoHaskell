@@ -2910,6 +2910,7 @@ dependencies = [
  "base64",
  "fs2",
  "libc",
+ "ratatui 0.30.0",
  "regex",
  "reqwest",
  "ring",
@@ -2917,6 +2918,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "signal-hook",
  "tempfile",
  "toml",
 ]

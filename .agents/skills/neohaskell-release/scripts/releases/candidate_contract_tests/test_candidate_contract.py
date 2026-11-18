@@ -7,15 +7,14 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
-import tempfile
 import unittest
 
 
 RELEASES = Path(__file__).resolve().parents[1]
-FIXTURES = Path(__file__).parent / "fixtures/v1"
 if str(RELEASES) not in sys.path:
     sys.path.insert(0, str(RELEASES))
 import candidate
+from candidate_contract_tests.generate_fixtures import CandidateFixtureCorpus, temporary_corpus_directory
 from candidate_contract_tests.test_release_binding import ReleaseBindingCases
 ROOT = candidate.release.ROOT
 
@@ -35,8 +34,8 @@ def _git(root, *args, env=None):
     ).stdout
 
 
-def _commit_fixture_source(root):
-    shutil.copytree(FIXTURES / "source", root)
+def _commit_fixture_source(root, corpus):
+    shutil.copytree(corpus.root / "source", root)
     _git(root, "init", "-q")
     _git(root, "add", "-A")
     env = os.environ.copy()
@@ -102,10 +101,14 @@ def _write_candidate(directory, core, closure_bytes=None, receipt_table=None):
 class CandidateContract(ReleaseBindingCases, unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.fixture_set = json.loads((FIXTURES / "fixture-set.json").read_text())
-        cls.source_temp = tempfile.TemporaryDirectory(prefix="candidate-contract-source-")
+        cls.corpus_temp = temporary_corpus_directory()
+        cls.addClassCleanup(cls.corpus_temp.cleanup)
+        cls.corpus = CandidateFixtureCorpus(ROOT, Path(cls.corpus_temp.name) / "corpus")
+        cls.fixture_set = json.loads((cls.corpus.root / "fixture-set.json").read_text())
+        cls.source_temp = temporary_corpus_directory(prefix="candidate-contract-source-")
         cls.source_root = Path(cls.source_temp.name) / "repo"
-        revision = _commit_fixture_source(cls.source_root)
+        cls.addClassCleanup(cls.source_temp.cleanup)
+        revision = _commit_fixture_source(cls.source_root, cls.corpus)
         cls.source_revision = revision
         cls.source_tree, cls.source_index = candidate._git_tree(
             cls.source_root, revision, candidate._registry()[1]["limits"],
@@ -116,12 +119,8 @@ class CandidateContract(ReleaseBindingCases, unittest.TestCase):
         if cls.source_tree_sha256 != cls.fixture_set["source_tree_sha256"]:
             raise AssertionError("fixture source tree changed")
 
-    @classmethod
-    def tearDownClass(cls):
-        cls.source_temp.cleanup()
-
     def fixture_dir(self, name="current-0.17.2"):
-        return FIXTURES / name
+        return self.corpus.root / name
 
     def parse_fixture(self, name="current-0.17.2"):
         directory = self.fixture_dir(name)
@@ -154,7 +153,7 @@ class CandidateContract(ReleaseBindingCases, unittest.TestCase):
         self.assertTrue(self.fixture_set["synthetic_metadata_only"])
 
     def test_shared_conformance_corpus_names_the_rejection_matrix(self):
-        corpus = json.loads((FIXTURES / "invalid-cases.json").read_bytes())
+        corpus = json.loads((self.corpus.root / "invalid-cases.json").read_bytes())
         names = {item["name"] for item in corpus["cases"]}
         required = {
             "wrong-pair-member",
@@ -195,7 +194,7 @@ class CandidateContract(ReleaseBindingCases, unittest.TestCase):
             self.parse_mutated_core(core)
         table = json.loads((self.fixture_dir() / "closures.json").read_bytes())
         table["paths"][0]["locations"][0]["signatures"] = [{}]
-        with tempfile.TemporaryDirectory(prefix="candidate-contract-signature-shape-") as temporary:
+        with temporary_corpus_directory(prefix="candidate-contract-signature-shape-") as temporary:
             directory = self.copy_artifacts(temporary)
             core = copy.deepcopy(original)
             core_bytes = _write_candidate(directory, core, candidate.canonical_json(table))
@@ -333,7 +332,7 @@ class CandidateContract(ReleaseBindingCases, unittest.TestCase):
         missing_reference = copy.deepcopy(table)
         first = next(path for path in missing_reference["paths"] if path["references"])
         first["references"][0] = "/nix/store/" + "z" * 32 + "-missing-reference"
-        with tempfile.TemporaryDirectory(prefix="candidate-contract-missing-ref-") as temporary:
+        with temporary_corpus_directory(prefix="candidate-contract-missing-ref-") as temporary:
             directory = self.copy_artifacts(temporary)
             core = copy.deepcopy(original_core)
             core_bytes = _write_candidate(directory, core, candidate.canonical_json(missing_reference))
@@ -352,7 +351,7 @@ class CandidateContract(ReleaseBindingCases, unittest.TestCase):
             }],
         })
         unreachable["paths"].sort(key=lambda item: item["store_path"])
-        with tempfile.TemporaryDirectory(prefix="candidate-contract-unreachable-") as temporary:
+        with temporary_corpus_directory(prefix="candidate-contract-unreachable-") as temporary:
             directory = self.copy_artifacts(temporary)
             core = copy.deepcopy(original_core)
             core_bytes = _write_candidate(directory, core, candidate.canonical_json(unreachable))
@@ -362,21 +361,21 @@ class CandidateContract(ReleaseBindingCases, unittest.TestCase):
     def test_materialized_artifacts_are_hashed_again_from_regular_files(self):
         core = self.parse_fixture().core
         name = next(iter(core["native_installers"].values()))["file"]["name"]
-        with tempfile.TemporaryDirectory(prefix="candidate-contract-byte-flip-") as temporary:
+        with temporary_corpus_directory(prefix="candidate-contract-byte-flip-") as temporary:
             directory = self.copy_artifacts(temporary)
             path = directory / name
             content = path.read_bytes()
             path.write_bytes(bytes([content[0] ^ 1]) + content[1:])
             with self.assertRaisesRegex(ValueError, "bytes differ"):
                 candidate.parse_candidate((directory / "candidate.json").read_bytes(), directory)
-        with tempfile.TemporaryDirectory(prefix="candidate-contract-file-size-") as temporary:
+        with temporary_corpus_directory(prefix="candidate-contract-file-size-") as temporary:
             directory = self.copy_artifacts(temporary)
             core = copy.deepcopy(core)
             core["native_installers"][next(iter(core["native_installers"]))]["file"]["size"] += 1
             core_bytes = _write_candidate(directory, core)
             with self.assertRaisesRegex(ValueError, "size differs"):
                 candidate.parse_candidate(core_bytes, directory)
-        with tempfile.TemporaryDirectory(prefix="candidate-contract-symlink-") as temporary:
+        with temporary_corpus_directory(prefix="candidate-contract-symlink-") as temporary:
             directory = self.copy_artifacts(temporary)
             outside = Path(temporary) / "outside"
             outside.write_bytes(b"outside candidate directory")
@@ -385,7 +384,7 @@ class CandidateContract(ReleaseBindingCases, unittest.TestCase):
             target.symlink_to(outside)
             with self.assertRaisesRegex(ValueError, "not a regular file"):
                 candidate.parse_candidate((directory / "candidate.json").read_bytes(), directory)
-        with tempfile.TemporaryDirectory(prefix="candidate-contract-extra-file-") as temporary:
+        with temporary_corpus_directory(prefix="candidate-contract-extra-file-") as temporary:
             directory = self.copy_artifacts(temporary)
             (directory / "unlisted.txt").write_bytes(b"extra")
             with self.assertRaisesRegex(ValueError, "unlisted files"):
@@ -393,7 +392,7 @@ class CandidateContract(ReleaseBindingCases, unittest.TestCase):
 
     def test_source_tree_and_generated_diff_mutations_fail_source_binding(self):
         for mutation in ("source", "generated-diff"):
-            with self.subTest(mutation=mutation), tempfile.TemporaryDirectory(prefix="candidate-contract-source-mutation-") as temporary:
+            with self.subTest(mutation=mutation), temporary_corpus_directory(prefix="candidate-contract-source-mutation-") as temporary:
                 directory = self.copy_artifacts(temporary)
                 core = json.loads((directory / "candidate.json").read_bytes())
                 receipts = json.loads((directory / "build-receipts.json").read_bytes())
@@ -409,7 +408,7 @@ class CandidateContract(ReleaseBindingCases, unittest.TestCase):
                     candidate.bind_source(parsed, self.source_root)
 
     def test_build_receipt_cannot_forge_a_different_source_tree(self):
-        with tempfile.TemporaryDirectory(prefix="candidate-contract-receipt-") as temporary:
+        with temporary_corpus_directory(prefix="candidate-contract-receipt-") as temporary:
             directory = self.copy_artifacts(temporary)
             core = json.loads((directory / "candidate.json").read_bytes())
             receipts = json.loads((directory / "build-receipts.json").read_bytes())
@@ -425,7 +424,7 @@ class CandidateContract(ReleaseBindingCases, unittest.TestCase):
         core["context"].pop("version_seed")
         core["context"]["plan_id"] = "c" * 64
         core["context"]["seed_receipt_sha256"] = "d" * 64
-        with tempfile.TemporaryDirectory(prefix="candidate-contract-release-retag-") as temporary:
+        with temporary_corpus_directory(prefix="candidate-contract-release-retag-") as temporary:
             directory = self.copy_artifacts(temporary)
             receipts = json.loads((directory / "build-receipts.json").read_bytes())
             _refresh_receipt_context(core, receipts)
@@ -434,9 +433,9 @@ class CandidateContract(ReleaseBindingCases, unittest.TestCase):
                 candidate.parse_candidate(core_bytes, directory)
 
     def test_missing_bootstrap_generator_source_fails_closed(self):
-        with tempfile.TemporaryDirectory(prefix="candidate-contract-missing-generator-") as temporary:
+        with temporary_corpus_directory(prefix="candidate-contract-missing-generator-") as temporary:
             root = Path(temporary) / "repo"
-            shutil.copytree(FIXTURES / "source", root)
+            shutil.copytree(self.corpus.root / "source", root)
             generator = root / "neo/lifecycle/scripts/generate_bootstraps.py"
             generator.unlink()
             _git(root, "init", "-q")
@@ -456,7 +455,7 @@ class CandidateContract(ReleaseBindingCases, unittest.TestCase):
                  "-c", "commit.gpgSign=false", "commit", "-q", "-m", "missing-generator", env=env)
             revision = _git(root, "rev-parse", "HEAD").decode("ascii").strip()
             tree, _index = candidate._git_tree(root, revision, candidate._registry()[1]["limits"])
-            with tempfile.TemporaryDirectory(prefix="candidate-contract-missing-generator-artifacts-") as artifact_tmp:
+            with temporary_corpus_directory(prefix="candidate-contract-missing-generator-artifacts-") as artifact_tmp:
                 directory = self.copy_artifacts(artifact_tmp, "previous-0.17.1")
                 core = json.loads((directory / "candidate.json").read_bytes())
                 receipts = json.loads((directory / "build-receipts.json").read_bytes())

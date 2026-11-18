@@ -1,5 +1,5 @@
 {
-  "help": "NeoHaskell native installer\n\nThis build checks the official Nix 2.34.9 Linux ARM64 daemon. Other providers and platforms remain unverified. New acquisition is blocked until configuration ownership is established. Local checks for retained keep and rollback remain available. This build does not install, configure, or repair Nix.\n\nUsage:\n  neo-installer [--help | --version]\n  neo-installer install [--version VERSION]\n  neo-installer update [--version VERSION | --rollback]\n  neo-installer rollback\n\nInstall keeps an existing installation unless an exact version is requested. Update selects a complete stable candidate. Update --rollback and rollback restore the recorded previous pair.\nUse --yes to accept the prepared installation review.",
+  "help": "NeoHaskell native installer\n\nThis build checks the official Nix 2.34.9 Linux ARM64 daemon. Other providers and platforms remain unverified. New acquisition is blocked until configuration ownership is established. Local checks for retained keep and rollback remain available. This build does not install, configure, or repair Nix.\n\nUsage:\n  neo-installer [--help | --version]\n  neo-installer install [--version VERSION]\n  neo-installer update [--version VERSION | --rollback]\n  neo-installer rollback\n\nInstall keeps an existing installation unless an exact version is requested. Update selects a complete stable candidate. Update --rollback and rollback restore the recorded previous pair.\nUse --yes to accept the prepared installation review.\nUse --plain for plain output or --still to disable animation. --yes always selects plain explicit consent. Ctrl-Z and SIGTSTP cancel the operation and restore the terminal.",
   "version": "neo-installer {version} ({revision}, {target})",
   "invalid_arguments": "Unknown arguments. Run neo-installer --help for usage.",
   "invalid_request": "Use install or update with an optional --version VERSION, update --rollback, or rollback without arguments.",
@@ -7,7 +7,7 @@
   "operation_failed": "The lifecycle operation did not complete. Check the existing Nix 2.34.9 installation and the availability of a complete release candidate. Saved installation state will be reconciled on the next run.",
   "previous_missing": "The recorded previous version has a missing output.",
   "previous_unchecked": "The previous version is recorded without a current health check.",
-  "installed_lifecycle_help": "This build checks the official Nix 2.34.9 Linux ARM64 daemon. New acquisition is blocked until configuration ownership is established.\n  neo update [--version VERSION | --rollback]  Update or restore the installed pair.\n  neo rollback                                 Alias for neo update --rollback.\n\nRetained rollback uses local checks. Other providers and platforms remain unverified. These operations do not install, configure, or repair Nix.\nUse --yes to accept the prepared installation review.",
+  "installed_lifecycle_help": "This build checks the official Nix 2.34.9 Linux ARM64 daemon. New acquisition is blocked until configuration ownership is established.\n  neo update [--version VERSION | --rollback]  Update or restore the installed pair.\n  neo rollback                                 Alias for neo update --rollback.\n\nRetained rollback uses local checks. Other providers and platforms remain unverified. These operations do not install, configure, or repair Nix.\nUse --yes to accept the prepared installation review.\nUse --plain for plain output or --still to disable animation. --yes always selects plain explicit consent. Ctrl-Z and SIGTSTP cancel the operation and restore the terminal.",
   "nix_missing_client": "The standard Nix client is missing. This build cannot establish a fresh or partial installation.",
   "nix_unproved_client": "The Nix client identity is not supported by this build. No replacement was attempted.",
   "nix_unproved_platform": "Nix service observation is not yet verified on this platform.",
@@ -36,5 +36,58 @@
   "review_retention": "Retain the selected package pair.",
   "review_activation": "Activate the selected package pair if it differs.",
   "review_cleanup": "Remove obsolete installer-owned state.",
-  "review_pending_recovery": "This review includes pending recovery."
+  "review_pending_recovery": "This review includes pending recovery.",
+  "dashboard": {
+    "panel": "Your environment",
+    "brand": "NeoHaskell",
+    "rows": [
+      "Prepare Nix",
+      "Configure Nix",
+      "Connect binary caches",
+      "Download neo",
+      "Download neoctl",
+      "Check your setup"
+    ],
+    "statuses": [
+      "UNSEEN",
+      "EXISTING",
+      "UNCHANGED",
+      "NOW",
+      "VERIFIED",
+      "BLOCKED"
+    ],
+    "activities": [
+      "Inspecting your installation.",
+      "Checking the existing Nix installation.",
+      "Selecting the requested version.",
+      "Preparing your review.",
+      "Review the changes before continuing.",
+      "Rechecking the reviewed installation.",
+      "Recovering the reviewed state.",
+      "Preparing the shared tool pair.",
+      "Verifying the retained tool pair.",
+      "Activating the verified tool pair.",
+      "Finishing owned installation state.",
+      "Stopping. Waiting for owned work.",
+      "The reviewed operation was declined.",
+      "The operation has finished.",
+      "The operation did not complete."
+    ],
+    "controls": "D Details    Q Cancel",
+    "review_controls": "Enter Continue    D Details    Esc Decline    Q Cancel",
+    "details_controls": "Enter or D Back    Up/Down Scroll    Q Cancel",
+    "details": "Details",
+    "truncated": "Earlier details were discarded.",
+    "restoration_failed": "Terminal restoration could not be confirmed.",
+    "short_name": "neo",
+    "summary": "Review and manage neo and neoctl.",
+    "presentation_errors": [
+      "Terminal input failed. The operation is stopping.",
+      "Terminal output failed. The operation is stopping.",
+      "Terminal restoration could not be confirmed.",
+      "An unexpected presentation failure stopped the operation.",
+      "The terminal session could not start safely.",
+      "The operation could not be displayed safely."
+    ]
+  }
 }

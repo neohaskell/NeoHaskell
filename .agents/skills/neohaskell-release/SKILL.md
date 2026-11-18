@@ -143,3 +143,5 @@ not infer a baseline from tags or reset the ledger.
 Validation fixtures do not claim a live two-target build or production
 publication. The complete generated-app result is reported only by the
 consumer-verification contract.
+
+Read [Candidate contract fixtures](references/candidate-fixtures.md) to generate disposable test corpora and refresh the runtime package export.

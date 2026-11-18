@@ -5,10 +5,10 @@ import json
 from pathlib import Path
 import shutil
 import subprocess
-import tempfile
 from unittest.mock import patch
 
 import candidate
+from candidate_contract_tests.generate_fixtures import temporary_corpus_directory
 
 
 def commit(root, message):
@@ -70,10 +70,10 @@ def maintained_seed(root, plan, revision, output):
     return owner
 
 
-def release_fixture(temporary, mutation=None):
-    from .test_candidate_contract import FIXTURES, _commit_fixture_source, _git, _identity
+def release_fixture(temporary, corpus, mutation=None):
+    from .test_candidate_contract import _commit_fixture_source, _git, _identity
     root = Path(temporary) / 'repo'
-    _commit_fixture_source(root)
+    _commit_fixture_source(root, corpus)
     (root / candidate.CANDIDATE_RELATIVE_PATH).write_bytes(
         Path(candidate.__file__).read_bytes())
     ledger = root / candidate.release.LEDGER_PATH
@@ -98,7 +98,7 @@ def release_fixture(temporary, mutation=None):
     if candidate.release.verify_generated(repo, revision, plan) is not True:
         raise AssertionError('Maintained preparation did not verify')
     directory = Path(temporary) / 'candidate'
-    shutil.copytree(FIXTURES / 'current-0.17.2', directory)
+    shutil.copytree(corpus.root / 'current-0.17.2', directory)
     core = json.loads((directory / 'candidate.json').read_bytes())
     source_identity(root, source, core)
     core['context'] = {k: v for k, v in core['context'].items() if k != 'version_seed'}
@@ -142,8 +142,8 @@ def refresh_seed(root, directory, core):
 
 class ReleaseBindingCases:
     def test_release_binding_accepts_maintained_preparation_and_synthetic_nix_seed(self):
-        with tempfile.TemporaryDirectory(prefix='candidate-release-binding-') as temporary:
-            root, directory, core, plan = release_fixture(temporary)
+        with temporary_corpus_directory(prefix='candidate-release-binding-') as temporary:
+            root, directory, core, plan = release_fixture(temporary, self.corpus)
             repo = candidate.release.Repo(root)
             self.assertNotIn(plan, repo.ledger(core['context']['change_source'])['attempts'])
             self.assertIn(plan, repo.ledger(core['context']['build_revision'])['attempts'])
@@ -157,8 +157,8 @@ class ReleaseBindingCases:
                                 (directory / 'neo-starter-flake.nix').read_bytes())
 
     def test_release_seed_rejects_unrelated_edits_and_changed_source_identity(self):
-        with tempfile.TemporaryDirectory(prefix='candidate-release-seed-negative-') as temporary:
-            root, directory, original, plan = release_fixture(temporary)
+        with temporary_corpus_directory(prefix='candidate-release-seed-negative-') as temporary:
+            root, directory, original, plan = release_fixture(temporary, self.corpus)
             originals = {p.name: p.read_bytes() for p in directory.glob('neo-starter-*')}
             mutations = ['flake-extra', 'project-extra', 'dependency', 'extra-node',
                          'lock-root', 'lock-url', 'lock-original-url', 'lock-type',
@@ -198,8 +198,8 @@ class ReleaseBindingCases:
                         candidate.bind_source(write_bound_input(directory, core), root)
 
     def test_release_binding_rejects_extra_preparation_file_and_stale_seed_identity(self):
-        with tempfile.TemporaryDirectory(prefix='candidate-release-diff-negative-') as temporary:
-            root, directory, core, plan = release_fixture(temporary)
+        with temporary_corpus_directory(prefix='candidate-release-diff-negative-') as temporary:
+            root, directory, core, plan = release_fixture(temporary, self.corpus)
             bad_plan = copy.deepcopy(core)
             bad_plan['context']['plan_id'] = '0' * 64
             with self.assertRaisesRegex(ValueError, 'Release plan identity is absent'):
@@ -229,9 +229,9 @@ class ReleaseBindingCases:
 
     def test_selection_accepts_distinct_immutable_historical_owner_bytes(self):
         from .test_candidate_contract import _commit_fixture_source
-        with tempfile.TemporaryDirectory(prefix='candidate-historical-selection-') as temporary:
+        with temporary_corpus_directory(prefix='candidate-historical-selection-') as temporary:
             previous_root = Path(temporary) / 'previous-source'
-            _commit_fixture_source(previous_root)
+            _commit_fixture_source(previous_root, self.corpus)
             previous = candidate.bind_source(self.parse_fixture('previous-0.17.1'), previous_root)
 
             def historical_owners(root):
@@ -242,7 +242,7 @@ class ReleaseBindingCases:
 
             release_tmp = Path(temporary) / 'release'
             release_tmp.mkdir()
-            root, directory, core, plan = release_fixture(release_tmp, historical_owners)
+            root, directory, core, plan = release_fixture(release_tmp, self.corpus, historical_owners)
             current = candidate.bind_source(write_bound_input(directory, core), root)
             self.assertNotEqual((previous_root / candidate.ENGINE_RELATIVE_PATH).read_bytes(),
                                 (root / candidate.ENGINE_RELATIVE_PATH).read_bytes())
@@ -257,9 +257,9 @@ class ReleaseBindingCases:
     def test_historical_source_rejects_unknown_registry_and_configuration_semantics(self):
         from .test_candidate_contract import _commit_fixture_source
         for mutation in ('registry', 'config', 'policy'):
-            with self.subTest(mutation=mutation), tempfile.TemporaryDirectory(prefix='candidate-history-negative-') as temporary:
+            with self.subTest(mutation=mutation), temporary_corpus_directory(prefix='candidate-history-negative-') as temporary:
                 root = Path(temporary) / 'repo'
-                _commit_fixture_source(root)
+                _commit_fixture_source(root, self.corpus)
                 relative = candidate.CONTRACT_RELATIVE_PATH if mutation == 'registry' else candidate.CONFIG_RELATIVE_PATH
                 path = root / relative
                 value = json.loads(path.read_bytes())

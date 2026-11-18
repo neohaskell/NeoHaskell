@@ -76,6 +76,7 @@ pub(crate) struct ReviewSummary {
     pub(crate) changes: Vec<ReviewedChange>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum ReviewOperation {
     Install,
     Update,
@@ -95,12 +96,33 @@ pub(crate) enum ReviewedChange {
 }
 
 pub(super) struct ReviewOffer {
-    pub(super) summary: ReviewSummary,
+    summary: ReviewSummary,
     token: ReviewToken,
 }
 pub(super) struct ReviewToken {
     owner: Weak<RefCell<EffectState>>,
     identity: u64,
+}
+
+impl ReviewOffer {
+    pub(super) fn summary(&self) -> &ReviewSummary {
+        &self.summary
+    }
+}
+
+#[derive(Clone, Copy)]
+pub(super) enum ReviewDecision {
+    Accept,
+    Decline,
+    ConsentRequired,
+}
+
+pub(super) enum OwnerInterest<'a> {
+    Ready,
+    Waiting {
+        descriptor: Option<(std::os::fd::BorrowedFd<'a>, libc::c_short)>,
+        deadline: Option<Instant>,
+    },
 }
 
 enum ReviewGate {
@@ -182,6 +204,7 @@ struct EffectState {
     review: ReviewGate,
     recovery: RecoveryPending,
     journal_attempt: Option<JournalAttempt>,
+    observation: super::observation::PresentationObservation,
 }
 
 struct JournalAttempt {
@@ -292,12 +315,19 @@ impl Future for EffectFuture {
 }
 
 impl Effects {
+    pub(super) fn observe(&self, activity: super::observation::Activity) {
+        self.state.borrow_mut().observation.activity(activity);
+    }
+    pub(super) fn observe_row(&self, row: usize, value: super::observation::Row) {
+        self.state.borrow_mut().observation.rows[row] = value;
+    }
     pub(super) fn recovery_pending(&self, pending: RecoveryPending) {
         self.state.borrow_mut().recovery = pending;
     }
 
     pub(super) async fn review(&self, summary: ReviewSummary) -> Result<u64, TransactionError> {
         self.checkpoint()?;
+        self.state.borrow_mut().observation.review(&summary)?;
         let identity = {
             let mut state = self.state.borrow_mut();
             if !matches!(state.review, ReviewGate::Inspecting)
@@ -454,6 +484,7 @@ impl Effects {
                 review: ReviewGate::Inspecting,
                 recovery: RecoveryPending::Unknown,
                 journal_attempt: None,
+                observation: super::observation::PresentationObservation::new(),
             })),
             cancellation,
             admission: Admission::Requested,
@@ -935,7 +966,7 @@ pub(super) struct Coordinator {
 }
 
 impl Coordinator {
-    fn new(
+    pub(super) fn new(
         request: snapshot::Request,
         executor: runtime::Executor,
         layout: Option<Layout>,
@@ -950,9 +981,70 @@ impl Coordinator {
 
     pub(super) fn request_cancel(&self) {
         self.effects.cancellation.request();
+        self.effects.observe(super::observation::Activity::Stopping);
     }
 
-    fn advance(&mut self) -> Poll<Result<RunOutcome, TransactionError>> {
+    pub(super) fn take_review(&mut self) -> Option<ReviewOffer> {
+        self.effects.take_review()
+    }
+
+    pub(super) fn answer(
+        &mut self,
+        offer: ReviewOffer,
+        decision: ReviewDecision,
+    ) -> Result<(), TransactionError> {
+        self.effects.answer(
+            offer.token,
+            match decision {
+                ReviewDecision::Accept => None,
+                ReviewDecision::Decline => Some(UnadmittedReason::Declined),
+                ReviewDecision::ConsentRequired => Some(UnadmittedReason::ConsentRequired),
+            },
+        )?;
+        self.effects.observe(match decision {
+            ReviewDecision::Accept => super::observation::Activity::Rechecking,
+            _ => super::observation::Activity::Declined,
+        });
+        Ok(())
+    }
+
+    pub(super) fn presentation(
+        &self,
+    ) -> std::cell::Ref<'_, super::observation::PresentationObservation> {
+        std::cell::Ref::map(self.effects.state.borrow(), |state| &state.observation)
+    }
+
+    pub(super) fn interest(&self) -> OwnerInterest<'_> {
+        let state = self.effects.state.borrow();
+        let active = match &state.slot {
+            EffectSlot::Active(ActiveEffect::Filesystem(task)) => Some(task.interest()),
+            EffectSlot::Active(ActiveEffect::Process { owner, .. }) => Some(owner.interest()),
+            _ => None,
+        };
+        if let Some(interest) = active {
+            return OwnerInterest::Waiting {
+                descriptor: interest.descriptor.map(|(fd, events)| {
+                    (unsafe { std::os::fd::BorrowedFd::borrow_raw(fd) }, events)
+                }),
+                deadline: Some(interest.deadline),
+            };
+        }
+        if matches!(state.slot, EffectSlot::Idle)
+            && matches!(state.review, ReviewGate::Awaiting { .. })
+            && !self.effects.stopped()
+        {
+            OwnerInterest::Waiting {
+                descriptor: None,
+                deadline: None,
+            }
+        } else {
+            OwnerInterest::Ready
+        }
+    }
+
+    pub(super) fn advance(&mut self) -> Poll<Result<RunOutcome, TransactionError>> {
+        #[cfg(test)]
+        super::dashboard::note_advance();
         self.effects.advance_effect();
         let waker = Waker::from(Arc::new(CallerWake));
         let mut context = Context::from_waker(&waker);
@@ -963,6 +1055,7 @@ impl Coordinator {
                         "owner finished with an effect",
                     )));
                 }
+                self.effects.state.borrow_mut().observation.finish(&result);
                 Poll::Ready(result)
             }
             Poll::Pending => Poll::Pending,
@@ -970,16 +1063,8 @@ impl Coordinator {
     }
 }
 
-pub(crate) fn run(
-    request: snapshot::Request,
-    executor: runtime::Executor,
-    consent: bool,
-) -> Result<RunOutcome, TransactionError> {
-    let mut coordinator = Coordinator::new(request, executor, None);
-    drive_plain(&mut coordinator, consent, &mut std::io::stdout().lock())
-}
-
-fn drive_plain(
+#[cfg(test)]
+pub(super) fn drive_plain(
     coordinator: &mut Coordinator,
     consent: bool,
     output: &mut impl std::io::Write,
@@ -988,13 +1073,17 @@ fn drive_plain(
         if let Poll::Ready(result) = coordinator.advance() {
             return result;
         }
-        if let Some(offer) = coordinator.effects.take_review() {
+        if let Some(offer) = coordinator.take_review() {
             crate::write_review(output, &offer.summary)
                 .and_then(|_| output.flush())
                 .map_err(|_| TransactionError::Io)?;
-            coordinator.effects.answer(
-                offer.token,
-                (!consent).then_some(UnadmittedReason::ConsentRequired),
+            coordinator.answer(
+                offer,
+                if consent {
+                    ReviewDecision::Accept
+                } else {
+                    ReviewDecision::ConsentRequired
+                },
             )?;
         }
         coordinator.effects.wait();
@@ -2190,10 +2279,10 @@ mod tests {
             };
             let (request, consent) = crate::parse_invocation(&arguments).unwrap();
             assert!(matches!(request, snapshot::Request::Rollback));
-            assert_eq!(consent, yes);
+            assert_eq!(consent.yes, yes);
             let before = fs::read(layout.record()).unwrap();
             let mut output = Vec::new();
-            let result = drive_plain(&mut coordinator, consent, &mut output).unwrap();
+            let result = drive_plain(&mut coordinator, consent.yes, &mut output).unwrap();
             let text = String::from_utf8(output).unwrap();
             assert!(text.contains(&crate::english().review_recover));
             assert!(text.contains(&crate::english().review_pending_recovery));
@@ -2268,6 +2357,7 @@ mod tests {
                 )
                 .unwrap()
                 .1
+                .yes
             );
         }
     }
@@ -2601,5 +2691,155 @@ mod tests {
             owner.read_record().await.unwrap();
             assert!(owner.effects.settlement(SettlementKind::Resource).is_err());
         });
+    }
+}
+
+#[cfg(test)]
+pub(super) fn dashboard_gated_fixture(
+    layout: Layout,
+    entered: std::sync::mpsc::SyncSender<()>,
+    release: std::sync::mpsc::Receiver<()>,
+) -> Coordinator {
+    let effects = Effects::new(Cancellation::default());
+    let flow = effects.clone();
+    let continuation = Box::pin(async move {
+        let FilesystemResult::Startup { lease, .. } = flow
+            .filesystem(FilesystemJob::Startup(Some(layout.clone())))
+            .await?
+        else {
+            return Err(TransactionError::InvalidState("fixture startup type"));
+        };
+        flow.state.borrow_mut().lease = Some(lease);
+        let identity = match flow
+            .review(ReviewSummary {
+                operation: ReviewOperation::Recover,
+                version: None,
+                recovery: RecoveryPending::None,
+                changes: vec![ReviewedChange::Recovery],
+            })
+            .await
+        {
+            Ok(identity) => identity,
+            Err(TransactionError::StopRequested) => return unadmitted(&flow),
+            Err(error) => return Err(error),
+        };
+        flow.admit_reviewed(identity)?;
+        flow.observe(super::observation::Activity::Recovering);
+        flow.filesystem(FilesystemJob::GatedWrite {
+            path: layout.state_directory.join("admitted-write"),
+            entered,
+            release,
+        })
+        .await?;
+        if flow.stopped() {
+            stopped(&flow, StopObservation::ObservedNoPair)
+        } else {
+            Ok(RunOutcome::Complete(None))
+        }
+    });
+    Coordinator {
+        effects,
+        continuation,
+    }
+}
+
+#[cfg(test)]
+pub(super) fn dashboard_process_fixture(layout: Layout, resistant: bool) -> Coordinator {
+    let effects = Effects::new(Cancellation::default());
+    let flow = effects.clone();
+    let continuation = Box::pin(async move {
+        let FilesystemResult::Startup { lease, .. } = flow
+            .filesystem(FilesystemJob::Startup(Some(layout.clone())))
+            .await?
+        else {
+            return Err(TransactionError::InvalidState("fixture startup type"));
+        };
+        flow.state.borrow_mut().lease = Some(lease);
+        let identity = match flow
+            .review(ReviewSummary {
+                operation: ReviewOperation::Recover,
+                version: None,
+                recovery: RecoveryPending::None,
+                changes: vec![ReviewedChange::Recovery],
+            })
+            .await
+        {
+            Ok(identity) => identity,
+            Err(TransactionError::StopRequested) => return unadmitted(&flow),
+            Err(error) => return Err(error),
+        };
+        flow.admit_reviewed(identity)?;
+        flow.observe(super::observation::Activity::Recovering);
+        let output = flow
+            .process(process::WorkerRequest::Fixture {
+                name: if resistant {
+                    "dashboard-private-resistant"
+                } else {
+                    "dashboard-private-success"
+                }
+                .into(),
+            })
+            .await?;
+        assert!(String::from_utf8_lossy(&output.stdout).contains("PRIVATE-DASHBOARD-STDOUT"));
+        assert!(String::from_utf8_lossy(&output.stderr).contains("PRIVATE-DASHBOARD-STDERR"));
+        std::fs::write(layout.state_directory.join("private-capture.json"), serde_json::to_vec(&serde_json::json!({
+            "stdout": String::from_utf8_lossy(&output.stdout), "stderr": String::from_utf8_lossy(&output.stderr),
+        })).unwrap()).unwrap();
+        Err(TransactionError::Verification(
+            "PRIVATE-DASHBOARD-SEMANTIC-ERROR",
+        ))
+    });
+    Coordinator {
+        effects,
+        continuation,
+    }
+}
+
+#[cfg(test)]
+impl Coordinator {
+    pub(super) fn dashboard_kill_worker(&mut self) -> u32 {
+        let mut state = self.effects.state.borrow_mut();
+        let EffectSlot::Active(ActiveEffect::Process { owner, .. }) = &mut state.slot else {
+            panic!("fixture requires active worker")
+        };
+        owner.dashboard_kill_worker()
+    }
+}
+
+#[cfg(test)]
+pub(super) fn dashboard_owned_fixture(layout: Layout, request: snapshot::Request) -> Coordinator {
+    let effects = Effects::new(Cancellation::default());
+    let flow = effects.clone();
+    let continuation = Box::pin(async move {
+        let FilesystemResult::Startup { lease, layout } = flow
+            .filesystem(FilesystemJob::Startup(Some(layout)))
+            .await?
+        else {
+            return Err(TransactionError::InvalidState("fixture startup type"));
+        };
+        flow.state.borrow_mut().lease = Some(lease);
+        let owner = InstallationOwner {
+            layout,
+            effects: flow.clone(),
+            fixture: true,
+        };
+        match owner
+            .run_owned(request, runtime::Executor::NativeInstaller)
+            .await
+        {
+            Ok(outcome) if !flow.stopped() => Ok(RunOutcome::Complete(outcome)),
+            Ok(_) | Err(TransactionError::StopRequested) => {
+                if !flow.mutation_admitted() {
+                    return unadmitted(&flow);
+                }
+                let observation = owner.observe_stopped().await?;
+                stopped(&flow, observation)
+            }
+            Err(error) => Err(error),
+        }
+    });
+    Coordinator {
+        effects,
+        continuation,
     }
 }

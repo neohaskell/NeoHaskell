@@ -2,6 +2,7 @@ use serde::Deserialize;
 
 #[derive(Deserialize)]
 pub(crate) struct English {
+    pub(crate) dashboard: DashboardCopy,
     pub(crate) consent_required: String,
     pub(crate) review_declined: String,
     pub(crate) review_changed: String,
@@ -41,4 +42,22 @@ pub(crate) struct English {
     pub(crate) nix_daemon_unavailable: String,
     pub(crate) nix_daemon_mismatch: String,
     pub(crate) nix_configuration_owner_unknown: String,
+}
+
+#[derive(Deserialize)]
+pub(crate) struct DashboardCopy {
+    pub(crate) panel: String,
+    pub(crate) brand: String,
+    pub(crate) short_name: String,
+    pub(crate) summary: String,
+    pub(crate) presentation_errors: [String; 6],
+    pub(crate) rows: [String; 6],
+    pub(crate) statuses: [String; 6],
+    pub(crate) activities: [String; 15],
+    pub(crate) controls: String,
+    pub(crate) review_controls: String,
+    pub(crate) details_controls: String,
+    pub(crate) details: String,
+    pub(crate) truncated: String,
+    pub(crate) restoration_failed: String,
 }

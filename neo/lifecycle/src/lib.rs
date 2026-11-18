@@ -63,8 +63,17 @@ pub fn dispatch_installed(arguments: &[std::ffi::OsString]) -> Option<Exit> {
 }
 
 #[cfg(unix)]
-fn parse_invocation(arguments: &[std::ffi::OsString]) -> Result<(installation::Request, bool), ()> {
+fn parse_invocation(
+    arguments: &[std::ffi::OsString],
+) -> Result<(installation::Request, installation::Options), ()> {
+    if arguments
+        .first()
+        .is_none_or(|argument| argument.to_str().is_none_or(|value| value.starts_with('-')))
+    {
+        return Err(());
+    }
     let mut consent = false;
+    let mut display = installation::DisplayPreference::Automatic;
     let mut filtered = Vec::new();
     for argument in arguments {
         if argument == "--yes" {
@@ -72,6 +81,15 @@ fn parse_invocation(arguments: &[std::ffi::OsString]) -> Result<(installation::R
                 return Err(());
             }
             consent = true;
+        } else if argument == "--plain" || argument == "--still" {
+            if display != installation::DisplayPreference::Automatic {
+                return Err(());
+            }
+            display = if argument == "--plain" {
+                installation::DisplayPreference::Plain
+            } else {
+                installation::DisplayPreference::Still
+            };
         } else {
             filtered.push(argument.clone());
         }
@@ -105,7 +123,13 @@ fn parse_invocation(arguments: &[std::ffi::OsString]) -> Result<(installation::R
             return Err(());
         }
     };
-    Ok((request, consent))
+    Ok((
+        request,
+        installation::Options {
+            yes: consent,
+            display,
+        },
+    ))
 }
 
 #[cfg(unix)]
@@ -122,7 +146,30 @@ fn run_request(arguments: &[std::ffi::OsString], executor: installation::Executo
             return Exit { code: 2 };
         }
     };
-    format_result(installation::run(request, executor, consent))
+    let report = installation::run(request, executor, consent);
+    format_report(report)
+}
+
+#[cfg(unix)]
+fn format_report(report: installation::DriveReport) -> Exit {
+    let english = english();
+    if let Some(failure) = report.presentation {
+        eprintln!(
+            "{}",
+            english.dashboard.presentation_errors[failure.primary as usize]
+        );
+        if !failure.restored {
+            eprintln!("{}", english.dashboard.restoration_failed);
+        }
+        if matches!(
+            report.operation,
+            Err(installation::TransactionError::CleanupUnknown)
+        ) {
+            eprintln!("{}", english.cleanup_unknown);
+        }
+        return Exit { code: 1 };
+    }
+    format_result(report.operation)
 }
 
 #[cfg(unix)]

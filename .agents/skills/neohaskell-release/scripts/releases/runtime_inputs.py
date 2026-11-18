@@ -8,11 +8,11 @@ import hashlib
 from pathlib import Path
 
 import candidate
+from candidate_contract_tests import generate_fixtures
 
 
 HERE = Path(__file__).resolve().parent
 CASES = HERE / "candidate_contract_tests/runtime_cases.json"
-FROZEN = HERE / "candidate_contract_tests/fixtures/v1"
 DESTINATION = candidate.release.ROOT / "neo/lifecycle/contract"
 
 
@@ -20,28 +20,38 @@ def digest(raw):
     return hashlib.sha256(raw).hexdigest()
 
 
-def expected_files():
+def expected_files(corpus):
     registry = candidate.contract_registry_bytes()
     outputs = {
         "registry.json": registry,
         "runtime_cases.json": CASES.read_bytes(),
-        "fixtures/v1/fixture-set.json": (FROZEN / "fixture-set.json").read_bytes(),
+        "fixtures/v1/fixture-set.json": (corpus.root / "fixture-set.json").read_bytes(),
     }
     fixture_set = candidate._loads(outputs["fixtures/v1/fixture-set.json"], 65536, 24, 1000)
     for name in sorted(fixture_set["candidate_ids"]):
-        for path in sorted((FROZEN / name).iterdir()):
+        for path in sorted((corpus.root / name).iterdir()):
             if path.is_symlink() or not path.is_file():
                 raise ValueError("Frozen parse input is not a regular file")
             outputs["fixtures/v1/" + name + "/" + path.name] = path.read_bytes()
     sources = [
-        Path(candidate.__file__), Path(__file__), CASES, candidate.CONTRACT_PATH,
+        Path(candidate.__file__), Path(__file__), Path(generate_fixtures.__file__), CASES, candidate.CONTRACT_PATH,
         Path(candidate.release.__file__), Path(candidate.remote.__file__),
         candidate.SKILL_ROOT / "references/config.json",
         candidate.release.ROOT / "flake.nix",
     ]
-    sources.extend(sorted(path for path in FROZEN.rglob("*") if path.is_file()))
     root = candidate.release.ROOT
-    source_hashes = {str(path.relative_to(root)): digest(path.read_bytes()) for path in sources}
+    source_hashes = {}
+
+    def attribute(relative, raw):
+        identity = digest(raw)
+        if relative in source_hashes and source_hashes[relative] != identity:
+            raise ValueError("Conflicting source attribution: " + relative)
+        source_hashes[relative] = identity
+
+    for relative in corpus.source_paths:
+        attribute(relative, (corpus.root / "source" / relative).read_bytes())
+    for path in sources:
+        attribute(path.relative_to(root).as_posix(), path.read_bytes())
     outputs["manifest.json"] = candidate.canonical_json({
         "schema_version": 1,
         "contract_registry_sha256": candidate.contract_registry_sha256(),
@@ -63,9 +73,9 @@ def safe_destination(destination):
                 raise ValueError("Runtime export contains a non-regular entry")
 
 
-def check(destination=DESTINATION):
+def check(corpus, destination=DESTINATION):
     safe_destination(destination)
-    expected = expected_files()
+    expected = expected_files(corpus)
     actual = {str(path.relative_to(destination)) for path in destination.rglob("*") if path.is_file() or path.is_symlink()}
     if actual != set(expected):
         raise ValueError("Runtime export file set drift")
@@ -75,9 +85,9 @@ def check(destination=DESTINATION):
             raise ValueError("Runtime export byte drift: " + name)
 
 
-def write(destination=DESTINATION):
+def write(corpus, destination=DESTINATION):
     safe_destination(destination)
-    expected = expected_files()
+    expected = expected_files(corpus)
     if destination.exists():
         actual = {str(path.relative_to(destination)) for path in destination.rglob("*") if path.is_file() or path.is_symlink()}
         if actual - set(expected):
@@ -88,7 +98,7 @@ def write(destination=DESTINATION):
         if path.is_symlink():
             raise ValueError("Runtime export destination is a symlink")
         path.write_bytes(raw)
-    check(destination)
+    check(corpus, destination)
 
 
 def main():
@@ -98,7 +108,9 @@ def main():
     mode.add_argument("--check", action="store_true")
     args = parser.parse_args()
     try:
-        write() if args.write else check()
+        with generate_fixtures.temporary_corpus_directory() as temporary:
+            corpus = generate_fixtures.CandidateFixtureCorpus(candidate.release.ROOT, Path(temporary) / "corpus")
+            write(corpus) if args.write else check(corpus)
     except (ValueError, OSError) as error:
         parser.exit(1, str(error) + "\n")
     print("runtime contract export matches " + candidate.contract_registry_sha256())

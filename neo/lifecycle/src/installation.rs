@@ -1,7 +1,9 @@
 mod coordinator;
+mod dashboard;
 mod filesystem;
 mod nix;
 pub(crate) mod nix_owner;
+mod observation;
 pub(crate) mod process;
 pub(crate) mod release;
 mod resource_io;
@@ -13,8 +15,9 @@ mod verification;
 use coordinator::{Effects, SettlementKind};
 pub(crate) use coordinator::{
     RecoveryPending, ReviewOperation, ReviewSummary, ReviewedChange, RunOutcome, StopObservation,
-    UnadmittedReason, run,
+    UnadmittedReason,
 };
+pub(crate) use dashboard::{DisplayPreference, DriveReport, Options, run};
 use filesystem::{FilesystemJob, FilesystemResult};
 pub(crate) use runtime::Executor;
 pub(crate) use snapshot::Request;

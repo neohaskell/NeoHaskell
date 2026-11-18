@@ -8,10 +8,43 @@ use std::path::{Path, PathBuf};
 
 pub(super) const CLIENT: &str = "/nix/var/nix/profiles/default/bin/nix";
 const SOCKET: &str = "/nix/var/nix/daemon-socket/socket";
-const PACKAGE: &str = "/nix/store/82nvpklg6giadsmk81fz7diiix246c0d-nix-2.34.9";
-const CLIENT_HASH: &str = "7f63128a37db39e945cbc965caa2d59fbd5b66c218295625b2080c0423ee365d";
-const SERVICE_HASH: &str = "b9ec9b86bc4f8fc03d6276151264d6dca290155404853c97ff56fb8067dd1d32";
-const SOCKET_HASH: &str = "3802372e8ccfd129929aa0887fb3f98d7ec2977e5c7a3dc774d29875c6651b16";
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct NixTargetIdentity {
+    package_root: &'static str,
+    client_sha256: &'static str,
+    service_sha256: &'static str,
+    socket_sha256: &'static str,
+}
+
+const ARM64_IDENTITY: NixTargetIdentity = NixTargetIdentity {
+    package_root: "/nix/store/82nvpklg6giadsmk81fz7diiix246c0d-nix-2.34.9",
+    client_sha256: "7f63128a37db39e945cbc965caa2d59fbd5b66c218295625b2080c0423ee365d",
+    service_sha256: "b9ec9b86bc4f8fc03d6276151264d6dca290155404853c97ff56fb8067dd1d32",
+    socket_sha256: "3802372e8ccfd129929aa0887fb3f98d7ec2977e5c7a3dc774d29875c6651b16",
+};
+
+const X86_64_GNU_IDENTITY: NixTargetIdentity = NixTargetIdentity {
+    package_root: "/nix/store/ssswpqihnyi8231b9r515k2hmpnk0h1n-nix-2.34.9",
+    client_sha256: "d476ea692162bcede8c46a492e0350862139c4e4a0d8a5a36bc81d340bac4c6d",
+    service_sha256: "08698149a115eb07a0478cdfff9ba30ce0e41035ab18192a7a2f20af00d3608e",
+    socket_sha256: "3802372e8ccfd129929aa0887fb3f98d7ec2977e5c7a3dc774d29875c6651b16",
+};
+
+fn target_identity() -> Result<&'static NixTargetIdentity, NixBlock> {
+    if cfg!(all(target_os = "linux", target_arch = "aarch64")) {
+        Ok(&ARM64_IDENTITY)
+    } else if cfg!(all(
+        target_os = "linux",
+        target_arch = "x86_64",
+        target_env = "gnu",
+        target_pointer_width = "64"
+    )) {
+        Ok(&X86_64_GNU_IDENTITY)
+    } else {
+        Err(NixBlock::UnprovedPlatform)
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum NixBlock {
@@ -72,14 +105,12 @@ impl InstallationOwner {
         {
             return Err(blocked(NixBlock::MissingClient));
         }
-        if !cfg!(all(target_os = "linux", target_arch = "aarch64")) {
-            return Err(blocked(NixBlock::UnprovedPlatform));
-        }
+        let identity = target_identity().map_err(blocked)?;
         let client = self.nix_client().await?;
         let client_digest = self
             .nix_digest(client.clone(), 8 * 1024 * 1024, NixBlock::UnprovedClient)
             .await?;
-        if client_digest != CLIENT_HASH {
+        if client_digest != identity.client_sha256 {
             return Err(blocked(NixBlock::UnprovedClient));
         }
         let configuration = ConfigurationObservation {
@@ -109,8 +140,8 @@ impl InstallationOwner {
             _ => return Err(blocked(NixBlock::InactiveService)),
         }
         for (name, digest) in [
-            ("nix-daemon.service", SERVICE_HASH),
-            ("nix-daemon.socket", SOCKET_HASH),
+            ("nix-daemon.service", identity.service_sha256),
+            ("nix-daemon.socket", identity.socket_sha256),
         ] {
             let path = self
                 .nix_protected(
@@ -165,6 +196,7 @@ impl InstallationOwner {
                     NixBlock::InactiveService,
                 )
                 .await?,
+            identity,
         )
         .map_err(blocked)?;
         socket_observation(
@@ -175,6 +207,7 @@ impl InstallationOwner {
                     NixBlock::InactiveService,
                 )
                 .await?,
+            identity,
         )
         .map_err(blocked)?;
         let repeated = service_observation(
@@ -185,6 +218,7 @@ impl InstallationOwner {
                     NixBlock::InactiveService,
                 )
                 .await?,
+            identity,
         )
         .map_err(blocked)?;
         if service != repeated || self.nix_client().await? != client {
@@ -265,8 +299,9 @@ impl InstallationOwner {
 }
 
 pub(super) fn trusted_client() -> Result<PathBuf, NixBlock> {
+    let identity = target_identity()?;
     let client = protected_path(Path::new(CLIENT)).map_err(|_| NixBlock::UnprovedClient)?;
-    if client != Path::new(PACKAGE).join("bin/nix") {
+    if client != Path::new(identity.package_root).join("bin/nix") {
         return Err(NixBlock::UnprovedClient);
     }
     Ok(client)
@@ -327,6 +362,7 @@ fn active_unit<'a>(
     bytes: &'a [u8],
     unit: &str,
     substate: &str,
+    identity: &NixTargetIdentity,
 ) -> Result<BTreeMap<&'a str, &'a str>, NixBlock> {
     let values = properties(bytes)?;
     for (key, expected) in [
@@ -343,7 +379,7 @@ fn active_unit<'a>(
         return Err(NixBlock::UnprovedService);
     }
     let fragment = format!("/etc/systemd/system/{unit}");
-    let packaged = format!("{PACKAGE}/lib/systemd/system/{unit}");
+    let packaged = format!("{}/lib/systemd/system/{unit}", identity.package_root);
     if values.get("FragmentPath") != Some(&fragment.as_str())
         && values.get("FragmentPath") != Some(&packaged.as_str())
     {
@@ -352,8 +388,11 @@ fn active_unit<'a>(
     Ok(values)
 }
 
-fn service_observation(bytes: &[u8]) -> Result<ServiceObservation, NixBlock> {
-    let values = active_unit(bytes, "nix-daemon.service", "running")?;
+fn service_observation(
+    bytes: &[u8],
+    identity: &NixTargetIdentity,
+) -> Result<ServiceObservation, NixBlock> {
+    let values = active_unit(bytes, "nix-daemon.service", "running", identity)?;
     let main_pid = values
         .get("MainPID")
         .and_then(|v| v.parse::<u32>().ok())
@@ -365,7 +404,8 @@ fn service_observation(bytes: &[u8]) -> Result<ServiceObservation, NixBlock> {
         .filter(|v| *v > 0)
         .ok_or(NixBlock::UnprovedService)?;
     let prefix = format!(
-        "{{ path={PACKAGE}/bin/nix-daemon ; argv[]=nix-daemon --daemon ; ignore_errors=no ; "
+        "{{ path={}/bin/nix-daemon ; argv[]=nix-daemon --daemon ; ignore_errors=no ; ",
+        identity.package_root
     );
     if !values
         .get("ExecStart")
@@ -378,8 +418,8 @@ fn service_observation(bytes: &[u8]) -> Result<ServiceObservation, NixBlock> {
     Ok(ServiceObservation { main_pid, started })
 }
 
-fn socket_observation(bytes: &[u8]) -> Result<(), NixBlock> {
-    let values = active_unit(bytes, "nix-daemon.socket", "running")?;
+fn socket_observation(bytes: &[u8], identity: &NixTargetIdentity) -> Result<(), NixBlock> {
+    let values = active_unit(bytes, "nix-daemon.socket", "running", identity)?;
     if values.get("Listen") != Some(&"/nix/var/nix/daemon-socket/socket (Stream)")
         || values.get("Triggers") != Some(&"nix-daemon.service")
     {
@@ -416,14 +456,15 @@ mod tests {
 
     fn service() -> String {
         format!(
-            "Id=nix-daemon.service\nLoadState=loaded\nActiveState=active\nSubState=running\nNeedDaemonReload=no\nFragmentPath=/etc/systemd/system/nix-daemon.service\nDropInPaths=\nMainPID=91\nExecMainStartTimestampMonotonic=1234\nExecStart={{ path={PACKAGE}/bin/nix-daemon ; argv[]=nix-daemon --daemon ; ignore_errors=no ; start_time=[Tue] ; stop_time=[n/a] ; pid=91 ; code=(null) ; status=0/0 }}\nUser=\nRootDirectory=\n"
+            "Id=nix-daemon.service\nLoadState=loaded\nActiveState=active\nSubState=running\nNeedDaemonReload=no\nFragmentPath=/etc/systemd/system/nix-daemon.service\nDropInPaths=\nMainPID=91\nExecMainStartTimestampMonotonic=1234\nExecStart={{ path={}/bin/nix-daemon ; argv[]=nix-daemon --daemon ; ignore_errors=no ; start_time=[Tue] ; stop_time=[n/a] ; pid=91 ; code=(null) ; status=0/0 }}\nUser=\nRootDirectory=\n",
+            ARM64_IDENTITY.package_root
         )
     }
 
     #[test]
     fn loaded_service_must_be_active_exact_and_without_overrides() {
         assert_eq!(
-            service_observation(service().as_bytes()),
+            service_observation(service().as_bytes(), &ARM64_IDENTITY),
             Ok(ServiceObservation {
                 main_pid: 91,
                 started: 1234
@@ -437,16 +478,78 @@ mod tests {
             ("argv[]=nix-daemon --daemon", "argv[]=imposter --daemon"),
             ("User=", "User=jess"),
         ] {
-            assert!(service_observation(service().replace(before, after).as_bytes()).is_err());
+            assert!(
+                service_observation(service().replace(before, after).as_bytes(), &ARM64_IDENTITY)
+                    .is_err()
+            );
         }
-        assert!(service_observation(format!("{}MainPID=92\n", service()).as_bytes()).is_err());
+        assert!(
+            service_observation(
+                format!("{}MainPID=92\n", service()).as_bytes(),
+                &ARM64_IDENTITY
+            )
+            .is_err()
+        );
+    }
+
+    const CAPTURED_X64_SERVICE: &[u8] = br#"MainPID=2656
+ExecMainStartTimestampMonotonic=131824418
+ExecStart={ path=/nix/store/ssswpqihnyi8231b9r515k2hmpnk0h1n-nix-2.34.9/bin/nix-daemon ; argv[]=nix-daemon --daemon ; ignore_errors=no ; start_time=[Wed 2026-11-18 08:58:58 UTC] ; stop_time=[n/a] ; pid=2656 ; code=(null) ; status=0/0 }
+RootDirectory=
+User=
+Id=nix-daemon.service
+LoadState=loaded
+ActiveState=active
+SubState=running
+FragmentPath=/etc/systemd/system/nix-daemon.service
+DropInPaths=
+NeedDaemonReload=no
+"#;
+
+    const CAPTURED_X64_SOCKET: &[u8] = br#"Listen=/nix/var/nix/daemon-socket/socket (Stream)
+Id=nix-daemon.socket
+Triggers=nix-daemon.service
+LoadState=loaded
+ActiveState=active
+SubState=running
+FragmentPath=/etc/systemd/system/nix-daemon.socket
+DropInPaths=
+NeedDaemonReload=no
+"#;
+
+    #[test]
+    fn captured_x64_service_observation_uses_selected_package() {
+        assert_eq!(
+            service_observation(CAPTURED_X64_SERVICE, &X86_64_GNU_IDENTITY),
+            Ok(ServiceObservation {
+                main_pid: 2656,
+                started: 131824418,
+            }),
+            "captured x64 systemd service uses its selected Nix package"
+        );
+    }
+
+    #[test]
+    fn captured_x64_socket_observation_matches_the_running_unit() {
+        assert_eq!(
+            socket_observation(CAPTURED_X64_SOCKET, &X86_64_GNU_IDENTITY),
+            Ok(())
+        );
+    }
+
+    #[test]
+    fn captured_x64_service_is_rejected_with_the_arm_package() {
+        assert_eq!(
+            service_observation(CAPTURED_X64_SERVICE, &ARM64_IDENTITY),
+            Err(NixBlock::UnprovedService)
+        );
     }
 
     #[test]
     fn a_configuration_digest_never_grants_authority() {
         for digest in [None, Some("a".repeat(64))] {
             let base = ObservedNixBase {
-                client_digest: CLIENT_HASH.into(),
+                client_digest: ARM64_IDENTITY.client_sha256.into(),
                 daemon: DaemonObservation { trusted: false },
                 service: ServiceObservation {
                     main_pid: 91,

@@ -1,3 +1,4 @@
+use super::observation::{Activity, Row};
 use super::{
     InstallSelection, InstallationOwner, Layout, Operation, PriorObservation, TransactionError,
     process, release, snapshot, validate_directory,
@@ -77,10 +78,15 @@ impl InstallationOwner {
                 .await?;
             self.recheck_recovery(&recovery).await?;
             self.effects.admit_reviewed(review)?;
+            self.effects.observe(Activity::Recovering);
             self.apply_recovery(recovery).await?;
             return Ok(None);
         }
+        self.effects.observe(Activity::CheckingNix);
         let observed_nix = self.observe_nix_base(&lease).await?;
+        self.effects.observe_row(0, Row::Existing);
+        self.effects.observe_row(1, Row::Unchanged);
+        self.effects.observe_row(2, Row::Unchanged);
         let before = recovery.projected.committed.clone();
         let offline = matches!(&request, snapshot::Request::Rollback)
             || matches!(&request, snapshot::Request::Install(None)) && before.is_some();
@@ -118,6 +124,7 @@ impl InstallationOwner {
                 offline,
             )
             .await?;
+        self.effects.observe(Activity::Selecting);
         let selected = match recovery.projected.ready_demand(&request)? {
             snapshot::Demand::Recorded(selected) => selected,
             snapshot::Demand::SelectExact(version) => source
@@ -134,6 +141,7 @@ impl InstallationOwner {
                 ));
             }
         };
+        self.effects.observe(Activity::PreparingReview);
         let prepared = self
             .prepare_snapshot(&selected, &source, identity.target, offline)
             .await?;
@@ -151,6 +159,7 @@ impl InstallationOwner {
             observed_nix.require_configuration_authority()?;
         }
         self.effects.admit_reviewed(review)?;
+        self.effects.observe(Activity::Recovering);
         self.apply_recovery(recovery).await?;
         self.effects
             .filesystem(super::FilesystemJob::EnsureCommandDirectory(
@@ -167,12 +176,20 @@ impl InstallationOwner {
             .map_err(|_| TransactionError::Verification("candidate system"))?
             .output("pair")
             .ok_or(TransactionError::Verification("candidate pair"))?;
+        self.effects.observe(Activity::PreparingPair);
+        self.effects.observe_row(3, Row::Working);
+        self.effects.observe_row(4, Row::Working);
         let retained = self
             .retain_candidate(&lease, &selected, pair, offline)
             .await?;
+        self.effects.observe(Activity::VerifyingPair);
+        self.effects.observe_row(5, Row::Working);
         let ready = self
             .verify_retention_observation(&lease, &candidate, system, retained)
             .await?;
+        for row in 3..6 {
+            self.effects.observe_row(row, Row::Verified);
+        }
         if before.as_ref().is_none_or(|roles| roles.active != ready) {
             let operation = match request {
                 snapshot::Request::Rollback => Operation::Rollback,
@@ -193,8 +210,10 @@ impl InstallationOwner {
                 }
             };
             let after = self.next_receipt(before.as_ref(), ready);
+            self.effects.observe(Activity::Activating);
             self.switch_pair(before.clone(), after, operation).await?;
         }
+        self.effects.observe(Activity::Finishing);
         let mut record = self.read_record().await?;
         record.previous_observation = match record
             .committed
