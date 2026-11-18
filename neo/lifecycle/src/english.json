@@ -110,5 +110,20 @@
   "bootstrap_locator": "The release locator is invalid or belongs to another release.",
   "bootstrap_download": "The installer download did not complete within its limits.",
   "bootstrap_integrity": "The downloaded installer does not match the release identity.",
-  "bootstrap_preparing": "Downloading and verifying the NeoHaskell installer."
+  "bootstrap_preparing": "Downloading and verifying the NeoHaskell installer.",
+  "windows_start_failed": "Windows could not start wsl.exe. Check your existing WSL installation.",
+  "windows_dispatch_failed": "The selected WSL distribution could not complete the operation. Check its Linux permissions and prerequisites.",
+  "windows_download_failed": "The bounded HTTPS download failed. Check your connection and retry.",
+  "windows_argument_invalid": "Use -Version X.Y.Z and at most one of -Plain or -Still. Use -Yes and -CandidateLocator for consent and release identity.",
+  "windows_wsl_missing": "wsl.exe is unavailable. Set up an eligible WSL2 distribution before installing NeoHaskell.",
+  "windows_consent_required": "Noninteractive installation requires -Yes. Use -Distribution to select an eligible WSL2 target if the configured default is unsuitable.",
+  "windows_target_invalid": "The selected or default distribution is unsuitable. Use -Distribution with an existing WSL2 distribution running systemd on x86-64 or ARM64, with a non-root default Linux user, a writable home and sudo permissions.",
+  "windows_selected": "NeoHaskell will be installed inside WSL distribution {0}. Use neo and neoctl from that WSL distribution.",
+  "windows_locator_invalid": "The candidate locator is invalid or belongs to a different installer release.",
+  "windows_integrity_failed": "The downloaded POSIX bootstrap does not match the release's exact size and SHA-256. Installation stopped.",
+  "windows_completed": "NeoHaskell installation completed inside WSL distribution {0}. Use neo and neoctl from that WSL distribution.",
+  "windows_failure": "NeoHaskell installation stopped. Check your WSL prerequisites and retry.",
+  "windows_probe_limit": "WSL inspection exceeded 30 seconds or 64 KiB. Check your WSL installation and retry.",
+  "windows_host_invalid": "Use native Windows on x86-64 or ARM64 with an eligible WSL2 distribution.",
+  "windows_permissions": "The selected Linux user needs a writable home, base64 and sudo. Noninteractive installation also requires sudo authorization without a password. Open this distribution and correct its permissions before retrying."
 }
