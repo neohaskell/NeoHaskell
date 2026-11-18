@@ -17,12 +17,108 @@ pub(crate) struct ProcessStamp {
     start_ticks: u64,
     effective_uid: u32,
     executable: ExecutableObservation,
+    launch_configuration: LaunchConfiguration,
 }
 
 #[derive(Debug, PartialEq, Eq)]
 enum ExecutableObservation {
     Verified(InputIdentity),
     Inaccessible,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum LaunchConfiguration {
+    Unobserved,
+    ConventionalSystem { user_sources: UserSources },
+    AlternateOrAmbiguous,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum UserSources {
+    Disabled,
+    StandardSearchPossible,
+}
+
+fn launch_configuration(bytes: &[u8]) -> LaunchConfiguration {
+    const KEYS: [&[u8]; 7] = [
+        b"NIX_CONF_DIR",
+        b"NIX_USER_CONF_FILES",
+        b"NIX_CONFIG",
+        b"NIX_CONFIG_HOME",
+        b"XDG_CONFIG_HOME",
+        b"XDG_CONFIG_DIRS",
+        b"HOME",
+    ];
+    if bytes.len() > 64 * 1024 || (!bytes.is_empty() && bytes.last() != Some(&0)) {
+        return LaunchConfiguration::AlternateOrAmbiguous;
+    }
+    let mut values = [None; 7];
+    for entry in bytes
+        .strip_suffix(&[0])
+        .unwrap_or(bytes)
+        .split(|byte| *byte == 0)
+        .filter(|_| !bytes.is_empty())
+    {
+        let Some(equal) = entry.iter().position(|byte| *byte == b'=') else {
+            return LaunchConfiguration::AlternateOrAmbiguous;
+        };
+        let key = &entry[..equal];
+        if key.is_empty() {
+            return LaunchConfiguration::AlternateOrAmbiguous;
+        }
+        if let Some(index) = KEYS.iter().position(|candidate| *candidate == key) {
+            if values[index].is_some() {
+                return LaunchConfiguration::AlternateOrAmbiguous;
+            }
+            values[index] = Some(&entry[equal + 1..]);
+        }
+    }
+    if !matches!(values[0], None | Some(b"" | b"/etc/nix"))
+        || !matches!(values[2], None | Some(b""))
+    {
+        return LaunchConfiguration::AlternateOrAmbiguous;
+    }
+    let user_sources = match values[1] {
+        Some(b"") => UserSources::Disabled,
+        None if values[3..6].iter().all(Option::is_none)
+            && matches!(values[6], None | Some(b"/root")) =>
+        {
+            UserSources::StandardSearchPossible
+        }
+        _ => return LaunchConfiguration::AlternateOrAmbiguous,
+    };
+    LaunchConfiguration::ConventionalSystem { user_sources }
+}
+
+fn observe_launch_configuration(
+    directory: &File,
+    observer_uid: u32,
+    executable: &ExecutableObservation,
+    read: &mut impl FnMut(&mut File) -> Result<Vec<u8>, TransactionError>,
+) -> Result<LaunchConfiguration, TransactionError> {
+    if observer_uid != 0 {
+        return Ok(LaunchConfiguration::Unobserved);
+    }
+    let ExecutableObservation::Verified(expected) = executable else {
+        return Ok(LaunchConfiguration::Unobserved);
+    };
+    let mut environment = match open_at(
+        directory,
+        c"environ",
+        libc::O_RDONLY | libc::O_NOFOLLOW | libc::O_NONBLOCK,
+    ) {
+        Ok(file) => file,
+        Err(error) if inaccessible(&error) => return Ok(LaunchConfiguration::Unobserved),
+        Err(_) => return Err(mismatch()),
+    };
+    let environment = read(&mut environment)?;
+    let actual = open_at(directory, c"exe", libc::O_RDONLY | libc::O_NONBLOCK)
+        .and_then(|file| file.metadata())
+        .map_err(|_| mismatch())?;
+    if !actual.is_file() || InputIdentity::of(&actual) != *expected {
+        return Err(mismatch());
+    }
+    Ok(launch_configuration(&environment))
 }
 
 fn mismatch() -> TransactionError {
@@ -141,7 +237,7 @@ pub(crate) fn observe(
         Err(error) if inaccessible(&error) => return Ok(KernelDaemonObservation::Inaccessible),
         Err(_) => return Err(mismatch()),
     };
-    let mut snapshot = || -> Result<Option<(u64, u32)>, TransactionError> {
+    let snapshot = |read: &mut dyn FnMut(&mut File) -> Result<Vec<u8>, TransactionError>| -> Result<Option<(u64, u32)>, TransactionError> {
         let open = |name| match open_at(
             &directory,
             name,
@@ -159,7 +255,7 @@ pub(crate) fn observe(
         };
         Ok(Some(stamp(&read(&mut stat)?, &read(&mut status)?, pid)?))
     };
-    let Some(before) = snapshot()? else {
+    let Some(before) = snapshot(&mut read)? else {
         return Ok(KernelDaemonObservation::Inaccessible);
     };
     let executable = match open_at(&directory, c"exe", libc::O_RDONLY | libc::O_NONBLOCK) {
@@ -179,7 +275,13 @@ pub(crate) fn observe(
         }
         Err(_) => return Err(mismatch()),
     };
-    if Some(before) != snapshot()? {
+    let launch_configuration = observe_launch_configuration(
+        &directory,
+        unsafe { libc::geteuid() },
+        &executable,
+        &mut read,
+    )?;
+    if Some(before) != snapshot(&mut read)? {
         return Err(mismatch());
     }
     Ok(KernelDaemonObservation::Observed(ProcessStamp {
@@ -187,12 +289,197 @@ pub(crate) fn observe(
         start_ticks: before.0,
         effective_uid: before.1,
         executable,
+        launch_configuration,
     }))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn launch_selectors_preserve_user_search_uncertainty() {
+        for bytes in [
+            b"".as_slice(),
+            b"HOME=/root\0",
+            b"NIX_CONF_DIR=/etc/nix\0NIX_CONFIG=\0",
+            b"NIX_CONF_DIR=\0",
+        ] {
+            assert_eq!(
+                launch_configuration(bytes),
+                LaunchConfiguration::ConventionalSystem {
+                    user_sources: UserSources::StandardSearchPossible,
+                }
+            );
+        }
+        for bytes in [
+            b"NIX_USER_CONF_FILES=\0".as_slice(),
+            b"NIX_USER_CONF_FILES=\0HOME=/private\0XDG_CONFIG_DIRS=/private\0",
+        ] {
+            assert_eq!(
+                launch_configuration(bytes),
+                LaunchConfiguration::ConventionalSystem {
+                    user_sources: UserSources::Disabled,
+                }
+            );
+        }
+    }
+
+    #[test]
+    fn alternate_duplicate_and_malformed_selectors_never_claim_conventional_inputs() {
+        for bytes in [
+            b"NIX_CONF_DIR=/secret\0".as_slice(),
+            b"NIX_CONFIG=secret = true\0",
+            b"NIX_USER_CONF_FILES=/secret\0",
+            b"NIX_CONFIG_HOME=/secret\0",
+            b"XDG_CONFIG_HOME=/secret\0",
+            b"XDG_CONFIG_DIRS=\0",
+            b"HOME=/secret\0",
+            b"HOME=\0",
+            b"NIX_CONFIG=\0NIX_CONFIG=\0",
+            b"NIX_CONF_DIR=/etc/nix\0NIX_CONF_DIR=/etc/nix\0",
+            b"NIX_USER_CONF_FILES=\0NIX_USER_CONF_FILES=\0",
+            b"HOME=/root\0HOME=/root\0",
+            b"NIX_CONFIG",
+            b"NIX_CONFIG\0",
+            b"=secret\0",
+            b"\0",
+            b"NIX_CONFIG=\0\0",
+            b"NIX_CONFIG=\xff\0",
+        ] {
+            let observation = launch_configuration(bytes);
+            assert_eq!(observation, LaunchConfiguration::AlternateOrAmbiguous);
+            assert_eq!(format!("{observation:?}"), "AlternateOrAmbiguous");
+        }
+        assert_eq!(
+            launch_configuration(&vec![0; 65537]),
+            LaunchConfiguration::AlternateOrAmbiguous
+        );
+        assert_eq!(
+            launch_configuration(b"UNRELATED=secret\xff\0"),
+            LaunchConfiguration::ConventionalSystem {
+                user_sources: UserSources::StandardSearchPossible,
+            }
+        );
+    }
+
+    fn fixture_executable(directory: &std::path::Path) -> ExecutableObservation {
+        let path = directory.join("executable");
+        std::fs::write(&path, b"fixture").unwrap();
+        ExecutableObservation::Verified(InputIdentity::of(&std::fs::metadata(path).unwrap()))
+    }
+
+    #[test]
+    fn ordinary_or_unverified_observers_do_not_read_environment() {
+        let temporary = tempfile::tempdir().unwrap();
+        let directory = File::open(temporary.path()).unwrap();
+        for (uid, executable) in [
+            (1000, fixture_executable(temporary.path())),
+            (0, ExecutableObservation::Inaccessible),
+        ] {
+            assert_eq!(
+                observe_launch_configuration(&directory, uid, &executable, &mut |_| {
+                    panic!("unqualified observation read environment")
+                })
+                .unwrap(),
+                LaunchConfiguration::Unobserved
+            );
+        }
+    }
+
+    #[test]
+    fn synthetic_environment_preserves_cancellation_and_descriptor_binding() {
+        use std::io::Read;
+        let temporary = tempfile::tempdir().unwrap();
+        let process = temporary.path().join("process");
+        std::fs::create_dir(&process).unwrap();
+        let directory = File::open(&process).unwrap();
+        let executable = fixture_executable(temporary.path());
+        std::os::unix::fs::symlink(temporary.path().join("executable"), process.join("exe"))
+            .unwrap();
+        assert_eq!(
+            observe_launch_configuration(&directory, 0, &executable, &mut |_| panic!(
+                "missing environment read"
+            ))
+            .unwrap(),
+            LaunchConfiguration::Unobserved
+        );
+        std::fs::write(process.join("environ"), b"NIX_USER_CONF_FILES=\0").unwrap();
+        assert!(matches!(
+            observe_launch_configuration(&directory, 0, &executable, &mut |_| Err(
+                TransactionError::StopRequested
+            )),
+            Err(TransactionError::StopRequested)
+        ));
+        let retained = temporary.path().join("retained");
+        std::fs::rename(&process, &retained).unwrap();
+        std::fs::create_dir(&process).unwrap();
+        std::fs::write(process.join("environ"), b"NIX_CONFIG=secret\0").unwrap();
+        let mut read = |file: &mut File| {
+            let mut bytes = Vec::new();
+            file.read_to_end(&mut bytes).unwrap();
+            Ok(bytes)
+        };
+        let baseline = observe_launch_configuration(&directory, 0, &executable, &mut read).unwrap();
+        assert_eq!(
+            baseline,
+            LaunchConfiguration::ConventionalSystem {
+                user_sources: UserSources::Disabled
+            }
+        );
+        let baseline = ProcessStamp {
+            pid: 91,
+            start_ticks: 123,
+            effective_uid: 0,
+            executable,
+            launch_configuration: baseline,
+        };
+        std::fs::write(retained.join("environ"), b"NIX_CONFIG=private-value\0").unwrap();
+        let changed = ProcessStamp {
+            pid: 91,
+            start_ticks: 123,
+            effective_uid: 0,
+            executable: ExecutableObservation::Verified(InputIdentity::of(
+                &std::fs::metadata(temporary.path().join("executable")).unwrap(),
+            )),
+            launch_configuration: observe_launch_configuration(
+                &directory,
+                0,
+                &baseline.executable,
+                &mut read,
+            )
+            .unwrap(),
+        };
+        assert_eq!(baseline.executable, changed.executable);
+        assert_ne!(baseline.launch_configuration, changed.launch_configuration);
+        assert_ne!(baseline, changed);
+        assert!(!format!("{changed:?}").contains("private-value"));
+    }
+
+    #[test]
+    fn changed_executable_invalidates_the_environment_read() {
+        use std::io::Read;
+        let temporary = tempfile::tempdir().unwrap();
+        let executable = fixture_executable(temporary.path());
+        let proc_exe = temporary.path().join("exe");
+        std::os::unix::fs::symlink(temporary.path().join("executable"), &proc_exe).unwrap();
+        let replacement = temporary.path().join("replacement");
+        std::fs::write(&replacement, b"fixture").unwrap();
+        std::fs::write(temporary.path().join("environ"), b"NIX_USER_CONF_FILES=\0").unwrap();
+        let directory = File::open(temporary.path()).unwrap();
+
+        let result = observe_launch_configuration(&directory, 0, &executable, &mut |file| {
+            let mut bytes = Vec::new();
+            file.read_to_end(&mut bytes).unwrap();
+            std::fs::rename(&replacement, &proc_exe).unwrap();
+            Ok(bytes)
+        });
+
+        assert!(matches!(
+            result,
+            Err(TransactionError::NixBlocked(NixBlock::DaemonMismatch))
+        ));
+    }
 
     fn stat(comm: &str) -> Vec<u8> {
         format!("91 ({comm}) S {} 98765 88888\n", vec!["0"; 18].join(" ")).into_bytes()
@@ -255,6 +542,7 @@ mod tests {
                 start_ticks,
                 effective_uid: 0,
                 executable,
+                launch_configuration: LaunchConfiguration::Unobserved,
             })
         };
         let baseline = observed(123, ExecutableObservation::Inaccessible);
