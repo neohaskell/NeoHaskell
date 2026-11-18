@@ -4,6 +4,7 @@ use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use std::fs::{self, File, OpenOptions};
 use std::io;
+use std::num::NonZeroU128;
 use std::os::unix::fs::{FileTypeExt, MetadataExt, OpenOptionsExt};
 use std::path::{Path, PathBuf};
 
@@ -72,6 +73,8 @@ pub(super) struct ObservedNixBase {
     configuration: ConfigurationObservation,
     #[serde(skip)]
     kernel: KernelDaemonObservation,
+    #[serde(skip)]
+    socket: (u64, u64),
 }
 
 #[derive(Debug, PartialEq, Eq, Serialize)]
@@ -83,6 +86,8 @@ struct DaemonObservation {
 struct ServiceObservation {
     main_pid: u32,
     started: u64,
+    #[serde(skip)]
+    invocation_id: NonZeroU128,
 }
 
 #[derive(PartialEq, Eq)]
@@ -543,6 +548,7 @@ impl InstallationOwner {
             service,
             configuration,
             kernel,
+            socket,
         })
     }
 
@@ -766,6 +772,17 @@ fn service_observation(
         .and_then(|v| v.parse::<u64>().ok())
         .filter(|v| *v > 0)
         .ok_or(NixBlock::UnprovedService)?;
+    let invocation_id = values
+        .get("InvocationID")
+        .filter(|value| {
+            value.len() == 32
+                && value
+                    .bytes()
+                    .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+        })
+        .and_then(|value| u128::from_str_radix(value, 16).ok())
+        .and_then(NonZeroU128::new)
+        .ok_or(NixBlock::UnprovedService)?;
     let prefix = format!(
         "{{ path={}/bin/nix-daemon ; argv[]=nix-daemon --daemon ; ignore_errors=no ; ",
         identity.package_root
@@ -778,7 +795,11 @@ fn service_observation(
     {
         return Err(NixBlock::UnprovedService);
     }
-    Ok(ServiceObservation { main_pid, started })
+    Ok(ServiceObservation {
+        main_pid,
+        started,
+        invocation_id,
+    })
 }
 
 fn socket_observation(bytes: &[u8], identity: &NixTargetIdentity) -> Result<(), NixBlock> {
@@ -941,9 +962,11 @@ mod tests {
                 service: ServiceObservation {
                     main_pid: 91,
                     started: 1234,
+                    invocation_id: NonZeroU128::new(0x0123456789abcdef0123456789abcdef).unwrap(),
                 },
                 configuration,
                 kernel: KernelDaemonObservation::Inaccessible,
+                socket: (1, 2),
             };
             let public = serde_json::to_value(&base).unwrap();
             assert_eq!(public.as_object().unwrap().len(), 4);
@@ -1170,7 +1193,7 @@ mod tests {
 
     fn service() -> String {
         format!(
-            "Id=nix-daemon.service\nLoadState=loaded\nActiveState=active\nSubState=running\nNeedDaemonReload=no\nFragmentPath=/etc/systemd/system/nix-daemon.service\nDropInPaths=\nMainPID=91\nExecMainStartTimestampMonotonic=1234\nExecStart={{ path={}/bin/nix-daemon ; argv[]=nix-daemon --daemon ; ignore_errors=no ; start_time=[Tue] ; stop_time=[n/a] ; pid=91 ; code=(null) ; status=0/0 }}\nUser=\nRootDirectory=\n",
+            "Id=nix-daemon.service\nLoadState=loaded\nActiveState=active\nSubState=running\nNeedDaemonReload=no\nFragmentPath=/etc/systemd/system/nix-daemon.service\nDropInPaths=\nMainPID=91\nExecMainStartTimestampMonotonic=1234\nInvocationID=0123456789abcdef0123456789abcdef\nExecStart={{ path={}/bin/nix-daemon ; argv[]=nix-daemon --daemon ; ignore_errors=no ; start_time=[Tue] ; stop_time=[n/a] ; pid=91 ; code=(null) ; status=0/0 }}\nUser=\nRootDirectory=\n",
             ARM64_IDENTITY.package_root
         )
     }
@@ -1181,7 +1204,8 @@ mod tests {
             service_observation(service().as_bytes(), &ARM64_IDENTITY),
             Ok(ServiceObservation {
                 main_pid: 91,
-                started: 1234
+                started: 1234,
+                invocation_id: NonZeroU128::new(0x0123456789abcdef0123456789abcdef).unwrap(),
             })
         );
         for (before, after) in [
@@ -1204,6 +1228,101 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    #[test]
+    fn service_requires_one_canonical_nonzero_invocation_id() {
+        let property = "InvocationID=0123456789abcdef0123456789abcdef\n";
+        assert_eq!(
+            service_observation(service().replace(property, "").as_bytes(), &ARM64_IDENTITY),
+            Err(NixBlock::UnprovedService)
+        );
+        for invalid in [
+            "",
+            "00000000000000000000000000000000",
+            "0123456789abcdef0123456789abcdeg",
+            "0123456789ABCDEF0123456789ABCDEF",
+            "0123456789abcdef0123456789abcde",
+            "00123456789abcdef0123456789abcdef",
+            "01234567-89ab-cdef-0123-456789abcdef",
+            "+123456789abcdef0123456789abcdef",
+            " 123456789abcdef0123456789abcdef",
+        ] {
+            let source = service().replace(property, &format!("InvocationID={invalid}\n"));
+            assert_eq!(
+                service_observation(source.as_bytes(), &ARM64_IDENTITY),
+                Err(NixBlock::UnprovedService),
+                "invalid invocation {invalid:?}"
+            );
+        }
+        for duplicate in [
+            "0123456789abcdef0123456789abcdef",
+            "fedcba9876543210fedcba9876543210",
+        ] {
+            let source = format!("{}InvocationID={duplicate}\n", service());
+            assert_eq!(
+                service_observation(source.as_bytes(), &ARM64_IDENTITY),
+                Err(NixBlock::UnprovedService)
+            );
+        }
+    }
+
+    #[test]
+    fn invocation_changes_distinguish_the_same_pid_and_start_timestamp() {
+        let before = service_observation(service().as_bytes(), &ARM64_IDENTITY).unwrap();
+        let source = service().replace(
+            "0123456789abcdef0123456789abcdef",
+            "fedcba9876543210fedcba9876543210",
+        );
+        let after = service_observation(source.as_bytes(), &ARM64_IDENTITY).unwrap();
+        assert_eq!(before.main_pid, after.main_pid);
+        assert_eq!(before.started, after.started);
+        assert_ne!(before, after);
+        assert_eq!(
+            serde_json::to_value(&before).unwrap(),
+            serde_json::json!({"main_pid": 91, "started": 1234})
+        );
+        assert_eq!(
+            serde_json::to_value(&before).unwrap(),
+            serde_json::to_value(&after).unwrap()
+        );
+    }
+
+    #[test]
+    fn whole_observation_retains_invocation_and_socket_identity_privately() {
+        let temporary = tempfile::tempdir().unwrap();
+        let path = temporary.path().canonicalize().unwrap().join("nix.conf");
+        fs::write(&path, b"keep-outputs = true\n").unwrap();
+        let observe = |source: &str, socket| ObservedNixBase {
+            client_digest: ARM64_IDENTITY.client_sha256.into(),
+            daemon: DaemonObservation { trusted: false },
+            service: service_observation(source.as_bytes(), &ARM64_IDENTITY).unwrap(),
+            configuration: fixture_input(&path).unwrap(),
+            kernel: KernelDaemonObservation::Inaccessible,
+            socket,
+        };
+        let before = observe(&service(), (1, 2));
+        assert_eq!(before, observe(&service(), (1, 2)));
+        let changed_invocation = service().replace(
+            "0123456789abcdef0123456789abcdef",
+            "fedcba9876543210fedcba9876543210",
+        );
+        let public = serde_json::to_value(&before).unwrap();
+        assert_eq!(public.as_object().unwrap().len(), 4);
+        assert!(public.get("socket").is_none());
+        assert!(public.get("kernel").is_none());
+        assert_eq!(
+            public["service"],
+            serde_json::json!({"main_pid": 91, "started": 1234})
+        );
+        for after in [
+            observe(&service(), (2, 2)),
+            observe(&service(), (1, 3)),
+            observe(&changed_invocation, (1, 2)),
+        ] {
+            assert_ne!(before, after);
+            assert_eq!(public, serde_json::to_value(&after).unwrap());
+        }
     }
 
     const CAPTURED_X64_SERVICE: &[u8] = br#"MainPID=2656
@@ -1232,14 +1351,22 @@ NeedDaemonReload=no
 "#;
 
     #[test]
-    fn captured_x64_service_observation_uses_selected_package() {
+    fn captured_x64_service_with_synthetic_invocation_uses_selected_package() {
         assert_eq!(
             service_observation(CAPTURED_X64_SERVICE, &X86_64_GNU_IDENTITY),
+            Err(NixBlock::UnprovedService)
+        );
+        let mut with_synthetic_invocation = CAPTURED_X64_SERVICE.to_vec();
+        with_synthetic_invocation
+            .extend_from_slice(b"InvocationID=0123456789abcdef0123456789abcdef\n");
+        assert_eq!(
+            service_observation(&with_synthetic_invocation, &X86_64_GNU_IDENTITY),
             Ok(ServiceObservation {
                 main_pid: 2656,
                 started: 131824418,
+                invocation_id: NonZeroU128::new(0x0123456789abcdef0123456789abcdef).unwrap(),
             }),
-            "captured x64 systemd service uses its selected Nix package"
+            "historical x64 service with a synthetic invocation uses its selected Nix package"
         );
     }
 
@@ -1252,9 +1379,12 @@ NeedDaemonReload=no
     }
 
     #[test]
-    fn captured_x64_service_is_rejected_with_the_arm_package() {
+    fn captured_x64_service_with_synthetic_invocation_is_rejected_with_the_arm_package() {
+        let mut with_synthetic_invocation = CAPTURED_X64_SERVICE.to_vec();
+        with_synthetic_invocation
+            .extend_from_slice(b"InvocationID=0123456789abcdef0123456789abcdef\n");
         assert_eq!(
-            service_observation(CAPTURED_X64_SERVICE, &ARM64_IDENTITY),
+            service_observation(&with_synthetic_invocation, &ARM64_IDENTITY),
             Err(NixBlock::UnprovedService)
         );
     }
@@ -1277,9 +1407,11 @@ NeedDaemonReload=no
                 service: ServiceObservation {
                     main_pid: 91,
                     started: 1234,
+                    invocation_id: NonZeroU128::new(0x0123456789abcdef0123456789abcdef).unwrap(),
                 },
                 configuration,
                 kernel: KernelDaemonObservation::Inaccessible,
+                socket: (1, 2),
             };
             let public = serde_json::to_value(&base).unwrap();
             assert_eq!(public.as_object().unwrap().len(), 4);

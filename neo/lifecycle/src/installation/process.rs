@@ -875,6 +875,7 @@ impl WorkerRequest {
                 command.args([
                     "--extra-experimental-features",
                     "nix-command",
+                    "--offline",
                     "store",
                     "info",
                     "--json",
@@ -887,7 +888,7 @@ impl WorkerRequest {
                 let mut command = Command::new("/usr/bin/systemctl");
                 command.args(["show", "--no-pager", "--property=Id,LoadState,ActiveState,SubState,NeedDaemonReload,FragmentPath,DropInPaths"]);
                 if matches!(self, Self::SystemdService) {
-                    command.args(["--property=MainPID,ExecMainStartTimestampMonotonic,ExecStart,User,RootDirectory", "nix-daemon.service"]);
+                    command.args(["--property=MainPID,ExecMainStartTimestampMonotonic,InvocationID,ExecStart,User,RootDirectory", "nix-daemon.service"]);
                 } else {
                     command.args(["--property=Listen,Triggers", "nix-daemon.socket"]);
                 }
@@ -1614,6 +1615,24 @@ mod tests {
             writer.shutdown(Shutdown::Write).unwrap();
             assert!(receive_result(&mut reader, CAPTURE_LIMIT).is_err());
         }
+    }
+
+    #[test]
+    fn systemd_service_query_includes_invocation_identity() {
+        let command = WorkerRequest::SystemdService
+            .command(Path::new("/"))
+            .unwrap();
+        assert_eq!(command.get_program(), "/usr/bin/systemctl");
+        assert_eq!(
+            command.get_args().collect::<Vec<_>>(),
+            [
+                "show",
+                "--no-pager",
+                "--property=Id,LoadState,ActiveState,SubState,NeedDaemonReload,FragmentPath,DropInPaths",
+                "--property=MainPID,ExecMainStartTimestampMonotonic,InvocationID,ExecStart,User,RootDirectory",
+                "nix-daemon.service",
+            ]
+        );
     }
 
     #[test]
