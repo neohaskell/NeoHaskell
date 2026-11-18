@@ -1,4 +1,6 @@
 mod candidate;
+#[cfg(unix)]
+mod diagnostics;
 mod identity;
 #[cfg(unix)]
 mod installation;
@@ -53,11 +55,25 @@ pub fn dispatch_installed(arguments: &[std::ffi::OsString]) -> Option<Exit> {
         .first()
         .is_some_and(|argument| argument == "update" || argument == "rollback")
     {
-        if arguments.len() == 2 && (arguments[1] == "--help" || arguments[1] == "-h") {
-            println!("{}", installed_help());
-            return Some(Exit { code: 0 });
-        }
-        return Some(run_request(arguments, installation::Executor::InstalledNeo));
+        let route = if arguments[0] == "update" {
+            diagnostics::RequestRoute::Update
+        } else {
+            diagnostics::RequestRoute::Rollback
+        };
+        return Some(diagnostics::record_public(
+            diagnostics::Invocation::Installed(route),
+            || {
+                if arguments.len() == 2 && (arguments[1] == "--help" || arguments[1] == "-h") {
+                    println!("{}", installed_help());
+                    diagnostics::InvocationResult {
+                        exit: Exit { code: 0 },
+                        outcome: diagnostics::DiagnosticOutcome::HelpDisplayed,
+                    }
+                } else {
+                    run_request(arguments, installation::Executor::InstalledNeo)
+                }
+            },
+        ));
     }
     None
 }
@@ -133,21 +149,40 @@ fn parse_invocation(
 }
 
 #[cfg(unix)]
-fn run_request(arguments: &[std::ffi::OsString], executor: installation::Executor) -> Exit {
+fn run_request(
+    arguments: &[std::ffi::OsString],
+    executor: installation::Executor,
+) -> diagnostics::InvocationResult {
     let english = english();
     if arguments.len() == 2 && (arguments[1] == "--help" || arguments[1] == "-h") {
         println!("{}", english.help);
-        return Exit { code: 0 };
+        return diagnostics::InvocationResult {
+            exit: Exit { code: 0 },
+            outcome: diagnostics::DiagnosticOutcome::HelpDisplayed,
+        };
     }
     let (request, consent) = match parse_invocation(arguments) {
         Ok(invocation) => invocation,
         Err(()) => {
             eprintln!("{}", english.invalid_request);
-            return Exit { code: 2 };
+            return diagnostics::InvocationResult {
+                exit: Exit { code: 2 },
+                outcome: diagnostics::DiagnosticOutcome::InvalidRequest,
+            };
         }
     };
+    let request_kind = match &request {
+        installation::Request::Install(_) => diagnostics::RequestRoute::Install,
+        installation::Request::Update(_) => diagnostics::RequestRoute::Update,
+        installation::Request::Rollback => diagnostics::RequestRoute::Rollback,
+        installation::Request::RecoverOnly => unreachable!("public parser excludes recovery-only"),
+    };
     let report = installation::run(request, executor, consent);
-    format_report(report)
+    let outcome = diagnostics::DiagnosticOutcome::from_drive_report(request_kind, &report);
+    diagnostics::InvocationResult {
+        exit: format_report(report),
+        outcome,
+    }
 }
 
 #[cfg(unix)]
@@ -293,14 +328,69 @@ fn write_review(
 }
 
 pub fn run() -> Exit {
-    let identity = identity::BuildIdentity::current();
     let arguments: Vec<_> = std::env::args_os().skip(1).collect();
     if let Some(exit) = dispatch_internal(&arguments) {
         return exit;
     }
+    #[cfg(unix)]
+    {
+        use diagnostics::{
+            DiagnosticOutcome, Invocation, InvocationResult, NativeRoute, RequestRoute,
+        };
+        let route = match arguments.as_slice() {
+            [] => NativeRoute::NoArguments,
+            [argument] if argument == "--help" || argument == "-h" => NativeRoute::Help,
+            [argument] if argument == "--version" || argument == "-V" => NativeRoute::Version,
+            _ => match arguments.first().and_then(|argument| argument.to_str()) {
+                Some("install") => NativeRoute::Operation(RequestRoute::Install),
+                Some("update") => NativeRoute::Operation(RequestRoute::Update),
+                Some("rollback") => NativeRoute::Operation(RequestRoute::Rollback),
+                _ => NativeRoute::Unknown,
+            },
+        };
+        diagnostics::record_public(Invocation::Native(route), || {
+            let english = english();
+            let (code, outcome) = match route {
+                NativeRoute::NoArguments | NativeRoute::Help => {
+                    println!("{}", english.help);
+                    (0, DiagnosticOutcome::HelpDisplayed)
+                }
+                NativeRoute::Version => {
+                    let identity = identity::BuildIdentity::current();
+                    println!(
+                        "{}",
+                        english
+                            .version
+                            .replace("{version}", identity.product_version)
+                            .replace("{revision}", identity.source_revision)
+                            .replace("{target}", identity.target)
+                    );
+                    (0, DiagnosticOutcome::VersionDisplayed)
+                }
+                NativeRoute::Operation(_) => {
+                    return run_request(&arguments, installation::Executor::NativeInstaller);
+                }
+                NativeRoute::Unknown => {
+                    eprintln!("{}", english.invalid_arguments);
+                    (2, DiagnosticOutcome::InvalidArguments)
+                }
+            };
+            InvocationResult {
+                exit: Exit { code },
+                outcome,
+            }
+        })
+    }
+    #[cfg(not(unix))]
+    run_non_unix(&arguments)
+}
+
+#[cfg(not(unix))]
+fn run_non_unix(arguments: &[std::ffi::OsString]) -> Exit {
+    let identity = identity::BuildIdentity::current();
     let english = english();
 
-    let code = match arguments.as_slice() {
+    let code = match arguments {
         [] => {
             println!("{}", english.help);
             0
@@ -319,13 +409,6 @@ pub fn run() -> Exit {
                     .replace("{target}", identity.target)
             );
             0
-        }
-        #[cfg(unix)]
-        _ if arguments.first().is_some_and(|argument| {
-            argument == "install" || argument == "update" || argument == "rollback"
-        }) =>
-        {
-            return run_request(&arguments, installation::Executor::NativeInstaller);
         }
         _ => {
             eprintln!("{}", english.invalid_arguments);

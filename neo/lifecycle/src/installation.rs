@@ -17,7 +17,9 @@ pub(crate) use coordinator::{
     RecoveryPending, ReviewOperation, ReviewSummary, ReviewedChange, RunOutcome, StopObservation,
     UnadmittedReason,
 };
-pub(crate) use dashboard::{DisplayPreference, DriveReport, Options, run};
+pub(crate) use dashboard::{
+    DisplayPreference, DriveReport, Failure as PresentationFailureKind, Options, run,
+};
 use filesystem::{FilesystemJob, FilesystemResult};
 pub(crate) use runtime::Executor;
 pub(crate) use snapshot::Request;

@@ -3,6 +3,8 @@ use serde::Deserialize;
 #[derive(Deserialize)]
 pub(crate) struct English {
     pub(crate) dashboard: DashboardCopy,
+    pub(crate) diagnostic_report_saved: String,
+    pub(crate) diagnostic_report_unavailable: String,
     pub(crate) consent_required: String,
     pub(crate) review_declined: String,
     pub(crate) review_changed: String,
