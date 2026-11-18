@@ -72,11 +72,19 @@ impl InstallationOwner {
         let lease = self.effects.clone();
         let recovery = self.inspect_recovery().await?;
         if matches!(request, snapshot::Request::RecoverOnly) {
+            let commands = if recovery.introduces_command_links() {
+                Some(self.observe_command_path().await?)
+            } else {
+                None
+            };
             let review = self
                 .effects
                 .review(recovery.summary(&request, None))
                 .await?;
             self.recheck_recovery(&recovery).await?;
+            if let Some(commands) = commands {
+                self.recheck_command_path(commands).await?;
+            }
             self.effects.admit_reviewed(review)?;
             self.effects.observe(Activity::Recovering);
             self.apply_recovery(recovery).await?;
@@ -86,6 +94,7 @@ impl InstallationOwner {
                 .completed(crate::diagnostics::CompletedStep::FinalSettlement);
             return Ok(None);
         }
+        let commands = self.observe_command_path().await?;
         self.effects.observe(Activity::CheckingNix);
         let observed_nix = self.observe_nix_base(&lease).await?;
         self.effects.observe_row(0, Row::Existing);
@@ -166,6 +175,7 @@ impl InstallationOwner {
         if requires_configuration {
             observed_nix.require_configuration_authority()?;
         }
+        self.recheck_command_path(commands).await?;
         self.effects.admit_reviewed(review)?;
         self.effects.observe(Activity::Recovering);
         self.apply_recovery(recovery).await?;

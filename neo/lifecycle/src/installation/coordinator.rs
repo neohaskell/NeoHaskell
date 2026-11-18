@@ -1790,10 +1790,18 @@ mod tests {
         assert!(!lease.path.exists());
     }
     fn review_fixture(after_switch: Option<bool>) -> (tempfile::TempDir, Layout, Coordinator) {
+        review_fixture_on_path(after_switch, None)
+    }
+
+    fn review_fixture_on_path(
+        after_switch: Option<bool>,
+        command_path: Option<&std::path::Path>,
+    ) -> (tempfile::TempDir, Layout, Coordinator) {
         let temporary = tempfile::tempdir().unwrap();
         let state = temporary.path().canonicalize().unwrap();
         fs::set_permissions(&state, fs::Permissions::from_mode(0o700)).unwrap();
-        let layout = Layout::new(state.clone(), state.join("bin"));
+        let mut layout = Layout::new(state.clone(), state.join("bin"));
+        layout.command_path = command_path.map(|path| path.as_os_str().to_owned());
         if let Some(after_switch) = after_switch {
             let owner = InstallationOwner::new(layout.clone());
             let before = owner.next_receipt(
@@ -2092,6 +2100,32 @@ mod tests {
         assert_eq!(fs::read(layout.record()).unwrap(), before);
         assert!(!layout.command_directory.exists());
         assert!(coordinator.effects.state.borrow().settlement.is_none());
+    }
+
+    #[test]
+    fn review_rechecks_command_path_before_introducing_links() {
+        let root = tempfile::tempdir().unwrap();
+        let foreign_directory = root.path().canonicalize().unwrap();
+        let foreign = foreign_directory.join("neoctl");
+        let (_temporary, layout, mut coordinator) =
+            review_fixture_on_path(Some(true), Some(&foreign_directory));
+        let before = fs::read(layout.record()).unwrap();
+        let offered = offer(&mut coordinator);
+        fs::write(&foreign, "").unwrap();
+        fs::set_permissions(&foreign, fs::Permissions::from_mode(0o700)).unwrap();
+        coordinator.effects.answer(offered.token, None).unwrap();
+        assert!(matches!(
+            finish(&mut coordinator),
+            Err(TransactionError::CommandPathConflict {
+                command: super::super::ManagedCommand::Neoctl,
+                path,
+            }) if path == foreign
+        ));
+        let facts = coordinator.diagnostics();
+        assert!(facts.review.unwrap().admitted_ms.is_none());
+        assert!(facts.applied_changes.is_empty());
+        assert_eq!(fs::read(layout.record()).unwrap(), before);
+        assert!(!layout.command_directory.exists());
     }
 
     #[test]
@@ -2616,8 +2650,8 @@ mod tests {
                     committing: false,
                 },
                 FilesystemJob::EnsureCommandLink {
-                    path: layout.command_directory.join("neo"),
-                    target: layout.expected_command_target("neo"),
+                    layout: layout.clone(),
+                    command: super::super::ManagedCommand::Neo,
                 },
                 FilesystemJob::RemoveCommandLink {
                     path: layout.command_directory.join("neo"),

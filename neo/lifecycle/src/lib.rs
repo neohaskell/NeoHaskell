@@ -266,6 +266,16 @@ fn format_result(result: Result<installation::RunOutcome, installation::Transact
             eprintln!("{}", english.cleanup_unknown);
             Exit { code: 1 }
         }
+        Err(installation::TransactionError::CommandPathConflict { command, path }) => {
+            eprintln!(
+                "{}",
+                english
+                    .command_path_conflict
+                    .replace("{command}", command.name())
+                    .replace("{path}", &format!("{path:?}"))
+            );
+            Exit { code: 1 }
+        }
         Err(installation::TransactionError::NixBlocked(reason)) => {
             use installation::nix_owner::NixBlock;
             let message = match reason {

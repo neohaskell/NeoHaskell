@@ -30,6 +30,7 @@ pub(crate) struct English {
     pub(crate) invalid_request: String,
     pub(crate) operation_complete: String,
     pub(crate) operation_failed: String,
+    pub(crate) command_path_conflict: String,
     pub(crate) operation_not_started: String,
     pub(crate) operation_stopped_no_pair: String,
     pub(crate) operation_stopped_pair: String,

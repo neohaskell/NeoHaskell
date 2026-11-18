@@ -5,6 +5,7 @@
   "version": "neo-installer {version} ({revision}, {target})",
   "invalid_arguments": "Unknown arguments. Run neo-installer --help for usage.",
   "invalid_request": "Use install or update with an optional --version VERSION, update --rollback, or rollback without arguments.",
+  "command_path_conflict": "PATH already resolves {command} to {path}. Remove the existing command from PATH before retrying.",
   "operation_complete": "NeoHaskell {version} is active. Both commands passed verification.",
   "operation_failed": "The lifecycle operation did not complete. Check the existing Nix 2.34.9 installation and the availability of a complete release candidate. Saved installation state will be reconciled on the next run.",
   "previous_missing": "The recorded previous version has a missing output.",

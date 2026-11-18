@@ -21,6 +21,7 @@ pub(crate) use dashboard::{
     DisplayPreference, DriveReport, Failure as PresentationFailureKind, Options, run,
 };
 use filesystem::{FilesystemJob, FilesystemResult};
+pub(crate) use review::ManagedCommand;
 pub(crate) use runtime::Executor;
 pub(crate) use snapshot::Request;
 
@@ -134,6 +135,10 @@ pub(crate) enum TransactionError {
     InvalidPair,
     InvalidState(&'static str),
     CommandLinkConflict,
+    CommandPathConflict {
+        command: ManagedCommand,
+        path: PathBuf,
+    },
     ForeignActiveTarget,
     NoInstallation,
     NoPreviousPair,
@@ -145,6 +150,8 @@ pub(crate) enum TransactionError {
 pub(crate) struct Layout {
     state_directory: PathBuf,
     command_directory: PathBuf,
+    #[cfg(test)]
+    command_path: Option<std::ffi::OsString>,
 }
 
 impl Layout {
@@ -152,7 +159,16 @@ impl Layout {
         Self {
             state_directory,
             command_directory,
+            #[cfg(test)]
+            command_path: None,
         }
+    }
+
+    fn command_path(&self) -> Option<std::ffi::OsString> {
+        #[cfg(test)]
+        return self.command_path.clone();
+        #[cfg(not(test))]
+        std::env::var_os("PATH")
     }
 
     fn active_link(&self) -> PathBuf {
@@ -326,6 +342,7 @@ impl InstallationOwner {
     ) -> Result<(), TransactionError> {
         self.validate_receipt(&after)?;
         self.validate_before_links(before.as_ref(), &after).await?;
+        self.observe_command_path().await?;
         let intent = Intent {
             schema: STATE_SCHEMA,
             operation,
@@ -549,32 +566,20 @@ impl InstallationOwner {
 
     async fn ensure_command_links(&self, receipt: &Receipt) -> Result<(), TransactionError> {
         self.validate_receipt(receipt)?;
-        self.ensure_command_link(
-            &receipt.links.neo,
-            &self.layout.expected_command_target("neo"),
-        )
-        .await?;
+        self.ensure_command_link(ManagedCommand::Neo).await?;
         #[cfg(test)]
         {
             self.effects.hit("after_neo_link");
             pause_after("after_neo_link");
         }
-        self.ensure_command_link(
-            &receipt.links.neoctl,
-            &self.layout.expected_command_target("neoctl"),
-        )
-        .await
+        self.ensure_command_link(ManagedCommand::Neoctl).await
     }
 
-    async fn ensure_command_link(
-        &self,
-        path: &Path,
-        target: &Path,
-    ) -> Result<(), TransactionError> {
+    async fn ensure_command_link(&self, command: ManagedCommand) -> Result<(), TransactionError> {
         self.effects
             .filesystem(FilesystemJob::EnsureCommandLink {
-                path: path.to_owned(),
-                target: target.to_owned(),
+                layout: self.layout.clone(),
+                command,
             })
             .await?;
         Ok(())

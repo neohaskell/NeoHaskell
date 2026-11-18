@@ -1,9 +1,10 @@
 use super::coordinator::{Admission, Cancellation, SettlementKind, WaitInterest};
 use super::resource_io::ResourceDirectory;
 use super::resources::{Inventory, LinkObservation};
+use super::review::{CommandOnPath, inspect_commands_on_path};
 use super::{
-    Layout, RootLease, TransactionError, open_owned_file, path_kind, read_owned_link,
-    remove_owned_file_if_present, sync_directory,
+    Layout, ManagedCommand, RootLease, TransactionError, open_owned_file, path_kind,
+    read_owned_link, remove_owned_file_if_present, sync_directory,
 };
 use crate::candidate::FileIdentity;
 use sha2::{Digest, Sha256};
@@ -21,6 +22,7 @@ pub(super) enum FilesystemJob {
     Startup(Option<Layout>),
     EnsureCommandDirectory(PathBuf),
     ObservePath(PathBuf),
+    ObserveCommandPath(Layout),
     InspectResourceDirectory {
         path: PathBuf,
         limit: usize,
@@ -57,8 +59,8 @@ pub(super) enum FilesystemJob {
     InspectLink(PathBuf),
     InspectPath(PathBuf),
     EnsureCommandLink {
-        path: PathBuf,
-        target: PathBuf,
+        layout: Layout,
+        command: ManagedCommand,
     },
     RemoveCommandLink {
         path: PathBuf,
@@ -121,6 +123,7 @@ pub(super) enum FilesystemJob {
 
 pub(super) enum FilesystemResult {
     ObservedPath(PathPreimage),
+    ObservedCommandPath([CommandOnPath; 2]),
     ObservedResources(Option<(super::resources::ParentObservation, Inventory)>),
     JournalPublication {
         kind: SettlementKind,
@@ -183,6 +186,7 @@ impl FilesystemJob {
             | Self::NixProcessName
             | Self::ResourceInventory { .. }
             | Self::ObservePath(_)
+            | Self::ObserveCommandPath(_)
             | Self::InspectResourceDirectory { .. } => false,
             Self::EnsureCommandDirectory(_)
             | Self::PublishRecord { .. }
@@ -420,6 +424,9 @@ fn execute(job: FilesystemJob, policy: &ReadPolicy) -> Result<FilesystemResult, 
             Ok(Result::Applied)
         }
         Job::ObservePath(path) => Ok(Result::ObservedPath(observe_path(&path)?)),
+        Job::ObserveCommandPath(layout) => Ok(Result::ObservedCommandPath(
+            inspect_commands_on_path(&layout, layout.command_path().as_deref(), || policy.check())?,
+        )),
         Job::InspectResourceDirectory { path, limit } => {
             let observed = ResourceDirectory::open_existing(path)?
                 .map(|directory| Ok((directory.identity.clone(), directory.inventory(limit)?)))
@@ -564,11 +571,16 @@ fn execute(job: FilesystemJob, policy: &ReadPolicy) -> Result<FilesystemResult, 
             publish_record(&layout.record(), &bytes, committing, policy)?;
             Ok(Result::Applied)
         }
-        Job::EnsureCommandLink { path, target } => {
+        Job::EnsureCommandLink { layout, command } => {
+            let path = layout.command_directory.join(command.name());
+            let target = layout.expected_command_target(command.name());
             match read_owned_link(&path).map_err(|_| TransactionError::CommandLinkConflict)? {
                 Some(actual) if actual == target => {}
                 Some(_) => return Err(TransactionError::CommandLinkConflict),
                 None => {
+                    inspect_commands_on_path(&layout, layout.command_path().as_deref(), || {
+                        policy.check()
+                    })?;
                     symlink(target, &path).map_err(|_| TransactionError::CommandLinkConflict)?;
                     sync_directory(path.parent().ok_or(TransactionError::UnsafePath)?)?;
                 }
@@ -611,6 +623,7 @@ fn execute(job: FilesystemJob, policy: &ReadPolicy) -> Result<FilesystemResult, 
             {
                 return Err(TransactionError::ForeignActiveTarget);
             }
+            inspect_commands_on_path(&layout, layout.command_path().as_deref(), || policy.check())?;
             fs::rename(layout.active_next_link(), layout.active_link())
                 .map_err(|_| TransactionError::Io)?;
             sync_directory(&layout.state_directory)?;
@@ -857,6 +870,36 @@ fn prune_snapshot(directory: &Path, files: &[FileIdentity]) -> Result<(), Transa
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn adding_either_link_rechecks_both_command_names() {
+        use std::os::unix::fs::PermissionsExt;
+        let temporary = tempfile::tempdir().unwrap();
+        let base = temporary.path().canonicalize().unwrap();
+        let command_directory = base.join("owned");
+        let other_directory = base.join("foreign");
+        fs::create_dir(&command_directory).unwrap();
+        fs::create_dir(&other_directory).unwrap();
+        let foreign = other_directory.join("neo");
+        fs::write(&foreign, b"foreign executable").unwrap();
+        fs::set_permissions(&foreign, fs::Permissions::from_mode(0o700)).unwrap();
+        let mut layout = Layout::new(base.join("state"), command_directory.clone());
+        layout.command_path = Some(other_directory.into_os_string());
+        let outcome = execute(
+            FilesystemJob::EnsureCommandLink {
+                layout,
+                command: ManagedCommand::Neoctl,
+            },
+            &ReadPolicy {
+                cancellation: Cancellation::default(),
+                admission: Admission::Requested,
+            },
+        );
+        assert!(
+            matches!(outcome, Err(TransactionError::CommandPathConflict { command: ManagedCommand::Neo, path }) if path == foreign)
+        );
+        assert!(fs::symlink_metadata(command_directory.join("neoctl")).is_err());
+    }
 
     #[test]
     fn completion_signal_does_not_join_a_thread_that_has_not_returned() {

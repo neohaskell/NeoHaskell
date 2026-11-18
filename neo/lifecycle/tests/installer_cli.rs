@@ -121,3 +121,76 @@ fn rollback_rejects_conflicting_version_and_mixed_arguments() {
         assert!(!home.exists(), "{arguments:?}");
     }
 }
+
+#[cfg(unix)]
+#[test]
+fn installer_refuses_path_commands_without_invoking_them_or_checking_nix() {
+    use std::fs;
+    use std::os::unix::fs::PermissionsExt;
+
+    for (command, empty_entry) in [("neo", false), ("neoctl", true)] {
+        let sandbox = tempdir().unwrap();
+        let root = sandbox.path().canonicalize().unwrap();
+        let home = root.join("home");
+        let state = root.join("state");
+        let foreign_name = "private-foreign\n\u{1b}-bin";
+        let foreign = root.join(foreign_name);
+        for directory in [&home, &state, &foreign] {
+            fs::create_dir(directory).unwrap();
+        }
+        let executable = foreign.join(command);
+        let marker = root.join("invoked");
+        fs::write(
+            &executable,
+            b"#!/bin/sh\n: > \"$NEO_PATH_FIXTURE_MARKER\"\n",
+        )
+        .unwrap();
+        fs::set_permissions(&executable, fs::Permissions::from_mode(0o700)).unwrap();
+        let (cwd, path) = if empty_entry {
+            (&foreign, "")
+        } else {
+            (&root, foreign_name)
+        };
+        let output = Command::new(env!("CARGO_BIN_EXE_neo-installer"))
+            .args(["install", "--plain"])
+            .env_clear()
+            .env("HOME", &home)
+            .env("XDG_STATE_HOME", &state)
+            .env("PATH", path)
+            .env("NEO_PATH_FIXTURE_MARKER", &marker)
+            .current_dir(cwd)
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(1));
+        let stderr = String::from_utf8(output.stderr).unwrap();
+        assert!(
+            stderr.contains(&format!(
+                "PATH already resolves {command} to {executable:?}."
+            )),
+            "{stderr}"
+        );
+        assert!(!stderr.contains('\u{1b}'));
+        assert!(!marker.exists());
+        assert!(!home.join(".local/bin").exists());
+
+        let report_path = fs::read_dir(state.join("neohaskell-diagnostics"))
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .find(|path| {
+                path.extension()
+                    .is_some_and(|extension| extension == "json")
+            })
+            .unwrap();
+        let report = fs::read_to_string(report_path).unwrap();
+        assert!(!report.contains("private-foreign"));
+        let report: serde_json::Value = serde_json::from_str(&report).unwrap();
+        let outcome = &report["report"]["state"]["outcome"];
+        assert_eq!(outcome["request"], "install");
+        assert_eq!(
+            outcome["operation"]["error"],
+            serde_json::json!({"kind": "command_path_conflict", "reason": command})
+        );
+        let events = outcome["observations"]["events"].as_array().unwrap();
+        assert!(!events.iter().any(|event| event["phase"] == "checking_nix"));
+    }
+}

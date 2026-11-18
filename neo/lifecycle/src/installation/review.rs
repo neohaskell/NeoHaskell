@@ -4,7 +4,96 @@ use super::resources::{Inventory, ParentObservation};
 use super::{
     FilesystemJob, FilesystemResult, InstallationOwner, InstallationRecord, TransactionError,
 };
+use std::env;
+use std::ffi::{CString, OsStr};
+use std::fs;
+use std::os::unix::ffi::OsStrExt;
+use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum ManagedCommand {
+    Neo,
+    Neoctl,
+}
+
+impl ManagedCommand {
+    pub(crate) fn name(self) -> &'static str {
+        match self {
+            Self::Neo => "neo",
+            Self::Neoctl => "neoctl",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum CommandOnPath {
+    Absent,
+    Managed,
+}
+
+pub(super) fn inspect_commands_on_path(
+    layout: &super::Layout,
+    path: Option<&OsStr>,
+    mut checkpoint: impl FnMut() -> Result<(), TransactionError>,
+) -> Result<[CommandOnPath; 2], TransactionError> {
+    Ok([
+        inspect_command_on_path(layout, ManagedCommand::Neo, path, &mut checkpoint)?,
+        inspect_command_on_path(layout, ManagedCommand::Neoctl, path, checkpoint)?,
+    ])
+}
+
+fn inspect_command_on_path(
+    layout: &super::Layout,
+    command: ManagedCommand,
+    path: Option<&OsStr>,
+    mut checkpoint: impl FnMut() -> Result<(), TransactionError>,
+) -> Result<CommandOnPath, TransactionError> {
+    checkpoint()?;
+    let Some(path) = path else {
+        return Ok(CommandOnPath::Absent);
+    };
+    for directory in env::split_paths(path) {
+        checkpoint()?;
+        let candidate = directory.join(command.name());
+        if !is_executable(&candidate) {
+            continue;
+        }
+        let directory = if directory.as_os_str().is_empty() {
+            Path::new(".")
+        } else {
+            &directory
+        };
+        if same_directory(directory, &layout.command_directory)
+            && super::read_owned_link(&candidate)
+                .is_ok_and(|target| target == Some(layout.expected_command_target(command.name())))
+        {
+            return Ok(CommandOnPath::Managed);
+        }
+        return Err(TransactionError::CommandPathConflict {
+            command,
+            path: std::path::absolute(&candidate).unwrap_or(candidate),
+        });
+    }
+    Ok(CommandOnPath::Absent)
+}
+
+fn same_directory(left: &Path, right: &Path) -> bool {
+    match (fs::metadata(left), fs::metadata(right)) {
+        (Ok(left), Ok(right)) => left.dev() == right.dev() && left.ino() == right.ino(),
+        _ => false,
+    }
+}
+
+fn is_executable(path: &Path) -> bool {
+    if !fs::metadata(path).is_ok_and(|metadata| metadata.is_file()) {
+        return false;
+    }
+    CString::new(path.as_os_str().as_bytes()).is_ok_and(|path| unsafe {
+        libc::faccessat(libc::AT_FDCWD, path.as_ptr(), libc::X_OK, libc::AT_EACCESS) == 0
+    })
+}
 
 pub(super) struct PreparedRecovery {
     bytes: Option<Vec<u8>>,
@@ -84,6 +173,31 @@ impl InstallationOwner {
         }
     }
 
+    pub(super) async fn observe_command_path(
+        &self,
+    ) -> Result<[CommandOnPath; 2], TransactionError> {
+        match self
+            .effects
+            .filesystem(FilesystemJob::ObserveCommandPath(self.layout.clone()))
+            .await?
+        {
+            FilesystemResult::ObservedCommandPath(commands) => Ok(commands),
+            _ => Err(TransactionError::InvalidState(
+                "command PATH completion type",
+            )),
+        }
+    }
+
+    pub(super) async fn recheck_command_path(
+        &self,
+        expected: [CommandOnPath; 2],
+    ) -> Result<(), TransactionError> {
+        if self.observe_command_path().await? != expected {
+            return Err(self.effects.review_changed());
+        }
+        Ok(())
+    }
+
     pub(super) async fn inspect_recovery(&self) -> Result<PreparedRecovery, TransactionError> {
         let bytes = self.record_bytes().await?;
         self.effects.check_recovery_preimage(bytes.as_deref())?;
@@ -139,9 +253,12 @@ impl InstallationOwner {
         {
             return Err(TransactionError::ForeignActiveTarget);
         }
-        for (command, repair) in [("neo", &mut repairs.neo), ("neoctl", &mut repairs.neoctl)] {
-            let path = self.layout.command_directory.join(command);
-            let expected = self.layout.expected_command_target(command);
+        for (command, repair) in [
+            (ManagedCommand::Neo, &mut repairs.neo),
+            (ManagedCommand::Neoctl, &mut repairs.neoctl),
+        ] {
+            let path = self.layout.command_directory.join(command.name());
+            let expected = self.layout.expected_command_target(command.name());
             let actual = self.inspect_link(path.clone()).await?;
             if actual.as_ref().is_some_and(|target| target != &expected) {
                 return Err(TransactionError::CommandLinkConflict);
@@ -149,8 +266,8 @@ impl InstallationOwner {
             if projected.committed.is_some() {
                 if actual.is_none() {
                     *repair = Some(FilesystemJob::EnsureCommandLink {
-                        path,
-                        target: expected,
+                        layout: self.layout.clone(),
+                        command,
                     });
                 }
             } else if actual.is_some() {
@@ -351,6 +468,12 @@ impl InstallationOwner {
 }
 
 impl PreparedRecovery {
+    pub(super) fn introduces_command_links(&self) -> bool {
+        [&self.repairs.neo, &self.repairs.neoctl]
+            .into_iter()
+            .any(|repair| matches!(repair, Some(FilesystemJob::EnsureCommandLink { .. })))
+    }
+
     pub(super) fn summary(
         &self,
         request: &super::snapshot::Request,
@@ -387,5 +510,71 @@ impl PreparedRecovery {
             recovery: self.pending,
             changes,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::os::unix::fs::{PermissionsExt, symlink};
+
+    #[test]
+    fn first_visible_executable_determines_command_ownership() {
+        let root = tempfile::tempdir().unwrap();
+        let root = root.path().canonicalize().unwrap();
+        let managed = root.join("managed");
+        let foreign = root.join("foreign");
+        let alias = root.join("alias");
+        let inactive = root.join("inactive");
+        let layout = super::super::Layout::new(root.clone(), managed.clone());
+        for directory in [&managed, &foreign, &inactive] {
+            fs::create_dir(directory).unwrap();
+        }
+        symlink(&managed, &alias).unwrap();
+        fs::create_dir(inactive.join("neo")).unwrap();
+        fs::write(inactive.join("neoctl"), "").unwrap();
+        for command in [ManagedCommand::Neo, ManagedCommand::Neoctl] {
+            let name = command.name();
+            fs::write(foreign.join(name), "").unwrap();
+            fs::set_permissions(foreign.join(name), fs::Permissions::from_mode(0o700)).unwrap();
+            symlink(layout.expected_command_target(name), managed.join(name)).unwrap();
+        }
+        let check = |directories: &[&Path]| {
+            let path = env::join_paths(directories).unwrap();
+            inspect_commands_on_path(&layout, Some(&path), || Ok(()))
+        };
+        assert_eq!(check(&[&inactive, &alias]), Ok([CommandOnPath::Absent; 2]));
+        let first = foreign.join("neo");
+        assert_eq!(
+            check(&[&alias, &foreign]),
+            Err(TransactionError::CommandPathConflict {
+                command: ManagedCommand::Neo,
+                path: first.clone(),
+            })
+        );
+        fs::create_dir(root.join("bin")).unwrap();
+        for name in ["neo", "neoctl"] {
+            fs::hard_link(foreign.join(name), root.join("bin").join(name)).unwrap();
+        }
+        symlink(&root, layout.active_link()).unwrap();
+        assert_eq!(
+            check(&[&inactive, &alias, &foreign]),
+            Ok([CommandOnPath::Managed; 2])
+        );
+        assert_eq!(
+            check(&[&foreign, &managed]),
+            Err(TransactionError::CommandPathConflict {
+                command: ManagedCommand::Neo,
+                path: first,
+            })
+        );
+        fs::remove_file(managed.join("neoctl")).unwrap();
+        assert_eq!(
+            check(&[&managed, &foreign]),
+            Err(TransactionError::CommandPathConflict {
+                command: ManagedCommand::Neoctl,
+                path: foreign.join("neoctl"),
+            })
+        );
     }
 }
