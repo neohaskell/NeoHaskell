@@ -7,6 +7,8 @@ use std::io;
 use std::os::unix::fs::{FileTypeExt, MetadataExt, OpenOptionsExt};
 use std::path::{Path, PathBuf};
 
+mod include_inputs;
+
 pub(super) const CLIENT: &str = "/nix/var/nix/profiles/default/bin/nix";
 const SOCKET: &str = "/nix/var/nix/daemon-socket/socket";
 const MAX_CONFIGURATION_BYTES: usize = 128 * 1024;
@@ -80,7 +82,14 @@ struct ServiceObservation {
 }
 
 #[derive(PartialEq, Eq)]
-pub(super) enum ConfigurationObservation {
+pub(super) struct ConfigurationObservation {
+    input: ConfigurationFile,
+    preparation: NixIncludePreparation,
+    attachment: include_inputs::AttachmentInputs,
+}
+
+#[derive(PartialEq, Eq)]
+enum ConfigurationFile {
     Missing {
         ancestors: Vec<Option<InputIdentity>>,
         resolved_parent: PathBuf,
@@ -93,7 +102,6 @@ pub(super) enum ConfigurationObservation {
         resolved_ancestors: Vec<Option<InputIdentity>>,
         file: InputIdentity,
         digest: String,
-        preparation: NixIncludePreparation,
     },
 }
 
@@ -220,6 +228,7 @@ pub(super) struct InputIdentity {
     uid: u32,
     gid: u32,
     size: u64,
+    links: u64,
     modified: (i64, i64),
     changed: (i64, i64),
 }
@@ -232,6 +241,11 @@ impl InputIdentity {
             mode: metadata.mode(),
             uid: metadata.uid(),
             gid: metadata.gid(),
+            links: if metadata.is_dir() {
+                0
+            } else {
+                metadata.nlink()
+            },
             size: if metadata.is_dir() { 0 } else { metadata.len() },
             modified: if metadata.is_dir() {
                 (0, 0)
@@ -249,9 +263,9 @@ impl InputIdentity {
 
 impl std::fmt::Debug for ConfigurationObservation {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Missing { .. } => formatter.write_str("MissingConfigurationInput"),
-            Self::Present { entry, digest, .. } => formatter
+        match &self.input {
+            ConfigurationFile::Missing { .. } => formatter.write_str("MissingConfigurationInput"),
+            ConfigurationFile::Present { entry, digest, .. } => formatter
                 .debug_struct("ConfigurationInput")
                 .field("entry", entry)
                 .field("digest", digest)
@@ -264,9 +278,9 @@ impl Serialize for ConfigurationObservation {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         use serde::ser::SerializeStruct;
         let mut value = serializer.serialize_struct("ConfigurationObservation", 1)?;
-        let digest = match self {
-            Self::Missing { .. } => None,
-            Self::Present { digest, .. } => Some(digest),
+        let digest = match &self.input {
+            ConfigurationFile::Missing { .. } => None,
+            ConfigurationFile::Present { digest, .. } => Some(digest),
         };
         value.serialize_field("digest", &digest)?;
         value.end()
@@ -285,7 +299,7 @@ fn input_ancestors(path: &Path) -> io::Result<Vec<Option<InputIdentity>>> {
 
 pub(super) fn configuration_input(
     path: &Path,
-    read: impl FnOnce(&mut File) -> Result<Vec<u8>, TransactionError>,
+    read: impl FnMut(&mut File) -> Result<Vec<u8>, TransactionError>,
 ) -> Result<ConfigurationObservation, TransactionError> {
     configuration_input_with(path, protected_path, read)
 }
@@ -293,8 +307,29 @@ pub(super) fn configuration_input(
 fn configuration_input_with(
     path: &Path,
     protect: impl Fn(&Path) -> io::Result<PathBuf>,
-    read: impl FnOnce(&mut File) -> Result<Vec<u8>, TransactionError>,
+    mut read: impl FnMut(&mut File) -> Result<Vec<u8>, TransactionError>,
 ) -> Result<ConfigurationObservation, TransactionError> {
+    let (input, bytes) = configuration_source_with(path, &protect, &mut read)?;
+    let preparation = match &input {
+        ConfigurationFile::Present { entry, digest, .. } => {
+            NixIncludePreparation::from_input(entry, digest, &bytes)
+        }
+        ConfigurationFile::Missing { .. } => NixIncludePreparation::Unresolved,
+    };
+    let attachment =
+        include_inputs::observe(path, &input, &preparation, &bytes, &protect, &mut read)?;
+    Ok(ConfigurationObservation {
+        input,
+        preparation,
+        attachment,
+    })
+}
+
+fn configuration_source_with(
+    path: &Path,
+    protect: &impl Fn(&Path) -> io::Result<PathBuf>,
+    read: &mut impl FnMut(&mut File) -> Result<Vec<u8>, TransactionError>,
+) -> Result<(ConfigurationFile, Vec<u8>), TransactionError> {
     let io = |_| TransactionError::Io;
     let ancestors = input_ancestors(path).map_err(io)?;
     if ancestors.first() == Some(&None) {
@@ -311,11 +346,14 @@ fn configuration_input_with(
         {
             return Err(TransactionError::Io);
         }
-        return Ok(ConfigurationObservation::Missing {
-            ancestors,
-            resolved_parent: resolved,
-            resolved_ancestors: protected,
-        });
+        return Ok((
+            ConfigurationFile::Missing {
+                ancestors,
+                resolved_parent: resolved,
+                resolved_ancestors: protected,
+            },
+            Vec::new(),
+        ));
     }
     let resolved = protect(path).map_err(io)?;
     let resolved_ancestors = input_ancestors(&resolved).map_err(io)?;
@@ -348,16 +386,17 @@ fn configuration_input_with(
         ConfigurationEntry::Indirect
     };
     let digest = format!("{:x}", Sha256::digest(&bytes));
-    let preparation = NixIncludePreparation::from_input(&entry, &digest, &bytes);
-    Ok(ConfigurationObservation::Present {
-        entry,
-        ancestors,
-        resolved,
-        resolved_ancestors,
-        file,
-        digest,
-        preparation,
-    })
+    Ok((
+        ConfigurationFile::Present {
+            entry,
+            ancestors,
+            resolved,
+            resolved_ancestors,
+            file,
+            digest,
+        },
+        bytes,
+    ))
 }
 
 impl ObservedNixBase {
@@ -713,7 +752,7 @@ mod tests {
     use super::*;
     use std::os::unix::fs::PermissionsExt;
 
-    fn fixture_input(path: &Path) -> Result<ConfigurationObservation, TransactionError> {
+    pub(super) fn fixture_input(path: &Path) -> Result<ConfigurationObservation, TransactionError> {
         configuration_input_with(
             path,
             |path| path.canonicalize(),
@@ -736,11 +775,7 @@ mod tests {
     }
 
     fn preparation(bytes: &[u8]) -> NixIncludePreparation {
-        let ConfigurationObservation::Present { preparation, .. } = test_configuration(bytes)
-        else {
-            panic!("present configuration expected")
-        };
-        preparation
+        test_configuration(bytes).preparation
     }
 
     #[test]
@@ -848,9 +883,7 @@ mod tests {
             POLICY_REFERENCE.as_bytes(),
         ] {
             let configuration = test_configuration(source);
-            let ConfigurationObservation::Present { preparation, .. } = &configuration else {
-                unreachable!()
-            };
+            let preparation = &configuration.preparation;
             assert!(!format!("{preparation:?}").contains("private sentinel"));
             assert!(!format!("{configuration:?}").contains(POLICY_LEAF));
             let json = serde_json::to_value(&configuration).unwrap();
@@ -887,10 +920,7 @@ mod tests {
         );
         let configuration =
             fixture_input(&directory.canonicalize().unwrap().join("nix.conf")).unwrap();
-        let ConfigurationObservation::Present { preparation, .. } = configuration else {
-            panic!("fixture file required")
-        };
-        let (kind, desired) = match preparation {
+        let (kind, desired) = match configuration.preparation {
             NixIncludePreparation::Append(desired) => ("append", desired),
             NixIncludePreparation::ExistingReference(desired) => ("existing", desired),
             _ => panic!("fixture is unresolved or conflicting"),
@@ -914,7 +944,7 @@ mod tests {
         let base = temporary.path().canonicalize().unwrap();
         let path = base.join("nix.conf");
         let missing = fixture_input(&path).unwrap();
-        assert!(matches!(missing, ConfigurationObservation::Missing { .. }));
+        assert!(matches!(&missing.input, ConfigurationFile::Missing { .. }));
         assert_eq!(
             serde_json::to_value(missing).unwrap(),
             serde_json::json!({"digest": null})
@@ -922,8 +952,8 @@ mod tests {
         fs::write(&path, b"private source contents").unwrap();
         let direct = fixture_input(&path).unwrap();
         assert!(matches!(
-            direct,
-            ConfigurationObservation::Present {
+            &direct.input,
+            ConfigurationFile::Present {
                 entry: ConfigurationEntry::Direct,
                 ..
             }
@@ -932,13 +962,13 @@ mod tests {
         symlink(&path, &link).unwrap();
         let indirect = fixture_input(&link).unwrap();
         assert!(matches!(
-            indirect,
-            ConfigurationObservation::Present {
+            &indirect.input,
+            ConfigurationFile::Present {
                 entry: ConfigurationEntry::Indirect,
-                preparation: NixIncludePreparation::Unresolved,
                 ..
             }
         ));
+        assert_eq!(indirect.preparation, NixIncludePreparation::Unresolved);
         assert_eq!(
             serde_json::to_value(&direct).unwrap(),
             serde_json::to_value(&indirect).unwrap()
