@@ -60,7 +60,8 @@ impl UninstallIntent {
         for file in &self.files {
             if allowed.get(&file.path) != Some(&file.content)
                 || !seen.insert(&file.path)
-                || file.held != held_path(layout, &file.path, file.identity)
+                || (file.held != held_path(layout, &file.path, file.identity)
+                    && (!valid_local_slot(layout, file) || file.held_parent.0 != file.parent.0))
                 || file.identity.2 != unsafe { libc::geteuid() }
             {
                 return Err(TransactionError::InvalidState(
@@ -288,6 +289,110 @@ fn held_path(layout: &Layout, path: &Path, identity: (u64, u64, u32, u32)) -> Pa
         .join(format!("uninstall-held-{:x}", digest.finalize()))
 }
 
+fn local_quarantine_prefix(layout: &Layout, entry: &Removal) -> String {
+    let legacy = held_path(layout, &entry.path, entry.identity);
+    format!(
+        ".neo-{}-",
+        legacy
+            .file_name()
+            .expect("generated hold basename")
+            .to_string_lossy()
+    )
+}
+
+fn valid_local_slot(layout: &Layout, entry: &Removal) -> bool {
+    if !private_quarantine(entry) {
+        return false;
+    }
+    let name = entry
+        .held
+        .parent()
+        .and_then(Path::file_name)
+        .and_then(|name| name.to_str());
+    let prefix = local_quarantine_prefix(layout, entry);
+    let nonce = name
+        .and_then(|name| name.strip_prefix(&prefix))
+        .and_then(|name| name.split_once('-'));
+    nonce.is_some_and(|(time, pid)| {
+        time.len() == 32
+            && !pid.is_empty()
+            && pid.len() <= 8
+            && time
+                .bytes()
+                .chain(pid.bytes())
+                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    })
+}
+
+pub(super) fn bind(
+    layout: &Layout,
+    mut intent: UninstallIntent,
+) -> Result<UninstallIntent, TransactionError> {
+    for entry in &mut intent.files {
+        if entry.held != held_path(layout, &entry.path, entry.identity)
+            || entry.parent.0 == entry.held_parent.0
+        {
+            continue;
+        }
+        match fs::symlink_metadata(&entry.held) {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            _ => return Err(TransactionError::UnsafePath),
+        }
+        let parent_path = entry.path.parent().ok_or(TransactionError::UnsafePath)?;
+        let parent = directory(parent_path, entry.parent)?;
+        let held = parent_path
+            .join(format!(
+                "{}{}",
+                local_quarantine_prefix(layout, entry),
+                super::new_installation_id()
+            ))
+            .join("held");
+        let quarantine = held.parent().ok_or(TransactionError::UnsafePath)?;
+        let name = basename(quarantine)?;
+        if unsafe { libc::mkdirat(parent.as_raw_fd(), name.as_ptr(), 0o700) } != 0 {
+            return Err(TransactionError::Io);
+        }
+        super::validate_directory(quarantine, true)?;
+        let metadata = fs::symlink_metadata(quarantine).map_err(|_| TransactionError::Io)?;
+        let identity = (metadata.dev(), metadata.ino());
+        let hold = directory(quarantine, identity)?;
+        if identity.0 != entry.parent.0
+            || fs::read_dir(quarantine)
+                .map_err(|_| TransactionError::Io)?
+                .next()
+                .is_some()
+        {
+            return Err(TransactionError::UnsafePath);
+        }
+        directory(parent_path, entry.parent)?;
+        hold.sync_all().map_err(|_| TransactionError::Io)?;
+        parent.sync_all().map_err(|_| TransactionError::Io)?;
+        entry.held = held;
+        entry.held_parent = identity;
+    }
+    Ok(intent)
+}
+
+fn private_quarantine(entry: &Removal) -> bool {
+    entry.held.parent().and_then(Path::parent) == entry.path.parent()
+        && entry.held.file_name().is_some_and(|name| name == "held")
+}
+
+fn cleanup_quarantine(entry: &Removal, parent: &std::fs::File) -> Result<(), TransactionError> {
+    if private_quarantine(entry) {
+        let path = entry.held.parent().ok_or(TransactionError::UnsafePath)?;
+        super::validate_directory(path, true)?;
+        let hold = directory(path, entry.held_parent)?;
+        hold.sync_all().map_err(|_| TransactionError::Io)?;
+        let name = basename(path)?;
+        if unsafe { libc::unlinkat(parent.as_raw_fd(), name.as_ptr(), libc::AT_REMOVEDIR) } != 0 {
+            return Err(TransactionError::Io);
+        }
+        parent.sync_all().map_err(|_| TransactionError::Io)?;
+    }
+    Ok(())
+}
+
 fn same_source(actual: &Removal, expected: &Removal) -> bool {
     actual.path == expected.path
         && actual.identity == expected.identity
@@ -363,10 +468,21 @@ pub(super) fn remove(entry: &Removal) -> Result<(), TransactionError> {
         entry.path.parent().ok_or(TransactionError::UnsafePath)?,
         entry.parent,
     )?;
-    let hold = directory(
-        entry.held.parent().ok_or(TransactionError::UnsafePath)?,
-        entry.held_parent,
-    )?;
+    let hold_path = entry.held.parent().ok_or(TransactionError::UnsafePath)?;
+    if private_quarantine(entry) {
+        match fs::symlink_metadata(hold_path) {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                if inspect(&entry.path, entry.content.clone())?.is_some() {
+                    return Err(TransactionError::UnsafePath);
+                }
+                parent.sync_all().map_err(|_| TransactionError::Io)?;
+                return Ok(());
+            }
+            Err(_) => return Err(TransactionError::Io),
+            Ok(_) => super::validate_directory(hold_path, true)?,
+        }
+    }
+    let hold = directory(hold_path, entry.held_parent)?;
     let name = basename(&entry.path)?;
     let slot = basename(&entry.held)?;
     let held = inspect(&entry.held, entry.content.clone());
@@ -377,6 +493,7 @@ pub(super) fn remove(entry: &Removal) -> Result<(), TransactionError> {
                 None => {
                     parent.sync_all().map_err(|_| TransactionError::Io)?;
                     hold.sync_all().map_err(|_| TransactionError::Io)?;
+                    cleanup_quarantine(entry, &parent)?;
                     return Ok(());
                 }
                 Some(actual) if same_source(&actual, entry) => {}
@@ -425,7 +542,8 @@ pub(super) fn remove(entry: &Removal) -> Result<(), TransactionError> {
         return Err(TransactionError::Io);
     }
     parent.sync_all().map_err(|_| TransactionError::Io)?;
-    hold.sync_all().map_err(|_| TransactionError::Io)
+    hold.sync_all().map_err(|_| TransactionError::Io)?;
+    cleanup_quarantine(entry, &parent)
 }
 
 impl InstallationOwner {
@@ -464,6 +582,16 @@ impl InstallationOwner {
             return Err(self.effects.review_changed());
         }
         self.effects.admit_reviewed(review)?;
+        let FilesystemResult::UninstallIntent(intent) = self
+            .effects
+            .filesystem(FilesystemJob::UninstallBind {
+                layout: self.layout.clone(),
+                intent,
+            })
+            .await?
+        else {
+            return Err(TransactionError::UnsafePath);
+        };
         record.uninstall = Some(intent);
         self.write_record(&record, false).await?;
         #[cfg(test)]
@@ -712,6 +840,69 @@ mod quarantine_tests {
         remove(&entry).unwrap();
         assert!(fs::symlink_metadata(&source).is_err());
         assert!(fs::symlink_metadata(&entry.held).is_err());
+    }
+
+    #[test]
+    fn source_volume_quarantine_removes_and_resumes_after_directory_cleanup() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().canonicalize().unwrap();
+        let layout = Layout::new(root.clone(), root.clone());
+        let source = root.join("neo");
+        symlink("expected", &source).unwrap();
+        let mut entry = inspect(&source, Content::Link("expected".into()))
+            .unwrap()
+            .unwrap();
+        entry.held = held_path(&layout, &entry.path, entry.identity);
+        entry.held_parent = (entry.parent.0.wrapping_add(1), entry.parent.1);
+        let intent = bind(
+            &layout,
+            UninstallIntent {
+                files: vec![entry],
+                shell: Vec::new(),
+            },
+        )
+        .unwrap();
+        let entry = &intent.files[0];
+        assert_eq!(entry.held_parent.0, entry.parent.0);
+        assert_eq!(
+            fs::symlink_metadata(entry.held.parent().unwrap())
+                .unwrap()
+                .mode()
+                & 0o777,
+            0o700
+        );
+        fs::rename(&source, &entry.held).unwrap();
+        remove(entry).unwrap();
+        assert!(!entry.held.parent().unwrap().exists());
+        remove(entry).unwrap();
+        confirm(&intent).unwrap();
+    }
+
+    #[test]
+    fn legacy_rebinding_preserves_unexpected_held_bytes() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().canonicalize().unwrap();
+        let layout = Layout::new(root.clone(), root.clone());
+        let source = root.join("neo");
+        symlink("expected", &source).unwrap();
+        let mut entry = inspect(&source, Content::Link("expected".into()))
+            .unwrap()
+            .unwrap();
+        entry.held = held_path(&layout, &entry.path, entry.identity);
+        entry.held_parent = (entry.parent.0.wrapping_add(1), entry.parent.1);
+        fs::write(&entry.held, b"foreign").unwrap();
+        assert!(
+            bind(
+                &layout,
+                UninstallIntent {
+                    files: vec![entry.clone()],
+                    shell: Vec::new()
+                }
+            )
+            .is_err()
+        );
+        assert_eq!(fs::read(&entry.held).unwrap(), b"foreign");
+        assert_eq!(fs::read_link(source).unwrap(), PathBuf::from("expected"));
     }
 
     #[test]

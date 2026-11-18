@@ -24,6 +24,10 @@ pub(super) enum FilesystemJob {
         layout: Layout,
         record: super::InstallationRecord,
     },
+    UninstallBind {
+        layout: super::Layout,
+        intent: super::uninstall::UninstallIntent,
+    },
     UninstallRemove(super::uninstall::Removal),
     UninstallConfirm(super::uninstall::UninstallIntent),
     ShellRemovalPlan {
@@ -237,7 +241,8 @@ impl FilesystemJob {
             | Self::ObservePath(_)
             | Self::ObserveCommandPath(_)
             | Self::InspectResourceDirectory { .. } => false,
-            Self::UninstallRemove(_)
+            Self::UninstallBind { .. }
+            | Self::UninstallRemove(_)
             | Self::ShellRemovalPlan { .. }
             | Self::ShellRemove { .. }
             | Self::ShellAcquire { .. }
@@ -483,6 +488,12 @@ fn execute(job: FilesystemJob, policy: &ReadPolicy) -> Result<FilesystemResult, 
             policy.check()?;
             super::uninstall::confirm(&intent)?;
             Ok(Result::Applied)
+        }
+        Job::UninstallBind { layout, intent } => {
+            policy.check()?;
+            Ok(Result::UninstallIntent(super::uninstall::bind(
+                &layout, intent,
+            )?))
         }
         Job::UninstallRemove(entry) => {
             policy.check()?;
