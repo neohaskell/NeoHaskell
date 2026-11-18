@@ -103,5 +103,12 @@
   "review_uninstall_changes": "Remove the recorded NeoHaskell command links, retained roots, snapshots and shell PATH blocks. Preserve Nix, projects and unrelated files. Keep shell edit escrow and the stable ownership locks. Interrupted removal requires another uninstall review.",
   "diagnostic_uninstall_cleanup_failed": "The tools were removed, but retained diagnostic reports could not be cleared. Run uninstall again to retry report cleanup.",
   "uninstall_complete": "NeoHaskell command links, retained roots, snapshots and owned shell blocks were removed. Nix and projects were preserved. Shell edit escrow and stable ownership locks remain.",
-  "uninstall_pending": "Uninstall did not complete. Recorded ownership and shell edit escrow are retained. Resolve conflicting files, then run uninstall again."
+  "uninstall_pending": "Uninstall did not complete. Recorded ownership and shell edit escrow are retained. Resolve conflicting files, then run uninstall again.",
+  "bootstrap_tools": "The bootstrap needs curl, standard shell tools, and sha256sum or shasum.",
+  "bootstrap_platform": "This platform has no supported native NeoHaskell installer.",
+  "bootstrap_staging": "The bootstrap could not prepare its private temporary files.",
+  "bootstrap_locator": "The release locator is invalid or belongs to another release.",
+  "bootstrap_download": "The installer download did not complete within its limits.",
+  "bootstrap_integrity": "The downloaded installer does not match the release identity.",
+  "bootstrap_preparing": "Downloading and verifying the NeoHaskell installer."
 }

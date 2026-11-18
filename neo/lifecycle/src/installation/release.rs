@@ -341,6 +341,19 @@ struct Asset {
 
 impl ReleaseSource {
     #[cfg(test)]
+    pub(super) fn bootstrap_fixture(
+        target: &'static str,
+        lease: &super::Effects,
+        port: u16,
+    ) -> Self {
+        Self {
+            effects: lease.clone(),
+            target,
+            authority: Some(FixtureAuthority::Loopback { port }),
+        }
+    }
+
+    #[cfg(test)]
     pub(super) fn unavailable_fixture(lease: &super::Effects) -> Self {
         Self {
             effects: lease.clone(),

@@ -24,7 +24,7 @@ pub(crate) use dashboard::{
 };
 use filesystem::{FilesystemJob, FilesystemResult};
 pub(crate) use review::ManagedCommand;
-pub(crate) use runtime::Executor;
+pub(crate) use runtime::{CandidateLocator, Executor};
 pub(crate) use snapshot::Request;
 
 use fs2::FileExt;

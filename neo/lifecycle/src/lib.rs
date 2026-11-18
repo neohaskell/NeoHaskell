@@ -151,6 +151,46 @@ fn parse_invocation(
 }
 
 #[cfg(unix)]
+fn parse_execution(
+    arguments: &[std::ffi::OsString],
+    executor: installation::Executor,
+) -> Result<
+    (
+        installation::Request,
+        installation::Options,
+        installation::Executor,
+    ),
+    (),
+> {
+    let mut filtered = Vec::new();
+    let mut locator = None;
+    let mut arguments = arguments.iter();
+    while let Some(argument) = arguments.next() {
+        if argument == "--candidate-locator" {
+            if locator.is_some() || !matches!(executor, installation::Executor::NativeInstaller) {
+                return Err(());
+            }
+            let value = arguments
+                .next()
+                .and_then(|value| value.to_str())
+                .ok_or(())?;
+            locator = Some(installation::CandidateLocator::parse(value)?);
+        } else {
+            filtered.push(argument.clone());
+        }
+    }
+    let (request, options) = parse_invocation(&filtered)?;
+    let executor = match locator {
+        Some(locator) if matches!(request, installation::Request::Install(_)) => {
+            installation::Executor::Bootstrap(locator)
+        }
+        Some(_) => return Err(()),
+        None => executor,
+    };
+    Ok((request, options, executor))
+}
+
+#[cfg(unix)]
 fn run_request(
     arguments: &[std::ffi::OsString],
     executor: installation::Executor,
@@ -163,7 +203,7 @@ fn run_request(
             outcome: diagnostics::DiagnosticOutcome::HelpDisplayed,
         };
     }
-    let (request, consent) = match parse_invocation(arguments) {
+    let (request, consent, executor) = match parse_execution(arguments, executor) {
         Ok(invocation) => invocation,
         Err(()) => {
             eprintln!("{}", english.invalid_request);
@@ -467,4 +507,66 @@ fn english() -> &'static language::English {
     ENGLISH.get_or_init(|| {
         serde_json::from_str(include_str!("english.json")).expect("valid English lifecycle text")
     })
+}
+
+#[cfg(all(test, unix))]
+mod locator_tests {
+    use super::*;
+
+    #[test]
+    fn bootstrap_parser_keeps_version_and_locator_distinct() {
+        let locator = format!("0.17.2@{}", "a".repeat(64));
+        let args = [
+            "install",
+            "--candidate-locator",
+            &locator,
+            "--version",
+            "0.17.1",
+            "--yes",
+        ];
+        let args = args.map(Into::into);
+        let (request, options, executor) =
+            parse_execution(&args, installation::Executor::NativeInstaller).unwrap();
+        assert!(
+            matches!(request, installation::Request::Install(Some(version)) if version == "0.17.1")
+        );
+        assert!(options.yes);
+        assert!(matches!(executor, installation::Executor::Bootstrap(_)));
+        assert!(parse_execution(&args, installation::Executor::InstalledNeo).is_err());
+        for operation in ["update", "rollback", "uninstall"] {
+            let args = [operation, "--candidate-locator", &locator].map(Into::into);
+            assert!(parse_execution(&args, installation::Executor::NativeInstaller).is_err());
+        }
+        let args = [
+            "install",
+            "--candidate-locator",
+            &locator,
+            "--candidate-locator",
+            &locator,
+        ]
+        .map(Into::into);
+        assert!(parse_execution(&args, installation::Executor::NativeInstaller).is_err());
+    }
+
+    #[test]
+    fn bootstrap_parser_rejects_ambiguous_and_unsafe_locators() {
+        let sha = "a".repeat(64);
+        for value in [
+            format!("v1.2.3@{sha}"),
+            format!("01.2.3@{sha}"),
+            format!("1.2.3-rc.1@{sha}"),
+            format!("1.2.3+build@{sha}"),
+            format!("1.2.3@{}", "A".repeat(64)),
+            format!("1.2.3@{sha}@{sha}"),
+            format!("1.2.3@{sha}\n"),
+            "1.2.3@../candidate.json".into(),
+            "1.2.3@abc".into(),
+        ] {
+            let args = ["install", "--candidate-locator", &value].map(Into::into);
+            assert!(
+                parse_execution(&args, installation::Executor::NativeInstaller).is_err(),
+                "accepted {value:?}"
+            );
+        }
+    }
 }

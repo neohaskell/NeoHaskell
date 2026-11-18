@@ -547,6 +547,26 @@ mod tests {
     }
 
     #[test]
+    fn bootstrap_demand_preserves_existing_and_pending_pairs() {
+        let locator = super::super::CandidateLocator::parse(&format!("0.17.3@{}", "c".repeat(64))).unwrap();
+        let executor = super::super::Executor::Bootstrap(locator);
+        let mut record = InstallationRecord::default();
+        let demand = |record: &InstallationRecord, request: Request| executor.demand(record.ready_demand(&request).unwrap());
+        assert_eq!(demand(&record, Request::Install(None)), Demand::Recorded(selected("0.17.3", 'c')));
+        assert_eq!(demand(&record, Request::Install(Some("0.17.0".into()))), Demand::SelectExact("0.17.0".into()));
+        record.pinned = Some(selected("0.17.2", 'b'));
+        assert_eq!(demand(&record, Request::Install(None)), Demand::Recorded(selected("0.17.2", 'b')));
+        record.committed = Some(Receipt {
+            schema: STATE_SCHEMA,
+            installation_id: "abc".into(),
+            active: pair(selected("0.17.1", 'a')),
+            previous: None,
+            links: Layout::new("/tmp/state".into(), "/tmp/bin".into()).owned_links(),
+        });
+        assert_eq!(demand(&record, Request::Install(None)), Demand::Recorded(selected("0.17.1", 'a')));
+    }
+
+    #[test]
     fn completed_selection_releases_only_its_own_resumable_pin() {
         let a = selected("0.17.1", 'a');
         let b = selected("0.17.2", 'b');

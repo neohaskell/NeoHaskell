@@ -13,6 +13,73 @@ use std::path::{Path, PathBuf};
 pub(crate) enum Executor {
     NativeInstaller,
     InstalledNeo,
+    Bootstrap(CandidateLocator),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct CandidateLocator {
+    version: [u64; 3],
+    candidate_id: [u8; 64],
+}
+
+impl CandidateLocator {
+    pub(crate) fn parse(value: &str) -> Result<Self, ()> {
+        let (version, candidate_id) = value.split_once('@').ok_or(())?;
+        let parsed = semver::Version::parse(version).map_err(|_| ())?;
+        if !parsed.pre.is_empty() || !parsed.build.is_empty() || parsed.to_string() != version {
+            return Err(());
+        }
+        if candidate_id.len() != 64
+            || !candidate_id
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+        {
+            return Err(());
+        }
+        Ok(Self {
+            version: [parsed.major, parsed.minor, parsed.patch],
+            candidate_id: candidate_id.as_bytes().try_into().map_err(|_| ())?,
+        })
+    }
+
+    fn selection(self) -> release::PinnedSelection {
+        release::PinnedSelection {
+            version: format!(
+                "{}.{}.{}",
+                self.version[0], self.version[1], self.version[2]
+            ),
+            candidate_id: String::from_utf8(self.candidate_id.to_vec())
+                .expect("validated ASCII digest"),
+        }
+    }
+
+    fn verify(
+        self,
+        manifest: &candidate::MetadataManifest,
+        version: &str,
+    ) -> Result<(), TransactionError> {
+        let selected = self.selection();
+        if selected.version != version
+            || manifest.version != selected.version
+            || manifest.candidate_id != selected.candidate_id
+        {
+            return Err(TransactionError::Verification(
+                "bootstrap executor identity",
+            ));
+        }
+        Ok(())
+    }
+}
+
+impl Executor {
+    pub(super) fn demand(self, demand: snapshot::Demand) -> snapshot::Demand {
+        match (self, demand) {
+            (Self::Bootstrap(locator), snapshot::Demand::SelectLatest) => {
+                snapshot::Demand::Recorded(locator.selection())
+            }
+            (_, demand) => demand,
+        }
+    }
 }
 
 pub(crate) struct Outcome {
@@ -78,6 +145,32 @@ impl InstallationOwner {
             ));
         }
         let lease = self.effects.clone();
+        let identity = crate::identity::BuildIdentity::current();
+        let system = match identity.target {
+            "aarch64-apple-darwin" => "aarch64-darwin",
+            "aarch64-unknown-linux-gnu" => "aarch64-linux",
+            "x86_64-unknown-linux-gnu" => "x86_64-linux",
+            _ => return Err(TransactionError::Verification("unsupported target")),
+        };
+        #[cfg(not(test))]
+        let source = release::ReleaseSource::production(identity.target, &lease)
+            .map_err(|_| TransactionError::Verification("release transport"))?;
+        #[cfg(test)]
+        let source = if self.fixture {
+            release::ReleaseSource::owned_fixture(identity.target, &lease)
+        } else {
+            release::ReleaseSource::production(identity.target, &lease)
+                .map_err(|_| TransactionError::Verification("release transport"))?
+        };
+        let bootstrap_evidence = if matches!(executor, Executor::Bootstrap(_)) {
+            let record = self.read_record().await?;
+            Some(
+                self.verify_executor(&lease, executor, &source, system, &record, false)
+                    .await?,
+            )
+        } else {
+            None
+        };
         self.recover_shell_rerun().await?;
         let recovery = self.inspect_recovery().await?;
         if matches!(request, snapshot::Request::RecoverOnly) {
@@ -119,37 +212,24 @@ impl InstallationOwner {
         if requires_configuration {
             observed_nix.require_configuration_authority()?;
         }
-        let identity = crate::identity::BuildIdentity::current();
-        let system = match identity.target {
-            "aarch64-apple-darwin" => "aarch64-darwin",
-            "aarch64-unknown-linux-gnu" => "aarch64-linux",
-            "x86_64-unknown-linux-gnu" => "x86_64-linux",
-            _ => return Err(TransactionError::Verification("unsupported target")),
+        let executor_evidence = match bootstrap_evidence {
+            Some(evidence) => evidence,
+            None => {
+                self.verify_executor(
+                    &lease,
+                    executor,
+                    &source,
+                    system,
+                    &recovery.projected,
+                    offline,
+                )
+                .await?
+            }
         };
-        #[cfg(not(test))]
-        let source = release::ReleaseSource::production(identity.target, &lease)
-            .map_err(|_| TransactionError::Verification("release transport"))?;
-        #[cfg(test)]
-        let source = if self.fixture {
-            release::ReleaseSource::owned_fixture(identity.target, &lease)
-        } else {
-            release::ReleaseSource::production(identity.target, &lease)
-                .map_err(|_| TransactionError::Verification("release transport"))?
-        };
-        let executor_evidence = self
-            .verify_executor(
-                &lease,
-                executor,
-                &source,
-                system,
-                &recovery.projected,
-                offline,
-            )
-            .await?;
         self.effects
             .completed(crate::diagnostics::CompletedStep::Prerequisites);
         self.effects.observe(Activity::Selecting);
-        let selected = match recovery.projected.ready_demand(&request)? {
+        let selected = match executor.demand(recovery.projected.ready_demand(&request)?) {
             snapshot::Demand::Recorded(selected) => selected,
             snapshot::Demand::SelectExact(version) => source
                 .select_exact(&version)
@@ -350,8 +430,22 @@ impl InstallationOwner {
         };
         let build = crate::identity::BuildIdentity::current();
         match executor {
-            Executor::NativeInstaller => {
+            Executor::NativeInstaller | Executor::Bootstrap(_) => {
+                let locator_selection = match executor {
+                    Executor::Bootstrap(locator) => {
+                        let selected = locator.selection();
+                        if selected.version != build.product_version {
+                            return Err(TransactionError::Verification("bootstrap build version"));
+                        }
+                        Some(selected)
+                    }
+                    _ => None,
+                };
                 let mut saved = Vec::new();
+                if let Some(selected) = &locator_selection {
+                    saved.push(selected);
+                }
+
                 if let Some(selected) = &record.pinned {
                     saved.push(selected);
                 }
@@ -365,7 +459,11 @@ impl InstallationOwner {
                 let mut authorized = None;
                 let mut sources = Vec::new();
                 for selected in saved {
-                    if selected.version != build.product_version {
+                    if selected.version != build.product_version
+                        || locator_selection
+                            .as_ref()
+                            .is_some_and(|locator| locator != selected)
+                    {
                         continue;
                     }
                     let path = self
@@ -406,6 +504,9 @@ impl InstallationOwner {
                             .1
                     }
                 };
+                if let Executor::Bootstrap(locator) = executor {
+                    locator.verify(&manifest, build.product_version)?;
+                }
                 let expected = manifest.native_installer;
                 self.effects
                     .filesystem(super::FilesystemJob::HashExecutor {
@@ -499,6 +600,132 @@ mod tests {
     use super::super::RootLease;
     use super::*;
     use std::process::Command;
+
+    #[test]
+    fn bootstrap_rejects_fetched_candidate_id_before_executor_or_state_changes() {
+        check_bootstrap_binding(false, true);
+    }
+
+    #[test]
+    fn bootstrap_rejects_a_different_executable_under_the_exact_candidate_id() {
+        check_bootstrap_binding(true, false);
+    }
+
+    #[test]
+    fn bootstrap_accepts_the_exact_candidate_and_executable_before_review() {
+        check_bootstrap_binding(true, true);
+    }
+
+    fn check_bootstrap_binding(use_exact_id: bool, use_exact_file: bool) {
+        use sha2::{Digest, Sha256};
+        use std::io::{BufRead, BufReader, Write};
+        use std::net::TcpListener;
+        use std::os::unix::fs::PermissionsExt;
+        let build = crate::identity::BuildIdentity::current();
+        let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("contract/fixtures/v1");
+        let index: serde_json::Value =
+            serde_json::from_slice(&fs::read(fixtures.join("fixture-set.json")).unwrap()).unwrap();
+        let name = index["candidate_ids"]
+            .as_object()
+            .unwrap()
+            .keys()
+            .next()
+            .unwrap();
+        let mut core: serde_json::Value =
+            serde_json::from_slice(&fs::read(fixtures.join(name).join("candidate.json")).unwrap())
+                .unwrap();
+        core["version"] = build.product_version.into();
+        core["context"]["version_seed"]["version"] = build.product_version.into();
+        let executable = std::env::current_exe().unwrap().canonicalize().unwrap();
+        let bytes = fs::read(&executable).unwrap();
+        let executable_sha = format!("{:x}", Sha256::digest(&bytes));
+        let identity = &mut core["native_installers"][build.target]["file"];
+        identity["size"] = bytes.len().into();
+        identity["sha256"] = if use_exact_file {
+            executable_sha.clone()
+        } else {
+            "ba".repeat(32)
+        }
+        .into();
+        drop(bytes);
+        let core = serde_json::to_vec(&core).unwrap();
+        let manifest = candidate::metadata_manifest(&core, build.target).unwrap();
+        let digit = if manifest.candidate_id.starts_with('a') {
+            "b"
+        } else {
+            "a"
+        };
+        let candidate_id = if use_exact_id {
+            manifest.candidate_id.clone()
+        } else {
+            digit.repeat(64)
+        };
+        let locator =
+            CandidateLocator::parse(&format!("{}@{candidate_id}", build.product_version)).unwrap();
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let version = build.product_version;
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            stream
+                .set_read_timeout(Some(std::time::Duration::from_secs(5)))
+                .unwrap();
+            let mut reader = BufReader::new(stream.try_clone().unwrap());
+            let mut line = String::new();
+            reader.read_line(&mut line).unwrap();
+            assert!(line.contains(&format!("/neo-v{version}/candidate.json")));
+            loop {
+                line.clear();
+                reader.read_line(&mut line).unwrap();
+                if line == "\r\n" {
+                    break;
+                }
+            }
+            write!(
+                stream,
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                core.len()
+            )
+            .unwrap();
+            stream.write_all(&core).unwrap();
+        });
+        let temporary = tempfile::tempdir().unwrap();
+        let state = temporary.path().join("state");
+        fs::create_dir(&state).unwrap();
+        fs::set_permissions(&state, fs::Permissions::from_mode(0o700)).unwrap();
+        let owner =
+            InstallationOwner::new(Layout::new(state.clone(), temporary.path().join("bin")));
+        let lease = RootLease::acquire(&owner.layout.lock()).unwrap();
+        let source = release::ReleaseSource::bootstrap_fixture(build.target, &owner.effects, port);
+        let record = super::super::InstallationRecord::default();
+        let result = super::super::coordinator::test_with(
+            &owner.effects,
+            &lease,
+            owner.verify_executor(
+                &owner.effects,
+                Executor::Bootstrap(locator),
+                &source,
+                "unused",
+                &record,
+                false,
+            ),
+        );
+        match (use_exact_id, use_exact_file, result) {
+            (false, _, Err(TransactionError::Verification("bootstrap executor identity"))) => {}
+            (true, false, Err(TransactionError::Verification("native executor hash"))) => {}
+            (true, true, Ok(observed)) => {
+                assert_eq!(observed.executable, executable);
+                assert_eq!(observed.native.unwrap().sha, executable_sha);
+            }
+            (id, file, result) => panic!(
+                "unexpected verification result for id={id}, file={file}: {:?}",
+                result.err()
+            ),
+        }
+        server.join().unwrap();
+        assert!(!state.join("installation.json").exists());
+        assert!(!temporary.path().join("bin").exists());
+    }
 
     #[test]
     #[ignore]
