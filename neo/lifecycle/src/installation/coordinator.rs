@@ -62,6 +62,7 @@ pub(crate) struct UnadmittedOperation {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum RecoveryPending {
+    Uninstall,
     Shell,
     Unknown,
     None,
@@ -79,6 +80,7 @@ pub(crate) struct ReviewSummary {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum ReviewOperation {
+    Uninstall,
     Install,
     Update,
     Rollback,
@@ -87,6 +89,7 @@ pub(crate) enum ReviewOperation {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum ReviewedChange {
+    Uninstall,
     ShellPath,
     ShellStartup,
     Recovery,
@@ -735,7 +738,8 @@ impl Effects {
                     serde_json::from_slice(bytes).map_err(|_| {
                         TransactionError::InvalidState("failed journal prior state is invalid")
                     })?;
-                if before.activation.is_some()
+                if before.uninstall.is_some()
+                    || before.activation.is_some()
                     || before.resources.pending.is_some()
                     || before
                         .shell

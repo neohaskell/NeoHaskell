@@ -1,3 +1,6 @@
+mod removal;
+pub(super) use removal::RemovalPlan;
+
 use super::{
     FilesystemJob, FilesystemResult, InstallationOwner, Layout, SettlementKind, TransactionError,
 };

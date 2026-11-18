@@ -20,6 +20,20 @@ use std::time::{Duration, Instant};
 
 pub(super) enum FilesystemJob {
     Startup(Option<Layout>),
+    UninstallInspect {
+        layout: Layout,
+        record: super::InstallationRecord,
+    },
+    UninstallRemove(super::uninstall::Removal),
+    UninstallConfirm(super::uninstall::UninstallIntent),
+    ShellRemovalPlan {
+        lease: std::sync::Arc<super::shell::HomeLease>,
+        receipt: super::shell::Receipt,
+    },
+    ShellRemove {
+        lease: std::sync::Arc<super::shell::HomeLease>,
+        plan: super::shell::RemovalPlan,
+    },
     ShellInspect {
         home: PathBuf,
         name: String,
@@ -143,6 +157,8 @@ pub(super) enum FilesystemJob {
 }
 
 pub(super) enum FilesystemResult {
+    UninstallIntent(super::uninstall::UninstallIntent),
+    ShellRemovalPlan(super::shell::RemovalPlan),
     ShellPreimage(Option<super::shell::ProfilePreimage>),
     ShellLease(std::sync::Arc<super::shell::HomeLease>),
     ShellPlan(super::shell::Receipt),
@@ -201,7 +217,9 @@ impl FilesystemJob {
 
     pub(super) fn mutates(&self) -> bool {
         match self {
-            Self::ShellInspect { .. }
+            Self::UninstallConfirm(_)
+            | Self::UninstallInspect { .. }
+            | Self::ShellInspect { .. }
             | Self::ShellVerify { .. }
             | Self::Startup(_)
             | Self::ReadRecord(_)
@@ -219,7 +237,10 @@ impl FilesystemJob {
             | Self::ObservePath(_)
             | Self::ObserveCommandPath(_)
             | Self::InspectResourceDirectory { .. } => false,
-            Self::ShellAcquire { .. }
+            Self::UninstallRemove(_)
+            | Self::ShellRemovalPlan { .. }
+            | Self::ShellRemove { .. }
+            | Self::ShellAcquire { .. }
             | Self::ShellPlan { .. }
             | Self::ShellApply { .. }
             | Self::EnsureCommandDirectory(_)
@@ -247,7 +268,9 @@ impl FilesystemJob {
                 matches!(reason, SettlementKind::Shell | SettlementKind::Recovery)
             }
             Self::EnsureCommandDirectory(_) => reason == SettlementKind::Recovery,
-            Self::ShellInspect { .. }
+            Self::UninstallConfirm(_)
+            | Self::UninstallInspect { .. }
+            | Self::ShellInspect { .. }
             | Self::ShellVerify { .. }
             | Self::ReadRecord(_)
             | Self::InspectLink(_)
@@ -450,6 +473,31 @@ fn execute(job: FilesystemJob, policy: &ReadPolicy) -> Result<FilesystemResult, 
     use FilesystemResult as Result;
     let journal = job.journal_kind();
     match job {
+        Job::UninstallInspect { layout, record } => {
+            policy.check()?;
+            Ok(Result::UninstallIntent(super::uninstall::prepare(
+                &layout, &record,
+            )?))
+        }
+        Job::UninstallConfirm(intent) => {
+            policy.check()?;
+            super::uninstall::confirm(&intent)?;
+            Ok(Result::Applied)
+        }
+        Job::UninstallRemove(entry) => {
+            policy.check()?;
+            super::uninstall::remove(&entry)?;
+            Ok(Result::Applied)
+        }
+        Job::ShellRemovalPlan { lease, receipt } => {
+            policy.check()?;
+            Ok(Result::ShellRemovalPlan(lease.plan_removal(&receipt)?))
+        }
+        Job::ShellRemove { lease, plan } => {
+            policy.check()?;
+            lease.remove(&plan)?;
+            Ok(Result::Applied)
+        }
         Job::ShellInspect { home, name } => Ok(Result::ShellPreimage(
             super::shell::inspect_profile(&home, &name)?,
         )),

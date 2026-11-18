@@ -16,6 +16,7 @@ pub(crate) enum Request {
     Update(Option<String>),
     Rollback,
     RecoverOnly,
+    Uninstall,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -37,7 +38,7 @@ impl super::InstallationRecord {
                 ))
         };
         match request {
-            Request::RecoverOnly => Ok(Demand::None),
+            Request::RecoverOnly | Request::Uninstall => Ok(Demand::None),
             Request::Rollback => {
                 let current = self
                     .committed

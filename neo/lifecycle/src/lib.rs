@@ -51,12 +51,13 @@ pub fn dispatch_installed(arguments: &[std::ffi::OsString]) -> Option<Exit> {
         return Some(exit);
     }
     #[cfg(unix)]
-    if arguments
-        .first()
-        .is_some_and(|argument| argument == "update" || argument == "rollback")
-    {
+    if arguments.first().is_some_and(|argument| {
+        argument == "update" || argument == "rollback" || argument == "uninstall"
+    }) {
         let route = if arguments[0] == "update" {
             diagnostics::RequestRoute::Update
+        } else if arguments[0] == "uninstall" {
+            diagnostics::RequestRoute::Uninstall
         } else {
             diagnostics::RequestRoute::Rollback
         };
@@ -117,6 +118,7 @@ fn parse_invocation(
             installation::Request::Rollback
         }
         [operation] if operation == "rollback" => installation::Request::Rollback,
+        [operation] if operation == "uninstall" => installation::Request::Uninstall,
         [operation, option, version]
             if option == "--version" && (operation == "install" || operation == "update") =>
         {
@@ -175,9 +177,20 @@ fn run_request(
         installation::Request::Install(_) => diagnostics::RequestRoute::Install,
         installation::Request::Update(_) => diagnostics::RequestRoute::Update,
         installation::Request::Rollback => diagnostics::RequestRoute::Rollback,
+        installation::Request::Uninstall => diagnostics::RequestRoute::Uninstall,
         installation::Request::RecoverOnly => unreachable!("public parser excludes recovery-only"),
     };
+    let uninstall = matches!(request, installation::Request::Uninstall);
     let report = installation::run(request, executor, consent);
+    if uninstall {
+        match &report.operation {
+            Ok(installation::RunOutcome::Complete(_)) => println!("{}", english.uninstall_complete),
+            Err(_) | Ok(installation::RunOutcome::Stopped(_)) => {
+                eprintln!("{}", english.uninstall_pending)
+            }
+            _ => {}
+        }
+    }
     let outcome = diagnostics::DiagnosticOutcome::from_drive_report(request_kind, &report);
     diagnostics::InvocationResult {
         exit: format_report(report),
@@ -324,6 +337,7 @@ fn write_review(
         installation::ReviewOperation::Install => &copy.review_install,
         installation::ReviewOperation::Update => &copy.review_update,
         installation::ReviewOperation::Rollback => &copy.review_rollback,
+        installation::ReviewOperation::Uninstall => &copy.review_uninstall,
         installation::ReviewOperation::Recover => &copy.review_recover,
     };
     writeln!(output, "{operation}")?;
@@ -337,6 +351,7 @@ fn write_review(
     for change in &summary.changes {
         use installation::ReviewedChange;
         let message = match change {
+            ReviewedChange::Uninstall => &copy.review_uninstall_changes,
             ReviewedChange::ShellPath => &copy.review_shell_path,
             ReviewedChange::ShellStartup => &copy.review_shell_startup,
             ReviewedChange::Recovery => &copy.review_recovery,
@@ -373,6 +388,7 @@ pub fn run() -> Exit {
                 Some("install") => NativeRoute::Operation(RequestRoute::Install),
                 Some("update") => NativeRoute::Operation(RequestRoute::Update),
                 Some("rollback") => NativeRoute::Operation(RequestRoute::Rollback),
+                Some("uninstall") => NativeRoute::Operation(RequestRoute::Uninstall),
                 _ => NativeRoute::Unknown,
             },
         };

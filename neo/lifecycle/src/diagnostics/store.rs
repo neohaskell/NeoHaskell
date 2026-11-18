@@ -339,6 +339,19 @@ impl Store {
 }
 
 impl OpenRecord {
+    pub(super) fn clear_retained(&self) -> Result<()> {
+        let _lock = self.store.lock()?;
+        let (records, stage, _) = self.store.inventory()?;
+        if let Some(stage) = stage {
+            self.store.remove(STAGE, stage)?;
+        }
+        for record in records {
+            self.store.remove(&record.name, record.identity)?;
+        }
+        self.store.directory.sync_all().map_err(|_| ())?;
+        self.store.verify_path()
+    }
+
     pub(super) fn finish(self, report: &Report) -> Result<PathBuf> {
         if report.started_at_ms() != self.created {
             return Err(());
@@ -910,6 +923,48 @@ mod tests {
         assert!(open.finish(&report).is_err());
         assert!(!path.exists());
         assert!(export.exists());
+    }
+
+    #[test]
+    fn uninstall_clears_owned_reports_and_staging_but_preserves_exports() {
+        let (_temporary, store) = setup();
+        let other = Store::open(store.path.parent().unwrap()).unwrap();
+        let first = store.begin(&started(now_ms().unwrap())).unwrap();
+        let second = other.begin(&started(now_ms().unwrap())).unwrap();
+        let store = &second.store;
+        let export = store.path.parent().unwrap().join("user-export.json");
+        fs::copy(store.path.join(&first.name), &export).unwrap();
+        let exported = fs::read(&export).unwrap();
+        let unrelated = store.path.join("notes.json");
+        fs::write(&unrelated, b"user data").unwrap();
+        let _stage = open_at(
+            &store.directory,
+            STAGE,
+            libc::O_WRONLY | libc::O_CREAT | libc::O_EXCL,
+            0o600,
+        )
+        .unwrap();
+        second.clear_retained().unwrap();
+        assert!(!store.path.join(STAGE).exists());
+        assert!(!store.path.join(&first.name).exists());
+        assert!(!store.path.join(&second.name).exists());
+        assert_eq!(fs::read(export).unwrap(), exported);
+        assert_eq!(fs::read(unrelated).unwrap(), b"user data");
+        assert!(store.path.join(LOCK).exists());
+    }
+
+    #[test]
+    fn uninstall_preserves_reserved_foreign_file_and_reports_on_inventory_failure() {
+        let (_temporary, store) = setup();
+        let open = store.begin(&started(now_ms().unwrap())).unwrap();
+        let store = &open.store;
+        let report = open.store.path.join(&open.name);
+        let prior = fs::read(&report).unwrap();
+        let foreign = store.path.join("v1-not an owned report");
+        fs::write(&foreign, b"foreign bytes").unwrap();
+        assert!(open.clear_retained().is_err());
+        assert_eq!(fs::read(report).unwrap(), prior);
+        assert_eq!(fs::read(foreign).unwrap(), b"foreign bytes");
     }
 
     #[test]

@@ -493,6 +493,7 @@ impl PreparedRecovery {
             super::snapshot::Request::Update(_) => ReviewOperation::Update,
             super::snapshot::Request::Rollback => ReviewOperation::Rollback,
             super::snapshot::Request::RecoverOnly => ReviewOperation::Recover,
+            super::snapshot::Request::Uninstall => ReviewOperation::Uninstall,
         };
         let mut changes = Vec::new();
         if self.repairs.required() {

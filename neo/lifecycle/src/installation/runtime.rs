@@ -69,6 +69,14 @@ impl InstallationOwner {
         request: snapshot::Request,
         executor: Executor,
     ) -> Result<Option<Outcome>, TransactionError> {
+        if matches!(request, snapshot::Request::Uninstall) {
+            return self.uninstall_owned().await.map(|()| None);
+        }
+        if self.read_record().await?.uninstall.is_some() {
+            return Err(TransactionError::InvalidState(
+                "uninstall is pending; run uninstall again",
+            ));
+        }
         let lease = self.effects.clone();
         self.recover_shell_rerun().await?;
         let recovery = self.inspect_recovery().await?;
@@ -235,7 +243,7 @@ impl InstallationOwner {
                 } else {
                     InstallSelection::LatestCompleteStable
                 }),
-                snapshot::Request::RecoverOnly => {
+                snapshot::Request::RecoverOnly | snapshot::Request::Uninstall => {
                     return Err(TransactionError::InvalidState(
                         "recovery requested activation",
                     ));

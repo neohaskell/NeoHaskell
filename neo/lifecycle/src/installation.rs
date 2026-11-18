@@ -12,6 +12,7 @@ mod review;
 mod runtime;
 mod shell;
 mod snapshot;
+mod uninstall;
 mod verification;
 use coordinator::{Effects, SettlementKind};
 pub(crate) use coordinator::{
@@ -84,6 +85,8 @@ struct InstallationRecord {
     resources: resources::ResourceLedger,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     shell: Option<shell::Ledger>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    uninstall: Option<uninstall::UninstallIntent>,
     previous_observation: PriorObservation,
     snapshot_files: std::collections::BTreeMap<String, Vec<crate::candidate::FileIdentity>>,
 }
@@ -104,6 +107,7 @@ impl Default for InstallationRecord {
             pinned: None,
             resources: resources::ResourceLedger::default(),
             shell: None,
+            uninstall: None,
             previous_observation: PriorObservation::NotChecked,
             snapshot_files: std::collections::BTreeMap::new(),
         }
@@ -683,6 +687,9 @@ impl InstallationOwner {
                 "unsupported installation schema",
             ));
         }
+        if let Some(intent) = &record.uninstall {
+            intent.validate(&self.layout, &record)?;
+        }
         if let Some(shell) = &record.shell {
             shell.validate(&self.layout)?;
             if shell.pending()
@@ -1159,6 +1166,17 @@ impl InstallationOwner {
         let owner = self.with_effects(effects.clone());
         let record = owner.read_record().await?;
         let target = owner.read_active_target().await?;
+        if record.uninstall.is_some() {
+            let observation = match (record.committed, target) {
+                (_, None) => coordinator::StopObservation::ObservedNoPair,
+                (Some(receipt), Some(target)) if receipt.active.output == target => {
+                    coordinator::StopObservation::ObservedPair(receipt.active)
+                }
+                _ => return Err(TransactionError::ForeignActiveTarget),
+            };
+            effects.finish_settlement()?;
+            return Ok(observation);
+        }
         if record.activation.is_some()
             || record.resources.pending.is_some()
             || record.shell.as_ref().is_some_and(shell::Ledger::pending)

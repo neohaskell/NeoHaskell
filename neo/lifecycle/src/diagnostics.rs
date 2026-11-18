@@ -27,6 +27,7 @@ pub(crate) enum NativeRoute {
 #[derive(Clone, Copy, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum RequestRoute {
+    Uninstall,
     Install,
     Update,
     Rollback,
@@ -279,6 +280,7 @@ pub(crate) enum UnadmittedReason {
 #[derive(Serialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum PendingRecovery {
+    Uninstall,
     Shell,
     Unknown,
     None,
@@ -431,6 +433,7 @@ impl DiagnosticOutcome {
                     }
                 },
                 pending_recovery: match value.recovery {
+                    R::Uninstall => PendingRecovery::Uninstall,
                     R::Unknown => PendingRecovery::Unknown,
                     R::None => PendingRecovery::None,
                     R::Activation => PendingRecovery::Activation,
@@ -532,7 +535,31 @@ pub(crate) fn record_public(
     let clock = Instant::now();
     let started = store::now_ms().map(|now| Report::started(invocation, now));
     let open = started.as_ref().map_err(|_| ()).and_then(store::begin);
-    let result = run();
+    let mut result = run();
+    if result.exit.code == 0
+        && matches!(
+            &result.outcome,
+            DiagnosticOutcome::Lifecycle {
+                request: RequestRoute::Uninstall,
+                operation: OperationOutcome::Complete { .. },
+                presentation: None,
+                ..
+            }
+        )
+    {
+        if open
+            .as_ref()
+            .is_ok_and(|record| record.clear_retained().is_ok())
+        {
+            return result.exit;
+        }
+        result.exit.code = 1;
+        let _ = writeln!(
+            io::stderr().lock(),
+            "{}",
+            crate::english().diagnostic_uninstall_cleanup_failed
+        );
+    }
     let saved = match (started, open) {
         (Ok(mut report), Ok(record)) => {
             report.state = State::Finished {
