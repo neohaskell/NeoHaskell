@@ -7,7 +7,9 @@ use std::io;
 use std::os::unix::fs::{FileTypeExt, MetadataExt, OpenOptionsExt};
 use std::path::{Path, PathBuf};
 
+pub(super) mod daemon_process;
 mod include_inputs;
+pub(super) use daemon_process::KernelDaemonObservation;
 
 pub(super) const CLIENT: &str = "/nix/var/nix/profiles/default/bin/nix";
 const SOCKET: &str = "/nix/var/nix/daemon-socket/socket";
@@ -68,6 +70,8 @@ pub(super) struct ObservedNixBase {
     daemon: DaemonObservation,
     service: ServiceObservation,
     configuration: ConfigurationObservation,
+    #[serde(skip)]
+    kernel: KernelDaemonObservation,
 }
 
 #[derive(Debug, PartialEq, Eq, Serialize)]
@@ -469,14 +473,7 @@ impl InstallationOwner {
             NixBlock::DaemonUnavailable,
         )
         .await?;
-        if !self
-            .inspect_path(PathBuf::from(SOCKET))
-            .await
-            .map_err(|error| error.preserve_stop(blocked(NixBlock::DaemonUnavailable)))?
-            .is_some_and(|m| m.uid() == 0 && m.file_type().is_socket())
-        {
-            return Err(blocked(NixBlock::DaemonUnavailable));
-        }
+        let socket = self.nix_socket_identity().await?;
         let bytes = self
             .nix_query(
                 lease,
@@ -494,6 +491,17 @@ impl InstallationOwner {
                 )
                 .await?,
             identity,
+        )
+        .map_err(blocked)?;
+        let kernel = self.nix_kernel_process(service.main_pid, identity).await?;
+        let repeated_daemon = daemon_observation(
+            &self
+                .nix_query(
+                    lease,
+                    process::WorkerRequest::StoreInfo,
+                    NixBlock::DaemonUnavailable,
+                )
+                .await?,
         )
         .map_err(blocked)?;
         socket_observation(
@@ -518,7 +526,12 @@ impl InstallationOwner {
             identity,
         )
         .map_err(blocked)?;
-        if service != repeated || self.nix_client().await? != client {
+        if service != repeated
+            || kernel != self.nix_kernel_process(repeated.main_pid, identity).await?
+            || daemon != repeated_daemon
+            || socket != self.nix_socket_identity().await?
+            || self.nix_client().await? != client
+        {
             return Err(blocked(NixBlock::DaemonMismatch));
         }
         if configuration != self.nix_configuration_input().await? {
@@ -529,7 +542,40 @@ impl InstallationOwner {
             daemon,
             service,
             configuration,
+            kernel,
         })
+    }
+
+    async fn nix_socket_identity(&self) -> Result<(u64, u64), TransactionError> {
+        let metadata = self
+            .inspect_path(PathBuf::from(SOCKET))
+            .await
+            .map_err(|error| {
+                error.preserve_stop(TransactionError::NixBlocked(NixBlock::DaemonUnavailable))
+            })?
+            .filter(|m| m.uid() == 0 && m.file_type().is_socket())
+            .ok_or(TransactionError::NixBlocked(NixBlock::DaemonUnavailable))?;
+        Ok((metadata.dev(), metadata.ino()))
+    }
+
+    async fn nix_kernel_process(
+        &self,
+        pid: u32,
+        identity: &NixTargetIdentity,
+    ) -> Result<KernelDaemonObservation, TransactionError> {
+        match self
+            .effects
+            .filesystem(super::FilesystemJob::NixDaemonProcess {
+                pid,
+                executable: Path::new(identity.package_root).join("bin/nix"),
+            })
+            .await?
+        {
+            super::FilesystemResult::NixDaemonProcess(value) => Ok(value),
+            _ => Err(TransactionError::InvalidState(
+                "Nix process completion type",
+            )),
+        }
     }
 
     async fn nix_configuration_input(&self) -> Result<ConfigurationObservation, TransactionError> {
@@ -897,7 +943,16 @@ mod tests {
                     started: 1234,
                 },
                 configuration,
+                kernel: KernelDaemonObservation::Inaccessible,
             };
+            let public = serde_json::to_value(&base).unwrap();
+            assert_eq!(public.as_object().unwrap().len(), 4);
+            assert!(public.get("kernel").is_none());
+            assert!(
+                !serde_json::to_string(&base)
+                    .unwrap()
+                    .contains("start_ticks")
+            );
             assert_eq!(
                 base.require_configuration_authority(),
                 Err(TransactionError::NixBlocked(
@@ -1224,7 +1279,16 @@ NeedDaemonReload=no
                     started: 1234,
                 },
                 configuration,
+                kernel: KernelDaemonObservation::Inaccessible,
             };
+            let public = serde_json::to_value(&base).unwrap();
+            assert_eq!(public.as_object().unwrap().len(), 4);
+            assert!(public.get("kernel").is_none());
+            assert!(
+                !serde_json::to_string(&base)
+                    .unwrap()
+                    .contains("start_ticks")
+            );
             assert_eq!(
                 base.require_configuration_authority(),
                 Err(TransactionError::NixBlocked(

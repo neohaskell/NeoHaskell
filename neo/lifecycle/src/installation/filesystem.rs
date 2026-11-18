@@ -146,6 +146,10 @@ pub(super) enum FilesystemJob {
         path: PathBuf,
         maximum: u64,
     },
+    NixDaemonProcess {
+        pid: u32,
+        executable: PathBuf,
+    },
     NixProcessName,
     NixConfigurationInput,
     OpenResourceDirectory(PathBuf),
@@ -162,6 +166,7 @@ pub(super) enum FilesystemJob {
 }
 
 pub(super) enum FilesystemResult {
+    NixDaemonProcess(super::nix_owner::KernelDaemonObservation),
     ConfigurationInput(super::nix_owner::ConfigurationObservation),
     UninstallIntent(super::uninstall::UninstallIntent),
     ShellRemovalPlan(super::shell::RemovalPlan),
@@ -239,6 +244,7 @@ impl FilesystemJob {
             | Self::ProtectedPath(_)
             | Self::BoundedDigest { .. }
             | Self::NixConfigurationInput
+            | Self::NixDaemonProcess { .. }
             | Self::NixProcessName
             | Self::ResourceInventory { .. }
             | Self::ObservePath(_)
@@ -867,6 +873,19 @@ fn execute(job: FilesystemJob, policy: &ReadPolicy) -> Result<FilesystemResult, 
                         file,
                         128 * 1024,
                         TransactionError::Verification("file size limit"),
+                        policy,
+                    )
+                })?,
+            ))
+        }
+        Job::NixDaemonProcess { pid, executable } => {
+            policy.check()?;
+            Ok(Result::NixDaemonProcess(
+                super::nix_owner::daemon_process::observe(pid, &executable, |file| {
+                    read_bounded(
+                        file,
+                        64 * 1024,
+                        TransactionError::Verification("process size limit"),
                         policy,
                     )
                 })?,
