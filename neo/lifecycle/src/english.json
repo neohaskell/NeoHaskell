@@ -104,6 +104,8 @@
   "diagnostic_uninstall_cleanup_failed": "The tools were removed, but retained diagnostic reports could not be cleared. Run uninstall again to retry report cleanup.",
   "uninstall_complete": "NeoHaskell command links, retained roots, snapshots and owned shell blocks were removed. Nix and projects were preserved. Shell edit escrow and stable ownership locks remain.",
   "uninstall_pending": "Uninstall did not complete. Recorded ownership and shell edit escrow are retained. Resolve conflicting files, then run uninstall again.",
+  "bootstrap_report_saved": "Diagnostic report saved at ",
+  "bootstrap_report_unavailable": "Diagnostic report unavailable.",
   "bootstrap_tools": "The bootstrap needs curl, standard shell tools, and sha256sum or shasum.",
   "bootstrap_platform": "This platform has no supported native NeoHaskell installer.",
   "bootstrap_staging": "The bootstrap could not prepare its private temporary files.",
