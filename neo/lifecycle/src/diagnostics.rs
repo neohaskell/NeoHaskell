@@ -112,6 +112,101 @@ enum State {
     },
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum Phase {
+    Inspecting,
+    CheckingNix,
+    Selecting,
+    PreparingReview,
+    Review,
+    Rechecking,
+    Recovering,
+    PreparingPair,
+    VerifyingPair,
+    Activating,
+    Finishing,
+    Stopping,
+    Unadmitted,
+    Finished,
+    Failed,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum CompletedStep {
+    Prerequisites,
+    CandidateSelection,
+    PairVerification,
+    Recovery,
+    FinalSettlement,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum AppliedChange {
+    ActivationCommitted,
+    ActivationRecovered,
+    ActivationReverted,
+    RecoveryRepairsSettled,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum ReviewAnswer {
+    Accepted,
+    Declined,
+    ConsentRequired,
+    Cancelled,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub(crate) struct PhaseEvent {
+    pub(crate) phase: Phase,
+    pub(crate) elapsed_ms: u64,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub(crate) struct ReviewFact {
+    pub(crate) entered_ms: u64,
+    pub(crate) wait_ms: Option<u64>,
+    pub(crate) answer: Option<ReviewAnswer>,
+    pub(crate) admitted_ms: Option<u64>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub(crate) struct InvocationFacts {
+    pub(crate) elapsed_ms: u64,
+    pub(crate) phase: Phase,
+    pub(crate) events: Vec<PhaseEvent>,
+    pub(crate) events_truncated: bool,
+    pub(crate) review: Option<ReviewFact>,
+    pub(crate) completed_steps: Vec<CompletedStep>,
+    pub(crate) applied_changes: Vec<AppliedChange>,
+    pub(crate) installer_retry_policy: RetryPolicy,
+    pub(crate) upstream_attempts: UpstreamAttempts,
+    pub(crate) other_applied_changes: ChangeObservation,
+    pub(crate) cancelled_ms: Option<u64>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum ChangeObservation {
+    Unknown,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum RetryPolicy {
+    NotImplemented,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum UpstreamAttempts {
+    Unknown,
+}
+
 #[derive(Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub(crate) enum DiagnosticOutcome {
@@ -124,6 +219,7 @@ pub(crate) enum DiagnosticOutcome {
         operation: OperationOutcome,
         presentation: Option<PresentationOutcome>,
         recovery_advice: RecoveryAdvice,
+        observations: Option<InvocationFacts>,
     },
 }
 
@@ -381,6 +477,7 @@ impl DiagnosticOutcome {
             operation,
             presentation,
             recovery_advice,
+            observations: report.observations.clone(),
         }
     }
 }
@@ -449,4 +546,78 @@ pub(crate) fn record_public(
         let _ = writeln!(io::stderr().lock(), "{message}");
     }
     result.exit
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn report_with_a_full_timeline_fits_the_payload_bound() {
+        let mut report = Report::started(Invocation::Installed(RequestRoute::Rollback), u64::MAX);
+        report.state = State::Finished {
+            finished_at_ms: Some(u64::MAX),
+            duration_ms: u64::MAX,
+            exit_code: 130,
+            outcome: DiagnosticOutcome::Lifecycle {
+                request: RequestRoute::Rollback,
+                operation: OperationOutcome::Cancelled {
+                    observation: StopObservation::Pair {
+                        version: EarnedVersion::from_observation(
+                            "18446744073709551615.18446744073709551615.18446744073709551615",
+                        ),
+                    },
+                },
+                presentation: Some(PresentationOutcome {
+                    primary: PresentationReason::DisplayData,
+                    restored: false,
+                }),
+                recovery_advice: RecoveryAdvice::InspectInstallationState,
+                observations: Some(InvocationFacts {
+                    elapsed_ms: u64::MAX,
+                    phase: Phase::PreparingReview,
+                    events: vec![
+                        PhaseEvent {
+                            phase: Phase::PreparingReview,
+                            elapsed_ms: u64::MAX
+                        };
+                        64
+                    ],
+                    events_truncated: true,
+                    review: Some(ReviewFact {
+                        entered_ms: u64::MAX,
+                        wait_ms: Some(u64::MAX),
+                        answer: Some(ReviewAnswer::ConsentRequired),
+                        admitted_ms: Some(u64::MAX),
+                    }),
+                    completed_steps: vec![
+                        CompletedStep::Prerequisites,
+                        CompletedStep::CandidateSelection,
+                        CompletedStep::PairVerification,
+                        CompletedStep::Recovery,
+                        CompletedStep::FinalSettlement,
+                    ],
+                    applied_changes: vec![
+                        AppliedChange::ActivationCommitted,
+                        AppliedChange::ActivationRecovered,
+                        AppliedChange::ActivationReverted,
+                        AppliedChange::RecoveryRepairsSettled,
+                    ],
+                    installer_retry_policy: RetryPolicy::NotImplemented,
+                    upstream_attempts: UpstreamAttempts::Unknown,
+                    other_applied_changes: ChangeObservation::Unknown,
+                    cancelled_ms: Some(u64::MAX),
+                }),
+            },
+        };
+        let bytes = report.encode().unwrap();
+        let value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(
+            value["state"]["outcome"]["observations"]["events"]
+                .as_array()
+                .unwrap()
+                .len(),
+            64
+        );
+    }
 }

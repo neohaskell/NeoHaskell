@@ -80,6 +80,10 @@ impl InstallationOwner {
             self.effects.admit_reviewed(review)?;
             self.effects.observe(Activity::Recovering);
             self.apply_recovery(recovery).await?;
+            self.effects
+                .completed(crate::diagnostics::CompletedStep::Recovery);
+            self.effects
+                .completed(crate::diagnostics::CompletedStep::FinalSettlement);
             return Ok(None);
         }
         self.effects.observe(Activity::CheckingNix);
@@ -124,6 +128,8 @@ impl InstallationOwner {
                 offline,
             )
             .await?;
+        self.effects
+            .completed(crate::diagnostics::CompletedStep::Prerequisites);
         self.effects.observe(Activity::Selecting);
         let selected = match recovery.projected.ready_demand(&request)? {
             snapshot::Demand::Recorded(selected) => selected,
@@ -141,6 +147,8 @@ impl InstallationOwner {
                 ));
             }
         };
+        self.effects
+            .completed(crate::diagnostics::CompletedStep::CandidateSelection);
         self.effects.observe(Activity::PreparingReview);
         let prepared = self
             .prepare_snapshot(&selected, &source, identity.target, offline)
@@ -161,6 +169,8 @@ impl InstallationOwner {
         self.effects.admit_reviewed(review)?;
         self.effects.observe(Activity::Recovering);
         self.apply_recovery(recovery).await?;
+        self.effects
+            .completed(crate::diagnostics::CompletedStep::Recovery);
         self.effects
             .filesystem(super::FilesystemJob::EnsureCommandDirectory(
                 self.layout.command_directory.clone(),
@@ -187,6 +197,8 @@ impl InstallationOwner {
         let ready = self
             .verify_retention_observation(&lease, &candidate, system, retained)
             .await?;
+        self.effects
+            .completed(crate::diagnostics::CompletedStep::PairVerification);
         for row in 3..6 {
             self.effects.observe_row(row, Row::Verified);
         }
@@ -232,6 +244,8 @@ impl InstallationOwner {
         let mut record = self.read_record().await?;
         record.complete_selection(&selected)?;
         self.write_record(&record, false).await?;
+        self.effects
+            .completed(crate::diagnostics::CompletedStep::FinalSettlement);
         Ok(Some(Outcome {
             version: candidate.version().into(),
             previous_missing: record.previous_observation == PriorObservation::MissingOutput,

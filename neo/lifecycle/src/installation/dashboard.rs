@@ -34,6 +34,7 @@ pub(crate) struct Options {
 pub(crate) struct DriveReport {
     pub(crate) operation: Result<RunOutcome, TransactionError>,
     pub(crate) presentation: Option<PresentationFailure>,
+    pub(crate) observations: Option<crate::diagnostics::InvocationFacts>,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Failure {
@@ -76,6 +77,7 @@ pub(crate) fn run(request: Request, executor: Executor, options: Options) -> Dri
         Ok(signals) => signals,
         Err(_) => {
             return DriveReport {
+                observations: None,
                 operation: Err(TransactionError::Io),
                 presentation: Some(PresentationFailure {
                     primary: Failure::Setup,
@@ -123,6 +125,7 @@ fn protected(
         if tty.activate().is_err() {
             if !tty.restore() {
                 return DriveReport {
+                    observations: Some(owner.diagnostics()),
                     operation: Err(TransactionError::Io),
                     presentation: Some(PresentationFailure {
                         primary: Failure::Setup,
@@ -140,6 +143,7 @@ fn protected(
         Ok(Ok(operation)) => {
             let restored = terminal.as_mut().is_none_or(Terminal::restore);
             return DriveReport {
+                observations: Some(owner.diagnostics()),
                 operation,
                 presentation: (!restored).then_some(PresentationFailure {
                     primary: Failure::Restore,
@@ -155,6 +159,7 @@ fn protected(
     let operation = catch_unwind(AssertUnwindSafe(|| settle(owner, signals)))
         .unwrap_or(Err(TransactionError::CleanupUnknown));
     DriveReport {
+        observations: Some(owner.diagnostics()),
         operation,
         presentation: Some(PresentationFailure {
             primary: failure,

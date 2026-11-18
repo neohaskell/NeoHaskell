@@ -205,6 +205,7 @@ struct EffectState {
     recovery: RecoveryPending,
     journal_attempt: Option<JournalAttempt>,
     observation: super::observation::PresentationObservation,
+    diagnostics: super::observation::InvocationObservation,
 }
 
 struct JournalAttempt {
@@ -316,7 +317,15 @@ impl Future for EffectFuture {
 
 impl Effects {
     pub(super) fn observe(&self, activity: super::observation::Activity) {
-        self.state.borrow_mut().observation.activity(activity);
+        let mut state = self.state.borrow_mut();
+        state.observation.activity(activity);
+        state.diagnostics.activity(activity);
+    }
+    pub(super) fn completed(&self, step: crate::diagnostics::CompletedStep) {
+        self.state.borrow_mut().diagnostics.completed(step);
+    }
+    pub(super) fn applied(&self, change: crate::diagnostics::AppliedChange) {
+        self.state.borrow_mut().diagnostics.applied(change);
     }
     pub(super) fn observe_row(&self, row: usize, value: super::observation::Row) {
         self.state.borrow_mut().observation.rows[row] = value;
@@ -340,6 +349,7 @@ impl Effects {
                 .checked_add(1)
                 .ok_or(TransactionError::InvalidState("owner identity exhausted"))?;
             let identity = state.next_identity;
+            state.diagnostics.review();
             state.review = ReviewGate::Awaiting {
                 identity,
                 offer: Some(ReviewOffer {
@@ -387,6 +397,14 @@ impl Effects {
         {
             return Err(TransactionError::InvalidState("expired review token"));
         }
+        state.diagnostics.answer(match withhold {
+            None => crate::diagnostics::ReviewAnswer::Accepted,
+            Some(UnadmittedReason::Declined) => crate::diagnostics::ReviewAnswer::Declined,
+            Some(UnadmittedReason::ConsentRequired) => {
+                crate::diagnostics::ReviewAnswer::ConsentRequired
+            }
+            Some(_) => crate::diagnostics::ReviewAnswer::Cancelled,
+        });
         state.review = match withhold {
             Some(reason) => ReviewGate::Stopped(reason),
             None => ReviewGate::Rechecking(token.identity),
@@ -400,6 +418,7 @@ impl Effects {
         if !matches!(state.review, ReviewGate::Rechecking(current) if current == identity) {
             return Err(TransactionError::InvalidState("review was not rechecked"));
         }
+        state.diagnostics.admitted();
         state.review = ReviewGate::Accepted {
             identity,
             progress: AcceptedProgress::NoMutationAdmitted,
@@ -485,6 +504,7 @@ impl Effects {
                 recovery: RecoveryPending::Unknown,
                 journal_attempt: None,
                 observation: super::observation::PresentationObservation::new(),
+                diagnostics: super::observation::InvocationObservation::new(),
             })),
             cancellation,
             admission: Admission::Requested,
@@ -758,6 +778,14 @@ impl Effects {
         {
             return Err(TransactionError::InvalidState("settlement is not complete"));
         }
+        if permit.kind == SettlementKind::Recovery {
+            state
+                .diagnostics
+                .completed(crate::diagnostics::CompletedStep::Recovery);
+            state
+                .diagnostics
+                .applied(crate::diagnostics::AppliedChange::RecoveryRepairsSettled);
+        }
         state.settlement = None;
         Ok(())
     }
@@ -981,6 +1009,7 @@ impl Coordinator {
 
     pub(super) fn request_cancel(&self) {
         self.effects.cancellation.request();
+        self.effects.state.borrow_mut().diagnostics.cancelled();
         self.effects.observe(super::observation::Activity::Stopping);
     }
 
@@ -1006,6 +1035,10 @@ impl Coordinator {
             _ => super::observation::Activity::Declined,
         });
         Ok(())
+    }
+
+    pub(super) fn diagnostics(&self) -> crate::diagnostics::InvocationFacts {
+        self.effects.state.borrow().diagnostics.snapshot()
     }
 
     pub(super) fn presentation(
@@ -1055,7 +1088,13 @@ impl Coordinator {
                         "owner finished with an effect",
                     )));
                 }
-                self.effects.state.borrow_mut().observation.finish(&result);
+                let mut state = self.effects.state.borrow_mut();
+                state.observation.finish(&result);
+                let activity = state.observation.activity;
+                state.diagnostics.activity(activity);
+                if self.effects.stopped() {
+                    state.diagnostics.cancelled();
+                }
                 Poll::Ready(result)
             }
             Poll::Pending => Poll::Pending,
@@ -1149,12 +1188,15 @@ fn stopped(
     effects: &Effects,
     observation: StopObservation,
 ) -> Result<RunOutcome, TransactionError> {
-    let state = effects.state.borrow();
+    let mut state = effects.state.borrow_mut();
     if !matches!(state.slot, EffectSlot::Idle) || state.settlement.is_some() {
         return Err(TransactionError::InvalidState(
             "stopping has unsettled work",
         ));
     }
+    state
+        .diagnostics
+        .completed(crate::diagnostics::CompletedStep::FinalSettlement);
     Ok(RunOutcome::Stopped(StoppedOperation {
         observation,
         _quiescent: Quiescent,
@@ -1442,6 +1484,8 @@ mod tests {
                 ),
             )
             .unwrap();
+            owner.effects.state.borrow_mut().diagnostics =
+                super::super::observation::InvocationObservation::new();
             *owner.effects.cancellation.cut.lock().unwrap() = Some(cut);
             let after = owner.next_receipt(Some(&before), after_pair.clone());
             test_with(&owner.effects, &lease, async {
@@ -1469,6 +1513,14 @@ mod tests {
             let record: super::super::InstallationRecord =
                 serde_json::from_slice(&fs::read(owner.layout.record()).unwrap()).unwrap();
             assert!(record.activation.is_none(), "{cut}");
+            let facts = owner.effects.state.borrow().diagnostics.snapshot();
+            assert_eq!(
+                facts
+                    .applied_changes
+                    .contains(&crate::diagnostics::AppliedChange::ActivationCommitted),
+                cut != "before_intent",
+                "{cut}"
+            );
             assert_eq!(
                 fs::read_link(owner.layout.active_link()).unwrap(),
                 expected.output,
@@ -1830,24 +1882,86 @@ mod tests {
                     RootLease::acquire(&layout.lock()),
                     Err(TransactionError::Busy)
                 ));
-                if reason == UnadmittedReason::Cancelled {
-                    coordinator.request_cancel();
-                } else {
-                    coordinator
-                        .effects
-                        .answer(offered.token, Some(reason))
-                        .unwrap();
+                match reason {
+                    UnadmittedReason::Cancelled => coordinator.request_cancel(),
+                    UnadmittedReason::ConsentRequired => coordinator
+                        .answer(offered, ReviewDecision::ConsentRequired)
+                        .unwrap(),
+                    UnadmittedReason::Declined => coordinator
+                        .answer(offered, ReviewDecision::Decline)
+                        .unwrap(),
+                    UnadmittedReason::ReviewChanged => unreachable!(),
                 }
                 let RunOutcome::Unadmitted(stopped) = finish(&mut coordinator).unwrap() else {
                     panic!("withheld review admitted work");
                 };
                 assert_eq!(stopped.reason, reason);
+                let facts = coordinator.diagnostics();
+                use crate::diagnostics::{Phase, ReviewAnswer};
+                assert_eq!(
+                    facts
+                        .events
+                        .iter()
+                        .any(|event| event.phase == Phase::Unadmitted),
+                    reason != UnadmittedReason::Cancelled,
+                );
+                let review = facts.review.unwrap();
+                assert_eq!(
+                    review.answer,
+                    Some(match reason {
+                        UnadmittedReason::ConsentRequired => ReviewAnswer::ConsentRequired,
+                        UnadmittedReason::Declined => ReviewAnswer::Declined,
+                        UnadmittedReason::Cancelled => ReviewAnswer::Cancelled,
+                        _ => unreachable!(),
+                    })
+                );
+                assert!(review.wait_ms.is_some());
+                assert!(review.admitted_ms.is_none());
+                assert!(facts.applied_changes.is_empty());
+                assert!(facts.completed_steps.is_empty());
                 assert_eq!(stopped.recovery, RecoveryPending::Activation);
                 assert_eq!(fs::read(layout.record()).unwrap(), before);
                 assert_eq!(fs::read_link(layout.active_link()).unwrap(), active);
                 assert!(!layout.command_directory.exists());
             }
         }
+    }
+
+    #[test]
+    fn diagnostic_owner_timeline_is_bounded_and_keeps_review_summary() {
+        let (_temporary, _layout, mut coordinator) = review_fixture(None);
+        for _ in 0..100 {
+            coordinator
+                .effects
+                .observe(super::super::observation::Activity::Inspecting);
+            coordinator
+                .effects
+                .observe(super::super::observation::Activity::Selecting);
+        }
+        let offered = offer(&mut coordinator);
+        coordinator
+            .effects
+            .answer(offered.token, Some(UnadmittedReason::Declined))
+            .unwrap();
+        assert!(matches!(
+            finish(&mut coordinator),
+            Ok(RunOutcome::Unadmitted(_))
+        ));
+        let facts = coordinator.diagnostics();
+        assert_eq!(facts.events.len(), 64);
+        assert!(facts.events_truncated);
+        assert_eq!(facts.phase, crate::diagnostics::Phase::Finished);
+        assert_eq!(
+            facts.review.as_ref().unwrap().answer,
+            Some(crate::diagnostics::ReviewAnswer::Declined)
+        );
+        assert!(
+            facts
+                .events
+                .windows(2)
+                .all(|pair| pair[0].elapsed_ms <= pair[1].elapsed_ms)
+        );
+        assert!(serde_json::to_vec(&facts).unwrap().len() < 10 * 1024);
     }
 
     #[test]
@@ -1883,6 +1997,29 @@ mod tests {
                 serde_json::from_slice(&fs::read(layout.record()).unwrap()).unwrap();
             assert!(record.activation.is_none());
             assert_eq!(record.committed.unwrap().active.output, active);
+            let facts = coordinator.diagnostics();
+            let review = facts.review.as_ref().unwrap();
+            assert_eq!(
+                review.answer,
+                Some(crate::diagnostics::ReviewAnswer::Accepted)
+            );
+            assert!(review.admitted_ms.unwrap() >= review.entered_ms + review.wait_ms.unwrap());
+            assert!(
+                facts
+                    .completed_steps
+                    .contains(&crate::diagnostics::CompletedStep::FinalSettlement)
+            );
+            assert!(
+                facts
+                    .applied_changes
+                    .contains(&crate::diagnostics::AppliedChange::RecoveryRepairsSettled)
+            );
+            assert!(
+                facts
+                    .events
+                    .windows(2)
+                    .all(|pair| pair[0].elapsed_ms <= pair[1].elapsed_ms)
+            );
             for command in ["neo", "neoctl"] {
                 assert_eq!(
                     fs::read_link(layout.command_directory.join(command)).unwrap(),
@@ -1904,6 +2041,20 @@ mod tests {
             coordinator.effects.cancel_at(cut);
             coordinator.effects.answer(offered.token, None).unwrap();
             let result = finish(&mut coordinator).unwrap();
+            let facts = coordinator.diagnostics();
+            let review = facts.review.as_ref().unwrap();
+            assert_eq!(
+                review.answer,
+                Some(crate::diagnostics::ReviewAnswer::Accepted)
+            );
+            assert!(review.admitted_ms.is_some());
+            assert!(facts.cancelled_ms.is_some());
+            assert_eq!(
+                facts
+                    .applied_changes
+                    .contains(&crate::diagnostics::AppliedChange::RecoveryRepairsSettled),
+                cut != "before_reviewed_recovery"
+            );
             if cut == "before_reviewed_recovery" {
                 assert!(matches!(result, RunOutcome::Unadmitted(_)));
                 assert_eq!(fs::read(layout.record()).unwrap(), before);
@@ -1980,6 +2131,14 @@ mod tests {
                 panic!("changed review admitted mutation");
             };
             assert_eq!(stopped.reason, UnadmittedReason::ReviewChanged, "{drift}");
+            let facts = coordinator.diagnostics();
+            let review = facts.review.unwrap();
+            assert_eq!(
+                review.answer,
+                Some(crate::diagnostics::ReviewAnswer::Accepted)
+            );
+            assert!(review.admitted_ms.is_none());
+            assert!(facts.applied_changes.is_empty());
             assert_eq!(fs::read(layout.record()).unwrap(), current);
             assert!(!coordinator.effects.mutation_admitted());
         }

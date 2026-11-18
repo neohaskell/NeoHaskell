@@ -227,6 +227,17 @@ fn terminal_owner_fixture() {
     if let Some(bridge) = bridge {
         bridge.join().unwrap();
     }
+    let facts = report
+        .observations
+        .as_ref()
+        .expect("owner facts survive terminal settlement");
+    assert!(
+        facts
+            .events
+            .windows(2)
+            .all(|pair| pair[0].elapsed_ms <= pair[1].elapsed_ms)
+    );
+    assert!(facts.events.last().unwrap().elapsed_ms <= facts.elapsed_ms);
     let outcome = match report.operation {
         Ok(RunOutcome::Complete(_)) => "complete",
         Ok(RunOutcome::Unadmitted(ref value)) => match value.reason {
@@ -376,7 +387,11 @@ pub(super) fn run_owner_fixture(request: Request, executor: Executor) -> Coordin
     let state = root.join("state");
     std::fs::create_dir_all(&state).unwrap();
     std::fs::set_permissions(&state, std::fs::Permissions::from_mode(0o700)).unwrap();
-    Coordinator::new(request, executor, Some(super::super::Layout::new(state, root)))
+    Coordinator::new(
+        request,
+        executor,
+        Some(super::super::Layout::new(state, root)),
+    )
 }
 
 pub(super) fn prepare_small_layout_fallback() {

@@ -122,3 +122,113 @@ impl PresentationObservation {
         });
     }
 }
+
+pub(super) struct InvocationObservation {
+    started: std::time::Instant,
+    facts: crate::diagnostics::InvocationFacts,
+}
+
+impl InvocationObservation {
+    pub(super) fn new() -> Self {
+        use crate::diagnostics::*;
+        Self {
+            started: std::time::Instant::now(),
+            facts: InvocationFacts {
+                elapsed_ms: 0,
+                phase: Phase::Inspecting,
+                events: vec![PhaseEvent {
+                    phase: Phase::Inspecting,
+                    elapsed_ms: 0,
+                }],
+                events_truncated: false,
+                review: None,
+                completed_steps: Vec::new(),
+                applied_changes: Vec::new(),
+                installer_retry_policy: RetryPolicy::NotImplemented,
+                upstream_attempts: UpstreamAttempts::Unknown,
+                other_applied_changes: ChangeObservation::Unknown,
+                cancelled_ms: None,
+            },
+        }
+    }
+    fn elapsed(&self) -> u64 {
+        self.started.elapsed().as_millis().min(u64::MAX as u128) as u64
+    }
+    pub(super) fn snapshot(&self) -> crate::diagnostics::InvocationFacts {
+        let mut facts = self.facts.clone();
+        facts.elapsed_ms = self.elapsed();
+        facts
+    }
+    pub(super) fn activity(&mut self, activity: Activity) {
+        use crate::diagnostics::{Phase, PhaseEvent};
+        let phase = match activity {
+            Activity::Inspecting => Phase::Inspecting,
+            Activity::CheckingNix => Phase::CheckingNix,
+            Activity::Selecting => Phase::Selecting,
+            Activity::PreparingReview => Phase::PreparingReview,
+            Activity::Review => Phase::Review,
+            Activity::Rechecking => Phase::Rechecking,
+            Activity::Recovering => Phase::Recovering,
+            Activity::PreparingPair => Phase::PreparingPair,
+            Activity::VerifyingPair => Phase::VerifyingPair,
+            Activity::Activating => Phase::Activating,
+            Activity::Finishing => Phase::Finishing,
+            Activity::Stopping => Phase::Stopping,
+            Activity::Declined => Phase::Unadmitted,
+            Activity::Finished => Phase::Finished,
+            Activity::Failed => Phase::Failed,
+        };
+        if self.facts.phase == phase {
+            return;
+        }
+        self.facts.phase = phase;
+        if self.facts.events.len() < 64 {
+            self.facts.events.push(PhaseEvent {
+                phase,
+                elapsed_ms: self.elapsed(),
+            });
+        } else {
+            self.facts.events_truncated = true;
+        }
+    }
+    pub(super) fn review(&mut self) {
+        self.activity(Activity::Review);
+        self.facts.review = Some(crate::diagnostics::ReviewFact {
+            entered_ms: self.elapsed(),
+            wait_ms: None,
+            answer: None,
+            admitted_ms: None,
+        });
+    }
+    pub(super) fn answer(&mut self, answer: crate::diagnostics::ReviewAnswer) {
+        let elapsed = self.elapsed();
+        if let Some(review) = &mut self.facts.review {
+            if review.answer.is_none() {
+                review.wait_ms = Some(elapsed.saturating_sub(review.entered_ms));
+                review.answer = Some(answer);
+            }
+        }
+    }
+    pub(super) fn cancelled(&mut self) {
+        if self.facts.cancelled_ms.is_none() {
+            self.facts.cancelled_ms = Some(self.elapsed());
+        }
+        self.answer(crate::diagnostics::ReviewAnswer::Cancelled);
+    }
+    pub(super) fn admitted(&mut self) {
+        let elapsed = self.elapsed();
+        if let Some(review) = &mut self.facts.review {
+            review.admitted_ms = Some(elapsed);
+        }
+    }
+    pub(super) fn completed(&mut self, step: crate::diagnostics::CompletedStep) {
+        if !self.facts.completed_steps.contains(&step) {
+            self.facts.completed_steps.push(step);
+        }
+    }
+    pub(super) fn applied(&mut self, change: crate::diagnostics::AppliedChange) {
+        if !self.facts.applied_changes.contains(&change) {
+            self.facts.applied_changes.push(change);
+        }
+    }
+}

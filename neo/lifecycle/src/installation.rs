@@ -418,6 +418,8 @@ impl InstallationOwner {
         if self.read_active_target().await?.as_ref() != Some(&after.active.output) {
             return Err(TransactionError::ForeignActiveTarget);
         }
+        self.effects
+            .applied(crate::diagnostics::AppliedChange::ActivationCommitted);
         self.remove_intent().await?;
         Ok(())
     }
@@ -443,6 +445,8 @@ impl InstallationOwner {
                     return Err(TransactionError::ForeignActiveTarget);
                 }
                 self.remove_intent().await?;
+                self.effects
+                    .applied(crate::diagnostics::AppliedChange::ActivationRecovered);
                 return Ok(Some(intent.after));
             }
             if active.as_ref() == before_target {
@@ -458,6 +462,8 @@ impl InstallationOwner {
                     self.remove_first_install_links(&intent.after).await?;
                 }
                 self.remove_intent().await?;
+                self.effects
+                    .applied(crate::diagnostics::AppliedChange::ActivationReverted);
                 return Ok(intent.before);
             }
             return Err(TransactionError::ForeignActiveTarget);
