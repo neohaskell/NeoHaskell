@@ -13,6 +13,8 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitStatus, Stdio};
 use std::time::{Duration, Instant};
 
+pub(super) mod shell_startup;
+
 pub(crate) const WORKER_ARGUMENT: &str = "--internal-operation-worker";
 const NIX: &str = "/nix/var/nix/profiles/default/bin/nix";
 const REQUEST_LIMIT: usize = 32 * 1024;
@@ -32,6 +34,7 @@ struct LeaseIdentity {
 #[serde(deny_unknown_fields)]
 pub(super) enum WorkerRequest {
     Release(super::release::FetchRequest),
+    ShellStartup(shell_startup::ShellStartupRequest),
     #[cfg(test)]
     BuildProfile {
         output: PathBuf,
@@ -91,9 +94,10 @@ impl WorkerRequest {
             | Self::PathInfo { .. }
             | Self::HashConvert { .. }
             | Self::VerifyContents { .. } => false,
-            Self::AcquireRetained { .. } | Self::RegisterExact { .. } | Self::ProbeTool { .. } => {
-                true
-            }
+            Self::ShellStartup(_)
+            | Self::AcquireRetained { .. }
+            | Self::RegisterExact { .. }
+            | Self::ProbeTool { .. } => true,
             #[cfg(test)]
             Self::FixturePathInfo { .. } => false,
             #[cfg(test)]
@@ -723,7 +727,9 @@ fn worker() -> io::Result<()> {
     let stdout_limit = operation.stdout_limit()?;
     let command = operation.command(directory)?;
     #[cfg(test)]
-    if directory.join("fixture-cache").exists() {
+    if directory.join("fixture-cache").exists()
+        && !matches!(operation, WorkerRequest::ShellStartup(_))
+    {
         use std::os::unix::fs::OpenOptionsExt;
         let mut trace = std::fs::OpenOptions::new()
             .create(true)
@@ -745,7 +751,12 @@ fn worker() -> io::Result<()> {
         } else {
             0
         };
-    let result = supervise(command, &lease, &control, stdout_limit, operation.timeout());
+    let result = match &operation {
+        WorkerRequest::ShellStartup(request) => {
+            shell_startup::supervise(request, command, &control, operation.timeout())
+        }
+        _ => supervise(command, &lease, &control, stdout_limit, operation.timeout()),
+    };
     #[cfg(test)]
     let result = if matches!(operation, WorkerRequest::Release(_)) {
         let mut result = result;
@@ -765,6 +776,7 @@ fn worker() -> io::Result<()> {
 impl WorkerRequest {
     fn timeout(&self) -> Duration {
         match self {
+            Self::ShellStartup(_) => Duration::from_secs(15),
             Self::Release(_) => Duration::from_secs(125),
             Self::Version | Self::StoreInfo | Self::SystemdService | Self::SystemdSocket => {
                 Duration::from_secs(15)
@@ -805,7 +817,11 @@ impl WorkerRequest {
     }
 
     fn command(&self, directory: &Path) -> io::Result<Command> {
+        if let Self::ShellStartup(request) = self {
+            return request.command();
+        }
         let mut command = match self {
+            Self::ShellStartup(_) => unreachable!(),
             Self::Release(fetch) => {
                 super::release::client_command(fetch, &directory.join(super::LOCK_NAME))?
             }

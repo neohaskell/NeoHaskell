@@ -62,6 +62,7 @@ pub(crate) struct UnadmittedOperation {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum RecoveryPending {
+    Shell,
     Unknown,
     None,
     Activation,
@@ -86,6 +87,8 @@ pub(crate) enum ReviewOperation {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum ReviewedChange {
+    ShellPath,
+    ShellStartup,
     Recovery,
     CommandDirectory,
     CommandLinks,
@@ -167,6 +170,7 @@ pub(super) enum SettlementKind {
     Recovery,
     Activation,
     Resource,
+    Shell,
     Observation,
 }
 
@@ -731,7 +735,13 @@ impl Effects {
                     serde_json::from_slice(bytes).map_err(|_| {
                         TransactionError::InvalidState("failed journal prior state is invalid")
                     })?;
-                if before.activation.is_some() || before.resources.pending.is_some() {
+                if before.activation.is_some()
+                    || before.resources.pending.is_some()
+                    || before
+                        .shell
+                        .as_ref()
+                        .is_some_and(super::shell::Ledger::pending)
+                {
                     return Err(TransactionError::InvalidState(
                         "failed journal prior state has unrelated recovery",
                     ));

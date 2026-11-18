@@ -262,6 +262,22 @@ fn format_result(result: Result<installation::RunOutcome, installation::Transact
             }
             Exit { code: 130 }
         }
+        Err(installation::TransactionError::ShellRecoveryCompleted) => {
+            eprintln!("{}", english.shell_recovery_completed);
+            Exit { code: 2 }
+        }
+        Err(installation::TransactionError::ShellUnsupported) => {
+            eprintln!("{}", english.shell_unsupported);
+            Exit { code: 1 }
+        }
+        Err(installation::TransactionError::ShellZdotdirUnsupported) => {
+            eprintln!("{}", english.shell_zdotdir_unsupported);
+            Exit { code: 1 }
+        }
+        Err(installation::TransactionError::ShellVerificationFailed) => {
+            eprintln!("{}", english.shell_verification_failed);
+            Exit { code: 1 }
+        }
         Err(installation::TransactionError::CleanupUnknown) => {
             eprintln!("{}", english.cleanup_unknown);
             Exit { code: 1 }
@@ -321,6 +337,8 @@ fn write_review(
     for change in &summary.changes {
         use installation::ReviewedChange;
         let message = match change {
+            ReviewedChange::ShellPath => &copy.review_shell_path,
+            ReviewedChange::ShellStartup => &copy.review_shell_startup,
             ReviewedChange::Recovery => &copy.review_recovery,
             ReviewedChange::CommandDirectory => &copy.review_command_directory,
             ReviewedChange::CommandLinks => &copy.review_command_links,

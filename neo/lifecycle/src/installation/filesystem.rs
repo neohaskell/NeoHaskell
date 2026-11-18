@@ -20,6 +20,27 @@ use std::time::{Duration, Instant};
 
 pub(super) enum FilesystemJob {
     Startup(Option<Layout>),
+    ShellInspect {
+        home: PathBuf,
+        name: String,
+    },
+    ShellAcquire {
+        home: PathBuf,
+        layout: Layout,
+    },
+    ShellPlan {
+        lease: std::sync::Arc<super::shell::HomeLease>,
+        name: String,
+        block: String,
+    },
+    ShellVerify {
+        lease: std::sync::Arc<super::shell::HomeLease>,
+        receipt: super::shell::Receipt,
+    },
+    ShellApply {
+        lease: std::sync::Arc<super::shell::HomeLease>,
+        receipt: super::shell::Receipt,
+    },
     EnsureCommandDirectory(PathBuf),
     ObservePath(PathBuf),
     ObserveCommandPath(Layout),
@@ -122,6 +143,9 @@ pub(super) enum FilesystemJob {
 }
 
 pub(super) enum FilesystemResult {
+    ShellPreimage(Option<super::shell::ProfilePreimage>),
+    ShellLease(std::sync::Arc<super::shell::HomeLease>),
+    ShellPlan(super::shell::Receipt),
     ObservedPath(PathPreimage),
     ObservedCommandPath([CommandOnPath; 2]),
     ObservedResources(Option<(super::resources::ParentObservation, Inventory)>),
@@ -163,16 +187,23 @@ impl FilesystemJob {
         match (
             record.activation.is_some(),
             record.resources.pending.is_some(),
+            record
+                .shell
+                .as_ref()
+                .is_some_and(super::shell::Ledger::pending),
         ) {
-            (true, false) => Some(SettlementKind::Activation),
-            (false, true) => Some(SettlementKind::Resource),
+            (false, false, true) => Some(SettlementKind::Shell),
+            (true, false, false) => Some(SettlementKind::Activation),
+            (false, true, false) => Some(SettlementKind::Resource),
             _ => None,
         }
     }
 
     pub(super) fn mutates(&self) -> bool {
         match self {
-            Self::Startup(_)
+            Self::ShellInspect { .. }
+            | Self::ShellVerify { .. }
+            | Self::Startup(_)
             | Self::ReadRecord(_)
             | Self::InspectLink(_)
             | Self::InspectPath(_)
@@ -188,7 +219,10 @@ impl FilesystemJob {
             | Self::ObservePath(_)
             | Self::ObserveCommandPath(_)
             | Self::InspectResourceDirectory { .. } => false,
-            Self::EnsureCommandDirectory(_)
+            Self::ShellAcquire { .. }
+            | Self::ShellPlan { .. }
+            | Self::ShellApply { .. }
+            | Self::EnsureCommandDirectory(_)
             | Self::PublishRecord { .. }
             | Self::PublishReviewedRecord { .. }
             | Self::EnsureCommandLink { .. }
@@ -209,8 +243,13 @@ impl FilesystemJob {
     }
     pub(super) fn permits_settlement(&self, reason: SettlementKind) -> bool {
         match self {
+            Self::ShellAcquire { .. } | Self::ShellApply { .. } => {
+                matches!(reason, SettlementKind::Shell | SettlementKind::Recovery)
+            }
             Self::EnsureCommandDirectory(_) => reason == SettlementKind::Recovery,
-            Self::ReadRecord(_)
+            Self::ShellInspect { .. }
+            | Self::ShellVerify { .. }
+            | Self::ReadRecord(_)
             | Self::InspectLink(_)
             | Self::InspectPath(_)
             | Self::ObservePath(_)
@@ -288,6 +327,13 @@ impl FilesystemTask {
         admission: Admission,
         permission: Option<super::coordinator::MutationPermission>,
     ) -> Result<Self, TransactionError> {
+        if matches!(job, FilesystemJob::ShellApply { .. })
+            && !matches!(admission, Admission::Settlement(_))
+        {
+            return Err(TransactionError::InvalidState(
+                "shell edit requires journal settlement",
+            ));
+        }
         if job.mutates() && permission.is_none() {
             return Err(TransactionError::InvalidState(
                 "filesystem requires accepted review",
@@ -404,6 +450,29 @@ fn execute(job: FilesystemJob, policy: &ReadPolicy) -> Result<FilesystemResult, 
     use FilesystemResult as Result;
     let journal = job.journal_kind();
     match job {
+        Job::ShellInspect { home, name } => Ok(Result::ShellPreimage(
+            super::shell::inspect_profile(&home, &name)?,
+        )),
+        Job::ShellAcquire { home, layout } => {
+            policy.check()?;
+            Ok(Result::ShellLease(super::shell::HomeLease::acquire(
+                home, &layout,
+            )?))
+        }
+        Job::ShellPlan { lease, name, block } => {
+            policy.check()?;
+            Ok(Result::ShellPlan(lease.plan(name, block)?))
+        }
+        Job::ShellVerify { lease, receipt } => {
+            policy.check()?;
+            lease.verify(&receipt)?;
+            Ok(Result::Applied)
+        }
+        Job::ShellApply { lease, receipt } => {
+            policy.check()?;
+            lease.apply(&receipt)?;
+            Ok(Result::Applied)
+        }
         #[cfg(test)]
         Job::GatedRead {
             path,

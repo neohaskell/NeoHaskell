@@ -279,6 +279,7 @@ pub(crate) enum UnadmittedReason {
 #[derive(Serialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum PendingRecovery {
+    Shell,
     Unknown,
     None,
     Activation,
@@ -378,7 +379,11 @@ impl ErrorFact {
             E::ForeignActiveTarget => Self::ForeignActiveTarget,
             E::NoInstallation => Self::NoInstallation,
             E::NoPreviousPair => Self::NoPreviousPair,
-            E::Verification(_) => Self::Verification,
+            E::ShellRecoveryCompleted
+            | E::ShellUnsupported
+            | E::ShellZdotdirUnsupported
+            | E::ShellVerificationFailed
+            | E::Verification(_) => Self::Verification,
             E::NixBlocked(reason) => {
                 use installation::nix_owner::NixBlock as N;
                 Self::NixBlocked(match reason {
@@ -431,6 +436,7 @@ impl DiagnosticOutcome {
                     R::Activation => PendingRecovery::Activation,
                     R::Resources => PendingRecovery::Resources,
                     R::ActivationAndResources => PendingRecovery::ActivationAndResources,
+                    R::Shell => PendingRecovery::Shell,
                 },
             },
             Ok(O::Stopped(value)) => OperationOutcome::Cancelled {

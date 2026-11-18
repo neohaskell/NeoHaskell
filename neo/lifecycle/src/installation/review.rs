@@ -130,7 +130,7 @@ impl RecoveryRepairs {
 }
 
 impl InstallationOwner {
-    async fn record_bytes(&self) -> Result<Option<Vec<u8>>, TransactionError> {
+    pub(super) async fn record_bytes(&self) -> Result<Option<Vec<u8>>, TransactionError> {
         match self
             .effects
             .filesystem(FilesystemJob::ReadRecord(self.layout.clone()))
@@ -202,6 +202,15 @@ impl InstallationOwner {
         let bytes = self.record_bytes().await?;
         self.effects.check_recovery_preimage(bytes.as_deref())?;
         let record = self.decode_record(bytes.as_deref())?;
+        if record
+            .shell
+            .as_ref()
+            .is_some_and(super::shell::Ledger::pending)
+        {
+            return Err(TransactionError::InvalidState(
+                "shell recovery must settle before activation or resources",
+            ));
+        }
         let pending = match (
             record.activation.is_some(),
             record.resources.pending.is_some(),

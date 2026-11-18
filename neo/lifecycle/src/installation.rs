@@ -10,6 +10,7 @@ mod resource_io;
 mod resources;
 mod review;
 mod runtime;
+mod shell;
 mod snapshot;
 mod verification;
 use coordinator::{Effects, SettlementKind};
@@ -81,6 +82,8 @@ struct InstallationRecord {
     activation: Option<Intent>,
     pinned: Option<release::PinnedSelection>,
     resources: resources::ResourceLedger,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    shell: Option<shell::Ledger>,
     previous_observation: PriorObservation,
     snapshot_files: std::collections::BTreeMap<String, Vec<crate::candidate::FileIdentity>>,
 }
@@ -100,6 +103,7 @@ impl Default for InstallationRecord {
             activation: None,
             pinned: None,
             resources: resources::ResourceLedger::default(),
+            shell: None,
             previous_observation: PriorObservation::NotChecked,
             snapshot_files: std::collections::BTreeMap::new(),
         }
@@ -142,6 +146,10 @@ pub(crate) enum TransactionError {
     ForeignActiveTarget,
     NoInstallation,
     NoPreviousPair,
+    ShellRecoveryCompleted,
+    ShellUnsupported,
+    ShellZdotdirUnsupported,
+    ShellVerificationFailed,
     Verification(&'static str),
     NixBlocked(nix_owner::NixBlock),
 }
@@ -675,6 +683,16 @@ impl InstallationOwner {
                 "unsupported installation schema",
             ));
         }
+        if let Some(shell) = &record.shell {
+            shell.validate(&self.layout)?;
+            if shell.pending()
+                && (record.activation.is_some() || record.resources.pending.is_some())
+            {
+                return Err(TransactionError::InvalidState(
+                    "shell transaction must be exclusive",
+                ));
+            }
+        }
         if let Some(receipt) = &record.committed {
             self.validate_receipt(receipt)?;
         }
@@ -741,6 +759,7 @@ impl InstallationOwner {
                 "state record exceeds the size limit",
             ));
         }
+        self.decode_record(Some(&bytes))?;
         self.effects
             .filesystem(FilesystemJob::PublishRecord {
                 path: self.layout.record(),
@@ -1140,7 +1159,10 @@ impl InstallationOwner {
         let owner = self.with_effects(effects.clone());
         let record = owner.read_record().await?;
         let target = owner.read_active_target().await?;
-        if record.activation.is_some() || record.resources.pending.is_some() {
+        if record.activation.is_some()
+            || record.resources.pending.is_some()
+            || record.shell.as_ref().is_some_and(shell::Ledger::pending)
+        {
             return Err(TransactionError::InvalidState(
                 "stopped operation has a pending journal",
             ));

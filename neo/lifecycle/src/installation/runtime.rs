@@ -70,6 +70,7 @@ impl InstallationOwner {
         executor: Executor,
     ) -> Result<Option<Outcome>, TransactionError> {
         let lease = self.effects.clone();
+        self.recover_shell_rerun().await?;
         let recovery = self.inspect_recovery().await?;
         if matches!(request, snapshot::Request::RecoverOnly) {
             let commands = if recovery.introduces_command_links() {
@@ -162,10 +163,14 @@ impl InstallationOwner {
         let prepared = self
             .prepare_snapshot(&selected, &source, identity.target, offline)
             .await?;
-        let review = self
-            .effects
-            .review(recovery.summary(&request, Some(selected.version.clone())))
-            .await?;
+        let shell_setup = self.prepare_shell().await?;
+        let mut summary = recovery.summary(&request, Some(selected.version.clone()));
+        summary.changes.extend([
+            super::ReviewedChange::ShellPath,
+            super::ReviewedChange::ShellStartup,
+        ]);
+        let review = self.effects.review(summary).await?;
+        self.recheck_shell(&shell_setup).await?;
         self.recheck_recovery(&recovery).await?;
         self.recheck_snapshot(&prepared).await?;
         self.recheck_executor(&executor_evidence).await?;
@@ -181,6 +186,10 @@ impl InstallationOwner {
         self.apply_recovery(recovery).await?;
         self.effects
             .completed(crate::diagnostics::CompletedStep::Recovery);
+        let _home_lease = self.install_shell(&shell_setup).await?;
+        if let Some(prior) = &before {
+            self.verify_shell_pair(&shell_setup, &prior.active).await?;
+        }
         self.effects
             .filesystem(super::FilesystemJob::EnsureCommandDirectory(
                 self.layout.command_directory.clone(),
@@ -212,6 +221,7 @@ impl InstallationOwner {
         for row in 3..6 {
             self.effects.observe_row(row, Row::Verified);
         }
+        let expected_pair = ready.clone();
         if before.as_ref().is_none_or(|roles| roles.active != ready) {
             let operation = match request {
                 snapshot::Request::Rollback => Operation::Rollback,
@@ -234,6 +244,9 @@ impl InstallationOwner {
             let after = self.next_receipt(before.as_ref(), ready);
             self.effects.observe(Activity::Activating);
             self.switch_pair(before.clone(), after, operation).await?;
+        }
+        if before.is_none() {
+            self.verify_shell_pair(&shell_setup, &expected_pair).await?;
         }
         self.effects.observe(Activity::Finishing);
         let mut record = self.read_record().await?;
