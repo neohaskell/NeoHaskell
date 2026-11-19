@@ -512,16 +512,17 @@ impl InstallationOwner {
         let pending = executable
             .pending_stock_policy(&rendezvous, discovery)
             .map_err(|_| TransactionError::Verification("helper policy intent"))?;
-        let persisted = self.persist_policy_intent(binding, pending).await?;
-        let commit = persisted.stock_commit(&self.effects, &self.layout)?;
-        let expected = commit.record_bytes().to_vec();
+        let intent = self.prepare_stock_policy_intent(binding, pending).await?;
+        let expected = intent.record_bytes().to_vec();
+        self.effects
+            .recovery_pending(super::coordinator::RecoveryPending::Unknown);
         let super::FilesystemResult::StockPolicyPublished(verified) = self
             .effects
             .filesystem(super::FilesystemJob::PublishStockPolicy {
                 executable,
                 rendezvous,
                 caller,
-                commit,
+                intent,
             })
             .await?
         else {

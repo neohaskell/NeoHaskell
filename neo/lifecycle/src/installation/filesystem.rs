@@ -90,7 +90,7 @@ pub(super) enum FilesystemJob {
         bytes: Vec<u8>,
         committing: bool,
     },
-    #[cfg(target_os = "linux")]
+    #[cfg(all(test, target_os = "linux"))]
     PublishPolicyIntent {
         layout: Layout,
         expected: Option<Vec<u8>>,
@@ -176,7 +176,7 @@ pub(super) enum FilesystemJob {
         executable: ExactExecutable,
         rendezvous: Rendezvous,
         caller: VerifiedCaller,
-        commit: super::coordinator::StockPolicyIntent,
+        intent: super::coordinator::PreparedStockPolicyIntent,
     },
     #[cfg(target_os = "linux")]
     InspectStockPolicy(super::coordinator::StockPolicyIntent),
@@ -295,14 +295,14 @@ impl FilesystemJob {
 
     pub(super) fn mutates(&self) -> bool {
         match self {
-            #[cfg(target_os = "linux")]
-            Self::PublishPolicyIntent { .. } | Self::ClearPolicyIntent { .. } => true,
+            #[cfg(all(test, target_os = "linux"))]
+            Self::PublishPolicyIntent { .. } => true,
             #[cfg(target_os = "linux")]
             Self::ObserveStockPolicy { .. }
             | Self::VerifyExistingNixPolicy { .. }
             | Self::InspectStockPolicy(_) => false,
             #[cfg(target_os = "linux")]
-            Self::PublishStockPolicy { .. } => true,
+            Self::PublishStockPolicy { .. } | Self::ClearPolicyIntent { .. } => true,
             Self::UninstallConfirm(_)
             | Self::UninstallInspect { .. }
             | Self::ShellInspect { .. }
@@ -542,11 +542,19 @@ impl Drop for FilesystemTask {
     }
 }
 
-struct ReadPolicy {
+pub(super) struct ReadPolicy {
     cancellation: Cancellation,
     admission: Admission,
 }
 impl ReadPolicy {
+    #[cfg(all(test, target_os = "linux"))]
+    pub(super) fn requested_for_test(cancellation: Cancellation) -> Self {
+        Self {
+            cancellation,
+            admission: Admission::Requested,
+        }
+    }
+
     fn check(&self) -> Result<(), TransactionError> {
         if matches!(self.admission, Admission::Requested) && self.cancellation.requested() {
             Err(TransactionError::StopRequested)
@@ -906,29 +914,13 @@ fn execute(
             publish_record(&path, &bytes, committing, policy)?;
             Ok(Result::Applied)
         }
-        #[cfg(target_os = "linux")]
+        #[cfg(all(test, target_os = "linux"))]
         Job::PublishPolicyIntent {
             layout,
             expected,
             bytes,
         } => {
-            let path = layout.record();
-            if read_record_bytes(&path, policy)? != expected {
-                return Err(TransactionError::InvalidState(
-                    "reviewed record changed before Nix policy intent publication",
-                ));
-            }
-            #[cfg(test)]
-            policy.cancellation.hit("before_policy_intent_publication");
-            policy.check()?;
-            publish_record(&path, &bytes, false, policy)?;
-            #[cfg(test)]
-            if policy
-                .cancellation
-                .is_cut("after_policy_intent_publication_error")
-            {
-                return Err(TransactionError::Io);
-            }
+            publish_policy_intent(&layout, expected.as_deref(), &bytes, policy)?;
             Ok(Result::Applied)
         }
         #[cfg(target_os = "linux")]
@@ -1164,12 +1156,23 @@ fn execute(
             executable,
             rendezvous,
             caller,
-            commit,
+            intent,
         } => {
+            let pending = intent.pending().clone();
             let verified = executable
-                .publish_stock_policy(rendezvous, &caller, &commit, terminal, || {
-                    policy.check().is_err()
-                })
+                .publish_stock_policy(
+                    rendezvous,
+                    &caller,
+                    &pending,
+                    terminal,
+                    || policy.check().is_err(),
+                    || {
+                        intent.persist(policy).map_err(|error| match error {
+                            TransactionError::StopRequested => HandoffError::Cancelled,
+                            _ => HandoffError::Frame,
+                        })
+                    },
+                )
                 .map_err(|error| match error {
                     HandoffError::Cancelled => TransactionError::StopRequested,
                     HandoffError::CleanupUnknown => TransactionError::CleanupUnknown,
@@ -1310,6 +1313,33 @@ fn read_record_bytes(
             )
         })
         .transpose()
+}
+
+#[cfg(target_os = "linux")]
+pub(super) fn publish_policy_intent(
+    layout: &Layout,
+    expected: Option<&[u8]>,
+    bytes: &[u8],
+    policy: &ReadPolicy,
+) -> Result<(), TransactionError> {
+    let path = layout.record();
+    if read_record_bytes(&path, policy)?.as_deref() != expected {
+        return Err(TransactionError::InvalidState(
+            "reviewed record changed before Nix policy intent publication",
+        ));
+    }
+    #[cfg(test)]
+    policy.cancellation.hit("before_policy_intent_publication");
+    policy.check()?;
+    publish_record(&path, bytes, false, policy)?;
+    #[cfg(test)]
+    if policy
+        .cancellation
+        .is_cut("after_policy_intent_publication_error")
+    {
+        return Err(TransactionError::Io);
+    }
+    Ok(())
 }
 
 fn publish_record(

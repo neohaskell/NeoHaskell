@@ -1,6 +1,6 @@
 use super::*;
 use crate::candidate::{FileIdentity, OutputPath, native_file_limit};
-use crate::installation::{PolicyStateLease, coordinator::StockPolicyIntent};
+use crate::installation::{PendingNixPolicy, PolicyStateLease, coordinator::StockPolicyIntent};
 use policy_commit::{PublishChallenge, PublishResponse};
 use std::ffi::OsStr;
 use std::io::{Read, Write};
@@ -100,16 +100,19 @@ pub(super) fn publish(
     executable: &ExactExecutable,
     rendezvous: Rendezvous,
     caller: &VerifiedCaller,
-    commit: &StockPolicyIntent,
+    pending: &PendingNixPolicy,
     terminal: Option<&ParkedTerminal>,
     cancelled: impl Fn() -> bool,
+    persist: impl FnOnce() -> Result<StockPolicyIntent, HandoffError>,
 ) -> Result<QuiescentReply, HandoffError> {
-    commit.verify().map_err(|_| HandoffError::Frame)?;
     exchange(
         executable,
         rendezvous,
         Some(caller),
-        PeerRequest::Publish(commit),
+        PeerRequest::Publish {
+            pending,
+            persist: Box::new(persist),
+        },
         terminal,
         cancelled,
     )
@@ -135,7 +138,10 @@ pub(super) fn inspect(
 
 enum PeerRequest<'a> {
     Discover,
-    Publish(&'a StockPolicyIntent),
+    Publish {
+        pending: &'a PendingNixPolicy,
+        persist: Box<dyn FnOnce() -> Result<StockPolicyIntent, HandoffError> + 'a>,
+    },
     Inspect(&'a StockPolicyIntent),
     Existing(PolicyScope),
 }
@@ -144,7 +150,7 @@ impl PeerRequest<'_> {
     fn argument(&self) -> &'static str {
         match self {
             Self::Discover => OBSERVE,
-            Self::Publish(_) => APPLY,
+            Self::Publish { .. } => APPLY,
             Self::Inspect(_) => RECOVER,
             Self::Existing(_) => EXISTING,
         }
@@ -196,8 +202,7 @@ struct PolicyScope {
 impl PolicyScope {
     const BYTES: usize = 48;
 
-    fn from_intent(intent: &StockPolicyIntent) -> Result<Self, HandoffError> {
-        let pending = intent.pending();
+    fn from_pending(pending: &PendingNixPolicy) -> Result<Self, HandoffError> {
         Ok(Self {
             inputs: pending.reviewed,
             state_lease: pending.state_lease.ok_or(HandoffError::Frame)?,
@@ -322,8 +327,8 @@ fn exchange(
             recheck_caller()
         };
         match request {
-            PeerRequest::Publish(commit) => {
-                let scope = PolicyScope::from_intent(commit)?;
+            PeerRequest::Publish { pending, persist } => {
+                let scope = PolicyScope::from_pending(pending)?;
                 let reviewed = ReviewedPolicyRequest::from_bytes(scope.inputs);
                 send_packet(&socket, STOCK_PUBLISH, &expected.epoch, &scope.encode())?;
                 wait_for_packet(&socket, deadline, &cancelled)?;
@@ -331,9 +336,16 @@ fn exchange(
                     PublishResponse::receive(&socket, &expected, reviewed, deadline)?;
                 let committed = if let PublishResponse::Challenge(challenge) = response {
                     verify()?;
+                    authorization_checkpoint()?;
+                    let commit = persist()?;
+                    if commit.pending() != pending {
+                        return Err(HandoffError::Frame);
+                    }
+                    verify()?;
                     commit.verify().map_err(|_| HandoffError::Frame)?;
-                    if cancelled() {
-                        return Err(HandoffError::Cancelled);
+                    authorization_checkpoint()?;
+                    if Instant::now() >= deadline {
+                        return Err(HandoffError::Timeout);
                     }
                     challenge.send_commit(&socket)?;
                     wait_for_packet(&socket, deadline, &cancelled)?;
@@ -353,7 +365,7 @@ fn exchange(
             PeerRequest::Inspect(intent) => {
                 let mut body = [0; MAX_BODY];
                 body[..32].copy_from_slice(&intent.pending().attempt);
-                body[32..].copy_from_slice(&PolicyScope::from_intent(intent)?.encode());
+                body[32..].copy_from_slice(&PolicyScope::from_pending(intent.pending())?.encode());
                 send_packet(&socket, INSPECT, &expected.epoch, &body)?;
                 wait_for_packet(&socket, deadline, &cancelled)?;
                 reply.inspection = Some(

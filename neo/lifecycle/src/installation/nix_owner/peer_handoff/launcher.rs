@@ -281,11 +281,14 @@ impl ExactExecutable {
         &self,
         rendezvous: Rendezvous,
         caller: &VerifiedCaller,
-        commit: &crate::installation::coordinator::StockPolicyIntent,
+        pending: &crate::installation::PendingNixPolicy,
         terminal: Option<&ParkedTerminal>,
         cancelled: impl Fn() -> bool,
+        persist: impl FnOnce() -> Result<
+            crate::installation::coordinator::StockPolicyIntent,
+            HandoffError,
+        >,
     ) -> Result<VerifiedPolicyInspection, HandoffError> {
-        let pending = commit.pending();
         if !caller.matches_release(&self.release)
             || pending.helper != self.release
             || Path::new(&pending.helper_path) != self.path
@@ -294,7 +297,10 @@ impl ExactExecutable {
             return Err(HandoffError::Executable);
         }
         self.recheck()?;
-        if native::publish(self, rendezvous, caller, commit, terminal, cancelled)?.policy
+        if native::publish(
+            self, rendezvous, caller, pending, terminal, cancelled, persist,
+        )?
+        .policy
             != Some(PolicyResult::ManagedRestartObserved)
         {
             return Err(HandoffError::Frame);

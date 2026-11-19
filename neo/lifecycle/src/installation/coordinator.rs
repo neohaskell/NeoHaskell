@@ -123,25 +123,14 @@ pub(super) struct PolicyComparisonWitness {
     identity: u64,
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(all(test, target_os = "linux"))]
 pub(super) struct PersistedPolicyIntent {
     binding: PolicyReviewBinding,
     pending: super::PendingNixPolicy,
-    bytes: Vec<u8>,
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(all(test, target_os = "linux"))]
 impl PersistedPolicyIntent {
-    pub(super) fn stock_commit(
-        self,
-        effects: &Effects,
-        layout: &Layout,
-    ) -> Result<StockPolicyIntent, TransactionError> {
-        effects.consume_policy_review(self.binding)?;
-        StockPolicyIntent::open(effects, layout, self.pending, self.bytes)
-    }
-
-    #[cfg(test)]
     pub(super) fn check_owner(&self, effects: &Effects) -> Result<(), TransactionError> {
         effects.check_policy_recheck(&self.binding)?;
         let state = effects.state.borrow();
@@ -156,14 +145,43 @@ impl PersistedPolicyIntent {
         Ok(())
     }
 
-    #[cfg(test)]
     pub(super) fn binding(&self) -> &PolicyReviewBinding {
         &self.binding
     }
 
-    #[cfg(test)]
     pub(super) fn pending(&self) -> &super::PendingNixPolicy {
         &self.pending
+    }
+}
+
+#[cfg(target_os = "linux")]
+pub(super) struct PreparedStockPolicyIntent {
+    intent: StockPolicyIntent,
+    expected: Option<Vec<u8>>,
+}
+
+#[cfg(target_os = "linux")]
+impl PreparedStockPolicyIntent {
+    pub(super) fn pending(&self) -> &super::PendingNixPolicy {
+        self.intent.pending()
+    }
+
+    pub(super) fn record_bytes(&self) -> &[u8] {
+        &self.intent.bytes
+    }
+
+    pub(super) fn persist(
+        self,
+        policy: &super::filesystem::ReadPolicy,
+    ) -> Result<StockPolicyIntent, TransactionError> {
+        self.intent.verify_lease()?;
+        super::filesystem::publish_policy_intent(
+            &self.intent.layout,
+            self.expected.as_deref(),
+            &self.intent.bytes,
+            policy,
+        )?;
+        Ok(self.intent)
     }
 }
 
@@ -184,11 +202,22 @@ impl StockPolicyIntent {
         bytes: Vec<u8>,
     ) -> Result<Self, TransactionError> {
         effects.checkpoint()?;
+        let intent = Self::with_lease(effects, layout, pending, bytes)?;
+        intent.verify()?;
+        Ok(intent)
+    }
+
+    fn with_lease(
+        effects: &Effects,
+        layout: &Layout,
+        pending: super::PendingNixPolicy,
+        bytes: Vec<u8>,
+    ) -> Result<Self, TransactionError> {
         let state = effects.state.borrow();
         let lease = state.lease.as_ref().ok_or(TransactionError::InvalidState(
             "Nix policy intent has no owner lease",
         ))?;
-        let intent = Self {
+        Ok(Self {
             lock: RootLease {
                 file: lease.file.try_clone().map_err(|_| TransactionError::Io)?,
                 path: lease.path.clone(),
@@ -196,26 +225,26 @@ impl StockPolicyIntent {
             layout: layout.clone(),
             pending,
             bytes,
-        };
-        intent.verify()?;
-        Ok(intent)
+        })
     }
 
     pub(super) fn pending(&self) -> &super::PendingNixPolicy {
         &self.pending
     }
 
-    pub(super) fn record_bytes(&self) -> &[u8] {
-        &self.bytes
-    }
-
-    pub(super) fn verify(&self) -> Result<(), TransactionError> {
-        use std::io::Read;
+    fn verify_lease(&self) -> Result<(), TransactionError> {
         let changed = || TransactionError::InvalidState("Nix policy intent changed before commit");
         let expected_lease = self.pending.state_lease.ok_or_else(changed)?;
         if self.lock.policy_identity(&self.layout.lock())? != expected_lease {
             return Err(changed());
         }
+        Ok(())
+    }
+
+    pub(super) fn verify(&self) -> Result<(), TransactionError> {
+        use std::io::Read;
+        self.verify_lease()?;
+        let changed = || TransactionError::InvalidState("Nix policy intent changed before commit");
         let file =
             super::open_owned_file(&self.layout.record(), true, false)?.ok_or_else(changed)?;
         let mut bytes = Vec::new();
@@ -263,7 +292,7 @@ enum ReviewGate {
         offer: Option<ReviewOffer>,
     },
     Rechecking(u64),
-    #[cfg(target_os = "linux")]
+    #[cfg(all(test, target_os = "linux"))]
     WritingPolicyIntent,
     #[cfg(target_os = "linux")]
     ClearingPolicyIntent,
@@ -359,12 +388,22 @@ struct JournalAttempt {
 
 #[cfg(target_os = "linux")]
 impl InstallationOwner {
-    pub(super) async fn persist_policy_intent(
+    pub(super) async fn prepare_stock_policy_intent(
         &self,
         binding: PolicyReviewBinding,
+        pending: super::PendingNixPolicy,
+    ) -> Result<PreparedStockPolicyIntent, TransactionError> {
+        self.effects.check_admitted_policy_review(&binding)?;
+        let (expected, pending, bytes) = self.policy_intent_record(pending).await?;
+        self.effects.consume_policy_review(binding)?;
+        let intent = StockPolicyIntent::with_lease(&self.effects, &self.layout, pending, bytes)?;
+        Ok(PreparedStockPolicyIntent { intent, expected })
+    }
+
+    async fn policy_intent_record(
+        &self,
         mut pending: super::PendingNixPolicy,
-    ) -> Result<PersistedPolicyIntent, TransactionError> {
-        self.effects.check_policy_intent_review(&binding)?;
+    ) -> Result<(Option<Vec<u8>>, super::PendingNixPolicy, Vec<u8>), TransactionError> {
         let expected = self.record_bytes().await?;
         let mut record = self.decode_record(expected.as_deref())?;
         if record.pending_nix_policy.is_some() {
@@ -375,6 +414,17 @@ impl InstallationOwner {
         pending.state_lease = Some(self.effects.policy_state_lease(&self.layout)?);
         record.pending_nix_policy = Some(pending.clone());
         let bytes = self.encode_record(&record)?;
+        Ok((expected, pending, bytes))
+    }
+
+    #[cfg(test)]
+    pub(super) async fn persist_policy_intent(
+        &self,
+        binding: PolicyReviewBinding,
+        pending: super::PendingNixPolicy,
+    ) -> Result<PersistedPolicyIntent, TransactionError> {
+        self.effects.check_policy_intent_review(&binding)?;
+        let (expected, pending, bytes) = self.policy_intent_record(pending).await?;
         self.effects.check_policy_intent_review(&binding)?;
         let review = std::mem::replace(
             &mut self.effects.state.borrow_mut().review,
@@ -386,7 +436,7 @@ impl InstallationOwner {
             .filesystem(FilesystemJob::PublishPolicyIntent {
                 layout: self.layout.clone(),
                 expected,
-                bytes: bytes.clone(),
+                bytes,
             })
             .await;
         self.effects.state.borrow_mut().review = review;
@@ -396,11 +446,7 @@ impl InstallationOwner {
             ));
         };
         self.effects.check_policy_intent_review(&binding)?;
-        Ok(PersistedPolicyIntent {
-            binding,
-            pending,
-            bytes,
-        })
+        Ok(PersistedPolicyIntent { binding, pending })
     }
 
     pub(super) async fn settle_policy_intent(
@@ -469,6 +515,7 @@ enum EffectRequest {
 
 #[cfg(target_os = "linux")]
 enum PolicyIntentOperation {
+    #[cfg(test)]
     Publish,
     Clear,
 }
@@ -498,6 +545,7 @@ impl EffectRequest {
     #[cfg(target_os = "linux")]
     fn policy_intent_operation(&self) -> Option<(&Layout, PolicyIntentOperation)> {
         match self {
+            #[cfg(test)]
             Self::Filesystem(FilesystemJob::PublishPolicyIntent { layout, .. }, _) => {
                 Some((layout, PolicyIntentOperation::Publish))
             }
@@ -675,7 +723,7 @@ impl Effects {
         Ok(())
     }
 
-    #[cfg(target_os = "linux")]
+    #[cfg(all(test, target_os = "linux"))]
     fn check_policy_intent_review(
         &self,
         binding: &PolicyReviewBinding,
@@ -938,17 +986,14 @@ impl Effects {
         if let Some((layout, operation)) = request.policy_intent_operation() {
             self.checkpoint()?;
             let state = self.state.borrow();
+            let policy_intent_admitted = match (&state.review, operation) {
+                #[cfg(test)]
+                (ReviewGate::WritingPolicyIntent, PolicyIntentOperation::Publish) => true,
+                (ReviewGate::ClearingPolicyIntent, PolicyIntentOperation::Clear) => true,
+                _ => false,
+            };
             return if matches!(self.admission, Admission::Requested)
-                && matches!(
-                    (&state.review, operation),
-                    (
-                        ReviewGate::WritingPolicyIntent,
-                        PolicyIntentOperation::Publish
-                    ) | (
-                        ReviewGate::ClearingPolicyIntent,
-                        PolicyIntentOperation::Clear
-                    )
-                )
+                && policy_intent_admitted
                 && state
                     .lease
                     .as_ref()
@@ -1874,6 +1919,81 @@ mod tests {
                 return value;
             }
             effects.wait();
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn prepared_policy_intent_persists_only_with_the_reviewed_record_and_lease() {
+        for change in ["none", "record", "lease", "cancel"] {
+            let (_temporary, owner, lease) = setup();
+            let identity = match owner.effects.state.borrow().review {
+                ReviewGate::Accepted { identity, .. } => identity,
+                _ => panic!("fixture review was not accepted"),
+            };
+            let binding = PolicyReviewBinding {
+                owner: Rc::downgrade(&owner.effects.state),
+                identity,
+            };
+            let pending = super::super::PendingNixPolicy {
+                attempt: [1; 32],
+                reviewed: [2; 32],
+                helper_path: "/nix/store/11111111111111111111111111111111-neo-policy-helper".into(),
+                helper: crate::candidate::FileIdentity {
+                    name: "neo-installer".into(),
+                    sha: "a".repeat(64),
+                    size: 1,
+                },
+                state_lease: None,
+            };
+            let prepared = test_with(
+                &owner.effects,
+                &lease,
+                owner.prepare_stock_policy_intent(binding, pending),
+            )
+            .unwrap();
+            let record = owner.layout.record();
+            assert!(!record.exists());
+            if change == "record" {
+                fs::write(&record, b"replacement").unwrap();
+                fs::set_permissions(&record, fs::Permissions::from_mode(0o600)).unwrap();
+            }
+            if change == "lease" {
+                let held = lease.policy_identity(&owner.layout.lock()).unwrap();
+                fs::rename(
+                    owner.layout.lock(),
+                    owner.layout.lock().with_extension("old"),
+                )
+                .unwrap();
+                let replacement = RootLease::acquire(&owner.layout.lock()).unwrap();
+                assert_ne!(
+                    replacement.policy_identity(&owner.layout.lock()).unwrap(),
+                    held
+                );
+            }
+            if change == "cancel" {
+                owner.effects.cancel_for_test();
+            }
+            let policy = super::super::filesystem::ReadPolicy::requested_for_test(
+                owner.effects.cancellation.clone(),
+            );
+            let result = prepared.persist(&policy);
+            match change {
+                "none" => result.unwrap().verify().unwrap(),
+                "record" => {
+                    assert!(result.is_err());
+                    assert_eq!(fs::read(record).unwrap(), b"replacement");
+                }
+                "lease" => {
+                    assert!(result.is_err());
+                    assert!(!record.exists());
+                }
+                "cancel" => {
+                    assert!(matches!(result, Err(TransactionError::StopRequested)));
+                    assert!(!record.exists());
+                }
+                _ => unreachable!(),
+            }
         }
     }
 
