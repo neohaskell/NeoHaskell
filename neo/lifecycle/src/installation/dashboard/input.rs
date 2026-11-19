@@ -3,6 +3,7 @@ use std::time::{Duration, Instant};
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Key {
     Accept,
+    Install,
     Details,
     Back,
     Up,
@@ -77,6 +78,7 @@ impl Input {
             match &mut self.sequence {
                 Sequence::Ground => match byte {
                     b'\r' | b'\n' => keys.push(Key::Accept),
+                    b'i' | b'I' => keys.push(Key::Install),
                     b'd' | b'D' => keys.push(Key::Details),
                     b'q' | b'Q' => keys.push(Key::Cancel),
                     27 => {

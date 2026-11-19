@@ -885,15 +885,90 @@ fn cache_review_at_eighty_columns_preserves_every_setting_across_pages() {
         operation: super::super::ReviewOperation::Install,
         version: None,
         recovery: super::super::RecoveryPending::None,
-        changes: vec![super::super::ReviewedChange::CacheSetup(
-            (0..35).map(|i| format!("setting-{i} = value\n")).collect(),
-        )],
+        changes: vec![super::super::ReviewedChange::CacheSetup {
+            target: "/etc/nix/nix.conf",
+            additions: (0..35).map(|i| format!("setting-{i} = value\n")).collect(),
+        }],
     };
-    let pages = cache_review_pages((80, 24), &summary).unwrap().unwrap();
+    let pages = review_pages((80, 24), &summary).unwrap();
     assert!(pages.len() > 1);
-    assert!(pages.iter().all(|page| page.lines().count() <= 15));
-    let text = pages.join("\n");
+    assert!(pages.iter().all(|page| page.text.lines().count() <= 15));
+    assert!(
+        pages
+            .last()
+            .unwrap()
+            .controls
+            .contains("[I] Authorize and install")
+    );
+    let text = pages
+        .into_iter()
+        .map(|p| p.text)
+        .collect::<Vec<_>>()
+        .join("\n");
     for i in 0..35 {
         assert!(text.contains(&format!("setting-{i} = value")));
+    }
+}
+
+#[test]
+fn progress_shows_the_known_daemon_and_the_next_user_action() {
+    let mut observation = PresentationObservation::new();
+    observation.rows[0] = Row::Existing;
+    observation.activity(Activity::PreparingReview);
+    let frame = render((80, 24), &observation, None, Page::Summary, 0, 0)
+        .unwrap()
+        .unwrap();
+    let text = String::from_utf8(frame).unwrap();
+    assert!(text.contains("Nix is running."));
+    assert!(text.contains("You'll review the changes before installation starts."));
+    assert!(!text.contains("UNSEEN"));
+}
+
+#[test]
+fn install_review_separates_system_settings_from_user_changes() {
+    let mut summary = super::super::ReviewSummary {
+        operation: super::super::ReviewOperation::Install,
+        version: Some("0.17.1".into()),
+        recovery: super::super::RecoveryPending::None,
+        changes: Vec::new(),
+    };
+    let pages = review_pages((80, 24), &summary).unwrap();
+    assert_eq!(pages.len(), 1);
+    assert!(pages[0].text.contains("Install NeoHaskell 0.17.1?"));
+    assert!(!pages[0].text.contains("sudo"));
+    assert!(pages[0].controls.contains("[I] Install"));
+    summary
+        .changes
+        .push(super::super::ReviewedChange::CacheSetup {
+            target: "/etc/nix/nix.custom.conf",
+            additions: "extra-trusted-public-keys = test-1:example=".into(),
+        });
+    for size in [(80, 24), (42, 24)] {
+        let pages = review_pages(size, &summary).unwrap();
+        let summary_page = pages
+            .iter()
+            .position(|p| p.controls.contains("Review Nix settings"))
+            .unwrap();
+        let overview = pages[..=summary_page]
+            .iter()
+            .map(|p| p.text.as_str())
+            .collect::<Vec<_>>()
+            .join(" ");
+        assert!(overview.contains("signing keys"));
+        assert!(!overview.contains("Enable Nix features"));
+        assert!(!overview.contains("Add package sources"));
+        assert!(
+            pages
+                .iter()
+                .skip(summary_page + 1)
+                .any(|p| p.text.contains("test-1:example="))
+        );
+        assert!(
+            pages
+                .last()
+                .unwrap()
+                .controls
+                .starts_with("[I] Authorize and install")
+        );
     }
 }

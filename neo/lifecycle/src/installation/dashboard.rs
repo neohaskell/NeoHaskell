@@ -267,7 +267,10 @@ fn drive(
                     input.reset();
                     dirty = true;
                 }
-                Key::Details => {
+                Key::Details
+                    if offer.is_none()
+                        || !offer.as_ref().is_some_and(|r| install_review(r.summary())) =>
+                {
                     page = Page::Details;
                     armed = None;
                     input.reset();
@@ -281,7 +284,7 @@ fn drive(
                     scroll = scroll.saturating_sub(1);
                     dirty = true;
                 }
-                Key::Back | Key::Accept
+                Key::Back | Key::Accept | Key::Install
                     if offer.is_some()
                         && armed
                             == viewport.map(|viewport| PresentationStamp {
@@ -303,46 +306,59 @@ fn drive(
                         review_page = 0;
                         viewport = Some(measured);
                         revision = revision.wrapping_add(1);
-                    } else if *key == Key::Accept
-                        && offer.as_ref().is_some_and(|offer| {
-                            cache_review_pages(measured, offer.summary()).is_ok_and(|pages| {
-                                pages.is_some_and(|pages| review_page + 1 < pages.len())
-                            })
-                        })
-                    {
-                        review_page += 1;
-                        revision = revision.wrapping_add(1);
-                    } else if let Some(review) = offer.take() {
-                        let decision = if *key == Key::Accept {
-                            ReviewDecision::Accept
+                    } else {
+                        let summary = offer.as_ref().ok_or(Failure::Setup)?.summary();
+                        let decision = if install_review(summary) {
+                            let pages = review_pages(measured, summary)?;
+                            let last = review_page + 1 == pages.len();
+                            match key {
+                                Key::Accept if !last => {
+                                    review_page += 1;
+                                    revision = revision.wrapping_add(1);
+                                    None
+                                }
+                                Key::Install if last => Some(ReviewDecision::Accept),
+                                Key::Back if review_page > 0 => {
+                                    review_page -= 1;
+                                    revision = revision.wrapping_add(1);
+                                    None
+                                }
+                                Key::Back => Some(ReviewDecision::Decline),
+                                _ => None,
+                            }
                         } else {
-                            ReviewDecision::Decline
+                            match key {
+                                Key::Accept => Some(ReviewDecision::Accept),
+                                Key::Back => Some(ReviewDecision::Decline),
+                                _ => None,
+                            }
                         };
-                        if *key == Key::Accept
-                            && review.summary().changes.iter().any(|change| {
-                                matches!(change, super::ReviewedChange::CacheSetup(_))
-                            })
-                        {
-                            let tty = terminal.as_mut().ok_or(Failure::Setup)?;
-                            if !tty.restore() {
-                                return Err(Failure::Input);
+                        if let Some(decision) = decision {
+                            let review = offer.take().ok_or(Failure::Setup)?;
+                            if matches!(decision, ReviewDecision::Accept)
+                                && cache_change(review.summary()).is_some()
+                            {
+                                let tty = terminal.as_mut().ok_or(Failure::Setup)?;
+                                if !tty.restore() {
+                                    return Err(Failure::Input);
+                                }
+                                let authorized = std::process::Command::new("/usr/bin/sudo")
+                                    .arg("-v")
+                                    .env_clear()
+                                    .env("PATH", "/usr/bin:/bin")
+                                    .status()
+                                    .is_ok_and(|status| status.success());
+                                tty.activate().map_err(|_| Failure::Setup)?;
+                                if !authorized {
+                                    return Ok(Err(TransactionError::NixBlocked(
+                                        super::nix::NixBlock::CacheConfiguration,
+                                    )));
+                                }
                             }
-                            let authorized = std::process::Command::new("/usr/bin/sudo")
-                                .arg("-v")
-                                .env_clear()
-                                .env("PATH", "/usr/bin:/bin")
-                                .status()
-                                .is_ok_and(|status| status.success());
-                            tty.activate().map_err(|_| Failure::Setup)?;
-                            if !authorized {
-                                return Ok(Err(TransactionError::NixBlocked(
-                                    super::nix::NixBlock::CacheConfiguration,
-                                )));
+                            match owner.answer(review, decision) {
+                                Ok(()) | Err(TransactionError::StopRequested) => {}
+                                Err(_) => return Err(Failure::DisplayData),
                             }
-                        }
-                        match owner.answer(review, decision) {
-                            Ok(()) | Err(TransactionError::StopRequested) => {}
-                            Err(_) => return Err(Failure::DisplayData),
                         }
                     }
                     armed = None;
@@ -608,33 +624,112 @@ fn wrap(text: &str, width: usize) -> Vec<String> {
     result
 }
 
-fn cache_review_pages(
+fn cache_change(summary: &super::ReviewSummary) -> Option<(&str, &str)> {
+    summary.changes.iter().find_map(|change| match change {
+        super::ReviewedChange::CacheSetup { target, additions } => {
+            Some((*target, additions.as_str()))
+        }
+        _ => None,
+    })
+}
+
+fn install_review(summary: &super::ReviewSummary) -> bool {
+    summary.operation == super::ReviewOperation::Install || cache_change(summary).is_some()
+}
+
+struct ReviewPage {
+    text: String,
+    controls: &'static str,
+}
+
+fn review_pages(
     size: (u16, u16),
     summary: &super::ReviewSummary,
-) -> Result<Option<Vec<String>>, Failure> {
-    if !summary
+) -> Result<Vec<ReviewPage>, Failure> {
+    let width = usize::from(size.0.min(76).saturating_sub(8)).max(1);
+    let rows = usize::from(size.1)
+        .saturating_sub(9 + wrap("[I] Authorize and install    [Esc] Back", width).len())
+        .max(1);
+    let mut pages = Vec::new();
+    let mut section = |text: &str, next: &'static str| {
+        let lines = wrap(text, width);
+        let mut chunks = lines.chunks(rows).peekable();
+        while let Some(lines) = chunks.next() {
+            pages.push(ReviewPage {
+                text: lines.join("\n"),
+                controls: if chunks.peek().is_some() {
+                    "[Enter] Read more    [Q] Cancel"
+                } else {
+                    next
+                },
+            });
+        }
+    };
+    let active = summary
         .changes
-        .iter()
-        .any(|change| matches!(change, super::ReviewedChange::CacheSetup(_)))
-        || size.0 < 32
-        || size.1 < 21
-    {
-        return Ok(None);
+        .contains(&super::ReviewedChange::AlreadyActive);
+    let action = if active {
+        "Check"
+    } else if summary.operation == super::ReviewOperation::Update {
+        "Update to"
+    } else {
+        "Install"
+    };
+    let version = summary.version.as_deref().unwrap_or("");
+    let mut text = format!("{action} NeoHaskell {version}?\n\nFor your account\n");
+    if active {
+        text.push_str(
+            "This version is already active. Check the neo and neoctl commands in ~/.local/bin.",
+        );
+    } else {
+        text.push_str("Make neo and neoctl available in ~/.local/bin.");
     }
-    let mut text = Vec::new();
-    crate::write_review(&mut text, summary).map_err(|_| Failure::DisplayData)?;
-    let text = String::from_utf8(text).map_err(|_| Failure::DisplayData)?;
-    let width = usize::from(size.0.min(76) - 8);
-    let controls = wrap(&crate::english().dashboard.review_controls, width)
-        .len()
-        .max(wrap("Enter Next page    Esc Decline", width).len());
-    let rows = usize::from(size.1) - 8 - controls;
-    Ok(Some(
-        wrap(&text, width)
-            .chunks(rows)
-            .map(|lines| lines.join("\n"))
-            .collect(),
-    ))
+    text.push_str("\nAdd that directory to your shell's PATH if needed. Open fresh shells to check both commands.");
+    if summary.changes.contains(&super::ReviewedChange::Recovery)
+        || !matches!(summary.recovery, super::RecoveryPending::None)
+    {
+        text.push_str("\nFinish the interrupted installation changes.");
+    }
+    if let Some((target, additions)) = cache_change(summary) {
+        text.push_str("\n\nFor everyone using Nix on this machine");
+        for setting in additions.lines() {
+            let Some((name, values)) = setting.split_once(" = ") else {
+                continue;
+            };
+            match name {
+                "extra-substituters" => {
+                    text.push_str("\nAdd package sources so Nix can download prebuilt tools.")
+                }
+                "extra-trusted-public-keys" => {
+                    text.push_str("\nTrust the signing keys for the packages.")
+                }
+                "extra-experimental-features" => {
+                    text.push_str(&format!("\nEnable Nix features: {values}."))
+                }
+                _ => {}
+            }
+        }
+        text.push_str(&format!(
+            "\nEdit {target} and restart Nix. This requires sudo."
+        ));
+        section(&text, "[Enter] Review Nix settings    [Q] Cancel");
+        section(
+            &format!(
+                "Nix settings for this machine\n\nAdd to {target}:\n{additions}\nInstalling will restart Nix. Your sudo password may be requested."
+            ),
+            "[I] Authorize and install    [Esc] Back",
+        );
+    } else {
+        section(
+            &text,
+            if active {
+                "[I] Check setup    [Esc] Cancel"
+            } else {
+                "[I] Install    [Esc] Cancel"
+            },
+        );
+    }
+    Ok(pages)
 }
 
 fn render(
@@ -671,7 +766,7 @@ fn render(
                 .map(|text| Line::from(Span::styled(text, Style::default().fg(color)))),
         );
     };
-    add(&copy.summary, MUTED);
+
     add("", PRIMARY);
     if page == Page::Details {
         add(&copy.details, PRIMARY);
@@ -688,18 +783,12 @@ fn render(
         add("", PRIMARY);
         add(&copy.details_controls, LILAC);
     } else if let Some(offer) = offer {
-        if let Some(pages) = cache_review_pages(size, offer.summary())? {
-            let index = scroll.min(pages.len() - 1);
-            add(&pages[index], PRIMARY);
+        if install_review(offer.summary()) {
+            let pages = review_pages(size, offer.summary())?;
+            let current = &pages[scroll.min(pages.len() - 1)];
+            add(&current.text, PRIMARY);
             add("", PRIMARY);
-            add(
-                if index + 1 < pages.len() {
-                    "Enter Next page    Esc Decline"
-                } else {
-                    &copy.review_controls
-                },
-                LILAC,
-            );
+            add(current.controls, LILAC);
         } else {
             let mut text = Vec::new();
             crate::write_review(&mut text, offer.summary()).map_err(|_| Failure::DisplayData)?;
@@ -708,8 +797,27 @@ fn render(
             add("", PRIMARY);
             add(&copy.review_controls, LILAC);
         }
+    } else if matches!(
+        observation.activity,
+        Activity::Inspecting
+            | Activity::CheckingNix
+            | Activity::Selecting
+            | Activity::PreparingReview
+    ) {
+        add("Checking your setup...", PRIMARY);
+        if observation.rows[0] == Row::Existing {
+            add("Nix is running.", MINT);
+        }
+        add(
+            "You'll review the changes before installation starts.",
+            MUTED,
+        );
+        add("[D] Details    [Q] Cancel", LILAC);
     } else {
         for (index, row) in observation.rows.iter().enumerate() {
+            if *row == Row::NotObserved {
+                continue;
+            }
             let status = &copy.statuses[*row as usize];
             let color = match row {
                 Row::Verified | Row::Existing => MINT,
@@ -727,7 +835,7 @@ fn render(
         add("", PRIMARY);
         add(&copy.controls, LILAC);
     }
-    let height = (lines.len() as u16 + 4).max(21);
+    let height = (lines.len() as u16 + 4).max(10);
     if height > size.1 {
         return Ok(None);
     }
@@ -748,7 +856,7 @@ fn render(
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .border_style(Style::default().fg(LILAC))
-        .title(format!("─ {} ", copy.panel))
+        .title(" NeoHaskell installer ")
         .render(panel, &mut buffer);
     Paragraph::new(lines).render(
         Rect::new(panel.x + 4, panel.y + 2, width - 8, height - 4),

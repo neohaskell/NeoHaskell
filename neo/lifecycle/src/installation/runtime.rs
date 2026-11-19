@@ -257,6 +257,13 @@ impl InstallationOwner {
             super::ReviewedChange::ShellPath,
             super::ReviewedChange::ShellStartup,
         ]);
+        if before
+            .as_ref()
+            .and_then(|roles| roles.active.selection.as_ref())
+            == Some(&selected)
+        {
+            summary.changes.push(super::ReviewedChange::AlreadyActive);
+        }
         let cache_plan = if offline {
             None
         } else {
@@ -270,9 +277,7 @@ impl InstallationOwner {
         self.effects.observe_row(1, config_row);
         self.effects.observe_row(2, config_row);
         if let Some(plan) = &cache_plan {
-            summary
-                .changes
-                .push(super::ReviewedChange::CacheSetup(plan.review()));
+            summary.changes.push(plan.review());
         }
         let review = self.effects.review(summary).await?;
         self.recheck_shell(&shell_setup).await?;

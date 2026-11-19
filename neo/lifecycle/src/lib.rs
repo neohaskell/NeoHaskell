@@ -418,7 +418,15 @@ fn write_review(
     for change in &summary.changes {
         use installation::ReviewedChange;
         let message = match change {
-            ReviewedChange::CacheSetup(details) => details,
+            ReviewedChange::CacheSetup { target, additions } => {
+                writeln!(
+                    output,
+                    "Add these settings to {target} and restart Nix with administrator access."
+                )?;
+                writeln!(output, "{additions}")?;
+                continue;
+            }
+            ReviewedChange::AlreadyActive => "This version is already active.",
             ReviewedChange::Uninstall => &copy.review_uninstall_changes,
             ReviewedChange::ShellPath => &copy.review_shell_path,
             ReviewedChange::ShellStartup => &copy.review_shell_startup,

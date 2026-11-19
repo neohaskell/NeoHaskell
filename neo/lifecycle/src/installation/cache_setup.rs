@@ -92,12 +92,11 @@ impl CachePlan {
         if self.determinate { CUSTOM } else { SYSTEM }
     }
 
-    pub(super) fn review(&self) -> String {
-        format!(
-            "Add the following settings to {} and restart the Nix daemon with administrator access.\n{}",
-            self.target(),
-            self.additions
-        )
+    pub(super) fn review(&self) -> super::ReviewedChange {
+        super::ReviewedChange::CacheSetup {
+            target: self.target(),
+            additions: self.additions.clone(),
+        }
     }
 
     pub(super) fn command(&self) -> io::Result<Command> {
@@ -145,7 +144,9 @@ fn missing_settings(
                 }
                 !actual.iter().any(|entry| {
                     entry.as_str().is_some_and(|entry| {
-                        entry == value || (name == "substituters" && entry.trim_end_matches('/') == value.trim_end_matches('/'))
+                        entry == value
+                            || (name == "substituters"
+                                && entry.trim_end_matches('/') == value.trim_end_matches('/'))
                     })
                 })
             })

@@ -89,7 +89,11 @@ pub(crate) enum ReviewOperation {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum ReviewedChange {
-    CacheSetup(String),
+    CacheSetup {
+        target: &'static str,
+        additions: String,
+    },
+    AlreadyActive,
     Uninstall,
     ShellPath,
     ShellStartup,
