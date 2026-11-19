@@ -138,6 +138,7 @@ pub(crate) enum Phase {
 pub(crate) enum CompletedStep {
     Prerequisites,
     NixPolicyObservation,
+    NixPolicyPlan,
     NixPolicyApplication,
     CandidateSelection,
     PairVerification,

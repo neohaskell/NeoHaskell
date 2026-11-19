@@ -1,7 +1,7 @@
 use super::{
-    CFDataCreate, CFDictionaryCreate, CfRef, FileIdentity, OBSERVATION_BYTES, OwnedCf,
-    SecCodeCheckValidity, SecCodeCopyGuestWithAttributes, kCFTypeDictionaryKeyCallBacks,
-    kCFTypeDictionaryValueCallBacks, kSecGuestAttributeAudit, observe_frame,
+    CFDataCreate, CFDictionaryCreate, CfRef, FileIdentity, INSPECTION_BYTES, OwnedCf,
+    SecCodeCheckValidity, SecCodeCopyGuestWithAttributes, inspect_frame,
+    kCFTypeDictionaryKeyCallBacks, kCFTypeDictionaryValueCallBacks, kSecGuestAttributeAudit,
     policy_helper_protected_path,
 };
 use crate::candidate::OutputPath;
@@ -38,7 +38,7 @@ const HEADER_BYTES: usize = 4 + NONCE_BYTES;
 const REQUEST: &[u8; 4] = b"NDQ1";
 const HELLO: &[u8; 4] = b"NDH1";
 const START: &[u8; 4] = b"NDS1";
-const RESULT: &[u8; 4] = b"NDR1";
+const RESULT: &[u8; 4] = b"NDR2";
 const ACCEPT: &[u8; 4] = b"NDA1";
 static CANCELLED: AtomicBool = AtomicBool::new(false);
 
@@ -503,7 +503,7 @@ fn launch(attended: bool) -> i32 {
         if !exchange.header(RESULT, &nonce) {
             return None;
         }
-        let mut result = [0; OBSERVATION_BYTES];
+        let mut result = [0; INSPECTION_BYTES];
         exchange.receive(&mut result).ok()?;
         if AuditWriter::read(&local) != Some(writer)
             || process_parent(writer.pid()) != Some(sudo_pid)
@@ -547,7 +547,7 @@ fn finish(
     let mut relayed = false;
     loop {
         if !eof {
-            let mut bytes = [0; HEADER_BYTES + OBSERVATION_BYTES];
+            let mut bytes = [0; HEADER_BYTES + INSPECTION_BYTES];
             match (&*socket).read(&mut bytes) {
                 Ok(0) => eof = true,
                 Ok(_) => extra = true,
@@ -638,14 +638,14 @@ fn observe_as_root() -> bool {
         return false;
     }
 
-    let Some(observation) = observe_frame() else {
+    let Some(observation) = inspect_frame() else {
         return false;
     };
     if !executable.still_protected() || !expected_caller() {
         return false;
     }
     let reply = exchange(Instant::now() + ROOT_EXCHANGE_LIMIT);
-    let mut frame = [0; HEADER_BYTES + OBSERVATION_BYTES];
+    let mut frame = [0; HEADER_BYTES + INSPECTION_BYTES];
     frame[..HEADER_BYTES].copy_from_slice(&header(RESULT, &nonce));
     frame[HEADER_BYTES..].copy_from_slice(&observation);
     reply.send(&frame).is_ok() && reply.header(ACCEPT, &nonce) && expected_caller()

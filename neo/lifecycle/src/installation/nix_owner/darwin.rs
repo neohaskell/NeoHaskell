@@ -23,6 +23,7 @@ pub(crate) use administrator::dispatch as dispatch_administrator;
 
 pub(crate) const OBSERVE_ARGUMENT: &str = "--internal-observe-darwin-nix";
 pub(in crate::installation) const OBSERVATION_BYTES: usize = 8;
+pub(in crate::installation) const INSPECTION_BYTES: usize = OBSERVATION_BYTES + 1 + 32;
 
 const CLIENT_PATH: &str =
     "/nix/store/6rn1wxxxikr07crcaqinpf7yqgm9pyqx-determinate-nix-3.23.1/bin/nix";
@@ -59,10 +60,41 @@ impl ObservedDarwinNix {
             && self.startup == StartupContext::RequiresPrivilege
     }
 
-    pub(in crate::installation) fn confirms(&self, ordinary: &Self) -> bool {
+    fn confirms(&self, ordinary: &Self) -> bool {
         ordinary.supports_inspection()
             && self.disk == ordinary.disk
             && self.startup == StartupContext::StandardSources
+    }
+
+    fn permits_vendor_plan(&self) -> bool {
+        self.startup == StartupContext::StandardSources
+            && self.disk.source == SourceRoute::VendorCustom
+            && self.disk.policy == DiskPolicy::RequiredCacheMissing
+    }
+}
+
+#[derive(PartialEq, Eq)]
+struct VendorPlanCommitment([u8; 32]);
+
+#[derive(Debug, PartialEq, Eq)]
+pub(in crate::installation) struct InspectedDarwinNix {
+    observation: ObservedDarwinNix,
+    vendor_plan: Option<VendorPlanCommitment>,
+}
+
+impl std::fmt::Debug for VendorPlanCommitment {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("VendorPlanCommitment")
+    }
+}
+
+impl InspectedDarwinNix {
+    pub(in crate::installation) fn confirms(&self, ordinary: &ObservedDarwinNix) -> bool {
+        self.observation.confirms(ordinary)
+    }
+
+    pub(in crate::installation) fn has_vendor_plan(&self) -> bool {
+        self.vendor_plan.is_some()
     }
 }
 
@@ -103,8 +135,29 @@ pub(in crate::installation) fn decode_observation(
     }
 }
 
+pub(in crate::installation) fn decode_inspection(
+    bytes: &[u8],
+) -> Result<InspectedDarwinNix, NixBlock> {
+    let frame: &[u8; INSPECTION_BYTES] = bytes.try_into().map_err(|_| NixBlock::UnprovedService)?;
+    let (observation, tail) = frame.split_at(OBSERVATION_BYTES);
+    let digest: [u8; 32] = tail[1..].try_into().expect("fixed frame");
+    let vendor_plan = match tail[0] {
+        0 if digest == [0; 32] => None,
+        1 if digest != [0; 32] => Some(VendorPlanCommitment(digest)),
+        _ => return Err(NixBlock::UnprovedService),
+    };
+    let observation = decode_observation(observation)?;
+    if vendor_plan.is_some() && !observation.permits_vendor_plan() {
+        return Err(NixBlock::UnprovedService);
+    }
+    Ok(InspectedDarwinNix {
+        observation,
+        vendor_plan,
+    })
+}
+
 pub(crate) fn run_observer() -> i32 {
-    let Some(frame) = observe_frame() else {
+    let Some(frame) = encode_observation(observe(false).map(|value| value.observation)) else {
         return 1;
     };
     i32::from(
@@ -115,8 +168,26 @@ pub(crate) fn run_observer() -> i32 {
     )
 }
 
-pub(super) fn observe_frame() -> Option<[u8; OBSERVATION_BYTES]> {
-    let fields = match observe() {
+fn inspect_frame() -> Option<[u8; INSPECTION_BYTES]> {
+    let inspection = observe(true);
+    let plan = inspection
+        .as_ref()
+        .ok()
+        .and_then(|value| value.vendor_plan.as_ref());
+    let mut frame = [0; INSPECTION_BYTES];
+    if let Some(plan) = plan {
+        frame[OBSERVATION_BYTES] = 1;
+        frame[OBSERVATION_BYTES + 1..].copy_from_slice(&plan.0);
+    }
+    let observation = encode_observation(inspection.map(|value| value.observation))?;
+    frame[..OBSERVATION_BYTES].copy_from_slice(&observation);
+    Some(frame)
+}
+
+fn encode_observation(
+    observation: Result<ObservedDarwinNix, NixBlock>,
+) -> Option<[u8; OBSERVATION_BYTES]> {
+    let fields = match observation {
         Ok(value) => [
             0,
             match value.disk.source {
@@ -154,6 +225,25 @@ struct FileIdentity {
     length: u64,
     changed: (i64, i64),
     modified: (i64, i64),
+}
+
+impl FileIdentity {
+    fn bind(&self, hash: &mut Sha256) {
+        for value in [self.device, self.inode, self.length] {
+            hash.update(value.to_le_bytes());
+        }
+        for value in [self.mode, self.owner, self.group] {
+            hash.update(value.to_le_bytes());
+        }
+        for value in [
+            self.changed.0,
+            self.changed.1,
+            self.modified.0,
+            self.modified.1,
+        ] {
+            hash.update(value.to_le_bytes());
+        }
+    }
 }
 
 impl From<Metadata> for FileIdentity {
@@ -431,7 +521,7 @@ impl RootPeer {
     }
 }
 
-fn observe() -> Result<ObservedDarwinNix, NixBlock> {
+fn observe(prepare_application: bool) -> Result<InspectedDarwinNix, NixBlock> {
     let client = verify_client()?;
     let sockets = SocketIdentities::observe()?;
     let job = launchd_pid()?;
@@ -465,7 +555,15 @@ fn observe() -> Result<ObservedDarwinNix, NixBlock> {
 
     // A connection worker can take over the socket and change its audit token.
     let replying = RootPeer::read(&connection).ok_or(NixBlock::DaemonMismatch)?;
-    let disk = configuration::observe();
+    let configuration =
+        configuration::observe(prepare_application && startup == StartupContext::StandardSources);
+    let observation = ObservedDarwinNix {
+        disk: configuration.disk,
+        startup,
+    };
+    let application_inputs = configuration.application_inputs.filter(|_| {
+        observation.permits_vendor_plan() && StartupContext::observe(listener) == startup
+    });
     if !replying.verified(&nix)
         || replying != listener && replying.parent() != Some(listener.pid())
         || !listener.verified(&nix)
@@ -486,7 +584,39 @@ fn observe() -> Result<ObservedDarwinNix, NixBlock> {
     if client_identity()? != client {
         return Err(NixBlock::UnprovedClient);
     }
-    Ok(ObservedDarwinNix { disk, startup })
+    let vendor_plan = application_inputs
+        .map(|inputs| application_commitment(inputs, &client, &sockets, supervisor, listener));
+    Ok(InspectedDarwinNix {
+        observation,
+        vendor_plan,
+    })
+}
+
+fn application_commitment(
+    inputs: [u8; 32],
+    client: &FileIdentity,
+    sockets: &SocketIdentities,
+    supervisor: RootPeer,
+    listener: RootPeer,
+) -> VendorPlanCommitment {
+    let mut hash = Sha256::new();
+    hash.update(b"neo:determinate-darwin:application:v1\0");
+    hash.update(inputs);
+    hash.update(CLIENT_SHA256);
+    for identity in [
+        client,
+        &sockets.alias,
+        &sockets.listener,
+        &sockets.supervisor,
+    ] {
+        identity.bind(&mut hash);
+    }
+    for process in [supervisor, listener] {
+        for field in process.0 {
+            hash.update(field.to_le_bytes());
+        }
+    }
+    VendorPlanCommitment(hash.finalize().into())
 }
 
 fn handshake(stream: &mut (impl Read + Write)) -> io::Result<()> {
@@ -647,6 +777,42 @@ mod tests {
                 Err(NixBlock::UnprovedService)
             ));
         }
+    }
+
+    #[test]
+    fn inspection_plan_requires_confirmed_standard_vendor_sources() {
+        let mut frame = [0; INSPECTION_BYTES];
+        frame[..OBSERVATION_BYTES].copy_from_slice(b"NDV\x02\0\x01\x01\x01");
+        let ordinary = decode_observation(b"NDV\x02\0\x01\x01\0").expect("ordinary observation");
+
+        let inspection = decode_inspection(&frame).expect("inspection without plan");
+        assert!(inspection.confirms(&ordinary));
+        assert!(!inspection.has_vendor_plan());
+
+        frame[OBSERVATION_BYTES] = 1;
+        assert_eq!(decode_inspection(&frame), Err(NixBlock::UnprovedService));
+        frame[OBSERVATION_BYTES + 1..].fill(19);
+        assert!(
+            decode_inspection(&frame)
+                .expect("vendor plan")
+                .has_vendor_plan()
+        );
+        assert_eq!(decode_observation(&frame), Err(NixBlock::UnprovedService));
+        for (index, changed) in [
+            (5, 2),
+            (6, 2),
+            (7, 0),
+            (OBSERVATION_BYTES, 0),
+            (OBSERVATION_BYTES, 2),
+        ] {
+            let mut invalid = frame;
+            invalid[index] = changed;
+            assert_eq!(decode_inspection(&invalid), Err(NixBlock::UnprovedService));
+        }
+        assert_eq!(
+            decode_inspection(&frame[..INSPECTION_BYTES - 1]),
+            Err(NixBlock::UnprovedService)
+        );
     }
 
     #[test]

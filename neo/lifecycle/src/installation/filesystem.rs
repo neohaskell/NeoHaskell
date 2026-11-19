@@ -229,7 +229,7 @@ pub(super) enum ExistingNixInspector {
 
 pub(super) enum FilesystemResult {
     #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
-    DarwinPolicyObserved(super::nix_owner::darwin::ObservedDarwinNix),
+    DarwinPolicyObserved(super::nix_owner::darwin::InspectedDarwinNix),
     #[cfg(target_os = "linux")]
     ExistingNixPolicyVerified(VerifiedExistingPolicy),
     #[cfg(target_os = "linux")]

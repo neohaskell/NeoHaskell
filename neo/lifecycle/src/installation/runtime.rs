@@ -352,6 +352,10 @@ impl InstallationOwner {
         }
         self.effects
             .completed(crate::diagnostics::CompletedStep::NixPolicyObservation);
+        if root.has_vendor_plan() {
+            self.effects
+                .completed(crate::diagnostics::CompletedStep::NixPolicyPlan);
+        }
         Ok(())
     }
 

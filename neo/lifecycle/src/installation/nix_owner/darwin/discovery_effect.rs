@@ -1,5 +1,5 @@
 use super::administrator::{ATTENDED_ARGUMENT, LAUNCH_ARGUMENT};
-use super::{OBSERVATION_BYTES, ObservedDarwinNix, decode_observation};
+use super::{INSPECTION_BYTES, InspectedDarwinNix, decode_inspection};
 use crate::installation::TransactionError;
 use crate::installation::dashboard::terminal::ParkedTerminal;
 use crate::installation::filesystem::{
@@ -39,7 +39,11 @@ impl Session {
         }
     }
 
-    fn result(self, exit: ExitStatus, frame: &[u8]) -> Result<ObservedDarwinNix, TransactionError> {
+    fn result(
+        self,
+        exit: ExitStatus,
+        frame: &[u8],
+    ) -> Result<InspectedDarwinNix, TransactionError> {
         if !matches!(exit.code(), Some(0 | 1)) {
             return Err(TransactionError::CleanupUnknown);
         }
@@ -49,10 +53,10 @@ impl Session {
         if exit.code() == Some(1) && frame.is_empty() {
             return Err(TransactionError::AdministratorUnavailable);
         }
-        if !exit.success() || frame.len() != OBSERVATION_BYTES {
+        if !exit.success() || frame.len() != INSPECTION_BYTES {
             return Err(TransactionError::Verification("Darwin policy helper reply"));
         }
-        decode_observation(frame).map_err(TransactionError::NixBlocked)
+        decode_inspection(frame).map_err(TransactionError::NixBlocked)
     }
 }
 
@@ -62,7 +66,7 @@ pub(in crate::installation) fn observe(
     opened: &Metadata,
     terminal: Option<&ParkedTerminal>,
     checkpoint: impl Fn() -> Result<(), TransactionError>,
-) -> Result<ObservedDarwinNix, TransactionError> {
+) -> Result<InspectedDarwinNix, TransactionError> {
     check_foreground(terminal, &checkpoint)?;
     if unsafe { libc::getuid() } == 0
         || unsafe { libc::getuid() } != unsafe { libc::geteuid() }
@@ -137,12 +141,12 @@ fn await_launcher(
     control: UnixStream,
     mut output: UnixStream,
     checkpoint: impl Fn() -> Result<(), TransactionError>,
-) -> Result<ObservedDarwinNix, TransactionError> {
+) -> Result<InspectedDarwinNix, TransactionError> {
     let mut session = Session::Running {
         _control: control,
         deadline: Instant::now() + LAUNCH_BUDGET,
     };
-    let mut frame = [0; OBSERVATION_BYTES + 1];
+    let mut frame = [0; INSPECTION_BYTES + 1];
     let mut received = 0;
     let mut output_closed = false;
     loop {
@@ -159,7 +163,7 @@ fn await_launcher(
                 Ok(0) => output_closed = true,
                 Ok(count) => {
                     received += count;
-                    if received > OBSERVATION_BYTES {
+                    if received > INSPECTION_BYTES {
                         session.stop(TransactionError::Verification("Darwin policy helper reply"));
                         let _ = output.shutdown(std::net::Shutdown::Read);
                         output_closed = true;

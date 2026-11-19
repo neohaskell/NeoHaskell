@@ -1,10 +1,11 @@
 use super::super::{
-    ConfigurationEntry, ConfigurationFile, InputIdentity, MAX_CONFIGURATION_BYTES, POLICY_LEAF,
-    TransactionError, configuration_source_with, include_inputs::EffectivePolicy,
-    protected_configuration_path_with,
+    ConfigurationEntry, ConfigurationFile, DesiredNixInclude, InputIdentity,
+    MAX_CONFIGURATION_BYTES, POLICY_LEAF, POLICY_REFERENCE, POLICY_STAGE, TransactionError,
+    configuration_source_with, include_inputs::EffectivePolicy, protected_configuration_path_with,
 };
 use super::{PLIST, SUPERVISOR_PATH};
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 use std::ffi::{CString, c_void};
 use std::fs::{self, File};
 use std::io::{self, Read};
@@ -26,6 +27,11 @@ pub(super) struct DiskObservation {
     pub(super) policy: DiskPolicy,
 }
 
+pub(super) struct CapturedConfiguration {
+    pub(super) disk: DiskObservation,
+    pub(super) application_inputs: Option<[u8; 32]>,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum SourceRoute {
     Unknown,
@@ -40,10 +46,13 @@ pub(super) enum DiskPolicy {
     Satisfies,
 }
 
-pub(super) fn observe() -> DiskObservation {
-    capture().unwrap_or(DiskObservation {
-        source: SourceRoute::Unknown,
-        policy: DiskPolicy::Unknown,
+pub(super) fn observe(prepare_application: bool) -> CapturedConfiguration {
+    capture(prepare_application).unwrap_or(CapturedConfiguration {
+        disk: DiskObservation {
+            source: SourceRoute::Unknown,
+            policy: DiskPolicy::Unknown,
+        },
+        application_inputs: None,
     })
 }
 
@@ -55,7 +64,7 @@ struct Deployment {
     projected: PathBuf,
 }
 
-fn capture() -> Result<DiskObservation, TransactionError> {
+fn capture(prepare_application: bool) -> Result<CapturedConfiguration, TransactionError> {
     require_etc_alias()?;
     let standard = read_configuration(STANDARD)?;
     let custom = read_configuration(CUSTOM)?;
@@ -89,14 +98,24 @@ fn capture() -> Result<DiskObservation, TransactionError> {
     let leaf_path = Path::new(STANDARD).with_file_name(POLICY_LEAF);
     let leaf_path = leaf_path.to_str().ok_or(TransactionError::Io)?;
     let (policy, leaf) = disk_policy(&standard.1, &custom.1, leaf_path)?;
+    let application = if prepare_application
+        && source == SourceRoute::VendorCustom
+        && policy == DiskPolicy::RequiredCacheMissing
+        && active.is_none()
+        && leaf.is_none()
+    {
+        PreparedApplication::capture(&standard.1, &custom, leaf_path).ok()
+    } else {
+        None
+    };
     if read_configuration(STANDARD)?.0 != standard.0
         || read_configuration(CUSTOM)?.0 != custom.0
         || active != deployment()?
-        || receipt.is_some_and(
-            |input| !matches!(read_configuration(RECEIPT), Ok((fresh, _)) if fresh == input),
+        || receipt.as_ref().is_some_and(
+            |input| !matches!(read_configuration(RECEIPT), Ok((fresh, _)) if &fresh == input),
         )
-        || service.is_some_and(
-            |input| !matches!(read_configuration(PLIST), Ok((fresh, _)) if fresh == input),
+        || service.as_ref().is_some_and(
+            |input| !matches!(read_configuration(PLIST), Ok((fresh, _)) if &fresh == input),
         )
         || leaf.is_some_and(
             |input| !matches!(read_configuration(leaf_path), Ok((fresh, _)) if fresh == input),
@@ -116,7 +135,220 @@ fn capture() -> Result<DiskObservation, TransactionError> {
         }
     }
     require_etc_alias()?;
-    Ok(DiskObservation { source, policy })
+    let application_inputs = match (application, receipt, service) {
+        (Some(application), Some(receipt), Some(service)) => {
+            application.commitment(VendorPreimages {
+                standard: &standard.0,
+                custom: &custom.0,
+                receipt: &receipt,
+                service: &service,
+            })
+        }
+        _ => None,
+    };
+    Ok(CapturedConfiguration {
+        disk: DiskObservation { source, policy },
+        application_inputs,
+    })
+}
+
+#[derive(Clone, Copy)]
+struct VendorPreimages<'a> {
+    standard: &'a ConfigurationFile,
+    custom: &'a ConfigurationFile,
+    receipt: &'a ConfigurationFile,
+    service: &'a ConfigurationFile,
+}
+
+struct ProtectedAbsence {
+    path: String,
+    input: ConfigurationFile,
+}
+
+impl ProtectedAbsence {
+    fn capture(path: &str) -> Result<Self, TransactionError> {
+        let (input, _) = read_configuration(path)?;
+        if !matches!(input, ConfigurationFile::Missing { .. }) {
+            return Err(TransactionError::Io);
+        }
+        Ok(Self {
+            path: path.to_owned(),
+            input,
+        })
+    }
+
+    fn is_current(&self) -> bool {
+        matches!(read_configuration(&self.path), Ok((fresh, _)) if fresh == self.input)
+    }
+}
+
+struct PreparedApplication {
+    absences: Vec<ProtectedAbsence>,
+    desired: DesiredNixInclude,
+}
+
+impl PreparedApplication {
+    fn capture(
+        standard: &[u8],
+        custom: &(ConfigurationFile, Vec<u8>),
+        leaf_path: &str,
+    ) -> Result<Self, TransactionError> {
+        let ConfigurationFile::Present { digest, .. } = &custom.0 else {
+            return Err(TransactionError::Io);
+        };
+        let stage_path = Path::new(STANDARD).with_file_name(POLICY_STAGE);
+        let stage_path = stage_path.to_str().ok_or(TransactionError::Io)?;
+        let absences = [
+            leaf_path,
+            stage_path,
+            SYSTEM_PROFILE,
+            STATIC,
+            CURRENT_SYSTEM,
+        ]
+        .into_iter()
+        .map(ProtectedAbsence::capture)
+        .collect::<Result<_, _>>()?;
+        let desired = desired_vendor_policy(standard, digest, &custom.1)?;
+        Ok(Self { absences, desired })
+    }
+
+    fn commitment(&self, preimages: VendorPreimages<'_>) -> Option<[u8; 32]> {
+        self.absences
+            .iter()
+            .all(ProtectedAbsence::is_current)
+            .then(|| application_commitment(preimages, &self.absences, &self.desired))
+    }
+}
+
+fn desired_vendor_policy(
+    standard: &[u8],
+    observed_digest: &str,
+    custom: &[u8],
+) -> Result<DesiredNixInclude, TransactionError> {
+    let (urls, keys) = crate::candidate::nix_cache_settings().map_err(|_| TransactionError::Io)?;
+    let leaf =
+        format!("extra-substituters = {urls}\nextra-trusted-public-keys = {keys}\n").into_bytes();
+    let terminal_lf = custom.is_empty() || custom.ends_with(b"\n");
+    let mut source = custom.to_vec();
+    if !terminal_lf {
+        source.push(b'\n');
+    }
+    source.extend_from_slice(POLICY_REFERENCE.as_bytes());
+    if terminal_lf {
+        source.push(b'\n');
+    }
+    if source.len() > MAX_CONFIGURATION_BYTES
+        || leaf.len() > MAX_CONFIGURATION_BYTES
+        || disk_policy_with_leaf(standard, &source, |effective| fold_leaf(&leaf, effective))?
+            != DiskPolicy::Satisfies
+    {
+        return Err(TransactionError::Io);
+    }
+    Ok(DesiredNixInclude {
+        observed_digest: observed_digest.to_owned(),
+        source,
+        leaf,
+    })
+}
+
+fn application_commitment(
+    preimages: VendorPreimages<'_>,
+    absences: &[ProtectedAbsence],
+    desired: &DesiredNixInclude,
+) -> [u8; 32] {
+    let mut hash = Sha256::new();
+    hash.update(b"neo:determinate-darwin-policy-inputs:v1\0");
+    for input in [
+        preimages.standard,
+        preimages.custom,
+        preimages.receipt,
+        preimages.service,
+    ] {
+        hash_configuration(&mut hash, input);
+    }
+    hash.update((absences.len() as u64).to_be_bytes());
+    for slot in absences {
+        hash_bytes(&mut hash, slot.path.as_bytes());
+        hash_configuration(&mut hash, &slot.input);
+    }
+    hash.update(Sha256::digest(&desired.source));
+    hash.update(Sha256::digest(&desired.leaf));
+    hash.finalize().into()
+}
+
+fn hash_configuration(hash: &mut Sha256, input: &ConfigurationFile) {
+    match input {
+        ConfigurationFile::Missing {
+            ancestors,
+            resolved_parent,
+            resolved_ancestors,
+        } => {
+            hash.update([0]);
+            hash_identities(hash, ancestors);
+            hash_bytes(hash, resolved_parent.as_os_str().as_encoded_bytes());
+            hash_identities(hash, resolved_ancestors);
+        }
+        ConfigurationFile::Present {
+            entry,
+            ancestors,
+            resolved,
+            resolved_ancestors,
+            file,
+            digest,
+        } => {
+            hash.update([1]);
+            hash.update([match entry {
+                ConfigurationEntry::Direct => 0,
+                ConfigurationEntry::Indirect => 1,
+            }]);
+            hash_identities(hash, ancestors);
+            hash_bytes(hash, resolved.as_os_str().as_encoded_bytes());
+            hash_identities(hash, resolved_ancestors);
+            hash_identity(hash, file);
+            hash_bytes(hash, digest.as_bytes());
+        }
+    }
+}
+
+fn hash_identities(hash: &mut Sha256, identities: &[Option<InputIdentity>]) {
+    hash.update((identities.len() as u64).to_be_bytes());
+    for identity in identities {
+        match identity {
+            Some(identity) => {
+                hash.update([1]);
+                hash_identity(hash, identity);
+            }
+            None => hash.update([0]),
+        }
+    }
+}
+
+fn hash_identity(hash: &mut Sha256, identity: &InputIdentity) {
+    let InputIdentity {
+        device,
+        inode,
+        mode,
+        uid,
+        gid,
+        size,
+        links,
+        modified,
+        changed,
+    } = identity;
+    for value in [device, inode, size, links] {
+        hash.update(value.to_be_bytes());
+    }
+    for value in [mode, uid, gid] {
+        hash.update(value.to_be_bytes());
+    }
+    for value in [modified.0, modified.1, changed.0, changed.1] {
+        hash.update(value.to_be_bytes());
+    }
+}
+
+fn hash_bytes(hash: &mut Sha256, bytes: &[u8]) {
+    hash.update((bytes.len() as u64).to_be_bytes());
+    hash.update(bytes);
 }
 
 fn vendor_files(
@@ -325,35 +557,49 @@ fn disk_policy(
     custom: &[u8],
     leaf_path: &str,
 ) -> Result<(DiskPolicy, Option<ConfigurationFile>), TransactionError> {
-    let mut effective = EffectivePolicy::default();
     let mut leaf = None;
+    let policy = disk_policy_with_leaf(standard, custom, |effective| {
+        let (input, bytes) = read_configuration(leaf_path)?;
+        if !is_direct(&input) {
+            return Err(TransactionError::Io);
+        }
+        leaf = Some(input);
+        fold_leaf(&bytes, effective)
+    })?;
+    Ok((policy, leaf))
+}
+
+fn disk_policy_with_leaf(
+    standard: &[u8],
+    custom: &[u8],
+    mut leaf: impl FnMut(&mut EffectivePolicy) -> Result<(), TransactionError>,
+) -> Result<DiskPolicy, TransactionError> {
+    let mut effective = EffectivePolicy::default();
     let saw_custom = fold_settings(standard, &mut effective, |reference, effective| {
         if reference != "!include nix.custom.conf" {
             return Err(TransactionError::Io);
         }
         fold_settings(custom, effective, |reference, effective| {
-            if reference != super::super::POLICY_REFERENCE {
+            if reference != POLICY_REFERENCE {
                 return Err(TransactionError::Io);
             }
-            let (input, bytes) = read_configuration(leaf_path)?;
-            if !is_direct(&input) {
-                return Err(TransactionError::Io);
-            }
-            leaf = Some(input);
-            fold_settings(&bytes, effective, |_, _| Err(TransactionError::Io))?;
-            Ok(())
+            leaf(effective)
         })?;
         Ok(())
     })?;
     if !saw_custom {
         return Err(TransactionError::Io);
     }
-    let policy = match effective.required_cache_policy() {
+    Ok(match effective.required_cache_policy() {
         Ok(true) => DiskPolicy::Satisfies,
         Ok(false) => DiskPolicy::RequiredCacheMissing,
         Err(_) => DiskPolicy::Unknown,
-    };
-    Ok((policy, leaf))
+    })
+}
+
+fn fold_leaf(bytes: &[u8], effective: &mut EffectivePolicy) -> Result<(), TransactionError> {
+    fold_settings(bytes, effective, |_, _| Err(TransactionError::Io))?;
+    Ok(())
 }
 
 fn fold_settings(
@@ -468,6 +714,138 @@ mod tests {
             policy(b"!include nix.custom.conf\n", custom.as_bytes()),
             DiskPolicy::Unknown
         );
+    }
+
+    #[test]
+    fn proposed_policy_preserves_custom_bytes_and_only_adds_vendor_cache_settings() {
+        let (urls, keys) = crate::candidate::nix_cache_settings().unwrap();
+        let expected_leaf =
+            format!("extra-substituters = {urls}\nextra-trusted-public-keys = {keys}\n");
+        for (custom, append) in [
+            (&b""[..], format!("{POLICY_REFERENCE}\n")),
+            (
+                &b"# keep this\r\nmax-jobs = 2\n"[..],
+                format!("{POLICY_REFERENCE}\n"),
+            ),
+            (
+                &b"# keep this\r\nmax-jobs = 2"[..],
+                format!("\n{POLICY_REFERENCE}"),
+            ),
+        ] {
+            let desired =
+                desired_vendor_policy(b"!include nix.custom.conf\n", "test", custom).unwrap();
+            assert_eq!(desired.source.strip_prefix(custom), Some(append.as_bytes()));
+            assert_eq!(desired.leaf, expected_leaf.as_bytes());
+        }
+    }
+
+    #[test]
+    fn proposed_policy_requires_the_complete_ordered_root_to_satisfy_policy() {
+        for assignment in [
+            "substituters =",
+            "trusted-public-keys =",
+            "require-sigs = false",
+        ] {
+            let standard = format!("!include nix.custom.conf\n{assignment}\n");
+            assert!(desired_vendor_policy(standard.as_bytes(), "test", b"").is_err());
+        }
+        let duplicate = format!("{POLICY_REFERENCE}\n");
+        assert!(
+            desired_vendor_policy(b"!include nix.custom.conf\n", "test", duplicate.as_bytes())
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn application_commitment_binds_protected_preimages_and_desired_files() {
+        let profile_absence = ProtectedAbsence {
+            path: SYSTEM_PROFILE.to_owned(),
+            input: ConfigurationFile::Missing {
+                ancestors: vec![None],
+                resolved_parent: PathBuf::from("/nix/var/nix/profiles"),
+                resolved_ancestors: Vec::new(),
+            },
+        };
+        let changed_absence = ProtectedAbsence {
+            path: profile_absence.path.clone(),
+            input: ConfigurationFile::Missing {
+                ancestors: vec![None],
+                resolved_parent: PathBuf::from("/nix/var/nix"),
+                resolved_ancestors: Vec::new(),
+            },
+        };
+        let input = test_preimage("first");
+        let changed_input = test_preimage("changed");
+        let preimages = VendorPreimages {
+            standard: &input,
+            custom: &input,
+            receipt: &input,
+            service: &input,
+        };
+        let absences = std::slice::from_ref(&profile_absence);
+        let mut desired =
+            desired_vendor_policy(b"!include nix.custom.conf\n", "test", b"").unwrap();
+        let commitment = application_commitment(preimages, absences, &desired);
+        assert_eq!(
+            commitment,
+            application_commitment(preimages, absences, &desired)
+        );
+        for changed_preimages in [
+            VendorPreimages {
+                standard: &changed_input,
+                ..preimages
+            },
+            VendorPreimages {
+                custom: &changed_input,
+                ..preimages
+            },
+            VendorPreimages {
+                receipt: &changed_input,
+                ..preimages
+            },
+            VendorPreimages {
+                service: &changed_input,
+                ..preimages
+            },
+        ] {
+            assert_ne!(
+                commitment,
+                application_commitment(changed_preimages, absences, &desired)
+            );
+        }
+        assert_ne!(
+            commitment,
+            application_commitment(preimages, &[changed_absence], &desired)
+        );
+        desired.source.push(b'\n');
+        let changed_source = application_commitment(preimages, absences, &desired);
+        assert_ne!(commitment, changed_source);
+        desired.leaf.push(b'\n');
+        assert_ne!(
+            changed_source,
+            application_commitment(preimages, absences, &desired)
+        );
+    }
+
+    fn test_preimage(digest: &str) -> ConfigurationFile {
+        ConfigurationFile::Present {
+            entry: ConfigurationEntry::Direct,
+            ancestors: Vec::new(),
+            resolved: PathBuf::from(CUSTOM),
+            resolved_ancestors: Vec::new(),
+            file: InputIdentity {
+                device: 1,
+                inode: 2,
+                mode: 0o644,
+                uid: 0,
+                gid: 0,
+                size: 10,
+                links: 1,
+                modified: (3, 4),
+                changed: (5, 6),
+            },
+            digest: digest.to_owned(),
+        }
     }
 
     #[test]
