@@ -12,10 +12,17 @@ use std::process::{Command, Stdio};
 use std::ptr::{NonNull, null};
 use std::time::Duration;
 
-pub(crate) const OBSERVE_ARGUMENT: &str = "--internal-observe-darwin-nix";
-pub(in crate::installation) const OBSERVATION_BYTES: usize = 5;
+mod configuration;
+mod startup;
 
-const CLIENT_PATH: &str = "/nix/store/6rn1wxxxikr07crcaqinpf7yqgm9pyqx-determinate-nix-3.23.1/bin/nix";
+use self::configuration::{DiskObservation, DiskPolicy, SourceRoute};
+use self::startup::StartupContext;
+
+pub(crate) const OBSERVE_ARGUMENT: &str = "--internal-observe-darwin-nix";
+pub(in crate::installation) const OBSERVATION_BYTES: usize = 8;
+
+const CLIENT_PATH: &str =
+    "/nix/store/6rn1wxxxikr07crcaqinpf7yqgm9pyqx-determinate-nix-3.23.1/bin/nix";
 const CLIENT_SIZE: u64 = 4_989_216;
 const CLIENT_SHA256: &str = "540097f96e9037cfe2b23ab8e92dddcca14486dadc0afb45cbe9dc12e23d2866";
 const NIX_REQUIREMENT: &CStr = c"cdhash H\"8fcb8f55e0b8e2b03ec47131e617fe0792a62f8d\"";
@@ -35,34 +42,78 @@ const SERVER_MAGIC: u64 = 0x6478_696f;
 const STDERR_LAST: u64 = 0x616c_7473;
 const VERSION: &[u8; 8] = b"2.35.2\0\0";
 
-pub(in crate::installation) struct ObservedDarwinNix(());
+#[derive(Debug, PartialEq, Eq)]
+pub(in crate::installation) struct ObservedDarwinNix {
+    disk: DiskObservation,
+    startup: StartupContext,
+}
 
-pub(in crate::installation) fn decode_observation(bytes: &[u8]) -> Result<ObservedDarwinNix, NixBlock> {
-    match bytes {
-        [b'N', b'D', b'V', 1, 0] => Ok(ObservedDarwinNix(())),
-        [b'N', b'D', b'V', 1, 1] => Err(NixBlock::MissingClient),
-        [b'N', b'D', b'V', 1, 2] => Err(NixBlock::UnprovedClient),
-        [b'N', b'D', b'V', 1, 3] => Err(NixBlock::InactiveService),
-        [b'N', b'D', b'V', 1, 5] => Err(NixBlock::DaemonUnavailable),
-        [b'N', b'D', b'V', 1, 6] => Err(NixBlock::DaemonMismatch),
+pub(in crate::installation) fn decode_observation(
+    bytes: &[u8],
+) -> Result<ObservedDarwinNix, NixBlock> {
+    let [b'N', b'D', b'V', 2, status, source, policy, startup] = bytes else {
+        return Err(NixBlock::UnprovedService);
+    };
+    match (status, source, policy, startup) {
+        (0, source, policy, startup) => {
+            let source = match source {
+                0 => SourceRoute::Unknown,
+                1 => SourceRoute::VendorCustom,
+                2 => SourceRoute::DarwinGenerated,
+                _ => return Err(NixBlock::UnprovedService),
+            };
+            let policy = match policy {
+                0 => DiskPolicy::Unknown,
+                1 => DiskPolicy::RequiredCacheMissing,
+                2 => DiskPolicy::Satisfies,
+                _ => return Err(NixBlock::UnprovedService),
+            };
+            if source == SourceRoute::Unknown && policy != DiskPolicy::Unknown {
+                return Err(NixBlock::UnprovedService);
+            }
+            Ok(ObservedDarwinNix {
+                disk: DiskObservation { source, policy },
+                startup: StartupContext::decode(*startup).ok_or(NixBlock::UnprovedService)?,
+            })
+        }
+        (1, 0, 0, 0) => Err(NixBlock::MissingClient),
+        (2, 0, 0, 0) => Err(NixBlock::UnprovedClient),
+        (3, 0, 0, 0) => Err(NixBlock::InactiveService),
+        (5, 0, 0, 0) => Err(NixBlock::DaemonUnavailable),
+        (6, 0, 0, 0) => Err(NixBlock::DaemonMismatch),
         _ => Err(NixBlock::UnprovedService),
     }
 }
 
 pub(crate) fn run_observer() -> i32 {
-    let status = match observe() {
-        Ok(_) => 0,
-        Err(NixBlock::MissingClient) => 1,
-        Err(NixBlock::UnprovedClient) => 2,
-        Err(NixBlock::InactiveService) => 3,
-        Err(NixBlock::UnprovedService) => 4,
-        Err(NixBlock::DaemonUnavailable) => 5,
-        Err(NixBlock::DaemonMismatch) => 6,
+    let fields = match observe() {
+        Ok(value) => [
+            0,
+            match value.disk.source {
+                SourceRoute::Unknown => 0,
+                SourceRoute::VendorCustom => 1,
+                SourceRoute::DarwinGenerated => 2,
+            },
+            match value.disk.policy {
+                DiskPolicy::Unknown => 0,
+                DiskPolicy::RequiredCacheMissing => 1,
+                DiskPolicy::Satisfies => 2,
+            },
+            value.startup as u8,
+        ],
+        Err(NixBlock::MissingClient) => [1, 0, 0, 0],
+        Err(NixBlock::UnprovedClient) => [2, 0, 0, 0],
+        Err(NixBlock::InactiveService) => [3, 0, 0, 0],
+        Err(NixBlock::UnprovedService) => [4, 0, 0, 0],
+        Err(NixBlock::DaemonUnavailable) => [5, 0, 0, 0],
+        Err(NixBlock::DaemonMismatch) => [6, 0, 0, 0],
         Err(_) => return 1,
     };
+    let mut frame = [b'N', b'D', b'V', 2, 0, 0, 0, 0];
+    frame[4..].copy_from_slice(&fields);
     i32::from(
         io::stdout()
-            .write_all(&[b'N', b'D', b'V', 1, status])
+            .write_all(&frame)
             .and_then(|()| io::stdout().flush())
             .is_err(),
     )
@@ -318,6 +369,10 @@ fn observe() -> Result<ObservedDarwinNix, NixBlock> {
     {
         return Err(NixBlock::DaemonMismatch);
     }
+    let startup = StartupContext::observe(listener);
+    if RootPeer::read(&connection) != Some(listener) || !listener.verified(&nix) {
+        return Err(NixBlock::DaemonMismatch);
+    }
 
     connection
         .set_read_timeout(Some(SOCKET_TIMEOUT))
@@ -330,6 +385,7 @@ fn observe() -> Result<ObservedDarwinNix, NixBlock> {
 
     // A connection worker can take over the socket and change its audit token.
     let replying = RootPeer::read(&connection).ok_or(NixBlock::DaemonMismatch)?;
+    let disk = configuration::observe();
     if !replying.verified(&nix)
         || replying != listener && replying.parent() != Some(listener.pid())
         || !listener.verified(&nix)
@@ -350,7 +406,7 @@ fn observe() -> Result<ObservedDarwinNix, NixBlock> {
     if client_identity()? != client {
         return Err(NixBlock::UnprovedClient);
     }
-    Ok(ObservedDarwinNix(()))
+    Ok(ObservedDarwinNix { disk, startup })
 }
 
 fn handshake(stream: &mut (impl Read + Write)) -> io::Result<()> {
@@ -484,16 +540,27 @@ mod tests {
 
     #[test]
     fn observation_frame_requires_exact_known_success() {
-        assert!(decode_observation(b"NDV\x01\x00").is_ok());
-        assert!(matches!(
-            decode_observation(b"NDV\x01\x05"),
+        assert_eq!(
+            decode_observation(b"NDV\x02\0\x01\x02\0"),
+            Ok(ObservedDarwinNix {
+                disk: DiskObservation {
+                    source: SourceRoute::VendorCustom,
+                    policy: DiskPolicy::Satisfies,
+                },
+                startup: StartupContext::RequiresPrivilege,
+            })
+        );
+        assert_eq!(
+            decode_observation(b"NDV\x02\x05\0\0\0"),
             Err(NixBlock::DaemonUnavailable)
-        ));
+        );
         for frame in [
-            b"NDV\x01\x00\0".as_slice(),
-            b"NDV\x01",
-            b"NDV\x02\x00",
-            b"NDV\x01\xff",
+            b"NDV\x01\0".as_slice(),
+            b"NDV\x02\0\0\0",
+            b"NDV\x02\0\0\0\0\0",
+            b"NDV\x02\0\0\x02\0",
+            b"NDV\x02\x05\x01\0\0",
+            b"NDV\x02\0\x01\x02\xff",
         ] {
             assert!(matches!(
                 decode_observation(frame),
@@ -571,7 +638,9 @@ mod tests {
             assert!(handshake(&mut exchange).is_ok());
             assert_eq!(
                 exchange.sent,
-                [CLIENT_MAGIC, PROTOCOL, 0, 0].map(u64::to_le_bytes).concat()
+                [CLIENT_MAGIC, PROTOCOL, 0, 0]
+                    .map(u64::to_le_bytes)
+                    .concat()
             );
         }
         for mut invalid in [

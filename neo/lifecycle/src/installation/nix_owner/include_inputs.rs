@@ -96,7 +96,7 @@ fn same_file(left: &ConfigurationFile, right: &ConfigurationFile) -> bool {
         if a.device == b.device && a.inode == b.inode)
 }
 
-struct EffectivePolicy {
+pub(super) struct EffectivePolicy {
     requires_signatures: bool,
     features: Vec<String>,
     substituters: Vec<String>,
@@ -139,7 +139,7 @@ fn parse_public_key(entry: &str) -> Option<(&str, [u8; 32])> {
 }
 
 impl EffectivePolicy {
-    fn assign(&mut self, name: &str, values: &[&str]) -> Result<(), TransactionError> {
+    pub(super) fn assign(&mut self, name: &str, values: &[&str]) -> Result<(), TransactionError> {
         match name {
             "require-sigs" => {
                 self.requires_signatures = match values {
@@ -187,16 +187,23 @@ impl EffectivePolicy {
     }
 
     fn verify(&self) -> Result<(), TransactionError> {
-        let (urls, keys) =
-            crate::candidate::nix_cache_settings().map_err(|_| TransactionError::Io)?;
-        if !self.requires_signatures
-            || self.loads_plugins
-            || !["nix-command", "flakes"]
-                .into_iter()
-                .all(|feature| self.features.iter().any(|configured| configured == feature))
+        if !["nix-command", "flakes"]
+            .into_iter()
+            .all(|feature| self.features.iter().any(|configured| configured == feature))
+            || !self.required_cache_policy()?
         {
             return Err(unsupported_policy());
         }
+        Ok(())
+    }
+
+    pub(super) fn required_cache_policy(&self) -> Result<bool, TransactionError> {
+        let (urls, keys) =
+            crate::candidate::nix_cache_settings().map_err(|_| TransactionError::Io)?;
+        if !self.requires_signatures || self.loads_plugins {
+            return Err(unsupported_policy());
+        }
+        let mut complete = true;
         for url in urls.split_ascii_whitespace() {
             // The daemon compares the requested StoreReference including its parameters.
             if !self
@@ -205,7 +212,7 @@ impl EffectivePolicy {
                 .chain(&self.trusted_substituters)
                 .any(|configured| configured == url || configured.strip_suffix('/') == Some(url))
             {
-                return Err(unsupported_policy());
+                complete = false;
             }
         }
         let mut trusted_keys = BTreeMap::new();
@@ -216,11 +223,13 @@ impl EffectivePolicy {
         }
         for key in keys.split_ascii_whitespace() {
             let (name, expected) = parse_public_key(key).ok_or(TransactionError::Io)?;
-            if trusted_keys.get(name) != Some(&expected) {
-                return Err(unsupported_policy());
+            match trusted_keys.get(name) {
+                Some(actual) if actual == &expected => {}
+                Some(_) => return Err(unsupported_policy()),
+                None => complete = false,
             }
         }
-        Ok(())
+        Ok(complete)
     }
 }
 
