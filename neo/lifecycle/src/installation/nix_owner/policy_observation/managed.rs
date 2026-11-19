@@ -1,7 +1,13 @@
 use super::*;
+use std::num::NonZeroU32;
 use std::os::fd::{AsRawFd, FromRawFd};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
+
+mod restart_job;
+pub(super) use restart_job::verify_final_restart;
+
+const MANAGER_READ_BUDGET: Duration = Duration::from_millis(400);
 
 #[derive(PartialEq, Eq, Serialize)]
 pub(super) struct ManagedSnapshot {
@@ -109,86 +115,119 @@ impl ReplacementView {
 enum ManagerOperation {
     Service,
     Socket,
-    Restart,
+}
+
+fn systemctl() -> Result<PathBuf, PolicyResult> {
+    protected_path(Path::new("/usr/bin/systemctl")).map_err(|_| PolicyResult::UnprovedService)
 }
 
 fn manager(operation: ManagerOperation) -> Result<Vec<u8>, PolicyResult> {
-    let systemctl = protected_path(Path::new("/usr/bin/systemctl"))
-        .map_err(|_| PolicyResult::UnprovedService)?;
-    let mut command = Command::new(systemctl);
+    let mut command = Command::new(systemctl()?);
+    command.args([
+        "show",
+        "--no-pager",
+        "--property=Id,LoadState,ActiveState,SubState,NeedDaemonReload,FragmentPath,DropInPaths",
+    ]);
     match operation {
-        ManagerOperation::Service | ManagerOperation::Socket => {
-            command.args(["show", "--no-pager", "--property=Id,LoadState,ActiveState,SubState,NeedDaemonReload,FragmentPath,DropInPaths"]);
-            if matches!(operation, ManagerOperation::Service) {
-                command.args(["--property=MainPID,ExecMainStartTimestampMonotonic,InvocationID,ExecStart,User,RootDirectory", "nix-daemon.service"]);
-            } else {
-                command.args(["--property=Listen,Triggers", "nix-daemon.socket"]);
-            }
+        ManagerOperation::Service => {
+            command.args(["--property=MainPID,ExecMainStartTimestampMonotonic,InvocationID,ExecStart,User,RootDirectory", "nix-daemon.service"]);
         }
-        ManagerOperation::Restart => {
-            command.args(["--no-ask-password", "restart", "nix-daemon.service"]);
+        ManagerOperation::Socket => {
+            command.args(["--property=Listen,Triggers", "nix-daemon.socket"]);
         }
     }
-    let budget = match operation {
-        ManagerOperation::Restart => Duration::from_secs(5),
-        _ => Duration::from_millis(400),
-    };
     command.stdin(Stdio::null());
-    bounded_output(command, budget)
+    bounded_output(command, MANAGER_READ_BUDGET)
 }
 
 pub(in crate::installation::nix_owner) fn bounded_output(
-    mut command: Command,
+    command: Command,
     budget: Duration,
 ) -> Result<Vec<u8>, PolicyResult> {
-    let mut child = command
-        .env_clear()
-        .current_dir("/")
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
-        .map_err(|_| PolicyResult::UnprovedService)?;
-    let mut stdout = child.stdout.take().ok_or(PolicyResult::UnprovedService)?;
-    if unsafe { libc::fcntl(stdout.as_raw_fd(), libc::F_SETFL, libc::O_NONBLOCK) } < 0 {
-        let _ = child.kill();
-        let _ = child.wait();
-        return Err(PolicyResult::UnprovedService);
-    }
-    let deadline = Instant::now() + budget;
     let mut output = Vec::new();
-    let mut delay = Duration::from_millis(1);
-    let result = loop {
-        let mut buffer = [0; 4096];
-        match stdout.read(&mut buffer) {
-            Ok(n) => output.extend_from_slice(&buffer[..n]),
-            Err(error) if error.kind() == io::ErrorKind::WouldBlock => (),
-            Err(_) => break Err(PolicyResult::UnprovedService),
+    read_command_output(command, budget, CommandOutput::Stdout, |chunk| {
+        output.extend_from_slice(chunk);
+        Ok(())
+    })?;
+    Ok(output)
+}
+
+enum CommandOutput {
+    Stdout,
+    RestartAcknowledgement,
+}
+
+fn read_command_output(
+    mut command: Command,
+    budget: Duration,
+    output: CommandOutput,
+    mut read: impl FnMut(&[u8]) -> Result<(), PolicyResult>,
+) -> Result<(), PolicyResult> {
+    command.env_clear().current_dir("/");
+    match output {
+        CommandOutput::Stdout => {
+            command.stdout(Stdio::piped()).stderr(Stdio::null());
         }
-        if output.len() > MAX_CONFIGURATION_BYTES || Instant::now() >= deadline {
-            break Err(PolicyResult::UnprovedService);
+        CommandOutput::RestartAcknowledgement => {
+            command
+                .env("SYSTEMD_LOG_TARGET", "console")
+                .env("SYSTEMD_COLORS", "0")
+                .stdout(Stdio::null())
+                .stderr(Stdio::piped());
         }
-        match child.try_wait() {
-            Ok(Some(status)) => {
-                if !status.success() {
-                    break Err(PolicyResult::UnprovedService);
-                }
-                loop {
-                    match stdout.read(&mut buffer) {
-                        Ok(0) => break,
-                        Ok(n) if output.len() + n <= MAX_CONFIGURATION_BYTES => {
-                            output.extend_from_slice(&buffer[..n])
-                        }
-                        _ => return Err(PolicyResult::UnprovedService),
-                    }
-                }
-                break Ok(output);
+    }
+    let mut child = command.spawn().map_err(|_| PolicyResult::UnprovedService)?;
+    let result = (|| {
+        let mut pipe: File = match output {
+            CommandOutput::Stdout => child.stdout.take().map(Into::<std::os::fd::OwnedFd>::into),
+            CommandOutput::RestartAcknowledgement => {
+                child.stderr.take().map(Into::<std::os::fd::OwnedFd>::into)
             }
-            Ok(None) => (),
-            Err(_) => break Err(PolicyResult::UnprovedService),
         }
-        std::thread::sleep(delay.min(deadline.saturating_duration_since(Instant::now())));
-        delay = delay.saturating_mul(2);
-    };
+        .ok_or(PolicyResult::UnprovedService)?
+        .into();
+        if unsafe { libc::fcntl(pipe.as_raw_fd(), libc::F_SETFL, libc::O_NONBLOCK) } < 0 {
+            return Err(PolicyResult::UnprovedService);
+        }
+
+        let deadline = Instant::now() + budget;
+        let mut buffer = [0; 4096];
+        let mut bytes = 0;
+        let mut delay = Duration::from_millis(1);
+        let mut status = None;
+        loop {
+            if Instant::now() >= deadline {
+                return Err(PolicyResult::UnprovedService);
+            }
+            match pipe.read(&mut buffer) {
+                Ok(0) if status.is_some() => {
+                    return if status
+                        .is_some_and(|status: std::process::ExitStatus| status.success())
+                    {
+                        Ok(())
+                    } else {
+                        Err(PolicyResult::UnprovedService)
+                    };
+                }
+                Ok(0) => (),
+                Ok(n) if bytes + n <= MAX_CONFIGURATION_BYTES => {
+                    bytes += n;
+                    read(&buffer[..n])?;
+                    continue;
+                }
+                Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+                Err(error) if error.kind() == io::ErrorKind::WouldBlock && status.is_none() => (),
+                _ => return Err(PolicyResult::UnprovedService),
+            }
+            status = child
+                .try_wait()
+                .map_err(|_| PolicyResult::UnprovedService)?;
+            if status.is_none() {
+                std::thread::sleep(delay.min(deadline.saturating_duration_since(Instant::now())));
+                delay = (delay * 2).min(Duration::from_millis(10));
+            }
+        }
+    })();
     if result.is_err() {
         let _ = child.kill();
         let _ = child.wait();
@@ -425,7 +464,20 @@ impl PolicyInputs {
         }))
     }
 
-    pub(super) fn restart_managed(
+    pub(super) fn request_managed_restart(
+        &self,
+        acknowledgement: Option<&mut dyn FnMut(NonZeroU32) -> Result<(), PolicyResult>>,
+    ) -> Result<(), PolicyResult> {
+        if !self.managed || unsafe { libc::geteuid() } != 0 {
+            return Err(PolicyResult::UnprovedService);
+        }
+        traced(
+            "manager restart",
+            restart_job::request_restart(acknowledgement),
+        )
+    }
+
+    pub(super) fn verify_managed_restart(
         &self,
         old: &ManagedSnapshot,
         secondary: Option<[u8; 32]>,
@@ -434,7 +486,6 @@ impl PolicyInputs {
         if !self.managed || unsafe { libc::geteuid() } != 0 {
             return Err(PolicyResult::UnprovedService);
         }
-        traced("manager restart", manager(ManagerOperation::Restart))?;
         let identity = target_identity().map_err(|_| PolicyResult::UnprovedService)?;
         let manager_after = traced(
             "manager show after restart",

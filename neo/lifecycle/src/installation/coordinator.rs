@@ -1518,10 +1518,15 @@ impl Effects {
         let next = match slot {
             EffectSlot::Admitted(request) => {
                 #[cfg(not(target_os = "linux"))]
-                let scoped = false;
+                let mutation_allowed = self.mutation_admitted();
                 #[cfg(target_os = "linux")]
-                let scoped = request.policy_intent_operation().is_some();
-                let permission = if request.mutates() && (self.mutation_admitted() || scoped) {
+                let mutation_allowed = match &request {
+                    EffectRequest::Filesystem(FilesystemJob::InspectStockPolicy(_), _) => {
+                        self.check_admission(&request).is_ok()
+                    }
+                    _ => self.mutation_admitted() || request.policy_intent_operation().is_some(),
+                };
+                let permission = if request.mutates() && mutation_allowed {
                     Some(MutationPermission { _private: () })
                 } else {
                     None
@@ -2162,6 +2167,7 @@ mod tests {
                 FilesystemJob::InspectStockPolicy(open()),
                 Admission::Requested,
             );
+            assert!(request.mutates());
             assert!(effects.check_admission(&request).is_err());
             effects.state.borrow_mut().review = ReviewGate::Inspecting;
             assert!(effects.check_admission(&request).is_err());

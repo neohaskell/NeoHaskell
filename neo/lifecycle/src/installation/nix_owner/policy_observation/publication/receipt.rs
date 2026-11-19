@@ -1,7 +1,8 @@
-use super::super::managed::ManagedSnapshot;
+use super::super::managed::{self, ManagedSnapshot};
 use super::*;
 use crate::installation::PolicyStateLease;
 use serde::Deserialize;
+use std::num::NonZeroU32;
 use std::os::unix::fs::PermissionsExt;
 
 const RECEIPT: &str = "receipt.json";
@@ -195,12 +196,70 @@ fn valid_continuity(
     }
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(deny_unknown_fields)]
+struct RestartIntent {
+    intent_monotonic: u64,
+    inputs_sha256: [u8; 32],
+}
+
+impl RestartIntent {
+    fn valid_since(self, old: &ManagerIdentity) -> bool {
+        self.intent_monotonic > old.started_monotonic && self.inputs_sha256 != [0; 32]
+    }
+
+    fn admits_replacement(self, replacement: &ManagerIdentity) -> bool {
+        replacement.started_monotonic > self.intent_monotonic
+    }
+
+    fn verify_completion(
+        self,
+        replacement: &ManagerIdentity,
+        continuity: Option<&ReceiptContinuity>,
+    ) -> Result<(), PolicyResult> {
+        if self.admits_replacement(replacement)
+            && continuity.is_some_and(|proof| proof.inputs_sha256 == self.inputs_sha256)
+        {
+            Ok(())
+        } else {
+            Err(PolicyResult::PublicationUnknown)
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(deny_unknown_fields)]
+struct AcceptedRestart {
+    intent: RestartIntent,
+    job_id: NonZeroU32,
+}
+
+fn valid_restart_intent(version: u8, old: &ManagerIdentity, intent: Option<RestartIntent>) -> bool {
+    match (version, intent) {
+        (6, Some(intent)) => intent.valid_since(old),
+        (6, None) | (_, Some(_)) => false,
+        (_, None) => true,
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 enum ReceiptPhase {
     Prepared {},
     RestartMayBeQueued {},
+    RestartArmed { intent: RestartIntent },
+    RestartAccepted { accepted: AcceptedRestart },
     RestartObserved { replacement: ManagerIdentity },
+}
+
+impl ReceiptPhase {
+    fn intent(&self) -> Option<RestartIntent> {
+        match self {
+            Self::RestartArmed { intent } => Some(*intent),
+            Self::RestartAccepted { accepted } => Some(accepted.intent),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
@@ -210,10 +269,26 @@ enum UnchangedReceiptPhase {
     RestartMayBeQueued {
         intent_monotonic: u64,
     },
+    RestartArmed {
+        intent: RestartIntent,
+    },
+    RestartAccepted {
+        accepted: AcceptedRestart,
+    },
     RestartObserved {
         intent_monotonic: u64,
         replacement: ManagerIdentity,
     },
+}
+
+impl UnchangedReceiptPhase {
+    fn intent(&self) -> Option<RestartIntent> {
+        match self {
+            Self::RestartArmed { intent } => Some(*intent),
+            Self::RestartAccepted { accepted } => Some(accepted.intent),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
@@ -276,14 +351,17 @@ impl UnchangedReceipt {
             UnchangedReceiptPhase::RestartObserved { replacement, .. } => Some(replacement),
             _ => None,
         };
-        matches!(self.version, 4 | 5)
+        matches!(self.version, 4 | 5 | 6)
             && valid_continuity(self.version, self.continuity.as_ref(), replacement)
+            && valid_restart_intent(self.version, &self.old_manager, self.phase.intent())
             && self.operation.state_lease.is_some()
             && self.operation.valid()
             && valid_boot_id(&self.boot_id)
             && self.old_manager.valid()
             && match &self.phase {
-                UnchangedReceiptPhase::Prepared {} => true,
+                UnchangedReceiptPhase::Prepared {}
+                | UnchangedReceiptPhase::RestartArmed { .. }
+                | UnchangedReceiptPhase::RestartAccepted { .. } => true,
                 UnchangedReceiptPhase::RestartMayBeQueued { intent_monotonic } => {
                     *intent_monotonic > self.old_manager.started_monotonic
                 }
@@ -345,8 +423,9 @@ impl PublishedReceipt {
                 self.secondary_sources_sha256,
                 self.operation.state_lease,
             ),
-            (1, None, None) | (2, Some(_), None) | (3 | 5, Some(_), Some(_))
+            (1, None, None) | (2, Some(_), None) | (3 | 5 | 6, Some(_), Some(_))
         ) && valid_continuity(self.version, self.continuity.as_ref(), replacement)
+            && valid_restart_intent(self.version, &self.old_manager, self.phase.intent())
             && self.operation.valid()
             && self.baseline.valid()
             && self.staged.valid()
@@ -363,9 +442,16 @@ impl PublishedReceipt {
 
     fn advance(&self, phase: ReceiptPhase) -> Result<Self, PolicyResult> {
         match (&self.phase, &phase) {
-            (ReceiptPhase::Prepared {}, ReceiptPhase::RestartMayBeQueued {}) => {}
             (
-                ReceiptPhase::RestartMayBeQueued {},
+                ReceiptPhase::Prepared {},
+                ReceiptPhase::RestartMayBeQueued {} | ReceiptPhase::RestartArmed { .. },
+            ) => {}
+            (ReceiptPhase::RestartArmed { intent }, ReceiptPhase::RestartAccepted { accepted })
+                if intent == &accepted.intent => {}
+            (
+                ReceiptPhase::RestartMayBeQueued {}
+                | ReceiptPhase::RestartArmed { .. }
+                | ReceiptPhase::RestartAccepted { .. },
                 ReceiptPhase::RestartObserved { replacement },
             ) if replacement.replaces(&self.old_manager) => {}
             _ => return Err(PolicyResult::PublicationUnknown),
@@ -433,6 +519,12 @@ struct LiveReceipt<'a> {
     continuity: Option<&'a ReceiptContinuity>,
 }
 
+struct RecoverableRestart<'a> {
+    old_manager: &'a ManagerIdentity,
+    secondary: [u8; 32],
+    accepted: AcceptedRestart,
+}
+
 impl PolicyReceipt {
     fn decode(raw: &[u8]) -> Result<Self, PolicyResult> {
         if raw.len() > MAX_RECEIPT_BYTES {
@@ -486,6 +578,154 @@ impl PolicyReceipt {
                 })
             }
         }
+    }
+
+    fn arm_restart(
+        &self,
+        intent_monotonic: u64,
+        inputs_sha256: Option<[u8; 32]>,
+    ) -> Result<Self, PolicyResult> {
+        let intent = inputs_sha256.map(|inputs_sha256| RestartIntent {
+            intent_monotonic,
+            inputs_sha256,
+        });
+        match self {
+            Self::Published(receipt) => {
+                let phase = match intent {
+                    Some(intent) => ReceiptPhase::RestartArmed { intent },
+                    None => ReceiptPhase::RestartMayBeQueued {},
+                };
+                let mut next = receipt.advance(phase)?;
+                if intent.is_some() {
+                    next.version = 6;
+                }
+                Ok(Self::Published(next))
+            }
+            Self::Unchanged(receipt)
+                if matches!(receipt.phase, UnchangedReceiptPhase::Prepared {}) =>
+            {
+                let phase = match intent {
+                    Some(intent) => UnchangedReceiptPhase::RestartArmed { intent },
+                    None => UnchangedReceiptPhase::RestartMayBeQueued { intent_monotonic },
+                };
+                Ok(Self::Unchanged(UnchangedReceipt {
+                    version: if intent.is_some() { 6 } else { 4 },
+                    phase,
+                    ..receipt.clone()
+                }))
+            }
+            _ => Err(PolicyResult::PublicationUnknown),
+        }
+    }
+
+    fn acknowledge_restart(&self, job_id: NonZeroU32) -> Result<Self, PolicyResult> {
+        match self {
+            Self::Published(receipt) => {
+                let ReceiptPhase::RestartArmed { intent } = receipt.phase else {
+                    return Err(PolicyResult::PublicationUnknown);
+                };
+                let accepted = AcceptedRestart { intent, job_id };
+                Ok(Self::Published(
+                    receipt.advance(ReceiptPhase::RestartAccepted { accepted })?,
+                ))
+            }
+            Self::Unchanged(receipt) => {
+                let UnchangedReceiptPhase::RestartArmed { intent } = receipt.phase else {
+                    return Err(PolicyResult::PublicationUnknown);
+                };
+                let accepted = AcceptedRestart { intent, job_id };
+                Ok(Self::Unchanged(UnchangedReceipt {
+                    phase: UnchangedReceiptPhase::RestartAccepted { accepted },
+                    ..receipt.clone()
+                }))
+            }
+        }
+    }
+
+    fn complete_restart(
+        &self,
+        replacement: ManagerIdentity,
+        continuity: Option<ReceiptContinuity>,
+    ) -> Result<Self, PolicyResult> {
+        match self {
+            Self::Published(receipt) => {
+                if let Some(intent) = receipt.phase.intent() {
+                    intent.verify_completion(&replacement, continuity.as_ref())?;
+                }
+                let mut completed =
+                    receipt.advance(ReceiptPhase::RestartObserved { replacement })?;
+                if continuity.is_some() {
+                    completed.version = 5;
+                    completed.continuity = continuity;
+                }
+                Ok(Self::Published(completed))
+            }
+            Self::Unchanged(receipt) => {
+                let intent_monotonic = match receipt.phase {
+                    UnchangedReceiptPhase::RestartMayBeQueued { intent_monotonic } => {
+                        intent_monotonic
+                    }
+                    UnchangedReceiptPhase::RestartArmed { intent }
+                    | UnchangedReceiptPhase::RestartAccepted {
+                        accepted: AcceptedRestart { intent, .. },
+                    } => {
+                        intent.verify_completion(&replacement, continuity.as_ref())?;
+                        intent.intent_monotonic
+                    }
+                    _ => return Err(PolicyResult::PublicationUnknown),
+                };
+                Ok(Self::Unchanged(UnchangedReceipt {
+                    phase: UnchangedReceiptPhase::RestartObserved {
+                        intent_monotonic,
+                        replacement,
+                    },
+                    version: if continuity.is_some() { 5 } else { 4 },
+                    continuity,
+                    ..receipt.clone()
+                }))
+            }
+        }
+    }
+
+    fn accepted_restart(
+        &self,
+        operation: &PolicyAttempt,
+        request: ReviewedPolicyRequest,
+    ) -> Result<RecoverableRestart<'_>, PolicyResult> {
+        let (attempt, reviewed, old_manager, secondary, accepted) = match self {
+            Self::Published(receipt) => {
+                let ReceiptPhase::RestartAccepted { accepted } = receipt.phase else {
+                    return Err(PolicyResult::PublicationUnknown);
+                };
+                (
+                    &receipt.operation,
+                    &receipt.reviewed,
+                    &receipt.old_manager,
+                    receipt.secondary_sources_sha256,
+                    accepted,
+                )
+            }
+            Self::Unchanged(receipt) => {
+                let UnchangedReceiptPhase::RestartAccepted { accepted } = receipt.phase else {
+                    return Err(PolicyResult::PublicationUnknown);
+                };
+                (
+                    &receipt.operation,
+                    &receipt.reviewed,
+                    &receipt.old_manager,
+                    Some(receipt.secondary_sources_sha256),
+                    accepted,
+                )
+            }
+        };
+        if attempt != operation || reviewed != request.bytes() {
+            return Err(PolicyResult::PublicationUnknown);
+        }
+        Ok(RecoverableRestart {
+            old_manager,
+            secondary: secondary.ok_or(PolicyResult::PublicationUnknown)?,
+            accepted,
+        })
     }
 
     fn verify_configuration(&self, stage: &File) -> Result<(), PolicyResult> {
@@ -689,25 +929,27 @@ impl<'a> ReceiptWriter<'a> {
         })
     }
 
-    pub(super) fn queue_restart(&mut self) -> Result<(), PolicyResult> {
-        let next = match &self.current {
-            PolicyReceipt::Published(receipt) => {
-                PolicyReceipt::Published(receipt.advance(ReceiptPhase::RestartMayBeQueued {})?)
-            }
-            PolicyReceipt::Unchanged(receipt)
-                if matches!(receipt.phase, UnchangedReceiptPhase::Prepared {})
-                    && boot_id()? == receipt.boot_id =>
-            {
-                PolicyReceipt::Unchanged(UnchangedReceipt {
-                    phase: UnchangedReceiptPhase::RestartMayBeQueued {
-                        intent_monotonic: monotonic_micros()?,
-                    },
-                    ..receipt.clone()
-                })
-            }
-            _ => return Err(PolicyResult::PublicationUnknown),
-        };
-        self.advance(next)
+    pub(super) fn queue_restart(
+        &mut self,
+        inputs_sha256: Option<[u8; 32]>,
+    ) -> Result<(), PolicyResult> {
+        if boot_id()? != self.current.boot_id() {
+            return Err(PolicyResult::PublicationUnknown);
+        }
+        let intent_monotonic =
+            if inputs_sha256.is_some() || matches!(&self.current, PolicyReceipt::Unchanged(_)) {
+                monotonic_micros()?
+            } else {
+                0
+            };
+        self.advance(self.current.arm_restart(intent_monotonic, inputs_sha256)?)
+    }
+
+    pub(super) fn record_restart_job(&mut self, job_id: NonZeroU32) -> Result<(), PolicyResult> {
+        if boot_id()? != self.current.boot_id() {
+            return Err(PolicyResult::PublicationUnknown);
+        }
+        self.advance(self.current.acknowledge_restart(job_id)?)
     }
 
     pub(super) fn observe_restart(
@@ -726,45 +968,26 @@ impl<'a> ReceiptWriter<'a> {
             }),
             None => None,
         };
-        let next = match &self.current {
-            PolicyReceipt::Published(receipt) => {
-                let mut completed =
-                    receipt.advance(ReceiptPhase::RestartObserved { replacement })?;
-                if continuity.is_some() {
-                    completed.version = 5;
-                    completed.continuity = continuity;
-                }
-                PolicyReceipt::Published(completed)
-            }
-            PolicyReceipt::Unchanged(receipt) => {
-                let UnchangedReceiptPhase::RestartMayBeQueued { intent_monotonic } = receipt.phase
-                else {
-                    return Err(PolicyResult::PublicationUnknown);
-                };
-                PolicyReceipt::Unchanged(UnchangedReceipt {
-                    phase: UnchangedReceiptPhase::RestartObserved {
-                        intent_monotonic,
-                        replacement,
-                    },
-                    version: if continuity.is_some() { 5 } else { 4 },
-                    continuity,
-                    ..receipt.clone()
-                })
-            }
-        };
-        self.advance(next)
+        self.advance(self.current.complete_restart(replacement, continuity)?)
     }
 
     pub(super) fn verify_unchanged(&self) -> Result<(), PolicyResult> {
         let PolicyReceipt::Unchanged(receipt) = &self.current else {
             return Err(PolicyResult::PublicationUnknown);
         };
+        self.verify_current()?;
+        receipt.verify_unchanged(self.stage)
+    }
+
+    fn verify_current(&self) -> Result<(), PolicyResult> {
         check_stage(self.parent, self.stage)?;
         require_absent(&descriptor_path(self.stage, RECEIPT_TEMP))?;
-        if boot_id()? != receipt.boot_id || read_current(self.stage, &self.held)? != self.current {
+        if boot_id()? != self.current.boot_id()
+            || read_current(self.stage, &self.held)? != self.current
+        {
             return Err(PolicyResult::PublicationUnknown);
         }
-        receipt.verify_unchanged(self.stage)
+        Ok(())
     }
 
     fn advance(&mut self, next: PolicyReceipt) -> Result<(), PolicyResult> {
@@ -866,6 +1089,67 @@ pub(super) fn verify_completed(
         },
         |_| Ok(()),
     )
+}
+
+pub(super) fn recover_accepted_restart(
+    inputs: &PolicyInputs,
+    parent: &File,
+    stage: &File,
+    operation: &PolicyAttempt,
+    request: ReviewedPolicyRequest,
+    verify_caller: impl Fn(&PolicyInputs) -> Result<(), PolicyResult> + Sync,
+) -> Result<(), PolicyResult> {
+    check_stage(parent, stage)?;
+    require_absent(&descriptor_path(stage, RECEIPT_TEMP))?;
+    let held = open(&descriptor_path(stage, RECEIPT))?;
+    let current = read_current(stage, &held)?;
+    let mut writer = ReceiptWriter {
+        parent,
+        stage,
+        current,
+        held,
+    };
+    writer.verify_current()?;
+    let RecoverableRestart {
+        accepted,
+        old_manager,
+        secondary,
+    } = writer.current.accepted_restart(operation, request)?;
+    let candidate = inputs
+        .managed_snapshot()?
+        .ok_or(PolicyResult::PublicationUnknown)?;
+    let generation = ManagerIdentity::capture(&candidate)?;
+    if !generation.replaces(old_manager) || !accepted.intent.admits_replacement(&generation) {
+        return Err(PolicyResult::PublicationUnknown);
+    }
+    let old_process = Path::new("/proc").join(old_manager.pid.to_string());
+    let verify = |current: &PolicyInputs| {
+        writer.verify_current()?;
+        require_absent(&old_process)?;
+        writer.current.verify_configuration(stage)?;
+        continuity::capture(current)?.verify(accepted.intent.inputs_sha256)?;
+        verify_caller(current)
+    };
+    let verify_job = || {
+        managed::verify_final_restart(
+            writer.current.boot_id(),
+            accepted.job_id,
+            &old_manager.invocation_id,
+            accepted.intent.intent_monotonic,
+            &candidate,
+        )
+    };
+    verify_job()?;
+    if inputs.inspect_managed_view(Some(secondary), &verify)? != candidate {
+        return Err(PolicyResult::PublicationUnknown);
+    }
+    verify_job()?;
+    if inputs.managed_snapshot()?.as_ref() != Some(&candidate) {
+        return Err(PolicyResult::PublicationUnknown);
+    }
+    verify(inputs)?;
+    writer.observe_restart(&candidate, Some(accepted.intent.inputs_sha256))?;
+    writer.verify_current()
 }
 
 pub(super) fn verify_existing(
@@ -1217,6 +1501,128 @@ mod tests {
         let mut raw = serde_json::to_value(receipt).unwrap();
         raw["continuity"] = serde_json::Value::Null;
         assert!(PolicyReceipt::decode(&serde_json::to_vec(&raw).unwrap()).is_err());
+    }
+
+    #[test]
+    fn accepted_restart_keeps_the_original_scope_and_input_fence() {
+        let mut published = receipt();
+        published.version = 3;
+        published.secondary_sources_sha256 = Some([4; 32]);
+        published.operation.state_lease = Some(PolicyStateLease {
+            device: 8,
+            inode: 23,
+        });
+        let operation = published.operation.clone();
+        let reviewed = ReviewedPolicyRequest::from_bytes(published.reviewed);
+        let old = published.old_manager.clone();
+        let unchanged = UnchangedReceipt {
+            version: 4,
+            operation: operation.clone(),
+            reviewed: published.reviewed,
+            evidence: UnchangedEvidence::AppliedUnchanged {
+                configuration_sha256: [7; 32],
+            },
+            secondary_sources_sha256: [4; 32],
+            boot_id: published.boot_id.clone(),
+            old_manager: old.clone(),
+            phase: UnchangedReceiptPhase::Prepared {},
+            continuity: None,
+        };
+        let intent = old.started_monotonic + 1;
+        let job = NonZeroU32::new(211).unwrap();
+        let stamp = [5; 32];
+        let decode =
+            |receipt: &PolicyReceipt| PolicyReceipt::decode(&serde_json::to_vec(receipt).unwrap());
+        let prepared = [
+            (PolicyReceipt::Published(published), 3),
+            (PolicyReceipt::Unchanged(unchanged), 4),
+        ];
+        for (prepared, legacy_version) in prepared {
+            let legacy = prepared.arm_restart(intent, None).unwrap();
+            assert!(decode(&legacy).unwrap().acknowledge_restart(job).is_err());
+            let armed = prepared.arm_restart(intent, Some(stamp)).unwrap();
+            assert!(
+                decode(&armed)
+                    .unwrap()
+                    .accepted_restart(&operation, reviewed)
+                    .is_err()
+            );
+            let invalid = prepared
+                .arm_restart(old.started_monotonic, Some(stamp))
+                .unwrap();
+            assert!(decode(&invalid).is_err());
+            let invalid = prepared.arm_restart(intent, Some([0; 32])).unwrap();
+            assert!(decode(&invalid).is_err());
+
+            let accepted = decode(&armed).unwrap().acknowledge_restart(job).unwrap();
+            let accepted = decode(&accepted).unwrap();
+            let recoverable = accepted.accepted_restart(&operation, reviewed).unwrap();
+            assert_eq!(*recoverable.old_manager, old);
+            assert_eq!(recoverable.accepted.job_id, job);
+            assert_eq!(recoverable.accepted.intent.intent_monotonic, intent);
+            assert_eq!(recoverable.accepted.intent.inputs_sha256, stamp);
+            assert!(accepted.acknowledge_restart(job).is_err());
+            assert!(accepted.arm_restart(intent, Some(stamp)).is_err());
+            assert!(accepted.live().is_none());
+            let mut other = operation.clone();
+            other.state_lease.as_mut().unwrap().inode += 1;
+            assert!(accepted.accepted_restart(&other, reviewed).is_err());
+            assert!(
+                accepted
+                    .accepted_restart(&operation, ReviewedPolicyRequest::from_bytes([8; 32]))
+                    .is_err()
+            );
+
+            let mut raw = serde_json::to_value(&accepted).unwrap();
+            raw["phase"]["accepted"]["job_id"] = 0.into();
+            assert!(PolicyReceipt::decode(&serde_json::to_vec(&raw).unwrap()).is_err());
+            raw["phase"]["accepted"]["job_id"] = job.get().into();
+            raw["version"] = legacy_version.into();
+            assert!(PolicyReceipt::decode(&serde_json::to_vec(&raw).unwrap()).is_err());
+
+            let mut replacement = old.clone();
+            replacement.pid += 1;
+            replacement.invocation_id = "b".repeat(32);
+            replacement.started_monotonic = intent;
+            let proof = ReceiptContinuity {
+                inputs_sha256: stamp,
+                verified_monotonic: intent + 2,
+            };
+            assert!(
+                accepted
+                    .complete_restart(replacement.clone(), Some(proof.clone()))
+                    .is_err()
+            );
+            replacement.started_monotonic += 1;
+            assert!(
+                accepted
+                    .complete_restart(replacement.clone(), None)
+                    .is_err()
+            );
+            let wrong = ReceiptContinuity {
+                inputs_sha256: [6; 32],
+                ..proof.clone()
+            };
+            assert!(
+                accepted
+                    .complete_restart(replacement.clone(), Some(wrong))
+                    .is_err()
+            );
+            let completed = accepted
+                .complete_restart(replacement.clone(), Some(proof.clone()))
+                .unwrap();
+            let completed = decode(&completed).unwrap();
+            let live = completed.live().unwrap();
+            assert_eq!(live.version, 5);
+            assert_eq!(live.replacement, &replacement);
+            assert_eq!(live.operation, &operation);
+            assert_eq!(live.reviewed, reviewed.bytes());
+            assert_eq!(live.continuity, Some(&proof));
+            assert!(completed.accepted_restart(&operation, reviewed).is_err());
+            let mut raw = serde_json::to_value(&completed).unwrap();
+            raw["version"] = 6.into();
+            assert!(PolicyReceipt::decode(&serde_json::to_vec(&raw).unwrap()).is_err());
+        }
     }
 
     #[test]

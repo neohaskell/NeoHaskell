@@ -269,9 +269,8 @@ impl UnchangedRestart {
         let stamp = continuity::capture(inputs)
             .and_then(|sources| sources.stamp())
             .ok();
-        writer.queue_restart()?;
-        let verify_restart_inputs = |current: &PolicyInputs| {
-            writer.verify_unchanged()?;
+        writer.queue_restart(stamp)?;
+        let verify_configuration = |current: &PolicyInputs| {
             if let Some(stamp) = stamp {
                 continuity::capture(current)?.verify(stamp)?;
             }
@@ -279,8 +278,17 @@ impl UnchangedRestart {
         };
         let replacement = (|| {
             self.recheck(inputs, parent)?;
-            verify_restart_inputs(inputs)?;
-            inputs.restart_managed(&self.old, Some(self.secondary), &verify_restart_inputs)
+            writer.verify_unchanged()?;
+            verify_configuration(inputs)?;
+            if stamp.is_some() {
+                inputs.request_managed_restart(Some(&mut |job| writer.record_restart_job(job)))?;
+            } else {
+                inputs.request_managed_restart(None)?;
+            }
+            inputs.verify_managed_restart(&self.old, Some(self.secondary), &|current| {
+                writer.verify_unchanged()?;
+                verify_configuration(current)
+            })
         })()
         .map_err(|_| PolicyResult::PublicationUnknown)?;
         writer.observe_restart(&replacement, stamp)?;
@@ -329,14 +337,27 @@ impl PolicyInputs {
             if receipt::verify_completed(self, &parent, &stage, operation, request).is_ok() {
                 return Ok(PolicyInspectionResult::VerifiedApplied);
             }
+            let caller = caller.ok_or(PolicyResult::InaccessibleInputs)?;
+            if receipt::recover_accepted_restart(
+                self,
+                &parent,
+                &stage,
+                operation,
+                request,
+                |current| {
+                    configuration_input(&current.source, read)
+                        .map_err(|_| PolicyResult::InaccessibleInputs)?
+                        .verify_caller_access(caller)
+                },
+            )
+            .is_ok()
+            {
+                return Ok(PolicyInspectionResult::VerifiedApplied);
+            }
             let writer = receipt::ReceiptWriter::reopen_prepared_unchanged(
                 &parent, &stage, operation, request,
             )?;
-            let restart = UnchangedRestart::capture(
-                self,
-                request,
-                caller.ok_or(PolicyResult::InaccessibleInputs)?,
-            )?;
+            let restart = UnchangedRestart::capture(self, request, caller)?;
             restart.recheck(self, &parent)?;
             writer.verify_prepared_unchanged(&restart.old, restart.secondary)?;
             Ok(PolicyInspectionResult::VerifiedPrepared)
@@ -666,7 +687,7 @@ impl PolicyInputs {
                     Ok(())
                 };
                 if let Some(receipt) = &mut receipt {
-                    receipt.queue_restart()?;
+                    receipt.queue_restart(continuity)?;
                     pause(PublicationMoment::AfterRestartIntent)?;
                     if !matches!(self.managed_snapshot(), Ok(Some(actual)) if actual == old) {
                         return Ok(PolicyResult::SourcePublishedApplicationPending);
@@ -675,8 +696,14 @@ impl PolicyInputs {
                 }
                 verify_secondary()?;
                 verify_restart_inputs(self)?;
-                let observed_restart =
-                    self.restart_managed(&old, secondary, &verify_restart_inputs);
+                let restart = match (&mut receipt, continuity) {
+                    (Some(receipt), Some(_)) => self
+                        .request_managed_restart(Some(&mut |job| receipt.record_restart_job(job))),
+                    _ => self.request_managed_restart(None),
+                };
+                let observed_restart = restart.and_then(|()| {
+                    self.verify_managed_restart(&old, secondary, &verify_restart_inputs)
+                });
                 verify_published()?;
                 match observed_restart {
                     Err(PolicyResult::PublicationUnknown) => {

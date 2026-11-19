@@ -301,12 +301,11 @@ impl FilesystemJob {
             #[cfg(all(test, target_os = "linux"))]
             Self::PublishPolicyIntent { .. } => true,
             #[cfg(target_os = "linux")]
-            Self::ObserveStockPolicy { .. }
-            | Self::VerifyExistingNixPolicy { .. }
-            | Self::InspectStockPolicy(_) => false,
+            Self::ObserveStockPolicy { .. } | Self::VerifyExistingNixPolicy { .. } => false,
             #[cfg(target_os = "linux")]
             Self::PublishStockPolicy { .. }
             | Self::ClearPolicyIntent { .. }
+            | Self::InspectStockPolicy(_)
             | Self::ResumeStockPolicy(_) => true,
             Self::UninstallConfirm(_)
             | Self::UninstallInspect { .. }
