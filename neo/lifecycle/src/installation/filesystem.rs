@@ -170,7 +170,7 @@ pub(super) enum FilesystemJob {
     VerifyExistingNixPolicy {
         inspector: ExistingNixInspector,
         lease: super::PolicyStateLease,
-        common: [u8; 32],
+        stamp: [u8; 32],
     },
     #[cfg(target_os = "linux")]
     PublishStockPolicy {
@@ -1129,7 +1129,7 @@ fn execute(
         Job::VerifyExistingNixPolicy {
             inspector,
             lease,
-            common,
+            stamp,
         } => {
             let blocked = || {
                 TransactionError::NixBlocked(super::nix_owner::NixBlock::ConfigurationOwnerUnknown)
@@ -1142,7 +1142,7 @@ fn execute(
                 ExistingNixInspector::Retained { executable, caller } => (executable, Some(caller)),
             };
             let proof = executable
-                .verify_existing_policy(caller.as_ref(), lease, common, terminal, || {
+                .verify_existing_policy(caller.as_ref(), lease, stamp, terminal, || {
                     policy.check().is_err()
                 })
                 .map_err(|error| match error {

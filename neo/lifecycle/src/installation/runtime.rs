@@ -375,7 +375,7 @@ impl InstallationOwner {
         use super::nix_owner::peer_handoff::{ExactExecutable, launcher::VerifiedCaller};
 
         let lease = self.effects.policy_state_lease(&self.layout)?;
-        let common = observed.common_policy_inputs()?;
+        let stamp = observed.replacement_policy_stamp()?;
         let checked = match plan {
             ExistingNixPolicyPlan::Installed(output) => {
                 self.effects.admit_reviewed(identity)?;
@@ -383,7 +383,7 @@ impl InstallationOwner {
                     .filesystem(super::FilesystemJob::VerifyExistingNixPolicy {
                         inspector: ExistingNixInspector::Installed(output),
                         lease,
-                        common,
+                        stamp,
                     })
                     .await
             }
@@ -414,7 +414,7 @@ impl InstallationOwner {
                         .filesystem(super::FilesystemJob::VerifyExistingNixPolicy {
                             inspector: ExistingNixInspector::Retained { executable, caller },
                             lease,
-                            common,
+                            stamp,
                         })
                         .await
                 }

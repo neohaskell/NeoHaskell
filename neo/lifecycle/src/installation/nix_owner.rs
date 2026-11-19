@@ -791,6 +791,14 @@ pub(super) fn protected_path(path: &Path) -> io::Result<PathBuf> {
 }
 
 fn protected_configuration_path(path: &Path) -> io::Result<PathBuf> {
+    protected_configuration_path_with(path, false, |_, _| Ok(()))
+}
+
+fn protected_configuration_path_with(
+    path: &Path,
+    allow_shared_store: bool,
+    mut record: impl FnMut(&Path, &fs::Metadata) -> io::Result<()>,
+) -> io::Result<PathBuf> {
     if !path.is_absolute() {
         return Err(io::Error::other("unproved configuration path"));
     }
@@ -800,6 +808,7 @@ fn protected_configuration_path(path: &Path) -> io::Result<PathBuf> {
     }
     #[cfg(target_os = "linux")]
     require_configuration_filesystem(Path::new("/"))?;
+    record(Path::new("/"), &root)?;
     let mut pending: VecDeque<_> = path.iter().map(ToOwned::to_owned).collect();
     let mut resolved = PathBuf::from("/");
     let mut links = 0;
@@ -817,6 +826,7 @@ fn protected_configuration_path(path: &Path) -> io::Result<PathBuf> {
                     return Err(io::Error::other("unproved configuration owner"));
                 }
                 if metadata.file_type().is_symlink() {
+                    record(&next, &metadata)?;
                     links += 1;
                     if links > 40 {
                         return Err(io::Error::other("unproved configuration path"));
@@ -826,11 +836,16 @@ fn protected_configuration_path(path: &Path) -> io::Result<PathBuf> {
                         pending.push_front(part.to_owned());
                     }
                 } else {
-                    if metadata.mode() & 0o022 != 0 {
+                    let shared_store = allow_shared_store
+                        && next == Path::new("/nix/store")
+                        && metadata.is_dir()
+                        && metadata.mode() & 0o1000 != 0;
+                    if metadata.mode() & 0o022 != 0 && !shared_store {
                         return Err(io::Error::other("unproved configuration owner"));
                     }
                     #[cfg(target_os = "linux")]
                     require_configuration_filesystem(&next)?;
+                    record(&next, &metadata)?;
                     resolved.push(part);
                 }
             }

@@ -5,6 +5,8 @@ use daemon_process::UserSources;
 use std::io::Read;
 
 #[cfg(target_os = "linux")]
+mod continuity;
+#[cfg(target_os = "linux")]
 mod managed;
 #[cfg(target_os = "linux")]
 pub(super) use managed::bounded_output;
@@ -73,10 +75,10 @@ pub(super) fn inspect_stock_policy(
 pub(super) fn verify_existing_stock_policy(
     caller_uid: u32,
     lease: crate::installation::PolicyStateLease,
-    common: [u8; 32],
+    stamp: [u8; 32],
 ) -> Result<(), PolicyResult> {
     managed::with_stock_inputs(move |inputs| {
-        inputs.verify_existing_receipt(caller_uid, lease, common)
+        inputs.verify_existing_receipt(caller_uid, lease, stamp)
     })
 }
 

@@ -12,7 +12,7 @@ const OBSERVE: &str = "--neo-policy-observe-peer";
 const APPLY: &str = "--neo-policy-publish-peer";
 const RECOVER: &str = "--neo-policy-inspect-peer";
 const EXISTING: &str = "--neo-policy-existing-peer";
-const EXISTING_FRAME: &[u8; 16] = b"NEO-EXISTING-V01";
+const EXISTING_FRAME: &[u8; 16] = b"NEO-EXISTING-V02";
 const STOCK_PUBLISH: &[u8; 16] = b"NEO-STOCK-PUB-V4";
 const STOCK_REPLACEMENT: &[u8; 16] = b"NEO-POLICY-LIVE1";
 const INSPECT_BYTES: usize = 32 + PolicyScope::BYTES;
@@ -196,7 +196,7 @@ pub(super) fn verify_existing(
     executable: &ExactExecutable,
     downloaded: Option<&VerifiedCaller>,
     lease: PolicyStateLease,
-    common: [u8; 32],
+    stamp: [u8; 32],
     terminal: Option<&ParkedTerminal>,
     cancelled: impl Fn() -> bool,
 ) -> Result<bool, HandoffError> {
@@ -204,7 +204,7 @@ pub(super) fn verify_existing(
         return Err(HandoffError::Executable);
     }
     let scope = PolicyScope {
-        inputs: common,
+        inputs: stamp,
         state_lease: lease,
     };
     exchange(

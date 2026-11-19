@@ -2011,7 +2011,7 @@ fn administrator_terminal_requires_review_owned_lease_and_live_effect() {
                     device: 1,
                     inode: 2,
                 },
-                common: [1; 32],
+                stamp: [1; 32],
             },
             Admission::Requested,
         ))
@@ -2219,7 +2219,7 @@ mod tests {
                         .unwrap(),
                     ),
                     lease: pending.state_lease.unwrap(),
-                    common: [0; 32],
+                    stamp: [0; 32],
                 },
                 Admission::Requested,
             );

@@ -429,7 +429,7 @@ impl PolicyInputs {
         &self,
         old: &ManagedSnapshot,
         secondary: Option<[u8; 32]>,
-        verify_published: &(impl Fn() -> Result<(), PolicyResult> + Sync),
+        verify_published: &(impl Fn(&Self) -> Result<(), PolicyResult> + Sync),
     ) -> Result<ManagedSnapshot, PolicyResult> {
         if !self.managed || unsafe { libc::geteuid() } != 0 {
             return Err(PolicyResult::UnprovedService);
@@ -471,7 +471,7 @@ impl PolicyInputs {
     pub(super) fn inspect_managed_view(
         &self,
         secondary: Option<[u8; 32]>,
-        verify_published: &(impl Fn() -> Result<(), PolicyResult> + Sync),
+        verify_published: &(impl Fn(&Self) -> Result<(), PolicyResult> + Sync),
     ) -> Result<ManagedSnapshot, PolicyResult> {
         if !self.managed || unsafe { libc::geteuid() } != 0 {
             return Err(PolicyResult::UnprovedService);
@@ -484,7 +484,7 @@ impl PolicyInputs {
         &self,
         view: ReplacementView,
         secondary: Option<[u8; 32]>,
-        verify_published: &(impl Fn() -> Result<(), PolicyResult> + Sync),
+        verify_published: &(impl Fn(&Self) -> Result<(), PolicyResult> + Sync),
     ) -> Result<ManagedSnapshot, PolicyResult> {
         let observed = std::thread::scope(|scope| {
             std::thread::Builder::new()
@@ -498,7 +498,7 @@ impl PolicyInputs {
                         view.enter().map_err(|_| PolicyResult::PublicationUnknown),
                     )?;
                     let verify = || {
-                        verify_published().map_err(|_| PolicyResult::PublicationUnknown)?;
+                        verify_published(self).map_err(|_| PolicyResult::PublicationUnknown)?;
                         if let Some(expected) = secondary {
                             if self.secondary_commitment()? != expected {
                                 return Err(PolicyResult::ChangedInputs);
@@ -525,7 +525,7 @@ impl PolicyInputs {
                 .join()
                 .unwrap_or(Err(PolicyResult::PublicationUnknown))
         });
-        verify_published().map_err(|_| PolicyResult::PublicationUnknown)?;
+        verify_published(self).map_err(|_| PolicyResult::PublicationUnknown)?;
         observed?;
         traced("outside replacement final recheck", view.revalidate(self))?;
         Ok(view.snapshot)

@@ -266,17 +266,24 @@ impl UnchangedRestart {
     ) -> Result<[u8; 32], PolicyResult> {
         self.recheck(inputs, parent)?;
         writer.verify_prepared_unchanged(&self.old, self.secondary)?;
+        let stamp = continuity::capture(inputs)
+            .and_then(|sources| sources.stamp())
+            .ok();
         writer.queue_restart()?;
+        let verify_restart_inputs = |current: &PolicyInputs| {
+            writer.verify_unchanged()?;
+            if let Some(stamp) = stamp {
+                continuity::capture(current)?.verify(stamp)?;
+            }
+            self.configuration.verify_caller_access(self.caller)
+        };
         let replacement = (|| {
             self.recheck(inputs, parent)?;
-            writer.verify_unchanged()?;
-            inputs.restart_managed(&self.old, Some(self.secondary), &|| {
-                writer.verify_unchanged()?;
-                self.configuration.verify_caller_access(self.caller)
-            })
+            verify_restart_inputs(inputs)?;
+            inputs.restart_managed(&self.old, Some(self.secondary), &verify_restart_inputs)
         })()
         .map_err(|_| PolicyResult::PublicationUnknown)?;
-        writer.observe_restart(&replacement)?;
+        writer.observe_restart(&replacement, stamp)?;
         writer.verify_unchanged()?;
         replacement_input_stamp(
             &self.configuration,
@@ -303,11 +310,11 @@ impl PolicyInputs {
         &self,
         caller_uid: u32,
         lease: crate::installation::PolicyStateLease,
-        common: [u8; 32],
+        stamp: [u8; 32],
     ) -> Result<(), PolicyResult> {
         let parent = locked_parent(libc::LOCK_SH)?;
         let stage = directory(Path::new(STAGE))?;
-        receipt::verify_existing(self, &parent, &stage, caller_uid, lease, common)
+        receipt::verify_existing(self, &parent, &stage, caller_uid, lease, stamp)
     }
 
     pub(in crate::installation::nix_owner) fn inspect_completed_attempt(
@@ -646,6 +653,18 @@ impl PolicyInputs {
                 pause(PublicationMoment::AfterPublication)?;
                 verify_published()?;
                 verify_secondary()?;
+                let continuity = stock.as_ref().and_then(|_| {
+                    continuity::capture(self)
+                        .and_then(|sources| sources.stamp())
+                        .ok()
+                });
+                let verify_restart_inputs = |inputs: &PolicyInputs| {
+                    verify_published()?;
+                    if let Some(stamp) = continuity {
+                        continuity::capture(inputs)?.verify(stamp)?;
+                    }
+                    Ok(())
+                };
                 if let Some(receipt) = &mut receipt {
                     receipt.queue_restart()?;
                     pause(PublicationMoment::AfterRestartIntent)?;
@@ -655,7 +674,9 @@ impl PolicyInputs {
                     verify_published()?;
                 }
                 verify_secondary()?;
-                let observed_restart = self.restart_managed(&old, secondary, &verify_published);
+                verify_restart_inputs(self)?;
+                let observed_restart =
+                    self.restart_managed(&old, secondary, &verify_restart_inputs);
                 verify_published()?;
                 match observed_restart {
                     Err(PolicyResult::PublicationUnknown) => {
@@ -663,7 +684,7 @@ impl PolicyInputs {
                     }
                     Ok(replacement) => {
                         if let Some(receipt) = &mut receipt {
-                            receipt.observe_restart(&replacement)?;
+                            receipt.observe_restart(&replacement, continuity)?;
                         }
                         return Ok(PolicyResult::ManagedRestartObserved);
                     }

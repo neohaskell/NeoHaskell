@@ -160,6 +160,39 @@ impl ManagerIdentity {
             && self.socket == old.socket
             && self.listener == old.listener
     }
+
+    fn follows_proof(&self, old: &Self, continuity: &ReceiptContinuity) -> bool {
+        self.replaces(old) && self.started_monotonic > continuity.verified_monotonic
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(deny_unknown_fields)]
+struct ReceiptContinuity {
+    inputs_sha256: [u8; 32],
+    verified_monotonic: u64,
+}
+
+fn decode_continuity<'de, D>(deserializer: D) -> Result<Option<ReceiptContinuity>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    ReceiptContinuity::deserialize(deserializer).map(Some)
+}
+
+fn valid_continuity(
+    version: u8,
+    continuity: Option<&ReceiptContinuity>,
+    replacement: Option<&ManagerIdentity>,
+) -> bool {
+    match (version, continuity, replacement) {
+        (5, Some(proof), Some(replacement)) => {
+            proof.inputs_sha256 != [0; 32]
+                && proof.verified_monotonic >= replacement.started_monotonic
+        }
+        (5, _, _) | (_, Some(_), _) => false,
+        (_, None, _) => true,
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
@@ -223,6 +256,12 @@ struct UnchangedReceipt {
     boot_id: String,
     old_manager: ManagerIdentity,
     phase: UnchangedReceiptPhase,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "decode_continuity"
+    )]
+    continuity: Option<ReceiptContinuity>,
 }
 
 impl UnchangedReceipt {
@@ -233,7 +272,12 @@ impl UnchangedReceipt {
     }
 
     fn valid(&self) -> bool {
-        self.version == 4
+        let replacement = match &self.phase {
+            UnchangedReceiptPhase::RestartObserved { replacement, .. } => Some(replacement),
+            _ => None,
+        };
+        matches!(self.version, 4 | 5)
+            && valid_continuity(self.version, self.continuity.as_ref(), replacement)
             && self.operation.state_lease.is_some()
             && self.operation.valid()
             && valid_boot_id(&self.boot_id)
@@ -281,18 +325,29 @@ struct PublishedReceipt {
     boot_id: String,
     old_manager: ManagerIdentity,
     phase: ReceiptPhase,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "decode_continuity"
+    )]
+    continuity: Option<ReceiptContinuity>,
 }
 
 impl PublishedReceipt {
     fn valid(&self) -> bool {
+        let replacement = match &self.phase {
+            ReceiptPhase::RestartObserved { replacement } => Some(replacement),
+            _ => None,
+        };
         matches!(
             (
                 self.version,
                 self.secondary_sources_sha256,
                 self.operation.state_lease,
             ),
-            (1, None, None) | (2, Some(_), None) | (3, Some(_), Some(_))
-        ) && self.operation.valid()
+            (1, None, None) | (2, Some(_), None) | (3 | 5, Some(_), Some(_))
+        ) && valid_continuity(self.version, self.continuity.as_ref(), replacement)
+            && self.operation.valid()
             && self.baseline.valid()
             && self.staged.valid()
             && self.leaf.valid()
@@ -375,6 +430,7 @@ struct LiveReceipt<'a> {
     boot_id: &'a str,
     secondary: Option<[u8; 32]>,
     replacement: &'a ManagerIdentity,
+    continuity: Option<&'a ReceiptContinuity>,
 }
 
 impl PolicyReceipt {
@@ -411,6 +467,7 @@ impl PolicyReceipt {
                     boot_id: &receipt.boot_id,
                     secondary: receipt.secondary_sources_sha256,
                     replacement,
+                    continuity: receipt.continuity.as_ref(),
                 })
             }
             Self::Unchanged(receipt) => {
@@ -425,6 +482,7 @@ impl PolicyReceipt {
                     boot_id: &receipt.boot_id,
                     secondary: Some(receipt.secondary_sources_sha256),
                     replacement,
+                    continuity: receipt.continuity.as_ref(),
                 })
             }
         }
@@ -547,6 +605,7 @@ impl<'a> ReceiptWriter<'a> {
             boot_id: boot_id()?,
             old_manager: ManagerIdentity::capture(old)?,
             phase: ReceiptPhase::Prepared {},
+            continuity: None,
         });
         Self::persist_prepared(parent, stage, current)
     }
@@ -569,6 +628,7 @@ impl<'a> ReceiptWriter<'a> {
             boot_id: boot_id()?,
             old_manager: ManagerIdentity::capture(old)?,
             phase: UnchangedReceiptPhase::Prepared {},
+            continuity: None,
         });
         Self::persist_prepared(parent, stage, current)
     }
@@ -653,15 +713,29 @@ impl<'a> ReceiptWriter<'a> {
     pub(super) fn observe_restart(
         &mut self,
         replacement: &ManagedSnapshot,
+        inputs_sha256: Option<[u8; 32]>,
     ) -> Result<(), PolicyResult> {
         if boot_id()? != self.current.boot_id() {
             return Err(PolicyResult::PublicationUnknown);
         }
         let replacement = ManagerIdentity::capture(replacement)?;
+        let continuity = match inputs_sha256 {
+            Some(inputs_sha256) => Some(ReceiptContinuity {
+                inputs_sha256,
+                verified_monotonic: monotonic_micros()?,
+            }),
+            None => None,
+        };
         let next = match &self.current {
-            PolicyReceipt::Published(receipt) => PolicyReceipt::Published(
-                receipt.advance(ReceiptPhase::RestartObserved { replacement })?,
-            ),
+            PolicyReceipt::Published(receipt) => {
+                let mut completed =
+                    receipt.advance(ReceiptPhase::RestartObserved { replacement })?;
+                if continuity.is_some() {
+                    completed.version = 5;
+                    completed.continuity = continuity;
+                }
+                PolicyReceipt::Published(completed)
+            }
             PolicyReceipt::Unchanged(receipt) => {
                 let UnchangedReceiptPhase::RestartMayBeQueued { intent_monotonic } = receipt.phase
                 else {
@@ -672,6 +746,8 @@ impl<'a> ReceiptWriter<'a> {
                         intent_monotonic,
                         replacement,
                     },
+                    version: if continuity.is_some() { 5 } else { 4 },
+                    continuity,
                     ..receipt.clone()
                 })
             }
@@ -784,11 +860,11 @@ pub(super) fn verify_completed(
         |receipt| {
             matches!(
                 (receipt.version, operation.state_lease),
-                (1, None) | (3 | 4, Some(_))
+                (1, None) | (3 | 4 | 5, Some(_))
             ) && receipt.operation == operation
                 && receipt.reviewed == request.bytes()
         },
-        || Ok(()),
+        |_| Ok(()),
     )
 }
 
@@ -798,21 +874,28 @@ pub(super) fn verify_existing(
     stage: &File,
     caller_uid: u32,
     lease: PolicyStateLease,
-    common: [u8; 32],
+    stamp: [u8; 32],
 ) -> Result<(), PolicyResult> {
     verify_live_receipt(
         inputs,
         parent,
         stage,
         |receipt| {
-            matches!(receipt.version, 3 | 4)
+            matches!(receipt.version, 3 | 4 | 5)
                 && receipt.operation.caller_uid == caller_uid
                 && receipt.operation.state_lease == Some(lease)
         },
-        || {
+        |observed| {
             let configuration = configuration_input(&inputs.source, read)
                 .map_err(|_| PolicyResult::InaccessibleInputs)?;
-            if common_inputs(&configuration, inputs.pid)? != common {
+            if replacement_input_stamp(
+                &configuration,
+                observed.pid,
+                observed.started,
+                observed.invocation,
+                observed.socket,
+            )? != stamp
+            {
                 return Err(PolicyResult::ChangedInputs);
             }
             Ok(())
@@ -825,7 +908,7 @@ fn verify_live_receipt(
     parent: &File,
     stage: &File,
     matches_receipt: impl FnOnce(&LiveReceipt<'_>) -> bool,
-    verify_current: impl Fn() -> Result<(), PolicyResult> + Sync,
+    verify_current: impl Fn(&ManagedSnapshot) -> Result<(), PolicyResult> + Sync,
 ) -> Result<(), PolicyResult> {
     check_stage(parent, stage)?;
     require_absent(&descriptor_path(stage, RECEIPT_TEMP))?;
@@ -835,17 +918,33 @@ fn verify_live_receipt(
     if !matches_receipt(&live) {
         return Err(PolicyResult::PublicationUnknown);
     }
-    let verify = || {
+    let candidate = inputs
+        .managed_snapshot()?
+        .ok_or(PolicyResult::PublicationUnknown)?;
+    let generation = ManagerIdentity::capture(&candidate)?;
+    let continuity = if generation == *live.replacement {
+        None
+    } else {
+        let proof = live.continuity.ok_or(PolicyResult::PublicationUnknown)?;
+        if !generation.follows_proof(live.replacement, proof) {
+            return Err(PolicyResult::PublicationUnknown);
+        }
+        Some(proof.inputs_sha256)
+    };
+    let verify = |current: &PolicyInputs| {
         check_stage(parent, stage)?;
         require_absent(&descriptor_path(stage, RECEIPT_TEMP))?;
         if boot_id()? != live.boot_id || read_current(stage, &file)? != receipt {
             return Err(PolicyResult::PublicationUnknown);
         }
         receipt.verify_configuration(stage)?;
-        verify_current()
+        if let Some(expected) = continuity {
+            continuity::capture(current)?.verify(expected)?;
+        }
+        verify_current(&candidate)
     };
     let observed = inputs.inspect_managed_view(live.secondary, &verify)?;
-    if ManagerIdentity::capture(&observed)? != *live.replacement {
+    if observed != candidate {
         return Err(PolicyResult::PublicationUnknown);
     }
     Ok(())
@@ -969,6 +1068,7 @@ mod tests {
                 snapshot_sha256: [4; 32],
             },
             phase: ReceiptPhase::Prepared {},
+            continuity: None,
         }
     }
 
@@ -1061,6 +1161,65 @@ mod tests {
     }
 
     #[test]
+    fn later_generation_requires_a_completed_continuity_proof() {
+        let mut receipt = receipt();
+        receipt.version = 3;
+        receipt.secondary_sources_sha256 = Some([4; 32]);
+        receipt.operation.state_lease = Some(PolicyStateLease {
+            device: 8,
+            inode: 23,
+        });
+        let mut replacement = receipt.old_manager.clone();
+        replacement.pid += 1;
+        replacement.invocation_id = "a".repeat(32);
+        replacement.started_monotonic += 2;
+        let proof = ReceiptContinuity {
+            inputs_sha256: [5; 32],
+            verified_monotonic: replacement.started_monotonic + 2,
+        };
+        let decode = |receipt: &PublishedReceipt| {
+            PolicyReceipt::decode(&serde_json::to_vec(receipt).unwrap())
+        };
+        receipt.continuity = Some(proof.clone());
+        assert!(decode(&receipt).is_err());
+        receipt.version = 5;
+        assert!(decode(&receipt).is_err());
+        receipt.phase = ReceiptPhase::RestartObserved {
+            replacement: replacement.clone(),
+        };
+        let decoded = decode(&receipt).unwrap();
+        let live = decoded.live().unwrap();
+        assert_eq!(live.continuity, Some(&proof));
+
+        let mut candidate = replacement.clone();
+        candidate.pid += 1;
+        candidate.invocation_id = "b".repeat(32);
+        candidate.started_monotonic = proof.verified_monotonic;
+        assert!(!candidate.follows_proof(&replacement, &proof));
+        candidate.started_monotonic += 1;
+        assert!(candidate.follows_proof(&replacement, &proof));
+        candidate.listener += 1;
+        assert!(!candidate.follows_proof(&replacement, &proof));
+
+        receipt.continuity.as_mut().unwrap().verified_monotonic = replacement.started_monotonic - 1;
+        assert!(decode(&receipt).is_err());
+        receipt.continuity = None;
+        assert!(decode(&receipt).is_err());
+        receipt.version = 3;
+        assert!(
+            decode(&receipt)
+                .unwrap()
+                .live()
+                .unwrap()
+                .continuity
+                .is_none()
+        );
+        let mut raw = serde_json::to_value(receipt).unwrap();
+        raw["continuity"] = serde_json::Value::Null;
+        assert!(PolicyReceipt::decode(&serde_json::to_vec(&raw).unwrap()).is_err());
+    }
+
+    #[test]
     fn unchanged_receipt_requires_its_own_evidence_lease_and_restart_fence() {
         let previous = receipt();
         let mut replacement = previous.old_manager.clone();
@@ -1084,6 +1243,7 @@ mod tests {
             boot_id: previous.boot_id,
             old_manager: previous.old_manager,
             phase: UnchangedReceiptPhase::Prepared {},
+            continuity: None,
         };
         let raw = serde_json::to_vec(&prepared).unwrap();
         assert_eq!(

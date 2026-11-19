@@ -67,18 +67,14 @@ impl ExactExecutable {
         &self,
         caller: Option<&VerifiedCaller>,
         lease: crate::installation::PolicyStateLease,
-        common: [u8; 32],
+        stamp: [u8; 32],
         terminal: Option<&ParkedTerminal>,
         cancelled: impl Fn() -> bool,
     ) -> Result<Option<VerifiedExistingPolicy>, HandoffError> {
         self.recheck()?;
         Ok(
-            native::verify_existing(self, caller, lease, common, terminal, cancelled)?.then_some(
-                VerifiedExistingPolicy {
-                    lease,
-                    inputs: VerifiedPolicyInputs::Common(common),
-                },
-            ),
+            native::verify_existing(self, caller, lease, stamp, terminal, cancelled)?
+                .then_some(VerifiedExistingPolicy { lease, stamp }),
         )
     }
 
@@ -309,7 +305,7 @@ impl ExactExecutable {
             (PolicyOperation::ConventionalAppend, None) => None,
             (PolicyOperation::ApplyUnchanged, Some(stamp)) => Some(VerifiedExistingPolicy {
                 lease: pending.state_lease.ok_or(HandoffError::Frame)?,
-                inputs: VerifiedPolicyInputs::Replacement(stamp),
+                stamp,
             }),
             _ => return Err(HandoffError::Frame),
         };
@@ -657,14 +653,9 @@ impl VerifiedPreparedPolicy {
     }
 }
 
-enum VerifiedPolicyInputs {
-    Common([u8; 32]),
-    Replacement([u8; 32]),
-}
-
 pub(in crate::installation) struct VerifiedExistingPolicy {
     lease: crate::installation::PolicyStateLease,
-    inputs: VerifiedPolicyInputs,
+    stamp: [u8; 32],
 }
 
 impl VerifiedExistingPolicy {
@@ -676,12 +667,7 @@ impl VerifiedExistingPolicy {
         if self.lease != lease {
             return Ok(false);
         }
-        match self.inputs {
-            VerifiedPolicyInputs::Common(stamp) => Ok(stamp == observed.common_policy_inputs()?),
-            VerifiedPolicyInputs::Replacement(stamp) => {
-                Ok(stamp == observed.replacement_policy_stamp()?)
-            }
-        }
+        Ok(self.stamp == observed.replacement_policy_stamp()?)
     }
 }
 
