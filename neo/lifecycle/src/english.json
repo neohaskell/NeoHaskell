@@ -49,6 +49,7 @@
   "review_activation": "Activate the selected package pair if it differs.",
   "review_nix_policy": "Add an include to /etc/nix/nix.conf to enable nix-command and flakes and add https://cache.iog.io and https://neohaskell.cachix.org with their signing keys. Apply the policy and restart the Nix daemon with administrator access.",
   "review_existing_nix_policy": "Use administrator access to verify the running Nix daemon and its existing cache policy.",
+  "review_darwin_policy_inspection": "Prepare a temporary helper and use administrator access to inspect the running Nix daemon and its configuration.",
   "review_apply_existing_nix_policy": "Use administrator access to restart nix-daemon.service with the existing configuration. The restart can interrupt Nix work. The configuration files stay unchanged.",
   "administrator_handoff": "Waiting for administrator authorization to run the reviewed Nix operation.",
   "administrator_unavailable": "Administrator authorization could not be confirmed. Check sudo access for the reviewed operation and retry.",

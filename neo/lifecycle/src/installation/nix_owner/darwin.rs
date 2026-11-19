@@ -10,13 +10,16 @@ use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::ptr::{NonNull, null};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
+mod administrator;
 mod configuration;
+pub(in crate::installation) mod discovery_effect;
 mod startup;
 
 use self::configuration::{DiskObservation, DiskPolicy, SourceRoute};
 use self::startup::StartupContext;
+pub(crate) use administrator::dispatch as dispatch_administrator;
 
 pub(crate) const OBSERVE_ARGUMENT: &str = "--internal-observe-darwin-nix";
 pub(in crate::installation) const OBSERVATION_BYTES: usize = 8;
@@ -34,6 +37,7 @@ const PLIST: &str = "/Library/LaunchDaemons/systems.determinate.nix-daemon.plist
 const SERVICE: &str = "/var/run/determinate-nixd.socket";
 const LISTENER: &str = "/var/run/nix-daemon.socket";
 const LAUNCHCTL_LIMIT: u64 = 64 * 1024;
+const LAUNCHCTL_TIMEOUT: Duration = Duration::from_secs(2);
 const SOCKET_TIMEOUT: Duration = Duration::from_secs(2);
 
 const PROTOCOL: u64 = 0x123;
@@ -46,6 +50,20 @@ const VERSION: &[u8; 8] = b"2.35.2\0\0";
 pub(in crate::installation) struct ObservedDarwinNix {
     disk: DiskObservation,
     startup: StartupContext,
+}
+
+impl ObservedDarwinNix {
+    pub(in crate::installation) fn supports_inspection(&self) -> bool {
+        self.disk.source != SourceRoute::Unknown
+            && self.disk.policy != DiskPolicy::Unknown
+            && self.startup == StartupContext::RequiresPrivilege
+    }
+
+    pub(in crate::installation) fn confirms(&self, ordinary: &Self) -> bool {
+        ordinary.supports_inspection()
+            && self.disk == ordinary.disk
+            && self.startup == StartupContext::StandardSources
+    }
 }
 
 pub(in crate::installation) fn decode_observation(
@@ -86,6 +104,18 @@ pub(in crate::installation) fn decode_observation(
 }
 
 pub(crate) fn run_observer() -> i32 {
+    let Some(frame) = observe_frame() else {
+        return 1;
+    };
+    i32::from(
+        io::stdout()
+            .write_all(&frame)
+            .and_then(|()| io::stdout().flush())
+            .is_err(),
+    )
+}
+
+pub(super) fn observe_frame() -> Option<[u8; OBSERVATION_BYTES]> {
     let fields = match observe() {
         Ok(value) => [
             0,
@@ -107,16 +137,11 @@ pub(crate) fn run_observer() -> i32 {
         Err(NixBlock::UnprovedService) => [4, 0, 0, 0],
         Err(NixBlock::DaemonUnavailable) => [5, 0, 0, 0],
         Err(NixBlock::DaemonMismatch) => [6, 0, 0, 0],
-        Err(_) => return 1,
+        Err(_) => return None,
     };
     let mut frame = [b'N', b'D', b'V', 2, 0, 0, 0, 0];
     frame[4..].copy_from_slice(&fields);
-    i32::from(
-        io::stdout()
-            .write_all(&frame)
-            .and_then(|()| io::stdout().flush())
-            .is_err(),
-    )
+    Some(frame)
 }
 
 #[derive(Eq, PartialEq)]
@@ -252,22 +277,51 @@ fn launchd_pid() -> Result<u32, NixBlock> {
         .stdout(Stdio::piped())
         .spawn()
         .map_err(|_| NixBlock::UnprovedService)?;
-    let mut output = Vec::new();
-    let read_result = child
-        .stdout
-        .take()
-        .expect("launchctl stdout pipe")
-        .take(LAUNCHCTL_LIMIT + 1)
-        .read_to_end(&mut output);
-    if !read_result.is_ok_and(|size| size <= LAUNCHCTL_LIMIT as usize) {
+    let observed = read_launchctl(&mut child);
+    if observed.is_err() {
         let _ = child.kill();
         let _ = child.wait();
+    }
+    observed
+}
+
+fn read_launchctl(child: &mut std::process::Child) -> Result<u32, NixBlock> {
+    let deadline = Instant::now() + LAUNCHCTL_TIMEOUT;
+    let mut pipe = child.stdout.take().ok_or(NixBlock::UnprovedService)?;
+    let fd = pipe.as_raw_fd();
+    let flags = unsafe { libc::fcntl(fd, libc::F_GETFL) };
+    if flags < 0 || unsafe { libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK) } < 0 {
         return Err(NixBlock::UnprovedService);
     }
-    if !child.wait().is_ok_and(|status| status.success()) {
-        return Err(NixBlock::InactiveService);
+    let mut output = Vec::new();
+    let mut buffer = [0; 4096];
+    let mut eof = false;
+    while !administrator::cancelled() && Instant::now() < deadline {
+        if !eof {
+            match pipe.read(&mut buffer) {
+                Ok(0) => eof = true,
+                Ok(count) if output.len() + count <= LAUNCHCTL_LIMIT as usize => {
+                    output.extend_from_slice(&buffer[..count]);
+                    continue;
+                }
+                Err(error)
+                    if matches!(
+                        error.kind(),
+                        io::ErrorKind::WouldBlock | io::ErrorKind::Interrupted
+                    ) => {}
+                _ => return Err(NixBlock::UnprovedService),
+            }
+        }
+        if eof && let Some(status) = child.try_wait().map_err(|_| NixBlock::UnprovedService)? {
+            return if status.success() {
+                parse_job(&output)
+            } else {
+                Err(NixBlock::InactiveService)
+            };
+        }
+        std::thread::sleep(Duration::from_millis(10));
     }
-    parse_job(&output)
+    Err(NixBlock::UnprovedService)
 }
 
 fn parse_job(output: &[u8]) -> Result<u32, NixBlock> {

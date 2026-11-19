@@ -40,6 +40,10 @@ pub fn dispatch_internal(arguments: &[std::ffi::OsString]) -> Option<Exit> {
 
 fn dispatch_installed_internal(arguments: &[std::ffi::OsString]) -> Option<Exit> {
     #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+    if let Some(code) = installation::nix_owner::darwin::dispatch_administrator(arguments) {
+        return Some(Exit { code });
+    }
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
     if matches!(arguments, [arg] if arg == installation::nix_owner::darwin::OBSERVE_ARGUMENT) {
         return Some(Exit {
             code: installation::nix_owner::darwin::run_observer(),
@@ -477,6 +481,8 @@ fn write_review(
             ReviewedChange::Cleanup => &copy.review_cleanup,
             ReviewedChange::NixPolicy => &copy.review_nix_policy,
             ReviewedChange::ExistingNixPolicy => &copy.review_existing_nix_policy,
+            #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+            ReviewedChange::DarwinPolicyInspection => &copy.review_darwin_policy_inspection,
             ReviewedChange::ApplyExistingNixPolicy => &copy.review_apply_existing_nix_policy,
             #[cfg(target_os = "linux")]
             ReviewedChange::NixPolicyRecoveryInspection => {

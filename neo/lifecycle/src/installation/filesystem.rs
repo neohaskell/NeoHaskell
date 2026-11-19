@@ -158,6 +158,11 @@ pub(super) enum FilesystemJob {
         expected: FileIdentity,
         location: PolicyHelperLocation,
     },
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+    ObserveDarwinPolicy {
+        path: PathBuf,
+        release: FileIdentity,
+    },
     #[cfg(target_os = "linux")]
     ObserveStockPolicy {
         executable: ExactExecutable,
@@ -223,6 +228,8 @@ pub(super) enum ExistingNixInspector {
 }
 
 pub(super) enum FilesystemResult {
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+    DarwinPolicyObserved(super::nix_owner::darwin::ObservedDarwinNix),
     #[cfg(target_os = "linux")]
     ExistingNixPolicyVerified(VerifiedExistingPolicy),
     #[cfg(target_os = "linux")]
@@ -299,6 +306,8 @@ impl FilesystemJob {
 
     pub(super) fn mutates(&self) -> bool {
         match self {
+            #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+            Self::ObserveDarwinPolicy { .. } => false,
             #[cfg(all(test, target_os = "linux"))]
             Self::PublishPolicyIntent { .. } => true,
             #[cfg(target_os = "linux")]
@@ -1094,6 +1103,20 @@ fn execute(
         } => Ok(Result::Digest(hash_helper(
             &path, &expected, location, policy,
         )?)),
+        #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+        Job::ObserveDarwinPolicy { path, release } => {
+            policy.check()?;
+            let (file, identity) =
+                open_verified_helper(&path, &release, PolicyHelperLocation::Store)?;
+            super::nix_owner::darwin::discovery_effect::observe(
+                &path,
+                &file,
+                &identity,
+                terminal,
+                || policy.check(),
+            )
+            .map(Result::DarwinPolicyObserved)
+        }
         #[cfg(target_os = "linux")]
         Job::ObserveStockPolicy {
             executable,

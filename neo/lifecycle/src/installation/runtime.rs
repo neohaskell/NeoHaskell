@@ -270,9 +270,9 @@ impl LaunchTarget<'_> {
 
 impl InstallationOwner {
     #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
-    async fn observe_install_nix_base(
+    async fn observe_darwin_nix(
         &self,
-    ) -> Result<super::nix_owner::ObservedNixBase, TransactionError> {
+    ) -> Result<super::nix_owner::darwin::ObservedDarwinNix, TransactionError> {
         use super::nix_owner::{NixBlock, darwin};
 
         let blocked = TransactionError::NixBlocked(NixBlock::UnprovedService);
@@ -286,12 +286,73 @@ impl InstallationOwner {
         {
             return Err(TransactionError::NixBlocked(NixBlock::UnprovedService));
         }
-        let _identity = darwin::decode_observation(&observation.stdout)
+        let identity = darwin::decode_observation(&observation.stdout)
             .map_err(TransactionError::NixBlocked)?;
         self.effects.observe_row(0, Row::Existing);
+        Ok(identity)
+    }
+
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+    async fn observe_install_nix_base(
+        &self,
+    ) -> Result<super::nix_owner::ObservedNixBase, TransactionError> {
+        self.observe_darwin_nix().await?;
         Err(TransactionError::NixBlocked(
-            NixBlock::ConfigurationOwnerUnknown,
+            super::nix_owner::NixBlock::ConfigurationOwnerUnknown,
         ))
+    }
+
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+    async fn inspect_darwin_policy(
+        &self,
+        evidence: &ExecutorEvidence,
+        source: &release::ReleaseSource,
+        recovery: &super::review::PreparedRecovery,
+        request: &snapshot::Request,
+    ) -> Result<(), TransactionError> {
+        let ordinary = self.observe_darwin_nix().await?;
+        if !ordinary.supports_inspection() {
+            return Ok(());
+        }
+        let plan = self.plan_nix_policy_helper(evidence, source).await?;
+        let mut summary = recovery.summary(request, Some(plan.release_version.clone()));
+        summary.changes = vec![super::ReviewedChange::DarwinPolicyInspection];
+        let review = self.effects.review(summary).await?;
+        self.recheck_recovery(recovery).await?;
+        self.recheck_sources(&evidence.sources).await?;
+        if self.observe_darwin_nix().await? != ordinary
+            || self.plan_nix_policy_helper(evidence, source).await? != plan
+        {
+            return Err(self.effects.review_changed());
+        }
+        self.effects.admit_reviewed(review)?;
+        let prepared = self.prepare_policy_helper(plan).await?;
+        self.recheck_prepared_nix_policy_helper(&prepared).await?;
+        let observed = match self
+            .effects
+            .filesystem(super::FilesystemJob::ObserveDarwinPolicy {
+                path: PathBuf::from(prepared.expected.as_str()),
+                release: prepared.release.clone(),
+            })
+            .await
+        {
+            Err(error @ (TransactionError::StopRequested | TransactionError::CleanupUnknown)) => {
+                return Err(error);
+            }
+            other => other,
+        };
+        self.release_prepared_nix_policy_helper(prepared).await?;
+        let super::FilesystemResult::DarwinPolicyObserved(root) = observed? else {
+            return Err(TransactionError::InvalidState(
+                "Darwin policy observation completion type",
+            ));
+        };
+        if !root.confirms(&ordinary) {
+            return Err(self.effects.review_changed());
+        }
+        self.effects
+            .completed(crate::diagnostics::CompletedStep::NixPolicyObservation);
+        Ok(())
     }
 
     #[cfg(not(all(target_os = "macos", target_arch = "aarch64")))]
@@ -1205,6 +1266,18 @@ impl InstallationOwner {
         }
         let commands = self.observe_command_path().await?;
         self.effects.observe(Activity::CheckingNix);
+        #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+        if let Some(evidence) = bootstrap_evidence.as_ref()
+            && !matches!(&request, snapshot::Request::Rollback)
+            && !(matches!(&request, snapshot::Request::Install(None))
+                && recovery.projected.committed.is_some())
+        {
+            self.inspect_darwin_policy(evidence, &source, &recovery, &request)
+                .await?;
+            return Err(TransactionError::NixBlocked(
+                super::nix_owner::NixBlock::ConfigurationOwnerUnknown,
+            ));
+        }
         let observed_nix = self.observe_install_nix_base().await?;
         self.effects.observe_row(0, Row::Existing);
         self.effects.observe_row(1, Row::Unchanged);

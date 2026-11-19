@@ -34,6 +34,8 @@ pub(crate) struct English {
     pub(crate) review_cleanup: String,
     pub(crate) review_nix_policy: String,
     pub(crate) review_existing_nix_policy: String,
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+    pub(crate) review_darwin_policy_inspection: String,
     pub(crate) review_apply_existing_nix_policy: String,
     #[cfg(target_os = "linux")]
     pub(crate) review_nix_policy_recovery_inspection: String,

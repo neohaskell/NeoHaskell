@@ -94,6 +94,8 @@ pub(crate) enum ReviewedChange {
     NixPolicy,
     ExistingNixPolicy,
     ApplyExistingNixPolicy,
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+    DarwinPolicyInspection,
     #[cfg(target_os = "linux")]
     NixPolicyRecoveryInspection,
     #[cfg(target_os = "linux")]
@@ -323,6 +325,13 @@ enum AcceptedProgress {
     MutationAdmitted,
 }
 
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum DarwinInspectionReview {
+    Pending(u64),
+    Consumed,
+}
+
 pub(super) struct MutationPermission {
     _private: (),
 }
@@ -387,6 +396,8 @@ struct EffectState {
     settlement: Option<SettlementPermit>,
     next_identity: u64,
     review: ReviewGate,
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+    darwin_inspection_review: Option<DarwinInspectionReview>,
     recovery: RecoveryPending,
     journal_attempt: Option<JournalAttempt>,
     observation: super::observation::PresentationObservation,
@@ -543,6 +554,12 @@ enum PolicyIntentOperation {
 
 impl EffectRequest {
     fn accepts_administrator_terminal(&self) -> bool {
+        #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+        if let Self::Filesystem(FilesystemJob::ObserveDarwinPolicy { .. }, Admission::Requested) =
+            self
+        {
+            return true;
+        }
         #[cfg(target_os = "linux")]
         if let Self::Filesystem(
             FilesystemJob::ObserveStockPolicy { .. }
@@ -565,6 +582,60 @@ impl EffectRequest {
         }
     }
 
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+    fn permits_darwin_inspection(&self, lease: &RootLease, review: DarwinInspectionReview) -> bool {
+        use std::os::unix::fs::MetadataExt;
+
+        let Some(state_directory) = lease.path.parent() else {
+            return false;
+        };
+        match self {
+            Self::Process(process::WorkerRequest::ImportPolicyHelper { .. }) => {
+                matches!(review, DarwinInspectionReview::Pending(_))
+            }
+            Self::Process(process::WorkerRequest::RegisterExact {
+                pair,
+                root: process::RootName::NixPolicyHelper,
+            }) => {
+                matches!(review, DarwinInspectionReview::Pending(_))
+                    && pair
+                        .strip_prefix("/nix/store/")
+                        .and_then(|name| name.split_once('-'))
+                        .is_some_and(|(_, name)| name == "neo-policy-helper")
+            }
+            Self::Filesystem(FilesystemJob::OpenResourceDirectory(path), _) => {
+                *path == state_directory.join("resources")
+            }
+            Self::Filesystem(
+                FilesystemJob::RemoveResource {
+                    directory, name, ..
+                },
+                _,
+            ) => {
+                super::resources::is_helper_link(name)
+                    && std::fs::symlink_metadata(state_directory.join("resources")).is_ok_and(
+                        |metadata| {
+                            metadata.is_dir()
+                                && metadata.dev() == directory.identity.device
+                                && metadata.ino() == directory.identity.inode
+                                && metadata.uid() == directory.identity.uid
+                        },
+                    )
+            }
+            Self::Filesystem(
+                FilesystemJob::PublishRecord {
+                    path,
+                    bytes,
+                    committing: false,
+                },
+                _,
+            ) if *path == state_directory.join(super::STATE_NAME) => {
+                darwin_helper_record_only(path, bytes, review).unwrap_or(false)
+            }
+            _ => !self.mutates(),
+        }
+    }
+
     #[cfg(target_os = "linux")]
     fn policy_intent_operation(&self) -> Option<(&Layout, PolicyIntentOperation)> {
         match self {
@@ -578,6 +649,80 @@ impl EffectRequest {
             _ => None,
         }
     }
+}
+
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+fn darwin_helper_record_only(
+    path: &std::path::Path,
+    bytes: &[u8],
+    review: DarwinInspectionReview,
+) -> Result<bool, TransactionError> {
+    use super::resources::{HELPER_ROOT, ResourceEffect, is_helper_link};
+    use std::fs::OpenOptions;
+    use std::io::Read;
+    use std::os::unix::fs::OpenOptionsExt;
+
+    let decode = |bytes: &[u8]| {
+        if bytes.len() as u64 > super::MAX_STATE_BYTES {
+            return Err(TransactionError::InvalidState(
+                "oversized Darwin helper record",
+            ));
+        }
+        serde_json::from_slice::<super::InstallationRecord>(bytes)
+            .map_err(|_| TransactionError::InvalidState("invalid Darwin helper record"))
+    };
+    let mut before = match OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK | libc::O_CLOEXEC)
+        .open(path)
+    {
+        Ok(file) => {
+            super::validate_private_file(&file.metadata().map_err(|_| TransactionError::Io)?)?;
+            let mut bytes = Vec::new();
+            file.take(super::MAX_STATE_BYTES + 1)
+                .read_to_end(&mut bytes)
+                .map_err(|_| TransactionError::Io)?;
+            decode(&bytes)?
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            super::InstallationRecord::default()
+        }
+        Err(_) => return Err(TransactionError::Io),
+    };
+    let mut next = decode(bytes)?;
+    let helper_pending = |record: &super::InstallationRecord| {
+        record
+            .resources
+            .pending
+            .as_ref()
+            .is_none_or(|effect| match effect {
+                ResourceEffect::Register { parent, .. } => parent == HELPER_ROOT,
+                ResourceEffect::Remove { name, .. } => is_helper_link(name),
+                ResourceEffect::Acquire { .. } => false,
+            })
+    };
+    if !helper_pending(&before)
+        || !helper_pending(&next)
+        || before.resources.parent.is_some() && next.resources.parent != before.resources.parent
+        || review == DarwinInspectionReview::Consumed
+            && matches!(
+                next.resources.pending,
+                Some(ResourceEffect::Register { .. })
+            )
+            && next.resources.pending != before.resources.pending
+    {
+        return Ok(false);
+    }
+    next.resources.parent = before.resources.parent.clone();
+    before.resources.pending = None;
+    next.resources.pending = None;
+    for record in [&mut before, &mut next] {
+        record
+            .resources
+            .links
+            .retain(|name, _| !is_helper_link(name));
+    }
+    Ok(before == next)
 }
 
 impl EffectSlot {
@@ -628,6 +773,12 @@ impl Future for EffectFuture {
             }
             if matches!(this.effects.admission, Admission::Requested) {
                 state.journal_attempt = None;
+            }
+            #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+            if let Some(EffectRequest::Filesystem(FilesystemJob::ObserveDarwinPolicy { .. }, _)) =
+                this.request.as_ref()
+            {
+                state.darwin_inspection_review = Some(DarwinInspectionReview::Consumed);
             }
             state.slot = EffectSlot::Admitted(this.request.take().unwrap());
             if state.slot.mutates() {
@@ -691,6 +842,12 @@ impl Effects {
                 .checked_add(1)
                 .ok_or(TransactionError::InvalidState("owner identity exhausted"))?;
             let identity = state.next_identity;
+            #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+            {
+                state.darwin_inspection_review = (summary.changes
+                    == [ReviewedChange::DarwinPolicyInspection])
+                .then_some(DarwinInspectionReview::Pending(identity));
+            }
             state.diagnostics.review();
             state.review = ReviewGate::Awaiting {
                 identity,
@@ -1002,6 +1159,12 @@ impl Effects {
         }
         let settlement = {
             let mut state = self.state.borrow_mut();
+            #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+            if state.darwin_inspection_review.is_some() {
+                return Err(TransactionError::InvalidState(
+                    "Darwin policy inspection does not authorize recovery",
+                ));
+            }
             if !matches!(state.review, ReviewGate::Accepted { .. })
                 || !matches!(state.slot, EffectSlot::Idle)
                 || state.settlement.is_some()
@@ -1054,6 +1217,8 @@ impl Effects {
                 settlement: None,
                 next_identity: 0,
                 review: ReviewGate::Inspecting,
+                #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+                darwin_inspection_review: None,
                 recovery: RecoveryPending::Unknown,
                 journal_attempt: None,
                 observation: super::observation::PresentationObservation::new(),
@@ -1101,6 +1266,56 @@ impl Effects {
         ) && self.state.borrow().lease.is_some()
         {
             return Err(TransactionError::InvalidState("startup already completed"));
+        }
+        #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+        if let EffectRequest::Filesystem(FilesystemJob::ObserveDarwinPolicy { .. }, admission) =
+            request
+        {
+            use std::os::unix::fs::MetadataExt;
+
+            self.checkpoint()?;
+            let state = self.state.borrow();
+            let reviewed = matches!(state.review, ReviewGate::Accepted { identity, .. }
+                if state.darwin_inspection_review == Some(DarwinInspectionReview::Pending(identity)));
+            let lease_held = state.lease.as_ref().is_some_and(|lease| {
+                let (Ok(held), Ok(named)) = (
+                    lease.file.metadata(),
+                    std::fs::symlink_metadata(&lease.path),
+                ) else {
+                    return false;
+                };
+                super::validate_private_file(&named).is_ok()
+                    && held.nlink() == 1
+                    && named.nlink() == 1
+                    && held.dev() == named.dev()
+                    && held.ino() == named.ino()
+            });
+            return if matches!(admission, Admission::Requested)
+                && matches!(self.admission, Admission::Requested)
+                && reviewed
+                && lease_held
+            {
+                Ok(())
+            } else {
+                Err(TransactionError::InvalidState(
+                    "Darwin policy inspection requires accepted review and live lease",
+                ))
+            };
+        }
+        #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+        {
+            let state = self.state.borrow();
+            if let Some(review) = state.darwin_inspection_review
+                && request.mutates()
+                && !state
+                    .lease
+                    .as_ref()
+                    .is_some_and(|lease| request.permits_darwin_inspection(lease, review))
+            {
+                return Err(TransactionError::InvalidState(
+                    "effect is outside the Darwin policy inspection review",
+                ));
+            }
         }
         #[cfg(target_os = "linux")]
         if let EffectRequest::Filesystem(
@@ -1319,6 +1534,14 @@ impl Effects {
 
     fn issue_settlement(&self, kind: SettlementKind) -> Result<Self, TransactionError> {
         let mut state = self.state.borrow_mut();
+        #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+        if state.darwin_inspection_review.is_some()
+            && !matches!(kind, SettlementKind::Resource | SettlementKind::Observation)
+        {
+            return Err(TransactionError::InvalidState(
+                "settlement is outside the Darwin policy inspection review",
+            ));
+        }
         #[cfg(target_os = "linux")]
         if matches!(
             state.review,
@@ -2033,6 +2256,134 @@ fn administrator_terminal_requires_review_owned_lease_and_live_effect() {
     assert!(effects.administrator_pending());
     effects.cancel_for_test();
     assert!(!effects.administrator_pending());
+}
+
+#[cfg(all(test, target_os = "macos", target_arch = "aarch64"))]
+#[test]
+fn darwin_policy_inspection_consumes_only_its_own_review_under_a_live_lease() {
+    fn request() -> EffectRequest {
+        EffectRequest::Filesystem(
+            FilesystemJob::ObserveDarwinPolicy {
+                path: "/nix/store/00000000000000000000000000000000-neo-policy-helper".into(),
+                release: crate::candidate::FileIdentity {
+                    name: "neo-installer-aarch64-apple-darwin".into(),
+                    sha: "0".repeat(64),
+                    size: 1,
+                },
+            },
+            Admission::Requested,
+        )
+    }
+
+    let temporary = tempfile::tempdir().unwrap();
+    let activation = EffectRequest::Filesystem(
+        FilesystemJob::EnsureCommandDirectory(temporary.path().join("bin")),
+        Admission::Requested,
+    );
+    let generic = Effects::for_tests();
+    generic.state.borrow_mut().lease =
+        Some(RootLease::acquire(&temporary.path().join("generic")).unwrap());
+    assert!(generic.check_admission(&request()).is_err());
+    generic.accept_fixture_review();
+    assert!(generic.check_admission(&request()).is_err());
+    assert!(generic.check_admission(&activation).is_ok());
+
+    let effects = Effects::for_tests();
+    let waker = Waker::from(Arc::new(CallerWake));
+    let mut context = Context::from_waker(&waker);
+    let mut review = Box::pin(effects.review(ReviewSummary {
+        operation: ReviewOperation::Install,
+        version: None,
+        recovery: RecoveryPending::None,
+        changes: vec![ReviewedChange::DarwinPolicyInspection],
+    }));
+    assert!(review.as_mut().poll(&mut context).is_pending());
+    let offer = effects.take_review().unwrap();
+    effects.answer(offer.token, None).unwrap();
+    let Poll::Ready(Ok(identity)) = review.as_mut().poll(&mut context) else {
+        panic!("Darwin inspection review was not accepted");
+    };
+    effects.admit_reviewed(identity).unwrap();
+    assert!(effects.check_admission(&request()).is_err());
+    let lease_path = temporary.path().join("inspection");
+    let parked = temporary.path().join("inspection-parked");
+    effects.state.borrow_mut().lease = Some(RootLease::acquire(&lease_path).unwrap());
+    assert!(effects.check_admission(&request()).is_ok());
+    assert!(effects.check_admission(&activation).is_err());
+    assert!(
+        effects
+            .issue_settlement(SettlementKind::Activation)
+            .is_err()
+    );
+    let helper = "/nix/store/00000000000000000000000000000000-neo-policy-helper";
+    let import = EffectRequest::Process(process::WorkerRequest::ImportPolicyHelper {
+        client: "/nix/var/nix/profiles/default/bin/nix".into(),
+        source: temporary.path().join("installer"),
+    });
+    assert!(effects.check_admission(&import).is_ok());
+    let managed = EffectRequest::Process(process::WorkerRequest::RegisterExact {
+        pair: helper.into(),
+        root: process::RootName::NixPolicyHelper,
+    });
+    assert!(effects.check_admission(&managed).is_ok());
+    let unrelated = EffectRequest::Process(process::WorkerRequest::RegisterExact {
+        pair: helper.into(),
+        root: process::RootName::Candidate("unrelated".into()),
+    });
+    assert!(effects.check_admission(&unrelated).is_err());
+    let write_record = |record: &super::InstallationRecord, admission| {
+        EffectRequest::Filesystem(
+            FilesystemJob::PublishRecord {
+                path: temporary.path().join(super::STATE_NAME),
+                bytes: serde_json::to_vec(record).unwrap(),
+                committing: false,
+            },
+            admission,
+        )
+    };
+    let mut record = super::InstallationRecord::default();
+    record.resources.pending = Some(super::resources::ResourceEffect::Register {
+        pair: helper.into(),
+        parent: super::resources::HELPER_ROOT.into(),
+    });
+    assert!(
+        effects
+            .check_admission(&write_record(&record, Admission::Requested))
+            .is_ok()
+    );
+    record.previous_observation = super::PriorObservation::MissingOutput;
+    assert!(
+        effects
+            .check_admission(&write_record(&record, Admission::Requested))
+            .is_err()
+    );
+    record.previous_observation = super::PriorObservation::NotChecked;
+    std::fs::rename(&lease_path, &parked).unwrap();
+    assert!(effects.check_admission(&request()).is_err());
+    std::fs::rename(&parked, &lease_path).unwrap();
+
+    let mut observation = Box::pin(EffectFuture {
+        effects: effects.clone(),
+        request: Some(request()),
+        admitted: false,
+    });
+    assert!(observation.as_mut().poll(&mut context).is_pending());
+    assert!(effects.administrator_pending());
+    assert!(effects.check_admission(&request()).is_err());
+    assert!(effects.check_admission(&activation).is_err());
+    assert!(effects.check_admission(&import).is_err());
+    assert!(effects.check_admission(&managed).is_err());
+    assert!(
+        effects
+            .check_admission(&write_record(&record, Admission::Requested))
+            .is_err()
+    );
+    record.resources.pending = None;
+    assert!(
+        effects
+            .check_admission(&write_record(&record, Admission::Requested))
+            .is_ok()
+    );
 }
 
 #[cfg(test)]
