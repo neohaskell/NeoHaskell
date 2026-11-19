@@ -296,6 +296,9 @@ fn format_result(result: Result<installation::RunOutcome, installation::Transact
                     .operation_complete
                     .replace("{version}", &outcome.version)
             );
+            if outcome.open_new_shell {
+                println!("{}", english.open_new_shell);
+            }
             if outcome.has_previous {
                 println!(
                     "{}",

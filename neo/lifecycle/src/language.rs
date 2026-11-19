@@ -41,6 +41,7 @@ pub(crate) struct English {
     pub(crate) invalid_arguments: String,
     pub(crate) invalid_request: String,
     pub(crate) operation_complete: String,
+    pub(crate) open_new_shell: String,
     pub(crate) operation_failed: String,
     pub(crate) command_path_conflict: String,
     pub(crate) operation_not_started: String,

@@ -86,6 +86,7 @@ pub(crate) struct Outcome {
     pub(crate) version: String,
     pub(crate) previous_missing: bool,
     pub(crate) has_previous: bool,
+    pub(crate) open_new_shell: bool,
 }
 
 struct ExecutorEvidence {
@@ -401,6 +402,9 @@ impl InstallationOwner {
             .completed(crate::diagnostics::CompletedStep::FinalSettlement);
         Ok(Some(Outcome {
             version: candidate.version().into(),
+            open_new_shell: !std::env::var_os("PATH").is_some_and(|path| {
+                std::env::split_paths(&path).any(|dir| dir == self.layout.command_directory)
+            }),
             previous_missing: record.previous_observation == PriorObservation::MissingOutput,
             has_previous: record
                 .committed
