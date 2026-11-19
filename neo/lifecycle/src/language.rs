@@ -37,6 +37,7 @@ pub(crate) struct English {
     pub(crate) review_apply_existing_nix_policy: String,
     #[cfg(target_os = "linux")]
     pub(crate) review_nix_policy_recovery_inspection: String,
+    pub(crate) review_resume_prepared_nix_policy: String,
     pub(crate) administrator_handoff: String,
     pub(crate) administrator_unavailable: String,
     pub(crate) nix_policy_recovery_completed: String,

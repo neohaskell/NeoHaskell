@@ -40,6 +40,20 @@ pub(super) fn publish_stock_policy(
 }
 
 #[cfg(target_os = "linux")]
+pub(super) fn resume_stock_policy(
+    request: ReviewedPolicyRequest,
+    attempt: PolicyAttempt,
+    require_commit: impl FnOnce() -> Result<(), PolicyResult> + Send,
+) -> StockPolicyOutcome {
+    match managed::mutate_in_stock_view(move |inputs| {
+        inputs.resume_stock_unchanged(request, attempt, require_commit)
+    }) {
+        Ok(stamp) => StockPolicyOutcome::AppliedUnchanged(stamp),
+        Err(result) => StockPolicyOutcome::Result(result),
+    }
+}
+
+#[cfg(target_os = "linux")]
 pub(super) fn inspect_stock_policy(
     request: ReviewedPolicyRequest,
     attempt: PolicyAttempt,
@@ -90,6 +104,7 @@ pub(in crate::installation) struct ReviewedPolicyRequest([u8; 32]);
 pub(in crate::installation) enum PolicyInspectionResult {
     Pending = 0,
     VerifiedApplied = 1,
+    VerifiedPrepared = 2,
 }
 
 #[cfg(target_os = "linux")]
@@ -98,6 +113,7 @@ impl PolicyInspectionResult {
         match value {
             0 => Some(Self::Pending),
             1 => Some(Self::VerifiedApplied),
+            2 => Some(Self::VerifiedPrepared),
             _ => None,
         }
     }

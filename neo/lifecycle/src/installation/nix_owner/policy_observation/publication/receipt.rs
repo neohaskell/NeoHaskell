@@ -226,6 +226,12 @@ struct UnchangedReceipt {
 }
 
 impl UnchangedReceipt {
+    fn matches_prepared(&self, operation: &PolicyAttempt, request: ReviewedPolicyRequest) -> bool {
+        matches!(self.phase, UnchangedReceiptPhase::Prepared {})
+            && &self.operation == operation
+            && &self.reviewed == request.bytes()
+    }
+
     fn valid(&self) -> bool {
         self.version == 4
             && self.operation.state_lease.is_some()
@@ -565,6 +571,45 @@ impl<'a> ReceiptWriter<'a> {
             phase: UnchangedReceiptPhase::Prepared {},
         });
         Self::persist_prepared(parent, stage, current)
+    }
+
+    pub(super) fn reopen_prepared_unchanged(
+        parent: &'a File,
+        stage: &'a File,
+        operation: &PolicyAttempt,
+        request: ReviewedPolicyRequest,
+    ) -> Result<Self, PolicyResult> {
+        check_stage(parent, stage)?;
+        require_absent(&descriptor_path(stage, RECEIPT_TEMP))?;
+        let held = open(&descriptor_path(stage, RECEIPT))?;
+        let current = read_current(stage, &held)?;
+        if !matches!(&current, PolicyReceipt::Unchanged(receipt) if receipt.matches_prepared(operation, request))
+        {
+            return Err(PolicyResult::PublicationUnknown);
+        }
+        Ok(Self {
+            parent,
+            stage,
+            current,
+            held,
+        })
+    }
+
+    pub(super) fn verify_prepared_unchanged(
+        &self,
+        old: &ManagedSnapshot,
+        secondary: [u8; 32],
+    ) -> Result<(), PolicyResult> {
+        let PolicyReceipt::Unchanged(receipt) = &self.current else {
+            return Err(PolicyResult::PublicationUnknown);
+        };
+        if !matches!(receipt.phase, UnchangedReceiptPhase::Prepared {})
+            || receipt.old_manager != ManagerIdentity::capture(old)?
+            || receipt.secondary_sources_sha256 != secondary
+        {
+            return Err(PolicyResult::ChangedInputs);
+        }
+        self.verify_unchanged()
     }
 
     fn persist_prepared(
@@ -1046,6 +1091,18 @@ mod tests {
             PolicyReceipt::Unchanged(prepared.clone())
         );
         assert!(PolicyReceipt::decode(&raw).unwrap().live().is_none());
+        let request = ReviewedPolicyRequest::from_bytes(prepared.reviewed);
+        assert!(prepared.matches_prepared(&prepared.operation, request));
+        assert!(!prepared.matches_prepared(
+            &prepared.operation,
+            ReviewedPolicyRequest::from_bytes([8; 32])
+        ));
+        let mut other_attempt = prepared.operation.clone();
+        other_attempt.attempt_epoch = [9; 32];
+        assert!(!prepared.matches_prepared(&other_attempt, request));
+        let mut other_lease = prepared.operation.clone();
+        other_lease.state_lease.as_mut().unwrap().inode += 1;
+        assert!(!prepared.matches_prepared(&other_lease, request));
 
         let mut invalid = serde_json::to_value(&prepared).unwrap();
         invalid["baseline"] = serde_json::to_value(previous.baseline).unwrap();
@@ -1065,6 +1122,7 @@ mod tests {
                 .live()
                 .is_none()
         );
+        assert!(!queued.matches_prepared(&queued.operation, request));
         let completed = UnchangedReceipt {
             phase: UnchangedReceiptPhase::RestartObserved {
                 intent_monotonic,
@@ -1074,6 +1132,7 @@ mod tests {
         };
         let observed = PolicyReceipt::decode(&serde_json::to_vec(&completed).unwrap()).unwrap();
         assert_eq!(observed.live().unwrap().replacement, &replacement);
+        assert!(!completed.matches_prepared(&completed.operation, request));
         let mut invalid = completed;
         replacement.started_monotonic = intent_monotonic;
         invalid.phase = UnchangedReceiptPhase::RestartObserved {

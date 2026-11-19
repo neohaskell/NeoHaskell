@@ -354,6 +354,10 @@ fn format_result(result: Result<installation::RunOutcome, installation::Transact
                         .operation_stopped_pair
                         .replace("{version}", &pair.version)
                 ),
+                #[cfg(target_os = "linux")]
+                installation::StopObservation::PolicyRecoveryInterrupted => {
+                    eprintln!("{}", english.nix_policy_recovery_pending)
+                }
             }
             Exit { code: 130 }
         }
@@ -466,6 +470,8 @@ fn write_review(
             ReviewedChange::NixPolicyRecoveryInspection => {
                 &copy.review_nix_policy_recovery_inspection
             }
+            #[cfg(target_os = "linux")]
+            ReviewedChange::ResumePreparedNixPolicy => &copy.review_resume_prepared_nix_policy,
         };
         writeln!(output, "{message}")?;
     }

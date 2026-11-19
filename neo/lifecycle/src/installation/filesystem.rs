@@ -181,6 +181,8 @@ pub(super) enum FilesystemJob {
     },
     #[cfg(target_os = "linux")]
     InspectStockPolicy(super::coordinator::StockPolicyIntent),
+    #[cfg(target_os = "linux")]
+    ResumeStockPolicy(super::coordinator::StockPolicyIntent),
     ResolvePairMember {
         member: PathBuf,
         expected: PathBuf,
@@ -231,9 +233,9 @@ pub(super) enum FilesystemResult {
     #[cfg(target_os = "linux")]
     StockPolicyPublished(super::nix_owner::peer_handoff::launcher::VerifiedPolicyInspection),
     #[cfg(target_os = "linux")]
-    StockPolicyInspected(
-        Option<super::nix_owner::peer_handoff::launcher::VerifiedPolicyInspection>,
-    ),
+    StockPolicyInspected(super::nix_owner::peer_handoff::launcher::StockPolicyInspection),
+    #[cfg(target_os = "linux")]
+    StockPolicyResumed(super::nix_owner::peer_handoff::launcher::VerifiedPolicyInspection),
     NixDaemonProcess(super::nix_owner::KernelDaemonObservation),
     ConfigurationInput(super::nix_owner::ConfigurationObservation),
     UninstallIntent(super::uninstall::UninstallIntent),
@@ -303,7 +305,9 @@ impl FilesystemJob {
             | Self::VerifyExistingNixPolicy { .. }
             | Self::InspectStockPolicy(_) => false,
             #[cfg(target_os = "linux")]
-            Self::PublishStockPolicy { .. } | Self::ClearPolicyIntent { .. } => true,
+            Self::PublishStockPolicy { .. }
+            | Self::ClearPolicyIntent { .. }
+            | Self::ResumeStockPolicy(_) => true,
             Self::UninstallConfirm(_)
             | Self::UninstallInspect { .. }
             | Self::ShellInspect { .. }
@@ -1186,7 +1190,12 @@ fn execute(
             Ok(Result::StockPolicyPublished(verified))
         }
         #[cfg(target_os = "linux")]
-        Job::InspectStockPolicy(intent) => {
+        job @ (Job::InspectStockPolicy(_) | Job::ResumeStockPolicy(_)) => {
+            let (intent, resume) = match job {
+                Job::InspectStockPolicy(intent) => (intent, false),
+                Job::ResumeStockPolicy(intent) => (intent, true),
+                _ => unreachable!(),
+            };
             let unresolved = TransactionError::NixPolicyRecoveryPending;
             let pending = intent.pending();
             let caller =
@@ -1195,20 +1204,30 @@ fn execute(
                 ExactExecutable::open(Path::new(&pending.helper_path), &pending.helper)
                     .map_err(|_| unresolved.clone())?;
             let rendezvous = Rendezvous::fresh().map_err(|_| unresolved.clone())?;
-            let inspected = executable
-                .inspect_stock_policy(rendezvous, &caller, &intent, terminal, || {
-                    policy.check().is_err()
-                })
-                .map_err(|error| match error {
-                    HandoffError::Cancelled => TransactionError::StopRequested,
-                    HandoffError::CleanupUnknown => TransactionError::CleanupUnknown,
-                    HandoffError::AdministratorUnavailable | HandoffError::ForegroundLost => {
-                        TransactionError::NixPolicyRecoveryInspectionUnavailable
-                    }
-                    _ => unresolved,
-                })?;
+            let map_error = |error| match error {
+                HandoffError::Cancelled => TransactionError::StopRequested,
+                HandoffError::CleanupUnknown => TransactionError::CleanupUnknown,
+                HandoffError::AdministratorUnavailable | HandoffError::ForegroundLost if resume => {
+                    TransactionError::AdministratorUnavailable
+                }
+                HandoffError::AdministratorUnavailable | HandoffError::ForegroundLost => {
+                    TransactionError::NixPolicyRecoveryInspectionUnavailable
+                }
+                _ => unresolved,
+            };
+            let cancelled = || policy.check().is_err();
+            let result = if resume {
+                executable
+                    .resume_stock_policy(rendezvous, &caller, intent, terminal, cancelled)
+                    .map(Result::StockPolicyResumed)
+            } else {
+                executable
+                    .inspect_stock_policy(rendezvous, &caller, &intent, terminal, cancelled)
+                    .map(Result::StockPolicyInspected)
+            }
+            .map_err(map_error)?;
             policy.check()?;
-            Ok(Result::StockPolicyInspected(inspected))
+            Ok(result)
         }
         Job::ResolvePairMember { member, expected } => {
             if member

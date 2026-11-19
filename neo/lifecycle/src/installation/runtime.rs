@@ -1034,6 +1034,7 @@ impl InstallationOwner {
         pending: &super::PendingNixPolicy,
     ) -> Result<(), TransactionError> {
         use super::coordinator::StockPolicyIntent;
+        use super::nix_owner::peer_handoff::launcher::StockPolicyInspection;
 
         let unresolved = TransactionError::NixPolicyRecoveryPending;
         self.effects.checkpoint()?;
@@ -1050,7 +1051,7 @@ impl InstallationOwner {
         self.verify_pending_helper_root(record, pending).await?;
         let intent =
             StockPolicyIntent::open(&self.effects, &self.layout, pending.clone(), before.clone())?;
-        let super::FilesystemResult::StockPolicyInspected(Some(verified)) = self
+        let super::FilesystemResult::StockPolicyInspected(inspected) = self
             .effects
             .review_and_inspect_stock_policy(
                 intent,
@@ -1059,6 +1060,34 @@ impl InstallationOwner {
             .await?
         else {
             return Err(unresolved);
+        };
+        let verified = match inspected {
+            StockPolicyInspection::Applied(verified) => verified,
+            StockPolicyInspection::Prepared(prepared) => {
+                let intent = StockPolicyIntent::open(
+                    &self.effects,
+                    &self.layout,
+                    pending.clone(),
+                    before.clone(),
+                )?;
+                let super::FilesystemResult::StockPolicyResumed(verified) = self
+                    .effects
+                    .review_and_resume_stock_policy(
+                        prepared,
+                        intent,
+                        self.verify_pending_helper_root(record, pending),
+                    )
+                    .await?
+                else {
+                    return Err(unresolved);
+                };
+                self.effects
+                    .completed(crate::diagnostics::CompletedStep::NixPolicyApplication);
+                self.effects
+                    .applied(crate::diagnostics::AppliedChange::NixPolicyApplied);
+                verified
+            }
+            StockPolicyInspection::Pending => return Err(unresolved),
         };
         self.verify_pending_helper_root(record, pending).await?;
         self.settle_policy_intent(verified, before).await?;

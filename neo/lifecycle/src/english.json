@@ -40,6 +40,7 @@
   "review_version": "Selected version {version}.",
   "review_recovery": "Recover the reviewed installation state.",
   "review_nix_policy_recovery_inspection": "Use administrator access to inspect the previous Nix policy operation. Clear the pending installer record only if its completed receipt is verified.",
+  "review_resume_prepared_nix_policy": "Resume the recorded Nix policy operation. Use administrator access to restart nix-daemon.service with the existing configuration. The restart can interrupt Nix work.",
   "review_command_directory": "Create the owned command directory if required.",
   "review_command_links": "Maintain the owned Neo and neoctl command links.",
   "review_selection": "Save the selected version and its metadata.",

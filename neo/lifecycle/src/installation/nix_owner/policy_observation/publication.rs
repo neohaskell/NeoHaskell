@@ -210,6 +210,73 @@ fn locked_parent(mode: libc::c_int) -> Result<File, PolicyResult> {
     Ok(parent)
 }
 
+struct UnchangedRestart {
+    request: ReviewedPolicyRequest,
+    configuration: ConfigurationObservation,
+    old: super::managed::ManagedSnapshot,
+    secondary: [u8; 32],
+}
+
+impl UnchangedRestart {
+    fn capture(
+        inputs: &PolicyInputs,
+        request: ReviewedPolicyRequest,
+    ) -> Result<Self, PolicyResult> {
+        let (actual, configuration) = inputs.capture_unchanged()?;
+        if actual != request {
+            return Err(PolicyResult::ChangedInputs);
+        }
+        let old = inputs
+            .managed_snapshot()?
+            .ok_or(PolicyResult::UnprovedService)?;
+        Ok(Self {
+            request,
+            configuration,
+            old,
+            secondary: inputs.secondary_commitment()?,
+        })
+    }
+
+    fn recheck(&self, inputs: &PolicyInputs, parent: &File) -> Result<(), PolicyResult> {
+        anchored(parent, Path::new("/etc/nix"))?;
+        if inputs.capture_unchanged()?.0 != self.request
+            || inputs.managed_snapshot()?.as_ref() != Some(&self.old)
+            || inputs.secondary_commitment()? != self.secondary
+        {
+            return Err(PolicyResult::ChangedInputs);
+        }
+        Ok(())
+    }
+
+    fn restart(
+        self,
+        inputs: &PolicyInputs,
+        parent: &File,
+        mut writer: receipt::ReceiptWriter<'_>,
+    ) -> Result<[u8; 32], PolicyResult> {
+        self.recheck(inputs, parent)?;
+        writer.verify_prepared_unchanged(&self.old, self.secondary)?;
+        writer.queue_restart()?;
+        let replacement = (|| {
+            self.recheck(inputs, parent)?;
+            writer.verify_unchanged()?;
+            inputs.restart_managed(&self.old, Some(self.secondary), &|| {
+                writer.verify_unchanged()
+            })
+        })()
+        .map_err(|_| PolicyResult::PublicationUnknown)?;
+        writer.observe_restart(&replacement)?;
+        writer.verify_unchanged()?;
+        replacement_input_stamp(
+            &self.configuration,
+            replacement.pid,
+            replacement.started,
+            replacement.invocation,
+            replacement.socket,
+        )
+    }
+}
+
 impl PolicyInputs {
     pub(super) fn unchanged_stage_absent(&self) -> Result<(), PolicyResult> {
         if !self.managed {
@@ -237,22 +304,21 @@ impl PolicyInputs {
         operation: &PolicyAttempt,
         request: ReviewedPolicyRequest,
     ) -> PolicyInspectionResult {
-        let inspect = || {
-            if !self.managed
-                || unsafe { libc::geteuid() } != 0
-                || self.source != Path::new(SOURCE)
-                || self.service != Path::new(SERVICE)
-            {
-                return Err(PolicyResult::PublicationRefused);
-            }
-            let parent = locked_parent(libc::LOCK_EX)?;
+        let inspect = || -> Result<PolicyInspectionResult, PolicyResult> {
+            let parent = self.locked_stock_parent()?;
             let stage = directory(Path::new(STAGE))?;
-            receipt::verify_completed(self, &parent, &stage, operation, request)
+            if receipt::verify_completed(self, &parent, &stage, operation, request).is_ok() {
+                return Ok(PolicyInspectionResult::VerifiedApplied);
+            }
+            let writer = receipt::ReceiptWriter::reopen_prepared_unchanged(
+                &parent, &stage, operation, request,
+            )?;
+            let restart = UnchangedRestart::capture(self, request)?;
+            restart.recheck(self, &parent)?;
+            writer.verify_prepared_unchanged(&restart.old, restart.secondary)?;
+            Ok(PolicyInspectionResult::VerifiedPrepared)
         };
-        match inspect() {
-            Ok(()) => PolicyInspectionResult::VerifiedApplied,
-            Err(_) => PolicyInspectionResult::Pending,
-        }
+        inspect().unwrap_or(PolicyInspectionResult::Pending)
     }
 
     #[cfg(test)]
@@ -307,6 +373,48 @@ impl PolicyInputs {
         attempt: PolicyAttempt,
         require_commit: impl FnOnce() -> Result<(), PolicyResult>,
     ) -> Result<[u8; 32], PolicyResult> {
+        let parent = self.locked_stock_parent()?;
+        let stage_path = descriptor_path(&parent, POLICY_STAGE);
+        receipt::require_absent(&stage_path).map_err(|_| PolicyResult::PublicationRefused)?;
+        let restart = UnchangedRestart::capture(self, request)?;
+        require_commit()?;
+        restart.recheck(self, &parent)?;
+        receipt::require_absent(&stage_path)?;
+        fs::DirBuilder::new()
+            .mode(0o700)
+            .create(&stage_path)
+            .map_err(|_| PolicyResult::PublicationRefused)?;
+        let stage = directory(Path::new(STAGE))?;
+        let writer = receipt::ReceiptWriter::prepare_unchanged(
+            &parent,
+            &stage,
+            attempt,
+            request,
+            &restart.configuration,
+            &restart.old,
+            restart.secondary,
+        )?;
+        restart.restart(self, &parent, writer)
+    }
+
+    pub(super) fn resume_stock_unchanged(
+        &self,
+        request: ReviewedPolicyRequest,
+        attempt: PolicyAttempt,
+        require_commit: impl FnOnce() -> Result<(), PolicyResult>,
+    ) -> Result<[u8; 32], PolicyResult> {
+        let parent = self.locked_stock_parent()?;
+        let stage = directory(Path::new(STAGE))?;
+        let writer =
+            receipt::ReceiptWriter::reopen_prepared_unchanged(&parent, &stage, &attempt, request)?;
+        let restart = UnchangedRestart::capture(self, request)?;
+        restart.recheck(self, &parent)?;
+        writer.verify_prepared_unchanged(&restart.old, restart.secondary)?;
+        require_commit()?;
+        restart.restart(self, &parent, writer)
+    }
+
+    fn locked_stock_parent(&self) -> Result<File, PolicyResult> {
         if !self.managed
             || unsafe { libc::geteuid() } != 0
             || self.source != Path::new(SOURCE)
@@ -315,62 +423,7 @@ impl PolicyInputs {
             return Err(PolicyResult::PublicationRefused);
         }
         target_identity().map_err(|_| PolicyResult::PublicationRefused)?;
-        let parent = locked_parent(libc::LOCK_EX)?;
-        let stage_path = descriptor_path(&parent, POLICY_STAGE);
-        receipt::require_absent(&stage_path).map_err(|_| PolicyResult::PublicationRefused)?;
-        let (actual, configuration) = self.capture_unchanged()?;
-        if actual != request {
-            return Err(PolicyResult::ChangedInputs);
-        }
-        let old = self
-            .managed_snapshot()?
-            .ok_or(PolicyResult::UnprovedService)?;
-        let secondary = self.secondary_commitment()?;
-        let verify_before_restart = || {
-            anchored(&parent, Path::new("/etc/nix"))?;
-            if self.capture_unchanged()?.0 != request
-                || self.managed_snapshot()?.as_ref() != Some(&old)
-                || self.secondary_commitment()? != secondary
-            {
-                return Err(PolicyResult::ChangedInputs);
-            }
-            Ok(())
-        };
-        require_commit()?;
-        verify_before_restart()?;
-        receipt::require_absent(&stage_path)?;
-        fs::DirBuilder::new()
-            .mode(0o700)
-            .create(&stage_path)
-            .map_err(|_| PolicyResult::PublicationRefused)?;
-        let stage = directory(Path::new(STAGE))?;
-        let mut writer = receipt::ReceiptWriter::prepare_unchanged(
-            &parent,
-            &stage,
-            attempt,
-            request,
-            &configuration,
-            &old,
-            secondary,
-        )?;
-        verify_before_restart()?;
-        writer.verify_unchanged()?;
-        writer.queue_restart()?;
-        let replacement = (|| {
-            verify_before_restart()?;
-            writer.verify_unchanged()?;
-            self.restart_managed(&old, Some(secondary), &|| writer.verify_unchanged())
-        })()
-        .map_err(|_| PolicyResult::PublicationUnknown)?;
-        writer.observe_restart(&replacement)?;
-        writer.verify_unchanged()?;
-        replacement_input_stamp(
-            &configuration,
-            replacement.pid,
-            replacement.started,
-            replacement.invocation,
-            replacement.socket,
-        )
+        locked_parent(libc::LOCK_EX)
     }
 
     fn publish_guarded(

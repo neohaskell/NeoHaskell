@@ -101,7 +101,7 @@ impl ExactExecutable {
                 replacement: None,
             })),
             Some(PolicyInspectionResult::Pending) => Ok(None),
-            None => Err(HandoffError::Frame),
+            Some(PolicyInspectionResult::VerifiedPrepared) | None => Err(HandoffError::Frame),
         }
     }
 
@@ -326,7 +326,7 @@ impl ExactExecutable {
         intent: &crate::installation::coordinator::StockPolicyIntent,
         terminal: Option<&ParkedTerminal>,
         cancelled: impl Fn() -> bool,
-    ) -> Result<Option<VerifiedPolicyInspection>, HandoffError> {
+    ) -> Result<StockPolicyInspection, HandoffError> {
         let pending = intent.pending();
         if !caller.matches_release(&self.release)
             || pending.helper != self.release
@@ -337,13 +337,48 @@ impl ExactExecutable {
         self.recheck()?;
         let reply = native::inspect(self, rendezvous, caller, intent, terminal, cancelled)?;
         match reply.inspection {
-            Some(PolicyInspectionResult::VerifiedApplied) => Ok(Some(VerifiedPolicyInspection {
-                pending: pending.clone(),
-                replacement: None,
-            })),
-            Some(PolicyInspectionResult::Pending) => Ok(None),
-            None => Err(HandoffError::Frame),
+            Some(PolicyInspectionResult::VerifiedApplied) => {
+                Ok(StockPolicyInspection::Applied(VerifiedPolicyInspection {
+                    pending: pending.clone(),
+                    replacement: None,
+                }))
+            }
+            Some(PolicyInspectionResult::VerifiedPrepared) if !pending.operation.is_append() => Ok(
+                StockPolicyInspection::Prepared(VerifiedPreparedPolicy(pending.clone())),
+            ),
+            Some(PolicyInspectionResult::Pending) => Ok(StockPolicyInspection::Pending),
+            _ => Err(HandoffError::Frame),
         }
+    }
+
+    pub(in crate::installation) fn resume_stock_policy(
+        &self,
+        rendezvous: Rendezvous,
+        caller: &VerifiedCaller,
+        intent: crate::installation::coordinator::StockPolicyIntent,
+        terminal: Option<&ParkedTerminal>,
+        cancelled: impl Fn() -> bool,
+    ) -> Result<VerifiedPolicyInspection, HandoffError> {
+        let pending = intent.pending().clone();
+        if !caller.matches_release(&self.release)
+            || pending.helper != self.release
+            || Path::new(&pending.helper_path) != self.path
+            || pending.operation.is_append()
+            || pending.attempt == rendezvous.epoch
+        {
+            return Err(HandoffError::Frame);
+        }
+        self.recheck()?;
+        let reply = native::resume(self, rendezvous, caller, intent, terminal, cancelled)?;
+        if reply.policy != Some(PolicyResult::ManagedRestartObserved)
+            || reply.replacement_stamp.is_none()
+        {
+            return Err(HandoffError::Frame);
+        }
+        Ok(VerifiedPolicyInspection {
+            pending,
+            replacement: None,
+        })
     }
 
     fn discovered_policy(
@@ -603,6 +638,23 @@ pub(in crate::installation) struct QuiescentReply {
 pub(in crate::installation) struct VerifiedPolicyInspection {
     pending: crate::installation::PendingNixPolicy,
     replacement: Option<VerifiedExistingPolicy>,
+}
+
+pub(in crate::installation) enum StockPolicyInspection {
+    Pending,
+    Applied(VerifiedPolicyInspection),
+    Prepared(VerifiedPreparedPolicy),
+}
+
+pub(in crate::installation) struct VerifiedPreparedPolicy(crate::installation::PendingNixPolicy);
+
+impl VerifiedPreparedPolicy {
+    pub(in crate::installation) fn matches(
+        &self,
+        pending: &crate::installation::PendingNixPolicy,
+    ) -> bool {
+        &self.0 == pending
+    }
 }
 
 enum VerifiedPolicyInputs {

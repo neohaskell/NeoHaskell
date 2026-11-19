@@ -13,9 +13,14 @@ const APPLY: &str = "--neo-policy-publish-peer";
 const RECOVER: &str = "--neo-policy-inspect-peer";
 const EXISTING: &str = "--neo-policy-existing-peer";
 const EXISTING_FRAME: &[u8; 16] = b"NEO-EXISTING-V01";
-const STOCK_PUBLISH: &[u8; 16] = b"NEO-STOCK-PUB-V3";
+const STOCK_PUBLISH: &[u8; 16] = b"NEO-STOCK-PUB-V4";
 const STOCK_REPLACEMENT: &[u8; 16] = b"NEO-POLICY-LIVE1";
-const MAX_BODY: usize = 32 + PolicyScope::BYTES;
+const INSPECT_BYTES: usize = 32 + PolicyScope::BYTES;
+const MAX_BODY: usize = if INSPECT_BYTES > ReviewedStockApply::BYTES {
+    INSPECT_BYTES
+} else {
+    ReviewedStockApply::BYTES
+};
 const SUDO: &str = "/usr/bin/sudo";
 const ACCEPT: &[u8; 16] = b"NEO-ACCEPT-V001\0";
 const BUDGET: Duration = Duration::from_secs(20);
@@ -112,11 +117,39 @@ pub(super) fn publish(
         Some(caller),
         PeerRequest::Publish {
             pending,
-            persist: Box::new(persist),
+            authority: PublishAuthority::Fresh(Box::new(persist)),
         },
         terminal,
         cancelled,
     )
+}
+
+pub(super) fn resume(
+    executable: &ExactExecutable,
+    rendezvous: Rendezvous,
+    caller: &VerifiedCaller,
+    intent: StockPolicyIntent,
+    terminal: Option<&ParkedTerminal>,
+    cancelled: impl Fn() -> bool,
+) -> Result<QuiescentReply, HandoffError> {
+    intent.verify().map_err(|_| HandoffError::Frame)?;
+    let pending = intent.pending().clone();
+    exchange(
+        executable,
+        rendezvous,
+        Some(caller),
+        PeerRequest::Publish {
+            pending: &pending,
+            authority: PublishAuthority::Resume(intent),
+        },
+        terminal,
+        cancelled,
+    )
+}
+
+enum PublishAuthority<'a> {
+    Fresh(Box<dyn FnOnce() -> Result<StockPolicyIntent, HandoffError> + 'a>),
+    Resume(StockPolicyIntent),
 }
 
 pub(super) fn inspect(
@@ -142,7 +175,7 @@ enum PeerRequest<'a> {
     Discover,
     Publish {
         pending: &'a PendingNixPolicy,
-        persist: Box<dyn FnOnce() -> Result<StockPolicyIntent, HandoffError> + 'a>,
+        authority: PublishAuthority<'a>,
     },
     Inspect(&'a StockPolicyIntent),
     Existing(PolicyScope),
@@ -235,23 +268,35 @@ impl PolicyScope {
 struct ReviewedStockApply {
     scope: PolicyScope,
     operation: PolicyOperation,
+    original_attempt: Option<[u8; 32]>,
 }
 
 impl ReviewedStockApply {
-    const BYTES: usize = PolicyScope::BYTES + 1;
+    const BYTES: usize = PolicyScope::BYTES + 1 + 32;
 
-    fn from_pending(pending: &PendingNixPolicy) -> Result<Self, HandoffError> {
+    fn from_pending(pending: &PendingNixPolicy, resume: bool) -> Result<Self, HandoffError> {
+        if resume && (pending.operation.is_append() || pending.attempt == [0; 32]) {
+            return Err(HandoffError::Frame);
+        }
         Ok(Self {
             scope: PolicyScope::from_pending(pending)?,
             operation: pending.operation,
+            original_attempt: resume.then_some(pending.attempt),
         })
     }
 
     fn decode(bytes: [u8; Self::BYTES]) -> Result<Self, HandoffError> {
+        let operation =
+            PolicyOperation::from_tag(bytes[PolicyScope::BYTES]).ok_or(HandoffError::Frame)?;
+        let attempt = bytes[PolicyScope::BYTES + 1..].try_into().unwrap();
+        let original_attempt = (attempt != [0; 32]).then_some(attempt);
+        if original_attempt.is_some() && operation.is_append() {
+            return Err(HandoffError::Frame);
+        }
         Ok(Self {
             scope: PolicyScope::decode(bytes[..PolicyScope::BYTES].try_into().unwrap())?,
-            operation: PolicyOperation::from_tag(bytes[PolicyScope::BYTES])
-                .ok_or(HandoffError::Frame)?,
+            operation,
+            original_attempt,
         })
     }
 
@@ -259,6 +304,9 @@ impl ReviewedStockApply {
         let mut bytes = [0; Self::BYTES];
         bytes[..PolicyScope::BYTES].copy_from_slice(&self.scope.encode());
         bytes[PolicyScope::BYTES] = self.operation as u8;
+        if let Some(attempt) = self.original_attempt {
+            bytes[PolicyScope::BYTES + 1..].copy_from_slice(&attempt);
+        }
         bytes
     }
 }
@@ -361,8 +409,11 @@ fn exchange(
             recheck_caller()
         };
         match request {
-            PeerRequest::Publish { pending, persist } => {
-                let apply = ReviewedStockApply::from_pending(pending)?;
+            PeerRequest::Publish { pending, authority } => {
+                let apply = ReviewedStockApply::from_pending(
+                    pending,
+                    matches!(authority, PublishAuthority::Resume(_)),
+                )?;
                 let reviewed = ReviewedPolicyRequest::from_bytes(apply.scope.inputs);
                 send_packet(&socket, STOCK_PUBLISH, &expected.epoch, &apply.encode())?;
                 wait_for_packet(&socket, deadline, &cancelled)?;
@@ -371,7 +422,10 @@ fn exchange(
                 let committed = if let PublishResponse::Challenge(challenge) = response {
                     verify()?;
                     authorization_checkpoint()?;
-                    let commit = persist()?;
+                    let commit = match authority {
+                        PublishAuthority::Fresh(persist) => persist()?,
+                        PublishAuthority::Resume(intent) => intent,
+                    };
                     if commit.pending() != pending {
                         return Err(HandoffError::Frame);
                     }
@@ -402,7 +456,7 @@ fn exchange(
                 reply.policy = Some(result);
             }
             PeerRequest::Inspect(intent) => {
-                let mut body = [0; MAX_BODY];
+                let mut body = [0; INSPECT_BYTES];
                 body[..32].copy_from_slice(&intent.pending().attempt);
                 body[32..].copy_from_slice(&PolicyScope::from_pending(intent.pending())?.encode());
                 send_packet(&socket, INSPECT, &expected.epoch, &body)?;
@@ -536,28 +590,36 @@ fn serve(epoch: [u8; 32], operation: WorkerOperation) -> Result<(), HandoffError
         }
         WorkerOperation::Apply => {
             use super::super::super::policy_observation::{
-                PolicyAttempt, StockPolicyOutcome, publish_stock_policy,
+                PolicyAttempt, StockPolicyOutcome, publish_stock_policy, resume_stock_policy,
             };
 
             let apply =
                 ReviewedStockApply::decode(receive_body(&socket, &expected, STOCK_PUBLISH)?)?;
+            if apply.original_attempt == Some(epoch) {
+                return Err(HandoffError::Frame);
+            }
             let reviewed = ReviewedPolicyRequest::from_bytes(apply.scope.inputs);
             verify()?;
             let attempt = PolicyAttempt::authenticated(
                 caller.uid,
-                epoch,
+                apply.original_attempt.unwrap_or(epoch),
                 &executable.path,
                 &approved,
                 &executable.identity,
                 Some(apply.scope.state_lease),
             );
-            let result = publish_stock_policy(apply.operation, reviewed, attempt, || {
+            let require_commit = || {
                 verify().map_err(|_| PolicyResult::PublicationRefused)?;
                 PublishChallenge::new(epoch, reviewed)
                     .and_then(|challenge| challenge.require_commit(&socket, caller, deadline))
                     .map_err(|_| PolicyResult::PublicationRefused)?;
                 verify().map_err(|_| PolicyResult::PublicationRefused)
-            });
+            };
+            let result = if apply.original_attempt.is_some() {
+                resume_stock_policy(reviewed, attempt, require_commit)
+            } else {
+                publish_stock_policy(apply.operation, reviewed, attempt, require_commit)
+            };
             verify()?;
             match result {
                 StockPolicyOutcome::Result(result) => {
@@ -576,7 +638,7 @@ fn serve(epoch: [u8; 32], operation: WorkerOperation) -> Result<(), HandoffError
         WorkerOperation::Inspect => {
             use super::super::super::policy_observation::{PolicyAttempt, inspect_stock_policy};
 
-            let body = receive_body::<MAX_BODY>(&socket, &expected, INSPECT)?;
+            let body = receive_body::<INSPECT_BYTES>(&socket, &expected, INSPECT)?;
             let attempt_epoch = body[..32].try_into().unwrap();
             if attempt_epoch == [0; 32] {
                 return Err(HandoffError::Frame);

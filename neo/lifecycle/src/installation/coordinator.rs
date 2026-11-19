@@ -96,6 +96,8 @@ pub(crate) enum ReviewedChange {
     ApplyExistingNixPolicy,
     #[cfg(target_os = "linux")]
     NixPolicyRecoveryInspection,
+    #[cfg(target_os = "linux")]
+    ResumePreparedNixPolicy,
     Uninstall,
     ShellPath,
     ShellStartup,
@@ -307,6 +309,11 @@ enum ReviewGate {
     },
     #[cfg(target_os = "linux")]
     AcceptedPolicyRecovery,
+    #[cfg(target_os = "linux")]
+    AcceptedPolicyResumption {
+        pending: super::PendingNixPolicy,
+        progress: AcceptedProgress,
+    },
     Stopped(UnadmittedReason),
 }
 
@@ -329,6 +336,8 @@ pub(crate) enum StopObservation {
     NotRequired,
     ObservedNoPair,
     ObservedPair(PairIdentity),
+    #[cfg(target_os = "linux")]
+    PolicyRecoveryInterrupted,
 }
 
 struct Quiescent;
@@ -539,7 +548,8 @@ impl EffectRequest {
             FilesystemJob::ObserveStockPolicy { .. }
             | FilesystemJob::PublishStockPolicy { .. }
             | FilesystemJob::VerifyExistingNixPolicy { .. }
-            | FilesystemJob::InspectStockPolicy(_),
+            | FilesystemJob::InspectStockPolicy(_)
+            | FilesystemJob::ResumeStockPolicy(_),
             Admission::Requested,
         ) = self
         {
@@ -621,8 +631,15 @@ impl Future for EffectFuture {
             }
             state.slot = EffectSlot::Admitted(this.request.take().unwrap());
             if state.slot.mutates() {
-                if let ReviewGate::Accepted { progress, .. } = &mut state.review {
-                    *progress = AcceptedProgress::MutationAdmitted;
+                match &mut state.review {
+                    ReviewGate::Accepted { progress, .. } => {
+                        *progress = AcceptedProgress::MutationAdmitted;
+                    }
+                    #[cfg(target_os = "linux")]
+                    ReviewGate::AcceptedPolicyResumption { progress, .. } => {
+                        *progress = AcceptedProgress::MutationAdmitted;
+                    }
+                    _ => {}
                 }
             }
             this.admitted = true;
@@ -717,22 +734,74 @@ impl Effects {
             .await?;
         recheck_helper.await?;
         intent.verify().map_err(|_| self.review_changed())?;
-        self.checkpoint()?;
+        self.admit_policy_recovery(identity, ReviewGate::AcceptedPolicyRecovery)?;
+        self.filesystem(FilesystemJob::InspectStockPolicy(intent))
+            .await
+    }
+
+    #[cfg(target_os = "linux")]
+    pub(super) async fn review_and_resume_stock_policy(
+        &self,
+        prepared: super::nix_owner::peer_handoff::launcher::VerifiedPreparedPolicy,
+        intent: StockPolicyIntent,
+        recheck_helper: impl Future<Output = Result<(), TransactionError>>,
+    ) -> Result<FilesystemResult, TransactionError> {
+        if !prepared.matches(intent.pending()) {
+            return Err(self.review_changed());
+        }
+        intent.verify().map_err(|_| self.review_changed())?;
         {
             let mut state = self.state.borrow_mut();
-            if !matches!(state.review, ReviewGate::Rechecking(current) if current == identity)
+            if !matches!(state.review, ReviewGate::AcceptedPolicyRecovery)
                 || !matches!(state.slot, EffectSlot::Idle)
                 || state.settlement.is_some()
             {
                 return Err(TransactionError::InvalidState(
-                    "Nix policy recovery review was not rechecked",
+                    "Nix policy resumption requires completed inspection",
                 ));
             }
-            state.diagnostics.admitted();
-            state.review = ReviewGate::AcceptedPolicyRecovery;
+            state.review = ReviewGate::Inspecting;
         }
-        self.filesystem(FilesystemJob::InspectStockPolicy(intent))
+        let identity = self
+            .review(ReviewSummary {
+                operation: ReviewOperation::Recover,
+                version: None,
+                recovery: RecoveryPending::Unknown,
+                changes: vec![ReviewedChange::ResumePreparedNixPolicy],
+            })
+            .await?;
+        recheck_helper.await?;
+        intent.verify().map_err(|_| self.review_changed())?;
+        self.admit_policy_recovery(
+            identity,
+            ReviewGate::AcceptedPolicyResumption {
+                pending: intent.pending().clone(),
+                progress: AcceptedProgress::NoMutationAdmitted,
+            },
+        )?;
+        self.filesystem(FilesystemJob::ResumeStockPolicy(intent))
             .await
+    }
+
+    #[cfg(target_os = "linux")]
+    fn admit_policy_recovery(
+        &self,
+        identity: u64,
+        accepted: ReviewGate,
+    ) -> Result<(), TransactionError> {
+        self.checkpoint()?;
+        let mut state = self.state.borrow_mut();
+        if !matches!(state.review, ReviewGate::Rechecking(current) if current == identity)
+            || !matches!(state.slot, EffectSlot::Idle)
+            || state.settlement.is_some()
+        {
+            return Err(TransactionError::InvalidState(
+                "Nix policy recovery review was not rechecked",
+            ));
+        }
+        state.diagnostics.admitted();
+        state.review = accepted;
+        Ok(())
     }
 
     pub(super) async fn review_nix_policy(
@@ -897,9 +966,24 @@ impl Effects {
     }
 
     fn mutation_admitted(&self) -> bool {
+        #[cfg(target_os = "linux")]
+        if self.policy_resumption_admitted() {
+            return true;
+        }
         matches!(
             self.state.borrow().review,
             ReviewGate::Accepted {
+                progress: AcceptedProgress::MutationAdmitted,
+                ..
+            }
+        )
+    }
+
+    #[cfg(target_os = "linux")]
+    fn policy_resumption_admitted(&self) -> bool {
+        matches!(
+            self.state.borrow().review,
+            ReviewGate::AcceptedPolicyResumption {
                 progress: AcceptedProgress::MutationAdmitted,
                 ..
             }
@@ -1019,11 +1103,26 @@ impl Effects {
             return Err(TransactionError::InvalidState("startup already completed"));
         }
         #[cfg(target_os = "linux")]
-        if let EffectRequest::Filesystem(FilesystemJob::InspectStockPolicy(intent), _) = request {
+        if let EffectRequest::Filesystem(
+            job @ (FilesystemJob::InspectStockPolicy(intent)
+            | FilesystemJob::ResumeStockPolicy(intent)),
+            _,
+        ) = request
+        {
             self.checkpoint()?;
             let state = self.state.borrow();
+            let reviewed = match (&state.review, job) {
+                (ReviewGate::AcceptedPolicyRecovery, FilesystemJob::InspectStockPolicy(_)) => true,
+                (
+                    ReviewGate::AcceptedPolicyResumption {
+                        pending: expected, ..
+                    },
+                    FilesystemJob::ResumeStockPolicy(_),
+                ) => expected == intent.pending(),
+                _ => false,
+            };
             return if matches!(self.admission, Admission::Requested)
-                && matches!(state.review, ReviewGate::AcceptedPolicyRecovery)
+                && reviewed
                 && state.lease.as_ref().is_some_and(|owner| {
                     owner
                         .policy_identity(&intent.layout.lock())
@@ -1086,6 +1185,7 @@ impl Effects {
                     ReviewGate::Accepted { .. } => Ok(()),
                     #[cfg(target_os = "linux")]
                     ReviewGate::AcceptedPolicyRecovery
+                    | ReviewGate::AcceptedPolicyResumption { .. }
                         if !request.mutates() && !request.accepts_administrator_terminal() =>
                     {
                         Ok(())
@@ -1220,7 +1320,10 @@ impl Effects {
     fn issue_settlement(&self, kind: SettlementKind) -> Result<Self, TransactionError> {
         let mut state = self.state.borrow_mut();
         #[cfg(target_os = "linux")]
-        if matches!(state.review, ReviewGate::AcceptedPolicyRecovery) {
+        if matches!(
+            state.review,
+            ReviewGate::AcceptedPolicyRecovery | ReviewGate::AcceptedPolicyResumption { .. }
+        ) {
             return Err(TransactionError::InvalidState(
                 "settlement is outside Nix policy recovery",
             ));
@@ -1388,6 +1491,10 @@ impl Effects {
         ) {
             return matches!(state.review, ReviewGate::AcceptedPolicyRecovery);
         }
+        #[cfg(target_os = "linux")]
+        if let EffectRequest::Filesystem(FilesystemJob::ResumeStockPolicy(intent), _) = request {
+            return matches!(&state.review, ReviewGate::AcceptedPolicyResumption { pending, .. } if pending == intent.pending());
+        }
         matches!(state.review, ReviewGate::Accepted { .. })
     }
 
@@ -1411,10 +1518,10 @@ impl Effects {
         let next = match slot {
             EffectSlot::Admitted(request) => {
                 #[cfg(not(target_os = "linux"))]
-                let journal = false;
+                let scoped = false;
                 #[cfg(target_os = "linux")]
-                let journal = request.policy_intent_operation().is_some();
-                let permission = if request.mutates() && (self.mutation_admitted() || journal) {
+                let scoped = request.policy_intent_operation().is_some();
+                let permission = if request.mutates() && (self.mutation_admitted() || scoped) {
                     Some(MutationPermission { _private: () })
                 } else {
                     None
@@ -1805,6 +1912,10 @@ async fn lifecycle(
     match result {
         Ok(outcome) if !effects.stopped() => Ok(RunOutcome::Complete(outcome)),
         Ok(_) | Err(TransactionError::StopRequested) => {
+            #[cfg(target_os = "linux")]
+            if effects.policy_resumption_admitted() {
+                return stopped(&effects, StopObservation::PolicyRecoveryInterrupted);
+            }
             if !effects.mutation_admitted() {
                 return unadmitted(&effects);
             }
@@ -2022,7 +2133,7 @@ mod tests {
         for replace_record in [false, true] {
             let (_temporary, owner, lease) = setup();
             let pending = super::super::PendingNixPolicy {
-                operation: PolicyOperation::ConventionalAppend,
+                operation: PolicyOperation::ApplyUnchanged,
                 attempt: [1; 32],
                 reviewed: [2; 32],
                 helper_path: "/nix/store/11111111111111111111111111111111-neo-policy-helper".into(),
@@ -2115,6 +2226,34 @@ mod tests {
             assert!(effects.check_admission(&update_inspector).is_err());
             assert!(effects.settlement(SettlementKind::Observation).is_err());
             assert_eq!(fs::read(&path).unwrap(), expected);
+
+            let resume = EffectRequest::Filesystem(
+                FilesystemJob::ResumeStockPolicy(open()),
+                Admission::Requested,
+            );
+            assert!(effects.check_admission(&resume).is_err());
+            let mut foreign = pending.clone();
+            foreign.attempt = [3; 32];
+            effects.state.borrow_mut().review = ReviewGate::AcceptedPolicyResumption {
+                pending: foreign,
+                progress: AcceptedProgress::NoMutationAdmitted,
+            };
+            assert!(effects.check_admission(&resume).is_err());
+            effects.state.borrow_mut().review = ReviewGate::AcceptedPolicyResumption {
+                pending,
+                progress: AcceptedProgress::NoMutationAdmitted,
+            };
+            assert!(!effects.mutation_admitted());
+            assert!(effects.check_admission(&request).is_err());
+            assert!(effects.check_admission(&install).is_err());
+            assert!(effects.settlement(SettlementKind::Observation).is_err());
+            let EffectRequest::Filesystem(job, _) = resume else {
+                unreachable!();
+            };
+            let mut resumption = Box::pin(effects.filesystem(job));
+            assert!(poll(effects, resumption.as_mut()).is_pending());
+            assert!(effects.administrator_pending());
+            assert!(effects.policy_resumption_admitted());
         }
     }
 

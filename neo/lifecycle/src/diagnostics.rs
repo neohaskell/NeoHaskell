@@ -297,7 +297,11 @@ pub(crate) enum PendingRecovery {
 pub(crate) enum StopObservation {
     NotRequired,
     NoPair,
-    Pair { version: Option<EarnedVersion> },
+    Pair {
+        version: Option<EarnedVersion>,
+    },
+    #[cfg(target_os = "linux")]
+    PolicyRecoveryInterrupted,
 }
 
 #[derive(Serialize)]
@@ -462,6 +466,10 @@ impl DiagnosticOutcome {
                     installation::StopObservation::ObservedPair(pair) => StopObservation::Pair {
                         version: EarnedVersion::from_observation(&pair.version),
                     },
+                    #[cfg(target_os = "linux")]
+                    installation::StopObservation::PolicyRecoveryInterrupted => {
+                        StopObservation::PolicyRecoveryInterrupted
+                    }
                 },
             },
             Err(error) => OperationOutcome::Failed {
