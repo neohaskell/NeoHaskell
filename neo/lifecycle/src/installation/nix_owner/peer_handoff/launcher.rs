@@ -1,5 +1,7 @@
+#[cfg(test)]
+use super::super::policy_observation::PolicyInputs;
 use super::super::policy_observation::{
-    DiscoveredInputs, PolicyInputs, PolicyInspectionResult, PolicyResult, ReviewedPolicyRequest,
+    DiscoveredInputs, PolicyInspectionResult, PolicyResult, ReviewedPolicyRequest,
 };
 use super::{HandoffError, PeerExpectation, PeerIdentity, linux};
 use crate::installation::filesystem::{self, PolicyHelperLocation};
@@ -36,10 +38,13 @@ enum HelperRequest {
     Discover,
 }
 
+#[cfg(test)]
 const REQUEST: &[u8] = b"NEO-READ-ONLY-V01";
+#[cfg(test)]
 const PUBLISH: &[u8; 16] = b"NEO-PUBLISH--V01";
+#[cfg(test)]
 const TIMEOUT: Duration = Duration::from_secs(2);
-
+#[cfg(test)]
 const REPLY: &[u8; 16] = b"NEO-OBSERVE-V001";
 
 pub(in crate::installation) struct ExactExecutable {
@@ -353,32 +358,31 @@ impl ExactExecutable {
         request: HelperRequest,
     ) -> Result<QuiescentReply, HandoffError> {
         self.recheck()?;
-        if matches!(authority, LaunchAuthority::SudoStock) {
-            if !matches!(request, HelperRequest::Discover) {
-                return Err(HandoffError::Frame);
+        match authority {
+            LaunchAuthority::SudoStock => match request {
+                HelperRequest::Discover => native::discover(self, rendezvous, None, || false),
+                HelperRequest::Compare(_reviewed) => Err(HandoffError::Frame),
+                _ => Err(HandoffError::Frame),
+            },
+            #[cfg(test)]
+            LaunchAuthority::SudoManagedFixture => {
+                let request = match request {
+                    HelperRequest::Compare(reviewed) => {
+                        admin_fixture::ManagedFixtureRequest::Compare(reviewed)
+                    }
+                    HelperRequest::Discover => admin_fixture::ManagedFixtureRequest::Discover,
+                    HelperRequest::Inspect { attempt, reviewed } => {
+                        admin_fixture::ManagedFixtureRequest::Inspect { attempt, reviewed }
+                    }
+                    _ => return Err(HandoffError::Frame),
+                };
+                admin_fixture::observe_managed(self, rendezvous, request)
             }
-            return native::discover(self, rendezvous, None, || false);
-        }
-        #[cfg(test)]
-        if matches!(authority, LaunchAuthority::SudoManagedFixture) {
-            let request = match request {
-                HelperRequest::Compare(reviewed) => {
-                    admin_fixture::ManagedFixtureRequest::Compare(reviewed)
-                }
-                HelperRequest::Discover => admin_fixture::ManagedFixtureRequest::Discover,
-                HelperRequest::Inspect { attempt, reviewed } => {
-                    admin_fixture::ManagedFixtureRequest::Inspect { attempt, reviewed }
-                }
-                _ => return Err(HandoffError::Frame),
-            };
-            return admin_fixture::observe_managed(self, rendezvous, request);
-        }
-        let child: Child = match authority {
-            LaunchAuthority::SudoStock => unreachable!(),
             #[cfg(test)]
-            LaunchAuthority::SudoManagedFixture => unreachable!(),
-            #[cfg(test)]
-            LaunchAuthority::SameUidFixture(mode) => self.spawn_fixture(&rendezvous, mode, None)?,
+            LaunchAuthority::SameUidFixture(mode) => {
+                let child = self.spawn_fixture(&rendezvous, mode, None)?;
+                self.observe_fixture(rendezvous, request, child)
+            }
             #[cfg(test)]
             LaunchAuthority::PolicyFixture {
                 mode,
@@ -386,8 +390,21 @@ impl ExactExecutable {
                 service,
                 executable,
                 pid,
-            } => self.spawn_fixture(&rendezvous, mode, Some((source, service, executable, pid)))?,
-        };
+            } => {
+                let child =
+                    self.spawn_fixture(&rendezvous, mode, Some((source, service, executable, pid)))?;
+                self.observe_fixture(rendezvous, request, child)
+            }
+        }
+    }
+
+    #[cfg(test)]
+    fn observe_fixture(
+        &self,
+        rendezvous: Rendezvous,
+        request: HelperRequest,
+        child: Child,
+    ) -> Result<QuiescentReply, HandoffError> {
         let mut child = ChildLease(child);
         let identity = PeerIdentity {
             pid: child.0.id() as i32,
@@ -547,10 +564,12 @@ pub(in crate::installation) struct Rendezvous {
     epoch: [u8; 32],
 }
 
+#[cfg(test)]
 struct AuthenticatedHelper {
     identity: PeerIdentity,
 }
 
+#[cfg(test)]
 struct PeerEndpoint {
     socket: OwnedFd,
 }
@@ -561,8 +580,10 @@ struct ApprovedPublish<'a> {
     persisted: crate::installation::coordinator::PersistedPolicyIntent,
 }
 
+#[cfg(test)]
 struct ChildLease(Child);
 
+#[cfg(test)]
 impl Drop for ChildLease {
     fn drop(&mut self) {
         let _ = self.0.kill();
@@ -655,6 +676,7 @@ impl Rendezvous {
         Ok(Self { listener, epoch })
     }
 
+    #[cfg(test)]
     fn accept(
         self,
         helper: &AuthenticatedHelper,
@@ -728,6 +750,7 @@ impl Rendezvous {
     }
 }
 
+#[cfg(test)]
 impl PeerEndpoint {
     fn observe(
         self,
@@ -738,7 +761,6 @@ impl PeerEndpoint {
         timeout: Duration,
     ) -> Result<QuiescentReply, HandoffError> {
         self.send_request(&mut child, request)?;
-        #[cfg(test)]
         if matches!(
             request,
             HelperRequest::Publish(_)
@@ -765,10 +787,7 @@ impl PeerEndpoint {
                 return Err(HandoffError::Timeout);
             }
         }
-        #[cfg(test)]
         let mut inspection = None;
-        #[cfg(not(test))]
-        let inspection = None;
         let (policy, discovery) = match request {
             HelperRequest::Compare(_) => (
                 Some(
@@ -777,7 +796,6 @@ impl PeerEndpoint {
                 ),
                 None,
             ),
-            #[cfg(test)]
             HelperRequest::Publish(_) => (
                 Some(
                     PolicyResult::decode(linux::receive_policy(&self.socket, &expected)?)
@@ -792,7 +810,6 @@ impl PeerEndpoint {
                         .ok_or(HandoffError::Frame)?,
                 ),
             ),
-            #[cfg(test)]
             HelperRequest::Inspect { .. } => {
                 inspection = Some(
                     PolicyInspectionResult::decode(linux::receive_policy_inspection(
@@ -815,7 +832,6 @@ impl PeerEndpoint {
             QuiescentReply {
                 pid: expected.identity.pid,
                 observed: match request {
-                    #[cfg(test)]
                     HelperRequest::Publish(_) => "policy publication helper replied",
                     _ => "read-only helper replied",
                 },
@@ -826,7 +842,6 @@ impl PeerEndpoint {
         )
     }
 
-    #[cfg(test)]
     fn publish_managed(
         self,
         mut child: ChildLease,
@@ -916,20 +931,16 @@ impl PeerEndpoint {
         }
         let mut frame = match request {
             HelperRequest::Discover => DISCOVER.to_vec(),
-            #[cfg(test)]
             HelperRequest::Publish(_) => PUBLISH.to_vec(),
-            #[cfg(test)]
             HelperRequest::Inspect { .. } => INSPECT.to_vec(),
             _ => REQUEST.to_vec(),
         };
         if let HelperRequest::Compare(request) = request {
             frame.extend_from_slice(request.bytes());
         }
-        #[cfg(test)]
         if let HelperRequest::Publish(request) = request {
             frame.extend_from_slice(request.bytes());
         }
-        #[cfg(test)]
         if let HelperRequest::Inspect { attempt, reviewed } = request {
             frame.extend_from_slice(&attempt);
             frame.extend_from_slice(reviewed.bytes());
