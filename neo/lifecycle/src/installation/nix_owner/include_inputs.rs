@@ -1,4 +1,5 @@
 use super::*;
+use base64::{Engine, engine::general_purpose::STANDARD};
 use std::path::Component;
 
 const MAX_EDGES: usize = 128;
@@ -78,6 +79,121 @@ fn same_file(left: &ConfigurationFile, right: &ConfigurationFile) -> bool {
         if a.device == b.device && a.inode == b.inode)
 }
 
+struct EffectivePolicy {
+    requires_signatures: bool,
+    features: Vec<String>,
+    substituters: Vec<String>,
+    trusted_substituters: Vec<String>,
+    public_keys: Vec<String>,
+    loads_plugins: bool,
+}
+
+impl Default for EffectivePolicy {
+    fn default() -> Self {
+        Self {
+            requires_signatures: true,
+            features: Vec::new(),
+            substituters: vec!["https://cache.nixos.org/".into()],
+            trusted_substituters: Vec::new(),
+            public_keys: vec![
+                "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=".into(),
+            ],
+            loads_plugins: false,
+        }
+    }
+}
+
+fn unsupported_policy() -> TransactionError {
+    TransactionError::NixBlocked(NixBlock::ConfigurationOwnerUnknown)
+}
+
+fn parse_public_key(entry: &str) -> Option<(&str, [u8; 32])> {
+    let (name, encoded) = entry.split_once(':')?;
+    if name.is_empty() {
+        return None;
+    }
+    let mut decoded = [0; 32];
+    let len = STANDARD.decode_slice(encoded, &mut decoded).ok()?;
+    (len == decoded.len()).then_some((name, decoded))
+}
+
+impl EffectivePolicy {
+    fn assign(&mut self, name: &str, values: &[&str]) -> Result<(), TransactionError> {
+        match name {
+            "require-sigs" => {
+                self.requires_signatures = match values {
+                    ["true" | "yes" | "1"] => true,
+                    ["false" | "no" | "0"] => false,
+                    _ => return Err(TransactionError::Io),
+                };
+                return Ok(());
+            }
+            "store" if !matches!(values, [] | ["auto" | "local"]) => {
+                return Err(unsupported_policy());
+            }
+            "plugin-files" => {
+                self.loads_plugins = !values.is_empty();
+                return Ok(());
+            }
+            _ => {}
+        }
+
+        let (setting, append) = match name.strip_prefix("extra-") {
+            Some(setting) => (setting, true),
+            None => (name, false),
+        };
+        let target = match setting {
+            "experimental-features" => &mut self.features,
+            "substituters" | "binary-caches" => &mut self.substituters,
+            "trusted-substituters" | "trusted-binary-caches" => &mut self.trusted_substituters,
+            "trusted-public-keys" | "binary-cache-public-keys" => &mut self.public_keys,
+            _ => return Ok(()),
+        };
+        if !append {
+            target.clear();
+        }
+        target.extend(values.iter().map(|value| (*value).to_owned()));
+        Ok(())
+    }
+
+    fn verify(&self) -> Result<(), TransactionError> {
+        let (urls, keys) =
+            crate::candidate::nix_cache_settings().map_err(|_| TransactionError::Io)?;
+        if !self.requires_signatures
+            || self.loads_plugins
+            || !["nix-command", "flakes"]
+                .into_iter()
+                .all(|feature| self.features.iter().any(|configured| configured == feature))
+        {
+            return Err(unsupported_policy());
+        }
+        for url in urls.split_ascii_whitespace() {
+            // The daemon compares the requested StoreReference including its parameters.
+            if !self
+                .substituters
+                .iter()
+                .chain(&self.trusted_substituters)
+                .any(|configured| configured == url || configured.strip_suffix('/') == Some(url))
+            {
+                return Err(unsupported_policy());
+            }
+        }
+        let mut trusted_keys = BTreeMap::new();
+        for configured in &self.public_keys {
+            let (name, key) = parse_public_key(configured).ok_or_else(unsupported_policy)?;
+            // Nix inserts keys by name in configuration order and keeps the first.
+            trusted_keys.entry(name).or_insert(key);
+        }
+        for key in keys.split_ascii_whitespace() {
+            let (name, expected) = parse_public_key(key).ok_or(TransactionError::Io)?;
+            if trusted_keys.get(name) != Some(&expected) {
+                return Err(unsupported_policy());
+            }
+        }
+        Ok(())
+    }
+}
+
 struct Walk<'a, P, R> {
     protect: &'a P,
     read: &'a mut R,
@@ -88,7 +204,7 @@ struct Walk<'a, P, R> {
     bytes: usize,
     references: usize,
     existing: bool,
-    requires_signatures: bool,
+    policy: EffectivePolicy,
 }
 
 impl<P, R> Walk<'_, P, R>
@@ -96,14 +212,17 @@ where
     P: Fn(&Path) -> io::Result<PathBuf>,
     R: FnMut(&mut File) -> Result<Vec<u8>, TransactionError>,
 {
-    fn read_graph(&mut self, path: &Path, bytes: &[u8]) -> Result<(), TransactionError> {
+    fn read_graph(
+        &mut self,
+        path: &Path,
+        bytes: &[u8],
+        pending_leaf: Option<&[u8]>,
+    ) -> Result<(), TransactionError> {
         self.visit(path, Some(bytes), 0)?;
-        if !self.requires_signatures {
-            return Err(TransactionError::NixBlocked(
-                NixBlock::ConfigurationOwnerUnknown,
-            ));
+        if let Some(leaf) = pending_leaf {
+            self.visit(&self.reserved.clone(), Some(leaf), 1)?;
         }
-        Ok(())
+        self.policy.verify()
     }
 
     fn visit(
@@ -151,18 +270,7 @@ where
                 {
                     return Err(TransactionError::Io);
                 }
-                match words.as_slice() {
-                    ["require-sigs", "=", "true" | "yes" | "1"] => self.requires_signatures = true,
-                    ["require-sigs", "=", "false" | "no" | "0"] => self.requires_signatures = false,
-                    ["require-sigs", ..] => return Err(TransactionError::Io),
-                    ["store", "="] | ["store", "=", "auto" | "local"] => {}
-                    ["store", ..] => {
-                        return Err(TransactionError::NixBlocked(
-                            NixBlock::ConfigurationOwnerUnknown,
-                        ));
-                    }
-                    _ => {}
-                }
+                self.policy.assign(words[0], &words[2..])?;
                 continue;
             }
             if words.len() != 2 || self.graph.edges.len() >= MAX_EDGES {
@@ -258,12 +366,12 @@ pub(super) fn observe(
                 edges: Vec::new(),
             },
             active: Vec::new(),
-            bytes: companion_bytes.len(),
+            bytes: 0,
             references: 0,
             existing,
-            requires_signatures: true,
+            policy: EffectivePolicy::default(),
         };
-        walk.read_graph(path, bytes)?;
+        walk.read_graph(path, bytes, (!existing).then_some(desired.leaf.as_slice()))?;
         if existing && walk.references != 1 {
             return Ok(AttachmentInputs::Conflict);
         }
@@ -553,12 +661,16 @@ pub(in crate::installation::nix_owner) mod recovery {
                     edges: Vec::new(),
                 },
                 active: Vec::new(),
-                bytes: companion.1.len(),
+                bytes: 0,
                 references: 0,
                 existing: published,
-                requires_signatures: true,
+                policy: EffectivePolicy::default(),
             };
-            walk.read_graph(path, &live.1)?;
+            walk.read_graph(
+                path,
+                &live.1,
+                (!published).then_some(desired.leaf.as_slice()),
+            )?;
             if published {
                 let Some(final_edge) = walk.graph.edges.pop() else {
                     return Ok(Stage::Conflict);
@@ -669,6 +781,12 @@ mod tests {
                 false,
             ),
             ("store = daemon\n", "", false),
+            ("plugin-files = /root/extension.so\n", "", false),
+            (
+                "plugin-files = /root/extension.so\ninclude settings.conf\n",
+                "plugin-files =\n",
+                true,
+            ),
         ] {
             fs::write(&nested, included).unwrap();
             fs::write(&main, source).unwrap();
@@ -704,6 +822,56 @@ mod tests {
             AttachmentInputs::VerifiedExisting(_)
         ));
         assert_eq!(fs::read(&leaf).unwrap(), desired.leaf);
+    }
+
+    #[test]
+    fn conventional_policy_rejects_a_shadowed_release_key() {
+        let (_temporary, main) = fixture();
+        let nested = main.with_file_name("settings.conf");
+        let (_, required_keys) = crate::candidate::nix_cache_settings().unwrap();
+        let expected = required_keys.split_ascii_whitespace().next().unwrap();
+        let (name, _) = expected.split_once(':').unwrap();
+        fs::write(
+            &nested,
+            format!("trusted-public-keys = {name}:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\n"),
+        )
+        .unwrap();
+        fs::write(&main, b"include settings.conf\n").unwrap();
+        let observation = fixture_input(&main).unwrap();
+        assert!(matches!(
+            attachment(&observation),
+            AttachmentInputs::Conflict
+        ));
+        let NixIncludePreparation::Append(desired) = observation.preparation else {
+            panic!("append");
+        };
+        fs::write(main.with_file_name(POLICY_LEAF), &desired.leaf).unwrap();
+        fs::write(&main, &desired.source).unwrap();
+        assert!(matches!(
+            attachment(&fixture_input(&main).unwrap()),
+            AttachmentInputs::Conflict
+        ));
+
+        fs::write(
+            &main,
+            format!(
+                "include settings.conf\nbinary-cache-public-keys = {required_keys}\n{POLICY_REFERENCE}\n"
+            ),
+        )
+        .unwrap();
+        assert!(matches!(
+            attachment(&fixture_input(&main).unwrap()),
+            AttachmentInputs::VerifiedExisting(_)
+        ));
+        fs::write(
+            &main,
+            format!("extra-trusted-public-keys = unrelated:bad-key\n{POLICY_REFERENCE}\n"),
+        )
+        .unwrap();
+        assert!(matches!(
+            attachment(&fixture_input(&main).unwrap()),
+            AttachmentInputs::Conflict
+        ));
     }
 
     fn recovery_read(file: &mut File) -> Result<Vec<u8>, TransactionError> {

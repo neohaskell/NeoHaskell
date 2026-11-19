@@ -119,7 +119,7 @@ pub(crate) fn declared_cache(index: usize) -> Result<DeclaredCache> {
     })
 }
 
-fn nix_cache_settings() -> Result<(String, String)> {
+pub(crate) fn nix_cache_settings() -> Result<(String, String)> {
     let contract = Contract::load()?;
     let entries = array(&contract.registry()["trusted_cache_keys"])?;
     let mut urls = Vec::new();
