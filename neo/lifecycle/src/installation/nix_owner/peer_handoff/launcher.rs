@@ -313,6 +313,7 @@ impl ExactExecutable {
         rendezvous: Rendezvous,
         caller: &VerifiedCaller,
         intent: &crate::installation::coordinator::StockPolicyIntent,
+        terminal: Option<&ParkedTerminal>,
         cancelled: impl Fn() -> bool,
     ) -> Result<Option<VerifiedPolicyInspection>, HandoffError> {
         let pending = intent.pending();
@@ -323,7 +324,7 @@ impl ExactExecutable {
             return Err(HandoffError::Executable);
         }
         self.recheck()?;
-        let reply = native::inspect(self, rendezvous, caller, intent, cancelled)?;
+        let reply = native::inspect(self, rendezvous, caller, intent, terminal, cancelled)?;
         match reply.inspection {
             Some(PolicyInspectionResult::VerifiedApplied) => {
                 Ok(Some(VerifiedPolicyInspection(pending.clone())))

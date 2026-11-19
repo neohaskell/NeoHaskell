@@ -92,6 +92,8 @@ pub(crate) enum ReviewOperation {
 pub(crate) enum ReviewedChange {
     NixPolicy,
     ExistingNixPolicy,
+    #[cfg(target_os = "linux")]
+    NixPolicyRecoveryInspection,
     Uninstall,
     ShellPath,
     ShellStartup,
@@ -300,6 +302,8 @@ enum ReviewGate {
         identity: u64,
         progress: AcceptedProgress,
     },
+    #[cfg(target_os = "linux")]
+    AcceptedPolicyRecovery,
     Stopped(UnadmittedReason),
 }
 
@@ -526,7 +530,8 @@ impl EffectRequest {
         if let Self::Filesystem(
             FilesystemJob::ObserveStockPolicy { .. }
             | FilesystemJob::PublishStockPolicy { .. }
-            | FilesystemJob::VerifyExistingNixPolicy { .. },
+            | FilesystemJob::VerifyExistingNixPolicy { .. }
+            | FilesystemJob::InspectStockPolicy(_),
             Admission::Requested,
         ) = self
         {
@@ -686,6 +691,40 @@ impl Effects {
             }
         })
         .await
+    }
+
+    #[cfg(target_os = "linux")]
+    pub(super) async fn review_and_inspect_stock_policy(
+        &self,
+        intent: StockPolicyIntent,
+        recheck_helper: impl Future<Output = Result<(), TransactionError>>,
+    ) -> Result<FilesystemResult, TransactionError> {
+        let identity = self
+            .review(ReviewSummary {
+                operation: ReviewOperation::Recover,
+                version: None,
+                recovery: RecoveryPending::Unknown,
+                changes: vec![ReviewedChange::NixPolicyRecoveryInspection],
+            })
+            .await?;
+        recheck_helper.await?;
+        intent.verify().map_err(|_| self.review_changed())?;
+        self.checkpoint()?;
+        {
+            let mut state = self.state.borrow_mut();
+            if !matches!(state.review, ReviewGate::Rechecking(current) if current == identity)
+                || !matches!(state.slot, EffectSlot::Idle)
+                || state.settlement.is_some()
+            {
+                return Err(TransactionError::InvalidState(
+                    "Nix policy recovery review was not rechecked",
+                ));
+            }
+            state.diagnostics.admitted();
+            state.review = ReviewGate::AcceptedPolicyRecovery;
+        }
+        self.filesystem(FilesystemJob::InspectStockPolicy(intent))
+            .await
     }
 
     pub(super) async fn review_nix_policy(
@@ -965,6 +1004,24 @@ impl Effects {
             return Err(TransactionError::InvalidState("startup already completed"));
         }
         #[cfg(target_os = "linux")]
+        if let EffectRequest::Filesystem(FilesystemJob::InspectStockPolicy(intent), _) = request {
+            self.checkpoint()?;
+            let state = self.state.borrow();
+            return if matches!(self.admission, Admission::Requested)
+                && matches!(state.review, ReviewGate::AcceptedPolicyRecovery)
+                && state.lease.as_ref().is_some_and(|owner| {
+                    owner
+                        .policy_identity(&intent.layout.lock())
+                        .is_ok_and(|lease| Some(lease) == intent.pending().state_lease)
+                }) {
+                Ok(())
+            } else {
+                Err(TransactionError::InvalidState(
+                    "Nix policy recovery inspection admission",
+                ))
+            };
+        }
+        #[cfg(target_os = "linux")]
         if let EffectRequest::Filesystem(FilesystemJob::VerifyExistingNixPolicy { lease, .. }, _) =
             request
         {
@@ -1012,6 +1069,12 @@ impl Effects {
                 let state = self.state.borrow();
                 match state.review {
                     ReviewGate::Accepted { .. } => Ok(()),
+                    #[cfg(target_os = "linux")]
+                    ReviewGate::AcceptedPolicyRecovery
+                        if !request.mutates() && !request.accepts_administrator_terminal() =>
+                    {
+                        Ok(())
+                    }
                     ReviewGate::Inspecting | ReviewGate::Rechecking(_) if !request.mutates() => {
                         Ok(())
                     }
@@ -1141,6 +1204,12 @@ impl Effects {
 
     fn issue_settlement(&self, kind: SettlementKind) -> Result<Self, TransactionError> {
         let mut state = self.state.borrow_mut();
+        #[cfg(target_os = "linux")]
+        if matches!(state.review, ReviewGate::AcceptedPolicyRecovery) {
+            return Err(TransactionError::InvalidState(
+                "settlement is outside Nix policy recovery",
+            ));
+        }
         if state.settlement.is_some() || !matches!(state.slot, EffectSlot::Idle) {
             return Err(TransactionError::InvalidState("settlement already pending"));
         }
@@ -1291,10 +1360,20 @@ impl Effects {
 
     fn administrator_pending(&self) -> bool {
         let state = self.state.borrow();
-        matches!(&state.slot, EffectSlot::Admitted(request) if request.accepts_administrator_terminal())
-            && matches!(state.review, ReviewGate::Accepted { .. })
-            && state.lease.is_some()
-            && !self.stopped()
+        let EffectSlot::Admitted(request) = &state.slot else {
+            return false;
+        };
+        if !request.accepts_administrator_terminal() || state.lease.is_none() || self.stopped() {
+            return false;
+        }
+        #[cfg(target_os = "linux")]
+        if matches!(
+            request,
+            EffectRequest::Filesystem(FilesystemJob::InspectStockPolicy(_), _)
+        ) {
+            return matches!(state.review, ReviewGate::AcceptedPolicyRecovery);
+        }
+        matches!(state.review, ReviewGate::Accepted { .. })
     }
 
     fn advance_effect_with_terminal(&self, terminal: Option<ParkedTerminal>) {
@@ -1924,6 +2003,107 @@ mod tests {
 
     #[cfg(target_os = "linux")]
     #[test]
+    fn pending_policy_recovery_review_only_admits_the_unchanged_inspection() {
+        for replace_record in [false, true] {
+            let (_temporary, owner, lease) = setup();
+            let pending = super::super::PendingNixPolicy {
+                attempt: [1; 32],
+                reviewed: [2; 32],
+                helper_path: "/nix/store/11111111111111111111111111111111-neo-policy-helper".into(),
+                helper: crate::candidate::FileIdentity {
+                    name: "neo-installer".into(),
+                    sha: "a".repeat(64),
+                    size: 1,
+                },
+                state_lease: Some(lease.policy_identity(&owner.layout.lock()).unwrap()),
+            };
+            let record = super::super::InstallationRecord {
+                pending_nix_policy: Some(pending.clone()),
+                ..Default::default()
+            };
+            let expected = owner.encode_record(&record).unwrap();
+            let path = owner.layout.record();
+            fs::write(&path, &expected).unwrap();
+            fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
+            let effects = &owner.effects;
+            retain(effects, &lease);
+            let open = || {
+                StockPolicyIntent::open(effects, &owner.layout, pending.clone(), expected.clone())
+                    .unwrap()
+            };
+            let request = EffectRequest::Filesystem(
+                FilesystemJob::InspectStockPolicy(open()),
+                Admission::Requested,
+            );
+            assert!(effects.check_admission(&request).is_err());
+            effects.state.borrow_mut().review = ReviewGate::Inspecting;
+            assert!(effects.check_admission(&request).is_err());
+
+            let mut inspection = Box::pin(
+                effects.review_and_inspect_stock_policy(open(), std::future::ready(Ok(()))),
+            );
+            assert!(poll(effects, inspection.as_mut()).is_pending());
+            let offer = effects.take_review().unwrap();
+            assert_eq!(offer.summary.operation, ReviewOperation::Recover);
+            assert_eq!(
+                offer.summary.changes,
+                [ReviewedChange::NixPolicyRecoveryInspection]
+            );
+            assert!(!effects.administrator_pending());
+            effects.answer(offer.token, None).unwrap();
+            if replace_record {
+                fs::write(&path, b"replacement").unwrap();
+                assert!(matches!(
+                    poll(effects, inspection.as_mut()),
+                    Poll::Ready(Err(TransactionError::StopRequested))
+                ));
+                assert!(!effects.administrator_pending());
+                assert_eq!(fs::read(&path).unwrap(), b"replacement");
+                continue;
+            }
+
+            assert!(poll(effects, inspection.as_mut()).is_pending());
+            assert!(effects.administrator_pending());
+            effects.state.borrow_mut().slot = EffectSlot::Idle;
+            let read = EffectRequest::Filesystem(
+                FilesystemJob::ReadRecord(owner.layout.clone()),
+                Admission::Requested,
+            );
+            assert!(effects.check_admission(&read).is_ok());
+            let install = EffectRequest::Filesystem(
+                FilesystemJob::EnsureCommandDirectory(owner.layout.command_directory.clone()),
+                Admission::Requested,
+            );
+            assert!(effects.check_admission(&install).is_err());
+            let write = EffectRequest::Filesystem(
+                FilesystemJob::ClearPolicyIntent {
+                    layout: owner.layout.clone(),
+                    expected: expected.clone(),
+                },
+                Admission::Requested,
+            );
+            assert!(effects.check_admission(&write).is_err());
+            let update_inspector = EffectRequest::Filesystem(
+                FilesystemJob::VerifyExistingNixPolicy {
+                    inspector: super::super::filesystem::ExistingNixInspector::Installed(
+                        crate::candidate::OutputPath::parse(
+                            "/nix/store/00000000000000000000000000000000-neo",
+                        )
+                        .unwrap(),
+                    ),
+                    lease: pending.state_lease.unwrap(),
+                    common: [0; 32],
+                },
+                Admission::Requested,
+            );
+            assert!(effects.check_admission(&update_inspector).is_err());
+            assert!(effects.settlement(SettlementKind::Observation).is_err());
+            assert_eq!(fs::read(&path).unwrap(), expected);
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
     fn prepared_policy_intent_persists_only_with_the_reviewed_record_and_lease() {
         for change in ["none", "record", "lease", "cancel"] {
             let (_temporary, owner, lease) = setup();
@@ -2504,7 +2684,7 @@ mod tests {
                 ] {
                     let fresh = InstallationOwner::new(owner.layout.clone());
                     assert!(matches!(
-                        test_with(
+                        test_with_review(
                             &fresh.effects,
                             &lease,
                             fresh.run_owned(request, runtime::Executor::NativeInstaller,)

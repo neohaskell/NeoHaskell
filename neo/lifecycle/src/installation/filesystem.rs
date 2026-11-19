@@ -1194,11 +1194,13 @@ fn execute(
                     .map_err(|_| unresolved.clone())?;
             let rendezvous = Rendezvous::fresh().map_err(|_| unresolved.clone())?;
             let inspected = executable
-                .inspect_stock_policy(rendezvous, &caller, &intent, || policy.check().is_err())
+                .inspect_stock_policy(rendezvous, &caller, &intent, terminal, || {
+                    policy.check().is_err()
+                })
                 .map_err(|error| match error {
                     HandoffError::Cancelled => TransactionError::StopRequested,
                     HandoffError::CleanupUnknown => TransactionError::CleanupUnknown,
-                    HandoffError::AdministratorUnavailable => {
+                    HandoffError::AdministratorUnavailable | HandoffError::ForegroundLost => {
                         TransactionError::NixPolicyRecoveryInspectionUnavailable
                     }
                     _ => unresolved,

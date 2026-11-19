@@ -1021,7 +1021,10 @@ impl InstallationOwner {
             StockPolicyIntent::open(&self.effects, &self.layout, pending.clone(), before.clone())?;
         let super::FilesystemResult::StockPolicyInspected(Some(verified)) = self
             .effects
-            .filesystem(super::FilesystemJob::InspectStockPolicy(intent))
+            .review_and_inspect_stock_policy(
+                intent,
+                self.verify_pending_helper_root(record, pending),
+            )
             .await?
         else {
             return Err(unresolved);

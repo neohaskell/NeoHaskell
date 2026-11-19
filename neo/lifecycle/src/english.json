@@ -39,6 +39,7 @@
   "review_recover": "Review recovery.",
   "review_version": "Selected version {version}.",
   "review_recovery": "Recover the reviewed installation state.",
+  "review_nix_policy_recovery_inspection": "Use administrator access to inspect the previous Nix policy operation. Clear the pending installer record only if its completed receipt is verified.",
   "review_command_directory": "Create the owned command directory if required.",
   "review_command_links": "Maintain the owned Neo and neoctl command links.",
   "review_selection": "Save the selected version and its metadata.",

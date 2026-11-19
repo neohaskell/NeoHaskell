@@ -123,6 +123,7 @@ pub(super) fn inspect(
     rendezvous: Rendezvous,
     caller: &VerifiedCaller,
     intent: &StockPolicyIntent,
+    terminal: Option<&ParkedTerminal>,
     cancelled: impl Fn() -> bool,
 ) -> Result<QuiescentReply, HandoffError> {
     intent.verify().map_err(|_| HandoffError::Frame)?;
@@ -131,7 +132,7 @@ pub(super) fn inspect(
         rendezvous,
         Some(caller),
         PeerRequest::Inspect(intent),
-        None,
+        terminal,
         cancelled,
     )
 }

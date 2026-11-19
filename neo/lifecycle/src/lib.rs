@@ -461,6 +461,10 @@ fn write_review(
             ReviewedChange::Cleanup => &copy.review_cleanup,
             ReviewedChange::NixPolicy => &copy.review_nix_policy,
             ReviewedChange::ExistingNixPolicy => &copy.review_existing_nix_policy,
+            #[cfg(target_os = "linux")]
+            ReviewedChange::NixPolicyRecoveryInspection => {
+                &copy.review_nix_policy_recovery_inspection
+            }
         };
         writeln!(output, "{message}")?;
     }
