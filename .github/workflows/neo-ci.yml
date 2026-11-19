@@ -81,8 +81,10 @@ jobs:
           extra-conf: |
             accept-flake-config = true
       - uses: DeterminateSystems/magic-nix-cache-action@v14
-      - name: Unit tests (all in-crate binary tests, --bins)
-        run: nix develop ./neo -c cargo test --manifest-path neo/Cargo.toml --locked --bins
+      - name: Unit tests (workspace libraries and binaries)
+        env:
+          RUST_TEST_THREADS: 1
+        run: nix develop ./neo -c cargo test --manifest-path neo/Cargo.toml --locked --workspace --lib --bins
       - name: rustfmt (report-only baseline)
         continue-on-error: true
         run: |

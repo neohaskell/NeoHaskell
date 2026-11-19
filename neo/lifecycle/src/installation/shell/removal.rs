@@ -165,7 +165,9 @@ fn attributes(file: &File) -> Result<String, TransactionError> {
     }
     #[cfg(target_os = "linux")]
     unsafe {
-        let count = libc::flistxattr(file.as_raw_fd(), std::ptr::null_mut(), 0);
+        // Overlayfs can overestimate the size when it filters private attributes.
+        let mut names = [0; 4096];
+        let count = libc::flistxattr(file.as_raw_fd(), names.as_mut_ptr(), names.len());
         if count != 0 {
             return Err(TransactionError::UnsafePath);
         }
@@ -389,9 +391,12 @@ mod tests {
         let home = temp.path().canonicalize().unwrap().join("home");
         let state = home.with_file_name("state");
         fs::create_dir(&home).unwrap();
+        fs::set_permissions(&home, fs::Permissions::from_mode(0o700)).unwrap();
         fs::create_dir(&state).unwrap();
         fs::set_permissions(&state, fs::Permissions::from_mode(0o700)).unwrap();
-        fs::write(home.join(".bashrc"), prefix).unwrap();
+        let profile = home.join(".bashrc");
+        fs::write(&profile, prefix).unwrap();
+        fs::set_permissions(&profile, fs::Permissions::from_mode(0o600)).unwrap();
         let layout = Layout::new(state, home.join("bin"));
         let lease = HomeLease::acquire(home, &layout).unwrap();
         let receipt = lease

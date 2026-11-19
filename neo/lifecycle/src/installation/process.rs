@@ -957,20 +957,12 @@ impl WorkerRequest {
             }
             Self::PathInfo { cache, paths } => {
                 self.stdout_limit()?;
-                let mut command = if let Some(index) = cache {
-                    let cache = crate::candidate::declared_cache(*index)
-                        .map_err(|_| invalid("cache identity"))?;
-                    let mut command = nix_command()?;
-                    command.arg("--store").arg(cache.url());
-                    command
+                let mut command = if cache.is_some() {
+                    nix_command()?
                 } else {
                     nix_daemon_command()?
                 };
-                command.args(["path-info", "--json", "--json-format", "1", "--sigs"]);
-                for path in paths {
-                    OutputPath::parse(path).map_err(|_| invalid("opaque output path"))?;
-                    command.arg(path);
-                }
+                append_path_info_args(&mut command, *cache, paths)?;
                 command
             }
             Self::HashConvert { hashes } => {
@@ -1062,6 +1054,24 @@ impl WorkerRequest {
         validate_argv_budget(&command)?;
         Ok(command)
     }
+}
+
+fn append_path_info_args(
+    command: &mut Command,
+    cache: Option<usize>,
+    paths: &[String],
+) -> io::Result<()> {
+    if let Some(index) = cache {
+        let cache =
+            crate::candidate::declared_cache(index).map_err(|_| invalid("cache identity"))?;
+        command.arg("--store").arg(cache.url());
+    }
+    command.args(["path-info", "--json", "--json-format", "1", "--sigs"]);
+    for path in paths {
+        OutputPath::parse(path).map_err(|_| invalid("opaque output path"))?;
+        command.arg(path);
+    }
+    Ok(())
 }
 
 fn nix_command() -> io::Result<Command> {
@@ -1638,8 +1648,6 @@ mod tests {
 
     #[test]
     fn metadata_batches_use_bounded_argv_and_generated_cache_authority() {
-        let (_temporary, lock) = setup();
-        let directory = lock.path.parent().unwrap();
         let paths = (0..64)
             .map(|n| format!("/nix/store/00000000000000000000000000000000-{n}"))
             .collect::<Vec<_>>();
@@ -1647,26 +1655,31 @@ mod tests {
             cache: Some(0),
             paths: paths.clone(),
         };
-        let command = operation.command(directory).unwrap();
+        let mut command = Command::new("nix");
+        append_path_info_args(&mut command, Some(0), &paths).unwrap();
+        let args = command.get_args().collect::<Vec<_>>();
+        let cache = crate::candidate::declared_cache(0).unwrap();
+        assert_eq!(args[0], "--store");
+        assert_eq!(args[1], cache.url());
         assert_eq!(
-            command.get_args().filter(|arg| *arg == "--stdin").count(),
-            0
+            &args[2..7],
+            &["path-info", "--json", "--json-format", "1", "--sigs"]
         );
-        assert_eq!(operation.stdout_limit().unwrap(), 16 * 1024 * 1024);
         assert!(
-            WorkerRequest::PathInfo {
-                cache: Some(usize::MAX),
-                paths: paths.clone()
-            }
-            .command(directory)
-            .is_err()
+            args[7..]
+                .iter()
+                .copied()
+                .eq(paths.iter().map(std::ffi::OsStr::new))
         );
+        validate_argv_budget(&command).unwrap();
+        assert_eq!(operation.stdout_limit().unwrap(), 16 * 1024 * 1024);
+        assert!(append_path_info_args(&mut command, Some(usize::MAX), &paths).is_err());
         assert!(
             WorkerRequest::PathInfo {
                 cache: None,
                 paths: vec![paths[0].clone(); 65]
             }
-            .command(directory)
+            .stdout_limit()
             .is_err()
         );
     }

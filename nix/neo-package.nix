@@ -100,6 +100,8 @@ rustPlatform.buildRustPackage {
   '';
 
   doCheck = true;
+  # Lifecycle tests fork workers and observe the release of inherited file locks.
+  dontUseCargoParallelTests = true;
   cargoTestFlags =
     (if isInstaller then [ "--package" cargoPackage ] else [ "--workspace" ])
     ++ [ "--lib" "--bins" ];
@@ -119,7 +121,17 @@ rustPlatform.buildRustPackage {
   # full by the neo-ci.yml `rust` job (the complete binary suite in the dev
   # shell, where `/usr/bin/env` exists). This scopes the sealed build to the
   # hermetic tests; it does not weaken any assertion.
-  checkFlags = [ "--skip=ide::methods::heal_event_model" ];
+  checkFlags = [
+    "--skip=ide::methods::heal_event_model"
+  ] ++ lib.optionals stdenv.hostPlatform.isLinux [
+    # The host CI exercises setgid directory creation and default ACLs.
+    "--skip=diagnostics::store::tests::setgid_parent_keeps_owner_only_access"
+    "--skip=diagnostics::store::tests::linux_default_acl_refuses_before_creating_store"
+    # Sealed Nix returns EOPNOTSUPP for flistxattr. Profile exchange requires readable metadata.
+    "--skip=installation::shell::removal::tests::removal_preserves_prefix_suffix_and_completed_retry"
+    "--skip=installation::shell::removal::tests::removal_refuses_editor_replacement_before_exchange"
+    "--skip=installation::shell::removal::tests::removal_retains_late_editor_writes_and_refuses_unknown_retry"
+  ];
 
   meta = {
     description = if isInstaller
