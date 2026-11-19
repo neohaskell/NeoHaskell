@@ -1,3 +1,4 @@
+use super::dashboard::terminal::ParkedTerminal;
 use super::filesystem::{FilesystemJob, FilesystemResult, FilesystemTask};
 use super::{
     InstallationOwner, Layout, PairIdentity, RootLease, TransactionError, process, runtime,
@@ -457,6 +458,7 @@ enum EffectSlot {
     Idle,
     Admitted(EffectRequest),
     Active(ActiveEffect),
+    AdministratorFinished(Result<EffectResult, TransactionError>),
     Completed(Result<EffectResult, TransactionError>),
 }
 
@@ -472,6 +474,20 @@ enum PolicyIntentOperation {
 }
 
 impl EffectRequest {
+    fn accepts_administrator_terminal(&self) -> bool {
+        #[cfg(target_os = "linux")]
+        if let Self::Filesystem(
+            FilesystemJob::ObserveStockPolicy { .. }
+            | FilesystemJob::PublishStockPolicy { .. }
+            | FilesystemJob::VerifyExistingNixPolicy { .. },
+            Admission::Requested,
+        ) = self
+        {
+            return true;
+        }
+        false
+    }
+
     fn mutates(&self) -> bool {
         match self {
             Self::Filesystem(job, _) => job.mutates(),
@@ -1223,7 +1239,32 @@ impl Effects {
         }
     }
 
+    #[cfg(test)]
     fn advance_effect(&self) {
+        self.advance_effect_with_terminal(None);
+    }
+
+    fn administrator_pending(&self) -> bool {
+        let state = self.state.borrow();
+        matches!(&state.slot, EffectSlot::Admitted(request) if request.accepts_administrator_terminal())
+            && matches!(state.review, ReviewGate::Accepted { .. })
+            && state.lease.is_some()
+            && !self.stopped()
+    }
+
+    fn advance_effect_with_terminal(&self, terminal: Option<ParkedTerminal>) {
+        let attended = terminal.is_some();
+        if attended && !self.administrator_pending() {
+            let error = if self.stopped() {
+                TransactionError::StopRequested
+            } else {
+                TransactionError::InvalidState(
+                    "administrator terminal without accepted review and lease",
+                )
+            };
+            self.state.borrow_mut().slot = EffectSlot::AdministratorFinished(Err(error));
+            return;
+        }
         let slot = {
             let mut state = self.state.borrow_mut();
             std::mem::replace(&mut state.slot, EffectSlot::Idle)
@@ -1255,6 +1296,7 @@ impl Effects {
                                 self.cancellation.clone(),
                                 admission,
                                 permission,
+                                terminal,
                             )
                             .map(ActiveEffect::Filesystem),
                             Err(_) => Err(TransactionError::Io),
@@ -1295,10 +1337,13 @@ impl Effects {
                 };
                 match active {
                     Ok(active) => EffectSlot::Active(active),
+                    Err(error) if attended => EffectSlot::AdministratorFinished(Err(error)),
                     Err(error) => EffectSlot::Completed(Err(error)),
                 }
             }
             EffectSlot::Active(mut active) => {
+                let attended =
+                    matches!(&active, ActiveEffect::Filesystem(task) if task.uses_terminal());
                 let result = match &mut active {
                     ActiveEffect::Filesystem(task) => task
                         .poll()
@@ -1354,6 +1399,7 @@ impl Effects {
                     }
                 };
                 match result {
+                    Some(result) if attended => EffectSlot::AdministratorFinished(result),
                     Some(result) => {
                         drop(active);
                         EffectSlot::Completed(result)
@@ -1505,9 +1551,45 @@ impl Coordinator {
     }
 
     pub(super) fn advance(&mut self) -> Poll<Result<RunOutcome, TransactionError>> {
+        self.advance_with_terminal(None)
+    }
+
+    pub(super) fn administrator_pending(&self) -> bool {
+        self.effects.administrator_pending()
+    }
+
+    pub(super) fn administrator_running(&self) -> bool {
+        matches!(
+            &self.effects.state.borrow().slot,
+            EffectSlot::Active(ActiveEffect::Filesystem(task)) if task.uses_terminal()
+        )
+    }
+
+    pub(super) fn administrator_finished(&self) -> Option<bool> {
+        let state = self.effects.state.borrow();
+        if let EffectSlot::AdministratorFinished(result) = &state.slot {
+            Some(!matches!(result, Err(TransactionError::CleanupUnknown)))
+        } else {
+            None
+        }
+    }
+
+    pub(super) fn complete_administrator(&self) {
+        let mut state = self.effects.state.borrow_mut();
+        let slot = std::mem::replace(&mut state.slot, EffectSlot::Idle);
+        state.slot = match slot {
+            EffectSlot::AdministratorFinished(result) => EffectSlot::Completed(result),
+            other => other,
+        };
+    }
+
+    pub(super) fn advance_with_terminal(
+        &mut self,
+        terminal: Option<ParkedTerminal>,
+    ) -> Poll<Result<RunOutcome, TransactionError>> {
         #[cfg(test)]
         super::dashboard::note_advance();
-        self.effects.advance_effect();
+        self.effects.advance_effect_with_terminal(terminal);
         let waker = Waker::from(Arc::new(CallerWake));
         let mut context = Context::from_waker(&waker);
         match self.continuation.as_mut().poll(&mut context) {
@@ -1660,6 +1742,42 @@ impl Effects {
     pub(super) fn cancel_at(&self, point: &'static str) {
         *self.cancellation.cut.lock().unwrap() = Some(point);
     }
+}
+
+#[cfg(all(test, target_os = "linux"))]
+#[test]
+fn administrator_terminal_requires_review_owned_lease_and_live_effect() {
+    let effects = Effects::for_tests();
+    let job = || {
+        EffectSlot::Admitted(EffectRequest::Filesystem(
+            FilesystemJob::VerifyExistingNixPolicy {
+                inspector: super::filesystem::ExistingNixInspector::Installed(
+                    crate::candidate::OutputPath::parse(
+                        "/nix/store/00000000000000000000000000000000-neo",
+                    )
+                    .unwrap(),
+                ),
+                lease: super::PolicyStateLease {
+                    device: 1,
+                    inode: 2,
+                },
+                common: [1; 32],
+            },
+            Admission::Requested,
+        ))
+    };
+    effects.state.borrow_mut().slot = job();
+    assert!(!effects.administrator_pending());
+    effects.state.borrow_mut().slot = EffectSlot::Idle;
+    effects.accept_fixture_review();
+    effects.state.borrow_mut().slot = job();
+    assert!(!effects.administrator_pending());
+    let temp = tempfile::tempdir().unwrap();
+    effects.state.borrow_mut().lease =
+        Some(RootLease::acquire(&temp.path().join("owner")).unwrap());
+    assert!(effects.administrator_pending());
+    effects.cancel_for_test();
+    assert!(!effects.administrator_pending());
 }
 
 #[cfg(test)]
@@ -3552,6 +3670,7 @@ mod tests {
                 ),
                 Cancellation::default(),
                 Admission::Requested,
+                None,
                 None
             )
             .is_err()

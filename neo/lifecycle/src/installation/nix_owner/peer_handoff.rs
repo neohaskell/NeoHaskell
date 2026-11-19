@@ -19,6 +19,8 @@ pub(in crate::installation) enum HandoffError {
     Timeout,
     CleanupUnknown,
     Cancelled,
+    ForegroundLost,
+    AdministratorUnavailable,
     Socket,
     Ancillary,
     Truncated,

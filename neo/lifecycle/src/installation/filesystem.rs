@@ -1,4 +1,5 @@
 use super::coordinator::{Admission, Cancellation, SettlementKind, WaitInterest};
+use super::dashboard::terminal::ParkedTerminal;
 #[cfg(target_os = "linux")]
 use super::nix_owner::peer_handoff::{
     ExactExecutable, HandoffError, Rendezvous,
@@ -391,6 +392,7 @@ pub(super) struct FilesystemTask {
     handle: Option<JoinHandle<Result<FilesystemResult, TransactionError>>>,
     completion: UnixStream,
     notified: bool,
+    attended: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -438,6 +440,7 @@ impl FilesystemTask {
         cancellation: Cancellation,
         admission: Admission,
         permission: Option<super::coordinator::MutationPermission>,
+        terminal: Option<ParkedTerminal>,
     ) -> Result<Self, TransactionError> {
         if matches!(job, FilesystemJob::ShellApply { .. })
             && !matches!(admission, Admission::Settlement(_))
@@ -463,10 +466,17 @@ impl FilesystemTask {
                 ));
             }
         }
+        if terminal
+            .as_ref()
+            .is_some_and(|terminal| !terminal.foreground())
+        {
+            return Err(TransactionError::AdministratorUnavailable);
+        }
         let (completion, mut signal) = UnixStream::pair().map_err(|_| TransactionError::Io)?;
         completion
             .set_nonblocking(true)
             .map_err(|_| TransactionError::Io)?;
+        let attended = terminal.is_some();
         let handle = std::thread::Builder::new()
             .name("neo-filesystem".into())
             .spawn(move || {
@@ -476,6 +486,7 @@ impl FilesystemTask {
                         cancellation,
                         admission,
                     },
+                    terminal.as_ref(),
                 );
                 drop(lease);
                 let _ = signal.write_all(&[1]);
@@ -486,7 +497,12 @@ impl FilesystemTask {
             handle: Some(handle),
             completion,
             notified: false,
+            attended,
         })
+    }
+
+    pub(super) fn uses_terminal(&self) -> bool {
+        self.attended
     }
 
     pub(super) fn poll(&mut self) -> Option<Result<FilesystemResult, TransactionError>> {
@@ -502,7 +518,11 @@ impl FilesystemTask {
                 .take()
                 .unwrap()
                 .join()
-                .unwrap_or(Err(TransactionError::Io)),
+                .unwrap_or(if self.attended {
+                    Err(TransactionError::CleanupUnknown)
+                } else {
+                    Err(TransactionError::Io)
+                }),
         )
     }
 
@@ -711,7 +731,13 @@ fn hash_helper(
     Ok(format!("{:x}", nar.finalize()))
 }
 
-fn execute(job: FilesystemJob, policy: &ReadPolicy) -> Result<FilesystemResult, TransactionError> {
+fn execute(
+    job: FilesystemJob,
+    policy: &ReadPolicy,
+    terminal: Option<&ParkedTerminal>,
+) -> Result<FilesystemResult, TransactionError> {
+    #[cfg(not(target_os = "linux"))]
+    let _ = terminal;
     use FilesystemJob as Job;
     use FilesystemResult as Result;
     let journal = job.journal_kind();
@@ -1075,10 +1101,13 @@ fn execute(job: FilesystemJob, policy: &ReadPolicy) -> Result<FilesystemResult, 
             common_inputs,
         } => {
             let discovery = executable
-                .discover_stock_policy(rendezvous, &caller, || policy.check().is_err())
+                .discover_stock_policy(rendezvous, &caller, terminal, || policy.check().is_err())
                 .map_err(|error| match error {
                     HandoffError::Cancelled => TransactionError::StopRequested,
                     HandoffError::CleanupUnknown => TransactionError::CleanupUnknown,
+                    HandoffError::AdministratorUnavailable | HandoffError::ForegroundLost => {
+                        TransactionError::AdministratorUnavailable
+                    }
                     _ => TransactionError::Verification("helper policy discovery"),
                 })?
                 .map_err(|_| {
@@ -1115,10 +1144,15 @@ fn execute(job: FilesystemJob, policy: &ReadPolicy) -> Result<FilesystemResult, 
                 ExistingNixInspector::Retained { executable, caller } => (executable, Some(caller)),
             };
             let proof = executable
-                .verify_existing_policy(caller.as_ref(), lease, common, || policy.check().is_err())
+                .verify_existing_policy(caller.as_ref(), lease, common, terminal, || {
+                    policy.check().is_err()
+                })
                 .map_err(|error| match error {
                     HandoffError::Cancelled => TransactionError::StopRequested,
                     HandoffError::CleanupUnknown => TransactionError::CleanupUnknown,
+                    HandoffError::AdministratorUnavailable | HandoffError::ForegroundLost => {
+                        TransactionError::AdministratorUnavailable
+                    }
                     _ => blocked(),
                 })?
                 .ok_or_else(blocked)?;
@@ -1133,10 +1167,15 @@ fn execute(job: FilesystemJob, policy: &ReadPolicy) -> Result<FilesystemResult, 
             commit,
         } => {
             let verified = executable
-                .publish_stock_policy(rendezvous, &caller, &commit, || policy.check().is_err())
+                .publish_stock_policy(rendezvous, &caller, &commit, terminal, || {
+                    policy.check().is_err()
+                })
                 .map_err(|error| match error {
                     HandoffError::Cancelled => TransactionError::StopRequested,
                     HandoffError::CleanupUnknown => TransactionError::CleanupUnknown,
+                    HandoffError::AdministratorUnavailable | HandoffError::ForegroundLost => {
+                        TransactionError::AdministratorUnavailable
+                    }
                     _ => TransactionError::Verification("Nix policy application is pending"),
                 })?;
             Ok(Result::StockPolicyPublished(verified))
@@ -1476,6 +1515,7 @@ mod tests {
                 cancellation: Cancellation::default(),
                 admission: Admission::Requested,
             },
+            None,
         );
         assert!(
             matches!(outcome, Err(TransactionError::CommandPathConflict { command: ManagedCommand::Neo, path }) if path == foreign)
@@ -1504,6 +1544,7 @@ mod tests {
             handle: Some(handle),
             completion,
             notified: false,
+            attended: false,
         };
         entered_rx.recv_timeout(Duration::from_secs(10)).unwrap();
         drop(lease);
@@ -1536,6 +1577,7 @@ pub(super) fn test_digest(path: &Path, maximum: u64) -> Result<String, Transacti
             cancellation: Cancellation::default(),
             admission: Admission::Requested,
         },
+        None,
     )? {
         FilesystemResult::Digest(value) => Ok(value),
         _ => Err(TransactionError::InvalidState("digest completion type")),

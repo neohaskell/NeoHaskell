@@ -377,6 +377,10 @@ fn format_result(result: Result<installation::RunOutcome, installation::Transact
             eprintln!("{}", english.cleanup_unknown);
             Exit { code: 1 }
         }
+        Err(installation::TransactionError::AdministratorUnavailable) => {
+            eprintln!("{}", english.administrator_unavailable);
+            Exit { code: 1 }
+        }
         Err(installation::TransactionError::CommandPathConflict { command, path }) => {
             eprintln!(
                 "{}",

@@ -4,6 +4,7 @@ use super::super::policy_observation::{
     DiscoveredInputs, PolicyInspectionResult, PolicyResult, ReviewedPolicyRequest,
 };
 use super::{HandoffError, PeerExpectation, PeerIdentity, linux};
+use crate::installation::dashboard::terminal::ParkedTerminal;
 use crate::installation::filesystem::{self, PolicyHelperLocation};
 use std::fs::{self, File};
 use std::mem::{size_of, zeroed};
@@ -67,11 +68,12 @@ impl ExactExecutable {
         caller: Option<&VerifiedCaller>,
         lease: crate::installation::PolicyStateLease,
         common: [u8; 32],
+        terminal: Option<&ParkedTerminal>,
         cancelled: impl Fn() -> bool,
     ) -> Result<Option<VerifiedExistingPolicy>, HandoffError> {
         self.recheck()?;
         Ok(
-            native::verify_existing(self, caller, lease, common, cancelled)?
+            native::verify_existing(self, caller, lease, common, terminal, cancelled)?
                 .then_some(VerifiedExistingPolicy { lease, common }),
         )
     }
@@ -258,13 +260,14 @@ impl ExactExecutable {
         &self,
         rendezvous: Rendezvous,
         caller: &VerifiedCaller,
+        terminal: Option<&ParkedTerminal>,
         cancelled: impl Fn() -> bool,
     ) -> Result<Result<StockDiscovery, PolicyResult>, HandoffError> {
         self.recheck()?;
         if !caller.matches_release(&self.release) {
             return Err(HandoffError::Executable);
         }
-        let reply = native::discover(self, rendezvous, Some(caller), cancelled)?;
+        let reply = native::discover(self, rendezvous, Some(caller), terminal, cancelled)?;
         Ok(reply
             .discovery
             .ok_or(HandoffError::Frame)?
@@ -279,6 +282,7 @@ impl ExactExecutable {
         rendezvous: Rendezvous,
         caller: &VerifiedCaller,
         commit: &crate::installation::coordinator::StockPolicyIntent,
+        terminal: Option<&ParkedTerminal>,
         cancelled: impl Fn() -> bool,
     ) -> Result<VerifiedPolicyInspection, HandoffError> {
         let pending = commit.pending();
@@ -290,7 +294,7 @@ impl ExactExecutable {
             return Err(HandoffError::Executable);
         }
         self.recheck()?;
-        if native::publish(self, rendezvous, caller, commit, cancelled)?.policy
+        if native::publish(self, rendezvous, caller, commit, terminal, cancelled)?.policy
             != Some(PolicyResult::ManagedRestartObserved)
         {
             return Err(HandoffError::Frame);
@@ -380,7 +384,7 @@ impl ExactExecutable {
         self.recheck()?;
         match authority {
             LaunchAuthority::SudoStock => match request {
-                HelperRequest::Discover => native::discover(self, rendezvous, None, || false),
+                HelperRequest::Discover => native::discover(self, rendezvous, None, None, || false),
                 HelperRequest::Compare(_reviewed) => Err(HandoffError::Frame),
                 _ => Err(HandoffError::Frame),
             },
@@ -411,8 +415,11 @@ impl ExactExecutable {
                 executable,
                 pid,
             } => {
-                let child =
-                    self.spawn_fixture(&rendezvous, mode, Some((source, service, executable, pid)))?;
+                let child = self.spawn_fixture(
+                    &rendezvous,
+                    mode,
+                    Some((source, service, executable, pid)),
+                )?;
                 self.observe_fixture(rendezvous, request, child)
             }
         }
@@ -718,7 +725,8 @@ impl Rendezvous {
         helper: &AuthenticatedHelper,
         child: &mut ChildLease,
     ) -> Result<PeerEndpoint, HandoffError> {
-        let socket = self.accept_connection(&mut child.0, Instant::now() + TIMEOUT, || false)?;
+        let socket =
+            self.accept_connection(&mut child.0, Some(Instant::now() + TIMEOUT), || Ok(()))?;
         linux::receive_inner(
             &socket,
             &PeerExpectation {
@@ -740,21 +748,21 @@ impl Rendezvous {
     fn accept_connection(
         &self,
         child: &mut Child,
-        deadline: Instant,
-        cancelled: impl Fn() -> bool,
+        deadline: Option<Instant>,
+        checkpoint: impl Fn() -> Result<(), HandoffError>,
     ) -> Result<OwnedFd, HandoffError> {
         loop {
-            if cancelled() {
-                return Err(HandoffError::Cancelled);
-            }
+            checkpoint()?;
             if child
                 .try_wait()
                 .map_err(|_| HandoffError::Transport)?
                 .is_some()
             {
-                return Err(HandoffError::Peer);
+                return Err(HandoffError::Exit);
             }
-            let remaining = deadline.saturating_duration_since(Instant::now());
+            let remaining = deadline.map_or(Duration::from_millis(50), |deadline| {
+                deadline.saturating_duration_since(Instant::now())
+            });
             if remaining.is_zero() {
                 return Err(HandoffError::Timeout);
             }
@@ -765,6 +773,9 @@ impl Rendezvous {
             };
             let result = unsafe { libc::poll(&mut poll, 1, remaining.as_millis().min(50) as i32) };
             if result < 0 {
+                if std::io::Error::last_os_error().kind() == std::io::ErrorKind::Interrupted {
+                    continue;
+                }
                 return Err(HandoffError::Transport);
             }
             if result == 0 {

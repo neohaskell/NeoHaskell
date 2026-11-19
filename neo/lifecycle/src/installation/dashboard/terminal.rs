@@ -320,6 +320,18 @@ pub(super) struct Terminal {
     changed: bool,
 }
 
+pub(in crate::installation) struct ParkedTerminal(OwnedFd);
+
+impl ParkedTerminal {
+    pub(in crate::installation) fn foreground(&self) -> bool {
+        foreground(self.0.as_raw_fd())
+    }
+}
+
+fn foreground(fd: RawFd) -> bool {
+    unsafe { libc::tcgetsid(fd) == libc::getsid(0) && libc::tcgetpgrp(fd) == libc::getpgrp() }
+}
+
 impl Terminal {
     pub(super) fn probe() -> io::Result<Option<Self>> {
         let sid = unsafe { libc::getsid(0) };
@@ -383,10 +395,39 @@ impl Terminal {
         self.fd.as_raw_fd()
     }
     pub(super) fn foreground(&self) -> bool {
-        unsafe {
-            libc::tcgetsid(self.descriptor()) == libc::getsid(0)
-                && libc::tcgetpgrp(self.descriptor()) == libc::getpgrp()
+        foreground(self.descriptor())
+    }
+    pub(super) fn park_for_administrator(&mut self, notice: &str) -> io::Result<ParkedTerminal> {
+        if !self.foreground() || !self.restore() || !self.foreground() {
+            return Err(io::ErrorKind::PermissionDenied.into());
         }
+        let fd = duplicate(&self.fd)?;
+        self.write_until(
+            format!("{notice}\n").as_bytes(),
+            Instant::now() + Duration::from_secs(2),
+        )?;
+        Ok(ParkedTerminal(fd))
+    }
+    pub(super) fn resume_after_administrator(&mut self) -> io::Result<()> {
+        self.reclaim_after_administrator()?;
+        self.activate()
+    }
+    pub(super) fn reclaim_after_administrator(&mut self) -> io::Result<()> {
+        if !self.foreground() {
+            return Err(io::ErrorKind::PermissionDenied.into());
+        }
+        if !self.restore() {
+            return Err(io::ErrorKind::InvalidData.into());
+        }
+        let current = TerminalSettings::capture(self.descriptor())?;
+        if !current.matches(&self.original) {
+            self.original.apply_now(self.descriptor())?;
+            let restored = TerminalSettings::capture(self.descriptor())?;
+            if !restored.matches(&self.original) {
+                return Err(io::ErrorKind::InvalidData.into());
+            }
+        }
+        self.discard_input()
     }
     pub(super) fn size(&self) -> io::Result<(u16, u16)> {
         let mut size: libc::winsize = unsafe { std::mem::zeroed() };

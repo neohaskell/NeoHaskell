@@ -83,6 +83,7 @@ pub(super) fn discover(
     executable: &ExactExecutable,
     rendezvous: Rendezvous,
     downloaded: Option<&VerifiedCaller>,
+    terminal: Option<&ParkedTerminal>,
     cancelled: impl Fn() -> bool,
 ) -> Result<QuiescentReply, HandoffError> {
     exchange(
@@ -90,6 +91,7 @@ pub(super) fn discover(
         rendezvous,
         downloaded,
         PeerRequest::Discover,
+        terminal,
         cancelled,
     )
 }
@@ -99,6 +101,7 @@ pub(super) fn publish(
     rendezvous: Rendezvous,
     caller: &VerifiedCaller,
     commit: &StockPolicyIntent,
+    terminal: Option<&ParkedTerminal>,
     cancelled: impl Fn() -> bool,
 ) -> Result<QuiescentReply, HandoffError> {
     commit.verify().map_err(|_| HandoffError::Frame)?;
@@ -107,6 +110,7 @@ pub(super) fn publish(
         rendezvous,
         Some(caller),
         PeerRequest::Publish(commit),
+        terminal,
         cancelled,
     )
 }
@@ -124,6 +128,7 @@ pub(super) fn inspect(
         rendezvous,
         Some(caller),
         PeerRequest::Inspect(intent),
+        None,
         cancelled,
     )
 }
@@ -151,6 +156,7 @@ pub(super) fn verify_existing(
     downloaded: Option<&VerifiedCaller>,
     lease: PolicyStateLease,
     common: [u8; 32],
+    terminal: Option<&ParkedTerminal>,
     cancelled: impl Fn() -> bool,
 ) -> Result<bool, HandoffError> {
     if downloaded.is_some_and(|caller| !caller.matches_release(&executable.release)) {
@@ -165,6 +171,7 @@ pub(super) fn verify_existing(
         Rendezvous::fresh()?,
         downloaded,
         PeerRequest::Existing(scope),
+        terminal,
         cancelled,
     )?
     .existing
@@ -223,6 +230,7 @@ fn exchange(
     rendezvous: Rendezvous,
     downloaded: Option<&VerifiedCaller>,
     request: PeerRequest<'_>,
+    terminal: Option<&ParkedTerminal>,
     cancelled: impl Fn() -> bool,
 ) -> Result<QuiescentReply, HandoffError> {
     let caller = ordinary_identity()?;
@@ -231,14 +239,23 @@ fn exchange(
         None => check_process_file(caller.pid, &executable.identity),
     };
     recheck_caller()?;
-    if cancelled() {
-        return Err(HandoffError::Cancelled);
-    }
+    let authorization_checkpoint = || {
+        check_cancellation(&cancelled)?;
+        if terminal.is_some_and(|terminal| !terminal.foreground()) {
+            return Err(HandoffError::ForegroundLost);
+        }
+        Ok(())
+    };
     let sudo = ProtectedSudo::open()?;
-    let deadline = Instant::now() + BUDGET;
+    authorization_checkpoint()?;
+    let launch_deadline = Instant::now() + BUDGET;
     let label = name(&rendezvous.epoch);
-    let mut child = Command::new(SUDO)
-        .args(["-n", "--"])
+    let mut command = Command::new(SUDO);
+    if terminal.is_none() {
+        command.arg("-n");
+    }
+    let mut child = command
+        .arg("--")
         .arg(&executable.path)
         .args([request.argument(), &label["neo-review-".len()..]])
         .current_dir("/")
@@ -247,16 +264,29 @@ fn exchange(
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
-        .map_err(|_| HandoffError::Executable)?;
+        .map_err(|_| HandoffError::AdministratorUnavailable)?;
 
-    let mut worker = None;
+    let mut authenticated_worker = None;
+    let mut direct_child = None;
+    let mut protocol_deadline = None;
     let exchange = (|| {
         let launched = ProcessPosition::read(child.id() as i32)?;
         if launched.parent != caller.pid {
             return Err(HandoffError::Peer);
         }
+        direct_child = Some(launched);
 
-        let socket = rendezvous.accept_connection(&mut child, deadline, &cancelled)?;
+        let socket = rendezvous.accept_connection(
+            &mut child,
+            terminal.is_none().then_some(launch_deadline),
+            &authorization_checkpoint,
+        )?;
+        let deadline = if terminal.is_some() {
+            Instant::now() + BUDGET
+        } else {
+            launch_deadline
+        };
+        protocol_deadline = Some(deadline);
         let identity = linux::connected_identity(&socket)?;
         if identity.uid != 0 || identity.gid != 0 {
             return Err(HandoffError::Peer);
@@ -269,13 +299,14 @@ fn exchange(
         if chain.first() == chain.last() || chain.last() != Some(&launched) {
             return Err(HandoffError::Peer);
         }
-        worker = chain.first().copied();
-        wait_for_packet(&socket, deadline, &cancelled)?;
+        wait_for_checked_packet(&socket, deadline, &authorization_checkpoint)?;
         linux::receive_inner(&socket, &expected)?;
         require_same_chain(&chain)?;
+        authenticated_worker = chain.first().copied();
         sudo.recheck()?;
         executable.recheck()?;
         recheck_caller()?;
+        authorization_checkpoint()?;
         let mut reply = QuiescentReply {
             pid: expected.identity.pid,
             observed: "authenticated stock helper replied",
@@ -356,15 +387,30 @@ fn exchange(
         Ok((socket, reply))
     })();
     drop(rendezvous);
-    let status = wait_for_exit(&mut child, deadline)?;
+    let status = if terminal.is_some() && authenticated_worker.is_none() {
+        settle_authorizer(&mut child, direct_child)?
+    } else {
+        wait_for_exit(&mut child, protocol_deadline.unwrap_or(launch_deadline))?
+    };
     if status.code().is_none() {
         return Err(HandoffError::CleanupUnknown);
     }
-    if let Some(worker) = worker {
+    if authenticated_worker.is_none() {
+        return match exchange {
+            Err(error @ (HandoffError::Cancelled | HandoffError::ForegroundLost)) => Err(error),
+            _ if cancelled() => Err(HandoffError::Cancelled),
+            _ if !status.success() => Err(HandoffError::AdministratorUnavailable),
+            result => result.map(|(_, reply)| reply),
+        };
+    }
+    if let Some(worker) = authenticated_worker {
         worker.check_exited()?;
     }
-    if matches!(&exchange, Err(HandoffError::Cancelled)) {
-        return Err(HandoffError::Cancelled);
+    if matches!(
+        &exchange,
+        Err(HandoffError::Cancelled | HandoffError::ForegroundLost)
+    ) {
+        return exchange.map(|(_, reply)| reply);
     }
     if !status.success() {
         return Err(HandoffError::Exit);
@@ -698,6 +744,10 @@ struct ProcessPosition {
 
 impl ProcessPosition {
     fn read(pid: i32) -> Result<Self, HandoffError> {
+        Self::read_with_stop(pid).map(|(position, _)| position)
+    }
+
+    fn read_with_stop(pid: i32) -> Result<(Self, bool), HandoffError> {
         if pid <= 1 {
             return Err(HandoffError::Peer);
         }
@@ -705,8 +755,9 @@ impl ProcessPosition {
         let (name, fields) = stat.rsplit_once(") ").ok_or(HandoffError::Peer)?;
         let (number, _) = name.split_once(" (").ok_or(HandoffError::Peer)?;
         let mut fields = fields.split_ascii_whitespace();
+        let state = fields.next();
         if number.parse::<i32>().ok() != Some(pid)
-            || !matches!(fields.next(), Some("R" | "S" | "D" | "T" | "t" | "I"))
+            || !matches!(state, Some("R" | "S" | "D" | "T" | "t" | "I"))
         {
             return Err(HandoffError::Peer);
         }
@@ -720,7 +771,7 @@ impl ProcessPosition {
             .and_then(|field| field.parse::<u64>().ok())
             .filter(|start| *start > 0)
             .ok_or(HandoffError::Peer)?;
-        Ok(Self { pid, parent, start })
+        Ok((Self { pid, parent, start }, state == Some("T")))
     }
 
     fn check_exited(&self) -> Result<(), HandoffError> {
@@ -898,15 +949,28 @@ fn wait_for_packet(
     deadline: Instant,
     cancelled: impl Fn() -> bool,
 ) -> Result<(), HandoffError> {
+    wait_for_checked_packet(socket, deadline, || check_cancellation(&cancelled))
+}
+
+fn check_cancellation(cancelled: impl Fn() -> bool) -> Result<(), HandoffError> {
+    if cancelled() {
+        return Err(HandoffError::Cancelled);
+    }
+    Ok(())
+}
+
+fn wait_for_checked_packet(
+    socket: &OwnedFd,
+    deadline: Instant,
+    checkpoint: impl Fn() -> Result<(), HandoffError>,
+) -> Result<(), HandoffError> {
     let mut poll = libc::pollfd {
         fd: socket.as_raw_fd(),
         events: libc::POLLIN,
         revents: 0,
     };
     loop {
-        if cancelled() {
-            return Err(HandoffError::Cancelled);
-        }
+        checkpoint()?;
         let remaining = deadline.saturating_duration_since(Instant::now());
         if remaining.is_zero() {
             return Err(HandoffError::Timeout);
@@ -916,6 +980,32 @@ fn wait_for_packet(
             1 if poll.revents & libc::POLLIN != 0 => return Ok(()),
             _ => return Err(HandoffError::Transport),
         }
+    }
+}
+
+fn settle_authorizer(
+    child: &mut Child,
+    expected: Option<ProcessPosition>,
+) -> Result<ExitStatus, HandoffError> {
+    let Some(expected) = expected else {
+        return child.wait().map_err(|_| HandoffError::CleanupUnknown);
+    };
+    let mut interrupted = false;
+    loop {
+        if let Some(status) = child.try_wait().map_err(|_| HandoffError::CleanupUnknown)? {
+            return Ok(status);
+        }
+        if let Ok((position, stopped)) = ProcessPosition::read_with_stop(expected.pid)
+            && position == expected
+        {
+            if !interrupted {
+                interrupted = unsafe { libc::kill(position.pid, libc::SIGINT) } == 0;
+            }
+            if interrupted && stopped {
+                unsafe { libc::kill(position.pid, libc::SIGCONT) };
+            }
+        }
+        std::thread::sleep(Duration::from_millis(10));
     }
 }
 

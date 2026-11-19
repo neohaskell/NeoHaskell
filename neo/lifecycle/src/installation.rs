@@ -155,6 +155,7 @@ pub(crate) enum TransactionError {
     Io,
     StopRequested,
     CleanupUnknown,
+    AdministratorUnavailable,
     ActivationRecoveryFailed {
         primary: Box<TransactionError>,
         recovery: Box<TransactionError>,
