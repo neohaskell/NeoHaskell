@@ -27,11 +27,6 @@ pub(super) struct DiskObservation {
     pub(super) policy: DiskPolicy,
 }
 
-pub(super) struct CapturedConfiguration {
-    pub(super) disk: DiskObservation,
-    pub(super) application_inputs: Option<[u8; 32]>,
-}
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum SourceRoute {
     Unknown,
@@ -46,14 +41,14 @@ pub(super) enum DiskPolicy {
     Satisfies,
 }
 
-pub(super) fn observe(prepare_application: bool) -> CapturedConfiguration {
-    capture(prepare_application).unwrap_or(CapturedConfiguration {
-        disk: DiskObservation {
+pub(super) fn observe(prepare_application: bool) -> (DiskObservation, Option<VendorApplication>) {
+    capture(prepare_application).unwrap_or((
+        DiskObservation {
             source: SourceRoute::Unknown,
             policy: DiskPolicy::Unknown,
         },
-        application_inputs: None,
-    })
+        None,
+    ))
 }
 
 #[derive(PartialEq, Eq)]
@@ -64,7 +59,9 @@ struct Deployment {
     projected: PathBuf,
 }
 
-fn capture(prepare_application: bool) -> Result<CapturedConfiguration, TransactionError> {
+fn capture(
+    prepare_application: bool,
+) -> Result<(DiskObservation, Option<VendorApplication>), TransactionError> {
     require_etc_alias()?;
     let standard = read_configuration(STANDARD)?;
     let custom = read_configuration(CUSTOM)?;
@@ -135,21 +132,72 @@ fn capture(prepare_application: bool) -> Result<CapturedConfiguration, Transacti
         }
     }
     require_etc_alias()?;
-    let application_inputs = match (application, receipt, service) {
-        (Some(application), Some(receipt), Some(service)) => {
-            application.commitment(VendorPreimages {
-                standard: &standard.0,
-                custom: &custom.0,
-                receipt: &receipt,
-                service: &service,
+    let application = match (application, receipt, service) {
+        (Some(prepared), Some(receipt), Some(service)) if prepared.is_current() => {
+            Some(VendorApplication {
+                standard: standard.0,
+                custom: custom.0,
+                receipt,
+                service,
+                prepared,
             })
         }
         _ => None,
     };
-    Ok(CapturedConfiguration {
-        disk: DiskObservation { source, policy },
-        application_inputs,
-    })
+    Ok((DiskObservation { source, policy }, application))
+}
+
+pub(super) struct VendorApplication {
+    standard: ConfigurationFile,
+    custom: ConfigurationFile,
+    receipt: ConfigurationFile,
+    service: ConfigurationFile,
+    prepared: PreparedApplication,
+}
+
+impl VendorApplication {
+    pub(super) fn commitment(&self) -> [u8; 32] {
+        application_commitment(
+            VendorPreimages {
+                standard: &self.standard,
+                custom: &self.custom,
+                receipt: &self.receipt,
+                service: &self.service,
+            },
+            &self.prepared.absences,
+            &self.prepared.desired,
+        )
+    }
+
+    pub(super) fn desired(&self) -> &DesiredNixInclude {
+        &self.prepared.desired
+    }
+
+    pub(super) fn custom_identity(&self) -> &InputIdentity {
+        let ConfigurationFile::Present { file, .. } = &self.custom else {
+            unreachable!("the vendor route requires a direct custom file")
+        };
+        file
+    }
+
+    pub(super) fn source_inputs_current(&self) -> bool {
+        matches!(read_configuration(CUSTOM), Ok((fresh, _)) if fresh == self.custom)
+            && self.remaining_inputs_current()
+    }
+
+    pub(super) fn remaining_inputs_current(&self) -> bool {
+        [
+            (STANDARD, &self.standard),
+            (RECEIPT, &self.receipt),
+            (PLIST, &self.service),
+        ]
+        .into_iter()
+        .all(|(path, input)| matches!(read_configuration(path), Ok((fresh, _)) if &fresh == input))
+            && self.prepared.absences[2..]
+                .iter()
+                .all(ProtectedAbsence::is_current)
+            && require_etc_alias().is_ok()
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -212,11 +260,8 @@ impl PreparedApplication {
         Ok(Self { absences, desired })
     }
 
-    fn commitment(&self, preimages: VendorPreimages<'_>) -> Option<[u8; 32]> {
-        self.absences
-            .iter()
-            .all(ProtectedAbsence::is_current)
-            .then(|| application_commitment(preimages, &self.absences, &self.desired))
+    fn is_current(&self) -> bool {
+        self.absences.iter().all(ProtectedAbsence::is_current)
     }
 }
 

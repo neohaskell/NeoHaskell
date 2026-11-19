@@ -310,12 +310,18 @@ impl InstallationOwner {
         recovery: &super::review::PreparedRecovery,
         request: &snapshot::Request,
     ) -> Result<(), TransactionError> {
+        use super::coordinator::{DarwinPublicationStep, RecoveryPending};
+        use super::nix_owner::darwin::PublicationOutcome;
+        use super::{FilesystemJob, FilesystemResult};
+        use crate::diagnostics::CompletedStep;
+
         let ordinary = self.observe_darwin_nix().await?;
         if !ordinary.supports_inspection() {
             return Ok(());
         }
         let plan = self.plan_nix_policy_helper(evidence, source).await?;
-        let mut summary = recovery.summary(request, Some(plan.release_version.clone()));
+        let version = plan.release_version.clone();
+        let mut summary = recovery.summary(request, Some(version.clone()));
         summary.changes = vec![super::ReviewedChange::DarwinPolicyInspection];
         let review = self.effects.review(summary).await?;
         self.recheck_recovery(recovery).await?;
@@ -328,9 +334,9 @@ impl InstallationOwner {
         self.effects.admit_reviewed(review)?;
         let prepared = self.prepare_policy_helper(plan).await?;
         self.recheck_prepared_nix_policy_helper(&prepared).await?;
-        let observed = match self
+        let root = match self
             .effects
-            .filesystem(super::FilesystemJob::ObserveDarwinPolicy {
+            .filesystem(FilesystemJob::ObserveDarwinPolicy {
                 path: PathBuf::from(prepared.expected.as_str()),
                 release: prepared.release.clone(),
             })
@@ -339,24 +345,75 @@ impl InstallationOwner {
             Err(error @ (TransactionError::StopRequested | TransactionError::CleanupUnknown)) => {
                 return Err(error);
             }
-            other => other,
-        };
-        self.release_prepared_nix_policy_helper(prepared).await?;
-        let super::FilesystemResult::DarwinPolicyObserved(root) = observed? else {
-            return Err(TransactionError::InvalidState(
-                "Darwin policy observation completion type",
-            ));
+            Ok(FilesystemResult::DarwinPolicyObserved(root)) => root,
+            other => {
+                self.release_prepared_nix_policy_helper(prepared).await?;
+                return Err(other.err().unwrap_or(TransactionError::InvalidState(
+                    "Darwin policy observation completion type",
+                )));
+            }
         };
         if !root.confirms(&ordinary) {
+            self.release_prepared_nix_policy_helper(prepared).await?;
             return Err(self.effects.review_changed());
         }
-        self.effects
-            .completed(crate::diagnostics::CompletedStep::NixPolicyObservation);
-        if root.has_vendor_plan() {
+        self.effects.completed(CompletedStep::NixPolicyObservation);
+        let Some(publication) = root.publication_request()? else {
+            self.release_prepared_nix_policy_helper(prepared).await?;
+            return Ok(());
+        };
+        self.effects.completed(CompletedStep::NixPolicyPlan);
+        let intent = self
+            .prepare_darwin_policy_intent(publication, &prepared.expected, &prepared.release)
+            .await?;
+        self.effects.recovery_pending(RecoveryPending::Resources);
+        let review = self
+            .effects
+            .review_darwin_publication(recovery.summary(request, Some(version)), intent.clone())
+            .await?;
+        self.recheck_sources(&evidence.sources).await?;
+        self.recheck_prepared_nix_policy_helper(&prepared).await?;
+        self.effects.admit_reviewed(review)?;
+        self.effects.recovery_pending(RecoveryPending::Unknown);
+        let effect = |step| {
             self.effects
-                .completed(crate::diagnostics::CompletedStep::NixPolicyPlan);
+                .filesystem(FilesystemJob::DarwinPolicyPublication {
+                    intent: intent.clone(),
+                    step,
+                })
+        };
+        let FilesystemResult::Applied = effect(DarwinPublicationStep::StoreIntent).await? else {
+            return Err(TransactionError::InvalidState(
+                "Darwin policy intent completion type",
+            ));
+        };
+        match effect(DarwinPublicationStep::Launch).await? {
+            FilesystemResult::DarwinPolicyPublished(PublicationOutcome::Refused) => {
+                let FilesystemResult::DarwinPolicyIntentCleared =
+                    effect(DarwinPublicationStep::ClearIntent).await?
+                else {
+                    return Err(TransactionError::InvalidState(
+                        "Darwin policy intent clearing completion type",
+                    ));
+                };
+                self.effects.recovery_pending(RecoveryPending::Resources);
+                self.release_prepared_nix_policy_helper(prepared).await?;
+                self.effects.recovery_pending(RecoveryPending::None);
+                Err(TransactionError::Verification(
+                    "reviewed Darwin Nix policy was refused",
+                ))
+            }
+            FilesystemResult::DarwinPolicyPublished(PublicationOutcome::Published) => {
+                self.effects.completed(CompletedStep::NixPolicyPublication);
+                Err(TransactionError::NixPolicyRecoveryPending)
+            }
+            FilesystemResult::DarwinPolicyPublished(PublicationOutcome::Pending) => {
+                Err(TransactionError::NixPolicyRecoveryPending)
+            }
+            _ => Err(TransactionError::InvalidState(
+                "Darwin policy publication completion type",
+            )),
         }
-        Ok(())
     }
 
     #[cfg(not(all(target_os = "macos", target_arch = "aarch64")))]

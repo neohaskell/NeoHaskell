@@ -920,7 +920,7 @@ struct RootLease {
 }
 
 impl RootLease {
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", all(target_os = "macos", target_arch = "aarch64")))]
     fn policy_identity(&self, path: &Path) -> Result<PolicyStateLease, TransactionError> {
         let held = self.file.metadata().map_err(|_| TransactionError::Io)?;
         let named = fs::symlink_metadata(path).map_err(|_| TransactionError::Io)?;

@@ -15,11 +15,13 @@ use std::time::{Duration, Instant};
 mod administrator;
 mod configuration;
 pub(in crate::installation) mod discovery_effect;
+mod publication;
 mod startup;
 
 use self::configuration::{DiskObservation, DiskPolicy, SourceRoute};
 use self::startup::StartupContext;
 pub(crate) use administrator::dispatch as dispatch_administrator;
+pub(in crate::installation) use publication::PublicationOutcome;
 
 pub(crate) const OBSERVE_ARGUMENT: &str = "--internal-observe-darwin-nix";
 pub(in crate::installation) const OBSERVATION_BYTES: usize = 8;
@@ -73,8 +75,49 @@ impl ObservedDarwinNix {
     }
 }
 
-#[derive(PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 struct VendorPlanCommitment([u8; 32]);
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(in crate::installation) struct VendorPublicationRequest {
+    attempt: [u8; 32],
+    reviewed: VendorPlanCommitment,
+}
+
+impl VendorPublicationRequest {
+    fn decode(bytes: &[u8; 64]) -> Option<Self> {
+        let (attempt, reviewed) = bytes.split_at(32);
+        let attempt: [u8; 32] = attempt.try_into().expect("fixed frame");
+        let reviewed: [u8; 32] = reviewed.try_into().expect("fixed frame");
+        (attempt != [0; 32] && reviewed != [0; 32]).then_some(Self {
+            attempt,
+            reviewed: VendorPlanCommitment(reviewed),
+        })
+    }
+
+    fn encode(self) -> [u8; 64] {
+        let mut bytes = [0; 64];
+        bytes[..32].copy_from_slice(&self.attempt);
+        bytes[32..].copy_from_slice(&self.reviewed.0);
+        bytes
+    }
+
+    pub(in crate::installation) fn pending(
+        self,
+        helper_path: String,
+        helper: crate::candidate::FileIdentity,
+        state_lease: super::super::PolicyStateLease,
+    ) -> super::super::PendingNixPolicy {
+        super::super::PendingNixPolicy {
+            attempt: self.attempt,
+            reviewed: self.reviewed.0,
+            helper_path,
+            helper,
+            operation: super::policy_observation::PolicyOperation::ConventionalAppend,
+            state_lease: Some(state_lease),
+        }
+    }
+}
 
 #[derive(Debug, PartialEq, Eq)]
 pub(in crate::installation) struct InspectedDarwinNix {
@@ -93,8 +136,28 @@ impl InspectedDarwinNix {
         self.observation.confirms(ordinary)
     }
 
-    pub(in crate::installation) fn has_vendor_plan(&self) -> bool {
+    #[cfg(test)]
+    fn has_vendor_plan(&self) -> bool {
         self.vendor_plan.is_some()
+    }
+
+    pub(in crate::installation) fn publication_request(
+        &self,
+    ) -> Result<Option<VendorPublicationRequest>, super::TransactionError> {
+        use ring::rand::{SecureRandom, SystemRandom};
+
+        self.vendor_plan
+            .map(|reviewed| {
+                let mut attempt = [0; 32];
+                SystemRandom::new()
+                    .fill(&mut attempt)
+                    .map_err(|_| super::TransactionError::Io)?;
+                if attempt == [0; 32] {
+                    return Err(super::TransactionError::Io);
+                }
+                Ok(VendorPublicationRequest { attempt, reviewed })
+            })
+            .transpose()
     }
 }
 
@@ -157,7 +220,7 @@ pub(in crate::installation) fn decode_inspection(
 }
 
 pub(crate) fn run_observer() -> i32 {
-    let Some(frame) = encode_observation(observe(false).map(|value| value.observation)) else {
+    let Some(frame) = encode_observation(observe(false).map(|(value, _)| value.observation)) else {
         return 1;
     };
     i32::from(
@@ -173,13 +236,13 @@ fn inspect_frame() -> Option<[u8; INSPECTION_BYTES]> {
     let plan = inspection
         .as_ref()
         .ok()
-        .and_then(|value| value.vendor_plan.as_ref());
+        .and_then(|(value, _)| value.vendor_plan.as_ref());
     let mut frame = [0; INSPECTION_BYTES];
     if let Some(plan) = plan {
         frame[OBSERVATION_BYTES] = 1;
         frame[OBSERVATION_BYTES + 1..].copy_from_slice(&plan.0);
     }
-    let observation = encode_observation(inspection.map(|value| value.observation))?;
+    let observation = encode_observation(inspection.map(|(value, _)| value.observation))?;
     frame[..OBSERVATION_BYTES].copy_from_slice(&observation);
     Some(frame)
 }
@@ -521,7 +584,14 @@ impl RootPeer {
     }
 }
 
-fn observe(prepare_application: bool) -> Result<InspectedDarwinNix, NixBlock> {
+struct VerifiedVendorApplication {
+    configuration: configuration::VendorApplication,
+    daemon: [u8; 32],
+}
+
+fn observe(
+    prepare_application: bool,
+) -> Result<(InspectedDarwinNix, Option<VerifiedVendorApplication>), NixBlock> {
     let client = verify_client()?;
     let sockets = SocketIdentities::observe()?;
     let job = launchd_pid()?;
@@ -555,13 +625,10 @@ fn observe(prepare_application: bool) -> Result<InspectedDarwinNix, NixBlock> {
 
     // A connection worker can take over the socket and change its audit token.
     let replying = RootPeer::read(&connection).ok_or(NixBlock::DaemonMismatch)?;
-    let configuration =
+    let (disk, application) =
         configuration::observe(prepare_application && startup == StartupContext::StandardSources);
-    let observation = ObservedDarwinNix {
-        disk: configuration.disk,
-        startup,
-    };
-    let application_inputs = configuration.application_inputs.filter(|_| {
+    let observation = ObservedDarwinNix { disk, startup };
+    let application = application.filter(|_| {
         observation.permits_vendor_plan() && StartupContext::observe(listener) == startup
     });
     if !replying.verified(&nix)
@@ -584,24 +651,55 @@ fn observe(prepare_application: bool) -> Result<InspectedDarwinNix, NixBlock> {
     if client_identity()? != client {
         return Err(NixBlock::UnprovedClient);
     }
-    let vendor_plan = application_inputs
-        .map(|inputs| application_commitment(inputs, &client, &sockets, supervisor, listener));
-    Ok(InspectedDarwinNix {
+    let application = application.map(|configuration| VerifiedVendorApplication {
+        configuration,
+        daemon: daemon_incarnation(&client, &sockets, supervisor, listener),
+    });
+    let vendor_plan = application.as_ref().map(|inputs| {
+        let mut hash = Sha256::new();
+        hash.update(b"neo:determinate-darwin:application:v2\0");
+        hash.update(inputs.configuration.commitment());
+        hash.update(inputs.daemon);
+        VendorPlanCommitment(hash.finalize().into())
+    });
+    let inspection = InspectedDarwinNix {
         observation,
         vendor_plan,
-    })
+    };
+    Ok((inspection, application))
 }
 
-fn application_commitment(
-    inputs: [u8; 32],
+fn publish_vendor_policy(
+    request: &VendorPublicationRequest,
+    authorize: impl FnOnce() -> bool,
+) -> publication::PublicationOutcome {
+    use publication::{LockedVendorDirectory, PublicationOutcome};
+
+    let Ok(directory) = LockedVendorDirectory::lock() else {
+        return PublicationOutcome::Refused;
+    };
+    let Ok((inspection, Some(application))) = observe(true) else {
+        return PublicationOutcome::Refused;
+    };
+    if inspection.vendor_plan != Some(request.reviewed) {
+        return PublicationOutcome::Refused;
+    }
+    directory.publish(
+        &application.configuration,
+        request,
+        &application.daemon,
+        authorize,
+    )
+}
+
+fn daemon_incarnation(
     client: &FileIdentity,
     sockets: &SocketIdentities,
     supervisor: RootPeer,
     listener: RootPeer,
-) -> VendorPlanCommitment {
+) -> [u8; 32] {
     let mut hash = Sha256::new();
-    hash.update(b"neo:determinate-darwin:application:v1\0");
-    hash.update(inputs);
+    hash.update(b"neo:determinate-darwin:daemon:v1\0");
     hash.update(CLIENT_SHA256);
     for identity in [
         client,
@@ -616,7 +714,7 @@ fn application_commitment(
             hash.update(field.to_le_bytes());
         }
     }
-    VendorPlanCommitment(hash.finalize().into())
+    hash.finalize().into()
 }
 
 fn handshake(stream: &mut (impl Read + Write)) -> io::Result<()> {

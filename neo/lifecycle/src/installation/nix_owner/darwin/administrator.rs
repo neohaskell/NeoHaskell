@@ -1,8 +1,9 @@
 use super::{
     CFDataCreate, CFDictionaryCreate, CfRef, FileIdentity, INSPECTION_BYTES, OwnedCf,
-    SecCodeCheckValidity, SecCodeCopyGuestWithAttributes, inspect_frame,
-    kCFTypeDictionaryKeyCallBacks, kCFTypeDictionaryValueCallBacks, kSecGuestAttributeAudit,
-    policy_helper_protected_path,
+    PublicationOutcome, SecCodeCheckValidity, SecCodeCopyGuestWithAttributes,
+    VendorPublicationRequest, inspect_frame, kCFTypeDictionaryKeyCallBacks,
+    kCFTypeDictionaryValueCallBacks, kSecGuestAttributeAudit, policy_helper_protected_path,
+    publish_vendor_policy,
 };
 use crate::candidate::OutputPath;
 use std::ffi::{CStr, OsStr, OsString};
@@ -24,8 +25,11 @@ use std::time::{Duration, Instant};
 pub(in crate::installation) const LAUNCH_ARGUMENT: &str = "--internal-darwin-discovery-launch";
 pub(in crate::installation) const ATTENDED_ARGUMENT: &str =
     "--internal-darwin-discovery-launch-attended";
+pub(super) const PUBLISH_ARGUMENT: &str = "--internal-darwin-publication-launch";
+pub(super) const PUBLISH_ATTENDED_ARGUMENT: &str = "--internal-darwin-publication-launch-attended";
 pub(in crate::installation) const CLEANUP_UNKNOWN: i32 = 124;
 const ROOT_ARGUMENT: &str = "--internal-darwin-discovery-root";
+const PUBLISH_ROOT_ARGUMENT: &str = "--internal-darwin-publication-root";
 const SUDO: &str = "/usr/bin/sudo";
 
 const AUTHENTICATION_LIMIT: Duration = Duration::from_secs(90);
@@ -41,6 +45,21 @@ const START: &[u8; 4] = b"NDS1";
 const RESULT: &[u8; 4] = b"NDR2";
 const ACCEPT: &[u8; 4] = b"NDA1";
 static CANCELLED: AtomicBool = AtomicBool::new(false);
+
+#[derive(Clone, Copy)]
+enum Purpose {
+    Inspect,
+    Publish,
+}
+
+impl Purpose {
+    fn root_argument(self) -> &'static str {
+        match self {
+            Self::Inspect => ROOT_ARGUMENT,
+            Self::Publish => PUBLISH_ROOT_ARGUMENT,
+        }
+    }
+}
 
 extern "C" fn request_stop(_: libc::c_int) {
     CANCELLED.store(true, Ordering::Relaxed);
@@ -64,22 +83,24 @@ pub(super) fn cancelled() -> bool {
 pub(crate) fn dispatch(args: &[OsString]) -> Option<i32> {
     let [argument] = args else { return None };
     let status = match argument.to_str()? {
-        LAUNCH_ARGUMENT => {
-            if !install_stop_handlers() {
-                return Some(1);
-            }
-            launch(false)
+        LAUNCH_ARGUMENT => launch_with_handlers(false, Purpose::Inspect),
+        ATTENDED_ARGUMENT => launch_with_handlers(true, Purpose::Inspect),
+        PUBLISH_ARGUMENT => launch_with_handlers(false, Purpose::Publish),
+        PUBLISH_ATTENDED_ARGUMENT => launch_with_handlers(true, Purpose::Publish),
+        ROOT_ARGUMENT => i32::from(!install_stop_handlers() || !run_as_root(Purpose::Inspect)),
+        PUBLISH_ROOT_ARGUMENT => {
+            i32::from(!install_stop_handlers() || !run_as_root(Purpose::Publish))
         }
-        ATTENDED_ARGUMENT => {
-            if !install_stop_handlers() {
-                return Some(1);
-            }
-            launch(true)
-        }
-        ROOT_ARGUMENT => i32::from(!install_stop_handlers() || !observe_as_root()),
         _ => return None,
     };
     Some(status)
+}
+
+fn launch_with_handlers(attended: bool, purpose: Purpose) -> i32 {
+    if !install_stop_handlers() {
+        return 1;
+    }
+    launch(attended, purpose)
 }
 
 struct Executable {
@@ -118,10 +139,14 @@ impl Executable {
 
     fn verifies(&self, socket: &UnixStream, writer: AuditWriter) -> bool {
         process_path(writer.pid()).as_deref() == Some(self.path.as_path())
-            && writer
-                .signing_information()
-                .is_some_and(|info| self.signing_information.same_image(&info))
+            && self.matches_image(writer)
             && AuditWriter::read(socket) == Some(writer)
+    }
+
+    fn matches_image(&self, writer: AuditWriter) -> bool {
+        writer
+            .signing_information()
+            .is_some_and(|info| self.signing_information.same_image(&info))
     }
 }
 
@@ -167,6 +192,40 @@ impl AuditWriter {
         self.0[1] == uid && self.0[3] == uid
     }
 
+    fn hardened(self) -> bool {
+        const CS_OPS_STATUS: u32 = 0;
+        const CS_VALID: u32 = 0x0000_0001;
+        const CS_GET_TASK_ALLOW: u32 = 0x0000_0004;
+        const CS_INVALID_ALLOWED: u32 = 0x0000_0020;
+        const CS_HARD: u32 = 0x0000_0100;
+        const CS_REQUIRE_LV: u32 = 0x0000_2000;
+        const CS_RUNTIME: u32 = 0x0001_0000;
+        const CS_DYLD_PLATFORM: u32 = 0x0200_0000;
+        const CS_DEBUGGED: u32 = 0x1000_0000;
+        const REQUIRED: u32 = CS_VALID | CS_HARD | CS_REQUIRE_LV | CS_RUNTIME | CS_DYLD_PLATFORM;
+        const FORBIDDEN: u32 = CS_GET_TASK_ALLOW | CS_INVALID_ALLOWED | CS_DEBUGGED;
+        unsafe extern "C" {
+            fn csops_audittoken(
+                pid: libc::pid_t,
+                operation: u32,
+                output: *mut libc::c_void,
+                size: usize,
+                token: *const [u32; 8],
+            ) -> libc::c_int;
+        }
+        let mut flags = 0_u32;
+        let status = unsafe {
+            csops_audittoken(
+                self.pid(),
+                CS_OPS_STATUS,
+                (&mut flags as *mut u32).cast(),
+                size_of::<u32>(),
+                &self.0,
+            )
+        };
+        status == 0 && flags & (REQUIRED | FORBIDDEN) == REQUIRED
+    }
+
     fn signing_information(self) -> Option<SigningInformation> {
         let token = OwnedCf::created(unsafe {
             CFDataCreate(
@@ -199,11 +258,13 @@ impl AuditWriter {
 #[link(name = "CoreFoundation", kind = "framework")]
 unsafe extern "C" {
     fn CFDictionaryGetValue(dictionary: CfRef, key: CfRef) -> CfRef;
+    fn CFDictionaryGetCount(dictionary: CfRef) -> isize;
     fn CFEqual(a: CfRef, b: CfRef) -> u8;
 }
 
 #[link(name = "Security", kind = "framework")]
 unsafe extern "C" {
+    static kSecCodeInfoEntitlementsDict: CfRef;
     static kSecCodeInfoUnique: CfRef;
     fn SecCodeCopySelf(flags: u32, code: *mut CfRef) -> i32;
     fn SecCodeCopySigningInformation(code: CfRef, flags: u32, info: *mut CfRef) -> i32;
@@ -230,6 +291,12 @@ impl SigningInformation {
 
     fn same_image(&self, other: &Self) -> bool {
         unsafe { CFEqual(self.code_hash(), other.code_hash()) != 0 }
+    }
+
+    fn has_no_entitlements(&self) -> bool {
+        let entitlements =
+            unsafe { CFDictionaryGetValue(self.0.as_ptr(), kSecCodeInfoEntitlementsDict) };
+        entitlements.is_null() || unsafe { CFDictionaryGetCount(entitlements) == 0 }
     }
 }
 
@@ -427,7 +494,7 @@ fn control_open(control: &UnixStream) -> bool {
     unsafe { libc::poll(&mut fd, 1, 0) == 0 }
 }
 
-fn launch(attended: bool) -> i32 {
+fn launch(attended: bool, purpose: Purpose) -> i32 {
     let uid = unsafe { libc::getuid() };
     if uid == 0 || uid != unsafe { libc::geteuid() } || !protected_sudo() {
         return 1;
@@ -437,6 +504,15 @@ fn launch(attended: bool) -> i32 {
     };
     let Some(control) = control_socket() else {
         return 1;
+    };
+    let request = match purpose {
+        Purpose::Inspect => None,
+        Purpose::Publish => {
+            let Some(request) = publication_request(&control, &executable, uid) else {
+                return 1;
+            };
+            Some(request)
+        }
     };
     if !control_open(&control) {
         return 1;
@@ -465,7 +541,7 @@ fn launch(attended: bool) -> i32 {
         .env("PATH", "/usr/bin:/bin:/usr/sbin:/sbin")
         .args(["-u", "root", "--"])
         .arg(&executable.path)
-        .arg(ROOT_ARGUMENT)
+        .arg(purpose.root_argument())
         .stdin(Stdio::from(input))
         .stdout(Stdio::from(output))
         .spawn();
@@ -499,7 +575,15 @@ fn launch(attended: bool) -> i32 {
             control: Some(&control),
             deadline: Instant::now() + OBSERVATION_LIMIT,
         };
+        if let Some((_, caller)) = request
+            && !publication_caller(&control, &executable, uid, caller)
+        {
+            return None;
+        }
         exchange.send(&header(START, &nonce)).ok()?;
+        if let Some((request, _)) = request {
+            exchange.send(&request.encode()).ok()?;
+        }
         if !exchange.header(RESULT, &nonce) {
             return None;
         }
@@ -531,6 +615,40 @@ fn launch(attended: bool) -> i32 {
         }
         Some(_) => 1,
     }
+}
+
+fn publication_request(
+    control: &UnixStream,
+    executable: &Executable,
+    uid: libc::uid_t,
+) -> Option<(VendorPublicationRequest, AuditWriter)> {
+    let mut bytes = [0; 64];
+    let exchange = Exchange {
+        socket: control,
+        control: None,
+        deadline: Instant::now() + ROOT_EXCHANGE_LIMIT,
+    };
+    exchange.receive(&mut bytes).ok()?;
+    let writer = AuditWriter::read(control)?;
+    if !publication_caller(control, executable, uid, writer) {
+        return None;
+    }
+    Some((VendorPublicationRequest::decode(&bytes)?, writer))
+}
+
+fn publication_caller(
+    control: &UnixStream,
+    executable: &Executable,
+    uid: libc::uid_t,
+    caller: AuditWriter,
+) -> bool {
+    caller.has_uid(uid)
+        && unsafe { libc::getppid() } == caller.pid()
+        && executable.signing_information.has_no_entitlements()
+        && executable.matches_image(caller)
+        && caller.hardened()
+        && AuditWriter::read(control) == Some(caller)
+        && control_open(control)
 }
 
 fn finish(
@@ -597,7 +715,7 @@ fn process_absent(pid: libc::pid_t) -> bool {
         && io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH)
 }
 
-fn observe_as_root() -> bool {
+fn run_as_root(purpose: Purpose) -> bool {
     if unsafe { libc::getuid() != 0 || libc::geteuid() != 0 } || !protected_sudo() {
         return false;
     }
@@ -629,6 +747,8 @@ fn observe_as_root() -> bool {
             && process_path(sudo).as_deref() == Some(Path::new(SUDO))
             && process_parent(sudo) == Some(caller.pid())
             && executable.verifies(&socket, caller)
+            && (matches!(purpose, Purpose::Inspect)
+                || (executable.signing_information.has_no_entitlements() && caller.hardened()))
     };
     if !expected_caller()
         || initial.send(&header(HELLO, &nonce)).is_err()
@@ -638,8 +758,28 @@ fn observe_as_root() -> bool {
         return false;
     }
 
-    let Some(observation) = inspect_frame() else {
-        return false;
+    let result = match purpose {
+        Purpose::Inspect => {
+            let Some(frame) = inspect_frame() else {
+                return false;
+            };
+            frame
+        }
+        Purpose::Publish => {
+            let mut bytes = [0; 64];
+            if initial.receive(&mut bytes).is_err() || !expected_caller() {
+                return false;
+            }
+            let Some(request) = VendorPublicationRequest::decode(&bytes) else {
+                return false;
+            };
+            publication_frame(publish_vendor_policy(&request, || {
+                !cancelled()
+                    && control_open(&socket)
+                    && executable.still_protected()
+                    && expected_caller()
+            }))
+        }
     };
     if !executable.still_protected() || !expected_caller() {
         return false;
@@ -647,6 +787,32 @@ fn observe_as_root() -> bool {
     let reply = exchange(Instant::now() + ROOT_EXCHANGE_LIMIT);
     let mut frame = [0; HEADER_BYTES + INSPECTION_BYTES];
     frame[..HEADER_BYTES].copy_from_slice(&header(RESULT, &nonce));
-    frame[HEADER_BYTES..].copy_from_slice(&observation);
+    frame[HEADER_BYTES..].copy_from_slice(&result);
     reply.send(&frame).is_ok() && reply.header(ACCEPT, &nonce) && expected_caller()
+}
+
+fn publication_frame(outcome: PublicationOutcome) -> [u8; INSPECTION_BYTES] {
+    let mut frame = [0; INSPECTION_BYTES];
+    frame[..4].copy_from_slice(b"NDP\x01");
+    frame[4] = match outcome {
+        PublicationOutcome::Refused => 1,
+        PublicationOutcome::Pending => 2,
+        PublicationOutcome::Published => 3,
+    };
+    frame
+}
+
+pub(super) fn decode_publication(frame: &[u8]) -> Option<PublicationOutcome> {
+    let [b'N', b'D', b'P', 1, status, padding @ ..] = frame else {
+        return None;
+    };
+    if frame.len() != INSPECTION_BYTES || padding.iter().any(|byte| *byte != 0) {
+        return None;
+    }
+    match status {
+        1 => Some(PublicationOutcome::Refused),
+        2 => Some(PublicationOutcome::Pending),
+        3 => Some(PublicationOutcome::Published),
+        _ => None,
+    }
 }

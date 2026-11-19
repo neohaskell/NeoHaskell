@@ -30,6 +30,7 @@
 #   `write_starter_template` into a temp dir, so the package build itself proves
 #   the release binary can generate a project with the network disabled.
 { lib
+, stdenv
 , rustPlatform
 , git
 , nix
@@ -90,6 +91,12 @@ rustPlatform.buildRustPackage {
     for installed in "$out/bin/"*; do
       test "$installed" = "$out/bin/${command}"
     done
+  '';
+
+  postFixup = lib.optionalString (isInstaller && stdenv.hostPlatform.isDarwin) ''
+    /usr/bin/codesign --force --sign - --timestamp=none --options runtime,library \
+      --identifier org.neohaskell.neo-installer "$out/bin/${command}"
+    /usr/bin/codesign --verify --strict "$out/bin/${command}"
   '';
 
   doCheck = true;

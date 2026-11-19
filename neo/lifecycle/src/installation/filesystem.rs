@@ -1,4 +1,6 @@
 use super::coordinator::{Admission, Cancellation, SettlementKind, WaitInterest};
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+use super::coordinator::{DarwinPolicyIntent, DarwinPublicationStep};
 use super::dashboard::terminal::ParkedTerminal;
 #[cfg(target_os = "linux")]
 use super::nix_owner::peer_handoff::{
@@ -163,6 +165,11 @@ pub(super) enum FilesystemJob {
         path: PathBuf,
         release: FileIdentity,
     },
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+    DarwinPolicyPublication {
+        intent: std::sync::Arc<DarwinPolicyIntent>,
+        step: DarwinPublicationStep,
+    },
     #[cfg(target_os = "linux")]
     ObserveStockPolicy {
         executable: ExactExecutable,
@@ -230,6 +237,10 @@ pub(super) enum ExistingNixInspector {
 pub(super) enum FilesystemResult {
     #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
     DarwinPolicyObserved(super::nix_owner::darwin::InspectedDarwinNix),
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+    DarwinPolicyPublished(super::nix_owner::darwin::PublicationOutcome),
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+    DarwinPolicyIntentCleared,
     #[cfg(target_os = "linux")]
     ExistingNixPolicyVerified(VerifiedExistingPolicy),
     #[cfg(target_os = "linux")]
@@ -308,6 +319,8 @@ impl FilesystemJob {
         match self {
             #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
             Self::ObserveDarwinPolicy { .. } => false,
+            #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+            Self::DarwinPolicyPublication { .. } => true,
             #[cfg(all(test, target_os = "linux"))]
             Self::PublishPolicyIntent { .. } => true,
             #[cfg(target_os = "linux")]
@@ -1117,6 +1130,40 @@ fn execute(
             )
             .map(Result::DarwinPolicyObserved)
         }
+        #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+        Job::DarwinPolicyPublication { intent, step } => {
+            let path = intent.layout.record();
+            match step {
+                DarwinPublicationStep::StoreIntent => {
+                    verify_darwin_intent(&intent, &intent.before, policy)?;
+                    publish_record(&path, &intent.after, false, policy)?;
+                    Ok(Result::Applied)
+                }
+                DarwinPublicationStep::Launch => {
+                    let path = Path::new(&intent.pending.helper_path);
+                    let (file, identity) = open_verified_helper(
+                        path,
+                        &intent.pending.helper,
+                        PolicyHelperLocation::Store,
+                    )?;
+                    verify_darwin_intent(&intent, &intent.after, policy)?;
+                    super::nix_owner::darwin::discovery_effect::publish(
+                        path,
+                        &file,
+                        &identity,
+                        terminal,
+                        intent.request,
+                        || policy.check(),
+                    )
+                    .map(Result::DarwinPolicyPublished)
+                }
+                DarwinPublicationStep::ClearIntent => {
+                    verify_darwin_intent(&intent, &intent.after, policy)?;
+                    publish_record(&path, &intent.before, false, policy)?;
+                    Ok(Result::DarwinPolicyIntentCleared)
+                }
+            }
+        }
         #[cfg(target_os = "linux")]
         Job::ObserveStockPolicy {
             executable,
@@ -1360,6 +1407,38 @@ fn execute(
             Ok(Result::ResourceRemoved { directory, result })
         }
     }
+}
+
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+fn verify_darwin_intent(
+    intent: &DarwinPolicyIntent,
+    expected: &[u8],
+    policy: &ReadPolicy,
+) -> Result<(), TransactionError> {
+    let changed = TransactionError::Verification("reviewed Darwin policy intent changed");
+    let state_lease = intent.pending.state_lease.ok_or_else(|| changed.clone())?;
+    let verify_lease = || {
+        let named = fs::symlink_metadata(intent.layout.lock()).map_err(|_| changed.clone())?;
+        super::validate_private_file(&named)?;
+        if (named.dev(), named.ino(), named.nlink()) != (state_lease.device, state_lease.inode, 1) {
+            return Err(changed.clone());
+        }
+        Ok(())
+    };
+    verify_lease()?;
+    let directory =
+        ResourceDirectory::open_existing(intent.layout.state_directory.join("resources"))?
+            .ok_or_else(|| changed.clone())?;
+    if directory.identity != intent.resource_parent
+        || directory
+            .inventory(intent.resource_limit)?
+            .get(super::resources::HELPER_ROOT)
+            != Some(&intent.helper_root)
+        || read_record_bytes(&intent.layout.record(), policy)?.as_deref() != Some(expected)
+    {
+        return Err(changed);
+    }
+    verify_lease()
 }
 
 fn read_record_bytes(

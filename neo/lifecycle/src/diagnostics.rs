@@ -139,6 +139,8 @@ pub(crate) enum CompletedStep {
     Prerequisites,
     NixPolicyObservation,
     NixPolicyPlan,
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+    NixPolicyPublication,
     NixPolicyApplication,
     CandidateSelection,
     PairVerification,

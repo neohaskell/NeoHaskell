@@ -483,6 +483,8 @@ fn write_review(
             ReviewedChange::ExistingNixPolicy => &copy.review_existing_nix_policy,
             #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
             ReviewedChange::DarwinPolicyInspection => &copy.review_darwin_policy_inspection,
+            #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+            ReviewedChange::DarwinPolicyPublication => &copy.review_darwin_policy_publication,
             ReviewedChange::ApplyExistingNixPolicy => &copy.review_apply_existing_nix_policy,
             #[cfg(target_os = "linux")]
             ReviewedChange::NixPolicyRecoveryInspection => {

@@ -1,12 +1,18 @@
-use super::administrator::{ATTENDED_ARGUMENT, LAUNCH_ARGUMENT};
-use super::{INSPECTION_BYTES, InspectedDarwinNix, decode_inspection};
+use super::administrator::{
+    ATTENDED_ARGUMENT, LAUNCH_ARGUMENT, PUBLISH_ARGUMENT, PUBLISH_ATTENDED_ARGUMENT,
+    decode_publication,
+};
+use super::{
+    INSPECTION_BYTES, InspectedDarwinNix, PublicationOutcome, VendorPublicationRequest,
+    decode_inspection,
+};
 use crate::installation::TransactionError;
 use crate::installation::dashboard::terminal::ParkedTerminal;
 use crate::installation::filesystem::{
     PolicyHelperLocation, helper_snapshot, protected_helper_path,
 };
 use std::fs::{self, File, Metadata};
-use std::io::{self, Read};
+use std::io::{self, Read, Write};
 use std::os::fd::OwnedFd;
 use std::os::unix::net::UnixStream;
 use std::path::Path;
@@ -43,7 +49,7 @@ impl Session {
         self,
         exit: ExitStatus,
         frame: &[u8],
-    ) -> Result<InspectedDarwinNix, TransactionError> {
+    ) -> Result<[u8; INSPECTION_BYTES], TransactionError> {
         if !matches!(exit.code(), Some(0 | 1)) {
             return Err(TransactionError::CleanupUnknown);
         }
@@ -53,10 +59,12 @@ impl Session {
         if exit.code() == Some(1) && frame.is_empty() {
             return Err(TransactionError::AdministratorUnavailable);
         }
-        if !exit.success() || frame.len() != INSPECTION_BYTES {
+        if !exit.success() {
             return Err(TransactionError::Verification("Darwin policy helper reply"));
         }
-        decode_inspection(frame).map_err(TransactionError::NixBlocked)
+        frame
+            .try_into()
+            .map_err(|_| TransactionError::Verification("Darwin policy helper reply"))
     }
 }
 
@@ -67,6 +75,39 @@ pub(in crate::installation) fn observe(
     terminal: Option<&ParkedTerminal>,
     checkpoint: impl Fn() -> Result<(), TransactionError>,
 ) -> Result<InspectedDarwinNix, TransactionError> {
+    let frame = run(path, executable, opened, terminal, None, checkpoint)?;
+    decode_inspection(&frame).map_err(TransactionError::NixBlocked)
+}
+
+pub(in crate::installation) fn publish(
+    path: &Path,
+    executable: &File,
+    opened: &Metadata,
+    terminal: Option<&ParkedTerminal>,
+    request: VendorPublicationRequest,
+    checkpoint: impl Fn() -> Result<(), TransactionError>,
+) -> Result<PublicationOutcome, TransactionError> {
+    let frame = run(
+        path,
+        executable,
+        opened,
+        terminal,
+        Some(request),
+        checkpoint,
+    )?;
+    decode_publication(&frame).ok_or(TransactionError::Verification(
+        "Darwin policy publication reply",
+    ))
+}
+
+fn run(
+    path: &Path,
+    executable: &File,
+    opened: &Metadata,
+    terminal: Option<&ParkedTerminal>,
+    publication: Option<VendorPublicationRequest>,
+    checkpoint: impl Fn() -> Result<(), TransactionError>,
+) -> Result<[u8; INSPECTION_BYTES], TransactionError> {
     check_foreground(terminal, &checkpoint)?;
     if unsafe { libc::getuid() } == 0
         || unsafe { libc::getuid() } != unsafe { libc::geteuid() }
@@ -86,10 +127,17 @@ pub(in crate::installation) fn observe(
     output
         .set_nonblocking(true)
         .map_err(|_| TransactionError::Io)?;
-    let (argument, stderr) = match terminal {
-        Some(_) => (ATTENDED_ARGUMENT, Stdio::inherit()),
-        None => (LAUNCH_ARGUMENT, Stdio::null()),
+    let (argument, stderr) = match (publication, terminal) {
+        (None, Some(_)) => (ATTENDED_ARGUMENT, Stdio::inherit()),
+        (None, None) => (LAUNCH_ARGUMENT, Stdio::null()),
+        (Some(_), Some(_)) => (PUBLISH_ATTENDED_ARGUMENT, Stdio::inherit()),
+        (Some(_), None) => (PUBLISH_ARGUMENT, Stdio::null()),
     };
+    if let Some(publication) = publication {
+        (&control)
+            .write_all(&publication.encode())
+            .map_err(|_| TransactionError::Io)?;
+    }
     recheck(path, executable, opened)?;
     check_foreground(terminal, &checkpoint)?;
     let mut launcher = Command::new(path)
@@ -141,7 +189,7 @@ fn await_launcher(
     control: UnixStream,
     mut output: UnixStream,
     checkpoint: impl Fn() -> Result<(), TransactionError>,
-) -> Result<InspectedDarwinNix, TransactionError> {
+) -> Result<[u8; INSPECTION_BYTES], TransactionError> {
     let mut session = Session::Running {
         _control: control,
         deadline: Instant::now() + LAUNCH_BUDGET,
