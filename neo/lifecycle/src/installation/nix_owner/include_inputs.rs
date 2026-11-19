@@ -216,11 +216,19 @@ where
         &mut self,
         path: &Path,
         bytes: &[u8],
-        pending_leaf: Option<&[u8]>,
+        pending: Option<&DesiredNixInclude>,
     ) -> Result<(), TransactionError> {
         self.visit(path, Some(bytes), 0)?;
-        if let Some(leaf) = pending_leaf {
-            self.visit(&self.reserved.clone(), Some(leaf), 1)?;
+        if let Some(desired) = pending {
+            if self.graph.edges.len() >= MAX_EDGES {
+                return Err(TransactionError::Io);
+            }
+            self.bytes += desired
+                .source
+                .len()
+                .checked_sub(bytes.len())
+                .ok_or(TransactionError::Io)?;
+            self.visit(&self.reserved.clone(), Some(&desired.leaf), 1)?;
         }
         self.policy.verify()
     }
@@ -371,7 +379,7 @@ pub(super) fn observe(
             existing,
             policy: EffectivePolicy::default(),
         };
-        walk.read_graph(path, bytes, (!existing).then_some(desired.leaf.as_slice()))?;
+        walk.read_graph(path, bytes, (!existing).then_some(desired))?;
         if existing && walk.references != 1 {
             return Ok(AttachmentInputs::Conflict);
         }
@@ -666,11 +674,7 @@ pub(in crate::installation::nix_owner) mod recovery {
                 existing: published,
                 policy: EffectivePolicy::default(),
             };
-            walk.read_graph(
-                path,
-                &live.1,
-                (!published).then_some(desired.leaf.as_slice()),
-            )?;
+            walk.read_graph(path, &live.1, (!published).then_some(desired))?;
             if published {
                 let Some(final_edge) = walk.graph.edges.pop() else {
                     return Ok(Stage::Conflict);
@@ -871,6 +875,51 @@ mod tests {
         assert!(matches!(
             attachment(&fixture_input(&main).unwrap()),
             AttachmentInputs::Conflict
+        ));
+    }
+
+    #[test]
+    fn append_counts_the_pending_include_in_the_edge_and_byte_limits() {
+        let (_temporary, main) = fixture();
+        let nested = main.with_file_name("settings.conf");
+        let extra_edge = "include settings.conf\n";
+        fs::write(&nested, b"keep-outputs = true\n").unwrap();
+        for (count, allowed) in [(MAX_EDGES, false), (MAX_EDGES - 1, true)] {
+            fs::write(&main, extra_edge.repeat(count)).unwrap();
+            assert_eq!(
+                matches!(
+                    attachment(&fixture_input(&main).unwrap()),
+                    AttachmentInputs::VerifiedAppend(_)
+                ),
+                allowed,
+                "edge count {count}"
+            );
+        }
+
+        let visits = 8;
+        let base = extra_edge.repeat(visits);
+        fs::write(&main, &base).unwrap();
+        let NixIncludePreparation::Append(desired) = fixture_input(&main).unwrap().preparation
+        else {
+            panic!("append");
+        };
+        let space = MAX_BYTES - desired.source.len() - desired.leaf.len();
+        let fit = space / visits;
+        for (length, allowed) in [(fit + 1, false), (fit, true)] {
+            fs::write(&nested, "#".repeat(length)).unwrap();
+            fs::write(&main, &base).unwrap();
+            let baseline = fixture_input(&main).unwrap();
+            assert_eq!(
+                matches!(attachment(&baseline), AttachmentInputs::VerifiedAppend(_)),
+                allowed,
+                "nested length {length}"
+            );
+        }
+        fs::write(&main, &desired.source).unwrap();
+        fs::write(main.with_file_name(POLICY_LEAF), &desired.leaf).unwrap();
+        assert!(matches!(
+            attachment(&fixture_input(&main).unwrap()),
+            AttachmentInputs::VerifiedExisting(_)
         ));
     }
 
