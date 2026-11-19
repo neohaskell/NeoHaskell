@@ -105,13 +105,11 @@ impl PresentationObservation {
     }
     pub(super) fn finish(&mut self, result: &Result<RunOutcome, TransactionError>) {
         if let Err(TransactionError::NixBlocked(reason)) = result {
-            let row = if matches!(
-                reason,
-                super::nix_owner::NixBlock::ConfigurationOwnerUnknown
-            ) {
-                1
-            } else {
-                0
+            let row = match reason {
+                super::nix_owner::NixBlock::ConfigurationOwnerUnknown => 1,
+                #[cfg(target_os = "linux")]
+                super::nix_owner::NixBlock::CallerAccessDenied => 1,
+                _ => 0,
             };
             self.rows[row] = Row::Blocked;
         }

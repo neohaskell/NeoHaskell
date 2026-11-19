@@ -133,14 +133,17 @@ fn manager(operation: ManagerOperation) -> Result<Vec<u8>, PolicyResult> {
         ManagerOperation::Restart => Duration::from_secs(5),
         _ => Duration::from_millis(400),
     };
+    command.stdin(Stdio::null());
     bounded_output(command, budget)
 }
 
-fn bounded_output(mut command: Command, budget: Duration) -> Result<Vec<u8>, PolicyResult> {
+pub(in crate::installation::nix_owner) fn bounded_output(
+    mut command: Command,
+    budget: Duration,
+) -> Result<Vec<u8>, PolicyResult> {
     let mut child = command
         .env_clear()
         .current_dir("/")
-        .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .spawn()
@@ -197,7 +200,7 @@ pub(super) fn verify_stock_account_home() -> Result<(), PolicyResult> {
     let getent =
         protected_path(Path::new("/usr/bin/getent")).map_err(|_| PolicyResult::UnknownLaunch)?;
     let mut command = Command::new(getent);
-    command.args(["passwd", "0"]);
+    command.args(["passwd", "0"]).stdin(Stdio::null());
     let output = bounded_output(command, Duration::from_millis(400))
         .map_err(|_| PolicyResult::UnknownLaunch)?;
     let record = output
@@ -240,8 +243,10 @@ fn verify_stock_executable(identity: &NixTargetIdentity) -> Result<(), PolicyRes
     Ok(())
 }
 
-pub(super) fn discover_stock_policy() -> Result<DiscoveredInputs, PolicyResult> {
-    with_stock_inputs(|inputs| inputs.capture_discovery())
+pub(super) fn discover_stock_policy(
+    caller: Option<StockCaller>,
+) -> Result<DiscoveredInputs, PolicyResult> {
+    with_stock_inputs(move |inputs| inputs.capture_discovery(caller))
 }
 
 pub(super) fn with_stock_inputs<T: Send>(

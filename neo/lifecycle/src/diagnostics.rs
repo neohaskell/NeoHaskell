@@ -345,6 +345,8 @@ pub(crate) enum NixReason {
     DaemonUnavailable,
     DaemonMismatch,
     ConfigurationOwnerUnknown,
+    #[cfg(target_os = "linux")]
+    CallerAccessDenied,
 }
 
 #[derive(Serialize)]
@@ -414,6 +416,8 @@ impl ErrorFact {
                     N::DaemonUnavailable => NixReason::DaemonUnavailable,
                     N::DaemonMismatch => NixReason::DaemonMismatch,
                     N::ConfigurationOwnerUnknown => NixReason::ConfigurationOwnerUnknown,
+                    #[cfg(target_os = "linux")]
+                    N::CallerAccessDenied => NixReason::CallerAccessDenied,
                 })
             }
         }

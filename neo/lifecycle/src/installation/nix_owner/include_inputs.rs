@@ -1,5 +1,7 @@
 use super::*;
 use base64::{Engine, engine::general_purpose::STANDARD};
+#[cfg(target_os = "linux")]
+use caller_access::{CallerAccess, DaemonAccessPolicy};
 use std::path::Component;
 
 const MAX_EDGES: usize = 128;
@@ -18,6 +20,21 @@ pub(super) enum AttachmentInputs {
 pub(super) struct Graph {
     companion: ConfigurationFile,
     edges: Vec<Edge>,
+    #[cfg(target_os = "linux")]
+    #[serde(skip)]
+    access: DaemonAccessPolicy,
+}
+
+#[cfg(target_os = "linux")]
+impl AttachmentInputs {
+    pub(super) fn access(&self, caller: StockCaller) -> CallerAccess {
+        match self {
+            Self::VerifiedAppend(graph) | Self::VerifiedExisting(graph) => {
+                graph.access.access(caller)
+            }
+            Self::Unresolved | Self::Conflict => CallerAccess::Unproved,
+        }
+    }
 }
 
 #[derive(PartialEq, Eq, Serialize)]
@@ -86,6 +103,8 @@ struct EffectivePolicy {
     trusted_substituters: Vec<String>,
     public_keys: Vec<String>,
     loads_plugins: bool,
+    #[cfg(target_os = "linux")]
+    access: DaemonAccessPolicy,
 }
 
 impl Default for EffectivePolicy {
@@ -99,6 +118,8 @@ impl Default for EffectivePolicy {
                 "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=".into(),
             ],
             loads_plugins: false,
+            #[cfg(target_os = "linux")]
+            access: DaemonAccessPolicy::default(),
         }
     }
 }
@@ -135,6 +156,11 @@ impl EffectivePolicy {
                 self.loads_plugins = !values.is_empty();
                 return Ok(());
             }
+            #[cfg(target_os = "linux")]
+            "build-users-group" => {
+                self.access.build_users_group = values.join(" ");
+                return Ok(());
+            }
             _ => {}
         }
 
@@ -147,6 +173,10 @@ impl EffectivePolicy {
             "substituters" | "binary-caches" => &mut self.substituters,
             "trusted-substituters" | "trusted-binary-caches" => &mut self.trusted_substituters,
             "trusted-public-keys" | "binary-cache-public-keys" => &mut self.public_keys,
+            #[cfg(target_os = "linux")]
+            "allowed-users" => &mut self.access.allowed_users,
+            #[cfg(target_os = "linux")]
+            "trusted-users" => &mut self.access.trusted_users,
             _ => return Ok(()),
         };
         if !append {
@@ -367,6 +397,8 @@ pub(super) fn observe(
             graph: Graph {
                 companion,
                 edges: Vec::new(),
+                #[cfg(target_os = "linux")]
+                access: DaemonAccessPolicy::default(),
             },
             active: Vec::new(),
             bytes: 0,
@@ -395,6 +427,10 @@ pub(super) fn observe(
             if configuration_source_with(&edge.path, protect, walk.read)?.0 != edge.input {
                 return Err(TransactionError::Io);
             }
+        }
+        #[cfg(target_os = "linux")]
+        {
+            walk.graph.access = walk.policy.access;
         }
         let inputs = if existing {
             AttachmentInputs::VerifiedExisting(walk.graph)
@@ -670,6 +706,8 @@ pub(in crate::installation::nix_owner) mod recovery {
                 graph: Graph {
                     companion: companion.0,
                     edges: Vec::new(),
+                    #[cfg(target_os = "linux")]
+                    access: DaemonAccessPolicy::default(),
                 },
                 active: Vec::new(),
                 bytes: 0,

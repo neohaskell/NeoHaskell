@@ -19,6 +19,7 @@
   "nix_daemon_unavailable": "The standard Nix daemon is unavailable to this user.",
   "nix_daemon_mismatch": "The Nix daemon response does not match the verified client and service.",
   "nix_configuration_owner_unknown": "The installer could not verify Nix configuration ownership or the required daemon policy.",
+  "nix_caller_access_denied": "The Nix configuration would deny this account access after a restart. Ask your administrator to check which accounts can use the Nix daemon, then retry.",
   "operation_not_started": "The operation stopped before startup.",
   "operation_stopped_no_pair": "The operation stopped. No NeoHaskell pair is active.",
   "operation_stopped_pair": "The operation stopped. NeoHaskell {version} is active.",

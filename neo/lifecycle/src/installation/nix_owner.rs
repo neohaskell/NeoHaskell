@@ -8,10 +8,16 @@ use std::num::NonZeroU128;
 use std::os::unix::fs::{FileTypeExt, MetadataExt, OpenOptionsExt};
 use std::path::{Path, PathBuf};
 
+#[cfg(target_os = "linux")]
+mod caller_access;
+#[cfg(target_os = "linux")]
+pub(crate) use caller_access::dispatch_caller_access;
 pub(super) mod daemon_process;
 mod include_inputs;
 pub(super) mod peer_handoff;
 pub(super) mod policy_observation;
+#[cfg(target_os = "linux")]
+pub(in crate::installation) use caller_access::StockCaller;
 pub(super) use daemon_process::KernelDaemonObservation;
 #[cfg(target_os = "linux")]
 pub(crate) use peer_handoff::launcher::{dispatch_existing_policy, dispatch_native_policy};
@@ -69,6 +75,8 @@ pub(crate) enum NixBlock {
     DaemonUnavailable,
     DaemonMismatch,
     ConfigurationOwnerUnknown,
+    #[cfg(target_os = "linux")]
+    CallerAccessDenied,
 }
 
 #[derive(Debug, PartialEq, Eq, Serialize)]
@@ -98,11 +106,20 @@ impl ObservedNixBase {
     pub(super) fn stock_policy_operation(
         &self,
     ) -> Result<policy_observation::PolicyOperation, TransactionError> {
-        if self.can_apply_existing_policy() {
-            Ok(policy_observation::PolicyOperation::ApplyUnchanged)
+        let operation = if self.can_apply_existing_policy() {
+            policy_observation::PolicyOperation::ApplyUnchanged
         } else {
             self.require_verified_append()?;
-            Ok(policy_observation::PolicyOperation::ConventionalAppend)
+            policy_observation::PolicyOperation::ConventionalAppend
+        };
+        match self.configuration.caller_access {
+            caller_access::CallerAccess::Allowed => Ok(operation),
+            caller_access::CallerAccess::Denied => {
+                Err(TransactionError::NixBlocked(NixBlock::CallerAccessDenied))
+            }
+            caller_access::CallerAccess::Unproved => Err(TransactionError::NixBlocked(
+                NixBlock::ConfigurationOwnerUnknown,
+            )),
         }
     }
 
@@ -144,11 +161,18 @@ pub(super) struct ConfigurationObservation {
     attachment: include_inputs::AttachmentInputs,
     complete_stock_policy: bool,
     policy_stage_absent: bool,
+    #[cfg(target_os = "linux")]
+    caller_access: caller_access::CallerAccess,
 }
 
 impl ConfigurationObservation {
     pub(super) fn has_complete_stock_policy(&self) -> bool {
         self.complete_stock_policy
+    }
+
+    #[cfg(target_os = "linux")]
+    pub(super) fn observe_caller_access(&mut self) {
+        self.caller_access = self.attachment.access(StockCaller::current());
     }
 }
 
@@ -398,6 +422,8 @@ fn configuration_input_with(
         attachment,
         complete_stock_policy,
         policy_stage_absent,
+        #[cfg(target_os = "linux")]
+        caller_access: caller_access::CallerAccess::Unproved,
     })
 }
 
@@ -1644,5 +1670,6 @@ pub(super) fn policy_review_fixture(path: &Path, started: u64) -> ObservedNixBas
 impl ObservedNixBase {
     pub(super) fn set_fixture_pid(&mut self, pid: u32) {
         self.service.main_pid = pid;
+        self.configuration.caller_access = caller_access::CallerAccess::Allowed;
     }
 }

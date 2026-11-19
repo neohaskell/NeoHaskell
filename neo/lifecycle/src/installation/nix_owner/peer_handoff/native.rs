@@ -547,6 +547,7 @@ fn serve(epoch: [u8; 32], operation: WorkerOperation) -> Result<(), HandoffError
     let sudo = ProtectedSudo::open()?;
     let socket = connect(&epoch)?;
     let caller = linux::connected_identity(&socket)?;
+    let stock_caller = super::super::super::StockCaller::new(caller.uid, caller.gid);
     let worker = unsafe { libc::getpid() };
     if caller.uid == 0 || caller.gid == 0 {
         return Err(HandoffError::Peer);
@@ -584,7 +585,8 @@ fn serve(epoch: [u8; 32], operation: WorkerOperation) -> Result<(), HandoffError
         WorkerOperation::Observe => {
             linux::receive_domain(&socket, &expected, DISCOVER)?;
             verify()?;
-            let result = super::super::super::policy_observation::stock_policy_frame();
+            let result =
+                super::super::super::policy_observation::stock_policy_frame(Some(stock_caller));
             verify()?;
             send_packet(&socket, DISCOVER, &epoch, &result)?;
         }
@@ -616,9 +618,15 @@ fn serve(epoch: [u8; 32], operation: WorkerOperation) -> Result<(), HandoffError
                 verify().map_err(|_| PolicyResult::PublicationRefused)
             };
             let result = if apply.original_attempt.is_some() {
-                resume_stock_policy(reviewed, attempt, require_commit)
+                resume_stock_policy(reviewed, attempt, stock_caller, require_commit)
             } else {
-                publish_stock_policy(apply.operation, reviewed, attempt, require_commit)
+                publish_stock_policy(
+                    apply.operation,
+                    reviewed,
+                    attempt,
+                    stock_caller,
+                    require_commit,
+                )
             };
             verify()?;
             match result {
@@ -653,8 +661,11 @@ fn serve(epoch: [u8; 32], operation: WorkerOperation) -> Result<(), HandoffError
                 &executable.identity,
                 Some(scope.state_lease),
             );
-            let result =
-                inspect_stock_policy(ReviewedPolicyRequest::from_bytes(scope.inputs), attempt);
+            let result = inspect_stock_policy(
+                ReviewedPolicyRequest::from_bytes(scope.inputs),
+                attempt,
+                stock_caller,
+            );
             verify()?;
             let mut domain = *INSPECTION;
             domain[15] = result as u8;

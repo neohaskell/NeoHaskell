@@ -7,6 +7,8 @@ use std::io::Read;
 #[cfg(target_os = "linux")]
 mod managed;
 #[cfg(target_os = "linux")]
+pub(super) use managed::bounded_output;
+#[cfg(target_os = "linux")]
 mod publication;
 #[cfg(all(test, target_os = "linux"))]
 pub(super) use publication::FixturePublicationBarrier;
@@ -24,14 +26,15 @@ pub(super) fn publish_stock_policy(
     operation: PolicyOperation,
     request: ReviewedPolicyRequest,
     attempt: PolicyAttempt,
+    caller: StockCaller,
     require_commit: impl FnOnce() -> Result<(), PolicyResult> + Send,
 ) -> StockPolicyOutcome {
     match managed::mutate_in_stock_view(move |inputs| match operation {
         PolicyOperation::ConventionalAppend => inputs
-            .publish_stock(request, attempt, require_commit)
+            .publish_stock(request, attempt, caller, require_commit)
             .map(StockPolicyOutcome::Result),
         PolicyOperation::ApplyUnchanged => inputs
-            .apply_stock_unchanged(request, attempt, require_commit)
+            .apply_stock_unchanged(request, attempt, caller, require_commit)
             .map(StockPolicyOutcome::AppliedUnchanged),
     }) {
         Ok(outcome) => outcome,
@@ -43,10 +46,11 @@ pub(super) fn publish_stock_policy(
 pub(super) fn resume_stock_policy(
     request: ReviewedPolicyRequest,
     attempt: PolicyAttempt,
+    caller: StockCaller,
     require_commit: impl FnOnce() -> Result<(), PolicyResult> + Send,
 ) -> StockPolicyOutcome {
     match managed::mutate_in_stock_view(move |inputs| {
-        inputs.resume_stock_unchanged(request, attempt, require_commit)
+        inputs.resume_stock_unchanged(request, attempt, caller, require_commit)
     }) {
         Ok(stamp) => StockPolicyOutcome::AppliedUnchanged(stamp),
         Err(result) => StockPolicyOutcome::Result(result),
@@ -57,9 +61,12 @@ pub(super) fn resume_stock_policy(
 pub(super) fn inspect_stock_policy(
     request: ReviewedPolicyRequest,
     attempt: PolicyAttempt,
+    caller: StockCaller,
 ) -> PolicyInspectionResult {
-    managed::with_stock_inputs(|inputs| Ok(inputs.inspect_completed_attempt(&attempt, request)))
-        .unwrap_or(PolicyInspectionResult::Pending)
+    managed::with_stock_inputs(move |inputs| {
+        Ok(inputs.inspect_completed_attempt(&attempt, request, Some(caller)))
+    })
+    .unwrap_or(PolicyInspectionResult::Pending)
 }
 
 #[cfg(target_os = "linux")]
@@ -80,7 +87,7 @@ pub(crate) const POLICY_OBSERVE_ARGUMENT: &str = "--neo-policy-observe";
 pub(crate) fn run_policy_observer() -> i32 {
     use std::io::Write;
 
-    let frame = stock_policy_frame();
+    let frame = stock_policy_frame(None);
     let mut output = io::stdout().lock();
     i32::from(
         output
@@ -91,8 +98,18 @@ pub(crate) fn run_policy_observer() -> i32 {
 }
 
 #[cfg(target_os = "linux")]
-pub(super) fn stock_policy_frame() -> [u8; 65] {
-    DiscoveredInputs::encode_result(managed::discover_stock_policy())
+pub(super) fn stock_policy_frame(caller: Option<StockCaller>) -> [u8; 65] {
+    DiscoveredInputs::encode_result(managed::discover_stock_policy(caller))
+}
+
+#[cfg(target_os = "linux")]
+impl ConfigurationObservation {
+    fn verify_caller_access(&self, caller: StockCaller) -> Result<(), PolicyResult> {
+        if self.attachment.access(caller) != caller_access::CallerAccess::Allowed {
+            return Err(PolicyResult::InaccessibleInputs);
+        }
+        Ok(())
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -466,13 +483,23 @@ impl PolicyInputs {
     pub(super) fn discover(&self) -> Result<DiscoveredInputs, PolicyResult> {
         #[cfg(test)]
         if self.fixture {
-            return self.capture_discovery();
+            return self.capture_discovery(
+                #[cfg(target_os = "linux")]
+                None,
+            );
         }
         Err(PolicyResult::UnprovedService)
     }
 
-    fn capture_discovery(&self) -> Result<DiscoveredInputs, PolicyResult> {
+    fn capture_discovery(
+        &self,
+        #[cfg(target_os = "linux")] caller: Option<StockCaller>,
+    ) -> Result<DiscoveredInputs, PolicyResult> {
         let (commitment, configuration) = self.capture()?;
+        #[cfg(target_os = "linux")]
+        if let Some(caller) = caller {
+            configuration.verify_caller_access(caller)?;
+        }
         let (operation, commitment) = if configuration.has_complete_stock_policy() {
             #[cfg(target_os = "linux")]
             self.unchanged_stage_absent()?;

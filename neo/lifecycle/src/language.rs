@@ -67,6 +67,7 @@ pub(crate) struct English {
     pub(crate) nix_daemon_unavailable: String,
     pub(crate) nix_daemon_mismatch: String,
     pub(crate) nix_configuration_owner_unknown: String,
+    pub(crate) nix_caller_access_denied: String,
 }
 
 #[derive(Deserialize)]

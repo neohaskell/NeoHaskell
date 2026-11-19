@@ -215,17 +215,25 @@ struct UnchangedRestart {
     configuration: ConfigurationObservation,
     old: super::managed::ManagedSnapshot,
     secondary: [u8; 32],
+    caller: StockCaller,
+}
+
+struct StockApplyInputs {
+    caller: StockCaller,
+    secondary: [u8; 32],
 }
 
 impl UnchangedRestart {
     fn capture(
         inputs: &PolicyInputs,
         request: ReviewedPolicyRequest,
+        caller: StockCaller,
     ) -> Result<Self, PolicyResult> {
         let (actual, configuration) = inputs.capture_unchanged()?;
         if actual != request {
             return Err(PolicyResult::ChangedInputs);
         }
+        configuration.verify_caller_access(caller)?;
         let old = inputs
             .managed_snapshot()?
             .ok_or(PolicyResult::UnprovedService)?;
@@ -234,18 +242,20 @@ impl UnchangedRestart {
             configuration,
             old,
             secondary: inputs.secondary_commitment()?,
+            caller,
         })
     }
 
     fn recheck(&self, inputs: &PolicyInputs, parent: &File) -> Result<(), PolicyResult> {
         anchored(parent, Path::new("/etc/nix"))?;
-        if inputs.capture_unchanged()?.0 != self.request
+        let (actual, configuration) = inputs.capture_unchanged()?;
+        if actual != self.request
             || inputs.managed_snapshot()?.as_ref() != Some(&self.old)
             || inputs.secondary_commitment()? != self.secondary
         {
             return Err(PolicyResult::ChangedInputs);
         }
-        Ok(())
+        configuration.verify_caller_access(self.caller)
     }
 
     fn restart(
@@ -261,7 +271,8 @@ impl UnchangedRestart {
             self.recheck(inputs, parent)?;
             writer.verify_unchanged()?;
             inputs.restart_managed(&self.old, Some(self.secondary), &|| {
-                writer.verify_unchanged()
+                writer.verify_unchanged()?;
+                self.configuration.verify_caller_access(self.caller)
             })
         })()
         .map_err(|_| PolicyResult::PublicationUnknown)?;
@@ -303,6 +314,7 @@ impl PolicyInputs {
         &self,
         operation: &PolicyAttempt,
         request: ReviewedPolicyRequest,
+        caller: Option<StockCaller>,
     ) -> PolicyInspectionResult {
         let inspect = || -> Result<PolicyInspectionResult, PolicyResult> {
             let parent = self.locked_stock_parent()?;
@@ -313,7 +325,11 @@ impl PolicyInputs {
             let writer = receipt::ReceiptWriter::reopen_prepared_unchanged(
                 &parent, &stage, operation, request,
             )?;
-            let restart = UnchangedRestart::capture(self, request)?;
+            let restart = UnchangedRestart::capture(
+                self,
+                request,
+                caller.ok_or(PolicyResult::InaccessibleInputs)?,
+            )?;
             restart.recheck(self, &parent)?;
             writer.verify_prepared_unchanged(&restart.old, restart.secondary)?;
             Ok(PolicyInspectionResult::VerifiedPrepared)
@@ -355,13 +371,14 @@ impl PolicyInputs {
         &self,
         request: ReviewedPolicyRequest,
         attempt: PolicyAttempt,
+        caller: StockCaller,
         require_commit: impl FnOnce() -> Result<(), PolicyResult>,
     ) -> Result<PolicyResult, PolicyResult> {
         let secondary = self.secondary_commitment()?;
         self.publish_guarded(
             request,
             Some(attempt),
-            Some(secondary),
+            Some(StockApplyInputs { caller, secondary }),
             |_| Ok(()),
             require_commit,
         )
@@ -371,12 +388,13 @@ impl PolicyInputs {
         &self,
         request: ReviewedPolicyRequest,
         attempt: PolicyAttempt,
+        caller: StockCaller,
         require_commit: impl FnOnce() -> Result<(), PolicyResult>,
     ) -> Result<[u8; 32], PolicyResult> {
         let parent = self.locked_stock_parent()?;
         let stage_path = descriptor_path(&parent, POLICY_STAGE);
         receipt::require_absent(&stage_path).map_err(|_| PolicyResult::PublicationRefused)?;
-        let restart = UnchangedRestart::capture(self, request)?;
+        let restart = UnchangedRestart::capture(self, request, caller)?;
         require_commit()?;
         restart.recheck(self, &parent)?;
         receipt::require_absent(&stage_path)?;
@@ -401,13 +419,14 @@ impl PolicyInputs {
         &self,
         request: ReviewedPolicyRequest,
         attempt: PolicyAttempt,
+        caller: StockCaller,
         require_commit: impl FnOnce() -> Result<(), PolicyResult>,
     ) -> Result<[u8; 32], PolicyResult> {
         let parent = self.locked_stock_parent()?;
         let stage = directory(Path::new(STAGE))?;
         let writer =
             receipt::ReceiptWriter::reopen_prepared_unchanged(&parent, &stage, &attempt, request)?;
-        let restart = UnchangedRestart::capture(self, request)?;
+        let restart = UnchangedRestart::capture(self, request, caller)?;
         restart.recheck(self, &parent)?;
         writer.verify_prepared_unchanged(&restart.old, restart.secondary)?;
         require_commit()?;
@@ -430,7 +449,7 @@ impl PolicyInputs {
         &self,
         request: ReviewedPolicyRequest,
         attempt: Option<PolicyAttempt>,
-        secondary: Option<[u8; 32]>,
+        stock: Option<StockApplyInputs>,
         pause: impl Fn(PublicationMoment) -> Result<(), PolicyResult>,
         require_commit: impl FnOnce() -> Result<(), PolicyResult>,
     ) -> Result<PolicyResult, PolicyResult> {
@@ -447,6 +466,14 @@ impl PolicyInputs {
         if actual != request {
             return Err(PolicyResult::ChangedInputs);
         }
+        let verify_caller = || {
+            if let Some(stock) = &stock {
+                baseline.verify_caller_access(stock.caller)?;
+            }
+            Ok::<(), PolicyResult>(())
+        };
+        verify_caller()?;
+        let secondary = stock.as_ref().map(|inputs| inputs.secondary);
         let NixIncludePreparation::Append(desired) = &baseline.preparation else {
             return Err(PolicyResult::PublicationRefused);
         };
@@ -477,6 +504,7 @@ impl PolicyInputs {
             return Err(PolicyResult::ChangedInputs);
         }
         let verify_secondary = || {
+            verify_caller()?;
             if let Some(expected) = secondary {
                 if self.secondary_commitment()? != expected {
                     return Err(PolicyResult::ChangedInputs);
@@ -601,6 +629,7 @@ impl PolicyInputs {
             .map_err(|_| PolicyResult::PublicationUnknown)?;
         sync()?;
         let verify_published = || {
+            verify_caller()?;
             check(Stage::SourcePublishedRetired)?;
             anchored(&source_anchor, Path::new(SOURCE))?;
             anchored(&original, &source_slot)?;

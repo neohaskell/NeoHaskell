@@ -40,6 +40,10 @@ pub fn dispatch_internal(arguments: &[std::ffi::OsString]) -> Option<Exit> {
 
 fn dispatch_installed_internal(arguments: &[std::ffi::OsString]) -> Option<Exit> {
     #[cfg(target_os = "linux")]
+    if let Some(code) = installation::nix_owner::dispatch_caller_access(arguments) {
+        return Some(Exit { code });
+    }
+    #[cfg(target_os = "linux")]
     if let Some(code) = installation::nix_owner::dispatch_existing_policy(arguments) {
         return Some(Exit { code });
     }
@@ -418,6 +422,8 @@ fn format_result(result: Result<installation::RunOutcome, installation::Transact
                 NixBlock::DaemonUnavailable => &english.nix_daemon_unavailable,
                 NixBlock::DaemonMismatch => &english.nix_daemon_mismatch,
                 NixBlock::ConfigurationOwnerUnknown => &english.nix_configuration_owner_unknown,
+                #[cfg(target_os = "linux")]
+                NixBlock::CallerAccessDenied => &english.nix_caller_access_denied,
             };
             eprintln!("{message}");
             Exit { code: 1 }

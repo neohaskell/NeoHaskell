@@ -1192,11 +1192,14 @@ impl InstallationOwner {
         let requires_configuration = !offline && !self.fixture;
         if requires_configuration {
             #[cfg(target_os = "linux")]
-            if !observed_nix.has_existing_policy() {
+            if !observed_nix.has_existing_policy()
+                || (observed_nix.can_apply_existing_policy()
+                    && !matches!(executor, Executor::InstalledNeo))
+            {
                 if matches!(executor, Executor::InstalledNeo) {
                     observed_nix.require_configuration_authority()?;
                 } else {
-                    observed_nix.require_verified_append()?;
+                    observed_nix.stock_policy_operation()?;
                 }
             }
             #[cfg(not(target_os = "linux"))]

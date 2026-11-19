@@ -395,7 +395,7 @@ fn root_sudo_helper() {
             );
             let result = authority
                 .policy
-                .inspect_completed_attempt(&operation, reviewed);
+                .inspect_completed_attempt(&operation, reviewed, None);
             eprintln!("protected Nix policy inspection {result:?}");
             frame[..16].copy_from_slice(INSPECTION);
             frame[15] = result as u8;

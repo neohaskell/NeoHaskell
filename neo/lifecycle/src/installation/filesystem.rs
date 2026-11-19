@@ -1269,7 +1269,7 @@ fn execute(
         }
         Job::NixConfigurationInput => {
             policy.check()?;
-            Ok(Result::ConfigurationInput(
+            let configuration =
                 super::nix_owner::configuration_input(Path::new("/etc/nix/nix.conf"), |file| {
                     read_bounded(
                         file,
@@ -1277,8 +1277,15 @@ fn execute(
                         TransactionError::Verification("file size limit"),
                         policy,
                     )
-                })?,
-            ))
+                })?;
+            #[cfg(target_os = "linux")]
+            let configuration = {
+                let mut observed = configuration;
+                observed.observe_caller_access();
+                observed
+            };
+            policy.check()?;
+            Ok(Result::ConfigurationInput(configuration))
         }
         Job::NixDaemonProcess { pid, executable } => {
             policy.check()?;
