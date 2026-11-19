@@ -2189,18 +2189,14 @@ mod tests {
         if expected == "applied" {
             assert!(matches!(
                 result,
-                Err(TransactionError::Verification(
-                    "Nix policy recovery settled; rerun the request"
-                ))
+                Err(TransactionError::NixPolicyRecoveryCompleted)
             ));
             original.pending_nix_policy = None;
             assert_eq!(after, owner.encode_record(&original).unwrap());
         } else {
             assert!(matches!(
                 result,
-                Err(TransactionError::InvalidState(
-                    "Nix policy outcome is pending"
-                ))
+                Err(TransactionError::NixPolicyRecoveryPending)
             ));
             assert_eq!(after, before);
         }
@@ -2261,9 +2257,7 @@ mod tests {
                     &lease,
                     fresh.run_owned(request, runtime::Executor::NativeInstaller,)
                 ),
-                Err(TransactionError::InvalidState(
-                    "Nix policy outcome is pending"
-                ))
+                Err(TransactionError::NixPolicyRecoveryPending)
             ));
             assert_eq!(fs::read(owner.layout.record()).unwrap(), bytes);
             assert_eq!(
@@ -2515,9 +2509,7 @@ mod tests {
                             &lease,
                             fresh.run_owned(request, runtime::Executor::NativeInstaller,)
                         ),
-                        Err(TransactionError::InvalidState(
-                            "Nix policy outcome is pending"
-                        ))
+                        Err(TransactionError::NixPolicyRecoveryPending)
                     ));
                     assert_eq!(fs::read(owner.layout.record()).unwrap(), bytes);
                 }

@@ -381,6 +381,18 @@ fn format_result(result: Result<installation::RunOutcome, installation::Transact
             eprintln!("{}", english.administrator_unavailable);
             Exit { code: 1 }
         }
+        Err(installation::TransactionError::NixPolicyRecoveryCompleted) => {
+            eprintln!("{}", english.nix_policy_recovery_completed);
+            Exit { code: 1 }
+        }
+        Err(installation::TransactionError::NixPolicyRecoveryInspectionUnavailable) => {
+            eprintln!("{}", english.nix_policy_recovery_inspection_unavailable);
+            Exit { code: 1 }
+        }
+        Err(installation::TransactionError::NixPolicyRecoveryPending) => {
+            eprintln!("{}", english.nix_policy_recovery_pending);
+            Exit { code: 1 }
+        }
         Err(installation::TransactionError::CommandPathConflict { command, path }) => {
             eprintln!(
                 "{}",

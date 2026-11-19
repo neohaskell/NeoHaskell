@@ -323,6 +323,9 @@ pub(crate) enum ErrorFact {
     ForeignActiveTarget,
     NoInstallation,
     NoPreviousPair,
+    NixPolicyRecoveryCompleted,
+    NixPolicyRecoveryInspectionUnavailable,
+    NixPolicyRecoveryPending,
     Verification,
     NixBlocked(NixReason),
 }
@@ -386,6 +389,11 @@ impl ErrorFact {
             E::ForeignActiveTarget => Self::ForeignActiveTarget,
             E::NoInstallation => Self::NoInstallation,
             E::NoPreviousPair => Self::NoPreviousPair,
+            E::NixPolicyRecoveryCompleted => Self::NixPolicyRecoveryCompleted,
+            E::NixPolicyRecoveryInspectionUnavailable => {
+                Self::NixPolicyRecoveryInspectionUnavailable
+            }
+            E::NixPolicyRecoveryPending => Self::NixPolicyRecoveryPending,
             E::ShellRecoveryCompleted
             | E::ShellUnsupported
             | E::ShellZdotdirUnsupported
@@ -482,6 +490,7 @@ impl DiagnosticOutcome {
         });
         let recovery_advice = match &report.operation {
             Err(E::NixBlocked(_)) => RecoveryAdvice::CheckNixInstallation,
+            Err(E::NixPolicyRecoveryCompleted) => RecoveryAdvice::ReviewBeforeRetry,
             Err(E::Busy) => RecoveryAdvice::WaitForOtherInvocation,
             Err(_) => RecoveryAdvice::InspectInstallationState,
             _ if presentation.is_some() => RecoveryAdvice::CheckTerminal,

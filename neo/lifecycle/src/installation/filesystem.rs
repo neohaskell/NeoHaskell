@@ -1185,7 +1185,7 @@ fn execute(
         }
         #[cfg(target_os = "linux")]
         Job::InspectStockPolicy(intent) => {
-            let unresolved = TransactionError::InvalidState("Nix policy outcome is pending");
+            let unresolved = TransactionError::NixPolicyRecoveryPending;
             let pending = intent.pending();
             let caller =
                 VerifiedCaller::open_current(&pending.helper).map_err(|_| unresolved.clone())?;
@@ -1198,6 +1198,9 @@ fn execute(
                 .map_err(|error| match error {
                     HandoffError::Cancelled => TransactionError::StopRequested,
                     HandoffError::CleanupUnknown => TransactionError::CleanupUnknown,
+                    HandoffError::AdministratorUnavailable => {
+                        TransactionError::NixPolicyRecoveryInspectionUnavailable
+                    }
                     _ => unresolved,
                 })?;
             policy.check()?;

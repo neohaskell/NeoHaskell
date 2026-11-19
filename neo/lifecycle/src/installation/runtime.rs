@@ -943,7 +943,7 @@ impl InstallationOwner {
     ) -> Result<(), TransactionError> {
         use super::nix_owner::peer_handoff::ExactExecutable;
 
-        let unresolved = TransactionError::InvalidState("Nix policy outcome is pending");
+        let unresolved = TransactionError::NixPolicyRecoveryPending;
         self.effects.checkpoint()?;
         if pending.state_lease != Some(self.effects.policy_state_lease(&self.layout)?) {
             return Err(unresolved);
@@ -970,7 +970,7 @@ impl InstallationOwner {
         record: &super::InstallationRecord,
         pending: &super::PendingNixPolicy,
     ) -> Result<(), TransactionError> {
-        let unresolved = TransactionError::InvalidState("Nix policy outcome is pending");
+        let unresolved = TransactionError::NixPolicyRecoveryPending;
         let helper = super::resources::HELPER_ROOT;
         let expected = record
             .resources
@@ -1004,7 +1004,7 @@ impl InstallationOwner {
     ) -> Result<(), TransactionError> {
         use super::coordinator::StockPolicyIntent;
 
-        let unresolved = TransactionError::InvalidState("Nix policy outcome is pending");
+        let unresolved = TransactionError::NixPolicyRecoveryPending;
         self.effects.checkpoint()?;
         if pending.state_lease != Some(self.effects.policy_state_lease(&self.layout)?) {
             return Err(unresolved);
@@ -1045,20 +1045,14 @@ impl InstallationOwner {
             #[cfg(all(test, target_os = "linux"))]
             if self.effects.inspect_policy_fixture() {
                 self.inspect_fixture_policy(&record, _pending).await?;
-                return Err(TransactionError::Verification(
-                    "Nix policy recovery settled; rerun the request",
-                ));
+                return Err(TransactionError::NixPolicyRecoveryCompleted);
             }
             #[cfg(target_os = "linux")]
             if matches!(executor, Executor::NativeInstaller | Executor::Bootstrap(_)) {
                 self.inspect_pending_stock_policy(&record, _pending).await?;
-                return Err(TransactionError::Verification(
-                    "Nix policy recovery settled; rerun the request",
-                ));
+                return Err(TransactionError::NixPolicyRecoveryCompleted);
             }
-            return Err(TransactionError::InvalidState(
-                "Nix policy outcome is pending",
-            ));
+            return Err(TransactionError::NixPolicyRecoveryPending);
         }
         if matches!(request, snapshot::Request::Uninstall) {
             return self.uninstall_owned().await.map(|()| None);
