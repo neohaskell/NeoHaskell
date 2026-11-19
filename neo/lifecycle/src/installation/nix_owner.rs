@@ -771,6 +771,14 @@ pub(super) fn trusted_client() -> Result<PathBuf, NixBlock> {
     Ok(client)
 }
 
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+pub(super) use darwin::{policy_helper_client, policy_helper_protected_path};
+
+#[cfg(not(all(target_os = "macos", target_arch = "aarch64")))]
+pub(super) use self::{
+    protected_path as policy_helper_protected_path, trusted_client as policy_helper_client,
+};
+
 pub(super) fn protected_path(path: &Path) -> io::Result<PathBuf> {
     for ancestor in path.ancestors() {
         let m = fs::symlink_metadata(ancestor)?;

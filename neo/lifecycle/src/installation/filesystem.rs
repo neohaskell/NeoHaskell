@@ -188,6 +188,7 @@ pub(super) enum FilesystemJob {
         expected: PathBuf,
     },
     NixClient,
+    NixPolicyHelperClient,
     ProtectedPath(PathBuf),
     BoundedDigest {
         path: PathBuf,
@@ -321,6 +322,7 @@ impl FilesystemJob {
             | Self::HashPolicyHelper { .. }
             | Self::ResolvePairMember { .. }
             | Self::NixClient
+            | Self::NixPolicyHelperClient
             | Self::ProtectedPath(_)
             | Self::BoundedDigest { .. }
             | Self::NixConfigurationInput
@@ -633,7 +635,10 @@ pub(super) fn protected_helper_path(path: &Path, location: PolicyHelperLocation)
     checked
         .to_str()
         .is_some_and(|text| crate::candidate::OutputPath::parse(text).is_ok())
-        && super::nix_owner::protected_path(path).ok().as_deref() == Some(path)
+        && super::nix_owner::policy_helper_protected_path(path)
+            .ok()
+            .as_deref()
+            == Some(path)
 }
 
 fn verify_executor_file(
@@ -1242,6 +1247,9 @@ fn execute(
         }
         Job::NixClient => Ok(Result::Executable(
             super::nix_owner::trusted_client().map_err(TransactionError::NixBlocked)?,
+        )),
+        Job::NixPolicyHelperClient => Ok(Result::Executable(
+            super::nix_owner::policy_helper_client().map_err(TransactionError::NixBlocked)?,
         )),
         Job::ProtectedPath(path) => Ok(Result::Executable(
             super::nix_owner::protected_path(&path).map_err(|_| TransactionError::Io)?,

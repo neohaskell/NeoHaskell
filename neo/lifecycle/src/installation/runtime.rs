@@ -758,7 +758,7 @@ impl InstallationOwner {
         }
         let super::FilesystemResult::Executable(client) = self
             .effects
-            .filesystem(super::FilesystemJob::NixClient)
+            .filesystem(super::FilesystemJob::NixPolicyHelperClient)
             .await?
         else {
             return Err(TransactionError::InvalidState(

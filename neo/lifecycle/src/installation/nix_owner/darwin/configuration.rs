@@ -278,7 +278,7 @@ pub(super) fn protect_configuration_path(path: &Path) -> io::Result<PathBuf> {
     protect(path, false)
 }
 
-fn protect(path: &Path, allow_shared_store: bool) -> io::Result<PathBuf> {
+pub(super) fn protect(path: &Path, allow_shared_store: bool) -> io::Result<PathBuf> {
     protected_configuration_path_with(path, allow_shared_store, |component, _| {
         require_no_acl(component)
     })

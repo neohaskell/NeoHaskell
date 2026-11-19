@@ -7,7 +7,7 @@ use std::mem::{MaybeUninit, size_of, size_of_val};
 use std::os::fd::AsRawFd;
 use std::os::unix::fs::{FileTypeExt, MetadataExt, OpenOptionsExt};
 use std::os::unix::net::UnixStream;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::ptr::{NonNull, null};
 use std::time::Duration;
@@ -181,6 +181,32 @@ fn verify_client() -> Result<FileIdentity, NixBlock> {
         return Err(NixBlock::UnprovedClient);
     }
     Ok(identity)
+}
+
+pub(in crate::installation) fn policy_helper_client() -> Result<PathBuf, NixBlock> {
+    let client = Path::new(CLIENT);
+    let expected = Path::new(CLIENT_PATH);
+    let protect = |path| {
+        policy_helper_protected_path(path).map_err(|error| match error.kind() {
+            io::ErrorKind::NotFound => NixBlock::MissingClient,
+            _ => NixBlock::UnprovedClient,
+        })
+    };
+    if protect(client)? != expected {
+        return Err(NixBlock::UnprovedClient);
+    }
+    let identity = verify_client()?;
+    if identity.mode & 0o7777 != 0o555
+        || protect(client)? != expected
+        || client_identity()? != identity
+    {
+        return Err(NixBlock::UnprovedClient);
+    }
+    Ok(expected.to_owned())
+}
+
+pub(in crate::installation) fn policy_helper_protected_path(path: &Path) -> io::Result<PathBuf> {
+    configuration::protect(path, true)
 }
 
 #[derive(Eq, PartialEq)]

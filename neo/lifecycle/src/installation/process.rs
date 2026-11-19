@@ -1006,9 +1006,9 @@ impl WorkerRequest {
                     }
                 };
                 let sibling = if matches!(root, RootName::NixPolicyHelper) {
-                    let client = super::nix_owner::trusted_client()
+                    let client = super::nix_owner::policy_helper_client()
                         .map_err(|_| invalid("unproved helper Nix client"))?;
-                    pinned_helper_client(&client, true)?
+                    helper_legacy_sibling(&client, super::nix_owner::policy_helper_protected_path)?
                 } else {
                     let nix = std::fs::canonicalize(NIX)?;
                     let sibling = nix
@@ -1159,15 +1159,15 @@ fn validate_helper_hash(value: &str) -> io::Result<()> {
 }
 
 fn pinned_helper_client(client: &Path, legacy: bool) -> io::Result<PathBuf> {
-    let trusted =
-        super::nix_owner::trusted_client().map_err(|_| invalid("unproved helper Nix client"))?;
+    let trusted = super::nix_owner::policy_helper_client()
+        .map_err(|_| invalid("unproved helper Nix client"))?;
     if trusted != client {
         return Err(invalid("changed helper Nix client"));
     }
     if !legacy {
         return Ok(trusted);
     }
-    helper_legacy_sibling(&trusted, super::nix_owner::protected_path)
+    helper_legacy_sibling(&trusted, super::nix_owner::policy_helper_protected_path)
 }
 
 fn helper_legacy_sibling(
