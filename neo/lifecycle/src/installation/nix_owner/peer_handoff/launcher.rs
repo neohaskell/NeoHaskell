@@ -15,7 +15,7 @@ use std::time::{Duration, Instant};
 #[path = "native.rs"]
 mod native;
 pub(in crate::installation) use native::VerifiedCaller;
-pub(crate) use native::dispatch_native_policy;
+pub(crate) use native::{dispatch_existing_policy, dispatch_native_policy};
 
 #[path = "policy_commit.rs"]
 mod policy_commit;
@@ -56,6 +56,26 @@ pub(in crate::installation) struct ExactExecutable {
 }
 
 impl ExactExecutable {
+    pub(in crate::installation) fn open_installed(
+        output: &crate::candidate::OutputPath,
+    ) -> Result<Self, HandoffError> {
+        native::installed_executable(output)
+    }
+
+    pub(in crate::installation) fn verify_existing_policy(
+        &self,
+        caller: Option<&VerifiedCaller>,
+        lease: crate::installation::PolicyStateLease,
+        common: [u8; 32],
+        cancelled: impl Fn() -> bool,
+    ) -> Result<Option<VerifiedExistingPolicy>, HandoffError> {
+        self.recheck()?;
+        Ok(
+            native::verify_existing(self, caller, lease, common, cancelled)?
+                .then_some(VerifiedExistingPolicy { lease, common }),
+        )
+    }
+
     #[cfg(test)]
     pub(in crate::installation) fn inspect_pending_fixture(
         pending: &crate::installation::PendingNixPolicy,
@@ -546,9 +566,25 @@ pub(in crate::installation) struct QuiescentReply {
     pub(in crate::installation) policy: Option<PolicyResult>,
     discovery: Option<Result<DiscoveredInputs, PolicyResult>>,
     inspection: Option<PolicyInspectionResult>,
+    existing: Option<bool>,
 }
 
 pub(in crate::installation) struct VerifiedPolicyInspection(crate::installation::PendingNixPolicy);
+
+pub(in crate::installation) struct VerifiedExistingPolicy {
+    lease: crate::installation::PolicyStateLease,
+    common: [u8; 32],
+}
+
+impl VerifiedExistingPolicy {
+    pub(in crate::installation) fn matches(
+        &self,
+        lease: crate::installation::PolicyStateLease,
+        common: [u8; 32],
+    ) -> bool {
+        self.lease == lease && self.common == common
+    }
+}
 
 impl VerifiedPolicyInspection {
     pub(in crate::installation) fn matches(
@@ -838,6 +874,7 @@ impl PeerEndpoint {
                 policy,
                 discovery,
                 inspection,
+                existing: None,
             },
         )
     }
@@ -888,6 +925,7 @@ impl PeerEndpoint {
                 policy: Some(result),
                 discovery: None,
                 inspection: None,
+                existing: None,
             },
         )
     }

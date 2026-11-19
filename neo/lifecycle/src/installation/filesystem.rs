@@ -1,7 +1,8 @@
 use super::coordinator::{Admission, Cancellation, SettlementKind, WaitInterest};
 #[cfg(target_os = "linux")]
 use super::nix_owner::peer_handoff::{
-    ExactExecutable, HandoffError, Rendezvous, launcher::VerifiedCaller,
+    ExactExecutable, HandoffError, Rendezvous,
+    launcher::{VerifiedCaller, VerifiedExistingPolicy},
 };
 use super::resource_io::ResourceDirectory;
 use super::resources::{Inventory, LinkObservation};
@@ -164,6 +165,12 @@ pub(super) enum FilesystemJob {
         common_inputs: [u8; 32],
     },
     #[cfg(target_os = "linux")]
+    VerifyExistingNixPolicy {
+        inspector: ExistingNixInspector,
+        lease: super::PolicyStateLease,
+        common: [u8; 32],
+    },
+    #[cfg(target_os = "linux")]
     PublishStockPolicy {
         executable: ExactExecutable,
         rendezvous: Rendezvous,
@@ -201,7 +208,18 @@ pub(super) enum FilesystemJob {
     },
 }
 
+#[cfg(target_os = "linux")]
+pub(super) enum ExistingNixInspector {
+    Installed(crate::candidate::OutputPath),
+    Retained {
+        executable: ExactExecutable,
+        caller: VerifiedCaller,
+    },
+}
+
 pub(super) enum FilesystemResult {
+    #[cfg(target_os = "linux")]
+    ExistingNixPolicyVerified(VerifiedExistingPolicy),
     #[cfg(target_os = "linux")]
     StockPolicyObserved {
         executable: ExactExecutable,
@@ -279,7 +297,9 @@ impl FilesystemJob {
             #[cfg(target_os = "linux")]
             Self::PublishPolicyIntent { .. } | Self::ClearPolicyIntent { .. } => true,
             #[cfg(target_os = "linux")]
-            Self::ObserveStockPolicy { .. } | Self::InspectStockPolicy(_) => false,
+            Self::ObserveStockPolicy { .. }
+            | Self::VerifyExistingNixPolicy { .. }
+            | Self::InspectStockPolicy(_) => false,
             #[cfg(target_os = "linux")]
             Self::PublishStockPolicy { .. } => true,
             Self::UninstallConfirm(_)
@@ -564,6 +584,24 @@ pub(super) fn helper_snapshot(
 pub(super) enum PolicyHelperLocation {
     Source,
     Store,
+    #[cfg(target_os = "linux")]
+    Installed,
+}
+
+pub(super) fn protected_helper_path(path: &Path, location: PolicyHelperLocation) -> bool {
+    let checked = match location {
+        PolicyHelperLocation::Store => path,
+        #[cfg(target_os = "linux")]
+        PolicyHelperLocation::Installed => match path.parent().and_then(Path::parent) {
+            Some(output) if path == output.join("bin/neo") => output,
+            _ => return false,
+        },
+        PolicyHelperLocation::Source => return false,
+    };
+    checked
+        .to_str()
+        .is_some_and(|text| crate::candidate::OutputPath::parse(text).is_ok())
+        && super::nix_owner::protected_path(path).ok().as_deref() == Some(path)
 }
 
 fn verify_executor_file(
@@ -573,17 +611,13 @@ fn verify_executor_file(
     policy: &ReadPolicy,
     mut visit: impl FnMut(&[u8]),
 ) -> Result<(fs::File, fs::Metadata), TransactionError> {
-    let stored = helper == Some(PolicyHelperLocation::Store);
+    let stored = helper.is_some_and(|location| location != PolicyHelperLocation::Source);
     policy.check()?;
     if !path.is_absolute() {
         return Err(TransactionError::Verification("executor absolute source"));
     }
-    if stored {
-        let text = path.to_str().ok_or(TransactionError::UnsafePath)?;
-        crate::candidate::OutputPath::parse(text)
-            .map_err(|_| TransactionError::Verification("helper store path"))?;
-        if super::nix_owner::protected_path(path).map_err(|_| TransactionError::UnsafePath)? != path
-        {
+    if let Some(location) = helper {
+        if stored && !protected_helper_path(path, location) {
             return Err(TransactionError::UnsafePath);
         }
     }
@@ -1063,6 +1097,33 @@ fn execute(job: FilesystemJob, policy: &ReadPolicy) -> Result<FilesystemResult, 
                 caller,
                 discovery,
             })
+        }
+        #[cfg(target_os = "linux")]
+        Job::VerifyExistingNixPolicy {
+            inspector,
+            lease,
+            common,
+        } => {
+            let blocked = || {
+                TransactionError::NixBlocked(super::nix_owner::NixBlock::ConfigurationOwnerUnknown)
+            };
+            let (executable, caller) = match inspector {
+                ExistingNixInspector::Installed(output) => (
+                    ExactExecutable::open_installed(&output).map_err(|_| blocked())?,
+                    None,
+                ),
+                ExistingNixInspector::Retained { executable, caller } => (executable, Some(caller)),
+            };
+            let proof = executable
+                .verify_existing_policy(caller.as_ref(), lease, common, || policy.check().is_err())
+                .map_err(|error| match error {
+                    HandoffError::Cancelled => TransactionError::StopRequested,
+                    HandoffError::CleanupUnknown => TransactionError::CleanupUnknown,
+                    _ => blocked(),
+                })?
+                .ok_or_else(blocked)?;
+            policy.check()?;
+            Ok(Result::ExistingNixPolicyVerified(proof))
         }
         #[cfg(target_os = "linux")]
         Job::PublishStockPolicy {

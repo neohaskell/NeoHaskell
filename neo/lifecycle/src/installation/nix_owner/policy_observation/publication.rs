@@ -201,6 +201,21 @@ fn anchored(file: &File, path: &Path) -> Result<(), PolicyResult> {
 }
 
 impl PolicyInputs {
+    pub(super) fn verify_existing_receipt(
+        &self,
+        caller_uid: u32,
+        lease: crate::installation::PolicyStateLease,
+        common: [u8; 32],
+    ) -> Result<(), PolicyResult> {
+        let parent = directory(Path::new("/etc/nix"))?;
+        if unsafe { libc::flock(parent.as_raw_fd(), libc::LOCK_SH | libc::LOCK_NB) } != 0 {
+            return Err(PolicyResult::PublicationRefused);
+        }
+        anchored(&parent, Path::new("/etc/nix"))?;
+        let stage = directory(Path::new(STAGE))?;
+        receipt::verify_existing(self, &parent, &stage, caller_uid, lease, common)
+    }
+
     pub(in crate::installation::nix_owner) fn inspect_completed_attempt(
         &self,
         operation: &PolicyAttempt,

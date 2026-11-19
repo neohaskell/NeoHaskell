@@ -14,7 +14,7 @@ pub(super) mod peer_handoff;
 pub(super) mod policy_observation;
 pub(super) use daemon_process::KernelDaemonObservation;
 #[cfg(target_os = "linux")]
-pub(crate) use peer_handoff::launcher::dispatch_native_policy;
+pub(crate) use peer_handoff::launcher::{dispatch_existing_policy, dispatch_native_policy};
 #[cfg(target_os = "linux")]
 pub(crate) use policy_observation::{POLICY_OBSERVE_ARGUMENT, run_policy_observer};
 
@@ -84,6 +84,14 @@ pub(super) struct ObservedNixBase {
 }
 
 impl ObservedNixBase {
+    #[cfg(target_os = "linux")]
+    pub(super) fn has_existing_policy(&self) -> bool {
+        matches!(
+            self.configuration.attachment,
+            include_inputs::AttachmentInputs::VerifiedExisting(_)
+        )
+    }
+
     pub(super) fn require_verified_append(&self) -> Result<(), TransactionError> {
         if matches!(
             self.configuration.preparation,

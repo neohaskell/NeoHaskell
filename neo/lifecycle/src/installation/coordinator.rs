@@ -90,6 +90,7 @@ pub(crate) enum ReviewOperation {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum ReviewedChange {
     NixPolicy,
+    ExistingNixPolicy,
     Uninstall,
     ShellPath,
     ShellStartup,
@@ -898,6 +899,24 @@ impl Effects {
         ) && self.state.borrow().lease.is_some()
         {
             return Err(TransactionError::InvalidState("startup already completed"));
+        }
+        #[cfg(target_os = "linux")]
+        if let EffectRequest::Filesystem(FilesystemJob::VerifyExistingNixPolicy { lease, .. }, _) =
+            request
+        {
+            self.checkpoint()?;
+            let state = self.state.borrow();
+            return if matches!(self.admission, Admission::Requested)
+                && matches!(state.review, ReviewGate::Accepted { .. })
+                && state.lease.as_ref().is_some_and(|owner| {
+                    owner.policy_identity(&owner.path).ok().as_ref() == Some(lease)
+                }) {
+                Ok(())
+            } else {
+                Err(TransactionError::InvalidState(
+                    "existing Nix policy admission",
+                ))
+            };
         }
         #[cfg(target_os = "linux")]
         if let Some((layout, operation)) = request.policy_intent_operation() {

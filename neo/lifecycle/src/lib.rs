@@ -35,6 +35,14 @@ pub fn dispatch_internal(arguments: &[std::ffi::OsString]) -> Option<Exit> {
             code: installation::nix_owner::run_policy_observer(),
         });
     }
+    dispatch_installed_internal(arguments)
+}
+
+fn dispatch_installed_internal(arguments: &[std::ffi::OsString]) -> Option<Exit> {
+    #[cfg(target_os = "linux")]
+    if let Some(code) = installation::nix_owner::dispatch_existing_policy(arguments) {
+        return Some(Exit { code });
+    }
     #[cfg(unix)]
     if arguments
         == [std::ffi::OsString::from(
@@ -56,12 +64,32 @@ pub fn dispatch_internal(arguments: &[std::ffi::OsString]) -> Option<Exit> {
     None
 }
 
+#[cfg(all(test, target_os = "linux"))]
+#[test]
+fn installed_cli_dispatches_read_only_policy_helpers() {
+    for argument in [
+        "--neo-policy-launch",
+        "--neo-policy-observe",
+        "--neo-policy-observe-peer",
+        "--neo-policy-publish-peer",
+        "--neo-policy-inspect-peer",
+    ] {
+        assert!(dispatch_installed_internal(&[argument.into()]).is_none());
+    }
+    let invalid = [
+        "--neo-policy-existing-peer".into(),
+        "invalid-challenge".into(),
+    ];
+    assert_eq!(dispatch_installed_internal(&invalid).unwrap().code(), 1);
+    assert_eq!(dispatch_internal(&invalid).unwrap().code(), 1);
+}
+
 pub fn installed_help() -> &'static str {
     &english().installed_lifecycle_help
 }
 
 pub fn dispatch_installed(arguments: &[std::ffi::OsString]) -> Option<Exit> {
-    if let Some(exit) = dispatch_internal(arguments) {
+    if let Some(exit) = dispatch_installed_internal(arguments) {
         return Some(exit);
     }
     #[cfg(unix)]
@@ -416,6 +444,7 @@ fn write_review(
             ReviewedChange::Activation => &copy.review_activation,
             ReviewedChange::Cleanup => &copy.review_cleanup,
             ReviewedChange::NixPolicy => &copy.review_nix_policy,
+            ReviewedChange::ExistingNixPolicy => &copy.review_existing_nix_policy,
         };
         writeln!(output, "{message}")?;
     }

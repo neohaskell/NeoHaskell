@@ -142,8 +142,16 @@ struct RecheckedNixPolicyPlan {
     binding: super::coordinator::PolicyReviewBinding,
 }
 
+#[cfg(target_os = "linux")]
+enum ExistingNixPolicyPlan {
+    Installed(OutputPath),
+    Downloaded(NixPolicyHelperPlan),
+}
+
 enum InstallPrerequisite {
     NotNeeded,
+    #[cfg(target_os = "linux")]
+    ExistingPolicy(ExistingNixPolicyPlan),
     #[cfg(target_os = "linux")]
     StockConventional(NixPolicyPlan),
     #[cfg(target_os = "linux")]
@@ -155,6 +163,11 @@ enum InstallPrerequisite {
 
 enum InstallReview {
     Ordinary(u64),
+    #[cfg(target_os = "linux")]
+    ExistingPolicy {
+        plan: ExistingNixPolicyPlan,
+        identity: u64,
+    },
     #[cfg(target_os = "linux")]
     StockConventional {
         plan: NixPolicyPlan,
@@ -311,6 +324,15 @@ impl InstallationOwner {
         }
         #[cfg(target_os = "linux")]
         {
+            if observed.has_existing_policy() {
+                let plan = match &evidence.installed {
+                    Some(output) => ExistingNixPolicyPlan::Installed(output.clone()),
+                    None => ExistingNixPolicyPlan::Downloaded(
+                        self.plan_nix_policy_helper(evidence, source).await?,
+                    ),
+                };
+                return Ok(InstallPrerequisite::ExistingPolicy(plan));
+            }
             observed.require_verified_append()?;
             let plan = self.plan_nix_policy(evidence, source).await?;
             if &plan.baseline != observed {
@@ -326,6 +348,101 @@ impl InstallationOwner {
             observed.require_configuration_authority()?;
             Ok(InstallPrerequisite::NotNeeded)
         }
+    }
+
+    #[cfg(target_os = "linux")]
+    async fn verify_reviewed_existing_policy(
+        &self,
+        plan: ExistingNixPolicyPlan,
+        identity: u64,
+        observed: &super::nix_owner::ObservedNixBase,
+        evidence: &ExecutorEvidence,
+        source: &release::ReleaseSource,
+    ) -> Result<super::nix_owner::peer_handoff::launcher::VerifiedExistingPolicy, TransactionError>
+    {
+        use super::filesystem::ExistingNixInspector;
+        use super::nix_owner::peer_handoff::{ExactExecutable, launcher::VerifiedCaller};
+
+        let lease = self.effects.policy_state_lease(&self.layout)?;
+        let common = observed.common_policy_inputs()?;
+        let checked = match plan {
+            ExistingNixPolicyPlan::Installed(output) => {
+                self.effects.admit_reviewed(identity)?;
+                self.effects
+                    .filesystem(super::FilesystemJob::VerifyExistingNixPolicy {
+                        inspector: ExistingNixInspector::Installed(output),
+                        lease,
+                        common,
+                    })
+                    .await
+            }
+            ExistingNixPolicyPlan::Downloaded(helper) => {
+                let fresh = self
+                    .plan_nix_policy_helper(evidence, source)
+                    .await
+                    .map_err(|error| match error {
+                        TransactionError::StopRequested | TransactionError::CleanupUnknown => error,
+                        _ => self.effects.review_changed(),
+                    })?;
+                if helper != fresh || &self.observe_install_nix_base().await? != observed {
+                    return Err(self.effects.review_changed());
+                }
+                let caller =
+                    VerifiedCaller::open(&helper.source, &helper.release, &helper.source_identity)
+                        .map_err(|_| self.effects.review_changed())?;
+                self.effects.admit_reviewed(identity)?;
+                let prepared = self.prepare_policy_helper(helper).await?;
+                let checked = async {
+                    self.recheck_prepared_nix_policy_helper(&prepared).await?;
+                    let executable = ExactExecutable::open(
+                        Path::new(prepared.expected.as_str()),
+                        &prepared.release,
+                    )
+                    .map_err(|_| TransactionError::Verification("helper exact executable"))?;
+                    self.effects
+                        .filesystem(super::FilesystemJob::VerifyExistingNixPolicy {
+                            inspector: ExistingNixInspector::Retained { executable, caller },
+                            lease,
+                            common,
+                        })
+                        .await
+                }
+                .await;
+                if let Err(
+                    error @ (TransactionError::StopRequested | TransactionError::CleanupUnknown),
+                ) = checked
+                {
+                    return Err(error);
+                }
+                self.release_prepared_nix_policy_helper(prepared).await?;
+                checked
+            }
+        }?;
+        let super::FilesystemResult::ExistingNixPolicyVerified(proof) = checked else {
+            return Err(TransactionError::InvalidState(
+                "existing policy completion type",
+            ));
+        };
+        if !proof.matches(lease, common) {
+            return Err(self.effects.review_changed());
+        }
+        self.effects
+            .completed(crate::diagnostics::CompletedStep::NixPolicyObservation);
+        Ok(proof)
+    }
+
+    #[cfg(target_os = "linux")]
+    async fn recheck_existing_policy(
+        &self,
+        proof: &super::nix_owner::peer_handoff::launcher::VerifiedExistingPolicy,
+        expected: &super::nix_owner::ObservedNixBase,
+    ) -> Result<(), TransactionError> {
+        let actual = self.observe_install_nix_base().await?;
+        let lease = self.effects.policy_state_lease(&self.layout)?;
+        if &actual != expected || !proof.matches(lease, actual.common_policy_inputs()?) {
+            return Err(self.effects.review_changed());
+        }
+        Ok(())
     }
 
     #[cfg(target_os = "linux")]
@@ -692,13 +809,21 @@ impl InstallationOwner {
     > {
         self.effects
             .check_admitted_policy_review(&reviewed.binding)?;
+        let prepared = self.prepare_policy_helper(reviewed.plan.helper).await?;
+        Ok((prepared, reviewed.binding))
+    }
+
+    async fn prepare_policy_helper(
+        &self,
+        helper: NixPolicyHelperPlan,
+    ) -> Result<PreparedNixPolicyHelper, TransactionError> {
         let NixPolicyHelperPlan {
             source,
             release,
             client,
             expected,
             ..
-        } = reviewed.plan.helper;
+        } = helper;
         let imported = self
             .helper_process_path(process::WorkerRequest::ImportPolicyHelper { client, source })
             .await?;
@@ -720,14 +845,11 @@ impl InstallationOwner {
             }
             return Err(error);
         }
-        Ok((
-            PreparedNixPolicyHelper {
-                expected,
-                release,
-                retention,
-            },
-            reviewed.binding,
-        ))
+        Ok(PreparedNixPolicyHelper {
+            expected,
+            release,
+            retention,
+        })
     }
 
     async fn helper_process_path(
@@ -1012,10 +1134,12 @@ impl InstallationOwner {
         let requires_configuration = !offline && !self.fixture;
         if requires_configuration {
             #[cfg(target_os = "linux")]
-            if matches!(executor, Executor::InstalledNeo) {
-                observed_nix.require_configuration_authority()?;
-            } else {
-                observed_nix.require_verified_append()?;
+            if !observed_nix.has_existing_policy() {
+                if matches!(executor, Executor::InstalledNeo) {
+                    observed_nix.require_configuration_authority()?;
+                } else {
+                    observed_nix.require_verified_append()?;
+                }
             }
             #[cfg(not(target_os = "linux"))]
             observed_nix.require_configuration_authority()?;
@@ -1075,6 +1199,14 @@ impl InstallationOwner {
                 InstallReview::Ordinary(self.effects.review(summary).await?)
             }
             #[cfg(target_os = "linux")]
+            InstallPrerequisite::ExistingPolicy(plan) => {
+                summary
+                    .changes
+                    .push(super::ReviewedChange::ExistingNixPolicy);
+                let identity = self.effects.review(summary).await?;
+                InstallReview::ExistingPolicy { plan, identity }
+            }
+            #[cfg(target_os = "linux")]
             InstallPrerequisite::StockConventional(plan) => {
                 let (plan, binding) = self.effects.review_nix_policy(plan, summary).await?;
                 InstallReview::StockConventional { plan, binding }
@@ -1097,8 +1229,25 @@ impl InstallationOwner {
             return Err(self.effects.review_changed());
         }
         self.recheck_command_path(commands).await?;
+        #[cfg(target_os = "linux")]
+        let mut existing_policy = None;
         match review {
             InstallReview::Ordinary(identity) => self.effects.admit_reviewed(identity)?,
+            #[cfg(target_os = "linux")]
+            InstallReview::ExistingPolicy { plan, identity } => {
+                existing_policy = Some(
+                    self.verify_reviewed_existing_policy(
+                        plan,
+                        identity,
+                        &observed_nix,
+                        &executor_evidence,
+                        &source,
+                    )
+                    .await?,
+                );
+                self.effects
+                    .completed(crate::diagnostics::CompletedStep::Prerequisites);
+            }
             #[cfg(target_os = "linux")]
             InstallReview::StockConventional { plan, binding } => {
                 self.apply_reviewed_stock_policy(plan, binding, &executor_evidence, &source)
@@ -1125,6 +1274,10 @@ impl InstallationOwner {
             .completed(crate::diagnostics::CompletedStep::Recovery);
         self.verify_remote(&lease, &prepared.candidate, system, !offline)
             .await?;
+        #[cfg(target_os = "linux")]
+        if let Some(proof) = &existing_policy {
+            self.recheck_existing_policy(proof, &observed_nix).await?;
+        }
         let candidate = self
             .publish_prepared_snapshot(&selected, prepared, identity.target)
             .await?;
@@ -1148,6 +1301,10 @@ impl InstallationOwner {
             .completed(crate::diagnostics::CompletedStep::PairVerification);
         for row in 3..6 {
             self.effects.observe_row(row, Row::Verified);
+        }
+        #[cfg(target_os = "linux")]
+        if let Some(proof) = &existing_policy {
+            self.recheck_existing_policy(proof, &observed_nix).await?;
         }
         self.observe_command_path().await?;
         let _home_lease = self.install_shell(&shell_setup).await?;
@@ -1180,6 +1337,10 @@ impl InstallationOwner {
                 }
             };
             let after = self.next_receipt(before.as_ref(), ready);
+            #[cfg(target_os = "linux")]
+            if let Some(proof) = &existing_policy {
+                self.recheck_existing_policy(proof, &observed_nix).await?;
+            }
             self.effects.observe(Activity::Activating);
             self.switch_pair(before.clone(), after, operation).await?;
         }

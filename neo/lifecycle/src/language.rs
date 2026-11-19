@@ -33,6 +33,7 @@ pub(crate) struct English {
     pub(crate) review_activation: String,
     pub(crate) review_cleanup: String,
     pub(crate) review_nix_policy: String,
+    pub(crate) review_existing_nix_policy: String,
     pub(crate) review_pending_recovery: String,
 
     pub(crate) help: String,

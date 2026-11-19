@@ -11,6 +11,8 @@ const LAUNCH: &str = "--neo-policy-launch";
 const OBSERVE: &str = "--neo-policy-observe-peer";
 const APPLY: &str = "--neo-policy-publish-peer";
 const RECOVER: &str = "--neo-policy-inspect-peer";
+const EXISTING: &str = "--neo-policy-existing-peer";
+const EXISTING_FRAME: &[u8; 16] = b"NEO-EXISTING-V01";
 const STOCK_PUBLISH: &[u8; 16] = b"NEO-STOCK-PUB-V2";
 const MAX_BODY: usize = 32 + PolicyScope::BYTES;
 const SUDO: &str = "/usr/bin/sudo";
@@ -44,6 +46,20 @@ pub(crate) fn dispatch_native_policy(arguments: &[std::ffi::OsString]) -> Option
             1
         }
     })
+}
+
+pub(crate) fn dispatch_existing_policy(arguments: &[std::ffi::OsString]) -> Option<i32> {
+    let [argument, rest @ ..] = arguments else {
+        return None;
+    };
+    if argument != EXISTING {
+        return None;
+    }
+    let result = match rest {
+        [epoch] => decode_epoch(epoch).and_then(|epoch| serve(epoch, WorkerOperation::Existing)),
+        _ => Err(HandoffError::Frame),
+    };
+    Some(i32::from(result.is_err()))
 }
 
 fn launch() -> Result<(), HandoffError> {
@@ -116,6 +132,7 @@ enum PeerRequest<'a> {
     Discover,
     Publish(&'a StockPolicyIntent),
     Inspect(&'a StockPolicyIntent),
+    Existing(PolicyScope),
 }
 
 impl PeerRequest<'_> {
@@ -124,12 +141,48 @@ impl PeerRequest<'_> {
             Self::Discover => OBSERVE,
             Self::Publish(_) => APPLY,
             Self::Inspect(_) => RECOVER,
+            Self::Existing(_) => EXISTING,
         }
     }
 }
 
+pub(super) fn verify_existing(
+    executable: &ExactExecutable,
+    downloaded: Option<&VerifiedCaller>,
+    lease: PolicyStateLease,
+    common: [u8; 32],
+    cancelled: impl Fn() -> bool,
+) -> Result<bool, HandoffError> {
+    if downloaded.is_some_and(|caller| !caller.matches_release(&executable.release)) {
+        return Err(HandoffError::Executable);
+    }
+    let scope = PolicyScope {
+        inputs: common,
+        state_lease: lease,
+    };
+    exchange(
+        executable,
+        Rendezvous::fresh()?,
+        downloaded,
+        PeerRequest::Existing(scope),
+        cancelled,
+    )?
+    .existing
+    .ok_or(HandoffError::Frame)
+}
+
+pub(super) fn installed_executable(output: &OutputPath) -> Result<ExactExecutable, HandoffError> {
+    ordinary_identity()?;
+    let mut running = RunningHelper::open_at(PolicyHelperLocation::Installed)?;
+    if running.path != Path::new(output.as_str()).join("bin/neo") {
+        return Err(HandoffError::Executable);
+    }
+    let release = running.measure()?;
+    ExactExecutable::open_at(&running.path, &release, PolicyHelperLocation::Installed)
+}
+
 struct PolicyScope {
-    reviewed: ReviewedPolicyRequest,
+    inputs: [u8; 32],
     state_lease: PolicyStateLease,
 }
 
@@ -139,7 +192,7 @@ impl PolicyScope {
     fn from_intent(intent: &StockPolicyIntent) -> Result<Self, HandoffError> {
         let pending = intent.pending();
         Ok(Self {
-            reviewed: ReviewedPolicyRequest::from_bytes(pending.reviewed),
+            inputs: pending.reviewed,
             state_lease: pending.state_lease.ok_or(HandoffError::Frame)?,
         })
     }
@@ -151,14 +204,14 @@ impl PolicyScope {
             return Err(HandoffError::Frame);
         }
         Ok(Self {
-            reviewed: ReviewedPolicyRequest::from_bytes(bytes[..32].try_into().unwrap()),
+            inputs: bytes[..32].try_into().unwrap(),
             state_lease: PolicyStateLease { device, inode },
         })
     }
 
     fn encode(&self) -> [u8; Self::BYTES] {
         let mut bytes = [0; Self::BYTES];
-        bytes[..32].copy_from_slice(self.reviewed.bytes());
+        bytes[..32].copy_from_slice(&self.inputs);
         bytes[32..40].copy_from_slice(&self.state_lease.device.to_le_bytes());
         bytes[40..48].copy_from_slice(&self.state_lease.inode.to_le_bytes());
         bytes
@@ -229,6 +282,7 @@ fn exchange(
             policy: None,
             discovery: None,
             inspection: None,
+            existing: None,
         };
         let verify = || {
             require_same_chain(&chain)?;
@@ -239,7 +293,7 @@ fn exchange(
         match request {
             PeerRequest::Publish(commit) => {
                 let scope = PolicyScope::from_intent(commit)?;
-                let reviewed = scope.reviewed;
+                let reviewed = ReviewedPolicyRequest::from_bytes(scope.inputs);
                 send_packet(&socket, STOCK_PUBLISH, &expected.epoch, &scope.encode())?;
                 wait_for_packet(&socket, deadline, &cancelled)?;
                 let mut response =
@@ -285,6 +339,17 @@ fn exchange(
                 let frame = linux::receive_discovery(&socket, &expected)?;
                 reply.discovery = Some(DiscoveredInputs::decode(frame).ok_or(HandoffError::Frame)?);
             }
+            PeerRequest::Existing(scope) => {
+                send_packet(&socket, EXISTING_FRAME, &expected.epoch, &scope.encode())?;
+                wait_for_packet(&socket, deadline, &cancelled)?;
+                reply.existing = Some(
+                    match receive_body::<1>(&socket, &expected, EXISTING_FRAME)? {
+                        [0] => false,
+                        [1] => true,
+                        _ => return Err(HandoffError::Frame),
+                    },
+                );
+            }
         }
         verify()?;
         send_packet(&socket, ACCEPT, &expected.epoch, &[])?;
@@ -315,6 +380,7 @@ enum WorkerOperation {
     Observe,
     Apply,
     Inspect,
+    Existing,
 }
 
 fn serve(epoch: [u8; 32], operation: WorkerOperation) -> Result<(), HandoffError> {
@@ -322,7 +388,11 @@ fn serve(epoch: [u8; 32], operation: WorkerOperation) -> Result<(), HandoffError
         return Err(HandoffError::Peer);
     }
     let deadline = Instant::now() + BUDGET;
-    let mut executable = RunningHelper::open()?;
+    let mut executable = match operation {
+        WorkerOperation::Existing => RunningHelper::open_at(PolicyHelperLocation::Store)
+            .or_else(|_| RunningHelper::open_at(PolicyHelperLocation::Installed))?,
+        _ => RunningHelper::open()?,
+    };
     let sudo = ProtectedSudo::open()?;
     let socket = connect(&epoch)?;
     let caller = linux::connected_identity(&socket)?;
@@ -371,7 +441,7 @@ fn serve(epoch: [u8; 32], operation: WorkerOperation) -> Result<(), HandoffError
             use super::super::super::policy_observation::{PolicyAttempt, publish_stock_policy};
 
             let scope = PolicyScope::decode(receive_body(&socket, &expected, STOCK_PUBLISH)?)?;
-            let reviewed = scope.reviewed;
+            let reviewed = ReviewedPolicyRequest::from_bytes(scope.inputs);
             verify()?;
             let attempt = PolicyAttempt::authenticated(
                 caller.uid,
@@ -409,11 +479,21 @@ fn serve(epoch: [u8; 32], operation: WorkerOperation) -> Result<(), HandoffError
                 &executable.identity,
                 Some(scope.state_lease),
             );
-            let result = inspect_stock_policy(scope.reviewed, attempt);
+            let result =
+                inspect_stock_policy(ReviewedPolicyRequest::from_bytes(scope.inputs), attempt);
             verify()?;
             let mut domain = *INSPECTION;
             domain[15] = result as u8;
             send_packet(&socket, &domain, &epoch, &[])?;
+        }
+        WorkerOperation::Existing => {
+            use super::super::super::policy_observation::verify_existing_stock_policy;
+
+            let scope = PolicyScope::decode(receive_body(&socket, &expected, EXISTING_FRAME)?)?;
+            verify()?;
+            let result = verify_existing_stock_policy(caller.uid, scope.state_lease, scope.inputs);
+            verify()?;
+            send_packet(&socket, EXISTING_FRAME, &epoch, &[u8::from(result.is_ok())])?;
         }
     }
     wait_for_packet(&socket, deadline, || false)?;
@@ -429,10 +509,12 @@ struct RunningHelper {
 
 impl RunningHelper {
     fn open() -> Result<Self, HandoffError> {
+        Self::open_at(PolicyHelperLocation::Store)
+    }
+
+    fn open_at(location: PolicyHelperLocation) -> Result<Self, HandoffError> {
         let path = std::env::current_exe().map_err(|_| HandoffError::Executable)?;
-        let text = path.to_str().ok_or(HandoffError::Executable)?;
-        OutputPath::parse(text).map_err(|_| HandoffError::Executable)?;
-        if super::super::super::protected_path(&path).ok() != Some(path.clone()) {
+        if !filesystem::protected_helper_path(&path, location) {
             return Err(HandoffError::Executable);
         }
         let file = File::open("/proc/self/exe").map_err(|_| HandoffError::Executable)?;

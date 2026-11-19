@@ -119,7 +119,7 @@ pub(crate) fn declared_cache(index: usize) -> Result<DeclaredCache> {
     })
 }
 
-pub(crate) fn nix_cache_policy() -> Result<String> {
+fn nix_cache_settings() -> Result<(String, String)> {
     let contract = Contract::load()?;
     let entries = array(&contract.registry()["trusted_cache_keys"])?;
     let mut urls = Vec::new();
@@ -130,6 +130,7 @@ pub(crate) fn nix_cache_policy() -> Result<String> {
         ensure(
             !url.is_empty()
                 && !key.is_empty()
+                && !url.contains('?')
                 && !url
                     .bytes()
                     .chain(key.bytes())
@@ -140,10 +141,17 @@ pub(crate) fn nix_cache_policy() -> Result<String> {
         keys.push(key);
     }
     ensure(!entries.is_empty(), MetadataError::Identity)?;
+    Ok((urls.join(" "), keys.join(" ")))
+}
+
+pub(crate) fn nix_cache_urls() -> Result<String> {
+    nix_cache_settings().map(|(urls, _)| urls)
+}
+
+pub(crate) fn nix_cache_policy() -> Result<String> {
+    let (urls, keys) = nix_cache_settings()?;
     Ok(format!(
-        "extra-experimental-features = nix-command flakes\nextra-substituters = {}\nextra-trusted-public-keys = {}\n",
-        urls.join(" "),
-        keys.join(" ")
+        "extra-experimental-features = nix-command flakes\nextra-substituters = {urls}\nextra-trusted-public-keys = {keys}\n",
     ))
 }
 

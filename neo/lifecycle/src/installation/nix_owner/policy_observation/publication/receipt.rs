@@ -472,6 +472,59 @@ pub(super) fn verify_completed(
     operation: &PolicyAttempt,
     request: ReviewedPolicyRequest,
 ) -> Result<(), PolicyResult> {
+    let version = if operation.state_lease.is_some() {
+        3
+    } else {
+        1
+    };
+    verify_live_receipt(
+        inputs,
+        parent,
+        stage,
+        |receipt| {
+            receipt.version == version
+                && &receipt.operation == operation
+                && &receipt.reviewed == request.bytes()
+        },
+        || Ok(()),
+    )
+}
+
+pub(super) fn verify_existing(
+    inputs: &PolicyInputs,
+    parent: &File,
+    stage: &File,
+    caller_uid: u32,
+    lease: PolicyStateLease,
+    common: [u8; 32],
+) -> Result<(), PolicyResult> {
+    verify_live_receipt(
+        inputs,
+        parent,
+        stage,
+        |receipt| {
+            receipt.version == 3
+                && receipt.operation.caller_uid == caller_uid
+                && receipt.operation.state_lease == Some(lease)
+        },
+        || {
+            let configuration = configuration_input(&inputs.source, read)
+                .map_err(|_| PolicyResult::InaccessibleInputs)?;
+            if common_inputs(&configuration, inputs.pid)? != common {
+                return Err(PolicyResult::ChangedInputs);
+            }
+            Ok(())
+        },
+    )
+}
+
+fn verify_live_receipt(
+    inputs: &PolicyInputs,
+    parent: &File,
+    stage: &File,
+    matches_receipt: impl FnOnce(&PolicyReceipt) -> bool,
+    verify_current: impl Fn() -> Result<(), PolicyResult> + Sync,
+) -> Result<(), PolicyResult> {
     check_stage(parent, stage)?;
     require_absent(&descriptor_path(stage, RECEIPT_TEMP))?;
     let file = open(&descriptor_path(stage, RECEIPT))?;
@@ -479,15 +532,7 @@ pub(super) fn verify_completed(
     let ReceiptPhase::RestartObserved { replacement } = &receipt.phase else {
         return Err(PolicyResult::PublicationUnknown);
     };
-    let expected_version = if operation.state_lease.is_some() {
-        3
-    } else {
-        1
-    };
-    if receipt.version != expected_version
-        || &receipt.operation != operation
-        || &receipt.reviewed != request.bytes()
-    {
+    if !matches_receipt(&receipt) {
         return Err(PolicyResult::PublicationUnknown);
     }
     let verify = || {
@@ -496,7 +541,8 @@ pub(super) fn verify_completed(
         if boot_id()? != receipt.boot_id || read_current(stage, &file)? != receipt {
             return Err(PolicyResult::PublicationUnknown);
         }
-        receipt.verify_published()
+        receipt.verify_published()?;
+        verify_current()
     };
     let observed = inputs.inspect_managed_view(receipt.secondary_sources_sha256, &verify)?;
     if ManagerIdentity::capture(&observed)? != *replacement {

@@ -956,7 +956,11 @@ impl WorkerRequest {
                 if *offline {
                     command.arg("--offline");
                 } else {
-                    command.args(["--option", "substitute", "true"]);
+                    let urls = crate::candidate::nix_cache_urls()
+                        .map_err(|_| invalid("declared substituters"))?;
+                    command
+                        .args(["--option", "substitute", "true", "--option", "substituters"])
+                        .arg(urls);
                 }
                 command
                     .args(["--option", "builders", "", "--max-jobs", "0"])

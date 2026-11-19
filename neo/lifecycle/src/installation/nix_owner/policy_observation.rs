@@ -36,6 +36,17 @@ pub(super) fn inspect_stock_policy(
 }
 
 #[cfg(target_os = "linux")]
+pub(super) fn verify_existing_stock_policy(
+    caller_uid: u32,
+    lease: crate::installation::PolicyStateLease,
+    common: [u8; 32],
+) -> Result<(), PolicyResult> {
+    managed::with_stock_inputs(move |inputs| {
+        inputs.verify_existing_receipt(caller_uid, lease, common)
+    })
+}
+
+#[cfg(target_os = "linux")]
 pub(crate) const POLICY_OBSERVE_ARGUMENT: &str = "--neo-policy-observe";
 
 #[cfg(target_os = "linux")]
