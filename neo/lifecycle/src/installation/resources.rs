@@ -1,6 +1,13 @@
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
+pub(super) const HELPER_ROOT: &str = "nix-policy-helper";
+pub(super) const HELPER_REGISTRATION_ADDITIONS: usize = 2;
+
+pub(super) fn is_helper_link(name: &str) -> bool {
+    name == HELPER_ROOT || temporary_of(name, HELPER_ROOT)
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct LinkObservation {
@@ -283,6 +290,58 @@ mod tests {
             inode,
             uid: 1001,
             target: target.into(),
+        }
+    }
+
+    #[test]
+    fn helper_registration_attributes_only_exact_final_and_one_temporary() {
+        let temporary = format!("{HELPER_ROOT}.tmp-12-34");
+        let after = Inventory::from([
+            (HELPER_ROOT.into(), link("helper", 1)),
+            (temporary.clone(), link("helper", 2)),
+        ]);
+        for observed in [
+            Inventory::new(),
+            Inventory::from([(temporary.clone(), link("helper", 2))]),
+            after.clone(),
+        ] {
+            let mut ledger = ResourceLedger::default();
+            ledger
+                .begin(
+                    ResourceEffect::Register {
+                        pair: "helper".into(),
+                        parent: HELPER_ROOT.into(),
+                    },
+                    &Inventory::new(),
+                )
+                .unwrap();
+            ledger.reconcile(observed.clone(), 1001).unwrap();
+            assert_eq!(ledger.links, observed);
+            assert!(ledger.pending.is_none());
+        }
+        for (name, target) in [
+            ("candidate-other", "helper"),
+            (HELPER_ROOT, "wrong"),
+            ("nix-policy-helper.tmp-x-3", "helper"),
+            ("nix-policy-helper.tmp-56-78", "helper"),
+        ] {
+            let mut observed = after.clone();
+            observed.insert(name.into(), link(target, 3));
+            let mut ledger = ResourceLedger::default();
+            ledger
+                .begin(
+                    ResourceEffect::Register {
+                        pair: "helper".into(),
+                        parent: HELPER_ROOT.into(),
+                    },
+                    &Inventory::new(),
+                )
+                .unwrap();
+            assert_eq!(
+                ledger.reconcile(observed, 1001),
+                Err(ResourceError::Foreign)
+            );
+            assert!(ledger.pending.is_some());
         }
     }
 

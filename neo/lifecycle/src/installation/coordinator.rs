@@ -89,6 +89,7 @@ pub(crate) enum ReviewOperation {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum ReviewedChange {
+    NixPolicy,
     Uninstall,
     ShellPath,
     ShellStartup,
@@ -108,6 +109,128 @@ pub(super) struct ReviewOffer {
 pub(super) struct ReviewToken {
     owner: Weak<RefCell<EffectState>>,
     identity: u64,
+}
+
+pub(super) struct PolicyReviewBinding {
+    owner: Weak<RefCell<EffectState>>,
+    identity: u64,
+}
+
+pub(super) struct PolicyComparisonWitness {
+    owner: Weak<RefCell<EffectState>>,
+    identity: u64,
+}
+
+#[cfg(target_os = "linux")]
+pub(super) struct PersistedPolicyIntent {
+    binding: PolicyReviewBinding,
+    pending: super::PendingNixPolicy,
+    bytes: Vec<u8>,
+}
+
+#[cfg(target_os = "linux")]
+impl PersistedPolicyIntent {
+    pub(super) fn stock_commit(
+        self,
+        effects: &Effects,
+        layout: &Layout,
+    ) -> Result<StockPolicyIntent, TransactionError> {
+        effects.consume_policy_review(self.binding)?;
+        StockPolicyIntent::open(effects, layout, self.pending, self.bytes)
+    }
+
+    #[cfg(test)]
+    pub(super) fn check_owner(&self, effects: &Effects) -> Result<(), TransactionError> {
+        effects.check_policy_recheck(&self.binding)?;
+        let state = effects.state.borrow();
+        let lease = state.lease.as_ref().ok_or(TransactionError::InvalidState(
+            "Nix policy intent has no owner lease",
+        ))?;
+        if self.pending.state_lease != Some(lease.policy_identity(&lease.path)?) {
+            return Err(TransactionError::InvalidState(
+                "Nix policy state lease changed",
+            ));
+        }
+        Ok(())
+    }
+
+    #[cfg(test)]
+    pub(super) fn binding(&self) -> &PolicyReviewBinding {
+        &self.binding
+    }
+
+    #[cfg(test)]
+    pub(super) fn pending(&self) -> &super::PendingNixPolicy {
+        &self.pending
+    }
+}
+
+#[cfg(target_os = "linux")]
+pub(super) struct StockPolicyIntent {
+    lock: RootLease,
+    layout: Layout,
+    pending: super::PendingNixPolicy,
+    bytes: Vec<u8>,
+}
+
+#[cfg(target_os = "linux")]
+impl StockPolicyIntent {
+    pub(super) fn open(
+        effects: &Effects,
+        layout: &Layout,
+        pending: super::PendingNixPolicy,
+        bytes: Vec<u8>,
+    ) -> Result<Self, TransactionError> {
+        effects.checkpoint()?;
+        let state = effects.state.borrow();
+        let lease = state.lease.as_ref().ok_or(TransactionError::InvalidState(
+            "Nix policy intent has no owner lease",
+        ))?;
+        let intent = Self {
+            lock: RootLease {
+                file: lease.file.try_clone().map_err(|_| TransactionError::Io)?,
+                path: lease.path.clone(),
+            },
+            layout: layout.clone(),
+            pending,
+            bytes,
+        };
+        intent.verify()?;
+        Ok(intent)
+    }
+
+    pub(super) fn pending(&self) -> &super::PendingNixPolicy {
+        &self.pending
+    }
+
+    pub(super) fn record_bytes(&self) -> &[u8] {
+        &self.bytes
+    }
+
+    pub(super) fn verify(&self) -> Result<(), TransactionError> {
+        use std::io::Read;
+        let changed = || TransactionError::InvalidState("Nix policy intent changed before commit");
+        let expected_lease = self.pending.state_lease.ok_or_else(changed)?;
+        if self.lock.policy_identity(&self.layout.lock())? != expected_lease {
+            return Err(changed());
+        }
+        let file =
+            super::open_owned_file(&self.layout.record(), true, false)?.ok_or_else(changed)?;
+        let mut bytes = Vec::new();
+        file.take(self.bytes.len() as u64 + 1)
+            .read_to_end(&mut bytes)
+            .map_err(|_| TransactionError::Io)?;
+        if bytes != self.bytes {
+            return Err(changed());
+        }
+        Ok(())
+    }
+}
+
+impl PolicyComparisonWitness {
+    pub(super) fn same_review(&self, other: &PolicyReviewBinding) -> bool {
+        Weak::ptr_eq(&self.owner, &other.owner) && self.identity == other.identity
+    }
 }
 
 impl ReviewOffer {
@@ -138,6 +261,10 @@ enum ReviewGate {
         offer: Option<ReviewOffer>,
     },
     Rechecking(u64),
+    #[cfg(target_os = "linux")]
+    WritingPolicyIntent,
+    #[cfg(target_os = "linux")]
+    ClearingPolicyIntent,
     Accepted {
         identity: u64,
         progress: AcceptedProgress,
@@ -204,6 +331,10 @@ pub(super) struct Effects {
 }
 
 struct EffectState {
+    #[cfg(all(test, target_os = "linux"))]
+    install_policy_fixture: Option<super::runtime::InstallPolicyFixture>,
+    #[cfg(all(test, target_os = "linux"))]
+    inspect_policy_fixture: bool,
     lease: Option<RootLease>,
     slot: EffectSlot,
     settlement: Option<SettlementPermit>,
@@ -222,6 +353,96 @@ struct JournalAttempt {
     before: Option<Vec<u8>>,
     bytes: Vec<u8>,
     publication: Result<(), TransactionError>,
+}
+
+#[cfg(target_os = "linux")]
+impl InstallationOwner {
+    pub(super) async fn persist_policy_intent(
+        &self,
+        binding: PolicyReviewBinding,
+        mut pending: super::PendingNixPolicy,
+    ) -> Result<PersistedPolicyIntent, TransactionError> {
+        self.effects.check_policy_intent_review(&binding)?;
+        let expected = self.record_bytes().await?;
+        let mut record = self.decode_record(expected.as_deref())?;
+        if record.pending_nix_policy.is_some() {
+            return Err(TransactionError::InvalidState(
+                "Nix policy outcome is pending",
+            ));
+        }
+        pending.state_lease = Some(self.effects.policy_state_lease(&self.layout)?);
+        record.pending_nix_policy = Some(pending.clone());
+        let bytes = self.encode_record(&record)?;
+        self.effects.check_policy_intent_review(&binding)?;
+        let review = std::mem::replace(
+            &mut self.effects.state.borrow_mut().review,
+            ReviewGate::WritingPolicyIntent,
+        );
+        self.effects.recovery_pending(RecoveryPending::Unknown);
+        let result = self
+            .effects
+            .filesystem(FilesystemJob::PublishPolicyIntent {
+                layout: self.layout.clone(),
+                expected,
+                bytes: bytes.clone(),
+            })
+            .await;
+        self.effects.state.borrow_mut().review = review;
+        let FilesystemResult::Applied = result? else {
+            return Err(TransactionError::InvalidState(
+                "Nix policy intent completion type",
+            ));
+        };
+        self.effects.check_policy_intent_review(&binding)?;
+        Ok(PersistedPolicyIntent {
+            binding,
+            pending,
+            bytes,
+        })
+    }
+
+    pub(super) async fn settle_policy_intent(
+        &self,
+        verified: super::nix_owner::peer_handoff::launcher::VerifiedPolicyInspection,
+        expected: Vec<u8>,
+    ) -> Result<(), TransactionError> {
+        self.effects.checkpoint()?;
+        let record = self.decode_record(Some(&expected))?;
+        let pending = record
+            .pending_nix_policy
+            .as_ref()
+            .ok_or(TransactionError::InvalidState(
+                "Nix policy intent is missing",
+            ))?;
+        if !verified.matches(pending)
+            || pending.state_lease != Some(self.effects.policy_state_lease(&self.layout)?)
+            || self.record_bytes().await?.as_deref() != Some(expected.as_slice())
+        {
+            return Err(TransactionError::InvalidState(
+                "Nix policy intent changed during inspection",
+            ));
+        }
+        self.effects.checkpoint()?;
+        let review = std::mem::replace(
+            &mut self.effects.state.borrow_mut().review,
+            ReviewGate::ClearingPolicyIntent,
+        );
+        let result = self
+            .effects
+            .filesystem(FilesystemJob::ClearPolicyIntent {
+                layout: self.layout.clone(),
+                expected,
+            })
+            .await;
+        self.effects.state.borrow_mut().review = review;
+        let FilesystemResult::Applied = result? else {
+            return Err(TransactionError::InvalidState(
+                "Nix policy intent settlement type",
+            ));
+        };
+        self.effects.recovery_pending(RecoveryPending::None);
+        Ok(())
+    }
 }
 
 impl Drop for EffectState {
@@ -243,11 +464,30 @@ enum EffectRequest {
     Process(process::WorkerRequest),
 }
 
+#[cfg(target_os = "linux")]
+enum PolicyIntentOperation {
+    Publish,
+    Clear,
+}
+
 impl EffectRequest {
     fn mutates(&self) -> bool {
         match self {
             Self::Filesystem(job, _) => job.mutates(),
             Self::Process(request) => request.mutates(),
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    fn policy_intent_operation(&self) -> Option<(&Layout, PolicyIntentOperation)> {
+        match self {
+            Self::Filesystem(FilesystemJob::PublishPolicyIntent { layout, .. }, _) => {
+                Some((layout, PolicyIntentOperation::Publish))
+            }
+            Self::Filesystem(FilesystemJob::ClearPolicyIntent { layout, .. }, _) => {
+                Some((layout, PolicyIntentOperation::Clear))
+            }
+            _ => None,
         }
     }
 }
@@ -383,6 +623,100 @@ impl Effects {
         .await
     }
 
+    pub(super) async fn review_nix_policy(
+        &self,
+        plan: super::runtime::NixPolicyPlan,
+        mut summary: ReviewSummary,
+    ) -> Result<(super::runtime::NixPolicyPlan, PolicyReviewBinding), TransactionError> {
+        if !summary.changes.contains(&ReviewedChange::NixPolicy) {
+            summary.changes.push(ReviewedChange::NixPolicy);
+        }
+        let identity = self.review(summary).await?;
+        Ok((
+            plan,
+            PolicyReviewBinding {
+                owner: Rc::downgrade(&self.state),
+                identity,
+            },
+        ))
+    }
+
+    pub(super) fn check_policy_recheck(
+        &self,
+        binding: &PolicyReviewBinding,
+    ) -> Result<(), TransactionError> {
+        self.checkpoint()?;
+        if !Weak::ptr_eq(&binding.owner, &Rc::downgrade(&self.state)) {
+            return Err(TransactionError::InvalidState("foreign policy review"));
+        }
+        if !matches!(self.state.borrow().review, ReviewGate::Rechecking(identity) if identity == binding.identity)
+        {
+            return Err(TransactionError::InvalidState(
+                "policy review is not rechecking",
+            ));
+        }
+        Ok(())
+    }
+
+    #[cfg(target_os = "linux")]
+    fn check_policy_intent_review(
+        &self,
+        binding: &PolicyReviewBinding,
+    ) -> Result<(), TransactionError> {
+        self.checkpoint()?;
+        if !Weak::ptr_eq(&binding.owner, &Rc::downgrade(&self.state))
+            || !matches!(
+                self.state.borrow().review,
+                ReviewGate::Rechecking(identity) | ReviewGate::Accepted { identity, .. }
+                    if identity == binding.identity
+            )
+        {
+            return Err(TransactionError::InvalidState("Nix policy review changed"));
+        }
+        Ok(())
+    }
+
+    pub(super) fn policy_comparison_witness(
+        &self,
+        binding: &PolicyReviewBinding,
+    ) -> Result<PolicyComparisonWitness, TransactionError> {
+        self.check_policy_recheck(binding)?;
+        Ok(PolicyComparisonWitness {
+            owner: binding.owner.clone(),
+            identity: binding.identity,
+        })
+    }
+
+    pub(super) fn admit_policy_review(
+        &self,
+        binding: &PolicyReviewBinding,
+    ) -> Result<(), TransactionError> {
+        self.check_policy_recheck(binding)?;
+        self.admit_reviewed(binding.identity)
+    }
+
+    pub(super) fn consume_policy_review(
+        &self,
+        binding: PolicyReviewBinding,
+    ) -> Result<(), TransactionError> {
+        self.check_admitted_policy_review(&binding)
+    }
+
+    pub(super) fn check_admitted_policy_review(
+        &self,
+        binding: &PolicyReviewBinding,
+    ) -> Result<(), TransactionError> {
+        self.checkpoint()?;
+        if !Weak::ptr_eq(&binding.owner, &Rc::downgrade(&self.state))
+            || !matches!(self.state.borrow().review, ReviewGate::Accepted { identity, .. } if identity == binding.identity)
+        {
+            return Err(TransactionError::InvalidState(
+                "policy review was not admitted",
+            ));
+        }
+        Ok(())
+    }
+
     fn take_review(&self) -> Option<ReviewOffer> {
         match &mut self.state.borrow_mut().review {
             ReviewGate::Awaiting { offer, .. } => offer.take(),
@@ -434,6 +768,11 @@ impl Effects {
     }
 
     pub(super) fn review_changed(&self) -> TransactionError {
+        if self.mutation_admitted() {
+            return TransactionError::Verification(
+                "reviewed installation changed after changes began",
+            );
+        }
         self.state.borrow_mut().review = ReviewGate::Stopped(UnadmittedReason::ReviewChanged);
         TransactionError::StopRequested
     }
@@ -503,6 +842,10 @@ impl Effects {
     fn new(cancellation: Cancellation) -> Self {
         Self {
             state: Rc::new(RefCell::new(EffectState {
+                #[cfg(all(test, target_os = "linux"))]
+                install_policy_fixture: None,
+                #[cfg(all(test, target_os = "linux"))]
+                inspect_policy_fixture: false,
                 lease: None,
                 slot: EffectSlot::Idle,
                 settlement: None,
@@ -516,6 +859,28 @@ impl Effects {
             cancellation,
             admission: Admission::Requested,
         }
+    }
+
+    #[cfg(all(test, target_os = "linux"))]
+    pub(super) fn install_policy_fixture(&self) -> Option<super::runtime::InstallPolicyFixture> {
+        self.state.borrow().install_policy_fixture.clone()
+    }
+
+    #[cfg(all(test, target_os = "linux"))]
+    pub(super) fn inspect_policy_fixture(&self) -> bool {
+        self.state.borrow().inspect_policy_fixture
+    }
+
+    #[cfg(target_os = "linux")]
+    pub(super) fn policy_state_lease(
+        &self,
+        layout: &Layout,
+    ) -> Result<super::PolicyStateLease, TransactionError> {
+        let state = self.state.borrow();
+        let lease = state.lease.as_ref().ok_or(TransactionError::InvalidState(
+            "Nix policy intent has no owner lease",
+        ))?;
+        lease.policy_identity(&layout.lock())
     }
 
     pub(super) fn stopped(&self) -> bool {
@@ -533,6 +898,33 @@ impl Effects {
         ) && self.state.borrow().lease.is_some()
         {
             return Err(TransactionError::InvalidState("startup already completed"));
+        }
+        #[cfg(target_os = "linux")]
+        if let Some((layout, operation)) = request.policy_intent_operation() {
+            self.checkpoint()?;
+            let state = self.state.borrow();
+            return if matches!(self.admission, Admission::Requested)
+                && matches!(
+                    (&state.review, operation),
+                    (
+                        ReviewGate::WritingPolicyIntent,
+                        PolicyIntentOperation::Publish
+                    ) | (
+                        ReviewGate::ClearingPolicyIntent,
+                        PolicyIntentOperation::Clear
+                    )
+                )
+                && state
+                    .lease
+                    .as_ref()
+                    .is_some_and(|lease| lease.policy_identity(&layout.lock()).is_ok())
+            {
+                Ok(())
+            } else {
+                Err(TransactionError::InvalidState(
+                    "Nix policy intent admission",
+                ))
+            };
         }
         match &self.admission {
             Admission::Requested if self.stopped() => Err(TransactionError::StopRequested),
@@ -819,7 +1211,11 @@ impl Effects {
         };
         let next = match slot {
             EffectSlot::Admitted(request) => {
-                let permission = if request.mutates() && self.mutation_admitted() {
+                #[cfg(not(target_os = "linux"))]
+                let journal = false;
+                #[cfg(target_os = "linux")]
+                let journal = request.policy_intent_operation().is_some();
+                let permission = if request.mutates() && (self.mutation_admitted() || journal) {
                     Some(MutationPermission { _private: () })
                 } else {
                     None
@@ -1341,6 +1737,844 @@ mod tests {
                 return value;
             }
             effects.wait();
+        }
+    }
+
+    #[test]
+    fn nix_policy_review_binds_exact_plan_and_owner_before_mutation() {
+        for drift in [
+            "none",
+            "release",
+            "helper",
+            "source",
+            "client",
+            "service",
+            "graph",
+            "decline",
+            "foreign",
+            "foreign-drift",
+            "generation",
+        ] {
+            let (_temporary, owner, lease) = setup();
+            owner.effects.state.borrow_mut().review = ReviewGate::Inspecting;
+            retain(&owner.effects, &lease);
+            let path = owner.layout.state_directory.join("nix.conf");
+            let original = b"max-jobs = 2\n!include optional.conf\n";
+            fs::write(&path, original).unwrap();
+            let plan = runtime::policy_review_fixture(&path, "none");
+            let summary = ReviewSummary {
+                operation: ReviewOperation::Install,
+                version: Some("1.0.0".into()),
+                recovery: RecoveryPending::None,
+                changes: vec![ReviewedChange::Selection],
+            };
+            let mut review = Box::pin(owner.effects.review_nix_policy(plan, summary));
+            assert!(poll(&owner.effects, review.as_mut()).is_pending());
+            let offer = owner.effects.take_review().unwrap();
+            assert_eq!(
+                offer.summary.changes,
+                vec![ReviewedChange::Selection, ReviewedChange::NixPolicy]
+            );
+            let mut rendered = Vec::new();
+            crate::write_review(&mut rendered, &offer.summary).unwrap();
+            let rendered = String::from_utf8(rendered).unwrap();
+            assert!(rendered.contains("/etc/nix/nix.conf"));
+            assert!(rendered.contains("https://cache.iog.io"));
+            assert!(rendered.contains("https://neohaskell.cachix.org"));
+            assert!(!rendered.contains("max-jobs"));
+            assert!(!rendered.contains("optional.conf"));
+            owner
+                .effects
+                .answer(
+                    offer.token,
+                    if drift == "decline" {
+                        Some(UnadmittedReason::Declined)
+                    } else {
+                        None
+                    },
+                )
+                .unwrap();
+            let answer = drive(&owner.effects, review);
+            if drift == "decline" {
+                assert!(answer.is_err());
+                assert!(!owner.effects.mutation_admitted());
+                continue;
+            }
+            let (plan, mut binding) = answer.unwrap();
+            assert!(!owner.effects.mutation_admitted());
+            if drift == "graph" {
+                fs::write(path.with_file_name("optional.conf"), b"max-jobs = 3\n").unwrap();
+                assert_eq!(fs::read(&path).unwrap(), original);
+            }
+            let fresh = runtime::policy_review_fixture(
+                &path,
+                if drift == "foreign-drift" {
+                    "helper"
+                } else {
+                    drift
+                },
+            );
+            if matches!(drift, "foreign" | "foreign-drift") {
+                let (_other_temp, other, _other_lease) = setup();
+                assert!(runtime::test_policy_recheck(&other, plan, binding, fresh).is_err());
+                assert!(matches!(
+                    other.effects.state.borrow().review,
+                    ReviewGate::Accepted { .. }
+                ));
+                continue;
+            }
+            if drift == "generation" {
+                binding.identity += 1;
+                assert!(runtime::test_policy_recheck(&owner, plan, binding, fresh).is_err());
+                assert!(matches!(
+                    owner.effects.state.borrow().review,
+                    ReviewGate::Rechecking(_)
+                ));
+                continue;
+            }
+            let checked = runtime::test_policy_recheck(&owner, plan, binding, fresh);
+            if drift == "none" {
+                let checked = checked.unwrap();
+                let early = PolicyReviewBinding {
+                    owner: checked.owner.clone(),
+                    identity: checked.identity,
+                };
+                assert!(owner.effects.consume_policy_review(early).is_err());
+                owner.effects.admit_policy_review(&checked).unwrap();
+                owner.effects.consume_policy_review(checked).unwrap();
+            } else {
+                assert!(checked.is_err(), "{drift}");
+                assert!(matches!(
+                    owner.effects.state.borrow().review,
+                    ReviewGate::Stopped(UnadmittedReason::ReviewChanged)
+                ));
+            }
+            assert!(!owner.effects.mutation_admitted());
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    #[ignore = "requires a disposable pinned daemon, registered exact test ELF and owned release fixture"]
+    fn ordinary_install_reviews_policy_before_any_mutation() {
+        run_ordinary_policy_review(runtime::PolicyFixtureMode::CompareOnly);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    #[ignore = "requires the explicitly opted-in disposable root daemon and registered release fixture"]
+    fn reviewed_policy_publishes_source_application_pending() {
+        assert_eq!(
+            std::env::var("NEO_TEST_POLICY_PUBLISH").as_deref(),
+            Ok("disposable-root-fixture")
+        );
+        assert_eq!(unsafe { libc::geteuid() }, 0);
+        run_ordinary_policy_review(runtime::PolicyFixtureMode::PublishOnly);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    #[ignore = "requires the explicitly opted-in disposable root systemd fixture"]
+    fn reviewed_policy_observes_managed_restart() {
+        assert_eq!(
+            std::env::var("NEO_TEST_POLICY_MANAGED_RESTART").as_deref(),
+            Ok("disposable-root-fixture")
+        );
+        assert_eq!(unsafe { libc::geteuid() }, 0);
+        run_ordinary_policy_review(runtime::PolicyFixtureMode::ManagedRestart);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    #[ignore = "requires UID/GID 1001 in the opted-in disposable sudo managed fixture"]
+    fn ordinary_user_reviews_elevated_managed_policy() {
+        assert!(matches!(
+            std::env::var("NEO_TEST_ADMIN_MANAGED").as_deref(),
+            Ok("accept" | "decline")
+        ));
+        assert_eq!(
+            unsafe {
+                (
+                    libc::getuid(),
+                    libc::geteuid(),
+                    libc::getgid(),
+                    libc::getegid(),
+                )
+            },
+            (1001, 1001, 1001, 1001)
+        );
+        run_ordinary_policy_review(runtime::PolicyFixtureMode::SudoManagedRestart);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    #[ignore = "requires the original user state and exact retained sudo fixture helper"]
+    fn ordinary_user_recovers_elevated_managed_policy() {
+        use super::super::{runtime, snapshot};
+
+        let expected = std::env::var("NEO_TEST_ADMIN_RECOVERY").unwrap();
+        assert!(matches!(expected.as_str(), "applied" | "pending"));
+        let owner = InstallationOwner::new(Layout::for_user().unwrap());
+        let lease = owner.hold_lock_for_test().unwrap();
+        let before = fs::read(owner.layout.record()).unwrap();
+        let mut original = owner.decode_record(Some(&before)).unwrap();
+        assert!(original.pending_nix_policy.is_some());
+        owner.effects.state.borrow_mut().inspect_policy_fixture = true;
+        let result = test_with(
+            &owner.effects,
+            &lease,
+            owner.run_owned(
+                snapshot::Request::RecoverOnly,
+                runtime::Executor::NativeInstaller,
+            ),
+        );
+        let after = fs::read(owner.layout.record()).unwrap();
+        if expected == "applied" {
+            assert!(matches!(
+                result,
+                Err(TransactionError::Verification(
+                    "Nix policy recovery settled; rerun the request"
+                ))
+            ));
+            original.pending_nix_policy = None;
+            assert_eq!(after, owner.encode_record(&original).unwrap());
+        } else {
+            assert!(matches!(
+                result,
+                Err(TransactionError::InvalidState(
+                    "Nix policy outcome is pending"
+                ))
+            ));
+            assert_eq!(after, before);
+        }
+        assert!(owner.effects.take_review().is_none());
+        assert!(!owner.effects.mutation_admitted());
+        assert!(!owner.layout.command_directory.exists());
+        assert!(!owner.layout.state_directory.join("snapshots").exists());
+        eprintln!("ordinary Nix policy recovery {expected}");
+    }
+
+    #[test]
+    fn pending_nix_policy_blocks_every_owner_request() {
+        let (_temporary, owner, lease) = setup();
+        let mut record = super::super::InstallationRecord::default();
+        let old = serde_json::to_vec(&record).unwrap();
+        assert!(
+            !std::str::from_utf8(&old)
+                .unwrap()
+                .contains("pending_nix_policy")
+        );
+        assert_eq!(owner.decode_record(Some(&old)).unwrap(), record);
+        let helper_path = "/nix/store/i0md420ln0dwnjs0ibm8v6z2jkqpdaqi-neo-policy-helper";
+        let held = owner.layout.command_directory.join("preserved");
+        std::os::unix::fs::symlink(helper_path, &held).unwrap();
+        record.pending_nix_policy = Some(super::super::PendingNixPolicy {
+            attempt: [17; 32],
+            reviewed: [19; 32],
+            helper_path: helper_path.into(),
+            helper: crate::candidate::FileIdentity {
+                name: "neo-installer".into(),
+                size: 123,
+                sha: "ab".repeat(32),
+            },
+            state_lease: None,
+        });
+        let bytes = owner.encode_record(&record).unwrap();
+        assert_eq!(owner.decode_record(Some(&bytes)).unwrap(), record);
+        let mut unknown: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        unknown["pending_nix_policy"]["unknown"] = true.into();
+        assert!(
+            owner
+                .decode_record(Some(&serde_json::to_vec(&unknown).unwrap()))
+                .is_err()
+        );
+        fs::write(owner.layout.record(), &bytes).unwrap();
+        fs::set_permissions(owner.layout.record(), fs::Permissions::from_mode(0o600)).unwrap();
+        for request in [
+            snapshot::Request::Install(None),
+            snapshot::Request::Update(None),
+            snapshot::Request::Rollback,
+            snapshot::Request::RecoverOnly,
+            snapshot::Request::Uninstall,
+        ] {
+            let fresh = InstallationOwner::new(owner.layout.clone());
+            assert!(matches!(
+                test_with(
+                    &fresh.effects,
+                    &lease,
+                    fresh.run_owned(request, runtime::Executor::NativeInstaller,)
+                ),
+                Err(TransactionError::InvalidState(
+                    "Nix policy outcome is pending"
+                ))
+            ));
+            assert_eq!(fs::read(owner.layout.record()).unwrap(), bytes);
+            assert_eq!(
+                fs::read_link(&held).unwrap(),
+                std::path::Path::new(helper_path)
+            );
+            assert!(fresh.effects.take_review().is_none());
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    fn run_ordinary_policy_review(fixture_mode: runtime::PolicyFixtureMode) {
+        let publish = fixture_mode != runtime::PolicyFixtureMode::CompareOnly;
+        use super::super::{nix_owner::NixBlock, runtime, snapshot};
+        let pid = std::env::var("NEO_TEST_DAEMON_PID")
+            .unwrap()
+            .parse()
+            .unwrap();
+        let daemon =
+            std::path::PathBuf::from(std::env::var_os("NEO_TEST_DAEMON_EXECUTABLE").unwrap());
+        let helper =
+            crate::candidate::OutputPath::parse(&std::env::var("NEO_TEST_PINNED_STORE").unwrap())
+                .unwrap();
+        let elevated = fixture_mode == runtime::PolicyFixtureMode::SudoManagedRestart;
+        let elevated_answer = if elevated {
+            std::env::var("NEO_TEST_ADMIN_MANAGED").unwrap()
+        } else {
+            String::new()
+        };
+        let modes: &[&str] = if elevated {
+            if elevated_answer == "accept" {
+                &["managed"]
+            } else {
+                &["decline"]
+            }
+        } else if fixture_mode == runtime::PolicyFixtureMode::ManagedRestart {
+            &["managed"]
+        } else if publish {
+            &["cancel-before-intent", "uncertain-intent", "publish"]
+        } else {
+            &[
+                "accept",
+                "decline",
+                "source-inode",
+                "include",
+                "refused",
+                "helper-mismatch",
+                "missing-authority",
+            ]
+        };
+        for &mode in modes {
+            let temporary = tempfile::tempdir().unwrap();
+            let root = temporary.path().canonicalize().unwrap();
+            fs::set_permissions(&root, fs::Permissions::from_mode(0o700)).unwrap();
+            let layout = if elevated
+                && mode == "managed"
+                && std::env::var("NEO_TEST_POLICY_OWNER_LAYOUT").as_deref() == Ok("normal")
+            {
+                Layout::for_user().unwrap()
+            } else {
+                Layout::new(root.clone(), root.join("bin"))
+            };
+            let owner = if mode == "missing-authority" {
+                InstallationOwner::new(layout)
+            } else {
+                InstallationOwner::owned_fixture(layout)
+            };
+            let lease = RootLease::acquire(&owner.layout.lock()).unwrap();
+            let nested = root.join("nested.conf");
+            let (source, service) = if publish {
+                (
+                    "/etc/nix/nix.conf".into(),
+                    "/etc/systemd/system/nix-daemon.service".into(),
+                )
+            } else {
+                let source = root.join("nix.conf");
+                let service = root.join("daemon.service");
+                fs::write(&source, "include nested.conf\n").unwrap();
+                fs::write(
+                    &nested,
+                    if mode == "refused" {
+                        "include nix.conf\n"
+                    } else {
+                        "max-jobs = 1\n"
+                    },
+                )
+                .unwrap();
+                fs::write(&service, "fixed service fixture\n").unwrap();
+                (source, service)
+            };
+            let original = fs::read(&source).unwrap();
+            owner.effects.state.borrow_mut().install_policy_fixture =
+                Some(runtime::InstallPolicyFixture {
+                    source: source.clone(),
+                    service,
+                    daemon: daemon.clone(),
+                    pid,
+                    mode: fixture_mode,
+                    helper: if mode == "helper-mismatch" {
+                        crate::candidate::OutputPath::parse(
+                            "/nix/store/i0md420ln0dwnjs0ibm8v6z2jkqpdaqi-unavailable-helper",
+                        )
+                        .unwrap()
+                    } else {
+                        helper.clone()
+                    },
+                });
+            if mode == "cancel-before-intent" {
+                owner.effects.cancel_at("before_policy_intent_publication");
+            }
+            if mode == "uncertain-intent" {
+                owner
+                    .effects
+                    .cancel_at("after_policy_intent_publication_error");
+            }
+            let mut reviews = 0;
+            let mut future = Box::pin(
+                owner.run_owned(
+                    snapshot::Request::Install(Some(
+                        crate::identity::BuildIdentity::current()
+                            .product_version
+                            .into(),
+                    )),
+                    runtime::Executor::NativeInstaller,
+                ),
+            );
+            let result = test_with(
+                &owner.effects,
+                &lease,
+                std::future::poll_fn(|context| {
+                    let result = future.as_mut().poll(context);
+                    if let Some(offer) = owner.effects.take_review() {
+                        reviews += 1;
+                        assert_eq!(reviews, 1);
+                        if elevated {
+                            eprintln!("ordinary owner review {:?}", offer.summary.changes);
+                        }
+                        for change in [
+                            ReviewedChange::Selection,
+                            ReviewedChange::NixPolicy,
+                            ReviewedChange::ShellPath,
+                            ReviewedChange::ShellStartup,
+                        ] {
+                            assert!(offer.summary.changes.contains(&change));
+                        }
+                        assert!(!owner.effects.mutation_admitted());
+                        if mode == "source-inode" {
+                            fs::rename(&source, source.with_extension("old")).unwrap();
+                            fs::write(&source, "include nested.conf\n").unwrap();
+                        }
+                        if mode == "include" {
+                            fs::write(&nested, "max-jobs = 2\n").unwrap();
+                        }
+                        owner
+                            .effects
+                            .answer(
+                                offer.token,
+                                (mode == "decline").then_some(UnadmittedReason::Declined),
+                            )
+                            .unwrap();
+                    }
+                    result
+                }),
+            );
+            assert_eq!(
+                reviews,
+                usize::from(matches!(
+                    mode,
+                    "managed"
+                        | "publish"
+                        | "accept"
+                        | "decline"
+                        | "source-inode"
+                        | "include"
+                        | "cancel-before-intent"
+                        | "uncertain-intent"
+                )),
+                "{mode}"
+            );
+            match (mode, result) {
+                (
+                    "managed",
+                    Err(TransactionError::Verification(
+                        "policy source published; managed restart observed; readiness unproved",
+                    )),
+                ) => (),
+                (
+                    "publish",
+                    Err(TransactionError::Verification(
+                        "policy source published; daemon application pending",
+                    )),
+                ) => {
+                    assert!(matches!(
+                        owner.effects.state.borrow().review,
+                        ReviewGate::Rechecking(_)
+                    ));
+                }
+                (
+                    "accept",
+                    Err(TransactionError::Verification(
+                        "policy application completion unavailable",
+                    )),
+                ) => (),
+                ("decline" | "source-inode" | "include", Err(TransactionError::StopRequested)) => {
+                    ()
+                }
+                ("cancel-before-intent", Err(TransactionError::StopRequested)) => (),
+                ("uncertain-intent", Err(TransactionError::Io)) => (),
+                (
+                    "refused" | "missing-authority",
+                    Err(TransactionError::NixBlocked(NixBlock::ConfigurationOwnerUnknown)),
+                ) => (),
+                (
+                    "helper-mismatch",
+                    Err(TransactionError::Verification("fixture helper fixed path")),
+                ) => (),
+                (_, result) => panic!("{mode}: unexpected outcome {:?}", result.err()),
+            }
+            assert!(!owner.effects.mutation_admitted());
+            let facts = owner.effects.state.borrow().diagnostics.snapshot();
+            assert!(
+                !facts
+                    .completed_steps
+                    .contains(&crate::diagnostics::CompletedStep::Prerequisites)
+            );
+            assert!(
+                !facts
+                    .completed_steps
+                    .contains(&crate::diagnostics::CompletedStep::Recovery)
+            );
+            let changes_policy = matches!(mode, "managed" | "publish");
+            if changes_policy || mode == "uncertain-intent" {
+                let bytes = fs::read(owner.layout.record()).unwrap();
+                let pending = owner
+                    .decode_record(Some(&bytes))
+                    .unwrap()
+                    .pending_nix_policy
+                    .unwrap();
+                assert_eq!(pending.helper_path, helper.as_str());
+                assert_ne!(pending.reviewed, [0; 32]);
+                for request in [
+                    snapshot::Request::Install(None),
+                    snapshot::Request::Uninstall,
+                ] {
+                    let fresh = InstallationOwner::new(owner.layout.clone());
+                    assert!(matches!(
+                        test_with(
+                            &fresh.effects,
+                            &lease,
+                            fresh.run_owned(request, runtime::Executor::NativeInstaller,)
+                        ),
+                        Err(TransactionError::InvalidState(
+                            "Nix policy outcome is pending"
+                        ))
+                    ));
+                    assert_eq!(fs::read(owner.layout.record()).unwrap(), bytes);
+                }
+            } else {
+                assert!(!owner.layout.record().exists());
+            }
+            assert!(!owner.layout.command_directory.exists());
+            assert!(!owner.layout.state_directory.join("snapshots").exists());
+            let leaf = source.with_file_name("neohaskell-cache-policy.conf");
+            if changes_policy {
+                if !elevated {
+                    assert_eq!(
+                        fs::read("/etc/nix/.neo-policy-publication/main-slot").unwrap(),
+                        original
+                    );
+                }
+                assert!(fs::read(&source).unwrap().starts_with(&original));
+                assert!(leaf.is_file());
+            } else {
+                assert_eq!(fs::read(&source).unwrap(), original);
+                assert!(!leaf.exists());
+            }
+            eprintln!("ordinary install policy mode {mode} passed");
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    #[ignore = "requires a root-owned disposable pinned daemon with explicit disabled user sources"]
+    fn discovered_policy_uses_one_owner_review() {
+        use super::super::nix_owner::peer_handoff::launcher::{
+            ExactExecutable, LaunchAuthority, Rendezvous,
+        };
+        use super::super::nix_owner::policy_observation::PolicyResult;
+        let pid = std::env::var("NEO_TEST_DAEMON_PID")
+            .unwrap()
+            .parse()
+            .unwrap();
+        let daemon =
+            std::path::PathBuf::from(std::env::var_os("NEO_TEST_DAEMON_EXECUTABLE").unwrap());
+        let pinned = std::path::PathBuf::from(std::env::var_os("NEO_TEST_PINNED_STORE").unwrap());
+        let expected = crate::candidate::OutputPath::parse(pinned.to_str().unwrap()).unwrap();
+        let release = crate::candidate::FileIdentity {
+            name: "neo-policy-helper".into(),
+            size: std::env::var("NEO_TEST_PINNED_SIZE")
+                .unwrap()
+                .parse()
+                .unwrap(),
+            sha: std::env::var("NEO_TEST_PINNED_SHA").unwrap(),
+        };
+        for mode in [
+            "accept",
+            "decline",
+            "source-inode",
+            "include",
+            "refused",
+            "foreign-helper",
+        ] {
+            let (_temporary, owner, lease) = setup();
+            owner.effects.state.borrow_mut().review = ReviewGate::Inspecting;
+            retain(&owner.effects, &lease);
+            let source = owner.layout.state_directory.join("nix.conf");
+            let nested = owner.layout.state_directory.join("nested.conf");
+            let service = owner.layout.state_directory.join("daemon.service");
+            let original = b"include nested.conf\n";
+            fs::write(&source, original).unwrap();
+            fs::write(
+                &nested,
+                if mode == "refused" {
+                    "include nix.conf\n"
+                } else {
+                    "max-jobs = 1\n"
+                },
+            )
+            .unwrap();
+            fs::write(&service, "fixed service fixture\n").unwrap();
+            let executable = ExactExecutable::open(&pinned, &release).unwrap();
+            let other_helper = ExactExecutable::open(&pinned, &release).unwrap();
+            let authority = || LaunchAuthority::PolicyFixture {
+                mode: "ok",
+                source: source.clone(),
+                service: service.clone(),
+                executable: daemon.clone(),
+                pid,
+            };
+            let discovered = executable
+                .discover_policy(Rendezvous::fresh().unwrap(), authority())
+                .unwrap();
+            if mode == "refused" {
+                assert!(discovered.is_err());
+                assert!(owner.effects.take_review().is_none());
+                assert_eq!(fs::read(&source).unwrap(), original);
+                assert!(!owner.effects.mutation_admitted());
+                eprintln!("discovered policy mode {mode} passed");
+                continue;
+            }
+            let discovered = discovered.unwrap();
+            let comparison = discovered.comparison();
+            for foreign in [false, true] {
+                let early = PolicyReviewBinding {
+                    owner: if foreign {
+                        Weak::new()
+                    } else {
+                        Rc::downgrade(&owner.effects.state)
+                    },
+                    identity: 0,
+                };
+                let premature = executable
+                    .discover_policy(Rendezvous::fresh().unwrap(), authority())
+                    .unwrap()
+                    .unwrap();
+                assert!(
+                    executable
+                        .confirm_discovery(
+                            &owner.effects,
+                            &early,
+                            premature,
+                            comparison,
+                            Rendezvous::fresh().unwrap(),
+                            authority(),
+                        )
+                        .is_err()
+                );
+            }
+            let mismatched = executable
+                .discover_policy(Rendezvous::fresh().unwrap(), authority())
+                .unwrap()
+                .unwrap();
+            assert!(
+                runtime::discovered_policy_review_fixture(&source, pid + 1, &release, &expected)
+                    .with_discovery(mismatched)
+                    .is_err()
+            );
+            let unrelated = owner.layout.state_directory.join("unrelated.conf");
+            fs::write(&unrelated, original).unwrap();
+            let mismatched = executable
+                .discover_policy(Rendezvous::fresh().unwrap(), authority())
+                .unwrap()
+                .unwrap();
+            assert!(
+                runtime::discovered_policy_review_fixture(&unrelated, pid, &release, &expected)
+                    .with_discovery(mismatched)
+                    .is_err()
+            );
+            if mode == "accept" {
+                let wrong_release = executable
+                    .discover_policy(Rendezvous::fresh().unwrap(), authority())
+                    .unwrap()
+                    .unwrap();
+                let mut unexpected = release.clone();
+                unexpected.size += 1;
+                assert!(
+                    runtime::discovered_policy_review_fixture(&source, pid, &unexpected, &expected)
+                        .with_discovery(wrong_release)
+                        .is_err()
+                );
+                let wrong_path = executable
+                    .discover_policy(Rendezvous::fresh().unwrap(), authority())
+                    .unwrap()
+                    .unwrap();
+                let other_path = crate::candidate::OutputPath::parse(
+                    "/nix/store/i0md420ln0dwnjs0ibm8v6z2jkqpdaqi-neo-policy-helper",
+                )
+                .unwrap();
+                assert!(
+                    runtime::discovered_policy_review_fixture(&source, pid, &release, &other_path)
+                        .with_discovery(wrong_path)
+                        .is_err()
+                );
+            }
+            let plan = runtime::discovered_policy_review_fixture(&source, pid, &release, &expected)
+                .with_discovery(discovered)
+                .unwrap();
+            let summary = ReviewSummary {
+                operation: ReviewOperation::Install,
+                version: Some("1.0.0".into()),
+                recovery: RecoveryPending::None,
+                changes: vec![],
+            };
+            let mut review = Box::pin(owner.effects.review_nix_policy(plan, summary));
+            assert!(poll(&owner.effects, review.as_mut()).is_pending());
+            let offer = owner.effects.take_review().unwrap();
+            assert_eq!(offer.summary.changes, vec![ReviewedChange::NixPolicy]);
+            owner
+                .effects
+                .answer(
+                    offer.token,
+                    if mode == "decline" {
+                        Some(UnadmittedReason::Declined)
+                    } else {
+                        None
+                    },
+                )
+                .unwrap();
+            let answer = drive(&owner.effects, review);
+            if mode == "decline" {
+                assert!(answer.is_err());
+                assert_eq!(fs::read(&source).unwrap(), original);
+                assert!(!owner.effects.mutation_admitted());
+                eprintln!("discovered policy mode {mode} passed");
+                continue;
+            }
+            let (plan, binding) = answer.unwrap();
+            owner.effects.check_policy_recheck(&binding).unwrap();
+            match mode {
+                "source-inode" => {
+                    fs::rename(&source, source.with_extension("old")).unwrap();
+                    fs::write(&source, original).unwrap();
+                }
+                "include" => fs::write(&nested, "max-jobs = 2\n").unwrap(),
+                _ => (),
+            }
+            let helper = if mode == "foreign-helper" {
+                &other_helper
+            } else {
+                &executable
+            };
+            let fresh = helper
+                .discover_policy(Rendezvous::fresh().unwrap(), authority())
+                .unwrap()
+                .unwrap();
+            let compared = helper
+                .observe_policy(Rendezvous::fresh().unwrap(), authority(), comparison)
+                .unwrap();
+            assert_eq!(
+                compared.policy,
+                Some(if matches!(mode, "source-inode" | "include") {
+                    PolicyResult::ChangedInputs
+                } else {
+                    PolicyResult::MatchingInputs
+                })
+            );
+            let fresh = if matches!(mode, "source-inode" | "include") {
+                assert!(
+                    helper
+                        .confirm_discovery(
+                            &owner.effects,
+                            &binding,
+                            fresh,
+                            comparison,
+                            Rendezvous::fresh().unwrap(),
+                            authority()
+                        )
+                        .is_err()
+                );
+                helper
+                    .discover_policy(Rendezvous::fresh().unwrap(), authority())
+                    .unwrap()
+                    .unwrap()
+            } else {
+                helper
+                    .confirm_discovery(
+                        &owner.effects,
+                        &binding,
+                        fresh,
+                        comparison,
+                        Rendezvous::fresh().unwrap(),
+                        authority(),
+                    )
+                    .unwrap()
+            };
+            if mode == "accept" {
+                assert!(fresh.is_confirmed(&binding));
+                let stale = PolicyReviewBinding {
+                    owner: Rc::downgrade(&owner.effects.state),
+                    identity: binding.identity + 1,
+                };
+                let foreign = PolicyReviewBinding {
+                    owner: Weak::new(),
+                    identity: binding.identity,
+                };
+                assert!(!fresh.is_confirmed(&stale));
+                assert!(!fresh.is_confirmed(&foreign));
+                for invalid in [&stale, &foreign] {
+                    let unconfirmed = executable
+                        .discover_policy(Rendezvous::fresh().unwrap(), authority())
+                        .unwrap()
+                        .unwrap();
+                    assert!(
+                        executable
+                            .confirm_discovery(
+                                &owner.effects,
+                                invalid,
+                                unconfirmed,
+                                comparison,
+                                Rendezvous::fresh().unwrap(),
+                                authority(),
+                            )
+                            .is_err()
+                    );
+                }
+            }
+            let fresh_plan =
+                runtime::discovered_policy_review_fixture(&source, pid, &release, &expected)
+                    .with_discovery(fresh)
+                    .unwrap();
+            let checked = runtime::test_policy_recheck(&owner, plan, binding, fresh_plan);
+            if mode == "accept" {
+                let binding = checked.unwrap();
+                assert_eq!(compared.policy, Some(PolicyResult::MatchingInputs));
+                owner.effects.admit_policy_review(&binding).unwrap();
+                owner.effects.consume_policy_review(binding).unwrap();
+            } else {
+                assert!(checked.is_err(), "{mode}");
+            }
+            assert!(owner.effects.take_review().is_none());
+            assert_eq!(fs::read(&source).unwrap(), original);
+            assert!(
+                !source
+                    .with_file_name("neohaskell-cache-policy.conf")
+                    .exists()
+            );
+            assert!(!owner.effects.mutation_admitted());
+            eprintln!("discovered policy mode {mode} passed");
         }
     }
 
@@ -2719,6 +3953,10 @@ mod tests {
                 ));
             }
             for request in [
+                process::WorkerRequest::ImportPolicyHelper {
+                    client: layout.state_directory.join("nix"),
+                    source: layout.state_directory.join("installer"),
+                },
                 process::WorkerRequest::AcquireRetained {
                     pair: "forbidden".into(),
                     candidate: "forbidden".into(),

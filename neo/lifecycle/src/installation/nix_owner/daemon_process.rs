@@ -5,13 +5,13 @@ use std::os::fd::{AsRawFd, FromRawFd};
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::Path;
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, serde::Serialize)]
 pub(crate) enum KernelDaemonObservation {
     Observed(ProcessStamp),
     Inaccessible,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, serde::Serialize)]
 pub(crate) struct ProcessStamp {
     pid: u32,
     start_ticks: u64,
@@ -20,23 +20,29 @@ pub(crate) struct ProcessStamp {
     launch_configuration: LaunchConfiguration,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, serde::Serialize)]
 enum ExecutableObservation {
     Verified(InputIdentity),
     Inaccessible,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, serde::Serialize)]
 enum LaunchConfiguration {
     Unobserved,
     ConventionalSystem { user_sources: UserSources },
     AlternateOrAmbiguous,
 }
 
-#[derive(Debug, PartialEq, Eq)]
-enum UserSources {
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
+pub(super) enum UserSources {
     Disabled,
-    StandardSearchPossible,
+    Stock(StockHome),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
+pub(super) enum StockHome {
+    Environment,
+    Passwd,
 }
 
 fn launch_configuration(bytes: &[u8]) -> LaunchConfiguration {
@@ -83,7 +89,11 @@ fn launch_configuration(bytes: &[u8]) -> LaunchConfiguration {
         None if values[3..6].iter().all(Option::is_none)
             && matches!(values[6], None | Some(b"/root")) =>
         {
-            UserSources::StandardSearchPossible
+            UserSources::Stock(if values[6].is_some() {
+                StockHome::Environment
+            } else {
+                StockHome::Passwd
+            })
         }
         _ => return LaunchConfiguration::AlternateOrAmbiguous,
     };
@@ -301,17 +311,22 @@ mod tests {
     fn launch_selectors_preserve_user_search_uncertainty() {
         for bytes in [
             b"".as_slice(),
-            b"HOME=/root\0",
             b"NIX_CONF_DIR=/etc/nix\0NIX_CONFIG=\0",
             b"NIX_CONF_DIR=\0",
         ] {
             assert_eq!(
                 launch_configuration(bytes),
                 LaunchConfiguration::ConventionalSystem {
-                    user_sources: UserSources::StandardSearchPossible,
+                    user_sources: UserSources::Stock(StockHome::Passwd),
                 }
             );
         }
+        assert_eq!(
+            launch_configuration(b"HOME=/root\0"),
+            LaunchConfiguration::ConventionalSystem {
+                user_sources: UserSources::Stock(StockHome::Environment),
+            }
+        );
         for bytes in [
             b"NIX_USER_CONF_FILES=\0".as_slice(),
             b"NIX_USER_CONF_FILES=\0HOME=/private\0XDG_CONFIG_DIRS=/private\0",
@@ -358,7 +373,7 @@ mod tests {
         assert_eq!(
             launch_configuration(b"UNRELATED=secret\xff\0"),
             LaunchConfiguration::ConventionalSystem {
-                user_sources: UserSources::StandardSearchPossible,
+                user_sources: UserSources::Stock(StockHome::Passwd),
             }
         );
     }
@@ -572,5 +587,18 @@ mod tests {
             Err(TransactionError::StopRequested)
         });
         assert!(matches!(result, Err(TransactionError::StopRequested)));
+    }
+}
+
+impl KernelDaemonObservation {
+    pub(super) fn conventional_user_sources(&self) -> Option<UserSources> {
+        match self {
+            Self::Observed(ProcessStamp {
+                executable: ExecutableObservation::Verified(_),
+                launch_configuration: LaunchConfiguration::ConventionalSystem { user_sources },
+                ..
+            }) => Some(*user_sources),
+            _ => None,
+        }
     }
 }

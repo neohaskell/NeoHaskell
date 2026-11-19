@@ -93,7 +93,8 @@ impl super::InstallationRecord {
 }
 
 pub(super) struct PreparedSnapshot {
-    pub(super) snapshot: Snapshot,
+    snapshot: Snapshot,
+    pub(super) candidate: candidate::ParsedCandidate,
     pub(super) local: Vec<SourcePreimage>,
 }
 
@@ -296,10 +297,12 @@ impl InstallationOwner {
             files.insert(file.name, bytes);
         }
         let snapshot = Snapshot { core, files };
-        snapshot
-            .parse()
-            .map_err(|_| TransactionError::Verification("complete snapshot"))?;
-        Ok(PreparedSnapshot { snapshot, local })
+        let candidate = self.parse_prepared_snapshot(&snapshot)?;
+        Ok(PreparedSnapshot {
+            snapshot,
+            candidate,
+            local,
+        })
     }
 
     pub(super) async fn recheck_snapshot(
@@ -406,10 +409,10 @@ impl InstallationOwner {
                 }
             ));
         }
-        self.parse_prepared_snapshot(&prepared.snapshot)
+        Ok(prepared.candidate)
     }
 
-    pub(super) fn parse_prepared_snapshot(
+    fn parse_prepared_snapshot(
         &self,
         snapshot: &Snapshot,
     ) -> Result<candidate::ParsedCandidate, TransactionError> {

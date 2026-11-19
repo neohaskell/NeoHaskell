@@ -1,7 +1,7 @@
 {
   "diagnostic_report_saved": "Diagnostic report saved at {path}",
   "diagnostic_report_unavailable": "Diagnostic report unavailable.",
-  "help": "NeoHaskell native installer\n\nThis build checks the official Nix 2.34.9 Linux ARM64 daemon. Other providers and platforms remain unverified. New acquisition is blocked until configuration ownership is established. Local checks for retained keep and rollback remain available. This build does not install, configure, or repair Nix.\n\nUsage:\n  neo-installer [--help | --version]\n  neo-installer install [--version VERSION]\n  neo-installer update [--version VERSION | --rollback]\n  neo-installer rollback\n\nInstall keeps an existing installation unless an exact version is requested. Update selects a complete stable candidate. Update --rollback and rollback restore the recorded previous pair.\nUse --yes to accept the prepared installation review.\nUse --plain for plain output or --still to disable animation. --yes always selects plain explicit consent. Ctrl-Z and SIGTSTP cancel the operation and restore the terminal.\n  neo-installer uninstall [--yes] [--plain|--still]",
+  "help": "NeoHaskell native installer\n\nThis build can apply the required cache policy to an existing official Nix 2.34.9 daemon on Linux ARM64 when it can verify configuration ownership. Applying the policy requires review and administrator access. Existing installations can keep or restore retained pairs through local checks.\n\nUsage:\n  neo-installer [--help | --version]\n  neo-installer install [--version VERSION]\n  neo-installer update [--version VERSION | --rollback]\n  neo-installer rollback\n\nInstall keeps an existing installation unless an exact version is requested. Update selects a complete stable candidate. Update --rollback and rollback restore the recorded previous pair.\nUse --yes to accept the prepared installation review.\nUse --plain for plain output or --still to disable animation. --yes always selects plain explicit consent. Ctrl-Z and SIGTSTP cancel the operation and restore the terminal.\n  neo-installer uninstall [--yes] [--plain|--still]",
   "version": "neo-installer {version} ({revision}, {target})",
   "invalid_arguments": "Unknown arguments. Run neo-installer --help for usage.",
   "invalid_request": "Use install or update with an optional --version VERSION, update --rollback, rollback, or uninstall.",
@@ -18,7 +18,7 @@
   "nix_unproved_service": "The loaded Nix service does not match the verified service configuration.",
   "nix_daemon_unavailable": "The standard Nix daemon is unavailable to this user.",
   "nix_daemon_mismatch": "The Nix daemon response does not match the verified client and service.",
-  "nix_configuration_owner_unknown": "New acquisition is blocked because Nix configuration ownership and required daemon policy are not established. This build made no Nix configuration changes.",
+  "nix_configuration_owner_unknown": "The installer could not verify Nix configuration ownership or the required daemon policy.",
   "operation_not_started": "The operation stopped before startup.",
   "operation_stopped_no_pair": "The operation stopped. No NeoHaskell pair is active.",
   "operation_stopped_pair": "The operation stopped. NeoHaskell {version} is active.",
@@ -44,6 +44,7 @@
   "review_selection": "Save the selected version and its metadata.",
   "review_retention": "Retain the selected package pair.",
   "review_activation": "Activate the selected package pair if it differs.",
+  "review_nix_policy": "Add an include to /etc/nix/nix.conf to enable nix-command and flakes and add https://cache.iog.io and https://neohaskell.cachix.org with their signing keys. Apply the policy and restart the Nix daemon with administrator access.",
   "review_cleanup": "Remove obsolete installer-owned state.",
   "review_pending_recovery": "This review includes pending recovery.",
   "dashboard": {

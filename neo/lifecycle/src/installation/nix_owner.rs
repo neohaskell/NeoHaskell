@@ -10,7 +10,13 @@ use std::path::{Path, PathBuf};
 
 pub(super) mod daemon_process;
 mod include_inputs;
+pub(super) mod peer_handoff;
+pub(super) mod policy_observation;
 pub(super) use daemon_process::KernelDaemonObservation;
+#[cfg(target_os = "linux")]
+pub(crate) use peer_handoff::launcher::dispatch_native_policy;
+#[cfg(target_os = "linux")]
+pub(crate) use policy_observation::{POLICY_OBSERVE_ARGUMENT, run_policy_observer};
 
 pub(super) const CLIENT: &str = "/nix/var/nix/profiles/default/bin/nix";
 const SOCKET: &str = "/nix/var/nix/daemon-socket/socket";
@@ -77,6 +83,24 @@ pub(super) struct ObservedNixBase {
     socket: (u64, u64),
 }
 
+impl ObservedNixBase {
+    pub(super) fn require_verified_append(&self) -> Result<(), TransactionError> {
+        if matches!(
+            self.configuration.preparation,
+            NixIncludePreparation::Append(_)
+        ) && matches!(
+            self.configuration.attachment,
+            include_inputs::AttachmentInputs::VerifiedAppend(_)
+        ) {
+            Ok(())
+        } else {
+            Err(TransactionError::NixBlocked(
+                NixBlock::ConfigurationOwnerUnknown,
+            ))
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Eq, Serialize)]
 struct DaemonObservation {
     trusted: bool,
@@ -97,7 +121,7 @@ pub(super) struct ConfigurationObservation {
     attachment: include_inputs::AttachmentInputs,
 }
 
-#[derive(PartialEq, Eq)]
+#[derive(PartialEq, Eq, Serialize)]
 enum ConfigurationFile {
     Missing {
         ancestors: Vec<Option<InputIdentity>>,
@@ -223,13 +247,18 @@ impl NixIncludePreparation {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Serialize)]
 pub(super) enum ConfigurationEntry {
     Direct,
     Indirect,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(
+    target_os = "linux",
+    derive(Clone, serde::Deserialize),
+    serde(deny_unknown_fields)
+)]
 pub(super) struct InputIdentity {
     device: u64,
     inode: u64,
@@ -1477,5 +1506,28 @@ NeedDaemonReload=no
             Err(error) => serde_json::json!({"status":"blocked", "reason":format!("{error:?}")}),
         };
         println!("OBSERVATION={observation}");
+    }
+}
+
+#[cfg(test)]
+pub(super) fn policy_review_fixture(path: &Path, started: u64) -> ObservedNixBase {
+    ObservedNixBase {
+        client_digest: "fixture-client".into(),
+        daemon: DaemonObservation { trusted: false },
+        service: ServiceObservation {
+            main_pid: 100,
+            started,
+            invocation_id: NonZeroU128::new(1).unwrap(),
+        },
+        configuration: tests::fixture_input(path).unwrap(),
+        kernel: KernelDaemonObservation::Inaccessible,
+        socket: (0, 0),
+    }
+}
+
+#[cfg(all(test, target_os = "linux"))]
+impl ObservedNixBase {
+    pub(super) fn set_fixture_pid(&mut self, pid: u32) {
+        self.service.main_pid = pid;
     }
 }

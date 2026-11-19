@@ -77,6 +77,24 @@ struct Intent {
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(deny_unknown_fields)]
+struct PendingNixPolicy {
+    attempt: [u8; 32],
+    reviewed: [u8; 32],
+    helper_path: String,
+    helper: crate::candidate::FileIdentity,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    state_lease: Option<PolicyStateLease>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(deny_unknown_fields)]
+struct PolicyStateLease {
+    device: u64,
+    inode: u64,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(deny_unknown_fields)]
 struct InstallationRecord {
     schema: u32,
     committed: Option<Receipt>,
@@ -87,6 +105,8 @@ struct InstallationRecord {
     shell: Option<shell::Ledger>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     uninstall: Option<uninstall::UninstallIntent>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pending_nix_policy: Option<PendingNixPolicy>,
     previous_observation: PriorObservation,
     snapshot_files: std::collections::BTreeMap<String, Vec<crate::candidate::FileIdentity>>,
 }
@@ -108,6 +128,7 @@ impl Default for InstallationRecord {
             resources: resources::ResourceLedger::default(),
             shell: None,
             uninstall: None,
+            pending_nix_policy: None,
             previous_observation: PriorObservation::NotChecked,
             snapshot_files: std::collections::BTreeMap::new(),
         }
@@ -687,6 +708,39 @@ impl InstallationOwner {
                 "unsupported installation schema",
             ));
         }
+        if let Some(pending) = &record.pending_nix_policy {
+            if record.uninstall.is_some()
+                || record.activation.is_some()
+                || record.resources.pending.is_some()
+                || record.shell.as_ref().is_some_and(shell::Ledger::pending)
+            {
+                return Err(TransactionError::InvalidState(
+                    "Nix policy attempt must be exclusive",
+                ));
+            }
+            if pending.attempt == [0; 32]
+                || crate::candidate::OutputPath::parse(&pending.helper_path).is_err()
+                || !pending.helper_path.ends_with("-neo-policy-helper")
+                || pending.helper.name.is_empty()
+                || pending.helper.name.len() > 512
+                || !pending
+                    .helper
+                    .name
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || b"._+-".contains(&byte))
+                || !candidate_id(&pending.helper.sha)
+                || pending.helper.size == 0
+                || record
+                    .resources
+                    .links
+                    .get(resources::HELPER_ROOT)
+                    .is_some_and(|root| root.target != pending.helper_path)
+            {
+                return Err(TransactionError::InvalidState(
+                    "Nix policy attempt identity",
+                ));
+            }
+        }
         if let Some(intent) = &record.uninstall {
             intent.validate(&self.layout, &record)?;
         }
@@ -754,11 +808,7 @@ impl InstallationOwner {
         Ok(record)
     }
 
-    async fn write_record(
-        &self,
-        record: &InstallationRecord,
-        committing: bool,
-    ) -> Result<(), TransactionError> {
+    fn encode_record(&self, record: &InstallationRecord) -> Result<Vec<u8>, TransactionError> {
         let bytes = serde_json::to_vec(record)
             .map_err(|_| TransactionError::InvalidState("could not encode state record"))?;
         if bytes.len() as u64 > MAX_STATE_BYTES {
@@ -767,6 +817,15 @@ impl InstallationOwner {
             ));
         }
         self.decode_record(Some(&bytes))?;
+        Ok(bytes)
+    }
+
+    async fn write_record(
+        &self,
+        record: &InstallationRecord,
+        committing: bool,
+    ) -> Result<(), TransactionError> {
+        let bytes = self.encode_record(record)?;
         self.effects
             .filesystem(FilesystemJob::PublishRecord {
                 path: self.layout.record(),
@@ -852,6 +911,27 @@ struct RootLease {
 }
 
 impl RootLease {
+    #[cfg(target_os = "linux")]
+    fn policy_identity(&self, path: &Path) -> Result<PolicyStateLease, TransactionError> {
+        let held = self.file.metadata().map_err(|_| TransactionError::Io)?;
+        let named = fs::symlink_metadata(path).map_err(|_| TransactionError::Io)?;
+        validate_private_file(&named)?;
+        if self.path != path
+            || held.nlink() != 1
+            || named.nlink() != 1
+            || held.dev() != named.dev()
+            || held.ino() != named.ino()
+        {
+            return Err(TransactionError::InvalidState(
+                "Nix policy state lease changed",
+            ));
+        }
+        Ok(PolicyStateLease {
+            device: held.dev(),
+            inode: held.ino(),
+        })
+    }
+
     fn acquire(path: &Path) -> Result<Self, TransactionError> {
         let file = open_or_create_lock(path)?;
         FileExt::try_lock_exclusive(&file).map_err(|error| {

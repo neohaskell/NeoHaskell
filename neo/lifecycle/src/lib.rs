@@ -21,6 +21,20 @@ impl Exit {
 }
 
 pub fn dispatch_internal(arguments: &[std::ffi::OsString]) -> Option<Exit> {
+    #[cfg(target_os = "linux")]
+    if let Some(code) = installation::nix_owner::dispatch_native_policy(arguments) {
+        return Some(Exit { code });
+    }
+    #[cfg(target_os = "linux")]
+    if arguments
+        == [std::ffi::OsString::from(
+            installation::nix_owner::POLICY_OBSERVE_ARGUMENT,
+        )]
+    {
+        return Some(Exit {
+            code: installation::nix_owner::run_policy_observer(),
+        });
+    }
     #[cfg(unix)]
     if arguments
         == [std::ffi::OsString::from(
@@ -401,6 +415,7 @@ fn write_review(
             ReviewedChange::Retention => &copy.review_retention,
             ReviewedChange::Activation => &copy.review_activation,
             ReviewedChange::Cleanup => &copy.review_cleanup,
+            ReviewedChange::NixPolicy => &copy.review_nix_policy,
         };
         writeln!(output, "{message}")?;
     }

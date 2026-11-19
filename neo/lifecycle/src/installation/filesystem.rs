@@ -1,4 +1,8 @@
 use super::coordinator::{Admission, Cancellation, SettlementKind, WaitInterest};
+#[cfg(target_os = "linux")]
+use super::nix_owner::peer_handoff::{
+    ExactExecutable, HandoffError, Rendezvous, launcher::VerifiedCaller,
+};
 use super::resource_io::ResourceDirectory;
 use super::resources::{Inventory, LinkObservation};
 use super::review::{CommandOnPath, inspect_commands_on_path};
@@ -84,6 +88,17 @@ pub(super) enum FilesystemJob {
         bytes: Vec<u8>,
         committing: bool,
     },
+    #[cfg(target_os = "linux")]
+    PublishPolicyIntent {
+        layout: Layout,
+        expected: Option<Vec<u8>>,
+        bytes: Vec<u8>,
+    },
+    #[cfg(target_os = "linux")]
+    ClearPolicyIntent {
+        layout: Layout,
+        expected: Vec<u8>,
+    },
     PublishReviewedRecord {
         layout: Layout,
         expected: Option<Vec<u8>>,
@@ -136,6 +151,27 @@ pub(super) enum FilesystemJob {
         path: PathBuf,
         expected: FileIdentity,
     },
+    HashPolicyHelper {
+        path: PathBuf,
+        expected: FileIdentity,
+        location: PolicyHelperLocation,
+    },
+    #[cfg(target_os = "linux")]
+    ObserveStockPolicy {
+        executable: ExactExecutable,
+        rendezvous: Rendezvous,
+        caller: VerifiedCaller,
+        common_inputs: [u8; 32],
+    },
+    #[cfg(target_os = "linux")]
+    PublishStockPolicy {
+        executable: ExactExecutable,
+        rendezvous: Rendezvous,
+        caller: VerifiedCaller,
+        commit: super::coordinator::StockPolicyIntent,
+    },
+    #[cfg(target_os = "linux")]
+    InspectStockPolicy(super::coordinator::StockPolicyIntent),
     ResolvePairMember {
         member: PathBuf,
         expected: PathBuf,
@@ -166,6 +202,18 @@ pub(super) enum FilesystemJob {
 }
 
 pub(super) enum FilesystemResult {
+    #[cfg(target_os = "linux")]
+    StockPolicyObserved {
+        executable: ExactExecutable,
+        caller: VerifiedCaller,
+        discovery: super::nix_owner::peer_handoff::launcher::StockDiscovery,
+    },
+    #[cfg(target_os = "linux")]
+    StockPolicyPublished(super::nix_owner::peer_handoff::launcher::VerifiedPolicyInspection),
+    #[cfg(target_os = "linux")]
+    StockPolicyInspected(
+        Option<super::nix_owner::peer_handoff::launcher::VerifiedPolicyInspection>,
+    ),
     NixDaemonProcess(super::nix_owner::KernelDaemonObservation),
     ConfigurationInput(super::nix_owner::ConfigurationObservation),
     UninstallIntent(super::uninstall::UninstallIntent),
@@ -228,6 +276,12 @@ impl FilesystemJob {
 
     pub(super) fn mutates(&self) -> bool {
         match self {
+            #[cfg(target_os = "linux")]
+            Self::PublishPolicyIntent { .. } | Self::ClearPolicyIntent { .. } => true,
+            #[cfg(target_os = "linux")]
+            Self::ObserveStockPolicy { .. } | Self::InspectStockPolicy(_) => false,
+            #[cfg(target_os = "linux")]
+            Self::PublishStockPolicy { .. } => true,
             Self::UninstallConfirm(_)
             | Self::UninstallInspect { .. }
             | Self::ShellInspect { .. }
@@ -239,6 +293,7 @@ impl FilesystemJob {
             | Self::ReadSnapshot { .. }
             | Self::CanonicalExecutable
             | Self::HashExecutor { .. }
+            | Self::HashPolicyHelper { .. }
             | Self::ResolvePairMember { .. }
             | Self::NixClient
             | Self::ProtectedPath(_)
@@ -482,6 +537,146 @@ fn read_bounded(
     }
 }
 
+fn nar_string(digest: &mut Sha256, bytes: &[u8]) {
+    digest.update((bytes.len() as u64).to_le_bytes());
+    digest.update(bytes);
+    digest.update(&[0; 7][..(8 - bytes.len() % 8) % 8]);
+}
+
+pub(super) fn helper_snapshot(
+    metadata: &fs::Metadata,
+) -> (u64, u64, u64, u32, u32, u32, i64, i64, i64, i64) {
+    (
+        metadata.dev(),
+        metadata.ino(),
+        metadata.len(),
+        metadata.mode(),
+        metadata.uid(),
+        metadata.gid(),
+        metadata.mtime(),
+        metadata.mtime_nsec(),
+        metadata.ctime(),
+        metadata.ctime_nsec(),
+    )
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum PolicyHelperLocation {
+    Source,
+    Store,
+}
+
+fn verify_executor_file(
+    path: &Path,
+    expected: &FileIdentity,
+    helper: Option<PolicyHelperLocation>,
+    policy: &ReadPolicy,
+    mut visit: impl FnMut(&[u8]),
+) -> Result<(fs::File, fs::Metadata), TransactionError> {
+    let stored = helper == Some(PolicyHelperLocation::Store);
+    policy.check()?;
+    if !path.is_absolute() {
+        return Err(TransactionError::Verification("executor absolute source"));
+    }
+    if stored {
+        let text = path.to_str().ok_or(TransactionError::UnsafePath)?;
+        crate::candidate::OutputPath::parse(text)
+            .map_err(|_| TransactionError::Verification("helper store path"))?;
+        if super::nix_owner::protected_path(path).map_err(|_| TransactionError::UnsafePath)? != path
+        {
+            return Err(TransactionError::UnsafePath);
+        }
+    }
+    let mut file = OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+        .open(path)
+        .map_err(|_| TransactionError::Verification("native executor file"))?;
+    let before = file.metadata().map_err(|_| TransactionError::Io)?;
+    if before.len() != expected.size as u64 {
+        return Err(TransactionError::Verification("native executor size"));
+    }
+    if !before.is_file()
+        || (helper.is_some() && before.mode() & 0o100 == 0)
+        || (stored && (before.uid() != 0 || before.mode() & 0o7777 != 0o555))
+    {
+        return Err(TransactionError::Verification("executor file identity"));
+    }
+    let mut raw = Sha256::new();
+    let mut count = 0usize;
+    let mut buffer = [0; 32 * 1024];
+    loop {
+        policy.check()?;
+        let size = file.read(&mut buffer).map_err(|_| TransactionError::Io)?;
+        if size == 0 {
+            break;
+        }
+        count = count
+            .checked_add(size)
+            .ok_or(TransactionError::Verification("native executor size"))?;
+        if count > expected.size {
+            return Err(TransactionError::Verification("native executor size"));
+        }
+        raw.update(&buffer[..size]);
+        visit(&buffer[..size]);
+    }
+    let after = file.metadata().map_err(|_| TransactionError::Io)?;
+    let named = fs::symlink_metadata(path).map_err(|_| TransactionError::Io)?;
+    if helper_snapshot(&before) != helper_snapshot(&after)
+        || helper_snapshot(&after) != helper_snapshot(&named)
+        || count != expected.size
+        || format!("{:x}", raw.finalize()) != expected.sha
+    {
+        return Err(TransactionError::Verification("native executor hash"));
+    }
+    policy.check()?;
+    Ok((file, after))
+}
+
+pub(super) fn open_verified_helper(
+    path: &Path,
+    expected: &FileIdentity,
+    location: PolicyHelperLocation,
+) -> Result<(fs::File, fs::Metadata), TransactionError> {
+    verify_executor_file(
+        path,
+        expected,
+        Some(location),
+        &ReadPolicy {
+            cancellation: Cancellation::default(),
+            admission: Admission::Requested,
+        },
+        |_| {},
+    )
+}
+
+fn hash_helper(
+    path: &Path,
+    expected: &FileIdentity,
+    location: PolicyHelperLocation,
+    policy: &ReadPolicy,
+) -> Result<String, TransactionError> {
+    let mut nar = Sha256::new();
+    for tag in [
+        b"nix-archive-1".as_slice(),
+        b"(",
+        b"type",
+        b"regular",
+        b"executable",
+        b"",
+        b"contents",
+    ] {
+        nar_string(&mut nar, tag);
+    }
+    nar.update((expected.size as u64).to_le_bytes());
+    verify_executor_file(path, expected, Some(location), policy, |chunk| {
+        nar.update(chunk)
+    })?;
+    nar.update(&[0; 7][..(8 - expected.size % 8) % 8]);
+    nar_string(&mut nar, b")");
+    Ok(format!("{:x}", nar.finalize()))
+}
+
 fn execute(job: FilesystemJob, policy: &ReadPolicy) -> Result<FilesystemResult, TransactionError> {
     use FilesystemJob as Job;
     use FilesystemResult as Result;
@@ -598,16 +793,7 @@ fn execute(job: FilesystemJob, policy: &ReadPolicy) -> Result<FilesystemResult, 
                     ));
                 }
             }
-            let bytes = open_owned_file(&layout.record(), true, false)?
-                .map(|file| {
-                    read_bounded(
-                        file,
-                        super::MAX_STATE_BYTES as usize,
-                        TransactionError::InvalidState("state record exceeds the size limit"),
-                        policy,
-                    )
-                })
-                .transpose()?;
+            let bytes = read_record_bytes(&layout.record(), policy)?;
             Ok(Result::Bytes(bytes))
         }
         Job::ReadSnapshot { path, maximum } => Ok(Result::Bytes(
@@ -637,16 +823,7 @@ fn execute(job: FilesystemJob, policy: &ReadPolicy) -> Result<FilesystemResult, 
         } => {
             if let Some(kind) = journal.filter(|_| matches!(policy.admission, Admission::Requested))
             {
-                let before = open_owned_file(&path, true, false)?
-                    .map(|file| {
-                        read_bounded(
-                            file,
-                            super::MAX_STATE_BYTES as usize,
-                            TransactionError::InvalidState("state record exceeds the size limit"),
-                            policy,
-                        )
-                    })
-                    .transpose()?;
+                let before = read_record_bytes(&path, policy)?;
                 let result = publish_record(&path, &bytes, committing, policy);
                 #[cfg(test)]
                 let result = if result.is_ok()
@@ -669,6 +846,61 @@ fn execute(job: FilesystemJob, policy: &ReadPolicy) -> Result<FilesystemResult, 
             publish_record(&path, &bytes, committing, policy)?;
             Ok(Result::Applied)
         }
+        #[cfg(target_os = "linux")]
+        Job::PublishPolicyIntent {
+            layout,
+            expected,
+            bytes,
+        } => {
+            let path = layout.record();
+            if read_record_bytes(&path, policy)? != expected {
+                return Err(TransactionError::InvalidState(
+                    "reviewed record changed before Nix policy intent publication",
+                ));
+            }
+            #[cfg(test)]
+            policy.cancellation.hit("before_policy_intent_publication");
+            policy.check()?;
+            publish_record(&path, &bytes, false, policy)?;
+            #[cfg(test)]
+            if policy
+                .cancellation
+                .is_cut("after_policy_intent_publication_error")
+            {
+                return Err(TransactionError::Io);
+            }
+            Ok(Result::Applied)
+        }
+        #[cfg(target_os = "linux")]
+        Job::ClearPolicyIntent { layout, expected } => {
+            let path = layout.record();
+            if read_record_bytes(&path, policy)?.as_deref() != Some(expected.as_slice()) {
+                return Err(TransactionError::InvalidState(
+                    "Nix policy intent changed before settlement",
+                ));
+            }
+            let mut record: super::InstallationRecord = serde_json::from_slice(&expected)
+                .map_err(|_| TransactionError::InvalidState("Nix policy record format"))?;
+            let lease = record
+                .pending_nix_policy
+                .take()
+                .and_then(|pending| pending.state_lease)
+                .ok_or(TransactionError::InvalidState(
+                    "Nix policy state lease missing",
+                ))?;
+            let named = fs::symlink_metadata(layout.lock()).map_err(|_| TransactionError::Io)?;
+            super::validate_private_file(&named)?;
+            if (named.dev(), named.ino(), named.nlink()) != (lease.device, lease.inode, 1) {
+                return Err(TransactionError::InvalidState(
+                    "Nix policy state lease changed",
+                ));
+            }
+            let bytes = serde_json::to_vec(&record)
+                .map_err(|_| TransactionError::InvalidState("Nix policy record format"))?;
+            policy.check()?;
+            publish_record(&path, &bytes, false, policy)?;
+            Ok(Result::Applied)
+        }
         Job::PublishReviewedRecord {
             layout,
             expected,
@@ -677,16 +909,7 @@ fn execute(job: FilesystemJob, policy: &ReadPolicy) -> Result<FilesystemResult, 
             bytes,
             committing,
         } => {
-            let current = open_owned_file(&layout.record(), true, false)?
-                .map(|file| {
-                    read_bounded(
-                        file,
-                        super::MAX_STATE_BYTES as usize,
-                        TransactionError::InvalidState("state record exceeds the size limit"),
-                        policy,
-                    )
-                })
-                .transpose()?;
+            let current = read_record_bytes(&layout.record(), policy)?;
             if current != expected || read_owned_link(&layout.active_link())? != active {
                 return Err(TransactionError::InvalidState(
                     "reviewed recovery changed before publication",
@@ -800,32 +1023,82 @@ fn execute(job: FilesystemJob, policy: &ReadPolicy) -> Result<FilesystemResult, 
                 .map_err(|_| TransactionError::Verification("executor path"))?,
         )),
         Job::HashExecutor { path, expected } => {
-            let mut file = File::open(path)
-                .map_err(|_| TransactionError::Verification("native executor file"))?;
-            if file.metadata().map_err(|_| TransactionError::Io)?.len() != expected.size as u64 {
-                return Err(TransactionError::Verification("native executor size"));
-            }
-            let mut digest = Sha256::new();
-            let mut count = 0usize;
-            let mut buffer = [0; 32 * 1024];
-            loop {
-                policy.check()?;
-                let size = file.read(&mut buffer).map_err(|_| TransactionError::Io)?;
-                if size == 0 {
-                    break;
-                }
-                count = count
-                    .checked_add(size)
-                    .ok_or(TransactionError::Verification("native executor size"))?;
-                if count > expected.size {
-                    return Err(TransactionError::Verification("native executor size"));
-                }
-                digest.update(&buffer[..size]);
-            }
-            if count != expected.size || format!("{:x}", digest.finalize()) != expected.sha {
-                return Err(TransactionError::Verification("native executor hash"));
-            }
+            verify_executor_file(&path, &expected, None, policy, |_| {})?;
             Ok(Result::Applied)
+        }
+        Job::HashPolicyHelper {
+            path,
+            expected,
+            location,
+        } => Ok(Result::Digest(hash_helper(
+            &path, &expected, location, policy,
+        )?)),
+        #[cfg(target_os = "linux")]
+        Job::ObserveStockPolicy {
+            executable,
+            rendezvous,
+            caller,
+            common_inputs,
+        } => {
+            let discovery = executable
+                .discover_stock_policy(rendezvous, &caller, || policy.check().is_err())
+                .map_err(|error| match error {
+                    HandoffError::Cancelled => TransactionError::StopRequested,
+                    HandoffError::CleanupUnknown => TransactionError::CleanupUnknown,
+                    _ => TransactionError::Verification("helper policy discovery"),
+                })?
+                .map_err(|_| {
+                    TransactionError::NixBlocked(
+                        super::nix_owner::NixBlock::ConfigurationOwnerUnknown,
+                    )
+                })?;
+            if discovery.common_inputs() != &common_inputs {
+                return Err(TransactionError::Verification(
+                    "reviewed policy inputs changed",
+                ));
+            }
+            policy.check()?;
+            Ok(Result::StockPolicyObserved {
+                executable,
+                caller,
+                discovery,
+            })
+        }
+        #[cfg(target_os = "linux")]
+        Job::PublishStockPolicy {
+            executable,
+            rendezvous,
+            caller,
+            commit,
+        } => {
+            let verified = executable
+                .publish_stock_policy(rendezvous, &caller, &commit, || policy.check().is_err())
+                .map_err(|error| match error {
+                    HandoffError::Cancelled => TransactionError::StopRequested,
+                    HandoffError::CleanupUnknown => TransactionError::CleanupUnknown,
+                    _ => TransactionError::Verification("Nix policy application is pending"),
+                })?;
+            Ok(Result::StockPolicyPublished(verified))
+        }
+        #[cfg(target_os = "linux")]
+        Job::InspectStockPolicy(intent) => {
+            let unresolved = TransactionError::InvalidState("Nix policy outcome is pending");
+            let pending = intent.pending();
+            let caller =
+                VerifiedCaller::open_current(&pending.helper).map_err(|_| unresolved.clone())?;
+            let executable =
+                ExactExecutable::open(Path::new(&pending.helper_path), &pending.helper)
+                    .map_err(|_| unresolved.clone())?;
+            let rendezvous = Rendezvous::fresh().map_err(|_| unresolved.clone())?;
+            let inspected = executable
+                .inspect_stock_policy(rendezvous, &caller, &intent, || policy.check().is_err())
+                .map_err(|error| match error {
+                    HandoffError::Cancelled => TransactionError::StopRequested,
+                    HandoffError::CleanupUnknown => TransactionError::CleanupUnknown,
+                    _ => unresolved,
+                })?;
+            policy.check()?;
+            Ok(Result::StockPolicyInspected(inspected))
         }
         Job::ResolvePairMember { member, expected } => {
             if member
@@ -921,6 +1194,22 @@ fn execute(job: FilesystemJob, policy: &ReadPolicy) -> Result<FilesystemResult, 
             Ok(Result::ResourceRemoved { directory, result })
         }
     }
+}
+
+fn read_record_bytes(
+    path: &Path,
+    policy: &ReadPolicy,
+) -> Result<Option<Vec<u8>>, TransactionError> {
+    open_owned_file(path, true, false)?
+        .map(|file| {
+            read_bounded(
+                file,
+                super::MAX_STATE_BYTES as usize,
+                TransactionError::InvalidState("state record exceeds the size limit"),
+                policy,
+            )
+        })
+        .transpose()
 }
 
 fn publish_record(
@@ -1033,6 +1322,75 @@ fn prune_snapshot(directory: &Path, files: &[FileIdentity]) -> Result<(), Transa
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn helper_nar_matches_independent_nix_vectors() {
+        let temporary = tempfile::tempdir().unwrap();
+        let path = temporary.path().canonicalize().unwrap().join("helper");
+        let policy = ReadPolicy {
+            cancellation: Cancellation::default(),
+            admission: Admission::Requested,
+        };
+        for (bytes, expected_nar) in [
+            (
+                b"#!/bin/sh\nprintf \"%s\\n\" helper-fixture\n".to_vec(),
+                "92bf8394ab84a8f865520a06b0ca2138d961bf39f27b84d96b6c2d307910e4c7",
+            ),
+            (
+                vec![0; 8],
+                "a0e542dbaff146ec07c4e46eb27841bd9a45a304203eaa34ecccb9b3022b08c3",
+            ),
+            (
+                vec![0; 32769],
+                "8e763ed1e1c58166a05d46044cd058f24863b94ffd211f28d1512c33e370f0dc",
+            ),
+        ] {
+            fs::write(&path, &bytes).unwrap();
+            fs::set_permissions(&path, fs::Permissions::from_mode(0o700)).unwrap();
+            let identity = FileIdentity {
+                name: "helper".into(),
+                sha: format!("{:x}", Sha256::digest(&bytes)),
+                size: bytes.len(),
+            };
+            assert_eq!(
+                hash_helper(&path, &identity, PolicyHelperLocation::Source, &policy).unwrap(),
+                expected_nar
+            );
+            fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
+            assert!(hash_helper(&path, &identity, PolicyHelperLocation::Source, &policy).is_err());
+            fs::set_permissions(&path, fs::Permissions::from_mode(0o700)).unwrap();
+            let mut replaced = bytes.clone();
+            replaced[0] ^= 1;
+            fs::write(&path, replaced).unwrap();
+            assert!(hash_helper(&path, &identity, PolicyHelperLocation::Source, &policy).is_err());
+            fs::write(&path, &bytes).unwrap();
+            let link = temporary.path().join("link");
+            symlink(&path, &link).unwrap();
+            assert!(hash_helper(&link, &identity, PolicyHelperLocation::Source, &policy).is_err());
+            fs::remove_file(link).unwrap();
+        }
+    }
+
+    #[test]
+    fn helper_rejects_fifo_and_directory_without_blocking() {
+        use std::os::unix::ffi::OsStrExt;
+        let temporary = tempfile::tempdir().unwrap();
+        let directory = temporary.path().canonicalize().unwrap();
+        let fifo = directory.join("fifo");
+        let name = std::ffi::CString::new(fifo.as_os_str().as_bytes()).unwrap();
+        assert_eq!(unsafe { libc::mkfifo(name.as_ptr(), 0o700) }, 0);
+        let identity = FileIdentity {
+            name: "helper".into(),
+            sha: format!("{:x}", Sha256::digest([])),
+            size: 0,
+        };
+        let policy = ReadPolicy {
+            cancellation: Cancellation::default(),
+            admission: Admission::Requested,
+        };
+        assert!(hash_helper(&fifo, &identity, PolicyHelperLocation::Source, &policy).is_err());
+        assert!(hash_helper(&directory, &identity, PolicyHelperLocation::Source, &policy).is_err());
+    }
 
     #[test]
     fn adding_either_link_rechecks_both_command_names() {

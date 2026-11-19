@@ -39,6 +39,14 @@ pub(super) enum WorkerRequest {
     BuildProfile {
         output: PathBuf,
     },
+    HelperFixedPath {
+        client: PathBuf,
+        nar_hash: String,
+    },
+    ImportPolicyHelper {
+        client: PathBuf,
+        source: PathBuf,
+    },
     Version,
     StoreInfo,
     SystemdService,
@@ -81,12 +89,14 @@ pub(super) enum WorkerRequest {
 pub(super) enum RootName {
     Candidate(String),
     Generation(String),
+    NixPolicyHelper,
 }
 
 impl WorkerRequest {
     pub(super) fn mutates(&self) -> bool {
         match self {
             Self::Release(_)
+            | Self::HelperFixedPath { .. }
             | Self::Version
             | Self::StoreInfo
             | Self::SystemdService
@@ -95,6 +105,7 @@ impl WorkerRequest {
             | Self::HashConvert { .. }
             | Self::VerifyContents { .. } => false,
             Self::ShellStartup(_)
+            | Self::ImportPolicyHelper { .. }
             | Self::AcquireRetained { .. }
             | Self::RegisterExact { .. }
             | Self::ProbeTool { .. } => true,
@@ -792,6 +803,7 @@ impl WorkerRequest {
 
     fn stdout_limit(&self) -> io::Result<usize> {
         match self {
+            Self::HelperFixedPath { .. } | Self::ImportPolicyHelper { .. } => Ok(256),
             Self::Release(fetch) => fetch.limit().map_err(|_| invalid("release request")),
             Self::PathInfo { paths, .. } => {
                 if paths.is_empty() || paths.len() > 64 {
@@ -822,6 +834,44 @@ impl WorkerRequest {
         }
         let mut command = match self {
             Self::ShellStartup(_) => unreachable!(),
+            Self::HelperFixedPath { client, nar_hash } => {
+                validate_helper_hash(nar_hash)?;
+                let mut command = Command::new(pinned_helper_client(client, true)?);
+                command.args([
+                    "--print-fixed-path",
+                    "--recursive",
+                    "sha256",
+                    nar_hash,
+                    "neo-policy-helper",
+                ]);
+                command
+            }
+            Self::ImportPolicyHelper { client, source } => {
+                if !source.is_absolute()
+                    || source
+                        .components()
+                        .any(|part| matches!(part, std::path::Component::ParentDir))
+                {
+                    return Err(invalid("helper absolute source"));
+                }
+                let mut command = Command::new(pinned_helper_client(client, false)?);
+                command
+                    .args([
+                        "--extra-experimental-features",
+                        "nix-command",
+                        "--offline",
+                        "store",
+                        "add",
+                        "--mode",
+                        "nar",
+                        "--hash-algo",
+                        "sha256",
+                        "--name",
+                        "neo-policy-helper",
+                    ])
+                    .arg(source);
+                command
+            }
             Self::Release(fetch) => {
                 super::release::client_command(fetch, &directory.join(super::LOCK_NAME))?
             }
@@ -905,8 +955,11 @@ impl WorkerRequest {
                 let mut command = nix_command();
                 if *offline {
                     command.arg("--offline");
+                } else {
+                    command.args(["--option", "substitute", "true"]);
                 }
                 command
+                    .args(["--option", "builders", "", "--max-jobs", "0"])
                     .arg("build")
                     .arg("--profile")
                     .arg(directory.join("prepared"))
@@ -920,6 +973,12 @@ impl WorkerRequest {
                 let directory = directory.join("resources");
                 validate_directory(&directory, true).map_err(|_| invalid("resource directory"))?;
                 let name = match root {
+                    RootName::NixPolicyHelper => {
+                        if pair.ends_with(".drv") {
+                            return Err(invalid("helper must be an imported output"));
+                        }
+                        super::resources::HELPER_ROOT.into()
+                    }
                     RootName::Candidate(id) => candidate_root(id)?,
                     RootName::Generation(name) => {
                         if !super::resources::is_generation(name) {
@@ -928,15 +987,34 @@ impl WorkerRequest {
                         name.clone()
                     }
                 };
-                let nix = std::fs::canonicalize(NIX)?;
-                let sibling = nix
-                    .parent()
-                    .ok_or_else(|| invalid("Nix executable parent"))?
-                    .join("nix-store");
-                if std::fs::canonicalize(&sibling)?.parent() != nix.parent() {
-                    return Err(invalid("legacy Nix executable"));
-                }
+                let sibling = if matches!(root, RootName::NixPolicyHelper) {
+                    let client = super::nix_owner::trusted_client()
+                        .map_err(|_| invalid("unproved helper Nix client"))?;
+                    pinned_helper_client(&client, true)?
+                } else {
+                    let nix = std::fs::canonicalize(NIX)?;
+                    let sibling = nix
+                        .parent()
+                        .ok_or_else(|| invalid("Nix executable parent"))?
+                        .join("nix-store");
+                    if std::fs::canonicalize(&sibling)?.parent() != nix.parent() {
+                        return Err(invalid("legacy Nix executable"));
+                    }
+                    sibling
+                };
                 let mut command = Command::new(sibling);
+                if matches!(root, RootName::NixPolicyHelper) {
+                    command.args([
+                        "--option",
+                        "substitute",
+                        "false",
+                        "--option",
+                        "builders",
+                        "",
+                        "--max-jobs",
+                        "0",
+                    ]);
+                }
                 command
                     .arg("--realise")
                     .arg(pair)
@@ -1049,6 +1127,66 @@ impl WorkerRequest {
         validate_argv_budget(&command)?;
         Ok(command)
     }
+}
+
+fn validate_helper_hash(value: &str) -> io::Result<()> {
+    if value.len() != 64
+        || !value
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+    {
+        return Err(invalid("helper NAR hash"));
+    }
+    Ok(())
+}
+
+fn pinned_helper_client(client: &Path, legacy: bool) -> io::Result<PathBuf> {
+    let trusted =
+        super::nix_owner::trusted_client().map_err(|_| invalid("unproved helper Nix client"))?;
+    if trusted != client {
+        return Err(invalid("changed helper Nix client"));
+    }
+    if !legacy {
+        return Ok(trusted);
+    }
+    helper_legacy_sibling(&trusted, super::nix_owner::protected_path)
+}
+
+fn helper_legacy_sibling(
+    client: &Path,
+    protect: impl FnOnce(&Path) -> io::Result<PathBuf>,
+) -> io::Result<PathBuf> {
+    let sibling = client
+        .parent()
+        .ok_or_else(|| invalid("Nix executable parent"))?
+        .join("nix-store");
+    if protect(&sibling)? != client {
+        return Err(invalid("legacy helper Nix executable"));
+    }
+    Ok(sibling)
+}
+
+pub(super) fn helper_output(bytes: &[u8]) -> io::Result<OutputPath> {
+    if bytes.len() > 256 {
+        return Err(invalid("helper output limit"));
+    }
+    let line = bytes
+        .strip_suffix(b"\n")
+        .ok_or_else(|| invalid("helper output line"))?;
+    let line = std::str::from_utf8(line).map_err(|_| invalid("helper output encoding"))?;
+    if line.contains(['\n', '\r']) {
+        return Err(invalid("helper output line"));
+    }
+    let path = OutputPath::parse(line).map_err(|_| invalid("helper output path"))?;
+    let name = Path::new(path.as_str())
+        .file_name()
+        .and_then(|name| name.to_str())
+        .and_then(|name| name.split_once('-'))
+        .map(|(_, suffix)| suffix);
+    if name != Some("neo-policy-helper") {
+        return Err(invalid("helper output name"));
+    }
+    Ok(path)
 }
 
 fn nix_command() -> Command {
@@ -1427,12 +1565,80 @@ mod tests {
             "overflow" => "installation::process::tests::fixture_overflow",
             "resource-gated" => "installation::resource_io::tests::fixture_resource_gated",
             "resource-nonzero" => "installation::resource_io::tests::fixture_resource_nonzero",
+            "resource-helper" => "installation::resource_io::tests::fixture_resource_helper",
             "launch-error" => return Ok(Command::new("/no-such-neo-process-fixture")),
             _ => return Err(invalid("fixture name")),
         };
         let mut command = Command::new(std::env::current_exe()?);
         command.args(["--exact", test, "--ignored", "--nocapture", "--quiet"]);
         Ok(command)
+    }
+
+    #[test]
+    fn helper_output_accepts_only_one_exact_named_store_line() {
+        let expected = "/nix/store/i0md420ln0dwnjs0ibm8v6z2jkqpdaqi-neo-policy-helper";
+        assert_eq!(
+            helper_output(format!("{expected}\n").as_bytes())
+                .unwrap()
+                .as_str(),
+            expected
+        );
+        for rejected in [
+            expected.to_owned(),
+            format!("{expected}\n\n"),
+            format!("{expected}\r\n"),
+            format!(" {expected}\n"),
+            format!("{expected}/bin/neo\n"),
+            format!("{expected}-other\n"),
+            "/nix/store/i0md420ln0dwnjs0ibm8v6z2jkqpdaqi-other-neo-policy-helper\n".to_owned(),
+            format!("{expected}\n{expected}\n"),
+            "x".repeat(257),
+        ] {
+            assert!(helper_output(rejected.as_bytes()).is_err());
+        }
+    }
+
+    #[test]
+    fn helper_legacy_name_must_resolve_to_the_pinned_multicall_executable() {
+        use std::os::unix::fs::symlink;
+        let temporary = tempfile::tempdir().unwrap();
+        let directory = temporary.path().canonicalize().unwrap();
+        let nix = directory.join("nix");
+        let nix_store = directory.join("nix-store");
+        std::fs::write(&nix, b"fixture").unwrap();
+        symlink("nix", &nix_store).unwrap();
+        assert_eq!(
+            helper_legacy_sibling(&nix, |path| path.canonicalize()).unwrap(),
+            nix_store
+        );
+        std::fs::remove_file(&nix_store).unwrap();
+        std::fs::write(&nix_store, b"fixture").unwrap();
+        assert!(helper_legacy_sibling(&nix, |path| path.canonicalize()).is_err());
+    }
+
+    #[test]
+    fn helper_hash_rejects_options_and_noncanonical_digests() {
+        assert!(validate_helper_hash(&"a".repeat(64)).is_ok());
+        for hash in [
+            "--help".to_owned(),
+            "A".repeat(64),
+            "0".repeat(63),
+            "g".repeat(64),
+            "0".repeat(65),
+        ] {
+            assert!(validate_helper_hash(&hash).is_err());
+        }
+        let request = WorkerRequest::ImportPolicyHelper {
+            client: PathBuf::from("/untrusted/nix"),
+            source: PathBuf::from("relative"),
+        };
+        assert!(request.command(Path::new("/tmp")).is_err());
+        let request = WorkerRequest::HelperFixedPath {
+            client: PathBuf::from("/untrusted/nix"),
+            nar_hash: "--help".into(),
+        };
+        assert!(request.command(Path::new("/tmp")).is_err());
+        assert_eq!(request.stdout_limit().unwrap(), 256);
     }
 
     #[test]

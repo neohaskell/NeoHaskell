@@ -137,6 +137,8 @@ pub(crate) enum Phase {
 #[serde(rename_all = "snake_case")]
 pub(crate) enum CompletedStep {
     Prerequisites,
+    NixPolicyObservation,
+    NixPolicyApplication,
     CandidateSelection,
     PairVerification,
     Recovery,
@@ -146,6 +148,7 @@ pub(crate) enum CompletedStep {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum AppliedChange {
+    NixPolicyApplied,
     ActivationCommitted,
     ActivationRecovered,
     ActivationReverted,

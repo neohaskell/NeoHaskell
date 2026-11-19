@@ -8,6 +8,16 @@ use std::os::fd::AsRawFd;
 use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
 use std::path::PathBuf;
 
+pub(super) struct HelperRetention {
+    target: OutputPath,
+}
+
+impl HelperRetention {
+    pub(super) fn target(&self) -> &OutputPath {
+        &self.target
+    }
+}
+
 pub(super) struct RetentionObservation {
     pair: OutputPath,
     root: PathBuf,
@@ -217,6 +227,12 @@ pub(super) fn pending_inventory_limit(ledger: &super::resources::ResourceLedger)
                 6
             }
         }
+        Some(ResourceEffect::Register { parent, .. })
+            if parent == super::resources::HELPER_ROOT =>
+        {
+            super::resources::HELPER_REGISTRATION_ADDITIONS
+                - usize::from(ledger.links.contains_key(parent))
+        }
         Some(ResourceEffect::Register { parent, .. }) => {
             if ledger.links.contains_key(parent) {
                 1
@@ -373,6 +389,127 @@ impl InstallationOwner {
         self.effects.checkpoint()
     }
 
+    fn helper_admission(record: &InstallationRecord) -> Result<(), TransactionError> {
+        if record.activation.is_some()
+            || record.uninstall.is_some()
+            || record
+                .shell
+                .as_ref()
+                .is_some_and(super::shell::Ledger::pending)
+            || record
+                .resources
+                .pending
+                .as_ref()
+                .is_some_and(|effect| match effect {
+                    ResourceEffect::Register { parent, .. } => {
+                        parent != super::resources::HELPER_ROOT
+                    }
+                    ResourceEffect::Remove { name, .. } => !super::resources::is_helper_link(name),
+                    ResourceEffect::Acquire { .. } => true,
+                })
+        {
+            return Err(TransactionError::InvalidState(
+                "helper retention requires quiescent installation",
+            ));
+        }
+        Ok(())
+    }
+
+    fn helper_observation(
+        record: &InstallationRecord,
+        directory: &ResourceDirectory,
+        target: &OutputPath,
+    ) -> Result<HelperRetention, TransactionError> {
+        if record.resources.pending.is_some()
+            || record.resources.parent.as_ref() != Some(&directory.identity)
+            || record
+                .resources
+                .links
+                .get(super::resources::HELPER_ROOT)
+                .is_none_or(|link| {
+                    link.target != target.as_str() || link.uid != directory.identity.uid
+                })
+        {
+            return Err(TransactionError::Verification(
+                "helper root does not retain exact output",
+            ));
+        }
+        Ok(HelperRetention {
+            target: target.clone(),
+        })
+    }
+
+    pub(super) async fn retain_nix_policy_helper(
+        &self,
+        lease: &super::Effects,
+        target: &OutputPath,
+    ) -> Result<HelperRetention, TransactionError> {
+        if target.as_str().ends_with(".drv") {
+            return Err(TransactionError::Verification(
+                "helper must be an imported output",
+            ));
+        }
+        let mut record = self.read_record().await?;
+        Self::helper_admission(&record)?;
+        let directory = self.resource_directory(&mut record).await?;
+        self.reconcile_resources(&mut record, &directory).await?;
+        if record
+            .resources
+            .links
+            .get(super::resources::HELPER_ROOT)
+            .is_some_and(|link| link.target != target.as_str())
+        {
+            return Err(TransactionError::Verification(
+                "helper root retains another output",
+            ));
+        }
+        let mut roots: BTreeSet<String> = record
+            .resources
+            .links
+            .keys()
+            .filter(|name| !super::resources::is_helper_link(name))
+            .cloned()
+            .collect();
+        roots.insert(super::resources::HELPER_ROOT.into());
+        self.prune_resources(&mut record, &directory, &roots)
+            .await?;
+        self.resource_operation(
+            lease,
+            &mut record,
+            &directory,
+            ResourceEffect::Register {
+                pair: target.as_str().into(),
+                parent: super::resources::HELPER_ROOT.into(),
+            },
+            process::WorkerRequest::RegisterExact {
+                pair: target.as_str().into(),
+                root: process::RootName::NixPolicyHelper,
+            },
+        )
+        .await?;
+        self.prune_resources(&mut record, &directory, &roots)
+            .await?;
+        Self::helper_observation(&record, &directory, target)
+    }
+
+    pub(super) async fn release_nix_policy_helper(
+        &self,
+        _lease: &super::Effects,
+    ) -> Result<(), TransactionError> {
+        let mut record = self.read_record().await?;
+        Self::helper_admission(&record)?;
+        let directory = self.resource_directory(&mut record).await?;
+        self.reconcile_resources(&mut record, &directory).await?;
+        let roots = record
+            .resources
+            .links
+            .keys()
+            .filter(|name| !super::resources::is_helper_link(name))
+            .cloned()
+            .collect();
+        self.prune_resources(&mut record, &directory, &roots).await
+    }
+
     pub(super) async fn finish_resources(
         &self,
         _lease: &super::Effects,
@@ -412,6 +549,17 @@ impl InstallationOwner {
         offline: bool,
     ) -> Result<RetentionObservation, TransactionError> {
         let mut record = self.read_record().await?;
+        if record
+            .resources
+            .links
+            .keys()
+            .any(|name| super::resources::is_helper_link(name))
+            || matches!(&record.resources.pending, Some(ResourceEffect::Register { parent, .. }) if parent == super::resources::HELPER_ROOT)
+        {
+            return Err(TransactionError::InvalidState(
+                "helper retention must be released before pair acquisition",
+            ));
+        }
         if record.pinned.as_ref() != Some(selected) {
             return Err(TransactionError::InvalidState(
                 "retention selection is not pinned",
@@ -627,6 +775,159 @@ mod tests {
                 )
                 .await
         })
+    }
+
+    #[test]
+    #[ignore]
+    fn fixture_resource_helper() {
+        symlink(
+            PAIR,
+            Path::new("resources").join(super::super::resources::HELPER_ROOT),
+        )
+        .unwrap();
+        std::process::exit(0);
+    }
+
+    #[test]
+    fn helper_worker_success_and_cancellation_settle_before_observation() {
+        for cancel in [false, true] {
+            let (_temporary, owner, lease) = setup();
+            if cancel {
+                owner.effects.cancel_at("before_resource_command");
+            }
+            let result = super::super::coordinator::test_with(&owner.effects, &lease, async {
+                let mut record = owner.read_record().await?;
+                let directory = owner.resource_directory(&mut record).await?;
+                owner
+                    .resource_operation(
+                        &owner.effects,
+                        &mut record,
+                        &directory,
+                        ResourceEffect::Register {
+                            pair: PAIR.into(),
+                            parent: super::super::resources::HELPER_ROOT.into(),
+                        },
+                        process::WorkerRequest::Fixture {
+                            name: "resource-helper".into(),
+                        },
+                    )
+                    .await?;
+                InstallationOwner::helper_observation(
+                    &record,
+                    &directory,
+                    &OutputPath::parse(PAIR).unwrap(),
+                )
+                .map(|observation| observation.target().clone())
+            });
+            if cancel {
+                assert_eq!(result, Err(TransactionError::StopRequested));
+            } else {
+                assert_eq!(result.unwrap().as_str(), PAIR);
+            }
+            let record: InstallationRecord =
+                serde_json::from_slice(&fs::read(owner.layout.record()).unwrap()).unwrap();
+            assert!(record.resources.pending.is_none());
+            assert_eq!(
+                record
+                    .resources
+                    .links
+                    .contains_key(super::super::resources::HELPER_ROOT),
+                !cancel
+            );
+        }
+    }
+
+    #[test]
+    fn helper_observation_requires_exact_owned_target_and_never_returns_alias() {
+        let (_temporary, owner, lease) = setup();
+        super::super::coordinator::test_with(&owner.effects, &lease, async {
+            let mut record = owner.read_record().await?;
+            let directory = owner.resource_directory(&mut record).await?;
+            let target = OutputPath::parse(PAIR).unwrap();
+            let alias = directory.path.join(super::super::resources::HELPER_ROOT);
+            symlink(PAIR, &alias).unwrap();
+            record.resources.links = directory.inventory(2)?;
+            let retained = InstallationOwner::helper_observation(&record, &directory, &target)?;
+            assert_eq!(retained.target(), &target);
+            assert_ne!(std::path::Path::new(retained.target().as_str()), alias);
+            record
+                .resources
+                .links
+                .get_mut(super::super::resources::HELPER_ROOT)
+                .unwrap()
+                .target = "wrong".into();
+            assert!(InstallationOwner::helper_observation(&record, &directory, &target).is_err());
+            record
+                .resources
+                .links
+                .get_mut(super::super::resources::HELPER_ROOT)
+                .unwrap()
+                .target = PAIR.into();
+            record
+                .resources
+                .links
+                .get_mut(super::super::resources::HELPER_ROOT)
+                .unwrap()
+                .uid += 1;
+            assert!(InstallationOwner::helper_observation(&record, &directory, &target).is_err());
+            Ok::<(), TransactionError>(())
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn helper_interrupted_registration_reconciles_and_releases_only_helper() {
+        let (_temporary, owner, lease) = setup();
+        super::super::coordinator::test_with(&owner.effects, &lease, async {
+            let mut record = owner.read_record().await?;
+            let directory = owner.resource_directory(&mut record).await?;
+            symlink(PAIR, directory.path.join(ROOT)).unwrap();
+            record.resources.links = directory.inventory(2)?;
+            let baseline = record.resources.links.clone();
+            record
+                .resources
+                .begin(
+                    ResourceEffect::Register {
+                        pair: PAIR.into(),
+                        parent: super::super::resources::HELPER_ROOT.into(),
+                    },
+                    &baseline,
+                )
+                .unwrap();
+            owner.write_record(&record, false).await?;
+            symlink(
+                PAIR,
+                directory.path.join(super::super::resources::HELPER_ROOT),
+            )
+            .unwrap();
+            owner.release_nix_policy_helper(&owner.effects).await?;
+            let recovered = owner.read_record().await?;
+            assert!(recovered.resources.pending.is_none());
+            assert_eq!(recovered.resources.links, baseline);
+            assert_eq!(directory.inventory(2)?, baseline);
+            Ok::<(), TransactionError>(())
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn helper_inventory_allowance_is_final_plus_one_temporary() {
+        let mut ledger = super::super::resources::ResourceLedger::default();
+        ledger.pending = Some(ResourceEffect::Register {
+            pair: PAIR.into(),
+            parent: super::super::resources::HELPER_ROOT.into(),
+        });
+        assert_eq!(pending_inventory_limit(&ledger), 3);
+        ledger.links.insert(
+            super::super::resources::HELPER_ROOT.into(),
+            LinkObservation {
+                device: 1,
+                inode: 1,
+                uid: 1001,
+                target: PAIR.into(),
+            },
+        );
+        assert_eq!(pending_inventory_limit(&ledger), 3);
     }
 
     #[test]

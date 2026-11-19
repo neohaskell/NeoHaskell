@@ -1285,6 +1285,11 @@ pub(crate) fn release_core_limit() -> Result<usize> {
     Contract::load()?.limit("max_core_bytes")
 }
 
+#[cfg(target_os = "linux")]
+pub(crate) fn native_file_limit() -> Result<usize> {
+    Contract::load()?.limit("max_native_file_bytes")
+}
+
 pub(crate) fn release_metadata_limit(name: &str) -> Result<usize> {
     let contract = Contract::load()?;
     if object(&contract.registry()["roles"]["bootstraps"])?
