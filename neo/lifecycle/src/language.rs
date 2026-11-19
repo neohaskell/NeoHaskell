@@ -32,23 +32,6 @@ pub(crate) struct English {
     pub(crate) review_retention: String,
     pub(crate) review_activation: String,
     pub(crate) review_cleanup: String,
-    pub(crate) review_nix_policy: String,
-    pub(crate) review_existing_nix_policy: String,
-    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
-    pub(crate) review_darwin_policy_inspection: String,
-    pub(crate) review_darwin_policy_publication: String,
-    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
-    pub(crate) review_darwin_policy_recovery_inspection: String,
-    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
-    pub(crate) review_darwin_policy_restart: String,
-    pub(crate) review_apply_existing_nix_policy: String,
-    #[cfg(target_os = "linux")]
-    pub(crate) review_nix_policy_recovery_inspection: String,
-    pub(crate) review_resume_prepared_nix_policy: String,
-    pub(crate) administrator_handoff: String,
-    pub(crate) administrator_unavailable: String,
-    pub(crate) nix_policy_recovery_completed: String,
-    pub(crate) nix_policy_recovery_inspection_unavailable: String,
     pub(crate) nix_policy_recovery_pending: String,
     pub(crate) review_pending_recovery: String,
 
@@ -68,13 +51,9 @@ pub(crate) struct English {
     pub(crate) previous_unchecked: String,
     pub(crate) nix_missing_client: String,
     pub(crate) nix_unproved_client: String,
-    pub(crate) nix_unproved_platform: String,
-    pub(crate) nix_inactive_service: String,
-    pub(crate) nix_unproved_service: String,
     pub(crate) nix_daemon_unavailable: String,
     pub(crate) nix_daemon_mismatch: String,
-    pub(crate) nix_configuration_owner_unknown: String,
-    pub(crate) nix_caller_access_denied: String,
+    pub(crate) nix_pair_acquisition: String,
 }
 
 #[derive(Deserialize)]

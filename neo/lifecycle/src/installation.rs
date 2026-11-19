@@ -1,8 +1,7 @@
 mod coordinator;
 mod dashboard;
 mod filesystem;
-mod nix;
-pub(crate) mod nix_owner;
+pub(crate) mod nix;
 mod observation;
 pub(crate) mod process;
 pub(crate) mod release;
@@ -82,13 +81,24 @@ struct PendingNixPolicy {
     reviewed: [u8; 32],
     helper_path: String,
     helper: crate::candidate::FileIdentity,
-    #[serde(
-        default,
-        skip_serializing_if = "nix_owner::policy_observation::PolicyOperation::is_append"
-    )]
-    operation: nix_owner::policy_observation::PolicyOperation,
+    #[serde(default, skip_serializing_if = "LegacyNixPolicyOperation::is_append")]
+    operation: LegacyNixPolicyOperation,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     state_lease: Option<PolicyStateLease>,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum LegacyNixPolicyOperation {
+    #[default]
+    ConventionalAppend,
+    ApplyUnchanged,
+}
+
+impl LegacyNixPolicyOperation {
+    fn is_append(&self) -> bool {
+        *self == Self::ConventionalAppend
+    }
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
@@ -160,7 +170,6 @@ pub(crate) enum TransactionError {
     Io,
     StopRequested,
     CleanupUnknown,
-    AdministratorUnavailable,
     ActivationRecoveryFailed {
         primary: Box<TransactionError>,
         recovery: Box<TransactionError>,
@@ -177,15 +186,13 @@ pub(crate) enum TransactionError {
     ForeignActiveTarget,
     NoInstallation,
     NoPreviousPair,
-    NixPolicyRecoveryCompleted,
-    NixPolicyRecoveryInspectionUnavailable,
     NixPolicyRecoveryPending,
     ShellRecoveryCompleted,
     ShellUnsupported,
     ShellZdotdirUnsupported,
     ShellVerificationFailed,
     Verification(&'static str),
-    NixBlocked(nix_owner::NixBlock),
+    NixBlocked(nix::NixBlock),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -920,27 +927,6 @@ struct RootLease {
 }
 
 impl RootLease {
-    #[cfg(any(target_os = "linux", all(target_os = "macos", target_arch = "aarch64")))]
-    fn policy_identity(&self, path: &Path) -> Result<PolicyStateLease, TransactionError> {
-        let held = self.file.metadata().map_err(|_| TransactionError::Io)?;
-        let named = fs::symlink_metadata(path).map_err(|_| TransactionError::Io)?;
-        validate_private_file(&named)?;
-        if self.path != path
-            || held.nlink() != 1
-            || named.nlink() != 1
-            || held.dev() != named.dev()
-            || held.ino() != named.ino()
-        {
-            return Err(TransactionError::InvalidState(
-                "Nix policy state lease changed",
-            ));
-        }
-        Ok(PolicyStateLease {
-            device: held.dev(),
-            inode: held.ino(),
-        })
-    }
-
     fn acquire(path: &Path) -> Result<Self, TransactionError> {
         let file = open_or_create_lock(path)?;
         FileExt::try_lock_exclusive(&file).map_err(|error| {

@@ -154,25 +154,10 @@ fn protected(
         Ok(Err(failure)) => failure,
         Err(_) => Failure::Panic,
     };
-    let parked = owner.administrator_running() || owner.administrator_finished().is_some();
-    let restored = (!parked).then(|| terminal.as_mut().is_none_or(Terminal::restore));
+    let restored = terminal.as_mut().is_none_or(Terminal::restore);
     owner.request_cancel();
-    let mut administrator_quiescent = true;
-    let operation = match catch_unwind(AssertUnwindSafe(|| {
-        settle(owner, signals, &mut administrator_quiescent)
-    })) {
-        Ok(operation) => operation,
-        Err(_) => {
-            administrator_quiescent = false;
-            Err(TransactionError::CleanupUnknown)
-        }
-    };
-    let restored = restored.unwrap_or_else(|| {
-        administrator_quiescent
-            && terminal
-                .as_mut()
-                .is_none_or(|tty| tty.reclaim_after_administrator().is_ok())
-    });
+    let operation = catch_unwind(AssertUnwindSafe(|| settle(owner, signals)))
+        .unwrap_or(Err(TransactionError::CleanupUnknown));
     DriveReport {
         observations: Some(owner.diagnostics()),
         operation,
@@ -183,31 +168,17 @@ fn protected(
     }
 }
 
-fn settle(
-    owner: &mut Coordinator,
-    signals: &Signals,
-    administrator_quiescent: &mut bool,
-) -> Result<RunOutcome, TransactionError> {
+fn settle(owner: &mut Coordinator, signals: &Signals) -> Result<RunOutcome, TransactionError> {
     #[cfg(test)]
     if tests::fault_mode("cleanup-unwind") {
         panic!("PRIVATE-DASHBOARD-CLEANUP-PANIC");
     }
     loop {
         signals.drain();
-        if let Some(quiescent) = owner.administrator_finished() {
-            *administrator_quiescent &= quiescent;
-            owner.complete_administrator();
-        }
         if let Poll::Ready(result) = owner.advance() {
             return result;
         }
-        if let Err(error) = wait_owner(owner, signals, None, None) {
-            if owner.administrator_running() {
-                *administrator_quiescent = false;
-                return Err(TransactionError::CleanupUnknown);
-            }
-            return Err(error);
-        }
+        wait_owner(owner, signals, None, None)?;
     }
 }
 
@@ -258,30 +229,6 @@ fn drive(
             owner.request_cancel();
             armed = None;
             dirty = true;
-        }
-        if let Some(quiescent) = owner.administrator_finished() {
-            if !quiescent {
-                return Err(Failure::Restore);
-            }
-            terminal
-                .as_mut()
-                .ok_or(Failure::Setup)?
-                .resume_after_administrator()
-                .map_err(|_| Failure::Restore)?;
-            owner.complete_administrator();
-            viewport = None;
-            dirty = true;
-            runnable = true;
-            continue;
-        }
-        if owner.administrator_running() {
-            if let Poll::Ready(result) = owner.advance() {
-                return Ok(result);
-            }
-            if owner.administrator_finished().is_none() {
-                wait_owner(owner, signals, None, None).map_err(|_| Failure::Input)?;
-            }
-            continue;
         }
         if let Some(tty) = terminal.as_ref() {
             if !tty.foreground() {
@@ -372,28 +319,8 @@ fn drive(
             }
         }
         if runnable || matches!(owner.interest(), OwnerInterest::Ready) {
-            let handed_off = if owner.administrator_pending() {
-                terminal
-                    .as_mut()
-                    .map(|tty| tty.park_for_administrator(&crate::english().administrator_handoff))
-                    .transpose()
-                    .map_err(|_| Failure::Restore)?
-            } else {
-                None
-            };
-            if handed_off.is_some() {
-                if signals.drain().0 {
-                    owner.request_cancel();
-                }
-                frame = None;
-                armed = None;
-                input.reset();
-            }
-            if let Poll::Ready(result) = owner.advance_with_terminal(handed_off) {
+            if let Poll::Ready(result) = owner.advance() {
                 return Ok(result);
-            }
-            if owner.administrator_running() || owner.administrator_finished().is_some() {
-                continue;
             }
             dirty = true;
         }

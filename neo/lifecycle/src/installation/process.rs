@@ -16,6 +16,7 @@ use std::time::{Duration, Instant};
 pub(super) mod shell_startup;
 
 pub(crate) const WORKER_ARGUMENT: &str = "--internal-operation-worker";
+#[cfg(test)]
 const NIX: &str = "/nix/var/nix/profiles/default/bin/nix";
 const REQUEST_LIMIT: usize = 32 * 1024;
 const CAPTURE_LIMIT: usize = 64 * 1024;
@@ -39,20 +40,9 @@ pub(super) enum WorkerRequest {
     BuildProfile {
         output: PathBuf,
     },
-    HelperFixedPath {
-        client: PathBuf,
-        nar_hash: String,
-    },
-    ImportPolicyHelper {
-        client: PathBuf,
-        source: PathBuf,
-    },
+    #[cfg(test)]
     Version,
-    StoreInfo,
-    SystemdService,
-    SystemdSocket,
-    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
-    ObserveDarwinNix,
+    LocalDaemonInfo,
     AcquireRetained {
         pair: String,
         candidate: String,
@@ -91,30 +81,22 @@ pub(super) enum WorkerRequest {
 pub(super) enum RootName {
     Candidate(String),
     Generation(String),
-    NixPolicyHelper,
 }
 
 impl WorkerRequest {
     pub(super) fn mutates(&self) -> bool {
         match self {
             Self::Release(_)
-            | Self::HelperFixedPath { .. }
-            | Self::Version
-            | Self::StoreInfo
-            | Self::SystemdService
-            | Self::SystemdSocket
+            | Self::LocalDaemonInfo
             | Self::PathInfo { .. }
             | Self::HashConvert { .. }
             | Self::VerifyContents { .. } => false,
-            #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
-            Self::ObserveDarwinNix => false,
             Self::ShellStartup(_)
-            | Self::ImportPolicyHelper { .. }
             | Self::AcquireRetained { .. }
             | Self::RegisterExact { .. }
             | Self::ProbeTool { .. } => true,
             #[cfg(test)]
-            Self::FixturePathInfo { .. } => false,
+            Self::FixturePathInfo { .. } | Self::Version => false,
             #[cfg(test)]
             Self::BuildProfile { .. } | Self::Fixture { .. } => true,
         }
@@ -377,7 +359,7 @@ impl OperationOwner {
         }
         self.stdout_limit = operation.stdout_limit()?;
         let request = PartialWrite::message(&operation)?;
-        self.deadline = Instant::now() + OPERATION_TIMEOUT + HANDSHAKE_TIMEOUT;
+        self.deadline = Instant::now() + operation.timeout() + HANDSHAKE_TIMEOUT;
         self.state = ProcessState::Request(request);
         Ok(())
     }
@@ -791,13 +773,8 @@ fn worker() -> io::Result<()> {
 impl WorkerRequest {
     fn timeout(&self) -> Duration {
         match self {
-            Self::ShellStartup(_) => Duration::from_secs(15),
+            Self::ShellStartup(_) | Self::LocalDaemonInfo => Duration::from_secs(15),
             Self::Release(_) => Duration::from_secs(125),
-            Self::Version | Self::StoreInfo | Self::SystemdService | Self::SystemdSocket => {
-                Duration::from_secs(15)
-            }
-            #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
-            Self::ObserveDarwinNix => Duration::from_secs(5),
             _ => OPERATION_TIMEOUT,
         }
     }
@@ -809,9 +786,7 @@ impl WorkerRequest {
 
     fn stdout_limit(&self) -> io::Result<usize> {
         match self {
-            Self::HelperFixedPath { .. } | Self::ImportPolicyHelper { .. } => Ok(256),
-            #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
-            Self::ObserveDarwinNix => Ok(super::nix_owner::darwin::OBSERVATION_BYTES),
+            Self::LocalDaemonInfo => Ok(4096),
             Self::Release(fetch) => fetch.limit().map_err(|_| invalid("release request")),
             Self::PathInfo { paths, .. } => {
                 if paths.is_empty() || paths.len() > 64 {
@@ -842,50 +817,6 @@ impl WorkerRequest {
         }
         let mut command = match self {
             Self::ShellStartup(_) => unreachable!(),
-            #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
-            Self::ObserveDarwinNix => {
-                let mut command = Command::new(std::env::current_exe()?);
-                command.arg(super::nix_owner::darwin::OBSERVE_ARGUMENT);
-                command
-            }
-            Self::HelperFixedPath { client, nar_hash } => {
-                validate_helper_hash(nar_hash)?;
-                let mut command = Command::new(pinned_helper_client(client, true)?);
-                command.args([
-                    "--print-fixed-path",
-                    "--recursive",
-                    "sha256",
-                    nar_hash,
-                    "neo-policy-helper",
-                ]);
-                command
-            }
-            Self::ImportPolicyHelper { client, source } => {
-                if !source.is_absolute()
-                    || source
-                        .components()
-                        .any(|part| matches!(part, std::path::Component::ParentDir))
-                {
-                    return Err(invalid("helper absolute source"));
-                }
-                let mut command = Command::new(pinned_helper_client(client, false)?);
-                command
-                    .args([
-                        "--extra-experimental-features",
-                        "nix-command",
-                        "--offline",
-                        "store",
-                        "add",
-                        "--mode",
-                        "nar",
-                        "--hash-algo",
-                        "sha256",
-                        "--name",
-                        "neo-policy-helper",
-                    ])
-                    .arg(source);
-                command
-            }
             Self::Release(fetch) => {
                 super::release::client_command(fetch, &directory.join(super::LOCK_NAME))?
             }
@@ -925,37 +856,15 @@ impl WorkerRequest {
                     .arg(output.as_str());
                 command
             }
+            #[cfg(test)]
             Self::Version => {
-                let executable = super::nix_owner::trusted_client()
-                    .map_err(|_| invalid("Nix client identity"))?;
-                let mut command = Command::new(executable);
+                let mut command = nix_command()?;
                 command.arg("--version");
                 command
             }
-            Self::StoreInfo => {
-                let executable = super::nix_owner::trusted_client()
-                    .map_err(|_| invalid("Nix client identity"))?;
-                let mut command = Command::new(executable);
-                command.args([
-                    "--extra-experimental-features",
-                    "nix-command",
-                    "--offline",
-                    "store",
-                    "info",
-                    "--json",
-                    "--store",
-                    "unix:///nix/var/nix/daemon-socket/socket",
-                ]);
-                command
-            }
-            Self::SystemdService | Self::SystemdSocket => {
-                let mut command = Command::new("/usr/bin/systemctl");
-                command.args(["show", "--no-pager", "--property=Id,LoadState,ActiveState,SubState,NeedDaemonReload,FragmentPath,DropInPaths"]);
-                if matches!(self, Self::SystemdService) {
-                    command.args(["--property=MainPID,ExecMainStartTimestampMonotonic,InvocationID,ExecStart,User,RootDirectory", "nix-daemon.service"]);
-                } else {
-                    command.args(["--property=Listen,Triggers", "nix-daemon.socket"]);
-                }
+            Self::LocalDaemonInfo => {
+                let mut command = nix_daemon_command()?;
+                command.args(["--offline", "store", "info", "--json"]);
                 command
             }
             Self::AcquireRetained {
@@ -966,7 +875,7 @@ impl WorkerRequest {
                 OutputPath::parse(pair).map_err(|_| invalid("opaque output path"))?;
                 let directory = directory.join("resources");
                 validate_directory(&directory, true).map_err(|_| invalid("resource directory"))?;
-                let mut command = nix_command();
+                let mut command = nix_daemon_command()?;
                 if *offline {
                     command.arg("--offline");
                 } else {
@@ -991,12 +900,6 @@ impl WorkerRequest {
                 let directory = directory.join("resources");
                 validate_directory(&directory, true).map_err(|_| invalid("resource directory"))?;
                 let name = match root {
-                    RootName::NixPolicyHelper => {
-                        if pair.ends_with(".drv") {
-                            return Err(invalid("helper must be an imported output"));
-                        }
-                        super::resources::HELPER_ROOT.into()
-                    }
                     RootName::Candidate(id) => candidate_root(id)?,
                     RootName::Generation(name) => {
                         if !super::resources::is_generation(name) {
@@ -1005,24 +908,10 @@ impl WorkerRequest {
                         name.clone()
                     }
                 };
-                let sibling = if matches!(root, RootName::NixPolicyHelper) {
-                    let client = super::nix_owner::policy_helper_client()
-                        .map_err(|_| invalid("unproved helper Nix client"))?;
-                    helper_legacy_sibling(&client, super::nix_owner::policy_helper_protected_path)?
-                } else {
-                    let nix = std::fs::canonicalize(NIX)?;
-                    let sibling = nix
-                        .parent()
-                        .ok_or_else(|| invalid("Nix executable parent"))?
-                        .join("nix-store");
-                    if std::fs::canonicalize(&sibling)?.parent() != nix.parent() {
-                        return Err(invalid("legacy Nix executable"));
-                    }
-                    sibling
-                };
-                let mut command = Command::new(sibling);
-                if matches!(root, RootName::NixPolicyHelper) {
-                    command.args([
+                let mut command = Command::new(super::nix::legacy_store_path()?);
+                command
+                    .args(["--store", super::nix::system_daemon()?])
+                    .args([
                         "--option",
                         "substitute",
                         "false",
@@ -1031,10 +920,8 @@ impl WorkerRequest {
                         "",
                         "--max-jobs",
                         "0",
-                    ]);
-                }
-                command
-                    .arg("--realise")
+                        "--realise",
+                    ])
                     .arg(pair)
                     .arg("--add-root")
                     .arg(directory.join(name))
@@ -1043,13 +930,16 @@ impl WorkerRequest {
             }
             Self::PathInfo { cache, paths } => {
                 self.stdout_limit()?;
-                let mut command = nix_command();
-                command.args(["path-info", "--json", "--json-format", "1", "--sigs"]);
-                if let Some(index) = cache {
+                let mut command = if let Some(index) = cache {
                     let cache = crate::candidate::declared_cache(*index)
                         .map_err(|_| invalid("cache identity"))?;
+                    let mut command = nix_command()?;
                     command.arg("--store").arg(cache.url());
-                }
+                    command
+                } else {
+                    nix_daemon_command()?
+                };
+                command.args(["path-info", "--json", "--json-format", "1", "--sigs"]);
                 for path in paths {
                     OutputPath::parse(path).map_err(|_| invalid("opaque output path"))?;
                     command.arg(path);
@@ -1059,7 +949,7 @@ impl WorkerRequest {
             Self::HashConvert { hashes } => {
                 use base64::Engine;
                 self.stdout_limit()?;
-                let mut command = nix_command();
+                let mut command = nix_command()?;
                 command.args(["hash", "convert", "--hash-algo", "sha256", "--to", "nix32"]);
                 for hash in hashes {
                     let encoded = hash
@@ -1079,7 +969,7 @@ impl WorkerRequest {
             }
             Self::VerifyContents { pair } => {
                 OutputPath::parse(pair).map_err(|_| invalid("opaque output path"))?;
-                let mut command = nix_command();
+                let mut command = nix_daemon_command()?;
                 command
                     .args(["store", "verify", "--recursive", "--sigs-needed", "1"])
                     .arg(pair);
@@ -1111,7 +1001,7 @@ impl WorkerRequest {
             #[cfg(test)]
             Self::FixturePathInfo { paths } => {
                 self.stdout_limit()?;
-                let mut command = nix_command();
+                let mut command = nix_command()?;
                 command
                     .args([
                         "path-info",
@@ -1139,7 +1029,8 @@ impl WorkerRequest {
             .env("PATH", "/usr/bin:/bin")
             .env("HOME", directory)
             .env("LANG", "C")
-            .env("NIX_REMOTE", "daemon")
+            .env("NIX_REMOTE", super::nix::DAEMON)
+            .env("NIX_USER_CONF_FILES", "/dev/null")
             .current_dir(directory)
             .process_group(0);
         validate_argv_budget(&command)?;
@@ -1147,70 +1038,16 @@ impl WorkerRequest {
     }
 }
 
-fn validate_helper_hash(value: &str) -> io::Result<()> {
-    if value.len() != 64
-        || !value
-            .bytes()
-            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
-    {
-        return Err(invalid("helper NAR hash"));
-    }
-    Ok(())
-}
-
-fn pinned_helper_client(client: &Path, legacy: bool) -> io::Result<PathBuf> {
-    let trusted = super::nix_owner::policy_helper_client()
-        .map_err(|_| invalid("unproved helper Nix client"))?;
-    if trusted != client {
-        return Err(invalid("changed helper Nix client"));
-    }
-    if !legacy {
-        return Ok(trusted);
-    }
-    helper_legacy_sibling(&trusted, super::nix_owner::policy_helper_protected_path)
-}
-
-fn helper_legacy_sibling(
-    client: &Path,
-    protect: impl FnOnce(&Path) -> io::Result<PathBuf>,
-) -> io::Result<PathBuf> {
-    let sibling = client
-        .parent()
-        .ok_or_else(|| invalid("Nix executable parent"))?
-        .join("nix-store");
-    if protect(&sibling)? != client {
-        return Err(invalid("legacy helper Nix executable"));
-    }
-    Ok(sibling)
-}
-
-pub(super) fn helper_output(bytes: &[u8]) -> io::Result<OutputPath> {
-    if bytes.len() > 256 {
-        return Err(invalid("helper output limit"));
-    }
-    let line = bytes
-        .strip_suffix(b"\n")
-        .ok_or_else(|| invalid("helper output line"))?;
-    let line = std::str::from_utf8(line).map_err(|_| invalid("helper output encoding"))?;
-    if line.contains(['\n', '\r']) {
-        return Err(invalid("helper output line"));
-    }
-    let path = OutputPath::parse(line).map_err(|_| invalid("helper output path"))?;
-    let name = Path::new(path.as_str())
-        .file_name()
-        .and_then(|name| name.to_str())
-        .and_then(|name| name.split_once('-'))
-        .map(|(_, suffix)| suffix);
-    if name != Some("neo-policy-helper") {
-        return Err(invalid("helper output name"));
-    }
-    Ok(path)
-}
-
-fn nix_command() -> Command {
-    let mut command = Command::new(NIX);
+fn nix_command() -> io::Result<Command> {
+    let mut command = Command::new(super::nix::system_client_path()?);
     command.args(["--extra-experimental-features", "nix-command flakes"]);
-    command
+    Ok(command)
+}
+
+fn nix_daemon_command() -> io::Result<Command> {
+    let mut command = nix_command()?;
+    command.args(["--store", super::nix::system_daemon()?]);
+    Ok(command)
 }
 
 fn validate_argv_budget(command: &Command) -> io::Result<()> {
@@ -1583,80 +1420,12 @@ mod tests {
             "overflow" => "installation::process::tests::fixture_overflow",
             "resource-gated" => "installation::resource_io::tests::fixture_resource_gated",
             "resource-nonzero" => "installation::resource_io::tests::fixture_resource_nonzero",
-            "resource-helper" => "installation::resource_io::tests::fixture_resource_helper",
             "launch-error" => return Ok(Command::new("/no-such-neo-process-fixture")),
             _ => return Err(invalid("fixture name")),
         };
         let mut command = Command::new(std::env::current_exe()?);
         command.args(["--exact", test, "--ignored", "--nocapture", "--quiet"]);
         Ok(command)
-    }
-
-    #[test]
-    fn helper_output_accepts_only_one_exact_named_store_line() {
-        let expected = "/nix/store/i0md420ln0dwnjs0ibm8v6z2jkqpdaqi-neo-policy-helper";
-        assert_eq!(
-            helper_output(format!("{expected}\n").as_bytes())
-                .unwrap()
-                .as_str(),
-            expected
-        );
-        for rejected in [
-            expected.to_owned(),
-            format!("{expected}\n\n"),
-            format!("{expected}\r\n"),
-            format!(" {expected}\n"),
-            format!("{expected}/bin/neo\n"),
-            format!("{expected}-other\n"),
-            "/nix/store/i0md420ln0dwnjs0ibm8v6z2jkqpdaqi-other-neo-policy-helper\n".to_owned(),
-            format!("{expected}\n{expected}\n"),
-            "x".repeat(257),
-        ] {
-            assert!(helper_output(rejected.as_bytes()).is_err());
-        }
-    }
-
-    #[test]
-    fn helper_legacy_name_must_resolve_to_the_pinned_multicall_executable() {
-        use std::os::unix::fs::symlink;
-        let temporary = tempfile::tempdir().unwrap();
-        let directory = temporary.path().canonicalize().unwrap();
-        let nix = directory.join("nix");
-        let nix_store = directory.join("nix-store");
-        std::fs::write(&nix, b"fixture").unwrap();
-        symlink("nix", &nix_store).unwrap();
-        assert_eq!(
-            helper_legacy_sibling(&nix, |path| path.canonicalize()).unwrap(),
-            nix_store
-        );
-        std::fs::remove_file(&nix_store).unwrap();
-        std::fs::write(&nix_store, b"fixture").unwrap();
-        assert!(helper_legacy_sibling(&nix, |path| path.canonicalize()).is_err());
-    }
-
-    #[test]
-    fn helper_hash_rejects_options_and_noncanonical_digests() {
-        assert!(validate_helper_hash(&"a".repeat(64)).is_ok());
-        for hash in [
-            "--help".to_owned(),
-            "A".repeat(64),
-            "0".repeat(63),
-            "g".repeat(64),
-            "0".repeat(65),
-        ] {
-            assert!(validate_helper_hash(&hash).is_err());
-        }
-        let request = WorkerRequest::ImportPolicyHelper {
-            client: PathBuf::from("/untrusted/nix"),
-            source: PathBuf::from("relative"),
-        };
-        assert!(request.command(Path::new("/tmp")).is_err());
-        let request = WorkerRequest::HelperFixedPath {
-            client: PathBuf::from("/untrusted/nix"),
-            nar_hash: "--help".into(),
-        };
-        assert!(request.command(Path::new("/tmp")).is_err());
-        assert_eq!(request.stdout_limit().unwrap(), 256);
     }
 
     #[test]
@@ -1839,24 +1608,6 @@ mod tests {
             writer.shutdown(Shutdown::Write).unwrap();
             assert!(receive_result(&mut reader, CAPTURE_LIMIT).is_err());
         }
-    }
-
-    #[test]
-    fn systemd_service_query_includes_invocation_identity() {
-        let command = WorkerRequest::SystemdService
-            .command(Path::new("/"))
-            .unwrap();
-        assert_eq!(command.get_program(), "/usr/bin/systemctl");
-        assert_eq!(
-            command.get_args().collect::<Vec<_>>(),
-            [
-                "show",
-                "--no-pager",
-                "--property=Id,LoadState,ActiveState,SubState,NeedDaemonReload,FragmentPath,DropInPaths",
-                "--property=MainPID,ExecMainStartTimestampMonotonic,InvocationID,ExecStart,User,RootDirectory",
-                "nix-daemon.service",
-            ]
-        );
     }
 
     #[test]

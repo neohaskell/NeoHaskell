@@ -28,10 +28,9 @@ fn help_and_version_work_without_nix_or_user_environment() {
     assert!(help.status.success());
     let help = String::from_utf8(help.stdout).expect("help uses UTF-8");
     assert!(help.contains("NeoHaskell native installer"));
-    assert!(help.contains("apply the required cache policy"));
-    assert!(help.contains("official Nix 2.34.9 daemon on Linux ARM64"));
-    assert!(help.contains("when it can verify configuration ownership"));
-    assert!(help.contains("Applying the policy requires review and administrator access."));
+    assert!(help.contains("require a working multi-user Nix daemon"));
+    assert!(help.contains("configured with the NeoHaskell caches"));
+    assert!(help.contains("/neo/nix-setup.md"));
     assert!(help.contains("neo-installer install [--version VERSION]"));
     assert!(help.contains("neo-installer update [--version VERSION | --rollback]"));
 

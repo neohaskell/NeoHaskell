@@ -636,11 +636,11 @@ try {
     $Selected = $Distribution
     if (-not $Selected) { $Selected = @($Records.Values | Where-Object { $_.Default })[0].Name }
     if (-not $Records.ContainsKey($Selected) -or $Records[$Selected].Version -cne '2') { Stop-Bootstrap 'windows_target_invalid' }
-    $Probe = 'printf "%s\n" "$WSL_DISTRO_NAME"; uname -m; cat /proc/1/comm; id -u; if test -w "$HOME" && command -v sudo >/dev/null && command -v base64 >/dev/null; then printf "ready\n"; else printf "permissions\n"; fi; if sudo -n -l -- /bin/sh >/dev/null 2>&1; then printf "sudo-ready\n"; else printf "sudo-interactive\n"; fi'
+    $Probe = 'printf "%s\n" "$WSL_DISTRO_NAME"; uname -m; cat /proc/1/comm; id -u; if test -w "$HOME" && command -v base64 >/dev/null; then printf "ready\n"; else printf "permissions\n"; fi'
     $Result = Invoke-Wsl @('--distribution', $Selected, '--exec', '/bin/sh', '-c', $Probe) $true
     $Fields = @($Result.TrimEnd("`r", "`n") -split '\r?\n')
-    if ($Fields.Count -ne 6 -or $Fields[0] -cne $Selected -or $Fields[1] -cnotin @('x86_64', 'aarch64') -or $Fields[2] -cne 'systemd' -or $Fields[3] -cnotmatch '^[1-9][0-9]*$') { Stop-Bootstrap 'windows_target_invalid' }
-    if ($Fields[4] -cne 'ready' -or (-not $Interactive -and $Fields[5] -cne 'sudo-ready')) { Stop-Bootstrap 'windows_permissions' }
+    if ($Fields.Count -ne 5 -or $Fields[0] -cne $Selected -or $Fields[1] -cnotin @('x86_64', 'aarch64') -or $Fields[2] -cne 'systemd' -or $Fields[3] -cnotmatch '^[1-9][0-9]*$') { Stop-Bootstrap 'windows_target_invalid' }
+    if ($Fields[4] -cne 'ready') { Stop-Bootstrap 'windows_permissions' }
     Write-Host ($English.windows_selected -f $Selected)
     $PreviousProtocol = [Net.ServicePointManager]::SecurityProtocol
     try {

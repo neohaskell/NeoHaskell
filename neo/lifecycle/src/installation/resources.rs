@@ -4,10 +4,6 @@ use std::collections::{BTreeMap, BTreeSet};
 pub(super) const HELPER_ROOT: &str = "nix-policy-helper";
 pub(super) const HELPER_REGISTRATION_ADDITIONS: usize = 2;
 
-pub(super) fn is_helper_link(name: &str) -> bool {
-    name == HELPER_ROOT || temporary_of(name, HELPER_ROOT)
-}
-
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct LinkObservation {

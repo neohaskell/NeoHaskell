@@ -137,15 +137,6 @@ pub(crate) enum Phase {
 #[serde(rename_all = "snake_case")]
 pub(crate) enum CompletedStep {
     Prerequisites,
-    NixPolicyObservation,
-    NixPolicyPlan,
-    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
-    NixPolicyPublication,
-    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
-    NixPolicyStagedSourceObserved,
-    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
-    NixPolicyPublishedLeafObserved,
-    NixPolicyApplication,
     CandidateSelection,
     PairVerification,
     Recovery,
@@ -155,7 +146,6 @@ pub(crate) enum CompletedStep {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum AppliedChange {
-    NixPolicyApplied,
     ActivationCommitted,
     ActivationRecovered,
     ActivationReverted,
@@ -304,11 +294,7 @@ pub(crate) enum PendingRecovery {
 pub(crate) enum StopObservation {
     NotRequired,
     NoPair,
-    Pair {
-        version: Option<EarnedVersion>,
-    },
-    #[cfg(any(target_os = "linux", all(target_os = "macos", target_arch = "aarch64")))]
-    PolicyRecoveryInterrupted,
+    Pair { version: Option<EarnedVersion> },
 }
 
 #[derive(Serialize)]
@@ -323,7 +309,6 @@ pub(crate) enum ErrorFact {
     Io,
     StopRequested,
     CleanupUnknown,
-    AdministratorUnavailable,
     ActivationRecoveryFailed,
     Busy,
     UnsafePath,
@@ -334,8 +319,6 @@ pub(crate) enum ErrorFact {
     ForeignActiveTarget,
     NoInstallation,
     NoPreviousPair,
-    NixPolicyRecoveryCompleted,
-    NixPolicyRecoveryInspectionUnavailable,
     NixPolicyRecoveryPending,
     Verification,
     NixBlocked(NixReason),
@@ -346,14 +329,9 @@ pub(crate) enum ErrorFact {
 pub(crate) enum NixReason {
     MissingClient,
     UnprovedClient,
-    UnprovedPlatform,
-    InactiveService,
-    UnprovedService,
     DaemonUnavailable,
     DaemonMismatch,
-    ConfigurationOwnerUnknown,
-    #[cfg(target_os = "linux")]
-    CallerAccessDenied,
+    PairAcquisition,
 }
 
 #[derive(Serialize)]
@@ -391,7 +369,6 @@ impl ErrorFact {
             E::Io => Self::Io,
             E::StopRequested => Self::StopRequested,
             E::CleanupUnknown => Self::CleanupUnknown,
-            E::AdministratorUnavailable => Self::AdministratorUnavailable,
             E::ActivationRecoveryFailed { .. } => Self::ActivationRecoveryFailed,
             E::Busy => Self::Busy,
             E::UnsafePath => Self::UnsafePath,
@@ -402,10 +379,6 @@ impl ErrorFact {
             E::ForeignActiveTarget => Self::ForeignActiveTarget,
             E::NoInstallation => Self::NoInstallation,
             E::NoPreviousPair => Self::NoPreviousPair,
-            E::NixPolicyRecoveryCompleted => Self::NixPolicyRecoveryCompleted,
-            E::NixPolicyRecoveryInspectionUnavailable => {
-                Self::NixPolicyRecoveryInspectionUnavailable
-            }
             E::NixPolicyRecoveryPending => Self::NixPolicyRecoveryPending,
             E::ShellRecoveryCompleted
             | E::ShellUnsupported
@@ -413,18 +386,13 @@ impl ErrorFact {
             | E::ShellVerificationFailed
             | E::Verification(_) => Self::Verification,
             E::NixBlocked(reason) => {
-                use installation::nix_owner::NixBlock as N;
+                use installation::nix::NixBlock as N;
                 Self::NixBlocked(match reason {
                     N::MissingClient => NixReason::MissingClient,
                     N::UnprovedClient => NixReason::UnprovedClient,
-                    N::UnprovedPlatform => NixReason::UnprovedPlatform,
-                    N::InactiveService => NixReason::InactiveService,
-                    N::UnprovedService => NixReason::UnprovedService,
                     N::DaemonUnavailable => NixReason::DaemonUnavailable,
                     N::DaemonMismatch => NixReason::DaemonMismatch,
-                    N::ConfigurationOwnerUnknown => NixReason::ConfigurationOwnerUnknown,
-                    #[cfg(target_os = "linux")]
-                    N::CallerAccessDenied => NixReason::CallerAccessDenied,
+                    N::PairAcquisition => NixReason::PairAcquisition,
                 })
             }
         }
@@ -477,13 +445,6 @@ impl DiagnosticOutcome {
                     installation::StopObservation::ObservedPair(pair) => StopObservation::Pair {
                         version: EarnedVersion::from_observation(&pair.version),
                     },
-                    #[cfg(any(
-                        target_os = "linux",
-                        all(target_os = "macos", target_arch = "aarch64")
-                    ))]
-                    installation::StopObservation::PolicyRecoveryInterrupted => {
-                        StopObservation::PolicyRecoveryInterrupted
-                    }
                 },
             },
             Err(error) => OperationOutcome::Failed {
@@ -512,7 +473,6 @@ impl DiagnosticOutcome {
         });
         let recovery_advice = match &report.operation {
             Err(E::NixBlocked(_)) => RecoveryAdvice::CheckNixInstallation,
-            Err(E::NixPolicyRecoveryCompleted) => RecoveryAdvice::ReviewBeforeRetry,
             Err(E::Busy) => RecoveryAdvice::WaitForOtherInvocation,
             Err(_) => RecoveryAdvice::InspectInstallationState,
             _ if presentation.is_some() => RecoveryAdvice::CheckTerminal,

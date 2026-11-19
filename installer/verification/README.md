@@ -41,7 +41,12 @@ Run the normal install, product, and lifecycle behavior on every lane in `covera
 | `wsl2-x86_64` | Native Windows PowerShell and actual `wsl.exe` dispatch to x86-64 WSL2. |
 | `wsl2-arm64` | Native Windows PowerShell and actual `wsl.exe` dispatch to ARM64 WSL2. |
 
-Each lane requires fresh Nix and compatible existing Nix scenarios. The NixOS owner case belongs to both Linux lanes. The nix-darwin owner case belongs to the macOS lane. The WSL lanes also require native Windows selection, dispatch, and boundary messaging checks.
+Prepare each lane with a compatible multi-user daemon and the signed caches in
+[Configure Nix for NeoHaskell](../../neo/nix-setup.md). Run the installer as an
+ordinary user. Record daemon configuration before and after the run to verify
+that it stays the same. The declarative configuration preservation cases cover
+NixOS on both Linux lanes and nix-darwin on macOS. The WSL lanes also require
+native Windows selection, dispatch, and boundary messaging checks.
 
 The shared case list covers clean-client cache substitution, separate lockstep commands, fresh-shell PATH resolution, the installed `neo` project flow, paired updates and rollback, fallback lifecycle operations, uninstall preservation, failure recovery, terminal behavior, timing, and private diagnostics.
 

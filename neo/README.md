@@ -17,6 +17,8 @@ The NeoHaskell CLI tool.
 - **Git**: Required for project initialization and the locking system.
 - **direnv** (Optional): Recommended for automatic editor integration (HLS).
 
+To prepare a machine for the NeoHaskell release installer, follow [Configure Nix for NeoHaskell](nix-setup.md).
+
 ## Installation
 
 ```bash

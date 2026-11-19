@@ -148,13 +148,6 @@ pub(crate) fn nix_cache_urls() -> Result<String> {
     nix_cache_settings().map(|(urls, _)| urls)
 }
 
-pub(crate) fn nix_cache_policy() -> Result<String> {
-    let (urls, keys) = nix_cache_settings()?;
-    Ok(format!(
-        "extra-experimental-features = nix-command flakes\nextra-substituters = {urls}\nextra-trusted-public-keys = {keys}\n",
-    ))
-}
-
 impl CacheWitness {
     pub(crate) fn cache(&self) -> &DeclaredCache {
         &self.cache

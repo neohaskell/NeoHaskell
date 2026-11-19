@@ -21,42 +21,10 @@ impl Exit {
 }
 
 pub fn dispatch_internal(arguments: &[std::ffi::OsString]) -> Option<Exit> {
-    #[cfg(target_os = "linux")]
-    if let Some(code) = installation::nix_owner::dispatch_native_policy(arguments) {
-        return Some(Exit { code });
-    }
-    #[cfg(target_os = "linux")]
-    if arguments
-        == [std::ffi::OsString::from(
-            installation::nix_owner::POLICY_OBSERVE_ARGUMENT,
-        )]
-    {
-        return Some(Exit {
-            code: installation::nix_owner::run_policy_observer(),
-        });
-    }
     dispatch_installed_internal(arguments)
 }
 
 fn dispatch_installed_internal(arguments: &[std::ffi::OsString]) -> Option<Exit> {
-    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
-    if let Some(code) = installation::nix_owner::darwin::dispatch_administrator(arguments) {
-        return Some(Exit { code });
-    }
-    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
-    if matches!(arguments, [arg] if arg == installation::nix_owner::darwin::OBSERVE_ARGUMENT) {
-        return Some(Exit {
-            code: installation::nix_owner::darwin::run_observer(),
-        });
-    }
-    #[cfg(target_os = "linux")]
-    if let Some(code) = installation::nix_owner::dispatch_caller_access(arguments) {
-        return Some(Exit { code });
-    }
-    #[cfg(target_os = "linux")]
-    if let Some(code) = installation::nix_owner::dispatch_existing_policy(arguments) {
-        return Some(Exit { code });
-    }
     #[cfg(unix)]
     if arguments
         == [std::ffi::OsString::from(
@@ -78,9 +46,9 @@ fn dispatch_installed_internal(arguments: &[std::ffi::OsString]) -> Option<Exit>
     None
 }
 
-#[cfg(all(test, target_os = "linux"))]
+#[cfg(all(test, unix))]
 #[test]
-fn installed_cli_dispatches_read_only_policy_helpers() {
+fn neither_cli_dispatches_legacy_nix_policy_helpers() {
     for argument in [
         "--neo-policy-launch",
         "--neo-policy-observe",
@@ -89,13 +57,14 @@ fn installed_cli_dispatches_read_only_policy_helpers() {
         "--neo-policy-inspect-peer",
     ] {
         assert!(dispatch_installed_internal(&[argument.into()]).is_none());
+        assert!(dispatch_internal(&[argument.into()]).is_none());
     }
     let invalid = [
         "--neo-policy-existing-peer".into(),
         "invalid-challenge".into(),
     ];
-    assert_eq!(dispatch_installed_internal(&invalid).unwrap().code(), 1);
-    assert_eq!(dispatch_internal(&invalid).unwrap().code(), 1);
+    assert!(dispatch_installed_internal(&invalid).is_none());
+    assert!(dispatch_internal(&invalid).is_none());
 }
 
 pub fn installed_help() -> &'static str {
@@ -368,10 +337,6 @@ fn format_result(result: Result<installation::RunOutcome, installation::Transact
                         .operation_stopped_pair
                         .replace("{version}", &pair.version)
                 ),
-                #[cfg(any(target_os = "linux", all(target_os = "macos", target_arch = "aarch64")))]
-                installation::StopObservation::PolicyRecoveryInterrupted => {
-                    eprintln!("{}", english.nix_policy_recovery_pending)
-                }
             }
             Exit { code: 130 }
         }
@@ -395,18 +360,6 @@ fn format_result(result: Result<installation::RunOutcome, installation::Transact
             eprintln!("{}", english.cleanup_unknown);
             Exit { code: 1 }
         }
-        Err(installation::TransactionError::AdministratorUnavailable) => {
-            eprintln!("{}", english.administrator_unavailable);
-            Exit { code: 1 }
-        }
-        Err(installation::TransactionError::NixPolicyRecoveryCompleted) => {
-            eprintln!("{}", english.nix_policy_recovery_completed);
-            Exit { code: 1 }
-        }
-        Err(installation::TransactionError::NixPolicyRecoveryInspectionUnavailable) => {
-            eprintln!("{}", english.nix_policy_recovery_inspection_unavailable);
-            Exit { code: 1 }
-        }
         Err(installation::TransactionError::NixPolicyRecoveryPending) => {
             eprintln!("{}", english.nix_policy_recovery_pending);
             Exit { code: 1 }
@@ -422,18 +375,13 @@ fn format_result(result: Result<installation::RunOutcome, installation::Transact
             Exit { code: 1 }
         }
         Err(installation::TransactionError::NixBlocked(reason)) => {
-            use installation::nix_owner::NixBlock;
+            use installation::nix::NixBlock;
             let message = match reason {
                 NixBlock::MissingClient => &english.nix_missing_client,
                 NixBlock::UnprovedClient => &english.nix_unproved_client,
-                NixBlock::UnprovedPlatform => &english.nix_unproved_platform,
-                NixBlock::InactiveService => &english.nix_inactive_service,
-                NixBlock::UnprovedService => &english.nix_unproved_service,
                 NixBlock::DaemonUnavailable => &english.nix_daemon_unavailable,
                 NixBlock::DaemonMismatch => &english.nix_daemon_mismatch,
-                NixBlock::ConfigurationOwnerUnknown => &english.nix_configuration_owner_unknown,
-                #[cfg(target_os = "linux")]
-                NixBlock::CallerAccessDenied => &english.nix_caller_access_denied,
+                NixBlock::PairAcquisition => &english.nix_pair_acquisition,
             };
             eprintln!("{message}");
             Exit { code: 1 }
@@ -479,25 +427,6 @@ fn write_review(
             ReviewedChange::Retention => &copy.review_retention,
             ReviewedChange::Activation => &copy.review_activation,
             ReviewedChange::Cleanup => &copy.review_cleanup,
-            ReviewedChange::NixPolicy => &copy.review_nix_policy,
-            ReviewedChange::ExistingNixPolicy => &copy.review_existing_nix_policy,
-            #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
-            ReviewedChange::DarwinPolicyInspection => &copy.review_darwin_policy_inspection,
-            #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
-            ReviewedChange::DarwinPolicyPublication => &copy.review_darwin_policy_publication,
-            #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
-            ReviewedChange::DarwinPolicyRecoveryInspection => {
-                &copy.review_darwin_policy_recovery_inspection
-            }
-            #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
-            ReviewedChange::DarwinPolicyRestart => &copy.review_darwin_policy_restart,
-            ReviewedChange::ApplyExistingNixPolicy => &copy.review_apply_existing_nix_policy,
-            #[cfg(target_os = "linux")]
-            ReviewedChange::NixPolicyRecoveryInspection => {
-                &copy.review_nix_policy_recovery_inspection
-            }
-            #[cfg(target_os = "linux")]
-            ReviewedChange::ResumePreparedNixPolicy => &copy.review_resume_prepared_nix_policy,
         };
         writeln!(output, "{message}")?;
     }

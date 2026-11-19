@@ -1,12 +1,4 @@
 use super::coordinator::{Admission, Cancellation, SettlementKind, WaitInterest};
-#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
-use super::coordinator::{DarwinPolicyIntent, DarwinPublicationStep, DarwinRecoveryStep};
-use super::dashboard::terminal::ParkedTerminal;
-#[cfg(target_os = "linux")]
-use super::nix_owner::peer_handoff::{
-    ExactExecutable, HandoffError, Rendezvous,
-    launcher::{VerifiedCaller, VerifiedExistingPolicy},
-};
 use super::resource_io::ResourceDirectory;
 use super::resources::{Inventory, LinkObservation};
 use super::review::{CommandOnPath, inspect_commands_on_path};
@@ -92,17 +84,6 @@ pub(super) enum FilesystemJob {
         bytes: Vec<u8>,
         committing: bool,
     },
-    #[cfg(all(test, target_os = "linux"))]
-    PublishPolicyIntent {
-        layout: Layout,
-        expected: Option<Vec<u8>>,
-        bytes: Vec<u8>,
-    },
-    #[cfg(target_os = "linux")]
-    ClearPolicyIntent {
-        layout: Layout,
-        expected: Vec<u8>,
-    },
     PublishReviewedRecord {
         layout: Layout,
         expected: Option<Vec<u8>>,
@@ -155,68 +136,10 @@ pub(super) enum FilesystemJob {
         path: PathBuf,
         expected: FileIdentity,
     },
-    HashPolicyHelper {
-        path: PathBuf,
-        expected: FileIdentity,
-        location: PolicyHelperLocation,
-    },
-    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
-    ObserveDarwinPolicy {
-        path: PathBuf,
-        release: FileIdentity,
-    },
-    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
-    DarwinPolicyPublication {
-        intent: std::sync::Arc<DarwinPolicyIntent>,
-        step: DarwinPublicationStep,
-    },
-    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
-    DarwinPolicyRecovery {
-        intent: std::sync::Arc<DarwinPolicyIntent>,
-        step: DarwinRecoveryStep,
-    },
-    #[cfg(target_os = "linux")]
-    ObserveStockPolicy {
-        executable: ExactExecutable,
-        rendezvous: Rendezvous,
-        caller: VerifiedCaller,
-        common_inputs: [u8; 32],
-        operation: super::nix_owner::policy_observation::PolicyOperation,
-    },
-    #[cfg(target_os = "linux")]
-    VerifyExistingNixPolicy {
-        inspector: ExistingNixInspector,
-        lease: super::PolicyStateLease,
-        stamp: [u8; 32],
-    },
-    #[cfg(target_os = "linux")]
-    PublishStockPolicy {
-        executable: ExactExecutable,
-        rendezvous: Rendezvous,
-        caller: VerifiedCaller,
-        intent: super::coordinator::PreparedStockPolicyIntent,
-    },
-    #[cfg(target_os = "linux")]
-    InspectStockPolicy(super::coordinator::StockPolicyIntent),
-    #[cfg(target_os = "linux")]
-    ResumeStockPolicy(super::coordinator::StockPolicyIntent),
     ResolvePairMember {
         member: PathBuf,
         expected: PathBuf,
     },
-    NixClient,
-    NixPolicyHelperClient,
-    ProtectedPath(PathBuf),
-    BoundedDigest {
-        path: PathBuf,
-        maximum: u64,
-    },
-    NixDaemonProcess {
-        pid: u32,
-        executable: PathBuf,
-    },
-    NixProcessName,
-    NixConfigurationInput,
     OpenResourceDirectory(PathBuf),
     ResourceInventory {
         directory: ResourceDirectory,
@@ -230,42 +153,7 @@ pub(super) enum FilesystemJob {
     },
 }
 
-#[cfg(target_os = "linux")]
-pub(super) enum ExistingNixInspector {
-    Installed(crate::candidate::OutputPath),
-    Retained {
-        executable: ExactExecutable,
-        caller: VerifiedCaller,
-    },
-}
-
 pub(super) enum FilesystemResult {
-    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
-    DarwinPolicyObserved(super::nix_owner::darwin::InspectedDarwinNix),
-    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
-    DarwinPolicyPublished(super::nix_owner::darwin::PublicationOutcome),
-    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
-    DarwinPolicyIntentCleared,
-    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
-    DarwinPolicyRecoveryObserved(super::nix_owner::darwin::DarwinPolicyRecovery),
-    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
-    DarwinPolicyRecoverySettled,
-    #[cfg(target_os = "linux")]
-    ExistingNixPolicyVerified(VerifiedExistingPolicy),
-    #[cfg(target_os = "linux")]
-    StockPolicyObserved {
-        executable: ExactExecutable,
-        caller: VerifiedCaller,
-        discovery: super::nix_owner::peer_handoff::launcher::StockDiscovery,
-    },
-    #[cfg(target_os = "linux")]
-    StockPolicyPublished(super::nix_owner::peer_handoff::launcher::VerifiedPolicyInspection),
-    #[cfg(target_os = "linux")]
-    StockPolicyInspected(super::nix_owner::peer_handoff::launcher::StockPolicyInspection),
-    #[cfg(target_os = "linux")]
-    StockPolicyResumed(super::nix_owner::peer_handoff::launcher::VerifiedPolicyInspection),
-    NixDaemonProcess(super::nix_owner::KernelDaemonObservation),
-    ConfigurationInput(super::nix_owner::ConfigurationObservation),
     UninstallIntent(super::uninstall::UninstallIntent),
     ShellRemovalPlan(super::shell::RemovalPlan),
     ShellPreimage(Option<super::shell::ProfilePreimage>),
@@ -290,7 +178,6 @@ pub(super) enum FilesystemResult {
     Link(Option<PathBuf>),
     Path(Option<fs::Metadata>),
     Executable(PathBuf),
-    Digest(String),
     ResourceDirectory(ResourceDirectory),
     Inventory {
         directory: ResourceDirectory,
@@ -326,21 +213,6 @@ impl FilesystemJob {
 
     pub(super) fn mutates(&self) -> bool {
         match self {
-            #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
-            Self::ObserveDarwinPolicy { .. } => false,
-            #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
-            Self::DarwinPolicyPublication { .. } => true,
-            #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
-            Self::DarwinPolicyRecovery { step, .. } => !matches!(step, DarwinRecoveryStep::Inspect),
-            #[cfg(all(test, target_os = "linux"))]
-            Self::PublishPolicyIntent { .. } => true,
-            #[cfg(target_os = "linux")]
-            Self::ObserveStockPolicy { .. } | Self::VerifyExistingNixPolicy { .. } => false,
-            #[cfg(target_os = "linux")]
-            Self::PublishStockPolicy { .. }
-            | Self::ClearPolicyIntent { .. }
-            | Self::InspectStockPolicy(_)
-            | Self::ResumeStockPolicy(_) => true,
             Self::UninstallConfirm(_)
             | Self::UninstallInspect { .. }
             | Self::ShellInspect { .. }
@@ -352,15 +224,7 @@ impl FilesystemJob {
             | Self::ReadSnapshot { .. }
             | Self::CanonicalExecutable
             | Self::HashExecutor { .. }
-            | Self::HashPolicyHelper { .. }
             | Self::ResolvePairMember { .. }
-            | Self::NixClient
-            | Self::NixPolicyHelperClient
-            | Self::ProtectedPath(_)
-            | Self::BoundedDigest { .. }
-            | Self::NixConfigurationInput
-            | Self::NixDaemonProcess { .. }
-            | Self::NixProcessName
             | Self::ResourceInventory { .. }
             | Self::ObservePath(_)
             | Self::ObserveCommandPath(_)
@@ -431,7 +295,6 @@ pub(super) struct FilesystemTask {
     handle: Option<JoinHandle<Result<FilesystemResult, TransactionError>>>,
     completion: UnixStream,
     notified: bool,
-    attended: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -479,7 +342,6 @@ impl FilesystemTask {
         cancellation: Cancellation,
         admission: Admission,
         permission: Option<super::coordinator::MutationPermission>,
-        terminal: Option<ParkedTerminal>,
     ) -> Result<Self, TransactionError> {
         if matches!(job, FilesystemJob::ShellApply { .. })
             && !matches!(admission, Admission::Settlement(_))
@@ -505,17 +367,10 @@ impl FilesystemTask {
                 ));
             }
         }
-        if terminal
-            .as_ref()
-            .is_some_and(|terminal| !terminal.foreground())
-        {
-            return Err(TransactionError::AdministratorUnavailable);
-        }
         let (completion, mut signal) = UnixStream::pair().map_err(|_| TransactionError::Io)?;
         completion
             .set_nonblocking(true)
             .map_err(|_| TransactionError::Io)?;
-        let attended = terminal.is_some();
         let handle = std::thread::Builder::new()
             .name("neo-filesystem".into())
             .spawn(move || {
@@ -525,7 +380,6 @@ impl FilesystemTask {
                         cancellation,
                         admission,
                     },
-                    terminal.as_ref(),
                 );
                 drop(lease);
                 let _ = signal.write_all(&[1]);
@@ -536,12 +390,7 @@ impl FilesystemTask {
             handle: Some(handle),
             completion,
             notified: false,
-            attended,
         })
-    }
-
-    pub(super) fn uses_terminal(&self) -> bool {
-        self.attended
     }
 
     pub(super) fn poll(&mut self) -> Option<Result<FilesystemResult, TransactionError>> {
@@ -557,11 +406,7 @@ impl FilesystemTask {
                 .take()
                 .unwrap()
                 .join()
-                .unwrap_or(if self.attended {
-                    Err(TransactionError::CleanupUnknown)
-                } else {
-                    Err(TransactionError::Io)
-                }),
+                .unwrap_or(Err(TransactionError::Io)),
         )
     }
 
@@ -586,14 +431,6 @@ pub(super) struct ReadPolicy {
     admission: Admission,
 }
 impl ReadPolicy {
-    #[cfg(all(test, target_os = "linux"))]
-    pub(super) fn requested_for_test(cancellation: Cancellation) -> Self {
-        Self {
-            cancellation,
-            admission: Admission::Requested,
-        }
-    }
-
     fn check(&self) -> Result<(), TransactionError> {
         if matches!(self.admission, Admission::Requested) && self.cancellation.requested() {
             Err(TransactionError::StopRequested)
@@ -624,13 +461,7 @@ fn read_bounded(
     }
 }
 
-fn nar_string(digest: &mut Sha256, bytes: &[u8]) {
-    digest.update((bytes.len() as u64).to_le_bytes());
-    digest.update(bytes);
-    digest.update(&[0; 7][..(8 - bytes.len() % 8) % 8]);
-}
-
-pub(super) fn helper_snapshot(
+fn executor_file_identity(
     metadata: &fs::Metadata,
 ) -> (u64, u64, u64, u32, u32, u32, i64, i64, i64, i64) {
     (
@@ -647,49 +478,14 @@ pub(super) fn helper_snapshot(
     )
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub(super) enum PolicyHelperLocation {
-    Source,
-    Store,
-    #[cfg(target_os = "linux")]
-    Installed,
-}
-
-pub(super) fn protected_helper_path(path: &Path, location: PolicyHelperLocation) -> bool {
-    let checked = match location {
-        PolicyHelperLocation::Store => path,
-        #[cfg(target_os = "linux")]
-        PolicyHelperLocation::Installed => match path.parent().and_then(Path::parent) {
-            Some(output) if path == output.join("bin/neo") => output,
-            _ => return false,
-        },
-        PolicyHelperLocation::Source => return false,
-    };
-    checked
-        .to_str()
-        .is_some_and(|text| crate::candidate::OutputPath::parse(text).is_ok())
-        && super::nix_owner::policy_helper_protected_path(path)
-            .ok()
-            .as_deref()
-            == Some(path)
-}
-
 fn verify_executor_file(
     path: &Path,
     expected: &FileIdentity,
-    helper: Option<PolicyHelperLocation>,
     policy: &ReadPolicy,
-    mut visit: impl FnMut(&[u8]),
-) -> Result<(fs::File, fs::Metadata), TransactionError> {
-    let stored = helper.is_some_and(|location| location != PolicyHelperLocation::Source);
+) -> Result<(), TransactionError> {
     policy.check()?;
     if !path.is_absolute() {
         return Err(TransactionError::Verification("executor absolute source"));
-    }
-    if let Some(location) = helper {
-        if stored && !protected_helper_path(path, location) {
-            return Err(TransactionError::UnsafePath);
-        }
     }
     let mut file = OpenOptions::new()
         .read(true)
@@ -700,10 +496,7 @@ fn verify_executor_file(
     if before.len() != expected.size as u64 {
         return Err(TransactionError::Verification("native executor size"));
     }
-    if !before.is_file()
-        || (helper.is_some() && before.mode() & 0o100 == 0)
-        || (stored && (before.uid() != 0 || before.mode() & 0o7777 != 0o555))
-    {
+    if !before.is_file() {
         return Err(TransactionError::Verification("executor file identity"));
     }
     let mut raw = Sha256::new();
@@ -722,72 +515,21 @@ fn verify_executor_file(
             return Err(TransactionError::Verification("native executor size"));
         }
         raw.update(&buffer[..size]);
-        visit(&buffer[..size]);
     }
     let after = file.metadata().map_err(|_| TransactionError::Io)?;
     let named = fs::symlink_metadata(path).map_err(|_| TransactionError::Io)?;
-    if helper_snapshot(&before) != helper_snapshot(&after)
-        || helper_snapshot(&after) != helper_snapshot(&named)
+    if executor_file_identity(&before) != executor_file_identity(&after)
+        || executor_file_identity(&after) != executor_file_identity(&named)
         || count != expected.size
         || format!("{:x}", raw.finalize()) != expected.sha
     {
         return Err(TransactionError::Verification("native executor hash"));
     }
     policy.check()?;
-    Ok((file, after))
+    Ok(())
 }
 
-pub(super) fn open_verified_helper(
-    path: &Path,
-    expected: &FileIdentity,
-    location: PolicyHelperLocation,
-) -> Result<(fs::File, fs::Metadata), TransactionError> {
-    verify_executor_file(
-        path,
-        expected,
-        Some(location),
-        &ReadPolicy {
-            cancellation: Cancellation::default(),
-            admission: Admission::Requested,
-        },
-        |_| {},
-    )
-}
-
-fn hash_helper(
-    path: &Path,
-    expected: &FileIdentity,
-    location: PolicyHelperLocation,
-    policy: &ReadPolicy,
-) -> Result<String, TransactionError> {
-    let mut nar = Sha256::new();
-    for tag in [
-        b"nix-archive-1".as_slice(),
-        b"(",
-        b"type",
-        b"regular",
-        b"executable",
-        b"",
-        b"contents",
-    ] {
-        nar_string(&mut nar, tag);
-    }
-    nar.update((expected.size as u64).to_le_bytes());
-    verify_executor_file(path, expected, Some(location), policy, |chunk| {
-        nar.update(chunk)
-    })?;
-    nar.update(&[0; 7][..(8 - expected.size % 8) % 8]);
-    nar_string(&mut nar, b")");
-    Ok(format!("{:x}", nar.finalize()))
-}
-
-fn execute(
-    job: FilesystemJob,
-    policy: &ReadPolicy,
-    terminal: Option<&ParkedTerminal>,
-) -> Result<FilesystemResult, TransactionError> {
-    #[cfg(not(target_os = "linux"))]
-    let _ = terminal;
+fn execute(job: FilesystemJob, policy: &ReadPolicy) -> Result<FilesystemResult, TransactionError> {
     use FilesystemJob as Job;
     use FilesystemResult as Result;
     let journal = job.journal_kind();
@@ -956,45 +698,6 @@ fn execute(
             publish_record(&path, &bytes, committing, policy)?;
             Ok(Result::Applied)
         }
-        #[cfg(all(test, target_os = "linux"))]
-        Job::PublishPolicyIntent {
-            layout,
-            expected,
-            bytes,
-        } => {
-            publish_policy_intent(&layout, expected.as_deref(), &bytes, policy)?;
-            Ok(Result::Applied)
-        }
-        #[cfg(target_os = "linux")]
-        Job::ClearPolicyIntent { layout, expected } => {
-            let path = layout.record();
-            if read_record_bytes(&path, policy)?.as_deref() != Some(expected.as_slice()) {
-                return Err(TransactionError::InvalidState(
-                    "Nix policy intent changed before settlement",
-                ));
-            }
-            let mut record: super::InstallationRecord = serde_json::from_slice(&expected)
-                .map_err(|_| TransactionError::InvalidState("Nix policy record format"))?;
-            let lease = record
-                .pending_nix_policy
-                .take()
-                .and_then(|pending| pending.state_lease)
-                .ok_or(TransactionError::InvalidState(
-                    "Nix policy state lease missing",
-                ))?;
-            let named = fs::symlink_metadata(layout.lock()).map_err(|_| TransactionError::Io)?;
-            super::validate_private_file(&named)?;
-            if (named.dev(), named.ino(), named.nlink()) != (lease.device, lease.inode, 1) {
-                return Err(TransactionError::InvalidState(
-                    "Nix policy state lease changed",
-                ));
-            }
-            let bytes = serde_json::to_vec(&record)
-                .map_err(|_| TransactionError::InvalidState("Nix policy record format"))?;
-            policy.check()?;
-            publish_record(&path, &bytes, false, policy)?;
-            Ok(Result::Applied)
-        }
         Job::PublishReviewedRecord {
             layout,
             expected,
@@ -1117,238 +820,8 @@ fn execute(
                 .map_err(|_| TransactionError::Verification("executor path"))?,
         )),
         Job::HashExecutor { path, expected } => {
-            verify_executor_file(&path, &expected, None, policy, |_| {})?;
+            verify_executor_file(&path, &expected, policy)?;
             Ok(Result::Applied)
-        }
-        Job::HashPolicyHelper {
-            path,
-            expected,
-            location,
-        } => Ok(Result::Digest(hash_helper(
-            &path, &expected, location, policy,
-        )?)),
-        #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
-        Job::ObserveDarwinPolicy { path, release } => {
-            policy.check()?;
-            let (file, identity) =
-                open_verified_helper(&path, &release, PolicyHelperLocation::Store)?;
-            super::nix_owner::darwin::discovery_effect::observe(
-                &path,
-                &file,
-                &identity,
-                terminal,
-                || policy.check(),
-            )
-            .map(Result::DarwinPolicyObserved)
-        }
-        #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
-        Job::DarwinPolicyPublication { intent, step } => {
-            let path = intent.layout.record();
-            match step {
-                DarwinPublicationStep::StoreIntent => {
-                    verify_darwin_intent(&intent, &intent.before, policy)?;
-                    publish_record(&path, &intent.after, false, policy)?;
-                    Ok(Result::Applied)
-                }
-                DarwinPublicationStep::Launch => {
-                    let path = Path::new(&intent.pending.helper_path);
-                    let (file, identity) = open_verified_helper(
-                        path,
-                        &intent.pending.helper,
-                        PolicyHelperLocation::Store,
-                    )?;
-                    verify_darwin_intent(&intent, &intent.after, policy)?;
-                    super::nix_owner::darwin::discovery_effect::publish(
-                        path,
-                        &file,
-                        &identity,
-                        terminal,
-                        intent.request,
-                        || policy.check(),
-                    )
-                    .map(Result::DarwinPolicyPublished)
-                }
-                DarwinPublicationStep::ClearIntent => {
-                    verify_darwin_intent(&intent, &intent.after, policy)?;
-                    publish_record(&path, &intent.before, false, policy)?;
-                    Ok(Result::DarwinPolicyIntentCleared)
-                }
-            }
-        }
-        #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
-        Job::DarwinPolicyRecovery { intent, step } => {
-            use super::nix_owner::darwin::discovery_effect;
-
-            if matches!(step, DarwinRecoveryStep::Settle) {
-                verify_darwin_intent(&intent, &intent.after, policy)?;
-                policy.check()?;
-                publish_record(&intent.layout.record(), &intent.before, false, policy)?;
-                return Ok(Result::DarwinPolicyRecoverySettled);
-            }
-            let path = Path::new(&intent.pending.helper_path);
-            let (file, identity) =
-                open_verified_helper(path, &intent.pending.helper, PolicyHelperLocation::Store)?;
-            verify_darwin_intent(&intent, &intent.after, policy)?;
-            match step {
-                DarwinRecoveryStep::Inspect => discovery_effect::inspect_pending(
-                    path,
-                    &file,
-                    &identity,
-                    terminal,
-                    intent.request,
-                    || policy.check(),
-                ),
-                DarwinRecoveryStep::Restart(plan) => discovery_effect::activate(
-                    path,
-                    &file,
-                    &identity,
-                    terminal,
-                    intent.request,
-                    plan,
-                    || policy.check(),
-                ),
-                DarwinRecoveryStep::Settle => unreachable!(),
-            }
-            .map(Result::DarwinPolicyRecoveryObserved)
-        }
-        #[cfg(target_os = "linux")]
-        Job::ObserveStockPolicy {
-            executable,
-            rendezvous,
-            caller,
-            common_inputs,
-            operation,
-        } => {
-            let discovery = executable
-                .discover_stock_policy(rendezvous, &caller, terminal, || policy.check().is_err())
-                .map_err(|error| match error {
-                    HandoffError::Cancelled => TransactionError::StopRequested,
-                    HandoffError::CleanupUnknown => TransactionError::CleanupUnknown,
-                    HandoffError::AdministratorUnavailable | HandoffError::ForegroundLost => {
-                        TransactionError::AdministratorUnavailable
-                    }
-                    _ => TransactionError::Verification("helper policy discovery"),
-                })?
-                .map_err(|_| {
-                    TransactionError::NixBlocked(
-                        super::nix_owner::NixBlock::ConfigurationOwnerUnknown,
-                    )
-                })?;
-            if discovery.common_inputs() != &common_inputs || discovery.operation() != operation {
-                return Err(TransactionError::Verification(
-                    "reviewed policy inputs changed",
-                ));
-            }
-            policy.check()?;
-            Ok(Result::StockPolicyObserved {
-                executable,
-                caller,
-                discovery,
-            })
-        }
-        #[cfg(target_os = "linux")]
-        Job::VerifyExistingNixPolicy {
-            inspector,
-            lease,
-            stamp,
-        } => {
-            let blocked = || {
-                TransactionError::NixBlocked(super::nix_owner::NixBlock::ConfigurationOwnerUnknown)
-            };
-            let (executable, caller) = match inspector {
-                ExistingNixInspector::Installed(output) => (
-                    ExactExecutable::open_installed(&output).map_err(|_| blocked())?,
-                    None,
-                ),
-                ExistingNixInspector::Retained { executable, caller } => (executable, Some(caller)),
-            };
-            let proof = executable
-                .verify_existing_policy(caller.as_ref(), lease, stamp, terminal, || {
-                    policy.check().is_err()
-                })
-                .map_err(|error| match error {
-                    HandoffError::Cancelled => TransactionError::StopRequested,
-                    HandoffError::CleanupUnknown => TransactionError::CleanupUnknown,
-                    HandoffError::AdministratorUnavailable | HandoffError::ForegroundLost => {
-                        TransactionError::AdministratorUnavailable
-                    }
-                    _ => blocked(),
-                })?
-                .ok_or_else(blocked)?;
-            policy.check()?;
-            Ok(Result::ExistingNixPolicyVerified(proof))
-        }
-        #[cfg(target_os = "linux")]
-        Job::PublishStockPolicy {
-            executable,
-            rendezvous,
-            caller,
-            intent,
-        } => {
-            let pending = intent.pending().clone();
-            let verified = executable
-                .publish_stock_policy(
-                    rendezvous,
-                    &caller,
-                    &pending,
-                    terminal,
-                    || policy.check().is_err(),
-                    || {
-                        intent.persist(policy).map_err(|error| match error {
-                            TransactionError::StopRequested => HandoffError::Cancelled,
-                            _ => HandoffError::Frame,
-                        })
-                    },
-                )
-                .map_err(|error| match error {
-                    HandoffError::Cancelled => TransactionError::StopRequested,
-                    HandoffError::CleanupUnknown => TransactionError::CleanupUnknown,
-                    HandoffError::AdministratorUnavailable | HandoffError::ForegroundLost => {
-                        TransactionError::AdministratorUnavailable
-                    }
-                    _ => TransactionError::Verification("Nix policy application is pending"),
-                })?;
-            Ok(Result::StockPolicyPublished(verified))
-        }
-        #[cfg(target_os = "linux")]
-        job @ (Job::InspectStockPolicy(_) | Job::ResumeStockPolicy(_)) => {
-            let (intent, resume) = match job {
-                Job::InspectStockPolicy(intent) => (intent, false),
-                Job::ResumeStockPolicy(intent) => (intent, true),
-                _ => unreachable!(),
-            };
-            let unresolved = TransactionError::NixPolicyRecoveryPending;
-            let pending = intent.pending();
-            let caller =
-                VerifiedCaller::open_current(&pending.helper).map_err(|_| unresolved.clone())?;
-            let executable =
-                ExactExecutable::open(Path::new(&pending.helper_path), &pending.helper)
-                    .map_err(|_| unresolved.clone())?;
-            let rendezvous = Rendezvous::fresh().map_err(|_| unresolved.clone())?;
-            let map_error = |error| match error {
-                HandoffError::Cancelled => TransactionError::StopRequested,
-                HandoffError::CleanupUnknown => TransactionError::CleanupUnknown,
-                HandoffError::AdministratorUnavailable | HandoffError::ForegroundLost if resume => {
-                    TransactionError::AdministratorUnavailable
-                }
-                HandoffError::AdministratorUnavailable | HandoffError::ForegroundLost => {
-                    TransactionError::NixPolicyRecoveryInspectionUnavailable
-                }
-                _ => unresolved,
-            };
-            let cancelled = || policy.check().is_err();
-            let result = if resume {
-                executable
-                    .resume_stock_policy(rendezvous, &caller, intent, terminal, cancelled)
-                    .map(Result::StockPolicyResumed)
-            } else {
-                executable
-                    .inspect_stock_policy(rendezvous, &caller, &intent, terminal, cancelled)
-                    .map(Result::StockPolicyInspected)
-            }
-            .map_err(map_error)?;
-            policy.check()?;
-            Ok(result)
         }
         Job::ResolvePairMember { member, expected } => {
             if member
@@ -1362,74 +835,6 @@ fn execute(
             }
             Ok(Result::Applied)
         }
-        Job::NixClient => Ok(Result::Executable(
-            super::nix_owner::trusted_client().map_err(TransactionError::NixBlocked)?,
-        )),
-        Job::NixPolicyHelperClient => Ok(Result::Executable(
-            super::nix_owner::policy_helper_client().map_err(TransactionError::NixBlocked)?,
-        )),
-        Job::ProtectedPath(path) => Ok(Result::Executable(
-            super::nix_owner::protected_path(&path).map_err(|_| TransactionError::Io)?,
-        )),
-        Job::BoundedDigest { path, maximum } => {
-            let file = OpenOptions::new()
-                .read(true)
-                .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
-                .open(path)
-                .map_err(|_| TransactionError::Io)?;
-            let metadata = file.metadata().map_err(|_| TransactionError::Io)?;
-            if !metadata.is_file() || metadata.len() > maximum {
-                return Err(TransactionError::Io);
-            }
-            Ok(Result::Digest(format!(
-                "{:x}",
-                Sha256::digest(read_bounded(
-                    file,
-                    maximum as usize,
-                    TransactionError::Verification("file size limit"),
-                    policy,
-                )?)
-            )))
-        }
-        Job::NixConfigurationInput => {
-            policy.check()?;
-            let configuration =
-                super::nix_owner::configuration_input(Path::new("/etc/nix/nix.conf"), |file| {
-                    read_bounded(
-                        file,
-                        128 * 1024,
-                        TransactionError::Verification("file size limit"),
-                        policy,
-                    )
-                })?;
-            #[cfg(target_os = "linux")]
-            let configuration = {
-                let mut observed = configuration;
-                observed.observe_caller_access();
-                observed
-            };
-            policy.check()?;
-            Ok(Result::ConfigurationInput(configuration))
-        }
-        Job::NixDaemonProcess { pid, executable } => {
-            policy.check()?;
-            Ok(Result::NixDaemonProcess(
-                super::nix_owner::daemon_process::observe(pid, &executable, |file| {
-                    read_bounded(
-                        file,
-                        64 * 1024,
-                        TransactionError::Verification("process size limit"),
-                        policy,
-                    )
-                })?,
-            ))
-        }
-        Job::NixProcessName => Ok(Result::Bytes(Some(read_bounded(
-            File::open("/proc/1/comm").map_err(|_| TransactionError::Io)?,
-            4096,
-            TransactionError::Verification("file size limit"),
-            policy,
-        )?))),
         Job::OpenResourceDirectory(path) => {
             Ok(Result::ResourceDirectory(ResourceDirectory::open(path)?))
         }
@@ -1456,38 +861,6 @@ fn execute(
     }
 }
 
-#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
-fn verify_darwin_intent(
-    intent: &DarwinPolicyIntent,
-    expected: &[u8],
-    policy: &ReadPolicy,
-) -> Result<(), TransactionError> {
-    let changed = TransactionError::Verification("reviewed Darwin policy intent changed");
-    let state_lease = intent.pending.state_lease.ok_or_else(|| changed.clone())?;
-    let verify_lease = || {
-        let named = fs::symlink_metadata(intent.layout.lock()).map_err(|_| changed.clone())?;
-        super::validate_private_file(&named)?;
-        if (named.dev(), named.ino(), named.nlink()) != (state_lease.device, state_lease.inode, 1) {
-            return Err(changed.clone());
-        }
-        Ok(())
-    };
-    verify_lease()?;
-    let directory =
-        ResourceDirectory::open_existing(intent.layout.state_directory.join("resources"))?
-            .ok_or_else(|| changed.clone())?;
-    if directory.identity != intent.resource_parent
-        || directory
-            .inventory(intent.resource_limit)?
-            .get(super::resources::HELPER_ROOT)
-            != Some(&intent.helper_root)
-        || read_record_bytes(&intent.layout.record(), policy)?.as_deref() != Some(expected)
-    {
-        return Err(changed);
-    }
-    verify_lease()
-}
-
 fn read_record_bytes(
     path: &Path,
     policy: &ReadPolicy,
@@ -1502,33 +875,6 @@ fn read_record_bytes(
             )
         })
         .transpose()
-}
-
-#[cfg(target_os = "linux")]
-pub(super) fn publish_policy_intent(
-    layout: &Layout,
-    expected: Option<&[u8]>,
-    bytes: &[u8],
-    policy: &ReadPolicy,
-) -> Result<(), TransactionError> {
-    let path = layout.record();
-    if read_record_bytes(&path, policy)?.as_deref() != expected {
-        return Err(TransactionError::InvalidState(
-            "reviewed record changed before Nix policy intent publication",
-        ));
-    }
-    #[cfg(test)]
-    policy.cancellation.hit("before_policy_intent_publication");
-    policy.check()?;
-    publish_record(&path, bytes, false, policy)?;
-    #[cfg(test)]
-    if policy
-        .cancellation
-        .is_cut("after_policy_intent_publication_error")
-    {
-        return Err(TransactionError::Io);
-    }
-    Ok(())
 }
 
 fn publish_record(
@@ -1643,75 +989,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn helper_nar_matches_independent_nix_vectors() {
-        let temporary = tempfile::tempdir().unwrap();
-        let path = temporary.path().canonicalize().unwrap().join("helper");
-        let policy = ReadPolicy {
-            cancellation: Cancellation::default(),
-            admission: Admission::Requested,
-        };
-        for (bytes, expected_nar) in [
-            (
-                b"#!/bin/sh\nprintf \"%s\\n\" helper-fixture\n".to_vec(),
-                "92bf8394ab84a8f865520a06b0ca2138d961bf39f27b84d96b6c2d307910e4c7",
-            ),
-            (
-                vec![0; 8],
-                "a0e542dbaff146ec07c4e46eb27841bd9a45a304203eaa34ecccb9b3022b08c3",
-            ),
-            (
-                vec![0; 32769],
-                "8e763ed1e1c58166a05d46044cd058f24863b94ffd211f28d1512c33e370f0dc",
-            ),
-        ] {
-            fs::write(&path, &bytes).unwrap();
-            fs::set_permissions(&path, fs::Permissions::from_mode(0o700)).unwrap();
-            let identity = FileIdentity {
-                name: "helper".into(),
-                sha: format!("{:x}", Sha256::digest(&bytes)),
-                size: bytes.len(),
-            };
-            assert_eq!(
-                hash_helper(&path, &identity, PolicyHelperLocation::Source, &policy).unwrap(),
-                expected_nar
-            );
-            fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
-            assert!(hash_helper(&path, &identity, PolicyHelperLocation::Source, &policy).is_err());
-            fs::set_permissions(&path, fs::Permissions::from_mode(0o700)).unwrap();
-            let mut replaced = bytes.clone();
-            replaced[0] ^= 1;
-            fs::write(&path, replaced).unwrap();
-            assert!(hash_helper(&path, &identity, PolicyHelperLocation::Source, &policy).is_err());
-            fs::write(&path, &bytes).unwrap();
-            let link = temporary.path().join("link");
-            symlink(&path, &link).unwrap();
-            assert!(hash_helper(&link, &identity, PolicyHelperLocation::Source, &policy).is_err());
-            fs::remove_file(link).unwrap();
-        }
-    }
-
-    #[test]
-    fn helper_rejects_fifo_and_directory_without_blocking() {
-        use std::os::unix::ffi::OsStrExt;
-        let temporary = tempfile::tempdir().unwrap();
-        let directory = temporary.path().canonicalize().unwrap();
-        let fifo = directory.join("fifo");
-        let name = std::ffi::CString::new(fifo.as_os_str().as_bytes()).unwrap();
-        assert_eq!(unsafe { libc::mkfifo(name.as_ptr(), 0o700) }, 0);
-        let identity = FileIdentity {
-            name: "helper".into(),
-            sha: format!("{:x}", Sha256::digest([])),
-            size: 0,
-        };
-        let policy = ReadPolicy {
-            cancellation: Cancellation::default(),
-            admission: Admission::Requested,
-        };
-        assert!(hash_helper(&fifo, &identity, PolicyHelperLocation::Source, &policy).is_err());
-        assert!(hash_helper(&directory, &identity, PolicyHelperLocation::Source, &policy).is_err());
-    }
-
-    #[test]
     fn adding_either_link_rechecks_both_command_names() {
         use std::os::unix::fs::PermissionsExt;
         let temporary = tempfile::tempdir().unwrap();
@@ -1734,7 +1011,6 @@ mod tests {
                 cancellation: Cancellation::default(),
                 admission: Admission::Requested,
             },
-            None,
         );
         assert!(
             matches!(outcome, Err(TransactionError::CommandPathConflict { command: ManagedCommand::Neo, path }) if path == foreign)
@@ -1763,7 +1039,6 @@ mod tests {
             handle: Some(handle),
             completion,
             notified: false,
-            attended: false,
         };
         entered_rx.recv_timeout(Duration::from_secs(10)).unwrap();
         drop(lease);
@@ -1782,23 +1057,5 @@ mod tests {
         };
         assert!(result.is_ok());
         assert!(RootLease::acquire(&lock).is_ok());
-    }
-}
-
-#[cfg(test)]
-pub(super) fn test_digest(path: &Path, maximum: u64) -> Result<String, TransactionError> {
-    match execute(
-        FilesystemJob::BoundedDigest {
-            path: path.to_owned(),
-            maximum,
-        },
-        &ReadPolicy {
-            cancellation: Cancellation::default(),
-            admission: Admission::Requested,
-        },
-        None,
-    )? {
-        FilesystemResult::Digest(value) => Ok(value),
-        _ => Err(TransactionError::InvalidState("digest completion type")),
     }
 }
