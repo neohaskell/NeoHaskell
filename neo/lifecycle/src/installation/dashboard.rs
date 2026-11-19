@@ -676,46 +676,51 @@ fn review_pages(
         "Install"
     };
     let version = summary.version.as_deref().unwrap_or("");
-    let mut text = format!("{action} NeoHaskell {version}?\n\nFor your account\n");
+    let mut text = format!("{action} NeoHaskell {version}?\n");
     if active {
-        text.push_str(
-            "This version is already active. Check the neo and neoctl commands in ~/.local/bin.",
-        );
-    } else {
-        text.push_str("Make neo and neoctl available in ~/.local/bin.");
+        text.push_str("This version is already active.\n");
     }
-    text.push_str("\nAdd that directory to your shell's PATH if needed. Open fresh shells to check both commands.");
+    text.push_str("\nAfter you approve, the installer will:");
+    let cache = cache_change(summary);
+    let mut steps = Vec::new();
+    if let Some((target, additions)) = cache {
+        text.push_str("\n\nFor everyone using Nix on this machine");
+        let mut settings = Vec::new();
+        for line in additions.lines() {
+            if let Some((name, values)) = line.split_once(" = ") {
+                match name {
+                    "extra-substituters" => settings.push("package sources".to_owned()),
+                    "extra-trusted-public-keys" => settings.push("signing keys".to_owned()),
+                    "extra-experimental-features" => settings.push(format!("features ({values})")),
+                    _ => {}
+                }
+            }
+        }
+        steps.push(format!("Add the missing Nix settings to {target} using sudo: {}.", settings.join(", ")));
+        steps.push("Restart Nix to load the settings.".to_owned());
+    }
+    let system_steps = steps.len();
     if summary.changes.contains(&super::ReviewedChange::Recovery)
         || !matches!(summary.recovery, super::RecoveryPending::None)
     {
-        text.push_str("\nFinish the interrupted installation changes.");
+        steps.push("Finish the interrupted installation changes.".to_owned());
     }
-    if let Some((target, additions)) = cache_change(summary) {
-        text.push_str("\n\nFor everyone using Nix on this machine");
-        for setting in additions.lines() {
-            let Some((name, values)) = setting.split_once(" = ") else {
-                continue;
-            };
-            match name {
-                "extra-substituters" => {
-                    text.push_str("\nAdd package sources so Nix can download prebuilt tools.")
-                }
-                "extra-trusted-public-keys" => {
-                    text.push_str("\nTrust the signing keys for the packages.")
-                }
-                "extra-experimental-features" => {
-                    text.push_str(&format!("\nEnable Nix features: {values}."))
-                }
-                _ => {}
-            }
+    if !active {
+        steps.push("Get neo and neoctl and verify both packages.".to_owned());
+    }
+    steps.push("Set up both commands in ~/.local/bin and update PATH if needed.".to_owned());
+    steps.push("Open fresh shells and check both commands.".to_owned());
+    for (index, step) in steps.iter().enumerate() {
+        if index == system_steps {
+            text.push_str("\n\nFor your account");
         }
-        text.push_str(&format!(
-            "\nEdit {target} and restart Nix. This requires sudo."
-        ));
+        text.push_str(&format!("\n{}. {step}", index + 1));
+    }
+    if let Some((target, additions)) = cache {
         section(&text, "[Enter] Review Nix settings    [Q] Cancel");
         section(
             &format!(
-                "Nix settings for this machine\n\nAdd to {target}:\n{additions}\nInstalling will restart Nix. Your sudo password may be requested."
+                "Nix settings for this machine\n\nThe installer will add these lines to {target}:\n{additions}\nIt will then restart Nix. You may be asked for your sudo password."
             ),
             "[I] Authorize and install    [Esc] Back",
         );
