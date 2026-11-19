@@ -39,6 +39,12 @@ pub fn dispatch_internal(arguments: &[std::ffi::OsString]) -> Option<Exit> {
 }
 
 fn dispatch_installed_internal(arguments: &[std::ffi::OsString]) -> Option<Exit> {
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+    if matches!(arguments, [arg] if arg == installation::nix_owner::darwin::OBSERVE_ARGUMENT) {
+        return Some(Exit {
+            code: installation::nix_owner::darwin::run_observer(),
+        });
+    }
     #[cfg(target_os = "linux")]
     if let Some(code) = installation::nix_owner::dispatch_caller_access(arguments) {
         return Some(Exit { code });

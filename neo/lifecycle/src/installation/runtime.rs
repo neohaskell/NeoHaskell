@@ -269,6 +269,32 @@ impl LaunchTarget<'_> {
 }
 
 impl InstallationOwner {
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+    async fn observe_install_nix_base(
+        &self,
+    ) -> Result<super::nix_owner::ObservedNixBase, TransactionError> {
+        use super::nix_owner::{NixBlock, darwin};
+
+        let blocked = TransactionError::NixBlocked(NixBlock::UnprovedService);
+        let observation = self
+            .observe(&self.effects, process::WorkerRequest::ObserveDarwinNix)
+            .await
+            .map_err(|error| error.preserve_stop(blocked))?;
+        if observation.exit_code != Some(0)
+            || observation.failure.is_some()
+            || !observation.stderr.is_empty()
+        {
+            return Err(TransactionError::NixBlocked(NixBlock::UnprovedService));
+        }
+        let _identity = darwin::decode_observation(&observation.stdout)
+            .map_err(TransactionError::NixBlocked)?;
+        self.effects.observe_row(0, Row::Existing);
+        Err(TransactionError::NixBlocked(
+            NixBlock::ConfigurationOwnerUnknown,
+        ))
+    }
+
+    #[cfg(not(all(target_os = "macos", target_arch = "aarch64")))]
     async fn observe_install_nix_base(
         &self,
     ) -> Result<super::nix_owner::ObservedNixBase, TransactionError> {

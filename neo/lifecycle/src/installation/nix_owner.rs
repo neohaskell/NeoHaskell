@@ -13,6 +13,8 @@ mod caller_access;
 #[cfg(target_os = "linux")]
 pub(crate) use caller_access::dispatch_caller_access;
 pub(super) mod daemon_process;
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+pub(crate) mod darwin;
 mod include_inputs;
 pub(super) mod peer_handoff;
 pub(super) mod policy_observation;

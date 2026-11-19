@@ -51,6 +51,8 @@ pub(super) enum WorkerRequest {
     StoreInfo,
     SystemdService,
     SystemdSocket,
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+    ObserveDarwinNix,
     AcquireRetained {
         pair: String,
         candidate: String,
@@ -104,6 +106,8 @@ impl WorkerRequest {
             | Self::PathInfo { .. }
             | Self::HashConvert { .. }
             | Self::VerifyContents { .. } => false,
+            #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+            Self::ObserveDarwinNix => false,
             Self::ShellStartup(_)
             | Self::ImportPolicyHelper { .. }
             | Self::AcquireRetained { .. }
@@ -792,6 +796,8 @@ impl WorkerRequest {
             Self::Version | Self::StoreInfo | Self::SystemdService | Self::SystemdSocket => {
                 Duration::from_secs(15)
             }
+            #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+            Self::ObserveDarwinNix => Duration::from_secs(5),
             _ => OPERATION_TIMEOUT,
         }
     }
@@ -804,6 +810,8 @@ impl WorkerRequest {
     fn stdout_limit(&self) -> io::Result<usize> {
         match self {
             Self::HelperFixedPath { .. } | Self::ImportPolicyHelper { .. } => Ok(256),
+            #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+            Self::ObserveDarwinNix => Ok(super::nix_owner::darwin::OBSERVATION_BYTES),
             Self::Release(fetch) => fetch.limit().map_err(|_| invalid("release request")),
             Self::PathInfo { paths, .. } => {
                 if paths.is_empty() || paths.len() > 64 {
@@ -834,6 +842,12 @@ impl WorkerRequest {
         }
         let mut command = match self {
             Self::ShellStartup(_) => unreachable!(),
+            #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+            Self::ObserveDarwinNix => {
+                let mut command = Command::new(std::env::current_exe()?);
+                command.arg(super::nix_owner::darwin::OBSERVE_ARGUMENT);
+                command
+            }
             Self::HelperFixedPath { client, nar_hash } => {
                 validate_helper_hash(nar_hash)?;
                 let mut command = Command::new(pinned_helper_client(client, true)?);
