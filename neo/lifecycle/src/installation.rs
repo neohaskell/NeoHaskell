@@ -1,3 +1,4 @@
+mod cache_setup;
 mod coordinator;
 mod dashboard;
 mod filesystem;

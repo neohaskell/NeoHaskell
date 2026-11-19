@@ -43,6 +43,9 @@ pub(super) enum WorkerRequest {
     #[cfg(test)]
     Version,
     LocalDaemonInfo,
+    CacheSettings(bool),
+    FlakeFeature,
+    ApplyCacheSettings(super::cache_setup::CachePlan),
     AcquireRetained {
         pair: String,
         candidate: String,
@@ -88,10 +91,13 @@ impl WorkerRequest {
         match self {
             Self::Release(_)
             | Self::LocalDaemonInfo
+            | Self::CacheSettings(_)
+            | Self::FlakeFeature
             | Self::PathInfo { .. }
             | Self::HashConvert { .. }
             | Self::VerifyContents { .. } => false,
             Self::ShellStartup(_)
+            | Self::ApplyCacheSettings(_)
             | Self::AcquireRetained { .. }
             | Self::RegisterExact { .. }
             | Self::ProbeTool { .. } => true,
@@ -786,6 +792,7 @@ impl WorkerRequest {
 
     fn stdout_limit(&self) -> io::Result<usize> {
         match self {
+            Self::CacheSettings(_) => Ok(1024 * 1024),
             Self::LocalDaemonInfo => Ok(4096),
             Self::Release(fetch) => fetch.limit().map_err(|_| invalid("release request")),
             Self::PathInfo { paths, .. } => {
@@ -860,6 +867,27 @@ impl WorkerRequest {
             Self::Version => {
                 let mut command = nix_command()?;
                 command.arg("--version");
+                command
+            }
+            Self::ApplyCacheSettings(plan) => plan.command()?,
+            Self::FlakeFeature => {
+                let mut command = Command::new(super::nix::system_client_path()?);
+                command.args([
+                    "--extra-experimental-features",
+                    "nix-command",
+                    "eval",
+                    "--offline",
+                    "--expr",
+                    r#"(builtins.parseFlakeRef "github:NixOS/nix").type == "github""#,
+                ]);
+                command
+            }
+            Self::CacheSettings(enable_command) => {
+                let mut command = Command::new(super::nix::system_client_path()?);
+                if *enable_command {
+                    command.args(["--extra-experimental-features", "nix-command"]);
+                }
+                command.args(["config", "show", "--json"]);
                 command
             }
             Self::LocalDaemonInfo => {

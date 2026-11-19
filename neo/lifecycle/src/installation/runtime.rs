@@ -204,15 +204,14 @@ impl InstallationOwner {
         }
         let commands = self.observe_command_path().await?;
         self.effects.observe(Activity::CheckingNix);
-        let observed_nix = self.observe_local_daemon().await?;
-        self.effects.observe_row(0, Row::Existing);
-        self.effects.observe_row(1, Row::Unchanged);
-        self.effects.observe_row(2, Row::Unchanged);
-        self.effects
-            .completed(crate::diagnostics::CompletedStep::Prerequisites);
         let before = recovery.projected.committed.clone();
         let offline = matches!(&request, snapshot::Request::Rollback)
             || matches!(&request, snapshot::Request::Install(None)) && before.is_some();
+        if !offline {
+            super::cache_setup::check_pending()?;
+        }
+        let observed_nix = self.observe_local_daemon().await?;
+        self.effects.observe_row(0, Row::Existing);
         let executor_evidence = match bootstrap_evidence {
             Some(evidence) => evidence,
             None => {
@@ -250,12 +249,31 @@ impl InstallationOwner {
         let prepared = self
             .prepare_snapshot(&selected, &source, identity.target, offline)
             .await?;
+        self.verify_remote(&lease, &prepared.candidate, system, !offline)
+            .await?;
         let shell_setup = self.prepare_shell().await?;
         let mut summary = recovery.summary(&request, Some(selected.version.clone()));
         summary.changes.extend([
             super::ReviewedChange::ShellPath,
             super::ReviewedChange::ShellStartup,
         ]);
+        let cache_plan = if offline {
+            None
+        } else {
+            self.cache_plan().await?
+        };
+        let config_row = if cache_plan.is_some() {
+            Row::Working
+        } else {
+            Row::Unchanged
+        };
+        self.effects.observe_row(1, config_row);
+        self.effects.observe_row(2, config_row);
+        if let Some(plan) = &cache_plan {
+            summary
+                .changes
+                .push(super::ReviewedChange::CacheSetup(plan.review()));
+        }
         let review = self.effects.review(summary).await?;
         self.recheck_shell(&shell_setup).await?;
         self.recheck_recovery(&recovery).await?;
@@ -265,13 +283,35 @@ impl InstallationOwner {
             return Err(self.effects.review_changed());
         }
         self.recheck_command_path(commands).await?;
+        if !offline && self.cache_plan().await? != cache_plan {
+            return Err(self.effects.review_changed());
+        }
         self.effects.admit_reviewed(review)?;
+        if let Some(plan) = cache_plan {
+            let result = self
+                .observe(
+                    &self.effects,
+                    process::WorkerRequest::ApplyCacheSettings(plan),
+                )
+                .await?;
+            if result.exit_code != Some(0)
+                || result.failure.is_some()
+                || self.cache_plan().await?.is_some()
+            {
+                return Err(TransactionError::NixBlocked(
+                    super::nix::NixBlock::CacheConfiguration,
+                ));
+            }
+            self.observe_local_daemon().await?;
+            self.effects.observe_row(1, Row::Verified);
+            self.effects.observe_row(2, Row::Verified);
+        }
+        self.effects
+            .completed(crate::diagnostics::CompletedStep::Prerequisites);
         self.effects.observe(Activity::Recovering);
         self.apply_recovery(recovery).await?;
         self.effects
             .completed(crate::diagnostics::CompletedStep::Recovery);
-        self.verify_remote(&lease, &prepared.candidate, system, !offline)
-            .await?;
         let candidate = self
             .publish_prepared_snapshot(&selected, prepared, identity.target)
             .await?;
@@ -621,7 +661,7 @@ mod tests {
 
     #[test]
     #[ignore = "requires working system Nix"]
-    fn observes_the_configured_local_daemon_through_the_worker() {
+    fn configured_daemon_needs_no_cache_changes() {
         use std::os::unix::fs::PermissionsExt;
 
         let temporary = tempfile::tempdir().unwrap();
@@ -629,8 +669,12 @@ mod tests {
         fs::set_permissions(&directory, fs::Permissions::from_mode(0o700)).unwrap();
         let owner = InstallationOwner::new(Layout::new(directory.clone(), directory.clone()));
         let lease = RootLease::acquire(&owner.layout.lock()).unwrap();
-        super::super::coordinator::test_with(&owner.effects, &lease, owner.observe_local_daemon())
-            .unwrap();
+        super::super::coordinator::test_with(&owner.effects, &lease, async {
+            owner.observe_local_daemon().await?;
+            assert!(owner.cache_plan().await?.is_none());
+            Ok::<(), TransactionError>(())
+        })
+        .unwrap();
     }
 
     #[test]

@@ -331,6 +331,7 @@ pub(crate) enum NixReason {
     UnprovedClient,
     DaemonUnavailable,
     DaemonMismatch,
+    CacheConfiguration,
     PairAcquisition,
 }
 
@@ -392,6 +393,7 @@ impl ErrorFact {
                     N::UnprovedClient => NixReason::UnprovedClient,
                     N::DaemonUnavailable => NixReason::DaemonUnavailable,
                     N::DaemonMismatch => NixReason::DaemonMismatch,
+                    N::CacheConfiguration => NixReason::CacheConfiguration,
                     N::PairAcquisition => NixReason::PairAcquisition,
                 })
             }

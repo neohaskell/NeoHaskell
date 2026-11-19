@@ -215,6 +215,7 @@ fn drive(
     let mut offer: Option<ReviewOffer> = None;
     let mut page = Page::Summary;
     let mut scroll = 0usize;
+    let mut review_page = 0usize;
     let mut armed = None;
     let mut frame: Option<Frame> = None;
     let mut dirty = true;
@@ -236,6 +237,7 @@ fn drive(
             }
             let measured = tty.size().map_err(|_| Failure::Input)?;
             if resized || viewport != Some(measured) {
+                review_page = 0;
                 viewport = Some(measured);
                 revision = revision.wrapping_add(1);
                 armed = None;
@@ -298,7 +300,17 @@ fn drive(
                     if cancel {
                         owner.request_cancel();
                     } else if resized || viewport != Some(measured) {
+                        review_page = 0;
                         viewport = Some(measured);
+                        revision = revision.wrapping_add(1);
+                    } else if *key == Key::Accept
+                        && offer.as_ref().is_some_and(|offer| {
+                            cache_review_pages(measured, offer.summary()).is_ok_and(|pages| {
+                                pages.is_some_and(|pages| review_page + 1 < pages.len())
+                            })
+                        })
+                    {
+                        review_page += 1;
                         revision = revision.wrapping_add(1);
                     } else if let Some(review) = offer.take() {
                         let decision = if *key == Key::Accept {
@@ -306,6 +318,28 @@ fn drive(
                         } else {
                             ReviewDecision::Decline
                         };
+                        if *key == Key::Accept
+                            && review.summary().changes.iter().any(|change| {
+                                matches!(change, super::ReviewedChange::CacheSetup(_))
+                            })
+                        {
+                            let tty = terminal.as_mut().ok_or(Failure::Setup)?;
+                            if !tty.restore() {
+                                return Err(Failure::Input);
+                            }
+                            let authorized = std::process::Command::new("/usr/bin/sudo")
+                                .arg("-v")
+                                .env_clear()
+                                .env("PATH", "/usr/bin:/bin")
+                                .status()
+                                .is_ok_and(|status| status.success());
+                            tty.activate().map_err(|_| Failure::Setup)?;
+                            if !authorized {
+                                return Ok(Err(TransactionError::NixBlocked(
+                                    super::nix::NixBlock::CacheConfiguration,
+                                )));
+                            }
+                        }
                         match owner.answer(review, decision) {
                             Ok(()) | Err(TransactionError::StopRequested) => {}
                             Err(_) => return Err(Failure::DisplayData),
@@ -326,6 +360,7 @@ fn drive(
         }
         if offer.is_none() {
             if let Some(review) = owner.take_review() {
+                review_page = 0;
                 offer = Some(review);
                 page = Page::Summary;
                 armed = None;
@@ -367,7 +402,11 @@ fn drive(
                     &owner.presentation(),
                     offer.as_ref(),
                     page,
-                    scroll,
+                    if page == Page::Summary {
+                        review_page
+                    } else {
+                        scroll
+                    },
                     tick,
                 )?;
                 if let Some(bytes) = rendered {
@@ -569,6 +608,35 @@ fn wrap(text: &str, width: usize) -> Vec<String> {
     result
 }
 
+fn cache_review_pages(
+    size: (u16, u16),
+    summary: &super::ReviewSummary,
+) -> Result<Option<Vec<String>>, Failure> {
+    if !summary
+        .changes
+        .iter()
+        .any(|change| matches!(change, super::ReviewedChange::CacheSetup(_)))
+        || size.0 < 32
+        || size.1 < 21
+    {
+        return Ok(None);
+    }
+    let mut text = Vec::new();
+    crate::write_review(&mut text, summary).map_err(|_| Failure::DisplayData)?;
+    let text = String::from_utf8(text).map_err(|_| Failure::DisplayData)?;
+    let width = usize::from(size.0.min(76) - 8);
+    let controls = wrap(&crate::english().dashboard.review_controls, width)
+        .len()
+        .max(wrap("Enter Next page    Esc Decline", width).len());
+    let rows = usize::from(size.1) - 8 - controls;
+    Ok(Some(
+        wrap(&text, width)
+            .chunks(rows)
+            .map(|lines| lines.join("\n"))
+            .collect(),
+    ))
+}
+
 fn render(
     size: (u16, u16),
     observation: &PresentationObservation,
@@ -620,12 +688,26 @@ fn render(
         add("", PRIMARY);
         add(&copy.details_controls, LILAC);
     } else if let Some(offer) = offer {
-        let mut text = Vec::new();
-        crate::write_review(&mut text, offer.summary()).map_err(|_| Failure::DisplayData)?;
-        let text = String::from_utf8(text).map_err(|_| Failure::DisplayData)?;
-        add(&text, PRIMARY);
-        add("", PRIMARY);
-        add(&copy.review_controls, LILAC);
+        if let Some(pages) = cache_review_pages(size, offer.summary())? {
+            let index = scroll.min(pages.len() - 1);
+            add(&pages[index], PRIMARY);
+            add("", PRIMARY);
+            add(
+                if index + 1 < pages.len() {
+                    "Enter Next page    Esc Decline"
+                } else {
+                    &copy.review_controls
+                },
+                LILAC,
+            );
+        } else {
+            let mut text = Vec::new();
+            crate::write_review(&mut text, offer.summary()).map_err(|_| Failure::DisplayData)?;
+            let text = String::from_utf8(text).map_err(|_| Failure::DisplayData)?;
+            add(&text, PRIMARY);
+            add("", PRIMARY);
+            add(&copy.review_controls, LILAC);
+        }
     } else {
         for (index, row) in observation.rows.iter().enumerate() {
             let status = &copy.statuses[*row as usize];

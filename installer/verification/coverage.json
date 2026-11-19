@@ -32,7 +32,7 @@
     "network.no-telemetry-or-automatic-report-upload"
   ],
   "capabilities": {
-    "nix-ownership": "Use a compatible existing Nix daemon and its configured signed caches without changing the system configuration.",
+    "nix-ownership": "Configure the signed caches through the owner of a compatible existing Nix daemon after review. Preserve unrelated settings.",
     "clean-client-install": "Install the exact tool pair from a clean client using published cached closures without compiling the tools locally.",
     "command-and-consumer-flow": "Resolve both commands from a fresh shell and run the installed candidate through the generated project contract.",
     "paired-lifecycle": "Rerun, select a version, update, roll back, interrupt, cancel, and uninstall the pair safely.",
@@ -102,9 +102,9 @@
     }
   ],
   "cases": [
-    {"id": "nix.existing-compatible-install", "capability": "nix-ownership", "requirement": "Detect a compatible existing Nix installation and preserve its variant, mode, owner, projects, and configuration."},
-    {"id": "nix.effective-daemon-cache-configuration", "capability": "nix-ownership", "requirement": "With administrator-configured features, cache URLs, and trusted public keys, verify signed substitution as an ordinary user. Preserve daemon settings and signature checks."},
-    {"id": "nix.rerun-does-not-duplicate-configuration", "capability": "nix-ownership", "requirement": "Rerun without changing the Nix version or daemon configuration."},
+    {"id": "nix.existing-compatible-install", "capability": "nix-ownership", "requirement": "Detect a compatible existing Nix installation and preserve its variant, mode, owner, projects, and unrelated configuration."},
+    {"id": "nix.effective-daemon-cache-configuration", "capability": "nix-ownership", "requirement": "Start with neither project cache configured. Compare the reviewed file, missing settings, and restart with the applied changes. Verify signed substitution of a cold pair as an ordinary user with zero builds. Preserve unrelated settings, signature checks, and trusted users."},
+    {"id": "nix.rerun-does-not-duplicate-configuration", "capability": "nix-ownership", "requirement": "Rerun with both caches configured. Verify zero configuration writes, administrator prompts, and daemon restarts."},
     {"id": "client.clean-state-and-real-cache-substitution", "capability": "clean-client-install", "requirement": "Record initial store state and prove actual candidate closures come from configured caches on a clean client."},
     {"id": "pair.bootstrap-install-and-lockstep-version", "capability": "clean-client-install", "requirement": "Install the exact native bootstrap and separate neo and neoctl commands as one lockstep pair without compiling either tool locally."},
     {"id": "path.fresh-shell-resolution-and-conflict-refusal", "capability": "command-and-consumer-flow", "requirement": "Resolve both owned commands in a fresh shell and stop before overwriting or hiding a conflicting command."},
@@ -116,7 +116,7 @@
     {"id": "lifecycle.interruption-and-cancellation-state", "capability": "paired-lifecycle", "requirement": "Interrupt before and during activation; verify the old pair stays usable, cancellation reports changes, and rerun resumes only safe owned work."},
     {"id": "lifecycle.uninstall-and-user-state-preservation", "capability": "paired-lifecycle", "requirement": "Remove owned tools, generations, links, PATH additions and retained diagnostics. Preserve Nix, shared cache configuration, unrelated packages, project pins and contents, user shell edits and exported reports. Refuse or report cleanup with unproven ownership. Never delete store paths directly or run broad garbage collection."},
     {"id": "failure.download-integrity-package-and-permission-boundaries", "capability": "failure-recovery", "requirement": "Exercise transient download retry and exhaustion, integrity failure, missing prebuilt packages and insufficient permissions. For every negative case assert exit result, cause, actual partial state, report location and a usable recovery action."},
-    {"id": "failure.nix-service-architecture-and-recovery", "capability": "failure-recovery", "requirement": "Exercise missing, damaged, inaccessible or incompatible Nix, missing or untrusted caches, and unsupported architectures. Assert exit result, cause, actual partial state, report location and recovery without automatic repair."},
+    {"id": "failure.nix-service-architecture-and-recovery", "capability": "failure-recovery", "requirement": "Exercise missing, damaged, inaccessible or incompatible Nix, unknown configuration owners, declined elevation, interrupted cache setup, invalid package signatures, and unsupported architectures. Check that missing Nix directs the user to multi-user setup, declined elevation preserves configuration and the working pair, and package failures never expand trust. Check the recovery instructions against the actual partial state."},
     {"id": "failure.timeout-quiet-work-input-and-partial-state", "capability": "failure-recovery", "requirement": "Exercise quiet work, input waits, operation timeouts and partial-state inspection. Assert exit result, cause, actual partial state, report location and usable recovery. Inspect effects after timeout instead of blindly repeating system changes."},
     {"id": "ui.dashboard-review-details-and-consent", "capability": "terminal-experience", "requirement": "Compare the production Dashboard with the accepted archive and verify one review before user-owned changes, explicit script consent, and Details."},
     {"id": "ui.still-plain-cancellation-resize-and-accessibility", "capability": "terminal-experience", "requirement": "Verify still mode, equivalent plain output, cancellation, narrow terminals, live resizing, and accessibility behavior."},
@@ -127,7 +127,7 @@
     {"id": "network.no-telemetry-or-automatic-report-upload", "capability": "timing-and-diagnostics", "requirement": "Inspect code and network activity for no installer telemetry or automatic report uploads, while allowing required release and cache downloads."},
     {"id": "nix-owner.nixos-declarative-configuration-and-generated-file-preservation", "capability": "nix-ownership", "requirement": "Install on NixOS with caches configured through nix.settings. Verify that both the declarative source and generated files are preserved."},
     {"id": "nix-owner.nix-darwin-owner-detection-and-declarative-preservation", "capability": "nix-ownership", "requirement": "Install on macOS with caches configured through nix-darwin. Verify that both the declarative source and generated files are preserved."},
-    {"id": "wsl.selection-prerequisites-identity-and-actual-dispatch", "capability": "windows-wsl-routing", "requirement": "Exercise default and explicit distro selection, unsuitable or ambiguous defaults, consent, WSL2 presence, architecture, systemd, permissions, Linux identity, and actual wsl.exe dispatch. Run the successful case as a user without sudo access."},
+    {"id": "wsl.selection-prerequisites-identity-and-actual-dispatch", "capability": "windows-wsl-routing", "requirement": "Exercise default and explicit distro selection, unsuitable or ambiguous defaults, consent, WSL2 presence, architecture, systemd, permissions, Linux identity, and actual wsl.exe dispatch. Run the preconfigured case as a user without sudo access."},
     {"id": "wsl.before-and-after-boundary-messaging-and-no-windows-tools", "capability": "windows-wsl-routing", "requirement": "Show the selected distro and WSL-only command boundary before and after dispatch; verify no native tools, misleading wrappers, conversion, restart, install, or repair."},
     {"id": "diagnostics.windows-routing-failures", "capability": "timing-and-diagnostics", "requirement": "Record failures before Rust starts and during native-Windows routing with a report location and sanitized technical details."}
   ],

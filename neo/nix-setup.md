@@ -9,10 +9,27 @@ On Windows, use a WSL2 distribution with systemd enabled. Follow the Linux
 multi-user Nix instructions inside that distribution.
 [Enable systemd in WSL2](https://learn.microsoft.com/en-us/windows/wsl/systemd/)
 
-## Add the caches to the daemon configuration
+## Run the installer as your ordinary user
 
-Have the administrator add these settings. Keep existing features, caches, and
-keys, including the default Nix cache. Keep signature checking enabled and leave
+Run the release installer with your usual account. If the caches are already
+configured, installation proceeds without administrator access. When the
+installer recognizes the configuration owner, it shows the changes
+and the required daemon restart. Review the affected file and settings before
+authorizing the change. Restarting the daemon can interrupt other Nix work.
+
+Interactive setup can prompt for your sudo password. With `--yes`, the
+installer uses an existing sudo credential or a passwordless rule. If your
+administrator requires a fresh password for every command, use the manual
+setup below.
+
+## Configure an administrator-managed daemon
+
+If the installer cannot identify the configuration owner, ask the administrator
+to add the missing settings below and reload the daemon. The installed
+`neo build`, `neo run`, and `neo test` commands use `nix develop`, which
+requires the `nix-command` and `flakes` features.
+
+Keep existing features, caches, and keys, including the default Nix cache. Keep signature checking enabled and leave
 `trusted-users` at its existing setting. [Nix binary cache guide](https://nix.dev/guides/recipes/add-binary-cache.html)
 
 ```ini
@@ -61,7 +78,7 @@ Open a new shell as the user who will run NeoHaskell and run the check without
 `sudo`.
 
 ```sh
-nix store info --store daemon --offline --json
+nix --extra-experimental-features nix-command store info --store daemon --offline --json
 ```
 
 If the command reports a daemon connection or permissions error, ask the

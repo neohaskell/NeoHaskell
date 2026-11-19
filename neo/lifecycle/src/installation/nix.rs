@@ -10,6 +10,7 @@ const SYSTEM_PROFILE_CLIENT: &str = "/run/current-system/sw/bin/nix";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum NixBlock {
+    CacheConfiguration,
     MissingClient,
     UnprovedClient,
     DaemonUnavailable,

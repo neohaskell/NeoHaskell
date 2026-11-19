@@ -878,3 +878,22 @@ fn current_mask() -> Vec<i32> {
         .map(|signal| unsafe { libc::sigismember(&mask, signal) })
         .collect()
 }
+
+#[test]
+fn cache_review_at_eighty_columns_preserves_every_setting_across_pages() {
+    let summary = super::super::ReviewSummary {
+        operation: super::super::ReviewOperation::Install,
+        version: None,
+        recovery: super::super::RecoveryPending::None,
+        changes: vec![super::super::ReviewedChange::CacheSetup(
+            (0..35).map(|i| format!("setting-{i} = value\n")).collect(),
+        )],
+    };
+    let pages = cache_review_pages((80, 24), &summary).unwrap().unwrap();
+    assert!(pages.len() > 1);
+    assert!(pages.iter().all(|page| page.lines().count() <= 15));
+    let text = pages.join("\n");
+    for i in 0..35 {
+        assert!(text.contains(&format!("setting-{i} = value")));
+    }
+}

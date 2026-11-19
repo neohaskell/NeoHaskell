@@ -377,6 +377,7 @@ fn format_result(result: Result<installation::RunOutcome, installation::Transact
         Err(installation::TransactionError::NixBlocked(reason)) => {
             use installation::nix::NixBlock;
             let message = match reason {
+                NixBlock::CacheConfiguration => &english.nix_cache_configuration,
                 NixBlock::MissingClient => &english.nix_missing_client,
                 NixBlock::UnprovedClient => &english.nix_unproved_client,
                 NixBlock::DaemonUnavailable => &english.nix_daemon_unavailable,
@@ -417,6 +418,7 @@ fn write_review(
     for change in &summary.changes {
         use installation::ReviewedChange;
         let message = match change {
+            ReviewedChange::CacheSetup(details) => details,
             ReviewedChange::Uninstall => &copy.review_uninstall_changes,
             ReviewedChange::ShellPath => &copy.review_shell_path,
             ReviewedChange::ShellStartup => &copy.review_shell_startup,

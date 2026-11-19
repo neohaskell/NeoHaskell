@@ -29,7 +29,7 @@ fn help_and_version_work_without_nix_or_user_environment() {
     let help = String::from_utf8(help.stdout).expect("help uses UTF-8");
     assert!(help.contains("NeoHaskell native installer"));
     assert!(help.contains("require a working multi-user Nix daemon"));
-    assert!(help.contains("configured with the NeoHaskell caches"));
+    assert!(help.contains("review the proposed changes and authorize setup"));
     assert!(help.contains("/neo/nix-setup.md"));
     assert!(help.contains("neo-installer install [--version VERSION]"));
     assert!(help.contains("neo-installer update [--version VERSION | --rollback]"));

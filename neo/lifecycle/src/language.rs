@@ -49,6 +49,7 @@ pub(crate) struct English {
     pub(crate) cleanup_unknown: String,
     pub(crate) previous_missing: String,
     pub(crate) previous_unchecked: String,
+    pub(crate) nix_cache_configuration: String,
     pub(crate) nix_missing_client: String,
     pub(crate) nix_unproved_client: String,
     pub(crate) nix_daemon_unavailable: String,

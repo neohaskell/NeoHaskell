@@ -87,8 +87,9 @@ pub(crate) enum ReviewOperation {
     Recover,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum ReviewedChange {
+    CacheSetup(String),
     Uninstall,
     ShellPath,
     ShellStartup,
