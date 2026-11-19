@@ -313,7 +313,7 @@ pub(super) enum ConfigurationEntry {
 
 #[derive(Debug, PartialEq, Eq, Serialize)]
 #[cfg_attr(
-    target_os = "linux",
+    any(target_os = "linux", all(target_os = "macos", target_arch = "aarch64")),
     derive(Clone, serde::Deserialize),
     serde(deny_unknown_fields)
 )]

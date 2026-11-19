@@ -1114,6 +1114,90 @@ pub(super) fn create_directory(path: &Path) -> Result<(), TransactionError> {
 }
 
 impl InstallationOwner {
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+    async fn recover_pending_darwin_policy(
+        &self,
+        record: &super::InstallationRecord,
+        pending: &super::PendingNixPolicy,
+    ) -> Result<(), TransactionError> {
+        use super::coordinator::{DarwinRecoveryStep, RecoveryPending};
+        use super::nix_owner::darwin::{DarwinPolicyRecovery, VendorPublicationRequest};
+        use super::{FilesystemJob, FilesystemResult};
+        use crate::diagnostics::{AppliedChange, CompletedStep};
+
+        let unresolved = TransactionError::NixPolicyRecoveryPending;
+        let request =
+            VendorPublicationRequest::from_pending(pending).ok_or_else(|| unresolved.clone())?;
+        let intent = self
+            .prepare_darwin_policy_recovery(record, pending, request)
+            .await?;
+        let effect = |step| {
+            self.effects
+                .filesystem(FilesystemJob::DarwinPolicyRecovery {
+                    intent: intent.clone(),
+                    step,
+                })
+        };
+        let review = self
+            .effects
+            .review_darwin_policy_recovery(intent.clone())
+            .await?;
+        self.effects.admit_reviewed(review)?;
+        let FilesystemResult::DarwinPolicyRecoveryObserved(observed) =
+            effect(DarwinRecoveryStep::Inspect)
+                .await
+                .map_err(|error| match error {
+                    TransactionError::AdministratorUnavailable
+                    | TransactionError::Verification(_) => {
+                        TransactionError::NixPolicyRecoveryInspectionUnavailable
+                    }
+                    other => other,
+                })?
+        else {
+            return Err(unresolved);
+        };
+        self.effects.completed(CompletedStep::NixPolicyObservation);
+        match observed {
+            DarwinPolicyRecovery::Ready(plan) => {
+                let review = self
+                    .effects
+                    .review_darwin_policy_restart(intent.clone(), plan)
+                    .await?;
+                self.effects.admit_reviewed(review)?;
+                if !matches!(
+                    effect(DarwinRecoveryStep::Restart(plan)).await?,
+                    FilesystemResult::DarwinPolicyRecoveryObserved(DarwinPolicyRecovery::Active)
+                ) {
+                    return Err(unresolved);
+                }
+                self.effects.applied(AppliedChange::NixPolicyApplied);
+            }
+            DarwinPolicyRecovery::Active => {}
+            DarwinPolicyRecovery::Prepared => {
+                self.effects
+                    .completed(CompletedStep::NixPolicyStagedSourceObserved);
+                return Err(unresolved);
+            }
+            DarwinPolicyRecovery::LeafPublished => {
+                self.effects
+                    .completed(CompletedStep::NixPolicyPublishedLeafObserved);
+                return Err(unresolved);
+            }
+            DarwinPolicyRecovery::Unresolved => return Err(unresolved),
+        }
+        self.effects.completed(CompletedStep::NixPolicyApplication);
+        let FilesystemResult::DarwinPolicyRecoverySettled =
+            effect(DarwinRecoveryStep::Settle).await?
+        else {
+            return Err(unresolved);
+        };
+        self.effects.recovery_pending(RecoveryPending::Resources);
+        self.release_nix_policy_helper(&self.effects).await?;
+        self.effects.recovery_pending(RecoveryPending::None);
+        self.effects.completed(CompletedStep::Recovery);
+        Ok(())
+    }
+
     #[cfg(all(test, target_os = "linux"))]
     async fn inspect_fixture_policy(
         &self,
@@ -1253,6 +1337,19 @@ impl InstallationOwner {
         if let Some(_pending) = record.pending_nix_policy.as_ref() {
             self.effects
                 .recovery_pending(super::coordinator::RecoveryPending::Unknown);
+            #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+            if matches!(executor, Executor::NativeInstaller | Executor::Bootstrap(_))
+                && matches!(
+                    &request,
+                    snapshot::Request::Install(_)
+                        | snapshot::Request::Update(_)
+                        | snapshot::Request::RecoverOnly
+                )
+            {
+                self.recover_pending_darwin_policy(&record, _pending)
+                    .await?;
+                return Err(TransactionError::NixPolicyRecoveryCompleted);
+            }
             #[cfg(all(test, target_os = "linux"))]
             if self.effects.inspect_policy_fixture() {
                 self.inspect_fixture_policy(&record, _pending).await?;

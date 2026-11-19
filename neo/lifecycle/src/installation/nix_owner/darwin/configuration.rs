@@ -19,6 +19,7 @@ const RECEIPT: &str = "/nix/receipt.json";
 const STATIC: &str = "/private/etc/static";
 const SYSTEM_PROFILE: &str = "/nix/var/nix/profiles/system";
 const CURRENT_SYSTEM: &str = "/run/current-system";
+const DEPLOYMENT_MARKERS: [&str; 3] = [SYSTEM_PROFILE, STATIC, CURRENT_SYSTEM];
 const CUSTOM_ENTRY: &str = "nix/nix.custom.conf";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -186,18 +187,32 @@ impl VendorApplication {
     }
 
     pub(super) fn remaining_inputs_current(&self) -> bool {
-        [
-            (STANDARD, &self.standard),
-            (RECEIPT, &self.receipt),
-            (PLIST, &self.service),
-        ]
-        .into_iter()
-        .all(|(path, input)| matches!(read_configuration(path), Ok((fresh, _)) if &fresh == input))
-            && self.prepared.absences[2..]
-                .iter()
-                .all(ProtectedAbsence::is_current)
-            && require_etc_alias().is_ok()
+        observe_remaining_inputs().is_ok_and(|actual| actual == self.remaining_inputs_commitment())
     }
+
+    pub(super) fn remaining_inputs_commitment(&self) -> [u8; 32] {
+        remaining_inputs_commitment(
+            [&self.standard, &self.receipt, &self.service],
+            &self.prepared.absences[2..],
+        )
+    }
+}
+
+pub(super) fn observe_remaining_inputs() -> Result<[u8; 32], TransactionError> {
+    require_etc_alias()?;
+    let (standard, _) = read_configuration(STANDARD)?;
+    let (receipt, _) = read_configuration(RECEIPT)?;
+    let (service, _) = read_configuration(PLIST)?;
+    let inputs = [&standard, &receipt, &service];
+    if !inputs.into_iter().all(is_direct) {
+        return Err(TransactionError::Io);
+    }
+    let absences = DEPLOYMENT_MARKERS
+        .into_iter()
+        .map(ProtectedAbsence::capture)
+        .collect::<Result<Vec<_>, _>>()?;
+    require_etc_alias()?;
+    Ok(remaining_inputs_commitment(inputs, &absences))
 }
 
 #[derive(Clone, Copy)]
@@ -246,16 +261,11 @@ impl PreparedApplication {
         };
         let stage_path = Path::new(STANDARD).with_file_name(POLICY_STAGE);
         let stage_path = stage_path.to_str().ok_or(TransactionError::Io)?;
-        let absences = [
-            leaf_path,
-            stage_path,
-            SYSTEM_PROFILE,
-            STATIC,
-            CURRENT_SYSTEM,
-        ]
-        .into_iter()
-        .map(ProtectedAbsence::capture)
-        .collect::<Result<_, _>>()?;
+        let absences = [leaf_path, stage_path]
+            .into_iter()
+            .chain(DEPLOYMENT_MARKERS)
+            .map(ProtectedAbsence::capture)
+            .collect::<Result<_, _>>()?;
         let desired = desired_vendor_policy(standard, digest, &custom.1)?;
         Ok(Self { absences, desired })
     }
@@ -311,14 +321,31 @@ fn application_commitment(
     ] {
         hash_configuration(&mut hash, input);
     }
-    hash.update((absences.len() as u64).to_be_bytes());
-    for slot in absences {
-        hash_bytes(&mut hash, slot.path.as_bytes());
-        hash_configuration(&mut hash, &slot.input);
-    }
+    hash_absences(&mut hash, absences);
     hash.update(Sha256::digest(&desired.source));
     hash.update(Sha256::digest(&desired.leaf));
     hash.finalize().into()
+}
+
+fn remaining_inputs_commitment(
+    inputs: [&ConfigurationFile; 3],
+    deployment_markers: &[ProtectedAbsence],
+) -> [u8; 32] {
+    let mut hash = Sha256::new();
+    hash.update(b"neo:determinate-darwin-remaining-inputs:v1\0");
+    for input in inputs {
+        hash_configuration(&mut hash, input);
+    }
+    hash_absences(&mut hash, deployment_markers);
+    hash.finalize().into()
+}
+
+fn hash_absences(hash: &mut Sha256, absences: &[ProtectedAbsence]) {
+    hash.update((absences.len() as u64).to_be_bytes());
+    for slot in absences {
+        hash_bytes(hash, slot.path.as_bytes());
+        hash_configuration(hash, &slot.input);
+    }
 }
 
 fn hash_configuration(hash: &mut Sha256, input: &ConfigurationFile) {

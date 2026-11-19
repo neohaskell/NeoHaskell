@@ -141,6 +141,10 @@ pub(crate) enum CompletedStep {
     NixPolicyPlan,
     #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
     NixPolicyPublication,
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+    NixPolicyStagedSourceObserved,
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+    NixPolicyPublishedLeafObserved,
     NixPolicyApplication,
     CandidateSelection,
     PairVerification,
@@ -303,7 +307,7 @@ pub(crate) enum StopObservation {
     Pair {
         version: Option<EarnedVersion>,
     },
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", all(target_os = "macos", target_arch = "aarch64")))]
     PolicyRecoveryInterrupted,
 }
 
@@ -473,7 +477,10 @@ impl DiagnosticOutcome {
                     installation::StopObservation::ObservedPair(pair) => StopObservation::Pair {
                         version: EarnedVersion::from_observation(&pair.version),
                     },
-                    #[cfg(target_os = "linux")]
+                    #[cfg(any(
+                        target_os = "linux",
+                        all(target_os = "macos", target_arch = "aarch64")
+                    ))]
                     installation::StopObservation::PolicyRecoveryInterrupted => {
                         StopObservation::PolicyRecoveryInterrupted
                     }

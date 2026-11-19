@@ -1,6 +1,6 @@
 use super::coordinator::{Admission, Cancellation, SettlementKind, WaitInterest};
 #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
-use super::coordinator::{DarwinPolicyIntent, DarwinPublicationStep};
+use super::coordinator::{DarwinPolicyIntent, DarwinPublicationStep, DarwinRecoveryStep};
 use super::dashboard::terminal::ParkedTerminal;
 #[cfg(target_os = "linux")]
 use super::nix_owner::peer_handoff::{
@@ -170,6 +170,11 @@ pub(super) enum FilesystemJob {
         intent: std::sync::Arc<DarwinPolicyIntent>,
         step: DarwinPublicationStep,
     },
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+    DarwinPolicyRecovery {
+        intent: std::sync::Arc<DarwinPolicyIntent>,
+        step: DarwinRecoveryStep,
+    },
     #[cfg(target_os = "linux")]
     ObserveStockPolicy {
         executable: ExactExecutable,
@@ -241,6 +246,10 @@ pub(super) enum FilesystemResult {
     DarwinPolicyPublished(super::nix_owner::darwin::PublicationOutcome),
     #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
     DarwinPolicyIntentCleared,
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+    DarwinPolicyRecoveryObserved(super::nix_owner::darwin::DarwinPolicyRecovery),
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+    DarwinPolicyRecoverySettled,
     #[cfg(target_os = "linux")]
     ExistingNixPolicyVerified(VerifiedExistingPolicy),
     #[cfg(target_os = "linux")]
@@ -321,6 +330,8 @@ impl FilesystemJob {
             Self::ObserveDarwinPolicy { .. } => false,
             #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
             Self::DarwinPolicyPublication { .. } => true,
+            #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+            Self::DarwinPolicyRecovery { step, .. } => !matches!(step, DarwinRecoveryStep::Inspect),
             #[cfg(all(test, target_os = "linux"))]
             Self::PublishPolicyIntent { .. } => true,
             #[cfg(target_os = "linux")]
@@ -1163,6 +1174,42 @@ fn execute(
                     Ok(Result::DarwinPolicyIntentCleared)
                 }
             }
+        }
+        #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+        Job::DarwinPolicyRecovery { intent, step } => {
+            use super::nix_owner::darwin::discovery_effect;
+
+            if matches!(step, DarwinRecoveryStep::Settle) {
+                verify_darwin_intent(&intent, &intent.after, policy)?;
+                policy.check()?;
+                publish_record(&intent.layout.record(), &intent.before, false, policy)?;
+                return Ok(Result::DarwinPolicyRecoverySettled);
+            }
+            let path = Path::new(&intent.pending.helper_path);
+            let (file, identity) =
+                open_verified_helper(path, &intent.pending.helper, PolicyHelperLocation::Store)?;
+            verify_darwin_intent(&intent, &intent.after, policy)?;
+            match step {
+                DarwinRecoveryStep::Inspect => discovery_effect::inspect_pending(
+                    path,
+                    &file,
+                    &identity,
+                    terminal,
+                    intent.request,
+                    || policy.check(),
+                ),
+                DarwinRecoveryStep::Restart(plan) => discovery_effect::activate(
+                    path,
+                    &file,
+                    &identity,
+                    terminal,
+                    intent.request,
+                    plan,
+                    || policy.check(),
+                ),
+                DarwinRecoveryStep::Settle => unreachable!(),
+            }
+            .map(Result::DarwinPolicyRecoveryObserved)
         }
         #[cfg(target_os = "linux")]
         Job::ObserveStockPolicy {

@@ -16,6 +16,7 @@ mod administrator;
 mod configuration;
 pub(in crate::installation) mod discovery_effect;
 mod publication;
+mod restart;
 mod startup;
 
 use self::configuration::{DiskObservation, DiskPolicy, SourceRoute};
@@ -102,6 +103,22 @@ impl VendorPublicationRequest {
         bytes
     }
 
+    pub(in crate::installation) fn from_pending(
+        pending: &super::super::PendingNixPolicy,
+    ) -> Option<Self> {
+        if !pending.operation.is_append()
+            || pending.state_lease.is_none()
+            || pending.attempt == [0; 32]
+            || pending.reviewed == [0; 32]
+        {
+            return None;
+        }
+        Some(Self {
+            attempt: pending.attempt,
+            reviewed: VendorPlanCommitment(pending.reviewed),
+        })
+    }
+
     pub(in crate::installation) fn pending(
         self,
         helper_path: String,
@@ -117,6 +134,31 @@ impl VendorPublicationRequest {
             state_lease: Some(state_lease),
         }
     }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(in crate::installation) struct DarwinRestartPlan([u8; 32]);
+
+#[cfg(test)]
+impl DarwinRestartPlan {
+    pub(in crate::installation) fn for_test() -> Self {
+        Self([9; 32])
+    }
+}
+
+impl std::fmt::Debug for DarwinRestartPlan {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("DarwinRestartPlan")
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(in crate::installation) enum DarwinPolicyRecovery {
+    Prepared,
+    LeafPublished,
+    Ready(DarwinRestartPlan),
+    Active,
+    Unresolved,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -220,7 +262,8 @@ pub(in crate::installation) fn decode_inspection(
 }
 
 pub(crate) fn run_observer() -> i32 {
-    let Some(frame) = encode_observation(observe(false).map(|(value, _)| value.observation)) else {
+    let Some(frame) = encode_observation(observe(false).map(|value| value.inspection.observation))
+    else {
         return 1;
     };
     i32::from(
@@ -236,13 +279,13 @@ fn inspect_frame() -> Option<[u8; INSPECTION_BYTES]> {
     let plan = inspection
         .as_ref()
         .ok()
-        .and_then(|(value, _)| value.vendor_plan.as_ref());
+        .and_then(|value| value.inspection.vendor_plan.as_ref());
     let mut frame = [0; INSPECTION_BYTES];
     if let Some(plan) = plan {
         frame[OBSERVATION_BYTES] = 1;
         frame[OBSERVATION_BYTES + 1..].copy_from_slice(&plan.0);
     }
-    let observation = encode_observation(inspection.map(|(value, _)| value.observation))?;
+    let observation = encode_observation(inspection.map(|value| value.inspection.observation))?;
     frame[..OBSERVATION_BYTES].copy_from_slice(&observation);
     Some(frame)
 }
@@ -439,8 +482,23 @@ fn launchd_pid() -> Result<u32, NixBlock> {
 }
 
 fn read_launchctl(child: &mut std::process::Child) -> Result<u32, NixBlock> {
-    let deadline = Instant::now() + LAUNCHCTL_TIMEOUT;
-    let mut pipe = child.stdout.take().ok_or(NixBlock::UnprovedService)?;
+    parse_job(&read_bounded_child(child, LAUNCHCTL_TIMEOUT)?)
+}
+
+fn read_bounded_child(
+    child: &mut std::process::Child,
+    timeout: Duration,
+) -> Result<Vec<u8>, NixBlock> {
+    let pipe = child.stdout.take().ok_or(NixBlock::UnprovedService)?;
+    read_bounded_output(child, pipe, timeout)
+}
+
+fn read_bounded_output(
+    child: &mut std::process::Child,
+    mut pipe: impl Read + AsRawFd,
+    timeout: Duration,
+) -> Result<Vec<u8>, NixBlock> {
+    let deadline = Instant::now() + timeout;
     let fd = pipe.as_raw_fd();
     let flags = unsafe { libc::fcntl(fd, libc::F_GETFL) };
     if flags < 0 || unsafe { libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK) } < 0 {
@@ -467,7 +525,7 @@ fn read_launchctl(child: &mut std::process::Child) -> Result<u32, NixBlock> {
         }
         if eof && let Some(status) = child.try_wait().map_err(|_| NixBlock::UnprovedService)? {
             return if status.success() {
-                parse_job(&output)
+                Ok(output)
             } else {
                 Err(NixBlock::InactiveService)
             };
@@ -584,14 +642,19 @@ impl RootPeer {
     }
 }
 
-struct VerifiedVendorApplication {
-    configuration: configuration::VendorApplication,
-    daemon: [u8; 32],
+struct VerifiedObservation {
+    inspection: InspectedDarwinNix,
+    application: Option<configuration::VendorApplication>,
+    daemon: DaemonIncarnation,
 }
 
-fn observe(
-    prepare_application: bool,
-) -> Result<(InspectedDarwinNix, Option<VerifiedVendorApplication>), NixBlock> {
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct DaemonIncarnation {
+    supervisor: RootPeer,
+    fingerprint: [u8; 32],
+}
+
+fn observe(prepare_application: bool) -> Result<VerifiedObservation, NixBlock> {
     let client = verify_client()?;
     let sockets = SocketIdentities::observe()?;
     let job = launchd_pid()?;
@@ -651,22 +714,26 @@ fn observe(
     if client_identity()? != client {
         return Err(NixBlock::UnprovedClient);
     }
-    let application = application.map(|configuration| VerifiedVendorApplication {
-        configuration,
-        daemon: daemon_incarnation(&client, &sockets, supervisor, listener),
-    });
+    let daemon = DaemonIncarnation {
+        supervisor,
+        fingerprint: daemon_incarnation(&client, &sockets, supervisor, listener),
+    };
     let vendor_plan = application.as_ref().map(|inputs| {
         let mut hash = Sha256::new();
         hash.update(b"neo:determinate-darwin:application:v2\0");
-        hash.update(inputs.configuration.commitment());
-        hash.update(inputs.daemon);
+        hash.update(inputs.commitment());
+        hash.update(daemon.fingerprint);
         VendorPlanCommitment(hash.finalize().into())
     });
     let inspection = InspectedDarwinNix {
         observation,
         vendor_plan,
     };
-    Ok((inspection, application))
+    Ok(VerifiedObservation {
+        inspection,
+        application,
+        daemon,
+    })
 }
 
 fn publish_vendor_policy(
@@ -678,18 +745,18 @@ fn publish_vendor_policy(
     let Ok(directory) = LockedVendorDirectory::lock() else {
         return PublicationOutcome::Refused;
     };
-    let Ok((inspection, Some(application))) = observe(true) else {
+    let Ok(VerifiedObservation {
+        inspection,
+        application: Some(application),
+        daemon,
+    }) = observe(true)
+    else {
         return PublicationOutcome::Refused;
     };
     if inspection.vendor_plan != Some(request.reviewed) {
         return PublicationOutcome::Refused;
     }
-    directory.publish(
-        &application.configuration,
-        request,
-        &application.daemon,
-        authorize,
-    )
+    directory.publish(&application, request, &daemon.fingerprint, authorize)
 }
 
 fn daemon_incarnation(

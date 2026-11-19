@@ -1,9 +1,9 @@
 use super::{
-    CFDataCreate, CFDictionaryCreate, CfRef, FileIdentity, INSPECTION_BYTES, OwnedCf,
-    PublicationOutcome, SecCodeCheckValidity, SecCodeCopyGuestWithAttributes,
-    VendorPublicationRequest, inspect_frame, kCFTypeDictionaryKeyCallBacks,
-    kCFTypeDictionaryValueCallBacks, kSecGuestAttributeAudit, policy_helper_protected_path,
-    publish_vendor_policy,
+    CFDataCreate, CFDictionaryCreate, CfRef, DarwinPolicyRecovery, DarwinRestartPlan, FileIdentity,
+    INSPECTION_BYTES, OwnedCf, PublicationOutcome, SecCodeCheckValidity,
+    SecCodeCopyGuestWithAttributes, VendorPublicationRequest, inspect_frame,
+    kCFTypeDictionaryKeyCallBacks, kCFTypeDictionaryValueCallBacks, kSecGuestAttributeAudit,
+    policy_helper_protected_path, publish_vendor_policy, restart,
 };
 use crate::candidate::OutputPath;
 use std::ffi::{CStr, OsStr, OsString};
@@ -22,18 +22,12 @@ use std::ptr::null;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
-pub(in crate::installation) const LAUNCH_ARGUMENT: &str = "--internal-darwin-discovery-launch";
-pub(in crate::installation) const ATTENDED_ARGUMENT: &str =
-    "--internal-darwin-discovery-launch-attended";
-pub(super) const PUBLISH_ARGUMENT: &str = "--internal-darwin-publication-launch";
-pub(super) const PUBLISH_ATTENDED_ARGUMENT: &str = "--internal-darwin-publication-launch-attended";
 pub(in crate::installation) const CLEANUP_UNKNOWN: i32 = 124;
-const ROOT_ARGUMENT: &str = "--internal-darwin-discovery-root";
-const PUBLISH_ROOT_ARGUMENT: &str = "--internal-darwin-publication-root";
 const SUDO: &str = "/usr/bin/sudo";
 
 const AUTHENTICATION_LIMIT: Duration = Duration::from_secs(90);
 const OBSERVATION_LIMIT: Duration = Duration::from_secs(15);
+const RESTART_LIMIT: Duration = Duration::from_secs(33);
 const ROOT_EXCHANGE_LIMIT: Duration = Duration::from_secs(3);
 const CLEANUP_LIMIT: Duration = Duration::from_secs(5);
 const RELAY_LIMIT: Duration = Duration::from_secs(2);
@@ -50,13 +44,103 @@ static CANCELLED: AtomicBool = AtomicBool::new(false);
 enum Purpose {
     Inspect,
     Publish,
+    Recover,
+    Activate,
 }
 
 impl Purpose {
-    fn root_argument(self) -> &'static str {
+    fn arguments(self) -> [&'static str; 3] {
         match self {
-            Self::Inspect => ROOT_ARGUMENT,
-            Self::Publish => PUBLISH_ROOT_ARGUMENT,
+            Self::Inspect => [
+                "--internal-darwin-discovery-launch",
+                "--internal-darwin-discovery-launch-attended",
+                "--internal-darwin-discovery-root",
+            ],
+            Self::Publish => [
+                "--internal-darwin-publication-launch",
+                "--internal-darwin-publication-launch-attended",
+                "--internal-darwin-publication-root",
+            ],
+            Self::Recover => [
+                "--internal-darwin-recovery-launch",
+                "--internal-darwin-recovery-launch-attended",
+                "--internal-darwin-recovery-root",
+            ],
+            Self::Activate => [
+                "--internal-darwin-restart-launch",
+                "--internal-darwin-restart-launch-attended",
+                "--internal-darwin-restart-root",
+            ],
+        }
+    }
+
+    fn time_limit(self) -> Duration {
+        if matches!(self, Self::Activate) {
+            RESTART_LIMIT
+        } else {
+            OBSERVATION_LIMIT
+        }
+    }
+
+    fn receive(self, exchange: &Exchange<'_>) -> Option<Request> {
+        if matches!(self, Self::Inspect) {
+            return Some(Request::Inspect);
+        }
+        let mut bytes = [0; 64];
+        exchange.receive(&mut bytes).ok()?;
+        let request = VendorPublicationRequest::decode(&bytes)?;
+        Some(match self {
+            Self::Inspect => unreachable!("inspection has no body"),
+            Self::Publish => Request::Publish(request),
+            Self::Recover => Request::Recover(request),
+            Self::Activate => {
+                let mut plan = [0; 32];
+                exchange.receive(&mut plan).ok()?;
+                if plan == [0; 32] {
+                    return None;
+                }
+                Request::Activate(request, DarwinRestartPlan(plan))
+            }
+        })
+    }
+}
+
+#[derive(Clone, Copy)]
+pub(super) enum Request {
+    Inspect,
+    Publish(VendorPublicationRequest),
+    Recover(VendorPublicationRequest),
+    Activate(VendorPublicationRequest, DarwinRestartPlan),
+}
+
+impl Request {
+    fn purpose(self) -> Purpose {
+        match self {
+            Self::Inspect => Purpose::Inspect,
+            Self::Publish(_) => Purpose::Publish,
+            Self::Recover(_) => Purpose::Recover,
+            Self::Activate(..) => Purpose::Activate,
+        }
+    }
+
+    pub(super) fn launch_argument(self, attended: bool) -> &'static str {
+        self.purpose().arguments()[usize::from(attended)]
+    }
+
+    pub(super) fn launch_budget(self) -> Duration {
+        AUTHENTICATION_LIMIT
+            + ROOT_EXCHANGE_LIMIT
+            + self.purpose().time_limit()
+            + CLEANUP_LIMIT
+            + RELAY_LIMIT
+            + Duration::from_secs(10)
+    }
+
+    pub(super) fn encode(self) -> Vec<u8> {
+        match self {
+            Self::Inspect => Vec::new(),
+            Self::Publish(request) | Self::Recover(request) => request.encode().to_vec(),
+            Self::Activate(request, plan) => [request.encode().as_slice(), &plan.0].concat(),
         }
     }
 }
@@ -82,25 +166,26 @@ pub(super) fn cancelled() -> bool {
 
 pub(crate) fn dispatch(args: &[OsString]) -> Option<i32> {
     let [argument] = args else { return None };
-    let status = match argument.to_str()? {
-        LAUNCH_ARGUMENT => launch_with_handlers(false, Purpose::Inspect),
-        ATTENDED_ARGUMENT => launch_with_handlers(true, Purpose::Inspect),
-        PUBLISH_ARGUMENT => launch_with_handlers(false, Purpose::Publish),
-        PUBLISH_ATTENDED_ARGUMENT => launch_with_handlers(true, Purpose::Publish),
-        ROOT_ARGUMENT => i32::from(!install_stop_handlers() || !run_as_root(Purpose::Inspect)),
-        PUBLISH_ROOT_ARGUMENT => {
-            i32::from(!install_stop_handlers() || !run_as_root(Purpose::Publish))
-        }
-        _ => return None,
-    };
-    Some(status)
-}
-
-fn launch_with_handlers(attended: bool, purpose: Purpose) -> i32 {
-    if !install_stop_handlers() {
-        return 1;
-    }
-    launch(attended, purpose)
+    let argument = argument.to_str()?;
+    let (purpose, role) = [
+        Purpose::Inspect,
+        Purpose::Publish,
+        Purpose::Recover,
+        Purpose::Activate,
+    ]
+    .into_iter()
+    .find_map(|purpose| {
+        purpose
+            .arguments()
+            .iter()
+            .position(|value| *value == argument)
+            .map(|role| (purpose, role))
+    })?;
+    Some(match role {
+        _ if !install_stop_handlers() => 1,
+        2 => i32::from(!run_as_root(purpose)),
+        _ => launch(role == 1, purpose),
+    })
 }
 
 struct Executable {
@@ -505,14 +590,24 @@ fn launch(attended: bool, purpose: Purpose) -> i32 {
     let Some(control) = control_socket() else {
         return 1;
     };
-    let request = match purpose {
-        Purpose::Inspect => None,
-        Purpose::Publish => {
-            let Some(request) = publication_request(&control, &executable, uid) else {
-                return 1;
-            };
-            Some(request)
+    let initial = Exchange {
+        socket: &control,
+        control: None,
+        deadline: Instant::now() + ROOT_EXCHANGE_LIMIT,
+    };
+    let Some(request) = purpose.receive(&initial) else {
+        return 1;
+    };
+    let caller = if matches!(purpose, Purpose::Inspect) {
+        None
+    } else {
+        let Some(writer) = AuditWriter::read(&control) else {
+            return 1;
+        };
+        if !request_caller(&control, &executable, uid, writer) {
+            return 1;
         }
+        Some(writer)
     };
     if !control_open(&control) {
         return 1;
@@ -541,7 +636,7 @@ fn launch(attended: bool, purpose: Purpose) -> i32 {
         .env("PATH", "/usr/bin:/bin:/usr/sbin:/sbin")
         .args(["-u", "root", "--"])
         .arg(&executable.path)
-        .arg(purpose.root_argument())
+        .arg(purpose.arguments()[2])
         .stdin(Stdio::from(input))
         .stdout(Stdio::from(output))
         .spawn();
@@ -573,17 +668,15 @@ fn launch(attended: bool, purpose: Purpose) -> i32 {
         let exchange = Exchange {
             socket: &local,
             control: Some(&control),
-            deadline: Instant::now() + OBSERVATION_LIMIT,
+            deadline: Instant::now() + purpose.time_limit(),
         };
-        if let Some((_, caller)) = request
-            && !publication_caller(&control, &executable, uid, caller)
+        if let Some(caller) = caller
+            && !request_caller(&control, &executable, uid, caller)
         {
             return None;
         }
         exchange.send(&header(START, &nonce)).ok()?;
-        if let Some((request, _)) = request {
-            exchange.send(&request.encode()).ok()?;
-        }
+        exchange.send(&request.encode()).ok()?;
         if !exchange.header(RESULT, &nonce) {
             return None;
         }
@@ -617,26 +710,7 @@ fn launch(attended: bool, purpose: Purpose) -> i32 {
     }
 }
 
-fn publication_request(
-    control: &UnixStream,
-    executable: &Executable,
-    uid: libc::uid_t,
-) -> Option<(VendorPublicationRequest, AuditWriter)> {
-    let mut bytes = [0; 64];
-    let exchange = Exchange {
-        socket: control,
-        control: None,
-        deadline: Instant::now() + ROOT_EXCHANGE_LIMIT,
-    };
-    exchange.receive(&mut bytes).ok()?;
-    let writer = AuditWriter::read(control)?;
-    if !publication_caller(control, executable, uid, writer) {
-        return None;
-    }
-    Some((VendorPublicationRequest::decode(&bytes)?, writer))
-}
-
-fn publication_caller(
+fn request_caller(
     control: &UnixStream,
     executable: &Executable,
     uid: libc::uid_t,
@@ -758,27 +832,26 @@ fn run_as_root(purpose: Purpose) -> bool {
         return false;
     }
 
-    let result = match purpose {
-        Purpose::Inspect => {
+    let Some(request) = purpose.receive(&initial) else {
+        return false;
+    };
+    let authorized = || {
+        !cancelled() && control_open(&socket) && executable.still_protected() && expected_caller()
+    };
+    if !authorized() {
+        return false;
+    }
+    let result = match request {
+        Request::Inspect => {
             let Some(frame) = inspect_frame() else {
                 return false;
             };
             frame
         }
-        Purpose::Publish => {
-            let mut bytes = [0; 64];
-            if initial.receive(&mut bytes).is_err() || !expected_caller() {
-                return false;
-            }
-            let Some(request) = VendorPublicationRequest::decode(&bytes) else {
-                return false;
-            };
-            publication_frame(publish_vendor_policy(&request, || {
-                !cancelled()
-                    && control_open(&socket)
-                    && executable.still_protected()
-                    && expected_caller()
-            }))
+        Request::Publish(request) => publication_frame(publish_vendor_policy(&request, authorized)),
+        Request::Recover(request) => recovery_frame(restart::inspect(&request)),
+        Request::Activate(request, plan) => {
+            recovery_frame(restart::apply(&request, plan, authorized))
         }
     };
     if !executable.still_protected() || !expected_caller() {
@@ -789,6 +862,44 @@ fn run_as_root(purpose: Purpose) -> bool {
     frame[..HEADER_BYTES].copy_from_slice(&header(RESULT, &nonce));
     frame[HEADER_BYTES..].copy_from_slice(&result);
     reply.send(&frame).is_ok() && reply.header(ACCEPT, &nonce) && expected_caller()
+}
+
+fn recovery_frame(outcome: DarwinPolicyRecovery) -> [u8; INSPECTION_BYTES] {
+    let mut frame = [0; INSPECTION_BYTES];
+    frame[..4].copy_from_slice(b"NDC\x01");
+    frame[4] = match outcome {
+        DarwinPolicyRecovery::Unresolved => 0,
+        DarwinPolicyRecovery::Prepared => 1,
+        DarwinPolicyRecovery::LeafPublished => 2,
+        DarwinPolicyRecovery::Ready(plan) => {
+            frame[5..37].copy_from_slice(&plan.0);
+            3
+        }
+        DarwinPolicyRecovery::Active => 4,
+    };
+    frame
+}
+
+pub(super) fn decode_recovery(frame: &[u8]) -> Option<DarwinPolicyRecovery> {
+    let [b'N', b'D', b'C', 1, status, rest @ ..] = frame else {
+        return None;
+    };
+    if frame.len() != INSPECTION_BYTES {
+        return None;
+    }
+    let (digest, reserved) = rest.split_at(32);
+    let digest: [u8; 32] = digest.try_into().ok()?;
+    if reserved.iter().any(|byte| *byte != 0) {
+        return None;
+    }
+    Some(match (*status, digest == [0; 32]) {
+        (0, true) => DarwinPolicyRecovery::Unresolved,
+        (1, true) => DarwinPolicyRecovery::Prepared,
+        (2, true) => DarwinPolicyRecovery::LeafPublished,
+        (3, false) => DarwinPolicyRecovery::Ready(DarwinRestartPlan(digest)),
+        (4, true) => DarwinPolicyRecovery::Active,
+        _ => return None,
+    })
 }
 
 fn publication_frame(outcome: PublicationOutcome) -> [u8; INSPECTION_BYTES] {

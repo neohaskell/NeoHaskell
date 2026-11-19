@@ -1,10 +1,7 @@
-use super::administrator::{
-    ATTENDED_ARGUMENT, LAUNCH_ARGUMENT, PUBLISH_ARGUMENT, PUBLISH_ATTENDED_ARGUMENT,
-    decode_publication,
-};
+use super::administrator::{Request, decode_publication, decode_recovery};
 use super::{
-    INSPECTION_BYTES, InspectedDarwinNix, PublicationOutcome, VendorPublicationRequest,
-    decode_inspection,
+    DarwinPolicyRecovery, DarwinRestartPlan, INSPECTION_BYTES, InspectedDarwinNix,
+    PublicationOutcome, VendorPublicationRequest, decode_inspection,
 };
 use crate::installation::TransactionError;
 use crate::installation::dashboard::terminal::ParkedTerminal;
@@ -19,7 +16,6 @@ use std::path::Path;
 use std::process::{Child, Command, ExitStatus, Stdio};
 use std::time::{Duration, Instant};
 
-const LAUNCH_BUDGET: Duration = Duration::from_secs(125);
 const CLEANUP_BUDGET: Duration = Duration::from_secs(25);
 const REAP_BUDGET: Duration = Duration::from_secs(2);
 const CHECK_INTERVAL: Duration = Duration::from_millis(20);
@@ -75,7 +71,14 @@ pub(in crate::installation) fn observe(
     terminal: Option<&ParkedTerminal>,
     checkpoint: impl Fn() -> Result<(), TransactionError>,
 ) -> Result<InspectedDarwinNix, TransactionError> {
-    let frame = run(path, executable, opened, terminal, None, checkpoint)?;
+    let frame = run(
+        path,
+        executable,
+        opened,
+        terminal,
+        Request::Inspect,
+        checkpoint,
+    )?;
     decode_inspection(&frame).map_err(TransactionError::NixBlocked)
 }
 
@@ -92,7 +95,7 @@ pub(in crate::installation) fn publish(
         executable,
         opened,
         terminal,
-        Some(request),
+        Request::Publish(request),
         checkpoint,
     )?;
     decode_publication(&frame).ok_or(TransactionError::Verification(
@@ -100,12 +103,60 @@ pub(in crate::installation) fn publish(
     ))
 }
 
+pub(in crate::installation) fn inspect_pending(
+    path: &Path,
+    executable: &File,
+    opened: &Metadata,
+    terminal: Option<&ParkedTerminal>,
+    request: VendorPublicationRequest,
+    checkpoint: impl Fn() -> Result<(), TransactionError>,
+) -> Result<DarwinPolicyRecovery, TransactionError> {
+    let frame = run(
+        path,
+        executable,
+        opened,
+        terminal,
+        Request::Recover(request),
+        checkpoint,
+    )?;
+    decode_recovery(&frame).ok_or(TransactionError::Verification(
+        "Darwin policy recovery reply",
+    ))
+}
+
+pub(in crate::installation) fn activate(
+    path: &Path,
+    executable: &File,
+    opened: &Metadata,
+    terminal: Option<&ParkedTerminal>,
+    request: VendorPublicationRequest,
+    plan: DarwinRestartPlan,
+    checkpoint: impl Fn() -> Result<(), TransactionError>,
+) -> Result<DarwinPolicyRecovery, TransactionError> {
+    let frame = run(
+        path,
+        executable,
+        opened,
+        terminal,
+        Request::Activate(request, plan),
+        checkpoint,
+    )?;
+    match decode_recovery(&frame) {
+        Some(recovery @ (DarwinPolicyRecovery::Active | DarwinPolicyRecovery::Unresolved)) => {
+            Ok(recovery)
+        }
+        _ => Err(TransactionError::Verification(
+            "Darwin policy restart reply",
+        )),
+    }
+}
+
 fn run(
     path: &Path,
     executable: &File,
     opened: &Metadata,
     terminal: Option<&ParkedTerminal>,
-    publication: Option<VendorPublicationRequest>,
+    request: Request,
     checkpoint: impl Fn() -> Result<(), TransactionError>,
 ) -> Result<[u8; INSPECTION_BYTES], TransactionError> {
     check_foreground(terminal, &checkpoint)?;
@@ -127,21 +178,18 @@ fn run(
     output
         .set_nonblocking(true)
         .map_err(|_| TransactionError::Io)?;
-    let (argument, stderr) = match (publication, terminal) {
-        (None, Some(_)) => (ATTENDED_ARGUMENT, Stdio::inherit()),
-        (None, None) => (LAUNCH_ARGUMENT, Stdio::null()),
-        (Some(_), Some(_)) => (PUBLISH_ATTENDED_ARGUMENT, Stdio::inherit()),
-        (Some(_), None) => (PUBLISH_ARGUMENT, Stdio::null()),
+    let stderr = if terminal.is_some() {
+        Stdio::inherit()
+    } else {
+        Stdio::null()
     };
-    if let Some(publication) = publication {
-        (&control)
-            .write_all(&publication.encode())
-            .map_err(|_| TransactionError::Io)?;
-    }
+    (&control)
+        .write_all(&request.encode())
+        .map_err(|_| TransactionError::Io)?;
     recheck(path, executable, opened)?;
     check_foreground(terminal, &checkpoint)?;
     let mut launcher = Command::new(path)
-        .arg(argument)
+        .arg(request.launch_argument(terminal.is_some()))
         .current_dir("/")
         .env_clear()
         .env("PATH", "/usr/bin:/bin")
@@ -150,9 +198,13 @@ fn run(
         .stderr(stderr)
         .spawn()
         .map_err(|_| TransactionError::AdministratorUnavailable)?;
-    let observed = await_launcher(&mut launcher, control, output, || {
-        check_foreground(terminal, &checkpoint)
-    })?;
+    let observed = await_launcher(
+        &mut launcher,
+        control,
+        output,
+        request.launch_budget(),
+        || check_foreground(terminal, &checkpoint),
+    )?;
     recheck(path, executable, opened)?;
     check_foreground(terminal, &checkpoint)?;
     Ok(observed)
@@ -188,11 +240,12 @@ fn await_launcher(
     launcher: &mut Child,
     control: UnixStream,
     mut output: UnixStream,
+    launch_budget: Duration,
     checkpoint: impl Fn() -> Result<(), TransactionError>,
 ) -> Result<[u8; INSPECTION_BYTES], TransactionError> {
     let mut session = Session::Running {
         _control: control,
-        deadline: Instant::now() + LAUNCH_BUDGET,
+        deadline: Instant::now() + launch_budget,
     };
     let mut frame = [0; INSPECTION_BYTES + 1];
     let mut received = 0;

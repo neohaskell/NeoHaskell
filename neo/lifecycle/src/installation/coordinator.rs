@@ -1,5 +1,7 @@
 use super::dashboard::terminal::ParkedTerminal;
 use super::filesystem::{FilesystemJob, FilesystemResult, FilesystemTask};
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+use super::nix_owner::darwin::{DarwinPolicyRecovery, DarwinRestartPlan};
 use super::nix_owner::policy_observation::PolicyOperation;
 use super::{
     InstallationOwner, Layout, PairIdentity, RootLease, TransactionError, process, runtime,
@@ -98,6 +100,10 @@ pub(crate) enum ReviewedChange {
     DarwinPolicyInspection,
     #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
     DarwinPolicyPublication,
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+    DarwinPolicyRecoveryInspection,
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+    DarwinPolicyRestart,
     #[cfg(target_os = "linux")]
     NixPolicyRecoveryInspection,
     #[cfg(target_os = "linux")]
@@ -336,6 +342,11 @@ enum DarwinInspectionReview {
         intent: Arc<DarwinPolicyIntent>,
         stage: DarwinPublicationStage,
     },
+    Recovery {
+        identity: u64,
+        intent: Arc<DarwinPolicyIntent>,
+        stage: DarwinRecoveryStage,
+    },
 }
 
 #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
@@ -368,6 +379,53 @@ impl DarwinPublicationStage {
 }
 
 #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+#[derive(Clone, Copy)]
+pub(super) enum DarwinRecoveryStep {
+    Inspect,
+    Restart(DarwinRestartPlan),
+    Settle,
+}
+
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+enum DarwinRecoveryStage {
+    InspectionReviewed,
+    Inspecting,
+    Ready(DarwinRestartPlan),
+    RestartReviewed(DarwinRestartPlan),
+    Restarting,
+    Verified,
+    Settling,
+    Pending,
+}
+
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+impl DarwinRecoveryStage {
+    fn admit(&self, step: DarwinRecoveryStep) -> Option<Self> {
+        match (self, step) {
+            (Self::InspectionReviewed, DarwinRecoveryStep::Inspect) => Some(Self::Inspecting),
+            (Self::RestartReviewed(expected), DarwinRecoveryStep::Restart(plan))
+                if *expected == plan =>
+            {
+                Some(Self::Restarting)
+            }
+            (Self::Verified, DarwinRecoveryStep::Settle) => Some(Self::Settling),
+            _ => None,
+        }
+    }
+
+    fn observe(&self, result: &DarwinPolicyRecovery) -> Option<Self> {
+        match (self, result) {
+            (Self::Inspecting, DarwinPolicyRecovery::Ready(plan)) => Some(Self::Ready(*plan)),
+            (Self::Inspecting | Self::Restarting, DarwinPolicyRecovery::Active) => {
+                Some(Self::Verified)
+            }
+            (Self::Inspecting | Self::Restarting, _) => Some(Self::Pending),
+            _ => None,
+        }
+    }
+}
+
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 pub(super) struct DarwinPolicyIntent {
     pub(super) layout: Layout,
     pub(super) request: super::nix_owner::darwin::VendorPublicationRequest,
@@ -393,11 +451,53 @@ impl InstallationOwner {
             .await?
             .ok_or_else(|| unavailable.clone())?;
         let mut record = self.decode_record(Some(&before))?;
+        if record.pending_nix_policy.is_some() {
+            return Err(unavailable);
+        }
+        let lease = self.effects.policy_state_lease(&self.layout)?;
+        let pending = request.pending(helper_path.as_str().into(), release.clone(), lease);
+        record.pending_nix_policy = Some(pending.clone());
+        let after = self.encode_record(&record)?;
+        self.bind_darwin_policy_intent(&record, request, pending, before, after)
+    }
+
+    pub(super) async fn prepare_darwin_policy_recovery(
+        &self,
+        record: &super::InstallationRecord,
+        pending: &super::PendingNixPolicy,
+        request: super::nix_owner::darwin::VendorPublicationRequest,
+    ) -> Result<Arc<DarwinPolicyIntent>, TransactionError> {
+        let unresolved = TransactionError::NixPolicyRecoveryPending;
+        let after = self
+            .record_bytes()
+            .await?
+            .ok_or_else(|| unresolved.clone())?;
+        let mut current = self.decode_record(Some(&after))?;
+        if &current != record
+            || current.pending_nix_policy.as_ref() != Some(pending)
+            || pending.state_lease != Some(self.effects.policy_state_lease(&self.layout)?)
+        {
+            return Err(unresolved);
+        }
+        current.pending_nix_policy = None;
+        let before = self.encode_record(&current)?;
+        self.bind_darwin_policy_intent(record, request, pending.clone(), before, after)
+    }
+
+    fn bind_darwin_policy_intent(
+        &self,
+        record: &super::InstallationRecord,
+        request: super::nix_owner::darwin::VendorPublicationRequest,
+        pending: super::PendingNixPolicy,
+        before: Vec<u8>,
+        after: Vec<u8>,
+    ) -> Result<Arc<DarwinPolicyIntent>, TransactionError> {
+        let unavailable = TransactionError::Verification("Darwin policy intent preimage");
         let helper_root = record
             .resources
             .links
             .get(super::resources::HELPER_ROOT)
-            .filter(|link| link.target == helper_path.as_str())
+            .filter(|link| link.target == pending.helper_path)
             .cloned()
             .ok_or_else(|| unavailable.clone())?;
         let resource_parent = record
@@ -406,13 +506,6 @@ impl InstallationOwner {
             .clone()
             .ok_or_else(|| unavailable.clone())?;
         let resource_limit = record.resources.links.len() + 1;
-        if record.pending_nix_policy.is_some() {
-            return Err(unavailable);
-        }
-        let lease = self.effects.policy_state_lease(&self.layout)?;
-        let pending = request.pending(helper_path.as_str().into(), release.clone(), lease);
-        record.pending_nix_policy = Some(pending.clone());
-        let after = self.encode_record(&record)?;
         Ok(Arc::new(DarwinPolicyIntent {
             layout: self.layout.clone(),
             request,
@@ -439,7 +532,7 @@ pub(crate) enum StopObservation {
     NotRequired,
     ObservedNoPair,
     ObservedPair(PairIdentity),
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", all(target_os = "macos", target_arch = "aarch64")))]
     PolicyRecoveryInterrupted,
 }
 
@@ -653,6 +746,10 @@ impl EffectRequest {
             FilesystemJob::ObserveDarwinPolicy { .. }
             | FilesystemJob::DarwinPolicyPublication {
                 step: DarwinPublicationStep::Launch,
+                ..
+            }
+            | FilesystemJob::DarwinPolicyRecovery {
+                step: DarwinRecoveryStep::Inspect | DarwinRecoveryStep::Restart(_),
                 ..
             },
             Admission::Requested,
@@ -894,6 +991,17 @@ impl Future for EffectFuture {
                     };
                     *stage = stage.admit(*step).expect("admitted Darwin policy step");
                 }
+                Some(EffectRequest::Filesystem(
+                    FilesystemJob::DarwinPolicyRecovery { step, .. },
+                    _,
+                )) => {
+                    let Some(DarwinInspectionReview::Recovery { stage, .. }) =
+                        &mut state.darwin_inspection_review
+                    else {
+                        unreachable!("admitted Darwin policy recovery");
+                    };
+                    *stage = stage.admit(*step).expect("admitted Darwin recovery step");
+                }
                 _ => {}
             }
             state.slot = EffectSlot::Admitted(this.request.take().unwrap());
@@ -946,40 +1054,45 @@ impl Effects {
     pub(super) async fn review(&self, summary: ReviewSummary) -> Result<u64, TransactionError> {
         self.checkpoint()?;
         self.state.borrow_mut().observation.review(&summary)?;
-        let identity = {
-            let mut state = self.state.borrow_mut();
-            if !matches!(state.review, ReviewGate::Inspecting)
-                || !matches!(state.slot, EffectSlot::Idle)
+        let identity =
             {
-                return Err(TransactionError::InvalidState("review already prepared"));
-            }
-            state.next_identity = state
-                .next_identity
-                .checked_add(1)
-                .ok_or(TransactionError::InvalidState("owner identity exhausted"))?;
-            let identity = state.next_identity;
-            #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
-            {
-                if summary.changes == [ReviewedChange::DarwinPolicyInspection] {
-                    state.darwin_inspection_review =
-                        Some(DarwinInspectionReview::Pending(identity));
-                } else if summary.changes != [ReviewedChange::DarwinPolicyPublication] {
-                    state.darwin_inspection_review = None;
+                let mut state = self.state.borrow_mut();
+                if !matches!(state.review, ReviewGate::Inspecting)
+                    || !matches!(state.slot, EffectSlot::Idle)
+                {
+                    return Err(TransactionError::InvalidState("review already prepared"));
                 }
-            }
-            state.diagnostics.review();
-            state.review = ReviewGate::Awaiting {
-                identity,
-                offer: Some(ReviewOffer {
-                    summary,
-                    token: ReviewToken {
-                        owner: Rc::downgrade(&self.state),
-                        identity,
-                    },
-                }),
+                state.next_identity = state
+                    .next_identity
+                    .checked_add(1)
+                    .ok_or(TransactionError::InvalidState("owner identity exhausted"))?;
+                let identity = state.next_identity;
+                #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+                {
+                    if summary.changes == [ReviewedChange::DarwinPolicyInspection] {
+                        state.darwin_inspection_review =
+                            Some(DarwinInspectionReview::Pending(identity));
+                    } else if !matches!(
+                        summary.changes.as_slice(),
+                        [ReviewedChange::DarwinPolicyPublication
+                            | ReviewedChange::DarwinPolicyRestart]
+                    ) {
+                        state.darwin_inspection_review = None;
+                    }
+                }
+                state.diagnostics.review();
+                state.review = ReviewGate::Awaiting {
+                    identity,
+                    offer: Some(ReviewOffer {
+                        summary,
+                        token: ReviewToken {
+                            owner: Rc::downgrade(&self.state),
+                            identity,
+                        },
+                    }),
+                };
+                identity
             };
-            identity
-        };
         std::future::poll_fn(|_| {
             if self.stopped() {
                 return Poll::Ready(Err(TransactionError::StopRequested));
@@ -1025,6 +1138,76 @@ impl Effects {
                 intent,
                 stage: DarwinPublicationStage::Reviewed,
             });
+        Ok(identity)
+    }
+
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+    pub(super) async fn review_darwin_policy_recovery(
+        &self,
+        intent: Arc<DarwinPolicyIntent>,
+    ) -> Result<u64, TransactionError> {
+        self.review_darwin_recovery(
+            intent,
+            ReviewedChange::DarwinPolicyRecoveryInspection,
+            DarwinRecoveryStage::InspectionReviewed,
+        )
+        .await
+    }
+
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+    pub(super) async fn review_darwin_policy_restart(
+        &self,
+        intent: Arc<DarwinPolicyIntent>,
+        plan: DarwinRestartPlan,
+    ) -> Result<u64, TransactionError> {
+        self.checkpoint()?;
+        {
+            let mut state = self.state.borrow_mut();
+            let ready = matches!(
+                (&state.review, &state.darwin_inspection_review),
+                (ReviewGate::Accepted { identity, .. },
+                    Some(DarwinInspectionReview::Recovery {
+                        identity: expected,
+                        intent: bound,
+                        stage: DarwinRecoveryStage::Ready(ready),
+                    }))
+                    if identity == expected && Arc::ptr_eq(bound, &intent) && *ready == plan
+            );
+            if !ready || !matches!(state.slot, EffectSlot::Idle) || state.settlement.is_some() {
+                return Err(TransactionError::InvalidState(
+                    "Darwin restart review requires its exact inspected recovery plan",
+                ));
+            }
+            state.review = ReviewGate::Inspecting;
+        }
+        self.review_darwin_recovery(
+            intent,
+            ReviewedChange::DarwinPolicyRestart,
+            DarwinRecoveryStage::RestartReviewed(plan),
+        )
+        .await
+    }
+
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+    async fn review_darwin_recovery(
+        &self,
+        intent: Arc<DarwinPolicyIntent>,
+        change: ReviewedChange,
+        stage: DarwinRecoveryStage,
+    ) -> Result<u64, TransactionError> {
+        let identity = self
+            .review(ReviewSummary {
+                operation: ReviewOperation::Recover,
+                version: None,
+                recovery: RecoveryPending::Unknown,
+                changes: vec![change],
+            })
+            .await?;
+        self.state.borrow_mut().darwin_inspection_review = Some(DarwinInspectionReview::Recovery {
+            identity,
+            intent,
+            stage,
+        });
         Ok(identity)
     }
 
@@ -1289,6 +1472,21 @@ impl Effects {
         )
     }
 
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+    fn darwin_policy_recovery_interrupted(&self) -> bool {
+        let state = self.state.borrow();
+        matches!(
+            state.review,
+            ReviewGate::Accepted {
+                progress: AcceptedProgress::MutationAdmitted,
+                ..
+            }
+        ) && matches!(
+            state.darwin_inspection_review,
+            Some(DarwinInspectionReview::Recovery { .. })
+        )
+    }
+
     #[cfg(target_os = "linux")]
     fn policy_resumption_admitted(&self) -> bool {
         matches!(
@@ -1457,18 +1655,42 @@ impl Effects {
         }
         #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
         if let EffectRequest::Filesystem(
-            FilesystemJob::DarwinPolicyPublication { intent, step },
+            job @ (FilesystemJob::DarwinPolicyPublication { intent, .. }
+            | FilesystemJob::DarwinPolicyRecovery { intent, .. }),
             admission,
         ) = request
         {
             self.checkpoint()?;
             let state = self.state.borrow();
-            let reviewed = matches!(
-                (&state.review, &state.darwin_inspection_review),
-                (ReviewGate::Accepted { identity, .. },
-                    Some(DarwinInspectionReview::Publication { identity: expected, intent: bound, stage }))
-                    if identity == expected && Arc::ptr_eq(bound, intent) && stage.admit(*step).is_some()
-            );
+            let reviewed = match (&state.review, &state.darwin_inspection_review, job) {
+                (
+                    ReviewGate::Accepted { identity, .. },
+                    Some(DarwinInspectionReview::Publication {
+                        identity: expected,
+                        intent: bound,
+                        stage,
+                    }),
+                    FilesystemJob::DarwinPolicyPublication { step, .. },
+                ) => {
+                    identity == expected
+                        && Arc::ptr_eq(bound, intent)
+                        && stage.admit(*step).is_some()
+                }
+                (
+                    ReviewGate::Accepted { identity, .. },
+                    Some(DarwinInspectionReview::Recovery {
+                        identity: expected,
+                        intent: bound,
+                        stage,
+                    }),
+                    FilesystemJob::DarwinPolicyRecovery { step, .. },
+                ) => {
+                    identity == expected
+                        && Arc::ptr_eq(bound, intent)
+                        && stage.admit(*step).is_some()
+                }
+                _ => false,
+            };
             let lease_held = state.lease.as_ref().is_some_and(|lease| {
                 lease
                     .policy_identity(&intent.layout.lock())
@@ -1482,7 +1704,7 @@ impl Effects {
                 Ok(())
             } else {
                 Err(TransactionError::InvalidState(
-                    "Darwin policy publication requires its exact accepted review and live lease",
+                    "Darwin policy effect requires its exact accepted review and live lease",
                 ))
             };
         }
@@ -1491,11 +1713,14 @@ impl Effects {
             let state = self.state.borrow();
             if let Some(review) = &state.darwin_inspection_review
                 && request.mutates()
-                && (matches!(review, DarwinInspectionReview::Publication { .. })
-                    || !state
-                        .lease
-                        .as_ref()
-                        .is_some_and(|lease| request.permits_darwin_inspection(lease, review)))
+                && (matches!(
+                    review,
+                    DarwinInspectionReview::Publication { .. }
+                        | DarwinInspectionReview::Recovery { .. }
+                ) || !state
+                    .lease
+                    .as_ref()
+                    .is_some_and(|lease| request.permits_darwin_inspection(lease, review)))
             {
                 return Err(TransactionError::InvalidState(
                     "effect is outside the Darwin policy inspection review",
@@ -1705,6 +1930,40 @@ impl Effects {
                 }
                 state.darwin_inspection_review = Some(DarwinInspectionReview::Consumed);
                 Ok(FilesystemResult::DarwinPolicyIntentCleared)
+            }
+            #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+            EffectResult::Filesystem(FilesystemResult::DarwinPolicyRecoveryObserved(result)) => {
+                let mut state = self.state.borrow_mut();
+                let Some(DarwinInspectionReview::Recovery { stage, .. }) =
+                    &mut state.darwin_inspection_review
+                else {
+                    return Err(TransactionError::InvalidState(
+                        "Darwin policy recovery completion",
+                    ));
+                };
+                *stage = stage
+                    .observe(&result)
+                    .ok_or(TransactionError::InvalidState(
+                        "Darwin policy recovery was not admitted",
+                    ))?;
+                Ok(FilesystemResult::DarwinPolicyRecoveryObserved(result))
+            }
+            #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+            EffectResult::Filesystem(FilesystemResult::DarwinPolicyRecoverySettled) => {
+                let mut state = self.state.borrow_mut();
+                if !matches!(
+                    &state.darwin_inspection_review,
+                    Some(DarwinInspectionReview::Recovery {
+                        stage: DarwinRecoveryStage::Settling,
+                        ..
+                    })
+                ) {
+                    return Err(TransactionError::InvalidState(
+                        "Darwin policy recovery settlement was not admitted",
+                    ));
+                }
+                state.darwin_inspection_review = Some(DarwinInspectionReview::Consumed);
+                Ok(FilesystemResult::DarwinPolicyRecoverySettled)
             }
             EffectResult::Filesystem(value) => Ok(value),
             _ => Err(TransactionError::InvalidState("filesystem completion type")),
@@ -2368,6 +2627,10 @@ async fn lifecycle(
             if effects.policy_resumption_admitted() {
                 return stopped(&effects, StopObservation::PolicyRecoveryInterrupted);
             }
+            #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+            if effects.darwin_policy_recovery_interrupted() {
+                return stopped(&effects, StopObservation::PolicyRecoveryInterrupted);
+            }
             if !effects.mutation_admitted() {
                 return unadmitted(&effects);
             }
@@ -2750,6 +3013,143 @@ fn darwin_policy_publication_requires_a_second_review_and_persists_before_launch
             .check_admission(&effect(DarwinPublicationStep::Launch))
             .is_err()
     );
+}
+
+#[cfg(all(test, target_os = "macos", target_arch = "aarch64"))]
+#[test]
+fn darwin_policy_recovery_requires_restart_review_and_active_proof_before_settlement() {
+    use super::nix_owner::darwin::VendorPublicationRequest;
+    use std::os::unix::fs::{PermissionsExt, symlink};
+
+    let temp = tempfile::tempdir().unwrap();
+    let layout = Layout::new(temp.path().to_path_buf(), temp.path().join("bin"));
+    let effects = Effects::for_tests();
+    let lease = RootLease::acquire(&layout.lock()).unwrap();
+    let pending = super::PendingNixPolicy {
+        attempt: [1; 32],
+        reviewed: [2; 32],
+        helper_path: "/nix/store/00000000000000000000000000000000-neo-policy-helper".into(),
+        helper: crate::candidate::FileIdentity {
+            name: "installer".into(),
+            sha: "1".repeat(64),
+            size: 1,
+        },
+        operation: PolicyOperation::ConventionalAppend,
+        state_lease: Some(lease.policy_identity(&layout.lock()).unwrap()),
+    };
+    let directory =
+        super::resource_io::ResourceDirectory::open(temp.path().join("resources")).unwrap();
+    symlink(
+        &pending.helper_path,
+        temp.path()
+            .join("resources")
+            .join(super::resources::HELPER_ROOT),
+    )
+    .unwrap();
+    let mut record = super::InstallationRecord::default();
+    record.resources.parent = Some(directory.identity.clone());
+    record.resources.links = directory.inventory(1).unwrap();
+    record.pending_nix_policy = Some(pending.clone());
+    let bytes = serde_json::to_vec(&record).unwrap();
+    std::fs::write(layout.record(), &bytes).unwrap();
+    std::fs::set_permissions(layout.record(), std::fs::Permissions::from_mode(0o600)).unwrap();
+    let owner = InstallationOwner {
+        layout: layout.clone(),
+        effects: effects.clone(),
+        fixture: false,
+    };
+    let request = VendorPublicationRequest::from_pending(&pending).unwrap();
+    let intent = test_with(
+        &effects,
+        &lease,
+        owner.prepare_darwin_policy_recovery(&record, &pending, request),
+    )
+    .unwrap();
+    effects.state.borrow_mut().lease = Some(lease);
+    let job = |step| FilesystemJob::DarwinPolicyRecovery {
+        step,
+        intent: intent.clone(),
+    };
+    let admission =
+        |step| effects.check_admission(&EffectRequest::Filesystem(job(step), Admission::Requested));
+    let plan = DarwinRestartPlan::for_test();
+    let waker = Waker::from(Arc::new(CallerWake));
+    let mut context = Context::from_waker(&waker);
+
+    assert!(admission(DarwinRecoveryStep::Inspect).is_err());
+    let mut inspection_review = Box::pin(effects.review_darwin_policy_recovery(intent.clone()));
+    assert!(inspection_review.as_mut().poll(&mut context).is_pending());
+    let offer = effects.take_review().unwrap();
+    assert_eq!(
+        offer.summary.changes,
+        [ReviewedChange::DarwinPolicyRecoveryInspection]
+    );
+    effects.answer(offer.token, None).unwrap();
+    let Poll::Ready(Ok(identity)) = inspection_review.as_mut().poll(&mut context) else {
+        panic!("Darwin recovery inspection review did not complete");
+    };
+    effects.admit_reviewed(identity).unwrap();
+    assert!(admission(DarwinRecoveryStep::Restart(plan)).is_err());
+    assert!(admission(DarwinRecoveryStep::Settle).is_err());
+
+    let mut inspection = Box::pin(effects.filesystem(job(DarwinRecoveryStep::Inspect)));
+    assert!(inspection.as_mut().poll(&mut context).is_pending());
+    assert!(effects.administrator_pending());
+    effects.state.borrow_mut().slot = EffectSlot::Completed(Ok(EffectResult::Filesystem(
+        FilesystemResult::DarwinPolicyRecoveryObserved(DarwinPolicyRecovery::Ready(plan)),
+    )));
+    assert!(matches!(
+        inspection.as_mut().poll(&mut context),
+        Poll::Ready(Ok(_))
+    ));
+    assert!(admission(DarwinRecoveryStep::Restart(plan)).is_err());
+    assert!(admission(DarwinRecoveryStep::Settle).is_err());
+
+    let mut restart_review = Box::pin(effects.review_darwin_policy_restart(intent.clone(), plan));
+    assert!(restart_review.as_mut().poll(&mut context).is_pending());
+    assert!(admission(DarwinRecoveryStep::Restart(plan)).is_err());
+    let offer = effects.take_review().unwrap();
+    assert_eq!(offer.summary.changes, [ReviewedChange::DarwinPolicyRestart]);
+    effects.answer(offer.token, None).unwrap();
+    let Poll::Ready(Ok(identity)) = restart_review.as_mut().poll(&mut context) else {
+        panic!("Darwin restart review did not complete");
+    };
+    effects.admit_reviewed(identity).unwrap();
+    assert!(admission(DarwinRecoveryStep::Restart(plan)).is_ok());
+    assert!(admission(DarwinRecoveryStep::Settle).is_err());
+
+    let mut restart = Box::pin(effects.filesystem(job(DarwinRecoveryStep::Restart(plan))));
+    assert!(restart.as_mut().poll(&mut context).is_pending());
+    assert!(effects.administrator_pending());
+    assert!(admission(DarwinRecoveryStep::Restart(plan)).is_err());
+    assert_eq!(std::fs::read(layout.record()).unwrap(), bytes);
+    effects.state.borrow_mut().slot = EffectSlot::Completed(Ok(EffectResult::Filesystem(
+        FilesystemResult::DarwinPolicyRecoveryObserved(DarwinPolicyRecovery::Active),
+    )));
+    assert!(matches!(
+        restart.as_mut().poll(&mut context),
+        Poll::Ready(Ok(_))
+    ));
+    assert!(admission(DarwinRecoveryStep::Restart(plan)).is_err());
+
+    let mut settlement = Box::pin(effects.filesystem(job(DarwinRecoveryStep::Settle)));
+    loop {
+        effects.advance_effect();
+        if let Poll::Ready(result) = settlement.as_mut().poll(&mut context) {
+            assert!(matches!(
+                result.unwrap(),
+                FilesystemResult::DarwinPolicyRecoverySettled
+            ));
+            break;
+        }
+        effects.wait();
+    }
+    record.pending_nix_policy = None;
+    assert_eq!(
+        std::fs::read(layout.record()).unwrap(),
+        serde_json::to_vec(&record).unwrap()
+    );
+    assert!(admission(DarwinRecoveryStep::Settle).is_err());
 }
 
 #[cfg(test)]

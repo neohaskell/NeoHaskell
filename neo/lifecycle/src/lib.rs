@@ -368,7 +368,7 @@ fn format_result(result: Result<installation::RunOutcome, installation::Transact
                         .operation_stopped_pair
                         .replace("{version}", &pair.version)
                 ),
-                #[cfg(target_os = "linux")]
+                #[cfg(any(target_os = "linux", all(target_os = "macos", target_arch = "aarch64")))]
                 installation::StopObservation::PolicyRecoveryInterrupted => {
                     eprintln!("{}", english.nix_policy_recovery_pending)
                 }
@@ -485,6 +485,12 @@ fn write_review(
             ReviewedChange::DarwinPolicyInspection => &copy.review_darwin_policy_inspection,
             #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
             ReviewedChange::DarwinPolicyPublication => &copy.review_darwin_policy_publication,
+            #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+            ReviewedChange::DarwinPolicyRecoveryInspection => {
+                &copy.review_darwin_policy_recovery_inspection
+            }
+            #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+            ReviewedChange::DarwinPolicyRestart => &copy.review_darwin_policy_restart,
             ReviewedChange::ApplyExistingNixPolicy => &copy.review_apply_existing_nix_policy,
             #[cfg(target_os = "linux")]
             ReviewedChange::NixPolicyRecoveryInspection => {

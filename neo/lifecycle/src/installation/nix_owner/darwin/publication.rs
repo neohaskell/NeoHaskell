@@ -1,7 +1,9 @@
 use super::super::{InputIdentity, MAX_CONFIGURATION_BYTES, POLICY_LEAF, POLICY_STAGE};
 use super::VendorPublicationRequest;
-use super::configuration::{VendorApplication, protect_configuration_path};
-use serde::Serialize;
+use super::configuration::{
+    VendorApplication, observe_remaining_inputs, protect_configuration_path,
+};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use sha2::{Digest, Sha256};
 use std::ffi::{CStr, CString};
 use std::fs::{self, File, OpenOptions};
@@ -17,6 +19,10 @@ const CUSTOM: &CStr = c"nix.custom.conf";
 const STAGED_CUSTOM: &CStr = c"main-slot";
 const STAGED_LEAF: &CStr = c"leaf-slot";
 const RECEIPT: &CStr = c"receipt.json";
+const RESTART: &CStr = c"restart.json";
+const RECEIPT_SCHEMA: u8 = 2;
+const RESTART_SCHEMA: u8 = 1;
+const MAX_RECORD_BYTES: usize = 4096;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(in crate::installation) enum PublicationOutcome {
@@ -27,6 +33,18 @@ pub(in crate::installation) enum PublicationOutcome {
 
 pub(super) struct LockedVendorDirectory {
     directory: File,
+}
+
+pub(super) enum RecoveredPublication {
+    Prepared,
+    LeafPublished,
+    Published(PublishedPolicy),
+}
+
+#[derive(PartialEq, Eq)]
+pub(super) struct PublishedPolicy {
+    pub(super) fingerprint: [u8; 32],
+    pub(super) restart_from: Option<[u8; 32]>,
 }
 
 impl LockedVendorDirectory {
@@ -128,28 +146,30 @@ impl LockedVendorDirectory {
             )?;
             require(source.attributes == snapshot.attributes)?;
             let leaf = create_file(&stage, STAGED_LEAF, &desired.leaf, 0, 0o644, None)?;
-            let receipt = serde_json::to_vec(&PublicationReceipt {
-                schema: 1,
-                attempt: &request.attempt,
-                reviewed_plan: &request.reviewed.0,
-                daemon,
-                original: &snapshot,
-                source: &source,
-                leaf: &leaf,
-            })
-            .map_err(io::Error::other)?;
-            let marker = create_file(&stage, RECEIPT, &receipt, 0, 0o600, None)?;
+            let receipt = PublicationReceipt {
+                schema: RECEIPT_SCHEMA,
+                attempt: request.attempt,
+                reviewed_plan: request.reviewed.0,
+                daemon: *daemon,
+                unchanged_inputs: application.remaining_inputs_commitment(),
+                original: snapshot,
+                source,
+                leaf,
+            };
+            let marker = write_record(&stage, RECEIPT, &receipt)?;
             sync_directories(&stage, &self.directory)?;
 
             let check_source = || {
                 check_directories()?;
                 marker.check_named(&stage, RECEIPT, false)?;
                 require(application.source_inputs_current())?;
-                snapshot.check_named(&self.directory, CUSTOM, false)?;
-                source.check_named(&stage, STAGED_CUSTOM, false)
+                receipt
+                    .original
+                    .check_named(&self.directory, CUSTOM, false)?;
+                receipt.source.check_named(&stage, STAGED_CUSTOM, false)
             };
             check_source()?;
-            leaf.check_named(&stage, STAGED_LEAF, false)?;
+            receipt.leaf.check_named(&stage, STAGED_LEAF, false)?;
             rename_at(
                 &stage,
                 STAGED_LEAF,
@@ -161,7 +181,9 @@ impl LockedVendorDirectory {
 
             check_source()?;
             require_absent(&stage, STAGED_LEAF)?;
-            leaf.check_named(&self.directory, &leaf_name, true)?;
+            receipt
+                .leaf
+                .check_named(&self.directory, &leaf_name, true)?;
             rename_at(
                 &stage,
                 STAGED_CUSTOM,
@@ -173,10 +195,12 @@ impl LockedVendorDirectory {
             check_directories()?;
             marker.check_named(&stage, RECEIPT, false)?;
             require_absent(&stage, STAGED_LEAF)?;
-            source.check_named(&self.directory, CUSTOM, true)?;
-            leaf.check_named(&self.directory, &leaf_name, true)?;
+            receipt.source.check_named(&self.directory, CUSTOM, true)?;
+            receipt
+                .leaf
+                .check_named(&self.directory, &leaf_name, true)?;
             require(application.remaining_inputs_current())?;
-            snapshot.check_named(&stage, STAGED_CUSTOM, true)
+            receipt.original.check_named(&stage, STAGED_CUSTOM, true)
         };
         if publish().is_ok() {
             PublicationOutcome::Published
@@ -184,20 +208,252 @@ impl LockedVendorDirectory {
             PublicationOutcome::Pending
         }
     }
+
+    pub(super) fn recover(
+        &self,
+        request: &VendorPublicationRequest,
+    ) -> io::Result<RecoveredPublication> {
+        let stage = self.open_stage()?;
+        self.recover_stage(request, &stage)
+    }
+
+    pub(super) fn mark_restart(
+        &self,
+        request: &VendorPublicationRequest,
+        expected: &PublishedPolicy,
+        live: [u8; 32],
+    ) -> io::Result<()> {
+        require(live != [0; 32] && expected.restart_from.is_none())?;
+        let stage = self.open_stage()?;
+        let RecoveredPublication::Published(current) = self.recover_stage(request, &stage)? else {
+            return Err(changed());
+        };
+        require(current == *expected)?;
+        let marker = write_record(
+            &stage,
+            RESTART,
+            &RestartReceipt {
+                schema: RESTART_SCHEMA,
+                attempt: request.attempt,
+                reviewed_plan: request.reviewed.0,
+                publication: expected.fingerprint,
+                previous: live,
+            },
+        )?;
+        sync_directories(&stage, &self.directory)?;
+        require(matches!(
+            self.recover_stage(request, &stage)?,
+            RecoveredPublication::Published(current)
+                if current.fingerprint == expected.fingerprint && current.restart_from == Some(live)
+        ))?;
+        marker.check_named(&stage, RESTART, false)
+    }
+
+    fn open_stage(&self) -> io::Result<File> {
+        self.check()?;
+        let name = CString::new(POLICY_STAGE).expect("fixed publication stage");
+        let stage = open_at(
+            &self.directory,
+            &name,
+            libc::O_RDONLY | libc::O_DIRECTORY,
+            0,
+        )?;
+        check_stage(&self.directory, &name, &stage)?;
+        Ok(stage)
+    }
+
+    fn recover_stage(
+        &self,
+        request: &VendorPublicationRequest,
+        stage: &File,
+    ) -> io::Result<RecoveredPublication> {
+        let stage_name = CString::new(POLICY_STAGE).expect("fixed publication stage");
+        let stage_identity = InputIdentity::of(&stage.metadata()?);
+        let (receipt, marker) = read_record::<PublicationReceipt>(stage, RECEIPT)?;
+        require(
+            receipt.schema == RECEIPT_SCHEMA
+                && receipt.attempt == request.attempt
+                && receipt.reviewed_plan == request.reviewed.0
+                && receipt.daemon != [0; 32],
+        )?;
+        let check_unchanged_inputs = || {
+            require(
+                observe_remaining_inputs().is_ok_and(|actual| actual == receipt.unchanged_inputs),
+            )
+        };
+        check_unchanged_inputs()?;
+        let files = PublicationFiles::read(&self.directory, stage)?;
+        let placement = files.placement(&receipt).ok_or_else(changed)?;
+        let restart = match read_record::<RestartReceipt>(stage, RESTART) {
+            Ok(found) => Some(found),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => None,
+            Err(error) => return Err(error),
+        };
+        let recovered = match placement {
+            PublicationPlacement::Prepared if restart.is_none() => RecoveredPublication::Prepared,
+            PublicationPlacement::LeafPublished if restart.is_none() => {
+                RecoveredPublication::LeafPublished
+            }
+            PublicationPlacement::Published => {
+                let fingerprint = files.fingerprint(&stage_identity, &marker)?;
+                let restart_from = restart
+                    .as_ref()
+                    .map(|(receipt, _)| receipt.previous(request, fingerprint))
+                    .transpose()?;
+                RecoveredPublication::Published(PublishedPolicy {
+                    fingerprint,
+                    restart_from,
+                })
+            }
+            _ => return Err(changed()),
+        };
+        require(PublicationFiles::read(&self.directory, stage)? == files)?;
+        marker.check_named(stage, RECEIPT, false)?;
+        match restart {
+            Some((_, marker)) => marker.check_named(stage, RESTART, false)?,
+            None => require_absent(stage, RESTART)?,
+        }
+        check_unchanged_inputs()?;
+        require(InputIdentity::of(&stage.metadata()?) == stage_identity)?;
+        check_stage(&self.directory, &stage_name, stage)?;
+        self.check()?;
+        Ok(recovered)
+    }
 }
 
-#[derive(Serialize)]
-struct PublicationReceipt<'a> {
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct PublicationReceipt {
     schema: u8,
-    attempt: &'a [u8; 32],
-    reviewed_plan: &'a [u8; 32],
-    daemon: &'a [u8; 32],
-    original: &'a FileSnapshot,
-    source: &'a FileSnapshot,
-    leaf: &'a FileSnapshot,
+    attempt: [u8; 32],
+    reviewed_plan: [u8; 32],
+    daemon: [u8; 32],
+    unchanged_inputs: [u8; 32],
+    original: FileSnapshot,
+    source: FileSnapshot,
+    leaf: FileSnapshot,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct RestartReceipt {
+    schema: u8,
+    attempt: [u8; 32],
+    reviewed_plan: [u8; 32],
+    publication: [u8; 32],
+    previous: [u8; 32],
+}
+
+impl RestartReceipt {
+    fn previous(
+        &self,
+        request: &VendorPublicationRequest,
+        fingerprint: [u8; 32],
+    ) -> io::Result<[u8; 32]> {
+        require(
+            self.schema == RESTART_SCHEMA
+                && self.attempt == request.attempt
+                && self.reviewed_plan == request.reviewed.0
+                && self.publication == fingerprint
+                && self.previous != [0; 32],
+        )?;
+        Ok(self.previous)
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum PublicationPlacement {
+    Prepared,
+    LeafPublished,
+    Published,
 }
 
 #[derive(PartialEq, Eq, Serialize)]
+struct PublicationFiles {
+    live_custom: FileSnapshot,
+    staged_custom: FileSnapshot,
+    live_leaf: Option<FileSnapshot>,
+    staged_leaf: Option<FileSnapshot>,
+}
+
+impl PublicationFiles {
+    fn read(directory: &File, stage: &File) -> io::Result<Self> {
+        fn optional(directory: &File, name: &CStr) -> io::Result<Option<FileSnapshot>> {
+            match FileSnapshot::read_named(directory, name) {
+                Ok(found) => Ok(Some(found)),
+                Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                    require_absent(directory, name)?;
+                    Ok(None)
+                }
+                Err(error) => Err(error),
+            }
+        }
+        let leaf = CString::new(POLICY_LEAF).expect("fixed policy leaf");
+        Ok(Self {
+            live_custom: FileSnapshot::read_named(directory, CUSTOM)?,
+            staged_custom: FileSnapshot::read_named(stage, STAGED_CUSTOM)?,
+            live_leaf: optional(directory, &leaf)?,
+            staged_leaf: optional(stage, STAGED_LEAF)?,
+        })
+    }
+
+    fn placement(&self, receipt: &PublicationReceipt) -> Option<PublicationPlacement> {
+        use PublicationPlacement::{LeafPublished, Prepared, Published};
+
+        let leaf_landed = self
+            .live_leaf
+            .as_ref()
+            .is_some_and(|leaf| leaf.matches_after_rename(&receipt.leaf));
+        if self.live_custom == receipt.original && self.staged_custom == receipt.source {
+            return match (&self.live_leaf, &self.staged_leaf) {
+                (None, Some(leaf)) if *leaf == receipt.leaf => Some(Prepared),
+                (Some(_), None) if leaf_landed => Some(LeafPublished),
+                _ => None,
+            };
+        }
+        (self.live_custom.matches_after_rename(&receipt.source)
+            && self.staged_custom.matches_after_rename(&receipt.original)
+            && leaf_landed
+            && self.staged_leaf.is_none())
+        .then_some(Published)
+    }
+
+    fn fingerprint(&self, stage: &InputIdentity, receipt: &FileSnapshot) -> io::Result<[u8; 32]> {
+        let mut hash = Sha256::new();
+        hash.update(b"neo:determinate-darwin-published-policy:v1\0");
+        hash.update(serde_json::to_vec(&(stage, receipt, self)).map_err(io::Error::other)?);
+        Ok(hash.finalize().into())
+    }
+}
+
+fn write_record(
+    directory: &File,
+    name: &CStr,
+    record: &impl Serialize,
+) -> io::Result<FileSnapshot> {
+    let bytes = serde_json::to_vec(record).map_err(io::Error::other)?;
+    require(bytes.len() <= MAX_RECORD_BYTES)?;
+    create_file(directory, name, &bytes, 0, 0o600, None)
+}
+
+fn read_record<T: DeserializeOwned>(
+    directory: &File,
+    name: &CStr,
+) -> io::Result<(T, FileSnapshot)> {
+    let file = open_at(directory, name, libc::O_RDONLY, 0)?;
+    let (snapshot, bytes) = FileSnapshot::read_bounded(&file, MAX_RECORD_BYTES)?;
+    require(
+        snapshot.identity.mode & 0o7777 == 0o600
+            && snapshot.identity.gid == 0
+            && named_identity_matches(directory, name, &file)?
+            && InputIdentity::of(&file.metadata()?) == snapshot.identity,
+    )?;
+    let record = serde_json::from_slice(&bytes).map_err(io::Error::other)?;
+    Ok((record, snapshot))
+}
+
+#[derive(Deserialize, PartialEq, Eq, Serialize)]
+#[serde(deny_unknown_fields)]
 struct FileSnapshot {
     identity: InputIdentity,
     digest: String,
@@ -206,6 +462,10 @@ struct FileSnapshot {
 
 impl FileSnapshot {
     fn capture(file: &File) -> io::Result<Self> {
+        Self::read_bounded(file, MAX_CONFIGURATION_BYTES).map(|(snapshot, _)| snapshot)
+    }
+
+    fn read_bounded(file: &File, maximum: usize) -> io::Result<(Self, Vec<u8>)> {
         let before = file.metadata()?;
         let identity = InputIdentity::of(&before);
         require(
@@ -213,31 +473,48 @@ impl FileSnapshot {
                 && identity.uid == 0
                 && identity.links == 1
                 && identity.mode & 0o7022 == 0
-                && identity.size <= MAX_CONFIGURATION_BYTES as u64,
+                && identity.size <= maximum as u64,
         )?;
         require_plain_metadata(file)?;
         let mut bytes = vec![0; identity.size as usize];
         file.read_exact_at(&mut bytes, 0)?;
         let attributes = attributes(file)?;
         require(InputIdentity::of(&file.metadata()?) == identity)?;
-        Ok(Self {
-            identity,
-            digest: format!("{:x}", Sha256::digest(bytes)),
-            attributes,
-        })
+        Ok((
+            Self {
+                identity,
+                digest: format!("{:x}", Sha256::digest(&bytes)),
+                attributes,
+            },
+            bytes,
+        ))
     }
 
-    fn check_named(&self, directory: &File, name: &CStr, renamed: bool) -> io::Result<()> {
+    fn read_named(directory: &File, name: &CStr) -> io::Result<Self> {
         let file = open_at(directory, name, libc::O_RDONLY, 0)?;
-        let mut actual = Self::capture(&file)?;
+        let actual = Self::capture(&file)?;
         require(
             named_identity_matches(directory, name, &file)?
                 && InputIdentity::of(&file.metadata()?) == actual.identity,
         )?;
-        if renamed {
-            actual.identity.changed = self.identity.changed;
-        }
-        require(actual == *self)
+        Ok(actual)
+    }
+
+    fn check_named(&self, directory: &File, name: &CStr, renamed: bool) -> io::Result<()> {
+        let actual = Self::read_named(directory, name)?;
+        require(if renamed {
+            actual.matches_after_rename(self)
+        } else {
+            actual == *self
+        })
+    }
+
+    fn matches_after_rename(&self, before: &Self) -> bool {
+        let mut identity = self.identity.clone();
+        identity.changed = before.identity.changed;
+        identity == before.identity
+            && self.digest == before.digest
+            && self.attributes == before.attributes
     }
 }
 
@@ -418,4 +695,109 @@ fn require(value: bool) -> io::Result<()> {
 
 fn changed() -> io::Error {
     io::Error::other("Darwin vendor policy publication inputs changed")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn snapshot(inode: u64, ctime: i64, digest: &str) -> FileSnapshot {
+        FileSnapshot {
+            identity: InputIdentity {
+                device: 1,
+                inode,
+                mode: 0o100644,
+                uid: 0,
+                gid: 0,
+                size: 42,
+                links: 1,
+                modified: (1, 0),
+                changed: (ctime, 0),
+            },
+            digest: digest.to_owned(),
+            attributes: [0; 32],
+        }
+    }
+
+    #[test]
+    fn recovery_identifies_the_exact_slot_placement() {
+        let receipt = PublicationReceipt {
+            schema: RECEIPT_SCHEMA,
+            attempt: [1; 32],
+            reviewed_plan: [2; 32],
+            daemon: [3; 32],
+            unchanged_inputs: [4; 32],
+            original: snapshot(1, 1, "original"),
+            source: snapshot(2, 1, "source"),
+            leaf: snapshot(3, 1, "leaf"),
+        };
+        let mut files = PublicationFiles {
+            live_custom: snapshot(1, 1, "original"),
+            staged_custom: snapshot(2, 1, "source"),
+            live_leaf: None,
+            staged_leaf: Some(snapshot(3, 1, "leaf")),
+        };
+        assert_eq!(
+            files.placement(&receipt),
+            Some(PublicationPlacement::Prepared)
+        );
+
+        files.live_leaf = Some(snapshot(3, 2, "leaf"));
+        assert_eq!(files.placement(&receipt), None);
+        files.staged_leaf = None;
+        assert_eq!(
+            files.placement(&receipt),
+            Some(PublicationPlacement::LeafPublished)
+        );
+
+        files.live_custom = snapshot(2, 2, "source");
+        files.staged_custom = snapshot(1, 2, "original");
+        assert_eq!(
+            files.placement(&receipt),
+            Some(PublicationPlacement::Published)
+        );
+        files.staged_custom = snapshot(4, 2, "original");
+        assert_eq!(files.placement(&receipt), None);
+    }
+
+    #[test]
+    fn restart_marker_matches_only_the_observed_published_policy() {
+        let request = VendorPublicationRequest {
+            attempt: [1; 32],
+            reviewed: super::super::VendorPlanCommitment([2; 32]),
+        };
+        let mut files = PublicationFiles {
+            live_custom: snapshot(2, 2, "source"),
+            staged_custom: snapshot(1, 2, "original"),
+            live_leaf: Some(snapshot(3, 2, "leaf")),
+            staged_leaf: None,
+        };
+        let stage = snapshot(4, 1, "stage").identity;
+        let receipt = snapshot(5, 1, "receipt");
+        let fingerprint = files.fingerprint(&stage, &receipt).unwrap();
+        let restart = RestartReceipt {
+            schema: RESTART_SCHEMA,
+            attempt: request.attempt,
+            reviewed_plan: request.reviewed.0,
+            publication: fingerprint,
+            previous: [3; 32],
+        };
+        assert_eq!(restart.previous(&request, fingerprint).unwrap(), [3; 32]);
+
+        let changed_receipt = snapshot(5, 1, "changed receipt");
+        assert!(
+            restart
+                .previous(
+                    &request,
+                    files.fingerprint(&stage, &changed_receipt).unwrap()
+                )
+                .is_err()
+        );
+        files.live_custom = snapshot(2, 3, "source");
+        assert!(
+            restart
+                .previous(&request, files.fingerprint(&stage, &receipt).unwrap())
+                .is_err()
+        );
+    }
 }
