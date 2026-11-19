@@ -376,12 +376,27 @@ impl UnchangedReceipt {
             }
     }
 
-    fn verify_unchanged(&self, stage: &File) -> Result<(), PolicyResult> {
-        let mut entries = fs::read_dir(descriptor_path(stage, "."))
+    fn verify_unchanged(&self, stage: &File, temporary: Option<&File>) -> Result<(), PolicyResult> {
+        if let Some(temporary) = temporary {
+            same_named_file(stage, RECEIPT_TEMP, temporary)?;
+        }
+        let entries = fs::read_dir(descriptor_path(stage, "."))
             .map_err(|_| PolicyResult::PublicationUnknown)?;
-        if !matches!(entries.next(), Some(Ok(entry)) if entry.file_name() == RECEIPT)
-            || entries.next().is_some()
-        {
+        let mut receipts = 0;
+        let mut scratch = 0;
+        for entry in entries {
+            let name = entry
+                .map_err(|_| PolicyResult::PublicationUnknown)?
+                .file_name();
+            if name == RECEIPT {
+                receipts += 1;
+            } else if name == RECEIPT_TEMP && temporary.is_some() {
+                scratch += 1;
+            } else {
+                return Err(PolicyResult::PublicationUnknown);
+            }
+        }
+        if (receipts, scratch) != (1, usize::from(temporary.is_some())) {
             return Err(PolicyResult::PublicationUnknown);
         }
         self.evidence.verify()
@@ -728,11 +743,30 @@ impl PolicyReceipt {
         })
     }
 
-    fn verify_configuration(&self, stage: &File) -> Result<(), PolicyResult> {
+    fn verify_configuration(
+        &self,
+        stage: &File,
+        temporary: Option<&File>,
+    ) -> Result<(), PolicyResult> {
         match self {
             Self::Published(receipt) => receipt.verify_published(),
-            Self::Unchanged(receipt) => receipt.verify_unchanged(stage),
+            Self::Unchanged(receipt) => receipt.verify_unchanged(stage, temporary),
         }
+    }
+
+    fn verify_completion_of(
+        &self,
+        accepted: &Self,
+        replacement: &ManagerIdentity,
+    ) -> Result<(), PolicyResult> {
+        let live = self.live().ok_or(PolicyResult::PublicationUnknown)?;
+        if live.version != 5
+            || live.replacement != replacement
+            || accepted.complete_restart(replacement.clone(), live.continuity.cloned())? != *self
+        {
+            return Err(PolicyResult::PublicationUnknown);
+        }
+        Ok(())
     }
 }
 
@@ -976,12 +1010,19 @@ impl<'a> ReceiptWriter<'a> {
             return Err(PolicyResult::PublicationUnknown);
         };
         self.verify_current()?;
-        receipt.verify_unchanged(self.stage)
+        receipt.verify_unchanged(self.stage, None)
     }
 
     fn verify_current(&self) -> Result<(), PolicyResult> {
+        self.verify_exchange(None)
+    }
+
+    fn verify_exchange(&self, scratch: Option<&RecoveryScratch>) -> Result<(), PolicyResult> {
         check_stage(self.parent, self.stage)?;
-        require_absent(&descriptor_path(self.stage, RECEIPT_TEMP))?;
+        match scratch {
+            Some(scratch) => scratch.verify(self.stage)?,
+            None => require_absent(&descriptor_path(self.stage, RECEIPT_TEMP))?,
+        }
         if boot_id()? != self.current.boot_id()
             || read_current(self.stage, &self.held)? != self.current
         {
@@ -1003,15 +1044,17 @@ impl<'a> ReceiptWriter<'a> {
     }
 }
 
-fn receipt_identity(file: &File) -> Result<fs::Metadata, PolicyResult> {
+fn receipt_identity(file: &File, name: &str) -> Result<fs::Metadata, PolicyResult> {
     let metadata = file
         .metadata()
         .map_err(|_| PolicyResult::PublicationUnknown)?;
+    let mode = metadata.mode() & 0o7777;
+    let empty_scratch = name == RECEIPT_TEMP && metadata.len() == 0 && mode & !0o600 == 0;
     if metadata.is_file()
         && metadata.uid() == 0
         && metadata.gid() == 0
         && metadata.nlink() == 1
-        && metadata.mode() & 0o7777 == 0o600
+        && (mode == 0o600 || empty_scratch)
         && metadata.len() <= MAX_RECEIPT_BYTES as u64
     {
         return Ok(metadata);
@@ -1022,14 +1065,18 @@ fn receipt_identity(file: &File) -> Result<fs::Metadata, PolicyResult> {
 fn same_named_file(stage: &File, name: &str, file: &File) -> Result<(), PolicyResult> {
     let named = fs::symlink_metadata(descriptor_path(stage, name))
         .map_err(|_| PolicyResult::PublicationUnknown)?;
-    if InputIdentity::of(&named) != InputIdentity::of(&receipt_identity(file)?) {
+    if InputIdentity::of(&named) != InputIdentity::of(&receipt_identity(file, name)?) {
         return Err(PolicyResult::PublicationUnknown);
     }
     Ok(())
 }
 
 fn read_current(stage: &File, file: &File) -> Result<PolicyReceipt, PolicyResult> {
-    same_named_file(stage, RECEIPT, file)?;
+    PolicyReceipt::decode(&read_named_receipt(stage, RECEIPT, file)?)
+}
+
+fn read_named_receipt(stage: &File, name: &str, file: &File) -> Result<Vec<u8>, PolicyResult> {
+    same_named_file(stage, name, file)?;
     let mut reader = file;
     reader
         .seek(SeekFrom::Start(0))
@@ -1039,8 +1086,76 @@ fn read_current(stage: &File, file: &File) -> Result<PolicyReceipt, PolicyResult
         .take(MAX_RECEIPT_BYTES as u64 + 1)
         .read_to_end(&mut raw)
         .map_err(|_| PolicyResult::PublicationUnknown)?;
-    same_named_file(stage, RECEIPT, file)?;
-    PolicyReceipt::decode(&raw)
+    same_named_file(stage, name, file)?;
+    Ok(raw)
+}
+
+struct RecoveryScratch {
+    file: File,
+    raw: Vec<u8>,
+}
+
+impl RecoveryScratch {
+    fn open(stage: &File) -> Result<Option<Self>, PolicyResult> {
+        let path = descriptor_path(stage, RECEIPT_TEMP);
+        match fs::symlink_metadata(&path) {
+            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
+            Err(_) => Err(PolicyResult::PublicationUnknown),
+            Ok(_) => {
+                let file = open(&path)?;
+                let raw = read_named_receipt(stage, RECEIPT_TEMP, &file)?;
+                Ok(Some(Self { file, raw }))
+            }
+        }
+    }
+
+    fn verify(&self, stage: &File) -> Result<(), PolicyResult> {
+        if read_named_receipt(stage, RECEIPT_TEMP, &self.file)? != self.raw {
+            return Err(PolicyResult::PublicationUnknown);
+        }
+        Ok(())
+    }
+
+    fn receipt(&self) -> Result<Option<PolicyReceipt>, PolicyResult> {
+        decode_recovery_scratch(&self.raw)
+    }
+
+    fn discard(&self, stage: &File) -> Result<(), PolicyResult> {
+        self.verify(stage)?;
+        fs::remove_file(descriptor_path(stage, RECEIPT_TEMP))
+            .and_then(|_| stage.sync_all())
+            .map_err(|_| PolicyResult::PublicationUnknown)
+    }
+}
+
+fn decode_recovery_scratch(raw: &[u8]) -> Result<Option<PolicyReceipt>, PolicyResult> {
+    match serde_json::from_slice::<serde_json::Value>(raw) {
+        Ok(_) => PolicyReceipt::decode(raw).map(Some),
+        Err(error) if error.is_eof() && (raw.is_empty() || raw.starts_with(b"{")) => Ok(None),
+        Err(_) => Err(PolicyResult::PublicationUnknown),
+    }
+}
+
+fn recovery_exchange<'a>(
+    canonical: &'a PolicyReceipt,
+    temporary: Option<&'a PolicyReceipt>,
+    operation: &PolicyAttempt,
+    request: ReviewedPolicyRequest,
+    replacement: &ManagerIdentity,
+) -> Result<RecoverableRestart<'a>, PolicyResult> {
+    let (accepted, completion) = if canonical.live().is_some() {
+        (
+            temporary.ok_or(PolicyResult::PublicationUnknown)?,
+            Some(canonical),
+        )
+    } else {
+        (canonical, temporary)
+    };
+    let restart = accepted.accepted_restart(operation, request)?;
+    if let Some(completion) = completion {
+        completion.verify_completion_of(accepted, replacement)?;
+    }
+    Ok(restart)
 }
 
 pub(super) fn require_absent(path: &Path) -> Result<(), PolicyResult> {
@@ -1100,33 +1215,46 @@ pub(super) fn recover_accepted_restart(
     verify_caller: impl Fn(&PolicyInputs) -> Result<(), PolicyResult> + Sync,
 ) -> Result<(), PolicyResult> {
     check_stage(parent, stage)?;
-    require_absent(&descriptor_path(stage, RECEIPT_TEMP))?;
     let held = open(&descriptor_path(stage, RECEIPT))?;
     let current = read_current(stage, &held)?;
+    let scratch = RecoveryScratch::open(stage)?;
+    let temporary = scratch
+        .as_ref()
+        .map(RecoveryScratch::receipt)
+        .transpose()?
+        .flatten();
     let mut writer = ReceiptWriter {
         parent,
         stage,
         current,
         held,
     };
-    writer.verify_current()?;
-    let RecoverableRestart {
-        accepted,
-        old_manager,
-        secondary,
-    } = writer.current.accepted_restart(operation, request)?;
+    writer.verify_exchange(scratch.as_ref())?;
     let candidate = inputs
         .managed_snapshot()?
         .ok_or(PolicyResult::PublicationUnknown)?;
     let generation = ManagerIdentity::capture(&candidate)?;
+    let RecoverableRestart {
+        accepted,
+        old_manager,
+        secondary,
+    } = recovery_exchange(
+        &writer.current,
+        temporary.as_ref(),
+        operation,
+        request,
+        &generation,
+    )?;
     if !generation.replaces(old_manager) || !accepted.intent.admits_replacement(&generation) {
         return Err(PolicyResult::PublicationUnknown);
     }
     let old_process = Path::new("/proc").join(old_manager.pid.to_string());
     let verify = |current: &PolicyInputs| {
-        writer.verify_current()?;
+        writer.verify_exchange(scratch.as_ref())?;
         require_absent(&old_process)?;
-        writer.current.verify_configuration(stage)?;
+        writer
+            .current
+            .verify_configuration(stage, scratch.as_ref().map(|file| &file.file))?;
         continuity::capture(current)?.verify(accepted.intent.inputs_sha256)?;
         verify_caller(current)
     };
@@ -1148,7 +1276,13 @@ pub(super) fn recover_accepted_restart(
         return Err(PolicyResult::PublicationUnknown);
     }
     verify(inputs)?;
-    writer.observe_restart(&candidate, Some(accepted.intent.inputs_sha256))?;
+    if let Some(scratch) = &scratch {
+        scratch.discard(stage)?;
+        writer.verify_current()?;
+    }
+    if writer.current.live().is_none() {
+        writer.observe_restart(&candidate, Some(accepted.intent.inputs_sha256))?;
+    }
     writer.verify_current()
 }
 
@@ -1221,7 +1355,7 @@ fn verify_live_receipt(
         if boot_id()? != live.boot_id || read_current(stage, &file)? != receipt {
             return Err(PolicyResult::PublicationUnknown);
         }
-        receipt.verify_configuration(stage)?;
+        receipt.verify_configuration(stage, None)?;
         if let Some(expected) = continuity {
             continuity::capture(current)?.verify(expected)?;
         }
@@ -1619,6 +1753,38 @@ mod tests {
             assert_eq!(live.reviewed, reviewed.bytes());
             assert_eq!(live.continuity, Some(&proof));
             assert!(completed.accepted_restart(&operation, reviewed).is_err());
+
+            let finished = serde_json::to_vec(&completed).unwrap();
+            let staged = decode_recovery_scratch(&finished).unwrap().unwrap();
+            let torn = decode_recovery_scratch(&finished[..finished.len() - 1]).unwrap();
+            assert!(torn.is_none());
+            assert!(decode_recovery_scratch(b"").unwrap().is_none());
+            assert!(decode_recovery_scratch(b"{invalid").is_err());
+            assert!(decode_recovery_scratch(b"[]").is_err());
+            for (canonical, scratch) in [
+                (&accepted, Some(&staged)),
+                (&completed, Some(&accepted)),
+                (&accepted, torn.as_ref()),
+            ] {
+                let restart =
+                    recovery_exchange(canonical, scratch, &operation, reviewed, &replacement)
+                        .unwrap();
+                assert_eq!(restart.accepted.job_id, job);
+            }
+            let mut unrelated = replacement.clone();
+            unrelated.invocation_id = "c".repeat(32);
+            for (canonical, scratch, attempt, candidate) in [
+                (&armed, Some(&accepted), &operation, &replacement),
+                (&accepted, Some(&armed), &operation, &replacement),
+                (&completed, torn.as_ref(), &operation, &replacement),
+                (&completed, Some(&accepted), &other, &replacement),
+                (&completed, Some(&accepted), &operation, &unrelated),
+                (&accepted, Some(&staged), &operation, &unrelated),
+            ] {
+                assert!(
+                    recovery_exchange(canonical, scratch, attempt, reviewed, candidate).is_err()
+                );
+            }
             let mut raw = serde_json::to_value(&completed).unwrap();
             raw["version"] = 6.into();
             assert!(PolicyReceipt::decode(&serde_json::to_vec(&raw).unwrap()).is_err());
