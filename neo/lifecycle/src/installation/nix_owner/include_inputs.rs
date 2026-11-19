@@ -88,6 +88,7 @@ struct Walk<'a, P, R> {
     bytes: usize,
     references: usize,
     existing: bool,
+    requires_signatures: bool,
 }
 
 impl<P, R> Walk<'_, P, R>
@@ -95,6 +96,16 @@ where
     P: Fn(&Path) -> io::Result<PathBuf>,
     R: FnMut(&mut File) -> Result<Vec<u8>, TransactionError>,
 {
+    fn read_graph(&mut self, path: &Path, bytes: &[u8]) -> Result<(), TransactionError> {
+        self.visit(path, Some(bytes), 0)?;
+        if !self.requires_signatures {
+            return Err(TransactionError::NixBlocked(
+                NixBlock::ConfigurationOwnerUnknown,
+            ));
+        }
+        Ok(())
+    }
+
     fn visit(
         &mut self,
         path: &Path,
@@ -139,6 +150,18 @@ where
                         .all(|b| b.is_ascii_alphanumeric() || b == b'-')
                 {
                     return Err(TransactionError::Io);
+                }
+                match words.as_slice() {
+                    ["require-sigs", "=", "true" | "yes" | "1"] => self.requires_signatures = true,
+                    ["require-sigs", "=", "false" | "no" | "0"] => self.requires_signatures = false,
+                    ["require-sigs", ..] => return Err(TransactionError::Io),
+                    ["store", "="] | ["store", "=", "auto" | "local"] => {}
+                    ["store", ..] => {
+                        return Err(TransactionError::NixBlocked(
+                            NixBlock::ConfigurationOwnerUnknown,
+                        ));
+                    }
+                    _ => {}
                 }
                 continue;
             }
@@ -238,8 +261,9 @@ pub(super) fn observe(
             bytes: companion_bytes.len(),
             references: 0,
             existing,
+            requires_signatures: true,
         };
-        walk.visit(path, Some(bytes), 0)?;
+        walk.read_graph(path, bytes)?;
         if existing && walk.references != 1 {
             return Ok(AttachmentInputs::Conflict);
         }
@@ -532,8 +556,9 @@ pub(in crate::installation::nix_owner) mod recovery {
                 bytes: companion.1.len(),
                 references: 0,
                 existing: published,
+                requires_signatures: true,
             };
-            walk.visit(path, Some(&live.1), 0)?;
+            walk.read_graph(path, &live.1)?;
             if published {
                 let Some(final_edge) = walk.graph.edges.pop() else {
                     return Ok(Stage::Conflict);
@@ -609,6 +634,76 @@ mod tests {
         let main = temporary.path().canonicalize().unwrap().join("nix.conf");
         fs::write(&main, b"keep-outputs = true\n").unwrap();
         (temporary, main)
+    }
+
+    #[test]
+    fn conventional_policy_requires_effective_signatures_and_stock_store() {
+        let (_temporary, main) = fixture();
+        let nested = main.with_file_name("settings.conf");
+        for (source, included, eligible) in [
+            ("keep-outputs = true\n!include absent.conf\n", "", true),
+            ("require-sigs = 1\nstore = auto\n", "", true),
+            ("store =\n", "", true),
+            (
+                "require-sigs = no\n!include settings.conf\n",
+                "require-sigs = yes # operator override\nstore = local\n",
+                true,
+            ),
+            ("require-sigs = false\n", "", false),
+            (
+                "require-sigs = true\ninclude settings.conf\n",
+                "require-sigs = 0\n",
+                false,
+            ),
+            (
+                "include settings.conf\nrequire-sigs = false\n",
+                "require-sigs = true\n",
+                false,
+            ),
+            ("require-sigs = enabled\nrequire-sigs = true\n", "", false),
+            ("require-sigs = true false\n", "", false),
+            ("require-sigs =\n", "", false),
+            (
+                "include settings.conf\n",
+                "store = local?require-sigs=false\n",
+                false,
+            ),
+            ("store = daemon\n", "", false),
+        ] {
+            fs::write(&nested, included).unwrap();
+            fs::write(&main, source).unwrap();
+            let input = fixture_input(&main).unwrap();
+            assert_eq!(
+                matches!(attachment(&input), AttachmentInputs::VerifiedAppend(_)),
+                eligible,
+                "main {source:?}, included {included:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn conventional_policy_rechecks_signatures_with_the_exact_existing_leaf() {
+        let (_temporary, main) = fixture();
+        let nested = main.with_file_name("settings.conf");
+        fs::write(&nested, b"require-sigs = true\n").unwrap();
+        fs::write(&main, b"include settings.conf\n").unwrap();
+        let baseline = fixture_input(&main).unwrap();
+        let NixIncludePreparation::Append(desired) = &baseline.preparation else {
+            panic!("append");
+        };
+        let leaf = main.with_file_name(POLICY_LEAF);
+        fs::write(&leaf, &desired.leaf).unwrap();
+        fs::write(&main, &desired.source).unwrap();
+        assert!(matches!(
+            attachment(&fixture_input(&main).unwrap()),
+            AttachmentInputs::VerifiedExisting(_)
+        ));
+        fs::write(&nested, b"require-sigs = false\n").unwrap();
+        assert!(!matches!(
+            attachment(&fixture_input(&main).unwrap()),
+            AttachmentInputs::VerifiedExisting(_)
+        ));
+        assert_eq!(fs::read(&leaf).unwrap(), desired.leaf);
     }
 
     fn recovery_read(file: &mut File) -> Result<Vec<u8>, TransactionError> {

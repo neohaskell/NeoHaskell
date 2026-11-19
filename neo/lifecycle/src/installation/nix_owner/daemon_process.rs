@@ -46,7 +46,7 @@ pub(super) enum StockHome {
 }
 
 fn launch_configuration(bytes: &[u8]) -> LaunchConfiguration {
-    const KEYS: [&[u8]; 7] = [
+    const KEYS: [&[u8]; 8] = [
         b"NIX_CONF_DIR",
         b"NIX_USER_CONF_FILES",
         b"NIX_CONFIG",
@@ -54,11 +54,12 @@ fn launch_configuration(bytes: &[u8]) -> LaunchConfiguration {
         b"XDG_CONFIG_HOME",
         b"XDG_CONFIG_DIRS",
         b"HOME",
+        b"NIX_REMOTE",
     ];
     if bytes.len() > 64 * 1024 || (!bytes.is_empty() && bytes.last() != Some(&0)) {
         return LaunchConfiguration::AlternateOrAmbiguous;
     }
-    let mut values = [None; 7];
+    let mut values = [None; KEYS.len()];
     for entry in bytes
         .strip_suffix(&[0])
         .unwrap_or(bytes)
@@ -81,6 +82,7 @@ fn launch_configuration(bytes: &[u8]) -> LaunchConfiguration {
     }
     if !matches!(values[0], None | Some(b"" | b"/etc/nix"))
         || !matches!(values[2], None | Some(b""))
+        || !matches!(values[7], None | Some(b"" | b"auto" | b"local"))
     {
         return LaunchConfiguration::AlternateOrAmbiguous;
     }
@@ -306,6 +308,34 @@ pub(crate) fn observe(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn conventional_policy_requires_stock_store_selector() {
+        for bytes in [
+            b"".as_slice(),
+            b"NIX_REMOTE=\0",
+            b"NIX_REMOTE=auto\0",
+            b"NIX_REMOTE=local\0",
+        ] {
+            assert_eq!(
+                launch_configuration(bytes),
+                LaunchConfiguration::ConventionalSystem {
+                    user_sources: UserSources::Stock(StockHome::Passwd),
+                }
+            );
+        }
+        for bytes in [
+            b"NIX_REMOTE=local?require-sigs=false\0".as_slice(),
+            b"NIX_REMOTE=daemon\0",
+            b"NIX_REMOTE=local\0NIX_REMOTE=auto\0",
+            b"NIX_REMOTE=\xff\0",
+        ] {
+            assert_eq!(
+                launch_configuration(bytes),
+                LaunchConfiguration::AlternateOrAmbiguous
+            );
+        }
+    }
 
     #[test]
     fn launch_selectors_preserve_user_search_uncertainty() {
