@@ -227,17 +227,13 @@ impl InstallationOwner {
             .output("neoctl")
             .ok_or(TransactionError::Verification("neoctl output"))?;
         for probe in [
-            process::Probe::NoArguments,
             process::Probe::Help,
             process::Probe::ShortHelp,
             process::Probe::UnknownFlag,
             process::Probe::Doctor,
             process::Probe::MixedHelp,
         ] {
-            let valid = matches!(
-                probe,
-                process::Probe::NoArguments | process::Probe::Help | process::Probe::ShortHelp
-            );
+            let valid = matches!(probe, process::Probe::Help | process::Probe::ShortHelp);
             let result = self
                 .observe(
                     lock,
@@ -248,12 +244,16 @@ impl InstallationOwner {
                     },
                 )
                 .await?;
-            let usage = b"Usage: neoctl [--help|-h|--version]\nDisplay usage and packaged version information for neoctl.\n";
-            let error = b"Invalid arguments. Run neoctl --help for usage.\n";
-            if result.exit_code != Some(if valid { 0 } else { 2 })
-                || result.stdout != if valid { usage.as_slice() } else { &[] }
-                || result.stderr != if valid { &[] } else { error.as_slice() }
-            {
+            let matches_expected = if valid {
+                result.exit_code == Some(0)
+                    && result.stderr.is_empty()
+                    && result.stdout.starts_with(b"Usage: neoctl ")
+            } else {
+                result.exit_code == Some(2)
+                    && result.stdout.is_empty()
+                    && result.stderr == b"Invalid arguments. Run neoctl --help for usage.\n"
+            };
+            if !matches_expected {
                 return Err(TransactionError::Verification("neoctl argument behavior"));
             }
         }

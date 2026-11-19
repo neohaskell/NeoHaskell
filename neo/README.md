@@ -27,6 +27,12 @@ cargo install --path .
 
 ## Usage
 
+### Run the local control service
+
+The release installer includes `neoctl`. Run `neoctl` to start the HTTP service on
+`127.0.0.1:8080`. From another terminal, run `curl http://127.0.0.1:8080/health`
+to check it. Press Ctrl-C in the first terminal to stop it.
+
 ### Create a new project
 ```bash
 neo new

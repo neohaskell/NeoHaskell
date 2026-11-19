@@ -93,7 +93,7 @@ def resolve_executable(parser: argparse.ArgumentParser, value: str, option: str)
 
 
 def invocation_cases(neo: Path, neoctl: Path, expected_version: str) -> list[Case]:
-    usage = b"Usage: neoctl [--help|-h|--version]\nDisplay usage and packaged version information for neoctl.\n"
+    usage = b"Usage: neoctl [--help|-h|--version]\nRun the NeoHaskell control service at http://127.0.0.1:8080.\n"
     invalid = b"Invalid arguments. Run neoctl --help for usage.\n"
     return [
         Case(
@@ -112,7 +112,6 @@ def invocation_cases(neo: Path, neoctl: Path, expected_version: str) -> list[Cas
             f"neoctl {expected_version}\n".encode(),
             b"",
         ),
-        Case("neoctl-no-arguments", neoctl, (), 0, usage, b""),
         Case("neoctl-help", neoctl, ("--help",), 0, usage, b""),
         Case("neoctl-short-help", neoctl, ("-h",), 0, usage, b""),
         Case("neoctl-unknown-flag", neoctl, ("--bogus",), 2, b"", invalid, (b"--bogus",)),

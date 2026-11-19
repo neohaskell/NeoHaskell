@@ -1,5 +1,5 @@
 {-| Provide a zero-entity query so neoctl can run as an Event Model app.
-The query keeps the CLI within normal model startup without adding domain data.
+The query keeps the service within normal model startup without adding domain data.
 -}
 module Neoctl.Placeholder (
   Placeholder (..),

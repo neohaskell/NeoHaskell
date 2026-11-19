@@ -12,7 +12,7 @@ from pathlib import Path
 
 TOOL = Path(__file__).resolve().parents[1] / "tool_pair.py"
 EXPECTED_VERSION = "0.17.1"
-HELP_OUTPUT = "Usage: neoctl [--help|-h|--version]\nDisplay usage and packaged version information for neoctl.\n"
+HELP_OUTPUT = "Usage: neoctl [--help|-h|--version]\nRun the NeoHaskell control service at http://127.0.0.1:8080.\n"
 INVALID_OUTPUT = "Invalid arguments. Run neoctl --help for usage.\n"
 
 
@@ -53,11 +53,11 @@ from pathlib import Path
 arguments = sys.argv[1:]
 if os.environ.get("LOG_LEVEL") is not None:
     sys.stdout.write('{{"level":"Info"}}\\n')
-if {mode!r} == "large-output" and not arguments:
+if {mode!r} == "large-output" and arguments == ["--help"]:
     sys.stdout.write("x" * 1_000_000)
     sys.stdout.flush()
     time.sleep(2)
-elif {mode!r} == "resistant-descendant" and not arguments:
+elif {mode!r} == "resistant-descendant" and arguments == ["--help"]:
     descendant_code = (
         "import os, signal, sys, time; "
         "signal.signal(signal.SIGTERM, signal.SIG_IGN); "
@@ -83,8 +83,8 @@ elif {mode!r} == "resistant-descendant" and not arguments:
     time.sleep(30)
 elif arguments == ["--version"]:
     sys.stdout.write("neoctl {version}\\n")
-elif arguments in ([], ["--help"], ["-h"]):
-    if {mode!r} == "timeout" and not arguments:
+elif arguments in (["--help"], ["-h"]):
+    if {mode!r} == "timeout" and arguments == ["--help"]:
         time.sleep(2)
     sys.stdout.write({HELP_OUTPUT!r})
 elif arguments in (["--bogus"], ["doctor"], ["--help", "unexpected"]):
@@ -159,7 +159,7 @@ else:
         report = json.loads(result.stdout)
         self.assertEqual(report["status"], "PASS")
         self.assertEqual(report["expected_version"], EXPECTED_VERSION)
-        self.assertEqual(len(report["observations"]), 8)
+        self.assertEqual(len(report["observations"]), 7)
         self.assertTrue(all(item["passed"] for item in report["observations"]))
         self.assertTrue(all(item["file_changes"] == [] for item in report["observations"]))
         self.assertTrue(
@@ -199,12 +199,12 @@ else:
 
         self.assertEqual(result.returncode, 1)
         report = json.loads(result.stdout)
-        no_arguments = next(
+        help_case = next(
             item
             for item in report["observations"]
-            if item["name"] == "neoctl-no-arguments"
+            if item["name"] == "neoctl-help"
         )
-        self.assertTrue(no_arguments["timed_out"])
+        self.assertTrue(help_case["timed_out"])
 
     @unittest.skipIf(os.name == "nt", "POSIX process group behavior is required")
     def test_timeout_kills_sigterm_resistant_descendant_after_leader_exits(self):
@@ -225,13 +225,13 @@ else:
 
             descendant_pid = int(descendant_pid_file.read_text(encoding="utf-8"))
             report = json.loads(result.stdout)
-            no_arguments = next(
+            help_case = next(
                 item
                 for item in report["observations"]
-                if item["name"] == "neoctl-no-arguments"
+                if item["name"] == "neoctl-help"
             )
-            self.assertTrue(no_arguments["timed_out"])
-            self.assertEqual(no_arguments["exit_code"], -signal.SIGTERM)
+            self.assertTrue(help_case["timed_out"])
+            self.assertEqual(help_case["exit_code"], -signal.SIGTERM)
             self.assertFalse(
                 self.process_survived(descendant_pid, descendant_alive_file),
                 "the SIGTERM-resistant descendant survived verifier cleanup",
@@ -250,17 +250,17 @@ else:
         self.assertEqual(result.returncode, 1)
         report = json.loads(result.stdout)
         self.assertIn(
-            "neoctl-no-arguments exceeded the raw stream capture limit",
+            "neoctl-help exceeded the raw stream capture limit",
             report["failures"],
         )
-        no_arguments = next(
+        help_case = next(
             item
             for item in report["observations"]
-            if item["name"] == "neoctl-no-arguments"
+            if item["name"] == "neoctl-help"
         )
-        self.assertGreater(no_arguments["stdout"]["byte_count"], 65_536)
-        self.assertTrue(no_arguments["stdout"]["truncated"])
-        self.assertEqual(len(base64.b64decode(no_arguments["stdout"]["base64"])), 65_536)
+        self.assertGreater(help_case["stdout"]["byte_count"], 65_536)
+        self.assertTrue(help_case["stdout"]["truncated"])
+        self.assertEqual(len(base64.b64decode(help_case["stdout"]["base64"])), 65_536)
 
 
 if __name__ == "__main__":
