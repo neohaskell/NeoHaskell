@@ -772,6 +772,8 @@ fn protected_configuration_path(path: &Path) -> io::Result<PathBuf> {
     if root.uid() != 0 || root.mode() & 0o022 != 0 {
         return Err(io::Error::other("unproved configuration owner"));
     }
+    #[cfg(target_os = "linux")]
+    require_configuration_filesystem(Path::new("/"))?;
     let mut pending: VecDeque<_> = path.iter().map(ToOwned::to_owned).collect();
     let mut resolved = PathBuf::from("/");
     let mut links = 0;
@@ -801,6 +803,8 @@ fn protected_configuration_path(path: &Path) -> io::Result<PathBuf> {
                     if metadata.mode() & 0o022 != 0 {
                         return Err(io::Error::other("unproved configuration owner"));
                     }
+                    #[cfg(target_os = "linux")]
+                    require_configuration_filesystem(&next)?;
                     resolved.push(part);
                 }
             }
@@ -810,6 +814,20 @@ fn protected_configuration_path(path: &Path) -> io::Result<PathBuf> {
         return Err(io::Error::other("configuration path changed"));
     }
     Ok(resolved)
+}
+
+#[cfg(target_os = "linux")]
+fn require_configuration_filesystem(path: &Path) -> io::Result<()> {
+    let name = std::ffi::CString::new(path.as_os_str().as_encoded_bytes())?;
+    let mut stats = std::mem::MaybeUninit::<libc::statfs>::uninit();
+    if unsafe { libc::statfs(name.as_ptr(), stats.as_mut_ptr()) } != 0 {
+        return Err(io::Error::last_os_error());
+    }
+    let filesystem = unsafe { stats.assume_init() }.f_type;
+    if filesystem == libc::PROC_SUPER_MAGIC || filesystem == libc::SYSFS_MAGIC {
+        return Err(io::Error::other("kernel-backed configuration path"));
+    }
+    Ok(())
 }
 
 #[derive(Deserialize)]
@@ -932,6 +950,17 @@ mod tests {
     use super::super::Layout;
     use super::super::RootLease;
     use super::*;
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn optional_configuration_cannot_use_process_filesystem_absence() {
+        let path = Path::new("/proc/0/neo-optional-configuration.conf");
+        assert!(!path.exists());
+        let result = configuration_source_with(path, &protected_configuration_path, &mut |_| {
+            panic!("the optional source is absent");
+        });
+        assert!(matches!(result, Err(TransactionError::Io)));
+    }
     use std::os::unix::fs::PermissionsExt;
 
     pub(super) fn fixture_input(path: &Path) -> Result<ConfigurationObservation, TransactionError> {
