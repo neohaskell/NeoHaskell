@@ -40,6 +40,20 @@ impl PolicyAttempt {
             },
         }
     }
+
+    fn valid(&self) -> bool {
+        self.state_lease.is_none_or(|lease| lease.inode != 0)
+            && self.caller_uid != 0
+            && self.attempt_epoch != [0; 32]
+            && self
+                .helper
+                .path
+                .to_str()
+                .is_some_and(|path| crate::candidate::OutputPath::parse(path).is_ok())
+            && lowercase_hex(&self.helper.sha256, 64)
+            && self.helper.size != 0
+            && self.helper.inode != 0
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
@@ -157,8 +171,98 @@ enum ReceiptPhase {
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+enum UnchangedReceiptPhase {
+    Prepared {},
+    RestartMayBeQueued {
+        intent_monotonic: u64,
+    },
+    RestartObserved {
+        intent_monotonic: u64,
+        replacement: ManagerIdentity,
+    },
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+enum UnchangedEvidence {
+    AppliedUnchanged { configuration_sha256: [u8; 32] },
+}
+
+impl UnchangedEvidence {
+    fn capture(configuration: &ConfigurationObservation) -> Result<Self, PolicyResult> {
+        if !configuration.has_complete_stock_policy() {
+            return Err(PolicyResult::PublicationUnknown);
+        }
+        Ok(Self::AppliedUnchanged {
+            configuration_sha256: commitment(
+                b"NEO-POLICY-UNCHANGED-CONFIGURATION-V1\0",
+                &(&configuration.input, &configuration.attachment),
+            )?,
+        })
+    }
+
+    fn verify(&self) -> Result<(), PolicyResult> {
+        let actual = configuration_input(Path::new(SOURCE), read)
+            .map_err(|_| PolicyResult::InaccessibleInputs)?;
+        if Self::capture(&actual)? != *self {
+            return Err(PolicyResult::ChangedInputs);
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(deny_unknown_fields)]
-struct PolicyReceipt {
+struct UnchangedReceipt {
+    version: u8,
+    operation: PolicyAttempt,
+    reviewed: [u8; 32],
+    evidence: UnchangedEvidence,
+    secondary_sources_sha256: [u8; 32],
+    boot_id: String,
+    old_manager: ManagerIdentity,
+    phase: UnchangedReceiptPhase,
+}
+
+impl UnchangedReceipt {
+    fn valid(&self) -> bool {
+        self.version == 4
+            && self.operation.state_lease.is_some()
+            && self.operation.valid()
+            && valid_boot_id(&self.boot_id)
+            && self.old_manager.valid()
+            && match &self.phase {
+                UnchangedReceiptPhase::Prepared {} => true,
+                UnchangedReceiptPhase::RestartMayBeQueued { intent_monotonic } => {
+                    *intent_monotonic > self.old_manager.started_monotonic
+                }
+                UnchangedReceiptPhase::RestartObserved {
+                    intent_monotonic,
+                    replacement,
+                } => {
+                    *intent_monotonic > self.old_manager.started_monotonic
+                        && replacement.started_monotonic > *intent_monotonic
+                        && replacement.replaces(&self.old_manager)
+                }
+            }
+    }
+
+    fn verify_unchanged(&self, stage: &File) -> Result<(), PolicyResult> {
+        let mut entries = fs::read_dir(descriptor_path(stage, "."))
+            .map_err(|_| PolicyResult::PublicationUnknown)?;
+        if !matches!(entries.next(), Some(Ok(entry)) if entry.file_name() == RECEIPT)
+            || entries.next().is_some()
+        {
+            return Err(PolicyResult::PublicationUnknown);
+        }
+        self.evidence.verify()
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(deny_unknown_fields)]
+struct PublishedReceipt {
     version: u8,
     operation: PolicyAttempt,
     reviewed: [u8; 32],
@@ -173,49 +277,27 @@ struct PolicyReceipt {
     phase: ReceiptPhase,
 }
 
-impl PolicyReceipt {
-    fn decode(raw: &[u8]) -> Result<Self, PolicyResult> {
-        if raw.len() > MAX_RECEIPT_BYTES {
-            return Err(PolicyResult::PublicationUnknown);
-        }
-        let value: Self =
-            serde_json::from_slice(raw).map_err(|_| PolicyResult::PublicationUnknown)?;
-        let helper = &value.operation.helper;
-        if !matches!(
+impl PublishedReceipt {
+    fn valid(&self) -> bool {
+        matches!(
             (
-                value.version,
-                value.secondary_sources_sha256,
-                value.operation.state_lease,
+                self.version,
+                self.secondary_sources_sha256,
+                self.operation.state_lease,
             ),
             (1, None, None) | (2, Some(_), None) | (3, Some(_), Some(_))
-        ) || value
-            .operation
-            .state_lease
-            .is_some_and(|lease| lease.inode == 0)
-            || value.operation.caller_uid == 0
-            || value.operation.attempt_epoch == [0; 32]
-            || !helper
-                .path
-                .to_str()
-                .is_some_and(|path| crate::candidate::OutputPath::parse(path).is_ok())
-            || !lowercase_hex(&helper.sha256, 64)
-            || helper.size == 0
-            || helper.inode == 0
-            || !value.baseline.valid()
-            || !value.staged.valid()
-            || !value.leaf.valid()
-            || !distinct_files([&value.baseline, &value.staged, &value.leaf])
-            || !valid_boot_id(&value.boot_id)
-            || !value.old_manager.valid()
-            || matches!(
-                &value.phase,
+        ) && self.operation.valid()
+            && self.baseline.valid()
+            && self.staged.valid()
+            && self.leaf.valid()
+            && distinct_files([&self.baseline, &self.staged, &self.leaf])
+            && valid_boot_id(&self.boot_id)
+            && self.old_manager.valid()
+            && !matches!(
+                &self.phase,
                 ReceiptPhase::RestartObserved { replacement }
-                    if !replacement.replaces(&value.old_manager)
+                    if !replacement.replaces(&self.old_manager)
             )
-        {
-            return Err(PolicyResult::PublicationUnknown);
-        }
-        Ok(value)
     }
 
     fn advance(&self, phase: ReceiptPhase) -> Result<Self, PolicyResult> {
@@ -255,12 +337,12 @@ impl PolicyReceipt {
             &self.staged.sha256,
             &source,
         );
-        let attachment = include_inputs::observe(
+        let (attachment, _) = include_inputs::observe(
             path,
             &live,
             &preparation,
             &source,
-            &protected_path,
+            &protected_configuration_path,
             &mut read,
         )
         .map_err(|_| PolicyResult::PublicationUnknown)?;
@@ -270,6 +352,83 @@ impl PolicyReceipt {
             return Err(PolicyResult::PublicationUnknown);
         }
         Ok(())
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(untagged)]
+enum PolicyReceipt {
+    Published(PublishedReceipt),
+    Unchanged(UnchangedReceipt),
+}
+
+struct LiveReceipt<'a> {
+    version: u8,
+    operation: &'a PolicyAttempt,
+    reviewed: &'a [u8; 32],
+    boot_id: &'a str,
+    secondary: Option<[u8; 32]>,
+    replacement: &'a ManagerIdentity,
+}
+
+impl PolicyReceipt {
+    fn decode(raw: &[u8]) -> Result<Self, PolicyResult> {
+        if raw.len() > MAX_RECEIPT_BYTES {
+            return Err(PolicyResult::PublicationUnknown);
+        }
+        let parsed: Self =
+            serde_json::from_slice(raw).map_err(|_| PolicyResult::PublicationUnknown)?;
+        match &parsed {
+            Self::Published(receipt) if receipt.valid() => Ok(parsed),
+            Self::Unchanged(receipt) if receipt.valid() => Ok(parsed),
+            _ => Err(PolicyResult::PublicationUnknown),
+        }
+    }
+
+    fn boot_id(&self) -> &str {
+        match self {
+            Self::Published(receipt) => &receipt.boot_id,
+            Self::Unchanged(receipt) => &receipt.boot_id,
+        }
+    }
+
+    fn live(&self) -> Option<LiveReceipt<'_>> {
+        match self {
+            Self::Published(receipt) => {
+                let ReceiptPhase::RestartObserved { replacement } = &receipt.phase else {
+                    return None;
+                };
+                Some(LiveReceipt {
+                    version: receipt.version,
+                    operation: &receipt.operation,
+                    reviewed: &receipt.reviewed,
+                    boot_id: &receipt.boot_id,
+                    secondary: receipt.secondary_sources_sha256,
+                    replacement,
+                })
+            }
+            Self::Unchanged(receipt) => {
+                let UnchangedReceiptPhase::RestartObserved { replacement, .. } = &receipt.phase
+                else {
+                    return None;
+                };
+                Some(LiveReceipt {
+                    version: receipt.version,
+                    operation: &receipt.operation,
+                    reviewed: &receipt.reviewed,
+                    boot_id: &receipt.boot_id,
+                    secondary: Some(receipt.secondary_sources_sha256),
+                    replacement,
+                })
+            }
+        }
+    }
+
+    fn verify_configuration(&self, stage: &File) -> Result<(), PolicyResult> {
+        match self {
+            Self::Published(receipt) => receipt.verify_published(),
+            Self::Unchanged(receipt) => receipt.verify_unchanged(stage),
+        }
     }
 }
 
@@ -311,6 +470,32 @@ fn boot_id() -> Result<String, PolicyResult> {
     Ok(value.to_owned())
 }
 
+fn monotonic_micros() -> Result<u64, PolicyResult> {
+    let worker = fs::metadata("/proc/thread-self/ns/time");
+    let manager = fs::metadata("/proc/1/ns/time");
+    match (worker, manager) {
+        (Ok(worker), Ok(manager))
+            if (worker.dev(), worker.ino()) == (manager.dev(), manager.ino()) => {}
+        (Err(worker), Err(manager))
+            if worker.kind() == io::ErrorKind::NotFound
+                && manager.kind() == io::ErrorKind::NotFound => {}
+        _ => return Err(PolicyResult::PublicationUnknown),
+    }
+    let mut time = libc::timespec {
+        tv_sec: 0,
+        tv_nsec: 0,
+    };
+    if unsafe { libc::clock_gettime(libc::CLOCK_MONOTONIC, &mut time) } != 0 {
+        return Err(PolicyResult::PublicationUnknown);
+    }
+    let seconds = u64::try_from(time.tv_sec).map_err(|_| PolicyResult::PublicationUnknown)?;
+    let nanos = u64::try_from(time.tv_nsec).map_err(|_| PolicyResult::PublicationUnknown)?;
+    seconds
+        .checked_mul(1_000_000)
+        .and_then(|micros| micros.checked_add(nanos / 1_000))
+        .ok_or(PolicyResult::PublicationUnknown)
+}
+
 fn commitment<T: Serialize>(domain: &[u8], value: &T) -> Result<[u8; 32], PolicyResult> {
     let value = serde_json::to_vec(value).map_err(|_| PolicyResult::PublicationUnknown)?;
     let mut hash = Sha256::new();
@@ -341,7 +526,7 @@ impl<'a> ReceiptWriter<'a> {
             (Some(_), Some(_)) => 3,
             _ => return Err(PolicyResult::PublicationRefused),
         };
-        let current = PolicyReceipt {
+        let current = PolicyReceipt::Published(PublishedReceipt {
             version,
             operation,
             reviewed: *request.bytes(),
@@ -356,7 +541,37 @@ impl<'a> ReceiptWriter<'a> {
             boot_id: boot_id()?,
             old_manager: ManagerIdentity::capture(old)?,
             phase: ReceiptPhase::Prepared {},
-        };
+        });
+        Self::persist_prepared(parent, stage, current)
+    }
+
+    pub(super) fn prepare_unchanged(
+        parent: &'a File,
+        stage: &'a File,
+        operation: PolicyAttempt,
+        request: ReviewedPolicyRequest,
+        configuration: &ConfigurationObservation,
+        old: &ManagedSnapshot,
+        secondary: [u8; 32],
+    ) -> Result<Self, PolicyResult> {
+        let current = PolicyReceipt::Unchanged(UnchangedReceipt {
+            version: 4,
+            operation,
+            reviewed: *request.bytes(),
+            evidence: UnchangedEvidence::capture(configuration)?,
+            secondary_sources_sha256: secondary,
+            boot_id: boot_id()?,
+            old_manager: ManagerIdentity::capture(old)?,
+            phase: UnchangedReceiptPhase::Prepared {},
+        });
+        Self::persist_prepared(parent, stage, current)
+    }
+
+    fn persist_prepared(
+        parent: &'a File,
+        stage: &'a File,
+        current: PolicyReceipt,
+    ) -> Result<Self, PolicyResult> {
         let held = publish(parent, stage, &current, None)?;
         parent
             .sync_all()
@@ -370,23 +585,68 @@ impl<'a> ReceiptWriter<'a> {
     }
 
     pub(super) fn queue_restart(&mut self) -> Result<(), PolicyResult> {
-        self.advance(ReceiptPhase::RestartMayBeQueued {})
+        let next = match &self.current {
+            PolicyReceipt::Published(receipt) => {
+                PolicyReceipt::Published(receipt.advance(ReceiptPhase::RestartMayBeQueued {})?)
+            }
+            PolicyReceipt::Unchanged(receipt)
+                if matches!(receipt.phase, UnchangedReceiptPhase::Prepared {})
+                    && boot_id()? == receipt.boot_id =>
+            {
+                PolicyReceipt::Unchanged(UnchangedReceipt {
+                    phase: UnchangedReceiptPhase::RestartMayBeQueued {
+                        intent_monotonic: monotonic_micros()?,
+                    },
+                    ..receipt.clone()
+                })
+            }
+            _ => return Err(PolicyResult::PublicationUnknown),
+        };
+        self.advance(next)
     }
 
     pub(super) fn observe_restart(
         &mut self,
         replacement: &ManagedSnapshot,
     ) -> Result<(), PolicyResult> {
-        if boot_id()? != self.current.boot_id {
+        if boot_id()? != self.current.boot_id() {
             return Err(PolicyResult::PublicationUnknown);
         }
-        self.advance(ReceiptPhase::RestartObserved {
-            replacement: ManagerIdentity::capture(replacement)?,
-        })
+        let replacement = ManagerIdentity::capture(replacement)?;
+        let next = match &self.current {
+            PolicyReceipt::Published(receipt) => PolicyReceipt::Published(
+                receipt.advance(ReceiptPhase::RestartObserved { replacement })?,
+            ),
+            PolicyReceipt::Unchanged(receipt) => {
+                let UnchangedReceiptPhase::RestartMayBeQueued { intent_monotonic } = receipt.phase
+                else {
+                    return Err(PolicyResult::PublicationUnknown);
+                };
+                PolicyReceipt::Unchanged(UnchangedReceipt {
+                    phase: UnchangedReceiptPhase::RestartObserved {
+                        intent_monotonic,
+                        replacement,
+                    },
+                    ..receipt.clone()
+                })
+            }
+        };
+        self.advance(next)
     }
 
-    fn advance(&mut self, phase: ReceiptPhase) -> Result<(), PolicyResult> {
-        let next = self.current.advance(phase)?;
+    pub(super) fn verify_unchanged(&self) -> Result<(), PolicyResult> {
+        let PolicyReceipt::Unchanged(receipt) = &self.current else {
+            return Err(PolicyResult::PublicationUnknown);
+        };
+        check_stage(self.parent, self.stage)?;
+        require_absent(&descriptor_path(self.stage, RECEIPT_TEMP))?;
+        if boot_id()? != receipt.boot_id || read_current(self.stage, &self.held)? != self.current {
+            return Err(PolicyResult::PublicationUnknown);
+        }
+        receipt.verify_unchanged(self.stage)
+    }
+
+    fn advance(&mut self, next: PolicyReceipt) -> Result<(), PolicyResult> {
         let held = publish(
             self.parent,
             self.stage,
@@ -439,7 +699,7 @@ fn read_current(stage: &File, file: &File) -> Result<PolicyReceipt, PolicyResult
     PolicyReceipt::decode(&raw)
 }
 
-fn require_absent(path: &Path) -> Result<(), PolicyResult> {
+pub(super) fn require_absent(path: &Path) -> Result<(), PolicyResult> {
     match fs::symlink_metadata(path) {
         Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
         _ => Err(PolicyResult::PublicationUnknown),
@@ -472,19 +732,16 @@ pub(super) fn verify_completed(
     operation: &PolicyAttempt,
     request: ReviewedPolicyRequest,
 ) -> Result<(), PolicyResult> {
-    let version = if operation.state_lease.is_some() {
-        3
-    } else {
-        1
-    };
     verify_live_receipt(
         inputs,
         parent,
         stage,
         |receipt| {
-            receipt.version == version
-                && &receipt.operation == operation
-                && &receipt.reviewed == request.bytes()
+            matches!(
+                (receipt.version, operation.state_lease),
+                (1, None) | (3 | 4, Some(_))
+            ) && receipt.operation == operation
+                && receipt.reviewed == request.bytes()
         },
         || Ok(()),
     )
@@ -503,7 +760,7 @@ pub(super) fn verify_existing(
         parent,
         stage,
         |receipt| {
-            receipt.version == 3
+            matches!(receipt.version, 3 | 4)
                 && receipt.operation.caller_uid == caller_uid
                 && receipt.operation.state_lease == Some(lease)
         },
@@ -522,30 +779,28 @@ fn verify_live_receipt(
     inputs: &PolicyInputs,
     parent: &File,
     stage: &File,
-    matches_receipt: impl FnOnce(&PolicyReceipt) -> bool,
+    matches_receipt: impl FnOnce(&LiveReceipt<'_>) -> bool,
     verify_current: impl Fn() -> Result<(), PolicyResult> + Sync,
 ) -> Result<(), PolicyResult> {
     check_stage(parent, stage)?;
     require_absent(&descriptor_path(stage, RECEIPT_TEMP))?;
     let file = open(&descriptor_path(stage, RECEIPT))?;
     let receipt = read_current(stage, &file)?;
-    let ReceiptPhase::RestartObserved { replacement } = &receipt.phase else {
-        return Err(PolicyResult::PublicationUnknown);
-    };
-    if !matches_receipt(&receipt) {
+    let live = receipt.live().ok_or(PolicyResult::PublicationUnknown)?;
+    if !matches_receipt(&live) {
         return Err(PolicyResult::PublicationUnknown);
     }
     let verify = || {
         check_stage(parent, stage)?;
         require_absent(&descriptor_path(stage, RECEIPT_TEMP))?;
-        if boot_id()? != receipt.boot_id || read_current(stage, &file)? != receipt {
+        if boot_id()? != live.boot_id || read_current(stage, &file)? != receipt {
             return Err(PolicyResult::PublicationUnknown);
         }
-        receipt.verify_published()?;
+        receipt.verify_configuration(stage)?;
         verify_current()
     };
-    let observed = inputs.inspect_managed_view(receipt.secondary_sources_sha256, &verify)?;
-    if ManagerIdentity::capture(&observed)? != *replacement {
+    let observed = inputs.inspect_managed_view(live.secondary, &verify)?;
+    if ManagerIdentity::capture(&observed)? != *live.replacement {
         return Err(PolicyResult::PublicationUnknown);
     }
     Ok(())
@@ -638,8 +893,8 @@ mod tests {
         }
     }
 
-    fn receipt() -> PolicyReceipt {
-        PolicyReceipt {
+    fn receipt() -> PublishedReceipt {
+        PublishedReceipt {
             version: 1,
             operation: PolicyAttempt {
                 caller_uid: 1001,
@@ -672,11 +927,18 @@ mod tests {
         }
     }
 
+    fn decode_published(raw: &[u8]) -> Result<PublishedReceipt, PolicyResult> {
+        match PolicyReceipt::decode(raw)? {
+            PolicyReceipt::Published(receipt) => Ok(receipt),
+            PolicyReceipt::Unchanged(_) => Err(PolicyResult::PublicationUnknown),
+        }
+    }
+
     #[test]
     fn receipt_refuses_unsupported_or_incoherent_data() {
         let prepared = receipt();
         let raw = serde_json::to_vec(&prepared).unwrap();
-        assert_eq!(PolicyReceipt::decode(&raw).unwrap(), prepared);
+        assert_eq!(decode_published(&raw).unwrap(), prepared);
         assert!(PolicyReceipt::decode(&vec![b' '; MAX_RECEIPT_BYTES + 1]).is_err());
 
         for path in [
@@ -697,7 +959,7 @@ mod tests {
         stock.version = 2;
         stock.secondary_sources_sha256 = Some([4; 32]);
         assert_eq!(
-            PolicyReceipt::decode(&serde_json::to_vec(&stock).unwrap()).unwrap(),
+            decode_published(&serde_json::to_vec(&stock).unwrap()).unwrap(),
             stock
         );
         stock.version = 3;
@@ -707,7 +969,7 @@ mod tests {
             inode: 23,
         });
         assert_eq!(
-            PolicyReceipt::decode(&serde_json::to_vec(&stock).unwrap()).unwrap(),
+            decode_published(&serde_json::to_vec(&stock).unwrap()).unwrap(),
             stock
         );
         stock.operation.state_lease.as_mut().unwrap().inode = 0;
@@ -743,7 +1005,7 @@ mod tests {
         );
         let terminal = queued.advance(observed).unwrap();
         assert_eq!(
-            PolicyReceipt::decode(&serde_json::to_vec(&terminal).unwrap()).unwrap(),
+            decode_published(&serde_json::to_vec(&terminal).unwrap()).unwrap(),
             terminal
         );
         assert!(
@@ -751,5 +1013,73 @@ mod tests {
                 .advance(ReceiptPhase::RestartMayBeQueued {})
                 .is_err()
         );
+    }
+
+    #[test]
+    fn unchanged_receipt_requires_its_own_evidence_lease_and_restart_fence() {
+        let previous = receipt();
+        let mut replacement = previous.old_manager.clone();
+        replacement.pid += 1;
+        replacement.started_monotonic += 2;
+        replacement.invocation_id = "b".repeat(32);
+        let prepared = UnchangedReceipt {
+            version: 4,
+            operation: PolicyAttempt {
+                state_lease: Some(PolicyStateLease {
+                    device: 8,
+                    inode: 23,
+                }),
+                ..previous.operation
+            },
+            reviewed: previous.reviewed,
+            evidence: UnchangedEvidence::AppliedUnchanged {
+                configuration_sha256: [7; 32],
+            },
+            secondary_sources_sha256: [4; 32],
+            boot_id: previous.boot_id,
+            old_manager: previous.old_manager,
+            phase: UnchangedReceiptPhase::Prepared {},
+        };
+        let raw = serde_json::to_vec(&prepared).unwrap();
+        assert_eq!(
+            PolicyReceipt::decode(&raw).unwrap(),
+            PolicyReceipt::Unchanged(prepared.clone())
+        );
+        assert!(PolicyReceipt::decode(&raw).unwrap().live().is_none());
+
+        let mut invalid = serde_json::to_value(&prepared).unwrap();
+        invalid["baseline"] = serde_json::to_value(previous.baseline).unwrap();
+        assert!(PolicyReceipt::decode(&serde_json::to_vec(&invalid).unwrap()).is_err());
+        let mut invalid = prepared.clone();
+        invalid.operation.state_lease = None;
+        assert!(PolicyReceipt::decode(&serde_json::to_vec(&invalid).unwrap()).is_err());
+
+        let intent_monotonic = prepared.old_manager.started_monotonic + 1;
+        let queued = UnchangedReceipt {
+            phase: UnchangedReceiptPhase::RestartMayBeQueued { intent_monotonic },
+            ..prepared.clone()
+        };
+        assert!(
+            PolicyReceipt::decode(&serde_json::to_vec(&queued).unwrap())
+                .unwrap()
+                .live()
+                .is_none()
+        );
+        let completed = UnchangedReceipt {
+            phase: UnchangedReceiptPhase::RestartObserved {
+                intent_monotonic,
+                replacement: replacement.clone(),
+            },
+            ..prepared
+        };
+        let observed = PolicyReceipt::decode(&serde_json::to_vec(&completed).unwrap()).unwrap();
+        assert_eq!(observed.live().unwrap().replacement, &replacement);
+        let mut invalid = completed;
+        replacement.started_monotonic = intent_monotonic;
+        invalid.phase = UnchangedReceiptPhase::RestartObserved {
+            intent_monotonic,
+            replacement,
+        };
+        assert!(PolicyReceipt::decode(&serde_json::to_vec(&invalid).unwrap()).is_err());
     }
 }

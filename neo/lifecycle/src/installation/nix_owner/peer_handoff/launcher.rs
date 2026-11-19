@@ -1,7 +1,7 @@
 #[cfg(test)]
 use super::super::policy_observation::PolicyInputs;
 use super::super::policy_observation::{
-    DiscoveredInputs, PolicyInspectionResult, PolicyResult, ReviewedPolicyRequest,
+    DiscoveredInputs, PolicyInspectionResult, PolicyOperation, PolicyResult, ReviewedPolicyRequest,
 };
 use super::{HandoffError, PeerExpectation, PeerIdentity, linux};
 use crate::installation::dashboard::terminal::ParkedTerminal;
@@ -73,8 +73,12 @@ impl ExactExecutable {
     ) -> Result<Option<VerifiedExistingPolicy>, HandoffError> {
         self.recheck()?;
         Ok(
-            native::verify_existing(self, caller, lease, common, terminal, cancelled)?
-                .then_some(VerifiedExistingPolicy { lease, common }),
+            native::verify_existing(self, caller, lease, common, terminal, cancelled)?.then_some(
+                VerifiedExistingPolicy {
+                    lease,
+                    inputs: VerifiedPolicyInputs::Common(common),
+                },
+            ),
         )
     }
 
@@ -92,9 +96,10 @@ impl ExactExecutable {
             },
         )?;
         match reply.inspection {
-            Some(PolicyInspectionResult::VerifiedApplied) => {
-                Ok(Some(VerifiedPolicyInspection(pending.clone())))
-            }
+            Some(PolicyInspectionResult::VerifiedApplied) => Ok(Some(VerifiedPolicyInspection {
+                pending: pending.clone(),
+                replacement: None,
+            })),
             Some(PolicyInspectionResult::Pending) => Ok(None),
             None => Err(HandoffError::Frame),
         }
@@ -157,7 +162,7 @@ impl ExactExecutable {
         rendezvous: &Rendezvous,
         confirmed: &DiscoveredPolicy,
     ) -> Result<crate::installation::PendingNixPolicy, HandoffError> {
-        self.pending(rendezvous, confirmed.comparison(), &confirmed.lifetime)
+        self.pending(rendezvous, confirmed.inputs, &confirmed.lifetime)
     }
 
     pub(in crate::installation) fn pending_stock_policy(
@@ -165,17 +170,13 @@ impl ExactExecutable {
         rendezvous: &Rendezvous,
         discovery: StockDiscovery,
     ) -> Result<crate::installation::PendingNixPolicy, HandoffError> {
-        self.pending(
-            rendezvous,
-            discovery.inputs.comparison(),
-            &discovery.lifetime,
-        )
+        self.pending(rendezvous, discovery.inputs, &discovery.lifetime)
     }
 
     fn pending(
         &self,
         rendezvous: &Rendezvous,
-        reviewed: ReviewedPolicyRequest,
+        discovered: DiscoveredInputs,
         discovery_owner: &std::sync::Arc<()>,
     ) -> Result<crate::installation::PendingNixPolicy, HandoffError> {
         if !std::sync::Arc::ptr_eq(&self.lifetime, discovery_owner) {
@@ -183,9 +184,10 @@ impl ExactExecutable {
         }
         Ok(crate::installation::PendingNixPolicy {
             attempt: rendezvous.epoch,
-            reviewed: *reviewed.bytes(),
+            reviewed: *discovered.comparison().bytes(),
             helper_path: self.path.to_str().ok_or(HandoffError::Executable)?.into(),
             helper: self.release.clone(),
+            operation: discovered.operation(),
             state_lease: None,
         })
     }
@@ -297,15 +299,24 @@ impl ExactExecutable {
             return Err(HandoffError::Executable);
         }
         self.recheck()?;
-        if native::publish(
+        let reply = native::publish(
             self, rendezvous, caller, pending, terminal, cancelled, persist,
-        )?
-        .policy
-            != Some(PolicyResult::ManagedRestartObserved)
-        {
+        )?;
+        if reply.policy != Some(PolicyResult::ManagedRestartObserved) {
             return Err(HandoffError::Frame);
         }
-        Ok(VerifiedPolicyInspection(pending.clone()))
+        let replacement = match (pending.operation, reply.replacement_stamp) {
+            (PolicyOperation::ConventionalAppend, None) => None,
+            (PolicyOperation::ApplyUnchanged, Some(stamp)) => Some(VerifiedExistingPolicy {
+                lease: pending.state_lease.ok_or(HandoffError::Frame)?,
+                inputs: VerifiedPolicyInputs::Replacement(stamp),
+            }),
+            _ => return Err(HandoffError::Frame),
+        };
+        Ok(VerifiedPolicyInspection {
+            pending: pending.clone(),
+            replacement,
+        })
     }
 
     pub(in crate::installation) fn inspect_stock_policy(
@@ -326,9 +337,10 @@ impl ExactExecutable {
         self.recheck()?;
         let reply = native::inspect(self, rendezvous, caller, intent, terminal, cancelled)?;
         match reply.inspection {
-            Some(PolicyInspectionResult::VerifiedApplied) => {
-                Ok(Some(VerifiedPolicyInspection(pending.clone())))
-            }
+            Some(PolicyInspectionResult::VerifiedApplied) => Ok(Some(VerifiedPolicyInspection {
+                pending: pending.clone(),
+                replacement: None,
+            })),
             Some(PolicyInspectionResult::Pending) => Ok(None),
             None => Err(HandoffError::Frame),
         }
@@ -572,6 +584,10 @@ impl StockDiscovery {
     pub(in crate::installation) fn common_inputs(&self) -> &[u8; 32] {
         self.inputs.common_inputs()
     }
+
+    pub(in crate::installation) fn operation(&self) -> PolicyOperation {
+        self.inputs.operation()
+    }
 }
 
 pub(in crate::installation) struct QuiescentReply {
@@ -581,22 +597,39 @@ pub(in crate::installation) struct QuiescentReply {
     discovery: Option<Result<DiscoveredInputs, PolicyResult>>,
     inspection: Option<PolicyInspectionResult>,
     existing: Option<bool>,
+    replacement_stamp: Option<[u8; 32]>,
 }
 
-pub(in crate::installation) struct VerifiedPolicyInspection(crate::installation::PendingNixPolicy);
+pub(in crate::installation) struct VerifiedPolicyInspection {
+    pending: crate::installation::PendingNixPolicy,
+    replacement: Option<VerifiedExistingPolicy>,
+}
+
+enum VerifiedPolicyInputs {
+    Common([u8; 32]),
+    Replacement([u8; 32]),
+}
 
 pub(in crate::installation) struct VerifiedExistingPolicy {
     lease: crate::installation::PolicyStateLease,
-    common: [u8; 32],
+    inputs: VerifiedPolicyInputs,
 }
 
 impl VerifiedExistingPolicy {
     pub(in crate::installation) fn matches(
         &self,
         lease: crate::installation::PolicyStateLease,
-        common: [u8; 32],
-    ) -> bool {
-        self.lease == lease && self.common == common
+        observed: &super::super::ObservedNixBase,
+    ) -> Result<bool, crate::installation::TransactionError> {
+        if self.lease != lease {
+            return Ok(false);
+        }
+        match self.inputs {
+            VerifiedPolicyInputs::Common(stamp) => Ok(stamp == observed.common_policy_inputs()?),
+            VerifiedPolicyInputs::Replacement(stamp) => {
+                Ok(stamp == observed.replacement_policy_stamp()?)
+            }
+        }
     }
 }
 
@@ -605,7 +638,11 @@ impl VerifiedPolicyInspection {
         &self,
         pending: &crate::installation::PendingNixPolicy,
     ) -> bool {
-        &self.0 == pending
+        &self.pending == pending
+    }
+
+    pub(in crate::installation) fn take_replacement(&mut self) -> Option<VerifiedExistingPolicy> {
+        self.replacement.take()
     }
 }
 
@@ -893,6 +930,7 @@ impl PeerEndpoint {
                 discovery,
                 inspection,
                 existing: None,
+                replacement_stamp: None,
             },
         )
     }
@@ -944,6 +982,7 @@ impl PeerEndpoint {
                 discovery: None,
                 inspection: None,
                 existing: None,
+                replacement_stamp: None,
             },
         )
     }

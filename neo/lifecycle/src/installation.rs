@@ -82,6 +82,11 @@ struct PendingNixPolicy {
     reviewed: [u8; 32],
     helper_path: String,
     helper: crate::candidate::FileIdentity,
+    #[serde(
+        default,
+        skip_serializing_if = "nix_owner::policy_observation::PolicyOperation::is_append"
+    )]
+    operation: nix_owner::policy_observation::PolicyOperation,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     state_lease: Option<PolicyStateLease>,
 }

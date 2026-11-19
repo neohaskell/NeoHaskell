@@ -117,6 +117,16 @@ pub(super) struct NixPolicyPlan {
     baseline: super::nix_owner::ObservedNixBase,
 }
 
+impl NixPolicyPlan {
+    pub(super) fn policy_operation(&self) -> super::nix_owner::policy_observation::PolicyOperation {
+        #[cfg(target_os = "linux")]
+        if self.baseline.can_apply_existing_policy() {
+            return super::nix_owner::policy_observation::PolicyOperation::ApplyUnchanged;
+        }
+        super::nix_owner::policy_observation::PolicyOperation::ConventionalAppend
+    }
+}
+
 #[cfg(target_os = "linux")]
 impl NixPolicyPlan {
     pub(super) fn with_discovery(
@@ -324,7 +334,9 @@ impl InstallationOwner {
         }
         #[cfg(target_os = "linux")]
         {
-            if observed.has_existing_policy() {
+            if observed.has_existing_policy()
+                && (evidence.installed.is_some() || !observed.can_apply_existing_policy())
+            {
                 let plan = match &evidence.installed {
                     Some(output) => ExistingNixPolicyPlan::Installed(output.clone()),
                     None => ExistingNixPolicyPlan::Downloaded(
@@ -333,7 +345,6 @@ impl InstallationOwner {
                 };
                 return Ok(InstallPrerequisite::ExistingPolicy(plan));
             }
-            observed.require_verified_append()?;
             let plan = self.plan_nix_policy(evidence, source).await?;
             if &plan.baseline != observed {
                 return Err(TransactionError::Verification(
@@ -423,7 +434,7 @@ impl InstallationOwner {
                 "existing policy completion type",
             ));
         };
-        if !proof.matches(lease, common) {
+        if !proof.matches(lease, observed)? {
             return Err(self.effects.review_changed());
         }
         self.effects
@@ -439,7 +450,7 @@ impl InstallationOwner {
     ) -> Result<(), TransactionError> {
         let actual = self.observe_install_nix_base().await?;
         let lease = self.effects.policy_state_lease(&self.layout)?;
-        if &actual != expected || !proof.matches(lease, actual.common_policy_inputs()?) {
+        if &actual != expected || !proof.matches(lease, &actual)? {
             return Err(self.effects.review_changed());
         }
         Ok(())
@@ -452,7 +463,13 @@ impl InstallationOwner {
         binding: super::coordinator::PolicyReviewBinding,
         evidence: &ExecutorEvidence,
         source: &release::ReleaseSource,
-    ) -> Result<(), TransactionError> {
+    ) -> Result<
+        Option<(
+            super::nix_owner::ObservedNixBase,
+            super::nix_owner::peer_handoff::launcher::VerifiedExistingPolicy,
+        )>,
+        TransactionError,
+    > {
         use super::nix_owner::peer_handoff::launcher::VerifiedCaller;
 
         self.effects.check_policy_recheck(&binding)?;
@@ -474,6 +491,7 @@ impl InstallationOwner {
         )
         .map_err(|_| self.effects.review_changed())?;
         let common_inputs = plan.baseline.common_policy_inputs()?;
+        let operation = plan.policy_operation();
         let reviewed = RecheckedNixPolicyPlan { plan, binding };
         self.admit_nix_policy(&reviewed)?;
         let (prepared, binding) = self.prepare_nix_policy_helper(reviewed).await?;
@@ -485,6 +503,7 @@ impl InstallationOwner {
                     rendezvous: target.rendezvous,
                     caller,
                     common_inputs,
+                    operation,
                 })
                 .await
         }
@@ -516,7 +535,7 @@ impl InstallationOwner {
         let expected = intent.record_bytes().to_vec();
         self.effects
             .recovery_pending(super::coordinator::RecoveryPending::Unknown);
-        let super::FilesystemResult::StockPolicyPublished(verified) = self
+        let super::FilesystemResult::StockPolicyPublished(mut verified) = self
             .effects
             .filesystem(super::FilesystemJob::PublishStockPolicy {
                 executable,
@@ -534,9 +553,18 @@ impl InstallationOwner {
             .completed(crate::diagnostics::CompletedStep::NixPolicyApplication);
         self.effects
             .applied(crate::diagnostics::AppliedChange::NixPolicyApplied);
+        let replacement = verified.take_replacement();
         self.settle_policy_intent(verified, expected).await?;
         self.release_prepared_nix_policy_helper(prepared).await?;
-        Ok(())
+        let Some(proof) = replacement else {
+            return Ok(None);
+        };
+        let observed = self.observe_install_nix_base().await?;
+        let lease = self.effects.policy_state_lease(&self.layout)?;
+        if !proof.matches(lease, &observed)? {
+            return Err(self.effects.review_changed());
+        }
+        Ok(Some((observed, proof)))
     }
 
     #[cfg(target_os = "linux")]
@@ -736,6 +764,9 @@ impl InstallationOwner {
     ) -> Result<NixPolicyPlan, TransactionError> {
         let helper = self.plan_nix_policy_helper(evidence, source).await?;
         let baseline = self.observe_install_nix_base().await?;
+        #[cfg(target_os = "linux")]
+        baseline.stock_policy_operation()?;
+        #[cfg(not(target_os = "linux"))]
         baseline.require_verified_append()?;
         Ok(NixPolicyPlan {
             #[cfg(test)]
@@ -1229,6 +1260,8 @@ impl InstallationOwner {
         self.recheck_command_path(commands).await?;
         #[cfg(target_os = "linux")]
         let mut existing_policy = None;
+        #[cfg(target_os = "linux")]
+        let mut replacement_nix = None;
         match review {
             InstallReview::Ordinary(identity) => self.effects.admit_reviewed(identity)?,
             #[cfg(target_os = "linux")]
@@ -1248,8 +1281,13 @@ impl InstallationOwner {
             }
             #[cfg(target_os = "linux")]
             InstallReview::StockConventional { plan, binding } => {
-                self.apply_reviewed_stock_policy(plan, binding, &executor_evidence, &source)
-                    .await?;
+                if let Some((observed, proof)) = self
+                    .apply_reviewed_stock_policy(plan, binding, &executor_evidence, &source)
+                    .await?
+                {
+                    replacement_nix = Some(observed);
+                    existing_policy = Some(proof);
+                }
                 self.effects
                     .completed(crate::diagnostics::CompletedStep::Prerequisites);
             }
@@ -1266,6 +1304,8 @@ impl InstallationOwner {
                 ));
             }
         }
+        #[cfg(target_os = "linux")]
+        let observed_nix = replacement_nix.as_ref().unwrap_or(&observed_nix);
         self.effects.observe(Activity::Recovering);
         self.apply_recovery(recovery).await?;
         self.effects
@@ -1274,7 +1314,7 @@ impl InstallationOwner {
             .await?;
         #[cfg(target_os = "linux")]
         if let Some(proof) = &existing_policy {
-            self.recheck_existing_policy(proof, &observed_nix).await?;
+            self.recheck_existing_policy(proof, observed_nix).await?;
         }
         let candidate = self
             .publish_prepared_snapshot(&selected, prepared, identity.target)
@@ -1284,6 +1324,10 @@ impl InstallationOwner {
             .map_err(|_| TransactionError::Verification("candidate system"))?
             .output("pair")
             .ok_or(TransactionError::Verification("candidate pair"))?;
+        #[cfg(target_os = "linux")]
+        if let Some(proof) = &existing_policy {
+            self.recheck_existing_policy(proof, observed_nix).await?;
+        }
         self.effects.observe(Activity::PreparingPair);
         self.effects.observe_row(3, Row::Working);
         self.effects.observe_row(4, Row::Working);
@@ -1302,7 +1346,7 @@ impl InstallationOwner {
         }
         #[cfg(target_os = "linux")]
         if let Some(proof) = &existing_policy {
-            self.recheck_existing_policy(proof, &observed_nix).await?;
+            self.recheck_existing_policy(proof, observed_nix).await?;
         }
         self.observe_command_path().await?;
         let _home_lease = self.install_shell(&shell_setup).await?;
@@ -1337,7 +1381,7 @@ impl InstallationOwner {
             let after = self.next_receipt(before.as_ref(), ready);
             #[cfg(target_os = "linux")]
             if let Some(proof) = &existing_policy {
-                self.recheck_existing_policy(proof, &observed_nix).await?;
+                self.recheck_existing_policy(proof, observed_nix).await?;
             }
             self.effects.observe(Activity::Activating);
             self.switch_pair(before.clone(), after, operation).await?;

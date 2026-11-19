@@ -1,7 +1,7 @@
 use super::{InstallationOwner, TransactionError, process};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 use std::fs::{self, File, OpenOptions};
 use std::io;
 use std::num::NonZeroU128;
@@ -86,10 +86,24 @@ pub(super) struct ObservedNixBase {
 impl ObservedNixBase {
     #[cfg(target_os = "linux")]
     pub(super) fn has_existing_policy(&self) -> bool {
-        matches!(
-            self.configuration.attachment,
-            include_inputs::AttachmentInputs::VerifiedExisting(_)
-        )
+        self.configuration.has_complete_stock_policy()
+    }
+
+    #[cfg(target_os = "linux")]
+    pub(super) fn can_apply_existing_policy(&self) -> bool {
+        self.has_existing_policy() && self.configuration.policy_stage_absent
+    }
+
+    #[cfg(target_os = "linux")]
+    pub(super) fn stock_policy_operation(
+        &self,
+    ) -> Result<policy_observation::PolicyOperation, TransactionError> {
+        if self.can_apply_existing_policy() {
+            Ok(policy_observation::PolicyOperation::ApplyUnchanged)
+        } else {
+            self.require_verified_append()?;
+            Ok(policy_observation::PolicyOperation::ConventionalAppend)
+        }
     }
 
     pub(super) fn require_verified_append(&self) -> Result<(), TransactionError> {
@@ -99,7 +113,8 @@ impl ObservedNixBase {
         ) && matches!(
             self.configuration.attachment,
             include_inputs::AttachmentInputs::VerifiedAppend(_)
-        ) {
+        ) && !self.configuration.has_complete_stock_policy()
+        {
             Ok(())
         } else {
             Err(TransactionError::NixBlocked(
@@ -127,6 +142,14 @@ pub(super) struct ConfigurationObservation {
     input: ConfigurationFile,
     preparation: NixIncludePreparation,
     attachment: include_inputs::AttachmentInputs,
+    complete_stock_policy: bool,
+    policy_stage_absent: bool,
+}
+
+impl ConfigurationObservation {
+    pub(super) fn has_complete_stock_policy(&self) -> bool {
+        self.complete_stock_policy
+    }
 }
 
 #[derive(PartialEq, Eq, Serialize)]
@@ -148,6 +171,7 @@ enum ConfigurationFile {
 
 const POLICY_LEAF: &str = "neohaskell-cache-policy.conf";
 const POLICY_REFERENCE: &str = "include neohaskell-cache-policy.conf";
+const POLICY_STAGE: &str = ".neo-policy-publication";
 
 #[derive(PartialEq, Eq)]
 pub(super) enum NixIncludePreparation {
@@ -347,7 +371,7 @@ pub(super) fn configuration_input(
     path: &Path,
     read: impl FnMut(&mut File) -> Result<Vec<u8>, TransactionError>,
 ) -> Result<ConfigurationObservation, TransactionError> {
-    configuration_input_with(path, protected_path, read)
+    configuration_input_with(path, protected_configuration_path, read)
 }
 
 fn configuration_input_with(
@@ -362,12 +386,18 @@ fn configuration_input_with(
         }
         ConfigurationFile::Missing { .. } => NixIncludePreparation::Unresolved,
     };
-    let attachment =
+    let (attachment, complete_stock_policy) =
         include_inputs::observe(path, &input, &preparation, &bytes, &protect, &mut read)?;
+    let policy_stage_absent = matches!(
+        fs::symlink_metadata(path.with_file_name(POLICY_STAGE)),
+        Err(error) if error.kind() == io::ErrorKind::NotFound
+    );
     Ok(ConfigurationObservation {
         input,
         preparation,
         attachment,
+        complete_stock_policy,
+        policy_stage_absent,
     })
 }
 
@@ -732,6 +762,54 @@ pub(super) fn protected_path(path: &Path) -> io::Result<PathBuf> {
         }
     }
     Ok(canonical)
+}
+
+fn protected_configuration_path(path: &Path) -> io::Result<PathBuf> {
+    if !path.is_absolute() {
+        return Err(io::Error::other("unproved configuration path"));
+    }
+    let root = fs::symlink_metadata("/")?;
+    if root.uid() != 0 || root.mode() & 0o022 != 0 {
+        return Err(io::Error::other("unproved configuration owner"));
+    }
+    let mut pending: VecDeque<_> = path.iter().map(ToOwned::to_owned).collect();
+    let mut resolved = PathBuf::from("/");
+    let mut links = 0;
+    while let Some(part) = pending.pop_front() {
+        match part.as_encoded_bytes() {
+            b"/" => resolved = PathBuf::from("/"),
+            b"." => {}
+            b".." => {
+                resolved.pop();
+            }
+            _ => {
+                let next = resolved.join(&part);
+                let metadata = fs::symlink_metadata(&next)?;
+                if metadata.uid() != 0 {
+                    return Err(io::Error::other("unproved configuration owner"));
+                }
+                if metadata.file_type().is_symlink() {
+                    links += 1;
+                    if links > 40 {
+                        return Err(io::Error::other("unproved configuration path"));
+                    }
+                    let target = fs::read_link(next)?;
+                    for part in target.iter().rev() {
+                        pending.push_front(part.to_owned());
+                    }
+                } else {
+                    if metadata.mode() & 0o022 != 0 {
+                        return Err(io::Error::other("unproved configuration owner"));
+                    }
+                    resolved.push(part);
+                }
+            }
+        }
+    }
+    if path.canonicalize()? != resolved {
+        return Err(io::Error::other("configuration path changed"));
+    }
+    Ok(resolved)
 }
 
 #[derive(Deserialize)]

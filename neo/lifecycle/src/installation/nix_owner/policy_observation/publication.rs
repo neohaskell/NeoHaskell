@@ -200,18 +200,34 @@ fn anchored(file: &File, path: &Path) -> Result<(), PolicyResult> {
     Ok(())
 }
 
+fn locked_parent(mode: libc::c_int) -> Result<File, PolicyResult> {
+    let path = Path::new("/etc/nix");
+    let parent = directory(path)?;
+    if unsafe { libc::flock(parent.as_raw_fd(), mode | libc::LOCK_NB) } != 0 {
+        return Err(PolicyResult::PublicationRefused);
+    }
+    anchored(&parent, path)?;
+    Ok(parent)
+}
+
 impl PolicyInputs {
+    pub(super) fn unchanged_stage_absent(&self) -> Result<(), PolicyResult> {
+        if !self.managed {
+            return Err(PolicyResult::UnprovedService);
+        }
+        let parent = locked_parent(libc::LOCK_SH).map_err(|_| PolicyResult::InaccessibleInputs)?;
+        receipt::require_absent(&descriptor_path(&parent, POLICY_STAGE))
+            .map_err(|_| PolicyResult::InaccessibleInputs)?;
+        anchored(&parent, Path::new("/etc/nix")).map_err(|_| PolicyResult::InaccessibleInputs)
+    }
+
     pub(super) fn verify_existing_receipt(
         &self,
         caller_uid: u32,
         lease: crate::installation::PolicyStateLease,
         common: [u8; 32],
     ) -> Result<(), PolicyResult> {
-        let parent = directory(Path::new("/etc/nix"))?;
-        if unsafe { libc::flock(parent.as_raw_fd(), libc::LOCK_SH | libc::LOCK_NB) } != 0 {
-            return Err(PolicyResult::PublicationRefused);
-        }
-        anchored(&parent, Path::new("/etc/nix"))?;
+        let parent = locked_parent(libc::LOCK_SH)?;
         let stage = directory(Path::new(STAGE))?;
         receipt::verify_existing(self, &parent, &stage, caller_uid, lease, common)
     }
@@ -229,11 +245,7 @@ impl PolicyInputs {
             {
                 return Err(PolicyResult::PublicationRefused);
             }
-            let parent = directory(Path::new("/etc/nix"))?;
-            if unsafe { libc::flock(parent.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
-                return Err(PolicyResult::PublicationRefused);
-            }
-            anchored(&parent, Path::new("/etc/nix"))?;
+            let parent = locked_parent(libc::LOCK_EX)?;
             let stage = directory(Path::new(STAGE))?;
             receipt::verify_completed(self, &parent, &stage, operation, request)
         };
@@ -289,6 +301,78 @@ impl PolicyInputs {
         )
     }
 
+    pub(super) fn apply_stock_unchanged(
+        &self,
+        request: ReviewedPolicyRequest,
+        attempt: PolicyAttempt,
+        require_commit: impl FnOnce() -> Result<(), PolicyResult>,
+    ) -> Result<[u8; 32], PolicyResult> {
+        if !self.managed
+            || unsafe { libc::geteuid() } != 0
+            || self.source != Path::new(SOURCE)
+            || self.service != Path::new(SERVICE)
+        {
+            return Err(PolicyResult::PublicationRefused);
+        }
+        target_identity().map_err(|_| PolicyResult::PublicationRefused)?;
+        let parent = locked_parent(libc::LOCK_EX)?;
+        let stage_path = descriptor_path(&parent, POLICY_STAGE);
+        receipt::require_absent(&stage_path).map_err(|_| PolicyResult::PublicationRefused)?;
+        let (actual, configuration) = self.capture_unchanged()?;
+        if actual != request {
+            return Err(PolicyResult::ChangedInputs);
+        }
+        let old = self
+            .managed_snapshot()?
+            .ok_or(PolicyResult::UnprovedService)?;
+        let secondary = self.secondary_commitment()?;
+        let verify_before_restart = || {
+            anchored(&parent, Path::new("/etc/nix"))?;
+            if self.capture_unchanged()?.0 != request
+                || self.managed_snapshot()?.as_ref() != Some(&old)
+                || self.secondary_commitment()? != secondary
+            {
+                return Err(PolicyResult::ChangedInputs);
+            }
+            Ok(())
+        };
+        require_commit()?;
+        verify_before_restart()?;
+        receipt::require_absent(&stage_path)?;
+        fs::DirBuilder::new()
+            .mode(0o700)
+            .create(&stage_path)
+            .map_err(|_| PolicyResult::PublicationRefused)?;
+        let stage = directory(Path::new(STAGE))?;
+        let mut writer = receipt::ReceiptWriter::prepare_unchanged(
+            &parent,
+            &stage,
+            attempt,
+            request,
+            &configuration,
+            &old,
+            secondary,
+        )?;
+        verify_before_restart()?;
+        writer.verify_unchanged()?;
+        writer.queue_restart()?;
+        let replacement = (|| {
+            verify_before_restart()?;
+            writer.verify_unchanged()?;
+            self.restart_managed(&old, Some(secondary), &|| writer.verify_unchanged())
+        })()
+        .map_err(|_| PolicyResult::PublicationUnknown)?;
+        writer.observe_restart(&replacement)?;
+        writer.verify_unchanged()?;
+        replacement_input_stamp(
+            &configuration,
+            replacement.pid,
+            replacement.started,
+            replacement.invocation,
+            replacement.socket,
+        )
+    }
+
     fn publish_guarded(
         &self,
         request: ReviewedPolicyRequest,
@@ -304,11 +388,7 @@ impl PolicyInputs {
             return Err(PolicyResult::PublicationRefused);
         }
         target_identity().map_err(|_| PolicyResult::PublicationRefused)?;
-        let parent = directory(Path::new("/etc/nix"))?;
-        if unsafe { libc::flock(parent.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
-            return Err(PolicyResult::PublicationRefused);
-        }
-        anchored(&parent, Path::new("/etc/nix"))?;
+        let parent = locked_parent(libc::LOCK_EX)?;
         let old_managed = self.managed_snapshot()?;
         let (actual, baseline) = self.capture()?;
         if actual != request {
@@ -317,10 +397,12 @@ impl PolicyInputs {
         let NixIncludePreparation::Append(desired) = &baseline.preparation else {
             return Err(PolicyResult::PublicationRefused);
         };
-        if !matches!(
-            baseline.attachment,
-            include_inputs::AttachmentInputs::VerifiedAppend(_)
-        ) {
+        if (secondary.is_some() && baseline.has_complete_stock_policy())
+            || !matches!(
+                baseline.attachment,
+                include_inputs::AttachmentInputs::VerifiedAppend(_)
+            )
+        {
             return Err(PolicyResult::PublicationRefused);
         }
         let mut original = open(&descriptor_path(&parent, "nix.conf"))?;
@@ -352,7 +434,7 @@ impl PolicyInputs {
         verify_secondary()?;
         fs::DirBuilder::new()
             .mode(0o700)
-            .create(descriptor_path(&parent, ".neo-policy-publication"))
+            .create(descriptor_path(&parent, POLICY_STAGE))
             .map_err(|_| PolicyResult::PublicationRefused)?;
         let stage = directory(Path::new(STAGE))?;
         let source_slot = Path::new(STAGE).join("main-slot");
@@ -385,8 +467,13 @@ impl PolicyInputs {
         let check = |expected| -> Result<(), PolicyResult> {
             anchored(&parent, Path::new("/etc/nix"))?;
             anchored(&stage, Path::new(STAGE))?;
-            if recovery::observe(Path::new(SOURCE), &evidence, &protected_path, &mut read)
-                .map_err(|_| PolicyResult::PublicationUnknown)?
+            if recovery::observe(
+                Path::new(SOURCE),
+                &evidence,
+                &protected_configuration_path,
+                &mut read,
+            )
+            .map_err(|_| PolicyResult::PublicationUnknown)?
                 != expected
             {
                 return Err(PolicyResult::PublicationUnknown);

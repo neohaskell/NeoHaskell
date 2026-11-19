@@ -164,6 +164,7 @@ pub(super) enum FilesystemJob {
         rendezvous: Rendezvous,
         caller: VerifiedCaller,
         common_inputs: [u8; 32],
+        operation: super::nix_owner::policy_observation::PolicyOperation,
     },
     #[cfg(target_os = "linux")]
     VerifyExistingNixPolicy {
@@ -1091,6 +1092,7 @@ fn execute(
             rendezvous,
             caller,
             common_inputs,
+            operation,
         } => {
             let discovery = executable
                 .discover_stock_policy(rendezvous, &caller, terminal, || policy.check().is_err())
@@ -1107,7 +1109,7 @@ fn execute(
                         super::nix_owner::NixBlock::ConfigurationOwnerUnknown,
                     )
                 })?;
-            if discovery.common_inputs() != &common_inputs {
+            if discovery.common_inputs() != &common_inputs || discovery.operation() != operation {
                 return Err(TransactionError::Verification(
                     "reviewed policy inputs changed",
                 ));

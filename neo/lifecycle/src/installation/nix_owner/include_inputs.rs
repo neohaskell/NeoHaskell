@@ -212,25 +212,20 @@ where
     P: Fn(&Path) -> io::Result<PathBuf>,
     R: FnMut(&mut File) -> Result<Vec<u8>, TransactionError>,
 {
-    fn read_graph(
+    fn visit_pending(
         &mut self,
-        path: &Path,
-        bytes: &[u8],
-        pending: Option<&DesiredNixInclude>,
+        observed_source_bytes: usize,
+        desired: &DesiredNixInclude,
     ) -> Result<(), TransactionError> {
-        self.visit(path, Some(bytes), 0)?;
-        if let Some(desired) = pending {
-            if self.graph.edges.len() >= MAX_EDGES {
-                return Err(TransactionError::Io);
-            }
-            self.bytes += desired
-                .source
-                .len()
-                .checked_sub(bytes.len())
-                .ok_or(TransactionError::Io)?;
-            self.visit(&self.reserved.clone(), Some(&desired.leaf), 1)?;
+        if self.graph.edges.len() >= MAX_EDGES {
+            return Err(TransactionError::Io);
         }
-        self.policy.verify()
+        self.bytes += desired
+            .source
+            .len()
+            .checked_sub(observed_source_bytes)
+            .ok_or(TransactionError::Io)?;
+        self.visit(&self.reserved.clone(), Some(&desired.leaf), 1)
     }
 
     fn visit(
@@ -336,21 +331,21 @@ pub(super) fn observe(
     bytes: &[u8],
     protect: &impl Fn(&Path) -> io::Result<PathBuf>,
     read: &mut impl FnMut(&mut File) -> Result<Vec<u8>, TransactionError>,
-) -> Result<AttachmentInputs, TransactionError> {
+) -> Result<(AttachmentInputs, bool), TransactionError> {
     let ConfigurationFile::Present {
         entry: ConfigurationEntry::Direct,
         ..
     } = input
     else {
-        return Ok(AttachmentInputs::Unresolved);
+        return Ok((AttachmentInputs::Unresolved, false));
     };
     let (existing, desired) = match preparation {
         NixIncludePreparation::Append(desired) => (false, desired),
         NixIncludePreparation::ExistingReference(desired) => (true, desired),
-        NixIncludePreparation::Conflict => return Ok(AttachmentInputs::Conflict),
-        _ => return Ok(AttachmentInputs::Unresolved),
+        NixIncludePreparation::Conflict => return Ok((AttachmentInputs::Conflict, false)),
+        _ => return Ok((AttachmentInputs::Unresolved, false)),
     };
-    let mut collect = || -> Result<AttachmentInputs, TransactionError> {
+    let mut collect = || -> Result<(AttachmentInputs, bool), TransactionError> {
         let reserved = normalize(&path.parent().ok_or(TransactionError::Io)?.join(POLICY_LEAF))
             .ok_or(TransactionError::Io)?;
         let (companion, companion_bytes) = configuration_source_with(&reserved, protect, read)?;
@@ -361,7 +356,7 @@ pub(super) fn observe(
             matches!(&companion, ConfigurationFile::Missing { .. })
         };
         if !acceptable {
-            return Ok(AttachmentInputs::Conflict);
+            return Ok((AttachmentInputs::Conflict, false));
         }
         let reserved_location = location(&reserved, &companion).ok_or(TransactionError::Io)?;
         let mut walk = Walk {
@@ -379,9 +374,16 @@ pub(super) fn observe(
             existing,
             policy: EffectivePolicy::default(),
         };
-        walk.read_graph(path, bytes, (!existing).then_some(desired))?;
+        walk.visit(path, Some(bytes), 0)?;
+        let complete = walk.policy.verify().is_ok();
+        if !complete {
+            if !existing {
+                walk.visit_pending(bytes.len(), desired)?;
+            }
+            walk.policy.verify()?;
+        }
         if existing && walk.references != 1 {
-            return Ok(AttachmentInputs::Conflict);
+            return Ok((AttachmentInputs::Conflict, false));
         }
         if configuration_source_with(path, protect, walk.read)?.0 != *input
             || configuration_source_with(&walk.reserved, protect, walk.read)?.0
@@ -394,16 +396,17 @@ pub(super) fn observe(
                 return Err(TransactionError::Io);
             }
         }
-        Ok(if existing {
+        let inputs = if existing {
             AttachmentInputs::VerifiedExisting(walk.graph)
         } else {
             AttachmentInputs::VerifiedAppend(walk.graph)
-        })
+        };
+        Ok((inputs, complete))
     };
     match collect() {
         Err(TransactionError::StopRequested) => Err(TransactionError::StopRequested),
-        Err(TransactionError::NixBlocked(_)) => Ok(AttachmentInputs::Conflict),
-        Err(_) => Ok(AttachmentInputs::Unresolved),
+        Err(TransactionError::NixBlocked(_)) => Ok((AttachmentInputs::Conflict, false)),
+        Err(_) => Ok((AttachmentInputs::Unresolved, false)),
         result => result,
     }
 }
@@ -674,7 +677,11 @@ pub(in crate::installation::nix_owner) mod recovery {
                 existing: published,
                 policy: EffectivePolicy::default(),
             };
-            walk.read_graph(path, &live.1, (!published).then_some(desired))?;
+            walk.visit(path, Some(&live.1), 0)?;
+            if !published {
+                walk.visit_pending(live.1.len(), desired)?;
+            }
+            walk.policy.verify()?;
             if published {
                 let Some(final_edge) = walk.graph.edges.pop() else {
                     return Ok(Stage::Conflict);

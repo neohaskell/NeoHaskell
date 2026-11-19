@@ -1,5 +1,6 @@
 use super::dashboard::terminal::ParkedTerminal;
 use super::filesystem::{FilesystemJob, FilesystemResult, FilesystemTask};
+use super::nix_owner::policy_observation::PolicyOperation;
 use super::{
     InstallationOwner, Layout, PairIdentity, RootLease, TransactionError, process, runtime,
     snapshot,
@@ -92,6 +93,7 @@ pub(crate) enum ReviewOperation {
 pub(crate) enum ReviewedChange {
     NixPolicy,
     ExistingNixPolicy,
+    ApplyExistingNixPolicy,
     #[cfg(target_os = "linux")]
     NixPolicyRecoveryInspection,
     Uninstall,
@@ -118,6 +120,7 @@ pub(super) struct ReviewToken {
 pub(super) struct PolicyReviewBinding {
     owner: Weak<RefCell<EffectState>>,
     identity: u64,
+    operation: PolicyOperation,
 }
 
 pub(super) struct PolicyComparisonWitness {
@@ -398,6 +401,11 @@ impl InstallationOwner {
         pending: super::PendingNixPolicy,
     ) -> Result<PreparedStockPolicyIntent, TransactionError> {
         self.effects.check_admitted_policy_review(&binding)?;
+        if pending.operation != binding.operation {
+            return Err(TransactionError::InvalidState(
+                "Nix policy operation differs from review",
+            ));
+        }
         let (expected, pending, bytes) = self.policy_intent_record(pending).await?;
         self.effects.consume_policy_review(binding)?;
         let intent = StockPolicyIntent::with_lease(&self.effects, &self.layout, pending, bytes)?;
@@ -732,8 +740,14 @@ impl Effects {
         plan: super::runtime::NixPolicyPlan,
         mut summary: ReviewSummary,
     ) -> Result<(super::runtime::NixPolicyPlan, PolicyReviewBinding), TransactionError> {
-        if !summary.changes.contains(&ReviewedChange::NixPolicy) {
-            summary.changes.push(ReviewedChange::NixPolicy);
+        let operation = plan.policy_operation();
+        let change = if operation.is_append() {
+            ReviewedChange::NixPolicy
+        } else {
+            ReviewedChange::ApplyExistingNixPolicy
+        };
+        if !summary.changes.contains(&change) {
+            summary.changes.push(change);
         }
         let identity = self.review(summary).await?;
         Ok((
@@ -741,6 +755,7 @@ impl Effects {
             PolicyReviewBinding {
                 owner: Rc::downgrade(&self.state),
                 identity,
+                operation,
             },
         ))
     }
@@ -2007,6 +2022,7 @@ mod tests {
         for replace_record in [false, true] {
             let (_temporary, owner, lease) = setup();
             let pending = super::super::PendingNixPolicy {
+                operation: PolicyOperation::ConventionalAppend,
                 attempt: [1; 32],
                 reviewed: [2; 32],
                 helper_path: "/nix/store/11111111111111111111111111111111-neo-policy-helper".into(),
@@ -2112,10 +2128,12 @@ mod tests {
                 _ => panic!("fixture review was not accepted"),
             };
             let binding = PolicyReviewBinding {
+                operation: PolicyOperation::ConventionalAppend,
                 owner: Rc::downgrade(&owner.effects.state),
                 identity,
             };
             let pending = super::super::PendingNixPolicy {
+                operation: PolicyOperation::ConventionalAppend,
                 attempt: [1; 32],
                 reviewed: [2; 32],
                 helper_path: "/nix/store/11111111111111111111111111111111-neo-policy-helper".into(),
@@ -2273,6 +2291,7 @@ mod tests {
             if drift == "none" {
                 let checked = checked.unwrap();
                 let early = PolicyReviewBinding {
+                    operation: PolicyOperation::ConventionalAppend,
                     owner: checked.owner.clone(),
                     identity: checked.identity,
                 };
@@ -2402,6 +2421,7 @@ mod tests {
         let held = owner.layout.command_directory.join("preserved");
         std::os::unix::fs::symlink(helper_path, &held).unwrap();
         record.pending_nix_policy = Some(super::super::PendingNixPolicy {
+            operation: PolicyOperation::ConventionalAppend,
             attempt: [17; 32],
             reviewed: [19; 32],
             helper_path: helper_path.into(),
@@ -2790,6 +2810,7 @@ mod tests {
             let comparison = discovered.comparison();
             for foreign in [false, true] {
                 let early = PolicyReviewBinding {
+                    operation: PolicyOperation::ConventionalAppend,
                     owner: if foreign {
                         Weak::new()
                     } else {
@@ -2954,10 +2975,12 @@ mod tests {
             if mode == "accept" {
                 assert!(fresh.is_confirmed(&binding));
                 let stale = PolicyReviewBinding {
+                    operation: PolicyOperation::ConventionalAppend,
                     owner: Rc::downgrade(&owner.effects.state),
                     identity: binding.identity + 1,
                 };
                 let foreign = PolicyReviewBinding {
+                    operation: PolicyOperation::ConventionalAppend,
                     owner: Weak::new(),
                     identity: binding.identity,
                 };

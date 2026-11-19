@@ -13,7 +13,8 @@ const APPLY: &str = "--neo-policy-publish-peer";
 const RECOVER: &str = "--neo-policy-inspect-peer";
 const EXISTING: &str = "--neo-policy-existing-peer";
 const EXISTING_FRAME: &[u8; 16] = b"NEO-EXISTING-V01";
-const STOCK_PUBLISH: &[u8; 16] = b"NEO-STOCK-PUB-V2";
+const STOCK_PUBLISH: &[u8; 16] = b"NEO-STOCK-PUB-V3";
+const STOCK_REPLACEMENT: &[u8; 16] = b"NEO-POLICY-LIVE1";
 const MAX_BODY: usize = 32 + PolicyScope::BYTES;
 const SUDO: &str = "/usr/bin/sudo";
 const ACCEPT: &[u8; 16] = b"NEO-ACCEPT-V001\0";
@@ -231,6 +232,37 @@ impl PolicyScope {
     }
 }
 
+struct ReviewedStockApply {
+    scope: PolicyScope,
+    operation: PolicyOperation,
+}
+
+impl ReviewedStockApply {
+    const BYTES: usize = PolicyScope::BYTES + 1;
+
+    fn from_pending(pending: &PendingNixPolicy) -> Result<Self, HandoffError> {
+        Ok(Self {
+            scope: PolicyScope::from_pending(pending)?,
+            operation: pending.operation,
+        })
+    }
+
+    fn decode(bytes: [u8; Self::BYTES]) -> Result<Self, HandoffError> {
+        Ok(Self {
+            scope: PolicyScope::decode(bytes[..PolicyScope::BYTES].try_into().unwrap())?,
+            operation: PolicyOperation::from_tag(bytes[PolicyScope::BYTES])
+                .ok_or(HandoffError::Frame)?,
+        })
+    }
+
+    fn encode(&self) -> [u8; Self::BYTES] {
+        let mut bytes = [0; Self::BYTES];
+        bytes[..PolicyScope::BYTES].copy_from_slice(&self.scope.encode());
+        bytes[PolicyScope::BYTES] = self.operation as u8;
+        bytes
+    }
+}
+
 fn exchange(
     executable: &ExactExecutable,
     rendezvous: Rendezvous,
@@ -320,6 +352,7 @@ fn exchange(
             discovery: None,
             inspection: None,
             existing: None,
+            replacement_stamp: None,
         };
         let verify = || {
             require_same_chain(&chain)?;
@@ -329,9 +362,9 @@ fn exchange(
         };
         match request {
             PeerRequest::Publish { pending, persist } => {
-                let scope = PolicyScope::from_pending(pending)?;
-                let reviewed = ReviewedPolicyRequest::from_bytes(scope.inputs);
-                send_packet(&socket, STOCK_PUBLISH, &expected.epoch, &scope.encode())?;
+                let apply = ReviewedStockApply::from_pending(pending)?;
+                let reviewed = ReviewedPolicyRequest::from_bytes(apply.scope.inputs);
+                send_packet(&socket, STOCK_PUBLISH, &expected.epoch, &apply.encode())?;
                 wait_for_packet(&socket, deadline, &cancelled)?;
                 let mut response =
                     PublishResponse::receive(&socket, &expected, reviewed, deadline)?;
@@ -360,6 +393,11 @@ fn exchange(
                 };
                 if result == PolicyResult::ManagedRestartObserved && !committed {
                     return Err(HandoffError::Frame);
+                }
+                if result == PolicyResult::ManagedRestartObserved && !apply.operation.is_append() {
+                    wait_for_packet(&socket, deadline, &cancelled)?;
+                    reply.replacement_stamp =
+                        Some(receive_body(&socket, &expected, STOCK_REPLACEMENT)?);
                 }
                 reply.policy = Some(result);
             }
@@ -497,10 +535,13 @@ fn serve(epoch: [u8; 32], operation: WorkerOperation) -> Result<(), HandoffError
             send_packet(&socket, DISCOVER, &epoch, &result)?;
         }
         WorkerOperation::Apply => {
-            use super::super::super::policy_observation::{PolicyAttempt, publish_stock_policy};
+            use super::super::super::policy_observation::{
+                PolicyAttempt, StockPolicyOutcome, publish_stock_policy,
+            };
 
-            let scope = PolicyScope::decode(receive_body(&socket, &expected, STOCK_PUBLISH)?)?;
-            let reviewed = ReviewedPolicyRequest::from_bytes(scope.inputs);
+            let apply =
+                ReviewedStockApply::decode(receive_body(&socket, &expected, STOCK_PUBLISH)?)?;
+            let reviewed = ReviewedPolicyRequest::from_bytes(apply.scope.inputs);
             verify()?;
             let attempt = PolicyAttempt::authenticated(
                 caller.uid,
@@ -508,9 +549,9 @@ fn serve(epoch: [u8; 32], operation: WorkerOperation) -> Result<(), HandoffError
                 &executable.path,
                 &approved,
                 &executable.identity,
-                Some(scope.state_lease),
+                Some(apply.scope.state_lease),
             );
-            let result = publish_stock_policy(reviewed, attempt, || {
+            let result = publish_stock_policy(apply.operation, reviewed, attempt, || {
                 verify().map_err(|_| PolicyResult::PublicationRefused)?;
                 PublishChallenge::new(epoch, reviewed)
                     .and_then(|challenge| challenge.require_commit(&socket, caller, deadline))
@@ -518,7 +559,19 @@ fn serve(epoch: [u8; 32], operation: WorkerOperation) -> Result<(), HandoffError
                 verify().map_err(|_| PolicyResult::PublicationRefused)
             });
             verify()?;
-            PublishResponse::send_outcome(&socket, &epoch, result)?;
+            match result {
+                StockPolicyOutcome::Result(result) => {
+                    PublishResponse::send_outcome(&socket, &epoch, result)?;
+                }
+                StockPolicyOutcome::AppliedUnchanged(stamp) => {
+                    PublishResponse::send_outcome(
+                        &socket,
+                        &epoch,
+                        PolicyResult::ManagedRestartObserved,
+                    )?;
+                    send_packet(&socket, STOCK_REPLACEMENT, &epoch, &stamp)?;
+                }
+            }
         }
         WorkerOperation::Inspect => {
             use super::super::super::policy_observation::{PolicyAttempt, inspect_stock_policy};

@@ -14,15 +14,28 @@ pub(super) use publication::FixturePublicationBarrier;
 pub(super) use publication::PolicyAttempt;
 
 #[cfg(target_os = "linux")]
+pub(super) enum StockPolicyOutcome {
+    Result(PolicyResult),
+    AppliedUnchanged([u8; 32]),
+}
+
+#[cfg(target_os = "linux")]
 pub(super) fn publish_stock_policy(
+    operation: PolicyOperation,
     request: ReviewedPolicyRequest,
     attempt: PolicyAttempt,
     require_commit: impl FnOnce() -> Result<(), PolicyResult> + Send,
-) -> PolicyResult {
-    match managed::mutate_in_stock_view(move |inputs| {
-        inputs.publish_stock(request, attempt, require_commit)
+) -> StockPolicyOutcome {
+    match managed::mutate_in_stock_view(move |inputs| match operation {
+        PolicyOperation::ConventionalAppend => inputs
+            .publish_stock(request, attempt, require_commit)
+            .map(StockPolicyOutcome::Result),
+        PolicyOperation::ApplyUnchanged => inputs
+            .apply_stock_unchanged(request, attempt, require_commit)
+            .map(StockPolicyOutcome::AppliedUnchanged),
     }) {
-        Ok(result) | Err(result) => result,
+        Ok(outcome) => outcome,
+        Err(result) => StockPolicyOutcome::Result(result),
     }
 }
 
@@ -138,9 +151,27 @@ impl ReviewedPolicyRequest {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+#[repr(u8)]
 pub(in crate::installation) enum PolicyOperation {
-    ConventionalAppend,
+    #[default]
+    ConventionalAppend = 0,
+    ApplyUnchanged = 9,
+}
+
+impl PolicyOperation {
+    pub(in crate::installation) fn from_tag(value: u8) -> Option<Self> {
+        match value {
+            0 => Some(Self::ConventionalAppend),
+            9 => Some(Self::ApplyUnchanged),
+            _ => None,
+        }
+    }
+
+    pub(in crate::installation) fn is_append(&self) -> bool {
+        *self == Self::ConventionalAppend
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -165,17 +196,18 @@ impl DiscoveredInputs {
 
     pub(super) fn encode(self) -> [u8; 65] {
         let mut bytes = [0; 65];
+        bytes[0] = self.operation as u8;
         bytes[1..33].copy_from_slice(self.commitment.bytes());
         bytes[33..].copy_from_slice(&self.common);
         bytes
     }
 
     pub(super) fn decode(bytes: [u8; 65]) -> Option<Result<Self, PolicyResult>> {
-        if bytes[0] == 0 {
+        if let Some(operation) = PolicyOperation::from_tag(bytes[0]) {
             return Some(Ok(Self {
                 commitment: ReviewedPolicyRequest::from_bytes(bytes[1..33].try_into().ok()?),
                 common: bytes[33..].try_into().ok()?,
-                operation: PolicyOperation::ConventionalAppend,
+                operation,
             }));
         }
         if bytes[1..] != [0; 64] {
@@ -191,6 +223,10 @@ impl DiscoveredInputs {
 
     pub(in crate::installation) fn comparison(self) -> ReviewedPolicyRequest {
         self.commitment
+    }
+
+    pub(in crate::installation) fn operation(&self) -> PolicyOperation {
+        self.operation
     }
 }
 
@@ -421,17 +457,37 @@ impl PolicyInputs {
 
     fn capture_discovery(&self) -> Result<DiscoveredInputs, PolicyResult> {
         let (commitment, configuration) = self.capture()?;
-        if !matches!(
+        let (operation, commitment) = if configuration.has_complete_stock_policy() {
+            #[cfg(target_os = "linux")]
+            self.unchanged_stage_absent()?;
+            (
+                PolicyOperation::ApplyUnchanged,
+                unchanged_commitment(commitment),
+            )
+        } else if matches!(
             configuration.attachment,
             include_inputs::AttachmentInputs::VerifiedAppend(_)
         ) {
+            (PolicyOperation::ConventionalAppend, commitment)
+        } else {
             return Err(PolicyResult::InaccessibleInputs);
-        }
+        };
         Ok(DiscoveredInputs {
             commitment,
             common: common_inputs(&configuration, self.pid)?,
-            operation: PolicyOperation::ConventionalAppend,
+            operation,
         })
+    }
+
+    #[cfg(target_os = "linux")]
+    fn capture_unchanged(
+        &self,
+    ) -> Result<(ReviewedPolicyRequest, ConfigurationObservation), PolicyResult> {
+        let (commitment, configuration) = self.capture()?;
+        if !configuration.has_complete_stock_policy() {
+            return Err(PolicyResult::InaccessibleInputs);
+        }
+        Ok((unchanged_commitment(commitment), configuration))
     }
 
     pub(super) fn review(&self) -> Result<ReviewedPolicyRequest, PolicyResult> {
@@ -473,6 +529,13 @@ impl PolicyInputs {
     }
 }
 
+fn unchanged_commitment(commitment: ReviewedPolicyRequest) -> ReviewedPolicyRequest {
+    let mut hash = Sha256::new();
+    hash.update(b"NEO-POLICY-APPLY-UNCHANGED-V1\0");
+    hash.update(commitment.bytes());
+    ReviewedPolicyRequest::from_bytes(hash.finalize().into())
+}
+
 #[cfg(test)]
 mod discovery_tests {
     use super::*;
@@ -495,7 +558,12 @@ mod discovery_tests {
             refusal[1] = 1;
             assert!(DiscoveredInputs::decode(refusal).is_none());
         }
-        for invalid in 9..=255 {
+        let mut unchanged = payload;
+        unchanged[0] = PolicyOperation::ApplyUnchanged as u8;
+        let decoded = DiscoveredInputs::decode(unchanged).unwrap().unwrap();
+        assert_eq!(decoded.operation(), PolicyOperation::ApplyUnchanged);
+        assert_eq!(decoded.encode(), unchanged);
+        for invalid in 10..=255 {
             let mut payload = [0; 65];
             payload[0] = invalid;
             assert!(DiscoveredInputs::decode(payload).is_none());
@@ -515,10 +583,42 @@ fn common_inputs(
     Ok(hash.finalize().into())
 }
 
+#[cfg(target_os = "linux")]
+fn replacement_input_stamp(
+    configuration: &ConfigurationObservation,
+    pid: u32,
+    started: u64,
+    invocation: u128,
+    socket: (u64, u64),
+) -> Result<[u8; 32], PolicyResult> {
+    let mut hash = Sha256::new();
+    hash.update(b"NEO-POLICY-REPLACEMENT-V1\0");
+    hash.update(common_inputs(configuration, pid)?);
+    hash.update(started.to_le_bytes());
+    hash.update(invocation.to_le_bytes());
+    hash.update(socket.0.to_le_bytes());
+    hash.update(socket.1.to_le_bytes());
+    Ok(hash.finalize().into())
+}
+
 impl ObservedNixBase {
     pub(in crate::installation) fn common_policy_inputs(
         &self,
     ) -> Result<[u8; 32], TransactionError> {
         common_inputs(&self.configuration, self.service.main_pid).map_err(|_| TransactionError::Io)
+    }
+
+    #[cfg(target_os = "linux")]
+    pub(in crate::installation) fn replacement_policy_stamp(
+        &self,
+    ) -> Result<[u8; 32], TransactionError> {
+        replacement_input_stamp(
+            &self.configuration,
+            self.service.main_pid,
+            self.service.started,
+            self.service.invocation_id.get(),
+            self.socket,
+        )
+        .map_err(|_| TransactionError::Io)
     }
 }
