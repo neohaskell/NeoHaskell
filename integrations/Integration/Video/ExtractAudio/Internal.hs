@@ -26,7 +26,7 @@ import Array qualified
 import Basics
 import Bytes (Bytes)
 import Bytes qualified
-import Char (Char)
+import Directory qualified
 import File qualified
 import Integration qualified
 import Integration.Video.ExtractAudio (Config (..), ExtractionResult (..), Request (..))
@@ -40,8 +40,6 @@ import Result (Result (..))
 import Service.Command.Core (NameOf)
 import Service.FileUpload.Core (FileAccessError (..), FileRef)
 import Subprocess qualified
-import System.Directory qualified as GhcDir
-import System.IO.Temp qualified as GhcTemp
 import Task (Task)
 import Task qualified
 import Text (Text)
@@ -341,7 +339,7 @@ buildFfmpegArgs config inputPath outputPath = do
     ]
 
 
--- | The native bracket masks acquisition until directory cleanup is registered.
+-- | 'Directory.withTemporaryFolder' defers cancellation until folder cleanup is registered.
 -- POSIX owner-only permissions isolate other users, not arbitrary media references.
 withWorkspace ::
   forall value.
@@ -349,28 +347,27 @@ withWorkspace ::
   Task Integration.IntegrationError value
 withWorkspace use = do
   let scoped :: Task Integration.IntegrationError (Result Integration.IntegrationError value)
-      scoped = do
-        parent <- GhcDir.getTemporaryDirectory |> Task.fromIO
-        GhcTemp.withTempDirectory parent "neohaskell-video-" (\directory -> do
-          let extraction = do
-                workspace <- workspaceFromDirectory directory
-                use workspace
-          Task.runResult extraction)
-          |> Task.fromIO
+      scoped =
+        Directory.withTemporaryFolder (\_ -> workspaceFailure) (\workDir -> do
+          workspace <- workspaceInFolder workDir
+          use workspace)
+          |> Task.asResult
   outcome <- scoped |> Task.asResultSafe
   case outcome of
-    Err _ -> Task.throw (Integration.UnexpectedError "Audio extraction workspace failed")
+    Err _ -> Task.throw workspaceFailure
     Ok result -> case result of
       Err err -> Task.throw err
       Ok value -> Task.yield value
 
 
+-- | One fixed error for acquisition failures and runtime exceptions in the workspace.
+workspaceFailure :: Integration.IntegrationError
+workspaceFailure = Integration.UnexpectedError "Audio extraction workspace failed"
+
+
 -- | Place fixed input and output filenames inside the acquired private directory.
-workspaceFromDirectory :: LinkedList.LinkedList Char -> Task Integration.IntegrationError Workspace
-workspaceFromDirectory directory = do
-  workDir <- case Path.fromLinkedList directory of
-    Nothing -> Task.throw (Integration.UnexpectedError "Invalid temp directory path")
-    Just path -> Task.yield path
+workspaceInFolder :: Path -> Task Integration.IntegrationError Workspace
+workspaceInFolder workDir = do
   inputPath <- tempFilePath workDir "input"
   outputPath <- tempFilePath workDir "output.wav"
   Task.yield Workspace {workDir, inputPath, outputPath}
