@@ -1,4 +1,5 @@
 """Build and verify one release's installer and signed Nix package closure."""
+import base64
 import json
 import os
 from pathlib import Path
@@ -66,10 +67,33 @@ def path_info_args(*options):
 
 
 def remote_info(cache, path):
-    result = subprocess.run(path_info_args("--option", "narinfo-cache-negative-ttl", "0", "--store", cache, path), capture_output=True, text=True)
+    args = path_info_args("--option", "narinfo-cache-negative-ttl", "0", "--store", cache, path)
+    result = subprocess.run(args, capture_output=True, text=True)
     if result.returncode:
         return None
     return json.loads(result.stdout)[path]
+
+
+def verify_metadata_signature(path, metadata, key, signatures):
+    # Nix considers content-addressed paths trusted independently of their signatures.
+    nar_hash = output("nix", "hash", "convert", "--hash-algo", "sha256", "--to", "nix32", metadata["narHash"])
+    references = ",".join(sorted(metadata["references"]))
+    fingerprint = f"1;{path};sha256:{nar_hash};{metadata['narSize']};{references}"
+    with tempfile.TemporaryDirectory() as temporary:
+        directory = Path(temporary)
+        key_file = directory / "key.der"
+        # RFC 8410 SubjectPublicKeyInfo header for a 32-byte Ed25519 key.
+        key_file.write_bytes(bytes.fromhex("302a300506032b6570032100") + base64.b64decode(
+            key.split(":", 1)[1], validate=True))
+        message = directory / "fingerprint"
+        message.write_bytes(fingerprint.encode())
+        signature_file = directory / "signature"
+        for signature in signatures:
+            signature_file.write_bytes(base64.b64decode(signature.split(":", 1)[1], validate=True))
+            subprocess.run([
+                "openssl", "pkeyutl", "-verify", "-rawin", "-pubin", "-keyform", "DER",
+                "-inkey", key_file, "-in", message, "-sigfile", signature_file,
+            ], check=True, stdout=subprocess.DEVNULL)
 
 
 def closure_rows(local, roots, caches):
@@ -88,9 +112,10 @@ def closure_rows(local, roots, caches):
             ):
                 raise ValueError(f"Remote NAR identity differs from the built output at {cache}: {path}")
             prefix = entry["key"].split(":", 1)[0] + ":"
-            signatures = sorted({sig for sig in info["signatures"] if sig.startswith(prefix)})
+            signatures = sorted({sig for sig in info.get("signatures", []) if sig.startswith(prefix)})
             if not signatures:
                 continue
+            verify_metadata_signature(path, metadata, entry["key"], signatures)
             used.setdefault(cache, []).append(path)
             rows.append({
                 "store_path": path, "nar_hash": metadata["narHash"], "nar_size": metadata["narSize"],
@@ -105,8 +130,8 @@ def closure_rows(local, roots, caches):
         if paths:
             subprocess.run([
                 "nix", "store", "verify", "--store", entry["cache"],
-                "--option", "trusted-public-keys", entry["key"], "--sigs-needed", "1", *paths,
-            ], check=True)
+                "--option", "trusted-public-keys", entry["key"], "--sigs-needed", "1", "--stdin",
+            ], input="\n".join(paths) + "\n", text=True, check=True)
     return rows
 
 

@@ -775,11 +775,12 @@ mod tests {
             stream.write_all(&core).unwrap();
         });
         let temporary = tempfile::tempdir().unwrap();
-        let state = temporary.path().join("state");
+        let directory = temporary.path().canonicalize().unwrap();
+        let state = directory.join("state");
         fs::create_dir(&state).unwrap();
         fs::set_permissions(&state, fs::Permissions::from_mode(0o700)).unwrap();
         let owner =
-            InstallationOwner::new(Layout::new(state.clone(), temporary.path().join("bin")));
+            InstallationOwner::new(Layout::new(state.clone(), directory.join("bin")));
         let lease = RootLease::acquire(&owner.layout.lock()).unwrap();
         let source = release::ReleaseSource::bootstrap_fixture(build.target, &owner.effects, port);
         let record = super::super::InstallationRecord::default();
@@ -809,7 +810,7 @@ mod tests {
         }
         server.join().unwrap();
         assert!(!state.join("installation.json").exists());
-        assert!(!temporary.path().join("bin").exists());
+        assert!(!directory.join("bin").exists());
     }
 
     #[test]
