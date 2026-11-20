@@ -1330,6 +1330,115 @@
       "source_sha": "fa498d786bc81a78a59fcdaf0d0382648b35a8c3",
       "target_policy": "native-v2",
       "version": "0.18.0"
+    },
+    {
+      "base_sha": "414602b9510a92dfac647bc68d6afadfb594502c",
+      "base_tag": "neo-v0.18.0",
+      "base_version": "0.18.0",
+      "bootstrap": false,
+      "contract_registry_sha256": "993db493d248ac754cf1c6631d03aa63f3be766e489d927a6c72d10d28cbb961",
+      "date": "2026-11-20",
+      "distribution_policy": "installer-v1",
+      "group": "platform",
+      "id": "2d6e86ff86444d984b804d4907080fdacadeee444308a95a7ecfeef228d3491d",
+      "impact": "compatible",
+      "kind": "release",
+      "notes": [
+        {
+          "category": "Improved",
+          "commit": "3bca6057eaf9b0b9a4f66b5ecf9f1099d843363d",
+          "component": "CLI",
+          "group": "platform",
+          "hash": "cd86292754a925543701703cc1539f4dc463c7c3d1520a1fa572f622e4f0e014",
+          "impact": "compatible",
+          "path": ".changes/cli-installer-release-assets.md",
+          "sections": {
+            "Summary": "New platform releases include the installer and prebuilt Neo and neoctl packages\nfor Linux x86-64, Linux ARM64 and Apple Silicon. After installing a release,\nrun `neo update` to update both commands together."
+          },
+          "text": "---\ngroup: platform\ncomponent: CLI\nimpact: compatible\ncategory: Improved\n---\n\n## Summary\n\nNew platform releases include the installer and prebuilt Neo and neoctl packages\nfor Linux x86-64, Linux ARM64 and Apple Silicon. After installing a release,\nrun `neo update` to update both commands together.\n"
+        },
+        {
+          "category": "Improved",
+          "commit": "3bca6057eaf9b0b9a4f66b5ecf9f1099d843363d",
+          "component": "CLI",
+          "group": "platform",
+          "hash": "b90ff1791f74fe15e85b481b978a66c33505c5506c1d7df1c9d22d5f72915a9d",
+          "impact": "none",
+          "path": ".changes/installer-local-verification.md",
+          "sections": {
+            "Summary": "Contributors can inspect installer inputs and required local platform coverage\nthrough a maintained verification entrypoint. Repository hook setup checks local\nevidence before installer changes are pushed. This tooling does not change\napplication APIs, generated projects, or installed commands. It does not publish\nor activate the new installer."
+          },
+          "text": "---\ngroup: platform\ncomponent: CLI\nimpact: none\ncategory: Improved\n---\n\n## Summary\n\nContributors can inspect installer inputs and required local platform coverage\nthrough a maintained verification entrypoint. Repository hook setup checks local\nevidence before installer changes are pushed. This tooling does not change\napplication APIs, generated projects, or installed commands. It does not publish\nor activate the new installer.\n"
+        },
+        {
+          "category": "Improved",
+          "commit": "3bca6057eaf9b0b9a4f66b5ecf9f1099d843363d",
+          "component": "CLI",
+          "group": "platform",
+          "hash": "6353a445aedbebbaa7ee60ba6a9509703cd1420e40c3fb790e6c55c1a995cf13",
+          "impact": "none",
+          "path": ".changes/installer-nix-packages.md",
+          "sections": {
+            "Summary": "Maintainers can build the native installer entrypoint separately from Neo and\nprepare a Nix output containing exactly `neo` and `neoctl`. The native entrypoint\ncurrently provides help and version only. Both package outputs use the platform\nversion and exclude Intel macOS from the installer target set."
+          },
+          "text": "---\ngroup: platform\ncomponent: CLI\nimpact: none\ncategory: Improved\n---\n\n## Summary\n\nMaintainers can build the native installer entrypoint separately from Neo and\nprepare a Nix output containing exactly `neo` and `neoctl`. The native entrypoint\ncurrently provides help and version only. Both package outputs use the platform\nversion and exclude Intel macOS from the installer target set.\n"
+        },
+        {
+          "category": "Improved",
+          "commit": "3bca6057eaf9b0b9a4f66b5ecf9f1099d843363d",
+          "component": "CLI",
+          "group": "platform",
+          "hash": "984cb6e13e3dc7ca49102242693fd40fac78a67f5ee3a565090fd4818486e16b",
+          "impact": "none",
+          "path": ".changes/installer-transaction-foundation.md",
+          "sections": {
+            "Summary": "Maintainers can exercise paired activation and interrupted-transaction recovery\nthrough an isolated filesystem harness. The shared Rust package derives product\nidentity from the Neo manifest and keeps the standalone native entrypoint\nseparate from the installed Neo package."
+          },
+          "text": "---\ngroup: platform\ncomponent: CLI\nimpact: none\ncategory: Improved\n---\n\n## Summary\n\nMaintainers can exercise paired activation and interrupted-transaction recovery\nthrough an isolated filesystem harness. The shared Rust package derives product\nidentity from the Neo manifest and keeps the standalone native entrypoint\nseparate from the installed Neo package.\n"
+        },
+        {
+          "category": "Added",
+          "commit": "3bca6057eaf9b0b9a4f66b5ecf9f1099d843363d",
+          "component": "CLI",
+          "group": "platform",
+          "hash": "25f7ba98800a2a41774d38f2a924a38980bd3e602659bcaa5fc8b0828d341f86",
+          "impact": "compatible",
+          "path": ".changes/neo-project-generation.md",
+          "sections": {
+            "Summary": "Run `neo generate --ci` to regenerate your project's Cabal and Nix files from\n`neo.json` without compiling. Existing build, run, and test commands still\nregenerate these files automatically. Generated executables can read their\npackage version through Cabal's `Paths_` module."
+          },
+          "text": "---\ngroup: platform\ncomponent: CLI\nimpact: compatible\ncategory: Added\n---\n\n## Summary\n\nRun `neo generate --ci` to regenerate your project's Cabal and Nix files from\n`neo.json` without compiling. Existing build, run, and test commands still\nregenerate these files automatically. Generated executables can read their\npackage version through Cabal's `Paths_` module.\n"
+        },
+        {
+          "category": "Fixed",
+          "commit": "3bca6057eaf9b0b9a4f66b5ecf9f1099d843363d",
+          "component": "CLI",
+          "group": "platform",
+          "hash": "888f71d65a46c3d4e0e247f65212fef03738b454ba9f92256727158dfe1751f4",
+          "impact": "compatible",
+          "path": ".changes/neo-uninstall-linux-shell-profile.md",
+          "sections": {
+            "Summary": "On Linux OverlayFS, `neo uninstall` can now remove its PATH entry from a shell profile when Linux reports an empty list of extended attributes. Profiles with visible extended attributes still require manual attention."
+          },
+          "text": "---\ngroup: platform\ncomponent: CLI\nimpact: compatible\ncategory: Fixed\n---\n\n## Summary\n\nOn Linux OverlayFS, `neo uninstall` can now remove its PATH entry from a shell profile when Linux reports an empty list of extended attributes. Profiles with visible extended attributes still require manual attention.\n"
+        },
+        {
+          "category": "Added",
+          "commit": "3bca6057eaf9b0b9a4f66b5ecf9f1099d843363d",
+          "component": "CLI",
+          "group": "platform",
+          "hash": "158b21e94faba4e5393690e917736c34b79792e103e46fa8d45344386517a741",
+          "impact": "compatible",
+          "path": ".changes/neoctl-help-version.md",
+          "sections": {
+            "Summary": "The monorepo provides a separate `neoctl` package generated with `neo new`.\nIt reports the platform version and provides help through a NeoHaskell event\nmodel. Invalid arguments exit with a help recovery message."
+          },
+          "text": "---\ngroup: platform\ncomponent: CLI\nimpact: compatible\ncategory: Added\n---\n\n## Summary\n\nThe monorepo provides a separate `neoctl` package generated with `neo new`.\nIt reports the platform version and provides help through a NeoHaskell event\nmodel. Invalid arguments exit with a help recovery message.\n"
+        }
+      ],
+      "source_sha": "3bca6057eaf9b0b9a4f66b5ecf9f1099d843363d",
+      "target_policy": "native-v2",
+      "version": "0.18.1"
     }
   ],
   "recoveries": [],
