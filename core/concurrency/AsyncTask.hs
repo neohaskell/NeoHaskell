@@ -12,6 +12,8 @@ module AsyncTask (
   isWaitingForStateChange,
   isWaitingForExceptionDelivery,
   requestThreadTermination,
+  injectRuntimeFailure,
+  threadsLeftRunningBy,
   cancel,
   sleep,
   process,
@@ -129,6 +131,41 @@ requestThreadTermination :: AsyncTask err result -> Task otherErr Unit
 requestThreadTermination (AsyncTask child) =
   Ghc.throwTo (GhcAsync.asyncThreadId child) GhcException.ThreadKilled
     |> Task.fromIO
+
+
+-- | Raise a runtime failure with this message inside a running task and return
+-- after delivery. The task sees an ordinary failure, not cancellation. Use it in
+-- tests that check cleanup when a failure arrives from outside the task.
+injectRuntimeFailure :: Text -> AsyncTask err result -> Task otherErr Unit
+injectRuntimeFailure message (AsyncTask child) =
+  Ghc.throwTo (GhcAsync.asyncThreadId child) (GhcException.ErrorCall (Text.toLinkedList message))
+    |> Task.fromIO
+
+
+-- | Run a task, then describe each thread that started while it ran and has
+-- not finished. This is a momentary status snapshot for tests that prove an
+-- operation leaves no worker behind. Threads started by unrelated concurrent
+-- work during the task are reported too.
+threadsLeftRunningBy :: Task err value -> Task err (value, Array Text)
+threadsLeftRunningBy task = do
+  existing <- GhcConc.listThreads |> Task.fromIO
+  value <- task
+  current <- GhcConc.listThreads |> Task.fromIO
+  let knownThreads = Array.fromLinkedList existing
+  descriptions <-
+    Array.fromLinkedList current
+      |> Array.dropIf (\thread -> Array.contains thread knownThreads)
+      |> Task.mapArray describeRunningThread
+  Task.yield (value, Array.getJusts descriptions)
+
+
+describeRunningThread :: GhcConc.ThreadId -> Task err (Maybe Text)
+describeRunningThread thread = do
+  status <- GhcConc.threadStatus thread |> Task.fromIO
+  case status of
+    GhcConc.ThreadFinished -> Task.yield Nothing
+    GhcConc.ThreadDied -> Task.yield Nothing
+    _ -> Task.yield (Just [fmt|#{thread} #{status}|])
 
 
 -- | Cancel a running async task.
