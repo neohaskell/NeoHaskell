@@ -461,7 +461,13 @@ fn signal_registration_retires_writers_and_supports_reentry() {
         .unwrap();
     std::fs::write(temporary.path().join("stdout"), &output.stdout).unwrap();
     std::fs::write(temporary.path().join("stderr"), &output.stderr).unwrap();
-    assert!(output.status.success());
+    assert!(
+        output.status.success(),
+        "child exited {}\nstdout:\n{}\nstderr:\n{}",
+        output.status,
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
     assert!(String::from_utf8_lossy(&output.stdout).contains("1 passed"));
 }
 

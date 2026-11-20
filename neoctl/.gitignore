@@ -11,3 +11,5 @@ result-*
 .idea/
 uploads/
 !*.cabal
+AGENTS.md
+CLAUDE.md

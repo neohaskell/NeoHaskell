@@ -29,7 +29,6 @@ pub(crate) enum MetadataError {
 
 type Result<T> = std::result::Result<T, MetadataError>;
 
-/// A lexical output path, not evidence that Nix realized or verified it.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct OutputPath(String);
 
@@ -259,8 +258,6 @@ impl ParsedCandidate {
     }
 }
 
-/// Only tables, auxiliary metadata, and bootstrap bytes are required here.
-/// Native executables for foreign platforms are never runtime parser inputs.
 pub(crate) struct MetadataInputs<'a> {
     pub(crate) core: &'a [u8],
     pub(crate) files: BTreeMap<&'a str, &'a [u8]>,

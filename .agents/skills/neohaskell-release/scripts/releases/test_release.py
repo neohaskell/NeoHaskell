@@ -380,14 +380,19 @@ class History(unittest.TestCase):
                 self.write(
                     path,
                     (
-                        "name: " + name + "\nversion: 0.4.1\n"
+                        json.dumps({"name": name, "version": "0.4.1", "neo-version": "main"}) + "\n"
+                        if path.endswith("neo.json")
+                        else "name: " + name + "\nversion: 0.4.1\n"
                         if path.endswith(".cabal")
                         else '[package]\nname = "' + name + '"\nversion = "0.4.1"\n'
                     ),
                 )
             for path, name in profile["locks"].items():
                 self.write(
-                    path, '[[package]]\nname = "' + name + '"\nversion = "0.4.1"\n'
+                    path,
+                    "name: " + name + "\nversion: 0.4.1\n"
+                    if path.endswith(".cabal")
+                    else '[[package]]\nname = "' + name + '"\nversion = "0.4.1"\n'
                 )
             self.write(
                 profile["changelog"],
@@ -855,6 +860,16 @@ class ArchivedTargetCompatibility(unittest.TestCase):
 
 
 class Prepare(History):
+    def test_neo_project_version_follows_release_preparation(self):
+        self.note()
+        plan = release.plan_release(self.repo, "HEAD", "platform", {}, "2026-09-15", ("neo-v0.4.1", "0.4.2"))
+        edits = release.expected_edits(self.repo, plan)
+        config = json.loads(edits["neoctl/neo.json"])
+        self.assertEqual(config["version"], "0.4.2")
+        self.assertEqual(config["name"], "neoctl")
+        self.assertEqual(config["neo-version"], "main")
+        self.assertIn("version: 0.4.2", edits["neoctl/neoctl.cabal"])
+
     def test_new_live_package_does_not_change_frozen_preparation(self):
         self.note()
         plan = release.plan_release(self.repo, "HEAD", "platform", {}, "2026-09-15", ("neo-v0.4.1", "0.4.2"))

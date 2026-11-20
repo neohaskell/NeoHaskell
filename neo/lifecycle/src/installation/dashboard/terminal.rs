@@ -11,12 +11,45 @@ struct RegisteredAction {
     installed: libc::sigaction,
 }
 
+fn action_flags(action: &libc::sigaction) -> libc::c_int {
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    {
+        const SA_RESTORER: libc::c_int = 0x04000000;
+        action.sa_flags & !SA_RESTORER
+    }
+    #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+    {
+        action.sa_flags
+    }
+}
+
 fn same_action(left: &libc::sigaction, right: &libc::sigaction) -> bool {
     left.sa_sigaction == right.sa_sigaction
-        && left.sa_flags == right.sa_flags
+        && action_flags(left) == action_flags(right)
         && (1..=128).all(|signal| unsafe {
             libc::sigismember(&left.sa_mask, signal) == libc::sigismember(&right.sa_mask, signal)
         })
+}
+
+#[test]
+fn action_comparison_preserves_foreign_handler_protection() {
+    let mut original = unsafe { std::mem::zeroed::<libc::sigaction>() };
+    unsafe { libc::sigemptyset(&mut original.sa_mask) };
+    let mut observed = original;
+    assert!(same_action(&original, &observed));
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    {
+        observed.sa_flags |= 0x04000000;
+        assert!(same_action(&original, &observed));
+    }
+    observed.sa_sigaction = libc::SIG_IGN;
+    assert!(!same_action(&original, &observed));
+    observed.sa_sigaction = original.sa_sigaction;
+    observed.sa_flags |= libc::SA_RESTART;
+    assert!(!same_action(&original, &observed));
+    observed.sa_flags &= !libc::SA_RESTART;
+    unsafe { libc::sigaddset(&mut observed.sa_mask, libc::SIGTERM) };
+    assert!(!same_action(&original, &observed));
 }
 
 const ENTER: &[u8] = b"\x1b[?1049h\x1b[?25l\x1b[?2004h";

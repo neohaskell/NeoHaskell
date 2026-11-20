@@ -1,13 +1,14 @@
 cabal-version: 3.4
 name: neoctl
 version: 0.18.0
-synopsis: NeoHaskell control service
-description: Run the NeoHaskell control service over HTTP.
+description: NeoHaskell control service
 homepage: https://neohaskell.org
 license: MIT
 author: NeoHaskell contributors
 category: Development
 build-type: Simple
+
+-- This file is managed by NeoCLI and should not be modified manually.
 
 common common_cfg
   ghc-options:
@@ -46,17 +47,27 @@ common common_cfg
 
   build-depends:
     base,
-    nhcore
+    nhcore,
+    nhintegrations,
+    aeson,
+    bytestring,
+    text,
+    uuid
+
 
 library
   import: common_cfg
-  other-modules:
-    Neoctl.Feature
-    Neoctl.Placeholder
   exposed-modules:
+
     App
+
+    Neoctl.Feature
+
+    Neoctl.Placeholder
+
   hs-source-dirs: src
   default-language: GHC2021
+
 
 executable neoctl
   import: common_cfg
@@ -68,3 +79,33 @@ executable neoctl
     neoctl
   hs-source-dirs: launcher
   default-language: GHC2021
+
+-- Every NeoCLI project ships a test-suite by default so `neo test` is always
+-- available (see cabal.project's `tests: True`). Reconcile keeps `tests/Spec.hs`
+-- (the hspec-discover driver) present and lists every sibling spec below. Haskell
+-- specs and `.hurl` e2e scenarios share the `tests/` directory.
+test-suite neoctl-test
+  import: common_cfg
+  type: exitcode-stdio-1.0
+  main-is: Spec.hs
+  hs-source-dirs: tests
+  -- Spec.hs is the hspec-discover driver; the `hspec-discover` executable is
+  -- provided on PATH by the haskell.nix dev shell (matching how nhcore is tested).
+  -- Declaring it via `build-tool-depends` instead makes cabal's solver reject the
+  -- installed hspec-discover library (Cabal-7107), so it is intentionally omitted.
+  build-depends:
+    base,
+    neoctl,
+    hspec,
+    QuickCheck,
+    quickcheck-instances
+
+  other-modules:
+
+    Neoctl.PlaceholderSpec
+
+
+  default-language: GHC2021
+  ghc-options:
+    -rtsopts
+    -with-rtsopts=-N

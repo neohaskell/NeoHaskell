@@ -1,6 +1,6 @@
 # Project and CLI
 
-`neo.json` is the input to project reconciliation. `neo build`, `neo run`, and `neo test` reconcile before their main operation. Reconciliation discovers source modules and generates Cabal and Nix files. Edit `neo.json` for package settings and dependencies rather than relying on edits to generated build files.
+`neo.json` is the input to project reconciliation. `neo build`, `neo run`, and `neo test` reconcile before their main operation. Reconciliation discovers source modules and generates Cabal and Nix files. Run `neo generate --ci` to regenerate these files without building. Edit `neo.json` for package settings and dependencies rather than relying on edits to generated build files.
 
 ## Create and run an application
 

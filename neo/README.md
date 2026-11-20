@@ -42,6 +42,9 @@ neo new
 ### Build the project
 ```bash
 neo build
+
+# Regenerate build files without compiling
+neo generate
 ```
 
 ### Run the project

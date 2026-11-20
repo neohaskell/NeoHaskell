@@ -32,6 +32,8 @@ pub enum Commands {
         #[arg(long)]
         library: bool,
     },
+    /// Generate Cabal, Nix, and guidance files from neo.json without building
+    Generate,
     /// Reconcile config and build the project
     #[command(
         long_about = "Automatically generate Nix and Cabal files from neo.json and build the project. \

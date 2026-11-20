@@ -335,7 +335,7 @@ class GateTests(unittest.TestCase):
         f.write("nix/hix.nix", hix)
         f.write("flake.lock", (root / "flake.lock").read_text())
         f.commit("reviewed configuration")
-        f.write("flake.nix", flake.replace('neoctl = flake.packages."neoctl:exe:neoctl";', 'neoctl = pkgs.hixProject.shell;'))
+        f.write("flake.nix", flake.replace('neoctl = neoctlFlake.packages.${system}."neoctl:exe:neoctl";', 'neoctl = pkgs.hixProject.shell;'))
         root_change = f.commit("package depends on shell")
         f.write("nix/hix.nix", hix.replace('hlint = "latest";', 'hlint = "3.8";'))
         tooling = f.commit("changed dependent shell tool")
@@ -401,6 +401,38 @@ class GateTests(unittest.TestCase):
         f.write("flake.nix", wired.replace('doctest = "latest";', 'doctest = "next";'))
         after = f.commit("dependent tool change")
         self.assertEqual(f.classify(before, after), ["nix-packaging"])
+
+    def test_neoctl_integration_dependency_requires_installer_evidence(self):
+        f = self.fixture()
+        f.write("integrations/nhintegrations.cabal", "version: 0.1.0\n")
+        before = f.commit("neoctl integration dependency")
+        f.write("integrations/nhintegrations.cabal", "version: 0.2.0\n")
+        after = f.commit("change neoctl integration dependency")
+        self.assertEqual(f.classify(before, after), ["nix-packaging"])
+
+    def test_neoctl_linked_library_sources_require_installer_evidence(self):
+        f = self.fixture()
+        for path in ("core/service/Service/Transport/Web.hs", "integrations/Integration/Http.hs"):
+            with self.subTest(path=path):
+                before = f.git("rev-parse", "HEAD").stdout.strip()
+                f.write(path, "changed linked library implementation\n")
+                after = f.commit("change neoctl linked implementation")
+                self.assertEqual(f.classify(before, after), ["neoctl-candidate"])
+        before = f.git("rev-parse", "HEAD").stdout.strip()
+        f.write("core/test-service/ServiceSpec.hs", "changed framework test\n")
+        f.write("integrations/test/HttpSpec.hs", "changed integration test\n")
+        after = f.commit("change framework tests")
+        self.assertEqual(f.classify(before, after), [])
+
+    def test_neoctl_generation_inputs_require_installer_evidence(self):
+        f = self.fixture()
+        for path in ("neo/src/reconcile/cabal.rs", "neo/assets/templates/project.cabal.j2",
+                     "neo/assets/templates/flake.nix.j2"):
+            with self.subTest(path=path):
+                before = f.git("rev-parse", "HEAD").stdout.strip()
+                f.write(path, "changed generation input\n")
+                after = f.commit("change neoctl generation input")
+                self.assertEqual(f.classify(before, after), ["installer-rust"])
 
     def test_incomplete_fixture_and_stale_records_cannot_pass(self):
         f = self.fixture(ready=True)

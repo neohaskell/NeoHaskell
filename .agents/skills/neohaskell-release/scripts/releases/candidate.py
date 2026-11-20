@@ -1309,7 +1309,12 @@ def _package_version(path: str, package_name: str, raw: bytes) -> str:
         text = raw.decode("utf-8", "strict")
     except UnicodeDecodeError as error:
         raise ValueError("Version input is not UTF-8: " + path) from error
-    if path.endswith(".cabal"):
+    if path.endswith("neo.json"):
+        config = json.loads(text, object_pairs_hook=_pairs_without_duplicates)
+        if not isinstance(config, dict) or config.get("name") != package_name:
+            raise ValueError("Package name differs from version source: " + path)
+        matches = [config["version"]] if isinstance(config.get("version"), str) else []
+    elif path.endswith(".cabal"):
         matches = re.findall(r"(?mi)^\s*version:\s*([^\s]+)\s*$", text)
     elif path.endswith("Cargo.toml"):
         package = re.search(r"(?ms)^\[package\]\s*\n(.*?)(?=^\[|\Z)", text)

@@ -24,14 +24,34 @@
         "neo/src/tui/**",
         "neo/Cargo.toml",
         "neo/Cargo.lock",
-        "neo/lifecycle/**"
+        "neo/lifecycle/**",
+        "neo/src/reconcile/**",
+        "neo/assets/templates/**"
       ]
     },
     {
       "family": "neoctl-candidate",
       "paths": [
         "neoctl/**",
-        "nix/neoctl-package.nix"
+        "nix/neoctl-package.nix",
+        "core/auth/**",
+        "core/config/**",
+        "core/core/**",
+        "core/concurrency/**",
+        "core/decimal/**",
+        "core/service/**",
+        "core/json/**",
+        "core/traits/**",
+        "core/system/**",
+        "core/http/**",
+        "core/meta/**",
+        "core/schema/**",
+        "core/testlib/**",
+        "core/options-parser/**",
+        "core/neoql/**",
+        "core/parser/**",
+        "core/layout/**",
+        "integrations/Integration/**"
       ]
     },
     {
@@ -44,7 +64,8 @@
         "neo/flake.lock",
         "cabal.project",
         "nix/hix.nix",
-        "core/nhcore.cabal"
+        "core/nhcore.cabal",
+        "integrations/nhintegrations.cabal"
       ]
     },
     {
@@ -77,6 +98,26 @@
     "description": "Exclude development-shell bindings only for an explicitly reviewed root projection and exact package recipe. Unknown structures or changed package dependencies retain all root tokens. Revalidate independence before updating approved shapes.",
     "independent_shapes": [
       {
+        "projection_sha256": "4e602d525c08697ede72c05adc5f5c49250dce4c2a4bf20a293a66bfea52b641",
+        "dependencies": {
+          "nix/neo-package.nix": "668e5f2d1d516c91a1e89179b0e8f5f741970e71a9d8405a02503a9bd824750c",
+          "flake.lock": "1effc4277140756e9669e68a4585ae4694e5dabe6bba3d586cf2128a5adf3621"
+        },
+        "projected_dependencies": {
+          "nix/hix.nix": "fabe9af2447fca16c221a18a6b389b04d0996726877167ce0393bcd8b9dae309"
+        }
+      },
+      {
+        "projection_sha256": "d22e72ad797872140cf04fb3b310e6ae77e602373b51cf7e3208cf927995b17e",
+        "dependencies": {
+          "nix/neo-package.nix": "6f5e37878b02438e63dbd45efd7fe4e870803de104a6faecfbe2943b4943c4b0",
+          "flake.lock": "1effc4277140756e9669e68a4585ae4694e5dabe6bba3d586cf2128a5adf3621"
+        },
+        "projected_dependencies": {
+          "nix/hix.nix": "fabe9af2447fca16c221a18a6b389b04d0996726877167ce0393bcd8b9dae309"
+        }
+      },
+      {
         "projection_sha256": "2fd04e0fe4a8b3d4fc976d9b730c45d36736f8b7e3099e9dedd183b136472ac7",
         "dependencies": {
           "nix/neo-package.nix": "8fc783f2c196e06f40f9173075cb677e5e386f2c240681edf78926def9ddafb9",
@@ -92,6 +133,24 @@
     "path": "nix/hix.nix",
     "description": "Exclude known shell-only settings only for this reviewed package configuration and exact Haskell.nix lock. Compiler, modules, unknown configuration and dependency changes retain all tokens.",
     "independent_shapes": [
+      {
+        "projection_sha256": "fabe9af2447fca16c221a18a6b389b04d0996726877167ce0393bcd8b9dae309",
+        "dependencies": {
+          "flake.lock": "1effc4277140756e9669e68a4585ae4694e5dabe6bba3d586cf2128a5adf3621"
+        },
+        "projected_dependencies": {
+          "flake.nix": "4e602d525c08697ede72c05adc5f5c49250dce4c2a4bf20a293a66bfea52b641"
+        }
+      },
+      {
+        "projection_sha256": "fabe9af2447fca16c221a18a6b389b04d0996726877167ce0393bcd8b9dae309",
+        "dependencies": {
+          "flake.lock": "1effc4277140756e9669e68a4585ae4694e5dabe6bba3d586cf2128a5adf3621"
+        },
+        "projected_dependencies": {
+          "flake.nix": "d22e72ad797872140cf04fb3b310e6ae77e602373b51cf7e3208cf927995b17e"
+        }
+      },
       {
         "projection_sha256": "fabe9af2447fca16c221a18a6b389b04d0996726877167ce0393bcd8b9dae309",
         "dependencies": {

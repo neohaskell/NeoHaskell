@@ -85,6 +85,8 @@ jobs:
         env:
           RUST_TEST_THREADS: 1
         run: nix develop ./neo -c cargo test --manifest-path neo/Cargo.toml --locked --workspace --lib --bins
+      - name: Generate project without a build toolchain
+        run: nix develop ./neo -c cargo test --manifest-path neo/Cargo.toml --locked --test integration_tests generate_regenerates_project_defaults_without_a_build_toolchain
       - name: rustfmt (report-only baseline)
         continue-on-error: true
         run: |
@@ -209,6 +211,14 @@ jobs:
           CONTRACT_TEST_TIMEOUT: "2400"
           CONTRACT_READY_DEADLINE: "300"
         run: ./.agents/skills/neohaskell-consumer-verification/scripts/neo-consumer-contract
+      - name: Test neoctl with the same framework checkout
+        working-directory: neoctl
+        env:
+          NEO_NEOHASKELL_SOURCE: ${{ github.workspace }}
+        run: |
+          "$NEO_BIN" generate --ci
+          cp ../flake.lock flake.lock
+          "$NEO_BIN" test --ci
 
   cache-populate:
     needs: changes

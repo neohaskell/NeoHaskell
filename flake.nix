@@ -33,7 +33,22 @@
         });
 
         neo = pkgs.callPackage ./nix/neo-package.nix { };
-        neoctl = flake.packages."neoctl:exe:neoctl";
+        neoctlSource = pkgs.runCommand "neoctl-project" {
+          nativeBuildInputs = [ neo ];
+        } ''
+          cp -R ${./neoctl} "$out"
+          chmod -R u+w "$out"
+          cd "$out"
+          export HOME="$TMPDIR"
+          export NEO_SKIP_NETWORK=1
+          neo --ci generate
+        '';
+        neoctlFlake = (import "${neoctlSource}/flake.nix").outputs {
+          self = neoctlSource;
+          inherit nixpkgs flake-utils haskellNix;
+          neohaskell = self;
+        };
+        neoctl = neoctlFlake.packages.${system}."neoctl:exe:neoctl";
         neo-installer = pkgs.callPackage ./nix/neo-package.nix {
           command = "neo-installer";
         };

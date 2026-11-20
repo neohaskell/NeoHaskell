@@ -124,9 +124,30 @@ rustPlatform.buildRustPackage {
   checkFlags = [
     "--skip=ide::methods::heal_event_model"
   ] ++ lib.optionals stdenv.hostPlatform.isLinux [
-    # The host CI exercises setgid directory creation and default ACLs.
+    # Nix user namespaces expose root-owned ancestors as unmapped UID 65534.
+    # Host CI retains the diagnostic ownership, ACL and publication tests.
     "--skip=diagnostics::store::tests::setgid_parent_keeps_owner_only_access"
+    "--skip=diagnostics::store::tests::begin_and_finish_keep_one_name_and_replace_the_inode"
+    "--skip=diagnostics::store::tests::retention_uses_exact_millisecond_boundary_and_keeps_future_records"
+    "--skip=diagnostics::store::tests::full_store_reserves_stage_bytes_and_evicts_oldest_only"
+    "--skip=diagnostics::store::tests::foreign_entries_survive_and_overflow_refuses_before_pruning"
+    "--skip=diagnostics::store::tests::corrupt_reserved_header_prevents_all_pruning"
+    "--skip=diagnostics::store::tests::hardlinked_report_is_neither_read_as_owned_nor_removed"
+    "--skip=diagnostics::store::tests::symlink_and_fifo_reserved_entries_refuse_without_following_or_blocking"
+    "--skip=diagnostics::store::tests::malformed_lock_is_preserved"
+    "--skip=diagnostics::store::tests::lock_contention_declines_and_keeps_stable_inode"
+    "--skip=diagnostics::store::tests::stale_empty_stage_is_removed_only_after_whole_inventory_validation"
+    "--skip=diagnostics::store::tests::finish_never_resurrects_deleted_started_record_and_export_survives"
+    "--skip=diagnostics::store::tests::uninstall_clears_owned_reports_and_staging_but_preserves_exports"
+    "--skip=diagnostics::store::tests::uninstall_preserves_reserved_foreign_file_and_reports_on_inventory_failure"
+    "--skip=diagnostics::store::tests::moved_store_refuses_a_misleading_report_locator"
+    "--skip=diagnostics::store::tests::wrong_modes_and_symlinked_parents_are_not_repaired"
     "--skip=diagnostics::store::tests::linux_default_acl_refuses_before_creating_store"
+    "--skip=diagnostics::store::tests::process_exit_at_publication_cuts_leaves_a_recoverable_store"
+    # Host shell locations and startup files are unavailable in the sealed build.
+    "--skip=installation::process::shell_startup::tests::interactive_startup_has_a_controlling_terminal_and_noise_is_discarded"
+    "--skip=installation::process::shell_startup::tests::qualified_lookup_and_pinned_versions_in_all_startup_modes"
+    "--skip=installation::process::shell_startup::tests::startup_timeout_and_cancellation_reap_the_shell_group"
     # Sealed Nix returns EOPNOTSUPP for flistxattr. Profile exchange requires readable metadata.
     "--skip=installation::shell::removal::tests::removal_preserves_prefix_suffix_and_completed_retry"
     "--skip=installation::shell::removal::tests::removal_refuses_editor_replacement_before_exchange"

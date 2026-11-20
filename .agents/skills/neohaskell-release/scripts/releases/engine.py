@@ -668,6 +668,12 @@ def plan_release(repo, source, group, completed, date, bootstrap=None, check_tag
 
 
 def change_version(text, path, package, target):
+    if path.endswith("neo.json"):
+        data = json.loads(text)
+        if data.get("name") != package or not isinstance(data.get("version"), str):
+            raise ValueError(f"{path}: cannot uniquely update {package}")
+        data["version"] = target
+        return json.dumps(data, indent=2, ensure_ascii=False) + "\n"
     if path.endswith(".cabal"):
         result, count = re.subn(
             r"(?mi)^(version:\s*)[^\n]+", lambda m: m[1] + target, text, count=1
