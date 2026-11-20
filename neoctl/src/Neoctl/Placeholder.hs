@@ -16,6 +16,10 @@ data Placeholder = Placeholder
   }
 
 
+-- | Allow callers to access neoctl's placeholder query.
+--
+-- >>> canAccess Nothing
+-- Nothing
 canAccess :: Maybe UserClaims -> Maybe AccessError
 canAccess userClaims = publicAccess userClaims
 
