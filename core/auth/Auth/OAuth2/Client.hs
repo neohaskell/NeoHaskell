@@ -108,15 +108,15 @@ import Auth.OAuth2.Types (
 import Auth.UrlValidation (ValidationError (..))
 import Auth.UrlValidation qualified as UrlValidation
 import Basics
+import Bytes (Bytes)
 import Bytes qualified
 import Log qualified
-import Char (Char)
 import Crypto.Hash qualified as Hash
-import LinkedList qualified
 import Crypto.Random qualified as Random
 import Data.ByteArray.Encoding qualified as Encoding
 import Data.ByteString qualified as BS
 import Http.Client qualified as Http
+import Http.Client.Internal qualified as HttpInternal
 import Json qualified
 import Maybe (Maybe (..))
 import Maybe qualified
@@ -596,25 +596,7 @@ requestTokens tokenEndpoint formParams = do
       -- SECURITY: Sanitize error message - don't expose full URL (may have secrets in query)
       let errMsg = sanitizeValidationError validationError
       Task.throw (EndpointValidationFailed errMsg)
-    Ok _ -> do
-      let request =
-            Http.request
-              |> Http.withUrl tokenEndpoint
-              |> Http.withTimeout 10 -- 10s timeout for OAuth2 token requests
-      let formArray = formParams |> Array.fromLinkedList
-      result <-
-        Http.postForm @TokenResponse request formArray
-          |> Task.mapError parseHttpError
-          |> Task.asResult
-      case result of
-        Err err -> Task.throw err
-        Ok response -> do
-          Task.yield
-            TokenSet
-              { accessToken = mkAccessToken response.body.access_token
-              , refreshToken = response.body.refresh_token |> fmap mkRefreshToken
-              , expiresInSeconds = response.body.expires_in
-              }
+    Ok _ -> postTokenRequest tokenEndpoint formParams
 
 
 -- | Make a token request to a pre-validated provider endpoint.
@@ -636,14 +618,8 @@ requestTokensValidated tokenEndpoint formParams = do
   Log.withScope [("component", "OAuth2"), ("endpoint", sanitizedEndpoint)] do
     Log.info "Token request (pre-validated)"
       |> Task.ignoreError
-  let request =
-        Http.request
-          |> Http.withUrl tokenEndpoint
-          |> Http.withTimeout 10 -- 10s timeout for OAuth2 token requests
-  let formArray = formParams |> Array.fromLinkedList
   result <-
-    Http.postForm @TokenResponse request formArray
-      |> Task.mapError parseHttpError
+    postTokenRequest tokenEndpoint formParams
       |> Task.asResult
   case result of
     Err err -> do
@@ -652,17 +628,69 @@ requestTokensValidated tokenEndpoint formParams = do
         Log.warn "Token request failed"
           |> Task.ignoreError
       Task.throw err
-    Ok response -> do
+    Ok tokens -> do
       -- AUDIT: Log success (no token values)
       Log.withScope [("component", "OAuth2"), ("endpoint", sanitizedEndpoint)] do
         Log.info "Token request succeeded"
           |> Task.ignoreError
-      Task.yield
+      Task.yield tokens
+
+
+-- | Send one token request and decode its response.
+-- Every token exchange and token refresh goes through this function, so both
+-- share the transport options and the status-first decoding.
+-- SECURITY: The caller validates the endpoint before calling this.
+postTokenRequest ::
+  Text ->
+  [(Text, Text)] ->
+  Task OAuth2Error TokenSet
+postTokenRequest tokenEndpoint formParams = do
+  let request =
+        Http.request
+          |> Http.withUrl tokenEndpoint
+          |> Http.withTimeout 10 -- 10s timeout for OAuth2 token requests
+          |> Http.addHeader "Accept" "application/json"
+  let formArray = formParams |> Array.fromLinkedList
+  response <-
+    HttpInternal.postFormRaw request formArray
+      |> Task.mapError transportError
+  case decodeTokenResponse response of
+    Err oauthError -> Task.throw oauthError
+    Ok tokens -> Task.yield tokens
+
+
+-- | Decode a token endpoint response, reading the HTTP status before the body.
+-- A 2xx status must carry a token response. Any other status is a rejection
+-- that may carry an OAuth2 error object (RFC 6749 Section 5.2).
+-- SECURITY: Errors built here never include the response body or the JSON
+-- parser diagnostics, because both can contain tokens.
+decodeTokenResponse :: Http.Response Bytes -> Result OAuth2Error TokenSet
+decodeTokenResponse response =
+  if response.statusCode >= 200 && response.statusCode < 300
+    then decodeTokenSuccess response.body
+    else Err (decodeTokenRejection response.statusCode response.body)
+
+
+-- | Decode the body of a 2xx token response.
+decodeTokenSuccess :: Bytes -> Result OAuth2Error TokenSet
+decodeTokenSuccess body =
+  case Json.decodeBytes @TokenResponse body of
+    Err _ -> Err (MalformedResponse "Token endpoint returned a response that is not a valid token response")
+    Ok tokenResponse ->
+      Ok
         TokenSet
-          { accessToken = mkAccessToken response.body.access_token
-          , refreshToken = response.body.refresh_token |> fmap mkRefreshToken
-          , expiresInSeconds = response.body.expires_in
+          { accessToken = mkAccessToken tokenResponse.access_token
+          , refreshToken = tokenResponse.refresh_token |> fmap mkRefreshToken
+          , expiresInSeconds = tokenResponse.expires_in
           }
+
+
+-- | Classify a non-2xx token response.
+decodeTokenRejection :: Int -> Bytes -> OAuth2Error
+decodeTokenRejection statusCode body =
+  case Json.decodeBytes @TokenErrorResponse body of
+    Err _ -> TokenRequestFailed [fmt|Token endpoint returned HTTP status #{statusCode}|]
+    Ok errorResponse -> mapOAuthErrorCode errorResponse.error errorResponse.error_description
 
 
 -- | Sanitize URL for audit logs - extract only scheme://host:port
@@ -697,69 +725,15 @@ errorCategory err = case err of
   InvalidRedirectUri _ -> "invalid_redirect_uri"
 
 
--- | Parse HTTP error to OAuth2Error, attempting to extract OAuth2 error response.
--- If the error message contains OAuth2 error JSON, parse it to specific error type.
--- Otherwise, return a generic NetworkError.
-parseHttpError :: Http.Error -> OAuth2Error
-parseHttpError httpError =
+-- | Convert a sanitized transport failure into a 'NetworkError'.
+-- The HTTP layer returns every response status as a value, so a failure here
+-- means that no complete response was read.
+transportError :: Http.Error -> OAuth2Error
+transportError httpError =
   case httpError of
-    Http.Error msg ->
-      -- Try to find and parse OAuth2 error JSON in the error message
-      -- HTTP client errors for status codes include the response body
-      -- Note: This is a best-effort parse - if it fails, we fall back to NetworkError
-      case parseOAuthErrorFromMessage msg of
-        Just oauthError -> oauthError
-        Nothing -> NetworkError msg
-    Http.InvalidUrl url ->
-      -- InvalidUrl should not occur via Http.postForm (only via Http.getSecure)
-      -- but we handle it defensively to satisfy exhaustiveness
-      NetworkError [fmt|Request used non-HTTPS URL: #{url}|]
-    Http.ResponseTooLarge limitBytes ->
-      -- ResponseTooLarge should not occur via Http.postForm (only via Http.getSecure)
-      -- but we handle it defensively to satisfy exhaustiveness
-      NetworkError [fmt|Response exceeded size limit of #{limitBytes} bytes|]
-
-
--- | Attempt to extract OAuth2 error from error message.
--- The HTTP library includes response body in some error messages.
-parseOAuthErrorFromMessage :: Text -> Maybe OAuth2Error
-parseOAuthErrorFromMessage msg = do
-  -- Look for JSON object pattern in the message
-  -- OAuth2 errors have format: {"error":"...", "error_description":"..."}
-  let msgStr = Text.toLinkedList msg
-  case findJsonInMessage msgStr of
-    Nothing -> Nothing
-    Just jsonStr -> do
-      case Json.decodeText (Text.fromLinkedList jsonStr) of
-        Err _ -> Nothing
-        Ok (errorResponse :: TokenErrorResponse) ->
-          Just (mapOAuthErrorCode errorResponse.error errorResponse.error_description)
-
-
--- | Find a JSON object in a message string (simple heuristic).
-findJsonInMessage :: [Char] -> Maybe [Char]
-findJsonInMessage [] = Nothing
-findJsonInMessage ('{' : rest) = do
-  -- Found opening brace, try to find matching close
-  case findClosingBrace rest 1 [] of
-    Just jsonChars -> Just ('{' : jsonChars)
-    Nothing -> findJsonInMessage rest
-findJsonInMessage (_ : rest) = findJsonInMessage rest
-
-
--- | Find closing brace, tracking nesting depth.
--- Accumulates characters in reverse order, then reverses at the end.
-findClosingBrace :: [Char] -> Int -> [Char] -> Maybe [Char]
-findClosingBrace [] _ _ = Nothing
-findClosingBrace (c : rest) depth acc = do
-  let newAcc = c : acc -- Build in reverse for efficiency
-  case c of
-    '{' -> findClosingBrace rest (depth + 1) newAcc
-    '}' -> do
-      if depth == 1
-        then Just (LinkedList.reverse newAcc)
-        else findClosingBrace rest (depth - 1) newAcc
-    _ -> findClosingBrace rest depth newAcc
+    Http.Error msg -> NetworkError msg
+    Http.InvalidUrl url -> NetworkError [fmt|Request used non-HTTPS URL: #{url}|]
+    Http.ResponseTooLarge limitBytes -> NetworkError [fmt|Response exceeded size limit of #{limitBytes} bytes|]
 
 
 -- | URL encoding (percent-encoding) using Network.URI.
