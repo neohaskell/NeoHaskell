@@ -12,9 +12,11 @@ from sweep_model import (
     BranchRules,
     CheckEvidence,
     CheckStatus,
+    ConsolidationEvidence,
     DecisionKind,
     Disposition,
     IndependentVerdict,
+    Ownership,
     OwnershipProof,
     PendingAttempt,
     PlanKind,
@@ -134,6 +136,12 @@ def make_pr(
             decision=ReviewDecision.NONE,
             approvals=0,
         ),
+        consolidation=ConsolidationEvidence(
+            complete=True,
+            candidate_head_sha=head_sha,
+            source_sha=source_sha,
+            changelog_entries=1,
+        ),
         mergeable=True,
         mergeable_head_sha=head_sha,
     )
@@ -150,7 +158,27 @@ def make_snapshot(
     selection_main_sha=MAIN,
     rules=None,
     inventory_complete=True,
+    merge_coverage=True,
 ):
+    if verified_merge is not None and merge_coverage:
+        covered_heads = frozenset(
+            (record.key, record.head_sha)
+            for record in records
+            if record.key != verified_merge.key
+            and record.source_sha != verified_merge.source_sha
+            and record.ownership is Ownership.VERIFIED
+            and record.disposition in {Disposition.OPEN, Disposition.CLOSED}
+        )
+        verified_merge = replace(
+            verified_merge,
+            consolidation=ConsolidationEvidence(
+                complete=True,
+                candidate_head_sha=verified_merge.head_sha,
+                source_sha=verified_merge.source_sha,
+                covered_heads=covered_heads,
+                changelog_entries=1,
+            ),
+        )
     return SweepSnapshot(
         main_sha=main_sha,
         selection_main_sha=selection_main_sha,
@@ -264,6 +292,178 @@ class SweepDecisionTests(unittest.TestCase):
         decision = decide(make_snapshot(records=(make_pr(), ambiguous)))
         self.assertEqual(decision.kind, DecisionKind.MERGE)
         self.assertEqual(decision.pr, make_pr().key)
+
+    def test_current_release_covers_each_verified_older_head_before_closure(self):
+        older = make_pr(
+            number=930,
+            head_sha=CHANGED_HEAD,
+            source_sha=OLD_MAIN,
+            stale_source_is_ancestor_of_replacement=True,
+        )
+        current = make_pr()
+        self.assertEqual(
+            decide(make_snapshot(records=(current, older))).kind,
+            DecisionKind.BLOCKED,
+        )
+        covered = replace(
+            current,
+            consolidation=replace(
+                current.consolidation,
+                covered_heads=frozenset({(older.key, older.head_sha)}),
+            ),
+        )
+        self.assertEqual(
+            decide(make_snapshot(records=(covered, older))).kind,
+            DecisionKind.LINK_STALE,
+        )
+        changed_older = replace(older, head_sha="9" * 40, ownership_proof=make_proof("9" * 40, OLD_MAIN))
+        self.assertEqual(
+            decide(make_snapshot(records=(covered, changed_older))).kind,
+            DecisionKind.BLOCKED,
+        )
+
+    def test_closed_older_preparation_remains_required_after_main_advances(self):
+        older = make_pr(
+            number=930,
+            head_sha=CHANGED_HEAD,
+            source_sha=OLD_MAIN,
+            disposition=Disposition.CLOSED,
+            replacement_link_recorded=True,
+        )
+        candidate = make_pr()
+        self.assertEqual(
+            decide(make_snapshot(records=(candidate, older))).kind,
+            DecisionKind.BLOCKED,
+        )
+        covered = replace(
+            candidate,
+            consolidation=replace(
+                candidate.consolidation,
+                covered_heads=frozenset({(older.key, older.head_sha)}),
+            ),
+        )
+        self.assertEqual(
+            decide(make_snapshot(records=(covered, older))).kind,
+            DecisionKind.MERGE,
+        )
+        changed_after_closure = replace(older, head_sha="9" * 40)
+        self.assertEqual(
+            decide(make_snapshot(records=(covered, changed_after_closure))).kind,
+            DecisionKind.BLOCKED,
+        )
+
+    def test_post_merge_stale_closure_requires_merged_coverage(self):
+        older = make_pr(
+            number=927,
+            source_sha="1" * 40,
+            stale_source_is_ancestor_of_replacement=True,
+            replacement_link_recorded=True,
+        )
+        attempt = PendingAttempt(PLAN, OLD_MAIN, PublicationStatus.IN_PROGRESS)
+        merged = make_merged()
+        missing = make_snapshot(
+            records=(older,),
+            verified_merge=merged,
+            pending_attempt=attempt,
+            merge_coverage=False,
+        )
+        self.assertEqual(decide(missing).kind, DecisionKind.BLOCKED)
+        complete = make_snapshot(
+            records=(older,),
+            verified_merge=merged,
+            pending_attempt=attempt,
+        )
+        self.assertEqual(decide(complete).kind, DecisionKind.CLOSE_STALE)
+
+    def test_older_pr_closes_before_candidate_ci_passes_or_merges(self):
+        older = make_pr(
+            number=930,
+            head_sha=CHANGED_HEAD,
+            source_sha=OLD_MAIN,
+            stale_source_is_ancestor_of_replacement=True,
+        )
+        candidate = make_pr(
+            checks=(make_check("ci-gate", 15368, HEAD, CheckStatus.FAILURE),),
+            consolidation=ConsolidationEvidence(
+                complete=True,
+                candidate_head_sha=HEAD,
+                source_sha=MAIN,
+                covered_heads=frozenset({(older.key, older.head_sha)}),
+                changelog_entries=1,
+            ),
+        )
+        running_check = ActiveRun(
+            501,
+            RunEvent.PULL_REQUEST,
+            RunStatus.IN_PROGRESS,
+            HEAD,
+            pull_request=candidate.key,
+        )
+        linked = decide(make_snapshot(records=(candidate, older), active_runs=(running_check,)))
+        self.assertEqual(linked.kind, DecisionKind.LINK_STALE)
+        self.assertEqual(linked.pr, older.key)
+        self.assertEqual(dict(linked.details)["replacement"], candidate.url)
+
+        closure = decide(
+            make_snapshot(
+                records=(candidate, replace(older, replacement_link_recorded=True)),
+                active_runs=(running_check,),
+            )
+        )
+        self.assertEqual(closure.kind, DecisionKind.CLOSE_STALE)
+        self.assertEqual(closure.pr, older.key)
+
+        after_closure = decide(make_snapshot(records=(candidate,)))
+        self.assertEqual(after_closure.kind, DecisionKind.REPAIR_CI)
+        self.assertEqual(after_closure.pr, candidate.key)
+
+    def test_older_pr_without_ancestry_proof_stays_open(self):
+        older = make_pr(number=930, head_sha=CHANGED_HEAD, source_sha=OLD_MAIN)
+        candidate = make_pr(
+            consolidation=ConsolidationEvidence(
+                complete=True,
+                candidate_head_sha=HEAD,
+                source_sha=MAIN,
+                covered_heads=frozenset({(older.key, older.head_sha)}),
+                changelog_entries=1,
+            ),
+        )
+        self.assertEqual(
+            decide(make_snapshot(records=(candidate, older))).kind,
+            DecisionKind.BLOCKED,
+        )
+
+    def test_missing_fragment_or_changelog_entry_blocks_merge(self):
+        current = make_pr()
+        for coverage in (
+            replace(current.consolidation, missing_paths=(".changes/old.md",)),
+            replace(current.consolidation, changelog_entries=0),
+            replace(current.consolidation, candidate_head_sha=CHANGED_HEAD),
+        ):
+            with self.subTest(coverage=coverage):
+                candidate = replace(current, consolidation=coverage)
+                self.assertEqual(
+                    decide(make_snapshot(records=(candidate,))).kind,
+                    DecisionKind.BLOCKED,
+                )
+
+    def test_unknown_older_preparation_blocks_cumulative_claim(self):
+        older = make_pr(
+            number=930,
+            source_sha=OLD_MAIN,
+            proof=make_proof(source_sha=OLD_MAIN, failed=frozenset({ProofCheck.GENERATED_DIFF})),
+        )
+        self.assertEqual(
+            decide(make_snapshot(records=(make_pr(), older))).kind,
+            DecisionKind.BLOCKED,
+        )
+
+    def test_recovery_pr_does_not_enter_cumulative_coverage(self):
+        recovery = make_pr(number=930, source_sha=OLD_MAIN, plan_kind=PlanKind.RECOVERY)
+        self.assertEqual(
+            decide(make_snapshot(records=(make_pr(), recovery))).kind,
+            DecisionKind.MERGE,
+        )
 
     def test_unverified_current_source_pr_prevents_duplicate_dispatch(self):
         altered = make_pr(
@@ -420,12 +620,17 @@ class SweepDecisionTests(unittest.TestCase):
             PublicationStatus.NEEDS_SOURCE_FIX,
             PublicationStatus.UNKNOWN,
         ):
+            expected = (
+                DecisionKind.BLOCKED
+                if publication is PublicationStatus.UNKNOWN
+                else DecisionKind.RECOVER_RELEASE
+            )
             cases[f"{publication.value} publication"] = (
                 replace(
                     snapshot,
                     pending_attempt=PendingAttempt(PLAN, OLD_MAIN, publication),
                 ),
-                DecisionKind.BLOCKED,
+                expected,
             )
 
         stale_action = DecisionKind.CLOSE_STALE if linked else DecisionKind.LINK_STALE
@@ -589,11 +794,12 @@ class SweepDecisionTests(unittest.TestCase):
                 with self.subTest(mutation=expected.value, condition=condition):
                     decision = decide(change(snapshot))
                     self.assertNotIn(decision.kind, mutation_kinds)
-                    expected_safe = (
-                        DecisionKind.RESCAN
-                        if condition in {"stale rules", "main changed"}
-                        else DecisionKind.BLOCKED
-                    )
+                    if condition in {"stale rules", "main changed"}:
+                        expected_safe = DecisionKind.RESCAN
+                    elif condition in {"paused attempt", "corrupt attempt", "source fix needed"}:
+                        expected_safe = DecisionKind.RECOVER_RELEASE
+                    else:
+                        expected_safe = DecisionKind.BLOCKED
                     self.assertEqual(decision.kind, expected_safe)
 
     def test_frozen_publication_tracking_survives_later_main_without_rules(self):
@@ -838,11 +1044,11 @@ class SweepDecisionTests(unittest.TestCase):
         decision = decide(make_snapshot(records=(record,)))
         self.assertEqual(decision.kind, DecisionKind.WAIT_CHECKS)
 
-    def test_skipped_required_check_blocks(self):
+    def test_skipped_required_check_needs_ci_repair(self):
         record = make_pr(
             checks=(make_check("ci-gate", 15368, HEAD, CheckStatus.SKIPPED),)
         )
-        self.assertEqual(decide(make_snapshot(records=(record,))).kind, DecisionKind.BLOCKED)
+        self.assertEqual(decide(make_snapshot(records=(record,))).kind, DecisionKind.REPAIR_CI)
 
     def test_current_success_supersedes_historical_failed_rerun_attempt(self):
         record = make_pr(

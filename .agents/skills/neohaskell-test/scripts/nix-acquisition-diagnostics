@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+"$@" &
+nix_pid=$!
+
+(
+  while kill -0 "$nix_pid" 2>/dev/null; do
+    printf 'Nix acquisition snapshot %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    sudo ps -eLo pid,tid,ppid,comm,stat,wchan:28,etime |
+      awk 'NR == 1 || $4 ~ /^(nix|nix-daemon|determinate-nixd|curl)$/'
+    if command -v ss >/dev/null 2>&1; then
+      sudo ss -tnpi |
+        awk '/users:\(\("(nix|nix-daemon|determinate-nixd|curl)"/ { print; getline; print }'
+    fi
+    sleep 30
+  done
+) &
+monitor_pid=$!
+trap 'kill "$monitor_pid" 2>/dev/null || true' EXIT
+
+wait "$nix_pid"

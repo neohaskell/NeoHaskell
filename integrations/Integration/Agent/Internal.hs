@@ -210,12 +210,12 @@ executeAgent ::
   Request command ->
   Task Integration.IntegrationError (Maybe Integration.CommandPayload)
 executeAgent ctx agentRequest = do
-  case Array.length agentRequest.tools == 0 of
-    True -> do
+  if Array.length agentRequest.tools == 0
+    then do
       let errorCmd = agentRequest.onError "Agent.agent: tools list is empty"
       let payload = Integration.makeCommandPayload errorCmd
       Task.yield (Just payload)
-    False -> do
+    else do
       let body = buildAgentRequestBody agentRequest
       let openRouterConfig = OpenRouterRequest.Config
             { temperature = agentRequest.config.temperature

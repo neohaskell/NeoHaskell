@@ -2,14 +2,18 @@ module Main (main) where
 
 import Prelude (IO)
 
+import AtomicVarSpec qualified
 import AsyncTask.RaceSpec qualified
 import ArraySpec qualified
 import BytesSpec qualified
 import Command.FromSchemaSpec qualified
 import ConcurrentMapSpec qualified
 import CryptoSpec qualified
+import ErasableSpec qualified
+import DateTimeSpec qualified
 import DeciderSpec qualified
 import DecimalSpec qualified
+import DirectorySpec qualified
 import UuidSpec qualified
 import EventVariantOfSpec qualified
 import Config.ApplicationSpec qualified
@@ -27,6 +31,7 @@ import Http.ClientSpec qualified
 import IntSpec qualified
 import Layout.RenderSpec qualified
 import LayoutSpec qualified
+import LockSpec qualified
 import NeoQL.ExecuteSpec qualified
 import NeoQL.ParserSpec qualified
 import OutboundIntegrationSpec qualified
@@ -39,24 +44,30 @@ import SetSpec qualified
 import StreamSpec qualified
 import Test.AppSpec.AppSpecSpec qualified
 import Test.AppSpec.VerifySpec qualified
+import Test.SpecSpec qualified
 import ParserSpec qualified
 import Parser.ErrorSpec qualified
 import Parser.WhitespaceSpec qualified
 import Parser.FileSpec qualified
 import TaskSpec qualified
+import TextSpec qualified
 import Test.Hspec qualified as Hspec
 
 
 main :: IO ()
 main = Hspec.hspec do
+  Hspec.describe "AtomicVar" AtomicVarSpec.spec
   Hspec.describe "AsyncTask.Race" AsyncTask.RaceSpec.spec
   Hspec.describe "Array" ArraySpec.spec
   Hspec.describe "Bytes" BytesSpec.spec
   Hspec.describe "Command.FromSchema" Command.FromSchemaSpec.spec
   Hspec.describe "ConcurrentMap" ConcurrentMapSpec.spec
   Hspec.describe "Crypto" CryptoSpec.spec
+  Hspec.describe "Erasable" ErasableSpec.spec
+  Hspec.describe "DateTime" DateTimeSpec.spec
   Hspec.describe "Decider" DeciderSpec.spec
   Hspec.describe "Decimal" DecimalSpec.spec
+  Hspec.describe "Directory" DirectorySpec.spec
   Hspec.describe "Uuid" UuidSpec.spec
   Hspec.describe "EventVariantOf" EventVariantOfSpec.spec
   Hspec.describe "Config.Application" Config.ApplicationSpec.spec
@@ -74,6 +85,7 @@ main = Hspec.hspec do
   Hspec.describe "Int" IntSpec.spec
   Hspec.describe "Layout" LayoutSpec.spec
   Hspec.describe "Layout.Render" Layout.RenderSpec.spec
+  Hspec.describe "Lock" LockSpec.spec
   Hspec.describe "NeoQL.Parser" NeoQL.ParserSpec.spec
   Hspec.describe "NeoQL.Execute" NeoQL.ExecuteSpec.spec
   Hspec.describe "OutboundIntegration" OutboundIntegrationSpec.spec
@@ -86,8 +98,10 @@ main = Hspec.hspec do
   Hspec.describe "Stream" StreamSpec.spec
   Hspec.describe "Test.AppSpec.AppSpec" Test.AppSpec.AppSpecSpec.spec
   Hspec.describe "Test.AppSpec.Verify" Test.AppSpec.VerifySpec.spec
+  Hspec.describe "Test.Spec" Test.SpecSpec.spec
   Hspec.describe "Parser" ParserSpec.spec
   Hspec.describe "Parser.Error" Parser.ErrorSpec.spec
   Hspec.describe "Parser.Whitespace" Parser.WhitespaceSpec.spec
   Hspec.describe "Parser.File" Parser.FileSpec.spec
   Hspec.describe "Task" TaskSpec.spec
+  Hspec.describe "Text" TextSpec.spec

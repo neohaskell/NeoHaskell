@@ -84,9 +84,9 @@ data ResolvedParams = ResolvedParams
 -- fail-fast @poolSize > 0@ validation WI-1 added to the pool-acquire paths.
 validatePort :: Int -> Result Text Word16
 validatePort p =
-  case p >= 1 && p <= 65535 of
-    True -> Ok (fromIntegral p)
-    False -> Err [fmt|port must be in 1..65535, got #{p}|]
+  if p >= 1 && p <= 65535
+    then Ok (fromIntegral p)
+    else Err [fmt|port must be in 1..65535, got #{p}|]
 
 
 -- | The single validation point for connection inputs (ADR-0062 section 2):

@@ -56,6 +56,7 @@ import Result (Result (..))
 import Service.FileUpload.BlobStore (BlobKey, BlobStore (..))
 import Service.FileUpload.Core (
   ContentHash (..),
+  FileCreation (..),
   FileAccessError (..),
   FileDeletedData (..),
   FileDeletionReason (..),
@@ -129,6 +130,10 @@ data FileStateStore = FileStateStore
   -- ^ Apply an event to update state
   , findByContentHash :: OwnerHash -> ContentHash -> Task Text (Maybe FileRef)
   -- ^ Find an existing non-deleted file with matching owner and content hash
+  , reserveCreation :: FileCreation -> Task Text FileCreation
+  -- ^ Atomically select the canonical reservation for an owner and key
+  , publishRetained :: FileCreation -> Task Text ()
+  -- ^ Publish a retained lifecycle state after its blob has been stored
   }
 
 
@@ -137,12 +142,18 @@ data FileStateStore = FileStateStore
 -- ==========================================================================
 
 -- | In-memory file state store for development/testing.
-type InMemoryFileStateStore = ConcurrentMap FileRef FileUploadState
+data InMemoryFileStateStore = InMemoryFileStateStore
+  { lifecycleStates :: ConcurrentMap FileRef FileUploadState
+  , fileCreations :: ConcurrentMap (Text, Text) FileCreation
+  }
 
 
 -- | Create a new in-memory file state store.
 newInMemoryFileStateStore :: Task err InMemoryFileStateStore
-newInMemoryFileStateStore = ConcurrentMap.new
+newInMemoryFileStateStore = do
+  lifecycleStates <- ConcurrentMap.new
+  fileCreations <- ConcurrentMap.new
+  Task.yield InMemoryFileStateStore {lifecycleStates, fileCreations}
 
 
 -- | Create a FileStateStore backed by a ConcurrentMap.
@@ -150,10 +161,10 @@ inMemoryFileStateStore :: InMemoryFileStateStore -> FileStateStore
 inMemoryFileStateStore store =
   FileStateStore
     { getState = \fileRef -> do
-        ConcurrentMap.get fileRef store
+        ConcurrentMap.get fileRef store.lifecycleStates
           |> Task.mapError (\_ -> "Failed to read state")
     , setState = \fileRef state -> do
-        ConcurrentMap.set fileRef state store
+        ConcurrentMap.set fileRef state store.lifecycleStates
           |> Task.mapError (\_ -> "Failed to write state")
     , updateState = \fileRef event -> do
         -- Use atomic update to prevent race conditions
@@ -162,14 +173,43 @@ inMemoryFileStateStore store =
                     Nothing -> Lifecycle.initialState
                     Just s -> s
               in Lifecycle.update event currentState
-        ConcurrentMap.update fileRef updateFn store
+        ConcurrentMap.update fileRef updateFn store.lifecycleStates
           |> Task.mapError (\_ -> "Failed to update state")
     , findByContentHash = \ownerHash contentHash -> do
         -- NOTE: O(n) scan — acceptable for dev/testing only. Production uses Postgres with indexed lookup.
-        allEntries <- ConcurrentMap.entries store
+        allEntries <- ConcurrentMap.entries store.lifecycleStates
           |> Task.mapError (\_ -> "Failed to read state map")
         let entryList = allEntries |> Array.toLinkedList
         Task.yield (findMatchingEntry ownerHash contentHash entryList)
+    , reserveCreation = \candidate -> do
+        let OwnerHash ownerText = candidate.ownerHash
+        let key = (ownerText, candidate.creationKey)
+        (canonical, _) <- ConcurrentMap.getOrInsert key candidate store.fileCreations
+        Task.yield canonical
+    , publishRetained = \creation -> do
+        let retainedFile = Lifecycle.RetainedFile
+              { metadata = Lifecycle.FileMetadata
+                  { ref = creation.fileRef
+                  , filename = creation.filename
+                  , contentType = creation.contentType
+                  , sizeBytes = creation.sizeBytes
+                  , blobKey = creation.blobKey
+                  , uploadedAt = creation.createdAt
+                  , contentHash = creation.contentHash
+                  }
+              , ownerHash = creation.ownerHash
+              }
+        (current, _) <- ConcurrentMap.getOrInsertIf
+          creation.fileRef
+          (Retained retainedFile)
+          (\state -> state == Initial)
+          store.lifecycleStates
+        case current of
+          Retained existing -> Task.unless
+            (existing == retainedFile)
+            (Task.throw "File reference already belongs to another retained file")
+          Deleted -> Task.throw "Deleted file cannot be restored"
+          _ -> Task.throw "File reference already has another lifecycle state"
     }
 
 
@@ -417,31 +457,15 @@ normalUploadFlow config blobStore stateStore ownerHash filename contentType cont
           Task.throw "Failed to record upload state"
 
 
--- | Guard a deduplication match against blob loss (issue #713).
---
--- Before returning an existing 'FileRef', verify its blob is still present in
--- the 'BlobStore'; if it is missing — or its presence cannot be confirmed (the
--- existence check itself errored) — re-store the caller's content under the
--- SAME blob key so the returned reference is never dangling. Healing in place
--- (same key, no state-store write) preserves dedup identity and is robust on
--- every backend: unlike falling through to a fresh upload, it cannot collide
--- with the (owner, content_hash) unique constraint and re-return the stale ref.
---
--- The re-stored bytes are the caller's own content, matched to the existing
--- entry by the same owner-scoped content hash, so healing never crosses owners
--- or writes different content. 'BlobStore.store' overwrites idempotently, so a
--- redundant re-store (e.g. after a transient existence-check error) is harmless.
 ensureBlobPresent :: BlobStore -> BlobKey -> Bytes -> Task Text Unit
 ensureBlobPresent blobStore blobKey content = do
   existsResult <- blobStore.exists blobKey |> Task.asResult
   blobPresent <- case existsResult of
     Ok present -> Task.yield present
     Err existsErr -> do
-      -- Presence unknown: keep the real error in the server log, then treat as
-      -- missing and heal (re-store is idempotent).
-      Log.warn [fmt|Dedup blob existence check errored (#{show existsErr}); treating as missing|]
+      Log.critical [fmt|Dedup blob existence check errored (#{show existsErr}); refusing to rewrite|]
         |> Task.ignoreError
-      Task.yield False
+      Task.throw "Failed to verify stored file content. Please retry."
   Task.unless blobPresent do
       Log.warn "Deduplicated blob unavailable; self-healing by re-storing content"
         |> Task.ignoreError
@@ -520,6 +544,14 @@ handleDownloadImpl blobStore stateStore ownerHash fileRef = Log.withScope [("com
           then Task.throw (NotOwner fileRef)
           else do
             let meta = confirmedFile.metadata
+            content <- blobStore.retrieve meta.blobKey
+              |> Task.mapError (\_ -> BlobMissing fileRef)
+            Task.yield (content, meta.contentType, meta.filename)
+      Retained retainedFile -> do
+        if retainedFile.ownerHash != ownerHash
+          then Task.throw (NotOwner fileRef)
+          else do
+            let meta = retainedFile.metadata
             content <- blobStore.retrieve meta.blobKey
               |> Task.mapError (\_ -> BlobMissing fileRef)
             Task.yield (content, meta.contentType, meta.filename)
@@ -642,7 +674,7 @@ cleanupExpiredFiles stateStore blobStore stateMap = do
           _ -> pass  -- Skip non-pending files
   
   -- Process in chunks of 100 entries
-  ConcurrentMap.forEachChunked 100 processEntry stateMap
+  ConcurrentMap.forEachChunked 100 processEntry stateMap.lifecycleStates
     |> Task.mapError (\_ -> "Failed to iterate state map")
   
   -- Return count of deleted files

@@ -31,7 +31,7 @@ import Service.Event.EntityName (EntityName (..))
 import Service.Event.EventMetadata (EventMetadata (..))
 import Service.Event.StreamId qualified as StreamId
 import Service.EventStore.InMemory qualified as InMemory
-import Service.FileUpload.Core (FileAccessError (..), FileRef (..))
+import Service.FileUpload.Core (FileAccessError (..), FileCreationError (..), FileRef (..))
 import Service.Integration.DispatchRegistry qualified as DispatchRegistry
 import Service.Integration.Dispatcher qualified as Dispatcher
 import Service.Transport (DispatchHandler)
@@ -159,6 +159,7 @@ spec = do
       let missingFile = FileAccessContext
             { retrieveFile = \ref -> Task.throw (FileNotFound ref)
             , getFileMetadata = \ref -> Task.throw (FileNotFound ref)
+            , createFile = \_ -> Task.throw InvalidFileMetadata
             }
       ctx <- Task.runOrPanic (makeContext (Just missingFile))
       outcome <- Task.runOrPanic (textTask (executeExtraction runner ctx (makeRequest VideoAudio.defaultConfig) |> Task.asResult))
@@ -362,6 +363,7 @@ makeContext fileAccess = do
     , providerRegistry = Integration.fromMap Map.empty
     , refreshLocks = emptyLocks
     , fileAccess = fileAccess
+    , eraseErasableKey = Nothing
     , outboundDispatch = DispatchRegistry.empty
     }
 
@@ -384,6 +386,7 @@ videoAccess :: FileAccessContext
 videoAccess = FileAccessContext
   { retrieveFile = \_ -> Task.yield fakeVideoBytes
   , getFileMetadata = \_ -> Task.throw (StorageError "metadata not available")
+  , createFile = \_ -> Task.throw InvalidFileMetadata
   }
 
 
@@ -447,12 +450,14 @@ runThroughDispatcher scenario dispatcherTimeoutMs = do
   eventStore <- InMemory.new |> Task.mapError (\err -> [fmt|#{err}|])
   dispatcher <-
     Dispatcher.newWithLifecycleConfigWithSource
-      (dispatcherConfig dispatcherTimeoutMs)
-      eventStore
-      (Array.wrap (extractionOutboundRunner (fakeRunner callsVar scenario)))
-      Array.empty
-      (Map.empty |> Map.set "TestCommand" (recordingEndpoint received))
-      context
+      Dispatcher.Setup
+        { settings = (dispatcherConfig dispatcherTimeoutMs),
+          eventStore = eventStore,
+          outboundRunners = (Array.wrap (extractionOutboundRunner (fakeRunner callsVar scenario))),
+          lifecycleRunners = Array.empty,
+          commandEndpoints = (Map.empty |> Map.set "TestCommand" (recordingEndpoint received)),
+          actionContext = context
+        }
   event <- videoUploadedEvent
   Dispatcher.dispatch dispatcher event
   waitForCommand received commandWaitMs
@@ -497,11 +502,9 @@ recordingEndpoint received _sourceMetadata _requestContext commandBytes _respond
 waitForCommand :: ConcurrentVar (Array TestCommand) -> Int -> Task Text Unit
 waitForCommand received remainingMs = do
   commands <- ConcurrentVar.peek received
-  if Array.length commands > 0 || remainingMs <= 0
-    then Task.yield unit
-    else do
-      AsyncTask.sleep 25
-      waitForCommand received (remainingMs - 25)
+  Task.unless (Array.length commands > 0 || remainingMs <= 0) do
+    AsyncTask.sleep 25
+    waitForCommand received (remainingMs - 25)
 
 
 videoUploadedEvent :: Task Text (Event Json.Value)

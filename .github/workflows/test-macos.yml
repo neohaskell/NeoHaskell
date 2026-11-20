@@ -1,12 +1,35 @@
 name: "Test macOS"
 
 on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "nix/**"
+      - ".github/workflows/cachix-push.yml"
+      - ".github/workflows/test.yml"
+      - ".github/workflows/test-macos.yml"
+      - ".github/workflows/nightly-bench.yml"
+      - "flake.nix"
+      - "flake.lock"
+      - "cabal.project*"
+      - "**/*.cabal"
   push:
     branches:
       - main
     paths:
       - "core/**"
       - "nix/**"
+      - "integrations/**"
+      - "testbed/**"
+      - ".github/workflows/cachix-push.yml"
+      - ".github/workflows/test.yml"
+      - ".github/workflows/test-macos.yml"
+      - ".github/workflows/nightly-bench.yml"
+      - "flake.nix"
+      - "flake.lock"
+      - "cabal.project*"
+      - "**/*.cabal"
 
 jobs:
   tests-macos:
@@ -20,6 +43,8 @@ jobs:
       matrix:
         include:
           - test-suite: nhcore-test-auth
+            needs-postgres: false
+          - test-suite: nhcore-test-auth-dns
             needs-postgres: false
           - test-suite: nhcore-test-core
             needs-postgres: false
@@ -58,14 +83,13 @@ jobs:
 
       - uses: actions/checkout@v7.0.1
 
-      - uses: DeterminateSystems/determinate-nix-action@v3.23.3
+      - uses: DeterminateSystems/determinate-nix-action@v3.24.2
         with:
           extra-conf: |
             accept-flake-config = true
             extra-substituters = https://cache.iog.io https://neohaskell.cachix.org
             extra-trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= neohaskell.cachix.org-1:mo2cLaGbwqbrxs9xhqKK8jeNsn3osi7t6XoAmxSZssc=
 
-      - uses: DeterminateSystems/magic-nix-cache-action@v14
       - uses: actions/cache@v6.1.0
         with:
           path: dist-newstyle
@@ -75,6 +99,13 @@ jobs:
 
       - name: Build the project with cabal
         run: nix develop --command cabal build all --disable-documentation
+
+      - name: Create isolated FileUpload test database
+        if: matrix.test-suite == 'nhcore-test-service'
+        run: |
+          private_db="nh_file_upload_ci_${GITHUB_RUN_ID}_${GITHUB_RUN_ATTEMPT}"
+          /opt/homebrew/opt/postgresql@16/bin/createdb -U neohaskell "$private_db"
+          echo "FILE_UPLOAD_TEST_DB=$private_db" >> "$GITHUB_ENV"
 
       - name: Run ${{ matrix.test-suite }}
         run: nix develop --command cabal test ${{ matrix.test-suite }}

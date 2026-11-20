@@ -9,7 +9,6 @@ module Version (
 
 import Array qualified
 import Basics
-import Char (Char)
 import Control.Monad.Fail qualified as GHC
 import Data.List qualified as GHC
 import Data.Version (Version (..))
@@ -19,7 +18,6 @@ import Language.Haskell.TH qualified as TH
 import Language.Haskell.TH.Quote (QuasiQuoter (..))
 import Language.Haskell.TH.Quote qualified as Quote
 import Language.Haskell.TH.Syntax qualified as TH
-import LinkedList (LinkedList)
 import Mappable qualified
 import Maybe (Maybe (..))
 import Text (Text)
@@ -58,7 +56,7 @@ instance TH.Lift Version where
 version :: Quote.QuasiQuoter
 version =
   QuasiQuoter
-    { quoteExp = parseVersionExp,
+    { quoteExp = \input -> parseVersionExp (Text.fromLinkedList input),
       quotePat = \_ -> GHC.fail "Versions can only be used as expressions",
       quoteType = \_ -> GHC.fail "Versions can only be used as expressions",
       quoteDec = \_ -> GHC.fail "Versions can only be used as expressions"
@@ -81,9 +79,9 @@ parse input =
         _ -> Nothing
 
 
-parseVersionExp :: LinkedList Char -> TH.Q TH.Exp
+parseVersionExp :: Text -> TH.Q TH.Exp
 parseVersionExp input =
-  case ReadP.readP_to_S Data.Version.parseVersion input of
+  case ReadP.readP_to_S Data.Version.parseVersion (Text.toLinkedList input) of
     [] -> GHC.fail "Invalid version format: no valid parse"
     parses ->
       case GHC.find (\(_, remaining) -> remaining == "") parses of

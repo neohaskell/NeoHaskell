@@ -2,6 +2,7 @@
 
 module Service.Query.Updater (
   createUpdater,
+  createUpdaterWithAction,
 ) where
 
 import Basics
@@ -13,9 +14,11 @@ import Service.Event (Event (..))
 import Service.Query.Core (Query, QueryAction (..), QueryOf (..))
 import Service.Query.Registry (QueryUpdater (..))
 import Service.QueryObjectStore.Core (QueryObjectStore (..))
+import Task (Task)
 import Task qualified
 import Text (Text)
 import ToText (toText)
+import Uuid (Uuid)
 
 
 -- | Create a QueryUpdater for a specific entity-query relationship.
@@ -51,6 +54,40 @@ createUpdater ::
   QueryObjectStore query ->
   QueryUpdater
 createUpdater queryName entityFetcher queryStore =
+  makeUpdater queryName entityFetcher queryStore Nothing
+
+
+-- | Report the action computed from the current row before updating an isolated store.
+-- Use this observer only when one runner owns the query store and updates it serially.
+createUpdaterWithAction ::
+  forall entity query.
+  ( Entity entity,
+    Query query,
+    QueryOf entity query,
+    Json.FromJSON (EventOf entity)
+  ) =>
+  Text ->
+  EntityFetcher entity (EventOf entity) ->
+  QueryObjectStore query ->
+  (Uuid -> QueryAction query -> Task Text Unit) ->
+  QueryUpdater
+createUpdaterWithAction queryName entityFetcher queryStore observe =
+  makeUpdater queryName entityFetcher queryStore (Just observe)
+
+
+makeUpdater ::
+  forall entity query.
+  ( Entity entity,
+    Query query,
+    QueryOf entity query,
+    Json.FromJSON (EventOf entity)
+  ) =>
+  Text ->
+  EntityFetcher entity (EventOf entity) ->
+  QueryObjectStore query ->
+  Maybe (Uuid -> QueryAction query -> Task Text Unit) ->
+  QueryUpdater
+makeUpdater queryName entityFetcher queryStore maybeObserve =
   QueryUpdater
     { queryName = queryName,
       updateQuery = \rawEvent -> do
@@ -69,6 +106,11 @@ createUpdater queryName entityFetcher queryStore =
           EntityFound fetchedEntity -> do
             let entity = fetchedEntity.state
             let targetQueryId = queryId @entity @query entity
+            observedAction <- case maybeObserve of
+              Nothing -> Task.yield Nothing
+              Just _ -> do
+                existing <- queryStore.get targetQueryId |> Task.mapError toText
+                Task.yield (Just (combine @entity @query entity existing))
 
             -- Atomically update the query using the combine function
             let updateFn maybeExistingQuery =
@@ -79,4 +121,7 @@ createUpdater queryName entityFetcher queryStore =
 
             queryStore.atomicUpdate targetQueryId updateFn
               |> Task.mapError (\e -> [fmt|[#{queryName}] atomicUpdate failed for queryId #{targetQueryId} (from #{entityName}/#{streamId}): #{toText e}|])
+            case (maybeObserve, observedAction) of
+              (Just observe, Just action) -> observe targetQueryId action
+              _ -> Task.yield unit
     }

@@ -1,7 +1,7 @@
 module Main (main) where
 
 import Prelude (IO)
-import Control.Exception qualified as GhcException
+import IO qualified
 import Log qualified
 import Task qualified
 
@@ -17,7 +17,7 @@ import Test.Hspec qualified as Hspec
 
 
 main :: IO ()
-main = Hspec.hspec integrationSpecs `GhcException.finally` Task.runOrPanic Log.finish
+main = IO.finally (Hspec.hspec integrationSpecs) (Task.runOrPanic Log.finish)
 
 
 integrationSpecs :: Hspec.Spec

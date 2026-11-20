@@ -32,6 +32,7 @@ import Integration qualified
 import Integration.Lifecycle qualified as Lifecycle
 import Json qualified
 import Map (Map)
+import Map qualified
 import Maybe (Maybe (..))
 import Maybe qualified
 import Result (Result (..))
@@ -40,6 +41,7 @@ import Service.Event (Event (..), EntityName (..))
 import Service.Event.StreamId (StreamId (..))
 import Service.EventStore (EventStore (..))
 import Service.EventStore.Core (Error)
+import EventVariantOf (EventVariantOf (..))
 import Service.EntityFetcher.Core qualified as EntityFetcher
 import Service.Integration.Dispatcher qualified as Dispatcher
 import Service.Integration.Types (OutboundRunner (..), OutboundLifecycleRunner (..), WorkerState (..))
@@ -57,7 +59,7 @@ import TypeName qualified
 -- This wraps the typed handler with:
 -- 1. JSON decoding of the full event ADT
 -- 2. Entity state reconstruction via event replay
--- 3. Dispatch to 'handleEventImpl'
+-- 3. Extract the selected payload and dispatch to 'handleEventImpl'
 --
 -- The handler's entity type and event type are determined by the type
 -- constraints. The event is decoded from JSON, the entity is reconstructed
@@ -67,7 +69,7 @@ createTypedOutboundRunner ::
   ( OutboundIntegration handler
   , entity ~ EntityOf handler
   , event ~ EventOf entity
-  , event ~ HandledEvent handler
+  , EventVariantOf event (HandledEvent handler)
   , Json.FromJSON entity
   , Json.FromJSON event
   , TypeName.Inspectable entity
@@ -87,18 +89,21 @@ createTypedOutboundRunner = do
               Log.warn [fmt|Failed to decode event: #{decodeErr}|]
                 |> Task.ignoreError
             Task.yield Array.empty
-          Ok decodedEvent -> do
-            entity <- fetchEntityState @entity eventStore typeName streamId
-            let outbound = handleEventImpl @handler entity decodedEvent
-            let actions = Integration.getActions outbound
-            actions
-              |> Task.mapArray (\action -> do
-                  result <- Integration.runAction ctx action |> Task.mapError toText
-                  case result of
-                    Just payload -> Task.yield [payload]
-                    Nothing -> Task.yield []
-                )
-              |> Task.map Array.flatten
+          Ok decodedEvent ->
+            case toVariant @event @(HandledEvent handler) decodedEvent of
+              Nothing -> Task.yield Array.empty
+              Just payload -> do
+                entity <- fetchEntityState @entity eventStore typeName streamId
+                let outbound = handleEventImpl @handler entity payload
+                let actions = Integration.getActions outbound
+                actions
+                  |> Task.mapArray (\action -> do
+                      result <- Integration.runAction ctx action |> Task.mapError toText
+                      case result of
+                        Just commandPayload -> Task.yield [commandPayload]
+                        Nothing -> Task.yield []
+                    )
+                  |> Task.map Array.flatten
     }
 
 
@@ -235,7 +240,16 @@ startIntegrationSubscriber maybeDispatcherConfig eventStore runners lifecycleRun
     then Task.yield Nothing
     else do
       let config = Maybe.withDefault Dispatcher.defaultConfig maybeDispatcherConfig
-      dispatcher <- Dispatcher.newWithLifecycleConfigWithSource config eventStore runners lifecycleRunners commandEndpoints ctx
+      dispatcher <-
+        Dispatcher.newWithLifecycleConfigWithSource
+          Dispatcher.Setup
+            { settings = config,
+              eventStore,
+              outboundRunners = runners,
+              lifecycleRunners,
+              commandEndpoints,
+              actionContext = ctx
+            }
 
       let processIntegrationEvent :: Event Json.Value -> Task Text Unit
           processIntegrationEvent rawEvent = do
@@ -268,6 +282,20 @@ startInboundWorkers inbounds commandEndpoints = do
   if Array.isEmpty inbounds
     then Task.yield Array.empty
     else do
+      inbounds
+        |> Task.forEach (\inboundWorker ->
+            case Integration.inboundCommandNames inboundWorker of
+              Nothing -> Task.yield unit
+              Just names ->
+                names
+                  |> Task.forEach (\name ->
+                      case Map.get name commandEndpoints of
+                        Just _ -> Task.yield unit
+                        Nothing -> Task.throw [fmt|Inbound worker declares command #{name}, but no receiving runtime is registered|]
+                    )
+                  |> Task.map (\_ -> unit)
+          )
+        |> Task.map (\_ -> unit)
       let workerCount = Array.length inbounds
       Log.withScope [("component", "Integration")] do
         Log.info [fmt|Starting #{workerCount} inbound worker(s)|]

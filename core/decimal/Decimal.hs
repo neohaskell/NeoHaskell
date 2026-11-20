@@ -162,9 +162,9 @@ toFloat (Decimal n) = Prelude.fromIntegral n / Prelude.fromIntegral scale
 -- @
 divide :: Decimal -> Decimal -> Maybe Decimal
 divide (Decimal a) (Decimal b) =
-  case b == 0 of
-    True -> Nothing
-    False -> do
+  if b == 0
+    then Nothing
+    else do
       let numerator = Prelude.toInteger a * Prelude.toInteger scale
       let quotient = Prelude.div numerator (Prelude.toInteger b)
       Just (Decimal (Prelude.fromInteger quotient))
@@ -238,9 +238,9 @@ formatDecimal (Decimal n) = do
   let fracPart = Prelude.mod absN scale
   let wholeText = Text.fromLinkedList (Prelude.show wholePart)
   let fracText = padLeft4 (Text.fromLinkedList (Prelude.show fracPart))
-  case isNeg of
-    True -> [fmt|-#{wholeText}.#{fracText}|]
-    False -> [fmt|#{wholeText}.#{fracText}|]
+  if isNeg
+    then [fmt|-#{wholeText}.#{fracText}|]
+    else [fmt|#{wholeText}.#{fracText}|]
 {-# INLINE formatDecimal #-}
 
 
@@ -248,9 +248,9 @@ formatDecimal (Decimal n) = do
 padLeft4 :: Text -> Text
 padLeft4 t = do
   let len = Text.length t
-  case len >= 4 of
-    True -> t
-    False -> do
+  if len >= 4
+    then t
+    else do
       let padding = GhcText.replicate (4 - len) "0"
       padding `GhcText.append` t
 
@@ -269,9 +269,9 @@ padLeft4 t = do
 parseDecimal :: Text -> Maybe Decimal
 parseDecimal t = do
   let stripped = GhcText.strip t
-  case GhcText.null stripped of
-    True -> Nothing
-    False -> do
+  if GhcText.null stripped
+    then Nothing
+    else do
       let str = Text.toLinkedList stripped
       case readDouble str of
         Just d -> Just (decimal d)
@@ -284,9 +284,9 @@ readDouble str =
   case str of
     [] -> Nothing
     _ ->
-      case isValidDecimalString str of
-        False -> Nothing
-        True ->
+      if not (isValidDecimalString str)
+        then Nothing
+        else
           case Prelude.reads str of
             [(d, "")] -> Just d
             _ -> Nothing

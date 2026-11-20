@@ -1,5 +1,6 @@
 module CryptoSpec where
 
+import Bytes qualified
 import Core
 import Crypto (HmacKey)
 import Crypto qualified
@@ -137,3 +138,43 @@ spec = parallel do
         let firstSignature = message |> Crypto.signWith firstKey
         let secondSignature = message |> Crypto.signWith secondKey
         firstSignature |> shouldNotBe secondSignature
+
+    -- ==========================================================================
+    -- Primitives (known-answer vectors)
+    -- ==========================================================================
+    describe "sha256" do
+      it "hashes the empty input to the FIPS 180-4 vector" \_ -> do
+        let digest = Text.toBytes "" |> Crypto.sha256 |> Crypto.toHex
+        digest |> shouldBe "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+
+      it "hashes abc to the FIPS 180-4 vector" \_ -> do
+        let digest = Text.toBytes "abc" |> Crypto.sha256 |> Crypto.toHex
+        digest |> shouldBe "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+
+    describe "hmacSha256" do
+      it "matches RFC 4231 test case 2 (key Jefe)" \_ -> do
+        let mac =
+              Text.toBytes "what do ya want for nothing?"
+                |> Crypto.hmacSha256 (Text.toBytes "Jefe")
+                |> Crypto.toHex
+        mac |> shouldBe "5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843"
+
+      it "accepts keys shorter than 32 bytes, unlike signWith" \_ -> do
+        let mac = Text.toBytes "m" |> Crypto.hmacSha256 (Text.toBytes "k")
+        Bytes.length mac |> shouldBe 32
+
+      it "agrees with signWith for a valid HmacKey" \_ -> do
+        let message = Text.toBytes "same message"
+        let viaSign = message |> Crypto.signWith knownKey
+        let viaRaw =
+              message
+                |> Crypto.hmacSha256 (Text.toBytes "0123456789abcdef0123456789abcdef")
+                |> Crypto.toHex
+        viaRaw |> shouldBe viaSign
+
+    describe "toHex" do
+      it "encodes two lowercase characters per byte" \_ -> do
+        Crypto.toHex (Bytes.pack [0, 15, 16, 255]) |> shouldBe "000f10ff"
+
+      it "encodes the empty input to the empty text" \_ -> do
+        Crypto.toHex (Text.toBytes "") |> shouldBe ""

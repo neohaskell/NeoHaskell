@@ -1,5 +1,453 @@
 # Changelog
 
+## 0.18.0 — 2026-11-16
+
+### Breaking changes
+
+- **Framework**: Web commands can read the socket client address and User-Agent through `RequestContext.origin`. `Text.fromBytesIfValid` decodes valid UTF-8 bytes without throwing. Apps that construct `WebTransport` or `RequestContext` records directly must add the new fields. The trusted proxy set stays empty by default. ([change](https://github.com/neohaskell/NeoHaskell/commit/196e4dfff0d7d5015dd4385e7f329c71d0524a49))
+
+### Added
+
+- **Framework**: Read one query row with `GET /queries/{query-name}/{id}` using the UUID chosen by the query's `queryId`. A successful read returns the row as JSON. Missing rows and rows hidden by `canView` return the same HTTP 404 response. Query access checks still run before storage access. Existing query declarations need no changes, and collection endpoints remain available. ([change](https://github.com/neohaskell/NeoHaskell/commit/adf0b6c1332c9683c6c5e52fa865e299e088c95d))
+
+### Migration from 0.17.1
+
+#### Framework
+
+Calls to `WebTransport.server` need no change. `emptyContext`, `anonymousContext`, `authenticatedContext`, and `trustedContext` already set `origin = Nothing`. If your app constructs either record directly, add the corresponding field below. Import `Service.Transport.Web` as `WebTransport` and `Service.Auth` as `Auth` to match the examples. Import `Set qualified as Set` if your app does not already import `Set`.
+
+```diff
+  , WebTransport.readinessProbe = Nothing
++ , WebTransport.trustedProxyAddresses = Set.empty
+```
+
+```diff
+  , Auth.trustedBypass = False
++ , Auth.origin = Nothing
+```
+
+`WebTransport.server` leaves the trusted proxy set empty. Trust a proxy only when your deployment requires it. `trustedProxyAddressFromText :: Text -> Result Text TrustedProxyAddress` accepts an exact IPv4 or IPv6 literal. Handle `Result.Err` before adding a parsed address to the set. Treat request-origin values as untrusted. Do not store them in events or logs without a reviewed privacy and retention purpose.
+
+### Verify
+
+From the generated app's root, run:
+
+```sh
+neo build --ci
+neo test --ci
+```
+
+Both commands must succeed. `neo test --ci` runs the app's Cabal tests and discovered Hurl scenarios.
+
+<details>
+<summary>Copy this prompt to your coding agent</summary>
+
+```text
+Migrate Framework from NeoHaskell 0.17.1 to 0.18.0.
+Update this NeoHaskell app for the request-origin changes in NeoHaskell 0.18.0.
+
+Find every app-authored full WebTransport and RequestContext record constructor. Leave WebTransport.server and the emptyContext, anonymousContext, authenticatedContext, and trustedContext helpers unchanged. Add trustedProxyAddresses = Set.empty to each direct WebTransport record. Add origin = Nothing to each internal RequestContext record.
+
+For example, a WebTransport record that ends with readinessProbe = Nothing gains trustedProxyAddresses = Set.empty. An internal RequestContext that ends with trustedBypass = False gains origin = Nothing. Use the field qualification that matches the app's imports.
+
+Import Set qualified as Set if the app does not already import Set.
+
+Do not enable forwarded addresses by default. Verify that trustedProxyAddressFromText :: Text -> Result Text TrustedProxyAddress accepts exact IPv4 or IPv6 literals. If the app's deployment explicitly requires a trusted proxy, handle Result.Err. Add only a parsed Result.Ok address to the trusted set. Ask the app owner to settle an unclear proxy policy. Treat request-origin values as untrusted. Do not store them in events or logs without a reviewed purpose.
+
+From the app root, run neo build --ci and neo test --ci. Both commands must pass. The test command runs the app's Cabal tests and discovered Hurl scenarios. Report changed files, command results, remaining direct record constructors, and any proxy policy that needs app-owner input.
+```
+
+</details>
+
+[Compare changes](https://github.com/neohaskell/NeoHaskell/compare/neo-v0.17.1...neo-v0.18.0)
+
+## 0.17.1 — 2026-11-06
+
+### Added
+
+- **Framework**: Integrations can save generated PDFs and other documents as owned files with `fileAccess.createFile`. Pass the owner captured by an authorized command, a stable document job key, and the document bytes. The returned `FileRef` works with the existing authenticated download route and has no temporary-upload expiry.
+
+Retrying a completed job with the same owner, key, and metadata returns the same reference and preserves its first completed bytes. An unfinished job or a missing stored file requires the original bytes. Applications must explicitly reconcile abandoned jobs because file creation and the command that records its reference are separate operations.
+
+Existing applications configured with `withFileUpload` keep their setup. To use the feature, create the file inside `Integration.action` and save its reference through a completion command. Verify that the owner can download the document and a retried job returns the same reference. ([change](https://github.com/neohaskell/NeoHaskell/commit/cc619bb61906fcb79f78b85a8e8b6dd9ec2beb69))
+
+[Compare changes](https://github.com/neohaskell/NeoHaskell/compare/neo-v0.17.0...neo-v0.17.1)
+
+## 0.17.0 — 2026-11-03
+
+### Breaking changes
+
+- **Framework**: You can now choose which network address and port your web server listens on. Add `EventModel.withHost "127.0.0.1"` and `EventModel.withPort 9090` in a named Event Model, or `Application.withHost "127.0.0.1"` and `Application.withPort 9090` in direct `Application` assembly. `WebTransport.host` also accepts `"*"`, the family preferences `"*4"` and `"*6"`, strict-family `"!4"` and `"!6"`, a bare address or hostname, or a bracketed IPv6 literal such as `"[::1]"`. Family preferences may fall back to the other family and do not guarantee strict isolation.
+
+Loopback (`"127.0.0.1"` or `"::1"`) is the right choice when your reverse proxy runs on the same machine or in the same container as the app. If the proxy runs in its own container network or on another host, it cannot reach a loopback listener. Keep a non-loopback bind and restrict access with your firewall or network policy instead.
+
+Invalid bind settings fail at startup with a clear message before opening sockets. An empty host, whitespace, a URL or path like `"http://127.0.0.1"`, a `host:port` pair, or malformed or non-IPv6 brackets (`"[]"`, `"[localhost]"`, `"[::1"`) fails with `Application.withHost: ...`. Port `0` and values outside `1..65535` fail with `Application.withPort: ...`. If the port is already in use or the address does not belong to this machine, startup stops with `WebTransport could not bind <host>:<port>: ...`.
+
+The default remains port 8080 and Warp's existing `"*4"` IPv4 preference, including its fallback behavior. A custom transport host or port is preserved when the corresponding override is omitted.
+
+This change is marked breaking for full-field record construction and prior ephemeral-port usage. `WebTransport` and `Application` each gained fields, so code that builds either record by naming every field must add the new ones. Apps using `WebTransport.server`, `EventModel.eventModel`, or `Application.new` need no change. A custom transport that previously used port `0` must choose a fixed port in `1..65535`. ([change](https://github.com/neohaskell/NeoHaskell/commit/efa79f0e1bc4fb4a9af4f1c706181c7a9c10d917))
+
+### Fixed
+
+- **Framework**: OpenAPI now describes query results as one page of rows and command responses with fields beside their `tag`. Regenerate API clients to replace types based on the old schema. HTTP response bodies did not change. ([change](https://github.com/neohaskell/NeoHaskell/commit/4cb078c88b8353c6fb723f051feb07bf06d4707e))
+- **Framework**: The maintained testbed now runs its file upload, download, and upload error checks with the other HTTP tests. This catches file endpoint regressions in the project test run. Existing applications need no code or data change. ([change](https://github.com/neohaskell/NeoHaskell/commit/9a2afa0cc4e92cd697d913a410f970a63371ee8c))
+- **Framework**: OpenAPI now describes an available protected value with its fields inside `contents`, matching the response returned by an authorized query. Generated clients can read a protected payload such as `firstSecret.contents.name` without a schema mismatch. Applications need no code change. ([change](https://github.com/neohaskell/NeoHaskell/commit/b9b3491476b87da7f3f60fe2ca9c5ad65febb0ba))
+
+### Migration from 0.16.0
+
+#### Framework
+
+Search your code for a `WebTransport { ... }` or `Application { ... }` record written with every field. Also search for custom port `0` settings and change them to a fixed port in `1..65535`. Default-only apps need no migration.
+
+- In a `WebTransport { ... }` record, add `host = "*4"` to keep the previous behavior, or `host = "127.0.0.1"` to accept local connections only.
+- In an `Application { ... }` record, add `bindHost = Nothing` and `bindPort = Nothing`.
+
+Prefer `EventModel.withHost` and `EventModel.withPort`, `Application.withHost` and `Application.withPort`, or `WebTransport.server { port = 9090 }` over naming every field.
+
+### Verify
+
+Build your app, start it, and request `/health` on the address you chose. To check the framework change itself, run `nix develop --command .agents/skills/tdd/scripts/test-match "WebTransport bind host and port" nhcore-test-service`. The suite checks `EventModel` and `Application` assembly, owned-instance identity with a competing-server negative control, loopback exclusion, early validation, bracketed IPv6 binding, and returned bind-failure cleanup.
+
+<details>
+<summary>Copy this prompt to your coding agent</summary>
+
+```text
+Migrate Framework from NeoHaskell 0.16.0 to 0.17.0.
+My NeoHaskell app fails to compile after upgrading nhcore. `WebTransport` gained a `host :: Text` field and `Application` gained `bindHost :: Maybe Text` and `bindPort :: Maybe Int`. Find every place that builds a `WebTransport { ... }` or `Application { ... }` record by naming all fields (search for `WebTransport {`, `WebTransport$` followed by `{`, and `Application {`). In each `WebTransport` record add `host = "*4"` so it keeps listening on all IPv4 addresses as before. In each `Application` record add `bindHost = Nothing` and `bindPort = Nothing`. Preserve existing nonzero ports and other fields. If a custom transport uses port 0, explain that this feature rejects ephemeral ports and ask which fixed port in 1..65535 to use. Default-only `WebTransport.server`, `EventModel.eventModel`, and `Application.new` usage needs no edit. Then build the project and run its tests. Report which files you edited and whether the build and tests pass. If my app sits behind a reverse proxy that runs on the same machine or in the same container, tell me I can use `EventModel.withHost "127.0.0.1"` or `Application.withHost "127.0.0.1"` for local-only access. If the proxy runs elsewhere, tell me to keep the default bind. Do not change the bind host without asking.
+```
+
+</details>
+
+[Compare changes](https://github.com/neohaskell/NeoHaskell/compare/neo-v0.16.0...neo-v0.17.0)
+
+## 0.16.0 — 2026-11-02
+
+### Breaking changes
+
+- **Framework**: An Event Model now rejects an inbound Slice that omits or repeats a command and target entity pair promised by its typed worker. Validation reports assembled Slice errors with their Feature, Chapter, and Slice paths before application workers start. Applications with incomplete inbound declarations must list every typed worker output once. ([change](https://github.com/neohaskell/NeoHaskell/commit/eda8a1fa934478383bcc0cd26f43004781d100e2))
+
+### Added
+
+- **Framework**: An application can now start from one named Event Model. Its Features register the declared commands, queries, outbound handlers, and typed inbound workers, while the same model supplies configuration and transport. Existing applications that assemble `Application` directly can keep doing so. For a model-backed application, `EventModel.run appEventModel` replaces a second authored registration list, and each query receives events only from its declared sources and payloads. ([change](https://github.com/neohaskell/NeoHaskell/commit/ee513c56f6118cc9c35dd24e6679dcec2d89c8f2))
+- **Framework**: An Event Model can now run its direct rules as generated Hspec examples. Each example checks a command's complete ordered events or rejection. Query examples check the action and all rows before and after the event. Register generators for requested values and call `specFor` in the test suite. Each sample has separate in-memory storage. Commands that accept an existing entity without emitting events now succeed without appending an empty payload. ([change](https://github.com/neohaskell/NeoHaskell/commit/ea75873fbd0da7da39124c82f328c2e70bdca629))
+
+### Improved
+
+- **CLI**: New applications now start with a Counter Feature and one named Event Model. The example declares its commands and query beside the Counter code, and the application starts from that model. The Counter HTTP workflow remains the same. Existing generated applications need no migration. ([change](https://github.com/neohaskell/NeoHaskell/commit/55a1ce5c8a79c548696ddb8b53b7625393d68fe5))
+
+### Fixed
+
+- **Framework**: Displaying an integration command payload now hides its data. This prevents a protected value's encrypted envelope and reference from appearing when an app logs the payload. Apps do not need to change their commands. ([change](https://github.com/neohaskell/NeoHaskell/commit/53452b9c2055bad027469f3c0eb816473e2a8def))
+
+### Migration from 0.15.0
+
+#### Framework
+
+For each `inboundIntegration @Handler` Slice, compare its `triggersCommand` and `onTargetEntity` declarations with the handler's `InboundOutputsOf` pairs. Add missing pairs and remove repeated pairs. If the application starts with `EventModel.run`, the Slice registers the handler. Remove any separate `Application.withInboundHandler @Handler` registration for that handler in the model-backed application. If the application assembles and runs `Application` directly, keep its `Application.withInboundHandler @Handler` registration.
+
+### Verify
+
+Compile the application and run its inbound integration tests. For an application that starts with `EventModel.run`, evaluate its named `eventModel` before starting workers. In this repository, run `nix develop --command python3 core/test/Service/EventModel/check_compiler_rejections.py`, `nix develop --command cabal test --project-file=cabal.project.dev nhtestbed-spec-demo --test-show-details=direct`, and `nix develop --command .agents/skills/neohaskell-test/scripts/run-testbed --strict` against an isolated PostgreSQL database.
+
+<details>
+<summary>Copy this prompt to your coding agent</summary>
+
+```text
+Migrate Framework from NeoHaskell 0.15.0 to 0.16.0.
+Find each inboundIntegration @Handler Slice and the executable that starts my NeoHaskell application. Compare its triggersCommand and onTargetEntity pairs with the handler's InboundOutputsOf type. Add every missing pair and remove any repeated pair. If the executable calls EventModel.run, use the Slice as the handler registration and remove any separate Application.withInboundHandler @Handler registration for that handler in the model-backed application. If the executable assembles and runs Application directly, keep Application.withInboundHandler @Handler. Compile the application, evaluate its named eventModel if it uses one, run its inbound integration tests, and report changed files and results.
+```
+
+</details>
+
+[Compare changes](https://github.com/neohaskell/NeoHaskell/compare/neo-v0.15.0...neo-v0.16.0)
+
+## 0.15.0 — 2026-10-30
+
+### Breaking changes
+
+- **Framework**: Event Model Slices now require implemented components. A declared command, query, entity, or event payload without its required implementation fails compilation. Applications cannot describe future components with `plannedEntity`, `plannedCommand`, `plannedProduces`, `plannedQuery`, `plannedReadsFrom`, or `plannedOnEvent`. ([change](https://github.com/neohaskell/NeoHaskell/commit/0ca306213afe31b5f23b3733de06fc8c1b76f541))
+
+### Added
+
+- **Framework**: An application can now describe its event flow in source-local Features. Export a Feature action beside its commands, queries, and integrations, then compose those actions in a named Event Model. The compiler checks typed event sources and command targets, and model evaluation checks each Slice has one primary shape. The description does not start workers yet. Existing application registration remains in place. ([change](https://github.com/neohaskell/NeoHaskell/commit/522a94bc2fe8e3187eb03a940231561656d56521))
+- **Framework**: An Event Model state-change or state-view Slice can now keep direct Given-When-Therefore rules beside its implemented command or query. Rules hold concrete historical events, a typed command or incoming event, and an exact command or query outcome. A rule can request typed values and reuse them in the same block. The runner that generates and executes cases will follow separately; applications should keep their existing behavior tests. ([change](https://github.com/neohaskell/NeoHaskell/commit/ce5df894f75a80532a89f029dd8f15f72d177909))
+
+### Fixed
+
+- **Framework**: An outbound integration now reports a failed result when its callback command is rejected, fails, is unauthorized, or has no handler. Callback failure text stays out of dispatcher errors and logs. An application still decides when and how to retry a pending request. ([change](https://github.com/neohaskell/NeoHaskell/commit/829928e19db7d5e00ee9d1e98818af420cc73d32))
+- **Framework**: An outbound integration now reports failure if its command handler returns without sending a result. Your application can keep an erasure request pending and retry it explicitly instead of treating the missing result as completion. No application code change is required. ([change](https://github.com/neohaskell/NeoHaskell/commit/23231da55d8e95bbe9e3084b2f4f768ebc80149c))
+
+### Migration from 0.14.0
+
+#### Framework
+
+If your application used a `planned*` builder, implement that component before adding it to a Feature. Replace `plannedEntity` with `entity`, `plannedCommand` with `command`, `plannedProduces` with `produces`, `plannedQuery` with `query`, `plannedReadsFrom` with `readsFrom`, and `plannedOnEvent` with `onEvent`. Define the matching `Entity`, `Command`, `Query`, `QueryOf`, and event payload relationships. Generate each entity Event ADT with a separate `deriveEntityEvents` call. Keep the existing `Application` registrations until Event Model runtime wiring is available.
+
+### Verify
+
+Compile the application and run the command, query, and integration tests for every declared Slice. In this repository, run `nix develop --command python3 core/test/Service/EventModel/check_compiler_rejections.py` and `nix develop --command .agents/skills/neohaskell-test/scripts/run-testbed --strict`.
+
+<details>
+<summary>Copy this prompt to your coding agent</summary>
+
+```text
+Migrate Framework from NeoHaskell 0.14.0 to 0.15.0.
+Find every plannedEntity, plannedCommand, plannedProduces, plannedQuery, plannedReadsFrom, plannedOnEvent, and sliceIsPlanned use in my NeoHaskell application. Implement the declared entity, command, query, and payload behavior before replacing each planned builder with entity, command, produces, query, readsFrom, or onEvent. Generate event ADTs separately with deriveEntityEvents, and preserve the existing Application registrations until Event Model runtime wiring is available. Remove any topology-only Slice whose behavior is not being implemented. Compile the app, run its command, query, and integration tests, and report the changed files, results, and any missing implementation that still blocks compilation.
+```
+
+</details>
+
+[Compare changes](https://github.com/neohaskell/NeoHaskell/compare/neo-v0.14.0...neo-v0.15.0)
+
+## 0.14.0 — 2026-10-30
+
+### Breaking changes
+
+- **Framework**: An application can now request deletion of one protected value through `Integration.Erasable.Erase`. The application checks who owns the record, records a pending request, and records completion or failure when the outbound action returns. Repeating a deletion reports `AlreadyErased`, so an application can finish a request after a restart without restoring the key. The remaining protected values stay available. ([change](https://github.com/neohaskell/NeoHaskell/commit/e3142bb358ab331e0a0efb539bf1fb8feeca1dbb))
+
+### Added
+
+- **Framework**: Apps can create protected values in commands with `Erasable.new` and carry them through events and queries. The PostgreSQL event store encrypts these values before storing events and keeps their keys separately. Apps can request deletion through `Integration.Erasable.Erase`, with authorization and retry tracking in application code. Follow the protected-value erasure migration when updating custom event stores or configuring PostgreSQL application scopes. ([change](https://github.com/neohaskell/NeoHaskell/commit/c2dc34b2590cffd8a5bc291d614b0491ba5ceb29))
+- **Framework**: An inbound worker can now emit several command types, including commands for different entities. List each command and its target in a typed worker, then register the handler with `Application.withInboundHandler`. The compiler rejects undeclared commands and wrong targets. Startup reports a missing receiving service before the worker runs. Existing `Integration.inbound`, `Timer.every`, and `Application.withInbound` calls keep working. ([change](https://github.com/neohaskell/NeoHaskell/commit/9df0280ccd34a21c278892183e388e763d165eaa))
+
+### Fixed
+
+- **Framework**: Records with `DateTime` or `Maybe DateTime` fields can now derive `ToSchema`. Timestamp fields appear as strings in OpenAPI and JSON Schema, matching their JSON encoding. Applications that defined an orphan `ToSchema DateTime` instance as a workaround must remove that instance to avoid a duplicate-instance error after updating NeoHaskell. ([change](https://github.com/neohaskell/NeoHaskell/commit/6f534e067dc61140796e46d3c32e6c144b9f30d4))
+- **Framework**: Web commands with acronym names now use the expected kebab-case URL. For example, `SaveIBAN` responds at `POST /commands/save-iban`, and OpenAPI lists the same path. Internal dispatch and MCP command names retain their original spelling.
+
+If two different command names produce the same Web URL, service registration rejects the duplicate instead of choosing one command. Rename one of the commands before starting the service. ([change](https://github.com/neohaskell/NeoHaskell/commit/3c05e3d83cdb6d2579b653694918961154d59391))
+- **Framework**: `actual |> shouldContain expected` now checks whether the actual array contains the expected subarray. `actual |> shouldNotContain expected` checks whether the actual array does not contain it. Both matchers previously checked the arrays in the opposite direction.
+
+If you swapped the arguments to work around this bug, put the expected subarray first again. For example, change `expected |> shouldContain actual` to `actual |> shouldContain expected`. Run your tests to confirm that their assertions still check the intended array. ([change](https://github.com/neohaskell/NeoHaskell/commit/e07c3910cdf69baf16543bebf7b9338dc98b98e3))
+- **Framework**: The maintained erasure example now checks that an erased value stays erased during concurrent owner requests, stale writes, and restart within one application instance. Its runner can use private loopback ports, and its crash check pauses only the selected local request. Application authors can run the example to check their erasure flow. The framework API and production erasure behavior are unchanged, so existing applications need no migration. ([change](https://github.com/neohaskell/NeoHaskell/commit/1abd28799061797b7dbf0d1e22ebcec7bbddd0bf))
+- **Framework**: The maintained protected-erasure example now shows a case status that remains after erasure and is reconstructed from events after restart. Its automated checks assert the status alongside the erased value, explicit retry, and application completion. Application authors can use the example to test their own retention choices. The framework erasure API and behavior are unchanged, so existing applications need no migration. ([change](https://github.com/neohaskell/NeoHaskell/commit/34af414272051e3e19ac69dddf587308dbd90778))
+- **Framework**: If a stored event is unreadable, query replay reports failure through `/ready` instead of marking an incomplete query ready. An affected HTTP query returns a generic 500 response while its projection reports rebuilding or failed. A query that reads a partial page during rebuilding also returns 500 if replay becomes ready before the response. Applications need no code change. The maintained testbed checks missing keys, malformed envelopes, and an unavailable key table without returning protected values. ([change](https://github.com/neohaskell/NeoHaskell/commit/b878164011e2177543c02b7d776a88d785134301))
+- **Framework**: The PostgreSQL event store now rejects a retry that reuses a protected event's ID with a different payload, even when the retry omits the protected value. It also rejects the rest of that retry batch. Existing protected data and its erasure state stay intact. Applications need no code change for normal event writes. ([change](https://github.com/neohaskell/NeoHaskell/commit/708848a109251d6665ced9324e90c2c6dcf60e33))
+
+### Migration from 0.13.0
+
+#### Framework
+
+Apps that build `PostgresEventStore` with a record constructor must add `erasableApplicationScope` with a stable, nonempty identifier for that application. For example, add `erasableApplicationScope = "my-application"` to the existing configuration record. Apps using `def` can set the field with a record update before creating protected values they intend to erase. The event store refuses outbound deletion when the scope is empty.
+
+Apps that construct the exported `EventStore` record, including stores returned by a custom `EventStoreConfig` instance, must add all four fields introduced since 0.13.0. Existing `insert` implementations also need to reject protected values if the store cannot protect them. For a store without protected-value support, follow `Service.EventStore.Simple`, which also backs `Service.EventStore.InMemory`:
+
+- `insertWithErasableKeys` takes new keys and an insertion payload. Reject a nonempty key array with `InsertionError (InsertionFailed "Erasable values require the PostgreSQL event store")`. With an empty key array, call the existing insertion implementation only after checking every event for protected values. Apply the same check to `insert` itself. Never store a plaintext fallback.
+- `renderProtectedJson` takes a JSON value. Use the public JSON check below. Return ordinary JSON unchanged with `Task.yield`. Return `StorageFailure` whenever the check finds a protected marker, including a malformed envelope.
+- `readErasableKey` takes a reference. Set `readErasableKey = \_ -> Task.throw (StorageFailure "Protected-value storage is unsupported by this event store")`.
+- `eraseErasableKey` takes an `ErasureTarget`. Set `eraseErasableKey = \_ -> Task.throw (StorageFailure "Protected-value erasure is unsupported by this event store")`.
+
+Inspect the JSON tree with the public `Json.parts` API. Reject any object with a `$erasable` key, regardless of its value or the other fields. Recurse through all object values and array elements. This also rejects malformed envelopes without decoding private framework types. For example, add this helper to the custom store's module:
+
+```haskell
+containsProtectedValue :: Json.Value -> Bool
+containsProtectedValue value =
+	case Json.parts value of
+		Json.ObjectParts pairs ->
+			pairs |> Array.any (\(key, nested) ->
+				key == "$erasable" || containsProtectedValue nested)
+		Json.ArrayParts values -> values |> Array.any containsProtectedValue
+		Json.Scalar _ -> False
+```
+
+For `InsertionPayload Json.Value`, check every `insertion.event` with this helper. For a custom event type with a `Json.ToJSON` instance, check `Json.encode insertion.event` instead. Use the JSON representation that the store actually persists if it has a custom encoder. Keep the original payload for ordinary insertion. The helper takes JSON values, so adapt its call site to the store's event type and encoding.
+
+Add `import Core` and qualified imports for `Array`, `Json`, and `Task` when using these helpers. Import `Error (StorageFailure, InsertionError)` from `Service.EventStore` and `InsertionFailure (InsertionFailed)` from `Service.Event`. Do not omit any field. Builds with `-Wall -Werror`, including this repository, reject incomplete record constructors. A store that supports protected values must implement all four operations. Its erasure operation has the one-reference `ErasureTarget -> Task Error ErasureResult` contract. Return `UnknownReference` only for a missing reference, `AlreadyErased` only for a known tombstone, and an error for scope denial or storage failure.
+
+Existing protected keys written before this change remain readable but have no application scope. The new scoped deletion action will refuse those keys. A data owner must assess and migrate legacy keys under a separately reviewed process before using this action on them. Do not assign a scope to a shared key table without first proving which application owns each key.
+
+The application must authorize requests and retain pending work. Register an outbound handler using `Integration.Erasable.Erase`, then record its result in an application command. The framework does not replay a lost result automatically. The maintained `OwnedProtectedEntity` testbed example shows explicit retry after a restart.
+
+### Verify
+
+Build each application and exercise all four new fields on every custom store. For an unsupported store, ordinary inserts and unprotected JSON must still work. Protected or malformed values, including markers nested in objects and arrays, must fail through both insertion paths and JSON rendering. For custom event types, exercise the actual event encoder before the check. Nonempty new-key arrays must fail even with an ordinary payload. Key reads and erasure must return `StorageFailure`. In this repository, run `nix develop --command cabal build lib:nhcore lib:nhtestbed` to check application wiring. With PostgreSQL running and ports 8080, 8081, and 8181 free, run `nix develop --command .agents/skills/neohaskell-test/scripts/run-testbed --strict`. The erasure scenario must show one `Erased` value, one `Available` value, a pending request after a rejected result, and a completed request after retry.
+
+<details>
+<summary>Copy this prompt to your coding agent</summary>
+
+```text
+Migrate Framework from NeoHaskell 0.13.0 to 0.14.0.
+1. Find every application-owned PostgresEventStore record constructor and add a stable, nonempty erasableApplicationScope value unique to the application. For constructors based on def, set the field before using outbound erasure.
+
+2. Find every custom EventStore record constructor, including those returned by EventStoreConfig instances. Add all four fields introduced since 0.13.0: insertWithErasableKeys, renderProtectedJson, readErasableKey, and eraseErasableKey.
+
+3. For a store without protected-value support, follow Service.EventStore.Simple, which backs InMemory. Implement insertWithErasableKeys so a nonempty new-key array returns InsertionError (InsertionFailed "Erasable values require the PostgreSQL event store"). For an empty array, delegate to the existing insertion implementation only after rejecting protected values in every event. Add the same rejection to insert itself. Use only public APIs. Write a recursive containsProtectedValue :: Json.Value -> Bool helper with Json.parts. In Json.ObjectParts pairs, use Array.any to reject a pair when its key equals "$erasable" or its value recursively contains that key. In Json.ArrayParts values, use Array.any containsProtectedValue. In Json.Scalar _, return False. Reject every "$erasable" object, including malformed envelopes, without decoding private framework types. For InsertionPayload Json.Value, check each insertion.event. For custom event types with Json.ToJSON, check Json.encode insertion.event. If the store has a custom encoder, inspect the JSON representation it actually persists. Keep the original payload for ordinary insertion. Adapt the helper's call site to the store's event type and encoding. Implement renderProtectedJson to return ordinary JSON unchanged with Task.yield and to return StorageFailure for protected values or malformed protected envelopes. Set readErasableKey = \_ -> Task.throw (StorageFailure "Protected-value storage is unsupported by this event store") and eraseErasableKey = \_ -> Task.throw (StorageFailure "Protected-value erasure is unsupported by this event store"). Add import Core and qualified imports for Array, Json, and Task as needed. Import Error (StorageFailure, InsertionError) from Service.EventStore and InsertionFailure (InsertionFailed) from Service.Event. Never store a plaintext fallback or omit a field. Builds with -Wall -Werror reject incomplete record constructors.
+
+4. Stores that support protected values must implement all four operations. A supporting store must delete only the named reference in its application, entity, and stream scope; distinguish a known tombstone from an unknown reference; and return an error for scope denial or storage failure. Preserve existing connection, OAuth, and file-upload settings. If the application needs erasure, put owner authorization and reference discovery in its commands and queries, use Integration.Erasable.Erase for one reference per request, and record completion or failure in its own entity. Keep pending requests until a result command commits and add an explicit retry path for a lost result. Do not assign a scope to legacy keys without proving their application ownership.
+
+5. Build the application and exercise every custom store's four new fields. For unsupported stores, verify ordinary inserts and unchanged unprotected JSON, rejection of protected and malformed values nested in objects and arrays through both insertion paths and JSON rendering, rejection of nonempty key arrays, and StorageFailure from key reads and erasure. For custom event types, exercise the actual event encoder before the check. Run protected-value request, restart, retry, and authorization tests for applications that support erasure. Report every changed file, test result, and legacy-key ownership that remains unresolved.
+```
+
+</details>
+
+[Compare changes](https://github.com/neohaskell/NeoHaskell/compare/neo-v0.13.0...neo-v0.14.0)
+
+## 0.13.0 — 2026-10-28
+
+### Breaking changes
+
+- **Framework**: Outbound handlers can now receive one event payload. The runtime skips the handler
+for other event types. Existing handlers that take the full event type need the
+explicit `outboundIntegrationFullEvent` marker to keep their current behavior. ([change](https://github.com/neohaskell/NeoHaskell/commit/e411f0e0ea2ec504065267c987c98c3c0e5460aa))
+
+### Added
+
+- **Framework**: New applications can list an entity's event payload types in `deriveEntityEvents`.
+The marker creates the parent event type and lets commands emit a single payload
+type without writing its wrapper constructor. Existing event types and stored
+events are unchanged. An application needs no migration to keep using a handwritten
+event type. ([change](https://github.com/neohaskell/NeoHaskell/commit/b6bf53e813498ef4c2c53e5500c9c14f4dd3dbb2))
+
+### Fixed
+
+- **Framework**: JSON text decoding now preserves names and messages with accented characters, ñ, Japanese text, and emoji. Existing apps need no code changes. For example, decoding `"niño"` now returns `niño` instead of an error. ([change](https://github.com/neohaskell/NeoHaskell/commit/a8ca484045e9f263c4402746fe560bfdb73ce95b))
+
+### Migration from 0.12.0
+
+#### Framework
+
+Find each `outboundIntegration ''Handler` or `deriveOutboundIntegration ''Handler`
+whose `handleEvent` second argument is the entity's full event type. Replace
+the marker with `outboundIntegrationFullEvent ''Handler` and import that name
+from `Service.OutboundIntegration.TH`. The handler body and stored events stay
+the same. To narrow the handler, give it one concrete payload argument, provide
+an `EventVariantOf` mapping from the stored event type, and keep
+`outboundIntegration ''Handler`.
+
+### Verify
+
+Run `neo build` and `neo test --ci` in the application. Exercise one matching
+event and one unrelated event. A payload handler runs only for the matching
+event. A full-event handler keeps its previous behavior.
+
+<details>
+<summary>Copy this prompt to your coding agent</summary>
+
+```text
+Migrate Framework from NeoHaskell 0.12.0 to 0.13.0.
+Update my NeoHaskell outbound handlers for payload dispatch. Find each
+`outboundIntegration ''Handler` or `deriveOutboundIntegration ''Handler` marker.
+If `handleEvent` takes the entity's full event type as its second argument,
+import `outboundIntegrationFullEvent` from `Service.OutboundIntegration.TH` and
+use `outboundIntegrationFullEvent ''Handler` to preserve its behavior. Keep the
+handler body and stored event type unchanged. For a handler that already takes
+one concrete payload, keep `outboundIntegration ''Handler` and confirm that
+`EventVariantOf` maps the stored event type to that payload. Run `neo build`
+and `neo test --ci`. Report the changed files, test results, and any handler
+whose payload mapping or intended event selection remains unclear.
+```
+
+</details>
+
+[Compare changes](https://github.com/neohaskell/NeoHaskell/compare/neo-v0.12.0...neo-v0.13.0)
+
+## 0.12.0 — 2026-10-26
+
+### Breaking changes
+
+- **Framework**: `AsyncTask.runWithCancellationEnabled` starts a child that can receive cancellation while its parent protects a handoff. It replaces `AsyncTask.runUnmasked`. Apps that call the old name need to update that call. ([change](https://github.com/neohaskell/NeoHaskell/commit/f70bf7f7b1854c0cc26b606d18a274182308225b))
+- **Framework**: Framework code can compose `AtomicVar` reads and updates with conditional `ConcurrentMap` operations in one transaction. `Transaction` is now a distinct type, so application code that imports `AtomicVar.Transaction` or combines raw STM with `AtomicVar.peekSTM` must migrate. ([change](https://github.com/neohaskell/NeoHaskell/commit/9bc20f0b06821102dccb8e82c43860f0e7be48fd))
+- **Framework**: Integration dispatch preserves atomic worker admission and drain during reaping and shutdown through a dedicated queue control. The constructor record change affects the framework builder and repository tests; application setup continues through `Application.withDispatcherConfig`. Event processing and `integration_result` logs keep their existing behavior. The temporary raw STM predicate operations `ConcurrentMap.getOrInsertIfM` and `ConcurrentMap.removeIfM` are removed in favor of typed transactions. ([change](https://github.com/neohaskell/NeoHaskell/commit/64c28a77047d47d151ffff30b3dd4925583de18d))
+
+### Added
+
+- **Framework**: `Http.Client` can now send PUT, HEAD, DELETE, POST and PATCH requests with a raw byte body and read the status code and headers of every response, including 4xx and 5xx. Use `Http.Client.sendSecure method request body` for HTTPS services and `Http.Client.Internal.sendRaw` for trusted loopback endpoints. `Http.getSecure` and `getRaw` keep working exactly as before.
+
+HTTPS byte requests load the system certificate store while keeping certificate
+and hostname checks and TLS 1.2 or later. Byte-level requests ignore environment
+proxies and stop retaining response chunks as soon as the configured size limit
+is exceeded, closing the response instead of waiting for the entire body.
+The limit is not a fixed process-memory cap; network buffers can contain extra
+bytes. The raw internal API remains caller-restricted, not a loopback validator.
+
+Existing applications do not need code changes. To verify locally, run `./dev test "Http.Client" nhcore-test-core` and confirm the `sendRaw` and `sendSecure` examples pass. ([change](https://github.com/neohaskell/NeoHaskell/commit/c243b9787e361f54f6436dc07be06694c7198852))
+- **Framework**: `Crypto` now offers the raw building blocks behind signatures: `Crypto.sha256` (32-byte digest), `Crypto.hmacSha256 key message` (raw HMAC that can be chained, any key length) and `Crypto.toHex` (lowercase hexadecimal). Use them when a protocol tells you exactly which bytes to hash or sign; keep using `Crypto.signWith` and `Crypto.verifyWith` for webhook secrets, which are unchanged.
+
+Existing applications do not need code changes. To verify locally, run `./dev test "Crypto" nhcore-test-core` and confirm the `sha256`, `hmacSha256` and `toHex` examples pass. ([change](https://github.com/neohaskell/NeoHaskell/commit/c243b9787e361f54f6436dc07be06694c7198852))
+- **Framework**: `Directory.withTemporaryFolder` gives a task a private, unique folder under the system temporary directory. It attempts to remove the folder when the task finishes, fails, or is cancelled. Use it for files that should last only as long as one operation. Existing apps need no changes. ([change](https://github.com/neohaskell/NeoHaskell/commit/f70bf7f7b1854c0cc26b606d18a274182308225b))
+- **Framework**: `Task.withCancellationBlocked` lets a cleanup task finish an ownership handoff before cancellation can interrupt it, including while it waits. Use it only when the wait and cleanup can finish. A stalled task in this operation cannot be cancelled. `AsyncTask.isWaitingForExceptionDelivery` exposes a momentary status snapshot for cancellation tests. ([change](https://github.com/neohaskell/NeoHaskell/commit/f70bf7f7b1854c0cc26b606d18a274182308225b))
+- **CLI**: New projects include shared instructions for Codex and Claude. The CLI keeps their framework guide matched to the exact NeoHaskell revision used by the project's build files, including a local framework source override. If the source resolves but the guide cannot be retrieved, the build continues and the instructions show that guidance is unavailable. Existing instructions and edited skills stay as the developer wrote them. ([change](https://github.com/neohaskell/NeoHaskell/commit/97d33f620444468070a0b470d52b128127c81187))
+- **Framework**: Each framework revision includes an agent guide for core application patterns, reusable HTTP side effects, and external OAuth2 account connections. Developers and their agents can follow self-contained examples tied to the same revision as their app, without a framework checkout. ([change](https://github.com/neohaskell/NeoHaskell/commit/97d33f620444468070a0b470d52b128127c81187))
+- **Framework**: Framework code can convert a `DateTime` to rounded Unix epoch milliseconds. Existing applications need no changes. ([change](https://github.com/neohaskell/NeoHaskell/commit/64c28a77047d47d151ffff30b3dd4925583de18d))
+
+### Improved
+
+- **Framework**: Command requests retain one safe result when decoding or handling fails, and cancellation still reaches blocked requests. Framework contributors can run the unconditional service-code lint check without an allowance for old findings. Public APIs and response formats are unchanged, so application projects need no migration. ([change](https://github.com/neohaskell/NeoHaskell/commit/f70bf7f7b1854c0cc26b606d18a274182308225b))
+
+### Fixed
+
+- **Framework**: A duplicate file upload no longer rewrites the existing stored blob when the blob store's existence check returns an error. The upload instead fails with "Failed to verify stored file content. Please retry." Backend details are logged at error level via `Log.critical`. A check that reports the blob present still reuses it; a check that reports it missing still restores the uploaded content. This does not change how the Local backend reports existence-check results.
+
+A concurrent upload that loses a state-store conflict may already have written its own provisional blob. It attempts to delete that provisional blob; it does not rewrite the winner's existing blob when the winner's existence check returns an error. This check does not prevent another actor from removing a blob later.
+
+No code or data changes are needed in applications. To verify locally, run `./.agents/skills/tdd/scripts/test-match "ContentDedup" nhcore-test-service` and confirm `dedup fails closed when the existence check errors` passes. ([change](https://github.com/neohaskell/NeoHaskell/commit/b71a18bb7a793189c4aeda5cab48f11b4b8baa29))
+- **Framework**: The migration guidance for command event attribution now identifies the applications that need an edit. Applications using `Application.withService` and built-in transports need no source changes. Applications that construct a custom `ServiceRunner` for `Application.withServiceRunner` must update command handlers in the third result of `getEndpointsByTransport` to accept `Maybe EventMetadata` before the request context, request bytes, and response callback. The first two result maps are unchanged, and an empty third map needs no edit. This clarifies the already released 0.11.0 change for these supported application entrypoints.
+
+For a handler that does not start another command, wrap its existing `EndpointHandler` as `\_sourceEvent requestContext body respond -> existingHandler requestContext body respond`. A handler that delegates to another dispatch handler must pass `sourceEvent` through. Keep the verified request context as the source of authorization. Stored event attribution does not grant permission to act as its user.
+
+Code that imports the internal `Service.CommandExecutor.Core.execute` function directly must now group its event store, entity fetcher, and entity name into `ExecutionDependencies`. Pass `FromRequest requestContext` for a root command or `FromEvent requestContext sourceEventMetadata` for an event-triggered command. Handle the typed `CommandExecutionFailure` result instead of a `Text` error.
+
+Build the application and run its command and integration tests. Execute a command and inspect its saved event. Check that `relatedUserSub` is the verified user and `correlationId` is the server request ID. For a command started by an event, check that `causationId` is the immediate source event ID. An absent source should not produce a `causationId`. ([change](https://github.com/neohaskell/NeoHaskell/commit/39d9e93f565aa4d7577e40497fde9b569256fec9))
+- **Framework**: Secure URL validation checks both IPv4 and IPv6 DNS records under one timeout. When the timeout expires, it stops both lookups. Existing calls to `validateSecureUrlWithDns` keep the same type and validation errors. ([change](https://github.com/neohaskell/NeoHaskell/commit/64c28a77047d47d151ffff30b3dd4925583de18d))
+
+### Migration from 0.11.0
+
+#### Framework
+
+Replace `AsyncTask.runUnmasked task` with `AsyncTask.runWithCancellationEnabled task`. The child still runs with cancellation enabled even when its parent starts it during a protected handoff. Keep ordinary `AsyncTask.run` calls when the child should inherit the parent's cancellation state.
+
+### Verify
+
+Search the app for `runUnmasked` and update each call. Run `neo build` and `neo test --ci` in the app. Both commands should finish successfully, and the search should find no old calls.
+
+<details>
+<summary>Copy this prompt to your coding agent</summary>
+
+```text
+Migrate Framework from NeoHaskell 0.11.0 to 0.12.0.
+In this NeoHaskell app, replace every AsyncTask.runUnmasked call with AsyncTask.runWithCancellationEnabled. This is an API rename: the child still receives cancellation while its parent protects a handoff. Do not replace ordinary AsyncTask.run calls. Search for remaining runUnmasked uses, run neo build and neo test --ci, and report the changed files and command results. If a call relies on a different cancellation contract, report it instead of changing that call automatically.
+```
+
+</details>
+
+#### Framework
+
+Import `Transaction` from the `Transaction` module instead of `AtomicVar`. Use `ConcurrentMap.getOrInsertIfTransaction` and `ConcurrentMap.removeIfTransaction` for predicates that return `Transaction Bool`. Compose `AtomicVar.peekSTM` and `AtomicVar.modifyWithResultSTM` directly in those predicates. Use `Transaction.run` when a composed operation needs its own atomic commit. Raw `STM` operations cannot be mixed into a `Transaction`; keep those operations behind the owning framework concurrency module.
+
+### Verify
+
+Compile affected application code against the updated `nhcore` package. Run its tests for concurrent map replacement, conditional removal, and `AtomicVar` updates.
+
+<details>
+<summary>Copy this prompt to your coding agent</summary>
+
+```text
+Migrate Framework from NeoHaskell 0.11.0 to 0.12.0.
+Find application imports of AtomicVar.Transaction and callbacks that combine AtomicVar.peekSTM or AtomicVar.modifyWithResultSTM with raw STM. Import Transaction from the Transaction module. Pass typed callbacks to ConcurrentMap.getOrInsertIfTransaction or ConcurrentMap.removeIfTransaction. Move unrelated raw STM callbacks into the concurrency module that owns their shared state. Replace standalone raw STM execution with Transaction.run only when the code is an owned Transaction. Preserve each callback's decision and all atomic updates. Compile the application against the updated nhcore package and run its concurrent map and AtomicVar behavior tests. Report changed files and results.
+```
+
+</details>
+
+#### Framework
+
+Replace `ConcurrentMap.getOrInsertIfM` with `ConcurrentMap.getOrInsertIfTransaction` and `ConcurrentMap.removeIfM` with `ConcurrentMap.removeIfTransaction`. Predicates that read or update an `AtomicVar` can compose `AtomicVar.peekSTM` and `AtomicVar.modifyWithResultSTM` in `Transaction`. Move predicates using other raw STM operations into the concurrency module that owns their shared state.
+
+### Verify
+
+Compile affected code against the updated `nhcore` package. Run tests that cover map replacement and conditional removal while worker status changes.
+
+<details>
+<summary>Copy this prompt to your coding agent</summary>
+
+```text
+Migrate Framework from NeoHaskell 0.11.0 to 0.12.0.
+Find getOrInsertIfM and removeIfM call sites. Replace them with getOrInsertIfTransaction and removeIfTransaction using callbacks that return Transaction Bool. Keep map lookup, queue status changes, and removal in one transaction. For callbacks that use unrelated raw STM operations, move the coordinated operation into its owning concurrency module. Compile against the updated nhcore package and run concurrent replacement and conditional removal tests. Report changed files and results.
+```
+
+</details>
+
+[Compare changes](https://github.com/neohaskell/NeoHaskell/compare/neo-v0.11.0...neo-v0.12.0)
+
 ## 0.11.0 — 2026-10-23
 
 ### Breaking changes

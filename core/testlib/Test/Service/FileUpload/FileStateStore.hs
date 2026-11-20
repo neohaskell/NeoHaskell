@@ -24,6 +24,7 @@ import Core
 import Service.FileUpload.Core (
   BlobKey (..),
   ContentHash (..),
+  FileCreation (..),
   FileConfirmedData (..),
   FileDeletedData (..),
   FileDeletionReason (..),
@@ -267,6 +268,54 @@ spec newStore = do
         result |> shouldBe Nothing
 
 
+    describe "retained creation" do
+      it "reserves one canonical file identity per owner and creation key" \_ -> do
+        store <- newStore
+        let first = mkFileCreation "owner-a" "job-1" "first"
+        let competing = mkFileCreation "owner-a" "job-1" "second"
+        firstResult <- store.reserveCreation first
+        secondResult <- store.reserveCreation competing
+        firstResult |> shouldBe first
+        secondResult |> shouldBe first
+        state <- store.getState first.fileRef
+        state |> shouldBe Nothing
+
+      it "scopes creation keys to their owner" \_ -> do
+        store <- newStore
+        let first = mkFileCreation "owner-a" "job-1" "first"
+        let otherOwner = mkFileCreation "owner-b" "job-1" "second"
+        firstResult <- store.reserveCreation first
+        otherResult <- store.reserveCreation otherOwner
+        firstResult.fileRef |> shouldBe first.fileRef
+        otherResult.fileRef |> shouldBe otherOwner.fileRef
+        (otherResult.fileRef != firstResult.fileRef) |> shouldBe True
+
+      it "publishes retained metadata and keeps the deletion tombstone" \_ -> do
+        store <- newStore
+        let creation = mkFileCreation "owner-a" "job-1" "retained"
+        _ <- store.reserveCreation creation
+        store.publishRetained creation
+        state <- store.getState creation.fileRef
+        case state of
+          Just (Retained retained) -> do
+            retained.ownerHash |> shouldBe creation.ownerHash
+            retained.metadata.ref |> shouldBe creation.fileRef
+            retained.metadata.blobKey |> shouldBe creation.blobKey
+            retained.metadata.filename |> shouldBe creation.filename
+            retained.metadata.contentType |> shouldBe creation.contentType
+            retained.metadata.sizeBytes |> shouldBe creation.sizeBytes
+            retained.metadata.contentHash |> shouldBe creation.contentHash
+          _ -> fail "Expected retained file state"
+        store.updateState creation.fileRef (mkDeleteEvent creation.fileRef)
+        repeatedReservation <- store.reserveCreation (mkFileCreation "owner-a" "job-1" "replacement")
+        repeatedReservation |> shouldBe creation
+        publishResult <- store.publishRetained creation |> Task.asResult
+        case publishResult of
+          Err _ -> pass
+          Ok _ -> fail "Expected the deleted state to reject publication"
+        stateAfterRetry <- store.getState creation.fileRef
+        stateAfterRetry |> shouldBe (Just Deleted)
+
 -- ==========================================================================
 -- Test Helpers
 -- ==========================================================================
@@ -334,4 +383,26 @@ mkFileUploadedEvent (FileRef refText) uploadedAtTime expiresAtTime =
     , expiresAt = expiresAtTime
     , uploadedAt = uploadedAtTime
     }
+
+
+mkFileCreation :: Text -> Text -> Text -> FileCreation
+mkFileCreation ownerText key suffix = FileCreation
+  { ownerHash = OwnerHash ownerText
+  , creationKey = key
+  , fileRef = FileRef [fmt|file_#{suffix}|]
+  , blobKey = BlobKey [fmt|blob_#{suffix}|]
+  , filename = "document.pdf"
+  , contentType = "application/pdf"
+  , sizeBytes = 4
+  , contentHash = ContentHash "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"
+  , createdAt = 1700000000
+  }
+
+
+mkDeleteEvent :: FileRef -> FileUploadEvent
+mkDeleteEvent fileRef = FileDeleted FileDeletedData
+  { fileRef = fileRef
+  , reason = UserRequested
+  , deletedAt = 1700000100
+  }
 

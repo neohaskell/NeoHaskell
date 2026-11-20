@@ -104,6 +104,22 @@ class TestMatchTests(unittest.TestCase):
         self.assertTrue(transcript.is_file())
         self.assertEqual(transcript.parent, self.root.resolve() / ".agents-state/tdd/test-match")
 
+    def test_builddir_keeps_focused_repl_output_separate(self) -> None:
+        builddir = self.base / "focused-build"
+        result = self.run_match("--builddir", str(builddir), "Cart")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(
+            json.loads(self.log.read_text()),
+            [
+                "cabal",
+                "repl",
+                "nhcore-test-core",
+                "--project-file=cabal.project.dev",
+                "-v0",
+                f"--builddir={builddir}",
+            ],
+        )
+
     def test_zero_selection_is_rejected(self) -> None:
         self.set_scenario(output="0 examples, 0 failures\n", exit=0)
         result = self.run_match("NoSuchExample")
@@ -116,6 +132,39 @@ class TestMatchTests(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn("Hspec reported failures", result.stdout)
 
+    def test_hspec_pending_summary_is_accepted(self) -> None:
+        self.set_scenario(output="31 examples, 0 failures, 4 pending\n", exit=0)
+        result = self.run_match("Integration.Dispatcher", "nhcore-test-integration")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("PASS: 31 examples, 0 failures, 4 pending", result.stdout)
+
+    def test_hspec_failure_with_pending_is_rejected(self) -> None:
+        self.set_scenario(
+            output=(
+                "Failures:\n  1) Cart rejects a stale revision\n"
+                "       expected revision 3, got 2\n\n"
+                "5 examples, 1 failure, 4 pending\n"
+            ),
+            exit=0,
+        )
+        result = self.run_match("Cart")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("Hspec reported failures", result.stdout)
+
+    def test_failure_and_pending_counts_cannot_exceed_example_count(self) -> None:
+        self.set_scenario(output="5 examples, 2 failures, 4 pending\n", exit=0)
+        result = self.run_match("Cart")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("failure and pending counts exceed the example count", result.stdout)
+
+    def test_oversized_summary_count_is_rejected_and_transcribed(self) -> None:
+        self.set_scenario(output=f"1 example, 0 failures, {'9' * 5000} pending\n", exit=0)
+        transcript = self.base / "oversized-summary.log"
+        result = self.run_match("--transcript", str(transcript), "Cart")
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertTrue(transcript.is_file(), result.stderr)
+        self.assertIn("outcome: invalid-summary", transcript.read_text())
+
     def test_compile_setup_error_is_rejected_even_with_a_success_summary(self) -> None:
         self.set_scenario(output="Main.hs:9:1: error: Could not find module X\n1 example, 0 failures\n", exit=0)
         result = self.run_match("Cart")
@@ -123,13 +172,19 @@ class TestMatchTests(unittest.TestCase):
         self.assertIn("setup error", result.stdout)
 
     def test_nonzero_cabal_exit_is_rejected_even_with_a_success_summary(self) -> None:
-        self.set_scenario(output="1 example, 0 failures\n", exit=23)
+        self.set_scenario(output="1 example, 0 failures, 1 pending\n", exit=23)
         result = self.run_match("Cart")
         self.assertEqual(result.returncode, 1)
         self.assertIn("exited with status 23", result.stdout)
 
     def test_missing_ambiguous_and_malformed_summaries_are_rejected(self) -> None:
-        for output in ("no summary\n", "1 example, 0 failures\n2 examples, 0 failures\n", "1 examples, 0 failure\n"):
+        for output in (
+            "no summary\n",
+            "1 example, 0 failures\n2 examples, 0 failures, 1 pending\n",
+            "1 examples, 0 failure\n",
+            "1 example, 0 failures, x pending\n",
+            "1 example, 0 failures, -1 pending\n",
+        ):
             with self.subTest(output=output):
                 self.set_scenario(output=output, exit=0)
                 result = self.run_match("Cart")

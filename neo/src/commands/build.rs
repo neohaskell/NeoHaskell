@@ -1,6 +1,5 @@
 use crate::output::OutputMode;
 use crate::prereqs;
-use crate::config::NeoConfig;
 use crate::subprocess::nix;
 use crate::commands::watch_common;
 use miette::IntoDiagnostic;
@@ -9,8 +8,6 @@ pub async fn run(watch: bool, skip_lock_check: bool, output_mode: &mut OutputMod
     prereqs::require_nix().await?;
     prereqs::warn_direnv(output_mode).await;
 
-    let config = NeoConfig::load("neo.json")?;
-
     if !skip_lock_check {
         crate::commands::lock::check_locked_files(output_mode).await?;
     }
@@ -18,7 +15,7 @@ pub async fn run(watch: bool, skip_lock_check: bool, output_mode: &mut OutputMod
     if output_mode.is_ci() {
         println!("[info] Reconciling project artifacts...");
     }
-    crate::reconcile::run(".", &config).await?;
+    crate::reconcile::run_project(".").await?;
     
     if watch {
         watch_common::run_watch("build", output_mode).await?;

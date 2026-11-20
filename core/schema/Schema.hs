@@ -41,6 +41,7 @@ module Schema (
 import Array (Array)
 import Array qualified
 import Basics
+import DateTime (DateTime)
 import GHC.Generics qualified as Generics
 import Maybe (Maybe (..))
 import Prelude qualified as GhcPrelude
@@ -72,6 +73,8 @@ data Schema
     SEnum (Array Text)
   | -- | Sum types with fields (data Shape = Circle {radius :: Int} | ...)
     SUnion (Array (Text, Schema))
+  | -- | Tagged values whose payload is under a required contents field
+    SUnionWithContents (Array (Text, Schema))
   | -- | Reference for recursive types
     SRef Text
   deriving (Show, Eq)
@@ -152,6 +155,10 @@ instance {-# OVERLAPPING #-} ToSchema GhcPrelude.String where
 
 instance ToSchema Uuid where
   toSchema = SText -- UUIDs serialize as text/strings
+
+
+instance ToSchema DateTime where
+  toSchema = SText
 
 
 -- -----------------------------------------------------------------------------

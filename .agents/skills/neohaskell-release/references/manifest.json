@@ -378,6 +378,958 @@
       "source_sha": "bc5b915f6beee0999f66aee5c08021f9d75c547c",
       "target_policy": "native-v2",
       "version": "0.11.0"
+    },
+    {
+      "base_sha": "1277f961b7c33f0d47df72cc8b452ce60b7d8646",
+      "base_tag": "neo-v0.11.0",
+      "base_version": "0.11.0",
+      "bootstrap": false,
+      "date": "2026-10-26",
+      "group": "platform",
+      "id": "29431b56308c3ba9ed241d9435697ef67b6649d9392b85b583780c12dde6e465",
+      "impact": "breaking",
+      "kind": "release",
+      "notes": [
+        {
+          "category": "Added",
+          "commit": "c243b9787e361f54f6436dc07be06694c7198852",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "610916536ef9d8d8c91b4acef7e30d29bf4afcfff7cd3a33c0f79ef1245392c6",
+          "impact": "compatible",
+          "path": ".changes/016-http-client-byte-level-methods.md",
+          "sections": {
+            "Summary": "`Http.Client` can now send PUT, HEAD, DELETE, POST and PATCH requests with a raw byte body and read the status code and headers of every response, including 4xx and 5xx. Use `Http.Client.sendSecure method request body` for HTTPS services and `Http.Client.Internal.sendRaw` for trusted loopback endpoints. `Http.getSecure` and `getRaw` keep working exactly as before.\n\nHTTPS byte requests load the system certificate store while keeping certificate\nand hostname checks and TLS 1.2 or later. Byte-level requests ignore environment\nproxies and stop retaining response chunks as soon as the configured size limit\nis exceeded, closing the response instead of waiting for the entire body.\nThe limit is not a fixed process-memory cap; network buffers can contain extra\nbytes. The raw internal API remains caller-restricted, not a loopback validator.\n\nExisting applications do not need code changes. To verify locally, run `./dev test \"Http.Client\" nhcore-test-core` and confirm the `sendRaw` and `sendSecure` examples pass."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: compatible\ncategory: Added\n---\n\n## Summary\n\n`Http.Client` can now send PUT, HEAD, DELETE, POST and PATCH requests with a raw byte body and read the status code and headers of every response, including 4xx and 5xx. Use `Http.Client.sendSecure method request body` for HTTPS services and `Http.Client.Internal.sendRaw` for trusted loopback endpoints. `Http.getSecure` and `getRaw` keep working exactly as before.\n\nHTTPS byte requests load the system certificate store while keeping certificate\nand hostname checks and TLS 1.2 or later. Byte-level requests ignore environment\nproxies and stop retaining response chunks as soon as the configured size limit\nis exceeded, closing the response instead of waiting for the entire body.\nThe limit is not a fixed process-memory cap; network buffers can contain extra\nbytes. The raw internal API remains caller-restricted, not a loopback validator.\n\nExisting applications do not need code changes. To verify locally, run `./dev test \"Http.Client\" nhcore-test-core` and confirm the `sendRaw` and `sendSecure` examples pass.\n"
+        },
+        {
+          "category": "Added",
+          "commit": "c243b9787e361f54f6436dc07be06694c7198852",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "7adc591458fdbf7024b567d2a6d1e07e169fa4b03b448a9c5eb19dfe715e728b",
+          "impact": "compatible",
+          "path": ".changes/021-crypto-sha256-hmac-hex.md",
+          "sections": {
+            "Summary": "`Crypto` now offers the raw building blocks behind signatures: `Crypto.sha256` (32-byte digest), `Crypto.hmacSha256 key message` (raw HMAC that can be chained, any key length) and `Crypto.toHex` (lowercase hexadecimal). Use them when a protocol tells you exactly which bytes to hash or sign; keep using `Crypto.signWith` and `Crypto.verifyWith` for webhook secrets, which are unchanged.\n\nExisting applications do not need code changes. To verify locally, run `./dev test \"Crypto\" nhcore-test-core` and confirm the `sha256`, `hmacSha256` and `toHex` examples pass."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: compatible\ncategory: Added\n---\n\n## Summary\n\n`Crypto` now offers the raw building blocks behind signatures: `Crypto.sha256` (32-byte digest), `Crypto.hmacSha256 key message` (raw HMAC that can be chained, any key length) and `Crypto.toHex` (lowercase hexadecimal). Use them when a protocol tells you exactly which bytes to hash or sign; keep using `Crypto.signWith` and `Crypto.verifyWith` for webhook secrets, which are unchanged.\n\nExisting applications do not need code changes. To verify locally, run `./dev test \"Crypto\" nhcore-test-core` and confirm the `sha256`, `hmacSha256` and `toHex` examples pass.\n"
+        },
+        {
+          "category": "Fixed",
+          "commit": "b71a18bb7a793189c4aeda5cab48f11b4b8baa29",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "d30cef20cc5d887280700d4a3b32d439873c0a534612fe411f8036876c50368d",
+          "impact": "compatible",
+          "path": ".changes/020-dedup-no-blind-rewrite.md",
+          "sections": {
+            "Summary": "A duplicate file upload no longer rewrites the existing stored blob when the blob store's existence check returns an error. The upload instead fails with \"Failed to verify stored file content. Please retry.\" Backend details are logged at error level via `Log.critical`. A check that reports the blob present still reuses it; a check that reports it missing still restores the uploaded content. This does not change how the Local backend reports existence-check results.\n\nA concurrent upload that loses a state-store conflict may already have written its own provisional blob. It attempts to delete that provisional blob; it does not rewrite the winner's existing blob when the winner's existence check returns an error. This check does not prevent another actor from removing a blob later.\n\nNo code or data changes are needed in applications. To verify locally, run `./.agents/skills/tdd/scripts/test-match \"ContentDedup\" nhcore-test-service` and confirm `dedup fails closed when the existence check errors` passes."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: compatible\ncategory: Fixed\n---\n\n## Summary\n\nA duplicate file upload no longer rewrites the existing stored blob when the blob store's existence check returns an error. The upload instead fails with \"Failed to verify stored file content. Please retry.\" Backend details are logged at error level via `Log.critical`. A check that reports the blob present still reuses it; a check that reports it missing still restores the uploaded content. This does not change how the Local backend reports existence-check results.\n\nA concurrent upload that loses a state-store conflict may already have written its own provisional blob. It attempts to delete that provisional blob; it does not rewrite the winner's existing blob when the winner's existence check returns an error. This check does not prevent another actor from removing a blob later.\n\nNo code or data changes are needed in applications. To verify locally, run `./.agents/skills/tdd/scripts/test-match \"ContentDedup\" nhcore-test-service` and confirm `dedup fails closed when the existence check errors` passes.\n"
+        },
+        {
+          "category": "Breaking changes",
+          "commit": "f70bf7f7b1854c0cc26b606d18a274182308225b",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "a60ffba7f367dbc705d361d793cbdb243aaf59c6dfbfb2b1e1b1ebdbdbdf3a82",
+          "impact": "breaking",
+          "path": ".changes/async-task-cancellation-name.md",
+          "sections": {
+            "Agent prompt": "```text\nIn this NeoHaskell app, replace every AsyncTask.runUnmasked call with AsyncTask.runWithCancellationEnabled. This is an API rename: the child still receives cancellation while its parent protects a handoff. Do not replace ordinary AsyncTask.run calls. Search for remaining runUnmasked uses, run neo build and neo test --ci, and report the changed files and command results. If a call relies on a different cancellation contract, report it instead of changing that call automatically.\n```",
+            "Migration": "Replace `AsyncTask.runUnmasked task` with `AsyncTask.runWithCancellationEnabled task`. The child still runs with cancellation enabled even when its parent starts it during a protected handoff. Keep ordinary `AsyncTask.run` calls when the child should inherit the parent's cancellation state.\n\n### Verify\n\nSearch the app for `runUnmasked` and update each call. Run `neo build` and `neo test --ci` in the app. Both commands should finish successfully, and the search should find no old calls.",
+            "Summary": "`AsyncTask.runWithCancellationEnabled` starts a child that can receive cancellation while its parent protects a handoff. It replaces `AsyncTask.runUnmasked`. Apps that call the old name need to update that call."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: breaking\ncategory: Breaking changes\n---\n\n## Summary\n\n`AsyncTask.runWithCancellationEnabled` starts a child that can receive cancellation while its parent protects a handoff. It replaces `AsyncTask.runUnmasked`. Apps that call the old name need to update that call.\n\n## Migration\n\nReplace `AsyncTask.runUnmasked task` with `AsyncTask.runWithCancellationEnabled task`. The child still runs with cancellation enabled even when its parent starts it during a protected handoff. Keep ordinary `AsyncTask.run` calls when the child should inherit the parent's cancellation state.\n\n### Verify\n\nSearch the app for `runUnmasked` and update each call. Run `neo build` and `neo test --ci` in the app. Both commands should finish successfully, and the search should find no old calls.\n\n## Agent prompt\n\n```text\nIn this NeoHaskell app, replace every AsyncTask.runUnmasked call with AsyncTask.runWithCancellationEnabled. This is an API rename: the child still receives cancellation while its parent protects a handoff. Do not replace ordinary AsyncTask.run calls. Search for remaining runUnmasked uses, run neo build and neo test --ci, and report the changed files and command results. If a call relies on a different cancellation contract, report it instead of changing that call automatically.\n```\n"
+        },
+        {
+          "category": "Fixed",
+          "commit": "f70bf7f7b1854c0cc26b606d18a274182308225b",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "b4071d1f85d13fa969237003eab6f533808445a6b91a81aa3dd8f9b91354c744",
+          "impact": "none",
+          "path": ".changes/guardrail-exception-strictness.md",
+          "sections": {
+            "Summary": "Tighten contributor lint checks for internal exception imports and preserve the existing strictness and filesystem-test contracts. This changes internal development checks and guidance. Application behavior and public APIs remain unchanged, so no release or migration is needed."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: none\ncategory: Fixed\n---\n\n## Summary\n\nTighten contributor lint checks for internal exception imports and preserve the existing strictness and filesystem-test contracts. This changes internal development checks and guidance. Application behavior and public APIs remain unchanged, so no release or migration is needed.\n"
+        },
+        {
+          "category": "Improved",
+          "commit": "f70bf7f7b1854c0cc26b606d18a274182308225b",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "e0a0f75c9cbe419393ed25cb9019de0f6ffad6a44fc6fdce8fa7f59bd8d7d1d8",
+          "impact": "none",
+          "path": ".changes/readable-service-checks.md",
+          "sections": {
+            "Summary": "Framework contributors get clearer service-code guidance and checks that reject misplaced exception mechanisms and agent-workspace dependencies. This change affects development tools and instructions. It does not change application behavior or public APIs."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: none\ncategory: Improved\n---\n\n## Summary\n\nFramework contributors get clearer service-code guidance and checks that reject misplaced exception mechanisms and agent-workspace dependencies. This change affects development tools and instructions. It does not change application behavior or public APIs.\n"
+        },
+        {
+          "category": "Added",
+          "commit": "f70bf7f7b1854c0cc26b606d18a274182308225b",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "e661d1e53e22fd5388781c63e1b108bd130fb5177d64848a59ad4a37bdb33a18",
+          "impact": "compatible",
+          "path": ".changes/scoped-temporary-folders.md",
+          "sections": {
+            "Summary": "`Directory.withTemporaryFolder` gives a task a private, unique folder under the system temporary directory. It attempts to remove the folder when the task finishes, fails, or is cancelled. Use it for files that should last only as long as one operation. Existing apps need no changes."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: compatible\ncategory: Added\n---\n\n## Summary\n\n`Directory.withTemporaryFolder` gives a task a private, unique folder under the system temporary directory. It attempts to remove the folder when the task finishes, fails, or is cancelled. Use it for files that should last only as long as one operation. Existing apps need no changes.\n"
+        },
+        {
+          "category": "Added",
+          "commit": "f70bf7f7b1854c0cc26b606d18a274182308225b",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "1223c32916bc02e93e664110965cdabcddd24bace15d459943bfe7707f20e827",
+          "impact": "compatible",
+          "path": ".changes/task-cancellation-blocked.md",
+          "sections": {
+            "Summary": "`Task.withCancellationBlocked` lets a cleanup task finish an ownership handoff before cancellation can interrupt it, including while it waits. Use it only when the wait and cleanup can finish. A stalled task in this operation cannot be cancelled. `AsyncTask.isWaitingForExceptionDelivery` exposes a momentary status snapshot for cancellation tests."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: compatible\ncategory: Added\n---\n\n## Summary\n\n`Task.withCancellationBlocked` lets a cleanup task finish an ownership handoff before cancellation can interrupt it, including while it waits. Use it only when the wait and cleanup can finish. A stalled task in this operation cannot be cancelled. `AsyncTask.isWaitingForExceptionDelivery` exposes a momentary status snapshot for cancellation tests.\n"
+        },
+        {
+          "category": "Improved",
+          "commit": "f70bf7f7b1854c0cc26b606d18a274182308225b",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "1a66886a160127297f640092f65fa961c60c990997a8405c2db4d5f3ad120b1e",
+          "impact": "compatible",
+          "path": ".changes/unconditional-lint-cleanup.md",
+          "sections": {
+            "Summary": "Command requests retain one safe result when decoding or handling fails, and cancellation still reaches blocked requests. Framework contributors can run the unconditional service-code lint check without an allowance for old findings. Public APIs and response formats are unchanged, so application projects need no migration."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: compatible\ncategory: Improved\n---\n\n## Summary\n\nCommand requests retain one safe result when decoding or handling fails, and cancellation still reaches blocked requests. Framework contributors can run the unconditional service-code lint check without an allowance for old findings. Public APIs and response formats are unchanged, so application projects need no migration.\n"
+        },
+        {
+          "category": "Added",
+          "commit": "00cc026f0322e1c23e25e301b86f4f13c92d61ce",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "7de03d98c2884760f69db63d55d76ae61cdba588bbe8ed1c1cbddeac56ce94aa",
+          "impact": "none",
+          "path": ".changes/nix-haskell-tools-skill.md",
+          "sections": {
+            "Summary": "Add a repository skill that runs Haskell tools through the project's Nix development shell. Agent instructions and test skills now use that shell for compiler and Cabal commands. This changes the development workflow only. Application APIs and runtime behavior are unchanged."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: none\ncategory: Added\n---\n\n## Summary\n\nAdd a repository skill that runs Haskell tools through the project's Nix development shell. Agent instructions and test skills now use that shell for compiler and Cabal commands. This changes the development workflow only. Application APIs and runtime behavior are unchanged.\n"
+        },
+        {
+          "category": "Fixed",
+          "commit": "39d9e93f565aa4d7577e40497fde9b569256fec9",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "090c66f7162ad85abed7e2956eb63fba42084596c1a3dd66aa786f29559ba999",
+          "impact": "compatible",
+          "path": ".changes/command-attribution-migration-clarification.md",
+          "sections": {
+            "Summary": "The migration guidance for command event attribution now identifies the applications that need an edit. Applications using `Application.withService` and built-in transports need no source changes. Applications that construct a custom `ServiceRunner` for `Application.withServiceRunner` must update command handlers in the third result of `getEndpointsByTransport` to accept `Maybe EventMetadata` before the request context, request bytes, and response callback. The first two result maps are unchanged, and an empty third map needs no edit. This clarifies the already released 0.11.0 change for these supported application entrypoints.\n\nFor a handler that does not start another command, wrap its existing `EndpointHandler` as `\\_sourceEvent requestContext body respond -> existingHandler requestContext body respond`. A handler that delegates to another dispatch handler must pass `sourceEvent` through. Keep the verified request context as the source of authorization. Stored event attribution does not grant permission to act as its user.\n\nCode that imports the internal `Service.CommandExecutor.Core.execute` function directly must now group its event store, entity fetcher, and entity name into `ExecutionDependencies`. Pass `FromRequest requestContext` for a root command or `FromEvent requestContext sourceEventMetadata` for an event-triggered command. Handle the typed `CommandExecutionFailure` result instead of a `Text` error.\n\nBuild the application and run its command and integration tests. Execute a command and inspect its saved event. Check that `relatedUserSub` is the verified user and `correlationId` is the server request ID. For a command started by an event, check that `causationId` is the immediate source event ID. An absent source should not produce a `causationId`."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: compatible\ncategory: Fixed\n---\n\n## Summary\n\nThe migration guidance for command event attribution now identifies the applications that need an edit. Applications using `Application.withService` and built-in transports need no source changes. Applications that construct a custom `ServiceRunner` for `Application.withServiceRunner` must update command handlers in the third result of `getEndpointsByTransport` to accept `Maybe EventMetadata` before the request context, request bytes, and response callback. The first two result maps are unchanged, and an empty third map needs no edit. This clarifies the already released 0.11.0 change for these supported application entrypoints.\n\nFor a handler that does not start another command, wrap its existing `EndpointHandler` as `\\_sourceEvent requestContext body respond -> existingHandler requestContext body respond`. A handler that delegates to another dispatch handler must pass `sourceEvent` through. Keep the verified request context as the source of authorization. Stored event attribution does not grant permission to act as its user.\n\nCode that imports the internal `Service.CommandExecutor.Core.execute` function directly must now group its event store, entity fetcher, and entity name into `ExecutionDependencies`. Pass `FromRequest requestContext` for a root command or `FromEvent requestContext sourceEventMetadata` for an event-triggered command. Handle the typed `CommandExecutionFailure` result instead of a `Text` error.\n\nBuild the application and run its command and integration tests. Execute a command and inspect its saved event. Check that `relatedUserSub` is the verified user and `correlationId` is the server request ID. For a command started by an event, check that `causationId` is the immediate source event ID. An absent source should not produce a `causationId`.\n"
+        },
+        {
+          "category": "Improved",
+          "commit": "39d9e93f565aa4d7577e40497fde9b569256fec9",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "f65393010d43debfa055c2d5d56b660650be3e101af96c62416b99d1df2c284c",
+          "impact": "none",
+          "path": ".changes/command-executor-internal-refactor.md",
+          "sections": {
+            "Summary": "The framework now keeps command attribution, execution outcomes, and result reporting in smaller internal modules. Applications still define commands with the `command` marker and register them with `Service.command`. They add services with `Application.withService`. These application APIs and the command response JSON are unchanged. App authors need no code or data migration. This internal refactor does not need a release announcement."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: none\ncategory: Improved\n---\n\n## Summary\n\nThe framework now keeps command attribution, execution outcomes, and result reporting in smaller internal modules. Applications still define commands with the `command` marker and register them with `Service.command`. They add services with `Application.withService`. These application APIs and the command response JSON are unchanged. App authors need no code or data migration. This internal refactor does not need a release announcement.\n"
+        },
+        {
+          "category": "Added",
+          "commit": "97d33f620444468070a0b470d52b128127c81187",
+          "component": "CLI",
+          "group": "platform",
+          "hash": "72cf17afcd8531caeeb975477124ea1eefbb4892605f54b0027e3dc1a472cd9d",
+          "impact": "compatible",
+          "path": ".changes/exact-source-agent-guidance-cli.md",
+          "sections": {
+            "Summary": "New projects include shared instructions for Codex and Claude. The CLI keeps their framework guide matched to the exact NeoHaskell revision used by the project's build files, including a local framework source override. If the source resolves but the guide cannot be retrieved, the build continues and the instructions show that guidance is unavailable. Existing instructions and edited skills stay as the developer wrote them."
+          },
+          "text": "---\ngroup: platform\ncomponent: CLI\nimpact: compatible\ncategory: Added\n---\n\n## Summary\n\nNew projects include shared instructions for Codex and Claude. The CLI keeps their framework guide matched to the exact NeoHaskell revision used by the project's build files, including a local framework source override. If the source resolves but the guide cannot be retrieved, the build continues and the instructions show that guidance is unavailable. Existing instructions and edited skills stay as the developer wrote them.\n"
+        },
+        {
+          "category": "Added",
+          "commit": "97d33f620444468070a0b470d52b128127c81187",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "c2f37757b213db538645279611b656774155c81acf6a3d0c7a057961a1fcdce4",
+          "impact": "compatible",
+          "path": ".changes/exact-source-agent-guidance-framework.md",
+          "sections": {
+            "Summary": "Each framework revision includes an agent guide for core application patterns, reusable HTTP side effects, and external OAuth2 account connections. Developers and their agents can follow self-contained examples tied to the same revision as their app, without a framework checkout."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: compatible\ncategory: Added\n---\n\n## Summary\n\nEach framework revision includes an agent guide for core application patterns, reusable HTTP side effects, and external OAuth2 account connections. Developers and their agents can follow self-contained examples tied to the same revision as their app, without a framework checkout.\n"
+        },
+        {
+          "category": "Breaking changes",
+          "commit": "9bc20f0b06821102dccb8e82c43860f0e7be48fd",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "9e3b9153c71598e2910596b0ef41f858f6f6c8ad723e25df821ad48ef802dcc8",
+          "impact": "breaking",
+          "path": ".changes/atomicvar-composed-transactions.md",
+          "sections": {
+            "Agent prompt": "```text\nFind application imports of AtomicVar.Transaction and callbacks that combine AtomicVar.peekSTM or AtomicVar.modifyWithResultSTM with raw STM. Import Transaction from the Transaction module. Pass typed callbacks to ConcurrentMap.getOrInsertIfTransaction or ConcurrentMap.removeIfTransaction. Move unrelated raw STM callbacks into the concurrency module that owns their shared state. Replace standalone raw STM execution with Transaction.run only when the code is an owned Transaction. Preserve each callback's decision and all atomic updates. Compile the application against the updated nhcore package and run its concurrent map and AtomicVar behavior tests. Report changed files and results.\n```",
+            "Migration": "Import `Transaction` from the `Transaction` module instead of `AtomicVar`. Use `ConcurrentMap.getOrInsertIfTransaction` and `ConcurrentMap.removeIfTransaction` for predicates that return `Transaction Bool`. Compose `AtomicVar.peekSTM` and `AtomicVar.modifyWithResultSTM` directly in those predicates. Use `Transaction.run` when a composed operation needs its own atomic commit. Raw `STM` operations cannot be mixed into a `Transaction`; keep those operations behind the owning framework concurrency module.\n\n### Verify\n\nCompile affected application code against the updated `nhcore` package. Run its tests for concurrent map replacement, conditional removal, and `AtomicVar` updates.",
+            "Summary": "Framework code can compose `AtomicVar` reads and updates with conditional `ConcurrentMap` operations in one transaction. `Transaction` is now a distinct type, so application code that imports `AtomicVar.Transaction` or combines raw STM with `AtomicVar.peekSTM` must migrate."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: breaking\ncategory: Breaking changes\n---\n\n## Summary\n\nFramework code can compose `AtomicVar` reads and updates with conditional `ConcurrentMap` operations in one transaction. `Transaction` is now a distinct type, so application code that imports `AtomicVar.Transaction` or combines raw STM with `AtomicVar.peekSTM` must migrate.\n\n## Migration\n\nImport `Transaction` from the `Transaction` module instead of `AtomicVar`. Use `ConcurrentMap.getOrInsertIfTransaction` and `ConcurrentMap.removeIfTransaction` for predicates that return `Transaction Bool`. Compose `AtomicVar.peekSTM` and `AtomicVar.modifyWithResultSTM` directly in those predicates. Use `Transaction.run` when a composed operation needs its own atomic commit. Raw `STM` operations cannot be mixed into a `Transaction`; keep those operations behind the owning framework concurrency module.\n\n### Verify\n\nCompile affected application code against the updated `nhcore` package. Run its tests for concurrent map replacement, conditional removal, and `AtomicVar` updates.\n\n## Agent prompt\n\n```text\nFind application imports of AtomicVar.Transaction and callbacks that combine AtomicVar.peekSTM or AtomicVar.modifyWithResultSTM with raw STM. Import Transaction from the Transaction module. Pass typed callbacks to ConcurrentMap.getOrInsertIfTransaction or ConcurrentMap.removeIfTransaction. Move unrelated raw STM callbacks into the concurrency module that owns their shared state. Replace standalone raw STM execution with Transaction.run only when the code is an owned Transaction. Preserve each callback's decision and all atomic updates. Compile the application against the updated nhcore package and run its concurrent map and AtomicVar behavior tests. Report changed files and results.\n```\n"
+        },
+        {
+          "category": "Fixed",
+          "commit": "64c28a77047d47d151ffff30b3dd4925583de18d",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "51dd63d9458afb66cbfb84bc4184a5f817eff00783a8d2a10d7a9c864c6f9925",
+          "impact": "none",
+          "path": ".changes/async-stm-ownership-guardrail.md",
+          "sections": {
+            "Summary": "Contributor checks reject raw concurrency imports outside their named owners and\nenforce the reviewed conditional, text parameter and formatting conventions.\nLint reads component language defaults from Cabal, so contributors no longer need\nduplicate Strict pragmas solely for lint. These changes affect internal development\nchecks only. Application behavior and public APIs are unchanged, so application\ndevelopers need no migration."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: none\ncategory: Fixed\n---\n\n## Summary\n\nContributor checks reject raw concurrency imports outside their named owners and\nenforce the reviewed conditional, text parameter and formatting conventions.\nLint reads component language defaults from Cabal, so contributors no longer need\nduplicate Strict pragmas solely for lint. These changes affect internal development\nchecks only. Application behavior and public APIs are unchanged, so application\ndevelopers need no migration.\n"
+        },
+        {
+          "category": "Fixed",
+          "commit": "64c28a77047d47d151ffff30b3dd4925583de18d",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "dd5310135b1c67e0addf8801a0bd36a456c41c30af6f0bb45cab4179a2a600c6",
+          "impact": "compatible",
+          "path": ".changes/auth-dns-task-boundary.md",
+          "sections": {
+            "Summary": "Secure URL validation checks both IPv4 and IPv6 DNS records under one timeout. When the timeout expires, it stops both lookups. Existing calls to `validateSecureUrlWithDns` keep the same type and validation errors."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: compatible\ncategory: Fixed\n---\n\n## Summary\n\nSecure URL validation checks both IPv4 and IPv6 DNS records under one timeout. When the timeout expires, it stops both lookups. Existing calls to `validateSecureUrlWithDns` keep the same type and validation errors.\n"
+        },
+        {
+          "category": "Added",
+          "commit": "64c28a77047d47d151ffff30b3dd4925583de18d",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "89be2350d19243bffa637b787093c039131efac28ace263132d4f6c8ea83dd15",
+          "impact": "compatible",
+          "path": ".changes/datetime-epoch-milliseconds.md",
+          "sections": {
+            "Summary": "Framework code can convert a `DateTime` to rounded Unix epoch milliseconds. Existing applications need no changes."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: compatible\ncategory: Added\n---\n\n## Summary\n\nFramework code can convert a `DateTime` to rounded Unix epoch milliseconds. Existing applications need no changes.\n"
+        },
+        {
+          "category": "Breaking changes",
+          "commit": "64c28a77047d47d151ffff30b3dd4925583de18d",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "9f9c3f8e7fea729354c4f8eab3e0d6c91dec03126500a178ddbd27c672782ab9",
+          "impact": "breaking",
+          "path": ".changes/dispatcher-worker-queue-ownership.md",
+          "sections": {
+            "Agent prompt": "```text\nFind getOrInsertIfM and removeIfM call sites. Replace them with getOrInsertIfTransaction and removeIfTransaction using callbacks that return Transaction Bool. Keep map lookup, queue status changes, and removal in one transaction. For callbacks that use unrelated raw STM operations, move the coordinated operation into its owning concurrency module. Compile against the updated nhcore package and run concurrent replacement and conditional removal tests. Report changed files and results.\n```",
+            "Migration": "Replace `ConcurrentMap.getOrInsertIfM` with `ConcurrentMap.getOrInsertIfTransaction` and `ConcurrentMap.removeIfM` with `ConcurrentMap.removeIfTransaction`. Predicates that read or update an `AtomicVar` can compose `AtomicVar.peekSTM` and `AtomicVar.modifyWithResultSTM` in `Transaction`. Move predicates using other raw STM operations into the concurrency module that owns their shared state.\n\n### Verify\n\nCompile affected code against the updated `nhcore` package. Run tests that cover map replacement and conditional removal while worker status changes.",
+            "Summary": "Integration dispatch preserves atomic worker admission and drain during reaping and shutdown through a dedicated queue control. The constructor record change affects the framework builder and repository tests; application setup continues through `Application.withDispatcherConfig`. Event processing and `integration_result` logs keep their existing behavior. The temporary raw STM predicate operations `ConcurrentMap.getOrInsertIfM` and `ConcurrentMap.removeIfM` are removed in favor of typed transactions."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: breaking\ncategory: Breaking changes\n---\n\n## Summary\n\nIntegration dispatch preserves atomic worker admission and drain during reaping and shutdown through a dedicated queue control. The constructor record change affects the framework builder and repository tests; application setup continues through `Application.withDispatcherConfig`. Event processing and `integration_result` logs keep their existing behavior. The temporary raw STM predicate operations `ConcurrentMap.getOrInsertIfM` and `ConcurrentMap.removeIfM` are removed in favor of typed transactions.\n\n## Migration\n\nReplace `ConcurrentMap.getOrInsertIfM` with `ConcurrentMap.getOrInsertIfTransaction` and `ConcurrentMap.removeIfM` with `ConcurrentMap.removeIfTransaction`. Predicates that read or update an `AtomicVar` can compose `AtomicVar.peekSTM` and `AtomicVar.modifyWithResultSTM` in `Transaction`. Move predicates using other raw STM operations into the concurrency module that owns their shared state.\n\n### Verify\n\nCompile affected code against the updated `nhcore` package. Run tests that cover map replacement and conditional removal while worker status changes.\n\n## Agent prompt\n\n```text\nFind getOrInsertIfM and removeIfM call sites. Replace them with getOrInsertIfTransaction and removeIfTransaction using callbacks that return Transaction Bool. Keep map lookup, queue status changes, and removal in one transaction. For callbacks that use unrelated raw STM operations, move the coordinated operation into its owning concurrency module. Compile against the updated nhcore package and run concurrent replacement and conditional removal tests. Report changed files and results.\n```\n"
+        },
+        {
+          "category": "Improved",
+          "commit": "64c28a77047d47d151ffff30b3dd4925583de18d",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "1ca32a5b7507efc3406131709935486edb62c5aceb86ca33c65a74f8a77af7e1",
+          "impact": "none",
+          "path": ".changes/release-app-boundary-audit.md",
+          "sections": {
+            "Summary": "Contributor guidance now requires supported app-call evidence before selecting\nrelease impact. It also defines task completion and dependent PR ownership,\nrequires documentation for new Haskell modules, and clarifies naming, foreign\nresult conversion, domain newtypes, and language-extension ownership. Skill\nvalidation skips installed dependency documentation while retaining authored\nresource checks. Application APIs, runtime behavior, release validation, and\nCI gates are unchanged."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: none\ncategory: Improved\n---\n\n## Summary\n\nContributor guidance now requires supported app-call evidence before selecting\nrelease impact. It also defines task completion and dependent PR ownership,\nrequires documentation for new Haskell modules, and clarifies naming, foreign\nresult conversion, domain newtypes, and language-extension ownership. Skill\nvalidation skips installed dependency documentation while retaining authored\nresource checks. Application APIs, runtime behavior, release validation, and\nCI gates are unchanged.\n"
+        }
+      ],
+      "source_sha": "64c28a77047d47d151ffff30b3dd4925583de18d",
+      "target_policy": "native-v2",
+      "version": "0.12.0"
+    },
+    {
+      "base_sha": "1b4f1c5d6c2bdb54f91689988f36ba2e6ab271c7",
+      "base_tag": "neo-v0.12.0",
+      "base_version": "0.12.0",
+      "bootstrap": false,
+      "date": "2026-10-28",
+      "group": "platform",
+      "id": "be5ecb41f6b0009f052f597ee41be9c931ca0757ff2f2f02f9052c542c4aa0cd",
+      "impact": "breaking",
+      "kind": "release",
+      "notes": [
+        {
+          "category": "Fixed",
+          "commit": "0dfb861c0a3eb914af6e3fe2f49d7c73ed6caf84",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "cffc74fb321a586c5a9661cfa0531e109552e8d99a0a33b383acd546d8cbab1e",
+          "impact": "none",
+          "path": ".changes/how-codemap-source-revalidation.md",
+          "sections": {
+            "Summary": "After a slow local HIE indexing attempt, the `how` codemap keeps returning\ncurrent-source search results. This changes repository tooling only; it does\nnot affect app APIs or require a migration."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: none\ncategory: Fixed\n---\n\n## Summary\n\nAfter a slow local HIE indexing attempt, the `how` codemap keeps returning\ncurrent-source search results. This changes repository tooling only; it does\nnot affect app APIs or require a migration.\n"
+        },
+        {
+          "category": "Improved",
+          "commit": "c37220187793a9e7b1c07d0bd3f99eb38616c417",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "710de87956ac992422d0262d0f2726452d2966e39add9a60c89a15abc3e462be",
+          "impact": "none",
+          "path": ".changes/release-preparation-consolidation.md",
+          "sections": {
+            "Summary": "The release preparation sweep now combines verified older preparations into one current generated PR, closes covered older PRs when the replacement opens, and continues through CI repair, merge, and public release verification. It accepts a revised note only when the new text matches the current source fragment and the revision has been reviewed. This changes the contributor release workflow only. Application behavior and public APIs remain unchanged, so applications need no migration."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: none\ncategory: Improved\n---\n\n## Summary\n\nThe release preparation sweep now combines verified older preparations into one current generated PR, closes covered older PRs when the replacement opens, and continues through CI repair, merge, and public release verification. It accepts a revised note only when the new text matches the current source fragment and the revision has been reviewed. This changes the contributor release workflow only. Application behavior and public APIs remain unchanged, so applications need no migration.\n"
+        },
+        {
+          "category": "Added",
+          "commit": "b6bf53e813498ef4c2c53e5500c9c14f4dd3dbb2",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "15ea150b6bfeaa68136654c6615740e33cfb58b37bce5b6436a394f35cd9274a",
+          "impact": "compatible",
+          "path": ".changes/explicit-entity-events.md",
+          "sections": {
+            "Summary": "New applications can list an entity's event payload types in `deriveEntityEvents`.\nThe marker creates the parent event type and lets commands emit a single payload\ntype without writing its wrapper constructor. Existing event types and stored\nevents are unchanged. An application needs no migration to keep using a handwritten\nevent type."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: compatible\ncategory: Added\n---\n\n## Summary\n\nNew applications can list an entity's event payload types in `deriveEntityEvents`.\nThe marker creates the parent event type and lets commands emit a single payload\ntype without writing its wrapper constructor. Existing event types and stored\nevents are unchanged. An application needs no migration to keep using a handwritten\nevent type.\n"
+        },
+        {
+          "category": "Breaking changes",
+          "commit": "e411f0e0ea2ec504065267c987c98c3c0e5460aa",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "9a7e1f5fc2b2b69a2a1980399c206a11296d193ed9a1e27ce0d109016503d82e",
+          "impact": "breaking",
+          "path": ".changes/outbound-payload-dispatch.md",
+          "sections": {
+            "Agent prompt": "```text\nUpdate my NeoHaskell outbound handlers for payload dispatch. Find each\n`outboundIntegration ''Handler` or `deriveOutboundIntegration ''Handler` marker.\nIf `handleEvent` takes the entity's full event type as its second argument,\nimport `outboundIntegrationFullEvent` from `Service.OutboundIntegration.TH` and\nuse `outboundIntegrationFullEvent ''Handler` to preserve its behavior. Keep the\nhandler body and stored event type unchanged. For a handler that already takes\none concrete payload, keep `outboundIntegration ''Handler` and confirm that\n`EventVariantOf` maps the stored event type to that payload. Run `neo build`\nand `neo test --ci`. Report the changed files, test results, and any handler\nwhose payload mapping or intended event selection remains unclear.\n```",
+            "Migration": "Find each `outboundIntegration ''Handler` or `deriveOutboundIntegration ''Handler`\nwhose `handleEvent` second argument is the entity's full event type. Replace\nthe marker with `outboundIntegrationFullEvent ''Handler` and import that name\nfrom `Service.OutboundIntegration.TH`. The handler body and stored events stay\nthe same. To narrow the handler, give it one concrete payload argument, provide\nan `EventVariantOf` mapping from the stored event type, and keep\n`outboundIntegration ''Handler`.\n\n### Verify\n\nRun `neo build` and `neo test --ci` in the application. Exercise one matching\nevent and one unrelated event. A payload handler runs only for the matching\nevent. A full-event handler keeps its previous behavior.",
+            "Summary": "Outbound handlers can now receive one event payload. The runtime skips the handler\nfor other event types. Existing handlers that take the full event type need the\nexplicit `outboundIntegrationFullEvent` marker to keep their current behavior."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: breaking\ncategory: Breaking changes\n---\n\n## Summary\n\nOutbound handlers can now receive one event payload. The runtime skips the handler\nfor other event types. Existing handlers that take the full event type need the\nexplicit `outboundIntegrationFullEvent` marker to keep their current behavior.\n\n## Migration\n\nFind each `outboundIntegration ''Handler` or `deriveOutboundIntegration ''Handler`\nwhose `handleEvent` second argument is the entity's full event type. Replace\nthe marker with `outboundIntegrationFullEvent ''Handler` and import that name\nfrom `Service.OutboundIntegration.TH`. The handler body and stored events stay\nthe same. To narrow the handler, give it one concrete payload argument, provide\nan `EventVariantOf` mapping from the stored event type, and keep\n`outboundIntegration ''Handler`.\n\n### Verify\n\nRun `neo build` and `neo test --ci` in the application. Exercise one matching\nevent and one unrelated event. A payload handler runs only for the matching\nevent. A full-event handler keeps its previous behavior.\n\n## Agent prompt\n\n```text\nUpdate my NeoHaskell outbound handlers for payload dispatch. Find each\n`outboundIntegration ''Handler` or `deriveOutboundIntegration ''Handler` marker.\nIf `handleEvent` takes the entity's full event type as its second argument,\nimport `outboundIntegrationFullEvent` from `Service.OutboundIntegration.TH` and\nuse `outboundIntegrationFullEvent ''Handler` to preserve its behavior. Keep the\nhandler body and stored event type unchanged. For a handler that already takes\none concrete payload, keep `outboundIntegration ''Handler` and confirm that\n`EventVariantOf` maps the stored event type to that payload. Run `neo build`\nand `neo test --ci`. Report the changed files, test results, and any handler\nwhose payload mapping or intended event selection remains unclear.\n```\n"
+        },
+        {
+          "category": "Fixed",
+          "commit": "5a4f6b60fd9c2f428e907ed4702849980a51b303",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "af47dc0d8bf0af6f3533e6f82b2307f30f1ae7868563b29b26a76fb608263b71",
+          "impact": "none",
+          "path": ".changes/local-agent-guide-reviews.md",
+          "sections": {
+            "Summary": "The agent guide check now keeps ignored Haskell fragment reviews in ignored worktree-local state. A fresh checkout must review the fragments before the local corpus gate passes. This changes contributor verification only and does not change generated applications."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: none\ncategory: Fixed\n---\n\n## Summary\n\nThe agent guide check now keeps ignored Haskell fragment reviews in ignored worktree-local state. A fresh checkout must review the fragments before the local corpus gate passes. This changes contributor verification only and does not change generated applications.\n"
+        },
+        {
+          "category": "Fixed",
+          "commit": "1342718ade3e7eb87b652eb619f98aaf5f0f41a5",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "e4923d38bd3ddb016e5dddb29a433b925237ac26e65f057b7bcc05754ccdfb6f",
+          "impact": "none",
+          "path": ".changes/postmerge-gate-reliability.md",
+          "sections": {
+            "Summary": "The core test and doctest CI jobs now use a Nix shell without Haskell Language Server. Release self-test Git fixtures disable automatic maintenance so a detached Git process cannot write inside a fixture during cleanup. This changes repository checks only. Application behavior and public APIs remain unchanged, so applications need no migration."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: none\ncategory: Fixed\n---\n\n## Summary\n\nThe core test and doctest CI jobs now use a Nix shell without Haskell Language Server. Release self-test Git fixtures disable automatic maintenance so a detached Git process cannot write inside a fixture during cleanup. This changes repository checks only. Application behavior and public APIs remain unchanged, so applications need no migration.\n"
+        },
+        {
+          "category": "Fixed",
+          "commit": "a8ca484045e9f263c4402746fe560bfdb73ce95b",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "706a09221db48feb8feaa0a9577a3011857a9c912417d0c7f2fb17919e1af826",
+          "impact": "compatible",
+          "path": ".changes/fix-json-unicode-640.md",
+          "sections": {
+            "Summary": "JSON text decoding now preserves names and messages with accented characters, ñ, Japanese text, and emoji. Existing apps need no code changes. For example, decoding `\"niño\"` now returns `niño` instead of an error."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: compatible\ncategory: Fixed\n---\n\n## Summary\n\nJSON text decoding now preserves names and messages with accented characters, ñ, Japanese text, and emoji. Existing apps need no code changes. For example, decoding `\"niño\"` now returns `niño` instead of an error.\n"
+        }
+      ],
+      "source_sha": "f9b6d8c701ccd9579494d0b9a3a69cc93fe5d1c1",
+      "target_policy": "native-v2",
+      "version": "0.13.0"
+    },
+    {
+      "base_sha": "0ec4a119deb7a3d5bca77aaed437bfa5f5eff5ea",
+      "base_tag": "neo-v0.13.0",
+      "base_version": "0.13.0",
+      "bootstrap": false,
+      "date": "2026-10-30",
+      "group": "platform",
+      "id": "2487ada950cc1d219a4fadaa71acc12c415464a374c5c9ef7adc4d13de52faa8",
+      "impact": "breaking",
+      "kind": "release",
+      "notes": [
+        {
+          "category": "Fixed",
+          "commit": "6f534e067dc61140796e46d3c32e6c144b9f30d4",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "235c7213bffa5e7230c81142964e88565b2afd447714170839f79f479d642c0d",
+          "impact": "compatible",
+          "path": ".changes/datetime-schema.md",
+          "sections": {
+            "Summary": "Records with `DateTime` or `Maybe DateTime` fields can now derive `ToSchema`. Timestamp fields appear as strings in OpenAPI and JSON Schema, matching their JSON encoding. Applications that defined an orphan `ToSchema DateTime` instance as a workaround must remove that instance to avoid a duplicate-instance error after updating NeoHaskell."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: compatible\ncategory: Fixed\n---\n\n## Summary\n\nRecords with `DateTime` or `Maybe DateTime` fields can now derive `ToSchema`. Timestamp fields appear as strings in OpenAPI and JSON Schema, matching their JSON encoding. Applications that defined an orphan `ToSchema DateTime` instance as a workaround must remove that instance to avoid a duplicate-instance error after updating NeoHaskell.\n"
+        },
+        {
+          "category": "Fixed",
+          "commit": "3c05e3d83cdb6d2579b653694918961154d59391",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "24e00563084d71d97dd7c12468597af27752dccf9559b96ba24104bb88885623",
+          "impact": "compatible",
+          "path": ".changes/fix-web-acronym-routing.md",
+          "sections": {
+            "Summary": "Web commands with acronym names now use the expected kebab-case URL. For example, `SaveIBAN` responds at `POST /commands/save-iban`, and OpenAPI lists the same path. Internal dispatch and MCP command names retain their original spelling.\n\nIf two different command names produce the same Web URL, service registration rejects the duplicate instead of choosing one command. Rename one of the commands before starting the service."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: compatible\ncategory: Fixed\n---\n\n## Summary\n\nWeb commands with acronym names now use the expected kebab-case URL. For example, `SaveIBAN` responds at `POST /commands/save-iban`, and OpenAPI lists the same path. Internal dispatch and MCP command names retain their original spelling.\n\nIf two different command names produce the same Web URL, service registration rejects the duplicate instead of choosing one command. Rename one of the commands before starting the service.\n"
+        },
+        {
+          "category": "Fixed",
+          "commit": "4d9fac0c318dc189051af52672b70a16a6da4ad9",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "e61bf10dd60bc8c73e13a141e72508187762bfc9c32b73e566b553c6995cdd49",
+          "impact": "none",
+          "path": ".changes/testbed-maintained-fixture-isolation.md",
+          "sections": {
+            "Summary": "The maintained testbed now gives each application a separate event database and generates fresh IDs for generic HTTP effect checks. This changes repository verification only. Application behavior and public APIs remain unchanged, so applications need no migration."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: none\ncategory: Fixed\n---\n\n## Summary\n\nThe maintained testbed now gives each application a separate event database and generates fresh IDs for generic HTTP effect checks. This changes repository verification only. Application behavior and public APIs remain unchanged, so applications need no migration.\n"
+        },
+        {
+          "category": "Fixed",
+          "commit": "e07c3910cdf69baf16543bebf7b9338dc98b98e3",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "0bb63b5702303fc506e68a8589133bd4d961e5d44774cde45165629ec95e7011",
+          "impact": "compatible",
+          "path": ".changes/fix-test-spec-containment-639.md",
+          "sections": {
+            "Summary": "`actual |> shouldContain expected` now checks whether the actual array contains the expected subarray. `actual |> shouldNotContain expected` checks whether the actual array does not contain it. Both matchers previously checked the arrays in the opposite direction.\n\nIf you swapped the arguments to work around this bug, put the expected subarray first again. For example, change `expected |> shouldContain actual` to `actual |> shouldContain expected`. Run your tests to confirm that their assertions still check the intended array."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: compatible\ncategory: Fixed\n---\n\n## Summary\n\n`actual |> shouldContain expected` now checks whether the actual array contains the expected subarray. `actual |> shouldNotContain expected` checks whether the actual array does not contain it. Both matchers previously checked the arrays in the opposite direction.\n\nIf you swapped the arguments to work around this bug, put the expected subarray first again. For example, change `expected |> shouldContain actual` to `actual |> shouldContain expected`. Run your tests to confirm that their assertions still check the intended array.\n"
+        },
+        {
+          "category": "Added",
+          "commit": "c2dc34b2590cffd8a5bc291d614b0491ba5ceb29",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "babe00e3c3537e5c8e92463d31a9cc24fffb407f77c832506e1bce272daae172",
+          "impact": "compatible",
+          "path": ".changes/erasable-protected-values-m1.md",
+          "sections": {
+            "Summary": "Apps can create protected values in commands with `Erasable.new` and carry them through events and queries. The PostgreSQL event store encrypts these values before storing events and keeps their keys separately. Apps can request deletion through `Integration.Erasable.Erase`, with authorization and retry tracking in application code. Follow the protected-value erasure migration when updating custom event stores or configuring PostgreSQL application scopes."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: compatible\ncategory: Added\n---\n\n## Summary\n\nApps can create protected values in commands with `Erasable.new` and carry them through events and queries. The PostgreSQL event store encrypts these values before storing events and keeps their keys separately. Apps can request deletion through `Integration.Erasable.Erase`, with authorization and retry tracking in application code. Follow the protected-value erasure migration when updating custom event stores or configuring PostgreSQL application scopes.\n"
+        },
+        {
+          "category": "Breaking changes",
+          "commit": "e3142bb358ab331e0a0efb539bf1fb8feeca1dbb",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "b4b301aff4d87df4eb61a06d3380a55089291c85c8f56d6f76694e7683834899",
+          "impact": "breaking",
+          "path": ".changes/erasable-outbound-erasure-m2.md",
+          "sections": {
+            "Agent prompt": "```text\n1. Find every application-owned PostgresEventStore record constructor and add a stable, nonempty erasableApplicationScope value unique to the application. For constructors based on def, set the field before using outbound erasure.\n\n2. Find every custom EventStore record constructor, including those returned by EventStoreConfig instances. Add all four fields introduced since 0.13.0: insertWithErasableKeys, renderProtectedJson, readErasableKey, and eraseErasableKey.\n\n3. For a store without protected-value support, follow Service.EventStore.Simple, which backs InMemory. Implement insertWithErasableKeys so a nonempty new-key array returns InsertionError (InsertionFailed \"Erasable values require the PostgreSQL event store\"). For an empty array, delegate to the existing insertion implementation only after rejecting protected values in every event. Add the same rejection to insert itself. Use only public APIs. Write a recursive containsProtectedValue :: Json.Value -> Bool helper with Json.parts. In Json.ObjectParts pairs, use Array.any to reject a pair when its key equals \"$erasable\" or its value recursively contains that key. In Json.ArrayParts values, use Array.any containsProtectedValue. In Json.Scalar _, return False. Reject every \"$erasable\" object, including malformed envelopes, without decoding private framework types. For InsertionPayload Json.Value, check each insertion.event. For custom event types with Json.ToJSON, check Json.encode insertion.event. If the store has a custom encoder, inspect the JSON representation it actually persists. Keep the original payload for ordinary insertion. Adapt the helper's call site to the store's event type and encoding. Implement renderProtectedJson to return ordinary JSON unchanged with Task.yield and to return StorageFailure for protected values or malformed protected envelopes. Set readErasableKey = \\_ -> Task.throw (StorageFailure \"Protected-value storage is unsupported by this event store\") and eraseErasableKey = \\_ -> Task.throw (StorageFailure \"Protected-value erasure is unsupported by this event store\"). Add import Core and qualified imports for Array, Json, and Task as needed. Import Error (StorageFailure, InsertionError) from Service.EventStore and InsertionFailure (InsertionFailed) from Service.Event. Never store a plaintext fallback or omit a field. Builds with -Wall -Werror reject incomplete record constructors.\n\n4. Stores that support protected values must implement all four operations. A supporting store must delete only the named reference in its application, entity, and stream scope; distinguish a known tombstone from an unknown reference; and return an error for scope denial or storage failure. Preserve existing connection, OAuth, and file-upload settings. If the application needs erasure, put owner authorization and reference discovery in its commands and queries, use Integration.Erasable.Erase for one reference per request, and record completion or failure in its own entity. Keep pending requests until a result command commits and add an explicit retry path for a lost result. Do not assign a scope to legacy keys without proving their application ownership.\n\n5. Build the application and exercise every custom store's four new fields. For unsupported stores, verify ordinary inserts and unchanged unprotected JSON, rejection of protected and malformed values nested in objects and arrays through both insertion paths and JSON rendering, rejection of nonempty key arrays, and StorageFailure from key reads and erasure. For custom event types, exercise the actual event encoder before the check. Run protected-value request, restart, retry, and authorization tests for applications that support erasure. Report every changed file, test result, and legacy-key ownership that remains unresolved.\n```",
+            "Migration": "Apps that build `PostgresEventStore` with a record constructor must add `erasableApplicationScope` with a stable, nonempty identifier for that application. For example, add `erasableApplicationScope = \"my-application\"` to the existing configuration record. Apps using `def` can set the field with a record update before creating protected values they intend to erase. The event store refuses outbound deletion when the scope is empty.\n\nApps that construct the exported `EventStore` record, including stores returned by a custom `EventStoreConfig` instance, must add all four fields introduced since 0.13.0. Existing `insert` implementations also need to reject protected values if the store cannot protect them. For a store without protected-value support, follow `Service.EventStore.Simple`, which also backs `Service.EventStore.InMemory`:\n\n- `insertWithErasableKeys` takes new keys and an insertion payload. Reject a nonempty key array with `InsertionError (InsertionFailed \"Erasable values require the PostgreSQL event store\")`. With an empty key array, call the existing insertion implementation only after checking every event for protected values. Apply the same check to `insert` itself. Never store a plaintext fallback.\n- `renderProtectedJson` takes a JSON value. Use the public JSON check below. Return ordinary JSON unchanged with `Task.yield`. Return `StorageFailure` whenever the check finds a protected marker, including a malformed envelope.\n- `readErasableKey` takes a reference. Set `readErasableKey = \\_ -> Task.throw (StorageFailure \"Protected-value storage is unsupported by this event store\")`.\n- `eraseErasableKey` takes an `ErasureTarget`. Set `eraseErasableKey = \\_ -> Task.throw (StorageFailure \"Protected-value erasure is unsupported by this event store\")`.\n\nInspect the JSON tree with the public `Json.parts` API. Reject any object with a `$erasable` key, regardless of its value or the other fields. Recurse through all object values and array elements. This also rejects malformed envelopes without decoding private framework types. For example, add this helper to the custom store's module:\n\n```haskell\ncontainsProtectedValue :: Json.Value -> Bool\ncontainsProtectedValue value =\n\tcase Json.parts value of\n\t\tJson.ObjectParts pairs ->\n\t\t\tpairs |> Array.any (\\(key, nested) ->\n\t\t\t\tkey == \"$erasable\" || containsProtectedValue nested)\n\t\tJson.ArrayParts values -> values |> Array.any containsProtectedValue\n\t\tJson.Scalar _ -> False\n```\n\nFor `InsertionPayload Json.Value`, check every `insertion.event` with this helper. For a custom event type with a `Json.ToJSON` instance, check `Json.encode insertion.event` instead. Use the JSON representation that the store actually persists if it has a custom encoder. Keep the original payload for ordinary insertion. The helper takes JSON values, so adapt its call site to the store's event type and encoding.\n\nAdd `import Core` and qualified imports for `Array`, `Json`, and `Task` when using these helpers. Import `Error (StorageFailure, InsertionError)` from `Service.EventStore` and `InsertionFailure (InsertionFailed)` from `Service.Event`. Do not omit any field. Builds with `-Wall -Werror`, including this repository, reject incomplete record constructors. A store that supports protected values must implement all four operations. Its erasure operation has the one-reference `ErasureTarget -> Task Error ErasureResult` contract. Return `UnknownReference` only for a missing reference, `AlreadyErased` only for a known tombstone, and an error for scope denial or storage failure.\n\nExisting protected keys written before this change remain readable but have no application scope. The new scoped deletion action will refuse those keys. A data owner must assess and migrate legacy keys under a separately reviewed process before using this action on them. Do not assign a scope to a shared key table without first proving which application owns each key.\n\nThe application must authorize requests and retain pending work. Register an outbound handler using `Integration.Erasable.Erase`, then record its result in an application command. The framework does not replay a lost result automatically. The maintained `OwnedProtectedEntity` testbed example shows explicit retry after a restart.\n\n### Verify\n\nBuild each application and exercise all four new fields on every custom store. For an unsupported store, ordinary inserts and unprotected JSON must still work. Protected or malformed values, including markers nested in objects and arrays, must fail through both insertion paths and JSON rendering. For custom event types, exercise the actual event encoder before the check. Nonempty new-key arrays must fail even with an ordinary payload. Key reads and erasure must return `StorageFailure`. In this repository, run `nix develop --command cabal build lib:nhcore lib:nhtestbed` to check application wiring. With PostgreSQL running and ports 8080, 8081, and 8181 free, run `nix develop --command .agents/skills/neohaskell-test/scripts/run-testbed --strict`. The erasure scenario must show one `Erased` value, one `Available` value, a pending request after a rejected result, and a completed request after retry.",
+            "Summary": "An application can now request deletion of one protected value through `Integration.Erasable.Erase`. The application checks who owns the record, records a pending request, and records completion or failure when the outbound action returns. Repeating a deletion reports `AlreadyErased`, so an application can finish a request after a restart without restoring the key. The remaining protected values stay available."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: breaking\ncategory: Breaking changes\n---\n\n## Summary\n\nAn application can now request deletion of one protected value through `Integration.Erasable.Erase`. The application checks who owns the record, records a pending request, and records completion or failure when the outbound action returns. Repeating a deletion reports `AlreadyErased`, so an application can finish a request after a restart without restoring the key. The remaining protected values stay available.\n\n## Migration\n\nApps that build `PostgresEventStore` with a record constructor must add `erasableApplicationScope` with a stable, nonempty identifier for that application. For example, add `erasableApplicationScope = \"my-application\"` to the existing configuration record. Apps using `def` can set the field with a record update before creating protected values they intend to erase. The event store refuses outbound deletion when the scope is empty.\n\nApps that construct the exported `EventStore` record, including stores returned by a custom `EventStoreConfig` instance, must add all four fields introduced since 0.13.0. Existing `insert` implementations also need to reject protected values if the store cannot protect them. For a store without protected-value support, follow `Service.EventStore.Simple`, which also backs `Service.EventStore.InMemory`:\n\n- `insertWithErasableKeys` takes new keys and an insertion payload. Reject a nonempty key array with `InsertionError (InsertionFailed \"Erasable values require the PostgreSQL event store\")`. With an empty key array, call the existing insertion implementation only after checking every event for protected values. Apply the same check to `insert` itself. Never store a plaintext fallback.\n- `renderProtectedJson` takes a JSON value. Use the public JSON check below. Return ordinary JSON unchanged with `Task.yield`. Return `StorageFailure` whenever the check finds a protected marker, including a malformed envelope.\n- `readErasableKey` takes a reference. Set `readErasableKey = \\_ -> Task.throw (StorageFailure \"Protected-value storage is unsupported by this event store\")`.\n- `eraseErasableKey` takes an `ErasureTarget`. Set `eraseErasableKey = \\_ -> Task.throw (StorageFailure \"Protected-value erasure is unsupported by this event store\")`.\n\nInspect the JSON tree with the public `Json.parts` API. Reject any object with a `$erasable` key, regardless of its value or the other fields. Recurse through all object values and array elements. This also rejects malformed envelopes without decoding private framework types. For example, add this helper to the custom store's module:\n\n```haskell\ncontainsProtectedValue :: Json.Value -> Bool\ncontainsProtectedValue value =\n\tcase Json.parts value of\n\t\tJson.ObjectParts pairs ->\n\t\t\tpairs |> Array.any (\\(key, nested) ->\n\t\t\t\tkey == \"$erasable\" || containsProtectedValue nested)\n\t\tJson.ArrayParts values -> values |> Array.any containsProtectedValue\n\t\tJson.Scalar _ -> False\n```\n\nFor `InsertionPayload Json.Value`, check every `insertion.event` with this helper. For a custom event type with a `Json.ToJSON` instance, check `Json.encode insertion.event` instead. Use the JSON representation that the store actually persists if it has a custom encoder. Keep the original payload for ordinary insertion. The helper takes JSON values, so adapt its call site to the store's event type and encoding.\n\nAdd `import Core` and qualified imports for `Array`, `Json`, and `Task` when using these helpers. Import `Error (StorageFailure, InsertionError)` from `Service.EventStore` and `InsertionFailure (InsertionFailed)` from `Service.Event`. Do not omit any field. Builds with `-Wall -Werror`, including this repository, reject incomplete record constructors. A store that supports protected values must implement all four operations. Its erasure operation has the one-reference `ErasureTarget -> Task Error ErasureResult` contract. Return `UnknownReference` only for a missing reference, `AlreadyErased` only for a known tombstone, and an error for scope denial or storage failure.\n\nExisting protected keys written before this change remain readable but have no application scope. The new scoped deletion action will refuse those keys. A data owner must assess and migrate legacy keys under a separately reviewed process before using this action on them. Do not assign a scope to a shared key table without first proving which application owns each key.\n\nThe application must authorize requests and retain pending work. Register an outbound handler using `Integration.Erasable.Erase`, then record its result in an application command. The framework does not replay a lost result automatically. The maintained `OwnedProtectedEntity` testbed example shows explicit retry after a restart.\n\n### Verify\n\nBuild each application and exercise all four new fields on every custom store. For an unsupported store, ordinary inserts and unprotected JSON must still work. Protected or malformed values, including markers nested in objects and arrays, must fail through both insertion paths and JSON rendering. For custom event types, exercise the actual event encoder before the check. Nonempty new-key arrays must fail even with an ordinary payload. Key reads and erasure must return `StorageFailure`. In this repository, run `nix develop --command cabal build lib:nhcore lib:nhtestbed` to check application wiring. With PostgreSQL running and ports 8080, 8081, and 8181 free, run `nix develop --command .agents/skills/neohaskell-test/scripts/run-testbed --strict`. The erasure scenario must show one `Erased` value, one `Available` value, a pending request after a rejected result, and a completed request after retry.\n\n## Agent prompt\n\n```text\n1. Find every application-owned PostgresEventStore record constructor and add a stable, nonempty erasableApplicationScope value unique to the application. For constructors based on def, set the field before using outbound erasure.\n\n2. Find every custom EventStore record constructor, including those returned by EventStoreConfig instances. Add all four fields introduced since 0.13.0: insertWithErasableKeys, renderProtectedJson, readErasableKey, and eraseErasableKey.\n\n3. For a store without protected-value support, follow Service.EventStore.Simple, which backs InMemory. Implement insertWithErasableKeys so a nonempty new-key array returns InsertionError (InsertionFailed \"Erasable values require the PostgreSQL event store\"). For an empty array, delegate to the existing insertion implementation only after rejecting protected values in every event. Add the same rejection to insert itself. Use only public APIs. Write a recursive containsProtectedValue :: Json.Value -> Bool helper with Json.parts. In Json.ObjectParts pairs, use Array.any to reject a pair when its key equals \"$erasable\" or its value recursively contains that key. In Json.ArrayParts values, use Array.any containsProtectedValue. In Json.Scalar _, return False. Reject every \"$erasable\" object, including malformed envelopes, without decoding private framework types. For InsertionPayload Json.Value, check each insertion.event. For custom event types with Json.ToJSON, check Json.encode insertion.event. If the store has a custom encoder, inspect the JSON representation it actually persists. Keep the original payload for ordinary insertion. Adapt the helper's call site to the store's event type and encoding. Implement renderProtectedJson to return ordinary JSON unchanged with Task.yield and to return StorageFailure for protected values or malformed protected envelopes. Set readErasableKey = \\_ -> Task.throw (StorageFailure \"Protected-value storage is unsupported by this event store\") and eraseErasableKey = \\_ -> Task.throw (StorageFailure \"Protected-value erasure is unsupported by this event store\"). Add import Core and qualified imports for Array, Json, and Task as needed. Import Error (StorageFailure, InsertionError) from Service.EventStore and InsertionFailure (InsertionFailed) from Service.Event. Never store a plaintext fallback or omit a field. Builds with -Wall -Werror reject incomplete record constructors.\n\n4. Stores that support protected values must implement all four operations. A supporting store must delete only the named reference in its application, entity, and stream scope; distinguish a known tombstone from an unknown reference; and return an error for scope denial or storage failure. Preserve existing connection, OAuth, and file-upload settings. If the application needs erasure, put owner authorization and reference discovery in its commands and queries, use Integration.Erasable.Erase for one reference per request, and record completion or failure in its own entity. Keep pending requests until a result command commits and add an explicit retry path for a lost result. Do not assign a scope to legacy keys without proving their application ownership.\n\n5. Build the application and exercise every custom store's four new fields. For unsupported stores, verify ordinary inserts and unchanged unprotected JSON, rejection of protected and malformed values nested in objects and arrays through both insertion paths and JSON rendering, rejection of nonempty key arrays, and StorageFailure from key reads and erasure. For custom event types, exercise the actual event encoder before the check. Run protected-value request, restart, retry, and authorization tests for applications that support erasure. Report every changed file, test result, and legacy-key ownership that remains unresolved.\n```\n"
+        },
+        {
+          "category": "Fixed",
+          "commit": "1abd28799061797b7dbf0d1e22ebcec7bbddd0bf",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "59ac6699ced6adf8fed41b07bebbf6e309ab0e7f671ec494627d423fb186c752",
+          "impact": "compatible",
+          "path": ".changes/cryptoerasure-concurrency-m3.md",
+          "sections": {
+            "Summary": "The maintained erasure example now checks that an erased value stays erased during concurrent owner requests, stale writes, and restart within one application instance. Its runner can use private loopback ports, and its crash check pauses only the selected local request. Application authors can run the example to check their erasure flow. The framework API and production erasure behavior are unchanged, so existing applications need no migration."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: compatible\ncategory: Fixed\n---\n\n## Summary\n\nThe maintained erasure example now checks that an erased value stays erased during concurrent owner requests, stale writes, and restart within one application instance. Its runner can use private loopback ports, and its crash check pauses only the selected local request. Application authors can run the example to check their erasure flow. The framework API and production erasure behavior are unchanged, so existing applications need no migration.\n"
+        },
+        {
+          "category": "Fixed",
+          "commit": "34af414272051e3e19ac69dddf587308dbd90778",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "d97402536f5e0db42c80929b23296f1d61f34a6ccbacbd7733a2787a6c1e2749",
+          "impact": "compatible",
+          "path": ".changes/cryptoerasure-example-m4.md",
+          "sections": {
+            "Summary": "The maintained protected-erasure example now shows a case status that remains after erasure and is reconstructed from events after restart. Its automated checks assert the status alongside the erased value, explicit retry, and application completion. Application authors can use the example to test their own retention choices. The framework erasure API and behavior are unchanged, so existing applications need no migration."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: compatible\ncategory: Fixed\n---\n\n## Summary\n\nThe maintained protected-erasure example now shows a case status that remains after erasure and is reconstructed from events after restart. Its automated checks assert the status alongside the erased value, explicit retry, and application completion. Application authors can use the example to test their own retention choices. The framework erasure API and behavior are unchanged, so existing applications need no migration.\n"
+        },
+        {
+          "category": "Added",
+          "commit": "9df0280ccd34a21c278892183e388e763d165eaa",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "4dea1b63e3782cb785b9647d97a0d33ff75c5afc61c678de79893ed39472cc26",
+          "impact": "compatible",
+          "path": ".changes/typed-inbound-workers-579.md",
+          "sections": {
+            "Summary": "An inbound worker can now emit several command types, including commands for different entities. List each command and its target in a typed worker, then register the handler with `Application.withInboundHandler`. The compiler rejects undeclared commands and wrong targets. Startup reports a missing receiving service before the worker runs. Existing `Integration.inbound`, `Timer.every`, and `Application.withInbound` calls keep working."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: compatible\ncategory: Added\n---\n\n## Summary\n\nAn inbound worker can now emit several command types, including commands for different entities. List each command and its target in a typed worker, then register the handler with `Application.withInboundHandler`. The compiler rejects undeclared commands and wrong targets. Startup reports a missing receiving service before the worker runs. Existing `Integration.inbound`, `Timer.every`, and `Application.withInbound` calls keep working.\n"
+        },
+        {
+          "category": "Fixed",
+          "commit": "b878164011e2177543c02b7d776a88d785134301",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "16125e741dac8db12e38c5412114a75492916baab245d486fb95bf3add5fef78",
+          "impact": "compatible",
+          "path": ".changes/cryptoerasure-fault-regressions.md",
+          "sections": {
+            "Summary": "If a stored event is unreadable, query replay reports failure through `/ready` instead of marking an incomplete query ready. An affected HTTP query returns a generic 500 response while its projection reports rebuilding or failed. A query that reads a partial page during rebuilding also returns 500 if replay becomes ready before the response. Applications need no code change. The maintained testbed checks missing keys, malformed envelopes, and an unavailable key table without returning protected values."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: compatible\ncategory: Fixed\n---\n\n## Summary\n\nIf a stored event is unreadable, query replay reports failure through `/ready` instead of marking an incomplete query ready. An affected HTTP query returns a generic 500 response while its projection reports rebuilding or failed. A query that reads a partial page during rebuilding also returns 500 if replay becomes ready before the response. Applications need no code change. The maintained testbed checks missing keys, malformed envelopes, and an unavailable key table without returning protected values.\n"
+        },
+        {
+          "category": "Fixed",
+          "commit": "dc7b6d49464c8f6d2b1f25e34588ae6ec238f640",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "bf3b1a58cea56eee380e4d0a64060a280355f80a09534d204e3a5c9bbdfbed3e",
+          "impact": "none",
+          "path": ".changes/erasable-release-migration-docs.md",
+          "sections": {
+            "Summary": "The protected-value release notes now describe the erasure operation included in the same release. Custom event-store authors upgrading from 0.13.0 get instructions for all four new record fields, including how stores without protected-value support preserve ordinary events and reject protected values through public JSON APIs. The migration covers JSON values and encoded custom event types. This documentation repair changes no application API or runtime behavior."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: none\ncategory: Fixed\n---\n\n## Summary\n\nThe protected-value release notes now describe the erasure operation included in the same release. Custom event-store authors upgrading from 0.13.0 get instructions for all four new record fields, including how stores without protected-value support preserve ordinary events and reject protected values through public JSON APIs. The migration covers JSON values and encoded custom event types. This documentation repair changes no application API or runtime behavior.\n"
+        },
+        {
+          "category": "Fixed",
+          "commit": "708848a109251d6665ced9324e90c2c6dcf60e33",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "9caefefdaf2c496a6c6fef10ba8d6533b81bc62931d9791174cc233bc5fc509c",
+          "impact": "compatible",
+          "path": ".changes/cryptoerasure-protected-duplicate-retry.md",
+          "sections": {
+            "Summary": "The PostgreSQL event store now rejects a retry that reuses a protected event's ID with a different payload, even when the retry omits the protected value. It also rejects the rest of that retry batch. Existing protected data and its erasure state stay intact. Applications need no code change for normal event writes."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: compatible\ncategory: Fixed\n---\n\n## Summary\n\nThe PostgreSQL event store now rejects a retry that reuses a protected event's ID with a different payload, even when the retry omits the protected value. It also rejects the rest of that retry batch. Existing protected data and its erasure state stay intact. Applications need no code change for normal event writes.\n"
+        }
+      ],
+      "source_sha": "708848a109251d6665ced9324e90c2c6dcf60e33",
+      "target_policy": "native-v2",
+      "version": "0.14.0"
+    },
+    {
+      "base_sha": "56f92499a1650c1f59dec0c6798638bfde327fb7",
+      "base_tag": "neo-v0.14.0",
+      "base_version": "0.14.0",
+      "bootstrap": false,
+      "date": "2026-10-30",
+      "group": "platform",
+      "id": "75538e8556b24e66ab35665288d51d6c0873663989ea5bd3e9acf72a0c5f41be",
+      "impact": "breaking",
+      "kind": "release",
+      "notes": [
+        {
+          "category": "Added",
+          "commit": "522a94bc2fe8e3187eb03a940231561656d56521",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "11b4537c231e5ad3e3de9b2013b9c758a4f8ab3ea13c2882310c27d2dbf6aa7a",
+          "impact": "compatible",
+          "path": ".changes/source-local-event-model-578.md",
+          "sections": {
+            "Summary": "An application can now describe its event flow in source-local Features. Export a Feature action beside its commands, queries, and integrations, then compose those actions in a named Event Model. The compiler checks typed event sources and command targets, and model evaluation checks each Slice has one primary shape. The description does not start workers yet. Existing application registration remains in place."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: compatible\ncategory: Added\n---\n\n## Summary\n\nAn application can now describe its event flow in source-local Features. Export a Feature action beside its commands, queries, and integrations, then compose those actions in a named Event Model. The compiler checks typed event sources and command targets, and model evaluation checks each Slice has one primary shape. The description does not start workers yet. Existing application registration remains in place.\n"
+        },
+        {
+          "category": "Fixed",
+          "commit": "0065a3a30ee09f8961ab8dddf6970fa09ab794ad",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "cfa78022ccd7fe4273d9c4d1095f75b2322158bb70375ba8699c6198bd341921",
+          "impact": "none",
+          "path": ".changes/planned-event-model-topology.md",
+          "sections": {
+            "Summary": "The planned Event Model builders in the earlier note were removed before a platform release. Event Model slices now require implemented components. The breaking change and migration appear in the executable Event Model note. This record replaces the obsolete feature note and does not describe a separate application change."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: none\ncategory: Fixed\n---\n\n## Summary\n\nThe planned Event Model builders in the earlier note were removed before a platform release. Event Model slices now require implemented components. The breaking change and migration appear in the executable Event Model note. This record replaces the obsolete feature note and does not describe a separate application change.\n"
+        },
+        {
+          "category": "Breaking changes",
+          "commit": "0ca306213afe31b5f23b3733de06fc8c1b76f541",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "18ac3272c621fab810e847195d83ad1efd201e3c19b065722e4610d92908dfb2",
+          "impact": "breaking",
+          "path": ".changes/executable-event-model-topology.md",
+          "sections": {
+            "Agent prompt": "```text\nFind every plannedEntity, plannedCommand, plannedProduces, plannedQuery, plannedReadsFrom, plannedOnEvent, and sliceIsPlanned use in my NeoHaskell application. Implement the declared entity, command, query, and payload behavior before replacing each planned builder with entity, command, produces, query, readsFrom, or onEvent. Generate event ADTs separately with deriveEntityEvents, and preserve the existing Application registrations until Event Model runtime wiring is available. Remove any topology-only Slice whose behavior is not being implemented. Compile the app, run its command, query, and integration tests, and report the changed files, results, and any missing implementation that still blocks compilation.\n```",
+            "Migration": "If your application used a `planned*` builder, implement that component before adding it to a Feature. Replace `plannedEntity` with `entity`, `plannedCommand` with `command`, `plannedProduces` with `produces`, `plannedQuery` with `query`, `plannedReadsFrom` with `readsFrom`, and `plannedOnEvent` with `onEvent`. Define the matching `Entity`, `Command`, `Query`, `QueryOf`, and event payload relationships. Generate each entity Event ADT with a separate `deriveEntityEvents` call. Keep the existing `Application` registrations until Event Model runtime wiring is available.\n\n### Verify\n\nCompile the application and run the command, query, and integration tests for every declared Slice. In this repository, run `nix develop --command python3 core/test/Service/EventModel/check_compiler_rejections.py` and `nix develop --command .agents/skills/neohaskell-test/scripts/run-testbed --strict`.",
+            "Summary": "Event Model Slices now require implemented components. A declared command, query, entity, or event payload without its required implementation fails compilation. Applications cannot describe future components with `plannedEntity`, `plannedCommand`, `plannedProduces`, `plannedQuery`, `plannedReadsFrom`, or `plannedOnEvent`."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: breaking\ncategory: Breaking changes\n---\n\n## Summary\n\nEvent Model Slices now require implemented components. A declared command, query, entity, or event payload without its required implementation fails compilation. Applications cannot describe future components with `plannedEntity`, `plannedCommand`, `plannedProduces`, `plannedQuery`, `plannedReadsFrom`, or `plannedOnEvent`.\n\n## Migration\n\nIf your application used a `planned*` builder, implement that component before adding it to a Feature. Replace `plannedEntity` with `entity`, `plannedCommand` with `command`, `plannedProduces` with `produces`, `plannedQuery` with `query`, `plannedReadsFrom` with `readsFrom`, and `plannedOnEvent` with `onEvent`. Define the matching `Entity`, `Command`, `Query`, `QueryOf`, and event payload relationships. Generate each entity Event ADT with a separate `deriveEntityEvents` call. Keep the existing `Application` registrations until Event Model runtime wiring is available.\n\n### Verify\n\nCompile the application and run the command, query, and integration tests for every declared Slice. In this repository, run `nix develop --command python3 core/test/Service/EventModel/check_compiler_rejections.py` and `nix develop --command .agents/skills/neohaskell-test/scripts/run-testbed --strict`.\n\n## Agent prompt\n\n```text\nFind every plannedEntity, plannedCommand, plannedProduces, plannedQuery, plannedReadsFrom, plannedOnEvent, and sliceIsPlanned use in my NeoHaskell application. Implement the declared entity, command, query, and payload behavior before replacing each planned builder with entity, command, produces, query, readsFrom, or onEvent. Generate event ADTs separately with deriveEntityEvents, and preserve the existing Application registrations until Event Model runtime wiring is available. Remove any topology-only Slice whose behavior is not being implemented. Compile the app, run its command, query, and integration tests, and report the changed files, results, and any missing implementation that still blocks compilation.\n```\n"
+        },
+        {
+          "category": "Added",
+          "commit": "ce5df894f75a80532a89f029dd8f15f72d177909",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "261305c1c32324b7d024a89d460733ec3c299cb783eba014affaf8301de9618e",
+          "impact": "compatible",
+          "path": ".changes/event-model-business-rules.md",
+          "sections": {
+            "Summary": "An Event Model state-change or state-view Slice can now keep direct Given-When-Therefore rules beside its implemented command or query. Rules hold concrete historical events, a typed command or incoming event, and an exact command or query outcome. A rule can request typed values and reuse them in the same block. The runner that generates and executes cases will follow separately; applications should keep their existing behavior tests."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: compatible\ncategory: Added\n---\n\n## Summary\n\nAn Event Model state-change or state-view Slice can now keep direct Given-When-Therefore rules beside its implemented command or query. Rules hold concrete historical events, a typed command or incoming event, and an exact command or query outcome. A rule can request typed values and reuse them in the same block. The runner that generates and executes cases will follow separately; applications should keep their existing behavior tests.\n"
+        },
+        {
+          "category": "Fixed",
+          "commit": "829928e19db7d5e00ee9d1e98818af420cc73d32",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "9c45538eebb474bbec975a0c9e99b0861d0b464e5229b17146b3a64276236f62",
+          "impact": "compatible",
+          "path": ".changes/integration-callback-outcome.md",
+          "sections": {
+            "Summary": "An outbound integration now reports a failed result when its callback command is rejected, fails, is unauthorized, or has no handler. Callback failure text stays out of dispatcher errors and logs. An application still decides when and how to retry a pending request."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: compatible\ncategory: Fixed\n---\n\n## Summary\n\nAn outbound integration now reports a failed result when its callback command is rejected, fails, is unauthorized, or has no handler. Callback failure text stays out of dispatcher errors and logs. An application still decides when and how to retry a pending request.\n"
+        },
+        {
+          "category": "Fixed",
+          "commit": "23231da55d8e95bbe9e3084b2f4f768ebc80149c",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "2d6a1d5c610cd90c55c22e4aa3e6b7bc4c1a4b6f13b9a13b3b53fb2ad5aac6de",
+          "impact": "compatible",
+          "path": ".changes/integration-callback-omission.md",
+          "sections": {
+            "Summary": "An outbound integration now reports failure if its command handler returns without sending a result. Your application can keep an erasure request pending and retry it explicitly instead of treating the missing result as completion. No application code change is required."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: compatible\ncategory: Fixed\n---\n\n## Summary\n\nAn outbound integration now reports failure if its command handler returns without sending a result. Your application can keep an erasure request pending and retry it explicitly instead of treating the missing result as completion. No application code change is required.\n"
+        }
+      ],
+      "source_sha": "a4d6a39d333029e329fc533afce67291cf24b069",
+      "target_policy": "native-v2",
+      "version": "0.15.0"
+    },
+    {
+      "base_sha": "e49435ce35e1060f81ba90ac15cfcf1252353f63",
+      "base_tag": "neo-v0.15.0",
+      "base_version": "0.15.0",
+      "bootstrap": false,
+      "date": "2026-11-02",
+      "group": "platform",
+      "id": "39b0dd27e6aa95301d354e3fc7dbfa645c574cad855324a5db3f5009700d9342",
+      "impact": "breaking",
+      "kind": "release",
+      "notes": [
+        {
+          "category": "Breaking changes",
+          "commit": "eda8a1fa934478383bcc0cd26f43004781d100e2",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "3bae69145c947cae2f9ccaf6e3ca3f009b33444dc3ad88c0156a726d46645b5d",
+          "impact": "breaking",
+          "path": ".changes/event-model-validation-581.md",
+          "sections": {
+            "Agent prompt": "```text\nFind each inboundIntegration @Handler Slice and the executable that starts my NeoHaskell application. Compare its triggersCommand and onTargetEntity pairs with the handler's InboundOutputsOf type. Add every missing pair and remove any repeated pair. If the executable calls EventModel.run, use the Slice as the handler registration and remove any separate Application.withInboundHandler @Handler registration for that handler in the model-backed application. If the executable assembles and runs Application directly, keep Application.withInboundHandler @Handler. Compile the application, evaluate its named eventModel if it uses one, run its inbound integration tests, and report changed files and results.\n```",
+            "Migration": "For each `inboundIntegration @Handler` Slice, compare its `triggersCommand` and `onTargetEntity` declarations with the handler's `InboundOutputsOf` pairs. Add missing pairs and remove repeated pairs. If the application starts with `EventModel.run`, the Slice registers the handler. Remove any separate `Application.withInboundHandler @Handler` registration for that handler in the model-backed application. If the application assembles and runs `Application` directly, keep its `Application.withInboundHandler @Handler` registration.\n\n### Verify\n\nCompile the application and run its inbound integration tests. For an application that starts with `EventModel.run`, evaluate its named `eventModel` before starting workers. In this repository, run `nix develop --command python3 core/test/Service/EventModel/check_compiler_rejections.py`, `nix develop --command cabal test --project-file=cabal.project.dev nhtestbed-spec-demo --test-show-details=direct`, and `nix develop --command .agents/skills/neohaskell-test/scripts/run-testbed --strict` against an isolated PostgreSQL database.",
+            "Summary": "An Event Model now rejects an inbound Slice that omits or repeats a command and target entity pair promised by its typed worker. Validation reports assembled Slice errors with their Feature, Chapter, and Slice paths before application workers start. Applications with incomplete inbound declarations must list every typed worker output once."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: breaking\ncategory: Breaking changes\n---\n\n## Summary\n\nAn Event Model now rejects an inbound Slice that omits or repeats a command and target entity pair promised by its typed worker. Validation reports assembled Slice errors with their Feature, Chapter, and Slice paths before application workers start. Applications with incomplete inbound declarations must list every typed worker output once.\n\n## Migration\n\nFor each `inboundIntegration @Handler` Slice, compare its `triggersCommand` and `onTargetEntity` declarations with the handler's `InboundOutputsOf` pairs. Add missing pairs and remove repeated pairs. If the application starts with `EventModel.run`, the Slice registers the handler. Remove any separate `Application.withInboundHandler @Handler` registration for that handler in the model-backed application. If the application assembles and runs `Application` directly, keep its `Application.withInboundHandler @Handler` registration.\n\n### Verify\n\nCompile the application and run its inbound integration tests. For an application that starts with `EventModel.run`, evaluate its named `eventModel` before starting workers. In this repository, run `nix develop --command python3 core/test/Service/EventModel/check_compiler_rejections.py`, `nix develop --command cabal test --project-file=cabal.project.dev nhtestbed-spec-demo --test-show-details=direct`, and `nix develop --command .agents/skills/neohaskell-test/scripts/run-testbed --strict` against an isolated PostgreSQL database.\n\n## Agent prompt\n\n```text\nFind each inboundIntegration @Handler Slice and the executable that starts my NeoHaskell application. Compare its triggersCommand and onTargetEntity pairs with the handler's InboundOutputsOf type. Add every missing pair and remove any repeated pair. If the executable calls EventModel.run, use the Slice as the handler registration and remove any separate Application.withInboundHandler @Handler registration for that handler in the model-backed application. If the executable assembles and runs Application directly, keep Application.withInboundHandler @Handler. Compile the application, evaluate its named eventModel if it uses one, run its inbound integration tests, and report changed files and results.\n```\n"
+        },
+        {
+          "category": "Fixed",
+          "commit": "53452b9c2055bad027469f3c0eb816473e2a8def",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "107c51946f2e95e8d3dd7bfa524579644849b40f037ca6574978c29822492a3c",
+          "impact": "compatible",
+          "path": ".changes/nh140-command-payload-show.md",
+          "sections": {
+            "Summary": "Displaying an integration command payload now hides its data. This prevents a protected value's encrypted envelope and reference from appearing when an app logs the payload. Apps do not need to change their commands."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: compatible\ncategory: Fixed\n---\n\n## Summary\n\nDisplaying an integration command payload now hides its data. This prevents a protected value's encrypted envelope and reference from appearing when an app logs the payload. Apps do not need to change their commands.\n"
+        },
+        {
+          "category": "Added",
+          "commit": "ee513c56f6118cc9c35dd24e6679dcec2d89c8f2",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "c54e5fa212adbbe11eb339713771611e184adc1129f935e93d7a9cd23aa4116e",
+          "impact": "compatible",
+          "path": ".changes/event-model-application-wiring-582.md",
+          "sections": {
+            "Summary": "An application can now start from one named Event Model. Its Features register the declared commands, queries, outbound handlers, and typed inbound workers, while the same model supplies configuration and transport. Existing applications that assemble `Application` directly can keep doing so. For a model-backed application, `EventModel.run appEventModel` replaces a second authored registration list, and each query receives events only from its declared sources and payloads."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: compatible\ncategory: Added\n---\n\n## Summary\n\nAn application can now start from one named Event Model. Its Features register the declared commands, queries, outbound handlers, and typed inbound workers, while the same model supplies configuration and transport. Existing applications that assemble `Application` directly can keep doing so. For a model-backed application, `EventModel.run appEventModel` replaces a second authored registration list, and each query receives events only from its declared sources and payloads.\n"
+        },
+        {
+          "category": "Added",
+          "commit": "ea75873fbd0da7da39124c82f328c2e70bdca629",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "fba89926814ad12bd7650f0813d2dd422f21a5381da7bc6359a4e7b1d9eb78e5",
+          "impact": "compatible",
+          "path": ".changes/event-model-rule-runner-583.md",
+          "sections": {
+            "Summary": "An Event Model can now run its direct rules as generated Hspec examples. Each example checks a command's complete ordered events or rejection. Query examples check the action and all rows before and after the event. Register generators for requested values and call `specFor` in the test suite. Each sample has separate in-memory storage. Commands that accept an existing entity without emitting events now succeed without appending an empty payload."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: compatible\ncategory: Added\n---\n\n## Summary\n\nAn Event Model can now run its direct rules as generated Hspec examples. Each example checks a command's complete ordered events or rejection. Query examples check the action and all rows before and after the event. Register generators for requested values and call `specFor` in the test suite. Each sample has separate in-memory storage. Commands that accept an existing entity without emitting events now succeed without appending an empty payload.\n"
+        },
+        {
+          "category": "Improved",
+          "commit": "55a1ce5c8a79c548696ddb8b53b7625393d68fe5",
+          "component": "CLI",
+          "group": "platform",
+          "hash": "b18c617957385d9718cd796135614ab834304d8b8013ea5ddc11f7581020e576",
+          "impact": "compatible",
+          "path": ".changes/event-model-generated-starter.md",
+          "sections": {
+            "Summary": "New applications now start with a Counter Feature and one named Event Model. The example declares its commands and query beside the Counter code, and the application starts from that model. The Counter HTTP workflow remains the same. Existing generated applications need no migration."
+          },
+          "text": "---\ngroup: platform\ncomponent: CLI\nimpact: compatible\ncategory: Improved\n---\n\n## Summary\n\nNew applications now start with a Counter Feature and one named Event Model. The example declares its commands and query beside the Counter code, and the application starts from that model. The Counter HTTP workflow remains the same. Existing generated applications need no migration.\n"
+        },
+        {
+          "category": "Fixed",
+          "commit": "0799b152267b0d8c05a3ffd79bf65a8498beaade",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "01109688b8e7dc7907a400bf5ee75fef0636416636fe8c23d0b6bd5c600685df",
+          "impact": "none",
+          "path": ".changes/release-016-inbound-migration-correction.md",
+          "sections": {
+            "Summary": "Correct the unreleased 0.16.0 migration instructions for typed inbound workers. An Event Model Slice already registers its worker when the application starts through `EventModel.run`. An application assembled directly with `Application` still needs explicit worker registration. This note correction changes no runtime behavior."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: none\ncategory: Fixed\n---\n\n## Summary\n\nCorrect the unreleased 0.16.0 migration instructions for typed inbound workers. An Event Model Slice already registers its worker when the application starts through `EventModel.run`. An application assembled directly with `Application` still needs explicit worker registration. This note correction changes no runtime behavior.\n"
+        }
+      ],
+      "source_sha": "0799b152267b0d8c05a3ffd79bf65a8498beaade",
+      "target_policy": "native-v2",
+      "version": "0.16.0"
+    },
+    {
+      "base_sha": "bde1b0e3bda85011f9293e86b82a45d96f042cf0",
+      "base_tag": "neo-v0.16.0",
+      "base_version": "0.16.0",
+      "bootstrap": false,
+      "date": "2026-11-03",
+      "group": "platform",
+      "id": "f7c79014144f7f2effd8211888697c71687ef6d86a16394e692b3dbb0405a447",
+      "impact": "breaking",
+      "kind": "release",
+      "notes": [
+        {
+          "category": "Breaking changes",
+          "commit": "efa79f0e1bc4fb4a9af4f1c706181c7a9c10d917",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "f6ceac07fbd53549f91ba703ae2943709dae6fbd51795b85f86642c91c4e4800",
+          "impact": "breaking",
+          "path": ".changes/019-server-bind-host-port.md",
+          "sections": {
+            "Agent prompt": "```text\nMy NeoHaskell app fails to compile after upgrading nhcore. `WebTransport` gained a `host :: Text` field and `Application` gained `bindHost :: Maybe Text` and `bindPort :: Maybe Int`. Find every place that builds a `WebTransport { ... }` or `Application { ... }` record by naming all fields (search for `WebTransport {`, `WebTransport$` followed by `{`, and `Application {`). In each `WebTransport` record add `host = \"*4\"` so it keeps listening on all IPv4 addresses as before. In each `Application` record add `bindHost = Nothing` and `bindPort = Nothing`. Preserve existing nonzero ports and other fields. If a custom transport uses port 0, explain that this feature rejects ephemeral ports and ask which fixed port in 1..65535 to use. Default-only `WebTransport.server`, `EventModel.eventModel`, and `Application.new` usage needs no edit. Then build the project and run its tests. Report which files you edited and whether the build and tests pass. If my app sits behind a reverse proxy that runs on the same machine or in the same container, tell me I can use `EventModel.withHost \"127.0.0.1\"` or `Application.withHost \"127.0.0.1\"` for local-only access. If the proxy runs elsewhere, tell me to keep the default bind. Do not change the bind host without asking.\n```",
+            "Migration": "Search your code for a `WebTransport { ... }` or `Application { ... }` record written with every field. Also search for custom port `0` settings and change them to a fixed port in `1..65535`. Default-only apps need no migration.\n\n- In a `WebTransport { ... }` record, add `host = \"*4\"` to keep the previous behavior, or `host = \"127.0.0.1\"` to accept local connections only.\n- In an `Application { ... }` record, add `bindHost = Nothing` and `bindPort = Nothing`.\n\nPrefer `EventModel.withHost` and `EventModel.withPort`, `Application.withHost` and `Application.withPort`, or `WebTransport.server { port = 9090 }` over naming every field.\n\n### Verify\n\nBuild your app, start it, and request `/health` on the address you chose. To check the framework change itself, run `nix develop --command .agents/skills/tdd/scripts/test-match \"WebTransport bind host and port\" nhcore-test-service`. The suite checks `EventModel` and `Application` assembly, owned-instance identity with a competing-server negative control, loopback exclusion, early validation, bracketed IPv6 binding, and returned bind-failure cleanup.",
+            "Summary": "You can now choose which network address and port your web server listens on. Add `EventModel.withHost \"127.0.0.1\"` and `EventModel.withPort 9090` in a named Event Model, or `Application.withHost \"127.0.0.1\"` and `Application.withPort 9090` in direct `Application` assembly. `WebTransport.host` also accepts `\"*\"`, the family preferences `\"*4\"` and `\"*6\"`, strict-family `\"!4\"` and `\"!6\"`, a bare address or hostname, or a bracketed IPv6 literal such as `\"[::1]\"`. Family preferences may fall back to the other family and do not guarantee strict isolation.\n\nLoopback (`\"127.0.0.1\"` or `\"::1\"`) is the right choice when your reverse proxy runs on the same machine or in the same container as the app. If the proxy runs in its own container network or on another host, it cannot reach a loopback listener. Keep a non-loopback bind and restrict access with your firewall or network policy instead.\n\nInvalid bind settings fail at startup with a clear message before opening sockets. An empty host, whitespace, a URL or path like `\"http://127.0.0.1\"`, a `host:port` pair, or malformed or non-IPv6 brackets (`\"[]\"`, `\"[localhost]\"`, `\"[::1\"`) fails with `Application.withHost: ...`. Port `0` and values outside `1..65535` fail with `Application.withPort: ...`. If the port is already in use or the address does not belong to this machine, startup stops with `WebTransport could not bind <host>:<port>: ...`.\n\nThe default remains port 8080 and Warp's existing `\"*4\"` IPv4 preference, including its fallback behavior. A custom transport host or port is preserved when the corresponding override is omitted.\n\nThis change is marked breaking for full-field record construction and prior ephemeral-port usage. `WebTransport` and `Application` each gained fields, so code that builds either record by naming every field must add the new ones. Apps using `WebTransport.server`, `EventModel.eventModel`, or `Application.new` need no change. A custom transport that previously used port `0` must choose a fixed port in `1..65535`."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: breaking\ncategory: Breaking changes\n---\n\n## Summary\n\nYou can now choose which network address and port your web server listens on. Add `EventModel.withHost \"127.0.0.1\"` and `EventModel.withPort 9090` in a named Event Model, or `Application.withHost \"127.0.0.1\"` and `Application.withPort 9090` in direct `Application` assembly. `WebTransport.host` also accepts `\"*\"`, the family preferences `\"*4\"` and `\"*6\"`, strict-family `\"!4\"` and `\"!6\"`, a bare address or hostname, or a bracketed IPv6 literal such as `\"[::1]\"`. Family preferences may fall back to the other family and do not guarantee strict isolation.\n\nLoopback (`\"127.0.0.1\"` or `\"::1\"`) is the right choice when your reverse proxy runs on the same machine or in the same container as the app. If the proxy runs in its own container network or on another host, it cannot reach a loopback listener. Keep a non-loopback bind and restrict access with your firewall or network policy instead.\n\nInvalid bind settings fail at startup with a clear message before opening sockets. An empty host, whitespace, a URL or path like `\"http://127.0.0.1\"`, a `host:port` pair, or malformed or non-IPv6 brackets (`\"[]\"`, `\"[localhost]\"`, `\"[::1\"`) fails with `Application.withHost: ...`. Port `0` and values outside `1..65535` fail with `Application.withPort: ...`. If the port is already in use or the address does not belong to this machine, startup stops with `WebTransport could not bind <host>:<port>: ...`.\n\nThe default remains port 8080 and Warp's existing `\"*4\"` IPv4 preference, including its fallback behavior. A custom transport host or port is preserved when the corresponding override is omitted.\n\nThis change is marked breaking for full-field record construction and prior ephemeral-port usage. `WebTransport` and `Application` each gained fields, so code that builds either record by naming every field must add the new ones. Apps using `WebTransport.server`, `EventModel.eventModel`, or `Application.new` need no change. A custom transport that previously used port `0` must choose a fixed port in `1..65535`.\n\n## Migration\n\nSearch your code for a `WebTransport { ... }` or `Application { ... }` record written with every field. Also search for custom port `0` settings and change them to a fixed port in `1..65535`. Default-only apps need no migration.\n\n- In a `WebTransport { ... }` record, add `host = \"*4\"` to keep the previous behavior, or `host = \"127.0.0.1\"` to accept local connections only.\n- In an `Application { ... }` record, add `bindHost = Nothing` and `bindPort = Nothing`.\n\nPrefer `EventModel.withHost` and `EventModel.withPort`, `Application.withHost` and `Application.withPort`, or `WebTransport.server { port = 9090 }` over naming every field.\n\n### Verify\n\nBuild your app, start it, and request `/health` on the address you chose. To check the framework change itself, run `nix develop --command .agents/skills/tdd/scripts/test-match \"WebTransport bind host and port\" nhcore-test-service`. The suite checks `EventModel` and `Application` assembly, owned-instance identity with a competing-server negative control, loopback exclusion, early validation, bracketed IPv6 binding, and returned bind-failure cleanup.\n\n## Agent prompt\n\n```text\nMy NeoHaskell app fails to compile after upgrading nhcore. `WebTransport` gained a `host :: Text` field and `Application` gained `bindHost :: Maybe Text` and `bindPort :: Maybe Int`. Find every place that builds a `WebTransport { ... }` or `Application { ... }` record by naming all fields (search for `WebTransport {`, `WebTransport$` followed by `{`, and `Application {`). In each `WebTransport` record add `host = \"*4\"` so it keeps listening on all IPv4 addresses as before. In each `Application` record add `bindHost = Nothing` and `bindPort = Nothing`. Preserve existing nonzero ports and other fields. If a custom transport uses port 0, explain that this feature rejects ephemeral ports and ask which fixed port in 1..65535 to use. Default-only `WebTransport.server`, `EventModel.eventModel`, and `Application.new` usage needs no edit. Then build the project and run its tests. Report which files you edited and whether the build and tests pass. If my app sits behind a reverse proxy that runs on the same machine or in the same container, tell me I can use `EventModel.withHost \"127.0.0.1\"` or `Application.withHost \"127.0.0.1\"` for local-only access. If the proxy runs elsewhere, tell me to keep the default bind. Do not change the bind host without asking.\n```\n"
+        },
+        {
+          "category": "Fixed",
+          "commit": "4cb078c88b8353c6fb723f051feb07bf06d4707e",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "6d6862a4ea5add7737aa8795f4373a5096aaae98a2cca0462124a38088109900",
+          "impact": "compatible",
+          "path": ".changes/openapi-response-contracts-1061.md",
+          "sections": {
+            "Summary": "OpenAPI now describes query results as one page of rows and command responses with fields beside their `tag`. Regenerate API clients to replace types based on the old schema. HTTP response bodies did not change."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: compatible\ncategory: Fixed\n---\n\n## Summary\n\nOpenAPI now describes query results as one page of rows and command responses with fields beside their `tag`. Regenerate API clients to replace types based on the old schema. HTTP response bodies did not change.\n"
+        },
+        {
+          "category": "Fixed",
+          "commit": "9a2afa0cc4e92cd697d913a410f970a63371ee8c",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "c0e7ef0647d35cb4157096aed8ca5d901b93630ee0ca13aab3620288257af5d9",
+          "impact": "compatible",
+          "path": ".changes/testbed-file-hurl-selection.md",
+          "sections": {
+            "Summary": "The maintained testbed now runs its file upload, download, and upload error checks with the other HTTP tests. This catches file endpoint regressions in the project test run. Existing applications need no code or data change."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: compatible\ncategory: Fixed\n---\n\n## Summary\n\nThe maintained testbed now runs its file upload, download, and upload error checks with the other HTTP tests. This catches file endpoint regressions in the project test run. Existing applications need no code or data change.\n"
+        },
+        {
+          "category": "Fixed",
+          "commit": "b9b3491476b87da7f3f60fe2ca9c5ad65febb0ba",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "97013beb997248627d5e450d4a2d49ab61dcbef45db2a9cf0750c33b93b03a61",
+          "impact": "compatible",
+          "path": ".changes/protected-openapi-contents.md",
+          "sections": {
+            "Summary": "OpenAPI now describes an available protected value with its fields inside `contents`, matching the response returned by an authorized query. Generated clients can read a protected payload such as `firstSecret.contents.name` without a schema mismatch. Applications need no code change."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: compatible\ncategory: Fixed\n---\n\n## Summary\n\nOpenAPI now describes an available protected value with its fields inside `contents`, matching the response returned by an authorized query. Generated clients can read a protected payload such as `firstSecret.contents.name` without a schema mismatch. Applications need no code change.\n"
+        }
+      ],
+      "source_sha": "b9b3491476b87da7f3f60fe2ca9c5ad65febb0ba",
+      "target_policy": "native-v2",
+      "version": "0.17.0"
+    },
+    {
+      "base_sha": "f09b360025d842e5ad9bc471f46af91e43cbdab7",
+      "base_tag": "neo-v0.17.0",
+      "base_version": "0.17.0",
+      "bootstrap": false,
+      "date": "2026-11-06",
+      "group": "platform",
+      "id": "77901112075852b7c71839f074bbc27878ffa3872bcfd1ed168b1e3af291eab9",
+      "impact": "compatible",
+      "kind": "release",
+      "notes": [
+        {
+          "category": "Added",
+          "commit": "cc619bb61906fcb79f78b85a8e8b6dd9ec2beb69",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "bffc7eb473fb7a66a80ce932b33f3d1fa219eaa140cb2a792a8f82766a6d3a2c",
+          "impact": "compatible",
+          "path": ".changes/create-integration-files.md",
+          "sections": {
+            "Summary": "Integrations can save generated PDFs and other documents as owned files with `fileAccess.createFile`. Pass the owner captured by an authorized command, a stable document job key, and the document bytes. The returned `FileRef` works with the existing authenticated download route and has no temporary-upload expiry.\n\nRetrying a completed job with the same owner, key, and metadata returns the same reference and preserves its first completed bytes. An unfinished job or a missing stored file requires the original bytes. Applications must explicitly reconcile abandoned jobs because file creation and the command that records its reference are separate operations.\n\nExisting applications configured with `withFileUpload` keep their setup. To use the feature, create the file inside `Integration.action` and save its reference through a completion command. Verify that the owner can download the document and a retried job returns the same reference."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: compatible\ncategory: Added\n---\n\n## Summary\n\nIntegrations can save generated PDFs and other documents as owned files with `fileAccess.createFile`. Pass the owner captured by an authorized command, a stable document job key, and the document bytes. The returned `FileRef` works with the existing authenticated download route and has no temporary-upload expiry.\n\nRetrying a completed job with the same owner, key, and metadata returns the same reference and preserves its first completed bytes. An unfinished job or a missing stored file requires the original bytes. Applications must explicitly reconcile abandoned jobs because file creation and the command that records its reference are separate operations.\n\nExisting applications configured with `withFileUpload` keep their setup. To use the feature, create the file inside `Integration.action` and save its reference through a completion command. Verify that the owner can download the document and a retried job returns the same reference.\n"
+        }
+      ],
+      "source_sha": "d986ae7789405ce8bf11e85832418014ef849ba3",
+      "target_policy": "native-v2",
+      "version": "0.17.1"
+    },
+    {
+      "base_sha": "cacc8069070721539ae0aac53286ce9492e906a5",
+      "base_tag": "neo-v0.17.1",
+      "base_version": "0.17.1",
+      "bootstrap": false,
+      "date": "2026-11-16",
+      "group": "platform",
+      "id": "b11161e8193142770e64d75fd89d58038e0bb7aded4ff241f6bdf2b5721d6c15",
+      "impact": "breaking",
+      "kind": "release",
+      "notes": [
+        {
+          "category": "Improved",
+          "commit": "d4b93daff3115ffd186d403db252631b8056456e",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "13e63ca3084a89f47202acb23d6509b44a6413335d6a0c7650c26539fb380c16",
+          "impact": "none",
+          "path": ".changes/issue-99-cache-publisher.md",
+          "sections": {
+            "Summary": "Framework users need no app changes. A trusted main-branch workflow now realizes and publishes the Linux CI and default shells and the macOS default shell to Cachix. Framework contributors can list local test jobs and run the documented ADR index check through the Nix-packaged `act` command. The testbed job uses its existing Nix-provided Hurl and no longer installs an unused system package that fails on Ubuntu 26.04. These CI and contributor-tool changes do not affect application behavior or public APIs."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: none\ncategory: Improved\n---\n\n## Summary\n\nFramework users need no app changes. A trusted main-branch workflow now realizes and publishes the Linux CI and default shells and the macOS default shell to Cachix. Framework contributors can list local test jobs and run the documented ADR index check through the Nix-packaged `act` command. The testbed job uses its existing Nix-provided Hurl and no longer installs an unused system package that fails on Ubuntu 26.04. These CI and contributor-tool changes do not affect application behavior or public APIs.\n"
+        },
+        {
+          "category": "Improved",
+          "commit": "d65f5e5256f136914649ffcd9eb7d696a1597ab8",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "ba81f147de99234269825971de00fed330213da41257f134d462f7f6e5e30a33",
+          "impact": "none",
+          "path": ".changes/issue-99-cache-closure-check.md",
+          "sections": {
+            "Summary": "Framework users need no app changes. Cache publication verification accounts for dependencies served by the configured upstream public caches. Cachix avoids storing duplicate upstream dependencies, so checking only its recursive metadata rejected a successful publication. This changes CI verification without changing application behavior or public APIs."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: none\ncategory: Improved\n---\n\n## Summary\n\nFramework users need no app changes. Cache publication verification accounts for dependencies served by the configured upstream public caches. Cachix avoids storing duplicate upstream dependencies, so checking only its recursive metadata rejected a successful publication. This changes CI verification without changing application behavior or public APIs.\n"
+        },
+        {
+          "category": "Improved",
+          "commit": "8b36dbce69c932bd53262c080094a3fbce9b5fcf",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "6055953f4e28b3205866d72516dee6032353d1789c2b82f6dbd5e06beb0792b4",
+          "impact": "none",
+          "path": ".changes/issue-99-cache-workers.md",
+          "sections": {
+            "Summary": "Framework test jobs no longer upload their local Nix stores through Magic. They read the configured public Cachix and IOG caches and build cache misses normally. Test macOS also runs on pull requests that change Nix, Cabal, or relevant workflow files. Application behavior, public APIs, and test workloads stay the same."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: none\ncategory: Improved\n---\n\n## Summary\n\nFramework test jobs no longer upload their local Nix stores through Magic. They read the configured public Cachix and IOG caches and build cache misses normally. Test macOS also runs on pull requests that change Nix, Cabal, or relevant workflow files. Application behavior, public APIs, and test workloads stay the same.\n"
+        },
+        {
+          "category": "Added",
+          "commit": "adf0b6c1332c9683c6c5e52fa865e299e088c95d",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "8230eff3713cc1ad23a98a43c5ac3a76781b80650c534b1277be6a8699692ff0",
+          "impact": "compatible",
+          "path": ".changes/query-by-id.md",
+          "sections": {
+            "Summary": "Read one query row with `GET /queries/{query-name}/{id}` using the UUID chosen by the query's `queryId`. A successful read returns the row as JSON. Missing rows and rows hidden by `canView` return the same HTTP 404 response. Query access checks still run before storage access. Existing query declarations need no changes, and collection endpoints remain available."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: compatible\ncategory: Added\n---\n\n## Summary\n\nRead one query row with `GET /queries/{query-name}/{id}` using the UUID chosen by the query's `queryId`. A successful read returns the row as JSON. Missing rows and rows hidden by `canView` return the same HTTP 404 response. Query access checks still run before storage access. Existing query declarations need no changes, and collection endpoints remain available.\n"
+        },
+        {
+          "category": "Breaking changes",
+          "commit": "196e4dfff0d7d5015dd4385e7f329c71d0524a49",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "9f5cae25ca6e64a6c3a3b8c3af02078ce0033d87ba61fc13c13088f928ed38d3",
+          "impact": "breaking",
+          "path": ".changes/request-context-origin.md",
+          "sections": {
+            "Agent prompt": "```text\nUpdate this NeoHaskell app for the request-origin changes in NeoHaskell 0.18.0.\n\nFind every app-authored full WebTransport and RequestContext record constructor. Leave WebTransport.server and the emptyContext, anonymousContext, authenticatedContext, and trustedContext helpers unchanged. Add trustedProxyAddresses = Set.empty to each direct WebTransport record. Add origin = Nothing to each internal RequestContext record.\n\nFor example, a WebTransport record that ends with readinessProbe = Nothing gains trustedProxyAddresses = Set.empty. An internal RequestContext that ends with trustedBypass = False gains origin = Nothing. Use the field qualification that matches the app's imports.\n\nImport Set qualified as Set if the app does not already import Set.\n\nDo not enable forwarded addresses by default. Verify that trustedProxyAddressFromText :: Text -> Result Text TrustedProxyAddress accepts exact IPv4 or IPv6 literals. If the app's deployment explicitly requires a trusted proxy, handle Result.Err. Add only a parsed Result.Ok address to the trusted set. Ask the app owner to settle an unclear proxy policy. Treat request-origin values as untrusted. Do not store them in events or logs without a reviewed purpose.\n\nFrom the app root, run neo build --ci and neo test --ci. Both commands must pass. The test command runs the app's Cabal tests and discovered Hurl scenarios. Report changed files, command results, remaining direct record constructors, and any proxy policy that needs app-owner input.\n```",
+            "Migration": "Calls to `WebTransport.server` need no change. `emptyContext`, `anonymousContext`, `authenticatedContext`, and `trustedContext` already set `origin = Nothing`. If your app constructs either record directly, add the corresponding field below. Import `Service.Transport.Web` as `WebTransport` and `Service.Auth` as `Auth` to match the examples. Import `Set qualified as Set` if your app does not already import `Set`.\n\n```diff\n  , WebTransport.readinessProbe = Nothing\n+ , WebTransport.trustedProxyAddresses = Set.empty\n```\n\n```diff\n  , Auth.trustedBypass = False\n+ , Auth.origin = Nothing\n```\n\n`WebTransport.server` leaves the trusted proxy set empty. Trust a proxy only when your deployment requires it. `trustedProxyAddressFromText :: Text -> Result Text TrustedProxyAddress` accepts an exact IPv4 or IPv6 literal. Handle `Result.Err` before adding a parsed address to the set. Treat request-origin values as untrusted. Do not store them in events or logs without a reviewed privacy and retention purpose.\n\n### Verify\n\nFrom the generated app's root, run:\n\n```sh\nneo build --ci\nneo test --ci\n```\n\nBoth commands must succeed. `neo test --ci` runs the app's Cabal tests and discovered Hurl scenarios.",
+            "Summary": "Web commands can read the socket client address and User-Agent through `RequestContext.origin`. `Text.fromBytesIfValid` decodes valid UTF-8 bytes without throwing. Apps that construct `WebTransport` or `RequestContext` records directly must add the new fields. The trusted proxy set stays empty by default."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: breaking\ncategory: Breaking changes\n---\n\n## Summary\n\nWeb commands can read the socket client address and User-Agent through `RequestContext.origin`. `Text.fromBytesIfValid` decodes valid UTF-8 bytes without throwing. Apps that construct `WebTransport` or `RequestContext` records directly must add the new fields. The trusted proxy set stays empty by default.\n\n## Migration\n\nCalls to `WebTransport.server` need no change. `emptyContext`, `anonymousContext`, `authenticatedContext`, and `trustedContext` already set `origin = Nothing`. If your app constructs either record directly, add the corresponding field below. Import `Service.Transport.Web` as `WebTransport` and `Service.Auth` as `Auth` to match the examples. Import `Set qualified as Set` if your app does not already import `Set`.\n\n```diff\n  , WebTransport.readinessProbe = Nothing\n+ , WebTransport.trustedProxyAddresses = Set.empty\n```\n\n```diff\n  , Auth.trustedBypass = False\n+ , Auth.origin = Nothing\n```\n\n`WebTransport.server` leaves the trusted proxy set empty. Trust a proxy only when your deployment requires it. `trustedProxyAddressFromText :: Text -> Result Text TrustedProxyAddress` accepts an exact IPv4 or IPv6 literal. Handle `Result.Err` before adding a parsed address to the set. Treat request-origin values as untrusted. Do not store them in events or logs without a reviewed privacy and retention purpose.\n\n### Verify\n\nFrom the generated app's root, run:\n\n```sh\nneo build --ci\nneo test --ci\n```\n\nBoth commands must succeed. `neo test --ci` runs the app's Cabal tests and discovered Hurl scenarios.\n\n## Agent prompt\n\n```text\nUpdate this NeoHaskell app for the request-origin changes in NeoHaskell 0.18.0.\n\nFind every app-authored full WebTransport and RequestContext record constructor. Leave WebTransport.server and the emptyContext, anonymousContext, authenticatedContext, and trustedContext helpers unchanged. Add trustedProxyAddresses = Set.empty to each direct WebTransport record. Add origin = Nothing to each internal RequestContext record.\n\nFor example, a WebTransport record that ends with readinessProbe = Nothing gains trustedProxyAddresses = Set.empty. An internal RequestContext that ends with trustedBypass = False gains origin = Nothing. Use the field qualification that matches the app's imports.\n\nImport Set qualified as Set if the app does not already import Set.\n\nDo not enable forwarded addresses by default. Verify that trustedProxyAddressFromText :: Text -> Result Text TrustedProxyAddress accepts exact IPv4 or IPv6 literals. If the app's deployment explicitly requires a trusted proxy, handle Result.Err. Add only a parsed Result.Ok address to the trusted set. Ask the app owner to settle an unclear proxy policy. Treat request-origin values as untrusted. Do not store them in events or logs without a reviewed purpose.\n\nFrom the app root, run neo build --ci and neo test --ci. Both commands must pass. The test command runs the app's Cabal tests and discovered Hurl scenarios. Report changed files, command results, remaining direct record constructors, and any proxy policy that needs app-owner input.\n```\n"
+        },
+        {
+          "category": "Improved",
+          "commit": "fa498d786bc81a78a59fcdaf0d0382648b35a8c3",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "6a4631d22484e783da0eb78938e8b634516c605a206c10f0e6377b7767eb7091",
+          "impact": "none",
+          "path": ".changes/request-context-origin-migration-guide.md",
+          "sections": {
+            "Summary": "This documentation correction replaces framework-only test commands in the request-origin migration with checks an application developer can run from the app root. It does not change framework APIs or application behavior."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: none\ncategory: Improved\n---\n\n## Summary\n\nThis documentation correction replaces framework-only test commands in the request-origin migration with checks an application developer can run from the app root. It does not change framework APIs or application behavior.\n"
+        }
+      ],
+      "source_sha": "fa498d786bc81a78a59fcdaf0d0382648b35a8c3",
+      "target_policy": "native-v2",
+      "version": "0.18.0"
     }
   ],
   "recoveries": [],

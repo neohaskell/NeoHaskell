@@ -10,10 +10,13 @@ Use the parent-scoped files or diff. Otherwise use the current diff against the 
 Delete prose comments unless one of these exceptions is proven:
 
 - Legal or license headers.
+- Short module headers that state the module responsibility and normal usage. Keep them specific to the owned API. Phase narration and workaround histories do not qualify.
 - Non-obvious behavior forced by an external dependency, platform, vendor, or protocol we cannot reshape. For surprises in our own code, delete the comment and mark the exact scoped symbol `MUST KILL` for a rename, extraction, type, or rearchitecture that makes the behavior obvious without prose.
 - Supported formatting-ignore directives. Lint suppressions qualify only when their rule is faulty, pedantic, or style-only.
 - Doc comments that define a public API contract. This includes Haddock and examples that specify that contract.
 - Issue or design-document links that explain a constraint code cannot express.
+
+Check new Haskell modules under [module documentation](../../neohaskell-module-docs/SKILL.md). Flag missing or inaccurate top-level Haddock. Keep concise, accurate responsibility and normal-usage headers under the module-header exception.
 
 This is the full exception list. If investigation does not establish an exception for a prose comment, delete it.
 
