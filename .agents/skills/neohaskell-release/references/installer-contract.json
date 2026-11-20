@@ -1,0 +1,312 @@
+{
+  "schema": 1,
+  "policy": "installer-v1",
+  "encoding": "canonical-utf8-json-v1",
+  "hash_algorithms": {
+    "candidate_id": "sha256-canonical-core-bytes-v1",
+    "selection_id": "sha256-canonical-selection-bytes-v1",
+    "source_tree": "sha256-git-ls-tree-recursive-z-v1",
+    "build_tree": "sha256-git-ls-tree-recursive-z-overlay-v1",
+    "recipe_set": "sha256-canonical-source-file-identities-v1",
+    "version_seed_recipe": "sha256-canonical-source-file-identities-v1",
+    "version_seed_diff": "sha256-canonical-version-edit-identities-v1",
+    "closure_id": "sha256-canonical-reachable-path-identities-v1",
+    "receipt_identity": "sha256-canonical-receipt-object-v1",
+    "release_seed_identity": "sha256-canonical-release-seed-identity-v1"
+  },
+  "wire_fields": {
+    "core": [
+      "auxiliary_assets",
+      "bootstraps",
+      "build_inputs",
+      "build_receipts",
+      "closures",
+      "context",
+      "contract_registry_sha256",
+      "native_installers",
+      "native_neo",
+      "packages",
+      "policy",
+      "schema_version",
+      "version"
+    ],
+    "engineering_context": [
+      "build_revision",
+      "build_tree_sha256",
+      "change_source",
+      "kind",
+      "source_tree_sha256",
+      "version_seed"
+    ],
+    "release_context": [
+      "build_revision",
+      "build_tree_sha256",
+      "change_source",
+      "kind",
+      "plan_id",
+      "seed_receipt_sha256",
+      "source_tree_sha256"
+    ],
+    "committed_version_seed": [
+      "kind"
+    ],
+    "engineering_version_seed": [
+      "build_tree_sha256",
+      "generated_diff_sha256",
+      "kind",
+      "recipe_sha256",
+      "version"
+    ],
+    "build_inputs": [
+      "cargo_lock_sha256",
+      "flake_lock_sha256",
+      "recipe_set_sha256",
+      "starter"
+    ],
+    "starter_inputs": [
+      "cabal_project_sha256",
+      "flake_sha256",
+      "framework_nar_hash",
+      "framework_revision",
+      "lock_sha256"
+    ],
+    "file_identity": [
+      "name",
+      "sha256",
+      "size"
+    ],
+    "native_neo_entry": [
+      "build_receipt_sha256",
+      "file"
+    ],
+    "native_installer_entry": [
+      "build_receipt_sha256",
+      "file"
+    ],
+    "bootstrap_entry": [
+      "english_source_sha256",
+      "file",
+      "generator_recipe_sha256",
+      "locator_input"
+    ],
+    "locator_input": [
+      "kind",
+      "name"
+    ],
+    "package_output": [
+      "build_receipt_sha256",
+      "closure_id",
+      "nar_hash",
+      "nar_size",
+      "store_path"
+    ],
+    "pair_output": [
+      "build_receipt_sha256",
+      "closure_id",
+      "members",
+      "nar_hash",
+      "nar_size",
+      "store_path"
+    ],
+    "pair_members": [
+      "neo",
+      "neoctl"
+    ],
+    "closure_table": [
+      "paths",
+      "roots",
+      "schema_version"
+    ],
+    "closure_path": [
+      "locations",
+      "nar_hash",
+      "nar_size",
+      "references",
+      "store_path"
+    ],
+    "cache_location": [
+      "cache",
+      "signatures"
+    ],
+    "build_receipts_table": [
+      "receipts",
+      "schema_version"
+    ],
+    "build_receipt": [
+      "build_inputs_sha256",
+      "build_tree_sha256",
+      "builder_system",
+      "context_sha256",
+      "output_identity",
+      "platform",
+      "producer_sha256",
+      "recipe_set_sha256",
+      "role",
+      "source_tree_sha256",
+      "verification_observations",
+      "version"
+    ],
+    "native_output_identity": [
+      "sha256",
+      "size"
+    ],
+    "nix_output_identity": [
+      "nar_hash",
+      "nar_size",
+      "store_path"
+    ],
+    "pair_output_identity": [
+      "members",
+      "nar_hash",
+      "nar_size",
+      "store_path"
+    ],
+    "verification_observations": [
+      "argv_sha256",
+      "reported_versions",
+      "result_sha256",
+      "toolchain_sha256"
+    ],
+    "verification_selection": [
+      "current_candidate_id",
+      "previous_candidate_id",
+      "schema_version"
+    ]
+  },
+  "roles": {
+    "native_neo": {
+      "target_policy": "native-v2",
+      "resolved_by": [
+        "engine.targets_for",
+        "github.required_assets"
+      ],
+      "expected_target_count": 2
+    },
+    "native_installers": {
+      "platforms": [
+        "x86_64-unknown-linux-gnu",
+        "aarch64-unknown-linux-gnu",
+        "aarch64-apple-darwin"
+      ],
+      "filename_prefix": "neo-installer-"
+    },
+    "bootstraps": {
+      "posix": {
+        "filename": "install",
+        "locator_input": {
+          "kind": "runtime-argument",
+          "name": "--candidate-locator"
+        }
+      },
+      "powershell": {
+        "filename": "install.ps1",
+        "locator_input": {
+          "kind": "runtime-argument",
+          "name": "--candidate-locator"
+        }
+      }
+    },
+    "nix_packages": {
+      "systems": [
+        "x86_64-linux",
+        "aarch64-linux",
+        "aarch64-darwin"
+      ],
+      "outputs": [
+        "neo",
+        "neoctl",
+        "pair"
+      ],
+      "output_receipt_count": 9
+    },
+    "output_receipt_count": 14
+  },
+  "auxiliary_assets": {
+    "resolved_by": "github.required_assets",
+    "exclude_roles": [
+      "native_neo_files"
+    ],
+    "must_match_exactly": true
+  },
+  "source_inputs": {
+    "recipe": [
+      ".agents/skills/neohaskell-release/references/config.json",
+      ".agents/skills/neohaskell-release/references/installer-contract.json",
+      ".agents/skills/neohaskell-release/scripts/releases/assemble_candidate.py",
+      ".agents/skills/neohaskell-release/scripts/releases/candidate.py",
+      ".agents/skills/neohaskell-release/scripts/releases/engine.py",
+      ".agents/skills/neohaskell-release/scripts/releases/github.py",
+      ".agents/skills/neohaskell-release/scripts/releases/installer_platform.py",
+      ".agents/skills/neohaskell-release/scripts/semantic-release",
+      "flake.nix",
+      "neo/lifecycle/scripts/generate_bootstraps.py",
+      "neo/lifecycle/src/english.json",
+      "nix/neo-package.nix"
+    ],
+    "version_seed_recipe": [
+      ".agents/skills/neohaskell-release/references/config.json",
+      ".agents/skills/neohaskell-release/scripts/releases/engine.py"
+    ],
+    "build": {
+      "flake_lock": "flake.lock",
+      "cargo_lock": "neo/Cargo.lock",
+      "starter": {
+        "flake": "neo/starter/flake.nix",
+        "lock": "neo/starter/flake.lock",
+        "cabal_project": "neo/starter/cabal.project"
+      }
+    },
+    "english_resource": "neo/lifecycle/src/english.json",
+    "bootstrap_generator": "neo/lifecycle/scripts/generate_bootstraps.py",
+    "engineering_starter_framework_revision": "ea75873fbd0da7da39124c82f328c2e70bdca629"
+  },
+  "metadata_files": {
+    "closures": "closures.json",
+    "build_receipts": "build-receipts.json"
+  },
+  "trusted_cache_keys": [
+    {
+      "cache": "https://neohaskell.cachix.org",
+      "key": "neohaskell.cachix.org-1:mo2cLaGbwqbrxs9xhqKK8jeNsn3osi7t6XoAmxSZssc="
+    },
+    {
+      "cache": "https://cache.iog.io",
+      "key": "hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ="
+    },
+    {
+      "cache": "https://cache.nixos.org",
+      "key": "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="
+    }
+  ],
+  "limits": {
+    "max_core_bytes": 2097152,
+    "max_table_bytes": 33554432,
+    "max_core_depth": 24,
+    "max_json_nodes": 2500000,
+    "max_name_bytes": 512,
+    "max_nix_store_path_bytes": 255,
+    "max_native_file_bytes": 268435456,
+    "max_bootstrap_file_bytes": 2097152,
+    "max_metadata_file_bytes": 33554432,
+    "max_closure_paths": 100000,
+    "max_references_per_path": 512,
+    "max_closure_edges": 400000,
+    "max_cache_locations_per_path": 2,
+    "max_signatures_per_location": 2,
+    "max_source_tree_entries": 200000,
+    "max_source_tree_index_bytes": 67108864
+  },
+  "context_rules": {
+    "engineering_committed_build_revision_equals_change_source": true,
+    "engineering_committed_build_tree_equals_source_tree": true,
+    "engineering_version_seed_uses_release_engine": true,
+    "engineering_version_seed_changes_only_configured_version_inputs": true,
+    "engineering_version_seed_binds_actual_build_tree": true,
+    "engineering_starter_framework_revision": "ea75873fbd0da7da39124c82f328c2e70bdca629",
+    "release_build_revision_is_generated_preparation": true,
+    "release_requires_distribution_policy_bound_to_registry": true,
+    "release_seed_identity_binds_actual_starter_files": true,
+    "bootstrap_embedded_candidate_id_forbidden": true,
+    "cache_signature_validation": "structural-only; Nix cryptographic verification is future"
+  }
+}

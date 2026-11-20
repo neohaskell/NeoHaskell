@@ -58,6 +58,9 @@ pub async fn dispatch(
         Some(Commands::New { project_name, library }) => {
             commands::new::run(project_name, library, output_mode, update_status).await?;
         }
+        Some(Commands::Generate) => {
+            crate::reconcile::run_project(".").await?;
+        }
         Some(Commands::Build { watch, skip_lock_check }) => {
             commands::build::run(watch, skip_lock_check, output_mode).await?;
         }

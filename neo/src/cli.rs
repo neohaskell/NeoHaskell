@@ -2,7 +2,7 @@ use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
 #[derive(Parser)]
-#[command(name = "neo", version, about = "The NeoHaskell CLI")]
+#[command(name = "neo", version, about = "The NeoHaskell CLI", after_help = neo_lifecycle::installed_help())]
 #[command(propagate_version = true)]
 pub struct Cli {
     /// Enable debug-level output
@@ -20,9 +20,11 @@ pub struct Cli {
 #[derive(Subcommand)]
 pub enum Commands {
     /// Scaffold a new NeoHaskell project
-    #[command(long_about = "Scaffold a new NeoHaskell project with a full interactive interview. \
+    #[command(
+        long_about = "Scaffold a new NeoHaskell project with a full interactive interview. \
                             This command will guide you through project naming, versioning, \
-                            and license selection. In --ci mode, it uses defaults unless args are provided.")]
+                            and license selection. In --ci mode, it uses defaults unless args are provided."
+    )]
     New {
         /// Project name (required in --ci mode)
         project_name: Option<String>,
@@ -30,9 +32,13 @@ pub enum Commands {
         #[arg(long)]
         library: bool,
     },
+    /// Generate Cabal, Nix, and guidance files from neo.json without building
+    Generate,
     /// Reconcile config and build the project
-    #[command(long_about = "Automatically generate Nix and Cabal files from neo.json and build the project. \
-                            If --watch is used, it starts a GHCi session for instant feedback on file changes.")]
+    #[command(
+        long_about = "Automatically generate Nix and Cabal files from neo.json and build the project. \
+                            If --watch is used, it starts a GHCi session for instant feedback on file changes."
+    )]
     Build {
         /// Watch mode with GHCi hot-reloading
         #[arg(long)]
@@ -50,23 +56,29 @@ pub enum Commands {
         watch: bool,
     },
     /// Run unit tests, then integration tests
-    #[command(long_about = "Execute all unit tests via Cabal, followed by integration tests using Hurl. \
-                            In --watch mode, tests are re-run on every file modification.")]
+    #[command(
+        long_about = "Execute all unit tests via Cabal, followed by integration tests using Hurl. \
+                            In --watch mode, tests are re-run on every file modification."
+    )]
     Test {
         /// Watch mode for continuous testing
         #[arg(long)]
         watch: bool,
     },
     /// Lock event-sourced domain files
-    #[command(long_about = "Search for and lock event-sourced domain files to prevent accidental modification. \
-                            Locked files are added to .locked-files and verified by the pre-commit hook.")]
+    #[command(
+        long_about = "Search for and lock event-sourced domain files to prevent accidental modification. \
+                            Locked files are added to .locked-files and verified by the pre-commit hook."
+    )]
     Lock(LockArgs),
     /// Launch the bundled in-browser NeoHaskell IDE
-    #[command(long_about = "Start a local HTTP server that serves the bundled NeoHaskell IDE \
+    #[command(
+        long_about = "Start a local HTTP server that serves the bundled NeoHaskell IDE \
                             (the Vite app embedded into the `neo` binary). Open the printed URL \
                             in your browser. Press Ctrl-C to stop. Defaults to binding 127.0.0.1 \
                             (loopback only). Pass `--host 0.0.0.0` to make the IDE reachable from \
-                            other machines on your network.")]
+                            other machines on your network."
+    )]
     Ide {
         /// IP address to bind on (e.g. `127.0.0.1`, `0.0.0.0`, `::1`).
         /// Hostnames are not accepted — pass a literal IPv4 or IPv6 address.
@@ -77,18 +89,21 @@ pub enum Commands {
         port: u16,
     },
     /// Inspect a NeoHaskell project's domain layout (commands, events, queries, integrations)
-    #[command(long_about = "Print a structured view of the project's NeoHaskell domains. \
+    #[command(
+        long_about = "Print a structured view of the project's NeoHaskell domains. \
                             By default emits everything as a single JSON document on stdout; \
                             use a subcommand to filter (e.g. `neo inspect commands` for just \
                             the command table). The heal flow for `event-model.json` uses the \
                             same data internally — running this command shows you exactly what \
-                            the AI agent sees.")]
+                            the AI agent sees."
+    )]
     Inspect {
         #[command(subcommand)]
         subcommand: Option<InspectSubcommand>,
     },
     /// Validate `event-model.json` against the schema + referential rules
-    #[command(long_about = "Validate the project's `event-model.json` (the event model the `neo ide` \
+    #[command(
+        long_about = "Validate the project's `event-model.json` (the event model the `neo ide` \
                             authors) against the embedded JSON Schema and referential-integrity rules, \
                             without launching the browser IDE. Reads `<cwd>/event-model.json` by default, \
                             or the PATH you pass. Read-only — it never modifies the file.\n\n\
@@ -96,7 +111,8 @@ pub enum Commands {
                             2 = invalid (schema and/or referential errors); 3 = the file is not valid JSON; \
                             4 = the file does not exist. A missing model is a failure, not a no-op. \
                             Pass `--json` to emit the machine-readable validation result on stdout (the exit \
-                            code still mirrors the status), e.g. `neo validate --json | jq -e '.status == \"valid\"'`.")]
+                            code still mirrors the status), e.g. `neo validate --json | jq -e '.status == \"valid\"'`."
+    )]
     Validate {
         /// Path to the event model file (defaults to `<cwd>/event-model.json`)
         path: Option<PathBuf>,
@@ -105,13 +121,15 @@ pub enum Commands {
         json: bool,
     },
     /// Install shared NeoHaskell skills into your AI coding tools
-    #[command(long_about = "Fetch the shared skill library from github.com/neohaskell/skills and \
+    #[command(
+        long_about = "Fetch the shared skill library from github.com/neohaskell/skills and \
                             install skills into the project-root folders for the AI coding agents you \
                             use (Claude Code, OpenAI Codex, Kiro, Cursor). Run `neo skills setup` for \
                             an interactive tool picker; in --ci mode it installs for every supported \
                             tool unless you pass `--tool <id>`. Setup preserves existing developer-owned \
                             skills and instruction files. Framework API guidance is synchronized by \
-                            `neo build`, `neo run`, and `neo test` from the exact framework source.")]
+                            `neo build`, `neo run`, and `neo test` from the exact framework source."
+    )]
     Skills {
         #[command(subcommand)]
         subcommand: Option<SkillsSubcommand>,
@@ -126,7 +144,9 @@ pub enum Commands {
 #[derive(Subcommand)]
 pub enum GuidanceSubcommand {
     /// Retry guidance retrieval for the current effective framework source
-    #[command(long_about = "Retry retrieval and validation of the exact-commit guidance corpus for the current project. The active guidance index is `.neo/agent-guidance/active.md`; if it remains unavailable, fix the reported source or network issue and run `neo guidance retry` again.")]
+    #[command(
+        long_about = "Retry retrieval and validation of the exact-commit guidance corpus for the current project. The active guidance index is `.neo/agent-guidance/active.md`; if it remains unavailable, fix the reported source or network issue and run `neo guidance retry` again."
+    )]
     Retry,
 }
 
@@ -210,7 +230,10 @@ mod tests {
     fn test_parse_new() {
         let cli = Cli::try_parse_from(["neo", "new", "my-project"]).unwrap();
         match cli.command {
-            Some(Commands::New { project_name, library }) => {
+            Some(Commands::New {
+                project_name,
+                library,
+            }) => {
                 assert_eq!(project_name, Some("my-project".into()));
                 assert!(!library);
             }
@@ -222,7 +245,10 @@ mod tests {
     fn test_parse_new_library() {
         let cli = Cli::try_parse_from(["neo", "new", "my-lib", "--library"]).unwrap();
         match cli.command {
-            Some(Commands::New { project_name, library }) => {
+            Some(Commands::New {
+                project_name,
+                library,
+            }) => {
                 assert_eq!(project_name, Some("my-lib".into()));
                 assert!(library);
             }
@@ -244,7 +270,10 @@ mod tests {
     fn test_parse_build_skip_lock_check() {
         let cli = Cli::try_parse_from(["neo", "build", "--skip-lock-check"]).unwrap();
         match cli.command {
-            Some(Commands::Build { watch, skip_lock_check }) => {
+            Some(Commands::Build {
+                watch,
+                skip_lock_check,
+            }) => {
                 assert!(!watch);
                 assert!(skip_lock_check);
             }
@@ -256,7 +285,10 @@ mod tests {
     fn test_parse_build_default_lock_check() {
         let cli = Cli::try_parse_from(["neo", "build"]).unwrap();
         match cli.command {
-            Some(Commands::Build { watch, skip_lock_check }) => {
+            Some(Commands::Build {
+                watch,
+                skip_lock_check,
+            }) => {
                 assert!(!watch);
                 assert!(!skip_lock_check);
             }
@@ -286,7 +318,9 @@ mod tests {
     fn test_parse_inspect_sync() {
         let cli = Cli::try_parse_from(["neo", "inspect", "sync"]).unwrap();
         match cli.command {
-            Some(Commands::Inspect { subcommand: Some(InspectSubcommand::Sync) }) => {}
+            Some(Commands::Inspect {
+                subcommand: Some(InspectSubcommand::Sync),
+            }) => {}
             other => panic!("Expected Inspect Sync, got {:?}", other.is_some()),
         }
     }
@@ -318,15 +352,33 @@ mod tests {
     #[test]
     fn test_parse_skills_setup() {
         let cli = Cli::try_parse_from([
-            "neo", "skills", "setup",
-            "--tool", "claude", "--tool", "cursor",
-            "--skill", "foo",
-            "--force", "--dry-run", "--refresh", "--no-primer",
+            "neo",
+            "skills",
+            "setup",
+            "--tool",
+            "claude",
+            "--tool",
+            "cursor",
+            "--skill",
+            "foo",
+            "--force",
+            "--dry-run",
+            "--refresh",
+            "--no-primer",
         ])
         .unwrap();
         match cli.command {
             Some(Commands::Skills {
-                subcommand: Some(SkillsSubcommand::Setup { tools, all_tools, skills, force, dry_run, refresh, no_primer }),
+                subcommand:
+                    Some(SkillsSubcommand::Setup {
+                        tools,
+                        all_tools,
+                        skills,
+                        force,
+                        dry_run,
+                        refresh,
+                        no_primer,
+                    }),
             }) => {
                 assert_eq!(tools, vec!["claude".to_string(), "cursor".to_string()]);
                 assert!(!all_tools);
@@ -345,7 +397,10 @@ mod tests {
         let cli = Cli::try_parse_from(["neo", "skills", "setup", "--all-tools"]).unwrap();
         match cli.command {
             Some(Commands::Skills {
-                subcommand: Some(SkillsSubcommand::Setup { all_tools, tools, .. }),
+                subcommand:
+                    Some(SkillsSubcommand::Setup {
+                        all_tools, tools, ..
+                    }),
             }) => {
                 assert!(all_tools);
                 assert!(tools.is_empty());
@@ -368,7 +423,9 @@ mod tests {
         let cli = Cli::try_parse_from(["neo", "guidance", "retry"]).unwrap();
         assert!(matches!(
             cli.command,
-            Some(Commands::Guidance { subcommand: GuidanceSubcommand::Retry })
+            Some(Commands::Guidance {
+                subcommand: GuidanceSubcommand::Retry
+            })
         ));
     }
 
@@ -388,7 +445,10 @@ mod tests {
         let cli = Cli::try_parse_from(["neo", "ide"]).unwrap();
         match cli.command {
             Some(Commands::Ide { host, port }) => {
-                assert_eq!(host, std::net::IpAddr::V4(std::net::Ipv4Addr::new(127, 0, 0, 1)));
+                assert_eq!(
+                    host,
+                    std::net::IpAddr::V4(std::net::Ipv4Addr::new(127, 0, 0, 1))
+                );
                 assert_eq!(port, 2323);
             }
             _ => panic!("Expected Ide command"),

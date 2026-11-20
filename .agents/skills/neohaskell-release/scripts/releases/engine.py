@@ -27,6 +27,7 @@ def find_root():
 ROOT = find_root()
 SKILL_ROOT = Path(__file__).resolve().parents[2]
 CONFIG_PATH = ".agents/skills/neohaskell-release/references/config.json"
+LIVE_LEGACY_CONFIG_PATH = "scripts/releases/config.json"
 LEDGER_PATH = ".agents/skills/neohaskell-release/references/manifest.json"
 LIVE_LEGACY_LEDGER_PATH = "scripts/releases/manifest.json"
 CONFIG = json.loads((SKILL_ROOT / "references/config.json").read_text())
@@ -482,6 +483,18 @@ def source_target_policy(repo, source):
     return policy
 
 
+def source_distribution(repo, source):
+    config = json.loads(repo.read(source, CONFIG_PATH) or "{}")
+    if "distribution_policy" not in config:
+        return {}
+    if config["distribution_policy"] != "installer-v1" or config.get("native_policy") != TARGET_POLICY:
+        raise ValueError("Unsupported release distribution policy")
+    projection = repo.read(source, "neo/lifecycle/contract/registry.json")
+    if not projection:
+        raise ValueError("Installer release source lacks its contract registry projection")
+    return {"distribution_policy": "installer-v1", "contract_registry_sha256": digest(projection)}
+
+
 def record_target_policy(record):
     if RAW_TARGET_FIELDS & record.keys():
         raise ValueError("Release record cannot contain raw target lists")
@@ -501,8 +514,9 @@ def targets_for(record):
 def validate_source_policy(repo, record):
     check_identity(record)
     policy = record_target_policy(record)
+    distribution = {k: record[k] for k in ("distribution_policy", "contract_registry_sha256") if k in record}
     if record["kind"] == "recovery":
-        if policy is not None:
+        if policy is not None or distribution:
             raise ValueError("Recovery records inherit the release target policy")
         ledger = repo.ledger(record["source_sha"])
         original = next(
@@ -515,6 +529,8 @@ def validate_source_policy(repo, record):
     if record["kind"] != "release":
         raise ValueError("Unknown release manifest kind")
     source_policy = source_target_policy(repo, record["source_sha"])
+    if distribution != source_distribution(repo, record["source_sha"]):
+        raise ValueError("Release distribution policy does not match its source")
     if policy != source_policy:
         raise ValueError("Release target policy does not match its source")
     return targets_for(record)
@@ -638,6 +654,7 @@ def plan_release(repo, source, group, completed, date, bootstrap=None, check_tag
     }
     if target_policy is not None:
         data["target_policy"] = target_policy
+    data.update(source_distribution(repo, source))
     plan = identify(data)
     validate_source_policy(repo, plan)
     for tag in [release_tag(plan)] + (
@@ -651,6 +668,12 @@ def plan_release(repo, source, group, completed, date, bootstrap=None, check_tag
 
 
 def change_version(text, path, package, target):
+    if path.endswith("neo.json"):
+        data = json.loads(text)
+        if data.get("name") != package or not isinstance(data.get("version"), str):
+            raise ValueError(f"{path}: cannot uniquely update {package}")
+        data["version"] = target
+        return json.dumps(data, indent=2, ensure_ascii=False) + "\n"
     if path.endswith(".cabal"):
         result, count = re.subn(
             r"(?mi)^(version:\s*)[^\n]+", lambda m: m[1] + target, text, count=1
@@ -694,11 +717,29 @@ def append_changelog(old, section, first):
     return "# Changelog\n\n" + section + "\n" + old
 
 
+def source_group_config(repo, source, group):
+    group_config(group)
+    text = repo.read(source, CONFIG_PATH)
+    if text is None:
+        text = repo.read(source, LIVE_LEGACY_CONFIG_PATH)
+    if text is None:
+        raise ValueError("Release source is missing its configuration")
+    try:
+        config = json.loads(text)
+    except (TypeError, json.JSONDecodeError) as error:
+        raise ValueError("Malformed source release configuration") from error
+    groups = config.get("groups") if isinstance(config, dict) else None
+    profile = groups.get(group) if isinstance(groups, dict) else None
+    if not isinstance(profile, dict) or not isinstance(profile.get("packages"), dict) or not isinstance(profile.get("locks"), dict) or not isinstance(profile.get("changelog"), str):
+        raise ValueError("Malformed source release group configuration")
+    return profile
+
+
 def expected_edits(repo, plan, *, ledger_path=LEDGER_PATH):
     validate_source_policy(repo, plan)
     source, group = plan["source_sha"], plan["group"]
     ledger = repo.ledger(source)
-    profile = group_config(group)
+    profile = source_group_config(repo, source, group)
     if plan["kind"] == "release":
         if plan["id"] in {p["id"] for p in ledger["attempts"]}:
             raise ValueError("Attempt already prepared")

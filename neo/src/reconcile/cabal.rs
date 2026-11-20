@@ -24,6 +24,7 @@ pub fn generate<P: AsRef<Path>>(
 
     let rendered = template.render(context! {
         name => config.name,
+        paths_module => format!("Paths_{}", config.name.replace('-', "_")),
         version => config.version,
         description => config.description,
         license => config.license,
@@ -174,6 +175,8 @@ mod tests {
         generate(dir.path(), &env, &config, &["App".to_string()], &[]).unwrap();
         let content = fs::read_to_string(dir.path().join("test-exec.cabal")).unwrap();
         assert!(content.contains("executable test-exec"), "missing executable stanza:\n{}", content);
+        assert!(content.contains("autogen-modules: Paths_test_exec"));
+        assert!(content.contains("other-modules: Paths_test_exec"));
         assert!(content.contains("main-is: Launcher.hs"), "missing main-is:\n{}", content);
         assert!(content.contains("hs-source-dirs: launcher"), "missing launcher source dir:\n{}", content);
     }
@@ -346,6 +349,7 @@ mod tests {
         generate(dir.path(), &env, &config, &["App".to_string()], &[]).unwrap();
         let content = fs::read_to_string(dir.path().join("driver-only.cabal")).unwrap();
         assert!(content.contains("test-suite driver-only-test"), "missing test-suite:\n{}", content);
-        assert!(!content.contains("other-modules:"), "unexpected empty other-modules header:\n{}", content);
+        let test_suite = content.split("test-suite driver-only-test").nth(1).unwrap();
+        assert!(!test_suite.contains("other-modules:"), "unexpected empty other-modules header:\n{}", test_suite);
     }
 }

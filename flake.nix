@@ -32,23 +32,62 @@
           };
         });
 
-        # The Rust Neo CLI (neo/) exposed as a first-class monorepo output.
-        # Defined in nix/neo-package.nix as the single source of truth; it stays
-        # an independent crate (own Cargo.toml/Cargo.lock, own version; no root
-        # workspace, no coupling to the NeoHaskell library outputs below).
         neo = pkgs.callPackage ./nix/neo-package.nix { };
+        neoctlSource = pkgs.runCommand "neoctl-project" {
+          nativeBuildInputs = [ neo ];
+        } ''
+          cp -R ${./neoctl} "$out"
+          chmod -R u+w "$out"
+          cd "$out"
+          export HOME="$TMPDIR"
+          export NEO_SKIP_NETWORK=1
+          neo --ci generate
+        '';
+        neoctlFlake = (import "${neoctlSource}/flake.nix").outputs {
+          self = neoctlSource;
+          inherit nixpkgs flake-utils haskellNix;
+          neohaskell = self;
+        };
+        neoctl = neoctlFlake.packages.${system}."neoctl:exe:neoctl";
+        neo-installer = pkgs.callPackage ./nix/neo-package.nix {
+          command = "neo-installer";
+        };
+        neo-pair = pkgs.symlinkJoin {
+          name = "neo-pair-${neo.version}";
+          paths = [ neo neoctl ];
+          postBuild = ''
+            test -x "$out/bin/neo"
+            test -x "$out/bin/neoctl"
+            for installed in "$out/bin/"*; do
+              case "$installed" in
+                "$out/bin/neo"|"$out/bin/neoctl") ;;
+                *) exit 1 ;;
+              esac
+            done
+          '';
+        };
       in flake // {
         devShells = flake.devShells // {
           ci = ciProject.shell;
         };
         legacyPackages = pkgs;
-        # Merge alongside the existing hix outputs; the default NeoHaskell
-        # package/app is untouched; `neo` is purely additive.
-        packages = flake.packages // { inherit neo; };
+        packages = flake.packages // { inherit neo neoctl; }
+          // pkgs.lib.optionalAttrs (system != "x86_64-darwin") {
+            inherit neo-installer neo-pair;
+          };
         apps = (flake.apps or { }) // {
           neo = {
             type = "app";
             program = "${neo}/bin/neo";
+          };
+          neoctl = {
+            type = "app";
+            program = "${neoctl}/bin/neoctl";
+          };
+        } // pkgs.lib.optionalAttrs (system != "x86_64-darwin") {
+          neo-installer = {
+            type = "app";
+            program = "${neo-installer}/bin/neo-installer";
           };
         };
       });
@@ -59,10 +98,12 @@
     # - cache.iog.io: IOHK's cache (GHC, haskell.nix infrastructure)
     # - neohaskell.cachix.org: NeoHaskell's cache (project deps, shell tools)
     extra-substituters = [
+      "https://cache.nixos.org"
       "https://cache.iog.io"
       "https://neohaskell.cachix.org"
     ];
     extra-trusted-public-keys = [
+      "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="
       "hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ="
       "neohaskell.cachix.org-1:mo2cLaGbwqbrxs9xhqKK8jeNsn3osi7t6XoAmxSZssc="
     ];
