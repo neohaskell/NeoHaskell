@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.18.1 — 2026-11-20
+
+### Added
+
+- **CLI**: Run `neo generate --ci` to regenerate your project's Cabal and Nix files from
+`neo.json` without compiling. Existing build, run, and test commands still
+regenerate these files automatically. Generated executables can read their
+package version through Cabal's `Paths_` module. ([change](https://github.com/neohaskell/NeoHaskell/commit/3bca6057eaf9b0b9a4f66b5ecf9f1099d843363d))
+- **CLI**: The monorepo provides a separate `neoctl` package generated with `neo new`.
+It reports the platform version and provides help through a NeoHaskell event
+model. Invalid arguments exit with a help recovery message. ([change](https://github.com/neohaskell/NeoHaskell/commit/3bca6057eaf9b0b9a4f66b5ecf9f1099d843363d))
+
+### Improved
+
+- **CLI**: New platform releases include the installer and prebuilt Neo and neoctl packages
+for Linux x86-64, Linux ARM64 and Apple Silicon. After installing a release,
+run `neo update` to update both commands together. ([change](https://github.com/neohaskell/NeoHaskell/commit/3bca6057eaf9b0b9a4f66b5ecf9f1099d843363d))
+
+### Fixed
+
+- **CLI**: On Linux OverlayFS, `neo uninstall` can now remove its PATH entry from a shell profile when Linux reports an empty list of extended attributes. Profiles with visible extended attributes still require manual attention. ([change](https://github.com/neohaskell/NeoHaskell/commit/3bca6057eaf9b0b9a4f66b5ecf9f1099d843363d))
+
+[Compare changes](https://github.com/neohaskell/NeoHaskell/compare/neo-v0.18.0...neo-v0.18.1)
+
 ## 0.18.0 — 2026-11-16
 
 ### Breaking changes
