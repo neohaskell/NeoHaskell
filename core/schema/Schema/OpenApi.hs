@@ -21,7 +21,9 @@
 -- @
 module Schema.OpenApi (
   toOpenApiSchema,
+  EndpointSchemas (..),
   toOpenApiSpec,
+  toOpenApiSpecWithQueryById,
 ) where
 
 import Array qualified
@@ -155,6 +157,19 @@ toOpenApiSchema schema = case schema of
       |> Lens.set OpenApiLens.description (Just [fmt|Reference to: {refName}|])
 
 
+-- | The endpoint schema groups included in an OpenAPI specification.
+--
+-- Query-by-ID schemas produce UUID-keyed query paths. OAuth2 and file schemas
+-- describe the built-in routes when those features are enabled.
+data EndpointSchemas = EndpointSchemas
+  { commandSchemas :: Map Text EndpointSchema
+  , querySchemas :: Map Text EndpointSchema
+  , queryByIdSchemas :: Map Text EndpointSchema
+  , oauth2Schemas :: Map Text EndpointSchema
+  , fileSchemas :: Map Text EndpointSchema
+  }
+
+
 -- | Generate OpenAPI 3.0 specification from endpoint schemas.
 --
 -- Creates a complete OpenAPI spec with:
@@ -164,6 +179,9 @@ toOpenApiSchema schema = case schema of
 -- - Paths for all endpoint types
 -- - Request/response schemas
 -- - Standard HTTP status codes
+--
+-- This five-argument function remains available for callers without
+-- query-by-ID schemas.
 toOpenApiSpec ::
   ApiInfo ->
   Map Text EndpointSchema ->  -- ^ Command schemas (tagged by entity name)
@@ -171,7 +189,30 @@ toOpenApiSpec ::
   Map Text EndpointSchema ->  -- ^ OAuth2 schemas (tagged "Authentication")
   Map Text EndpointSchema ->  -- ^ File upload schemas (tagged "Files")
   OpenApi.OpenApi
-toOpenApiSpec apiInfo commandSchemas querySchemas oauth2Schemas fileSchemas = do
+toOpenApiSpec apiInfo commandSchemas querySchemas oauth2Schemas fileSchemas =
+  toOpenApiSpecWithQueryById apiInfo
+    EndpointSchemas
+      { commandSchemas = commandSchemas
+      , querySchemas = querySchemas
+      , queryByIdSchemas = Map.empty
+      , oauth2Schemas = oauth2Schemas
+      , fileSchemas = fileSchemas
+      }
+
+
+-- | Generate an OpenAPI spec with collection and UUID-keyed query operations.
+--
+-- The legacy 'toOpenApiSpec' API omits the query-by-ID schema family.
+toOpenApiSpecWithQueryById ::
+  ApiInfo ->
+  EndpointSchemas ->
+  OpenApi.OpenApi
+toOpenApiSpecWithQueryById apiInfo endpointSchemas = do
+  let commandSchemas = endpointSchemas.commandSchemas
+  let querySchemas = endpointSchemas.querySchemas
+  let queryByIdSchemas = endpointSchemas.queryByIdSchemas
+  let oauth2Schemas = endpointSchemas.oauth2Schemas
+  let fileSchemas = endpointSchemas.fileSchemas
   let info = GhcMonoid.mempty
         |> Lens.set OpenApiLens.title apiInfo.apiTitle
         |> Lens.set OpenApiLens.version apiInfo.apiVersion
@@ -187,7 +228,7 @@ toOpenApiSpec apiInfo commandSchemas querySchemas oauth2Schemas fileSchemas = do
            ) Set.empty
 
   -- Build list of all tag names
-  let hasQueries = Map.length querySchemas > 0
+  let hasQueries = Map.length querySchemas > 0 || Map.length queryByIdSchemas > 0
   let hasOAuth2 = Map.length oauth2Schemas > 0
   let hasFiles = Map.length fileSchemas > 0
 
@@ -222,6 +263,13 @@ toOpenApiSpec apiInfo commandSchemas querySchemas oauth2Schemas fileSchemas = do
         |> Array.toLinkedList
         |> InsOrdHashMap.fromList
 
+  let queryByIdPaths = queryByIdSchemas
+        |> Map.entries
+        |> Array.map (\(name, schema) -> makeQueryByIdPath name schema)
+        |> Array.map (\(path, item) -> (Text.toLinkedList path, item))
+        |> Array.toLinkedList
+        |> InsOrdHashMap.fromList
+
   let oauth2Paths = oauth2Schemas
         |> Map.entries
         |> Array.map (\(name, schema) -> makeOAuth2Path name schema)
@@ -238,6 +286,7 @@ toOpenApiSpec apiInfo commandSchemas querySchemas oauth2Schemas fileSchemas = do
 
   let allPaths = commandPaths
         |> InsOrdHashMap.union queryPaths
+        |> InsOrdHashMap.union queryByIdPaths
         |> InsOrdHashMap.union oauth2Paths
         |> InsOrdHashMap.union filePaths
 
@@ -307,6 +356,63 @@ makeCommandPath name schema = do
 
   let pathItem = GhcMonoid.mempty
         |> Lens.set OpenApiLens.post (Just operation)
+
+  (path, pathItem)
+
+
+makeQueryByIdPath :: Text -> EndpointSchema -> (Text, OpenApi.PathItem)
+makeQueryByIdPath name schema = do
+  let kebabName = name |> Text.toKebabCase
+  let path = [fmt|/queries/#{kebabName}/{id}|]
+  let idParameter = GhcMonoid.mempty
+        |> Lens.set OpenApiLens.name "id"
+        |> Lens.set OpenApiLens.in_ OpenApi.ParamPath
+        |> Lens.set OpenApiLens.required (Just True)
+        |> Lens.set OpenApiLens.description (Just "Query object UUID")
+        |> Lens.set OpenApiLens.schema (Just (OpenApi.Inline (GhcMonoid.mempty
+             |> Lens.set OpenApiLens.type_ (Just OpenApi.OpenApiString)
+             |> Lens.set OpenApiLens.format (Just "uuid")
+           )))
+
+  let responseContent = InsOrdHashMap.fromList
+        [ ("application/json", GhcMonoid.mempty
+            |> Lens.set OpenApiLens.schema (Just (OpenApi.Inline (toOpenApiSchema schema.responseSchema)))
+          )
+        ]
+  let responses = OpenApi.Responses
+        { OpenApi._responsesDefault = Nothing
+        , OpenApi._responsesResponses = InsOrdHashMap.fromList
+            [ (200, OpenApi.Inline (GhcMonoid.mempty
+                |> Lens.set OpenApiLens.description "Success"
+                |> Lens.set OpenApiLens.content responseContent
+              ))
+            , (400, OpenApi.Inline (GhcMonoid.mempty
+                |> Lens.set OpenApiLens.description "Invalid query object UUID"
+              ))
+            , (401, OpenApi.Inline (GhcMonoid.mempty
+                |> Lens.set OpenApiLens.description "Unauthorized"
+              ))
+            , (403, OpenApi.Inline (GhcMonoid.mempty
+                |> Lens.set OpenApiLens.description "Forbidden"
+              ))
+            , (404, OpenApi.Inline (GhcMonoid.mempty
+                |> Lens.set OpenApiLens.description "Query object not found or not visible"
+              ))
+            , (500, OpenApi.Inline (GhcMonoid.mempty
+                |> Lens.set OpenApiLens.description "Internal Server Error"
+              ))
+            ]
+        }
+
+  let operation = GhcMonoid.mempty
+        |> Lens.set OpenApiLens.summary (Just name)
+        |> Lens.set OpenApiLens.description (Just schema.description)
+        |> Lens.set OpenApiLens.deprecated (Just schema.deprecated)
+        |> Lens.set OpenApiLens.tags ["Queries"]
+        |> Lens.set OpenApiLens.parameters [OpenApi.Inline idParameter]
+        |> Lens.set OpenApiLens.responses responses
+  let pathItem = GhcMonoid.mempty
+        |> Lens.set OpenApiLens.get (Just operation)
 
   (path, pathItem)
 

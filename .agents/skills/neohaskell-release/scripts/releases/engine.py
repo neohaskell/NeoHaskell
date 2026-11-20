@@ -923,21 +923,35 @@ def check_checkout(repo, base, pr_message=None):
     if before != after:
         raise ValueError("A feature PR cannot rewrite release history")
     revisions = repo.git("rev-list", "--no-merges", base + ".." + head).splitlines()
+    commit_impacts = []
+    for sha in revisions:
+        message = repo.git("show", "-s", "--format=%B", sha)
+        commit_impacts.append(
+            (message, release_impact(repo, message, sha + "^1", sha))
+        )
     needs = max(
-        (
-            release_impact(
-                repo, repo.git("show", "-s", "--format=%B", sha), sha + "^1", sha
-            )
-            for sha in revisions
-        ),
+        (impact for _, impact in commit_impacts),
         key=IMPACTS.get,
         default="none",
     )
     if pr_message:
         merge_base = repo.git("merge-base", base, head)
-        needs = max(
-            needs, release_impact(repo, pr_message, merge_base, head), key=IMPACTS.get
+        pr_impact = release_impact(repo, pr_message, merge_base, head)
+        needs = max(needs, pr_impact, key=IMPACTS.get)
+        is_nonbreaking_dependency_maintenance = (
+            re.match(r"fix\(deps\):", pr_message) is not None
+            and pr_impact == "none"
+            and all(
+                impact == "none"
+                or (
+                    impact == "compatible"
+                    and re.match(r"fix\(deps\):", message) is not None
+                )
+                for message, impact in commit_impacts
+            )
         )
+        if is_nonbreaking_dependency_maintenance:
+            needs = "none"
     changed = set(repo.git("diff", "--name-only", base + "..." + head).splitlines())
     pending = [
         n for n in notes if n["path"] in changed or n["path"] not in repo.tree(base)

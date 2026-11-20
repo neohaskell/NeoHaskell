@@ -369,6 +369,7 @@ authenticatedContext userId =
     , requestId = Uuid.nil
     , timestamp = DateTime.fromEpochSeconds 0
     , trustedBypass = False
+    , origin = Nothing
     }
 
 

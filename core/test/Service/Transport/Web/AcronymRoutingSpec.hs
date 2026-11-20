@@ -74,6 +74,7 @@ spec = do
             { Transport.transport = Web.server
             , Transport.commandEndpoints = webHandlers
             , Transport.queryEndpoints = Map.empty
+            , Transport.queryByIdEndpoints = Map.empty
             , Transport.commandSchemas = webSchemas
             , Transport.querySchemas = Map.empty
             }

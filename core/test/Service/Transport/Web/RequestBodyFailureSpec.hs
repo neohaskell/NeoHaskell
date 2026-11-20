@@ -271,6 +271,7 @@ requestBodyEndpoints handler =
     { Transport.transport = Web.server
     , Transport.commandEndpoints = Map.fromArray [("body-probe", handler)]
     , Transport.queryEndpoints = Map.empty
+    , Transport.queryByIdEndpoints = Map.empty
     , Transport.commandSchemas = Map.empty
     , Transport.querySchemas = Map.empty
     }
@@ -377,6 +378,7 @@ webProbeEndpoints eventStore = do
       { Transport.transport = Web.server
       , Transport.commandEndpoints = commandEndpoints
       , Transport.queryEndpoints = Map.empty
+      , Transport.queryByIdEndpoints = Map.empty
       , Transport.commandSchemas = commandSchemas
       , Transport.querySchemas = Map.empty
       }
