@@ -1,6 +1,8 @@
 module Service.FileUpload.FileStateStore.PostgresSpec (spec) where
 
 import Core
+import AsyncTask qualified
+import Environment qualified
 import Hasql.Pool (Pool)
 import Hasql.Pool qualified as HasqlPool
 import Hasql.Session qualified as Session
@@ -8,14 +10,28 @@ import LinkedList qualified
 import Maybe qualified
 import Result qualified
 import Service.EventStore.Postgres (PostgresEventStore (..))
-import Service.FileUpload.Core (FileStateStoreBackend (..))
+import Service.FileUpload.Core (
+  BlobKey (..),
+  ContentHash (..),
+  FileCreation (..),
+  FileDeletedData (..),
+  FileDeletionReason (..),
+  FileRef (..),
+  FileStateStoreBackend (..),
+  FileUploadedData (..),
+  FileUploadEvent (..),
+  OwnerHash (..),
+ )
 import Service.FileUpload.FileStateStore.Postgres qualified as PostgresFileStore
+import Service.FileUpload.Lifecycle (FileUploadState (..))
+import Service.FileUpload.Lifecycle qualified as Lifecycle
 import Service.FileUpload.Web (FileStateStore (..))
 import Service.Infra.Postgres.ConnectionConfig (ConnectionParams (..), SslMode (..))
 import Service.Infra.Postgres.ConnectionConfig qualified as ConnectionConfig
 import Task qualified
 import Test
 import Test.Service.FileUpload.FileStateStore qualified as FileStateStoreSpec
+import Text qualified
 
 
 -- | Test configuration - same as other Postgres tests in the codebase
@@ -24,11 +40,11 @@ import Test.Service.FileUpload.FileStateStore qualified as FileStateStoreSpec
 -- record UPDATE would be ambiguous under -XDuplicateRecordFields. Constructing
 -- via the named constructor disambiguates. Values mirror the old def-based
 -- fixture (poolSize/sslMode/sslRootCert at their PostgresEventStore defaults).
-testConfig :: PostgresEventStore
-testConfig =
+testConfig :: Text -> PostgresEventStore
+testConfig databaseName =
   PostgresEventStore
     { host = "localhost"
-    , databaseName = "neohaskell"
+    , databaseName = databaseName
     , user = "neohaskell"
     , password = "neohaskell"
     , port = 5432
@@ -37,6 +53,14 @@ testConfig =
     , sslRootCert = Nothing
     , erasableApplicationScope = ""
     }
+
+
+withFreshStore :: PostgresEventStore -> (FileStateStore -> Task Text result) -> Task Text result
+withFreshStore config operation = do
+  (store, pool) <- PostgresFileStore.newWithCleanup config
+  Task.finally
+    (HasqlPool.release pool |> Task.fromIO)
+    (operation store)
 
 
 -- WI-5 (#684) regression: the FileUpload state-store pool must run on the same
@@ -70,6 +94,14 @@ paramsFor cfg =
     , sslMode = cfg.sslMode
     , sslRootCert = cfg.sslRootCert
     }
+
+
+privateDatabase :: Task Text Text
+privateDatabase = do
+  databaseName <- Environment.getVariable "FILE_UPLOAD_TEST_DB"
+  if Text.isEmpty databaseName || databaseName == "neohaskell"
+    then Task.throw "FILE_UPLOAD_TEST_DB must name a dedicated PostgreSQL test database"
+    else Task.yield databaseName
 
 
 sslThreadingSpec :: Spec Unit
@@ -138,35 +170,185 @@ spec = do
     -- Note: newWithCleanup creates a pool internally. The pool is explicitly
     -- released after use to prevent connection leaks in tests.
     let newStore = do
-          let withFreshStore operation = do
-                (store, pool) <- PostgresFileStore.newWithCleanup testConfig
-                Task.finally
-                  (HasqlPool.release pool |> Task.fromIO)
-                  (operation store)
+          databaseName <- privateDatabase
+          let config = testConfig databaseName
           -- Reset table for test isolation using a short-lived pool
-          (_, setupPool) <- PostgresFileStore.newWithCleanup testConfig
+          (_, setupPool) <- PostgresFileStore.newWithCleanup config
           Task.finally
             (HasqlPool.release setupPool |> Task.fromIO)
             (dropTable setupPool)
-          let getState fileRef =
-                withFreshStore \store ->
+          let getState :: FileRef -> Task Text (Maybe FileUploadState)
+              getState fileRef =
+                withFreshStore config \store ->
                   store.getState fileRef
-          let setState fileRef state =
-                withFreshStore \store ->
+              setState :: FileRef -> FileUploadState -> Task Text ()
+              setState fileRef state =
+                withFreshStore config \store ->
                   store.setState fileRef state
-          let updateState fileRef event =
-                withFreshStore \store ->
+              updateState :: FileRef -> FileUploadEvent -> Task Text ()
+              updateState fileRef event =
+                withFreshStore config \store ->
                   store.updateState fileRef event
-          let findByContentHash ownerHashVal contentHashVal =
-                withFreshStore \store ->
+              findByContentHash :: OwnerHash -> ContentHash -> Task Text (Maybe FileRef)
+              findByContentHash ownerHashVal contentHashVal =
+                withFreshStore config \store ->
                   store.findByContentHash ownerHashVal contentHashVal
-          Task.yield FileStateStore {getState, setState, updateState, findByContentHash}
+              reserveCreation :: FileCreation -> Task Text FileCreation
+              reserveCreation creation =
+                withFreshStore config \store ->
+                  store.reserveCreation creation
+              publishRetained :: FileCreation -> Task Text ()
+              publishRetained creation =
+                withFreshStore config \store ->
+                  store.publishRetained creation
+          Task.yield FileStateStore {getState, setState, updateState, findByContentHash, reserveCreation, publishRetained}
     FileStateStoreSpec.spec newStore
+    it "rolls back a rejected update before reusing the same one-connection pool" \_ -> do
+      databaseName <- privateDatabase
+      let config = (testConfig databaseName) {poolSize = 1}
+      (_, setupPool) <- PostgresFileStore.newWithCleanup config
+      Task.finally
+        (HasqlPool.release setupPool |> Task.fromIO)
+        (dropTable setupPool)
+      (store, pool) <- PostgresFileStore.newWithCleanup config
+      Task.finally
+        (HasqlPool.release pool |> Task.fromIO)
+        do
+          let owner = OwnerHash "transaction-cleanup-owner"
+          let duplicateHash = ContentHash "transaction-cleanup-duplicate"
+          let firstRef = FileRef "transaction-cleanup-first"
+          let rejectedRef = FileRef "transaction-cleanup-rejected"
+          let laterRef = FileRef "transaction-cleanup-later"
+          let uploaded fileRef contentHash = FileUploaded FileUploadedData
+                { fileRef = fileRef
+                , ownerHash = owner
+                , contentHash = contentHash
+                , filename = "transaction-cleanup.txt"
+                , contentType = "text/plain"
+                , sizeBytes = 36
+                , blobKey = BlobKey "transaction-cleanup-blob"
+                , expiresAt = 2000000000
+                , uploadedAt = 1700000000
+                }
+          store.updateState firstRef (uploaded firstRef duplicateHash)
+          rejectedResult <- store.updateState rejectedRef (uploaded rejectedRef duplicateHash) |> Task.asResult
+          case rejectedResult of
+            Err err -> Text.contains "23505" err |> shouldBe True
+            Ok _ -> fail "Expected duplicate owner/content state to be rejected"
+          firstStateResult <- store.getState firstRef |> Task.asResult
+          case firstStateResult of
+            Ok (Just (Pending _)) -> pass
+            Err err -> fail [fmt|The first pending state became unreadable after rejection: #{err}|]
+            _ -> fail "The first pending state must survive a rejected duplicate update"
+          rejectedStateResult <- store.getState rejectedRef |> Task.asResult
+          rejectedStateResult |> shouldBe (Ok Nothing)
+          laterWriteResult <- store.updateState laterRef (uploaded laterRef (ContentHash "transaction-cleanup-later")) |> Task.asResult
+          laterWriteResult |> shouldBe (Ok ())
+          laterStateResult <- store.getState laterRef |> Task.asResult
+          case laterStateResult of
+            Ok (Just (Pending _)) -> pass
+            _ -> fail "A distinct update must succeed after the rejected duplicate"
+    it "keeps one reservation across concurrent PostgreSQL writers, reopen, and pending cleanup" \_ -> do
+      databaseName <- privateDatabase
+      let config = testConfig databaseName
+      (_, setupPool) <- PostgresFileStore.newWithCleanup config
+      Task.finally
+        (HasqlPool.release setupPool |> Task.fromIO)
+        (dropTable setupPool)
+      let firstCandidate = testCreation "first"
+      let competingCandidate = testCreation "second"
+      (firstCandidate.fileRef != competingCandidate.fileRef) |> shouldBe True
+      (firstCandidate.blobKey != competingCandidate.blobKey) |> shouldBe True
+      (store, pool) <- PostgresFileStore.newWithCleanup config
+      Task.finally
+        (HasqlPool.release pool |> Task.fromIO)
+        do
+          (first, second) <- AsyncTask.runConcurrently
+            (store.reserveCreation firstCandidate, store.reserveCreation competingCandidate)
+          first |> shouldBe second
+          (reopened, reopenedPool) <- PostgresFileStore.newWithCleanup config
+          Task.finally
+            (HasqlPool.release reopenedPool |> Task.fromIO)
+            do
+              repeated <- reopened.reserveCreation firstCandidate
+              repeated |> shouldBe first
+              reopened.publishRetained repeated
+              retainedState <- reopened.getState repeated.fileRef
+              case retainedState of
+                Just (Retained _) -> pass
+                _ -> fail "Expected the published reservation after reopening the PostgreSQL store"
+              PostgresFileStore.deleteFileState reopenedPool repeated.fileRef
+              stateAfterCleanup <- reopened.getState repeated.fileRef
+              case stateAfterCleanup of
+                Just (Retained _) -> pass
+                _ -> fail "Pending cleanup must preserve retained state and its creation identity"
+              reopened.updateState repeated.fileRef (FileDeleted FileDeletedData
+                { fileRef = repeated.fileRef
+                , reason = UserRequested
+                , deletedAt = 1700000100
+                })
+              PostgresFileStore.deleteFileState reopenedPool repeated.fileRef
+              deletedState <- reopened.getState repeated.fileRef
+              deletedState |> shouldBe (Just Deleted)
+              stillCanonical <- reopened.reserveCreation competingCandidate
+              stillCanonical |> shouldBe first
+
+    it "still deletes a confirmed state without a creation identity" \_ -> do
+      databaseName <- privateDatabase
+      let config = testConfig databaseName
+      (_, setupPool) <- PostgresFileStore.newWithCleanup config
+      Task.finally
+        (HasqlPool.release setupPool |> Task.fromIO)
+        (dropTable setupPool)
+      (store, pool) <- PostgresFileStore.newWithCleanup config
+      Task.finally
+        (HasqlPool.release pool |> Task.fromIO)
+        do
+          let fileRef = FileRef "legacy-confirmed-cleanup"
+          let confirmed = Confirmed Lifecycle.ConfirmedFile
+                { metadata = Lifecycle.FileMetadata
+                    { ref = fileRef
+                    , filename = "legacy.pdf"
+                    , contentType = "application/pdf"
+                    , sizeBytes = 4
+                    , blobKey = BlobKey "legacy-confirmed-blob"
+                    , uploadedAt = 1700000000
+                    , contentHash = ContentHash "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+                    }
+                , ownerHash = OwnerHash "legacy-confirmed-owner"
+                , confirmedByRequestId = "legacy-confirmed-request"
+                }
+          store.setState fileRef confirmed
+          PostgresFileStore.deleteFileState pool fileRef
+          stateAfterCleanup <- store.getState fileRef
+          stateAfterCleanup |> shouldBe Nothing
+
+
+testCreation :: Text -> FileCreation
+testCreation variant =
+  FileCreation
+    { ownerHash = OwnerHash "postgres-create-file-owner",
+      creationKey = "postgres-create-file-key",
+      fileRef = FileRef [fmt|file_postgres_create_#{variant}|],
+      blobKey = BlobKey [fmt|blob_postgres_create_#{variant}|],
+      filename = "report.pdf",
+      contentType = "application/pdf",
+      sizeBytes = 8,
+      contentHash = ContentHash "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      createdAt = 1700000000
+    }
 
 
 -- | Drop table for test isolation
 dropTable :: Pool -> Task Text ()
 dropTable pool = do
+  let dropCreationTable = Session.sql "DROP TABLE IF EXISTS file_creation CASCADE"
+  creationResult <- HasqlPool.use pool dropCreationTable
+    |> Task.fromIO
+    |> Task.map Result.fromEither
+  case creationResult of
+    Err err -> Task.throw [fmt|Failed to drop file creation table: #{show err}|]
+    Ok _ -> pass
   let session = Session.sql "DROP TABLE IF EXISTS file_upload_state CASCADE"
   result <- HasqlPool.use pool session
     |> Task.fromIO

@@ -31,7 +31,7 @@ import Service.Event.EntityName (EntityName (..))
 import Service.Event.EventMetadata (EventMetadata (..))
 import Service.Event.StreamId qualified as StreamId
 import Service.EventStore.InMemory qualified as InMemory
-import Service.FileUpload.Core (FileAccessError (..), FileRef (..))
+import Service.FileUpload.Core (FileAccessError (..), FileCreationError (..), FileRef (..))
 import Service.Integration.DispatchRegistry qualified as DispatchRegistry
 import Service.Integration.Dispatcher qualified as Dispatcher
 import Service.Transport (DispatchHandler)
@@ -159,6 +159,7 @@ spec = do
       let missingFile = FileAccessContext
             { retrieveFile = \ref -> Task.throw (FileNotFound ref)
             , getFileMetadata = \ref -> Task.throw (FileNotFound ref)
+            , createFile = \_ -> Task.throw InvalidFileMetadata
             }
       ctx <- Task.runOrPanic (makeContext (Just missingFile))
       outcome <- Task.runOrPanic (textTask (executeExtraction runner ctx (makeRequest VideoAudio.defaultConfig) |> Task.asResult))
@@ -385,6 +386,7 @@ videoAccess :: FileAccessContext
 videoAccess = FileAccessContext
   { retrieveFile = \_ -> Task.yield fakeVideoBytes
   , getFileMetadata = \_ -> Task.throw (StorageError "metadata not available")
+  , createFile = \_ -> Task.throw InvalidFileMetadata
   }
 
 

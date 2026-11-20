@@ -10,6 +10,8 @@ import Testbed.AccountConnection.Feature (accountConnectionFlow)
 import Testbed.Config (TestbedConfig)
 import Testbed.Erasable.Owned.Feature (ownedErasureFlow)
 import Testbed.Erasable.Owned.ReplayGateStore (ReplayGateStoreConfig (..))
+import Testbed.GeneratedPdf.Feature (generatedPdfFlow)
+import Testbed.Infrastructure (makeFileUploadConfig)
 import Testbed.OAuth2.Configuration (makeOAuthPostgresConfig, oauthApiInfo, providerConfig)
 
 
@@ -18,9 +20,12 @@ oauthEventModel oauthPort fixturePort queueTimeoutMode = EventModel.eventModel d
   EventModel.appName "OAuth2 testbed"
   EventModel.withConfig @TestbedConfig
   EventModel.withEventStore makeOAuthPostgresConfig
-  EventModel.withTransport (WebTransport.server {WebTransport.port = oauthPort})
+  EventModel.withTransport WebTransport.server
+  EventModel.withHost "127.0.0.1"
+  EventModel.withPort oauthPort
   EventModel.withApiInfo @() (\_ -> oauthApiInfo)
   EventModel.withQueryObjectStore ReplayGateStoreConfig
+  EventModel.withFileUpload makeFileUploadConfig
   EventModel.withAuth @() (\_ -> [fmt|http://127.0.0.1:#{fixturePort}/oidc|])
   EventModel.withOAuth2StateKey "OAUTH2_TESTBED_STATE_KEY"
   EventModel.withOAuth2Provider @() (\_ -> providerConfig oauthPort fixturePort)
@@ -28,6 +33,7 @@ oauthEventModel oauthPort fixturePort queueTimeoutMode = EventModel.eventModel d
   EventModel.features do
     accountConnectionFlow
     ownedErasureFlow
+    generatedPdfFlow
 
 
 configureDispatcher :: Bool -> EventModel.EventModelAction

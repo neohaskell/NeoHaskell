@@ -17,6 +17,7 @@ import Service.FileUpload.Lifecycle (
   FileMetadata (..),
   FileUploadState (..),
   PendingFile (..),
+  RetainedFile (..),
   canConfirm,
   canDelete,
   getBlobKey,
@@ -156,6 +157,15 @@ spec = do
           let state = update deleteEvent confirmedState
           state |> shouldBe Deleted
 
+        it "transitions Retained to Deleted" \_ -> do
+          let retainedState = mkRetainedState
+          let deleteEvent = FileDeleted FileDeletedData
+                { fileRef = FileRef "ref-retained"
+                , reason = UserRequested
+                , deletedAt = 1700004000
+                }
+          update deleteEvent retainedState |> shouldBe Deleted
+
         it "is idempotent - deleting Deleted is no-op" \_ -> do
           let deleteEvent = FileDeleted FileDeletedData
                 { fileRef = FileRef "ref-1"
@@ -164,6 +174,22 @@ spec = do
                 }
           let state = update deleteEvent Deleted
           state |> shouldBe Deleted
+
+      describe "Retained state" do
+        it "does not expire or accept browser confirmation" \_ -> do
+          let state = mkRetainedState
+          canConfirm state 1700000000 |> shouldBe False
+          isExpired state 1700000000 |> shouldBe False
+
+        it "retains owner and blob metadata and allows explicit deletion" \_ -> do
+          let state = mkRetainedState
+          canDelete state |> shouldBe True
+          getOwnerHash state |> shouldBe (Just (OwnerHash "owner-retained"))
+          getBlobKey state |> shouldBe (Just (BlobKey "blob-retained"))
+
+        it "does not become Pending when a browser upload event is applied" \_ -> do
+          let state = mkRetainedState
+          update (mkFileUploadedEvent "ref-retained" 1700005000 1700008600) state |> shouldBe state
 
     -- ==========================================================================
     -- Validation Helpers
@@ -313,6 +339,21 @@ mkConfirmEvent refId =
     , confirmedByRequestId = "request-default"
     , confirmedAt = 1700000100
     }
+
+
+mkRetainedState :: FileUploadState
+mkRetainedState = Retained RetainedFile
+  { metadata = FileMetadata
+      { ref = FileRef "ref-retained"
+      , filename = "retained.pdf"
+      , contentType = "application/pdf"
+      , sizeBytes = 3
+      , blobKey = BlobKey "blob-retained"
+      , uploadedAt = 1700000000
+      , contentHash = ContentHash "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"
+      }
+  , ownerHash = OwnerHash "owner-retained"
+  }
 
 
 -- Types and functions imported from Service.FileUpload.Core and Service.FileUpload.Lifecycle

@@ -495,16 +495,16 @@
     "neohaskell": {
       "flake": false,
       "locked": {
-        "lastModified": 1792677146,
-        "narHash": "sha256-U9+eka5EBtaxqcTrlfFF2ngvtn1Zb0zMIWaLyLI7MwQ=",
+        "lastModified": 1793517328,
+        "narHash": "sha256-cpydo4ze2Ch8y1Ffw0H6CDaBiZLw4MakROBPZgoAUh0=",
         "ref": "refs/heads/main",
-        "rev": "cbdc45f1bb89c9c7bb8da9fbdb25343771d924ca",
-        "revCount": 314,
+        "rev": "ea75873fbd0da7da39124c82f328c2e70bdca629",
+        "revCount": 386,
         "type": "git",
         "url": "https://github.com/neohaskell/neohaskell.git"
       },
       "original": {
-        "rev": "cbdc45f1bb89c9c7bb8da9fbdb25343771d924ca",
+        "rev": "ea75873fbd0da7da39124c82f328c2e70bdca629",
         "type": "git",
         "url": "https://github.com/neohaskell/neohaskell.git"
       }

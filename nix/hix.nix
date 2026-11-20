@@ -31,6 +31,7 @@
     unset _nh_root
   '';
   shell.buildInputs = with pkgs; [
+    (callPackage ./act.nix { })
     git
     nixfmt-classic
     postgresql

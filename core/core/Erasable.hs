@@ -35,7 +35,7 @@ instance Json.FromJSON (Erasable value) where
 
 
 instance (Schema.ToSchema value) => Schema.ToSchema (Erasable value) where
-  toSchema = Schema.SUnion [("Available", Schema.toSchema @value), ("Erased", Schema.SNull)]
+  toSchema = Schema.SUnionWithContents [("Available", Schema.toSchema @value), ("Erased", Schema.SNull)]
 
 
 new :: (Json.ToJSON value) => value -> Decision (Erasable value)

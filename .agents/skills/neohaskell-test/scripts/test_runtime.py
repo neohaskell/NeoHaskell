@@ -10,6 +10,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
@@ -241,6 +242,21 @@ def run_testbed(root: Path, env: dict[str, str], timeout: float) -> tuple[str, s
         return "FAIL", f"testbed output exceeded {MAX_OUTPUT_BYTES} bytes", result
     if result.returncode != 0:
         return "FAIL", f"testbed runner exited with status {result.returncode}", result
+    expected = Counter(
+        path.relative_to(root / "testbed/tests").as_posix()
+        for path in (root / "testbed/tests").rglob("*.hurl")
+    )
+    observed = Counter(
+        "/".join(Path(path).parts[-2:])
+        for path in re.findall(
+            r"^Success (.+?\.hurl) \(", result.output.decode("utf-8", errors="replace"), re.MULTILINE
+        )
+    )
+    if expected != observed:
+        missing = sorted((expected - observed).elements())
+        unexpected = sorted((observed - expected).elements())
+        reason = f"Hurl selection differs from checked-in files; missing={missing}; unexpected={unexpected}"
+        return "FAIL", reason, result
     return "PASS", "maintained Hurl testbed runner completed", result
 
 

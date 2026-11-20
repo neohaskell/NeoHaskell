@@ -1,5 +1,166 @@
 # Changelog
 
+## 0.18.0 — 2026-11-16
+
+### Breaking changes
+
+- **Framework**: Web commands can read the socket client address and User-Agent through `RequestContext.origin`. `Text.fromBytesIfValid` decodes valid UTF-8 bytes without throwing. Apps that construct `WebTransport` or `RequestContext` records directly must add the new fields. The trusted proxy set stays empty by default. ([change](https://github.com/neohaskell/NeoHaskell/commit/196e4dfff0d7d5015dd4385e7f329c71d0524a49))
+
+### Added
+
+- **Framework**: Read one query row with `GET /queries/{query-name}/{id}` using the UUID chosen by the query's `queryId`. A successful read returns the row as JSON. Missing rows and rows hidden by `canView` return the same HTTP 404 response. Query access checks still run before storage access. Existing query declarations need no changes, and collection endpoints remain available. ([change](https://github.com/neohaskell/NeoHaskell/commit/adf0b6c1332c9683c6c5e52fa865e299e088c95d))
+
+### Migration from 0.17.1
+
+#### Framework
+
+Calls to `WebTransport.server` need no change. `emptyContext`, `anonymousContext`, `authenticatedContext`, and `trustedContext` already set `origin = Nothing`. If your app constructs either record directly, add the corresponding field below. Import `Service.Transport.Web` as `WebTransport` and `Service.Auth` as `Auth` to match the examples. Import `Set qualified as Set` if your app does not already import `Set`.
+
+```diff
+  , WebTransport.readinessProbe = Nothing
++ , WebTransport.trustedProxyAddresses = Set.empty
+```
+
+```diff
+  , Auth.trustedBypass = False
++ , Auth.origin = Nothing
+```
+
+`WebTransport.server` leaves the trusted proxy set empty. Trust a proxy only when your deployment requires it. `trustedProxyAddressFromText :: Text -> Result Text TrustedProxyAddress` accepts an exact IPv4 or IPv6 literal. Handle `Result.Err` before adding a parsed address to the set. Treat request-origin values as untrusted. Do not store them in events or logs without a reviewed privacy and retention purpose.
+
+### Verify
+
+From the generated app's root, run:
+
+```sh
+neo build --ci
+neo test --ci
+```
+
+Both commands must succeed. `neo test --ci` runs the app's Cabal tests and discovered Hurl scenarios.
+
+<details>
+<summary>Copy this prompt to your coding agent</summary>
+
+```text
+Migrate Framework from NeoHaskell 0.17.1 to 0.18.0.
+Update this NeoHaskell app for the request-origin changes in NeoHaskell 0.18.0.
+
+Find every app-authored full WebTransport and RequestContext record constructor. Leave WebTransport.server and the emptyContext, anonymousContext, authenticatedContext, and trustedContext helpers unchanged. Add trustedProxyAddresses = Set.empty to each direct WebTransport record. Add origin = Nothing to each internal RequestContext record.
+
+For example, a WebTransport record that ends with readinessProbe = Nothing gains trustedProxyAddresses = Set.empty. An internal RequestContext that ends with trustedBypass = False gains origin = Nothing. Use the field qualification that matches the app's imports.
+
+Import Set qualified as Set if the app does not already import Set.
+
+Do not enable forwarded addresses by default. Verify that trustedProxyAddressFromText :: Text -> Result Text TrustedProxyAddress accepts exact IPv4 or IPv6 literals. If the app's deployment explicitly requires a trusted proxy, handle Result.Err. Add only a parsed Result.Ok address to the trusted set. Ask the app owner to settle an unclear proxy policy. Treat request-origin values as untrusted. Do not store them in events or logs without a reviewed purpose.
+
+From the app root, run neo build --ci and neo test --ci. Both commands must pass. The test command runs the app's Cabal tests and discovered Hurl scenarios. Report changed files, command results, remaining direct record constructors, and any proxy policy that needs app-owner input.
+```
+
+</details>
+
+[Compare changes](https://github.com/neohaskell/NeoHaskell/compare/neo-v0.17.1...neo-v0.18.0)
+
+## 0.17.1 — 2026-11-06
+
+### Added
+
+- **Framework**: Integrations can save generated PDFs and other documents as owned files with `fileAccess.createFile`. Pass the owner captured by an authorized command, a stable document job key, and the document bytes. The returned `FileRef` works with the existing authenticated download route and has no temporary-upload expiry.
+
+Retrying a completed job with the same owner, key, and metadata returns the same reference and preserves its first completed bytes. An unfinished job or a missing stored file requires the original bytes. Applications must explicitly reconcile abandoned jobs because file creation and the command that records its reference are separate operations.
+
+Existing applications configured with `withFileUpload` keep their setup. To use the feature, create the file inside `Integration.action` and save its reference through a completion command. Verify that the owner can download the document and a retried job returns the same reference. ([change](https://github.com/neohaskell/NeoHaskell/commit/cc619bb61906fcb79f78b85a8e8b6dd9ec2beb69))
+
+[Compare changes](https://github.com/neohaskell/NeoHaskell/compare/neo-v0.17.0...neo-v0.17.1)
+
+## 0.17.0 — 2026-11-03
+
+### Breaking changes
+
+- **Framework**: You can now choose which network address and port your web server listens on. Add `EventModel.withHost "127.0.0.1"` and `EventModel.withPort 9090` in a named Event Model, or `Application.withHost "127.0.0.1"` and `Application.withPort 9090` in direct `Application` assembly. `WebTransport.host` also accepts `"*"`, the family preferences `"*4"` and `"*6"`, strict-family `"!4"` and `"!6"`, a bare address or hostname, or a bracketed IPv6 literal such as `"[::1]"`. Family preferences may fall back to the other family and do not guarantee strict isolation.
+
+Loopback (`"127.0.0.1"` or `"::1"`) is the right choice when your reverse proxy runs on the same machine or in the same container as the app. If the proxy runs in its own container network or on another host, it cannot reach a loopback listener. Keep a non-loopback bind and restrict access with your firewall or network policy instead.
+
+Invalid bind settings fail at startup with a clear message before opening sockets. An empty host, whitespace, a URL or path like `"http://127.0.0.1"`, a `host:port` pair, or malformed or non-IPv6 brackets (`"[]"`, `"[localhost]"`, `"[::1"`) fails with `Application.withHost: ...`. Port `0` and values outside `1..65535` fail with `Application.withPort: ...`. If the port is already in use or the address does not belong to this machine, startup stops with `WebTransport could not bind <host>:<port>: ...`.
+
+The default remains port 8080 and Warp's existing `"*4"` IPv4 preference, including its fallback behavior. A custom transport host or port is preserved when the corresponding override is omitted.
+
+This change is marked breaking for full-field record construction and prior ephemeral-port usage. `WebTransport` and `Application` each gained fields, so code that builds either record by naming every field must add the new ones. Apps using `WebTransport.server`, `EventModel.eventModel`, or `Application.new` need no change. A custom transport that previously used port `0` must choose a fixed port in `1..65535`. ([change](https://github.com/neohaskell/NeoHaskell/commit/efa79f0e1bc4fb4a9af4f1c706181c7a9c10d917))
+
+### Fixed
+
+- **Framework**: OpenAPI now describes query results as one page of rows and command responses with fields beside their `tag`. Regenerate API clients to replace types based on the old schema. HTTP response bodies did not change. ([change](https://github.com/neohaskell/NeoHaskell/commit/4cb078c88b8353c6fb723f051feb07bf06d4707e))
+- **Framework**: The maintained testbed now runs its file upload, download, and upload error checks with the other HTTP tests. This catches file endpoint regressions in the project test run. Existing applications need no code or data change. ([change](https://github.com/neohaskell/NeoHaskell/commit/9a2afa0cc4e92cd697d913a410f970a63371ee8c))
+- **Framework**: OpenAPI now describes an available protected value with its fields inside `contents`, matching the response returned by an authorized query. Generated clients can read a protected payload such as `firstSecret.contents.name` without a schema mismatch. Applications need no code change. ([change](https://github.com/neohaskell/NeoHaskell/commit/b9b3491476b87da7f3f60fe2ca9c5ad65febb0ba))
+
+### Migration from 0.16.0
+
+#### Framework
+
+Search your code for a `WebTransport { ... }` or `Application { ... }` record written with every field. Also search for custom port `0` settings and change them to a fixed port in `1..65535`. Default-only apps need no migration.
+
+- In a `WebTransport { ... }` record, add `host = "*4"` to keep the previous behavior, or `host = "127.0.0.1"` to accept local connections only.
+- In an `Application { ... }` record, add `bindHost = Nothing` and `bindPort = Nothing`.
+
+Prefer `EventModel.withHost` and `EventModel.withPort`, `Application.withHost` and `Application.withPort`, or `WebTransport.server { port = 9090 }` over naming every field.
+
+### Verify
+
+Build your app, start it, and request `/health` on the address you chose. To check the framework change itself, run `nix develop --command .agents/skills/tdd/scripts/test-match "WebTransport bind host and port" nhcore-test-service`. The suite checks `EventModel` and `Application` assembly, owned-instance identity with a competing-server negative control, loopback exclusion, early validation, bracketed IPv6 binding, and returned bind-failure cleanup.
+
+<details>
+<summary>Copy this prompt to your coding agent</summary>
+
+```text
+Migrate Framework from NeoHaskell 0.16.0 to 0.17.0.
+My NeoHaskell app fails to compile after upgrading nhcore. `WebTransport` gained a `host :: Text` field and `Application` gained `bindHost :: Maybe Text` and `bindPort :: Maybe Int`. Find every place that builds a `WebTransport { ... }` or `Application { ... }` record by naming all fields (search for `WebTransport {`, `WebTransport$` followed by `{`, and `Application {`). In each `WebTransport` record add `host = "*4"` so it keeps listening on all IPv4 addresses as before. In each `Application` record add `bindHost = Nothing` and `bindPort = Nothing`. Preserve existing nonzero ports and other fields. If a custom transport uses port 0, explain that this feature rejects ephemeral ports and ask which fixed port in 1..65535 to use. Default-only `WebTransport.server`, `EventModel.eventModel`, and `Application.new` usage needs no edit. Then build the project and run its tests. Report which files you edited and whether the build and tests pass. If my app sits behind a reverse proxy that runs on the same machine or in the same container, tell me I can use `EventModel.withHost "127.0.0.1"` or `Application.withHost "127.0.0.1"` for local-only access. If the proxy runs elsewhere, tell me to keep the default bind. Do not change the bind host without asking.
+```
+
+</details>
+
+[Compare changes](https://github.com/neohaskell/NeoHaskell/compare/neo-v0.16.0...neo-v0.17.0)
+
+## 0.16.0 — 2026-11-02
+
+### Breaking changes
+
+- **Framework**: An Event Model now rejects an inbound Slice that omits or repeats a command and target entity pair promised by its typed worker. Validation reports assembled Slice errors with their Feature, Chapter, and Slice paths before application workers start. Applications with incomplete inbound declarations must list every typed worker output once. ([change](https://github.com/neohaskell/NeoHaskell/commit/eda8a1fa934478383bcc0cd26f43004781d100e2))
+
+### Added
+
+- **Framework**: An application can now start from one named Event Model. Its Features register the declared commands, queries, outbound handlers, and typed inbound workers, while the same model supplies configuration and transport. Existing applications that assemble `Application` directly can keep doing so. For a model-backed application, `EventModel.run appEventModel` replaces a second authored registration list, and each query receives events only from its declared sources and payloads. ([change](https://github.com/neohaskell/NeoHaskell/commit/ee513c56f6118cc9c35dd24e6679dcec2d89c8f2))
+- **Framework**: An Event Model can now run its direct rules as generated Hspec examples. Each example checks a command's complete ordered events or rejection. Query examples check the action and all rows before and after the event. Register generators for requested values and call `specFor` in the test suite. Each sample has separate in-memory storage. Commands that accept an existing entity without emitting events now succeed without appending an empty payload. ([change](https://github.com/neohaskell/NeoHaskell/commit/ea75873fbd0da7da39124c82f328c2e70bdca629))
+
+### Improved
+
+- **CLI**: New applications now start with a Counter Feature and one named Event Model. The example declares its commands and query beside the Counter code, and the application starts from that model. The Counter HTTP workflow remains the same. Existing generated applications need no migration. ([change](https://github.com/neohaskell/NeoHaskell/commit/55a1ce5c8a79c548696ddb8b53b7625393d68fe5))
+
+### Fixed
+
+- **Framework**: Displaying an integration command payload now hides its data. This prevents a protected value's encrypted envelope and reference from appearing when an app logs the payload. Apps do not need to change their commands. ([change](https://github.com/neohaskell/NeoHaskell/commit/53452b9c2055bad027469f3c0eb816473e2a8def))
+
+### Migration from 0.15.0
+
+#### Framework
+
+For each `inboundIntegration @Handler` Slice, compare its `triggersCommand` and `onTargetEntity` declarations with the handler's `InboundOutputsOf` pairs. Add missing pairs and remove repeated pairs. If the application starts with `EventModel.run`, the Slice registers the handler. Remove any separate `Application.withInboundHandler @Handler` registration for that handler in the model-backed application. If the application assembles and runs `Application` directly, keep its `Application.withInboundHandler @Handler` registration.
+
+### Verify
+
+Compile the application and run its inbound integration tests. For an application that starts with `EventModel.run`, evaluate its named `eventModel` before starting workers. In this repository, run `nix develop --command python3 core/test/Service/EventModel/check_compiler_rejections.py`, `nix develop --command cabal test --project-file=cabal.project.dev nhtestbed-spec-demo --test-show-details=direct`, and `nix develop --command .agents/skills/neohaskell-test/scripts/run-testbed --strict` against an isolated PostgreSQL database.
+
+<details>
+<summary>Copy this prompt to your coding agent</summary>
+
+```text
+Migrate Framework from NeoHaskell 0.15.0 to 0.16.0.
+Find each inboundIntegration @Handler Slice and the executable that starts my NeoHaskell application. Compare its triggersCommand and onTargetEntity pairs with the handler's InboundOutputsOf type. Add every missing pair and remove any repeated pair. If the executable calls EventModel.run, use the Slice as the handler registration and remove any separate Application.withInboundHandler @Handler registration for that handler in the model-backed application. If the executable assembles and runs Application directly, keep Application.withInboundHandler @Handler. Compile the application, evaluate its named eventModel if it uses one, run its inbound integration tests, and report changed files and results.
+```
+
+</details>
+
+[Compare changes](https://github.com/neohaskell/NeoHaskell/compare/neo-v0.15.0...neo-v0.16.0)
+
 ## 0.15.0 — 2026-10-30
 
 ### Breaking changes

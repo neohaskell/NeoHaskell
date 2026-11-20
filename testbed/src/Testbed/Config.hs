@@ -16,6 +16,7 @@
 module Testbed.Config (
   TestbedConfig (..),
   HasTestbedConfig,
+  readHost,
   readPort,
 ) where
 
@@ -25,6 +26,14 @@ import Core
 import Environment qualified
 import Task qualified
 import Text qualified
+
+
+readHost :: Text -> Text -> Task Text Text
+readHost name defaultHost = do
+  configured <- Environment.getVariable name |> Task.asResult
+  case configured of
+    Err _ -> Task.yield defaultHost
+    Ok value -> Task.yield value
 
 
 readPort :: Text -> Int -> Task Text Int

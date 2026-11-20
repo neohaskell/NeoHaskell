@@ -1,5 +1,7 @@
 module Service.Transport.Web (
   WebTransport (..),
+  TrustedProxyAddress,
+  trustedProxyAddressFromText,
   AuthEnabled (..),
   OAuth2Config (..),
   FileUploadEnabled (..),
@@ -7,6 +9,11 @@ module Service.Transport.Web (
   HealthCheckConfig (..),
   IntegrationStatus (..),
   server,
+  hostPreference,
+  warpSettings,
+  applyBindOverrides,
+  validateBindHost,
+  validateBindPort,
   isHealthCheckPath,
   buildHealthResponse,
   isReadinessPath,
@@ -23,7 +30,7 @@ import Auth.Jwks (JwksManager)
 import Auth.Middleware qualified as Middleware
 import Auth.OAuth2.Provider (OAuth2Action (..))
 import Auth.OAuth2.Routes (OAuth2Routes (..), OAuth2RouteError (..))
-import Auth.Options (AuthOptions (Authenticated, Everyone))
+import Auth.Options (AuthOptions (Authenticated))
 import Array (Array)
 import Array qualified
 import Basics
@@ -31,10 +38,13 @@ import Bytes (Bytes)
 import Bytes qualified
 import ConcurrentVar qualified
 import Log qualified
+import System.IO.Error (IOError)
 import Data.Aeson qualified as Aeson
 import Data.ByteString qualified as GhcBS
 import Data.ByteString.Lazy qualified as GhcLBS
+import Data.IP qualified as IP
 import Data.List qualified as GhcList
+import Data.Word qualified as GhcWord
 import Data.Yaml qualified as Yaml
 import GHC.TypeLits qualified as GHC
 import Json qualified
@@ -47,6 +57,7 @@ import Network.HTTP.Types.Method qualified as GhcMethod
 import Network.HTTP.Types.Status qualified as HTTP
 import Network.Wai qualified as Wai
 import Network.Wai.Handler.Warp qualified as Warp
+import Network.Socket qualified as Socket
 import Record (KnownHash (..))
 import Record qualified
 import Result (Result (..))
@@ -65,11 +76,13 @@ import Service.AccessControl (AccessError (..), QueryEndpointError (..))
 import Service.Query.Pagination qualified as Pagination
 import Service.Response (CommandResponse)
 import Service.Response qualified as Response
-import Service.Transport (EndpointHandler, Endpoints (..), Transport (..))
+import Service.Transport (EndpointHandler, Endpoints (..), QueryByIdEndpoint (..), Transport (..))
 import Service.Transport.Web.BuiltinSchemas qualified as BuiltinSchemas
 import Service.Transport.Web.Readiness (ReadinessConfig)
 import Service.Transport.Web.Readiness qualified as Readiness
 import Service.Transport.Web.SwaggerUI qualified as SwaggerUI
+import Set (Set)
+import Set qualified
 import Service.Query.Subscriber (Readiness)
 import Service.Query.Subscriber qualified as Subscriber
 import Task (Task)
@@ -77,6 +90,7 @@ import Task qualified
 import Var qualified
 import Text (Text)
 import Text qualified
+import Text.Read qualified as GhcRead
 import ToText (toText)
 import NeoQL qualified
 import Uuid qualified
@@ -148,9 +162,45 @@ data IntegrationStatus = IntegrationStatus
   }
 
 
+-- | An exact IPv4 or IPv6 address trusted to forward request metadata.
+data TrustedProxyAddress
+  = TrustedProxyIPv4 IP.IPv4
+  | TrustedProxyIPv6 IP.IPv6
+  deriving (Eq, Ord)
+
+
+-- | Parse an exact IPv4 or IPv6 literal for the Web transport's trusted proxy set.
+-- The parser rejects hostnames, CIDR ranges, brackets, and whitespace.
+-- Returns 'Result.Err' for any value other than a bare IP literal.
+trustedProxyAddressFromText :: Text -> Result Text TrustedProxyAddress
+trustedProxyAddressFromText addressText =
+  if Text.words addressText != Array.wrap addressText
+    then Result.Err "trusted proxy address must be an exact IPv4 or IPv6 literal"
+    else
+      case GhcRead.readMaybe @IP.IPv4 (Text.toLinkedList addressText) of
+        Maybe.Just ipv4 -> Result.Ok (TrustedProxyIPv4 ipv4)
+        Maybe.Nothing ->
+          case GhcRead.readMaybe @IP.IPv6 (Text.toLinkedList addressText) of
+            Maybe.Just ipv6 -> Result.Ok (TrustedProxyIPv6 ipv6)
+            Maybe.Nothing -> Result.Err "trusted proxy address must be an exact IPv4 or IPv6 literal"
+
+
 -- | HTTP/JSON transport using WAI/Warp.
 data WebTransport = WebTransport
   { port :: Int,
+    -- | Interface to bind. Set via Application.withHost.
+    --
+    -- * @"127.0.0.1"@ (or any literal address such as @"::1"@): that address only.
+    --   Loopback-only suits a reverse proxy that runs in the same network
+    --   namespace (same host, same container, or a shared pod network); a proxy
+    --   in a separate namespace cannot reach this listener through its own loopback.
+    -- * @"*4"@: any interface, IPv4 preferred with IPv6 fallback (Warp's default).
+    -- * @"*6"@: any interface, IPv6 preferred with IPv4 fallback.
+    -- * @"*"@: either family, selected by the platform.
+    -- * @"!4"@ / @"!6"@: IPv4 / IPv6 only.
+    --
+    -- Checked by 'validateBindHost' before the server starts.
+    host :: Text,
     maxBodySize :: Int,
     -- | Optional JWT authentication. Set via Application.withAuth.
     authEnabled :: Maybe AuthEnabled,
@@ -172,7 +222,10 @@ data WebTransport = WebTransport
     readinessConfig :: Maybe ReadinessConfig,
     -- | Readiness probe closure. Built from the live Subscriber in Application.run.
     -- When Nothing, GET /ready returns 404.
-    readinessProbe :: Maybe (Task Text Readiness)
+    readinessProbe :: Maybe (Task Text Readiness),
+    -- | Exact proxy IP addresses trusted as an immediate peer for X-Forwarded-For.
+    -- Empty by default. Parse entries with 'trustedProxyAddressFromText'.
+    trustedProxyAddresses :: Set TrustedProxyAddress
   }
 
 
@@ -184,6 +237,9 @@ deriveKnownHash "WebTransport"
 
 -- | Default WebTransport configuration.
 -- Port defaults to 8080.
+-- Host defaults to "*4" (IPv4 preferred, IPv6 fallback, unchanged from Warp.run).
+-- X-Forwarded-For cannot override the socket peer unless a trusted proxy is configured.
+-- Use Application.withHost "127.0.0.1" to bind IPv4 loopback only.
 -- Max body size defaults to 1MB (1048576 bytes) to prevent DoS attacks.
 -- Auth is disabled by default - use Application.withAuth to enable.
 -- OAuth2 is disabled by default - use Application.withOAuth2Provider to enable.
@@ -193,6 +249,7 @@ server :: WebTransport
 server =
   WebTransport
     { port = 8080,
+      host = "*4",
       maxBodySize = 1048576,
       authEnabled = Nothing,
       oauth2Config = Nothing,
@@ -202,8 +259,239 @@ server =
       healthCheck = Just HealthCheckConfig {healthPath = "health"},
       integrationStatus = Nothing,
       readinessConfig = Nothing,
-      readinessProbe = Nothing
+      readinessProbe = Nothing,
+      trustedProxyAddresses = Set.empty
     }
+
+
+requestOrigin :: Set TrustedProxyAddress -> Wai.Request -> Auth.RequestOrigin
+requestOrigin trustedProxyAddresses request = do
+  let clientAddress = requestClientAddress trustedProxyAddresses request
+  let userAgent = requestUserAgent request
+  Auth.RequestOrigin
+    { Auth.clientAddress = clientAddress
+    , Auth.userAgent = userAgent
+    }
+
+
+requestClientAddress :: Set TrustedProxyAddress -> Wai.Request -> Maybe Text
+requestClientAddress trustedProxyAddresses request =
+  case socketPeerAddress request of
+    Maybe.Nothing -> Maybe.Nothing
+    Maybe.Just peerAddress -> do
+      let forwardedAddress =
+            if Set.contains peerAddress trustedProxyAddresses
+              then requestForwardedAddress trustedProxyAddresses request
+              else Maybe.Nothing
+      let clientAddress = Maybe.withDefault peerAddress forwardedAddress
+      Maybe.Just (trustedProxyAddressText clientAddress)
+
+
+requestUserAgent :: Wai.Request -> Maybe Text
+requestUserAgent request =
+  case uniqueHeaderValue HTTP.hUserAgent request of
+    Maybe.Nothing -> Maybe.Nothing
+    Maybe.Just headerValue -> decodeHeaderText headerValue
+
+
+requestForwardedAddress :: Set TrustedProxyAddress -> Wai.Request -> Maybe TrustedProxyAddress
+requestForwardedAddress trustedProxyAddresses request =
+  case uniqueHeaderValue "X-Forwarded-For" request of
+    Maybe.Nothing -> Maybe.Nothing
+    Maybe.Just headerValue ->
+      case parseForwardedAddresses headerValue of
+        Maybe.Nothing -> Maybe.Nothing
+        Maybe.Just addresses -> nearestUntrustedAddress trustedProxyAddresses addresses
+
+
+uniqueHeaderValue :: HTTP.HeaderName -> Wai.Request -> Maybe GhcBS.ByteString
+uniqueHeaderValue headerName request =
+  case
+    request.requestHeaders
+      |> GhcList.filter (\(name, _) -> name == headerName)
+      |> GhcList.map (\(_, value) -> value)
+  of
+    [] -> Maybe.Nothing
+    [headerValue] -> Maybe.Just headerValue
+    _ -> Maybe.Nothing
+
+
+parseForwardedAddresses :: GhcBS.ByteString -> Maybe [TrustedProxyAddress]
+parseForwardedAddresses headerValue =
+  if GhcBS.length headerValue > maxForwardedHeaderBytes
+    then Maybe.Nothing
+    else do
+      let addressValues = GhcBS.split 44 headerValue
+      if GhcList.length addressValues > maxForwardedHops
+        then Maybe.Nothing
+        else parseForwardedAddressValues addressValues
+
+
+parseForwardedAddressValues :: [GhcBS.ByteString] -> Maybe [TrustedProxyAddress]
+parseForwardedAddressValues addressValues =
+  case addressValues of
+    [] -> Maybe.Just []
+    addressValue : remainingValues -> do
+      address <- parseForwardedAddress addressValue
+      remainingAddresses <- parseForwardedAddressValues remainingValues
+      Maybe.Just (address : remainingAddresses)
+
+
+parseForwardedAddress :: GhcBS.ByteString -> Maybe TrustedProxyAddress
+parseForwardedAddress rawAddress = do
+  let addressValue = rawAddress |> GhcBS.dropWhile isHeaderWhitespace |> GhcBS.dropWhileEnd isHeaderWhitespace
+  addressText <- decodeHeaderText addressValue
+  case trustedProxyAddressFromText addressText of
+    Result.Ok address -> Maybe.Just address
+    Result.Err _ -> Maybe.Nothing
+
+
+decodeHeaderText :: GhcBS.ByteString -> Maybe Text
+decodeHeaderText headerValue =
+  headerValue
+    |> Bytes.fromLegacy
+    |> Text.fromBytesIfValid
+
+
+isHeaderWhitespace :: GhcWord.Word8 -> Bool
+isHeaderWhitespace byte = byte == 32 || byte == 9
+
+
+nearestUntrustedAddress :: Set TrustedProxyAddress -> [TrustedProxyAddress] -> Maybe TrustedProxyAddress
+nearestUntrustedAddress trustedProxyAddresses addresses =
+  findNearestUntrusted trustedProxyAddresses (GhcList.reverse addresses)
+
+
+findNearestUntrusted :: Set TrustedProxyAddress -> [TrustedProxyAddress] -> Maybe TrustedProxyAddress
+findNearestUntrusted trustedProxyAddresses addresses =
+  case addresses of
+    [] -> Maybe.Nothing
+    address : remainingAddresses ->
+      if Set.contains address trustedProxyAddresses
+        then findNearestUntrusted trustedProxyAddresses remainingAddresses
+        else Maybe.Just address
+
+
+socketPeerAddress :: Wai.Request -> Maybe TrustedProxyAddress
+socketPeerAddress request =
+  case Wai.remoteHost request of
+    Socket.SockAddrInet _ hostAddress ->
+      Maybe.Just (TrustedProxyIPv4 (IP.fromHostAddress hostAddress))
+    Socket.SockAddrInet6 _ _ hostAddress _ ->
+      Maybe.Just (TrustedProxyIPv6 (IP.fromHostAddress6 hostAddress))
+    _ -> Maybe.Nothing
+
+
+trustedProxyAddressText :: TrustedProxyAddress -> Text
+trustedProxyAddressText proxyAddress =
+  case proxyAddress of
+    TrustedProxyIPv4 ipv4 -> show ipv4 |> Text.fromLinkedList
+    TrustedProxyIPv6 ipv6 -> show ipv6 |> Text.fromLinkedList
+
+
+maxForwardedHeaderBytes :: Int
+maxForwardedHeaderBytes = 4096
+
+
+maxForwardedHops :: Int
+maxForwardedHops = 32
+
+
+-- | Convert a 'WebTransport' host setting into a Warp 'Warp.HostPreference'.
+--
+-- @"*"@ selects either family; @"*4"@ and @"*6"@ prefer IPv4 / IPv6 with fallback.
+-- @"!4"@ and @"!6"@ select only that family. IPv6 brackets are removed for
+-- Warp's address resolver. Other text remains a literal address or hostname.
+hostPreference :: Text -> Warp.HostPreference
+hostPreference hostText = do
+  let bindHost =
+        if Text.startsWith "[" hostText && Text.endsWith "]" hostText && Text.contains ":" hostText
+          then hostText |> Text.dropLeft 1 |> Text.dropRight 1
+          else hostText
+  bindHost
+    |> Text.toLinkedList
+    |> fromString
+
+
+-- | Warp settings that bind the transport's configured host and port.
+warpSettings :: WebTransport -> Warp.Settings
+warpSettings transport =
+  Warp.defaultSettings
+    |> Warp.setPort transport.port
+    |> Warp.setHost (hostPreference transport.host)
+
+
+-- | Apply the application-level bind overrides ('Application.withHost' /
+-- 'Application.withPort') to a registered transport. An absent override keeps
+-- the transport's own setting, so a custom @server { port = ... }@ survives
+-- when only the host is overridden (and the other way round). Pure, so the
+-- composition rule is testable without starting a server.
+applyBindOverrides :: Maybe Text -> Maybe Int -> WebTransport -> WebTransport
+applyBindOverrides maybeHost maybePort transport =
+  transport
+    { host = maybeHost |> Maybe.withDefault transport.host
+    , port = maybePort |> Maybe.withDefault transport.port
+    }
+
+
+-- | Check a bind host before the server starts. Accepted forms are the Warp
+-- wildcards (@"*"@, @"*4"@, @"*6"@, @"!4"@, @"!6"@), a bare literal address or
+-- hostname such as @"127.0.0.1"@, @"::1"@ or @"localhost"@, and a bracketed
+-- IPv6 literal such as @"[::1]"@ (unwrapped by 'hostPreference').
+--
+-- The checks target the mistakes a hand-written or LLM-written config makes:
+-- an empty or blank host, whitespace anywhere (including a leading or
+-- trailing space, tab or newline), a URL (@"http://127.0.0.1"@), a path,
+-- malformed or non-IPv6 brackets (@"[]"@, @"[localhost]"@, @"[::1"@), or a
+-- @host:port@ pair pasted into the host field. A single colon can only be a
+-- port suffix because a literal IPv6 address always contains at least two.
+-- Anything that passes is handed to Warp as a 'Warp.HostPreference'; an
+-- address this machine does not own still fails at bind time with the
+-- @could not bind@ error from 'runTransport'.
+--
+-- Returns the reason the host is rejected, or 'Nothing' when these checks pass.
+validateBindHost :: Text -> Maybe Text
+validateBindHost hostText
+  | Text.isEmpty (Text.trim hostText) =
+      Just "bind host must not be empty; use \"*4\" for all IPv4 interfaces or \"127.0.0.1\" for loopback only"
+  | Text.words hostText != Array.wrap hostText =
+      Just [fmt|bind host "#{hostText}" must not contain whitespace|]
+  | Text.contains "/" hostText =
+      Just [fmt|bind host "#{hostText}" looks like a URL or path; use a bare address such as "127.0.0.1", not "http://127.0.0.1"|]
+  | Text.contains "]:" hostText || (hostText |> Text.indexes ":" |> Array.length) == 1 =
+      Just [fmt|bind host "#{hostText}" carries a port; set the port with Application.withPort instead|]
+  | hasMalformedBindBrackets hostText =
+      Just [fmt|bind host "#{hostText}" has malformed brackets; brackets may only wrap an IPv6 literal such as "[::1]", and ports belong in Application.withPort|]
+  | otherwise = Nothing
+
+
+-- | Allow brackets only when a single outer pair wraps an IPv6 literal.
+hasMalformedBindBrackets :: Text -> Bool
+hasMalformedBindBrackets hostText = do
+  let opening = hostText |> Text.indexes "[" |> Array.length
+  let closing = hostText |> Text.indexes "]" |> Array.length
+  let hasBrackets = opening > 0 || closing > 0
+  let validBracketedIpv6 =
+        opening == 1
+          && closing == 1
+          && Text.startsWith "[" hostText
+          && Text.endsWith "]" hostText
+          && Text.contains ":" hostText
+  hasBrackets && not validBracketedIpv6
+
+
+-- | Check a bind port before the server starts. Only 1..65535 is accepted.
+-- Port 0 is rejected on purpose: the OS would pick a free port, but nothing in
+-- the application reports which one, so the server would be unreachable by
+-- design. Returns the reason the port is rejected, or 'Nothing' when usable.
+validateBindPort :: Int -> Maybe Text
+validateBindPort portNumber =
+  if portNumber == 0
+    then Just "bind port 0 asks the OS for a random port that nothing reports back; choose a fixed port between 1 and 65535"
+    else
+      if portNumber < 0 || portNumber > 65535
+        then Just [fmt|bind port #{portNumber} is outside 1..65535|]
+        else Nothing
 
 
 data CommandRequestBodyState
@@ -584,6 +872,19 @@ instance Transport WebTransport where
                   |> Wai.responseLBS HTTP.status400 [(HTTP.hContentType, "application/json")]
           respondFn response400
 
+    let respondToQueryResult result =
+          case result of
+            Result.Ok responseText -> okJson responseText
+            Result.Err endpointError ->
+              case endpointError of
+                AuthorizationError authErr ->
+                  case authErr of
+                    Unauthenticated -> unauthorized "Authentication required"
+                    Forbidden -> forbidden "Access denied"
+                    InsufficientPermissions _ -> forbidden "Insufficient permissions"
+                QueryNotFound -> notFound "{\"error\":\"Query object not found\"}"
+                StorageError _ -> internalError "Internal server error"
+
     -- Helper function for 302 redirect with configurable extra headers.
     -- SECURITY: Sanitize URL to prevent header injection (CRLF attacks)
     let redirectWithHeaders extraHeaders url respondFn = do
@@ -653,20 +954,24 @@ instance Transport WebTransport where
                 routeResultState <- Var.new CommandRouteAuthenticationPending
                 let processCommandWithContext :: RequestContext -> Task Text Wai.ResponseReceived
                     processCommandWithContext requestContext = do
-                      Var.set (CommandRouteBodyRequest requestContext CommandRequestBodyInProgress) routeResultState
+                      let requestContextWithOrigin =
+                            requestContext
+                              { Auth.origin = Just (requestOrigin webTransport.trustedProxyAddresses request)
+                              }
+                      Var.set (CommandRouteBodyRequest requestContextWithOrigin CommandRequestBodyInProgress) routeResultState
                       CommandResultReceipt.setRelatedUserSub
                         requestId
-                        (requestContext.user |> Maybe.map (\claims -> claims.sub))
+                        (requestContextWithOrigin.user |> Maybe.map (\claims -> claims.sub))
                       safeBodyResult <- readBodyWithLimit maxBodySize request |> Task.asResultSafe @Text
                       bodyResult <- case safeBodyResult of
                         Result.Err _ -> do
-                          Var.set (CommandRouteBodyRequest requestContext CommandRequestBodyFailed) routeResultState
+                          Var.set (CommandRouteBodyRequest requestContextWithOrigin CommandRequestBodyFailed) routeResultState
                           Task.yield CommandRequestBodyReadFailed
                         Result.Ok (Result.Err errorMessage) -> do
-                          Var.set (CommandRouteBodyRequest requestContext CommandRequestBodyTooLarge) routeResultState
+                          Var.set (CommandRouteBodyRequest requestContextWithOrigin CommandRequestBodyTooLarge) routeResultState
                           Task.yield (CommandRequestBodyRejected errorMessage)
                         Result.Ok (Result.Ok bodyBytes) -> do
-                          Var.set (CommandRouteBodyRequest requestContext CommandRequestBodySucceeded) routeResultState
+                          Var.set (CommandRouteBodyRequest requestContextWithOrigin CommandRequestBodySucceeded) routeResultState
                           Task.yield (CommandRequestBodyBytes bodyBytes)
                       case bodyResult of
                         CommandRequestBodyRejected errorMessage -> do
@@ -675,9 +980,9 @@ instance Transport WebTransport where
                           internalError "Internal server error"
                         CommandRequestBodyBytes bodyBytes -> do
                           respondVar <- ConcurrentVar.new
-                          Var.set (CommandRouteHandlerOwnsResult requestContext) routeResultState
+                          Var.set (CommandRouteHandlerOwnsResult requestContextWithOrigin) routeResultState
                           handler
-                            requestContext
+                            requestContextWithOrigin
                             bodyBytes
                             ( \(commandResponse, responseBytes) -> do
                                 let httpStatus = commandResponseToHttpStatus commandResponse
@@ -842,20 +1147,7 @@ instance Transport WebTransport where
                       -- Execute the query handler with error recovery
                       -- Handler performs internal canAccess/canView checks
                       result <- handler userClaims maybeExpr pageRequest |> Task.asResult
-                      case result of
-                        Result.Ok responseText -> okJson responseText
-                        Result.Err endpointError ->
-                          -- Pattern match on typed error for proper HTTP status
-                          case endpointError of
-                            AuthorizationError authErr ->
-                              case authErr of
-                                Unauthenticated -> unauthorized "Authentication required"
-                                Forbidden -> forbidden "Access denied"
-                                InsufficientPermissions _ -> forbidden "Insufficient permissions"
-                            StorageError _msg ->
-                              -- Don't expose internal error details to client
-                              -- The msg is logged server-side by the transport layer
-                              internalError "Internal server error"
+                      respondToQueryResult result
 
                 -- The query's canAccessImpl decides if authentication is
                 -- required; we only need to hand it the resolved claims.
@@ -866,6 +1158,24 @@ instance Transport WebTransport where
                   Maybe.Just auth -> withResolvedClaims auth request respond (\_ -> Task.yield ()) processQueryWithClaims
           Maybe.Nothing ->
             notFound [fmt|Query not found: #{queryName}|]
+      ["queries", queryNameKebab, queryIdText] -> do
+        if Wai.requestMethod request != "GET"
+          then notFound "Not found"
+          else do
+            let queryName = queryNameKebab |> Text.toPascalCase
+            case Map.get queryName endpoints.queryByIdEndpoints of
+              Maybe.Nothing -> notFound [fmt|Query not found: #{queryName}|]
+              Maybe.Just endpoint ->
+                case Uuid.fromText queryIdText of
+                  Maybe.Nothing -> badRequest "{\"error\":\"Invalid query ID\"}" respond
+                  Maybe.Just queryId -> do
+                    let processQueryByIdWithClaims userClaims = do
+                          result <- endpoint.byIdHandler userClaims queryId |> Task.asResult
+                          respondToQueryResult result
+                    case webTransport.authEnabled of
+                      Maybe.Nothing -> processQueryByIdWithClaims Maybe.Nothing
+                      Maybe.Just auth ->
+                        withResolvedClaims auth request respond (\_ -> Task.yield ()) processQueryByIdWithClaims
       -- OAuth2 routes: /connect/{provider}, /callback/{provider}, /disconnect/{provider}
       ["connect", providerName] -> do
         case webTransport.oauth2Config of
@@ -1055,12 +1365,10 @@ instance Transport WebTransport where
           Maybe.Just fileUpload -> do
             let fileRef = FileRef fileRefText
             -- Extract owner identity from auth context
-            -- Use Everyone auth option to allow both anonymous and authenticated downloads
             ownerHashResult <- case webTransport.authEnabled of
               Maybe.Nothing -> Task.yield "anonymous"
               Maybe.Just auth -> do
-                -- Check for JWT but don't require it (Everyone allows anonymous)
-                authResult <- Middleware.checkAuth (Maybe.Just auth.jwksManager) auth.authConfig Everyone request
+                authResult <- Middleware.checkAuth (Maybe.Just auth.jwksManager) auth.authConfig Authenticated request
                 case authResult of
                   Result.Err _ -> Task.yield "anonymous"  -- No valid token, treat as anonymous
                   Result.Ok authContext -> case authContext.claims of
@@ -1114,8 +1422,20 @@ instance Transport WebTransport where
         -- Generate builtin endpoint schemas
         let oauth2Schemas = BuiltinSchemas.oauth2EndpointSchemas isOAuth2Enabled
         let fileSchemas = BuiltinSchemas.fileUploadEndpointSchemas isFileUploadEnabled
+        let queryByIdSchemas =
+              endpoints.queryByIdEndpoints
+                |> Map.entries
+                |> Array.map (\(name, endpoint) -> (name, endpoint.byIdSchema))
+                |> Map.fromArray
+        let endpointSchemas = OpenApi.EndpointSchemas
+              { OpenApi.commandSchemas = endpoints.commandSchemas
+              , OpenApi.querySchemas = endpoints.querySchemas
+              , OpenApi.queryByIdSchemas = queryByIdSchemas
+              , OpenApi.oauth2Schemas = oauth2Schemas
+              , OpenApi.fileSchemas = fileSchemas
+              }
         -- Generate OpenAPI spec from endpoint schemas
-        let spec = OpenApi.toOpenApiSpec apiInfo endpoints.commandSchemas endpoints.querySchemas oauth2Schemas fileSchemas
+        let spec = OpenApi.toOpenApiSpecWithQueryById apiInfo endpointSchemas
         -- Encode to JSON and return with cache headers
         let jsonText = Json.encodeText spec
         let jsonBytes = jsonText |> Text.toBytes |> Bytes.toLazyLegacy
@@ -1142,8 +1462,20 @@ instance Transport WebTransport where
         -- Generate builtin endpoint schemas
         let oauth2Schemas = BuiltinSchemas.oauth2EndpointSchemas isOAuth2Enabled
         let fileSchemas = BuiltinSchemas.fileUploadEndpointSchemas isFileUploadEnabled
+        let queryByIdSchemas =
+              endpoints.queryByIdEndpoints
+                |> Map.entries
+                |> Array.map (\(name, endpoint) -> (name, endpoint.byIdSchema))
+                |> Map.fromArray
+        let endpointSchemas = OpenApi.EndpointSchemas
+              { OpenApi.commandSchemas = endpoints.commandSchemas
+              , OpenApi.querySchemas = endpoints.querySchemas
+              , OpenApi.queryByIdSchemas = queryByIdSchemas
+              , OpenApi.oauth2Schemas = oauth2Schemas
+              , OpenApi.fileSchemas = fileSchemas
+              }
         -- Generate OpenAPI spec from endpoint schemas
-        let spec = OpenApi.toOpenApiSpec apiInfo endpoints.commandSchemas endpoints.querySchemas oauth2Schemas fileSchemas
+        let spec = OpenApi.toOpenApiSpecWithQueryById apiInfo endpointSchemas
         -- Encode to YAML with cache headers
         let yamlBytes = Yaml.encode spec
         -- Cache headers - spec changes only on deployment
@@ -1208,12 +1540,17 @@ instance Transport WebTransport where
           Maybe.Nothing -> baseApp
           Maybe.Just cors -> corsMiddleware cors baseApp
 
-    -- Start the Warp server on the specified port
+    -- Start the Warp server on the configured host and port. A bind that the
+    -- OS refuses (port in use, address not owned by this machine) surfaces as
+    -- a Task error naming the host and port instead of an uncaught IOException.
+    let host = transport.host
     let port = transport.port
     Log.withScope [("component", "WebTransport")] do
-      Log.info [fmt|Starting WebTransport server on port #{port}|]
+      Log.info [fmt|Starting WebTransport server on #{host}:#{port}|]
         |> Task.ignoreError
-    Warp.run transport.port waiApp |> Task.fromIO
+    Warp.runSettings (warpSettings transport) waiApp
+      |> Task.fromFailableIO @IOError
+      |> Task.mapError (\ioError -> [fmt|WebTransport could not bind #{host}:#{port}: #{show ioError}|])
 
 
   buildHandler ::

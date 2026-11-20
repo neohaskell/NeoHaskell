@@ -6,12 +6,50 @@ fn neo_cmd() -> Command {
 }
 
 #[test]
+fn generate_regenerates_project_defaults_without_a_build_toolchain() {
+    let temp = tempfile::tempdir().unwrap();
+    let project = temp.path();
+    std::fs::create_dir(project.join("src")).unwrap();
+    std::fs::write(project.join("src/App.hs"), "module App where\n").unwrap();
+    for version in ["0.1.0", "0.2.0"] {
+        std::fs::write(
+            project.join("neo.json"),
+            serde_json::json!({
+                "name": "generated-project",
+                "version": version,
+                "neo-version": "main"
+            }).to_string(),
+        ).unwrap();
+        neo_cmd()
+            .current_dir(project)
+            .env("NEO_SKIP_NETWORK", "1")
+            .env_remove("NEO_NEOHASKELL_SOURCE")
+            .env("PATH", "")
+            .args(["--ci", "generate"])
+            .assert()
+            .success();
+        let cabal = std::fs::read_to_string(project.join("generated-project.cabal")).unwrap();
+        assert!(cabal.contains(&format!("version: {version}")));
+        assert!(cabal.contains("    NoImplicitPrelude\n"));
+        assert!(cabal.contains("    OverloadedRecordDot\n"));
+        assert!(cabal.contains("autogen-modules: Paths_generated_project"));
+        assert!(cabal.contains("    App\n"));
+        assert!(project.join("flake.nix").is_file());
+        assert!(project.join("cabal.project").is_file());
+        assert!(project.join("tests/Spec.hs").is_file());
+    }
+}
+
+#[test]
 fn test_version() {
     let mut cmd = neo_cmd();
     cmd.arg("--version")
         .assert()
         .success()
-        .stdout(predicate::str::contains("neo 0.1.0"));
+        .stdout(predicate::str::contains(format!(
+            "neo {}",
+            env!("CARGO_PKG_VERSION")
+        )));
 }
 
 #[test]
@@ -403,7 +441,7 @@ fn test_neo_test_hurl_discovery() {
         .arg("test")
         .arg("--ci")
         .assert()
-        .stdout(predicate::str::contains("Running 1 Hurl integration tests"));
+        .stdout(predicate::str::contains("Running 3 Hurl integration tests"));
 }
 
 #[test]

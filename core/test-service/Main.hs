@@ -6,6 +6,7 @@ import Log qualified
 import Task qualified
 
 import Service.ApplicationSpec qualified
+import Service.AuthSpec qualified
 import Service.CommandExecutor.THSpec qualified
 import Service.CommandHandlerSpec qualified
 import Service.CommandSpec qualified
@@ -22,6 +23,7 @@ import Service.FileUpload.BlobStore.S3.SigV4Spec qualified
 import Service.FileUpload.BlobStore.S3Spec qualified
 import Service.FileUpload.ContentDedupSpec qualified
 import Service.FileUpload.CoreSpec qualified
+import Service.FileUpload.CreateSpec qualified
 import Service.FileUpload.DownloadSpec qualified
 import Service.FileUpload.FileStateStore.InMemorySpec qualified
 import Service.FileUpload.FileStateStore.PostgresSpec qualified
@@ -51,6 +53,7 @@ import Service.Transport.Mcp.JsonRpcSpec qualified
 import Service.Transport.Mcp.ProtocolSpec qualified
 import Service.Transport.Mcp.ResponseSpec qualified
 import Service.Transport.WebSpec qualified
+import Service.Transport.Web.BindSpec qualified
 import Service.Transport.Web.HealthCheckSpec qualified
 import Service.Transport.Web.ReadinessRouteSpec qualified
 import Service.Command.AuthSpec qualified
@@ -74,6 +77,7 @@ main = IO.finally (Hspec.hspec serviceSpecs) (Task.runOrPanic Log.finish)
 serviceSpecs :: Hspec.Spec
 serviceSpecs = do
   Hspec.describe "Service.Application" Service.ApplicationSpec.spec
+  Hspec.describe "Service.Auth" Service.AuthSpec.spec
   Hspec.describe "Service.CommandExecutor.TH" Service.CommandExecutor.THSpec.spec
   Hspec.describe "Service.CommandHandler" Service.CommandHandlerSpec.spec
   Hspec.describe "Service.Command" Service.CommandSpec.spec
@@ -90,6 +94,7 @@ serviceSpecs = do
   Hspec.describe "Service.FileUpload.BlobStore.S3.SigV4" Service.FileUpload.BlobStore.S3.SigV4Spec.spec
   Hspec.describe "Service.FileUpload.ContentDedup" Service.FileUpload.ContentDedupSpec.spec
   Hspec.describe "Service.FileUpload.Core" Service.FileUpload.CoreSpec.spec
+  Hspec.describe "Service.FileUpload.Create" Service.FileUpload.CreateSpec.spec
   Hspec.describe "Service.FileUpload.Download" Service.FileUpload.DownloadSpec.spec
   Hspec.describe "Service.FileUpload.FileStateStore.InMemory" Service.FileUpload.FileStateStore.InMemorySpec.spec
   Hspec.describe "Service.FileUpload.FileStateStore.Postgres" Service.FileUpload.FileStateStore.PostgresSpec.spec
@@ -119,6 +124,7 @@ serviceSpecs = do
   Hspec.describe "Service.Transport.Mcp.Protocol" Service.Transport.Mcp.ProtocolSpec.spec
   Hspec.describe "Service.Transport.Mcp.Response" Service.Transport.Mcp.ResponseSpec.spec
   Hspec.describe "Service.Transport.Web" Service.Transport.WebSpec.spec
+  Hspec.describe "Service.Transport.Web.Bind" Service.Transport.Web.BindSpec.spec
   Hspec.describe "Health Check" Service.Transport.Web.HealthCheckSpec.spec
   Hspec.describe "Service.Transport.Web.ReadinessRoute" Service.Transport.Web.ReadinessRouteSpec.spec
   Hspec.describe "Service.Command.Auth" Service.Command.AuthSpec.spec

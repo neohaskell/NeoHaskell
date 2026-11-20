@@ -73,6 +73,8 @@ data Schema
     SEnum (Array Text)
   | -- | Sum types with fields (data Shape = Circle {radius :: Int} | ...)
     SUnion (Array (Text, Schema))
+  | -- | Tagged values whose payload is under a required contents field
+    SUnionWithContents (Array (Text, Schema))
   | -- | Reference for recursive types
     SRef Text
   deriving (Show, Eq)

@@ -3,11 +3,13 @@
 module Testbed.EventModel (appEventModel, s3AppEventModel) where
 
 import Core
+import Result qualified
 import Service.Application (ApiInfo (..))
 import Service.EventModel qualified as EventModel
 import Service.FileUpload.BlobStore (BlobStoreConfig)
 import Service.FileUpload.Core (FileUploadConfig)
 import Service.Transport.Web qualified as WebTransport
+import Set qualified as Set
 import Testbed.Cart.Feature (cartFlow)
 import Testbed.Config (TestbedConfig)
 import Testbed.Document.Feature (documentFlow)
@@ -15,28 +17,36 @@ import Testbed.Erasable.Feature (protectedFlow)
 import Testbed.Erasable.Owned.Feature (ownedErasureFlow)
 import Testbed.ExternalEffect.Feature (externalEffectFlow)
 import Testbed.Infrastructure (makeFileUploadConfig, makePostgresConfig, makeS3FileUploadConfig)
+import Testbed.RequestOrigin (requestOriginFlow)
 import Testbed.Stock.Feature (stockFlow)
 
 
-appEventModel :: Int -> Result Text EventModel.EventModel
-appEventModel httpPort = testbedEventModel httpPort makeFileUploadConfig
+appEventModel :: Text -> Int -> Result Text EventModel.EventModel
+appEventModel httpHost httpPort = testbedEventModel httpHost httpPort makeFileUploadConfig
 
 
-s3AppEventModel :: Int -> Result Text EventModel.EventModel
-s3AppEventModel httpPort = testbedEventModel httpPort makeS3FileUploadConfig
+s3AppEventModel :: Text -> Int -> Result Text EventModel.EventModel
+s3AppEventModel httpHost httpPort = testbedEventModel httpHost httpPort makeS3FileUploadConfig
 
 
 testbedEventModel ::
   forall blobStoreConfig.
   (BlobStoreConfig blobStoreConfig) =>
+  Text ->
   Int ->
   (TestbedConfig -> FileUploadConfig blobStoreConfig) ->
   Result Text EventModel.EventModel
-testbedEventModel httpPort uploadFactory = EventModel.eventModel do
+testbedEventModel httpHost httpPort uploadFactory = EventModel.eventModel do
   EventModel.appName "Testbed"
   EventModel.withConfig @TestbedConfig
   EventModel.withEventStore makePostgresConfig
-  EventModel.withTransport (WebTransport.server {WebTransport.port = httpPort})
+  EventModel.withTransport
+    ( WebTransport.server
+        { WebTransport.trustedProxyAddresses = Set.singleton testbedTrustedProxyAddress
+        }
+    )
+  EventModel.withHost httpHost
+  EventModel.withPort httpPort
   EventModel.withApiInfo @() (\_ -> testbedApiInfo)
   EventModel.withFileUpload uploadFactory
   EventModel.features do
@@ -46,6 +56,7 @@ testbedEventModel httpPort uploadFactory = EventModel.eventModel do
     externalEffectFlow
     protectedFlow
     ownedErasureFlow
+    requestOriginFlow
 
 
 testbedApiInfo :: ApiInfo
@@ -55,3 +66,10 @@ testbedApiInfo =
       apiVersion = "1.0.0",
       apiDescription = "Example NeoHaskell application demonstrating event sourcing, CQRS, and integrations"
     }
+
+
+testbedTrustedProxyAddress :: WebTransport.TrustedProxyAddress
+testbedTrustedProxyAddress =
+  case WebTransport.trustedProxyAddressFromText "127.0.0.1" of
+    Result.Ok address -> address
+    Result.Err _ -> panic "Invalid testbed trusted proxy address"

@@ -101,7 +101,7 @@ main = Hspec.hspec spec
 
 spec :: Spec Unit
 spec = do
-  case App.appEventModel 8080 of
+  case App.appEventModel "127.0.0.1" 8080 of
     Err problem -> Hspec.it "assembles direct rules" do
       Hspec.expectationFailure (Text.toLinkedList problem)
     Ok model -> do
@@ -243,7 +243,7 @@ spec = do
           failures |> shouldBe []
 
     it "runs every direct cart rule through isolated service and query storage" \_ -> do
-      case App.appEventModel 8080 of
+      case App.appEventModel "127.0.0.1" 8080 of
         Err problem -> problem |> shouldBe "valid Event Model"
         Ok model -> do
           let generators = RuleRunner.emptyGenerators
@@ -276,15 +276,17 @@ spec = do
           reports |> Array.fromLinkedList |> Array.length |> shouldBe 0
 
     it "lowers declared components into the application" \_ -> do
-      case App.appEventModel 8080 of
+      case App.appEventModel "127.0.0.1" 8080 of
         Err problem -> problem |> shouldBe "valid Event Model"
         Ok model -> do
           let application = EventModel.toApplication model
-          Application.serviceRunnerCount application |> shouldBe 17
+          Application.serviceRunnerCount application |> shouldBe 18
           Application.queryDefinitionCount application |> shouldBe 6
           Application.transportCount application |> shouldBe 1
           Application.hasConfig application |> shouldBe True
           Application.hasEventStore application |> shouldBe True
+          application.bindHost |> shouldBe (Just "127.0.0.1")
+          application.bindPort |> shouldBe (Just 8080)
 
     it "configures capabilities and typed adapters inside the named model" \_ -> do
       store <- InMemorySecretStore.new
@@ -343,7 +345,7 @@ spec = do
         Err problem -> problem |> Text.contains "at most one withConfig" |> shouldBe True
 
     it "composes executable Features and all four Slice shapes" \_ -> do
-      case App.appEventModel 8080 of
+      case App.appEventModel "127.0.0.1" 8080 of
         Err problem -> problem |> shouldBe "valid Event Model"
         Ok model -> do
           model |> EventModel.modelName |> shouldBe "Testbed"
@@ -351,7 +353,14 @@ spec = do
           foundFeatures
             |> Array.map EventModel.featureName
             |> shouldBe
-              ["Cart flow", "Stock flow", "Document flow", "External effect flow", "Protected record flow", "Owned erasure flow"]
+              [ "Cart flow",
+                "Stock flow",
+                "Document flow",
+                "External effect flow",
+                "Protected record flow",
+                "Owned erasure flow",
+                "Request origin"
+              ]
           let allChapters = foundFeatures |> Array.flatMap (\selected -> selected |> EventModel.featureChapters |> Array.fromLinkedList)
           allChapters
             |> Array.map EventModel.chapterName
@@ -361,17 +370,18 @@ spec = do
                 "Manage documents",
                 "Deliver effects",
                 "Store protected values",
-                "Erase protected values"
+                "Erase protected values",
+                "Read Web request metadata"
               ]
           let allSlices = allChapters |> Array.flatMap (\selected -> selected |> EventModel.chapterSlices |> Array.fromLinkedList)
-          allSlices |> Array.length |> shouldBe 29
-          allSlices |> Array.takeIf (\selected -> EventModel.sliceKind selected == "state-change") |> Array.length |> shouldBe 17
+          allSlices |> Array.length |> shouldBe 30
+          allSlices |> Array.takeIf (\selected -> EventModel.sliceKind selected == "state-change") |> Array.length |> shouldBe 18
           allSlices |> Array.takeIf (\selected -> EventModel.sliceKind selected == "state-view") |> Array.length |> shouldBe 6
           allSlices |> Array.takeIf (\selected -> EventModel.sliceKind selected == "outbound") |> Array.length |> shouldBe 4
           allSlices |> Array.takeIf (\selected -> EventModel.sliceKind selected == "inbound") |> Array.length |> shouldBe 2
 
     it "keeps direct rules with concrete history, command, and ordered event values" \_ -> do
-      case App.appEventModel 8080 of
+      case App.appEventModel "127.0.0.1" 8080 of
         Err problem -> problem |> shouldBe "valid Event Model"
         Ok model -> do
           let selected = model |> modelSlices |> Array.takeIf (\item -> EventModel.sliceName item == "Add an item")
@@ -412,7 +422,7 @@ spec = do
                 _ -> False |> shouldBe True
 
     it "keeps view rules with their exact query actions" \_ -> do
-      case App.appEventModel 8080 of
+      case App.appEventModel "127.0.0.1" 8080 of
         Err problem -> problem |> shouldBe "valid Event Model"
         Ok model -> do
           let selected = model |> modelSlices |> Array.takeIf (\item -> EventModel.sliceName item == "Show cart summary")
@@ -509,7 +519,7 @@ spec = do
           EventModel.verifyViewObservation Uuid.nil (Update 2) changedAnotherRow |> shouldBe False
 
     it "keeps each translation command with its own target and explicit triggers" \_ -> do
-      case App.appEventModel 8080 of
+      case App.appEventModel "127.0.0.1" 8080 of
         Err problem -> problem |> shouldBe "valid Event Model"
         Ok model -> do
           let allSlices = model |> modelSlices

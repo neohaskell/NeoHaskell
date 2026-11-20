@@ -76,13 +76,17 @@ jobs:
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@v7.0.1
-      - uses: DeterminateSystems/determinate-nix-action@v3.24.0
+      - uses: DeterminateSystems/determinate-nix-action@v3.24.2
         with:
           extra-conf: |
             accept-flake-config = true
       - uses: DeterminateSystems/magic-nix-cache-action@v14
-      - name: Unit tests (all in-crate binary tests, --bins)
-        run: nix develop ./neo -c cargo test --manifest-path neo/Cargo.toml --locked --bins
+      - name: Unit tests (workspace libraries and binaries)
+        env:
+          RUST_TEST_THREADS: 1
+        run: nix develop ./neo -c cargo test --manifest-path neo/Cargo.toml --locked --workspace --lib --bins
+      - name: Generate project without a build toolchain
+        run: nix develop ./neo -c cargo test --manifest-path neo/Cargo.toml --locked --test integration_tests generate_regenerates_project_defaults_without_a_build_toolchain
       - name: rustfmt (report-only baseline)
         continue-on-error: true
         run: |
@@ -106,7 +110,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7.0.1
-      - uses: DeterminateSystems/determinate-nix-action@v3.24.0
+      - uses: DeterminateSystems/determinate-nix-action@v3.24.2
         with:
           extra-conf: |
             accept-flake-config = true
@@ -150,7 +154,7 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7.0.1
-      - uses: DeterminateSystems/determinate-nix-action@v3.24.0
+      - uses: DeterminateSystems/determinate-nix-action@v3.24.2
         with:
           extra-conf: |
             accept-flake-config = true
@@ -181,7 +185,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: neo
-      - uses: DeterminateSystems/determinate-nix-action@v3.24.0
+      - uses: DeterminateSystems/determinate-nix-action@v3.24.2
         with:
           extra-conf: |
             accept-flake-config = true
@@ -207,6 +211,14 @@ jobs:
           CONTRACT_TEST_TIMEOUT: "2400"
           CONTRACT_READY_DEADLINE: "300"
         run: ./.agents/skills/neohaskell-consumer-verification/scripts/neo-consumer-contract
+      - name: Test neoctl with the same framework checkout
+        working-directory: neoctl
+        env:
+          NEO_NEOHASKELL_SOURCE: ${{ github.workspace }}
+        run: |
+          "$NEO_BIN" generate --ci
+          cp ../flake.lock flake.lock
+          "$NEO_BIN" test --ci
 
   cache-populate:
     needs: changes
@@ -236,7 +248,7 @@ jobs:
         if: ${{ env.CACHIX_AUTH_TOKEN != '' }}
         with:
           workspaces: neo
-      - uses: DeterminateSystems/determinate-nix-action@v3.24.0
+      - uses: DeterminateSystems/determinate-nix-action@v3.24.2
         if: ${{ env.CACHIX_AUTH_TOKEN != '' }}
         with:
           extra-conf: |
