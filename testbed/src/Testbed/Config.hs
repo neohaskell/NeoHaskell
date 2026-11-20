@@ -16,11 +16,34 @@
 module Testbed.Config (
   TestbedConfig (..),
   HasTestbedConfig,
+  readHost,
+  readPort,
 ) where
 
 import Config (defineConfig)
 import Config qualified
 import Core
+import Environment qualified
+import Task qualified
+import Text qualified
+
+
+readHost :: Text -> Text -> Task Text Text
+readHost name defaultHost = do
+  configured <- Environment.getVariable name |> Task.asResult
+  case configured of
+    Err _ -> Task.yield defaultHost
+    Ok value -> Task.yield value
+
+
+readPort :: Text -> Int -> Task Text Int
+readPort name defaultPort = do
+  configured <- Environment.getVariable name |> Task.asResult
+  case configured of
+    Err _ -> Task.yield defaultPort
+    Ok value -> case Text.toInt value of
+      Nothing -> Task.throw [fmt|Invalid #{name}|]
+      Just port -> Task.yield port
 
 
 defineConfig

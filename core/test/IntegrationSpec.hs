@@ -9,9 +9,12 @@ import ConcurrentMap qualified
 import Core
 import GHC.TypeLits qualified as GHC
 import Integration qualified
+import Integration.Erasable qualified as ErasableIntegration
 import Json qualified
 import Map qualified
+import Result qualified
 import Service.Command.Core (NameOf)
+import Service.Event qualified as Event
 import Service.Integration.DispatchRegistry qualified as DispatchRegistry
 import Task qualified
 import Test
@@ -50,6 +53,7 @@ makeContext = do
       , Integration.refreshLocks = locks
       , Integration.fileAccess = Nothing
       , Integration.outboundDispatch = DispatchRegistry.empty
+      , Integration.eraseErasableKey = Nothing
       }
 
 
@@ -75,6 +79,28 @@ instance
 
 spec :: Spec Unit
 spec = do
+  describe "Json.decodeText" do
+    it "preserves accented Spanish text and ñ" \_ -> do
+      Json.decodeText @Text "\"canción y niño\"" |> shouldBe (Ok "canción y niño")
+
+    it "preserves Japanese and emoji" \_ -> do
+      Json.decodeText @Text "\"日本語 😀\"" |> shouldBe (Ok "日本語 😀")
+
+    it "preserves composed and decomposed Unicode separately" \_ -> do
+      Json.decodeText @Text "\"é\"" |> shouldBe (Ok "é")
+      Json.decodeText @Text "\"e\x0301\"" |> shouldBe (Ok "e\x0301")
+
+    it "preserves nested object values" \_ -> do
+      let expected = Json.object [("outer", Json.object [("message", Json.encode ("niño 日本語 😀" :: Text))])]
+      Json.decodeText @Json.Value "{\"outer\":{\"message\":\"niño 日本語 😀\"}}" |> shouldBe (Ok expected)
+
+    it "decodes escaped Unicode and surrogate pairs" \_ -> do
+      Json.decodeText @Text "\"ni\\u00f1o \\u65e5\\u672c \\ud83d\\ude00\"" |> shouldBe (Ok "niño 日本 😀")
+
+    it "preserves ASCII and rejects malformed JSON" \_ -> do
+      Json.decodeText @Text "\"plain ASCII\"" |> shouldBe (Ok "plain ASCII")
+      Json.decodeText @Text "{\"broken\":" |> shouldSatisfy Result.isErr
+
   describe "Integration.Outbound" do
     describe "batch" do
       it "collects multiple actions" \_ -> do
@@ -107,6 +133,52 @@ spec = do
             payload.commandType |> shouldSatisfy (Text.contains "TestCommand")
           Nothing -> do
             fail "Expected Just CommandPayload but got Nothing"
+
+  describe "Integration.Erasable.Erase" do
+    it "passes an already-erased result to the application's command" \_ -> do
+      context <- makeContext
+      let target = ErasableIntegration.ErasureTarget
+            { reference = "known-reference",
+              entityName = Event.EntityName "OwnedEntity",
+              streamId = Event.StreamId "owned-stream"
+            }
+      let configured = context
+            { Integration.eraseErasableKey = Just (\_ -> Task.yield ErasableIntegration.AlreadyErased)
+            }
+      let action = Integration.outbound ErasableIntegration.Erase
+            { target,
+              onResult = \result -> TestCommand {commandId = 1, commandName = case result of
+                ErasableIntegration.ErasedNow -> "erased"
+                ErasableIntegration.AlreadyErased -> "already"
+                ErasableIntegration.UnknownReference -> "unknown"},
+              onFailure = \_ -> TestCommand {commandId = 2, commandName = "failed"}
+            }
+      output <- Integration.runAction configured action |> Task.mapError toText
+      case output of
+        Nothing -> fail "Expected a result command"
+        Just payload ->
+          Json.decode payload.commandData |> shouldBe (Ok TestCommand {commandId = 1, commandName = "already"})
+
+    it "sends storage failure to the application's failure command" \_ -> do
+      context <- makeContext
+      let target = ErasableIntegration.ErasureTarget
+            { reference = "known-reference",
+              entityName = Event.EntityName "OwnedEntity",
+              streamId = Event.StreamId "owned-stream"
+            }
+      let configured = context
+            { Integration.eraseErasableKey = Just (\_ -> Task.throw (Integration.UnexpectedError "storage failed"))
+            }
+      let action = Integration.outbound ErasableIntegration.Erase
+            { target,
+              onResult = \_ -> TestCommand {commandId = 1, commandName = "erased"},
+              onFailure = \_ -> TestCommand {commandId = 2, commandName = "failed"}
+            }
+      output <- Integration.runAction configured action |> Task.mapError toText
+      case output of
+        Nothing -> fail "Expected a failure command"
+        Just payload ->
+          Json.decode payload.commandData |> shouldBe (Ok TestCommand {commandId = 2, commandName = "failed"})
 
   describe "Integration.Action construction" do
     describe "action" do
@@ -207,7 +279,7 @@ spec = do
       jsonText |> shouldSatisfy (Text.contains "encode-test")
 
     it "round-trips through decodeText -> CommandPayload" \_ -> do
-      let cmd = TestCommand {commandId = 99, commandName = "roundtrip-test"}
+      let cmd = TestCommand {commandId = 99, commandName = "canción de niño 日本語 😀"}
       let jsonText = Integration.encodeCommand cmd
       case Json.decodeText jsonText of
         Err err -> fail [fmt|Failed to decode JSON: #{err}|]
@@ -217,7 +289,7 @@ spec = do
             Err err -> fail [fmt|Failed to decode command data: #{err}|]
             Ok decoded -> do
               decoded.commandId |> shouldBe 99
-              decoded.commandName |> shouldBe "roundtrip-test"
+              decoded.commandName |> shouldBe "canción de niño 日本語 😀"
 
     it "matches the format expected by dispatchAction" \_ -> do
       -- This verifies encodeCommand produces the exact JSON format

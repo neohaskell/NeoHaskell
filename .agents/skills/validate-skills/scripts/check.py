@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import argparse
 import json
+import os
 from pathlib import Path
 import re
 import sys
@@ -58,6 +59,14 @@ def link_errors(path, root):
     return errors
 
 
+def markdown_files(root):
+    for directory, children, files in os.walk(root):
+        children[:] = [name for name in children if name != 'node_modules']
+        for name in files:
+            if name.endswith('.md'):
+                yield Path(directory) / name
+
+
 def validate(root, skills_root=None, skill=None):
     root = root.resolve()
     collection = skills_root.resolve() if skills_root else root / '.agents/skills'
@@ -85,10 +94,10 @@ def validate(root, skills_root=None, skill=None):
             if name in names:
                 errors.append(f'{path}: duplicate name {name}, also in {names[name]}')
             names[name] = str(path)
-    documents = sorted({path for entry in files if entry.is_file() for path in entry.parent.rglob('*.md')})
+    documents = sorted({path for entry in files if entry.is_file() for path in markdown_files(entry.parent)})
     is_project_collection = not skill and not skills_root
     if is_project_collection:
-        documents += [path for path in [root / 'AGENTS.md', *sorted((root / '.agents/workflow').rglob('*.md'))] if path.is_file()]
+        documents += [path for path in [root / 'AGENTS.md', *sorted(markdown_files(root / '.agents/workflow'))] if path.is_file()]
         for directory in ['.agents/workflow/scripts', '.agents/workflow/references', '.agents/agents']:
             if any(path.is_file() for path in (root / directory).rglob('*')):
                 errors.append(f'{directory}: move skill resources into their owner')

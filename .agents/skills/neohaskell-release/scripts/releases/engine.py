@@ -27,6 +27,7 @@ def find_root():
 ROOT = find_root()
 SKILL_ROOT = Path(__file__).resolve().parents[2]
 CONFIG_PATH = ".agents/skills/neohaskell-release/references/config.json"
+LIVE_LEGACY_CONFIG_PATH = "scripts/releases/config.json"
 LEDGER_PATH = ".agents/skills/neohaskell-release/references/manifest.json"
 LIVE_LEGACY_LEDGER_PATH = "scripts/releases/manifest.json"
 CONFIG = json.loads((SKILL_ROOT / "references/config.json").read_text())
@@ -84,6 +85,131 @@ def commit_impact(message):
     if re.match(r"(feat|fix|perf)(?:\([^)]+\))?:", message):
         return "compatible"
     return "none"
+
+
+def dependency_only_change(repo, before, after):
+    old_tree, new_tree = repo.tree(before), repo.tree(after)
+    paths = {
+        path
+        for path in old_tree.keys() | new_tree.keys()
+        if old_tree.get(path) != new_tree.get(path)
+    }
+    if not paths or any(
+        old_tree.get(path, (None,))[0] not in {"100644", "100755"}
+        or old_tree[path][0] != new_tree.get(path, (None,))[0]
+        or (
+            old_tree[path][0] == "100755"
+            and path != ".agents/skills/neohaskell-release/scripts/releases/test_release.py"
+        )
+        for path in paths
+    ):
+        return False
+
+    action_changes = set()
+    fixture_changes = set()
+    for path in paths:
+        old, new = repo.read(before, path), repo.read(after, path)
+        if path == "neo/assets/ide/package-lock.json":
+            try:
+                old_data, new_data = json.loads(old), json.loads(new)
+                old_packages = old_data["packages"]
+                new_packages = new_data["packages"]
+                if old_packages.keys() != new_packages.keys():
+                    return False
+                changed = [
+                    key for key in old_packages if old_packages[key] != new_packages[key]
+                ]
+                if not changed or any(
+                    key == ""
+                    or old_packages[key].get("dev") is not True
+                    or new_packages[key].get("dev") is not True
+                    or old_packages[key].keys() != new_packages[key].keys()
+                    or {
+                        k: v
+                        for k, v in old_packages[key].items()
+                        if k not in {"version", "resolved", "integrity"}
+                    }
+                    != {
+                        k: v
+                        for k, v in new_packages[key].items()
+                        if k not in {"version", "resolved", "integrity"}
+                    }
+                    for key in changed
+                ):
+                    return False
+                if {
+                    k: v for k, v in old_data.items() if k != "packages"
+                } != {
+                    k: v for k, v in new_data.items() if k != "packages"
+                }:
+                    return False
+            except (TypeError, ValueError, KeyError, AttributeError):
+                return False
+        elif re.fullmatch(r"\.github/workflows/[^/]+\.ya?ml", path):
+            old_lines = old.splitlines(keepends=True)
+            new_lines = new.splitlines(keepends=True)
+            if len(old_lines) != len(new_lines):
+                return False
+            for old_line, new_line in zip(old_lines, new_lines):
+                if old_line == new_line:
+                    continue
+                pattern = r"([ \t]*-[ \t]*uses:[ \t]*)([\w.-]+/[\w.-]+)@([^\s#]+)([^\n]*\n?)"
+                old_match = re.fullmatch(pattern, old_line)
+                new_match = re.fullmatch(pattern, new_line)
+                if (
+                    not old_match
+                    or not new_match
+                    or old_match.group(1, 2) != new_match.group(1, 2)
+                ):
+                    return False
+                if old_match[4] != new_match[4]:
+                    comment = r"([ \t]*#[ \t]*)(v?[0-9]+(?:\.[0-9]+){1,3})([^\n]*\n?)"
+                    old_comment = re.fullmatch(comment, old_match[4])
+                    new_comment = re.fullmatch(comment, new_match[4])
+                    if (
+                        not old_comment
+                        or not new_comment
+                        or old_comment.group(1, 3) != new_comment.group(1, 3)
+                    ):
+                        return False
+                old_ref, new_ref = old_match[3], new_match[3]
+                sha_refs = all(re.fullmatch(r"[0-9a-f]{40}", ref) for ref in (old_ref, new_ref))
+                tag_refs = all(re.fullmatch(r"v?[0-9]+(?:\.[0-9]+){1,3}", ref) for ref in (old_ref, new_ref))
+                tag_refs = tag_refs and old_ref.startswith("v") == new_ref.startswith("v")
+                if not (sha_refs or tag_refs):
+                    return False
+                action_changes.add((old_match[2], old_ref, new_ref))
+        elif path == ".agents/skills/neohaskell-release/scripts/releases/test_release.py":
+            old_lines = old.splitlines(keepends=True)
+            new_lines = new.splitlines(keepends=True)
+            if len(old_lines) != len(new_lines):
+                return False
+            for old_line, new_line in zip(old_lines, new_lines):
+                if old_line == new_line:
+                    continue
+                pattern = r'(\s*self\.assertIn\(")([\w.-]+/[\w.-]+)@([^"\s]+)(", native\)\s*)'
+                old_match = re.fullmatch(pattern, old_line)
+                new_match = re.fullmatch(pattern, new_line)
+                if (
+                    not old_match
+                    or not new_match
+                    or old_match.group(1, 2, 4) != new_match.group(1, 2, 4)
+                ):
+                    return False
+                fixture_changes.add((old_match[2], old_match[3], new_match[3]))
+        else:
+            return False
+    return (
+        bool(action_changes or "neo/assets/ide/package-lock.json" in paths)
+        and fixture_changes <= action_changes
+    )
+
+
+def release_impact(repo, message, before, after):
+    impact = commit_impact(message)
+    if impact != "compatible" or not re.match(r"fix\(deps\):", message):
+        return impact
+    return "none" if dependency_only_change(repo, before, after) else impact
 
 
 def sections(body):
@@ -357,6 +483,18 @@ def source_target_policy(repo, source):
     return policy
 
 
+def source_distribution(repo, source):
+    config = json.loads(repo.read(source, CONFIG_PATH) or "{}")
+    if "distribution_policy" not in config:
+        return {}
+    if config["distribution_policy"] != "installer-v1" or config.get("native_policy") != TARGET_POLICY:
+        raise ValueError("Unsupported release distribution policy")
+    projection = repo.read(source, "neo/lifecycle/contract/registry.json")
+    if not projection:
+        raise ValueError("Installer release source lacks its contract registry projection")
+    return {"distribution_policy": "installer-v1", "contract_registry_sha256": digest(projection)}
+
+
 def record_target_policy(record):
     if RAW_TARGET_FIELDS & record.keys():
         raise ValueError("Release record cannot contain raw target lists")
@@ -376,8 +514,9 @@ def targets_for(record):
 def validate_source_policy(repo, record):
     check_identity(record)
     policy = record_target_policy(record)
+    distribution = {k: record[k] for k in ("distribution_policy", "contract_registry_sha256") if k in record}
     if record["kind"] == "recovery":
-        if policy is not None:
+        if policy is not None or distribution:
             raise ValueError("Recovery records inherit the release target policy")
         ledger = repo.ledger(record["source_sha"])
         original = next(
@@ -390,6 +529,8 @@ def validate_source_policy(repo, record):
     if record["kind"] != "release":
         raise ValueError("Unknown release manifest kind")
     source_policy = source_target_policy(repo, record["source_sha"])
+    if distribution != source_distribution(repo, record["source_sha"]):
+        raise ValueError("Release distribution policy does not match its source")
     if policy != source_policy:
         raise ValueError("Release target policy does not match its source")
     return targets_for(record)
@@ -481,7 +622,7 @@ def plan_release(repo, source, group, completed, date, bootstrap=None, check_tag
     if bootstrap is None:
         for sha in repo.commits(base_sha, source):
             message = repo.git("show", "-s", "--format=%B", sha)
-            level = commit_impact(message)
+            level = release_impact(repo, message, sha + "^1", sha)
             impact = max(impact, level, key=IMPACTS.get)
     if impact == "none":
         if bootstrap:
@@ -513,6 +654,7 @@ def plan_release(repo, source, group, completed, date, bootstrap=None, check_tag
     }
     if target_policy is not None:
         data["target_policy"] = target_policy
+    data.update(source_distribution(repo, source))
     plan = identify(data)
     validate_source_policy(repo, plan)
     for tag in [release_tag(plan)] + (
@@ -526,6 +668,12 @@ def plan_release(repo, source, group, completed, date, bootstrap=None, check_tag
 
 
 def change_version(text, path, package, target):
+    if path.endswith("neo.json"):
+        data = json.loads(text)
+        if data.get("name") != package or not isinstance(data.get("version"), str):
+            raise ValueError(f"{path}: cannot uniquely update {package}")
+        data["version"] = target
+        return json.dumps(data, indent=2, ensure_ascii=False) + "\n"
     if path.endswith(".cabal"):
         result, count = re.subn(
             r"(?mi)^(version:\s*)[^\n]+", lambda m: m[1] + target, text, count=1
@@ -569,11 +717,29 @@ def append_changelog(old, section, first):
     return "# Changelog\n\n" + section + "\n" + old
 
 
+def source_group_config(repo, source, group):
+    group_config(group)
+    text = repo.read(source, CONFIG_PATH)
+    if text is None:
+        text = repo.read(source, LIVE_LEGACY_CONFIG_PATH)
+    if text is None:
+        raise ValueError("Release source is missing its configuration")
+    try:
+        config = json.loads(text)
+    except (TypeError, json.JSONDecodeError) as error:
+        raise ValueError("Malformed source release configuration") from error
+    groups = config.get("groups") if isinstance(config, dict) else None
+    profile = groups.get(group) if isinstance(groups, dict) else None
+    if not isinstance(profile, dict) or not isinstance(profile.get("packages"), dict) or not isinstance(profile.get("locks"), dict) or not isinstance(profile.get("changelog"), str):
+        raise ValueError("Malformed source release group configuration")
+    return profile
+
+
 def expected_edits(repo, plan, *, ledger_path=LEDGER_PATH):
     validate_source_policy(repo, plan)
     source, group = plan["source_sha"], plan["group"]
     ledger = repo.ledger(source)
-    profile = group_config(group)
+    profile = source_group_config(repo, source, group)
     if plan["kind"] == "release":
         if plan["id"] in {p["id"] for p in ledger["attempts"]}:
             raise ValueError("Attempt already prepared")
@@ -763,10 +929,35 @@ def check_checkout(repo, base, pr_message=None):
     if before != after:
         raise ValueError("A feature PR cannot rewrite release history")
     revisions = repo.git("rev-list", "--no-merges", base + ".." + head).splitlines()
-    messages = [repo.git("show", "-s", "--format=%B", sha) for sha in revisions]
+    commit_impacts = []
+    for sha in revisions:
+        message = repo.git("show", "-s", "--format=%B", sha)
+        commit_impacts.append(
+            (message, release_impact(repo, message, sha + "^1", sha))
+        )
+    needs = max(
+        (impact for _, impact in commit_impacts),
+        key=IMPACTS.get,
+        default="none",
+    )
     if pr_message:
-        messages.append(pr_message)
-    needs = max((commit_impact(m) for m in messages), key=IMPACTS.get, default="none")
+        merge_base = repo.git("merge-base", base, head)
+        pr_impact = release_impact(repo, pr_message, merge_base, head)
+        needs = max(needs, pr_impact, key=IMPACTS.get)
+        is_nonbreaking_dependency_maintenance = (
+            re.match(r"fix\(deps\):", pr_message) is not None
+            and pr_impact == "none"
+            and all(
+                impact == "none"
+                or (
+                    impact == "compatible"
+                    and re.match(r"fix\(deps\):", message) is not None
+                )
+                for message, impact in commit_impacts
+            )
+        )
+        if is_nonbreaking_dependency_maintenance:
+            needs = "none"
     changed = set(repo.git("diff", "--name-only", base + "..." + head).splitlines())
     pending = [
         n for n in notes if n["path"] in changed or n["path"] not in repo.tree(base)

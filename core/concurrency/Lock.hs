@@ -10,7 +10,6 @@ module Lock (
 import Basics
 import ConcurrentVar (ConcurrentVar)
 import ConcurrentVar qualified
-import Control.Exception qualified
 import Task (Task)
 import Task qualified
 import Maybe (Maybe (..))
@@ -41,13 +40,9 @@ release self = do
 
 
 with :: Lock -> Task _ value -> Task _ value
-with self task =
-  do
-    Control.Exception.bracket
-      (acquire self |> Task.runNoErrors)
-      (\_ -> release self |> Task.runNoErrors)
-      (\_ -> task |> Task.runNoErrors)
-    |> Task.fromIO
+with self task = Task.withCancellationDeferred \restore -> do
+  acquire self
+  Task.finally (release self) (restore task)
 
 
 -- | Execute a task while holding the lock, with a timeout in seconds.
@@ -57,19 +52,19 @@ with self task =
 -- SECURITY: Use this instead of 'with' for refresh operations to prevent deadlock.
 withTimeout :: forall value. Int -> Lock -> Task _ value -> Task _ (Result Text value)
 withTimeout timeoutSeconds self task = do
-  case timeoutSeconds > 0 of
-    False -> Task.yield (Err "lock timeout: non-positive timeout")
-    True -> do
+  if timeoutSeconds <= 0
+    then Task.yield (Err "lock timeout: non-positive timeout")
+    else Task.withCancellationDeferred \restore -> do
       let microseconds = timeoutSeconds * 1000000
-      maybeUnit <- GhcTimeout.timeout microseconds (acquire self |> Task.runNoErrors) |> Task.fromIO
+      maybeUnit <-
+        GhcTimeout.timeout microseconds (acquire self |> Task.runNoErrors)
+          |> Task.fromIO
+          |> restore
       case maybeUnit of
         Nothing -> Task.yield (Err "lock timeout")
         Just _ -> do
           taskResult <-
-            Control.Exception.finally
-              (task |> Task.asResult |> Task.runNoErrors)
-              (release self |> Task.runNoErrors)
-              |> Task.fromIO
+            Task.finally (release self) (restore (Task.asResult task))
           case taskResult of
             Ok value -> Task.yield (Ok value)
             Err err -> Task.throw err

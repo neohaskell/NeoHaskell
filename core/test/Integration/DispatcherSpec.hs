@@ -6,14 +6,10 @@ import Array qualified
 import AsyncTask qualified
 import Channel qualified
 import Auth.SecretStore.InMemory qualified as InMemorySecretStore
-import Control.Concurrent qualified as Ghc
-import Control.Concurrent.Async qualified as GhcAsync
 import ConcurrentVar qualified
 import ConcurrentMap qualified
-import Control.Exception qualified as GhcException
 import Core
 import DateTime qualified
-import GHC.Conc qualified as GhcConc
 import Integration qualified
 import Integration.Command qualified as Command
 import Integration.Lifecycle qualified as Lifecycle
@@ -21,6 +17,7 @@ import Json qualified
 import LinkedList qualified
 import Map qualified
 import Maybe qualified
+import Prelude qualified as GhcPrelude
 import Service.Command.Core (NameOf)
 import Service.Event (Event (..), StreamPosition (..))
 import Service.Event.EntityName (EntityName (..))
@@ -33,6 +30,8 @@ import Service.Application.Integrations qualified as Integrations
 import Service.Integration.Dispatcher qualified as Dispatcher
 import Service.Integration.DispatchRegistry qualified as DispatchRegistry
 import Service qualified
+import Service.AccessControl (AccessError (..))
+import Service.Response (CommandResponse (..))
 import Service.Transport (DispatchHandler, EndpointHandler)
 import Service.Transport.InternalSpec qualified as InternalCommand
 import Stream qualified
@@ -121,33 +120,30 @@ makeContext = do
       , Integration.refreshLocks = locks
       , Integration.fileAccess = Nothing
       , Integration.outboundDispatch = DispatchRegistry.empty
+      , Integration.eraseErasableKey = Nothing
       }
 
 
 waitForDispatchCount :: Int -> Int -> ConcurrentVar.ConcurrentVar Int -> Task Text Unit
 waitForDispatchCount attemptsLeft expectedCount dispatchCount = do
   currentCount <- dispatchCount |> ConcurrentVar.peek
-  if currentCount >= expectedCount
-    then Task.yield unit
-    else
-      if attemptsLeft <= 0
-        then Task.throw "Timed out waiting for command dispatch"
-        else do
-          AsyncTask.sleep 20 |> Task.mapError (\_ -> "dispatch completion wait failed" :: Text)
-          waitForDispatchCount (attemptsLeft - 1) expectedCount dispatchCount
+  Task.unless (currentCount >= expectedCount) do
+    if attemptsLeft <= 0
+      then Task.throw "Timed out waiting for command dispatch"
+      else do
+        AsyncTask.sleep 20 |> Task.mapError (\_ -> "dispatch completion wait failed" :: Text)
+        waitForDispatchCount (attemptsLeft - 1) expectedCount dispatchCount
 
 
-waitForBlockedOnSTM :: Int -> GhcConc.ThreadId -> Task Text Unit
-waitForBlockedOnSTM attemptsLeft threadId = do
-  threadStatus <- GhcConc.threadStatus threadId |> Task.fromIO
-  case threadStatus of
-    GhcConc.ThreadBlocked GhcConc.BlockedOnSTM -> Task.yield unit
-    _ ->
-      if attemptsLeft <= 0
-        then Task.throw "Timed out waiting for a thread blocked on STM"
-        else do
-          AsyncTask.sleep 5 |> Task.mapError (\_ -> "thread status wait failed" :: Text)
-          waitForBlockedOnSTM (attemptsLeft - 1) threadId
+waitForBlockedOnSTM :: Int -> AsyncTask.AsyncTask err result -> Task Text Unit
+waitForBlockedOnSTM attemptsLeft child = do
+  waiting <- AsyncTask.isWaitingForStateChange child
+  Task.unless waiting do
+    if attemptsLeft <= 0
+      then Task.throw "Timed out waiting for a thread blocked on STM"
+      else do
+        AsyncTask.sleep 5 |> Task.mapError (\_ -> "thread status wait failed" :: Text)
+        waitForBlockedOnSTM (attemptsLeft - 1) child
 
 
 cancelShutdownWhileWriterIsAdmitted ::
@@ -163,25 +159,23 @@ cancelShutdownWhileWriterIsAdmitted dispatcher activeEvent queuedEvent waitingEv
   Channel.read workerStarted
   Dispatcher.dispatch dispatcher queuedEvent
 
-  writerTask <-
-    GhcAsync.async (Task.runResult (Dispatcher.dispatch dispatcher waitingEvent))
-      |> Task.fromIO
-  waitForBlockedOnSTM 200 (GhcAsync.asyncThreadId writerTask)
+  writerTask <- AsyncTask.run (Dispatcher.dispatch dispatcher waitingEvent)
+  waitForBlockedOnSTM 200 writerTask
 
-  shutdownTask <-
-    GhcAsync.async (Task.runResult (Dispatcher.shutdown dispatcher))
-      |> Task.fromIO
-  waitForBlockedOnSTM 200 (GhcAsync.asyncThreadId shutdownTask)
+  shutdownTask <- AsyncTask.run (Dispatcher.shutdown dispatcher)
+  waitForBlockedOnSTM 200 shutdownTask
 
-  Ghc.throwTo (GhcAsync.asyncThreadId shutdownTask) GhcException.ThreadKilled
-    |> Task.fromIO
-  GhcAsync.cancel writerTask |> Task.fromIO
+  AsyncTask.requestThreadTermination shutdownTask
+  AsyncTask.cancel writerTask
   workerStopRace <-
     AsyncTask.race
       (Channel.read workerStopped)
       (AsyncTask.sleep 500 |> Task.mapError (\_ -> "worker cancellation wait failed" :: Text))
 
-  _ <- GhcAsync.waitCatch shutdownTask |> Task.fromIO
+  shutdownOutcome <- AsyncTask.waitOutcome shutdownTask
+  case shutdownOutcome of
+    AsyncTask.Interrupted -> Task.yield unit
+    _ -> Task.throw "Shutdown did not preserve interruption"
   Dispatcher.shutdown dispatcher
 
   case workerStopRace of
@@ -216,19 +210,22 @@ spec = do
                   processEvent = \_maybeContext _eventStore _event -> Task.yield [payload]
                 }
         let captureSource :: DispatchHandler
-            captureSource sourceEventMetadata _requestContext _commandBytes _respond =
+            captureSource sourceEventMetadata _requestContext _commandBytes respond = do
               Channel.write sourceEventMetadata capturedSources
+              respond (Accepted {entityId = "entity-source"}, Json.encodeText ("accepted" :: Text.Text) |> Text.toBytes)
 
         eventStore <- InMemory.new |> Task.mapError toText
         context <- makeContext
         dispatcher <-
           Dispatcher.newWithLifecycleConfigWithSource
-            Dispatcher.defaultConfig
-            eventStore
-            [runner]
-            []
-            (Map.empty |> Map.set "CaptureSource" captureSource)
-            context
+            Dispatcher.Setup
+              { settings = Dispatcher.defaultConfig,
+                eventStore = eventStore,
+                outboundRunners = [runner],
+                lifecycleRunners = [],
+                commandEndpoints = (Map.empty |> Map.set "CaptureSource" captureSource),
+                actionContext = context
+              }
         event <- makeTestEvent "entity-source" 1 1
 
         Dispatcher.dispatch dispatcher event
@@ -263,12 +260,14 @@ spec = do
         actionContext <- makeContext
         dispatcher <-
           Dispatcher.newWithLifecycleConfigWithSource
-            Dispatcher.defaultConfig
-            rawEventStore
-            [outboundRunner]
-            []
-            observedCommandEndpoints
-            actionContext
+            Dispatcher.Setup
+              { settings = Dispatcher.defaultConfig,
+                eventStore = rawEventStore,
+                outboundRunners = [outboundRunner],
+                lifecycleRunners = [],
+                commandEndpoints = observedCommandEndpoints,
+                actionContext = actionContext
+              }
         sourceEventBase <- makeTestEvent "outbound-source-stream" 1 1
         let sourceEvent =
               sourceEventBase
@@ -335,8 +334,9 @@ spec = do
                   commandData = Json.encode ("ignored" :: Text.Text)
                 }
         let legacyHandler :: EndpointHandler
-            legacyHandler _requestContext _commandBytes _respond =
+            legacyHandler _requestContext _commandBytes respond = do
               dispatchCount |> ConcurrentVar.modify (+ 1)
+              respond (Accepted {entityId = "legacy-stream"}, Json.encodeText ("accepted" :: Text.Text) |> Text.toBytes)
         let legacyEndpoints :: Map.Map Text EndpointHandler
             legacyEndpoints = Map.empty |> Map.set "LegacyCommand" legacyHandler
         let runner =
@@ -353,12 +353,14 @@ spec = do
         context <- makeContext
         dispatcher <-
           Dispatcher.newWithLifecycleConfig
-            Dispatcher.defaultConfig
-            eventStore
-            [runner]
-            []
-            legacyEndpoints
-            context
+            Dispatcher.Setup
+              { settings = Dispatcher.defaultConfig,
+                eventStore = eventStore,
+                outboundRunners = [runner],
+                lifecycleRunners = [],
+                commandEndpoints = legacyEndpoints,
+                actionContext = context
+              }
         event <- makeTestEvent "legacy-stream" 1 1
         Dispatcher.dispatch dispatcher event
         waitForDispatchCount 250 2 dispatchCount
@@ -409,8 +411,7 @@ spec = do
                         callCount |> ConcurrentVar.modify (+ 1)
                         if currentCount == 0
                           then do
-                            -- First call: throw a raw IO exception (bypasses ExceptT)
-                            Task.fromIO (GhcException.throwIO (GhcException.ErrorCall "private-runner-error-sentinel"))
+                            Task.evaluate (panic "private-runner-error-sentinel")
                           else do
                             -- Subsequent calls: process normally
                             processedEvents
@@ -422,21 +423,24 @@ spec = do
         context <- makeContext
         dispatcher <-
           Dispatcher.newWithLifecycleConfig
-            Dispatcher.DispatcherConfig
-              { idleTimeoutMs = 60000,
-                reaperIntervalMs = 10000,
-                enableReaper = False,
-                workerChannelCapacity = 100,
-                channelWriteTimeoutMs = 5000,
-                eventProcessingTimeoutMs = Nothing,
-                maxEventRetries = 0,
-                retryBaseDelayMs = 50
+            Dispatcher.Setup
+              { settings =
+                  Dispatcher.DispatcherConfig
+                    { idleTimeoutMs = 60000,
+                      reaperIntervalMs = 10000,
+                      enableReaper = False,
+                      workerChannelCapacity = 100,
+                      channelWriteTimeoutMs = 5000,
+                      eventProcessingTimeoutMs = Nothing,
+                      maxEventRetries = 0,
+                      retryBaseDelayMs = 50
+                    },
+                eventStore = eventStore,
+                outboundRunners = [crashOnFirstRunner],
+                lifecycleRunners = [],
+                commandEndpoints = Map.empty,
+                actionContext = context
               }
-            eventStore
-            [crashOnFirstRunner]
-            []
-            Map.empty
-            context
 
         -- Dispatch first event - IO exception caught at runner level, event skipped
         event1 <- makeTestEvent "entity-A" 1 1
@@ -480,21 +484,24 @@ spec = do
         context <- makeContext
         dispatcher <-
           Dispatcher.newWithLifecycleConfig
-            Dispatcher.DispatcherConfig
-              { idleTimeoutMs = 60000,
-                reaperIntervalMs = 10000,
-                enableReaper = False,
-                workerChannelCapacity = 10,
-                channelWriteTimeoutMs = 5000,
-                eventProcessingTimeoutMs = Just 20,
-                maxEventRetries = 0,
-                retryBaseDelayMs = 50
+            Dispatcher.Setup
+              { settings =
+                  Dispatcher.DispatcherConfig
+                    { idleTimeoutMs = 60000,
+                      reaperIntervalMs = 10000,
+                      enableReaper = False,
+                      workerChannelCapacity = 10,
+                      channelWriteTimeoutMs = 5000,
+                      eventProcessingTimeoutMs = Just 20,
+                      maxEventRetries = 0,
+                      retryBaseDelayMs = 50
+                    },
+                eventStore = eventStore,
+                outboundRunners = [slowRunner, laterRunner],
+                lifecycleRunners = [],
+                commandEndpoints = Map.empty,
+                actionContext = context
               }
-            eventStore
-            [slowRunner, laterRunner]
-            []
-            Map.empty
-            context
         event <- makeTestEvent "timeout-stream" 1 1
         Dispatcher.dispatch dispatcher event
         AsyncTask.sleep 150 |> Task.mapError (\_ -> "sleep error" :: Text)
@@ -503,15 +510,15 @@ spec = do
         wasLaterRunnerStarted <- ConcurrentVar.peek laterRunnerStarted
         wasLaterRunnerStarted |> shouldBe False
 
-      it "reports every matching runner when callback dispatch fails" \_ -> do
+      it "stops later runners when a handler omits its callback" \_ -> do
         dispatchCount <- ConcurrentVar.containing (0 :: Int)
         laterRunnerStarted <- ConcurrentVar.containing False
         let payload =
               Integration.CommandPayload
-                { commandType = "FailCommand",
+                { commandType = "OmitCommand",
                   commandData = Json.encode ("ignored" :: Text.Text)
                 }
-        let failingRunner =
+        let omittingRunner =
               Dispatcher.OutboundRunner
                 { entityTypeName = "TestEntity",
                   processEvent = \_context _store _event -> Task.yield [payload]
@@ -523,21 +530,23 @@ spec = do
                     laterRunnerStarted |> ConcurrentVar.modify (\_ -> True)
                     Task.yield Array.empty
                 }
-        let failDispatch :: DispatchHandler
-            failDispatch _sourceEventMetadata _requestContext _commandBytes _respond = do
+        let omitDispatch :: DispatchHandler
+            omitDispatch _sourceEventMetadata _requestContext _commandBytes _respond = do
               dispatchCount |> ConcurrentVar.modify (+ 1)
-              Task.throw "private-dispatch-error-sentinel"
+              Task.yield unit
 
         eventStore <- InMemory.new |> Task.mapError toText
         context <- makeContext
         dispatcher <-
           Dispatcher.newWithLifecycleConfigWithSource
-            Dispatcher.defaultConfig
-            eventStore
-            [failingRunner, laterRunner]
-            []
-            (Map.empty |> Map.set "FailCommand" failDispatch)
-            context
+            Dispatcher.Setup
+              { settings = Dispatcher.defaultConfig,
+                eventStore = eventStore,
+                outboundRunners = [omittingRunner, laterRunner],
+                lifecycleRunners = [],
+                commandEndpoints = (Map.empty |> Map.set "OmitCommand" omitDispatch),
+                actionContext = context
+              }
         event <- makeTestEvent "dispatch-failure-stream" 1 1
         Dispatcher.dispatch dispatcher event
         AsyncTask.sleep 100 |> Task.mapError (\_ -> "sleep error" :: Text)
@@ -546,6 +555,119 @@ spec = do
         dispatchAttempts |> shouldBe 1
         wasLaterRunnerStarted <- ConcurrentVar.peek laterRunnerStarted
         wasLaterRunnerStarted |> shouldBe False
+
+      it "reports rejected callback commands without exposing their reason" \_ -> do
+        let payload =
+              Integration.CommandPayload
+                { commandType = "RejectedCallback",
+                  commandData = Json.encode ("ignored" :: Text.Text)
+                }
+        let rejectDispatch :: DispatchHandler
+            rejectDispatch _source _context _bytes respond =
+              respond (Rejected {reason = "private-callback-sentinel"}, Json.encodeText ("ignored" :: Text.Text) |> Text.toBytes)
+        let endpoints = Map.empty |> Map.set "RejectedCallback" rejectDispatch
+        rejected <- Dispatcher.dispatchCommandWithSource endpoints Nothing payload |> Task.asResult
+        rejected |> shouldBe (Err "Command dispatch failed")
+
+      it "reports failed callback commands without exposing their error" \_ -> do
+        let payload =
+              Integration.CommandPayload
+                { commandType = "FailedCallback",
+                  commandData = Json.encode ("ignored" :: Text.Text)
+                }
+        let failDispatch :: DispatchHandler
+            failDispatch _source _context _bytes respond =
+              respond (Failed {error = "private-callback-sentinel"}, Json.encodeText ("ignored" :: Text.Text) |> Text.toBytes)
+        let endpoints = Map.empty |> Map.set "FailedCallback" failDispatch
+        failed <- Dispatcher.dispatchCommandWithSource endpoints Nothing payload |> Task.asResult
+        failed |> shouldBe (Err "Command dispatch failed")
+
+      it "reports a missing callback command handler" \_ -> do
+        let payload =
+              Integration.CommandPayload
+                { commandType = "MissingCallback",
+                  commandData = Json.encode ("ignored" :: Text.Text)
+                }
+        missing <- Dispatcher.dispatchCommandWithSource Map.empty Nothing payload |> Task.asResult
+        missing |> shouldBe (Err "Command dispatch handler unavailable")
+
+      it "reports a handler that omits its callback" \_ -> do
+        let payload =
+              Integration.CommandPayload
+                { commandType = "OmittedCallback",
+                  commandData = Json.encode ("ignored" :: Text.Text)
+                }
+        let omitCallback :: DispatchHandler
+            omitCallback _source _context _bytes _respond = Task.yield unit
+        let endpoints = Map.empty |> Map.set "OmittedCallback" omitCallback
+        omitted <- Dispatcher.dispatchCommandWithSource endpoints Nothing payload |> Task.asResult
+        omitted |> shouldBe (Err "Command dispatch failed")
+
+      it "reports unauthorized callback commands without exposing their response" \_ -> do
+        let payload =
+              Integration.CommandPayload
+                { commandType = "UnauthorizedCallback",
+                  commandData = Json.encode ("ignored" :: Text.Text)
+                }
+        let unauthorizedDispatch :: DispatchHandler
+            unauthorizedDispatch _source _context _bytes respond =
+              respond (Unauthorized {authError = Unauthenticated}, Json.encodeText ("private-callback-sentinel" :: Text.Text) |> Text.toBytes)
+        let endpoints = Map.empty |> Map.set "UnauthorizedCallback" unauthorizedDispatch
+        unauthorized <- Dispatcher.dispatchCommandWithSource endpoints Nothing payload |> Task.asResult
+        unauthorized |> shouldBe (Err "Command dispatch failed")
+
+      it "does not expose a callback handler failure" \_ -> do
+        let payload =
+              Integration.CommandPayload
+                { commandType = "ThrowingCallback",
+                  commandData = Json.encode ("ignored" :: Text.Text)
+                }
+        let throwingDispatch :: DispatchHandler
+            throwingDispatch _source _context _bytes _respond = Task.throw "private-callback-sentinel"
+        let endpoints = Map.empty |> Map.set "ThrowingCallback" throwingDispatch
+        failed <- Dispatcher.dispatchCommandWithSource endpoints Nothing payload |> Task.asResult
+        failed |> shouldBe (Err "Command dispatch failed")
+
+      it "does not report success when a callback handler crashes" \_ -> do
+        let payload =
+              Integration.CommandPayload
+                { commandType = "CrashingCallback",
+                  commandData = Json.encode ("ignored" :: Text.Text)
+                }
+        let crashDispatch :: DispatchHandler
+            crashDispatch _source _context _bytes _respond =
+              Task.fromIO (GhcPrelude.ioError (GhcPrelude.userError "private-callback-sentinel"))
+        let endpoints = Map.empty |> Map.set "CrashingCallback" crashDispatch
+        child <- AsyncTask.run (Dispatcher.dispatchCommandWithSource endpoints Nothing payload)
+        outcome <- AsyncTask.waitOutcome child
+        case outcome of
+          AsyncTask.Crashed _ -> pass
+          _ -> fail "Callback handler crash must not return success"
+
+      it "does not respond after a callback handler is cancelled" \_ -> do
+        entered <- Channel.new
+        responded <- ConcurrentVar.containing False
+        let payload =
+              Integration.CommandPayload
+                { commandType = "CancelledCallback",
+                  commandData = Json.encode ("ignored" :: Text.Text)
+                }
+        let blockedDispatch :: DispatchHandler
+            blockedDispatch _source _context _bytes respond = do
+              Channel.write unit entered
+              AsyncTask.sleep 60000
+              responded |> ConcurrentVar.modify (\_ -> True)
+              respond (Accepted {entityId = "cancelled"}, Json.encodeText ("ignored" :: Text.Text) |> Text.toBytes)
+        let endpoints = Map.empty |> Map.set "CancelledCallback" blockedDispatch
+        child <- AsyncTask.runWithCancellationEnabled (Dispatcher.dispatchCommandWithSource endpoints Nothing payload)
+        Channel.read entered
+        AsyncTask.cancel child
+        outcome <- AsyncTask.waitOutcome child
+        case outcome of
+          AsyncTask.Interrupted -> pass
+          _ -> fail "Cancelled callback handler must stop"
+        wasResponded <- ConcurrentVar.peek responded
+        wasResponded |> shouldBe False
 
     describe "per-entity ordering" do
       it "processes events for the same entity in order" \_ -> do
@@ -840,21 +962,24 @@ spec = do
         context <- makeContext
         dispatcher <-
           Dispatcher.newWithLifecycleConfig
-            Dispatcher.DispatcherConfig
-              { idleTimeoutMs = 50,
-                reaperIntervalMs = 25,
-                enableReaper = True,
-                workerChannelCapacity = 100,
-                channelWriteTimeoutMs = 5000,
-                eventProcessingTimeoutMs = Nothing,
-                maxEventRetries = 3,
-                retryBaseDelayMs = 50
+            Dispatcher.Setup
+              { settings =
+                  Dispatcher.DispatcherConfig
+                    { idleTimeoutMs = 50,
+                      reaperIntervalMs = 25,
+                      enableReaper = True,
+                      workerChannelCapacity = 100,
+                      channelWriteTimeoutMs = 5000,
+                      eventProcessingTimeoutMs = Nothing,
+                      maxEventRetries = 3,
+                      retryBaseDelayMs = 50
+                    },
+                eventStore = eventStore,
+                outboundRunners = [],
+                lifecycleRunners = [lifecycleRunner],
+                commandEndpoints = Map.empty,
+                actionContext = context
               }
-            eventStore
-            []
-            [lifecycleRunner]
-            Map.empty
-            context
 
         -- Send event to entity A
         eventA <- makeTestEvent "entity-A" 1 1
@@ -889,21 +1014,24 @@ spec = do
         context <- makeContext
         dispatcher <-
           Dispatcher.newWithLifecycleConfig
-            Dispatcher.DispatcherConfig
-              { idleTimeoutMs = 50,
-                reaperIntervalMs = 25,
-                enableReaper = True,
-                workerChannelCapacity = 100,
-                channelWriteTimeoutMs = 5000,
-                eventProcessingTimeoutMs = Nothing,
-                maxEventRetries = 3,
-                retryBaseDelayMs = 50
+            Dispatcher.Setup
+              { settings =
+                  Dispatcher.DispatcherConfig
+                    { idleTimeoutMs = 50,
+                      reaperIntervalMs = 25,
+                      enableReaper = True,
+                      workerChannelCapacity = 100,
+                      channelWriteTimeoutMs = 5000,
+                      eventProcessingTimeoutMs = Nothing,
+                      maxEventRetries = 3,
+                      retryBaseDelayMs = 50
+                    },
+                eventStore = eventStore,
+                outboundRunners = [],
+                lifecycleRunners = [lifecycleRunner],
+                commandEndpoints = Map.empty,
+                actionContext = context
               }
-            eventStore
-            []
-            [lifecycleRunner]
-            Map.empty
-            context
 
         -- Send first event
         eventA1 <- makeTestEvent "entity-A" 1 1
@@ -1023,21 +1151,24 @@ spec = do
         context <- makeContext
         dispatcher <-
           Dispatcher.newWithLifecycleConfig
-            Dispatcher.DispatcherConfig
-              { idleTimeoutMs = 60000,
-                reaperIntervalMs = 10000,
-                enableReaper = False,
-                workerChannelCapacity = 2,
-                channelWriteTimeoutMs = 20,
-                eventProcessingTimeoutMs = Nothing,
-                maxEventRetries = 3,
-                retryBaseDelayMs = 50
+            Dispatcher.Setup
+              { settings =
+                  Dispatcher.DispatcherConfig
+                    { idleTimeoutMs = 60000,
+                      reaperIntervalMs = 10000,
+                      enableReaper = False,
+                      workerChannelCapacity = 2,
+                      channelWriteTimeoutMs = 20,
+                      eventProcessingTimeoutMs = Nothing,
+                      maxEventRetries = 3,
+                      retryBaseDelayMs = 50
+                    },
+                eventStore = eventStore,
+                outboundRunners = [slowRunner],
+                lifecycleRunners = [],
+                commandEndpoints = Map.empty,
+                actionContext = context
               }
-            eventStore
-            [slowRunner]
-            []
-            Map.empty
-            context
 
         -- Create 4 events for the same entity
         event1 <- makeTestEvent "entity-A" 1 1
@@ -1097,12 +1228,14 @@ spec = do
         outboundContext <- makeContext
         outboundDispatcher <-
           Dispatcher.newWithLifecycleConfig
-            forcedStopConfig
-            outboundEventStore
-            [blockingOutboundRunner]
-            []
-            Map.empty
-            outboundContext
+            Dispatcher.Setup
+              { settings = forcedStopConfig,
+                eventStore = outboundEventStore,
+                outboundRunners = [blockingOutboundRunner],
+                lifecycleRunners = [],
+                commandEndpoints = Map.empty,
+                actionContext = outboundContext
+              }
         outboundActiveEvent <- makeTestEvent "outbound-cancelled-stream" 1 1
         outboundQueuedEvent <- makeTestEvent "outbound-cancelled-stream" 2 2
         Dispatcher.dispatch outboundDispatcher outboundActiveEvent
@@ -1132,12 +1265,14 @@ spec = do
         lifecycleContext <- makeContext
         lifecycleDispatcher <-
           Dispatcher.newWithLifecycleConfig
-            forcedStopConfig
-            lifecycleEventStore
-            []
-            [blockingLifecycleRunner]
-            Map.empty
-            lifecycleContext
+            Dispatcher.Setup
+              { settings = forcedStopConfig,
+                eventStore = lifecycleEventStore,
+                outboundRunners = [],
+                lifecycleRunners = [blockingLifecycleRunner],
+                commandEndpoints = Map.empty,
+                actionContext = lifecycleContext
+              }
         lifecycleActiveEvent <- makeTestEvent "lifecycle-cancelled-stream" 1 1
         lifecycleQueuedEvent <- makeTestEvent "lifecycle-cancelled-stream" 2 2
         Dispatcher.dispatch lifecycleDispatcher lifecycleActiveEvent
@@ -1174,12 +1309,14 @@ spec = do
         outboundContext <- makeContext
         outboundDispatcher <-
           Dispatcher.newWithLifecycleConfig
-            interruptedStopConfig
-            outboundEventStore
-            [blockingOutboundRunner]
-            []
-            Map.empty
-            outboundContext
+            Dispatcher.Setup
+              { settings = interruptedStopConfig,
+                eventStore = outboundEventStore,
+                outboundRunners = [blockingOutboundRunner],
+                lifecycleRunners = [],
+                commandEndpoints = Map.empty,
+                actionContext = outboundContext
+              }
         outboundActiveEvent <- makeTestEvent "outbound-interrupted-stop" 1 1
         outboundQueuedEvent <- makeTestEvent "outbound-interrupted-stop" 2 2
         outboundWaitingEvent <- makeTestEvent "outbound-interrupted-stop" 3 3
@@ -1216,12 +1353,14 @@ spec = do
         lifecycleContext <- makeContext
         lifecycleDispatcher <-
           Dispatcher.newWithLifecycleConfig
-            interruptedStopConfig
-            lifecycleEventStore
-            []
-            [blockingLifecycleRunner]
-            Map.empty
-            lifecycleContext
+            Dispatcher.Setup
+              { settings = interruptedStopConfig,
+                eventStore = lifecycleEventStore,
+                outboundRunners = [],
+                lifecycleRunners = [blockingLifecycleRunner],
+                commandEndpoints = Map.empty,
+                actionContext = lifecycleContext
+              }
         lifecycleActiveEvent <- makeTestEvent "lifecycle-interrupted-stop" 1 1
         lifecycleQueuedEvent <- makeTestEvent "lifecycle-interrupted-stop" 2 2
         lifecycleWaitingEvent <- makeTestEvent "lifecycle-interrupted-stop" 3 3
@@ -1271,12 +1410,14 @@ spec = do
         context <- makeContext
         dispatcher <-
           Dispatcher.newWithLifecycleConfig
-            creationRaceConfig
-            eventStore
-            []
-            [lifecycleRunner]
-            Map.empty
-            context
+            Dispatcher.Setup
+              { settings = creationRaceConfig,
+                eventStore = eventStore,
+                outboundRunners = [],
+                lifecycleRunners = [lifecycleRunner],
+                commandEndpoints = Map.empty,
+                actionContext = context
+              }
         event <- makeTestEvent "lifecycle-create-shutdown-race" 1 1
         dispatchTask <- AsyncTask.run (Dispatcher.dispatch dispatcher event)
         Channel.read spawnStarted
@@ -1305,21 +1446,24 @@ spec = do
         context <- makeContext
         dispatcher <-
           Dispatcher.newWithLifecycleConfig
-            Dispatcher.DispatcherConfig
-              { idleTimeoutMs = 60000,
-                reaperIntervalMs = 10000,
-                enableReaper = False,
-                workerChannelCapacity = 100,
-                channelWriteTimeoutMs = 50,
-                eventProcessingTimeoutMs = Nothing,
-                maxEventRetries = 3,
-                retryBaseDelayMs = 50
+            Dispatcher.Setup
+              { settings =
+                  Dispatcher.DispatcherConfig
+                    { idleTimeoutMs = 60000,
+                      reaperIntervalMs = 10000,
+                      enableReaper = False,
+                      workerChannelCapacity = 100,
+                      channelWriteTimeoutMs = 50,
+                      eventProcessingTimeoutMs = Nothing,
+                      maxEventRetries = 3,
+                      retryBaseDelayMs = 50
+                    },
+                eventStore = eventStore,
+                outboundRunners = [fastRunner],
+                lifecycleRunners = [],
+                commandEndpoints = Map.empty,
+                actionContext = context
               }
-            eventStore
-            [fastRunner]
-            []
-            Map.empty
-            context
 
         -- Dispatch 10 events
         events <-
@@ -1342,7 +1486,7 @@ spec = do
               Dispatcher.OutboundRunner
                 { entityTypeName = "TestEntity",
                   processEvent = \_maybeContext _eventStore _event -> do
-                    maskingState <- GhcException.getMaskingState |> Task.fromIO
+                    maskingState <- Task.cancellationState
                     Channel.write maskingState callbackMaskingStates
                     Task.yield Array.empty
                 }
@@ -1355,7 +1499,7 @@ spec = do
         callbackMaskingState <- Channel.read callbackMaskingStates
         Dispatcher.shutdown dispatcher
 
-        callbackMaskingState |> shouldBe GhcException.Unmasked
+        callbackMaskingState |> shouldBe Task.CancellationEnabled
 
       it "runs lifecycle callbacks in an unmasked child" \_ -> do
         callbackMaskingStates <- Channel.new
@@ -1366,7 +1510,7 @@ spec = do
                     Task.yield
                       Dispatcher.WorkerState
                         { processEvent = \_event -> do
-                            maskingState <- GhcException.getMaskingState |> Task.fromIO
+                            maskingState <- Task.cancellationState
                             Channel.write maskingState callbackMaskingStates
                             Task.yield Array.empty,
                           cleanup = Task.yield unit
@@ -1381,7 +1525,7 @@ spec = do
         callbackMaskingState <- Channel.read callbackMaskingStates
         Dispatcher.shutdown dispatcher
 
-        callbackMaskingState |> shouldBe GhcException.Unmasked
+        callbackMaskingState |> shouldBe Task.CancellationEnabled
 
     describe "concurrent dispatch to multiple entities" do
       it "handles concurrent dispatch to multiple entities correctly" \_ -> do
@@ -1635,7 +1779,7 @@ spec = do
                         attemptCount |> ConcurrentVar.modify (+ 1)
                         if currentAttempt == 0
                           then
-                            Task.fromIO (GhcException.throwIO (GhcException.ErrorCall "transient network error"))
+                            Task.evaluate (panic "transient network error")
                           else do
                             processedEvents
                               |> ConcurrentVar.modify (\evts -> evts ++ [decoded.sequenceNum])
@@ -1646,21 +1790,24 @@ spec = do
         context <- makeContext
         dispatcher <-
           Dispatcher.newWithLifecycleConfig
-            Dispatcher.DispatcherConfig
-              { idleTimeoutMs = 60000,
-                reaperIntervalMs = 10000,
-                enableReaper = False,
-                workerChannelCapacity = 100,
-                channelWriteTimeoutMs = 5000,
-                eventProcessingTimeoutMs = Nothing,
-                maxEventRetries = 3,
-                retryBaseDelayMs = 50
+            Dispatcher.Setup
+              { settings =
+                  Dispatcher.DispatcherConfig
+                    { idleTimeoutMs = 60000,
+                      reaperIntervalMs = 10000,
+                      enableReaper = False,
+                      workerChannelCapacity = 100,
+                      channelWriteTimeoutMs = 5000,
+                      eventProcessingTimeoutMs = Nothing,
+                      maxEventRetries = 3,
+                      retryBaseDelayMs = 50
+                    },
+                eventStore = eventStore,
+                outboundRunners = [retryRunner],
+                lifecycleRunners = [],
+                commandEndpoints = Map.empty,
+                actionContext = context
               }
-            eventStore
-            [retryRunner]
-            []
-            Map.empty
-            context
 
         event <- makeTestEvent "entity-A" 1 1
         Dispatcher.dispatch dispatcher event
@@ -1692,7 +1839,7 @@ spec = do
                         attemptCount |> ConcurrentVar.modify (+ 1)
                         if decoded.sequenceNum == 1
                           then
-                            Task.fromIO (GhcException.throwIO (GhcException.ErrorCall "persistent network error"))
+                            Task.evaluate (panic "persistent network error")
                           else do
                             processedEvents
                               |> ConcurrentVar.modify (\evts -> evts ++ [decoded.sequenceNum])
@@ -1703,21 +1850,24 @@ spec = do
         context <- makeContext
         dispatcher <-
           Dispatcher.newWithLifecycleConfig
-            Dispatcher.DispatcherConfig
-              { idleTimeoutMs = 60000,
-                reaperIntervalMs = 10000,
-                enableReaper = False,
-                workerChannelCapacity = 100,
-                channelWriteTimeoutMs = 5000,
-                eventProcessingTimeoutMs = Nothing,
-                maxEventRetries = 2,
-                retryBaseDelayMs = 10
+            Dispatcher.Setup
+              { settings =
+                  Dispatcher.DispatcherConfig
+                    { idleTimeoutMs = 60000,
+                      reaperIntervalMs = 10000,
+                      enableReaper = False,
+                      workerChannelCapacity = 100,
+                      channelWriteTimeoutMs = 5000,
+                      eventProcessingTimeoutMs = Nothing,
+                      maxEventRetries = 2,
+                      retryBaseDelayMs = 10
+                    },
+                eventStore = eventStore,
+                outboundRunners = [alwaysFailFirstRunner],
+                lifecycleRunners = [],
+                commandEndpoints = Map.empty,
+                actionContext = context
               }
-            eventStore
-            [alwaysFailFirstRunner]
-            []
-            Map.empty
-            context
 
         event1 <- makeTestEvent "entity-A" 1 1
         event2 <- makeTestEvent "entity-A" 2 2
@@ -1753,21 +1903,24 @@ spec = do
         context <- makeContext
         dispatcher <-
           Dispatcher.newWithLifecycleConfig
-            Dispatcher.DispatcherConfig
-              { idleTimeoutMs = 60000,
-                reaperIntervalMs = 10000,
-                enableReaper = False,
-                workerChannelCapacity = 100,
-                channelWriteTimeoutMs = 5000,
-                eventProcessingTimeoutMs = Nothing,
-                maxEventRetries = 3,
-                retryBaseDelayMs = 10
+            Dispatcher.Setup
+              { settings =
+                  Dispatcher.DispatcherConfig
+                    { idleTimeoutMs = 60000,
+                      reaperIntervalMs = 10000,
+                      enableReaper = False,
+                      workerChannelCapacity = 100,
+                      channelWriteTimeoutMs = 5000,
+                      eventProcessingTimeoutMs = Nothing,
+                      maxEventRetries = 3,
+                      retryBaseDelayMs = 10
+                    },
+                eventStore = eventStore,
+                outboundRunners = [decodeFailRunner],
+                lifecycleRunners = [],
+                commandEndpoints = Map.empty,
+                actionContext = context
               }
-            eventStore
-            [decodeFailRunner]
-            []
-            Map.empty
-            context
 
         event <- makeTestEvent "entity-A" 1 1
         Dispatcher.dispatch dispatcher event

@@ -41,15 +41,14 @@ spec = do
   describe "Integration.Oura.Internal" do
     describe "fetchAllPages (via executeDailySleepInternal)" do
       it "accumulates data across multiple pages" do
-        -- Mock that returns next_token on first call, Nothing on second
         let mockPaginatedFetch :: HttpFetch SleepData
             mockPaginatedFetch _token url =
-              case Text.contains "next_token" url of
-                True -> Task.yield PaginatedResponse
+              if Text.contains "next_token" url
+                then Task.yield PaginatedResponse
                   { data_ = [mockSleepData2]
                   , nextToken = Nothing
                   }
-                False -> Task.yield PaginatedResponse
+                else Task.yield PaginatedResponse
                   { data_ = [mockSleepData1]
                   , nextToken = Just "page2token"
                   }
@@ -132,6 +131,7 @@ spec = do
               , providerRegistry = fromMap Map.empty
               , refreshLocks = emptyLocks
               , fileAccess = Nothing
+              , eraseErasableKey = Nothing
               , outboundDispatch = DispatchRegistry.empty
               }
 
@@ -271,12 +271,12 @@ spec = do
       it "accumulates workout data across multiple pages" do
         let mockPaginatedFetch :: HttpFetch WorkoutData
             mockPaginatedFetch _token url =
-              case Text.contains "next_token" url of
-                True -> Task.yield PaginatedResponse
+              if Text.contains "next_token" url
+                then Task.yield PaginatedResponse
                   { data_ = [mockWorkoutData2]
                   , nextToken = Nothing
                   }
-                False -> Task.yield PaginatedResponse
+                else Task.yield PaginatedResponse
                   { data_ = [mockWorkoutData1]
                   , nextToken = Just "page2token"
                   }

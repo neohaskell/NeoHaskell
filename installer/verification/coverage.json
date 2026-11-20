@@ -1,0 +1,136 @@
+{
+  "schema_version": 1,
+  "suite_id": "neohaskell-installer-acceptance",
+  "status": "scaffold",
+  "support_floors": {
+    "status": "unresolved",
+    "values": {}
+  },
+  "common_required_cases": [
+    "nix.existing-compatible-install",
+    "nix.effective-daemon-cache-configuration",
+    "nix.rerun-does-not-duplicate-configuration",
+    "client.clean-state-and-real-cache-substitution",
+    "pair.bootstrap-install-and-lockstep-version",
+    "path.fresh-shell-resolution-and-conflict-refusal",
+    "neoctl.help-version-invalid-and-no-argument-behavior",
+    "project.installed-neo-new-build-test-run-and-health",
+    "lifecycle.rerun-version-selection-and-paired-update",
+    "lifecycle.previous-pair-and-explicit-rollback",
+    "lifecycle.fallback-operations-when-neo-cannot-start",
+    "lifecycle.interruption-and-cancellation-state",
+    "lifecycle.uninstall-and-user-state-preservation",
+    "failure.download-integrity-package-and-permission-boundaries",
+    "failure.nix-service-architecture-and-recovery",
+    "failure.timeout-quiet-work-input-and-partial-state",
+    "ui.dashboard-review-details-and-consent",
+    "ui.still-plain-cancellation-resize-and-accessibility",
+    "ui.english-installer-strings-use-language-file",
+    "timing.feedback-and-stage-measurements",
+    "diagnostics.sanitized-private-records-and-retention",
+    "diagnostics.pre-rust-failures",
+    "network.no-telemetry-or-automatic-report-upload"
+  ],
+  "capabilities": {
+    "nix-ownership": "Configure the signed caches through the owner of a compatible existing Nix daemon after review. Preserve unrelated settings.",
+    "clean-client-install": "Install the exact tool pair from a clean client using published cached closures without compiling the tools locally.",
+    "command-and-consumer-flow": "Resolve both commands from a fresh shell and run the installed candidate through the generated project contract.",
+    "paired-lifecycle": "Rerun, select a version, update, roll back, interrupt, cancel, and uninstall the pair safely.",
+    "failure-recovery": "Stop at invalid prerequisites or failed operations with accurate partial state and recovery guidance.",
+    "terminal-experience": "Preserve the accepted Dashboard direction and equivalent still and plain output.",
+    "timing-and-diagnostics": "Measure stages and keep private, sanitized, bounded local records.",
+    "windows-wsl-routing": "Dispatch from native PowerShell into the selected eligible WSL2 distribution without installing Windows tools."
+  },
+  "lanes": [
+    {
+      "id": "linux-x86_64",
+      "required": true,
+      "environment": "Linux x86-64 with active systemd and the standard multiuser daemon.",
+      "required_capabilities": ["nix-ownership", "clean-client-install", "command-and-consumer-flow", "paired-lifecycle", "failure-recovery", "terminal-experience", "timing-and-diagnostics"],
+      "required_cases": ["nix-owner.nixos-declarative-configuration-and-generated-file-preservation"]
+    },
+    {
+      "id": "linux-arm64",
+      "required": true,
+      "environment": "Linux ARM64 with active systemd and the standard multiuser daemon.",
+      "required_capabilities": ["nix-ownership", "clean-client-install", "command-and-consumer-flow", "paired-lifecycle", "failure-recovery", "terminal-experience", "timing-and-diagnostics"],
+      "required_cases": ["nix-owner.nixos-declarative-configuration-and-generated-file-preservation"]
+    },
+    {
+      "id": "macos-arm64",
+      "required": true,
+      "environment": "Apple silicon macOS using the standard launchd service.",
+      "required_capabilities": ["nix-ownership", "clean-client-install", "command-and-consumer-flow", "paired-lifecycle", "failure-recovery", "terminal-experience", "timing-and-diagnostics"],
+      "required_cases": ["nix-owner.nix-darwin-owner-detection-and-declarative-preservation"]
+    },
+    {
+      "id": "wsl2-x86_64",
+      "required": true,
+      "environment": "Native Windows PowerShell dispatching through actual wsl.exe into eligible x86-64 WSL2 with active systemd.",
+      "required_capabilities": ["nix-ownership", "clean-client-install", "command-and-consumer-flow", "paired-lifecycle", "failure-recovery", "terminal-experience", "timing-and-diagnostics", "windows-wsl-routing"],
+      "required_cases": ["wsl.selection-prerequisites-identity-and-actual-dispatch", "wsl.before-and-after-boundary-messaging-and-no-windows-tools", "diagnostics.windows-routing-failures"]
+    },
+    {
+      "id": "wsl2-arm64",
+      "required": true,
+      "environment": "Native Windows PowerShell dispatching through actual wsl.exe into eligible ARM64 WSL2 with active systemd.",
+      "required_capabilities": ["nix-ownership", "clean-client-install", "command-and-consumer-flow", "paired-lifecycle", "failure-recovery", "terminal-experience", "timing-and-diagnostics", "windows-wsl-routing"],
+      "required_cases": ["wsl.selection-prerequisites-identity-and-actual-dispatch", "wsl.before-and-after-boundary-messaging-and-no-windows-tools", "diagnostics.windows-routing-failures"]
+    }
+  ],
+  "conditional_cases": [
+    {
+      "id": "nix.variant.official",
+      "capability": "nix-ownership",
+      "requirement": "Preserve a compatible official Nix installation without implicit replacement, migration, or update.",
+      "required_when": "The published support matrix promises this variant on the lane.",
+      "lanes": ["linux-x86_64", "linux-arm64", "macos-arm64", "wsl2-x86_64", "wsl2-arm64"]
+    },
+    {
+      "id": "nix.variant.determinate",
+      "capability": "nix-ownership",
+      "requirement": "Preserve a compatible Determinate installation without implicit replacement, migration, or update.",
+      "required_when": "The published support matrix promises this variant on the lane.",
+      "lanes": ["linux-x86_64", "linux-arm64", "macos-arm64", "wsl2-x86_64", "wsl2-arm64"]
+    },
+    {
+      "id": "nix.variant.lix",
+      "capability": "nix-ownership",
+      "requirement": "Preserve a compatible Lix installation without implicit replacement, migration, or update.",
+      "required_when": "The published support matrix promises this variant on the lane.",
+      "lanes": ["linux-x86_64", "linux-arm64", "macos-arm64", "wsl2-x86_64", "wsl2-arm64"]
+    }
+  ],
+  "cases": [
+    {"id": "nix.existing-compatible-install", "capability": "nix-ownership", "requirement": "Detect a compatible existing Nix installation and preserve its variant, mode, owner, projects, and unrelated configuration."},
+    {"id": "nix.effective-daemon-cache-configuration", "capability": "nix-ownership", "requirement": "Start with neither project cache configured. Compare the reviewed file, missing settings, and restart with the applied changes. Verify signed substitution of a cold pair as an ordinary user with zero builds. Preserve unrelated settings, signature checks, and trusted users."},
+    {"id": "nix.rerun-does-not-duplicate-configuration", "capability": "nix-ownership", "requirement": "Rerun with both caches configured. Verify zero configuration writes, administrator prompts, and daemon restarts."},
+    {"id": "client.clean-state-and-real-cache-substitution", "capability": "clean-client-install", "requirement": "Record initial store state and prove actual candidate closures come from configured caches on a clean client."},
+    {"id": "pair.bootstrap-install-and-lockstep-version", "capability": "clean-client-install", "requirement": "Install the exact native bootstrap and separate neo and neoctl commands as one lockstep pair without compiling either tool locally."},
+    {"id": "path.fresh-shell-resolution-and-conflict-refusal", "capability": "command-and-consumer-flow", "requirement": "Resolve both owned commands in a fresh shell and stop before overwriting or hiding a conflicting command."},
+    {"id": "neoctl.help-version-invalid-and-no-argument-behavior", "capability": "command-and-consumer-flow", "requirement": "Check help, version and invalid arguments. Separately start neoctl with no arguments and verify the HTTP health endpoint on loopback. Installation must complete without starting the server."},
+    {"id": "project.installed-neo-new-build-test-run-and-health", "capability": "command-and-consumer-flow", "requirement": "Use installed neo to generate, build, test, and run the pinned starter, then verify its health response and maintained smoke assertions."},
+    {"id": "lifecycle.rerun-version-selection-and-paired-update", "capability": "paired-lifecycle", "requirement": "Use two compatible complete candidate versions. Verify safe reruns, explicit supported-version selection, unchanged project pins, and preparation and activation of both tools together. Failed updates leave the prior pair usable."},
+    {"id": "lifecycle.previous-pair-and-explicit-rollback", "capability": "paired-lifecycle", "requirement": "Retain one previous working complete pair. Prove neo update --rollback restores it; failed updates leave the active prior pair usable. Rollback does not reverse Nix or system configuration."},
+    {"id": "lifecycle.fallback-operations-when-neo-cannot-start", "capability": "paired-lifecycle", "requirement": "Use the downloadable installer for lifecycle operations when installed neo cannot start."},
+    {"id": "lifecycle.interruption-and-cancellation-state", "capability": "paired-lifecycle", "requirement": "Interrupt before and during activation; verify the old pair stays usable, cancellation reports changes, and rerun resumes only safe owned work."},
+    {"id": "lifecycle.uninstall-and-user-state-preservation", "capability": "paired-lifecycle", "requirement": "Remove owned tools, generations, links, PATH additions and retained diagnostics. Preserve Nix, shared cache configuration, unrelated packages, project pins and contents, user shell edits and exported reports. Refuse or report cleanup with unproven ownership. Never delete store paths directly or run broad garbage collection."},
+    {"id": "failure.download-integrity-package-and-permission-boundaries", "capability": "failure-recovery", "requirement": "Exercise transient download retry and exhaustion, integrity failure, missing prebuilt packages and insufficient permissions. For every negative case assert exit result, cause, actual partial state, report location and a usable recovery action."},
+    {"id": "failure.nix-service-architecture-and-recovery", "capability": "failure-recovery", "requirement": "Exercise missing, damaged, inaccessible or incompatible Nix, unknown configuration owners, declined elevation, interrupted cache setup, invalid package signatures, and unsupported architectures. Check that missing Nix directs the user to multi-user setup, declined elevation preserves configuration and the working pair, and package failures never expand trust. Check the recovery instructions against the actual partial state."},
+    {"id": "failure.timeout-quiet-work-input-and-partial-state", "capability": "failure-recovery", "requirement": "Exercise quiet work, input waits, operation timeouts and partial-state inspection. Assert exit result, cause, actual partial state, report location and usable recovery. Inspect effects after timeout instead of blindly repeating system changes."},
+    {"id": "ui.dashboard-review-details-and-consent", "capability": "terminal-experience", "requirement": "Compare the production Dashboard with the accepted archive and verify one review before user-owned changes, explicit script consent, and Details."},
+    {"id": "ui.still-plain-cancellation-resize-and-accessibility", "capability": "terminal-experience", "requirement": "Verify still mode, equivalent plain output, cancellation, narrow terminals, live resizing, and accessibility behavior."},
+    {"id": "ui.english-installer-strings-use-language-file", "capability": "terminal-experience", "requirement": "Verify prompts, progress, errors, recovery, help, completion, bootstrap, and Windows-routing text come from the English language file."},
+    {"id": "timing.feedback-and-stage-measurements", "capability": "timing-and-diagnostics", "requirement": "Measure feedback before network work and bootstrap, prerequisite, download, and completion stages. Separate machine time from human waits and record machine, network, and cache conditions. Verify elapsed time, last activity, input-needed state, finite retries, and derive response, timeout, and retry limits before release."},
+    {"id": "diagnostics.sanitized-private-records-and-retention", "capability": "timing-and-diagnostics", "requirement": "Create private records on every run. Seed controlled secrets, identifying paths and unsafe upstream output; verify sanitization in saved records, Details and exports. Assert required fields and failure report location. Test the seven-day boundary, repeated failures at the total 10 MiB cap, next-run pruning and no background cleanup."},
+    {"id": "diagnostics.pre-rust-failures", "capability": "timing-and-diagnostics", "requirement": "Record sanitized failures before Rust starts without passwords, tokens, environment dumps, project contents, or identifying paths."},
+    {"id": "network.no-telemetry-or-automatic-report-upload", "capability": "timing-and-diagnostics", "requirement": "Inspect code and network activity for no installer telemetry or automatic report uploads, while allowing required release and cache downloads."},
+    {"id": "nix-owner.nixos-declarative-configuration-and-generated-file-preservation", "capability": "nix-ownership", "requirement": "Install on NixOS with caches configured through nix.settings. Verify that both the declarative source and generated files are preserved."},
+    {"id": "nix-owner.nix-darwin-owner-detection-and-declarative-preservation", "capability": "nix-ownership", "requirement": "Install on macOS with caches configured through nix-darwin. Verify that both the declarative source and generated files are preserved."},
+    {"id": "wsl.selection-prerequisites-identity-and-actual-dispatch", "capability": "windows-wsl-routing", "requirement": "Exercise default and explicit distro selection, unsuitable or ambiguous defaults, consent, WSL2 presence, architecture, systemd, permissions, Linux identity, and actual wsl.exe dispatch. Run the preconfigured case as a user without sudo access."},
+    {"id": "wsl.before-and-after-boundary-messaging-and-no-windows-tools", "capability": "windows-wsl-routing", "requirement": "Show the selected distro and WSL-only command boundary before and after dispatch; verify no native tools, misleading wrappers, conversion, restart, install, or repair."},
+    {"id": "diagnostics.windows-routing-failures", "capability": "timing-and-diagnostics", "requirement": "Record failures before Rust starts and during native-Windows routing with a report location and sanitized technical details."}
+  ],
+  "conditional_case_policy": "A conditional case is required when its condition applies. Unknown applicability or missing execution evidence keeps acceptance incomplete.",
+  "evidence_policy": "This registry contains requirements only. It contains no pass results, support claims, or platform acceptance evidence."
+}

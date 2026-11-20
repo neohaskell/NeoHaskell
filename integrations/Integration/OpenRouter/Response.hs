@@ -215,14 +215,14 @@ instance Json.FromJSON Choice where
 
 instance Json.ToJSON Choice where
   toJSON choice =
-    case Array.length choice.toolCalls == 0 of
-      True ->
+    if Array.length choice.toolCalls == 0
+      then
         Json.object
           [ ("message", Json.toJSON choice.message)
           , ("finish_reason", Json.toJSON choice.finishReason)
           , ("index", Json.toJSON choice.index)
           ]
-      False ->
+      else
         Json.object
           [ ("message", Json.toJSON choice.message)
           , ("finish_reason", Json.toJSON choice.finishReason)

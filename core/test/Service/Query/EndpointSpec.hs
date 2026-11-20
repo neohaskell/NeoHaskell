@@ -2,6 +2,7 @@ module Service.Query.EndpointSpec where
 
 import Array qualified
 import Auth.Claims (UserClaims (..))
+import ConcurrentVar qualified
 import Core
 import Json qualified
 import Map qualified
@@ -85,9 +86,9 @@ instance Service.Query.Core.Query OwnerOnlyQuery where
   canViewImpl user query = case user of
     Nothing -> Just Unauthenticated
     Just claims ->
-      case claims.sub == query.ownerId of
-        True -> Nothing
-        False -> Just Forbidden
+      if claims.sub == query.ownerId
+        then Nothing
+        else Just Forbidden
 
 
 -- | Test query type - requires specific permission
@@ -109,9 +110,9 @@ instance Service.Query.Core.Query PermissionQuery where
   canAccessImpl user = case user of
     Nothing -> Just Unauthenticated
     Just claims ->
-      case claims.permissions |> Array.contains "admin:read" of
-        True -> Nothing
-        False -> Just (InsufficientPermissions ["admin:read"])
+      if claims.permissions |> Array.contains "admin:read"
+        then Nothing
+        else Just (InsufficientPermissions ["admin:read"])
   canViewImpl _ _ = Nothing
 
 
@@ -207,6 +208,67 @@ spec = do
         case parsed of
           Ok _ -> pass
           Err _err -> fail "Result is not valid JSON"
+
+    describe "createQueryByIdEndpoint" do
+      it "loads the requested UUID and returns the row as a root object" \_ -> do
+        store <- InMemoryStore.new @TestQuery |> Task.mapError toText
+        requestedId <- Uuid.generate
+        otherId <- Uuid.generate
+        let requestedQuery = TestQuery {id = requestedId, name = "requested", value = 42}
+        let otherQuery = TestQuery {id = otherId, name = "other", value = 17}
+        store.atomicUpdate requestedId (\_ -> Just requestedQuery) |> Task.mapError errorToText
+        store.atomicUpdate otherId (\_ -> Just otherQuery) |> Task.mapError errorToText
+        lookupIds <- ConcurrentVar.containing (Array.empty :: Array Uuid)
+        let keyedStore = store
+              { get = \queryId -> do
+                  lookupIds |> ConcurrentVar.modify (Array.push queryId)
+                  store.get queryId
+              , getAll = Task.throw (Service.QueryObjectStore.Core.StorageError "collection scan must not run")
+              }
+        responseText <-
+          Endpoint.createQueryByIdEndpoint @TestQuery keyedStore Nothing requestedId
+            |> Task.mapError endpointErrorToText
+        observedIds <- lookupIds |> ConcurrentVar.peek
+        observedIds |> shouldBe (Array.fromLinkedList [requestedId])
+        case Json.decodeText @TestQuery responseText of
+          Ok response -> do
+            response.id |> shouldBe requestedId
+            response.name |> shouldBe "requested"
+            response.value |> shouldBe 42
+          Err _ -> fail "Expected the keyed response to decode as one query object"
+
+      it "checks query access before looking up a UUID" \_ -> do
+        store <- InMemoryStore.new @AuthenticatedQuery |> Task.mapError toText
+        requestedId <- Uuid.generate
+        lookupIds <- ConcurrentVar.containing (Array.empty :: Array Uuid)
+        let guardedStore = store
+              { get = \queryId -> do
+                  lookupIds |> ConcurrentVar.modify (Array.push queryId)
+                  Task.throw (Service.QueryObjectStore.Core.StorageError "lookup must not run")
+              }
+        result <- Endpoint.createQueryByIdEndpoint @AuthenticatedQuery guardedStore Nothing requestedId |> Task.asResult
+        observedIds <- lookupIds |> ConcurrentVar.peek
+        observedIds |> shouldBe Array.empty
+        result |> shouldBe (Err (Auth.AuthorizationError Unauthenticated))
+
+      it "uses the same not-found outcome for missing and row-denied objects" \_ -> do
+        store <- InMemoryStore.new @OwnerOnlyQuery |> Task.mapError toText
+        storedId <- Uuid.generate
+        missingId <- Uuid.generate
+        let query = OwnerOnlyQuery {ownerQueryId = storedId, ownerId = "user-1", ownerQueryData = "private"}
+        store.atomicUpdate storedId (\_ -> Just query) |> Task.mapError errorToText
+        renderCalls <- ConcurrentVar.containing (0 :: Int)
+        let renderProtected value = do
+              renderCalls |> ConcurrentVar.modify (\count -> count + 1)
+              Task.yield value
+        let handler userClaims queryId = Endpoint.createQueryByIdEndpointWithProtection renderProtected store userClaims queryId
+        let user = testUser "user-2" []
+        deniedResult <- handler (Just user) storedId |> Task.asResult
+        missingResult <- handler (Just user) missingId |> Task.asResult
+        deniedResult |> shouldBe (Err Auth.QueryNotFound)
+        missingResult |> shouldBe (Err Auth.QueryNotFound)
+        observedRenderCalls <- renderCalls |> ConcurrentVar.peek
+        observedRenderCalls |> shouldBe 0
 
 
     describe "authorization" do
@@ -324,10 +386,27 @@ spec = do
             Ok response -> do
               -- User-1 should see their 2 queries, not user-2's
               Array.length response.items |> shouldBe 2
+              response.total |> shouldBe 2
               -- Check no queries belong to other users (using any with negation)
               let hasOtherOwner = response.items |> Array.any (\q -> q.ownerId != "user-1")
               hasOtherOwner |> shouldBe False
             Err _err -> fail "Failed to decode result"
+          page <- Endpoint.createQueryEndpoint @OwnerOnlyQuery store (Just user1) Nothing (QueryPageRequest {limit = 1, offset = 0}) |> Task.mapError endpointErrorToText
+          nextPage <- Endpoint.createQueryEndpoint @OwnerOnlyQuery store (Just user1) Nothing (QueryPageRequest {limit = 1, offset = 1}) |> Task.mapError endpointErrorToText
+          case (Json.decodeText @(QueryPageResponse OwnerOnlyQuery) page, Json.decodeText @(QueryPageResponse OwnerOnlyQuery) nextPage) of
+            (Ok firstPage, Ok secondPage) -> do
+              Array.length firstPage.items |> shouldBe 1
+              firstPage.items |> Array.any (\item -> item.ownerId != "user-1") |> shouldBe False
+              firstPage.total |> shouldBe 2
+              firstPage.hasMore |> shouldBe True
+              firstPage.effectiveLimit |> shouldBe 1
+              Array.length secondPage.items |> shouldBe 1
+              secondPage.items |> shouldNotBe firstPage.items
+              secondPage.items |> Array.any (\item -> item.ownerId != "user-1") |> shouldBe False
+              secondPage.total |> shouldBe 2
+              secondPage.hasMore |> shouldBe False
+              secondPage.effectiveLimit |> shouldBe 1
+            _ -> fail "Failed to decode owner pages"
 
 
 -- | Convert QueryObjectStore Error to Text.
@@ -341,4 +420,5 @@ errorToText err = case err of
 endpointErrorToText :: QueryEndpointError -> Text
 endpointErrorToText err = case err of
   Auth.AuthorizationError authErr -> ToText.toText authErr
+  Auth.QueryNotFound -> "Query object not found"
   Auth.StorageError msg -> msg

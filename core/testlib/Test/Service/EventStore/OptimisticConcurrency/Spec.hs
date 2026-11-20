@@ -160,24 +160,22 @@ spec backend newStore = do
         let secondEventIsExpected =
               Array.get 1 durableEvents == Just event1Insertion.event
                 || Array.get 1 durableEvents == Just event2Insertion.event
-        if not bad
-          then do
-            [result1, result2]
-              |> Array.map (\x -> if Result.isOk x then 1 else 0)
-              |> Array.sumIntegers
-              |> shouldBe 1
-            events
-              |> Array.length
-              |> shouldBe 2
-            events
-              |> Array.get 0
-              |> Maybe.map (\event -> event.metadata.eventId)
-              |> shouldBe (Just initialEventId)
-            events
-              |> Array.get 1
-              |> Maybe.map (\event -> event.metadata.eventId)
-              |> shouldSatisfy (\id -> id == Just event1Id || id == Just event2Id)
-          else Task.yield unit
+        Task.unless bad do
+          [result1, result2]
+            |> Array.map (\x -> if Result.isOk x then 1 else 0)
+            |> Array.sumIntegers
+            |> shouldBe 1
+          events
+            |> Array.length
+            |> shouldBe 2
+          events
+            |> Array.get 0
+            |> Maybe.map (\event -> event.metadata.eventId)
+            |> shouldBe (Just initialEventId)
+          events
+            |> Array.get 1
+            |> Maybe.map (\event -> event.metadata.eventId)
+            |> shouldSatisfy (\id -> id == Just event1Id || id == Just event2Id)
         Regression.assertBehavior
           "postgres-append-barrier"
           (successfulInsertions == 1

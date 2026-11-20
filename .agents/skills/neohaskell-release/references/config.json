@@ -2,6 +2,7 @@
   "schema": 1,
   "repository": "neohaskell/NeoHaskell",
   "native_policy": "native-v2",
+  "distribution_policy": "installer-v1",
   "groups": {
     "platform": {
       "tag": "neo-v",
@@ -11,10 +12,12 @@
         "core/nhcore.cabal": "nhcore",
         "integrations/nhintegrations.cabal": "nhintegrations",
         "testbed/nhtestbed.cabal": "nhtestbed",
-        "neo/Cargo.toml": "neo"
+        "neo/Cargo.toml": "neo",
+        "neoctl/neo.json": "neoctl"
       },
       "locks": {
-        "neo/Cargo.lock": "neo"
+        "neo/Cargo.lock": "neo",
+        "neoctl/neoctl.cabal": "neoctl"
       },
       "asset_prefix": "neo-"
     }

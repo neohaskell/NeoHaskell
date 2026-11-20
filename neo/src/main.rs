@@ -1,23 +1,23 @@
 mod app;
 mod cli;
 mod commands;
+mod config;
 mod errlog;
 mod errors;
+mod git;
 mod ide;
 mod inspect;
 mod interpret;
-mod output;
-mod config;
-mod prereqs;
-mod theme;
-mod tui;
 mod lock;
 mod network;
-mod git;
+mod output;
+mod prereqs;
 mod reconcile;
 mod skills;
 mod subprocess;
 mod test_utils;
+mod theme;
+mod tui;
 
 use clap::Parser;
 use cli::Cli;
@@ -37,8 +37,16 @@ fn detect_terminal_width() -> usize {
     }
 }
 
+fn main() -> miette::Result<()> {
+    let arguments: Vec<_> = std::env::args_os().skip(1).collect();
+    if let Some(exit) = neo_lifecycle::dispatch_installed(&arguments) {
+        std::process::exit(exit.code());
+    }
+    run()
+}
+
 #[tokio::main]
-async fn main() -> miette::Result<()> {
+async fn run() -> miette::Result<()> {
     let stderr_is_tty = {
         use std::io::IsTerminal;
         std::io::stderr().is_terminal()
@@ -55,17 +63,18 @@ async fn main() -> miette::Result<()> {
     }))?;
 
     let cli = Cli::parse();
-    
+
     // Detect CI environment
     let is_ci = cli.ci || std::env::var("CI").is_ok();
-    
+
     let mut output_mode = if is_ci {
         OutputMode::Ci
     } else {
         // Check terminal size
         if let Ok((cols, _)) = ratatui::crossterm::terminal::size() {
             if cols < 60 {
-                println!("\n  {} Terminal is too narrow ({} columns).", 
+                println!(
+                    "\n  {} Terminal is too narrow ({} columns).",
                     ratatui::style::Stylize::bold(ratatui::style::Stylize::yellow("⚠")),
                     cols
                 );
@@ -74,10 +83,10 @@ async fn main() -> miette::Result<()> {
         }
         OutputMode::Interactive
     };
-    
+
     let update_status = std::sync::Arc::new(std::sync::Mutex::new(None));
     let update_status_clone = update_status.clone();
-    
+
     // Background update check (non-blocking)
     let _update_handle = tokio::spawn(async move {
         if let Ok(Some(latest_version)) = network::check_for_updates().await {
@@ -102,10 +111,16 @@ async fn main() -> miette::Result<()> {
     let final_update_status = update_status.lock().unwrap();
     if let Some(latest_version) = &*final_update_status {
         if is_ci {
-            println!("\n[info] A new version of NeoCLI is available: v{}", latest_version);
+            println!(
+                "\n[info] A new version of NeoCLI is available: v{}",
+                latest_version
+            );
         } else {
             // Only print if not already shown in TUI or for consistency
-            println!("\n  NeoCLI v{} is available! Run `neo update` to install.", latest_version);
+            println!(
+                "\n  NeoCLI v{} is available! Run `neo update` to install.",
+                latest_version
+            );
         }
     }
 
@@ -129,9 +144,21 @@ mod tests {
             .with_links(true)
             .with_width(120);
         let rendered = render(&diag, handler);
-        assert!(rendered.contains("×"), "missing unicode error glyph: {}", rendered);
-        assert!(rendered.contains("help:"), "missing help block: {}", rendered);
-        assert!(rendered.contains("\x1b["), "missing ANSI color codes: {:?}", rendered);
+        assert!(
+            rendered.contains("×"),
+            "missing unicode error glyph: {}",
+            rendered
+        );
+        assert!(
+            rendered.contains("help:"),
+            "missing help block: {}",
+            rendered
+        );
+        assert!(
+            rendered.contains("\x1b["),
+            "missing ANSI color codes: {:?}",
+            rendered
+        );
     }
 
     #[test]
@@ -142,8 +169,16 @@ mod tests {
             .with_urls(false)
             .with_width(120);
         let rendered = render(&diag, handler);
-        assert!(!rendered.contains("\x1b["), "unexpected ANSI in nocolor theme: {:?}", rendered);
-        assert!(rendered.contains("×"), "unicode glyph missing in nocolor: {}", rendered);
+        assert!(
+            !rendered.contains("\x1b["),
+            "unexpected ANSI in nocolor theme: {:?}",
+            rendered
+        );
+        assert!(
+            rendered.contains("×"),
+            "unicode glyph missing in nocolor: {}",
+            rendered
+        );
     }
 
     #[test]
@@ -154,7 +189,11 @@ mod tests {
             .with_urls(false)
             .with_width(120);
         let rendered = render(&diag, handler);
-        assert!(!rendered.contains("\x1b["), "unexpected ANSI in none theme: {:?}", rendered);
+        assert!(
+            !rendered.contains("\x1b["),
+            "unexpected ANSI in none theme: {:?}",
+            rendered
+        );
     }
 
     #[test]

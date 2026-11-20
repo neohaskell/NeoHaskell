@@ -1,5 +1,4 @@
 use minijinja::{context, Environment};
-use std::fs;
 use crate::reconcile::resolve::{ResolvedConfig, DependencySource};
 use crate::errors::NeoError;
 
@@ -25,6 +24,7 @@ pub fn generate<P: AsRef<Path>>(
 
     let rendered = template.render(context! {
         name => config.name,
+        paths_module => format!("Paths_{}", config.name.replace('-', "_")),
         version => config.version,
         description => config.description,
         license => config.license,
@@ -37,7 +37,8 @@ pub fn generate<P: AsRef<Path>>(
 
     let filename = format!("{}.cabal", config.name);
     let out_path = project_dir.as_ref().join(filename);
-    fs::write(&out_path, rendered).map_err(|e| NeoError::io_at("writing generated cabal file at", &out_path, e))?;
+    super::atomic_write(&out_path, rendered.as_bytes())
+        .map_err(|e| NeoError::io_at("writing generated cabal file at", &out_path, e))?;
 
     Ok(())
 }
@@ -45,6 +46,7 @@ pub fn generate<P: AsRef<Path>>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
     use tempfile::tempdir;
     use crate::reconcile::resolve::{ResolvedConfig, ResolvedDependency, DependencySource};
 
@@ -52,8 +54,7 @@ mod tests {
         ResolvedConfig {
             name: "p".to_string(),
             version: "0.1.0".to_string(),
-            neo_version: "main".to_string(),
-            neo_sha: "abc".to_string(),
+            framework_source: crate::reconcile::source::FrameworkSource::OfflinePlaceholder,
             description: None,
             author: None,
             license: "MIT".to_string(),
@@ -174,6 +175,8 @@ mod tests {
         generate(dir.path(), &env, &config, &["App".to_string()], &[]).unwrap();
         let content = fs::read_to_string(dir.path().join("test-exec.cabal")).unwrap();
         assert!(content.contains("executable test-exec"), "missing executable stanza:\n{}", content);
+        assert!(content.contains("autogen-modules: Paths_test_exec"));
+        assert!(content.contains("other-modules: Paths_test_exec"));
         assert!(content.contains("main-is: Launcher.hs"), "missing main-is:\n{}", content);
         assert!(content.contains("hs-source-dirs: launcher"), "missing launcher source dir:\n{}", content);
     }
@@ -214,8 +217,7 @@ mod tests {
         let config = ResolvedConfig {
             name: "test-modules".to_string(),
             version: "0.1.0".to_string(),
-            neo_version: "main".to_string(),
-            neo_sha: "abc".to_string(),
+            framework_source: crate::reconcile::source::FrameworkSource::OfflinePlaceholder,
             description: None,
             author: None,
             license: "MIT".to_string(),
@@ -347,6 +349,7 @@ mod tests {
         generate(dir.path(), &env, &config, &["App".to_string()], &[]).unwrap();
         let content = fs::read_to_string(dir.path().join("driver-only.cabal")).unwrap();
         assert!(content.contains("test-suite driver-only-test"), "missing test-suite:\n{}", content);
-        assert!(!content.contains("other-modules:"), "unexpected empty other-modules header:\n{}", content);
+        let test_suite = content.split("test-suite driver-only-test").nth(1).unwrap();
+        assert!(!test_suite.contains("other-modules:"), "unexpected empty other-modules header:\n{}", test_suite);
     }
 }

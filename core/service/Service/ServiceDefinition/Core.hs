@@ -7,6 +7,7 @@ module Service.ServiceDefinition.Core (
   new,
   command,
   toServiceRunner,
+  RunnableCommand (..),
   ServiceRunner (..),
   TransportValue (..),
 
@@ -32,10 +33,12 @@ import Record qualified
 import Schema (FieldSchema (..), Schema)
 import Schema qualified
 import Service.Auth (RequestContext (..))
+import Service.Auth qualified as Auth
 import Service.Transport.Internal (InternalTransport)
 import Service.Transport (Transport (..), EndpointHandler, DispatchHandler, EndpointSchema (..))
 import Service.Command (EntityOf, EventOf)
 import Service.Command.Core (TransportsOf, NamesOf, AppendSymbols, AllKnownSymbols (..), Command (..), Entity (..), Event, KnownMultiTenant (..), NameOf)
+import Service.CommandExecutor.CommandExecutionFailure qualified as CommandExecutionFailure
 import Service.CommandExecutor qualified as CommandExecutor
 import Service.Response qualified as Response
 import Service.EntityFetcher.Core qualified as EntityFetcher
@@ -355,7 +358,13 @@ buildCommandResponseHandler eventStore maybeCache sourceEventMetadata requestCon
         (updateImpl @entity)
         |> Task.mapError toText
   let entityName = EntityName (getSymbolText (Record.Proxy @entityName))
-  result <- CommandExecutor.execute eventStore fetcher entityName sourceEventMetadata requestContext cmdInstance
+  let dependencies = CommandExecutor.ExecutionDependencies {eventStore, entityFetcher = fetcher, entityName}
+  let source = case sourceEventMetadata of
+        Nothing -> CommandExecutor.FromRequest requestContext
+        Just metadata -> CommandExecutor.FromEvent requestContext metadata
+  result <-
+    CommandExecutor.execute dependencies source cmdInstance
+      |> Task.mapError CommandExecutionFailure.message
   Task.yield (Response.fromExecutionResult result)
 
 
@@ -587,6 +596,55 @@ toServiceRunner service =
     }
 
 
+-- | Register one declared command through the existing service runtime.
+class (Command command) => RunnableCommand command where
+  commandRunner :: ServiceRunner
+  runRuleCommand :: EventStore Json.Value -> command -> Task Text Response.CommandResponse
+
+
+instance
+  ( Command command,
+    Schema.ToSchema command,
+    Json.FromJSON command,
+    Entity (EntityOf command),
+    Event (EventOf (EntityOf command)),
+    EntityOf (EventOf (EntityOf command)) ~ EntityOf command,
+    StreamId.ToStreamId (EntityIdType (EntityOf command)),
+    Eq (EntityIdType (EntityOf command)),
+    Ord (EntityIdType (EntityOf command)),
+    Show (EntityIdType (EntityOf command)),
+    Show (EventOf (EntityOf command)),
+    Json.FromJSON (EventOf (EntityOf command)),
+    Json.ToJSON (EventOf (EntityOf command)),
+    Json.FromJSON (EntityOf command),
+    Json.ToJSON (EntityOf command),
+    BuildHandlersForTransports (PublicTransports (TransportsOf command)),
+    KnownBool (IncludesInternalTransport (TransportsOf command)),
+    AssertNoMixedTransports (TransportsOf command),
+    AllKnownSymbols (NamesOf (PublicTransports (TransportsOf command))),
+    KnownMultiTenant (IsMultiTenant command),
+    Record.KnownSymbol (NameOf command),
+    Record.KnownHash (NameOf command),
+    Record.KnownSymbol (NameOf (EntityOf command))
+  ) =>
+  RunnableCommand command
+  where
+  commandRunner = toServiceRunner (command @command new)
+  runRuleCommand rawEventStore commandValue = do
+    requestContext <- Auth.trustedContext
+    let eventStore = rawEventStore |> EventStore.castEventStore @(EventOf (EntityOf command))
+    buildCommandResponseHandler
+      @command
+      @(EntityOf command)
+      @(EventOf (EntityOf command))
+      @(NameOf (EntityOf command))
+      eventStore
+      Nothing
+      Nothing
+      requestContext
+      commandValue
+
+
 -- | Build command endpoints for a service, grouped by transport name.
 --
 -- Returns a tuple of (public handlers, public schemas, dispatch handlers).
@@ -665,8 +723,11 @@ buildEndpointsByTransport rawEventStore commandDefinitions transportsMap = do
               )
               Array.empty
 
-  -- Group by transport name, detecting duplicate command handlers
-  let groupByTransport (transportNameText, cmdName, handler, schema) (handlersAcc, schemasAcc) =
+  let groupByTransport (transportNameText, cmdName, handler, schema) (handlersAcc, schemasAcc) = do
+        let endpointName =
+              if transportNameText == "WebTransport"
+                then cmdName |> Text.toKebabCase
+                else cmdName
         let endpointSchema = Service.Transport.EndpointSchema
               { requestSchema = Just schema
               , responseSchema = commandResponseSchema
@@ -674,20 +735,19 @@ buildEndpointsByTransport rawEventStore commandDefinitions transportsMap = do
               , deprecated = False
               , entityName = Just entityNameText
               }
-        in case handlersAcc |> Map.get transportNameText of
+        case handlersAcc |> Map.get transportNameText of
           Nothing -> do
-            let newHandlers = handlersAcc |> Map.set transportNameText (Map.empty |> Map.set cmdName handler)
-            let newSchemas = schemasAcc |> Map.set transportNameText (Map.empty |> Map.set cmdName endpointSchema)
+            let newHandlers = handlersAcc |> Map.set transportNameText (Map.empty |> Map.set endpointName handler)
+            let newSchemas = schemasAcc |> Map.set transportNameText (Map.empty |> Map.set endpointName endpointSchema)
             (newHandlers, newSchemas)
           Just existingHandlers ->
-            case existingHandlers |> Map.get cmdName of
+            case existingHandlers |> Map.get endpointName of
               Just _ ->
-                -- Duplicate handler detected - this is a configuration error
-                panic [fmt|Duplicate command handler registered for: #{cmdName}|]
+                panic [fmt|Duplicate command handler registered for: #{endpointName}|]
               Nothing -> do
-                let newHandlers = handlersAcc |> Map.set transportNameText (existingHandlers |> Map.set cmdName handler)
+                let newHandlers = handlersAcc |> Map.set transportNameText (existingHandlers |> Map.set endpointName handler)
                 let existingSchemas = schemasAcc |> Map.get transportNameText |> Maybe.withDefault Map.empty
-                let newSchemas = schemasAcc |> Map.set transportNameText (existingSchemas |> Map.set cmdName endpointSchema)
+                let newSchemas = schemasAcc |> Map.set transportNameText (existingSchemas |> Map.set endpointName endpointSchema)
                 (newHandlers, newSchemas)
 
   let groupDispatch (cmdName, handler) dispatchResult =
@@ -720,12 +780,6 @@ commandResponseSchema = Schema.SUnion (Array.fromLinkedList
           , fieldSchema = Schema.SText
           , fieldRequired = True
           , fieldDescription = "ID of the affected entity"
-          }
-      , FieldSchema
-          { fieldName = "events"
-          , fieldSchema = Schema.SArray (Schema.SObject Array.empty)
-          , fieldRequired = True
-          , fieldDescription = "Events generated by the command"
           }
       ]))
   , ("Rejected", Schema.SObject (Array.fromLinkedList

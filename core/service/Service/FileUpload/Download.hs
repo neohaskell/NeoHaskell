@@ -21,6 +21,7 @@ import Service.FileUpload.Lifecycle (
   FileMetadata (..),
   FileUploadState (..),
   PendingFile (..),
+  RetainedFile (..),
  )
 import Task (Task)
 import Task qualified
@@ -91,6 +92,8 @@ downloadFromState blobStore requestOwner fileRef state = do
       downloadPending blobStore requestOwner fileRef pendingFile
     Confirmed confirmedFile ->
       downloadConfirmed blobStore requestOwner fileRef confirmedFile
+    Retained retainedFile ->
+      downloadRetained blobStore requestOwner fileRef retainedFile
 
 
 -- | Download a pending file (checks expiration)
@@ -125,6 +128,13 @@ downloadConfirmed blobStore requestOwner fileRef confirmedFile = do
   if confirmedFile.ownerHash != requestOwner
     then Task.throw (NotOwner fileRef)
     else retrieveContent blobStore fileRef confirmedFile.metadata
+
+
+downloadRetained :: BlobStore -> OwnerHash -> FileRef -> RetainedFile -> Task DownloadError DownloadResponse
+downloadRetained blobStore requestOwner fileRef retainedFile = do
+  if retainedFile.ownerHash != requestOwner
+    then Task.throw (NotOwner fileRef)
+    else retrieveContent blobStore fileRef retainedFile.metadata
 
 
 -- | Retrieve content from blob store

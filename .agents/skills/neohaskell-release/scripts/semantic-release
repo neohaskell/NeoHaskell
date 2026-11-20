@@ -49,6 +49,19 @@ def work_outputs(items):
         outputs[f"{group}_has_work"] = str(bool(selected)).lower()
         outputs[f"{group}_items"] = json.dumps(selected)
         outputs[f"{group}_matrix"] = json.dumps(matrix)
+    installers = [item for item in items if item.get("distribution_policy") == "installer-v1" and not item["reuse"]]
+    hosts = [
+        ("x86_64-linux", "x86_64-unknown-linux-gnu", "ubuntu-24.04"),
+        ("aarch64-linux", "aarch64-unknown-linux-gnu", "ubuntu-24.04-arm"),
+        ("aarch64-darwin", "aarch64-apple-darwin", "macos-15"),
+    ]
+    outputs["installer_has_work"] = str(bool(installers)).lower()
+    outputs["installer_items"] = json.dumps(installers)
+    outputs["installer_matrix"] = json.dumps({"include": [
+        {**item, "system": system, "target": target, "runner": runner,
+         "native_neo": target in release.targets_for(item)}
+        for item in installers for system, target, runner in hosts
+    ]})
     return outputs
 
 
@@ -290,6 +303,7 @@ def main():
             "orchestrate",
             "seed",
             "build-native",
+            "installer-platform",
             "consumer",
             "publish",
             "preview",
@@ -307,6 +321,7 @@ def main():
     parser.add_argument("--reason")
     parser.add_argument("--revision", default="HEAD")
     parser.add_argument("--target")
+    parser.add_argument("--native-neo", type=Path)
     parser.add_argument("--inputs")
     parser.add_argument("--out")
     args = parser.parse_args()
@@ -383,6 +398,13 @@ def main():
         seed(repo, plan, revision, args.out)
     elif args.command == "build-native":
         build_native(repo, plan, revision, args.target, args.inputs, args.out)
+    elif args.command == "installer-platform":
+        from installer_platform import build
+        ci_only()
+        if plan.get("distribution_policy") != "installer-v1":
+            raise ValueError("Release attempt predates installer distribution")
+        apply_seed(repo, plan, revision, args.inputs)
+        build(repo, plan, revision, args.target, Path(args.inputs), Path(args.out), args.native_neo)
     elif args.command == "consumer":
         consumer(repo, plan, revision, args.inputs, args.out)
     elif args.command == "publish":

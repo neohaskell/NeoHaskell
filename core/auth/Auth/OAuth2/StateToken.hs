@@ -105,9 +105,9 @@ mkHmacKey :: Text -> Result Text HmacKey
 mkHmacKey secret = do
   let secretBytes = Text.toBytes secret |> Bytes.unwrap
   let len = BS.length secretBytes
-  case len >= 32 of
-    False -> Err [fmt|HMAC key must be at least 32 bytes, got #{len}|]
-    True -> Ok (HmacKey secretBytes)
+  if len < 32
+    then Err [fmt|HMAC key must be at least 32 bytes, got #{len}|]
+    else Ok (HmacKey secretBytes)
 
 
 -- | Generate a cryptographically secure random HMAC key.
@@ -253,44 +253,37 @@ decodeStateToken (HmacKey keyBytes) currentTime tokenText = do
     GhcEither.Left _ -> Task.throw MalformedToken
     GhcEither.Right bytes -> Task.yield bytes
 
-  -- Check minimum length (at least signature size + 1 byte payload)
   let totalLen = BS.length decodedBytes
-  case totalLen > signatureSize of
-    False -> Task.throw MalformedToken
-    True -> do
-      -- Split into payload and signature
+  if totalLen <= signatureSize
+    then Task.throw MalformedToken
+    else do
       let payloadLen = totalLen - signatureSize
       let (payloadBytes, signatureBytes) = BS.splitAt payloadLen decodedBytes
 
-      -- Recompute HMAC and verify (constant-time comparison)
       let expectedHmac = HMAC.hmac keyBytes payloadBytes :: HMAC.HMAC Hash.SHA256
       let expectedSigBytes = BA.convert expectedHmac :: BS.ByteString
-      case BA.constEq signatureBytes expectedSigBytes of
-        False -> do
+      if not (BA.constEq signatureBytes expectedSigBytes)
+        then do
           Log.warn "State token signature verification failed"
             |> Task.ignoreError
           Task.throw SignatureInvalid
-        True -> do
-          -- Parse JSON payload
+        else do
           let payloadText = Bytes.fromLegacy payloadBytes |> Text.fromBytes
           case Json.decodeText payloadText of
             Err _ -> Task.throw MalformedToken
             Ok payload -> do
-              -- Validate timestamp consistency (expiresAt must be >= issuedAt)
-              case payload.expiresAt >= payload.issuedAt of
-                False -> Task.throw TokenInvalidTimestamps
-                True -> do
-                  -- Validate TTL
-                  case currentTime <= payload.expiresAt of
-                    False -> do
+              if payload.expiresAt < payload.issuedAt
+                then Task.throw TokenInvalidTimestamps
+                else do
+                  if currentTime > payload.expiresAt
+                    then do
                       Log.debug "State token expired"
                         |> Task.ignoreError
                       Task.throw TokenExpired
-                    True -> do
-                      -- Validate clock skew (issuedAt not too far in future)
-                      case currentTime >= payload.issuedAt - clockSkewTolerance of
-                        False -> Task.throw TokenNotYetValid
-                        True -> Task.yield payload
+                    else do
+                      if currentTime < payload.issuedAt - clockSkewTolerance
+                        then Task.throw TokenNotYetValid
+                        else Task.yield payload
 
 
 -- | Constant-time comparison for Text values.

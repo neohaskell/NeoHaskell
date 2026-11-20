@@ -1,12 +1,17 @@
 module Service.Query.Endpoint (
   createQueryEndpoint,
+  createQueryEndpointWithProtection,
+  createQueryByIdEndpoint,
+  createQueryByIdEndpointWithProtection,
 ) where
 
 import Array qualified
 import Auth.Claims (UserClaims)
 import Basics
+import Erasable.Internal qualified as Erasable
 import Json qualified
 import Maybe (Maybe (..))
+import Result (Result (..))
 import Service.AccessControl (QueryEndpointError)
 import Service.AccessControl qualified as Auth
 import Service.Query.Core (Query (..))
@@ -17,6 +22,7 @@ import Task qualified
 import Text (Text)
 import NeoQL (Expr)
 import NeoQL qualified
+import Uuid (Uuid)
 
 
 -- | Create an endpoint handler for a query type.
@@ -48,6 +54,29 @@ createQueryEndpoint ::
   QueryPageRequest ->
   Task QueryEndpointError Text
 createQueryEndpoint queryStore userClaims maybeExpr pageRequest = do
+  createQueryEndpointWithProtection rejectProtectedJson queryStore userClaims maybeExpr pageRequest
+
+
+rejectProtectedJson :: Json.Value -> Task QueryEndpointError Json.Value
+rejectProtectedJson value =
+  case Erasable.references value of
+    Err _ -> Task.throw (Auth.StorageError "Malformed erasable response")
+    Ok refs ->
+      if Array.isEmpty refs
+        then Task.yield value
+        else Task.throw (Auth.StorageError "Protected response resolver is unavailable")
+
+
+createQueryEndpointWithProtection ::
+  forall query.
+  (Json.ToJSON query, Query query) =>
+  (Json.Value -> Task QueryEndpointError Json.Value) ->
+  QueryObjectStore query ->
+  Maybe UserClaims ->
+  Maybe Expr ->
+  QueryPageRequest ->
+  Task QueryEndpointError Text
+createQueryEndpointWithProtection renderProtected queryStore userClaims maybeExpr pageRequest = do
   -- Phase 1: Pre-fetch authorization
   case canAccessImpl @query userClaims of
     Just authErr -> Task.throw (Auth.AuthorizationError authErr)
@@ -85,9 +114,55 @@ createQueryEndpoint queryStore userClaims maybeExpr pageRequest = do
             , effectiveLimit = effectiveLimit
             }
 
-      let responseText = response |> Json.encodeText
+      responseJson <- response |> Json.toJSON |> renderProtected
+      let responseText = responseJson |> Json.encodeText
 
       Task.yield responseText
+
+
+-- | Create a single-object handler for a query type.
+--
+-- Query-level access is checked before the UUID lookup. Missing and row-denied
+-- objects return the same 'Auth.QueryNotFound' error. Protected JSON is rejected
+-- unless the caller uses 'createQueryByIdEndpointWithProtection'.
+createQueryByIdEndpoint ::
+  forall query.
+  ( Json.ToJSON query,
+    Query query
+  ) =>
+  QueryObjectStore query ->
+  Maybe UserClaims ->
+  Uuid ->
+  Task QueryEndpointError Text
+createQueryByIdEndpoint queryStore userClaims queryId = do
+  createQueryByIdEndpointWithProtection rejectProtectedJson queryStore userClaims queryId
+
+
+-- | Create a single-object handler that resolves protected values before encoding.
+--
+-- The typed store lookup happens once after query-level authorization. Row-level
+-- authorization runs before JSON conversion or protected-value rendering.
+createQueryByIdEndpointWithProtection ::
+  forall query.
+  (Json.ToJSON query, Query query) =>
+  (Json.Value -> Task QueryEndpointError Json.Value) ->
+  QueryObjectStore query ->
+  Maybe UserClaims ->
+  Uuid ->
+  Task QueryEndpointError Text
+createQueryByIdEndpointWithProtection renderProtected queryStore userClaims queryId = do
+  case canAccessImpl @query userClaims of
+    Just authErr -> Task.throw (Auth.AuthorizationError authErr)
+    Nothing -> do
+      maybeQuery <- queryStore.get queryId |> Task.mapError storeErrorToEndpointError
+      case maybeQuery of
+        Nothing -> Task.throw Auth.QueryNotFound
+        Just query ->
+          case canViewImpl @query userClaims query of
+            Just _ -> Task.throw Auth.QueryNotFound
+            Nothing -> do
+              responseJson <- Json.toJSON query |> renderProtected
+              Task.yield (Json.encodeText responseJson)
 
 
 -- | Convert QueryObjectStore Error to QueryEndpointError.

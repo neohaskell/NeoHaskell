@@ -2,7 +2,7 @@
 
 **You own the program, never the code. Author briefs, drain the queue, keep the frontier green, decide.** For a whole project handed to one standing coordinator chat: multi-day, many stacked PRs, dozens to hundreds of subagents, the human checking in twice a day instead of every five minutes. One task driven to a predicate is Autonomous run. One ambitious run needing a bespoke workflow is figure-it-out. Route here when the work outlives any single agent. Work one agent could finish inside the session's budget is not a program.
 
-Ceremony must scale with the program. On cheap near-identical units, collapse it as each section directs. Record the existing grant and who owns landing; continuous landing runs only within it. A program handed over for review stops at the agreed review boundary. Use `.agents/workflow/playbooks/shipping.md` and `.agents/workflow/playbooks/babysit.md` for independent PR proof, current checks and actual merge confirmation; bookkeeping never grants merge authority.
+Ceremony must scale with the program. On cheap near-identical units, collapse it as each section directs. Record the completion boundary and landing owner under the [task completion policy](../../skills/orchestrate/references/task-completion.md). Continuous landing stays within that boundary. Preserve an explicit review-before-landing instruction. Use `.agents/workflow/playbooks/shipping.md` and `.agents/workflow/playbooks/babysit.md` for independent PR proof, current checks and actual merge confirmation; bookkeeping never grants merge authority.
 
 Three rules carry the rest.
 
@@ -76,6 +76,8 @@ A dependency is a context relay, not just ordering. Undeclared upstream context 
 - A drain turn ends with the three lines from `orch status`: counts against the states, what changed, gates open. Detail lives in `status.md`. The full reply contract applies at checkpoints and close.
 
 #### Stack safety
+
+Apply the [task completion policy](../../skills/orchestrate/references/task-completion.md#represent-dependencies-as-a-real-pr-stack) to the actual PR dependencies, native metadata, and current root/tip links. The store below records that same stack. It does not replace GitHub base relationships.
 
 - The frontier is a computed object, never narrative. Recompute `frontier.json` after every merge and stack mutation: ordered PR list, branch names, head SHAs, a generation number, the lowest unmerged PR. The command walks the PR base chain through the checkout's current branch, using GitHub CLI for the repository/default branch and actual published head/base SHAs and states. A closed, unmerged prerequisite remains a blocker, including when reached from below through its live descendants. Missing, ambiguous, inconsistent or unknown observations fail without advancing the saved generation. A branch with no PR errors rather than guessing.
 - Exactly one stacker per stack may mutate topology (chain rebases, force-pushes, base retargets, merges), serialized within its stack. Record the holder in the standing orders. Place chain rebases where the required clone and resources are available. Transfer exclusive write ownership before a stacker rewrite and return the resulting head/base/lease before the owner resumes, per `.agents/workflow/playbooks/autopilot-stack.md`.

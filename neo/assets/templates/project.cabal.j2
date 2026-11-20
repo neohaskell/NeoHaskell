@@ -70,6 +70,8 @@ library
 executable {{ name }}
   import: common_cfg
   main-is: Launcher.hs
+  autogen-modules: {{ paths_module }}
+  other-modules: {{ paths_module }}
   build-depends:
     base,
     {{ name }}

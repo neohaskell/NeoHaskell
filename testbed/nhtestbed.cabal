@@ -1,6 +1,6 @@
 cabal-version: 3.4
 name: nhtestbed
-version: 0.11.0
+version: 0.18.0
 synopsis: End-to-End Testbed for NeoHaskell
 description: A real NeoHaskell application that demonstrates features and runs blackbox acceptance tests.
 homepage: https://neohaskell.org
@@ -55,31 +55,76 @@ common common_cfg
 library
   import: common_cfg
   exposed-modules:
-    App
+    Testbed.EventModel
     Testbed.Config
+    Testbed.RequestOrigin
     Testbed.Cart.Commands.AddItem
+    Testbed.Cart.Commands.AddTwoItems
+    Testbed.Cart.Commands.ConfirmCart
+    Testbed.Cart.Commands.OverfillCart
     Testbed.Cart.Commands.CreateCart
     Testbed.Cart.Commands.CreateCartInternal
+    Testbed.Cart.Commands.CreateTypedInboundCart
     Testbed.Cart.Commands.RegisterCartByKey
+    Testbed.Cart.Commands.SaveIBAN
     Testbed.Cart.Core
+    Testbed.Cart.Feature
     Testbed.Cart.Integrations
     Testbed.Cart.Integrations.EventCounter
     Testbed.Cart.Integrations.ReserveStockOnItemAdded
     Testbed.Cart.Queries.CartSummary
-    Testbed.Cart.Service
+    Testbed.Cart.Queries.RuleProjection
+    Testbed.Cart.Queries.CartStockActivity
     Testbed.Document.Commands.CreateDocument
     Testbed.Document.Core
-    Testbed.Document.Service
-    Testbed.Service
+    Testbed.Document.Feature
+    Testbed.Erasable.Core
+    Testbed.Erasable.Feature
+    Testbed.Erasable.Commands.CreateProtected
+    Testbed.Erasable.Query
+    Testbed.Erasable.Owned.Core
+    Testbed.Erasable.Owned.Feature
+    Testbed.Erasable.Owned.Commands.Create
+    Testbed.Erasable.Owned.Commands.MapErased
+    Testbed.Erasable.Owned.Commands.Request
+    Testbed.Erasable.Owned.Commands.Record
+    Testbed.Erasable.Owned.Outbound
+    Testbed.Erasable.Owned.Query
+    Testbed.Erasable.Owned.ReplayGateStore
     Testbed.Stock.Commands.InitializeStock
+    Testbed.Stock.Commands.InitializeStockInternal
     Testbed.Stock.Commands.ReserveStock
     Testbed.Stock.Core
+    Testbed.Stock.Feature
     Testbed.Stock.Queries.StockLevel
-    Testbed.Stock.Service
     Testbed.Examples.AiTranscription
     Testbed.Examples.HttpIntegration
     Testbed.Examples.OpenRouterIntegration
     Testbed.Examples.PdfExtraction
+    Testbed.Integrations.JsonSideEffect
+    Testbed.Infrastructure
+    Testbed.Integrations.TypedInboundExample
+    Testbed.ExternalEffect.Core
+    Testbed.ExternalEffect.AuditOutbound
+    Testbed.ExternalEffect.Feature
+    Testbed.ExternalEffect.Commands.RecordExternalEffect
+    Testbed.ExternalEffect.Commands.RequestExternalEffect
+    Testbed.ExternalEffect.Outbound
+    Testbed.ExternalEffect.Query
+    Testbed.AccountConnection.Core
+    Testbed.AccountConnection.Feature
+    Testbed.AccountConnection.Commands.RecordAccountConnection
+    Testbed.AccountConnection.Outbound
+    Testbed.AccountConnection.RemovalOutbound
+    Testbed.AccountConnection.Query
+    Testbed.OAuth2.Configuration
+    Testbed.OAuth2.EventModel
+    Testbed.GeneratedPdf.Core
+    Testbed.GeneratedPdf.Commands.Request
+    Testbed.GeneratedPdf.Commands.Record
+    Testbed.GeneratedPdf.Outbound
+    Testbed.GeneratedPdf.Query
+    Testbed.GeneratedPdf.Feature
 
   hs-source-dirs: src
   default-language: GHC2021
@@ -92,3 +137,47 @@ executable nhtestbed
 
   hs-source-dirs: launcher
   default-language: GHC2021
+
+executable nhoauthtestbed
+  import: common_cfg
+  main-is: OAuth2Launcher.hs
+  build-depends:
+    nhtestbed
+
+  hs-source-dirs: launcher
+  default-language: GHC2021
+
+test-suite nhtestbed-spec-demo
+  import: common_cfg
+  type: exitcode-stdio-1.0
+  hs-source-dirs: spec-demo
+  main-is: SpecDemo.hs
+  build-depends:
+    base,
+    hspec,
+    nhcore,
+    nhtestbed,
+    QuickCheck
+  default-language: GHC2021
+
+test-suite nhtestbed-datetime-schema
+  import: common_cfg
+  type: exitcode-stdio-1.0
+  main-is: Main.hs
+  hs-source-dirs: test-datetime-schema
+  default-language: GHC2021
+  build-depends:
+    base,
+    hspec
+
+test-suite nhtestbed-erasure
+  import: common_cfg
+  type: exitcode-stdio-1.0
+  main-is: Main.hs
+  hs-source-dirs: test-erasure
+  default-language: GHC2021
+  build-depends:
+    base,
+    hspec,
+    nhcore,
+    nhtestbed

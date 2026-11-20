@@ -3,6 +3,7 @@
 module TextSpec where
 
 import Array qualified
+import Bytes qualified
 import Core
 import LinkedList qualified
 import Maybe qualified
@@ -28,6 +29,13 @@ spec = do
         it "returns the number of characters" \_ -> do
           "innumerable" |> Text.length |> shouldBe 11
           "🙈🙉🙊" |> Text.length |> shouldBe 3
+
+      describe "fromBytesIfValid" do
+        it "decodes valid UTF-8 bytes" \_ -> do
+          "hello" |> Text.toBytes |> Text.fromBytesIfValid |> shouldBe (Just "hello")
+
+        it "returns Nothing for invalid UTF-8 bytes" \_ -> do
+          Bytes.pack [255] |> Text.fromBytesIfValid |> shouldBe Nothing
 
       describe "reverse" do
         it "reverses the text" \_ -> do

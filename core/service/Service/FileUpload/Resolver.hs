@@ -188,3 +188,21 @@ resolveFromState blobStore requestOwner fileRef state = case state of
           , uploadedAt = DateTime.fromEpochSeconds metadata.uploadedAt
           , blobKey = blobKey
           }
+
+  Retained retainedFile -> do
+    let metadata = retainedFile.metadata
+    let blobKey = metadata.blobKey
+    Task.when (retainedFile.ownerHash != requestOwner) do
+      Task.throw (NotOwner fileRef)
+    blobExists <- blobStore.exists blobKey
+      |> Task.mapError (\_ -> StorageError "Failed to check blob existence")
+    Task.when (not blobExists) do
+      Task.throw (BlobMissing fileRef)
+    Task.yield ResolvedFile
+      { ref = fileRef
+      , filename = metadata.filename
+      , contentType = metadata.contentType
+      , sizeBytes = metadata.sizeBytes
+      , uploadedAt = DateTime.fromEpochSeconds metadata.uploadedAt
+      , blobKey = blobKey
+      }

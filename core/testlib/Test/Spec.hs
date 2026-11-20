@@ -180,14 +180,14 @@ shouldSatisfy predicate value = do
 -- | Assert that an array contains another array
 shouldContain :: (HasCallStack, Show a, Eq a) => Array a -> Array a -> Task Text Unit
 shouldContain expected actual = do
-  Task.fromIO (Hspec.shouldContain (Array.toLinkedList expected) (Array.toLinkedList actual))
+  Task.fromIO (Hspec.shouldContain (Array.toLinkedList actual) (Array.toLinkedList expected))
 {-# INLINE shouldContain #-}
 
 
 -- | Assert that an array does not contain another array
 shouldNotContain :: (HasCallStack, Show a, Eq a) => Array a -> Array a -> Task Text Unit
 shouldNotContain expected actual = do
-  Task.fromIO (Hspec.shouldNotContain (Array.toLinkedList expected) (Array.toLinkedList actual))
+  Task.fromIO (Hspec.shouldNotContain (Array.toLinkedList actual) (Array.toLinkedList expected))
 {-# INLINE shouldNotContain #-}
 
 
@@ -356,9 +356,8 @@ https://github.com/NeoHaskell/NeoHaskell/issues|]
 shouldBeLessThanOrEqual :: (HasCallStack, Show a, Ord a) => a -> a -> Task Text Unit
 shouldBeLessThanOrEqual maximum value = do
   let msg = [fmt|#{toText value} is not less than or equal to #{toText maximum}|]
-  if value <= maximum
-    then Task.yield unit
-    else msg |> fail
+  Task.unless (value <= maximum) do
+    msg |> fail
 {-# INLINE shouldBeLessThanOrEqual #-}
 
 
@@ -366,9 +365,8 @@ shouldBeLessThanOrEqual maximum value = do
 shouldBeGreaterThanOrEqual :: (HasCallStack, Show a, Ord a) => a -> a -> Task Text Unit
 shouldBeGreaterThanOrEqual minimum value = do
   let msg = [fmt|#{toText value} is not greater than or equal to #{toText minimum}|]
-  if value >= minimum
-    then Task.yield unit
-    else msg |> fail
+  Task.unless (value >= minimum) do
+    msg |> fail
 {-# INLINE shouldBeGreaterThanOrEqual #-}
 
 
@@ -376,9 +374,8 @@ shouldBeGreaterThanOrEqual minimum value = do
 shouldBeLessThan :: (HasCallStack, Show a, Ord a) => a -> a -> Task Text Unit
 shouldBeLessThan maximum value = do
   let msg = [fmt|#{toText value} is not less than #{toText maximum}|]
-  if value < maximum
-    then Task.yield unit
-    else msg |> fail
+  Task.unless (value < maximum) do
+    msg |> fail
 {-# INLINE shouldBeLessThan #-}
 
 
@@ -386,9 +383,8 @@ shouldBeLessThan maximum value = do
 shouldBeGreaterThan :: (HasCallStack, Show a, Ord a) => a -> a -> Task Text Unit
 shouldBeGreaterThan minimum value = do
   let msg = [fmt|#{toText value} is not greater than #{toText minimum}|]
-  if value > minimum
-    then Task.yield unit
-    else msg |> fail
+  Task.unless (value > minimum) do
+    msg |> fail
 {-# INLINE shouldBeGreaterThan #-}
 
 
