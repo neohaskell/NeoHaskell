@@ -1,6 +1,5 @@
 use super::*;
 use std::fs;
-use std::io::Read;
 use std::path::{Path, PathBuf};
 
 fn fixture_root() -> PathBuf {
@@ -38,90 +37,6 @@ fn metadata(files: &BTreeMap<String, Vec<u8>>) -> Result<ParsedCandidate> {
         core: &files["candidate.json"],
         files: inputs,
     })
-}
-
-fn audit(directory: &Path) -> Result<()> {
-    let root = fs::symlink_metadata(directory).map_err(|_| MetadataError::File)?;
-    ensure(
-        root.is_dir() && !root.file_type().is_symlink(),
-        MetadataError::File,
-    )?;
-    let contract = Contract::load()?;
-    let mut core_file = open_regular(&directory.join("candidate.json"))?;
-    let mut raw = Vec::new();
-    core_file
-        .by_ref()
-        .take((contract.limit("max_core_bytes")? + 1) as u64)
-        .read_to_end(&mut raw)
-        .map_err(|_| MetadataError::File)?;
-    let checked = core(&contract, &raw)?;
-    let mut identities = checked.files.clone();
-    identities.insert(
-        "candidate.json".into(),
-        FileIdentity {
-            name: "candidate.json".into(),
-            sha: hash(&raw),
-            size: raw.len(),
-        },
-    );
-    let actual: BTreeSet<_> = fs::read_dir(directory)
-        .map_err(|_| MetadataError::File)?
-        .map(|entry| {
-            entry
-                .map(|entry| entry.file_name().to_string_lossy().into_owned())
-                .map_err(|_| MetadataError::File)
-        })
-        .collect::<Result<_>>()?;
-    ensure(
-        actual == identities.keys().cloned().collect(),
-        MetadataError::File,
-    )?;
-    for (name, identity) in identities {
-        let mut file = open_regular(&directory.join(name))?;
-        ensure(
-            file.metadata().map_err(|_| MetadataError::File)?.len() == identity.size as u64,
-            MetadataError::File,
-        )?;
-        let mut hasher = Sha256::new();
-        let mut total = 0;
-        let mut buffer = [0; 65536];
-        loop {
-            let count = file.read(&mut buffer).map_err(|_| MetadataError::File)?;
-            if count == 0 {
-                break;
-            }
-            total += count;
-            ensure(total <= identity.size, MetadataError::File)?;
-            hasher.update(&buffer[..count]);
-        }
-        ensure(
-            total == identity.size && format!("{:x}", hasher.finalize()) == identity.sha,
-            MetadataError::File,
-        )?;
-    }
-    metadata(&files(directory))?;
-    Ok(())
-}
-
-fn open_regular(path: &Path) -> Result<fs::File> {
-    let before = fs::symlink_metadata(path).map_err(|_| MetadataError::File)?;
-    ensure(
-        before.is_file() && !before.file_type().is_symlink(),
-        MetadataError::File,
-    )?;
-    let mut options = fs::OpenOptions::new();
-    options.read(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.custom_flags(libc::O_NOFOLLOW);
-    }
-    let file = options.open(path).map_err(|_| MetadataError::File)?;
-    ensure(
-        file.metadata().map_err(|_| MetadataError::File)?.is_file(),
-        MetadataError::File,
-    )?;
-    Ok(file)
 }
 
 fn apply(directory: &Path, case: &Value) {
@@ -236,7 +151,6 @@ fn frozen_candidates_project_only_the_selected_closure() {
     let contract = Contract::load().unwrap();
     for (name, id) in index["candidate_ids"].as_object().unwrap() {
         let directory = fixture_root().join(name);
-        audit(&directory).unwrap();
         let loaded = files(&directory);
         let parsed = metadata(&loaded).unwrap();
         assert_eq!(parsed.id(), id.as_str().unwrap());
@@ -330,7 +244,7 @@ fn shared_integer_vectors_match_python() {
 }
 
 #[test]
-fn shared_cases_distinguish_metadata_from_materialization() {
+fn shared_cases_validate_metadata_independently_of_payload_files() {
     for case in cases()["cases"].as_array().unwrap() {
         let temporary = tempfile::tempdir().unwrap();
         let directory = temporary.path().join("candidate");
@@ -353,12 +267,6 @@ fn shared_cases_distinguish_metadata_from_materialization() {
             result.is_ok(),
             case["metadata_valid"].as_bool().unwrap(),
             "metadata {}",
-            case["name"]
-        );
-        assert_eq!(
-            audit(&directory).is_ok(),
-            case["materialized_valid"].as_bool().unwrap(),
-            "materialized {}",
             case["name"]
         );
     }

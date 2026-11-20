@@ -67,9 +67,8 @@ Record skipped and unavailable cases as incomplete. Keep real clean-client runs 
 ## Adapter and runner status
 
 The entrypoint exists. Real installation adapters and candidate publication remain
-unimplemented in this foundation. The Linux capability probe under
-`runners/linux/` checks only systemd and a test service. It cannot satisfy the
-installation, lifecycle, cache, or generated-project cases.
+unimplemented in this foundation. Platform acceptance requires installation,
+lifecycle, cache, and generated-project evidence from real adapters.
 
 Inventory configured runners and adapters during implementation. Record unavailable environments and retain their required cases as incomplete. A container or guest that cannot reproduce the required service owner, native Windows dispatch, or clean-client state does not satisfy the corresponding lane.
 

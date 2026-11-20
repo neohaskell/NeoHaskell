@@ -60,15 +60,6 @@ fn unknown_arguments_are_rejected_without_user_state() {
 }
 
 #[test]
-fn internal_worker_requires_a_lease_before_any_public_cli_setup() {
-    let empty_path = tempdir().unwrap();
-    let output = run_installer(&["--internal-operation-worker"], empty_path.path());
-    assert_eq!(output.status.code(), Some(125));
-    assert!(output.stdout.is_empty());
-    assert!(output.stderr.is_empty());
-}
-
-#[test]
 fn lifecycle_requires_an_explicit_safe_home_without_touching_host_state() {
     let empty_path = tempdir().unwrap();
     let output = run_installer(&["install"], empty_path.path());

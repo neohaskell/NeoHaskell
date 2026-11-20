@@ -2303,85 +2303,6 @@ mod tests {
     }
 
     #[test]
-    fn review_gate_refuses_mutations_and_settlement_before_recheck() {
-        let (_temporary, layout, mut coordinator) = review_fixture(None);
-        let offered = offer(&mut coordinator);
-        for rechecking in [false, true] {
-            if rechecking {
-                coordinator
-                    .effects
-                    .answer(
-                        ReviewToken {
-                            owner: offered.token.owner.clone(),
-                            identity: offered.token.identity,
-                        },
-                        None,
-                    )
-                    .unwrap();
-            }
-            for job in [
-                FilesystemJob::EnsureCommandDirectory(layout.command_directory.clone()),
-                FilesystemJob::PublishRecord {
-                    path: layout.record(),
-                    bytes: b"forbidden".to_vec(),
-                    committing: false,
-                },
-                FilesystemJob::EnsureSnapshotDirectory(layout.state_directory.join("snapshots")),
-                FilesystemJob::OpenResourceDirectory(layout.state_directory.join("resources")),
-            ] {
-                assert!(
-                    coordinator
-                        .effects
-                        .check_admission(&EffectRequest::Filesystem(job, Admission::Requested))
-                        .is_err()
-                );
-            }
-            assert!(
-                coordinator
-                    .effects
-                    .check_admission(&EffectRequest::Process(
-                        process::WorkerRequest::AcquireRetained {
-                            pair: "forbidden".into(),
-                            candidate: "forbidden".into(),
-                            offline: false
-                        }
-                    ))
-                    .is_err()
-            );
-            for kind in [
-                SettlementKind::Recovery,
-                SettlementKind::Activation,
-                SettlementKind::Resource,
-            ] {
-                assert!(coordinator.effects.settlement(kind).is_err());
-            }
-            assert!(!layout.record().exists());
-            assert!(!layout.command_directory.exists());
-        }
-        assert!(
-            FilesystemTask::start(
-                FilesystemJob::EnsureCommandDirectory(layout.command_directory.clone()),
-                Some(
-                    coordinator
-                        .effects
-                        .state
-                        .borrow()
-                        .lease
-                        .as_ref()
-                        .unwrap()
-                        .file
-                        .try_clone()
-                        .unwrap()
-                ),
-                Cancellation::default(),
-                Admission::Requested,
-                None,
-            )
-            .is_err()
-        );
-    }
-
-    #[test]
     fn review_pending_resource_effects_are_observed_without_publication() {
         use super::super::resources::{ParentObservation, ResourceEffect};
         use std::os::unix::fs::MetadataExt;
@@ -2823,6 +2744,23 @@ mod tests {
                     ))
                 ));
             }
+            for kind in [
+                SettlementKind::Recovery,
+                SettlementKind::Activation,
+                SettlementKind::Resource,
+            ] {
+                assert!(effects.settlement(kind).is_err());
+            }
+            assert!(
+                FilesystemTask::start(
+                    FilesystemJob::EnsureCommandDirectory(layout.command_directory.clone()),
+                    Some(lease.file.try_clone().unwrap()),
+                    Cancellation::default(),
+                    Admission::Requested,
+                    None,
+                )
+                .is_err()
+            );
             assert!(!layout.record().exists());
             assert!(!layout.command_directory.exists());
             assert_eq!(

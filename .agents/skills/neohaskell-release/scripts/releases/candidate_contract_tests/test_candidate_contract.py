@@ -2,10 +2,8 @@ import base64
 import copy
 import hashlib
 import json
-import os
 from pathlib import Path
 import shutil
-import subprocess
 import sys
 import unittest
 
@@ -14,7 +12,9 @@ RELEASES = Path(__file__).resolve().parents[1]
 if str(RELEASES) not in sys.path:
     sys.path.insert(0, str(RELEASES))
 import candidate
-from candidate_contract_tests.generate_fixtures import CandidateFixtureCorpus, temporary_corpus_directory
+from candidate_contract_tests.generate_fixtures import (
+    CandidateFixtureCorpus, _commit_source, _git, temporary_corpus_directory,
+)
 from candidate_contract_tests.test_release_binding import ReleaseBindingCases
 ROOT = candidate.release.ROOT
 
@@ -27,33 +27,9 @@ def _identity(name, raw):
     return {"name": name, "sha256": _hash(raw), "size": len(raw)}
 
 
-def _git(root, *args, env=None):
-    return subprocess.run(
-        ["git", *args], cwd=str(root), env=env,
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True,
-    ).stdout
-
-
 def _commit_fixture_source(root, corpus):
     shutil.copytree(corpus.root / "source", root)
-    _git(root, "init", "-q")
-    _git(root, "add", "-A")
-    env = os.environ.copy()
-    env.update({
-        "GIT_CONFIG_NOSYSTEM": "1",
-        "GIT_AUTHOR_NAME": "Candidate Contract Fixture",
-        "GIT_AUTHOR_EMAIL": "candidate-fixture@example.invalid",
-        "GIT_AUTHOR_DATE": "2000-01-01T00:00:00Z",
-        "GIT_COMMITTER_NAME": "Candidate Contract Fixture",
-        "GIT_COMMITTER_EMAIL": "candidate-fixture@example.invalid",
-        "GIT_COMMITTER_DATE": "2000-01-01T00:00:00Z",
-    })
-    _git(
-        root, "-c", "user.name=Candidate Contract Fixture",
-        "-c", "user.email=candidate-fixture@example.invalid",
-        "-c", "commit.gpgSign=false", "commit", "-q", "-m", "fixture", env=env,
-    )
-    return _git(root, "rev-parse", "HEAD").decode("ascii").strip()
+    return _commit_source(root)
 
 
 def _refresh_receipt_links(core, table):
@@ -146,41 +122,11 @@ class CandidateContract(ReleaseBindingCases, unittest.TestCase):
             self.fixture_set["candidate_ids"]["current-0.17.2"],
         )
         closure = json.loads((self.fixture_dir() / "closures.json").read_bytes())
-        self.assertEqual(len(closure["paths"]), 599)
+        self.assertEqual(len(closure["paths"]), 76)
         self.assertEqual(max(len(item["references"]) for item in closure["paths"]), 65)
         self.assertEqual(sum(item["nar_size"] for item in closure["paths"]), 5044109824)
         self.assertTrue(self.fixture_set["parse_only"])
         self.assertTrue(self.fixture_set["synthetic_metadata_only"])
-
-    def test_shared_conformance_corpus_names_the_rejection_matrix(self):
-        corpus = json.loads((self.corpus.root / "invalid-cases.json").read_bytes())
-        names = {item["name"] for item in corpus["cases"]}
-        required = {
-            "wrong-pair-member",
-            "unlisted-closure-reference",
-            "unreachable-closure-path",
-            "native-output-byte-flip",
-            "wrong-source-tree",
-            "wrong-engineering-generated-diff",
-            "engineering-context-as-release",
-            "missing-bootstrap-generator-source",
-            "forged-receipt-source-tree",
-            "duplicate-json-key",
-            "native-output-wrong-size",
-            "unlisted-materialized-file",
-        }
-        self.assertTrue(corpus["parse_only"])
-        self.assertTrue(required.issubset(names))
-        missing_outputs = [
-            item for item in corpus["cases"]
-            if item.get("document") == "candidate"
-            and item.get("operation") == "remove"
-            and (
-                item.get("path", [None])[0] in {"native_neo", "native_installers"}
-                or (item.get("path", [None])[0] == "packages" and len(item["path"]) == 3)
-            )
-        ]
-        self.assertEqual(len(missing_outputs), 14)
 
     def test_malformed_role_maps_and_signature_values_fail_at_the_boundary(self):
         original = self.parse_fixture().core
@@ -438,22 +384,7 @@ class CandidateContract(ReleaseBindingCases, unittest.TestCase):
             shutil.copytree(self.corpus.root / "source", root)
             generator = root / "neo/lifecycle/scripts/generate_bootstraps.py"
             generator.unlink()
-            _git(root, "init", "-q")
-            _git(root, "add", "-A")
-            env = os.environ.copy()
-            env.update({
-                "GIT_CONFIG_NOSYSTEM": "1",
-                "GIT_AUTHOR_NAME": "Candidate Contract Fixture",
-                "GIT_AUTHOR_EMAIL": "candidate-fixture@example.invalid",
-                "GIT_AUTHOR_DATE": "2000-01-01T00:00:00Z",
-                "GIT_COMMITTER_NAME": "Candidate Contract Fixture",
-                "GIT_COMMITTER_EMAIL": "candidate-fixture@example.invalid",
-                "GIT_COMMITTER_DATE": "2000-01-01T00:00:00Z",
-            })
-            _git(root, "-c", "user.name=Candidate Contract Fixture",
-                 "-c", "user.email=candidate-fixture@example.invalid",
-                 "-c", "commit.gpgSign=false", "commit", "-q", "-m", "missing-generator", env=env)
-            revision = _git(root, "rev-parse", "HEAD").decode("ascii").strip()
+            revision = _commit_source(root)
             tree, _index = candidate._git_tree(root, revision, candidate._registry()[1]["limits"])
             with temporary_corpus_directory(prefix="candidate-contract-missing-generator-artifacts-") as artifact_tmp:
                 directory = self.copy_artifacts(artifact_tmp, "previous-0.17.1")

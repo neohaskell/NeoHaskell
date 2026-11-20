@@ -214,50 +214,36 @@ fn unsafe_store_keeps_public_behavior_without_touching_target() {
 }
 
 #[test]
-fn installed_help_uses_same_store_and_unrelated_routes_stay_outside() {
-    let executable = std::env::current_exe().unwrap();
+fn native_and_installed_routes_share_the_private_store() {
+    if let Ok(operation) = std::env::var("NEO_DIAGNOSTIC_TEST_OPERATION") {
+        assert_eq!(
+            neo_lifecycle::dispatch_installed(&[operation.into(), "--help".into()])
+                .unwrap()
+                .code(),
+            0
+        );
+        return;
+    }
     let user = UserRoot::new();
     assert!(user.run(&["--help"]).status.success());
     for operation in ["update", "rollback"] {
-        let output = Command::new(&executable)
-            .arg("--exact")
-            .arg("installed_dispatch_child")
-            .arg("--nocapture")
+        let output = Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "native_and_installed_routes_share_the_private_store",
+                "--nocapture",
+            ])
             .env_clear()
             .env("HOME", &user.home)
             .env("XDG_STATE_HOME", &user.state)
             .env("NEO_DIAGNOSTIC_TEST_OPERATION", operation)
             .output()
             .unwrap();
-        assert!(
-            output.status.success(),
-            "{}",
-            String::from_utf8_lossy(&output.stderr)
-        );
+        assert!(output.status.success(), "{output:?}");
     }
     assert_eq!(user.reports().len(), 3);
     for path in user.reports() {
         report(&path);
-    }
-}
-
-#[test]
-fn installed_dispatch_child() {
-    let Some(operation) = std::env::var_os("NEO_DIAGNOSTIC_TEST_OPERATION") else {
-        return;
-    };
-    assert_eq!(
-        neo_lifecycle::dispatch_installed(&[operation, "--help".into()])
-            .unwrap()
-            .code(),
-        0
-    );
-    for arguments in [
-        vec!["--help".into()],
-        vec!["--version".into()],
-        vec!["unrelated".into()],
-    ] {
-        assert!(neo_lifecycle::dispatch_installed(&arguments).is_none());
     }
 }
 

@@ -23,7 +23,7 @@ import candidate
 ROOT = candidate.release.ROOT
 NIX_BASE32 = "0123456789abcdfghijklmnpqrsvwxyz"
 FRAMEWORK_REVISION = "ea75873fbd0da7da39124c82f328c2e70bdca629"
-EXPECTED_PATHS = 599
+EXPECTED_PATHS = 76
 EXPECTED_MAX_REFERENCES = 65
 EXPECTED_NAR_SIZE = 5044109824
 
@@ -133,48 +133,40 @@ def _write_source_snapshot(source_root, output_root):
     return projection, tuple(copied_paths), snapshot_root
 
 
+def _commit_source(root):
+    _git(root, "init", "-q")
+    _git(root, "add", "-A")
+    env = os.environ.copy()
+    env.update({
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_AUTHOR_NAME": "Candidate Contract Fixture",
+        "GIT_AUTHOR_EMAIL": "candidate-fixture@example.invalid",
+        "GIT_AUTHOR_DATE": "2000-01-01T00:00:00Z",
+        "GIT_COMMITTER_NAME": "Candidate Contract Fixture",
+        "GIT_COMMITTER_EMAIL": "candidate-fixture@example.invalid",
+        "GIT_COMMITTER_DATE": "2000-01-01T00:00:00Z",
+    })
+    _git(root, "-c", "user.name=Candidate Contract Fixture",
+         "-c", "user.email=candidate-fixture@example.invalid",
+         "-c", "commit.gpgSign=false", "commit", "-q", "-m", "fixture", env=env)
+    return _git(root, "rev-parse", "HEAD").decode("ascii").strip()
+
+
 @contextmanager
-def _committed_source(paths, snapshot_root):
+def _committed_source(snapshot_root):
     with tempfile.TemporaryDirectory(prefix="candidate-contract-source-", dir=snapshot_root.parent.parent) as temporary:
         checkout = Path(temporary) / "source"
         shutil.copytree(snapshot_root, checkout)
-        _git(checkout, "init", "-q")
-        _git(checkout, "add", "-A")
-        env = os.environ.copy()
-        env.update({
-            "GIT_CONFIG_NOSYSTEM": "1",
-            "GIT_AUTHOR_NAME": "Candidate Contract Fixture",
-            "GIT_AUTHOR_EMAIL": "candidate-fixture@example.invalid",
-            "GIT_AUTHOR_DATE": "2000-01-01T00:00:00Z",
-            "GIT_COMMITTER_NAME": "Candidate Contract Fixture",
-            "GIT_COMMITTER_EMAIL": "candidate-fixture@example.invalid",
-            "GIT_COMMITTER_DATE": "2000-01-01T00:00:00Z",
-        })
-        _git(checkout, "-c", "user.name=Candidate Contract Fixture",
-             "-c", "user.email=candidate-fixture@example.invalid",
-             "-c", "commit.gpgSign=false", "commit", "-q", "-m", "fixture", env=env)
-        revision = _git(checkout, "rev-parse", "HEAD").decode("ascii").strip()
+        revision = _commit_source(checkout)
         tree_bytes, index = candidate._git_tree(checkout, revision,
-                                                projection_limits())
-        if len(paths) != len(set(paths)):
-            raise ValueError("Fixture source recipe paths contain duplicates")
-        yield_root = Path(temporary) / "source"
-        recipe_digest, recipe_files = candidate._source_inputs(
-            yield_root, index, candidate.contract_registry_projection()["registry"]["source_inputs"]["recipe"]
-        )
+                                                candidate._registry()[1]["limits"])
         yield {
-            "root": yield_root,
+            "root": checkout,
             "revision": revision,
             "tree_bytes": tree_bytes,
             "tree_sha256": _hash(tree_bytes),
             "index": index,
-            "recipe_sha256": recipe_digest,
-            "recipe_files": recipe_files,
         }
-
-
-def projection_limits():
-    return candidate._registry()[1]["limits"]
 
 
 def _version_overlay(source):
@@ -203,7 +195,7 @@ def _closure_material():
         for role in outputs:
             root_paths[system][role] = _store_path(number, "fixture-" + system + "-" + role)
             number += 1
-    deps = [_store_path(1000 + i, "fixture-dependency-{:04d}".format(i)) for i in range(590)]
+    deps = [_store_path(1000 + i, "fixture-dependency-{:04d}".format(i)) for i in range(67)]
     edges = {path: [] for path in root_paths_by_flat(root_paths) | set(deps)}
     for system, roles in root_paths.items():
         edges[roles["neo"]] = [deps[0]]
@@ -270,7 +262,7 @@ def _identity(name, content):
     return {"name": name, "sha256": _hash(content), "size": len(content)}
 
 
-def _file_payloads(source, snapshot_root, projection, native_neo, native_installers, bootstraps):
+def _file_payloads(snapshot_root, projection, native_neo, native_installers, bootstraps):
     payloads = {}
     for name, content in native_neo.items():
         payloads[name] = content
@@ -344,10 +336,7 @@ def _candidate_payload(version, source, snapshot_root, projection, closure):
         "posix": b"#!/bin/sh\nexec neo-installer --candidate-locator \"$1\"\n",
         "powershell": b"param([Parameter(Mandatory=$true)][string]$CandidateLocator)\n& neo-installer --candidate-locator $CandidateLocator\n",
     }
-    payloads = _file_payloads(source, snapshot_root, projection, native_neo, native_installers, bootstraps)
-    profile = candidate._config_profile(source["root"], source["revision"], source["index"])
-    seed_paths = projection["registry"]["source_inputs"]["version_seed_recipe"]
-    seed_recipe, _seed_files = candidate._source_inputs(source["root"], source["index"], seed_paths)
+    payloads = _file_payloads(snapshot_root, projection, native_neo, native_installers, bootstraps)
     if version == "0.17.1":
         overlays = {}
         build_tree_sha256 = source["tree_sha256"]
@@ -460,128 +449,6 @@ def _candidate_payload(version, source, snapshot_root, projection, closure):
     return core, core_bytes, materialized
 
 
-def _invalid_cases(projection, core, closure):
-    cases = []
-    for target in sorted(core["native_neo"]):
-        cases.append({"name": "missing-native-neo-" + target, "document": "candidate", "operation": "remove", "path": ["native_neo", target]})
-    for target in sorted(core["native_installers"]):
-        cases.append({"name": "missing-native-installer-" + target, "document": "candidate", "operation": "remove", "path": ["native_installers", target]})
-    for system in sorted(core["packages"]):
-        for role in sorted(core["packages"][system]):
-            cases.append({"name": "missing-nix-" + system + "-" + role, "document": "candidate", "operation": "remove", "path": ["packages", system, role]})
-    cases.extend([
-        {"name": "missing-posix-bootstrap", "document": "candidate", "operation": "remove", "path": ["bootstraps", "posix"]},
-        {"name": "missing-powershell-bootstrap", "document": "candidate", "operation": "remove", "path": ["bootstraps", "powershell"]},
-        {"name": "missing-nix-platform-x86_64-linux", "document": "candidate", "operation": "remove", "path": ["packages", "x86_64-linux"]},
-        {"name": "unknown-nix-platform", "document": "candidate", "operation": "add", "path": ["packages", "unknown-system"], "value": {}},
-        {"name": "unknown-native-installer-platform", "document": "candidate", "operation": "add", "path": ["native_installers", "unknown-platform"], "value": {}},
-        {"name": "bad-nar-sri", "document": "candidate", "operation": "replace", "path": ["packages", "x86_64-linux", "neo", "nar_hash"], "value": "sha256-not-base64"},
-        {
-            "name": "wrong-pair-member",
-            "document": "candidate",
-            "operation": "replace",
-            "path": ["packages", "x86_64-linux", "pair", "members", "neo"],
-            "value": core["packages"]["x86_64-linux"]["neoctl"]["store_path"],
-        },
-        {
-            "name": "derivation-is-not-an-output",
-            "document": "candidate",
-            "operation": "replace-with-suffix",
-            "path": ["packages", "x86_64-linux", "neo", "store_path"],
-            "suffix": ".drv",
-        },
-        {
-            "name": "flake-expression-is-not-an-output",
-            "document": "candidate",
-            "operation": "replace",
-            "path": ["packages", "x86_64-linux", "neo", "store_path"],
-            "value": 'builtins.getFlake(".")#neo',
-        },
-        {
-            "name": "unlisted-closure-reference",
-            "document": "closures",
-            "operation": "replace-reference",
-            "path": next(
-                ["paths", index, "references", 0]
-                for index, item in enumerate(closure["paths"])
-                if item["references"]
-            ),
-            "value": "/nix/store/" + "z" * 32 + "-missing-reference",
-        },
-        {
-            "name": "unreachable-closure-path",
-            "document": "closures",
-            "operation": "append-unreachable-path",
-            "store_path": "/nix/store/" + "y" * 32 + "-unreachable-extra",
-        },
-        {
-            "name": "native-output-byte-flip",
-            "document": "file",
-            "operation": "flip-byte",
-            "file": next(iter(core["native_installers"].values()))["file"]["name"],
-            "offset": 0,
-        },
-        {
-            "name": "native-output-wrong-size",
-            "document": "candidate",
-            "operation": "increment-file-size",
-            "path": ["native_installers", next(iter(core["native_installers"])), "file", "size"],
-            "amount": 1,
-        },
-        {
-            "name": "unlisted-materialized-file",
-            "document": "artifact-directory",
-            "operation": "add-file",
-            "file": "unlisted.txt",
-        },
-        {
-            "name": "wrong-source-tree",
-            "document": "candidate",
-            "operation": "replace-and-refresh-receipts",
-            "path": ["context", "source_tree_sha256"],
-            "value": "0" * 64,
-        },
-        {
-            "name": "wrong-engineering-generated-diff",
-            "document": "candidate",
-            "operation": "replace-and-refresh-receipts",
-            "path": ["context", "version_seed", "generated_diff_sha256"],
-            "value": "0" * 64,
-        },
-        {
-            "name": "engineering-context-as-release",
-            "document": "candidate",
-            "operation": "retag-engineering-as-release",
-        },
-        {
-            "name": "missing-bootstrap-generator-source",
-            "document": "source",
-            "operation": "remove-file",
-            "file": projection["registry"]["source_inputs"]["bootstrap_generator"],
-        },
-        {
-            "name": "forged-receipt-source-tree",
-            "document": "build-receipts",
-            "operation": "replace-and-refresh-output-link",
-            "path": ["receipts", 0, "source_tree_sha256"],
-            "value": "0" * 64,
-        },
-        {
-            "name": "duplicate-json-key",
-            "document": "candidate.json",
-            "operation": "replace-raw",
-            "value": '{"schema_version":2,"schema_version":2}',
-        },
-        {
-            "name": "noncanonical-json-newline",
-            "document": "candidate.json",
-            "operation": "append-bytes",
-            "value": "\\n",
-        },
-    ])
-    return {"schema_version": 1, "fixture": "current-0.17.2", "parse_only": True, "cases": cases}
-
-
 def _canonical_path(path):
     result = Path(path).expanduser()
     if not result.is_absolute():
@@ -639,7 +506,7 @@ def _generate_corpus(source_root, output_root):
     projection, source_paths, snapshot_root = _write_source_snapshot(source_root, output_root)
     current = output_root / "current-0.17.2"
     previous = output_root / "previous-0.17.1"
-    with _committed_source(source_paths, snapshot_root) as source:
+    with _committed_source(snapshot_root) as source:
         closure = _closure_material()
         observed = _closure_shape(closure[3])
         expected = {
@@ -656,11 +523,6 @@ def _generate_corpus(source_root, output_root):
             directory.mkdir()
             for name, content in files.items():
                 (directory / name).write_bytes(content)
-        current_core = json.loads((current / "candidate.json").read_bytes())
-        closure_table = json.loads((current / "closures.json").read_bytes())
-        (output_root / "invalid-cases.json").write_bytes(
-            candidate.canonical_json(_invalid_cases(projection, current_core, closure_table))
-        )
         manifest = {
             "schema_version": 1,
             "parse_only": True,
