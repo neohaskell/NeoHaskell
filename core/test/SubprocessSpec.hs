@@ -3,11 +3,7 @@ module SubprocessSpec (spec) where
 import Core
 import Array qualified
 import AsyncTask qualified
-import ConcurrentVar qualified
 import Console qualified
-import Control.Exception qualified as GhcException
-import GHC.Conc qualified as GhcConc
-import LinkedList qualified
 import Subprocess qualified
 import Task qualified
 import Test
@@ -72,24 +68,17 @@ spec = do
         requireAbsent workspace
 
     it "times out when a descendant retains the output pipes" \_ -> do
-      baselineThreads <- Task.fromIO GhcConc.listThreads
-      withRunningChild 1 "descendant" \workspace worker -> do
-        fixtureControl ["readers-open", workspace] |> Task.andThen (shouldBe "open")
-        outcome <- AsyncTask.waitFor worker |> Task.asResult
-        case outcome of
-          Err message -> message |> shouldSatisfy (Text.contains "TimeoutError")
-          other -> Test.fail [fmt|Expected inherited-pipe timeout, got #{other}|]
-        requireAbsent workspace
-        fixtureControl ["descendant-alive", workspace] |> Task.andThen (shouldBe "alive")
-        fixtureControl ["readers-closed", workspace] |> Task.andThen (shouldBe "closed")
-      remainingThreads <- Task.fromIO GhcConc.listThreads
-      let leakedThreads = remainingThreads |> LinkedList.filter (\thread -> not (LinkedList.member thread baselineThreads))
-      leakedThreads |> Array.fromLinkedList |> Task.forEach (\thread -> do
-        status <- Task.fromIO (GhcConc.threadStatus thread)
-        case status of
-          GhcConc.ThreadFinished -> Task.yield ()
-          GhcConc.ThreadDied -> Task.yield ()
-          other -> Test.fail [fmt|Subprocess left a live thread: #{thread} #{other}|])
+      (_, liveThreads) <- AsyncTask.threadsLeftRunningBy do
+        withRunningChild 1 "descendant" \workspace worker -> do
+          fixtureControl ["readers-open", workspace] |> Task.andThen (shouldBe "open")
+          outcome <- AsyncTask.waitFor worker |> Task.asResult
+          case outcome of
+            Err message -> message |> shouldSatisfy (Text.contains "TimeoutError")
+            other -> Test.fail [fmt|Expected inherited-pipe timeout, got #{other}|]
+          requireAbsent workspace
+          fixtureControl ["descendant-alive", workspace] |> Task.andThen (shouldBe "alive")
+          fixtureControl ["readers-closed", workspace] |> Task.andThen (shouldBe "closed")
+      liveThreads |> Task.forEach (\thread -> Test.fail [fmt|Subprocess left a live thread: #{thread}|])
 
     it "reaps the direct child after a real UTF8 pipe decoding failure" \_ -> do
       withRunningChild 3 "invalid-text" \workspace worker -> do
@@ -135,16 +124,10 @@ spec = do
         requireAbsent workspace
 
     it "reaps the owned child when a synchronous exception interrupts cancellation cleanup" \_ -> do
-      workerThread <- ConcurrentVar.new
-      let publishWorkerThread child = do
-            thread <- Task.fromIO GhcConc.myThreadId
-            workerThread |> ConcurrentVar.set thread
-            child
-      withPreparedChild publishWorkerThread 10 "record-term" \workspace worker -> do
-        thread <- ConcurrentVar.peek workerThread
+      withRunningChild 10 "record-term" \workspace worker -> do
         AsyncTask.process (AsyncTask.cancel worker) \firstCancel -> do
           fixtureControl ["term-seen", workspace] |> Task.map (\_ -> ())
-          Task.fromIO (GhcConc.throwTo thread (GhcException.ErrorCall "synchronous interruption"))
+          AsyncTask.injectRuntimeFailure "synchronous interruption" worker
           AsyncTask.waitFor firstCancel
         outcome <- AsyncTask.waitCatch worker
         case outcome of
@@ -183,21 +166,10 @@ withRunningChild ::
   Int -> Text ->
   (Text -> AsyncTask.AsyncTask Text Subprocess.Completion -> Task Text Unit) ->
   Task Text Unit
-withRunningChild seconds mode test =
-  withPreparedChild (\child -> child) seconds mode test
-
-
--- The prelude runs on the worker thread before the child is created, so a test
--- can publish worker identity without a production test seam.
-withPreparedChild ::
-  (Task Text Subprocess.Completion -> Task Text Subprocess.Completion) ->
-  Int -> Text ->
-  (Text -> AsyncTask.AsyncTask Text Subprocess.Completion -> Task Text Unit) ->
-  Task Text Unit
-withPreparedChild prelude seconds mode test = do
+withRunningChild seconds mode test = do
   workspace <- fixtureControl ["create"]
   let cleanup = fixtureControl ["cleanup", workspace] |> Task.map (\_ -> ())
-  let child = runFixture seconds ["start", workspace, mode] |> Task.mapError (\err -> [fmt|#{err}|]) |> prelude
+  let child = runFixture seconds ["start", workspace, mode] |> Task.mapError (\err -> [fmt|#{err}|])
   AsyncTask.process child (\worker -> do
     let check = do
           requireReady workspace
