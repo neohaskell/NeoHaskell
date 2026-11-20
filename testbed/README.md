@@ -330,7 +330,9 @@ The maintained runner executes both the default local upload scenarios and the S
 nix develop --command .agents/skills/neohaskell-test/scripts/run-testbed --strict
 ```
 
-To run the S3 upload scenario alone with PostgreSQL running locally, start the fake services and the S3-configured testbed in two terminals, then run Hurl in a third terminal:
+The runner starts the S3-configured testbed on a separate fresh database and prints the database name. The local file scenarios upload the same PNG bytes for the anonymous owner. In a shared database, deduplication returns that earlier file reference and its `fixtures/crlf-test.png` filename, and the S3 scenario fails.
+
+To run the S3 upload scenario alone with PostgreSQL running locally, start the fake services and the S3-configured testbed in two terminals, then run Hurl in a third terminal. Set `DB_NAME` to a database where the local file scenarios have not run:
 
 ```bash
 python3 testbed/scripts/fake_external_services.py

@@ -283,7 +283,12 @@ if [ -d "$HURL_TEST_ROOT/s3" ] && [ "$(ls -A "$HURL_TEST_ROOT"/s3/*.hurl 2>/dev/
 	fi
 	S3_UPLOAD_TEMP_DIR=$(mktemp -d)
 	s3_unused_upload_dir="$S3_UPLOAD_TEMP_DIR/unused-local-uploads"
-	DB_NAME="$testbed_db" \
+	# The file scenarios upload the same PNG bytes for the anonymous owner.
+	# In a shared database, deduplication returns that earlier file reference.
+	s3_db="nh_testbed_s3_${database_suffix}"
+	createdb -h "${DB_HOST:-localhost}" -p "${DB_PORT:-5432}" -U "${DB_USER:-neohaskell}" "$s3_db"
+	echo "S3 testbed database: $s3_db"
+	DB_NAME="$s3_db" \
 		UPLOAD_DIR="$s3_unused_upload_dir" \
 		S3_ENDPOINT="http://127.0.0.1:$TESTBED_FIXTURE_PORT" \
 		S3_BUCKET="testbed-s3-bucket" \
