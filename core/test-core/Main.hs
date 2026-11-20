@@ -42,6 +42,7 @@ import Schema.JsonSchemaSpec qualified
 import Service.Transport.Web.SwaggerUISpec qualified
 import SetSpec qualified
 import StreamSpec qualified
+import SubprocessSpec qualified
 import Test.AppSpec.AppSpecSpec qualified
 import Test.AppSpec.VerifySpec qualified
 import Test.SpecSpec qualified
@@ -96,6 +97,7 @@ main = Hspec.hspec do
   Hspec.describe "Service.Transport.Web.SwaggerUI" Service.Transport.Web.SwaggerUISpec.spec
   Hspec.describe "Set" SetSpec.spec
   Hspec.describe "Stream" StreamSpec.spec
+  Hspec.describe "Subprocess" SubprocessSpec.spec
   Hspec.describe "Test.AppSpec.AppSpec" Test.AppSpec.AppSpecSpec.spec
   Hspec.describe "Test.AppSpec.Verify" Test.AppSpec.VerifySpec.spec
   Hspec.describe "Test.Spec" Test.SpecSpec.spec
