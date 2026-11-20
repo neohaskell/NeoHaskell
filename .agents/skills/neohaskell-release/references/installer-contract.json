@@ -232,9 +232,12 @@
     "recipe": [
       ".agents/skills/neohaskell-release/references/config.json",
       ".agents/skills/neohaskell-release/references/installer-contract.json",
+      ".agents/skills/neohaskell-release/scripts/releases/assemble_candidate.py",
       ".agents/skills/neohaskell-release/scripts/releases/candidate.py",
       ".agents/skills/neohaskell-release/scripts/releases/engine.py",
       ".agents/skills/neohaskell-release/scripts/releases/github.py",
+      ".agents/skills/neohaskell-release/scripts/releases/installer_platform.py",
+      ".agents/skills/neohaskell-release/scripts/semantic-release",
       "flake.nix",
       "neo/lifecycle/scripts/generate_bootstraps.py",
       "neo/lifecycle/src/english.json",
@@ -269,6 +272,10 @@
     {
       "cache": "https://cache.iog.io",
       "key": "hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ="
+    },
+    {
+      "cache": "https://cache.nixos.org",
+      "key": "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="
     }
   ],
   "limits": {

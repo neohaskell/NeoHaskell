@@ -76,6 +76,9 @@ def release_fixture(temporary, corpus, mutation=None):
     _commit_fixture_source(root, corpus)
     (root / candidate.CANDIDATE_RELATIVE_PATH).write_bytes(
         Path(candidate.__file__).read_bytes())
+    projection = root / 'neo/lifecycle/contract/registry.json'
+    projection.parent.mkdir(parents=True, exist_ok=True)
+    projection.write_bytes(candidate.contract_registry_bytes())
     ledger = root / candidate.release.LEDGER_PATH
     ledger.write_text(candidate.release.canonical({'schema': 1, 'attempts': [], 'recoveries': []}))
     (root / 'CHANGELOG.md').write_text('# History\n')
@@ -90,9 +93,8 @@ def release_fixture(temporary, corpus, mutation=None):
     repo = candidate.release.Repo(root)
     plan = candidate.release.plan_release(repo, source, 'platform', {}, '2026-11-16',
                                           ('neo-v0.17.1', '0.17.2'))
-    plan = candidate.release.identify({**{k: v for k, v in plan.items() if k != 'id'},
-        'distribution_policy': 'installer-v1',
-        'contract_registry_sha256': candidate.contract_registry_sha256()})
+    if plan.get('contract_registry_sha256') != candidate.contract_registry_sha256():
+        raise AssertionError('Release planning did not freeze the installer contract')
     candidate.release.write_edits(root, candidate.release.expected_edits(repo, plan))
     revision = commit(root, 'ci: generated preparation')
     if candidate.release.verify_generated(repo, revision, plan) is not True:
@@ -141,16 +143,88 @@ def refresh_seed(root, directory, core):
 
 
 class ReleaseBindingCases:
+    def test_assembly_from_platform_reports_builds_source_bound_release_and_rejects_mixed_seed(self):
+        import assemble_candidate as assembler
+
+        with temporary_corpus_directory(prefix='candidate-assembly-') as temporary:
+            root, directory, core, plan = release_fixture(temporary, self.corpus)
+            artifacts = root.parent / 'assets'
+            platforms = root.parent / 'platforms'
+            artifacts.mkdir()
+            platforms.mkdir()
+            for name in candidate.contract_registry_projection()['resolved']['required_assets']:
+                shutil.copyfile(directory / name, artifacts / name)
+            receipts = json.loads((directory / 'build-receipts.json').read_bytes())['receipts']
+            closures = json.loads((directory / 'closures.json').read_bytes())
+            rows = {row['store_path']: row for row in closures['paths']}
+            revision = core['context']['build_revision']
+            for system, target in assembler.TARGETS.items():
+                installer = core['native_installers'][target]['file']
+                shutil.copyfile(directory / installer['name'], platforms / installer['name'])
+                native = {'native-installer': installer}
+                if target in core['native_neo']:
+                    native['native-neo'] = core['native_neo'][target]['file']
+                roots = closures['roots'][system]
+                paths = set.union(*(assembler.reachable(rows, path) for path in roots.values()))
+                report = {
+                    'system': system, 'target': target, 'version': plan['version'],
+                    'revision': revision, 'attempt': plan['id'], 'native': native,
+                    'roots': roots, 'paths': [rows[path] for path in sorted(paths)],
+                    'observations': {r['role']: r['verification_observations'] for r in receipts
+                                     if r['platform'] in (system, target)},
+                    'starter_hashes': {name: core['build_inputs']['starter'][role + '_sha256']
+                                       for role, name in assembler.STARTER.items()},
+                }
+                report_file = platforms / ('platform-' + target + '.json')
+                report_file.write_bytes(candidate.canonical_json(report))
+            assembler.assemble(root, plan['id'], revision, artifacts, platforms)
+            manifest = (artifacts / 'candidate.json').read_bytes()
+            locator = plan['version'] + '@' + candidate._sha256(manifest) + '\n'
+            self.assertEqual((artifacts / 'candidate.locator').read_text(), locator)
+            self.assertEqual(json.loads(manifest)['context'], core['context'])
+            assembler.assemble(root, plan['id'], revision, artifacts, platforms)
+            self.assertEqual((artifacts / 'candidate.json').read_bytes(), manifest)
+            self.assertEqual((artifacts / 'candidate.locator').read_text(), locator)
+            report['starter_hashes']['flake.lock'] = 'a' * 64
+            report_file.write_bytes(candidate.canonical_json(report))
+            with self.assertRaisesRegex(ValueError, 'starter inputs differ'):
+                assembler.assemble(root, plan['id'], revision, artifacts, platforms)
+            self.assertEqual((artifacts / 'candidate.json').read_bytes(), manifest)
+
     def test_release_binding_accepts_maintained_preparation_and_synthetic_nix_seed(self):
         with temporary_corpus_directory(prefix='candidate-release-binding-') as temporary:
             root, directory, core, plan = release_fixture(temporary, self.corpus)
             repo = candidate.release.Repo(root)
             self.assertNotIn(plan, repo.ledger(core['context']['change_source'])['attempts'])
             self.assertIn(plan, repo.ledger(core['context']['build_revision'])['attempts'])
+            from test_release import FakeAPI, write_verification_receipts
+            from .test_candidate_contract import _identity
+            revision = core['context']['build_revision']
+            write_verification_receipts(plan, revision, directory)
+            for name in core['auxiliary_assets']:
+                core['auxiliary_assets'][name] = _identity(name, (directory / name).read_bytes())
             bound = candidate.bind_source(write_bound_input(directory, core), root)
             self.assertEqual(bound.context_kind, 'release')
             self.assertEqual(bound.version, '0.17.2')
             self.assertNotEqual(bound.change_source, bound.build_revision)
+            locator = directory / 'candidate.locator'
+            locator.write_text(f'{bound.version}@{bound.candidate_id}\n')
+            names = candidate.remote.required_assets(plan)
+            self.assertEqual(names, {p.name for p in directory.iterdir()})
+            files = candidate.remote.seal_artifacts(repo, plan, revision, directory)
+            api = FakeAPI()
+            self.assertTrue(candidate.remote.publish(api, repo, plan, revision, files, lambda: None))
+            restored = Path(temporary) / 'restored'
+            self.assertTrue(candidate.remote.restore_bundle(api, repo, plan, revision, restored))
+            retry = candidate.remote.seal_artifacts(repo, plan, revision, restored)
+            self.assertEqual(files, retry)
+            writes = list(api.writes)
+            self.assertFalse(candidate.remote.publish(api, repo, plan, revision, retry, lambda: None))
+            self.assertEqual(writes, api.writes)
+            locator.write_text(f'{bound.version}@{"0" * 64}\n')
+            with self.assertRaisesRegex(ValueError, "locator"):
+                candidate.remote.verify_candidate(repo, plan, bound.build_revision, directory, names)
+
             tree, index = candidate._git_tree(root, bound.build_revision, candidate._registry()[1]['limits'])
             self.assertNotEqual(bound.build_tree_sha256, candidate._sha256(tree))
             self.assertNotEqual(candidate._git_blob(root, index, 'neo/starter/flake.nix')[1],

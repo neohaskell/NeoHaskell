@@ -13,6 +13,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 import engine as release
 from candidate_contract_tests import CandidateContract
 from candidate_contract_tests.test_runtime import RuntimeContract
+from test_installer_platform import InstallerPlatform
 
 ROOT = release.ROOT
 SKILL_ROOT = release.SKILL_ROOT
@@ -373,7 +374,7 @@ class History(unittest.TestCase):
             release.LEDGER_PATH,
             release.canonical({"schema": 1, "attempts": [], "recoveries": []}),
         )
-        self.write(release.CONFIG_PATH, release.canonical(release.CONFIG))
+        self.write(release.CONFIG_PATH, release.canonical({k: v for k, v in release.CONFIG.items() if k != "distribution_policy"}))
         for profile in release.CONFIG["groups"].values():
             for path, name in profile["packages"].items():
                 self.write(
@@ -570,6 +571,11 @@ def artifact_files(repo, plan, revision, directory):
     directory.mkdir(parents=True, exist_ok=True)
     for name in remote.required_assets(plan):
         (directory / name).write_bytes(("fixture " + name).encode())
+    write_verification_receipts(plan, revision, directory)
+    return remote.seal_artifacts(repo, plan, revision, directory)
+
+
+def write_verification_receipts(plan, revision, directory):
     prefix = release.CONFIG["groups"][plan["group"]]["asset_prefix"]
     for target in release.targets_for(plan):
         receipt = {
@@ -604,7 +610,6 @@ def artifact_files(repo, plan, revision, directory):
             }
         )
     )
-    return remote.seal_artifacts(repo, plan, revision, directory)
 
 
 class TargetPolicies(History):
@@ -1570,7 +1575,7 @@ class Workflow(unittest.TestCase):
         }
         self.assertEqual(
             jobs,
-            {"prepare", "platform_seed", "platform_native", "platform_consumer", "platform_cache", "platform_publish", "reconcile"},
+            {"prepare", "platform_seed", "platform_native", "platform_consumer", "platform_cache", "installer_platform", "installer_candidate", "platform_publish", "reconcile"},
         )
         self.assertIn("push:\n    branches: [main]", text)
         self.assertIn("workflow_dispatch:", text)
@@ -1588,7 +1593,7 @@ class Workflow(unittest.TestCase):
             self.assertIn("github.ref == 'refs/heads/main'", block)
             self.assertIn("needs.prepare.outputs.platform_has_work == 'true'", block)
             self.assertNotIn("permissions:", block)
-        self.assertEqual(text.count("persist-credentials: false"), 12)
+        self.assertEqual(text.count("persist-credentials: false"), text.count("uses: actions/checkout@"))
         self.assertIn("Release engine self-tests (offline)", text)
         self.assertIn("run: ./.agents/skills/neohaskell-release/scripts/semantic-release --self-test", text)
         for name in ("prepare", "platform_seed", "platform_native", "platform_consumer", "platform_publish", "reconcile"):
@@ -1600,17 +1605,30 @@ class Workflow(unittest.TestCase):
             self.assertIn("ref: ${{ matrix.revision }}", block)
             self.assertIn("ref: ${{ needs.prepare.outputs.tooling_revision }}", block)
             self.assertIn("path: .agents-state/release-tooling", block)
-            self.assertIn("run: ./.agents-state/release-tooling/.agents/skills/neohaskell-release/scripts/semantic-release", block)
+            self.assertIn('matrix.distribution_policy == \'installer-v1\'', block)
+            self.assertIn('"$RELEASE_TOOLS/.agents/skills/neohaskell-release/scripts/semantic-release"', block)
         self.assertIn("NEOHASKELL_ROOT: ${{ github.workspace }}", text)
         native = self.job_block(text, "platform_native")
         self.assertIn("cachix/install-nix-action@75c75c31ebece974e48ebc36b4ad125bd97bd97b", native)
-        self.assertLess(native.index("uses: DeterminateSystems/determinate-nix-action@"), native.index("semantic-release build-native"))
+        self.assertLess(native.index("uses: DeterminateSystems/determinate-nix-action@"), native.index('semantic-release" build-native'))
         consumer = self.job_block(text, "platform_consumer")
         self.assertIn("accept-flake-config = true", consumer)
         self.assertIn("ref: ${{ matrix.revision }}", consumer)
         self.assertIn("github.ref == 'refs/heads/main'", consumer)
         publish = self.job_block(text, "platform_publish")
-        self.assertIn("needs: [prepare, platform_native, platform_consumer]", publish)
+        self.assertIn("needs: [prepare, platform_native, platform_consumer, installer_candidate]", publish)
+        self.assertIn("needs.installer_candidate.result == 'success'", publish)
+        self.assertIn("needs.prepare.outputs.installer_has_work == 'false' && needs.installer_candidate.result == 'skipped'", publish)
+        producer = self.job_block(text, "installer_platform")
+        candidate = self.job_block(text, "installer_candidate")
+        self.assertIn("needs: [prepare, platform_native]", producer)
+        self.assertIn("CACHIX_AUTH_TOKEN", producer)
+        self.assertIn("needs: [prepare, installer_platform, platform_consumer]", candidate)
+        self.assertIn("name: release-${{ matrix.attempt }}-installer", candidate)
+        for job in (producer, candidate):
+            self.assertIn("needs.prepare.outputs.installer_has_work == 'true'", job)
+            self.assertNotIn("continue-on-error", job)
+            self.assertNotIn("contents: write", job)
         self.assertIn("github.ref == 'refs/heads/main'", publish)
         self.assertIn("needs.prepare.outputs.platform_has_work == 'true'", publish)
         self.assertIn("contents: write", publish)
@@ -1679,7 +1697,7 @@ class Workflow(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("Prepare reviewed release PRs", result.stdout)
 
-    def test_workflow_outputs_are_platform_only_and_preserve_reuse(self):
+    def test_installer_work_is_limited_to_fresh_opted_in_platform_releases(self):
         import runpy
 
         cli = runpy.run_path(str(SKILL_ROOT / "scripts/semantic-release"))
@@ -1692,12 +1710,21 @@ class Workflow(unittest.TestCase):
         }
         for selected in ([], [item]):
             outputs = cli["work_outputs"](selected)
-            self.assertEqual(set(outputs), {"platform_has_work", "platform_items", "platform_matrix"})
+            self.assertEqual(outputs["installer_has_work"], "false")
+            self.assertEqual(json.loads(outputs["installer_items"]), [])
+            self.assertEqual(json.loads(outputs["installer_matrix"]), {"include": []})
             self.assertEqual(outputs["platform_has_work"], str(bool(selected)).lower())
             self.assertEqual(json.loads(outputs["platform_items"]), selected)
             matrix = json.loads(outputs["platform_matrix"])["include"]
             self.assertEqual({row["target"] for row in matrix}, set(release.TARGETS) if selected else set())
             self.assertTrue(all(row["reuse"] and row["group"] == "platform" for row in matrix))
+        fresh = {**item, "distribution_policy": "installer-v1", "reuse": False}
+        outputs = cli["work_outputs"]([fresh, {**fresh, "reuse": True}, item])
+        self.assertEqual(outputs["installer_has_work"], "true")
+        self.assertEqual(json.loads(outputs["installer_items"]), [fresh])
+        installer_rows = json.loads(outputs["installer_matrix"])["include"]
+        self.assertEqual({(row["system"], row["native_neo"]) for row in installer_rows}, {
+            ("x86_64-linux", True), ("aarch64-linux", False), ("aarch64-darwin", True)})
         historical = {key: value for key, value in item.items() if key != "target_policy"}
         legacy_matrix = json.loads(
             cli["work_outputs"]([historical])["platform_matrix"]
@@ -1871,6 +1898,7 @@ GROUPS = {
     "bootstrap": Bootstrap,
     "candidate-contract": CandidateContract,
     "candidate-runtime": RuntimeContract,
+    "installer-platform": InstallerPlatform,
 }
 
 

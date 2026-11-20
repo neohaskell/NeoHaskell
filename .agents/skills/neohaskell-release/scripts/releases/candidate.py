@@ -334,6 +334,9 @@ def _validate_registry(registry: Dict[str, Any]) -> None:
     required_recipe_inputs = {
         CONFIG_RELATIVE_PATH, CONTRACT_RELATIVE_PATH, CANDIDATE_RELATIVE_PATH,
         ENGINE_RELATIVE_PATH, GITHUB_RELATIVE_PATH, "flake.nix", "nix/neo-package.nix",
+        ".agents/skills/neohaskell-release/scripts/releases/assemble_candidate.py",
+        ".agents/skills/neohaskell-release/scripts/releases/installer_platform.py",
+        ".agents/skills/neohaskell-release/scripts/semantic-release",
         "neo/lifecycle/src/english.json", "neo/lifecycle/scripts/generate_bootstraps.py",
     }
     recipe_paths = source_inputs["recipe"]

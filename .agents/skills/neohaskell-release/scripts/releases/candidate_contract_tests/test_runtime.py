@@ -156,6 +156,18 @@ class RuntimeContract(unittest.TestCase):
             manifest = json.loads(before["manifest.json"])
             self.assertEqual(manifest["sources"]["neo/Cargo.lock"], hashlib.sha256((corpus.root / "source/neo/Cargo.lock").read_bytes()).hexdigest())
 
+    def test_release_version_bump_preserves_the_versioned_parse_fixtures(self):
+        with temporary_corpus_directory() as temporary:
+            root = Path(temporary)
+            selected = root / "next-release"
+            shutil.copytree(self.corpus.root / "source", selected)
+            profile = json.loads((selected / candidate.CONFIG_RELATIVE_PATH).read_bytes())["groups"]["platform"]
+            for path, name in {**profile["packages"], **profile["locks"]}.items():
+                manifest = selected / path
+                manifest.write_text(candidate.release.change_version(manifest.read_text(), path, name, "0.18.1"))
+            after = CandidateFixtureCorpus(selected, root / "corpus")
+            self.assertEqual(runtime_inputs.expected_files(after), runtime_inputs.expected_files(self.corpus))
+
     def test_export_rejects_conflicting_source_attribution(self):
         with temporary_corpus_directory() as temporary:
             root = Path(temporary)

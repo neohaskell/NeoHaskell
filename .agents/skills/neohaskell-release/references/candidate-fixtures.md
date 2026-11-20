@@ -4,7 +4,7 @@ Release-tool tests generate a fresh version-1 corpus before they consume it. The
 
 Every binary, bootstrap, NAR hash, signature, and receipt observation is synthetic. The fixture index marks the corpus as parse-only synthetic metadata. Its generated graph has 599 paths, a maximum of 65 references, and a total NAR size of 5,044,109,824 bytes. These values make no cache, build, network-size, or platform claim.
 
-The source snapshot copies declared inputs from the selected repository. If its bootstrap generator is absent, generation supplies a synthetic placeholder solely for source-byte binding tests. Tests never execute the placeholder or synthetic bootstraps. Production source binding still requires the real generator.
+The source snapshot copies declared inputs from the selected repository. It sets registered package and lockfile versions to the historical fixture baseline of 0.17.1. This keeps the synthetic examples reproducible when a platform release increments its version. The export manifest hashes the resulting snapshot bytes. Actual release builds use the version in their frozen preparation. If its bootstrap generator is absent, generation supplies a synthetic placeholder solely for source-byte binding tests. Tests never execute the placeholder or synthetic bootstraps. Production source binding still requires the real generator.
 
 Run the maintained groups with `python3 -B .agents/skills/neohaskell-release/scripts/semantic-release --self-test candidate-contract candidate-runtime`. Tests own fresh temporary directories under `.agents-state/neohaskell-release` and remove them on completion.
 

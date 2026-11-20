@@ -483,6 +483,18 @@ def source_target_policy(repo, source):
     return policy
 
 
+def source_distribution(repo, source):
+    config = json.loads(repo.read(source, CONFIG_PATH) or "{}")
+    if "distribution_policy" not in config:
+        return {}
+    if config["distribution_policy"] != "installer-v1" or config.get("native_policy") != TARGET_POLICY:
+        raise ValueError("Unsupported release distribution policy")
+    projection = repo.read(source, "neo/lifecycle/contract/registry.json")
+    if not projection:
+        raise ValueError("Installer release source lacks its contract registry projection")
+    return {"distribution_policy": "installer-v1", "contract_registry_sha256": digest(projection)}
+
+
 def record_target_policy(record):
     if RAW_TARGET_FIELDS & record.keys():
         raise ValueError("Release record cannot contain raw target lists")
@@ -502,8 +514,9 @@ def targets_for(record):
 def validate_source_policy(repo, record):
     check_identity(record)
     policy = record_target_policy(record)
+    distribution = {k: record[k] for k in ("distribution_policy", "contract_registry_sha256") if k in record}
     if record["kind"] == "recovery":
-        if policy is not None:
+        if policy is not None or distribution:
             raise ValueError("Recovery records inherit the release target policy")
         ledger = repo.ledger(record["source_sha"])
         original = next(
@@ -516,6 +529,8 @@ def validate_source_policy(repo, record):
     if record["kind"] != "release":
         raise ValueError("Unknown release manifest kind")
     source_policy = source_target_policy(repo, record["source_sha"])
+    if distribution != source_distribution(repo, record["source_sha"]):
+        raise ValueError("Release distribution policy does not match its source")
     if policy != source_policy:
         raise ValueError("Release target policy does not match its source")
     return targets_for(record)
@@ -639,6 +654,7 @@ def plan_release(repo, source, group, completed, date, bootstrap=None, check_tag
     }
     if target_policy is not None:
         data["target_policy"] = target_policy
+    data.update(source_distribution(repo, source))
     plan = identify(data)
     validate_source_policy(repo, plan)
     for tag in [release_tag(plan)] + (

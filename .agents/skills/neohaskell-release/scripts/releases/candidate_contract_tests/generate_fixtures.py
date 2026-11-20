@@ -92,7 +92,7 @@ def _source_paths(registry, source_root):
     paths.update(profile["locks"])
     for path in paths:
         candidate._validate_source_path(path)
-    return sorted(paths)
+    return sorted(paths), {**profile["packages"], **profile["locks"]}
 
 
 def _missing_source_path(root, relative):
@@ -110,7 +110,7 @@ def _missing_source_path(root, relative):
 
 def _write_source_snapshot(source_root, output_root):
     projection = candidate.contract_registry_projection()
-    paths = _source_paths(projection["registry"], source_root)
+    paths, versioned_files = _source_paths(projection["registry"], source_root)
     snapshot_root = output_root / "source"
     snapshot_root.mkdir()
     copied_paths = []
@@ -122,6 +122,8 @@ def _write_source_snapshot(source_root, output_root):
             content = b"synthetic-generator-recipe-v1\n"
         else:
             content = candidate._read_worktree_file(source_root, relative, 32 * 1024 * 1024)
+            if relative in versioned_files:
+                content = candidate.release.change_version(content.decode(), relative, versioned_files[relative], "0.17.1").encode()
             copied_paths.append(relative)
         destination.write_bytes(content)
     registry = candidate._loads((snapshot_root / candidate.CONTRACT_RELATIVE_PATH).read_bytes(), 2 * 1024 * 1024, 24, 100000)

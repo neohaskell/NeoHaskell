@@ -1,8 +1,7 @@
 # Configure Nix for NeoHaskell
 
 Set up a working multi-user Nix installation before you run the NeoHaskell
-release installer. The NeoHaskell Cachix cache provides the tools. The IOG
-cache provides prebuilt dependencies. If you need Nix itself, follow the
+release installer. The NeoHaskell Cachix cache provides the tools. The IOG and official Nix caches provide prebuilt dependencies. If you need Nix itself, follow the
 [official Nix installation instructions](https://nix.dev/install-nix.html).
 
 On Windows, use a WSL2 distribution with systemd enabled. Follow the Linux
@@ -34,8 +33,8 @@ Keep existing features, caches, and keys, including the default Nix cache. Keep 
 
 ```ini
 extra-experimental-features = nix-command flakes
-extra-substituters = https://neohaskell.cachix.org https://cache.iog.io
-extra-trusted-public-keys = neohaskell.cachix.org-1:mo2cLaGbwqbrxs9xhqKK8jeNsn3osi7t6XoAmxSZssc= hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ=
+extra-substituters = https://neohaskell.cachix.org https://cache.iog.io https://cache.nixos.org
+extra-trusted-public-keys = neohaskell.cachix.org-1:mo2cLaGbwqbrxs9xhqKK8jeNsn3osi7t6XoAmxSZssc= hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
 ```
 
 Use the configuration source that manages your daemon.
@@ -64,10 +63,12 @@ nix.settings = {
 	extra-substituters = [
 		"https://neohaskell.cachix.org"
 		"https://cache.iog.io"
+		"https://cache.nixos.org"
 	];
 	extra-trusted-public-keys = [
 		"neohaskell.cachix.org-1:mo2cLaGbwqbrxs9xhqKK8jeNsn3osi7t6XoAmxSZssc="
 		"hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ="
+		"cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="
 	];
 };
 ```
@@ -85,5 +86,5 @@ If the command reports a daemon connection or permissions error, ask the
 administrator to check that the daemon is running and that your account can
 connect. A successful response confirms daemon access. The release installation
 checks whether the daemon can obtain the selected packages. If the installer
-reports a cache or signature error, check both cache URLs and public keys in
+reports a cache or signature error, check the cache URLs and public keys in
 the system configuration and confirm that the daemon has loaded the changes.

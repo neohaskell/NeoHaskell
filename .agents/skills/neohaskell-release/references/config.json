@@ -2,6 +2,7 @@
   "schema": 1,
   "repository": "neohaskell/NeoHaskell",
   "native_policy": "native-v2",
+  "distribution_policy": "installer-v1",
   "groups": {
     "platform": {
       "tag": "neo-v",

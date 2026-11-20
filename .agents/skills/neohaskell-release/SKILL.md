@@ -52,8 +52,7 @@ Coordinate the protection update with landing the workflow migration. Requiring 
 2. Copy [the fragment template](assets/change.md) to
    `.changes/<unique-slug>.md`. Use one fragment per affected component and do
    not reuse a consumed filename.
-3. Use `group: platform` for Framework, Integrations, CLI or IDE. Installer
-   publication is retired, and installer release fragments are rejected.
+3. Use `group: platform` for Framework, Integrations, CLI or IDE. Installer changes use the platform group and CLI component.
 4. Declare `impact: compatible`, `breaking` or `none`. Features, fixes and
    performance improvements normally mean compatible. Internal refactors with
    unchanged supported app contracts, CI work, and docs work use none with a
@@ -113,6 +112,19 @@ and the generated-app contract must pass before publication. The release body
 must equal the committed changelog section. Platform tags `neo-vX` and `vX`
 share the same commit. Retries reuse verified inputs and assets; any mismatch
 stops publication.
+
+New platform plans also freeze the installer distribution policy. The release
+workflow builds a portable installer and the seeded Neo and neoctl packages
+on Linux x86-64, Linux ARM64 and Apple Silicon. The installer jobs use the
+repository's `CACHIX_AUTH_TOKEN` to push each package pair. Cache verification
+is required before publication. The separate starter development-shell cache
+job remains optional.
+
+The workflow attaches both bootstraps, the native installers, candidate
+metadata and the candidate locator to the same GitHub release as the native
+CLI assets. An installed user runs `neo update` to select the newest complete
+stable release. Each subsequent release uses the same workflow. Historical
+release attempts retain the publication policy recorded when they were planned.
 
 If main advances before a preparation merges, its provenance check fails.
 Dispatch `auto` on main to prepare a fresh PR, then close the stale PR after
