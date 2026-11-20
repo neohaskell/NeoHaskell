@@ -481,6 +481,204 @@
       "boundary": "http:real",
       "expected_examples": 1,
       "fixture": "Network.Wai.Handler.Warp.testWithApplicationSettings"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-core",
+      "path": "core/test/Http/ClientRawSpec.hs",
+      "match": "postFormRaw returns a non-2xx status with its exact body bytes",
+      "boundary": "http:real",
+      "expected_examples": 1,
+      "fixture": "Http.Client.Internal.postFormRaw"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-core",
+      "path": "core/test/Http/ClientRawSpec.hs",
+      "match": "postFormRaw returns a 2xx body without decoding it",
+      "boundary": "http:real",
+      "expected_examples": 1,
+      "fixture": "Http.Client.Internal.postFormRaw"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-core",
+      "path": "core/test/Http/ClientRawSpec.hs",
+      "match": "postFormRaw POSTs the fields url-encoded in caller order",
+      "boundary": "http:real",
+      "expected_examples": 1,
+      "fixture": "Http.Client.Internal.postFormRaw"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-core",
+      "path": "core/test/Http/ClientRawSpec.hs",
+      "match": "postFormRaw sends the same method, content type and body as Http.postForm",
+      "boundary": "http:real",
+      "expected_examples": 1,
+      "fixture": "Http.Client.Internal.postFormRaw"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-core",
+      "path": "core/test/Http/ClientRawSpec.hs",
+      "match": "postFormRaw sends caller headers and no Accept header of its own",
+      "boundary": "http:real",
+      "expected_examples": 1,
+      "fixture": "Http.Client.Internal.postFormRaw"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-core",
+      "path": "core/test/Http/ClientRawSpec.hs",
+      "match": "postFormRaw returns a redirect status without contacting its target",
+      "boundary": "http:real",
+      "expected_examples": 1,
+      "fixture": "Http.Client.Internal.postFormRaw"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-core",
+      "path": "core/test/Http/ClientRawSpec.hs",
+      "match": "postFormRaw follows a redirect only when the request allows one",
+      "boundary": "http:real",
+      "expected_examples": 1,
+      "fixture": "Http.Client.Internal.postFormRaw"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-core",
+      "path": "core/test/Http/ClientRawSpec.hs",
+      "match": "postFormRaw enforces maxResponseBytes on the response body",
+      "boundary": "http:real",
+      "expected_examples": 1,
+      "fixture": "Http.Client.Internal.postFormRaw"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-core",
+      "path": "core/test/Http/ClientRawSpec.hs",
+      "match": "postFormRaw stops at the response timeout with a sanitized error",
+      "boundary": "http:real",
+      "expected_examples": 1,
+      "fixture": "Http.Client.Internal.postFormRaw"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-auth",
+      "path": "core/test/Auth/OAuth2/ClientSpec.hs",
+      "match": "returns the tokens of a 200 response with their optional fields",
+      "boundary": "http:real",
+      "expected_examples": 5,
+      "fixture": "Network.Wai.Handler.Warp.testWithApplicationSettings"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-auth",
+      "path": "core/test/Auth/OAuth2/ClientSpec.hs",
+      "match": "returns InvalidGrant for a 400 invalid_grant response",
+      "boundary": "http:real",
+      "expected_examples": 5,
+      "fixture": "Network.Wai.Handler.Warp.testWithApplicationSettings"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-auth",
+      "path": "core/test/Auth/OAuth2/ClientSpec.hs",
+      "match": "returns InvalidClient for a 401 invalid_client response",
+      "boundary": "http:real",
+      "expected_examples": 5,
+      "fixture": "Network.Wai.Handler.Warp.testWithApplicationSettings"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-auth",
+      "path": "core/test/Auth/OAuth2/ClientSpec.hs",
+      "match": "returns MalformedResponse for a 200 response that is not JSON",
+      "boundary": "http:real",
+      "expected_examples": 5,
+      "fixture": "Network.Wai.Handler.Warp.testWithApplicationSettings"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-auth",
+      "path": "core/test/Auth/OAuth2/ClientSpec.hs",
+      "match": "returns MalformedResponse for a 200 response without access_token",
+      "boundary": "http:real",
+      "expected_examples": 5,
+      "fixture": "Network.Wai.Handler.Warp.testWithApplicationSettings"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-auth",
+      "path": "core/test/Auth/OAuth2/ClientSpec.hs",
+      "match": "returns TokenRequestFailed for a non-JSON error status",
+      "boundary": "http:real",
+      "expected_examples": 5,
+      "fixture": "Network.Wai.Handler.Warp.testWithApplicationSettings"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-auth",
+      "path": "core/test/Auth/OAuth2/ClientSpec.hs",
+      "match": "does not accept tokens from an error status",
+      "boundary": "http:real",
+      "expected_examples": 1,
+      "fixture": "Network.Wai.Handler.Warp.testWithApplicationSettings"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-auth",
+      "path": "core/test/Auth/OAuth2/ClientSpec.hs",
+      "match": "accepts tokens from any 2xx status",
+      "boundary": "http:real",
+      "expected_examples": 1,
+      "fixture": "Network.Wai.Handler.Warp.testWithApplicationSettings"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-auth",
+      "path": "core/test/Auth/OAuth2/ClientSpec.hs",
+      "match": "returns a redirect status without following it",
+      "boundary": "http:real",
+      "expected_examples": 1,
+      "fixture": "Network.Wai.Handler.Warp.testWithApplicationSettings"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-auth",
+      "path": "core/test/Auth/OAuth2/ClientSpec.hs",
+      "match": "returns TokenRequestFailed for an error status whose JSON is not an OAuth error",
+      "boundary": "http:real",
+      "expected_examples": 1,
+      "fixture": "Network.Wai.Handler.Warp.testWithApplicationSettings"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-auth",
+      "path": "core/test/Auth/OAuth2/ClientSpec.hs",
+      "match": "returns ScopeDenied for an invalid_scope response",
+      "boundary": "http:real",
+      "expected_examples": 1,
+      "fixture": "Network.Wai.Handler.Warp.testWithApplicationSettings"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-auth",
+      "path": "core/test/Auth/OAuth2/ClientSpec.hs",
+      "match": "returns TokenRequestFailed with the provider description for other OAuth error codes",
+      "boundary": "http:real",
+      "expected_examples": 1,
+      "fixture": "Network.Wai.Handler.Warp.testWithApplicationSettings"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-auth",
+      "path": "core/test/Auth/OAuth2/ClientSpec.hs",
+      "match": "uses the error code when the provider sends no description",
+      "boundary": "http:real",
+      "expected_examples": 1,
+      "fixture": "Network.Wai.Handler.Warp.testWithApplicationSettings"
     }
   ]
 }
