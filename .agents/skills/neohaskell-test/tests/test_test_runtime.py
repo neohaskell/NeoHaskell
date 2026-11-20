@@ -31,7 +31,7 @@ class TestRuntimeTests(unittest.TestCase):
     def test_cabal_project_discovers_the_declared_local_packages(self) -> None:
         packages = cabal_packages(REPOSITORY)
         names = {package.name for package in packages}
-        self.assertEqual(names, {"nhcore", "nhintegrations", "nhtestbed"})
+        self.assertEqual(names, {"neoctl", "nhcore", "nhintegrations", "nhtestbed"})
         self.assertTrue(all(package.cabal_file.is_file() for package in packages))
 
     def test_cabal_test_targets_match_current_component_declarations(self) -> None:
