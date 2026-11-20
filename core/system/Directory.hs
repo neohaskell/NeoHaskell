@@ -7,28 +7,31 @@ module Directory (
   copy,
   getCurrent,
   removeRecursive,
+  withTemporaryFolder,
 ) where
 
 import Array (Array)
 import Array qualified
 import Basics
 import Console qualified
-import Control.Exception qualified as Exception
-import Data.Either qualified as Either
 import Distribution.Simple.Utils qualified as Cabal
 import Distribution.Verbosity qualified as CabalVerbosity
-import GHC.IO.Exception qualified as Exception
 import Maybe qualified
 import Path (Path)
 import Path qualified
+import Result qualified
 import System.Directory qualified
-import System.Directory.Internal.Prelude qualified as Exception
 import System.Directory.Recursive qualified as RecursiveDir
-import System.IO.Error (alreadyExistsErrorType)
+import System.FilePath qualified
+import System.IO.Error qualified as IOError
+import System.Posix.Directory qualified as PosixDirectory
+import System.Posix.Files qualified as PosixFiles
 import Task (Task)
 import Task qualified
+import Text (Text)
 import Text qualified
 import ToText qualified
+import Uuid qualified
 
 
 data Error
@@ -54,16 +57,16 @@ create dirPath = do
         dirPath
           |> Path.toLinkedList
           |> System.Directory.createDirectory
-  result <- Exception.try @Exception.IOError createDirAction |> Task.fromIO
+  result <- createDirAction |> Task.fromFailableIO @IOError.IOError |> Task.asResult
   case result of
-    Either.Left err ->
-      if Exception.ioeGetErrorType err == alreadyExistsErrorType
+    Result.Err err ->
+      if IOError.isAlreadyExistsError err
         then do
           pure unit
         else do
           log "[Directory.create] Failed to create directory"
           Task.throw NotWritable
-    Either.Right _ -> do
+    Result.Ok _ -> do
       log [fmt|[[Directory.create] Directory created: #{p}|]
       Task.yield unit
 
@@ -78,12 +81,12 @@ copy src dest = do
         dest
           |> Path.toLinkedList
           |> Cabal.copyDirectoryRecursive CabalVerbosity.silent (Path.toLinkedList src)
-  result <- Exception.try @Exception.IOError copyFileAction |> Task.fromIO
+  result <- copyFileAction |> Task.fromFailableIO @IOError.IOError |> Task.asResult
   case result of
-    Either.Left err -> do
+    Result.Err err -> do
       log [fmt|[Directory.copy] Failed to copy #{srcP} to #{destP}: #{show err}|]
       Task.throw NotWritable
-    Either.Right _ -> do
+    Result.Ok _ -> do
       log [fmt|[Directory.copy] Copied #{srcP} to #{destP}|]
       Task.yield unit
 
@@ -96,12 +99,12 @@ walk dirPath = do
         dirPath
           |> Path.toLinkedList
           |> RecursiveDir.getDirRecursive
-  result <- Exception.try @Exception.IOError walkDirAction |> Task.fromIO
+  result <- walkDirAction |> Task.fromFailableIO @IOError.IOError |> Task.asResult
   case result of
-    Either.Left err -> do
+    Result.Err err -> do
       log [fmt|[Directory.walk] Failed to walk directory #{p}: #{show err}|]
       Task.throw WalkError
-    Either.Right fps -> do
+    Result.Ok fps -> do
       log [fmt|[Directory.walk] Directory #{p} walked|]
       let paths = Array.fromLinkedList fps
       let numPathChars =
@@ -123,12 +126,12 @@ getCurrent :: Task Error Path
 getCurrent = do
   let log m = Console.log m |> Task.fromIO
   log "[Directory.getCurrent] Getting current working directory"
-  result <- Exception.try @Exception.IOError System.Directory.getCurrentDirectory |> Task.fromIO
+  result <- System.Directory.getCurrentDirectory |> Task.fromFailableIO @IOError.IOError |> Task.asResult
   case result of
-    Either.Left err -> do
+    Result.Err err -> do
       log [fmt|[Directory.getCurrent] Failed to get current directory: #{show err}|]
       Task.throw NotReadable
-    Either.Right currentDir -> do
+    Result.Ok currentDir -> do
       log [fmt|[Directory.getCurrent] Current directory: #{currentDir}|]
       let result =
             currentDir
@@ -145,7 +148,7 @@ createIfMissing dirPath = do
           |> Path.toLinkedList
           |> System.Directory.createDirectoryIfMissing True
   createDirAction
-    |> Task.fromFailableIO @Exception.IOError
+    |> Task.fromFailableIO @IOError.IOError
     |> Task.mapError (\_ -> NotWritable)
 
 
@@ -156,5 +159,49 @@ removeRecursive dirPath = do
           |> Path.toLinkedList
           |> System.Directory.removeDirectoryRecursive
   removeDirAction
-    |> Task.fromFailableIO @Exception.IOError
+    |> Task.fromFailableIO @IOError.IOError
     |> Task.mapError (\_ -> NotWritable)
+
+
+-- | Create a private folder for one task and attempt to remove it after every
+-- exit, including typed errors, runtime exceptions, and cancellation.
+withTemporaryFolder :: (Error -> err) -> (Path -> Task err value) -> Task err value
+withTemporaryFolder mapError use = Task.withCancellationDeferred \restore -> do
+  folder <- newTemporaryFolder |> Task.mapError mapError
+  Task.finally (removeRecursive folder) do
+    callback <- Task.evaluate (use folder)
+    restore callback
+
+
+newTemporaryFolder :: Task Error Path
+newTemporaryFolder = do
+  temporaryRoot <-
+    System.Directory.getTemporaryDirectory
+      |> Task.fromFailableIO @IOError.IOError
+      |> Task.mapError (\_ -> NotReadable)
+  absoluteRoot <-
+    System.Directory.makeAbsolute temporaryRoot
+      |> Task.fromFailableIO @IOError.IOError
+      |> Task.mapError (\_ -> NotReadable)
+  reserveTemporaryFolder 3 (Text.fromLinkedList absoluteRoot)
+
+
+reserveTemporaryFolder :: Int -> Text -> Task Error Path
+reserveTemporaryFolder retriesLeft temporaryRoot = do
+  nonce <- Uuid.generate
+  let name = [fmt|neohaskell-#{Uuid.toText nonce}|]
+  let filePath = System.FilePath.combine (Text.toLinkedList temporaryRoot) (Text.toLinkedList name)
+  candidate <-
+    case Path.fromLinkedList filePath of
+      Maybe.Just path -> Task.yield path
+      Maybe.Nothing -> Task.throw NotWritable
+  created <-
+    PosixDirectory.createDirectory filePath PosixFiles.ownerModes
+      |> Task.fromFailableIO @IOError.IOError
+      |> Task.asResult
+  case created of
+    Result.Ok _ -> Task.yield candidate
+    Result.Err err ->
+      if IOError.isAlreadyExistsError err && retriesLeft > 0
+        then reserveTemporaryFolder (retriesLeft - 1) temporaryRoot
+        else Task.throw NotWritable

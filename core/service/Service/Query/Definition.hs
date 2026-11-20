@@ -3,37 +3,48 @@
 
 module Service.Query.Definition (
   QueryDefinition (..),
+  WiredQueryEndpoint (..),
   createDefinition,
   createDefinitionWithStore,
+  EventSubscription (..),
+  restrictToSources,
+  restrictRegistryToSources,
   WireEntities (..),
 ) where
 
+import Array qualified
 import Basics
 import GHC.TypeLits qualified as GHC
 import Json qualified
+import Map qualified
+import Maybe (Maybe (..))
+import Maybe qualified
 import Record qualified
 import Schema (Schema)
 import Schema qualified
+import Service.AccessControl qualified as Auth
 import Service.Command.Core (Entity (..), EventOf, NameOf)
 import Service.EntityFetcher.Core qualified as EntityFetcher
+import Service.Event (Event (..))
 import Service.Event.EntityName (EntityName (..))
 import Service.EventStore.Core (EventStore)
 import Service.EventStore.Core qualified as EventStore
-import Service.Query.Core (EntitiesOf, Query, QueryOf)
+import Service.Query.Core (EntitiesOf, Query, QueryAction, QueryOf)
 import Service.Query.Endpoint qualified as Endpoint
-import Service.Query.Registry (QueryRegistry)
+import Service.Query.Registry (QueryRegistry, QueryUpdater (..))
 import Service.Query.Registry qualified as Registry
 import Service.Query.Updater qualified as Updater
 import Service.QueryObjectStore.Core (QueryObjectStore)
 import Service.QueryObjectStore.InMemory qualified as InMemory
 import Service.SnapshotCache.InMemory qualified as SnapshotCache
-import Service.Transport (QueryEndpointHandler, EndpointSchema (..))
-import Maybe (Maybe (..))
+import Service.Transport (EndpointSchema (..), QueryByIdEndpoint (..), QueryEndpointHandler)
 import Task (Task)
 import Task qualified
 import Text (Text)
 import Text qualified
 import ToText (toText)
+import Uuid (Uuid)
+import Prelude qualified
 
 
 -- | Captures how to wire a query type at runtime.
@@ -52,11 +63,66 @@ data QueryDefinition = QueryDefinition
     querySchema :: Schema,
     -- | Given an EventStore, creates the query infrastructure and returns:
     -- - QueryRegistry entries for this query's entities
-    -- - The query endpoint name, handler, and schema
+    -- - Its collection and UUID handlers with their schemas
     wireQuery ::
       EventStore Json.Value ->
-      Task Text (QueryRegistry, (Text, QueryEndpointHandler, EndpointSchema))
+      Task Text (QueryRegistry, WiredQueryEndpoint)
   }
+
+
+-- | A declarative query's collection and UUID endpoints with their schemas.
+data WiredQueryEndpoint = WiredQueryEndpoint
+  { wiredQueryName :: Text
+  , wiredCollectionHandler :: QueryEndpointHandler
+  , wiredCollectionSchema :: EndpointSchema
+  , wiredQueryById :: QueryByIdEndpoint
+  }
+
+
+data EventSubscription = EventSubscription EntityName (Json.Value -> Bool)
+
+
+-- | Keep only the entity and payload subscriptions named by a query Slice.
+restrictToSources :: [EventSubscription] -> QueryDefinition -> QueryDefinition
+restrictToSources subscriptions definition = do
+  definition
+    { wireQuery = \eventStore -> do
+        (registry, endpoint) <- definition.wireQuery eventStore
+        let selected = restrictRegistryToSources subscriptions registry
+        Task.yield (selected, endpoint)
+    }
+
+
+restrictRegistryToSources :: [EventSubscription] -> QueryRegistry -> QueryRegistry
+restrictRegistryToSources subscriptions registry = do
+  let predicates = Prelude.foldl addSubscription Map.empty subscriptions
+  Registry.registeredEntityNames registry
+    |> Array.reduce (registerSelected registry predicates) Registry.empty
+
+
+addSubscription ::
+  Map.Map EntityName [Json.Value -> Bool] -> EventSubscription -> Map.Map EntityName [Json.Value -> Bool]
+addSubscription predicates (EventSubscription entityName accepts) = do
+  let existing = predicates |> Map.get entityName |> Maybe.withDefault []
+  predicates |> Map.set entityName (accepts : existing)
+
+
+registerSelected ::
+  QueryRegistry -> Map.Map EntityName [Json.Value -> Bool] -> EntityName -> QueryRegistry -> QueryRegistry
+registerSelected registry predicates entityName selected = case predicates |> Map.get entityName of
+  Nothing -> selected
+  Just accepted -> do
+    let updaters = Registry.getUpdatersForEntity entityName registry
+    updaters
+      |> Array.reduce (\updater current -> current |> Registry.register entityName (filterUpdater accepted updater)) selected
+
+
+filterUpdater :: [Json.Value -> Bool] -> QueryUpdater -> QueryUpdater
+filterUpdater accepted updater =
+  updater
+    { updateQuery = \rawEvent ->
+        Task.when (Prelude.any (\accepts -> accepts rawEvent.event) accepted) (updater.updateQuery rawEvent)
+    }
 
 
 -- | Create a QueryDefinition for a query type using in-memory storage.
@@ -131,13 +197,22 @@ createDefinitionWithStore storeFactory = do
 
   let schema = Schema.toSchema @query
 
-  let endpointSchema = EndpointSchema
-        { requestSchema = Nothing  -- Queries have no request body (GET)
-        , responseSchema = schema
-        , description = ""
-        , deprecated = False
-        , entityName = Nothing  -- Queries grouped under fixed "Queries" tag
-        }
+  let pageSchema =
+        Schema.SObject
+          [ Schema.FieldSchema "items" (Schema.SArray schema) True "",
+            Schema.FieldSchema "total" Schema.SInt True "",
+            Schema.FieldSchema "hasMore" Schema.SBool True "",
+            Schema.FieldSchema "effectiveLimit" Schema.SInt True ""
+          ]
+
+  let endpointSchema =
+        EndpointSchema
+          { requestSchema = Nothing, -- Queries have no request body (GET)
+            responseSchema = pageSchema,
+            description = "",
+            deprecated = False,
+            entityName = Nothing -- Queries grouped under fixed "Queries" tag
+          }
 
   QueryDefinition
     { queryName = queryNameText,
@@ -150,10 +225,28 @@ createDefinitionWithStore storeFactory = do
         -- 2. Wire all entities and collect their registries
         registry <- wireEntities @entities @query queryNameText rawEventStore queryStore
 
-        -- 3. Create endpoint handler (lambda accepts Maybe UserClaims, Maybe NeoQL.Expr, and QueryPageRequest)
-        let endpoint userClaims maybeExpr pageRequest = Endpoint.createQueryEndpoint queryStore userClaims maybeExpr pageRequest
+        let renderProtected jsonValue =
+              rawEventStore.renderProtectedJson jsonValue
+                |> Task.mapError (\_ -> Auth.StorageError "Protected response resolution failed")
+        let endpoint userClaims maybeExpr pageRequest =
+              Endpoint.createQueryEndpointWithProtection
+                renderProtected
+                queryStore
+                userClaims
+                maybeExpr
+                pageRequest
+        let byIdEndpoint = QueryByIdEndpoint
+              { byIdHandler = Endpoint.createQueryByIdEndpointWithProtection renderProtected queryStore
+              , byIdSchema = endpointSchema {responseSchema = schema}
+              }
+        let wiredEndpoint = WiredQueryEndpoint
+              { wiredQueryName = queryNameText
+              , wiredCollectionHandler = endpoint
+              , wiredCollectionSchema = endpointSchema
+              , wiredQueryById = byIdEndpoint
+              }
 
-        Task.yield (registry, (queryNameText, endpoint, endpointSchema))
+        Task.yield (registry, wiredEndpoint)
     }
 
 
@@ -168,10 +261,20 @@ class WireEntities (entities :: [Type]) (query :: Type) where
     QueryObjectStore query ->
     Task Text QueryRegistry
 
+  wireEntitiesWithObserver ::
+    Text ->
+    EventStore Json.Value ->
+    QueryObjectStore query ->
+    Maybe (Uuid -> QueryAction query -> Task Text Unit) ->
+    Task Text QueryRegistry
+  wireEntitiesWithObserver queryName rawEventStore queryStore _ =
+    wireEntities @entities @query queryName rawEventStore queryStore
+
 
 -- | Base case: empty entity list produces empty registry.
 instance WireEntities '[] query where
   wireEntities _ _ _ = Task.yield Registry.empty
+  wireEntitiesWithObserver _ _ _ _ = Task.yield Registry.empty
 
 
 -- | Recursive case: wire the head entity, then combine with tail.
@@ -186,7 +289,9 @@ instance
   ) =>
   WireEntities (entity ': rest) query
   where
-  wireEntities queryNameText rawEventStore queryStore = do
+  wireEntities queryNameText rawEventStore queryStore =
+    wireEntitiesWithObserver @(entity ': rest) @query queryNameText rawEventStore queryStore Nothing
+  wireEntitiesWithObserver queryNameText rawEventStore queryStore observe = do
     -- Wire this entity
     let entityNameText =
           GHC.symbolVal (Record.Proxy @(NameOf entity))
@@ -208,11 +313,9 @@ instance
         |> Task.mapError toText
 
     -- Create QueryUpdater for entity -> query
-    let updater =
-          Updater.createUpdater @entity @query
-            queryNameText
-            entityFetcher
-            queryStore
+    let updater = case observe of
+          Nothing -> Updater.createUpdater @entity @query queryNameText entityFetcher queryStore
+          Just onAction -> Updater.createUpdaterWithAction @entity @query queryNameText entityFetcher queryStore onAction
 
     -- Create registry entry for this entity
     let thisRegistry =
@@ -220,7 +323,7 @@ instance
             |> Registry.register (EntityName entityNameText) updater
 
     -- Recursively wire remaining entities
-    restRegistry <- wireEntities @rest @query queryNameText rawEventStore queryStore
+    restRegistry <- wireEntitiesWithObserver @rest @query queryNameText rawEventStore queryStore observe
 
     -- Combine registries
     Task.yield (thisRegistry |> Registry.mergeInto restRegistry)

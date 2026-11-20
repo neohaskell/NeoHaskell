@@ -1,11 +1,13 @@
 module Service.OutboundIntegration.TH (
   deriveOutboundIntegration,
   outboundIntegration,
+  outboundIntegrationFullEvent,
 ) where
 
 import Control.Monad.Fail qualified as MonadFail
 import Appendable ((++))
 import Basics -- HOOK-ALLOW: Core reexports these markers, so TH must use the lower-level prelude.
+import EventVariantOf (EventVariantOf)
 import Maybe (Maybe (..))
 import GHC.Base (String)
 import Language.Haskell.TH.Lib qualified as THLib
@@ -23,10 +25,8 @@ import Service.CommandExecutor.TH (deriveKnownHash)
 --
 -- type instance EntityOf ReserveStockOnItemAdded = CartEntity
 --
--- handleEvent :: CartEntity -> CartEvent -> Integration.Outbound
--- handleEvent cart event = case event of
---   ItemAdded {stockId, quantity} -> Integration.batch [...]
---   _ -> Integration.none
+-- handleEvent :: CartEntity -> ItemAddedPayload -> Integration.Outbound
+-- handleEvent cart payload = Integration.batch [...]
 --
 -- deriveOutboundIntegration ''ReserveStockOnItemAdded
 -- @
@@ -35,26 +35,37 @@ import Service.CommandExecutor.TH (deriveKnownHash)
 --
 -- * 'EntityOf' instance exists for the handler
 -- * 'EventOf' resolves from the entity
--- * 'handleEvent' function exists with correct signature:
---   @EntityType -> EventType -> Integration.Outbound@
+-- * 'handleEvent' takes the entity and one concrete mapped payload
 --
 -- Generates:
 --
 -- * @instance OutboundIntegration HandlerType@ with 'HandledEvent' set
---   to the event ADT type (EventOf entity)
+--   to the payload type
 -- * @type instance NameOf HandlerType = "HandlerType"@
 -- * @instance KnownHash "HandlerType"@
 deriveOutboundIntegration :: TH.Name -> THLib.DecsQ
-deriveOutboundIntegration = outboundIntegration
+deriveOutboundIntegration handlerName = outboundIntegration handlerName
 {-# INLINE deriveOutboundIntegration #-}
 
 
 -- | Compatibility name for 'deriveOutboundIntegration'.
 outboundIntegration :: TH.Name -> THLib.DecsQ
-outboundIntegration handlerName = do
+outboundIntegration handlerName = deriveHandler PayloadOnly handlerName
+
+
+-- | Keep an existing full-event handler explicit while it is migrated.
+-- The handler receives every constructor through the identity event mapping.
+outboundIntegrationFullEvent :: TH.Name -> THLib.DecsQ
+outboundIntegrationFullEvent handlerName = deriveHandler FullEvent handlerName
+
+
+data HandlerMode = PayloadOnly | FullEvent
+
+
+deriveHandler :: HandlerMode -> TH.Name -> THLib.DecsQ
+deriveHandler mode handlerName = do
   let handlerNameStr = TH.nameBase handlerName
 
-  -- Step 1: Look up EntityOf
   entityTypeFamilyName <- lookupOrFail "EntityOf"
   entityTypeInstances <- TH.reifyInstances entityTypeFamilyName [TH.ConT handlerName]
 
@@ -76,7 +87,6 @@ ERROR: EntityOf type instance for '#{handlerNameStr}' must be a concrete type.
 
   let entityTypeStr = TH.nameBase entityType
 
-  -- Step 2: Look up EventOf
   eventTypeFamilyName <- lookupOrFail "EventOf"
   eventTypeInstances <- TH.reifyInstances eventTypeFamilyName [TH.ConT entityType]
 
@@ -96,58 +106,43 @@ Ensure your entity has: `type instance EventOf #{entityTypeStr} = YourEventType`
 ERROR: EventOf type instance for entity '#{entityTypeStr}' must be a concrete type.
 |]
 
-  let eventTypeStr = TH.nameBase eventType
-
-  -- Step 3: Look up handleEvent
   handleEventName <-
     TH.lookupValueName "handleEvent"
       >>= orError
         [fmt|
 ERROR: Missing 'handleEvent' function for handler '#{handlerNameStr}'.
 
-Please add: `handleEvent :: #{entityTypeStr} -> #{eventTypeStr} -> Integration.Outbound`
+Please add: `handleEvent :: #{entityTypeStr} -> YourPayload -> Integration.Outbound`
 |]
 
-  -- Step 4: Validate handleEvent signature structurally.
-  -- Extract the first two argument types from the function type AST and
-  -- compare them directly as TH.Name values — no string manipulation.
   handleEventInfo <- TH.reify handleEventName
-  case handleEventInfo of
+  payloadType <- case handleEventInfo of
     TH.VarI _ functionType _ -> do
       let prettyType = THPpr.pprint functionType
       case extractFunctionArgs functionType of
         Just (arg1, arg2) -> do
           let arg1Name = extractConName arg1
           let arg2Name = extractConName arg2
-          let entityOk = arg1Name == Just entityType
-          let eventOk = arg2Name == Just eventType
-          if not entityOk || not eventOk
-            then do
-              let expectedSig = entityTypeStr ++ " -> " ++ eventTypeStr ++ " -> Outbound"
-              MonadFail.fail
-                [fmt|
-ERROR: 'handleEvent' has incorrect signature.
-
-Expected: #{expectedSig}
-Current:  #{prettyType}
-|]
-            else pure ()
+          if arg1Name != Just entityType
+            then MonadFail.fail [fmt|ERROR: 'handleEvent' must take #{entityTypeStr} as its first argument. Current: #{prettyType}|]
+            else case arg2Name of
+              Nothing -> MonadFail.fail [fmt|ERROR: 'handleEvent' must take one concrete event payload as its second argument. Current: #{prettyType}|]
+              Just _ -> do
+                validatePayload mode eventType arg2
+                pure arg2
         Nothing -> do
-          let expectedSig = entityTypeStr ++ " -> " ++ eventTypeStr ++ " -> Outbound"
           MonadFail.fail
             [fmt|
 ERROR: 'handleEvent' does not look like a two-argument function.
 
-Expected: #{expectedSig}
+Expected: #{entityTypeStr} -> YourPayload -> Integration.Outbound
 Current:  #{prettyType}
 |]
-    _ -> pure ()
+    _ -> MonadFail.fail [fmt|ERROR: Could not inspect 'handleEvent' for handler #{handlerNameStr}.|]
 
-  -- Step 5: Look up required type names
   outboundIntegrationClassName <- lookupOrFail "OutboundIntegration"
   nameOfTypeFamilyName <- lookupOrFail "NameOf"
 
-  -- Step 6: Generate OutboundIntegration instance
   let outboundInstance =
         TH.InstanceD
           Nothing
@@ -157,7 +152,7 @@ Current:  #{prettyType}
               ( TH.TySynEqn
                   Nothing
                   (TH.ConT (TH.mkName "HandledEvent") `TH.AppT` TH.ConT handlerName)
-                  (TH.ConT eventType)
+                  payloadType
               )
           , TH.ValD
               (TH.VarP (TH.mkName "handleEventImpl"))
@@ -166,7 +161,6 @@ Current:  #{prettyType}
           , TH.PragmaD (TH.InlineP (TH.mkName "handleEventImpl") TH.Inline TH.FunLike TH.AllPhases)
           ]
 
-  -- Step 7: Generate NameOf type instance
   let nameOfInstance =
         TH.TySynInstD
           ( TH.TySynEqn
@@ -175,10 +169,28 @@ Current:  #{prettyType}
               (TH.LitT (TH.StrTyLit handlerNameStr))
           )
 
-  -- Step 8: Generate KnownHash instance
   knownHashInstances <- deriveKnownHash handlerNameStr
 
   pure ([nameOfInstance, outboundInstance] ++ knownHashInstances)
+
+
+validatePayload :: HandlerMode -> TH.Name -> TH.Type -> TH.Q ()
+validatePayload mode eventType payloadType = do
+  let eventTypeStr = TH.nameBase eventType
+  let payloadTypeStr = THPpr.pprint payloadType
+  case mode of
+    FullEvent ->
+      if extractConName payloadType == Just eventType
+        then pure ()
+        else MonadFail.fail [fmt|ERROR: outboundIntegrationFullEvent requires #{eventTypeStr} as the second handleEvent argument, but found #{payloadTypeStr}. Use outboundIntegration for a concrete payload.|]
+    PayloadOnly -> do
+      if extractConName payloadType == Just eventType
+        then MonadFail.fail [fmt|ERROR: outboundIntegration requires one concrete event payload, but handleEvent takes the full #{eventTypeStr} event sum. Use outboundIntegrationFullEvent explicitly during migration.|]
+        else pure ()
+      mappings <- TH.reifyInstances ''EventVariantOf [TH.ConT eventType, payloadType]
+      case mappings of
+        [] -> MonadFail.fail [fmt|ERROR: No EventVariantOf #{eventTypeStr} #{payloadTypeStr} mapping exists. Generate it with deriveEntityEvents or define both fromVariant and toVariant before outboundIntegration.|]
+        _ -> pure ()
 
 
 -- | Look up a type name or fail with a helpful error.

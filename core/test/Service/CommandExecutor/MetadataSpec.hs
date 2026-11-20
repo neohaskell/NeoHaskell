@@ -5,13 +5,13 @@ import AsyncTask qualified
 import Auth.Claims (UserClaims (..))
 import Basics
 import ConcurrentVar qualified
-import Control.Exception qualified as GhcException
 import Decider qualified
 import Log qualified
 import Map qualified
 import Maybe (Maybe (..))
 import Result (Result (..))
 import Service.Auth qualified as Auth
+import Service.CommandExecutor.CommandExecutionFailure qualified as CommandExecutionFailure
 import Service.CommandExecutor.Core qualified as Executor
 import Service.EntityFetcher.Core qualified as Fetcher
 import Service.Event qualified as Event
@@ -63,7 +63,12 @@ spec = do
             }
       context <- Auth.authenticatedContext claims
       let command = AuthenticatedAddItem {cartId, itemId = Uuid.nil, amount = 1}
-      result <- Executor.execute store fetcher entityName Nothing context command
+      result <-
+        Executor.execute
+          (executionDependencies store fetcher entityName)
+          (Executor.FromRequest context)
+          command
+          |> Task.mapError CommandExecutionFailure.message
       case result of
         Executor.CommandAccepted {eventsAppended} -> eventsAppended |> shouldBe 1
         other -> fail [fmt|Expected accepted command, received #{toText other}|]
@@ -85,7 +90,12 @@ spec = do
       let sourceMetadata = sourceMetadataBase {relatedUserSub = Just "historical-actor"}
       cartId <- Uuid.generate
       let command = AuthenticatedAddItem {cartId, itemId = Uuid.nil, amount = 1}
-      result <- Executor.execute store fetcher (EntityName "CartEntity") (Just sourceMetadata) Auth.emptyContext command
+      result <-
+        Executor.execute
+          (executionDependencies store fetcher (EntityName "CartEntity"))
+          (Executor.FromEvent Auth.emptyContext sourceMetadata)
+          command
+          |> Task.mapError CommandExecutionFailure.message
       case result of
         Executor.CommandUnauthorized {} -> pass
         other -> fail [fmt|Expected an unauthenticated result, received #{toText other}|]
@@ -109,8 +119,18 @@ spec = do
             }
       let context = Auth.emptyContext {Auth.user = Just claims}
       let command = AuthenticatedAddItem {cartId, itemId = Uuid.nil, amount = 1}
-      firstResult <- Executor.execute store fetcher entityName Nothing context command
-      secondResult <- Executor.execute store fetcher entityName Nothing context command
+      firstResult <-
+        Executor.execute
+          (executionDependencies store fetcher entityName)
+          (Executor.FromRequest context)
+          command
+          |> Task.mapError CommandExecutionFailure.message
+      secondResult <-
+        Executor.execute
+          (executionDependencies store fetcher entityName)
+          (Executor.FromRequest context)
+          command
+          |> Task.mapError CommandExecutionFailure.message
       case (firstResult, secondResult) of
         (Executor.CommandAccepted {}, Executor.CommandAccepted {}) -> pass
         other -> fail [fmt|Expected two accepted commands, received #{toText other}|]
@@ -148,7 +168,12 @@ spec = do
       let command = AuthenticatedAddItem {cartId, itemId = Uuid.nil, amount = 1}
       let failure = EventStore.InsertionError (Event.InsertionFailed "private-store-error-sentinel")
       let failedStore = store {EventStore.insert = \_ -> Task.throw failure}
-      result <- Executor.execute failedStore fetcher entityName Nothing context command
+      result <-
+        Executor.execute
+          (executionDependencies failedStore fetcher entityName)
+          (Executor.FromRequest context)
+          command
+          |> Task.mapError CommandExecutionFailure.message
       case result of
         Executor.CommandFailed {} -> pass
         other -> fail [fmt|Expected append failure, received #{toText other}|]
@@ -177,7 +202,12 @@ spec = do
       let command = AuthenticatedAddItem {cartId, itemId = Uuid.nil, amount = 1}
       let conflict = EventStore.InsertionError Event.ConsistencyCheckFailed
       let conflictingStore = store {EventStore.insert = \_ -> Task.throw conflict}
-      result <- Executor.execute conflictingStore fetcher entityName Nothing context command
+      result <-
+        Executor.execute
+          (executionDependencies conflictingStore fetcher entityName)
+          (Executor.FromRequest context)
+          command
+          |> Task.mapError CommandExecutionFailure.message
       case result of
         Executor.CommandFailed {retriesAttempted} -> retriesAttempted |> shouldBe 10
         other -> fail [fmt|Expected bounded retry failure, received #{toText other}|]
@@ -196,15 +226,21 @@ spec = do
       let throwingFetcher =
             fetcher
               { Fetcher.fetch = \_ _ ->
-                  Task.fromIO (GhcException.throwIO (GhcException.ErrorCall "private-io-exception-sentinel"))
+                  Task.fromIO (panic "private-io-exception-sentinel")
               }
       Log.withScope
         [ ("eventId", "ambient-event-id-sentinel")
         , ("streamId", "ambient-stream-id-sentinel")
         ] do
-        result <- Executor.execute store throwingFetcher entityName Nothing context command |> Task.asResult
+        result <-
+          Executor.execute
+            (executionDependencies store throwingFetcher entityName)
+            (Executor.FromRequest context)
+            command
+            |> Task.asResult
         case result of
-          Err _ -> pass
+          Err (Executor.SynchronousExecutionFailed _) -> pass
+          Err other -> fail [fmt|Expected a synchronous execution failure, received #{CommandExecutionFailure.message other}|]
           Ok executionResult -> fail [fmt|Expected the IO exception to fail the command, received #{toText executionResult}|]
       store.close |> Task.mapError toText
 
@@ -223,7 +259,13 @@ spec = do
                   AsyncTask.sleep 100000
                   Task.yield Fetcher.EntityNotFound
               }
-      commandTask <- AsyncTask.run (Executor.execute store blockingFetcher entityName Nothing context command) |> Task.mapError toText
+      commandTask <-
+        AsyncTask.run
+          (Executor.execute
+            (executionDependencies store blockingFetcher entityName)
+            (Executor.FromRequest context)
+            command)
+          |> Task.mapError CommandExecutionFailure.message
       AsyncTask.sleep 50 |> Task.mapError (\_ -> "sleep error" :: Text)
       fetchDidStart <- ConcurrentVar.peek fetchStarted
       fetchDidStart |> shouldBe True
@@ -233,3 +275,16 @@ spec = do
         Err _ -> pass
         Ok executionResult -> fail [fmt|Expected cancellation, received #{toText executionResult}|]
       store.close |> Task.mapError toText
+
+
+executionDependencies ::
+  EventStore.EventStore event ->
+  Fetcher.EntityFetcher entity event ->
+  EntityName ->
+  Executor.ExecutionDependencies entity event
+executionDependencies eventStore entityFetcher entityName =
+  Executor.ExecutionDependencies
+    { Executor.eventStore = eventStore,
+      Executor.entityFetcher = entityFetcher,
+      Executor.entityName = entityName
+    }

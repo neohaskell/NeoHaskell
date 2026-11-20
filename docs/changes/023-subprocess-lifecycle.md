@@ -7,9 +7,9 @@ NickSeagull approved repairs to existing guarantees on [October13](https://githu
 ```yaml spec
 issue: adhoc:subprocess-lifecycle
 kind: bug
-touches: [system]
+touches: [system, concurrency]
 breaking: false
-new-dependency: true
+new-dependency: false
 new-capability: false
 new-extension-point: false
 ```
@@ -17,7 +17,11 @@ new-extension-point: false
 ## Contract delta
 
 ```diff signatures
++ AsyncTask.injectRuntimeFailure :: Text -> AsyncTask err result -> Task otherErr Unit
++ AsyncTask.threadsLeftRunningBy :: Task err value -> Task err (value, Array Text)
 ```
+
+The two `AsyncTask` operations are additive test operations. C9 and C15 use them because the dialect gate keeps thread inspection and exception delivery in `AsyncTask`.
 
 Existing signature remains `Subprocess.runWithTimeout :: Int -> Text -> Array Text -> Path -> Task Error Completion`. Preserve full stdout/stderr and normal/nonzero exit codes. Strict concurrent draining repairs the pipe deadlock; there is no capture-size rejection, silent truncation, or bounded-memory claim. Complete output retains memory proportional to output. Timeout stays `TimeoutError`; synchronous create/read failures are `ProcessError`; asynchronous cancellation propagates after cleanup. Preserve existing text decoding semantics.
 Timeout includes pipe draining as well as process wait. The child and readers are owned through every exit. Failure/timeout/cancel requests direct-child termination; after 1 second grace force termination, reap, close handles, and join/cancel readers. Successful completion closes handles and joins readers too. Do not wait forever for EOF held by a descendant. Descendant termination and an OS sandbox are not promised. Uninterruptible kernel waits are not universally time-bounded.
@@ -48,13 +52,13 @@ C1 remains the exact original red reproduction. C2–C5 require full output thro
 
 C6–C8 create a private synthetic workspace. The child writes its own PID only after installing its TERM policy; a separate control requires that PID to be live and its command to contain this workspace before the lifecycle action. After completion/cancellation the observer requires no process-table entry, rejecting zombies as well as live survivors. This is direct-child observation, not process-tree cleanup. A finally cleanup sends SIGKILL only after PID identity validation, waits until the child is absent or a non-executing zombie, and removes only its own workspace; its own failure is red, never ignored. That separate controller cannot reap the Haskell parent's child. Cleanup records zombie versus absent; the test assertion still requires absence and rejects zombies. A post-REPL observation verifies no executing fixture remains. The TERM-resistant test has a four-second test budget (one-second process timeout plus one-second cleanup grace and observation margin), not a new production deadline.
 
-C9 observes a separately owned live descendant after its parent is reaped and the pipe deadline returns; fixture cleanup kills that descendant without claiming production tree ownership. C10 forces a real invalid UTF8 byte followed by EOF while the child remains live; the peer reader must be cancelled and child reaped before ProcessError. C11 covers waiting after EOF. C9 separately requires both descendant writers to observe BrokenPipeError after timeout while the descendant remains alive, proving read-end closure rather than inferring it from PID disappearance. Before the deadline it requires successful writes to both descriptors with no closed-reader markers. It checks newly created GHC thread identities have finished/died after scoped work completes. These reader/handle observations cover the held-descendant timeout path, not every OS failure mode. These observations use real pipes and runtime thread status, not a public test seam. PDF impact coverage remains mandatory before acceptance.
+C9 observes a separately owned live descendant after its parent is reaped and the pipe deadline returns; fixture cleanup kills that descendant without claiming production tree ownership. C10 forces a real invalid UTF8 byte followed by EOF while the child remains live; the peer reader must be cancelled and child reaped before ProcessError. C11 covers waiting after EOF. C9 separately requires both descendant writers to observe BrokenPipeError after timeout while the descendant remains alive, proving read-end closure rather than inferring it from PID disappearance. Before the deadline it requires successful writes to both descriptors with no closed-reader markers. It checks newly created GHC thread identities have finished/died after scoped work completes. These reader/handle observations cover the held-descendant timeout path, not every OS failure mode. These observations use real pipes and runtime thread status read through `AsyncTask.threadsLeftRunningBy`; `Subprocess` has no test seam. PDF impact coverage remains mandatory before acceptance.
 
-Review principle: concurrent draining preserves complete retained output (C1–C5). Ownership lasts through ordinary and repeated cancellation (C6–C8,C14). While cleanup is awaited, any exception delivered to the waiting thread — including a synchronous type sent by `throwTo` — is not classified as cancellation by type; cleanup is still awaited and the original asynchronous exception propagates (C15). C15 publishes the worker thread identity from a test-side prelude before the child starts, throws `ErrorCall` once the child records TERM, and requires `AsyncCancelled` plus PID absence; fixture cleanup still kills a leaked child. Real process controls distinguish failure from absent/malformed fixtures. A passing structural locator check is not runtime evidence; the real ownership controls above are required.
+Review principle: concurrent draining preserves complete retained output (C1–C5). Ownership lasts through ordinary and repeated cancellation (C6–C8,C14). While cleanup is awaited, any exception delivered to the waiting thread — including a synchronous type sent by `throwTo` — is not classified as cancellation by type; cleanup is still awaited and the original asynchronous exception propagates (C15). C15 raises a runtime failure inside the worker task with `AsyncTask.injectRuntimeFailure` once the child records TERM, and requires `AsyncCancelled` plus PID absence; fixture cleanup still kills a leaked child. Real process controls distinguish failure from absent/malformed fixtures. A passing structural locator check is not runtime evidence; the real ownership controls above are required.
 
 ## User impact
 
-No API or capture-limit change; PDF callers keep full extracted text. Declare conditional direct `unix` dependency on non-Windows platforms for the existing resolved POSIX signal API; no new package version or lockfile change. Windows retains the native process termination API. The private one-second TERM grace allows escalation for an unresponsive direct child; it is cleanup time, not a changed extraction deadline. POSIX uses forced direct-child termination after grace; Windows uses the process library's native forced termination. No process-tree or sandbox guarantee. Full captured output is not memory-bounded; an opt-in retention policy is a separate future decision.
+No `Subprocess` API or capture-limit change; PDF callers keep full extracted text. The POSIX signal API comes from the `unix` package, which `core/nhcore.cabal` already lists for every component; no new package version or lockfile change. Windows retains the native process termination API. The private one-second TERM grace allows escalation for an unresponsive direct child; it is cleanup time, not a changed extraction deadline. POSIX uses forced direct-child termination after grace; Windows uses the process library's native forced termination. No process-tree or sandbox guarantee. Full captured output is not memory-bounded; an opt-in retention policy is a separate future decision.
 
 ## ADR
 
@@ -65,8 +69,10 @@ No API or capture-limit change; PDF callers keep full extracted text. Declare co
 The implementation stays in `core/system/Subprocess.hs` (`runWithTimeout`).
 `core/test/SubprocessSpec.hs` owns the regression tests, registered by
 `core/test-core/Main.hs` and `core/nhcore.cabal`. The criteria registry and
-Framework release fragment describe the same contract. No lower API export
-is added.
+Framework release fragment describe the same contract. `Subprocess` exports
+nothing new. Exception control and thread inspection stay in `Task`, `IO`, and
+`AsyncTask`; `core/concurrency/AsyncTask.hs` gains the two test operations
+listed in the contract delta, covered by `core/test/TaskSpec.hs`.
 
 Run `./.agents/skills/tdd/scripts/test-match Subprocess nhcore-test-core`
 for the lifecycle criteria. PDF text extraction, PDF metadata, and video

@@ -23,11 +23,6 @@
 #                       bounded deadline (never a fixed sleep); exercise the starter
 #                       smoke command; terminate the whole process tree cleanly
 #
-# The override is deterministic and leaves normal user generation untouched: it is
-# carried by NEO_NEOHASKELL_SOURCE, which the neo reconciler honors only when set
-# (see neo/src/reconcile/flake.rs). Generation runs OFFLINE (NEO_SKIP_NETWORK=1),
-# so it exercises the embedded starter with no network round-trip.
-#
 # Run:  ./.agents/skills/neohaskell-consumer-verification/scripts/neo-consumer-contract
 #       ./.agents/skills/neohaskell-consumer-verification/scripts/neo-consumer-contract --self-test
 #
@@ -279,6 +274,13 @@ run_contract() {
   assert_file "$proj/launcher/Launcher.hs"   "executable launcher"
   assert_file "$proj/src/Starter/Counter/Event.hs" "starter counter domain"
   assert_file "$proj/tests/integration/smoke.hurl" "starter smoke scenario"
+  assert_file "$proj/AGENTS.md" "generated project instructions"
+  assert_file "$proj/CLAUDE.md" "Claude import of project instructions"
+  assert_file "$proj/.neo/agent-guidance/active.md" "active framework guidance index"
+  assert_contains "$proj/CLAUDE.md" "@AGENTS.md" "Claude reads shared project instructions"
+  assert_contains "$proj/AGENTS.md" ".neo/agent-guidance/active.md" "agents read the active framework guidance"
+  assert_contains "$proj/.neo/agent-guidance/active.md" "status: unavailable" "offline generation has no guessed framework guidance"
+  assert_contains "$proj/.gitignore" ".neo/" "source-matched guidance remains project-local"
   assert_absent "$proj/IMPORT.md" "starter provenance file is internal-only"
   info "generated surfaces present; internal provenance absent"
 
@@ -323,6 +325,14 @@ run_contract() {
     "inputMap revision must equal the isolated checkout HEAD"
   assert_contains "$proj/cabal.project" "tag: $source_rev" \
     "Cabal revision must equal the isolated checkout HEAD"
+  assert_contains "$proj/.neo/agent-guidance/active.md" "status: ready" \
+    "the exact checkout's guidance must activate after a successful build reconciliation"
+  assert_contains "$proj/.neo/agent-guidance/active.md" "source-sha: $source_rev" \
+    "the active guidance index must identify the same commit as Nix and Cabal"
+  assert_contains "$proj/.neo/agent-guidance/active.md" "cache/$source_rev/index.md" \
+    "the active guidance index must link only to the exact-commit cache"
+  assert_file "$proj/.neo/agent-guidance/cache/$source_rev/manifest.json" \
+    "the exact checkout's guidance corpus must be present"
   info "override confirmed in regenerated flake.nix"
 
   phase "4. test — neo test --ci (Haskell specs + Hurl scenarios)"

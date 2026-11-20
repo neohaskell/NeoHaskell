@@ -1,3 +1,6 @@
+{-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE UndecidableInstances #-}
+
 -- | # Integration
 --
 -- This module provides the integration pattern for connecting domain events
@@ -35,6 +38,10 @@ module Integration (
   Action,
   ActionContext (..),
   FileAccessContext (..),
+  CreateFileRequest (..),
+  FileCreationError (..),
+  FileMetadata (..),
+  FileRef,
 
   -- * Provider Registry
   ImmutableProviderRegistry,
@@ -63,6 +70,13 @@ module Integration (
   Inbound (..),
   InboundConfig (..),
   inbound,
+  TypedInbound,
+  TypedInboundConfig (..),
+  AllowedOutput,
+  KnownInboundOutputs,
+  typedInbound,
+  asInbound,
+  inboundCommandNames,
 
   -- * Errors
   IntegrationError (..),
@@ -87,6 +101,7 @@ import ConcurrentMap (ConcurrentMap)
 import Lock (Lock)
 import Basics
 import Bytes (Bytes)
+import Data.Kind (Constraint)
 import Data.Aeson qualified as GhcAeson
 import Data.Proxy (Proxy (..))
 import GHC.TypeLits qualified as GHC
@@ -95,7 +110,15 @@ import Map (Map)
 import Map qualified
 import Maybe (Maybe (..))
 import Service.Command.Core (NameOf)
-import Service.FileUpload.Core (FileAccessError, FileMetadata, FileRef)
+import Service.Entity.Core (EntityOf)
+import Service.FileUpload.Core (
+  CreateFileRequest (..),
+  FileAccessError,
+  FileCreationError (..),
+  FileMetadata (..),
+  FileRef,
+ )
+import Service.EventStore.Core (ErasureResult, ErasureTarget)
 import Service.Integration.DispatchRegistry (DispatchRegistry)
 import Task (Task)
 import Task qualified
@@ -161,6 +184,7 @@ data ActionContext = ActionContext
   , fileAccess :: Maybe FileAccessContext
   -- ^ File access context for retrieving uploaded files.
   -- 'Nothing' when file uploads are not enabled in the application.
+  , eraseErasableKey :: Maybe (ErasureTarget -> Task IntegrationError ErasureResult)
   , outboundDispatch :: DispatchRegistry
   -- ^ ADR-0055 registry of pre-bound outbound-integration dispatcher closures.
   -- Populated once at startup by 'Application.run' based on the
@@ -169,10 +193,10 @@ data ActionContext = ActionContext
   }
 
 
--- | Context for accessing uploaded files from integrations.
+-- | Context for file access from integrations.
 --
--- This allows integrations to retrieve file content and metadata
--- for processing (e.g., PDF text extraction, image analysis).
+-- This allows integrations to retrieve file content and metadata and create
+-- application-owned retained files.
 --
 -- The context is populated by 'Application.run' when file uploads
 -- are enabled via 'Application.withFileUpload'.
@@ -188,10 +212,13 @@ data ActionContext = ActionContext
 -- @
 data FileAccessContext = FileAccessContext
   { retrieveFile :: FileRef -> Task FileAccessError Bytes
-  -- ^ Retrieve file content by FileRef.
-  -- Validates ownership internally based on request context.
+  -- ^ Retrieve file content by FileRef. Integration actions are privileged
+  -- and this operation does not check the file owner.
   , getFileMetadata :: FileRef -> Task FileAccessError FileMetadata
   -- ^ Get file metadata (filename, content type, size) without retrieving bytes.
+  , createFile :: CreateFileRequest -> Task FileCreationError FileRef
+  -- ^ Create or recover a retained file. This privileged operation trusts the
+  -- supplied owner. Capture it from an authenticated, authorized command.
   }
 
 
@@ -200,7 +227,11 @@ data CommandPayload = CommandPayload
   { commandType :: Text
   , commandData :: Json.Value
   }
-  deriving (Eq, Show, Generic)
+  deriving (Eq, Generic)
+
+
+instance Show CommandPayload where
+  show _ = "CommandPayload <REDACTED>"
 
 
 instance Json.FromJSON CommandPayload
@@ -362,6 +393,7 @@ newtype Inbound = Inbound InboundInternal
 
 data InboundInternal = InboundInternal
   { _runWorker :: (CommandPayload -> Task IntegrationError Unit) -> Task IntegrationError Unit
+  , _declaredCommands :: Maybe (Array Text)
   }
 
 
@@ -386,8 +418,86 @@ inbound config = do
         InboundInternal
           { _runWorker = \emitPayload ->
               config.run \cmd -> emitPayload (makeCommandPayload cmd)
+          , _declaredCommands = Nothing
           }
   Inbound worker
+
+
+-- | A worker whose complete command and target-entity output set is in its type.
+newtype TypedInbound (outputs :: [(Type, Type)]) = TypedInbound Inbound
+
+
+-- | A worker implementation that may emit only commands declared in @outputs@.
+data TypedInboundConfig (outputs :: [(Type, Type)]) = TypedInboundConfig
+  { run ::
+      (forall command. (AllowedOutput command outputs, Json.ToJSON command, GHC.KnownSymbol (NameOf command)) => command -> Task IntegrationError Unit) ->
+      Task IntegrationError Unit
+  }
+
+
+type family SameType (left :: Type) (right :: Type) :: Bool where
+  SameType value value = 'True
+  SameType left right = 'False
+
+
+-- | Reject a command not listed by the worker, or listed with the wrong entity.
+type family AllowedOutput (command :: Type) (outputs :: [(Type, Type)]) :: Constraint where
+  AllowedOutput command '[] = GHC.TypeError ('GHC.Text "Inbound worker emitted undeclared command " 'GHC.:<>: 'GHC.ShowType command)
+  AllowedOutput command ('(listed, entity) ': rest) = CheckOutput (SameType command listed) command entity rest
+
+
+type family CheckOutput (found :: Bool) (command :: Type) (entity :: Type) (rest :: [(Type, Type)]) :: Constraint where
+  CheckOutput 'True command entity rest = (EntityOf command ~ entity)
+  CheckOutput 'False command entity rest = AllowedOutput command rest
+
+
+-- | Reflect every declared command and verify its target and codec at compile time.
+class KnownInboundOutputs (outputs :: [(Type, Type)]) where
+  inboundOutputNames :: Array Text
+
+
+instance KnownInboundOutputs '[] where
+  inboundOutputNames = Array.empty
+
+
+instance
+  ( EntityOf command ~ entity
+  , Json.ToJSON command
+  , GHC.KnownSymbol (NameOf command)
+  , KnownInboundOutputs rest
+  ) =>
+  KnownInboundOutputs ('(command, entity) ': rest)
+  where
+  inboundOutputNames =
+    inboundOutputNames @rest
+      |> Array.push (GHC.symbolVal (Proxy @(NameOf command)) |> Text.fromLinkedList)
+
+
+-- | Build a worker with compile-time output restrictions and startup registration checks.
+typedInbound ::
+  forall outputs.
+  (KnownInboundOutputs outputs) =>
+  TypedInboundConfig outputs ->
+  TypedInbound outputs
+typedInbound (TypedInboundConfig {run = runWorker}) = do
+  let worker =
+        InboundInternal
+          { _runWorker = \emitPayload ->
+              runWorker \command -> emitPayload (makeCommandPayload command)
+          , _declaredCommands = Just (inboundOutputNames @outputs)
+          }
+  TypedInbound (Inbound worker)
+
+
+-- | Adapt a typed worker to the existing Application registration path.
+asInbound :: TypedInbound outputs -> Inbound
+asInbound (TypedInbound inboundWorker) = inboundWorker
+
+
+-- | Return the command names a typed worker promises to emit.
+-- Legacy single-command workers return 'Nothing' and retain their old behavior.
+inboundCommandNames :: Inbound -> Maybe (Array Text)
+inboundCommandNames (Inbound worker) = worker._declaredCommands
 
 
 -- ============================================================================

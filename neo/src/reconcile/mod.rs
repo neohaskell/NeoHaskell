@@ -1,19 +1,81 @@
 use minijinja::Environment;
 use crate::config::NeoConfig;
 use crate::errors::NeoError;
+use fs2::FileExt;
+use std::fs::{self, OpenOptions};
+use std::io::Write;
+use std::path::Path;
 
 pub mod cabal;
 pub mod cabal_project;
 pub mod dep_spec;
 pub mod flake;
+pub mod guidance;
 pub mod modules;
 pub mod resolve;
+pub mod source;
 pub mod test_suite;
 
-use std::path::Path;
+struct ProjectLock {
+    _file: std::fs::File,
+}
 
-pub async fn run<P: AsRef<Path>>(project_dir: P, config: &NeoConfig) -> miette::Result<()> {
+impl ProjectLock {
+    async fn acquire(project_dir: &Path) -> miette::Result<Self> {
+        let lock_dir = project_dir.join(".neo");
+        fs::create_dir_all(&lock_dir)
+            .map_err(|error| NeoError::io_at("creating the project state directory at", &lock_dir, error))?;
+        let lock_path = lock_dir.join("project.lock");
+        let file = OpenOptions::new()
+            .create(true)
+            .read(true)
+            .write(true)
+            .open(&lock_path)
+            .map_err(|error| NeoError::io_at("opening the project reconciliation lock at", &lock_path, error))?;
+        let display_path = lock_path.clone();
+        tokio::task::spawn_blocking(move || {
+            FileExt::lock_exclusive(&file).map_err(|error| {
+                NeoError::io_at("acquiring the project reconciliation lock at", &display_path, error)
+            })?;
+            Ok(Self { _file: file })
+        })
+        .await
+        .map_err(|error| miette::miette!("waiting for the project reconciliation lock failed: {error}"))?
+    }
+}
+
+fn atomic_write(path: &Path, content: &[u8]) -> std::io::Result<()> {
+    let parent = path.parent().unwrap_or_else(|| Path::new("."));
+    fs::create_dir_all(parent)?;
+    let mut temp = tempfile::NamedTempFile::new_in(parent)?;
+    temp.write_all(content)?;
+    temp.as_file().sync_all()?;
+    temp.persist(path).map_err(|error| error.error)?;
+    if let Ok(directory) = std::fs::File::open(parent) {
+        let _ = directory.sync_all();
+    }
+    Ok(())
+}
+
+pub async fn run_project<P: AsRef<Path>>(project_dir: P) -> miette::Result<()> {
     let project_dir = project_dir.as_ref();
+    let _lock = ProjectLock::acquire(project_dir).await?;
+    let config_path = project_dir.join("neo.json");
+    let config = NeoConfig::load(&config_path)?;
+    run_locked(project_dir, &config, false).await
+}
+
+pub async fn retry_guidance<P: AsRef<Path>>(project_dir: P) -> miette::Result<()> {
+    let project_dir = project_dir.as_ref();
+    let _lock = ProjectLock::acquire(project_dir).await?;
+    let config_path = project_dir.join("neo.json");
+    let config = NeoConfig::load(&config_path)?;
+    run_locked(project_dir, &config, true).await
+}
+
+async fn run_locked(project_dir: &Path, config: &NeoConfig, explicit_retry: bool) -> miette::Result<()> {
+    let source = source::FrameworkSource::resolve(&config.neo_version).await?;
+    let guidance_plan = guidance::begin(project_dir, &source, explicit_retry)?;
     let mut env = Environment::new();
 
     env.add_template(
@@ -32,7 +94,7 @@ pub async fn run<P: AsRef<Path>>(project_dir: P, config: &NeoConfig) -> miette::
     )
     .map_err(|e| NeoError::TemplateError { template: "cabal.project".to_string(), reason: e.to_string() })?;
 
-    let resolved = resolve::resolve(config).await?;
+    let resolved = resolve::resolve(config, source.clone()).await?;
     let modules = modules::discover(project_dir.join("src"));
 
     // Testing is built in by default: every project has a `test-suite` so `neo test`
@@ -44,6 +106,13 @@ pub async fn run<P: AsRef<Path>>(project_dir: P, config: &NeoConfig) -> miette::
     cabal::generate(project_dir, &env, &resolved, &modules, &test_modules)?;
     flake::generate(project_dir, &env, &resolved)?;
     cabal_project::generate(project_dir, &env, &resolved)?;
+
+    if let Some(warning) = guidance::finish(project_dir, &source, guidance_plan, explicit_retry).await {
+        println!("[warn] {warning}");
+        if explicit_retry {
+            return Err(miette::miette!("framework guidance retrieval did not complete"));
+        }
+    }
 
     Ok(())
 }
@@ -76,6 +145,10 @@ mod tests {
         }
     }
 
+    fn write_config(project_dir: &Path, config: &NeoConfig) {
+        fs::write(project_dir.join("neo.json"), serde_json::to_vec(config).unwrap()).unwrap();
+    }
+
     #[tokio::test]
     async fn test_reconcile_full() {
         let dir = tempdir().unwrap();
@@ -85,10 +158,12 @@ mod tests {
         fs::write(project_dir.join("src/Main.hs"), "").unwrap();
         fs::write(project_dir.join("src/Lib.hs"), "").unwrap();
 
-        let config = fixture_config();
+        let mut config = fixture_config();
+        config.neo_version = "0123456789012345678901234567890123456789".to_string();
+        write_config(project_dir, &config);
 
         unsafe { std::env::set_var("NEO_SKIP_NETWORK", "1"); }
-        run(project_dir, &config).await.unwrap();
+        run_project(project_dir).await.unwrap();
 
         assert!(project_dir.join("my-project.cabal").exists());
         assert!(project_dir.join("flake.nix").exists());
@@ -112,6 +187,12 @@ mod tests {
 
         let flake_content = fs::read_to_string(project_dir.join("flake.nix")).unwrap();
         assert!(flake_content.contains("description = \"A test project\""));
+        assert!(flake_content.contains(&config.neo_version));
+        assert!(cabal_project.contains(&config.neo_version));
+        let active = fs::read_to_string(project_dir.join(".neo/agent-guidance/active.md")).unwrap();
+        assert!(active.contains("status: unavailable"));
+        assert!(active.contains(&config.neo_version));
+        assert!(active.contains("neo guidance retry"));
     }
 
     #[tokio::test]
@@ -126,8 +207,9 @@ mod tests {
         fs::write(project_dir.join("tests/ExampleSpec.hs"), "").unwrap();
 
         let config = fixture_config();
+        write_config(project_dir, &config);
         unsafe { std::env::set_var("NEO_SKIP_NETWORK", "1"); }
-        run(project_dir, &config).await.unwrap();
+        run_project(project_dir).await.unwrap();
 
         // hspec-discover driver was created.
         let driver = project_dir.join("tests/Spec.hs");
@@ -152,8 +234,9 @@ mod tests {
         fs::write(project_dir.join("src/App.hs"), "").unwrap();
 
         let config = fixture_config();
+        write_config(project_dir, &config);
         unsafe { std::env::set_var("NEO_SKIP_NETWORK", "1"); }
-        run(project_dir, &config).await.unwrap();
+        run_project(project_dir).await.unwrap();
 
         assert!(
             project_dir.join("tests/Spec.hs").exists(),
@@ -178,14 +261,15 @@ mod tests {
         fs::write(project_dir.join("src/Main.hs"), "").unwrap();
 
         let config = fixture_config();
+        write_config(project_dir, &config);
         unsafe { std::env::set_var("NEO_SKIP_NETWORK", "1"); }
 
-        run(project_dir, &config).await.unwrap();
+        run_project(project_dir).await.unwrap();
         let cabal1 = fs::read_to_string(project_dir.join("my-project.cabal")).unwrap();
         let proj1 = fs::read_to_string(project_dir.join("cabal.project")).unwrap();
         let flake1 = fs::read_to_string(project_dir.join("flake.nix")).unwrap();
 
-        run(project_dir, &config).await.unwrap();
+        run_project(project_dir).await.unwrap();
         let cabal2 = fs::read_to_string(project_dir.join("my-project.cabal")).unwrap();
         let proj2 = fs::read_to_string(project_dir.join("cabal.project")).unwrap();
         let flake2 = fs::read_to_string(project_dir.join("flake.nix")).unwrap();
@@ -193,5 +277,29 @@ mod tests {
         assert_eq!(cabal1, cabal2, "reconcile is not idempotent for .cabal");
         assert_eq!(proj1, proj2, "reconcile is not idempotent for cabal.project");
         assert_eq!(flake1, flake2, "reconcile is not idempotent for flake.nix");
+    }
+
+    #[tokio::test]
+    async fn queued_reconcile_reads_config_after_acquiring_project_lock() {
+        let dir = tempdir().unwrap();
+        let project_dir = dir.path();
+        fs::create_dir_all(project_dir.join("src")).unwrap();
+        fs::write(project_dir.join("src/Main.hs"), "").unwrap();
+        write_config(project_dir, &fixture_config());
+        unsafe { std::env::set_var("NEO_SKIP_NETWORK", "1"); }
+
+        let held_lock = ProjectLock::acquire(project_dir).await.unwrap();
+        let requested_project = project_dir.to_path_buf();
+        let waiting = tokio::spawn(async move { run_project(requested_project).await });
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+
+        let mut latest = fixture_config();
+        latest.name = "latest-project".to_string();
+        write_config(project_dir, &latest);
+        drop(held_lock);
+        waiting.await.unwrap().unwrap();
+
+        assert!(project_dir.join("latest-project.cabal").exists());
+        assert!(!project_dir.join("my-project.cabal").exists());
     }
 }

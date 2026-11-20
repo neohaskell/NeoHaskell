@@ -39,6 +39,121 @@
   },
   "boundaries": [
     {
+      "kind": "hspec",
+      "suite": "nhcore-test-service",
+      "path": "core/test/Service/Transport/Web/BindSpec.hs",
+      "match": "the same worker stays live until explicitly released without Application cleanup",
+      "boundary": "http:real",
+      "expected_examples": 1,
+      "fixture": "WebTransport bind host and port"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-service",
+      "path": "core/test/Service/Transport/Web/BindSpec.hs",
+      "match": "closes a started inbound socket before returning the bind error",
+      "boundary": "http:real",
+      "expected_examples": 1,
+      "fixture": "WebTransport bind host and port"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-service",
+      "path": "core/test/Service/Transport/Web/BindSpec.hs",
+      "match": "rejects an unrelated catch-all 200 after the intended Application bind fails",
+      "boundary": "http:real",
+      "expected_examples": 1,
+      "fixture": "WebTransport bind host and port"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-service",
+      "path": "core/test/Service/Transport/Web/BindSpec.hs",
+      "match": "a wildcard listener defeats the owned-interface bind probe",
+      "boundary": "http:real",
+      "expected_examples": 1,
+      "fixture": "WebTransport bind host and port"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-service",
+      "path": "core/test/Service/Transport/Web/BindSpec.hs",
+      "match": "accepts the intended Application and excludes another owned interface",
+      "boundary": "http:real",
+      "expected_examples": 1,
+      "fixture": "WebTransport bind host and port"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-service",
+      "path": "core/test/Service/Transport/Web/BindSpec.hs",
+      "match": "preserves a custom registered host with a port-only override at runtime",
+      "boundary": "http:real",
+      "expected_examples": 1,
+      "fixture": "WebTransport bind host and port"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-service",
+      "path": "core/test/Service/Transport/Web/BindSpec.hs",
+      "match": "preserves a custom registered port with a host-only override at runtime",
+      "boundary": "http:real",
+      "expected_examples": 1,
+      "fixture": "WebTransport bind host and port"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-service",
+      "path": "core/test/Service/Transport/Web/BindSpec.hs",
+      "match": "preserves a custom registered host and port with absent overrides at runtime",
+      "boundary": "http:real",
+      "expected_examples": 1,
+      "fixture": "WebTransport bind host and port"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-service",
+      "path": "core/test/Service/Transport/Web/BindSpec.hs",
+      "match": "applies host and port set after withTransport at runtime",
+      "boundary": "http:real",
+      "expected_examples": 1,
+      "fixture": "WebTransport bind host and port"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-service",
+      "path": "core/test/Service/Transport/Web/BindSpec.hs",
+      "match": "applies host and port set before withTransport at runtime",
+      "boundary": "http:real",
+      "expected_examples": 1,
+      "fixture": "WebTransport bind host and port"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-service",
+      "path": "core/test/Service/Transport/Web/BindSpec.hs",
+      "match": "rejects invalid static bind before owned auth discovery",
+      "boundary": "http:real",
+      "expected_examples": 1,
+      "fixture": "WebTransport bind host and port"
+    },
+    {
+      "kind": "script",
+      "path": "core/test/Http/transport_fixture.py",
+      "boundary": "http:real",
+      "expected_examples": 1,
+      "fixture": "Http.Client.syntheticTransport"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-core",
+      "path": "core/test/Http/ClientRawSpec.hs",
+      "match": "sendRaw rejects an oversized chunk before source EOF",
+      "boundary": "http:real",
+      "expected_examples": 1,
+      "fixture": "Http.Client.Internal.sendRaw"
+    },
+    {
       "kind": "script",
       "path": "testbed/scripts/cold-start-readiness.sh",
       "boundary": "http:real"
@@ -155,7 +270,16 @@
       "kind": "hspec",
       "suite": "nhcore-test-service",
       "path": "core/test/Service/FileUpload/ContentDedupSpec.hs",
-      "match": "dedup self-heals when the existence check errors",
+      "match": "dedup fails closed when the existence check errors",
+      "boundary": "filesystem:real",
+      "expected_examples": 1,
+      "fixture": "Service.FileUpload.ContentDedup"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-service",
+      "path": "core/test/Service/FileUpload/ContentDedupSpec.hs",
+      "match": "dedup conflict retry cleans only its provisional blob when winner check errors",
       "boundary": "filesystem:real",
       "expected_examples": 1,
       "fixture": "Service.FileUpload.ContentDedup"
@@ -165,6 +289,15 @@
       "suite": "nhcore-test-service",
       "path": "core/test/Service/FileUpload/ContentDedupSpec.hs",
       "match": "duplicate upload returns same blobKey as original",
+      "boundary": "filesystem:real",
+      "expected_examples": 1,
+      "fixture": "Service.FileUpload.ContentDedup"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-service",
+      "path": "core/test/Service/FileUpload/ContentDedupSpec.hs",
+      "match": "duplicate upload of a present blob makes no store call",
       "boundary": "filesystem:real",
       "expected_examples": 1,
       "fixture": "Service.FileUpload.ContentDedup"
@@ -303,6 +436,87 @@
       "boundary": "subprocess:real",
       "expected_examples": 1,
       "fixture": "ExtractAudioSpec.mediaControl sibling-intact"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-core",
+      "path": "core/test/Http/ClientRawSpec.hs",
+      "match": "sendRaw PUT delivers method, raw body and custom header",
+      "boundary": "http:real",
+      "expected_examples": 1,
+      "fixture": "Http.Client.Internal.sendRaw"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-core",
+      "path": "core/test/Http/ClientRawSpec.hs",
+      "match": "sendRaw HEAD returns headers and an empty body without throwing",
+      "boundary": "http:real",
+      "expected_examples": 1,
+      "fixture": "Http.Client.Internal.sendRaw"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-core",
+      "path": "core/test/Http/ClientRawSpec.hs",
+      "match": "sendRaw DELETE surfaces a 404 as a status code, not an error",
+      "boundary": "http:real",
+      "expected_examples": 1,
+      "fixture": "Http.Client.Internal.sendRaw"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-core",
+      "path": "core/test/Http/ClientRawSpec.hs",
+      "match": "sendRaw PUT surfaces a 403 as a status code, not an error",
+      "boundary": "http:real",
+      "expected_examples": 1,
+      "fixture": "Http.Client.Internal.sendRaw"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-core",
+      "path": "core/test/Http/ClientRawSpec.hs",
+      "match": "sendRaw enforces maxResponseBytes on the response body",
+      "boundary": "http:real",
+      "expected_examples": 1,
+      "fixture": "Http.Client.Internal.sendRaw"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-core",
+      "path": "core/test/Http/ClientRawSpec.hs",
+      "match": "returns Ok with statusCode 401 on 401 response",
+      "boundary": "http:real",
+      "expected_examples": 1,
+      "fixture": "Http.Client.Internal.getRaw"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-service",
+      "path": "core/test/Service/Transport/Web/BindSpec.hs",
+      "match": "serves /health on loopback when bound to 127.0.0.1",
+      "boundary": "http:real",
+      "expected_examples": 1,
+      "fixture": "WebTransport bind host and port"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-service",
+      "path": "core/test/Service/Transport/Web/BindSpec.hs",
+      "match": "a wildcard bind occupies the port on every address (negative control for the loopback probe)",
+      "boundary": "http:real",
+      "expected_examples": 1,
+      "fixture": "WebTransport bind host and port"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhcore-test-service",
+      "path": "core/test/Service/Transport/Web/BindSpec.hs",
+      "match": "a port already in use fails with an error naming the host and port",
+      "boundary": "http:real",
+      "expected_examples": 1,
+      "fixture": "WebTransport bind host and port"
     },
     {
       "kind": "hspec",

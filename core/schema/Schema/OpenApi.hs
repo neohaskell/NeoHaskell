@@ -21,7 +21,9 @@
 -- @
 module Schema.OpenApi (
   toOpenApiSchema,
+  EndpointSchemas (..),
   toOpenApiSpec,
+  toOpenApiSpecWithQueryById,
 ) where
 
 import Array qualified
@@ -105,13 +107,47 @@ toOpenApiSchema schema = case schema of
   
   SUnion variants -> do
     let variantSchemas = variants
-          |> Array.map (\(name, variantSchema) -> 
-               toOpenApiSchema variantSchema
+          |> Array.map (\(name, contentsSchema) -> do
+               let tagSchema = GhcMonoid.mempty
+                     |> Lens.set OpenApiLens.type_ (Just OpenApi.OpenApiString)
+                     |> Lens.set OpenApiLens.enum_ (Just [Json.toJSON name])
+               let wrappedContents =
+                     ( Array.fromLinkedList [("contents", OpenApi.Inline (toOpenApiSchema contentsSchema))]
+                     , Array.fromLinkedList ["contents"]
+                     )
+               let (contentsProperties, contentsRequired) = case contentsSchema of
+                     SObject fields -> do
+                       if Array.any (\field -> Text.isEmpty field.fieldName) fields
+                         then wrappedContents
+                         else do
+                           let fieldProperties = fields
+                                 |> Array.map (\field -> (field.fieldName, OpenApi.Inline (toOpenApiSchema field.fieldSchema)))
+                           let fieldRequired = fields
+                                 |> Array.takeIf (\field -> field.fieldRequired)
+                                 |> Array.map (\field -> field.fieldName)
+                           (fieldProperties, fieldRequired)
+                     _ -> wrappedContents
+               let properties = contentsProperties
+                     |> Array.prepend (Array.fromLinkedList [("tag", OpenApi.Inline tagSchema)])
+                     |> Array.toLinkedList
+                     |> InsOrdHashMap.fromList
+               let required = contentsRequired
+                     |> Array.takeIf (\fieldName -> fieldName != "tag")
+                     |> Array.prepend (Array.fromLinkedList ["tag"])
+                     |> Array.toLinkedList
+               GhcMonoid.mempty
+                 |> Lens.set OpenApiLens.type_ (Just OpenApi.OpenApiObject)
                  |> Lens.set OpenApiLens.title (Just name)
-             )
+                 |> Lens.set OpenApiLens.properties properties
+                 |> Lens.set OpenApiLens.required required)
           |> Array.toLinkedList
     GhcMonoid.mempty
       |> Lens.set OpenApiLens.oneOf (Just (variantSchemas |> LinkedList.map OpenApi.Inline))
+
+  SUnionWithContents variants ->
+    toOpenApiSchema
+      (SUnion (variants |> Array.map (\(name, contentsSchema) ->
+        (name, SObject [FieldSchema "contents" contentsSchema True ""]))))
   
   SRef refName -> do
     -- Note: Schema references in OpenAPI are handled at the usage site via Referenced type,
@@ -119,6 +155,19 @@ toOpenApiSchema schema = case schema of
     GhcMonoid.mempty
       |> Lens.set OpenApiLens.title (Just refName)
       |> Lens.set OpenApiLens.description (Just [fmt|Reference to: {refName}|])
+
+
+-- | The endpoint schema groups included in an OpenAPI specification.
+--
+-- Query-by-ID schemas produce UUID-keyed query paths. OAuth2 and file schemas
+-- describe the built-in routes when those features are enabled.
+data EndpointSchemas = EndpointSchemas
+  { commandSchemas :: Map Text EndpointSchema
+  , querySchemas :: Map Text EndpointSchema
+  , queryByIdSchemas :: Map Text EndpointSchema
+  , oauth2Schemas :: Map Text EndpointSchema
+  , fileSchemas :: Map Text EndpointSchema
+  }
 
 
 -- | Generate OpenAPI 3.0 specification from endpoint schemas.
@@ -130,6 +179,9 @@ toOpenApiSchema schema = case schema of
 -- - Paths for all endpoint types
 -- - Request/response schemas
 -- - Standard HTTP status codes
+--
+-- This five-argument function remains available for callers without
+-- query-by-ID schemas.
 toOpenApiSpec ::
   ApiInfo ->
   Map Text EndpointSchema ->  -- ^ Command schemas (tagged by entity name)
@@ -137,7 +189,30 @@ toOpenApiSpec ::
   Map Text EndpointSchema ->  -- ^ OAuth2 schemas (tagged "Authentication")
   Map Text EndpointSchema ->  -- ^ File upload schemas (tagged "Files")
   OpenApi.OpenApi
-toOpenApiSpec apiInfo commandSchemas querySchemas oauth2Schemas fileSchemas = do
+toOpenApiSpec apiInfo commandSchemas querySchemas oauth2Schemas fileSchemas =
+  toOpenApiSpecWithQueryById apiInfo
+    EndpointSchemas
+      { commandSchemas = commandSchemas
+      , querySchemas = querySchemas
+      , queryByIdSchemas = Map.empty
+      , oauth2Schemas = oauth2Schemas
+      , fileSchemas = fileSchemas
+      }
+
+
+-- | Generate an OpenAPI spec with collection and UUID-keyed query operations.
+--
+-- The legacy 'toOpenApiSpec' API omits the query-by-ID schema family.
+toOpenApiSpecWithQueryById ::
+  ApiInfo ->
+  EndpointSchemas ->
+  OpenApi.OpenApi
+toOpenApiSpecWithQueryById apiInfo endpointSchemas = do
+  let commandSchemas = endpointSchemas.commandSchemas
+  let querySchemas = endpointSchemas.querySchemas
+  let queryByIdSchemas = endpointSchemas.queryByIdSchemas
+  let oauth2Schemas = endpointSchemas.oauth2Schemas
+  let fileSchemas = endpointSchemas.fileSchemas
   let info = GhcMonoid.mempty
         |> Lens.set OpenApiLens.title apiInfo.apiTitle
         |> Lens.set OpenApiLens.version apiInfo.apiVersion
@@ -153,7 +228,7 @@ toOpenApiSpec apiInfo commandSchemas querySchemas oauth2Schemas fileSchemas = do
            ) Set.empty
 
   -- Build list of all tag names
-  let hasQueries = Map.length querySchemas > 0
+  let hasQueries = Map.length querySchemas > 0 || Map.length queryByIdSchemas > 0
   let hasOAuth2 = Map.length oauth2Schemas > 0
   let hasFiles = Map.length fileSchemas > 0
 
@@ -188,6 +263,13 @@ toOpenApiSpec apiInfo commandSchemas querySchemas oauth2Schemas fileSchemas = do
         |> Array.toLinkedList
         |> InsOrdHashMap.fromList
 
+  let queryByIdPaths = queryByIdSchemas
+        |> Map.entries
+        |> Array.map (\(name, schema) -> makeQueryByIdPath name schema)
+        |> Array.map (\(path, item) -> (Text.toLinkedList path, item))
+        |> Array.toLinkedList
+        |> InsOrdHashMap.fromList
+
   let oauth2Paths = oauth2Schemas
         |> Map.entries
         |> Array.map (\(name, schema) -> makeOAuth2Path name schema)
@@ -204,6 +286,7 @@ toOpenApiSpec apiInfo commandSchemas querySchemas oauth2Schemas fileSchemas = do
 
   let allPaths = commandPaths
         |> InsOrdHashMap.union queryPaths
+        |> InsOrdHashMap.union queryByIdPaths
         |> InsOrdHashMap.union oauth2Paths
         |> InsOrdHashMap.union filePaths
 
@@ -277,6 +360,63 @@ makeCommandPath name schema = do
   (path, pathItem)
 
 
+makeQueryByIdPath :: Text -> EndpointSchema -> (Text, OpenApi.PathItem)
+makeQueryByIdPath name schema = do
+  let kebabName = name |> Text.toKebabCase
+  let path = [fmt|/queries/#{kebabName}/{id}|]
+  let idParameter = GhcMonoid.mempty
+        |> Lens.set OpenApiLens.name "id"
+        |> Lens.set OpenApiLens.in_ OpenApi.ParamPath
+        |> Lens.set OpenApiLens.required (Just True)
+        |> Lens.set OpenApiLens.description (Just "Query object UUID")
+        |> Lens.set OpenApiLens.schema (Just (OpenApi.Inline (GhcMonoid.mempty
+             |> Lens.set OpenApiLens.type_ (Just OpenApi.OpenApiString)
+             |> Lens.set OpenApiLens.format (Just "uuid")
+           )))
+
+  let responseContent = InsOrdHashMap.fromList
+        [ ("application/json", GhcMonoid.mempty
+            |> Lens.set OpenApiLens.schema (Just (OpenApi.Inline (toOpenApiSchema schema.responseSchema)))
+          )
+        ]
+  let responses = OpenApi.Responses
+        { OpenApi._responsesDefault = Nothing
+        , OpenApi._responsesResponses = InsOrdHashMap.fromList
+            [ (200, OpenApi.Inline (GhcMonoid.mempty
+                |> Lens.set OpenApiLens.description "Success"
+                |> Lens.set OpenApiLens.content responseContent
+              ))
+            , (400, OpenApi.Inline (GhcMonoid.mempty
+                |> Lens.set OpenApiLens.description "Invalid query object UUID"
+              ))
+            , (401, OpenApi.Inline (GhcMonoid.mempty
+                |> Lens.set OpenApiLens.description "Unauthorized"
+              ))
+            , (403, OpenApi.Inline (GhcMonoid.mempty
+                |> Lens.set OpenApiLens.description "Forbidden"
+              ))
+            , (404, OpenApi.Inline (GhcMonoid.mempty
+                |> Lens.set OpenApiLens.description "Query object not found or not visible"
+              ))
+            , (500, OpenApi.Inline (GhcMonoid.mempty
+                |> Lens.set OpenApiLens.description "Internal Server Error"
+              ))
+            ]
+        }
+
+  let operation = GhcMonoid.mempty
+        |> Lens.set OpenApiLens.summary (Just name)
+        |> Lens.set OpenApiLens.description (Just schema.description)
+        |> Lens.set OpenApiLens.deprecated (Just schema.deprecated)
+        |> Lens.set OpenApiLens.tags ["Queries"]
+        |> Lens.set OpenApiLens.parameters [OpenApi.Inline idParameter]
+        |> Lens.set OpenApiLens.responses responses
+  let pathItem = GhcMonoid.mempty
+        |> Lens.set OpenApiLens.get (Just operation)
+
+  (path, pathItem)
+
+
 -- | Create OpenAPI path item for a query endpoint.
 --
 -- Queries use GET /queries/{name} with pagination and NeoQL filtering.
@@ -287,30 +427,9 @@ makeQueryPath name schema = do
   let kebabName = name |> Text.toKebabCase
   let path = [fmt|/queries/#{kebabName}|]
 
-  -- Build the paginated envelope schema matching QueryPageResponse
-  let itemsArraySchema = toOpenApiSchema (SArray schema.responseSchema)
-  let totalSchema = GhcMonoid.mempty
-        |> Lens.set OpenApiLens.type_ (Just OpenApi.OpenApiInteger)
-        |> Lens.set OpenApiLens.description (Just "Total matching items after authorization filtering")
-  let hasMoreSchema = GhcMonoid.mempty
-        |> Lens.set OpenApiLens.type_ (Just OpenApi.OpenApiBoolean)
-        |> Lens.set OpenApiLens.description (Just "Whether more items exist beyond this page")
-  let effectiveLimitSchema = GhcMonoid.mempty
-        |> Lens.set OpenApiLens.type_ (Just OpenApi.OpenApiInteger)
-        |> Lens.set OpenApiLens.description (Just "Actual page size limit applied (may be lower than requested)")
-  let envelopeSchema = GhcMonoid.mempty
-        |> Lens.set OpenApiLens.type_ (Just OpenApi.OpenApiObject)
-        |> Lens.set OpenApiLens.properties (InsOrdHashMap.fromList
-              [ ("items", OpenApi.Inline itemsArraySchema)
-              , ("total", OpenApi.Inline totalSchema)
-              , ("hasMore", OpenApi.Inline hasMoreSchema)
-              , ("effectiveLimit", OpenApi.Inline effectiveLimitSchema)
-              ])
-        |> Lens.set OpenApiLens.required ["items", "total", "hasMore", "effectiveLimit"]
-
   let responseContent = InsOrdHashMap.fromList
         [ ("application/json", GhcMonoid.mempty
-            |> Lens.set OpenApiLens.schema (Just (OpenApi.Inline envelopeSchema))
+            |> Lens.set OpenApiLens.schema (Just (OpenApi.Inline (toOpenApiSchema schema.responseSchema)))
           )
         ]
 

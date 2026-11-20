@@ -51,6 +51,7 @@ makeContext = do
       , Integration.refreshLocks = locks
       , Integration.fileAccess = Nothing
       , Integration.outboundDispatch = DispatchRegistry.empty
+      , Integration.eraseErasableKey = Nothing
       }
 
 

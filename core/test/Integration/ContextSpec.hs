@@ -57,6 +57,7 @@ makeContext = do
       , Integration.refreshLocks = locks
       , Integration.fileAccess = Nothing
       , Integration.outboundDispatch = DispatchRegistry.empty
+      , Integration.eraseErasableKey = Nothing
       }
 
 
@@ -124,15 +125,18 @@ spec = do
             , Integration.refreshLocks = emptyLocks
             , Integration.fileAccess = Nothing
             , Integration.outboundDispatch = DispatchRegistry.empty
+            , Integration.eraseErasableKey = Nothing
             }
       dispatcher <-
         Dispatcher.newWithLifecycleConfig
-          Dispatcher.defaultConfig
-          eventStore
-          [runner]
-          []
-          Map.empty
-          emptyContext
+          Dispatcher.Setup
+            { settings = Dispatcher.defaultConfig,
+              eventStore = eventStore,
+              outboundRunners = [runner],
+              lifecycleRunners = [],
+              commandEndpoints = Map.empty,
+              actionContext = emptyContext
+            }
 
       metadata <- EventMetadata.new
       let streamId = StreamId.fromTextUnsafe "entity-A"

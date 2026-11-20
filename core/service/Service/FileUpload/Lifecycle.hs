@@ -3,6 +3,7 @@ module Service.FileUpload.Lifecycle (
   FileUploadState (..),
   PendingFile (..),
   ConfirmedFile (..),
+  RetainedFile (..),
   FileMetadata (..),
 
   -- * State Machine
@@ -71,11 +72,20 @@ data ConfirmedFile = ConfirmedFile
   deriving (Generic, Eq, Show)
 
 
+-- | A file created by an integration and retained until explicit deletion.
+data RetainedFile = RetainedFile
+  { metadata :: FileMetadata
+  , ownerHash :: OwnerHash
+  }
+  deriving (Generic, Eq, Show)
+
+
 -- | File upload lifecycle state machine
 data FileUploadState
   = Initial -- No events yet
   | Pending PendingFile -- Uploaded, awaiting confirmation
   | Confirmed ConfirmedFile -- Confirmed by a command
+  | Retained RetainedFile -- Created by an integration, without pending expiry
   | Deleted -- File has been deleted
   deriving (Generic, Eq, Show)
 
@@ -92,22 +102,24 @@ initialState = Initial
 -- | Apply an event to transition state
 update :: FileUploadEvent -> FileUploadState -> FileUploadState
 update event state = case event of
-  FileUploaded uploaded ->
-    Pending
-      PendingFile
-        { metadata =
-            FileMetadata
-              { ref = uploaded.fileRef
-              , filename = uploaded.filename
-              , contentType = uploaded.contentType
-              , sizeBytes = uploaded.sizeBytes
-              , blobKey = uploaded.blobKey
-              , uploadedAt = uploaded.uploadedAt
-              , contentHash = uploaded.contentHash
-              }
-        , ownerHash = uploaded.ownerHash
-        , expiresAt = uploaded.expiresAt
-        }
+  FileUploaded uploaded -> case state of
+    Retained _ -> state
+    _ ->
+      Pending
+        PendingFile
+          { metadata =
+              FileMetadata
+                { ref = uploaded.fileRef
+                , filename = uploaded.filename
+                , contentType = uploaded.contentType
+                , sizeBytes = uploaded.sizeBytes
+                , blobKey = uploaded.blobKey
+                , uploadedAt = uploaded.uploadedAt
+                , contentHash = uploaded.contentHash
+                }
+          , ownerHash = uploaded.ownerHash
+          , expiresAt = uploaded.expiresAt
+          }
   FileConfirmed confirmed ->
     case state of
       Pending pending ->
@@ -123,6 +135,7 @@ update event state = case event of
     case state of
       Pending _ -> Deleted
       Confirmed _ -> Deleted
+      Retained _ -> Deleted
       Deleted -> Deleted -- Idempotent
       Initial -> Initial -- Invalid transition: ignore
 
@@ -148,11 +161,12 @@ isExpired state currentTime = case state of
 
 
 -- | Check if file can be deleted
--- Returns True for Pending and Confirmed states
+-- Returns True for Pending, Confirmed, and Retained states
 canDelete :: FileUploadState -> Bool
 canDelete state = case state of
   Pending _ -> True
   Confirmed _ -> True
+  Retained _ -> True
   _ -> False
 
 
@@ -161,6 +175,7 @@ getOwnerHash :: FileUploadState -> Maybe OwnerHash
 getOwnerHash state = case state of
   Pending pending -> Just pending.ownerHash
   Confirmed confirmed -> Just confirmed.ownerHash
+  Retained retained -> Just retained.ownerHash
   _ -> Nothing
 
 
@@ -169,6 +184,7 @@ getBlobKey :: FileUploadState -> Maybe BlobKey
 getBlobKey state = case state of
   Pending pending -> Just pending.metadata.blobKey
   Confirmed confirmed -> Just confirmed.metadata.blobKey
+  Retained retained -> Just retained.metadata.blobKey
   _ -> Nothing
 
 
@@ -177,4 +193,5 @@ getMetadata :: FileUploadState -> Maybe FileMetadata
 getMetadata state = case state of
   Pending pending -> Just pending.metadata
   Confirmed confirmed -> Just confirmed.metadata
+  Retained retained -> Just retained.metadata
   _ -> Nothing

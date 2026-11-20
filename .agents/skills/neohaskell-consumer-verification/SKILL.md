@@ -1,6 +1,6 @@
 ---
 name: neohaskell-consumer-verification
-description: Verify generated projects, starter and testbed freshness, or the embedded IDE bundle. Use when framework exports, Template Haskell markers, generated APIs, starter dependencies, CLI generation or IDE sources change.
+description: Verify generated projects, starter and testbed freshness, source-owned agent guidance, or the embedded IDE bundle. Use when framework exports, Template Haskell markers, generated APIs, starter dependencies, CLI generation, guidance accuracy or IDE sources change.
 ---
 
 # NeoHaskell consumer verification
@@ -11,6 +11,25 @@ frontend. The full contract tests a consumer-visible result. A script
 self-test checks only its orchestration or comparison logic.
 
 ## Framework changes include their consumers
+
+Every developed public NeoHaskell feature needs a working example in the
+repository testbed. Exercise the public API in testbed application code, assert
+its observable behavior with a maintained automated testbed scenario, and give
+concrete commands to run the example and its test in testbed documentation.
+Add or update these in the feature PR. Unit tests, compiler fixtures,
+generated-project checks, and
+documentation snippets are useful additional evidence, but none replaces the
+testbed example and assertion. A change with no public feature can state that
+the testbed requirement does not apply and identify the internal-only scope.
+Do not exempt a public feature because its API is compile-time, because it has
+no convenient HTTP endpoint, or because its example is deferred. Adapt the
+testbed's application and maintained runner to exercise the actual contract.
+
+During review, trace the testbed example from the public API through its
+registration and runtime path to the scenario's independent expected result.
+Run the affected scenario through [NeoHaskell tests](../neohaskell-test/SKILL.md)
+against the PR revision. Report the example, assertion, commands, revision,
+and result. A missing or skipped required run is incomplete.
 
 For framework export, marker or generated-API changes, inventory affected uses in
 `neo/starter/` and `testbed/` before implementation. Migrate those consumers in
@@ -37,8 +56,9 @@ checks run and any unavailable coverage. A skipped required check is incomplete.
 
 ## Generated project contract
 
-Run from the repository root, or set `NEOHASKELL_ROOT` to the checked-out
-repository.
+Run from the repository root on the host, or set `NEOHASKELL_ROOT` to the
+checked-out repository. The full script invokes Nix for its build and generated
+project phases. Follow the [verification environment decision](../nix-haskell-tools/SKILL.md#choose-the-verification-environment).
 
 ```sh
 ./.agents/skills/neohaskell-consumer-verification/scripts/neo-consumer-contract --self-test
@@ -79,6 +99,11 @@ offline.
 revision for the CLI, starter and framework. Release preparation freezes the
 starter pins to its candidate framework revision before packaging the CLI.
 Cache population must use the corresponding tested source and binary.
+Run the full contract after committing the PR source, because its isolated Git
+snapshot reads `HEAD`. Record that revision and the result. Run it on a capable
+host or a Linux Actions runner at the same PR head if local capacity is
+insufficient. A script self-test or a 4 GiB Docker out-of-memory termination
+does not establish the generated-project result or waive the required gate.
 
 ## Embedded IDE bundle
 
@@ -102,3 +127,78 @@ The CI workflow runs both owner self-tests and the applicable full check. Every
 PR runs the generated-project contract, including drafts and documentation
 changes. The aggregate gate requires its success. Component-specific draft and
 path selection does not permit skipping the generated-project contract.
+
+## Source-owned agent guidance
+
+Before opening a PR that changes a consumer-facing framework contract, generated
+CLI behavior, or `docs/agent/`, compare the changed source with the private
+capability registry and published topic pages. Read the maintained implementation behind each
+affected claim. Update stale pages, examples, scenarios, and review records.
+For each affected capability, report the updated page or explain why its guide
+still matches the source. Review explanatory fragments against their cited
+source; compilation cannot prove prose claims.
+
+Follow [Agent guide authoring](../agent-guide-authoring/SKILL.md) for the
+published pages. Keep implementation paths and required checks in this skill's
+private policy at `references/agent-docs-policy.json`. Keep review receipts in
+the ignored `.agents-state/neohaskell-consumer-verification/agent-docs-reviews.json`
+of the current worktree.
+
+Before `--verify-evidence`, complete the
+[service-suite PostgreSQL setup](../neohaskell-test/SKILL.md#prepare-postgresql-for-service-suites).
+Use an owned disposable instance at `localhost:5432`, with the `neohaskell`
+database and a `neohaskell` role with password `neohaskell` and database creation
+permission. Create a separate disposable file-state database and export
+`FILE_UPLOAD_TEST_DB` for the entire guide command. The fixture rejects an unset
+name or `neohaskell`. Other service specs still use the `neohaskell` database.
+Keep `PGOPTIONS` unset so the testbed can use its fresh databases.
+
+Run the local corpus check from the repository root inside the pinned Nix shell:
+
+```sh
+nix develop --command .agents/skills/neohaskell-consumer-verification/scripts/agent-docs-check
+nix develop --command .agents/skills/neohaskell-consumer-verification/scripts/agent-docs-check --verify-evidence
+```
+
+The gate validates the published `docs/agent/manifest.json` page inventory,
+local links, and the private capability policy at
+`references/agent-docs-policy.json`. Each mapped capability retains a
+source file and maintained Hurl scenario in that policy. Add a capability and
+page mapping when a new public feature changes the generated application guide.
+The gate preserves its baseline capabilities and accepts new mappings with
+valid evidence. It checks that mapped source and scenario paths exist and that
+the scenario has a request and assertions. It cannot tell whether that scenario
+exercises the public feature. An independent verifier must trace the feature's
+public API through the testbed application and run the relevant maintained
+assertion before accepting a public-feature PR. A passing guide check does not
+replace that verification. The gate rejects
+framework repository paths in published guidance. It compiles every runnable
+Haskell fence with `markdown-unlit`
+against the checkout's `nhcore` and `nhintegrations` packages. Use `haskell
+ignore` only for fragments that need surrounding application definitions.
+Declare each such fragment and its owning source in the policy.
+
+A fresh checkout has no review receipts. The default and `--structure-only`
+checks fail until the current worktree has reviewed every ignored fragment.
+Run `agent-docs-check --prepare-reviews` to create a local draft with the
+current revision, worktree path, fragment hashes, and source hashes. Read each
+declared source and fragment, then fill its empty `reason` with the concrete
+review finding. Preparing a draft alone never
+passes the gate. A new commit, changed fragment, changed source, or another
+worktree invalidates the receipt. Regenerate and review after the final commit.
+
+`--structure-only` provides quick feedback but does not compile examples.
+Run the default check on the checked-out PR revision for each affected PR.
+For a corpus-wide change or a change to the capability policy, run
+`--verify-evidence` with PostgreSQL available. It also runs the
+service and auth specs, the maintained Hurl testbed, and the generated-project
+contract. For a narrower runtime change, run the affected maintained scenario
+or suite and record the command and result in the PR. Use a fresh PostgreSQL
+database for repeated local evidence runs. The testbed retains events across
+runs and uses in-memory query projections. Run the full guide check in the host
+Nix shell or on a Linux Actions runner at the same revision. Keep it pending
+if the local environment cannot complete it. `--structure-only`, a prepared
+draft, and a resource-limited failure are not passing acceptance evidence.
+
+If you change the corpus validator, run its local cases with
+`python3 .agents/skills/neohaskell-consumer-verification/tests/test_agent_docs_check_cases.py`.

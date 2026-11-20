@@ -22,7 +22,6 @@ import Array qualified
 import Basics
 import Char (Char)
 import Control.Concurrent.Async qualified as GhcAsync
-import Control.Exception qualified as GhcException
 import Data.Foldable qualified as GhcFoldable
 import IO qualified
 import GHC.IO.Exception qualified as Exception
@@ -31,7 +30,6 @@ import Maybe (Maybe (..))
 import Path (Path)
 import Path qualified
 import Result (Result (..))
-import Result qualified
 import System.Directory qualified as GhcDir
 import System.Exit qualified
 import System.Process qualified
@@ -115,65 +113,88 @@ runWithTimeout timeoutSeconds executable arguments directory = do
           }
 
   result <- captureProcess timeoutMicros processToExecute
-    |> Task.fromFailableIO @Exception.IOError
     |> Task.mapError (\err -> ProcessError [fmt|#{err}|])
   case result of
     Nothing -> Task.throw (TimeoutError [fmt|Process timed out after #{timeoutSeconds} seconds|])
     Just completion -> Task.yield completion
 
 
--- | Acquire the child under masking, run the deadline, and preserve the primary exception.
-captureProcess :: Int -> System.Process.CreateProcess -> IO.IO (Maybe Completion)
-captureProcess timeoutMicros processToExecute = GhcException.mask \restore -> do
-  resources <- System.Process.createProcess processToExecute
-  outcome <- IO.try (restore (GhcTimeout.timeout timeoutMicros (collectProcess resources)))
-  -- Cleanup must not replace the original asynchronous or reader exception.
-  cleanup <- GhcAsync.withAsync (releaseProcess resources) awaitProcessCleanup
-  case outcome of
-    Err original -> preserveProcessException original cleanup
-    Ok result -> case cleanup of
-      Err failure -> GhcException.throwIO failure
-      Ok () -> pure result
+-- | The pipes that were created for a child, and the child itself.
+type ProcessResources =
+  (Maybe GhcHandle.Handle, Maybe GhcHandle.Handle, Maybe GhcHandle.Handle, System.Process.ProcessHandle)
 
 
--- Keep cleanup owned until it finishes, even if cancellation is repeated or any
--- other exception is delivered while waiting. The worker remains interruptible;
--- no OS wait is masked uninterruptibly.
--- | Wait for the owned cleanup worker without abandoning it on any interruption.
-awaitProcessCleanup :: GhcAsync.Async Unit -> IO.IO (Result GhcException.SomeException Unit)
+-- | Acquire the child with cancellation deferred, run the deadline, and release the child on every exit.
+captureProcess :: Int -> System.Process.CreateProcess -> Task Exception.IOError (Maybe Completion)
+captureProcess timeoutMicros processToExecute = Task.withCancellationDeferred \restore -> do
+  resources <-
+    System.Process.createProcess processToExecute
+      |> Task.fromFailableIO @Exception.IOError
+  result <-
+    GhcTimeout.timeout timeoutMicros (collectProcess resources)
+      |> Task.fromFailableIO @Exception.IOError
+      |> restore
+      |> Task.onFailure (releaseAfterFailure resources)
+  releaseReportingFailure resources
+  Task.yield result
+
+
+-- | Release the child after a failed capture without replacing the failure the caller must see.
+-- A cancelled capture keeps its original cancellation. Any other failure gives way only to
+-- cancellation that arrives during cleanup, because 'Task.onFailure' ignores the rest.
+releaseAfterFailure :: ProcessResources -> Task.Failure Exception.IOError -> Task Exception.IOError Unit
+releaseAfterFailure resources failure = case failure of
+  Task.Interrupted -> releaseKeepingCancellation resources
+  Task.TypedFailure _ -> releaseReportingFailure resources
+  Task.RuntimeFailure -> releaseReportingFailure resources
+
+
+-- | Release the child and report a cleanup failure or an exception delivered during cleanup.
+releaseReportingFailure :: ProcessResources -> Task Exception.IOError Unit
+releaseReportingFailure resources = do
+  released <- releaseOwnedProcess resources |> Task.fromFailableIO @Exception.IOError
+  case released of
+    Ok _ -> Task.yield unit
+    Err failure -> Task.throw failure
+
+
+-- | Release the child and discard whatever cleanup reports, including later interruptions.
+releaseKeepingCancellation :: ProcessResources -> Task Exception.IOError Unit
+releaseKeepingCancellation resources =
+  releaseOwnedProcess resources
+    |> IO.map (\_ -> unit)
+    |> IO.catchAny (\_ -> IO.yield unit)
+    |> Task.fromIO
+
+
+-- | Run cleanup in an owned worker and wait for it without abandoning it on any interruption.
+-- Cleanup stays owned until it finishes, even if cancellation is repeated or any other
+-- exception is delivered while waiting. The worker remains interruptible; no OS wait is
+-- masked uninterruptibly.
+releaseOwnedProcess :: ProcessResources -> IO.IO (Result Exception.IOError Unit)
+releaseOwnedProcess resources =
+  GhcAsync.withAsync (Task.runResult (releaseProcess resources)) awaitProcessCleanup
+
+
+-- | Wait for the cleanup worker. The first exception delivered during the wait
+-- continues only after cleanup has finished.
+awaitProcessCleanup :: GhcAsync.Async (Result Exception.IOError Unit) -> IO.IO (Result Exception.IOError Unit)
 awaitProcessCleanup worker =
-  GhcException.catch
-    (GhcAsync.waitCatch worker |> IO.map Result.fromEither)
-    (finishProcessCleanup worker)
+  IO.finally (GhcAsync.wait worker) (finishProcessCleanup worker)
 
 
--- | Finish releasing resources before reporting an exception received during cleanup.
--- 'throwTo' can deliver any exception type to the waiting thread, while
--- 'waitCatch' already returns worker failures as values; the handler therefore
+-- | Finish waiting for cleanup whatever is delivered meanwhile.
+-- 'throwTo' can deliver any exception type to the waiting thread, so the handler
 -- does not classify interruption by type.
-finishProcessCleanup ::
-  GhcAsync.Async Unit -> GhcException.SomeException -> IO.IO (Result GhcException.SomeException Unit)
-finishProcessCleanup worker interruption = do
-  _ <- awaitProcessCleanup worker
-  pure (Err interruption)
-
-
--- | Give asynchronous cancellation precedence over synchronous cleanup failures.
-preserveProcessException :: GhcException.SomeException -> Result GhcException.SomeException Unit -> IO.IO value
-preserveProcessException original cleanup =
-  case GhcException.fromException @GhcException.SomeAsyncException original of
-    Just _ -> GhcException.throwIO original
-    Nothing -> case cleanup of
-      Ok () -> GhcException.throwIO original
-      Err failure -> case GhcException.fromException @GhcException.SomeAsyncException failure of
-        Just _ -> GhcException.throwIO failure
-        Nothing -> GhcException.throwIO original
+finishProcessCleanup :: GhcAsync.Async (Result Exception.IOError Unit) -> IO.IO Unit
+finishProcessCleanup worker =
+  GhcAsync.waitCatch worker
+    |> IO.map (\_ -> unit)
+    |> IO.catchAny (\_ -> finishProcessCleanup worker)
 
 
 -- | Drain both captured streams strictly before collecting the child exit status.
-collectProcess ::
-  (Maybe GhcHandle.Handle, Maybe GhcHandle.Handle, Maybe GhcHandle.Handle, System.Process.ProcessHandle) ->
-  IO.IO Completion
+collectProcess :: ProcessResources -> IO.IO Completion
 collectProcess resources = do
   let (_, stdoutHandle, stderrHandle, child) = resources
   (stdoutContent, stderrContent) <- GhcAsync.concurrently
@@ -197,14 +218,15 @@ readProcessPipe handle = case handle of
 
 
 -- | Stop and reap the direct child, then attempt every owned handle close.
-releaseProcess ::
-  (Maybe GhcHandle.Handle, Maybe GhcHandle.Handle, Maybe GhcHandle.Handle, System.Process.ProcessHandle) ->
-  IO.IO Unit
+releaseProcess :: ProcessResources -> Task Exception.IOError Unit
 releaseProcess resources = do
   let (stdinHandle, stdoutHandle, stderrHandle, child) = resources
-  stopProcess child `GhcException.finally`
-    (closeProcessPipe stdinHandle `GhcException.finally`
-      (closeProcessPipe stdoutHandle `GhcException.finally` closeProcessPipe stderrHandle))
+  let closePipes =
+        IO.finally
+          (closeProcessPipe stdinHandle)
+          (IO.finally (closeProcessPipe stdoutHandle) (closeProcessPipe stderrHandle))
+  stopProcess child
+    |> Task.finally (Task.fromIO closePipes)
 
 
 -- | Close a created pipe; inherited streams are represented by Nothing.
@@ -213,34 +235,40 @@ closeProcessPipe handle = GhcFoldable.for_ handle GhcHandle.hClose
 
 
 -- | Give a live direct child one second to terminate before forced termination and reap.
-stopProcess :: System.Process.ProcessHandle -> IO.IO Unit
+stopProcess :: System.Process.ProcessHandle -> Task Exception.IOError Unit
 stopProcess child = do
-  status <- System.Process.getProcessExitCode child
+  status <- System.Process.getProcessExitCode child |> Task.fromFailableIO @Exception.IOError
   case status of
-    Just _ -> pure ()
+    Just _ -> Task.yield unit
     Nothing -> do
       signalOwnedProcess child (System.Process.terminateProcess child)
-      exited <- GhcTimeout.timeout 1000000 (System.Process.waitForProcess child)
+      exited <-
+        GhcTimeout.timeout 1000000 (System.Process.waitForProcess child)
+          |> Task.fromFailableIO @Exception.IOError
       case exited of
-        Just _ -> pure ()
+        Just _ -> Task.yield unit
         Nothing -> do
           signalOwnedProcess child (forceProcess child)
-          _ <- System.Process.waitForProcess child
-          pure ()
+          System.Process.waitForProcess child
+            |> Task.fromFailableIO @Exception.IOError
+            |> Task.map (\_ -> unit)
 
 
 -- | Recheck child completion if a termination signal races with exit.
-signalOwnedProcess :: System.Process.ProcessHandle -> IO.IO Unit -> IO.IO Unit
-signalOwnedProcess child signal = GhcException.catch signal (handleProcessSignalError child)
+signalOwnedProcess :: System.Process.ProcessHandle -> IO.IO Unit -> Task Exception.IOError Unit
+signalOwnedProcess child signal =
+  signal
+    |> Task.fromFailableIO @Exception.IOError
+    |> Task.recover (handleProcessSignalError child)
 
 
 -- | Accept an already reaped child, but propagate a genuine signalling failure.
-handleProcessSignalError :: System.Process.ProcessHandle -> Exception.IOError -> IO.IO Unit
+handleProcessSignalError :: System.Process.ProcessHandle -> Exception.IOError -> Task Exception.IOError Unit
 handleProcessSignalError child failure = do
-  status <- System.Process.getProcessExitCode child
+  status <- System.Process.getProcessExitCode child |> Task.fromFailableIO @Exception.IOError
   case status of
-    Just _ -> pure ()
-    Nothing -> GhcException.throwIO failure
+    Just _ -> Task.yield unit
+    Nothing -> Task.throw failure
 
 
 -- | Force only the owned direct child using the platform termination API.

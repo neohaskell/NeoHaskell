@@ -8,7 +8,9 @@ content keeps short-circuiting to a `FileRef` whose blob is gone, and every
 downstream read fails permanently with `File blob is missing from storage`.
 This change makes dedup self-healing: before returning a match, verify the blob
 exists and, if it does not, re-store the content under the same blob key so the
-returned reference is never dangling.
+matched blob is restored when the backend reports it missing. This is a
+check-time guarantee, not a promise that no other actor can later remove the
+blob; change 020 separately defines the returned-error boundary.
 
 ```yaml spec
 issue: issue#713                # issue#NNN or adhoc:<slug>
@@ -41,7 +43,7 @@ losing a blob), so the reproductions are `integration`.
 | C1 | Re-uploading content whose deduplicated **Pending** blob was lost returns a `FileRef` whose blob is present again (self-heal), not a dangling ref | `hspec:nhcore-test-service:core/test/Service/FileUpload/ContentDedupSpec.hs#dedup self-heals a missing Pending blob on re-upload` | integration | filesystem:real |
 | C2 | Same self-heal when the dedup match is a **Confirmed** file | `hspec:nhcore-test-service:core/test/Service/FileUpload/ContentDedupSpec.hs#dedup self-heals a missing Confirmed blob on re-upload` | integration | filesystem:real |
 | C3 | Self-heal preserves dedup identity — same `FileRef` and same `blobKey` as the original — and the re-stored blob retrieves the exact uploaded content | `hspec:nhcore-test-service:core/test/Service/FileUpload/ContentDedupSpec.hs#dedup self-heal preserves FileRef/blobKey and restores exact content` | integration | filesystem:real |
-| C4 | When the existence check itself errors, dedup still heals (re-stores) rather than returning a possibly-dangling ref | `hspec:nhcore-test-service:core/test/Service/FileUpload/ContentDedupSpec.hs#dedup self-heals when the existence check errors` | integration | filesystem:real |
+| C4 | When the existence check itself errors, dedup fails closed (no blind re-store, generic client error) — behavior revised by change 020 | `hspec:nhcore-test-service:core/test/Service/FileUpload/ContentDedupSpec.hs#dedup fails closed when the existence check errors` | integration | filesystem:real |
 | C5 | Healthy path preserved — when the blob is present, a duplicate upload still returns the existing `FileRef`/`blobKey` unchanged | `hspec:nhcore-test-service:core/test/Service/FileUpload/ContentDedupSpec.hs#duplicate upload returns same blobKey as original` | integration | filesystem:real |
 
 ## User impact
@@ -74,8 +76,9 @@ missing-blob guard (`ensureBlobPresent`) is applied at **all four** sites that
 return a pre-existing `FileRef` — the two dedup branches (Pending/Confirmed) and
 the two 23505 concurrent-race retry branches in `normalUploadFlow` — since the
 race-retry path returns a stored `blobKey` with the same absent check and is the
-same defect class. The race branches only fire under the Postgres unique
-constraint, so they are covered structurally by the shared helper (proven by
-C1–C4 on the in-memory store) rather than by a separate, non-deterministic
-concurrency criterion. `handleDownloadImpl`'s `File blob is missing from storage`
+same defect class. The real race branches use the Postgres unique
+constraint. Change 020 C4 additionally tests the retry path with an injected
+`23505` result and real filesystem cleanup; it is a deterministic regression,
+not a PostgreSQL concurrency test. The shared helper also provides structural
+coverage across Pending and Confirmed retry states. `handleDownloadImpl`'s `File blob is missing from storage`
 remains a detect-only backstop, unchanged.

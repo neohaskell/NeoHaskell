@@ -1,17 +1,27 @@
-module Testbed.Cart.Integrations (
-  periodicCartCreator,
-) where
+-- | Create carts from the timer worker declared by the cart Feature.
+module Testbed.Cart.Integrations (PeriodicCartCreator (..), workerImpl) where
 
+import AsyncTask qualified
+import Core
 import Integration qualified
-import Integration.Timer qualified as Timer
 import Testbed.Cart.Commands.CreateCartInternal (CreateCartInternal (..))
+import Testbed.Cart.Core (CartEntity)
 
 
--- | Inbound integration: periodically creates new carts.
--- Every 3 seconds, submits a CreateCartInternal command.
-periodicCartCreator :: Integration.Inbound
-periodicCartCreator =
-  Timer.every Timer.Every
-    { interval = Timer.seconds 3
-    , toCommand = \_ -> CreateCartInternal
-    }
+data PeriodicCartCreator = PeriodicCartCreator
+
+
+workerImpl :: () -> Integration.TypedInbound '[ '(CreateCartInternal, CartEntity)]
+workerImpl _ =
+  Integration.typedInbound
+    Integration.TypedInboundConfig
+      { Integration.run = \emit -> do
+          let loop = do
+                emit CreateCartInternal
+                AsyncTask.sleep 3000
+                loop
+          loop
+      }
+
+
+inboundIntegration ''PeriodicCartCreator

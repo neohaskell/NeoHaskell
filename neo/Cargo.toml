@@ -1,9 +1,16 @@
 [package]
 name = "neo"
-version = "0.11.0"
+version = "0.18.1"
 edition = "2024"
 
+[workspace]
+members = ["lifecycle"]
+default-members = ["."]
+resolver = "3"
+
 [dependencies]
+neo-lifecycle = { path = "lifecycle" }
+
 # CLI parsing
 clap = { version = "4", features = ["derive", "env"] }
 
@@ -33,6 +40,8 @@ mime_guess = "2"
 # Serialization
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+sha1 = "0.10"
+sha2 = "0.10"
 
 # Error handling
 miette = { version = "7", features = ["fancy"] }
@@ -64,6 +73,7 @@ tempfile = "3"
 
 # Git
 gix = { version = "0.83", default-features = false, features = ["basic", "index", "sha1"] }
+fs2 = "0.4"
 
 # JSON Schema validation (used by `neo ide` to validate `event-model.json`)
 jsonschema = { version = "0.30", default-features = false }

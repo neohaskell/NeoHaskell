@@ -22,13 +22,15 @@ module Config.Global (
 import Appendable ((++))
 import Basics
 import Data.Dynamic (Dynamic, dynTypeRep, fromDynamic, toDyn)
-import Data.IORef (IORef, newIORef, readIORef, writeIORef)
 import Data.Typeable (Typeable)
 import Data.Typeable qualified as Typeable
 import IO qualified
 import Maybe (Maybe (..))
 import System.IO.Unsafe (unsafePerformIO)
+import Task qualified
 import Text (Text)
+import Var (Var)
+import Var qualified
 
 
 -- | Global storage for application config.
@@ -39,8 +41,8 @@ import Text (Text)
 -- 2. Config is immutable once loaded
 -- 3. No race conditions are possible in the startup sequence
 {-# NOINLINE globalConfigRef #-}
-globalConfigRef :: IORef (Maybe Dynamic)
-globalConfigRef = unsafePerformIO (newIORef Nothing)
+globalConfigRef :: Var (Maybe Dynamic)
+globalConfigRef = unsafePerformIO (Task.runNoErrors (Var.new Nothing))
 
 
 -- | Get the global config.
@@ -61,7 +63,7 @@ globalConfigRef = unsafePerformIO (newIORef Nothing)
 {-# NOINLINE get #-}
 get :: forall config. (Typeable config, HasCallStack) => config
 get = unsafePerformIO do
-  maybeDyn <- readIORef globalConfigRef
+  maybeDyn <- Var.get globalConfigRef |> Task.runNoErrors
   case maybeDyn of
     Nothing ->
       panic ("Config.get: Config not initialized. Ensure Application.run has been called with withConfig." ++ configDependentGuidance)
@@ -94,4 +96,4 @@ configDependentGuidance =
 -- This is called by 'Application.run' after loading the config.
 -- It should NOT be called directly by user code.
 setGlobalConfig :: (Typeable config) => config -> IO.IO ()
-setGlobalConfig config = writeIORef globalConfigRef (Just (toDyn config))
+setGlobalConfig config = Var.set (Just (toDyn config)) globalConfigRef |> Task.runNoErrors

@@ -86,6 +86,8 @@ toJsonSchema schema = case schema of
             |> Array.toLinkedList
     Json.object [("oneOf", Json.toJSON oneOf)]
 
+  SUnionWithContents variants -> toJsonSchema (SUnion variants)
+
   SRef refName ->
     Json.object [("$ref", Json.toJSON ("#/definitions/" |> Text.append refName))]
 

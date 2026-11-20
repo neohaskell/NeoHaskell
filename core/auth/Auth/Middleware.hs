@@ -68,15 +68,12 @@ extractToken request = do
   case findHeader HTTP.hAuthorization headers of
     Nothing -> Nothing
     Just headerValue -> do
-      -- Trim leading/trailing whitespace from header value
       let headerText = headerValue |> Bytes.fromLegacy |> Text.fromBytes |> Text.trim
       -- RFC 7235: Authorization scheme is case-insensitive
-      -- Check for "Bearer" prefix (case-insensitive), then handle optional space
       let headerLower = Text.toLower headerText
-      case Text.startsWith "bearer" headerLower of
-        False -> Nothing
-        True -> do
-          -- Drop "Bearer" prefix, trim any whitespace between scheme and token
+      if not (Text.startsWith "bearer" headerLower)
+        then Nothing
+        else do
           let afterBearer = Text.dropLeft 6 headerText |> Text.trim
           Just afterBearer
 
@@ -100,23 +97,22 @@ findHeader name headers =
   case headers of
     [] -> Nothing
     ((headerName, headerValue) : rest) ->
-      case headerName == name of
-        True -> Just headerValue
-        False -> findHeader name rest
+      if headerName == name
+        then Just headerValue
+        else findHeader name rest
 
 
--- | Find a query parameter by name.
 findQueryParam :: GhcBS.ByteString -> [(GhcBS.ByteString, Maybe GhcBS.ByteString)] -> Maybe GhcBS.ByteString
 findQueryParam name params =
   case params of
     [] -> Nothing
     ((paramName, paramValue) : rest) ->
-      case paramName == name of
-        True ->
+      if paramName == name
+        then
           case paramValue of
             Nothing -> Nothing
             Just value -> Just value
-        False -> findQueryParam name rest
+        else findQueryParam name rest
 
 
 -- | Check authentication and authorization for a request.
@@ -162,11 +158,11 @@ checkAuthWithToken maybeManager config token = do
         Task.yield (Err (AuthInfraUnavailable "Authentication not configured"))
       Just manager -> do
         isStale <- Jwks.checkStaleness manager
-        case isStale of
-          True -> do
+        if isStale
+          then do
             Log.warn "JWKS keys are stale, returning 503" |> Task.ignoreError
             Task.yield (Err (AuthInfraUnavailable "Authentication keys are stale"))
-          False ->
+          else
             validateTokenAndBuildContext manager config token
 
 
@@ -185,14 +181,12 @@ validateAndBuildContext maybeManager config request = do
         Log.warn "Auth not configured but authentication required" |> Task.ignoreError
         Task.yield (Err (AuthInfraUnavailable "Authentication not configured"))
       Just manager -> do
-        -- Check key staleness (503 if keys too old)
         isStale <- Jwks.checkStaleness manager
-        case isStale of
-          True -> do
+        if isStale
+          then do
             Log.warn "JWKS keys are stale, returning 503" |> Task.ignoreError
             Task.yield (Err (AuthInfraUnavailable "Authentication keys are stale"))
-          False -> do
-            -- Extract token from request
+          else do
             case extractToken request of
               Nothing -> do
                 Log.debug "No Bearer token in request" |> Task.ignoreError
@@ -208,15 +202,12 @@ validateTokenAndBuildContext ::
   Text ->
   Task err (Result AuthError AuthContext)
 validateTokenAndBuildContext manager config token = do
-  -- DoS protection: reject oversized tokens before parsing
-  -- 8KB is generous (typical JWT is 1-2KB, max reasonable is ~4KB)
   let maxTokenSize = 8192
-  case Text.length token > maxTokenSize of
-    True -> do
+  if Text.length token > maxTokenSize
+    then do
       Log.warn "Token exceeds maximum size (DoS protection)" |> Task.ignoreError
       Task.yield (Err (TokenMalformed "Token exceeds maximum size"))
-    False -> do
-      -- OPTIMIZED: Parse header ONCE for kid extraction AND validation
+    else do
       case Jwt.parseHeader token of
         Err err -> do
           Log.debug [fmt|Token header parse failed: #{toText err}|] |> Task.ignoreError
