@@ -11,7 +11,10 @@ fn test_version() {
     cmd.arg("--version")
         .assert()
         .success()
-        .stdout(predicate::str::contains("neo 0.1.0"));
+        .stdout(predicate::str::contains(format!(
+            "neo {}",
+            env!("CARGO_PKG_VERSION")
+        )));
 }
 
 #[test]
@@ -403,7 +406,7 @@ fn test_neo_test_hurl_discovery() {
         .arg("test")
         .arg("--ci")
         .assert()
-        .stdout(predicate::str::contains("Running 1 Hurl integration tests"));
+        .stdout(predicate::str::contains("Running 3 Hurl integration tests"));
 }
 
 #[test]
