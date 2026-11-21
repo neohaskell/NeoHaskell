@@ -1,6 +1,6 @@
 ### Multi-phase or multi-PR plan
 
-**You own the plan, not the code. The plan is a checklist an owner runs box by box and the operator audits from the evidence.** The plan is the deliverable. Do not implement.
+**You own the plan, not the code. The plan is a checklist an owner runs box by box and the operator audits from the evidence.** The plan is the deliverable. Do not implement. Record the execution boundary from the [task completion policy](../../skills/orchestrate/references/task-completion.md) for whoever later runs the plan.
 
 1. When the change is low-risk and has an obvious approach with no meaningful sequencing or design decision, skip the plan. File count alone does not establish that for a public API or generator change. Say so and stop.
 2. Settle open questions by prototype before you write. Run `.agents/workflow/playbooks/prototype.md` for each. Keep the branch, the SHA, formal test results and the relevant screenshots, compiler output or runtime evidence for Appendix A. Ask the operator only about a product or preference call that no run can settle. Give options (the **never-block-on-the-human** principle skill).
@@ -10,7 +10,7 @@
 6. Run `node .agents/skills/multi-phase-plan/scripts/check-plan.mjs <plan.md>` using the actual repository workflow path from `AGENTS.md` and fix every line it prints (the **encode-lessons-in-structure** principle skill).
 7. Hand back. Post the plan path and the script's output, then stop. Execution starts on the operator's explicit go, under the execution playbook the plan names.
 
-**Verification.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked (the **prove-it-works** principle skill). That sentence is the verification rule. Every verification block opens with it. The live block is mandatory. Ten lanes at the PR head drive the actual affected boundary, per **swarm** and `AGENTS.md`, concurrently or in batches within available capacity. Every required lane needs a result with its tested SHAs and method; a blocked or missing lane is not a pass. Each lane is one box with a concrete scenario, the evidence artifact it saves, and its pass predicate. One lane is the **Regression lane against trunk.** It runs the same load-bearing scenario on trunk and head. If trunk does not have the feature, the lane records that fact and gates the behavior the diff adds plus the end state the user waits for instead of inventing a trunk result. The perf gate is dual-sided. Trunk and head must both produce the named metric. If trunk lacks the feature, also isolate the work the diff adds and set an absolute budget for that work plus the end-to-end state the user waits for. Do not claim a ratio between unlike scenarios. The perf block names the metric, the interleaved probe, the trunk baseline measured first, and the rule with the number that fails. A PR that changes an interaction is review-gated. The operator reviews it in chat before merge, with screenshots and a video for visual interactions, or concrete API examples, compiler diagnostics and execution evidence for nonvisual interactions. A PR that changes no interaction writes `**Review gate.** None. <PR id> is not review-gated.` and no boxes under it.
+**Verification.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked (the **prove-it-works** principle skill). That sentence is the verification rule. Every verification block opens with it. The live block is mandatory. Ten lanes at the PR head drive the actual affected boundary, per **swarm** and `AGENTS.md`, concurrently or in batches within available capacity. Every required lane needs a result with its tested SHAs and method; a blocked or missing lane is not a pass. Each lane is one box with a concrete scenario, the evidence artifact it saves, and its pass predicate. One lane is the **Regression lane against trunk.** It runs the same load-bearing scenario on trunk and head. If trunk does not have the feature, the lane records that fact and gates the behavior the diff adds plus the end state the user waits for instead of inventing a trunk result. The perf gate is dual-sided. Trunk and head must both produce the named metric. If trunk lacks the feature, also isolate the work the diff adds and set an absolute budget for that work plus the end-to-end state the user waits for. Do not claim a ratio between unlike scenarios. The perf block names the metric, the interleaved probe, the trunk baseline measured first, and the rule with the number that fails. Independent review covers every changed interaction with screenshots and a video for visual interactions, or concrete API examples, compiler diagnostics and execution evidence for nonvisual interactions. Add an operator review gate only when the task completion boundary explicitly requires one. Otherwise write `**Review gate.** None. <PR id> has no operator review gate.` and no boxes under it. This does not remove independent verification or required branch reviews.
 
 **Control skill.** Pick it by surface. Browser and web UIs use `control-ui`; CLIs and TUIs use `control-cli`. For framework/library/compiler work, lanes use representative compiler consumers, demanded pure results and executed Task/decision or command/storage/query/service flows. Use meaningful Hspec examples and QuickCheck properties with independently specified expectations; avoid tautological tests. A PR touching multiple boundaries gets lanes on each. Name the actual runner and evidence even where no control skill applies. Performance probes follow `benchmark-checklist`, covering affected framework flows and consumer compilation costs when relevant. A missing usable driver is a risk in Appendix C, not a reason to claim a pass.
 
@@ -23,7 +23,7 @@
 
 One box is one unit of work. Every box names the evidence that checks it. A nested box is a sub-step of the box above it. Check a box only when its evidence exists, a file, a log line, a screenshot, a test run, or a SHA. The body is a how-to. The appendices explain and record.
 
-The program runs `.agents/workflow/playbooks/<execution playbook>.md`. <Who merges, and which PR ids are the operator's items that stop at merge-ready.>
+The program runs `.agents/workflow/playbooks/<execution playbook>.md`. <Who owns landing under the task completion policy, and any explicitly requested PRs that stop at merge-ready.>
 
 Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
@@ -31,7 +31,7 @@ Tests alone are not sufficient verification. A PR is verified only when its unit
 
 ### Arm the program
 
-- [ ] State the protocol and this plan to the operator, then stop. Start execution only on the operator's explicit go.
+- [ ] Record execution authority from the task completion policy. A standalone plan request stops until execution is authorized. An existing implementation grant needs no additional approval turn.
 - [ ] Trunk. Discover and record the actual trunk ref and workflow/skill paths from `AGENTS.md`.
 - [ ] Read these from trunk at program start. Re-read them at every tick.
   - [ ] `git show <trunk-ref>:.agents/workflow/playbooks/<execution playbook>.md`
@@ -39,7 +39,7 @@ Tests alone are not sufficient verification. A PR is verified only when its unit
   - [ ] `git show <trunk-ref>:<relevant verification skill path>`
   - [ ] `git show <trunk-ref>:.agents/workflow/playbooks/opening-a-pr.md`
   - [ ] `git show <trunk-ref>:<each other leaf skill path>`
-- [ ] Audit cadence. On the operator's go, use a supported supervision mechanism from `AGENTS.md` with a one-hour audit cadence and the tick prompt below. Record the actual mechanism and its lifetime; if persistence is unavailable, report that and supervise while the session is active. Never promise monitoring the host cannot supply.
+- [ ] Audit cadence. Once execution is authorized, use a supported supervision mechanism from `AGENTS.md` with a one-hour audit cadence and the tick prompt below. Record the actual mechanism and its lifetime; if persistence is unavailable, report that and supervise while the session is active. Never promise monitoring the host cannot supply.
 - [ ] Use this tick prompt, verbatim. "Re-read the execution playbook from trunk. Audit the operation against it and fix drift in this tick. Probe every active lane and judge progress by side effects only. Stand down a stuck lane and dispatch its replacement now. Then post a short status message to the operator in chat only when the audit found a tracked change that no earlier status message reported, such as a PR opened, a code-ready head, a round launched or closed, a verdict, a merge, a stuck agent and the action taken, a blocker added or cleared, or a decision only the operator can make. Name every such change and nothing else. Do not repeat a table, the merged list, or an unchanged blocker. If the audit found none, end the turn with no reply text. Either way, log this tick's row in your decision trail. The row names the items reported, or none."
 - [ ] On the operator's hold or stand-down, send every owner a zero-writes order at once.
 
@@ -50,12 +50,12 @@ Tests alone are not sufficient verification. A PR is verified only when its unit
   - [ ] <PR id> and <PR id> are independent and first. Both branch from the recorded trunk ref.
   - [ ] <PR id> after <PR id>.
 - [ ] Hold the file boundaries. <PR id or class> touches only `<glob>`.
-- [ ] Hold the review gate. <PR ids> change an interaction. They wait for the operator's review in chat with the boundary-appropriate evidence before merge.
+- [ ] Record any explicit operator review gates and their source. Use None when the task completion policy requires no additional human review. Keep independent evidence for every changed interaction.
 
 ### PR mechanics, for every PR
 
 - [ ] Confirm the repository and use `gh` consistently for PR operations.
-- [ ] Open the PR ready, never draft, per **Opening a PR**, using `gh pr create --base <base-branch>`. A stack child targets its parent branch.
+- [ ] Open the PR ready unless a draft was explicitly requested, per **Opening a PR**, using `gh pr create --base <base-branch>`. A stack child targets its parent branch.
 - [ ] Run the repo's lint and typecheck once before the PR-facing push. Push with hooks on.
 - [ ] Run `/deslop` before each commit and `/no-comments` before review.
 - [ ] Triage every review comment per `../../skills/babysit/references/review-triage.md`.
@@ -118,7 +118,7 @@ Each live lane uses an isolated checkout and fixtures/state at the declared PR h
 - [ ] Baseline. Record the trunk <value> first.
 - [ ] Rule. <Head against trunk, with the number that fails. If the scenarios differ, add absolute budgets for the diff-added work and the user-visible end state instead of an invalid ratio.>
 
-**Review gate.** <Visual. or Nonvisual.> The operator reviews before merge. Choose Visual when any visual interaction changes; use None only under the rule above.
+**Review gate.** <None., Visual., or Nonvisual.> Use None when no operator review gate was explicitly requested. For a requested gate, choose Visual when a visual interaction changes and Nonvisual otherwise. Omit the following boxes for None.
 
 - [ ] Present the operator with evidence from lane <n> at `<review-evidence-path>`. For nonvisual interactions, include API examples or diagnostics plus the relevant executed checks.
 - [ ] For a Visual gate, copy screenshots and record a 30 to 60 second video of the change, saving both under `.agents-state/<program>/review/`. Omit this box for a Nonvisual gate.
@@ -129,7 +129,7 @@ Each live lane uses an isolated checkout and fixtures/state at the declared PR h
 - [ ] Root's clean verdict at the exact head SHA.
 - [ ] Review triage done.
 - [ ] Current head/base, required checks/reviews and verified inputs still satisfy `.agents/workflow/playbooks/shipping.md`; any owner-controlled rebase has been independently revalidated.
-- [ ] <The owner squash-merges its own PR, or the root appends it to the base-branch stack and the operator lands it bottom-up.>
+- [ ] <The designated owner lands through Shipping, or delivers the verified stack at the explicitly requested no-merge boundary.>
 
 ## Close the program
 

@@ -3,6 +3,7 @@ import json
 import io
 import zipfile
 import os
+import tempfile
 from pathlib import Path
 import urllib.error
 import urllib.parse
@@ -315,7 +316,32 @@ def required_assets(plan):
         "neo-compatibility.json",
         "consumer.json",
     }
+    if plan.get("distribution_policy") == "installer-v1":
+        import candidate
+        registry = candidate.contract_registry_projection()["registry"]
+        installers = registry["roles"]["native_installers"]
+        names.update(installers["filename_prefix"] + target for target in installers["platforms"])
+        names.update(role["filename"] for role in registry["roles"]["bootstraps"].values())
+        names.update(registry["metadata_files"].values())
+        names.update(("candidate.json", "candidate.locator"))
     return names
+
+
+def verify_candidate(repo, plan, revision, directory, names):
+    import candidate
+    with tempfile.TemporaryDirectory(dir=directory) as temp:
+        projection = Path(temp)
+        for name in names - {"candidate.locator"}:
+            os.link(directory / name, projection / name)
+        parsed = candidate.parse_candidate((projection / "candidate.json").read_bytes(), projection)
+        bound = candidate.bind_source(parsed, repo.root)
+        if (bound.context_kind != "release" or parsed.core["context"]["plan_id"] != plan["id"]
+                or bound.build_revision != revision or bound.change_source != plan["source_sha"]
+                or bound.version != plan["version"]):
+            raise ValueError("Installer candidate differs from the frozen release")
+        locator = f"{bound.version}@{bound.candidate_id}\n".encode("ascii")
+        if (directory / "candidate.locator").read_bytes() != locator:
+            raise ValueError("Installer locator differs from the verified release candidate")
 
 
 def bundle_bytes(files):
@@ -383,6 +409,8 @@ def seal_artifacts(repo, plan, revision, directory):
         if not path.is_file() or path.is_symlink():
             raise ValueError("Release asset is not a regular file")
         hashes[name] = release.digest(path.read_bytes())
+    if plan.get("distribution_policy") == "installer-v1":
+        verify_candidate(repo, plan, revision, directory, names)
     prefix = release.group_config(plan["group"])["asset_prefix"]
     for target in release.targets_for(plan):
         receipt = json.loads((directory / ("receipt-" + target + ".json")).read_text())
@@ -571,6 +599,7 @@ def select_work(
                     "attempt": plan["id"],
                     "revision": revision,
                     "reuse": reuse,
+                    **({"distribution_policy": plan["distribution_policy"]} if "distribution_policy" in plan else {}),
                     **(
                         {"target_policy": plan["target_policy"]}
                         if "target_policy" in plan

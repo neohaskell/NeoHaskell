@@ -1,0 +1,21 @@
+{
+  "schema": 1,
+  "generator_source_commit": "033ae4a570686cd885ca14c6595997d9498d5287",
+  "generator_binary_version": "neo 0.17.1",
+  "generator_binary_sha256": "ebd629cca0ba6334868ac34a59ed130bf145145efc5822b76181b2c965d950d0",
+  "generator_command": [
+    "neo",
+    "--ci",
+    "new",
+    "neoctl"
+  ],
+  "generator_environment": {
+    "NEO_SKIP_NETWORK": "1"
+  },
+  "generated_project_commit": "3b6daadd755dceb42528c09800c38a2b2e9b58a3",
+  "generated_git_tree_sha1": "3ccfcb9e015486ae03067bce3ac70e1a71a986a2",
+  "generated_framework_pin": {
+    "repository": "https://github.com/neohaskell/neohaskell.git",
+    "revision": "ea75873fbd0da7da39124c82f328c2e70bdca629"
+  }
+}

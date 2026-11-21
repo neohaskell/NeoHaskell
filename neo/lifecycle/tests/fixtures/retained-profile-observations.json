@@ -1,0 +1,464 @@
+{
+  "cases": [
+    {
+      "after": {
+        "candidate-A": {
+          "device": 191,
+          "inode": 1866035,
+          "target": "/nix/store/c6acyrja1hllzyjvgc32chrx5ywrjsnd-a",
+          "uid": 1001
+        },
+        "prepared": {
+          "device": 191,
+          "inode": 1866402,
+          "target": "prepared-1-link",
+          "uid": 1001
+        },
+        "prepared-1-link": {
+          "device": 191,
+          "inode": 1866383,
+          "target": "/nix/store/c6acyrja1hllzyjvgc32chrx5ywrjsnd-a",
+          "uid": 1001
+        }
+      },
+      "before": {},
+      "name": "baseline-combined-A",
+      "pair": "/nix/store/c6acyrja1hllzyjvgc32chrx5ywrjsnd-a",
+      "root": "candidate-A"
+    },
+    {
+      "after": {
+        "candidate-A": {
+          "device": 191,
+          "inode": 1866035,
+          "target": "/nix/store/c6acyrja1hllzyjvgc32chrx5ywrjsnd-a",
+          "uid": 1001
+        },
+        "candidate-B": {
+          "device": 191,
+          "inode": 1866407,
+          "target": "/nix/store/wjbc89q3hplnihv5m025dz4j51pfaz0f-payload-B",
+          "uid": 1001
+        },
+        "prepared": {
+          "device": 191,
+          "inode": 1866428,
+          "target": "prepared-2-link",
+          "uid": 1001
+        },
+        "prepared-1-link": {
+          "device": 191,
+          "inode": 1866383,
+          "target": "/nix/store/c6acyrja1hllzyjvgc32chrx5ywrjsnd-a",
+          "uid": 1001
+        },
+        "prepared-2-link": {
+          "device": 191,
+          "inode": 1866420,
+          "target": "/nix/store/wjbc89q3hplnihv5m025dz4j51pfaz0f-payload-B",
+          "uid": 1001
+        }
+      },
+      "before": {
+        "candidate-A": {
+          "device": 191,
+          "inode": 1866035,
+          "target": "/nix/store/c6acyrja1hllzyjvgc32chrx5ywrjsnd-a",
+          "uid": 1001
+        },
+        "prepared": {
+          "device": 191,
+          "inode": 1866402,
+          "target": "prepared-1-link",
+          "uid": 1001
+        },
+        "prepared-1-link": {
+          "device": 191,
+          "inode": 1866383,
+          "target": "/nix/store/c6acyrja1hllzyjvgc32chrx5ywrjsnd-a",
+          "uid": 1001
+        }
+      },
+      "name": "combined-B",
+      "pair": "/nix/store/wjbc89q3hplnihv5m025dz4j51pfaz0f-payload-B",
+      "root": "candidate-B"
+    },
+    {
+      "after": {
+        "candidate-A": {
+          "device": 191,
+          "inode": 1866383,
+          "target": "/nix/store/c6acyrja1hllzyjvgc32chrx5ywrjsnd-a",
+          "uid": 1001
+        },
+        "candidate-B": {
+          "device": 191,
+          "inode": 1866402,
+          "target": "/nix/store/wjbc89q3hplnihv5m025dz4j51pfaz0f-payload-B",
+          "uid": 1001
+        },
+        "prepared": {
+          "device": 191,
+          "inode": 1866430,
+          "target": "prepared-3-link",
+          "uid": 1001
+        },
+        "prepared-2-link": {
+          "device": 191,
+          "inode": 1866420,
+          "target": "/nix/store/wjbc89q3hplnihv5m025dz4j51pfaz0f-payload-B",
+          "uid": 1001
+        },
+        "prepared-3-link": {
+          "device": 191,
+          "inode": 1866037,
+          "target": "/nix/store/c6acyrja1hllzyjvgc32chrx5ywrjsnd-a",
+          "uid": 1001
+        }
+      },
+      "before": {
+        "candidate-A": {
+          "device": 191,
+          "inode": 1866035,
+          "target": "/nix/store/c6acyrja1hllzyjvgc32chrx5ywrjsnd-a",
+          "uid": 1001
+        },
+        "candidate-B": {
+          "device": 191,
+          "inode": 1866402,
+          "target": "/nix/store/wjbc89q3hplnihv5m025dz4j51pfaz0f-payload-B",
+          "uid": 1001
+        },
+        "prepared": {
+          "device": 191,
+          "inode": 1866415,
+          "target": "prepared-2-link",
+          "uid": 1001
+        },
+        "prepared-2-link": {
+          "device": 191,
+          "inode": 1866420,
+          "target": "/nix/store/wjbc89q3hplnihv5m025dz4j51pfaz0f-payload-B",
+          "uid": 1001
+        }
+      },
+      "name": "restore-A",
+      "pair": "/nix/store/c6acyrja1hllzyjvgc32chrx5ywrjsnd-a",
+      "root": "candidate-A"
+    },
+    {
+      "after": {
+        "candidate": {
+          "device": 191,
+          "inode": 1866749,
+          "target": "/nix/store/v8xgi0ih26njyy0b0rip8fbdivxi4kjd-payload-adopted",
+          "uid": 1001
+        },
+        "prepared": {
+          "device": 191,
+          "inode": 1866721,
+          "target": "prepared-1-link.tmp-6324-846930886",
+          "uid": 1001
+        },
+        "prepared-1-link.tmp-6324-846930886": {
+          "device": 191,
+          "inode": 1866747,
+          "target": "/nix/store/v8xgi0ih26njyy0b0rip8fbdivxi4kjd-payload-adopted",
+          "uid": 1001
+        }
+      },
+      "before": {
+        "candidate": {
+          "device": 191,
+          "inode": 1866702,
+          "target": "/nix/store/v8xgi0ih26njyy0b0rip8fbdivxi4kjd-payload-adopted",
+          "uid": 1001
+        },
+        "prepared-1-link.tmp-6324-846930886": {
+          "device": 191,
+          "inode": 1866747,
+          "target": "/nix/store/v8xgi0ih26njyy0b0rip8fbdivxi4kjd-payload-adopted",
+          "uid": 1001
+        }
+      },
+      "name": "adopt-generation-replay",
+      "pair": "/nix/store/v8xgi0ih26njyy0b0rip8fbdivxi4kjd-payload-adopted",
+      "root": "candidate"
+    },
+    {
+      "after": {
+        "candidate": {
+          "device": 191,
+          "inode": 1866749,
+          "target": "/nix/store/v8xgi0ih26njyy0b0rip8fbdivxi4kjd-payload-adopted",
+          "uid": 1001
+        },
+        "candidate-A": {
+          "device": 191,
+          "inode": 1866565,
+          "target": "/nix/store/c6acyrja1hllzyjvgc32chrx5ywrjsnd-a",
+          "uid": 1001
+        },
+        "prepared": {
+          "device": 191,
+          "inode": 1866705,
+          "target": "prepared-2-link",
+          "uid": 1001
+        },
+        "prepared-1-link.tmp-6324-846930886": {
+          "device": 191,
+          "inode": 1867761,
+          "target": "/nix/store/v8xgi0ih26njyy0b0rip8fbdivxi4kjd-payload-adopted",
+          "uid": 1001
+        },
+        "prepared-2-link": {
+          "device": 191,
+          "inode": 1866682,
+          "target": "/nix/store/c6acyrja1hllzyjvgc32chrx5ywrjsnd-a",
+          "uid": 1001
+        }
+      },
+      "before": {
+        "candidate": {
+          "device": 191,
+          "inode": 1866749,
+          "target": "/nix/store/v8xgi0ih26njyy0b0rip8fbdivxi4kjd-payload-adopted",
+          "uid": 1001
+        },
+        "prepared": {
+          "device": 191,
+          "inode": 1866721,
+          "target": "prepared-1-link.tmp-6324-846930886",
+          "uid": 1001
+        },
+        "prepared-1-link.tmp-6324-846930886": {
+          "device": 191,
+          "inode": 1867761,
+          "target": "/nix/store/v8xgi0ih26njyy0b0rip8fbdivxi4kjd-payload-adopted",
+          "uid": 1001
+        }
+      },
+      "name": "adopted-restored-A",
+      "pair": "/nix/store/c6acyrja1hllzyjvgc32chrx5ywrjsnd-a",
+      "root": "candidate-A"
+    },
+    {
+      "after": {
+        "candidate-A": {
+          "device": 191,
+          "inode": 1866737,
+          "target": "/nix/store/c6acyrja1hllzyjvgc32chrx5ywrjsnd-a",
+          "uid": 1001
+        },
+        "prepared": {
+          "device": 191,
+          "inode": 1866747,
+          "target": "prepared-2-link",
+          "uid": 1001
+        },
+        "prepared-1-link.tmp-6579-1804289383": {
+          "device": 191,
+          "inode": 1867762,
+          "target": "/nix/store/qjrrirkivgrn8wz2d9pi0ma5r8cnrc3h-payload-missing-current-B",
+          "uid": 1001
+        },
+        "prepared-2-link": {
+          "device": 191,
+          "inode": 1866740,
+          "target": "/nix/store/c6acyrja1hllzyjvgc32chrx5ywrjsnd-a",
+          "uid": 1001
+        }
+      },
+      "before": {
+        "prepared": {
+          "device": 191,
+          "inode": 1867768,
+          "target": "prepared-1-link.tmp-6579-1804289383",
+          "uid": 1001
+        },
+        "prepared-1-link.tmp-6579-1804289383": {
+          "device": 191,
+          "inode": 1867762,
+          "target": "/nix/store/qjrrirkivgrn8wz2d9pi0ma5r8cnrc3h-payload-missing-current-B",
+          "uid": 1001
+        }
+      },
+      "name": "restore-retained-A-offline",
+      "pair": "/nix/store/c6acyrja1hllzyjvgc32chrx5ywrjsnd-a",
+      "root": "candidate-A"
+    },
+    {
+      "after": {
+        "candidate-A": {
+          "device": 191,
+          "inode": 1866383,
+          "target": "/nix/store/c6acyrja1hllzyjvgc32chrx5ywrjsnd-a",
+          "uid": 1001
+        },
+        "candidate-pending.tmp-5352-1804289383": {
+          "device": 191,
+          "inode": 1866456,
+          "target": "/nix/store/xdvxvv2k3y2amrv94lzp1d090faw38pv-payload-kill-outlink-1",
+          "uid": 1001
+        },
+        "prepared": {
+          "device": 191,
+          "inode": 1866430,
+          "target": "prepared-9-link",
+          "uid": 1001
+        },
+        "prepared-9-link": {
+          "device": 191,
+          "inode": 1866402,
+          "target": "/nix/store/c6acyrja1hllzyjvgc32chrx5ywrjsnd-a",
+          "uid": 1001
+        }
+      },
+      "before": {
+        "candidate-A": {
+          "device": 191,
+          "inode": 1866383,
+          "target": "/nix/store/c6acyrja1hllzyjvgc32chrx5ywrjsnd-a",
+          "uid": 1001
+        },
+        "prepared": {
+          "device": 191,
+          "inode": 1866430,
+          "target": "prepared-9-link",
+          "uid": 1001
+        },
+        "prepared-9-link": {
+          "device": 191,
+          "inode": 1866402,
+          "target": "/nix/store/c6acyrja1hllzyjvgc32chrx5ywrjsnd-a",
+          "uid": 1001
+        }
+      },
+      "name": "kill-outlink-1",
+      "pair": "/nix/store/xdvxvv2k3y2amrv94lzp1d090faw38pv-payload-kill-outlink-1",
+      "root": "candidate-pending"
+    },
+    {
+      "after": {
+        "candidate-A": {
+          "device": 191,
+          "inode": 1866547,
+          "target": "/nix/store/c6acyrja1hllzyjvgc32chrx5ywrjsnd-a",
+          "uid": 1001
+        },
+        "candidate-pending": {
+          "device": 191,
+          "inode": 1866680,
+          "target": "/nix/store/knji8hgl1mdqspn98q2m4pllnvilh81n-payload-kill-generation-1",
+          "uid": 1001
+        },
+        "prepared": {
+          "device": 191,
+          "inode": 1866650,
+          "target": "prepared-15-link",
+          "uid": 1001
+        },
+        "prepared-15-link": {
+          "device": 191,
+          "inode": 1866430,
+          "target": "/nix/store/c6acyrja1hllzyjvgc32chrx5ywrjsnd-a",
+          "uid": 1001
+        },
+        "prepared-16-link.tmp-5592-846930886": {
+          "device": 191,
+          "inode": 1866559,
+          "target": "/nix/store/knji8hgl1mdqspn98q2m4pllnvilh81n-payload-kill-generation-1",
+          "uid": 1001
+        }
+      },
+      "before": {
+        "candidate-A": {
+          "device": 191,
+          "inode": 1866547,
+          "target": "/nix/store/c6acyrja1hllzyjvgc32chrx5ywrjsnd-a",
+          "uid": 1001
+        },
+        "prepared": {
+          "device": 191,
+          "inode": 1866650,
+          "target": "prepared-15-link",
+          "uid": 1001
+        },
+        "prepared-15-link": {
+          "device": 191,
+          "inode": 1866430,
+          "target": "/nix/store/c6acyrja1hllzyjvgc32chrx5ywrjsnd-a",
+          "uid": 1001
+        }
+      },
+      "name": "kill-generation-1",
+      "pair": "/nix/store/knji8hgl1mdqspn98q2m4pllnvilh81n-payload-kill-generation-1",
+      "root": "candidate-pending"
+    },
+    {
+      "after": {
+        ".0_prepared": {
+          "device": 191,
+          "inode": 1866680,
+          "target": "prepared-22-link",
+          "uid": 1001
+        },
+        "candidate-A": {
+          "device": 191,
+          "inode": 1866478,
+          "target": "/nix/store/c6acyrja1hllzyjvgc32chrx5ywrjsnd-a",
+          "uid": 1001
+        },
+        "candidate-pending": {
+          "device": 191,
+          "inode": 1866536,
+          "target": "/nix/store/qw4l65cjkx9yqzik266yc1mvi8kysgnn-payload-kill-profile-1",
+          "uid": 1001
+        },
+        "prepared": {
+          "device": 191,
+          "inode": 1866529,
+          "target": "prepared-21-link",
+          "uid": 1001
+        },
+        "prepared-21-link": {
+          "device": 191,
+          "inode": 1866430,
+          "target": "/nix/store/c6acyrja1hllzyjvgc32chrx5ywrjsnd-a",
+          "uid": 1001
+        },
+        "prepared-22-link": {
+          "device": 191,
+          "inode": 1866490,
+          "target": "/nix/store/qw4l65cjkx9yqzik266yc1mvi8kysgnn-payload-kill-profile-1",
+          "uid": 1001
+        }
+      },
+      "before": {
+        "candidate-A": {
+          "device": 191,
+          "inode": 1866478,
+          "target": "/nix/store/c6acyrja1hllzyjvgc32chrx5ywrjsnd-a",
+          "uid": 1001
+        },
+        "prepared": {
+          "device": 191,
+          "inode": 1866529,
+          "target": "prepared-21-link",
+          "uid": 1001
+        },
+        "prepared-21-link": {
+          "device": 191,
+          "inode": 1866430,
+          "target": "/nix/store/c6acyrja1hllzyjvgc32chrx5ywrjsnd-a",
+          "uid": 1001
+        }
+      },
+      "name": "kill-profile-1",
+      "pair": "/nix/store/qw4l65cjkx9yqzik266yc1mvi8kysgnn-payload-kill-profile-1",
+      "root": "candidate-pending"
+    }
+  ],
+  "protocol_verdict": "INCONCLUSIVE",
+  "source_sha256": "428d4892820b5864067e9bd710421fc96a3f9b0037a7187eb2a2c376b4696875"
+}

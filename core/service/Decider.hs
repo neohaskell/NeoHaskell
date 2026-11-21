@@ -3,12 +3,16 @@ module Decider (
   Decision (..),
   DecisionContext (..),
   CommandResult (..),
+  KeyState (..),
 
   -- * Execution
   runDecision,
+  runDecisionWithKeys,
 
   -- * Smart Constructors
   generateUuid,
+  protectValue,
+  transformValue,
   generateDeterministicUuid,
   acceptAny,
   acceptNew,
@@ -21,14 +25,21 @@ import Applicable
 import Array (Array)
 import Array qualified
 import Basics
+import Erasable.Cipher qualified as Cipher
+import Erasable.Internal (KeyState (..), NewKey (..), ProtectedValue (..))
+import Erasable.Internal qualified as Erasable
 import EventVariantOf (EventVariantOf (..))
 import Control.Monad qualified as Monad
 import Log qualified
+import Json qualified
+import Result (Result (..))
 import Mappable
 import Service.Event (InsertionType (..), StreamPosition)
 import Task (Task)
 import Task qualified
 import Text (Text)
+import Text qualified
+import Maybe (Maybe (..))
 import Thenable
 import ToText (toText)
 import Uuid (Uuid)
@@ -57,6 +68,8 @@ data Decision a where
   Return :: a -> Decision a
   Bind :: Decision a -> (a -> Decision b) -> Decision b
   GenUuid :: Decision Uuid
+  ProtectValue :: Json.Value -> Decision ProtectedValue
+  TransformValue :: (Json.FromJSON input, Json.ToJSON output) => (input -> output) -> ProtectedValue -> Decision ProtectedValue
   Accept :: InsertionType -> Array a -> Decision a
   Reject :: Text -> Decision a
 
@@ -87,26 +100,86 @@ data DecisionContext = DecisionContext
 -- The Decision must terminate with either 'Accept' or 'Reject'. A bare 'Return'
 -- or an 'Accept'/'Reject' in the middle of a chain will result in an error.
 runDecision :: (HasCallStack) => DecisionContext -> Decision a -> Task Text (CommandResult a)
-runDecision ctx = go
- where
-  go :: forall a. (HasCallStack) => Decision a -> Task Text (CommandResult a)
-  go (Return _) = Task.throw "Decision didn't terminate with accept/reject"
-  go (Bind m f) = case m of
+runDecision ctx decision = do
+  (result, _) <- runDecisionWithKeys ctx (\_ -> Task.throw "Erasable key lookup is unavailable") decision
+  Task.yield result
+
+
+runDecisionWithKeys ::
+  (HasCallStack) =>
+  DecisionContext ->
+  (Text -> Task Text KeyState) ->
+  Decision a ->
+  Task Text (CommandResult a, Array NewKey)
+runDecisionWithKeys ctx lookupKey decision = runDecisionStep ctx lookupKey Array.empty decision
+
+
+runDecisionStep ::
+  forall a.
+  (HasCallStack) =>
+  DecisionContext ->
+  (Text -> Task Text KeyState) ->
+  Array NewKey ->
+  Decision a ->
+  Task Text (CommandResult a, Array NewKey)
+runDecisionStep ctx lookupKey keys decision = case decision of
+  Return _ -> Task.throw "Decision didn't terminate with accept/reject"
+  Bind m f -> case m of
     GenUuid -> do
       uuid <- ctx.genUuid
-      f uuid |> go
+      f uuid |> runDecisionStep ctx lookupKey keys
+    ProtectValue jsonValue -> do
+      uuid <- ctx.genUuid
+      key <- Cipher.generateKey
+      let reference = Uuid.toText uuid
+      let plaintext = jsonValue |> Json.encodeText |> Text.toBytes
+      let context = "decision"
+      envelope <- Cipher.seal key (Erasable.contextBytes reference context) plaintext
+      let protected = ProtectedValue {reference, context, envelope}
+      let newKey = NewKey {reference, key}
+      f protected |> runDecisionStep ctx lookupKey (keys |> Array.push newKey)
+    TransformValue transform protected -> do
+      keyState <-
+        case Array.find (\entry -> entry.reference == protected.reference) keys of
+          Just entry -> Task.yield (Active entry.key)
+          Nothing -> lookupKey protected.reference
+      case keyState of
+        Missing -> Task.throw "Erasable key record is missing"
+        Erased -> f protected |> runDecisionStep ctx lookupKey keys
+        Active key -> do
+          bytes <-
+            case Cipher.open key (Erasable.contextBytes protected.reference protected.context) protected.envelope of
+              Err err -> Task.throw err
+              Ok value -> Task.yield value
+          source <-
+            case Json.decodeBytes bytes of
+              Err _ -> Task.throw "Erasable source is not valid JSON"
+              Ok value -> Task.yield value
+          let transformed = transform source |> Json.toJSON |> Json.encodeText |> Text.toBytes
+          envelope <- Cipher.seal key (Erasable.contextBytes protected.reference protected.context) transformed
+          f (protected {envelope}) |> runDecisionStep ctx lookupKey keys
     Accept _ _ -> Task.throw "Accept must be the last statement"
     Reject _ -> Task.throw "Reject must be the last statement"
-    Return a -> go (f a)
-    Bind m' f' -> go (Bind m' (\x -> Bind (f' x) f))
-  go GenUuid = Task.throw "Unbound GenUuid"
-  go (Accept s events) = do
+    Return a -> runDecisionStep ctx lookupKey keys (f a)
+    Bind m' f' -> runDecisionStep ctx lookupKey keys (Bind m' (\x -> Bind (f' x) f))
+  GenUuid -> Task.throw "Unbound GenUuid"
+  ProtectValue _ -> Task.throw "Unbound ProtectValue"
+  TransformValue _ _ -> Task.throw "Unbound TransformValue"
+  Accept s events -> do
     let eventCount = Array.length events
     Log.debug [fmt|Decision: accepted with #{toText eventCount} event(s)|] |> Task.ignoreError
-    AcceptCommand s events |> Task.yield
-  go (Reject reason) = do
+    (AcceptCommand s events, keys) |> Task.yield
+  Reject reason -> do
     Log.debug "Decision: rejected" |> Task.ignoreError
-    RejectCommand reason |> Task.yield
+    (RejectCommand reason, Array.empty) |> Task.yield
+
+
+protectValue :: Json.Value -> Decision ProtectedValue
+protectValue value = ProtectValue value
+
+
+transformValue :: (Json.FromJSON input, Json.ToJSON output) => (input -> output) -> ProtectedValue -> Decision ProtectedValue
+transformValue transform protected = TransformValue transform protected
 
 
 -- | Generate a UUID within a Decision context.

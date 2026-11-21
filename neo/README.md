@@ -17,6 +17,8 @@ The NeoHaskell CLI tool.
 - **Git**: Required for project initialization and the locking system.
 - **direnv** (Optional): Recommended for automatic editor integration (HLS).
 
+The release installer uses an existing multi-user Nix daemon and reviews any required cache setup. [Configure Nix for NeoHaskell](nix-setup.md).
+
 ## Installation
 
 ```bash
@@ -24,6 +26,12 @@ cargo install --path .
 ```
 
 ## Usage
+
+### Run the local control service
+
+The release installer includes `neoctl`. Run `neoctl` to start the HTTP service on
+`127.0.0.1:8080`. From another terminal, run `curl http://127.0.0.1:8080/health`
+to check it. Press Ctrl-C in the first terminal to stop it.
 
 ### Create a new project
 ```bash
@@ -34,6 +42,9 @@ neo new
 ### Build the project
 ```bash
 neo build
+
+# Regenerate build files without compiling
+neo generate
 ```
 
 ### Run the project

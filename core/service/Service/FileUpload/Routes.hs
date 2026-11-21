@@ -142,12 +142,10 @@ handleUpload config blobStore request = Log.withScope [("component", "FileUpload
             }
     Nothing -> pass  -- All types allowed
 
-  -- 3. Sanitize and truncate filename (max 255 chars for filesystem compatibility)
-  -- Honor storeOriginalFilename config - use empty string if disabled
   let maxFilenameLength = 255
-  let sanitizedFilename = case config.storeOriginalFilename of
-        True -> request.filename |> Text.left maxFilenameLength
-        False -> ""  -- Don't store/return original filename
+  let sanitizedFilename = if config.storeOriginalFilename
+        then request.filename |> Text.left maxFilenameLength
+        else ""
 
   -- 4. Generate FileRef and BlobKey (both random UUIDs)
   fileRefUuid <- Uuid.generate

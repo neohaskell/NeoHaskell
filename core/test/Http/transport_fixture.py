@@ -313,9 +313,12 @@ P.print ("UNKNOWN" :: P.String, case unknown of P.Just (Result.Err (H.ResponseTo
 Conc.threadDelay 3000000
 """
     if mode == "secure-internal-body":
-        text = ":module + *Http.Client\n" + text.replace(
-            "Task.runResult (R.sendRaw method", "sendSecureRawIO method").replace(
-            ")) B.empty)", ")) B.empty")
+        text = (
+            ":module + *Http.Client\n"
+            "let flattenSecure action = do { outer <- Task.runResult action; "
+            "P.pure (case outer of Result.Ok inner -> inner; Result.Err error -> Result.Err error) }\n"
+            + text.replace("Task.runResult (R.sendRaw method", "flattenSecure (sendSecureRaw method")
+        )
     output = repl(fixture, directory, mode, text, env)
     for name in ("EXACT", "ZERO", "HEAD", "ZERO_REJECTED", "OVER", "ADVERTISED", "DECOMPRESSED", "CHUNKED", "UNKNOWN"):
         assert f'("{name}",True)' in output, "REGRESSION_ASSERT:body-limit:" + name

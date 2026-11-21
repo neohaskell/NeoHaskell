@@ -1,0 +1,9 @@
+{
+  "name": "neoctl",
+  "version": "0.18.1",
+  "neo-version": "main",
+  "description": "NeoHaskell control service",
+  "author": "NeoHaskell contributors",
+  "license": "MIT",
+  "type": "executable"
+}

@@ -1,17 +1,19 @@
 module Main (main) where
 
 import Prelude (IO)
-import Control.Exception qualified as GhcException
+import IO qualified
 import Log qualified
 import Task qualified
 
 import Service.ApplicationSpec qualified
+import Service.AuthSpec qualified
 import Service.CommandExecutor.THSpec qualified
 import Service.CommandHandlerSpec qualified
 import Service.CommandSpec qualified
 import Service.EventStore.InMemorySpec qualified
 import Service.EventStore.SimpleSpec qualified
 import Service.EventStore.Postgres.PoolBudgetSpec qualified
+import Service.EventStore.Postgres.ErasableKeysSpec qualified
 import Service.Infra.Postgres.ConnectionConfigSpec qualified
 import Service.EventStore.Postgres.SubscriptionStoreSpec qualified
 import Service.EventStore.Postgres.NotificationsSpec qualified
@@ -19,6 +21,7 @@ import Service.EventStore.PostgresSpec qualified
 import Service.FileUpload.BlobStore.LocalSpec qualified
 import Service.FileUpload.ContentDedupSpec qualified
 import Service.FileUpload.CoreSpec qualified
+import Service.FileUpload.CreateSpec qualified
 import Service.FileUpload.DownloadSpec qualified
 import Service.FileUpload.FileStateStore.InMemorySpec qualified
 import Service.FileUpload.FileStateStore.PostgresSpec qualified
@@ -31,6 +34,7 @@ import Service.Integration.SelectionSpec qualified
 import Service.Integration.WireupSpec qualified
 import Service.Entity.THSpec qualified
 import Service.Event.THSpec qualified
+import Service.Event.EntityEventsSpec qualified
 import Service.Query.DefinitionSpec qualified
 import Service.Query.EndpointSpec qualified
 import Service.Query.RegistrySpec qualified
@@ -47,6 +51,7 @@ import Service.Transport.Mcp.JsonRpcSpec qualified
 import Service.Transport.Mcp.ProtocolSpec qualified
 import Service.Transport.Mcp.ResponseSpec qualified
 import Service.Transport.WebSpec qualified
+import Service.Transport.Web.BindSpec qualified
 import Service.Transport.Web.HealthCheckSpec qualified
 import Service.Transport.Web.ReadinessRouteSpec qualified
 import Service.Command.AuthSpec qualified
@@ -54,6 +59,7 @@ import Service.Command.CanAccessSpec qualified
 import Service.Transport.Web.CommandAuthSpec qualified
 import Service.Transport.Web.InvalidTokenSpec qualified
 import Service.Transport.Web.RequestBodyFailureSpec qualified
+import Service.Transport.Web.AcronymRoutingSpec qualified
 import Service.CommandExecutor.AuditLoggingSpec qualified
 import Service.CommandExecutor.MetadataSpec qualified
 import Service.CommandExecutor.StorageMetadataSpec qualified
@@ -63,18 +69,20 @@ import Test.Hspec qualified as Hspec
 
 
 main :: IO ()
-main = Hspec.hspec serviceSpecs `GhcException.finally` Task.runOrPanic Log.finish
+main = IO.finally (Hspec.hspec serviceSpecs) (Task.runOrPanic Log.finish)
 
 
 serviceSpecs :: Hspec.Spec
 serviceSpecs = do
   Hspec.describe "Service.Application" Service.ApplicationSpec.spec
+  Hspec.describe "Service.Auth" Service.AuthSpec.spec
   Hspec.describe "Service.CommandExecutor.TH" Service.CommandExecutor.THSpec.spec
   Hspec.describe "Service.CommandHandler" Service.CommandHandlerSpec.spec
   Hspec.describe "Service.Command" Service.CommandSpec.spec
   Hspec.describe "Service.EventStore.InMemory" Service.EventStore.InMemorySpec.spec
   Hspec.describe "Service.EventStore.Simple" Service.EventStore.SimpleSpec.spec
   Hspec.describe "Service.EventStore.Postgres.PoolBudget" Service.EventStore.Postgres.PoolBudgetSpec.spec
+  Hspec.describe "Service.EventStore.Postgres.ErasableKeys" Service.EventStore.Postgres.ErasableKeysSpec.spec
   Hspec.describe "Service.Infra.Postgres.ConnectionConfig" Service.Infra.Postgres.ConnectionConfigSpec.spec
   Hspec.describe "Service.EventStore.Postgres.SubscriptionStore" Service.EventStore.Postgres.SubscriptionStoreSpec.spec
   Hspec.describe "Service.EventStore.Postgres" Service.EventStore.PostgresSpec.spec
@@ -82,6 +90,7 @@ serviceSpecs = do
   Hspec.describe "Service.FileUpload.BlobStore.Local" Service.FileUpload.BlobStore.LocalSpec.spec
   Hspec.describe "Service.FileUpload.ContentDedup" Service.FileUpload.ContentDedupSpec.spec
   Hspec.describe "Service.FileUpload.Core" Service.FileUpload.CoreSpec.spec
+  Hspec.describe "Service.FileUpload.Create" Service.FileUpload.CreateSpec.spec
   Hspec.describe "Service.FileUpload.Download" Service.FileUpload.DownloadSpec.spec
   Hspec.describe "Service.FileUpload.FileStateStore.InMemory" Service.FileUpload.FileStateStore.InMemorySpec.spec
   Hspec.describe "Service.FileUpload.FileStateStore.Postgres" Service.FileUpload.FileStateStore.PostgresSpec.spec
@@ -94,6 +103,7 @@ serviceSpecs = do
   Hspec.describe "Service.Integration.Wireup" Service.Integration.WireupSpec.spec
   Hspec.describe "Service.Entity.TH" Service.Entity.THSpec.spec
   Hspec.describe "Service.Event.TH" Service.Event.THSpec.spec
+  Hspec.describe "Service.Event.EntityEvents" Service.Event.EntityEventsSpec.spec
   Hspec.describe "Service.Query.Definition" Service.Query.DefinitionSpec.spec
   Hspec.describe "Service.Query.Endpoint" Service.Query.EndpointSpec.spec
   Hspec.describe "Service.Query.Registry" Service.Query.RegistrySpec.spec
@@ -110,6 +120,7 @@ serviceSpecs = do
   Hspec.describe "Service.Transport.Mcp.Protocol" Service.Transport.Mcp.ProtocolSpec.spec
   Hspec.describe "Service.Transport.Mcp.Response" Service.Transport.Mcp.ResponseSpec.spec
   Hspec.describe "Service.Transport.Web" Service.Transport.WebSpec.spec
+  Hspec.describe "Service.Transport.Web.Bind" Service.Transport.Web.BindSpec.spec
   Hspec.describe "Health Check" Service.Transport.Web.HealthCheckSpec.spec
   Hspec.describe "Service.Transport.Web.ReadinessRoute" Service.Transport.Web.ReadinessRouteSpec.spec
   Hspec.describe "Service.Command.Auth" Service.Command.AuthSpec.spec
@@ -117,6 +128,7 @@ serviceSpecs = do
   Hspec.describe "Service.Transport.Web.CommandAuth" Service.Transport.Web.CommandAuthSpec.spec
   Hspec.describe "Service.Transport.Web.InvalidToken" Service.Transport.Web.InvalidTokenSpec.spec
   Hspec.describe "Service.Transport.Web.RequestBodyFailure" Service.Transport.Web.RequestBodyFailureSpec.spec
+  Hspec.describe "Service.Transport.Web.AcronymRouting" Service.Transport.Web.AcronymRoutingSpec.spec
   Hspec.describe "Service.CommandExecutor.AuditLogging" Service.CommandExecutor.AuditLoggingSpec.spec
   Hspec.describe "Service.CommandExecutor.Metadata" Service.CommandExecutor.MetadataSpec.spec
   Hspec.describe "Service.CommandExecutor.StorageMetadata" Service.CommandExecutor.StorageMetadataSpec.spec

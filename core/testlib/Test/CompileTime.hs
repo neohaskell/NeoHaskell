@@ -8,7 +8,6 @@ module Test.CompileTime (
 ) where
 
 import Control.DeepSeq (NFData (..), force)
-import Control.Exception (evaluate)
 import Core
 import Task qualified
 import Test.ShouldNotTypecheck qualified as ShouldNotTypecheck
@@ -53,7 +52,5 @@ shouldNotTypecheck expression = do
 -- @
 shouldTypecheck :: forall value. (NFData value) => value -> Task Text Unit
 shouldTypecheck expression = do
-  -- Force evaluation to ensure the expression is well-typed
-  -- If it doesn't typecheck, compilation will fail
-  _ <- Task.fromIO (evaluate (force expression))
+  _ <- Task.evaluate (force expression)
   Task.yield unit

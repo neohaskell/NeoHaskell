@@ -1,6 +1,9 @@
 module Testbed.Cart.Core (
   CartEntity (..),
   CartEvent (..),
+  CartCreatedPayload (..),
+  ItemAddedPayload (..),
+  IBANSavedPayload (..),
   initialState,
 ) where
 
@@ -14,7 +17,8 @@ import Uuid qualified
 data CartEntity = CartEntity
   { cartId :: Uuid,
     ownerId :: Text,
-    items :: Array CartItem
+    items :: Array CartItem,
+    savedIBAN :: Maybe Text
   }
   deriving (Generic)
 
@@ -47,7 +51,8 @@ initialState =
   CartEntity
     { cartId = Uuid.nil,
       ownerId = "",
-      items = Array.empty
+      items = Array.empty,
+      savedIBAN = Nothing
     }
 
 
@@ -69,13 +74,99 @@ data CartEvent
         stockId :: Uuid,
         quantity :: Int
       }
+  | IBANSaved
+      { entityId :: Uuid,
+        iban :: Text
+      }
   deriving (Generic, Show)
+
+
+data ItemAddedPayload = ItemAddedPayload
+  { itemAddedEntityId :: Uuid,
+    itemAddedStockId :: Uuid,
+    itemAddedQuantity :: Int
+  }
+
+
+type instance EntityOf ItemAddedPayload = CartEntity
+
+
+data CartCreatedPayload = CartCreatedPayload
+  { cartCreatedEntityId :: Uuid,
+    cartCreatedOwnerId :: Text
+  }
+
+
+type instance EntityOf CartCreatedPayload = CartEntity
+
+
+data IBANSavedPayload = IBANSavedPayload
+  { ibanSavedEntityId :: Uuid,
+    ibanSavedValue :: Text
+  }
+
+
+type instance EntityOf IBANSavedPayload = CartEntity
+
+
+instance EventVariantOf CartEvent CartCreatedPayload where
+  fromVariant payload =
+    CartCreated
+      { entityId = payload.cartCreatedEntityId,
+        ownerId = payload.cartCreatedOwnerId
+      }
+  toVariant eventValue = case eventValue of
+    CartCreated {entityId, ownerId} ->
+      Just
+        CartCreatedPayload
+          { cartCreatedEntityId = entityId,
+            cartCreatedOwnerId = ownerId
+          }
+    ItemAdded {} -> Nothing
+    IBANSaved {} -> Nothing
+
+
+instance EventVariantOf CartEvent ItemAddedPayload where
+  fromVariant payload =
+    ItemAdded
+      { entityId = payload.itemAddedEntityId,
+        stockId = payload.itemAddedStockId,
+        quantity = payload.itemAddedQuantity
+      }
+  toVariant eventValue = case eventValue of
+    ItemAdded {entityId, stockId, quantity} ->
+      Just
+        ItemAddedPayload
+          { itemAddedEntityId = entityId,
+            itemAddedStockId = stockId,
+            itemAddedQuantity = quantity
+          }
+    CartCreated {} -> Nothing
+    IBANSaved {} -> Nothing
+
+
+instance EventVariantOf CartEvent IBANSavedPayload where
+  fromVariant payload =
+    IBANSaved
+      { entityId = payload.ibanSavedEntityId,
+        iban = payload.ibanSavedValue
+      }
+  toVariant eventValue = case eventValue of
+    IBANSaved {entityId, iban} ->
+      Just
+        IBANSavedPayload
+          { ibanSavedEntityId = entityId,
+            ibanSavedValue = iban
+          }
+    CartCreated {} -> Nothing
+    ItemAdded {} -> Nothing
 
 
 getEventEntityId :: CartEvent -> Uuid
 getEventEntityId event = case event of
   CartCreated {entityId} -> entityId
   ItemAdded {entityId} -> entityId
+  IBANSaved {entityId} -> entityId
 
 
 type instance EventOf CartEntity = CartEvent
@@ -100,7 +191,8 @@ update event entity = case event of
     CartEntity
       { cartId = entityId,
         ownerId = ownerId,
-        items = Array.empty
+        items = Array.empty,
+        savedIBAN = Nothing
       }
   ItemAdded {stockId, quantity} ->
     entity
@@ -112,3 +204,4 @@ update event entity = case event of
                   amount = makeNaturalOrPanic quantity
                 }
       }
+  IBANSaved {iban} -> entity {savedIBAN = Just iban}

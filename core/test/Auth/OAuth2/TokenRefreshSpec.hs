@@ -1,7 +1,10 @@
 module Auth.OAuth2.TokenRefreshSpec (spec) where
 
-import Auth.OAuth2.TokenRefresh (TokenRefreshError (..), withValidToken)
+import Array (Array)
+import Array qualified
+import AsyncTask qualified
 import Auth.OAuth2.Client qualified as OAuth2
+import Auth.OAuth2.TokenRefresh (TokenRefreshError (..), withValidToken)
 import Auth.OAuth2.Types (
   ClientId (..),
   OAuth2Error (..),
@@ -16,21 +19,20 @@ import Auth.OAuth2.Types (
  )
 import Auth.SecretStore (SecretStore (..), TokenKey (..))
 import Auth.SecretStore.InMemory qualified as InMemory
-import Array (Array)
-import Array qualified
-import AsyncTask qualified
-import ConcurrentVar qualified
+import Bytes qualified
 import ConcurrentMap qualified
+import ConcurrentVar qualified
 import Control.Concurrent qualified as GhcConcurrent
 import Core hiding (Array)
 import Data.ByteString.Lazy qualified as GhcLBS
+import LinkedList qualified
+import Lock qualified
 import Network.HTTP.Types qualified as GhcHTTP
 import Network.Wai qualified as GhcWai
 import Network.Wai.Handler.Warp qualified as GhcWarp
 import Task qualified
 import Test
 import Text qualified
-import Lock qualified
 
 
 spec :: Spec Unit
@@ -115,9 +117,9 @@ spec = do
       store <- InMemory.new
       let tokenSet =
             TokenSet
-              { accessToken = mkAccessToken "expired"
-              , refreshToken = Nothing -- No refresh token!
-              , expiresInSeconds = Just 3600
+              { accessToken = mkAccessToken "expired",
+                refreshToken = Nothing, -- No refresh token!
+                expiresInSeconds = Just 3600
               }
       let key = TokenKey "oauth:provider:user1"
       store.put key tokenSet
@@ -221,11 +223,11 @@ spec = do
       -- Create a store that fails on get
       let failingStore =
             SecretStore
-              { get = \_ -> Task.throw "connection refused"
-              , put = \_ _ -> Task.yield ()
-              , delete = \_ -> Task.yield ()
-              , atomicModify = \_ _ -> Task.yield ()
-              , atomicModifyReturning = \_ _ -> Task.throw "connection refused"
+              { get = \_ -> Task.throw "connection refused",
+                put = \_ _ -> Task.yield (),
+                delete = \_ -> Task.yield (),
+                atomicModify = \_ _ -> Task.yield (),
+                atomicModifyReturning = \_ _ -> Task.throw "connection refused"
               }
 
       refreshLocks <- ConcurrentMap.new
@@ -291,7 +293,7 @@ spec = do
       _ <- GhcConcurrent.forkIO (backgroundTask |> Task.runNoErrors) |> Task.fromIO
 
       -- Give the background task time to reach and block at the lock
-      GhcConcurrent.threadDelay 50000 |> Task.fromIO  -- 50ms
+      GhcConcurrent.threadDelay 50000 |> Task.fromIO -- 50ms
 
       -- Simulate: another thread refreshed the token in the store
       let freshTokenSet = makeTokenSetWithRefresh "new-access-token" "new-refresh-token"
@@ -346,7 +348,6 @@ spec = do
           tasks = Array.initialize 100 (\_ -> singleTask)
       AsyncTask.runAllIgnoringErrors tasks
 
-
       finalRefreshCount <- ConcurrentVar.peek refreshCounter
       finalRefreshCount |> shouldBe 1
       finalSuccessCount <- ConcurrentVar.peek successCounter
@@ -354,6 +355,7 @@ spec = do
 
   -- Integration tests
   integrationSpec
+  tokenResponseSpec
 
 
 -- | Mock refresh that always succeeds with a new token
@@ -366,9 +368,9 @@ mockRefreshSuccessTask :: Task OAuth2Error TokenSet
 mockRefreshSuccessTask =
   Task.yield
     TokenSet
-      { accessToken = mkAccessToken "new-access-token"
-      , refreshToken = Just (mkRefreshToken "new-refresh-token")
-      , expiresInSeconds = Just 3600
+      { accessToken = mkAccessToken "new-access-token",
+        refreshToken = Just (mkRefreshToken "new-refresh-token"),
+        expiresInSeconds = Just 3600
       }
 
 
@@ -388,9 +390,9 @@ isUnauthorized err = Text.startsWith "401 " err || err == "401"
 makeTokenSetWithRefresh :: Text -> Text -> TokenSet
 makeTokenSetWithRefresh access refresh =
   TokenSet
-    { accessToken = mkAccessToken access
-    , refreshToken = Just (mkRefreshToken refresh)
-    , expiresInSeconds = Just 3600
+    { accessToken = mkAccessToken access,
+      refreshToken = Just (mkRefreshToken refresh),
+      expiresInSeconds = Just 3600
     }
 
 
@@ -399,7 +401,9 @@ mockTokenApp :: GhcWai.Application
 mockTokenApp request respond = do
   case (GhcWai.requestMethod request, GhcWai.pathInfo request) of
     ("POST", ["oauth", "token"]) -> do
-      let responseBody = GhcLBS.fromStrict "{\"access_token\":\"fresh-token\",\"refresh_token\":\"fresh-refresh\",\"expires_in\":3600,\"token_type\":\"Bearer\"}"
+      let responseBody =
+            GhcLBS.fromStrict
+              "{\"access_token\":\"fresh-token\",\"refresh_token\":\"fresh-refresh\",\"expires_in\":3600,\"token_type\":\"Bearer\"}"
       respond (GhcWai.responseLBS GhcHTTP.status200 [(GhcHTTP.hContentType, "application/json")] responseBody)
     _ ->
       respond (GhcWai.responseLBS GhcHTTP.status404 [] "Not Found")
@@ -426,9 +430,9 @@ integrationSpec = do
             -- MUST use unsafeValidatedProvider (localhost fails SSRF validation)
             let mockProvider =
                   Provider
-                    { name = "mock"
-                    , authorizeEndpoint = [fmt|http://localhost:#{testPort}/oauth/authorize|]
-                    , tokenEndpoint = [fmt|http://localhost:#{testPort}/oauth/token|]
+                    { name = "mock",
+                      authorizeEndpoint = [fmt|http://localhost:#{testPort}/oauth/authorize|],
+                      tokenEndpoint = [fmt|http://localhost:#{testPort}/oauth/token|]
                     }
             let validatedProvider = unsafeValidatedProvider mockProvider
 
@@ -477,3 +481,112 @@ integrationSpec = do
       -- Cleanup: always kill server thread (even on test failure)
       let cleanup = GhcConcurrent.killThread serverThread |> Task.fromIO
       runTest |> Task.finally cleanup
+
+
+-- | Owned HTTP responses exercise the public refresh path, not a decoder helper.
+tokenResponseSpec :: Spec Unit
+tokenResponseSpec = do
+  describe "OAuth2 token response boundary" do
+    it "returns InvalidGrant for a real OAuth error after a valid token control" \_ -> do
+      withTokenResponse GhcHTTP.status200 validTokenResponse \result -> do
+        case result of
+          Ok tokens -> unwrapAccessToken tokens.accessToken |> shouldBe "fresh-token"
+          Err err -> fail [fmt|Positive token control failed: #{toText err}|]
+      withTokenResponse GhcHTTP.status400 "{\"error\":\"invalid_grant\",\"error_description\":\"owned refresh rejected\"}" \result -> do
+        case result of
+          Err (InvalidGrant description) -> description |> shouldBe "owned refresh rejected"
+          _ -> fail "REGRESSION_ASSERT:oauth-invalid-grant-must-be-typed"
+
+    it "returns InvalidClient for a real OAuth client error" \_ -> do
+      withTokenResponse GhcHTTP.status400 "{\"error\":\"invalid_client\",\"error_description\":\"owned client rejected\"}" \result -> do
+        case result of
+          Err (InvalidClient description) -> description |> shouldBe "owned client rejected"
+          _ -> fail "Expected typed InvalidClient"
+
+    it "returns MalformedResponse for invalid JSON on token success" \_ -> do
+      withTokenResponse GhcHTTP.status200 "not-json-secret-sentinel" expectMalformedTokenResponse
+
+    it "returns MalformedResponse when token success lacks access_token" \_ -> do
+      withTokenResponse GhcHTTP.status200 "{\"token_type\":\"Bearer\"}" expectMalformedTokenResponse
+
+    it "returns TokenRequestFailed for a non-JSON error response" \_ -> do
+      withTokenResponse GhcHTTP.status401 "owned-error-secret-sentinel" \result -> do
+        case result of
+          Err (TokenRequestFailed message) -> Text.contains "secret-sentinel" message |> shouldBe False
+          _ -> fail "Expected typed TokenRequestFailed"
+
+    it "decodes valid tokens and preserves their optional fields" \_ -> do
+      withTokenResponse GhcHTTP.status200 validTokenResponse \result -> do
+        case result of
+          Ok tokens -> do
+            unwrapAccessToken tokens.accessToken |> shouldBe "fresh-token"
+            tokens.expiresInSeconds |> shouldBe (Just 3600)
+            tokens.refreshToken |> shouldBe (Just (mkRefreshToken "fresh-refresh"))
+          Err err -> fail [fmt|Expected tokens, got #{toText err}|]
+
+
+expectMalformedTokenResponse :: Result OAuth2Error TokenSet -> Task Text Unit
+expectMalformedTokenResponse result = do
+  case result of
+    Err (MalformedResponse message) -> Text.contains "secret-sentinel" message |> shouldBe False
+    _ -> fail "Expected typed MalformedResponse"
+
+
+validTokenResponse :: GhcLBS.ByteString
+validTokenResponse =
+  "{\"access_token\":\"fresh-token\",\"refresh_token\":\"fresh-refresh\",\"expires_in\":3600,\"token_type\":\"Bearer\"}"
+
+
+-- | Warp owns the ephemeral socket and brackets teardown even when decoding throws.
+withTokenResponse ::
+  GhcHTTP.Status ->
+  GhcLBS.ByteString ->
+  (Result OAuth2Error TokenSet -> Task Text Unit) ->
+  Task Text Unit
+withTokenResponse status body check = do
+  requests <- ConcurrentVar.containing (0 :: Int)
+  malformed <- ConcurrentVar.containing False
+  let application request respond = do
+        requestBody <- GhcWai.strictRequestBody request
+        let form = requestBody |> Bytes.fromLazyLegacy |> Bytes.unwrap |> GhcHTTP.parseQuery |> LinkedList.sort
+        let expectedForm =
+              [ ("grant_type", Just "refresh_token"),
+                ("refresh_token", Just "test-refresh"),
+                ("client_id", Just "test-client"),
+                ("client_secret", Just "test-secret")
+              ]
+                |> LinkedList.sort
+        let validRequest =
+              GhcWai.requestMethod request
+                == "POST"
+                && GhcWai.pathInfo request
+                == ["oauth", "token"]
+                && form
+                == expectedForm
+        Task.runOrPanic (ConcurrentVar.modify (+ 1) requests :: Task Text Unit)
+        Task.runOrPanic (ConcurrentVar.modify (\bad -> bad || not validRequest) malformed :: Task Text Unit)
+        respond (GhcWai.responseLBS status [(GhcHTTP.hContentType, "application/json")] body)
+  let settings = GhcWarp.defaultSettings |> GhcWarp.setHost "127.0.0.1"
+  GhcWarp.testWithApplicationSettings
+    settings
+    (Task.runOrPanic (Task.yield application :: Task Text GhcWai.Application))
+    ( \port -> Task.runOrPanic do
+        let provider =
+              unsafeValidatedProvider
+                Provider
+                  { name = "owned-token-response",
+                    authorizeEndpoint = [fmt|http://127.0.0.1:#{port}/oauth/authorize|],
+                    tokenEndpoint = [fmt|http://127.0.0.1:#{port}/oauth/token|]
+                  }
+        result <-
+          OAuth2.refreshTokenValidated
+            provider
+            (ClientId "test-client")
+            (mkClientSecret "test-secret")
+            (mkRefreshToken "test-refresh")
+            |> Task.asResult
+        check result
+        ConcurrentVar.peek requests |> Task.andThen (shouldBe 1)
+        ConcurrentVar.peek malformed |> Task.andThen (shouldBe False)
+    )
+    |> Task.fromIO

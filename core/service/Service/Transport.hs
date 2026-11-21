@@ -3,6 +3,8 @@ module Service.Transport (
   EndpointHandler,
   DispatchHandler,
   QueryEndpointHandler,
+  QueryByIdEndpointHandler,
+  QueryByIdEndpoint (..),
   Endpoints (..),
   EndpointSchema (..),
 ) where
@@ -23,6 +25,7 @@ import Service.Response (CommandResponse)
 import Task (Task)
 import Text (Text)
 import NeoQL (Expr)
+import Uuid (Uuid)
 
 
 -- | Handler for a single command endpoint.
@@ -53,6 +56,20 @@ type DispatchHandler = Maybe EventMetadata -> EndpointHandler
 type QueryEndpointHandler = Maybe UserClaims -> Maybe Expr -> QueryPageRequest -> Task QueryEndpointError Text
 
 
+-- | Handler for fetching one query object by its storage UUID.
+--
+-- The HTTP transport parses the path segment into 'Uuid' before calling this
+-- handler. Authorization and storage access remain inside the endpoint.
+type QueryByIdEndpointHandler = Maybe UserClaims -> Uuid -> Task QueryEndpointError Text
+
+
+-- | A keyed query handler paired with the schema of its single-object response.
+data QueryByIdEndpoint = QueryByIdEndpoint
+  { byIdHandler :: QueryByIdEndpointHandler
+  , byIdSchema :: EndpointSchema
+  }
+
+
 -- | Schema information for an endpoint (command or query).
 --
 -- Used for OpenAPI spec generation. Captured at registration time
@@ -79,6 +96,7 @@ data Endpoints transport = Endpoints
   { transport :: transport,
     commandEndpoints :: Map Text EndpointHandler,
     queryEndpoints :: Map Text QueryEndpointHandler,
+    queryByIdEndpoints :: Map Text QueryByIdEndpoint,
     commandSchemas :: Map Text EndpointSchema,
     querySchemas :: Map Text EndpointSchema
   }

@@ -1,0 +1,36 @@
+[package]
+name = "neo-lifecycle"
+version = "0.0.0"
+edition = "2024"
+publish = false
+build = "build.rs"
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "neo-installer"
+path = "src/bin/neo-installer.rs"
+
+[dependencies]
+base64 = "0.22.1"
+ring = "0.17.14"
+reqwest = { version = "0.12", features = ["blocking", "json", "rustls-tls"], default-features = false }
+sha2 = "0.10.9"
+regex = "1.12.3"
+fs2 = "0.4"
+libc = "0.2"
+semver = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+ratatui = { version = "0.30", default-features = false }
+signal-hook = "0.3"
+
+[build-dependencies]
+semver = "1"
+toml = "0.8"
+
+[dev-dependencies]
+tempfile = "3"
+toml = "0.8"

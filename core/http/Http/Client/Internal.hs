@@ -1,3 +1,13 @@
+{-| Byte-level HTTP requests for trusted framework callers.
+Every function returns the status code, the headers, and the undecoded body of
+any response, including 4xx and 5xx. No function here enforces HTTPS, so the
+caller must validate the endpoint first.
+
+'getRaw' and 'sendRaw' reach trusted loopback endpoints and ignore environment
+proxies. 'postFormRaw' is the status-preserving twin of 'Http.Client.postForm'
+for callers that must read the status before they decode the body, such as the
+OAuth2 token requests in "Auth.OAuth2.Client".
+-}
 module Http.Client.Internal (
   -- * Internal HTTP access
 
@@ -5,6 +15,9 @@ module Http.Client.Internal (
   -- This module is for internal use only (e.g., localhost OAuth2 discovery per ADR-0018).
   getRaw,
   sendRaw,
+
+  -- * Status-preserving form requests
+  postFormRaw,
 ) where
 
 import Array (Array)
@@ -12,7 +25,6 @@ import Array qualified
 import Basics
 import Bytes (Bytes)
 import Bytes qualified
-import Control.Exception qualified as GhcException
 import Data.ByteString (ByteString)
 import Data.ByteString qualified as GhcBS
 import Data.CaseInsensitive qualified as CI
@@ -65,10 +77,47 @@ sendRaw ::
 sendRaw method options body = do
   let verb = Http.methodName method
   Log.debug [fmt|HTTP #{verb} (raw/internal)|] |> Task.ignoreError
-  result <-
-    sendRawInternalIO method options body
-      |> Task.fromFailableIO @HttpClient.HttpException
-      |> Task.mapError sanitizeInternalHttpError
+  result <- sendRawInternal method options body
+  case result of
+    Err error -> Task.throw error
+    Ok response -> Task.yield response
+
+
+-- | Performs a form-urlencoded POST and returns the response without decoding it.
+-- The status-preserving twin of 'Http.Client.postForm': it sends the same
+-- method, @Content-Type@ and field encoding through the same process-wide
+-- connection manager. TLS verification and environment-proxy handling are
+-- therefore those of 'Http.Client.postForm', not those of 'sendRaw'.
+-- It honors the request headers, the response timeout and 'maxRedirects'.
+--
+-- Unlike 'Http.Client.postForm', this never throws on a non-2xx status and never
+-- parses the body, so a caller can classify the status first. It sends no
+-- @Accept@ header of its own; add one with 'Http.Client.addHeader'. The body is
+-- bounded by 'maxResponseBytes' like every other byte-level request. Transport
+-- failures are sanitized: the error never carries the form fields, the request
+-- headers, or the URL path and query.
+--
+-- WARNING: Does NOT enforce HTTPS. The caller must validate the endpoint first.
+--
+-- @
+-- let request = Http.request |> Http.withUrl tokenEndpoint
+-- response <- HttpInternal.postFormRaw request [("grant_type", "refresh_token")]
+-- if response.statusCode == 200
+--   then decodeTokens response.body
+--   else decodeProviderError response.statusCode response.body
+-- @
+postFormRaw ::
+  Http.Request ->
+  Array (Text, Text) ->
+  Task Http.Error (Http.Response Bytes)
+postFormRaw options formParams = do
+  Log.debug "HTTP POST (form, raw/internal)" |> Task.ignoreError
+  manager <- HttpTls.getGlobalManager |> Task.fromIO
+  let buildRequest baseReq =
+        baseReq
+          |> applyFormBody formParams
+          |> applyRequestOptions options
+  result <- sendBounded manager Http.Post options buildRequest
   case result of
     Err error -> Task.throw error
     Ok response -> Task.yield response
@@ -81,19 +130,56 @@ rawManager = GhcUnsafe.unsafePerformIO do
   HttpClient.newManager (HttpClient.managerSetProxy HttpClient.noProxy HttpTls.tlsManagerSettings)
 
 
--- | Own the response until its bounded body has been read or rejected.
-sendRawInternalIO :: Method -> Http.Request -> Bytes -> GhcIO.IO (Result Http.Error (Http.Response Bytes))
-sendRawInternalIO method options body = do
-  baseReq <- parseRequestUrl options
-  let req =
+-- | Send a raw body through the proxy-free manager.
+sendRawInternal :: Method -> Http.Request -> Bytes -> Task Http.Error (Result Http.Error (Http.Response Bytes))
+sendRawInternal method options body = do
+  let buildRequest baseReq =
         baseReq
           |> applyRequestOptions options
           |> Http.applyMethodAndBody method body
+  sendBounded rawManager method options buildRequest
+
+
+-- | Own the response until its bounded body has been read or rejected.
+sendBounded ::
+  HttpClient.Manager ->
+  Method ->
+  Http.Request ->
+  (HttpClient.Request -> HttpClient.Request) ->
+  Task Http.Error (Result Http.Error (Http.Response Bytes))
+sendBounded manager method options buildRequest = Task.withCancellationDeferred \restore -> do
+  baseReq <-
+    parseRequestUrl options
+      |> Task.fromFailableIO @HttpClient.HttpException
+      |> Task.mapError sanitizeInternalHttpError
+  let req =
+        baseReq
+          |> buildRequest
           |> setRequestIgnoreStatus
-  GhcException.bracket
-    (HttpClient.responseOpen req rawManager)
-    HttpClient.responseClose
-    (readLimitedResponse method options)
+  response <-
+    HttpClient.responseOpen req manager
+      |> Task.fromFailableIO @HttpClient.HttpException
+      |> Task.mapError sanitizeInternalHttpError
+  readLimitedResponse method options response
+    |> Task.fromFailableIO @HttpClient.HttpException
+    |> Task.mapError sanitizeInternalHttpError
+    |> restore
+    |> Task.finally (HttpClient.responseClose response |> Task.fromIO)
+
+
+-- | Set the POST method, the form @Content-Type@ and the url-encoded fields.
+-- Mirrors the private encoding of 'Http.Client.postForm'. Kept private here to
+-- avoid widening the public Http.Client API for plumbing.
+applyFormBody :: Array (Text, Text) -> HttpClient.Request -> HttpClient.Request
+applyFormBody formParams baseReq = do
+  let formData =
+        formParams
+          |> Array.toLinkedList
+          |> fmap (\(key, value) -> (Text.toBytes key |> Bytes.unwrap, Text.toBytes value |> Bytes.unwrap))
+  baseReq
+    |> HttpSimple.setRequestMethod "POST"
+    |> HttpSimple.setRequestHeader "Content-Type" ["application/x-www-form-urlencoded"]
+    |> HttpSimple.setRequestBodyURLEncoded formData
 
 
 -- | HEAD bypasses advertised length; delivered chunks still obey the byte cap.
@@ -194,9 +280,9 @@ sanitizeInternalHttpError exception = do
           let truncated = case HttpSimple.parseRequest url of
                 GhcEither.Left _ -> "<malformed URL>"
                 GhcEither.Right req -> do
-                  let scheme = case HttpClient.secure req of
-                        True -> "https://" :: Text
-                        False -> "http://" :: Text
+                  let scheme = if HttpClient.secure req
+                        then "https://" :: Text
+                        else "http://" :: Text
                   let host = toText (show (HttpClient.host req))
                   scheme |> Text.append host
           [fmt|Invalid URL: #{truncated}|]

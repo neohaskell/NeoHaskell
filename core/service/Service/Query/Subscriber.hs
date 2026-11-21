@@ -171,6 +171,7 @@ rebuildAll subscriber = do
               case rawEvent.metadata.globalPosition of
                 Just pos -> subscriber.lastProcessedPosition |> ConcurrentVar.modify (\_ -> Just pos)
                 Nothing -> pass
+            ToxicAllEvent _ -> Task.throw "Query replay encountered an unreadable event"
             _ -> pass
           Task.yield unit
       )
@@ -584,6 +585,7 @@ processEventsForQuery updaters _options messageStream =
                 case rawEvent.metadata.globalPosition of
                   Just (StreamPosition position) -> Task.yield (max lastPos position, count + 1)
                   Nothing -> Task.yield (lastPos, count + 1)
+              ToxicAllEvent _ -> Task.throw "Query replay encountered an unreadable event"
               _ -> Task.yield (lastPos, count)
         )
         (0, 0)
@@ -726,10 +728,7 @@ processCoordinatedReplayEvent subscriber coordinator rawEvent = do
   case rawEvent.metadata.globalPosition of
     Nothing -> Task.throw "Replay event had no global position"
     Just position ->
-      if queryReplayPositionProcessed state position then
-        Task.yield unit
-      else do
-        -- Updaters run outside the coordinator so live events can enter the inbox.
+      Task.unless (queryReplayPositionProcessed state position) do
         processEventHandlerStrict subscriber rawEvent
         advanceQueryReplayHighWater coordinator position
 
@@ -777,6 +776,7 @@ readReplayHead subscriber entityNames = do
     |> Stream.consume
       ( \current message ->
           case (current, message) of
+            (_, ToxicAllEvent _) -> Task.throw "Query replay encountered an unreadable event"
             (Just position, _) -> Task.yield (Just position)
             (Nothing, AllEvent rawEvent) -> Task.yield rawEvent.metadata.globalPosition
             _ -> Task.yield Nothing
@@ -847,6 +847,7 @@ consumeReplayMessage subscriber maybeCoordinator replayedCountRef replayHead (la
         Task.yield (rawEvent.metadata.globalPosition, count + 1)
       else
         Task.yield (lastPosition, count)
+    ToxicAllEvent _ -> Task.throw "Query replay encountered an unreadable event"
     _ -> Task.yield (lastPosition, count)
 
 

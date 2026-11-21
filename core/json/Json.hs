@@ -4,6 +4,13 @@ module Json (
   Aeson.FromJSONKey,
   Aeson.ToJSON (..),
   Aeson.Object,
+  Parts (..),
+  parts,
+  array,
+  Aeson.Options (tagSingleConstructors),
+  Aeson.defaultOptions,
+  Aeson.genericParseJSON,
+  Aeson.genericToJSON,
   decodeText,
   encode,
   decode,
@@ -24,12 +31,14 @@ module Json (
 ) where
 
 import Array (Array)
+import Array qualified
 import Basics
 import Bytes (Bytes)
 import Bytes qualified
 import Control.Monad qualified as Monad
 import Data.Aeson qualified as Aeson
 import Data.Aeson.Key qualified as AesonKey
+import Data.Aeson.KeyMap qualified as AesonKeyMap
 import Data.Aeson.Text qualified as AesonText
 import Data.Aeson.Types qualified as AesonTypes
 import Data.Either qualified as Either
@@ -44,7 +53,7 @@ import Text qualified
 
 decodeText :: (Aeson.FromJSON value) => Text -> Result Text value
 decodeText text = do
-  let bs = Text.convert text
+  let bs = text |> Text.toBytes |> Bytes.unwrap
   case Aeson.eitherDecodeStrict bs of
     Either.Left error -> Result.Err (Text.fromLinkedList error)
     Either.Right value -> Result.Ok value
@@ -82,6 +91,28 @@ instance (Aeson.ToJSON a) => Aeson.ToJSON (Array a)
 
 instance Default Aeson.Value where
   def = Aeson.Null
+
+
+data Parts
+  = ObjectParts (Array (Text, Aeson.Value))
+  | ArrayParts (Array Aeson.Value)
+  | Scalar Aeson.Value
+
+
+parts :: Aeson.Value -> Parts
+parts value =
+  case value of
+    Aeson.Object object ->
+      ObjectParts
+        (AesonKeyMap.toList object
+          |> Array.fromLinkedList
+          |> Array.map (\(key, item) -> (AesonKey.toText key, item)))
+    Aeson.Array values -> ArrayParts (Array.fromLegacy values)
+    _ -> Scalar value
+
+
+array :: Array Aeson.Value -> Aeson.Value
+array values = Aeson.Array (Array.unwrap values)
 
 
 -- | The JSON null value.

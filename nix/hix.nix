@@ -31,6 +31,7 @@
     unset _nh_root
   '';
   shell.buildInputs = with pkgs; [
+    (callPackage ./act.nix { })
     git
     nixfmt-classic
     postgresql
@@ -38,5 +39,6 @@
     poppler_utils
     (python3.withPackages (ps: [ ps.pyyaml ]))
     haskellPackages.hoogle
+    haskellPackages.markdown-unlit
   ];
 }

@@ -1,8 +1,6 @@
 use minijinja::{context, Environment};
-use std::fs;
 use crate::reconcile::resolve::{ResolvedConfig, DependencySource};
 use crate::errors::NeoError;
-use crate::reconcile::flake::local_source_override;
 
 use std::path::Path;
 
@@ -29,18 +27,18 @@ pub fn generate<P: AsRef<Path>>(
         }
     }
 
-    let local_source = local_source_override()?;
     let rendered = template.render(context! {
         git_dependencies => git_dependencies,
         file_dependencies => file_dependencies,
-        neo_sha => config.neo_sha,
-        neohaskell_git_url => local_source.as_ref().map(|s| s.git_url.as_str()).unwrap_or("https://github.com/neohaskell/neohaskell.git"),
-        neohaskell_commit => local_source.as_ref().map(|s| s.rev.as_str()).unwrap_or(config.neo_sha.as_str()),
+        neo_sha => config.framework_source.pin(),
+        neohaskell_git_url => config.framework_source.git_url(),
+        neohaskell_commit => config.framework_source.pin(),
         name => config.name,
     }).map_err(|e| NeoError::TemplateError { template: "cabal.project".to_string(), reason: e.to_string() })?;
 
     let out_path = project_dir.as_ref().join("cabal.project");
-    fs::write(&out_path, rendered).map_err(|e| NeoError::io_at("writing generated `cabal.project` at", &out_path, e))?;
+    super::atomic_write(&out_path, rendered.as_bytes())
+        .map_err(|e| NeoError::io_at("writing generated `cabal.project` at", &out_path, e))?;
 
     Ok(())
 }
@@ -48,6 +46,7 @@ pub fn generate<P: AsRef<Path>>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
     use tempfile::tempdir;
     use crate::reconcile::resolve::{ResolvedConfig, ResolvedDependency, DependencySource};
 
@@ -55,8 +54,7 @@ mod tests {
         ResolvedConfig {
             name: "p".to_string(),
             version: "0.1.0".to_string(),
-            neo_version: "main".to_string(),
-            neo_sha: "neo-sha".to_string(),
+            framework_source: crate::reconcile::source::FrameworkSource::OfflinePlaceholder,
             description: None,
             author: None,
             license: "MIT".to_string(),
@@ -179,10 +177,36 @@ mod tests {
         let config = rc(vec![]);
         generate(dir.path(), &env, &config).unwrap();
         let content = fs::read_to_string(dir.path().join("cabal.project")).unwrap();
-        assert!(content.contains("sha: neo-sha"));
+        assert!(content.contains("sha: deadbeef"));
         assert!(!content.contains("source-repository-package"));
         // Testing is built in by default → the per-package tests stanza is always present.
         assert!(content.contains("tests: True"), "missing tests stanza:\n{}", content);
+    }
+
+    #[test]
+    fn cabal_project_uses_the_typed_local_framework_source() {
+        let dir = tempdir().unwrap();
+        let mut env = Environment::new();
+        env.add_template(
+            "cabal.project",
+            "sha: {{ neo_sha }}\nframework-location: {{ neohaskell_git_url }}\nframework-tag: {{ neohaskell_commit }}\n",
+        )
+        .unwrap();
+        let mut config = rc(vec![]);
+        let sha = "0123456789012345678901234567890123456789";
+        config.framework_source = crate::reconcile::source::FrameworkSource::Commit {
+            sha: crate::reconcile::source::FullSha::parse(sha).unwrap(),
+            origin: crate::reconcile::source::FrameworkOrigin::LocalGit {
+                root: std::path::PathBuf::from("/work/Neo Haskell"),
+            },
+        };
+
+        generate(dir.path(), &env, &config).unwrap();
+
+        let content = fs::read_to_string(dir.path().join("cabal.project")).unwrap();
+        assert!(content.contains(&format!("sha: {sha}")));
+        assert!(content.contains("location: file:///work/Neo%20Haskell"));
+        assert!(content.contains(&format!("tag: {sha}")));
     }
 
     #[test]

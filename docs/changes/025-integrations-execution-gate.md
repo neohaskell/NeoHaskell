@@ -36,7 +36,7 @@ C1 originally reproduced the omission against the unchanged main `7bd77c` runner
 
 Current main retired `./dev`, the old runner, and the `criteria-runtime` report consumer. This change does not restore them. The Linux suite report remains a diagnostic artifact, not input to the retired concatenation gate. The existing `checks.yml` tooling job discovers the test skill's Python tests and propagates their failures.
 
-Wiring negative controls must reject missing job/needs/result/report, wrong-suite substitution and narrowed selectors. Native full candidate `nhintegrations-test` execution is mandatory, separately from script wiring checks. Real CI at actual HEAD, `run-full-suite --strict` with owned PostgreSQL and Hurl, and testbed execution remain required before ready. OAuth failures remain unresolved while PR917 API approval is pending. No Auth or HTTP behavior change is authorized by this tooling migration.
+Wiring negative controls must reject missing job/needs/result/report, wrong-suite substitution and narrowed selectors. Native full candidate `nhintegrations-test` execution is mandatory, separately from script wiring checks. Real CI at actual HEAD, `run-full-suite --strict` with owned PostgreSQL and Hurl, and testbed execution remain required before ready. [Change 029](029-oauth-token-response.md) repairs the OAuth token error handling that made C5 and C6 fail, so both examples pass with it integrated. This tooling migration itself changes no Auth or HTTP behavior.
 
 ## User impact
 

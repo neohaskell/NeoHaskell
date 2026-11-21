@@ -2,10 +2,10 @@ module Integration.Oura.SyncAllSpec (spec) where
 
 import Basics
 import Bytes qualified
+import IO (IO)
 import Network.HTTP.Types qualified as GhcHTTP
 import Network.Wai qualified as GhcWai
 import Network.Wai.Handler.Warp qualified as GhcWarp
-import System.IO qualified as GhcIO
 import Data.Maybe qualified as GhcMaybe
 import Test.Hspec
 import Integration.Oura.SyncAll (SyncAll (..), SyncResult (..), executeSyncAll)
@@ -193,7 +193,7 @@ spec = do
           observed `shouldBe` 1
 
 
-withLocalTokenFailure :: ActionWith (ActionContext, ConcurrentVar Int) -> GhcIO.IO ()
+withLocalTokenFailure :: ActionWith (ActionContext, ConcurrentVar Int) -> IO ()
 withLocalTokenFailure runExample = do
   refreshCount <- Task.runOrPanic (ConcurrentVar.containing 0 :: Task Text (ConcurrentVar Int))
   malformed <- Task.runOrPanic (ConcurrentVar.containing False :: Task Text (ConcurrentVar Bool))
@@ -282,6 +282,7 @@ setupMockContext tokenEndpoint = do
     , providerRegistry = fromMap providerRegistry
     , refreshLocks = locks
     , fileAccess = Nothing
+    , eraseErasableKey = Nothing
     , outboundDispatch = DispatchRegistry.empty
     }
 

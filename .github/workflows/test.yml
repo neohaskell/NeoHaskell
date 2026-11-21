@@ -74,13 +74,13 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7.0.1
-      - uses: DeterminateSystems/determinate-nix-action@v3.23.3
+      - uses: DeterminateSystems/determinate-nix-action@v3.24.2
         with:
           extra-conf: |
             accept-flake-config = true
-            extra-substituters = https://cache.iog.io https://neohaskell.cachix.org
+            http2 = false
+            extra-substituters = https://neohaskell.cachix.org?priority=30 https://cache.iog.io
             extra-trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= neohaskell.cachix.org-1:mo2cLaGbwqbrxs9xhqKK8jeNsn3osi7t6XoAmxSZssc=
-      - uses: DeterminateSystems/magic-nix-cache-action@v14
       - uses: actions/cache@v6.1.0
         with:
           path: dist-newstyle
@@ -88,7 +88,9 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cabal-
       - name: Build the project with cabal
-        run: nix develop --command cabal build all --disable-documentation
+        run: ./.agents/skills/neohaskell-test/scripts/nix-acquisition-diagnostics nix --debug develop .#ci --command cabal build all --disable-documentation
+      - name: Run doctest suite
+        run: nix develop .#ci --command ./.agents/skills/neohaskell-test/scripts/run-doctest --strict
       - uses: actions/upload-artifact@v7
         with:
           name: dist-newstyle
@@ -97,38 +99,19 @@ jobs:
           retention-days: 1
           if-no-files-found: error
 
-  doctest:
-    needs: changes
-    if: >-
-      needs.changes.outputs.run_expensive == 'true'
-      && needs.changes.outputs.compiled == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v7.0.1
-      - uses: DeterminateSystems/determinate-nix-action@v3.23.3
-        with:
-          extra-conf: |
-            accept-flake-config = true
-            extra-substituters = https://cache.iog.io https://neohaskell.cachix.org
-            extra-trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= neohaskell.cachix.org-1:mo2cLaGbwqbrxs9xhqKK8jeNsn3osi7t6XoAmxSZssc=
-      - uses: DeterminateSystems/magic-nix-cache-action@v14
-      - name: Run doctest suite
-        run: ./.agents/skills/neohaskell-test/scripts/run-doctest --strict
-
   test-core:
     needs: [build]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7.0.1
-      - uses: DeterminateSystems/determinate-nix-action@v3.23.3
+      - uses: DeterminateSystems/determinate-nix-action@v3.24.2
         with:
           extra-conf: |
             accept-flake-config = true
-            extra-substituters = https://cache.iog.io https://neohaskell.cachix.org
+            http2 = false
+            extra-substituters = https://neohaskell.cachix.org?priority=30 https://cache.iog.io
             extra-trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= neohaskell.cachix.org-1:mo2cLaGbwqbrxs9xhqKK8jeNsn3osi7t6XoAmxSZssc=
-      - uses: DeterminateSystems/magic-nix-cache-action@v14
       - uses: actions/download-artifact@v8
         with:
           name: dist-newstyle
@@ -136,8 +119,14 @@ jobs:
       - name: Run nhcore-test-core
         run: |
           set -o pipefail
-          LOG_LEVEL=Warn nix develop --command cabal test nhcore-test-core \
+          LOG_LEVEL=Warn ./.agents/skills/neohaskell-test/scripts/nix-acquisition-diagnostics nix develop .#ci --command cabal test nhcore-test-core \
             --test-show-details=direct | tee nhcore-test-core.report
+      - name: Check outbound payload compiler diagnostics
+        run: nix develop .#ci --command python3 core/test/Service/OutboundIntegration/check_compiler_rejections.py
+      - name: Check Event Model compiler diagnostics
+        run: nix develop .#ci --command python3 core/test/Service/EventModel/check_compiler_rejections.py
+      - name: Run source-local Event Model testbed assertions
+        run: nix develop .#ci --command cabal test nhtestbed-spec-demo --test-show-details=direct
       - uses: actions/upload-artifact@v7
         with:
           name: nhcore-test-core-report
@@ -151,13 +140,12 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7.0.1
-      - uses: DeterminateSystems/determinate-nix-action@v3.23.3
+      - uses: DeterminateSystems/determinate-nix-action@v3.24.2
         with:
           extra-conf: |
             accept-flake-config = true
             extra-substituters = https://cache.iog.io https://neohaskell.cachix.org
             extra-trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= neohaskell.cachix.org-1:mo2cLaGbwqbrxs9xhqKK8jeNsn3osi7t6XoAmxSZssc=
-      - uses: DeterminateSystems/magic-nix-cache-action@v14
       - uses: actions/download-artifact@v8
         with:
           name: dist-newstyle
@@ -194,19 +182,19 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7.0.1
-      - uses: DeterminateSystems/determinate-nix-action@v3.23.3
+      - uses: DeterminateSystems/determinate-nix-action@v3.24.2
         with:
           extra-conf: |
             accept-flake-config = true
-            extra-substituters = https://cache.iog.io https://neohaskell.cachix.org
+            http2 = false
+            extra-substituters = https://neohaskell.cachix.org?priority=30 https://cache.iog.io
             extra-trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= neohaskell.cachix.org-1:mo2cLaGbwqbrxs9xhqKK8jeNsn3osi7t6XoAmxSZssc=
-      - uses: DeterminateSystems/magic-nix-cache-action@v14
       - uses: actions/download-artifact@v8
         with:
           name: dist-newstyle
           path: dist-newstyle
       - name: Run nhcore-test-auth
-        run: LOG_LEVEL=Warn nix develop --command cabal test nhcore-test-auth
+        run: LOG_LEVEL=Warn nix develop .#ci --command cabal test nhcore-test-auth nhcore-test-auth-dns
 
   test-integration:
     needs: [build]
@@ -214,19 +202,19 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7.0.1
-      - uses: DeterminateSystems/determinate-nix-action@v3.23.3
+      - uses: DeterminateSystems/determinate-nix-action@v3.24.2
         with:
           extra-conf: |
             accept-flake-config = true
-            extra-substituters = https://cache.iog.io https://neohaskell.cachix.org
+            http2 = false
+            extra-substituters = https://neohaskell.cachix.org?priority=30 https://cache.iog.io
             extra-trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= neohaskell.cachix.org-1:mo2cLaGbwqbrxs9xhqKK8jeNsn3osi7t6XoAmxSZssc=
-      - uses: DeterminateSystems/magic-nix-cache-action@v14
       - uses: actions/download-artifact@v8
         with:
           name: dist-newstyle
           path: dist-newstyle
       - name: Run nhcore-test-integration
-        run: LOG_LEVEL=Warn nix develop --command cabal test nhcore-test-integration
+        run: LOG_LEVEL=Warn nix develop .#ci --command cabal test nhcore-test-integration
 
   test-integrations:
     needs: [build]
@@ -234,13 +222,13 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7.0.1
-      - uses: DeterminateSystems/determinate-nix-action@v3.23.3
+      - uses: DeterminateSystems/determinate-nix-action@v3.24.2
         with:
           extra-conf: |
             accept-flake-config = true
-            extra-substituters = https://cache.iog.io https://neohaskell.cachix.org
+            http2 = false
+            extra-substituters = https://neohaskell.cachix.org?priority=30 https://cache.iog.io
             extra-trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= neohaskell.cachix.org-1:mo2cLaGbwqbrxs9xhqKK8jeNsn3osi7t6XoAmxSZssc=
-      - uses: DeterminateSystems/magic-nix-cache-action@v14
       - uses: actions/download-artifact@v8
         with:
           name: dist-newstyle
@@ -248,7 +236,7 @@ jobs:
       - name: Run nhintegrations-test
         run: |
           set -o pipefail
-          LOG_LEVEL=Warn nix develop --command cabal test nhintegrations-test \
+          LOG_LEVEL=Warn nix develop .#ci --command cabal test nhintegrations-test \
             --test-show-details=direct | tee .nhintegrations-test.report
       - uses: actions/upload-artifact@v7
         if: always()
@@ -264,13 +252,13 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7.0.1
-      - uses: DeterminateSystems/determinate-nix-action@v3.23.3
+      - uses: DeterminateSystems/determinate-nix-action@v3.24.2
         with:
           extra-conf: |
             accept-flake-config = true
-            extra-substituters = https://cache.iog.io https://neohaskell.cachix.org
+            http2 = false
+            extra-substituters = https://neohaskell.cachix.org?priority=30 https://cache.iog.io
             extra-trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= neohaskell.cachix.org-1:mo2cLaGbwqbrxs9xhqKK8jeNsn3osi7t6XoAmxSZssc=
-      - uses: DeterminateSystems/magic-nix-cache-action@v14
       - uses: actions/download-artifact@v8
         with:
           name: dist-newstyle
@@ -293,10 +281,23 @@ jobs:
           fi
         env:
           PGPASSWORD: neohaskell
+      - name: Create isolated FileUpload test database
+        run: |
+          private_db="nh_file_upload_ci_${GITHUB_RUN_ID}_${GITHUB_RUN_ATTEMPT}"
+          docker exec neohaskell_postgres createdb -U neohaskell "$private_db"
+          echo "FILE_UPLOAD_TEST_DB=$private_db" >> "$GITHUB_ENV"
       - name: Run nhcore-test-service
         env:
           POSTGRES_AVAILABLE: "true"
-        run: LOG_LEVEL=Warn nix develop --command cabal test nhcore-test-service --test-show-details=direct
+        run: LOG_LEVEL=Warn ./.agents/skills/neohaskell-test/scripts/nix-acquisition-diagnostics nix develop .#ci --command cabal test nhcore-test-service --test-show-details=direct
+      - name: Run Erasable key store examples
+        run: |
+          private_db="nh_cryptoerasure_ci_${GITHUB_RUN_ID}_${GITHUB_RUN_ATTEMPT}"
+          docker exec neohaskell_postgres createdb -U neohaskell "$private_db"
+          CRYPTOERASURE_TEST_DB="$private_db" LOG_LEVEL=Warn nix develop .#ci --command .agents/skills/tdd/scripts/test-match --builddir "$RUNNER_TEMP/erasable-build" --transcript "$RUNNER_TEMP/erasable-service.log" 'Erasable key store' nhcore-test-service
+          grep -F 'summary: 12 examples, 0 failures' "$RUNNER_TEMP/erasable-service.log"
+      - name: Check entity event compiler rejections
+        run: nix develop .#ci --command python3 core/test/Service/Event/check_compiler_rejections.py
 
   test-hurl:
     needs: [build]
@@ -304,19 +305,18 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7.0.1
-      - uses: DeterminateSystems/determinate-nix-action@v3.23.3
+      - uses: DeterminateSystems/determinate-nix-action@v3.24.2
         with:
           extra-conf: |
             accept-flake-config = true
             extra-substituters = https://cache.iog.io https://neohaskell.cachix.org
             extra-trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= neohaskell.cachix.org-1:mo2cLaGbwqbrxs9xhqKK8jeNsn3osi7t6XoAmxSZssc=
-      - uses: DeterminateSystems/magic-nix-cache-action@v14
       - uses: actions/download-artifact@v8
         with:
           name: dist-newstyle
           path: dist-newstyle
       - name: Restore executable permissions
-        run: find dist-newstyle/build -type f -name 'nhtestbed' -exec chmod +x {} +
+        run: find dist-newstyle/build -type f \( -name 'nhtestbed' -o -name 'nhoauthtestbed' \) -exec chmod +x {} +
       - name: Start PostgreSQL
         run: |
           docker run -d --name neohaskell_postgres \
@@ -335,24 +335,22 @@ jobs:
           fi
         env:
           PGPASSWORD: neohaskell
-      - name: Install hurl (pinned binary + checksum)
-        run: |
-          curl -fsSL --retry 5 --retry-delay 5 --retry-all-errors \
-            --connect-timeout 20 --max-time 120 --retry-max-time 300 \
-            -o hurl.deb \
-            https://github.com/Orange-OpenSource/hurl/releases/download/6.0.0/hurl_6.0.0_amd64.deb
-          echo "2686f605adfdceca18579a941b317262a4185915e6fda1f8deaab201da22e9cf  hurl.deb" | sha256sum -c -
-          sudo dpkg -i hurl.deb
       - name: Install poppler-utils (for PDF extraction tests)
         run: sudo apt-get update && sudo apt-get install -y poppler-utils
       - name: Run integration tests
-        run: nix develop --command ./testbed/scripts/run-tests.sh
+        env:
+          DB_HOST: 127.0.0.1
+          DB_PASSWORD: neohaskell
+          CRYPTOERASURE_FAULT_TESTS: "1"
+          TESTBED_FAULT_HTTP_PORT: "19153"
+          TESTBED_FAULT_FIXTURE_PORT: "19154"
+        run: .agents/skills/neohaskell-test/scripts/run-testbed --strict --timeout 2400
       - name: Prove cold-start health stays flat through 100k events
         run: nix develop --command ./testbed/scripts/cold-start-readiness.sh
 
   ci-gate:
     if: always()
-    needs: [changes, build, doctest, test-core, test-transport, test-auth, test-integration, test-integrations, test-service, test-hurl]
+    needs: [changes, build, test-core, test-transport, test-auth, test-integration, test-integrations, test-service, test-hurl]
     runs-on: ubuntu-latest
     steps:
       - name: Check all tests passed
@@ -371,7 +369,6 @@ jobs:
           fi
           results=(
             "build=${{ needs.build.result }}"
-            "doctest=${{ needs.doctest.result }}"
             "test-core=${{ needs.test-core.result }}"
             "test-transport=${{ needs.test-transport.result }}"
             "test-auth=${{ needs.test-auth.result }}"

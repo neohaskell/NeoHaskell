@@ -50,11 +50,10 @@ matchesExpr expr value =
               Maybe.Nothing ->
                 FieldNotFound
               Maybe.Just fieldValue ->
-                case compareValues expectedValue fieldValue of
-                  True -> Matches
-                  False -> NoMatch
+                if compareValues expectedValue fieldValue
+                  then Matches
+                  else NoMatch
         _ ->
-          -- Non-object values (arrays, strings, numbers, null, bool) never match
           FieldNotFound
 
 

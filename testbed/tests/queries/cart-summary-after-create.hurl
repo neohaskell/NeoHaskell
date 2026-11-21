@@ -18,7 +18,7 @@ jsonpath "$.entityId" exists
 GET http://localhost:8080/queries/cart-summary
 [Options]
 retry: 5
-retry-interval: 100
+retry-interval: 100ms
 
 HTTP/1.1 200
 Content-Type: application/json
@@ -32,4 +32,18 @@ jsonpath "$.items[?(@.cartSummaryId == '{{new_cart_id}}')]" count == 1
 # - isEmpty should be true
 jsonpath "$.items[?(@.cartSummaryId == '{{new_cart_id}}')].itemCount" nth 0 == 0
 jsonpath "$.items[?(@.cartSummaryId == '{{new_cart_id}}')].isEmpty" nth 0 == true
+
+GET http://localhost:8080/queries/cart-summary/{{new_cart_id}}
+[Options]
+retry: 5
+retry-interval: 100ms
+
+HTTP/1.1 200
+Content-Type: application/json
+
+[Asserts]
+jsonpath "$.cartSummaryId" == "{{new_cart_id}}"
+jsonpath "$.itemCount" == 0
+jsonpath "$.isEmpty" == true
+jsonpath "$.items" not exists
 

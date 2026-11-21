@@ -415,19 +415,7 @@ async fn do_scaffold(mut config: ProjectConfig) -> miette::Result<()> {
 
     // Run reconciliation to generate .cabal, flake.nix, etc.
     // This ensures these files exist and can be tracked by Git
-    let neo_config = crate::config::NeoConfig {
-        name: config.name.clone(),
-        version: config.version.clone(),
-        neo_version: config.neo_version.clone(),
-        description: if config.description.is_empty() { None } else { Some(config.description.clone()) },
-        author: if config.author.is_empty() { None } else { Some(config.author.clone()) },
-        license: config.license.clone(),
-        kind: config.kind,
-        dependencies: std::collections::HashMap::new(),
-        source_path: None,
-        source_content: None,
-    };
-    crate::reconcile::run(&project_path, &neo_config).await?;
+    crate::reconcile::run_project(&project_path).await?;
 
     // Safeguard .gitignore: ensure *.cabal is not ignored
     let gitignore_path = project_path.join(".gitignore");

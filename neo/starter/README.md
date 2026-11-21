@@ -92,13 +92,13 @@ After this, `nix develop` (no flag) transparently uses the caches for this flake
 .
 ├── launcher/Launcher.hs          # Thin entry — buffers stdout/stderr, runs App
 ├── src/
-│   ├── App.hs                    # Application wiring (event store, transports, services)
+│   ├── App.hs                    # Named Event Model and shared configuration
 │   ├── Starter/Config.hs         # Typed config (port, upload dir, optional Postgres)
 │   └── Starter/Counter/          # Example bounded context — rename or delete
 │       ├── Core.hs               # Re-exports Entity and Event
 │       ├── Entity.hs             # CounterEntity + update function
 │       ├── Event.hs              # Sum type of all counter events
-│       ├── Service.hs            # Registers commands with the framework
+│       ├── Feature.hs            # Local command and query Slices
 │       ├── Events/               # One file per event type
 │       ├── Commands/             # One file per command type
 │       └── Queries/              # One file per read model
@@ -120,7 +120,7 @@ The starter's namespace is `Starter.Counter.*`. When you're building "Books" for
 1. **Rename the directory.** `mv src/Starter src/Library`, then `mv src/Library/Counter src/Library/Book`.
 2. **Fix the module names** in every `.hs` file under `src/Library/Book/` — change `module Starter.Counter.X` to `module Library.Book.X` and every `import Starter.Counter.X` to `import Library.Book.X`.
 3. **Update `neohaskell-starter.cabal`** — rewrite the `exposed-modules` list, and change `Starter.Config` to `Library.Config`. Optionally rename the package itself (`name: library`, `executable library`).
-4. **Update `src/App.hs`** — change `Starter.*` imports to `Library.*`.
+4. **Update `src/App.hs`** — change the `Starter.*` imports to `Library.*` and keep the renamed Feature in `features do`.
 
 Then:
 
@@ -149,7 +149,7 @@ Say you want to record when a counter is reset to zero. Four steps:
    instance Json.ToJSON Event
    ```
 
-2. **Wire it into the sum type** in `src/Starter/Counter/Event.hs` — add a `CounterReset` variant and a branch in `getEventEntityId`.
+2. **Wire it into the sum type** in `src/Starter/Counter/Event.hs` — add a `CounterReset` variant and a branch in `getEventEntityId`. Add its `EntityOf` and `EventVariantOf` instances in `src/Starter/Counter/Entity.hs`.
 
 3. **Handle it in `update`** in `src/Starter/Counter/Entity.hs`:
 
@@ -160,7 +160,23 @@ Say you want to record when a counter is reset to zero. Four steps:
 
 4. **Expose the module** — add `Starter.Counter.Events.CounterReset` to `exposed-modules` in the `.cabal` file, then `cabal build`.
 
-(Add a matching `Commands/ResetCounter.hs` and register it in `Service.hs` if you want an HTTP endpoint too.)
+To add a reset HTTP command, implement `Commands/ResetCounter.hs`, then add a state-change Slice in `Starter.Counter.Feature.counterFlow`. List `CounterReset.Event` with `produces` in that Slice. The application registers the command through its Feature; there is no second service registration list.
+
+## Run the executable Counter Event Model
+
+`Starter.Counter.Feature.counterFlow` declares the three commands and `CounterView` near the Counter implementation. `App.appEventModel` composes that exported Feature with the event store and Web transport. `Launcher` calls `EventModel.run`, which validates the model before starting the application. The Counter query subscribes to all three concrete payload types, and the existing Hurl flow checks command execution and query values.
+
+From a generated project, run the example and its maintained assertion in separate terminals:
+
+```sh
+nix develop --command cabal run
+```
+
+```sh
+nix develop --command hurl --test tests/scenarios/counter-flow.hurl
+```
+
+The framework testbed has a separate source-local Event Model with compiler rejection fixtures and runtime assertions. From the NeoHaskell repository root, run `nix develop --command python3 core/test/Service/EventModel/check_compiler_rejections.py` and `nix develop --command cabal test --project-file=cabal.project.dev nhtestbed-spec-demo --test-show-details=direct`.
 
 ## Switch to Postgres
 

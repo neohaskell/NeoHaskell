@@ -129,6 +129,6 @@ isNested modifier =
 
 addIf :: Bool -> item -> [item] -> [item]
 addIf condition item arr =
-  case condition of
-    True -> arr ++ [item]
-    False -> arr
+  if condition
+    then arr ++ [item]
+    else arr

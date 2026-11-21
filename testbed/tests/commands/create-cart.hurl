@@ -10,6 +10,9 @@ Content-Type: application/json
 [Asserts]
 # Response must have entityId field
 jsonpath "$.entityId" exists
+jsonpath "$.tag" == "Accepted"
+jsonpath "$.contents" not exists
+jsonpath "$.events" not exists
 # entityId must be a valid UUID format (lowercase hex with dashes)
 jsonpath "$.entityId" isString
 jsonpath "$.entityId" matches /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/

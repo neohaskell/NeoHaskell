@@ -7,9 +7,13 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).parent))
 import engine as release
+from candidate_contract_tests import CandidateContract
+from candidate_contract_tests.test_runtime import RuntimeContract
+from test_installer_platform import InstallerPlatform
 
 ROOT = release.ROOT
 SKILL_ROOT = release.SKILL_ROOT
@@ -363,26 +367,32 @@ class History(unittest.TestCase):
         self.root = Path(self.temp.name)
         self.repo = release.Repo(self.root)
         self.git("init", "-q", "-b", "main")
+        self.git("config", "maintenance.auto", "false")
         self.git("config", "user.email", "fixture@example.invalid")
         self.git("config", "user.name", "Fixture")
         self.write(
             release.LEDGER_PATH,
             release.canonical({"schema": 1, "attempts": [], "recoveries": []}),
         )
-        self.write(release.CONFIG_PATH, release.canonical(release.CONFIG))
+        self.write(release.CONFIG_PATH, release.canonical({k: v for k, v in release.CONFIG.items() if k != "distribution_policy"}))
         for profile in release.CONFIG["groups"].values():
             for path, name in profile["packages"].items():
                 self.write(
                     path,
                     (
-                        "name: " + name + "\nversion: 0.4.1\n"
+                        json.dumps({"name": name, "version": "0.4.1", "neo-version": "main"}) + "\n"
+                        if path.endswith("neo.json")
+                        else "name: " + name + "\nversion: 0.4.1\n"
                         if path.endswith(".cabal")
                         else '[package]\nname = "' + name + '"\nversion = "0.4.1"\n'
                     ),
                 )
             for path, name in profile["locks"].items():
                 self.write(
-                    path, '[[package]]\nname = "' + name + '"\nversion = "0.4.1"\n'
+                    path,
+                    "name: " + name + "\nversion: 0.4.1\n"
+                    if path.endswith(".cabal")
+                    else '[[package]]\nname = "' + name + '"\nversion = "0.4.1"\n'
                 )
             self.write(
                 profile["changelog"],
@@ -566,6 +576,11 @@ def artifact_files(repo, plan, revision, directory):
     directory.mkdir(parents=True, exist_ok=True)
     for name in remote.required_assets(plan):
         (directory / name).write_bytes(("fixture " + name).encode())
+    write_verification_receipts(plan, revision, directory)
+    return remote.seal_artifacts(repo, plan, revision, directory)
+
+
+def write_verification_receipts(plan, revision, directory):
     prefix = release.CONFIG["groups"][plan["group"]]["asset_prefix"]
     for target in release.targets_for(plan):
         receipt = {
@@ -600,7 +615,6 @@ def artifact_files(repo, plan, revision, directory):
             }
         )
     )
-    return remote.seal_artifacts(repo, plan, revision, directory)
 
 
 class TargetPolicies(History):
@@ -846,6 +860,155 @@ class ArchivedTargetCompatibility(unittest.TestCase):
 
 
 class Prepare(History):
+    def test_neo_project_version_follows_release_preparation(self):
+        self.note()
+        plan = release.plan_release(self.repo, "HEAD", "platform", {}, "2026-09-15", ("neo-v0.4.1", "0.4.2"))
+        edits = release.expected_edits(self.repo, plan)
+        config = json.loads(edits["neoctl/neo.json"])
+        self.assertEqual(config["version"], "0.4.2")
+        self.assertEqual(config["name"], "neoctl")
+        self.assertEqual(config["neo-version"], "main")
+        self.assertIn("version: 0.4.2", edits["neoctl/neoctl.cabal"])
+
+    def test_new_live_package_does_not_change_frozen_preparation(self):
+        self.note()
+        plan = release.plan_release(self.repo, "HEAD", "platform", {}, "2026-09-15", ("neo-v0.4.1", "0.4.2"))
+        with patch.dict(release.CONFIG["groups"]["platform"]["packages"], {"future/future.cabal": "future"}):
+            edits = release.expected_edits(self.repo, plan)
+        self.assertNotIn("future/future.cabal", edits)
+        self.assertIn("version: 0.4.2", edits["core/nhcore.cabal"])
+
+    def test_package_required_by_source_cannot_be_omitted(self):
+        config = json.loads(self.repo.read("HEAD", release.CONFIG_PATH))
+        config["groups"]["platform"]["packages"]["future/future.cabal"] = "future"
+        self.write(release.CONFIG_PATH, release.canonical(config))
+        self.note()
+        plan = release.plan_release(self.repo, "HEAD", "platform", {}, "2026-09-15", ("neo-v0.4.1", "0.4.2"))
+        with self.assertRaisesRegex(ValueError, "Missing version input: future/future.cabal"):
+            release.expected_edits(self.repo, plan)
+
+    def split_action_update(self):
+        first, release_baseline = self.publish_bootstrap()
+        workflow = ".github/workflows/semantic-release.yml"
+        fixture = ".agents/skills/neohaskell-release/scripts/releases/test_release.py"
+        self.write(workflow, "      - uses: cachix/install-nix-action@" + "a" * 40 + " # v31.11.2; supports Intel macOS\n")
+        self.write(fixture, 'self.assertIn("cachix/install-nix-action@' + "a" * 40 + '", native)\n')
+        self.commit("chore: record current release installer")
+        owning_base = self.git("rev-parse", "HEAD")
+        self.write(workflow, "      - uses: cachix/install-nix-action@" + "b" * 40 + " # 31.11.3; supports Intel macOS\n")
+        self.commit("fix(deps): bump cachix/install-nix-action")
+        return first, release_baseline, owning_base, fixture
+
+    def test_dependency_only_action_update_needs_no_platform_release(self):
+        first, baseline, owning_base, fixture = self.split_action_update()
+        self.write(fixture, 'self.assertIn("cachix/install-nix-action@' + "b" * 40 + '", native)\n')
+        self.commit("fix(deps): sync installer pin assertion")
+        self.assertEqual(
+            release.check_checkout(self.repo, owning_base, "fix(deps): bump cachix/install-nix-action"),
+            "release fragments valid",
+        )
+        self.repo.git("reset", "--soft", owning_base)
+        self.commit("fix(deps): bump cachix/install-nix-action")
+        self.assertIsNone(
+            release.plan_release(self.repo, "HEAD", "platform", {first["id"]: baseline}, "2026-09-16")
+        )
+
+    def test_split_dependency_update_with_app_change_needs_fragment(self):
+        _, _, owning_base, fixture = self.split_action_update()
+        self.write(fixture, 'self.assertIn("cachix/install-nix-action@' + "b" * 40 + '", native)\n')
+        self.write("source.txt", "changed app behavior")
+        self.commit("fix(deps): sync installer assertion")
+        with self.assertRaisesRegex(ValueError, "fragment"):
+            release.check_checkout(self.repo, owning_base, "fix(deps): bump cachix/install-nix-action")
+
+    def test_non_dependency_commit_in_dependency_update_needs_fragment(self):
+        _, _, owning_base, fixture = self.split_action_update()
+        self.write(fixture, 'self.assertIn("cachix/install-nix-action@' + "b" * 40 + '", native)\n')
+        self.commit("feat(release): sync installer assertion")
+        with self.assertRaisesRegex(ValueError, "fragment"):
+            release.check_checkout(self.repo, owning_base, "fix(deps): bump cachix/install-nix-action")
+
+    def test_breaking_commit_in_dependency_update_needs_fragment(self):
+        _, _, owning_base, fixture = self.split_action_update()
+        self.write(fixture, 'self.assertIn("cachix/install-nix-action@' + "b" * 40 + '", native)\n')
+        self.commit("fix(deps)!: sync installer assertion")
+        with self.assertRaisesRegex(ValueError, "fragment"):
+            release.check_checkout(self.repo, owning_base, "fix(deps): bump cachix/install-nix-action")
+
+    def test_breaking_pr_body_in_dependency_update_needs_fragment(self):
+        _, _, owning_base, fixture = self.split_action_update()
+        self.write(fixture, 'self.assertIn("cachix/install-nix-action@' + "b" * 40 + '", native)\n')
+        self.commit("fix(deps): sync installer assertion")
+        with self.assertRaisesRegex(ValueError, "fragment"):
+            release.check_checkout(
+                self.repo,
+                owning_base,
+                "fix(deps): bump cachix/install-nix-action\n\nBREAKING CHANGE: incompatible toolchain",
+            )
+
+    def test_dev_only_lockfile_update_needs_no_platform_release(self):
+        first, baseline = self.publish_bootstrap()
+        path = "neo/assets/ide/package-lock.json"
+        old = {"packages": {"": {"devDependencies": {"jsdom": "^29"}}, "node_modules/undici": {"version": "7.29.1", "resolved": "old", "integrity": "old", "dev": True}}}
+        new = copy.deepcopy(old)
+        new["packages"]["node_modules/undici"].update({"version": "7.30.1", "resolved": "new", "integrity": "new"})
+        self.write(path, json.dumps(old))
+        self.commit("chore: record current IDE lockfile")
+        owning_base = self.git("rev-parse", "HEAD")
+        self.write(path, json.dumps(new))
+        self.commit("fix(deps): bump IDE development tools")
+        self.assertEqual(
+            release.check_checkout(self.repo, owning_base, "fix(deps): bump IDE development tools"),
+            "release fragments valid",
+        )
+        self.assertIsNone(
+            release.plan_release(self.repo, "HEAD", "platform", {first["id"]: baseline}, "2026-09-16")
+        )
+
+    def test_dependency_subject_does_not_hide_workflow_code_change(self):
+        self.write(".github/workflows/checks.yml", "      - run: echo safe\n")
+        self.commit("chore: record checks workflow")
+        owning_base = self.git("rev-parse", "HEAD")
+        self.write(".github/workflows/checks.yml", "      - run: echo bypass\n")
+        self.commit("fix(deps): update checks")
+        with self.assertRaisesRegex(ValueError, "fragment"):
+            release.check_checkout(self.repo, owning_base, "fix(deps): update checks")
+
+    def test_dependency_subject_does_not_hide_runtime_lock_change(self):
+        path = "neo/assets/ide/package-lock.json"
+        old = {"packages": {"node_modules/runtime": {"version": "1.0.0", "dev": False}}}
+        new = {"packages": {"node_modules/runtime": {"version": "1.1.0", "dev": False}}}
+        self.write(path, json.dumps(old))
+        self.commit("chore: record current lockfile")
+        owning_base = self.git("rev-parse", "HEAD")
+        self.write(path, json.dumps(new))
+        self.commit("fix(deps): bump runtime package")
+        with self.assertRaisesRegex(ValueError, "fragment"):
+            release.check_checkout(self.repo, owning_base, "fix(deps): bump runtime package")
+
+    def test_dependency_subject_does_not_hide_unrelated_fixture_change(self):
+        path = ".agents/skills/neohaskell-release/scripts/releases/test_release.py"
+        self.write(path, 'self.assertIn("owner/action@' + "a" * 40 + '", native)\n')
+        self.commit("chore: record current assertion")
+        owning_base = self.git("rev-parse", "HEAD")
+        self.write(path, 'self.assertIn("owner/action@' + "b" * 40 + '", native)\n')
+        self.commit("fix(deps): change assertion")
+        with self.assertRaisesRegex(ValueError, "fragment"):
+            release.check_checkout(self.repo, owning_base, "fix(deps): change assertion")
+
+    def test_dependency_subject_does_not_hide_app_change_or_breaking_notice(self):
+        self.write("source.txt", "changed app behavior")
+        self.commit("fix(deps): update app runtime")
+        with self.assertRaisesRegex(ValueError, "fragment"):
+            release.check_checkout(self.repo, self.base, "fix(deps): update app runtime")
+
+        _first, baseline = self.publish_bootstrap()
+        self.write(".github/workflows/test.yml", "      - uses: owner/action@v2\n")
+        self.commit("fix(deps)!: update action incompatibly")
+        self.note("breaking-dependency", NOTE, "docs: describe the update")
+        with self.assertRaisesRegex(ValueError, "migration"):
+            release.check_checkout(self.repo, baseline, "fix(deps)!: update action incompatibly")
+
     def test_lockstep_updates_platform_inputs(self):
         plan, revision = self.bootstrap()
         self.assertTrue(release.verify_generated(self.repo, revision, plan))
@@ -1466,7 +1629,7 @@ class Workflow(unittest.TestCase):
         }
         self.assertEqual(
             jobs,
-            {"prepare", "platform_seed", "platform_native", "platform_consumer", "platform_cache", "platform_publish", "reconcile"},
+            {"prepare", "platform_seed", "platform_native", "platform_consumer", "platform_cache", "installer_platform", "installer_candidate", "platform_publish", "reconcile"},
         )
         self.assertIn("push:\n    branches: [main]", text)
         self.assertIn("workflow_dispatch:", text)
@@ -1484,7 +1647,7 @@ class Workflow(unittest.TestCase):
             self.assertIn("github.ref == 'refs/heads/main'", block)
             self.assertIn("needs.prepare.outputs.platform_has_work == 'true'", block)
             self.assertNotIn("permissions:", block)
-        self.assertEqual(text.count("persist-credentials: false"), 12)
+        self.assertEqual(text.count("persist-credentials: false"), text.count("uses: actions/checkout@"))
         self.assertIn("Release engine self-tests (offline)", text)
         self.assertIn("run: ./.agents/skills/neohaskell-release/scripts/semantic-release --self-test", text)
         for name in ("prepare", "platform_seed", "platform_native", "platform_consumer", "platform_publish", "reconcile"):
@@ -1496,17 +1659,30 @@ class Workflow(unittest.TestCase):
             self.assertIn("ref: ${{ matrix.revision }}", block)
             self.assertIn("ref: ${{ needs.prepare.outputs.tooling_revision }}", block)
             self.assertIn("path: .agents-state/release-tooling", block)
-            self.assertIn("run: ./.agents-state/release-tooling/.agents/skills/neohaskell-release/scripts/semantic-release", block)
+            self.assertIn('matrix.distribution_policy == \'installer-v1\'', block)
+            self.assertIn('"$RELEASE_TOOLS/.agents/skills/neohaskell-release/scripts/semantic-release"', block)
         self.assertIn("NEOHASKELL_ROOT: ${{ github.workspace }}", text)
         native = self.job_block(text, "platform_native")
-        self.assertIn("cachix/install-nix-action@448cde739abec1eaf0646249e3d25bb8d9bc7702", native)
-        self.assertLess(native.index("uses: DeterminateSystems/determinate-nix-action@"), native.index("semantic-release build-native"))
+        self.assertIn("cachix/install-nix-action@3dc140bfc76c49fbd4dd958429132e3746bcb086", native)
+        self.assertLess(native.index("uses: DeterminateSystems/determinate-nix-action@"), native.index('semantic-release" build-native'))
         consumer = self.job_block(text, "platform_consumer")
         self.assertIn("accept-flake-config = true", consumer)
         self.assertIn("ref: ${{ matrix.revision }}", consumer)
         self.assertIn("github.ref == 'refs/heads/main'", consumer)
         publish = self.job_block(text, "platform_publish")
-        self.assertIn("needs: [prepare, platform_native, platform_consumer]", publish)
+        self.assertIn("needs: [prepare, platform_native, platform_consumer, installer_candidate]", publish)
+        self.assertIn("needs.installer_candidate.result == 'success'", publish)
+        self.assertIn("needs.prepare.outputs.installer_has_work == 'false' && needs.installer_candidate.result == 'skipped'", publish)
+        producer = self.job_block(text, "installer_platform")
+        candidate = self.job_block(text, "installer_candidate")
+        self.assertIn("needs: [prepare, platform_native]", producer)
+        self.assertIn("CACHIX_AUTH_TOKEN", producer)
+        self.assertIn("needs: [prepare, installer_platform, platform_consumer]", candidate)
+        self.assertIn("name: release-${{ matrix.attempt }}-installer", candidate)
+        for job in (producer, candidate):
+            self.assertIn("needs.prepare.outputs.installer_has_work == 'true'", job)
+            self.assertNotIn("continue-on-error", job)
+            self.assertNotIn("contents: write", job)
         self.assertIn("github.ref == 'refs/heads/main'", publish)
         self.assertIn("needs.prepare.outputs.platform_has_work == 'true'", publish)
         self.assertIn("contents: write", publish)
@@ -1575,7 +1751,7 @@ class Workflow(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("Prepare reviewed release PRs", result.stdout)
 
-    def test_workflow_outputs_are_platform_only_and_preserve_reuse(self):
+    def test_installer_work_is_limited_to_fresh_opted_in_platform_releases(self):
         import runpy
 
         cli = runpy.run_path(str(SKILL_ROOT / "scripts/semantic-release"))
@@ -1588,12 +1764,21 @@ class Workflow(unittest.TestCase):
         }
         for selected in ([], [item]):
             outputs = cli["work_outputs"](selected)
-            self.assertEqual(set(outputs), {"platform_has_work", "platform_items", "platform_matrix"})
+            self.assertEqual(outputs["installer_has_work"], "false")
+            self.assertEqual(json.loads(outputs["installer_items"]), [])
+            self.assertEqual(json.loads(outputs["installer_matrix"]), {"include": []})
             self.assertEqual(outputs["platform_has_work"], str(bool(selected)).lower())
             self.assertEqual(json.loads(outputs["platform_items"]), selected)
             matrix = json.loads(outputs["platform_matrix"])["include"]
             self.assertEqual({row["target"] for row in matrix}, set(release.TARGETS) if selected else set())
             self.assertTrue(all(row["reuse"] and row["group"] == "platform" for row in matrix))
+        fresh = {**item, "distribution_policy": "installer-v1", "reuse": False}
+        outputs = cli["work_outputs"]([fresh, {**fresh, "reuse": True}, item])
+        self.assertEqual(outputs["installer_has_work"], "true")
+        self.assertEqual(json.loads(outputs["installer_items"]), [fresh])
+        installer_rows = json.loads(outputs["installer_matrix"])["include"]
+        self.assertEqual({(row["system"], row["native_neo"]) for row in installer_rows}, {
+            ("x86_64-linux", True), ("aarch64-linux", False), ("aarch64-darwin", True)})
         historical = {key: value for key, value in item.items() if key != "target_policy"}
         legacy_matrix = json.loads(
             cli["work_outputs"]([historical])["platform_matrix"]
@@ -1765,6 +1950,9 @@ GROUPS = {
     "workflow": Workflow,
     "ledger": LedgerLocations,
     "bootstrap": Bootstrap,
+    "candidate-contract": CandidateContract,
+    "candidate-runtime": RuntimeContract,
+    "installer-platform": InstallerPlatform,
 }
 
 
