@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import subprocess
@@ -139,6 +140,97 @@ class TestRuntimeTests(unittest.TestCase):
         self.assertIn("testbed: SKIP", normal.stdout)
         self.assertEqual(strict.returncode, 1, strict.stderr)
         self.assertIn("testbed: INCOMPLETE", strict.stdout)
+
+
+class FullSuiteTests(unittest.TestCase):
+    def run_full_suite(self, statuses=None, cabal_exit=0, strict=True, testbed_exit=0):
+        with tempfile.TemporaryDirectory(prefix="nh-full-suite-") as directory:
+            root = Path(directory)
+            shutil.copy2(REPOSITORY / "cabal.project", root / "cabal.project")
+            for package in cabal_packages(REPOSITORY):
+                destination = root / package.cabal_file.relative_to(REPOSITORY)
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(package.cabal_file, destination)
+            (root / "nix").mkdir()
+            (root / "nix/hix.nix").touch()
+            binaries = root / "bin"
+            binaries.mkdir()
+            for name in ("bash", "dirname"):
+                (binaries / name).symlink_to(shutil.which(name))
+            log = root / "commands.jsonl"
+            fixture = binaries / "fixture"
+            fixture.write_text(
+                "#!" + sys.executable + "\n"
+                "import json, os, pathlib, sys\n"
+                "name = pathlib.Path(sys.argv[0]).name\n"
+                "with open(os.environ['FIXTURE_LOG'], 'a') as output:\n"
+                "    output.write(json.dumps([name, *sys.argv[1:]]) + '\\n')\n"
+                "if name == 'cabal':\n"
+                "    print('owned per-example output')\n"
+                "    for suite, status in json.loads(os.environ['SUITE_RESULTS']).items():\n"
+                "        print(f'Test suite {suite}: {status}')\n"
+                "    sys.exit(int(os.environ['CABAL_EXIT']))\n"
+                "if name == 'hurl':\n"
+                "    sys.exit(int(os.environ['TESTBED_EXIT']))\n"
+            )
+            fixture.chmod(0o755)
+            for name in ("cabal", "pg_isready", "hurl", "curl"):
+                (binaries / name).symlink_to(fixture.name)
+            runner = root / "testbed/scripts/run-tests.sh"
+            runner.parent.mkdir(parents=True, exist_ok=True)
+            runner.write_text("#!/bin/sh\nexec hurl owned-testbed.hurl\n")
+            environment = dict(os.environ)
+            results = {target: "PASS" for _, target in cabal_test_targets(REPOSITORY)}
+            results.update(statuses or {})
+            environment.update(
+                PATH=str(binaries), NEOHASKELL_ROOT=str(root), FIXTURE_LOG=str(log),
+                SUITE_RESULTS=json.dumps({key: value for key, value in results.items() if value}),
+                CABAL_EXIT=str(cabal_exit), TESTBED_EXIT=str(testbed_exit),
+            )
+            command = [sys.executable, str(SCRIPTS / "run-full-suite"), "--_inside-toolchain"]
+            if strict:
+                command.append("--strict")
+            result = subprocess.run(command, cwd=root, env=environment, text=True,
+                                    capture_output=True, check=False, timeout=10)
+            calls = [json.loads(line) for line in log.read_text().splitlines()]
+            self.assertEqual([call for call in calls if call[0] == "cabal"], [
+                ["cabal", "test", "all", "--project-file=cabal.project", "--test-show-details=direct"]
+            ])
+            self.assertIn(["hurl", "owned-testbed.hurl"], calls)
+            self.assertIn("owned per-example output", result.stdout)
+            return result
+
+    def test_whole_integrations_suite_is_executed(self):
+        result = self.run_full_suite()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        for package, target in cabal_test_targets(REPOSITORY):
+            self.assertEqual(result.stdout.count(f"full-suite: PASS Cabal target {package}:{target}\n"), 1)
+        self.assertIn("full-suite: PASS testbed acceptance", result.stdout)
+
+    def test_integrations_failure_is_not_skipped(self):
+        for suite in ("nhintegrations-test", "nhcore-test-core", "nhcore-test-service"):
+            for exit_code in (0, 37):
+                with self.subTest(suite=suite, exit_code=exit_code):
+                    result = self.run_full_suite({suite: "FAIL"}, cabal_exit=exit_code)
+                    self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                    self.assertIn("full-suite: FAIL:", result.stdout)
+
+    def test_missing_wrong_or_skipped_integrations_result_is_incomplete(self):
+        for status in (None, "SKIP"):
+            for strict in (False, True):
+                with self.subTest(status=status, strict=strict):
+                    result = self.run_full_suite(
+                        {"nhintegrations-test": status, "wrong-integrations-test": "PASS"}, strict=strict
+                    )
+                    self.assertEqual(result.returncode, 1 if strict else 0, result.stdout + result.stderr)
+                    self.assertIn("full-suite: INCOMPLETE", result.stdout)
+                    self.assertIn("SKIP Cabal target nhintegrations:nhintegrations-test", result.stdout)
+
+    def test_cabal_and_testbed_failures_remain_fatal(self):
+        for cabal_exit, testbed_exit in ((37, 0), (0, 37)):
+            with self.subTest(cabal_exit=cabal_exit, testbed_exit=testbed_exit):
+                result = self.run_full_suite(cabal_exit=cabal_exit, testbed_exit=testbed_exit)
+                self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
 
 
 if __name__ == "__main__":
