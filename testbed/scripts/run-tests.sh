@@ -22,6 +22,7 @@ ERASURE_MISSING_CALLBACK_SELECTOR=""
 ERASURE_ACTION_FAILURE_SELECTOR=""
 OAUTH_TESTBED_LOG=""
 HURL_TEMP_DIR=""
+S3_UPLOAD_TEMP_DIR=""
 TESTBED_HTTP_HOST="${TESTBED_HTTP_HOST:-127.0.0.1}"
 TESTBED_HTTP_PORT="${TESTBED_HTTP_PORT:-8080}"
 TESTBED_OAUTH_PORT="${TESTBED_OAUTH_PORT:-8081}"
@@ -64,6 +65,9 @@ cleanup() {
 	fi
 	if [ -n "$HURL_TEMP_DIR" ]; then
 		rm -rf "$HURL_TEMP_DIR"
+	fi
+	if [ -n "$S3_UPLOAD_TEMP_DIR" ]; then
+		rm -rf "$S3_UPLOAD_TEMP_DIR"
 	fi
 	for pid in "$OAUTH_TESTBED_PID" "$TESTBED_PID" "$FAKE_SERVICES_PID"; do
 		if [ -n "$pid" ]; then
@@ -263,6 +267,42 @@ if [ -d "$HURL_TEST_ROOT/integrations" ] && [ "$(ls -A "$HURL_TEST_ROOT"/integra
 	failed_effect_id=$(python3 -c 'import uuid; print(uuid.uuid4())')
 	echo "Generic HTTP effect IDs: $delivered_effect_id $failed_effect_id"
 	hurl --test --error-format long --variable "delivered_effect_id=$delivered_effect_id" --variable "failed_effect_id=$failed_effect_id" "$HURL_TEST_ROOT"/integrations/*.hurl
+	echo ""
+fi
+
+if [ -d "$HURL_TEST_ROOT/s3" ] && [ "$(ls -A "$HURL_TEST_ROOT"/s3/*.hurl 2>/dev/null)" ]; then
+	echo -e "${GREEN}Running S3 file upload tests...${NC}"
+	if [ -n "$TESTBED_PID" ]; then
+		kill "$TESTBED_PID" 2>/dev/null || true
+		wait "$TESTBED_PID" 2>/dev/null || true
+		TESTBED_PID=""
+	fi
+	if is_testbed_ready; then
+		echo -e "${RED}Error: Testbed still responds after stopping for S3 mode${NC}"
+		exit 1
+	fi
+	S3_UPLOAD_TEMP_DIR=$(mktemp -d)
+	s3_unused_upload_dir="$S3_UPLOAD_TEMP_DIR/unused-local-uploads"
+	# The file scenarios upload the same PNG bytes for the anonymous owner.
+	# In a shared database, deduplication returns that earlier file reference.
+	s3_db="nh_testbed_s3_${database_suffix}"
+	createdb -h "${DB_HOST:-localhost}" -p "${DB_PORT:-5432}" -U "${DB_USER:-neohaskell}" "$s3_db"
+	echo "S3 testbed database: $s3_db"
+	DB_NAME="$s3_db" \
+		UPLOAD_DIR="$s3_unused_upload_dir" \
+		S3_ENDPOINT="http://127.0.0.1:$TESTBED_FIXTURE_PORT" \
+		S3_BUCKET="testbed-s3-bucket" \
+		S3_REGION="us-east-1" \
+		S3_ACCESS_KEY_ID="testbed-s3-access-key" \
+		S3_SECRET_ACCESS_KEY="testbed-s3-secret-key" \
+		"$(cabal "${CABAL_GLOBAL_OPTIONS[@]}" list-bin "${CABAL_EXE_OPTIONS[@]}" exe:nhtestbed)" &
+	TESTBED_PID=$!
+	wait_for_service "http://127.0.0.1:$TESTBED_HTTP_PORT/health" "S3 testbed" "$TESTBED_PID"
+	hurl --test "$HURL_TEST_ROOT"/s3/*.hurl
+	if [ -e "$s3_unused_upload_dir" ]; then
+		echo -e "${RED}Error: S3 file upload mode created local directory $s3_unused_upload_dir${NC}"
+		exit 1
+	fi
 	echo ""
 fi
 

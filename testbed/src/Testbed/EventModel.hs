@@ -1,11 +1,13 @@
 -- | Compose testbed Features and configure their shared application runtime.
--- Run 'appEventModel' through 'Service.EventModel.run'.
-module Testbed.EventModel (appEventModel) where
+-- Run 'appEventModel' or 's3AppEventModel' through 'Service.EventModel.run'.
+module Testbed.EventModel (appEventModel, s3AppEventModel) where
 
 import Core
 import Result qualified
 import Service.Application (ApiInfo (..))
 import Service.EventModel qualified as EventModel
+import Service.FileUpload.BlobStore (BlobStoreConfig)
+import Service.FileUpload.Core (FileUploadConfig)
 import Service.Transport.Web qualified as WebTransport
 import Set qualified as Set
 import Testbed.Cart.Feature (cartFlow)
@@ -14,13 +16,27 @@ import Testbed.Document.Feature (documentFlow)
 import Testbed.Erasable.Feature (protectedFlow)
 import Testbed.Erasable.Owned.Feature (ownedErasureFlow)
 import Testbed.ExternalEffect.Feature (externalEffectFlow)
-import Testbed.Infrastructure (makeFileUploadConfig, makePostgresConfig)
+import Testbed.Infrastructure (makeFileUploadConfig, makePostgresConfig, makeS3FileUploadConfig)
 import Testbed.RequestOrigin (requestOriginFlow)
 import Testbed.Stock.Feature (stockFlow)
 
 
 appEventModel :: Text -> Int -> Result Text EventModel.EventModel
-appEventModel httpHost httpPort = EventModel.eventModel do
+appEventModel httpHost httpPort = testbedEventModel httpHost httpPort makeFileUploadConfig
+
+
+s3AppEventModel :: Text -> Int -> Result Text EventModel.EventModel
+s3AppEventModel httpHost httpPort = testbedEventModel httpHost httpPort makeS3FileUploadConfig
+
+
+testbedEventModel ::
+  forall blobStoreConfig.
+  (BlobStoreConfig blobStoreConfig) =>
+  Text ->
+  Int ->
+  (TestbedConfig -> FileUploadConfig blobStoreConfig) ->
+  Result Text EventModel.EventModel
+testbedEventModel httpHost httpPort uploadFactory = EventModel.eventModel do
   EventModel.appName "Testbed"
   EventModel.withConfig @TestbedConfig
   EventModel.withEventStore makePostgresConfig
@@ -32,7 +48,7 @@ appEventModel httpHost httpPort = EventModel.eventModel do
   EventModel.withHost httpHost
   EventModel.withPort httpPort
   EventModel.withApiInfo @() (\_ -> testbedApiInfo)
-  EventModel.withFileUpload makeFileUploadConfig
+  EventModel.withFileUpload uploadFactory
   EventModel.features do
     cartFlow
     stockFlow

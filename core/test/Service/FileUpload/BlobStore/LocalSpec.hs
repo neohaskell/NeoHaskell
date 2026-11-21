@@ -8,6 +8,7 @@ import Directory qualified
 import "nhcore" Path qualified
 import Result qualified
 import Service.FileUpload.BlobStore (BlobStore (..), BlobStoreError (..))
+import Service.FileUpload.BlobStore qualified as BlobStore
 import Service.FileUpload.BlobStore.Local (LocalBlobStoreConfig (..), createBlobStore)
 import Service.FileUpload.Core (BlobKey (..))
 import Task qualified
@@ -284,6 +285,13 @@ spec = do
           -- All should be True
           let allExist = not (existResults |> Array.any (\exists -> not exists))
           allExist |> shouldBe True
+
+    describe "Configuration" do
+      it "rejects empty and blank rootDir values" \_ -> do
+        emptyResult <- createBlobStore LocalBlobStoreConfig {rootDir = [Path.path||]} |> Task.asResult
+        emptyResult |> Result.map (\_ -> ()) |> shouldBe (Err "Local blob store rootDir cannot be empty")
+        blankResult <- BlobStore.createBlobStore LocalBlobStoreConfig {rootDir = [Path.path|   |]} |> Task.asResult
+        blankResult |> Result.map (\_ -> ()) |> shouldBe (Err "Local blob store rootDir cannot be empty")
 
 
 -- ==========================================================================

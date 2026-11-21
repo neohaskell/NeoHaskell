@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-import hashlib
-import json
 import base64
+import hashlib
+import hmac
+import json
 import os
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import parse_qs, urlencode, urlsplit
@@ -17,6 +18,10 @@ CLIENT_ID = "testbed-client"
 CLIENT_SECRET = "testbed-fake-client-secret"
 REDIRECT_URI = f"http://localhost:{os.environ.get('TESTBED_OAUTH_PORT', '8081')}/callback/test-provider"
 AUTHORIZATION_CODE = "fixture-authorization-code"
+S3_BUCKET = os.environ.get("S3_BUCKET", "testbed-s3-bucket")
+S3_REGION = os.environ.get("S3_REGION", "us-east-1")
+S3_ACCESS_KEY_ID = os.environ.get("S3_ACCESS_KEY_ID", "testbed-s3-access-key")
+S3_SECRET_ACCESS_KEY = os.environ.get("S3_SECRET_ACCESS_KEY", "testbed-s3-secret-key")
 FIXTURE_JWT = ".".join(
     (
         "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6InRlc3RiZWQtcnMyNTYifQ",
@@ -53,6 +58,17 @@ JWKS = {
 }
 
 
+def empty_s3_state() -> dict:
+    return {
+        "objects": {},
+        "putCount": 0,
+        "getCount": 0,
+        "headCount": 0,
+        "deleteCount": 0,
+        "rejectedCount": 0,
+    }
+
+
 def empty_state() -> dict:
     return {
         "effects": {},
@@ -65,6 +81,7 @@ def empty_state() -> dict:
         "pkceVerified": False,
         "tokenExchangeSucceeded": False,
         "pkceChallenge": None,
+        "s3": empty_s3_state(),
     }
 
 
@@ -75,6 +92,62 @@ def decode_form(body: bytes) -> dict[str, str]:
 def pkce_challenge(verifier: str) -> str:
     digest = hashlib.sha256(verifier.encode("ascii")).digest()
     return base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
+
+
+def hmac_sha256(key: bytes, message: bytes) -> bytes:
+    return hmac.new(key, message, hashlib.sha256).digest()
+
+
+def verify_s3_request(method: str, raw_path: str, headers: dict[str, str], body: bytes) -> bool:
+    authorization = headers.get("authorization", "")
+    if not authorization.startswith("AWS4-HMAC-SHA256 "):
+        return False
+    attributes = {}
+    for item in authorization.removeprefix("AWS4-HMAC-SHA256 ").split(", "):
+        if "=" not in item:
+            return False
+        name, value = item.split("=", 1)
+        attributes[name] = value
+    credential = attributes.get("Credential", "")
+    signed_headers_raw = attributes.get("SignedHeaders", "")
+    received_signature = attributes.get("Signature", "")
+    parts = credential.split("/")
+    if len(parts) != 5:
+        return False
+    access_key, date_stamp, region, service, terminator = parts
+    if (
+        access_key != S3_ACCESS_KEY_ID
+        or region != S3_REGION
+        or service != "s3"
+        or terminator != "aws4_request"
+        or not date_stamp
+    ):
+        return False
+    amz_date = headers.get("x-amz-date", "")
+    payload_hash = hashlib.sha256(body).hexdigest()
+    if not amz_date.startswith(date_stamp) or headers.get("x-amz-content-sha256") != payload_hash:
+        return False
+    signed_names = signed_headers_raw.split(";")
+    for required in ("host", "x-amz-content-sha256", "x-amz-date"):
+        if required not in signed_names or not headers.get(required):
+            return False
+    canonical_headers = "".join(
+        f"{name}:{' '.join(headers.get(name, '').split())}\n" for name in signed_names
+    )
+    canonical_request = "\n".join(
+        (method, raw_path, "", canonical_headers, signed_headers_raw, payload_hash)
+    )
+    request_hash = hashlib.sha256(canonical_request.encode("utf-8")).hexdigest()
+    scope = f"{date_stamp}/{region}/s3/aws4_request"
+    string_to_sign = "\n".join(("AWS4-HMAC-SHA256", amz_date, scope, request_hash))
+    date_key = hmac_sha256(("AWS4" + S3_SECRET_ACCESS_KEY).encode("utf-8"), date_stamp.encode("utf-8"))
+    region_key = hmac_sha256(date_key, region.encode("utf-8"))
+    service_key = hmac_sha256(region_key, b"s3")
+    signing_key = hmac_sha256(service_key, b"aws4_request")
+    expected_signature = hmac.new(
+        signing_key, string_to_sign.encode("utf-8"), hashlib.sha256
+    ).hexdigest()
+    return hmac.compare_digest(received_signature, expected_signature)
 
 
 class FixtureServer(HTTPServer):
@@ -103,6 +176,20 @@ class FixtureHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(encoded)
 
+    def send_s3_xml_error(self, code: str, status: int) -> None:
+        encoded = f"<Error><Code>{code}</Code></Error>".encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/xml")
+        self.send_header("Content-Length", str(len(encoded)))
+        self.end_headers()
+        self.wfile.write(encoded)
+
+    def read_body(self) -> bytes:
+        length = int(self.headers.get("Content-Length", "0"))
+        if length <= 0:
+            return b""
+        return self.rfile.read(length)
+
     def read_json(self) -> dict | None:
         length = int(self.headers.get("Content-Length", "0"))
         if length <= 0 or length > 16384:
@@ -113,10 +200,108 @@ class FixtureHandler(BaseHTTPRequestHandler):
             return None
         return value if isinstance(value, dict) else None
 
+    def lowercase_headers(self) -> dict[str, str]:
+        return {key.lower(): value for key, value in self.headers.items()}
+
+    def is_s3_bucket_path(self, path: str) -> bool:
+        return path.startswith(f"/{S3_BUCKET}/")
+
+    def handle_s3(self, method: str) -> None:
+        raw_path = urlsplit(self.path).path
+        body = self.read_body()
+        s3_state = self.server.fixture_state["s3"]
+        if not verify_s3_request(method, raw_path, self.lowercase_headers(), body):
+            s3_state["rejectedCount"] += 1
+            if method == "HEAD":
+                self.send_response(403)
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+            else:
+                self.send_s3_xml_error("AccessDenied", 403)
+            return
+        objects = s3_state["objects"]
+        if method == "PUT":
+            objects[raw_path] = body
+            s3_state["putCount"] += 1
+            etag = f'"{hashlib.sha256(body).hexdigest()[:16]}-{len(body)}"'
+            self.send_response(200)
+            self.send_header("ETag", etag)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+        elif method == "GET":
+            s3_state["getCount"] += 1
+            stored = objects.get(raw_path)
+            if stored is None:
+                self.send_s3_xml_error("NoSuchKey", 404)
+                return
+            etag = f'"{hashlib.sha256(stored).hexdigest()[:16]}-{len(stored)}"'
+            self.send_response(200)
+            self.send_header("ETag", etag)
+            self.send_header("Content-Type", "application/octet-stream")
+            self.send_header("Content-Length", str(len(stored)))
+            self.end_headers()
+            self.wfile.write(stored)
+        elif method == "HEAD":
+            s3_state["headCount"] += 1
+            stored = objects.get(raw_path)
+            if stored is None:
+                self.send_response(404)
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
+            etag = f'"{hashlib.sha256(stored).hexdigest()[:16]}-{len(stored)}"'
+            self.send_response(200)
+            self.send_header("ETag", etag)
+            self.send_header("Content-Length", str(len(stored)))
+            self.end_headers()
+        elif method == "DELETE":
+            s3_state["deleteCount"] += 1
+            objects.pop(raw_path, None)
+            self.send_response(204)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+
+    def do_PUT(self) -> None:
+        path = urlsplit(self.path).path
+        if self.is_s3_bucket_path(path):
+            self.handle_s3("PUT")
+        else:
+            self.send_json({"error": "not found"}, 404)
+
+    def do_HEAD(self) -> None:
+        path = urlsplit(self.path).path
+        if self.is_s3_bucket_path(path):
+            self.handle_s3("HEAD")
+        else:
+            self.send_response(404)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+
+    def do_DELETE(self) -> None:
+        path = urlsplit(self.path).path
+        if self.is_s3_bucket_path(path):
+            self.handle_s3("DELETE")
+        else:
+            self.send_json({"error": "not found"}, 404)
+
     def do_GET(self) -> None:
         path = urlsplit(self.path).path
-        if path == "/health":
+        if self.is_s3_bucket_path(path):
+            self.handle_s3("GET")
+        elif path == "/health":
             self.send_json({"status": "ok", "fixture": "neohaskell-testbed"})
+        elif path == "/s3/observations":
+            s3_state = self.server.fixture_state["s3"]
+            self.send_json(
+                {
+                    "putCount": s3_state["putCount"],
+                    "getCount": s3_state["getCount"],
+                    "headCount": s3_state["headCount"],
+                    "deleteCount": s3_state["deleteCount"],
+                    "rejectedCount": s3_state["rejectedCount"],
+                    "objectCount": len(s3_state["objects"]),
+                }
+            )
         elif path == "/fixture/jwt":
             self.send_json({"accessToken": FIXTURE_JWT})
         elif path == "/fixture/other-jwt":
@@ -159,6 +344,9 @@ class FixtureHandler(BaseHTTPRequestHandler):
         path = urlsplit(self.path).path
         if path == "/fixture/reset":
             self.server.fixture_state = empty_state()
+            self.send_json({"status": "reset"})
+        elif path == "/fixture/reset/s3":
+            self.server.fixture_state["s3"] = empty_s3_state()
             self.send_json({"status": "reset"})
         elif path == "/fixture/reset/external-effects":
             self.server.fixture_state["effects"] = {}
