@@ -7,9 +7,9 @@ module Starter.Counter.Entity (
 
 import Core
 import Derive
-import Starter.Counter.Events.CounterCreated (CounterCreated)
-import Starter.Counter.Events.CounterDecremented (CounterDecremented)
-import Starter.Counter.Events.CounterIncremented (CounterIncremented)
+import Starter.Counter.Events.CounterCreated (CounterCreated (..))
+import Starter.Counter.Events.CounterDecremented (CounterDecremented (..))
+import Starter.Counter.Events.CounterIncremented (CounterIncremented (..))
 import Uuid qualified
 
 data CounterEntity = CounterEntity
