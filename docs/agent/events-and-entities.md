@@ -2,6 +2,12 @@
 
 An entity is the current state of one stream. Its event type records accepted changes. `EntityOf command` chooses the command's entity type. `EventOf entity` chooses that entity's event type. `EntityOf event` connects event routing to the entity.
 
+## A catalogue of named events
+
+In a generated project each payload has the same name as its module. Import `Core` and `Derive`. Place `derive ''CounterCreated eventPayload` below a payload record to derive its JSON instances. In the entity module, put `derive ''CounterEntity entity { events = [''CounterCreated, ''CounterIncremented] }` between the state record and its functions. The catalogue derives the parent event type, ownership, routing and variant instances. Each conventional payload has an `entityId` field. The parent event uses the payload name for its stored tag.
+
+Write `initialState :: CounterEntity` and `update :: CounterEvent -> CounterEntity -> CounterEntity`. Match `CounterEventCounterCreated payload` in the reducer. In a Feature, refer to the payload type directly with `produces @CounterCreated` or `onEvent @CounterCreated`.
+
 ## State reconstruction
 
 `initialStateImpl` supplies the reducer's starting state. `updateImpl` has the shape `event -> entity -> entity`. The framework reconstructs an entity by applying its events in order. Keep the reducer pure and deterministic.
@@ -13,11 +19,11 @@ This fragment describes the reducer shape. It needs the entity and event declara
 ```haskell ignore
 update :: CounterEvent -> CounterEntity -> CounterEntity
 update event entity = case event of
-	CounterIncremented payload ->
+	CounterEventCounterIncremented payload ->
 		entity {value = entity.value + payload.amount}
-	CounterDecremented payload ->
+	CounterEventCounterDecremented payload ->
 		entity {value = entity.value - payload.amount}
-	CounterCreated payload ->
+	CounterEventCounterCreated payload ->
 		CounterEntity {counterId = payload.entityId, label = payload.label, value = 0}
 ```
 
@@ -29,7 +35,7 @@ For a handwritten event sum, add the new constructor, its routing branch, and it
 
 `deriveEvent` supplies serialization and stock instances that are missing. `deriveEntity` supplies missing entity plumbing, while application code still defines state transitions and event routing. Read [marker order](template-haskell-order.md) before using either marker.
 
-For a new entity whose events are separate payload types, call `deriveEntityEvents ''Proposal [''ProposalCreated, ''PdfUploaded]` after declaring or importing both payloads and their `EntityOf` mappings. The marker generates `ProposalEvent`, one constructor per listed payload, `EventOf Proposal`, payload injection and extraction, routing through each payload's `Event` instance, and JSON instances for the parent event. Define the entity reducer and each payload's `Event` routing instance after the marker so the reducer can match the generated constructors. A command can pass one payload type directly to `Decider.acceptNew` or `Decider.acceptExisting`; use `event` around each payload in a mixed list. The marker does not read or evaluate an Event Model.
+If you maintain explicit event ownership and routing instances, call `deriveEntityEvents ''Proposal [''ProposalCreated, ''PdfUploaded]` after declaring or importing both payloads and their `EntityOf` mappings. The marker generates `ProposalEvent`, one constructor per listed payload, `EventOf Proposal`, payload injection and extraction, routing through each payload's `Event` instance, and JSON instances for the parent event. Define the entity reducer and each payload's `Event` routing instance after the marker so the reducer can match the generated constructors. A command can pass one payload type directly to `Decider.acceptNew` or `Decider.acceptExisting`; use `event` around each payload in a mixed list. The marker does not read or evaluate an Event Model.
 
 Generated parent events use tagged JSON even when the list has one payload. Adding another payload does not remove that tag from earlier events.
 

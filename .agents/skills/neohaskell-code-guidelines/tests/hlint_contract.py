@@ -140,6 +140,8 @@ class StaticChecks(unittest.TestCase):
         self.assertIn("Conflicting component", self.check(2))
         cabal.write_text("library\n  if flag(strict)\n    default-extensions: Strict\n  hs-source-dirs: core\n")
         self.assertIn("Conditional Cabal", self.check(2))
+        cabal.write_text("library\n  default-extensions: Arrows\n  if flag(launcher)\n    build-depends: nhcore:launcher\n    cpp-options: -DHAS_LAUNCHER\n  hs-source-dirs: core\n")
+        self.check(0)
 
     def test_component_overrides_and_compiler_flag_precedence(self):
         self.source("common base\n  default-extensions: Strict\ncommon inherited\n  import: base\nlibrary\n  import: inherited\n  hs-source-dirs: strict\ntest-suite lazy\n  import: inherited\n  ghc-options: -XNoStrict\n  default-extensions: Strict\n  hs-source-dirs: lazy\n", "fixture.cabal")

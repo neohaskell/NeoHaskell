@@ -1,7 +1,7 @@
 module Main where
 
 import Core
-import Service.EventModel qualified as EventModel
+import Service.EventModel.Launcher qualified as EventModel
 import Task qualified
 import Testbed.Config (readHost, readPort)
 import Testbed.EventModel (appEventModel)

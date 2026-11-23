@@ -1,7 +1,7 @@
 -- | Represent the local Feature hierarchy and its typed component references.
 -- The public builders in 'Service.EventModel' construct these values.
 module Service.EventModel.Types (
-  EventModel (..),
+  ValidatedEventModel (..),
   Feature (..),
   Chapter (..),
   Slice (..),
@@ -63,7 +63,7 @@ import Uuid (Uuid)
 import Prelude (Applicative (..), Functor (..), Monad (..))
 
 
-data EventModel = EventModel
+data ValidatedEventModel = ValidatedEventModel
   { modelName :: Text,
     modelFeatures :: [Feature],
     modelConfiguration :: [Application -> Application]

@@ -38,6 +38,7 @@ def read_components(root, path, package_root):
     stanzas = {}
     current = None
     field = None
+    condition_indent = None
     for number, raw in enumerate((root / path).read_text().splitlines(), 1):
         line = raw.split("--", 1)[0].rstrip()
         if not line.strip():
@@ -46,8 +47,17 @@ def read_components(root, path, package_root):
             if line.strip() not in {"{% for dep, ver in dependencies %}", "{% endfor %}", "{% for module in modules %}", "{% if not is_library %}", "{% endif %}", "{% if test_modules %}", "{% for module in test_modules %}"} and not line.startswith("{% if description %}"):
                 raise ValueError(f"Unsupported template condition in {path}:{number}.")
             continue
+        indent = len(line) - len(line.lstrip())
         if re.match(r"\s*(if\b|elif\b|else\b)", line):
-            raise ValueError(f"Conditional Cabal settings need explicit support in {path}:{number}.")
+            condition_indent = indent if condition_indent is None else min(indent, condition_indent)
+            field = None
+            continue
+        if condition_indent is not None:
+            if indent > condition_indent:
+                if re.fullmatch(r"\s*build-depends:.*|\s*cpp-options:(?:\s+-D[A-Za-z_][A-Za-z0-9_]*)+", line):
+                    continue
+                raise ValueError(f"Conditional Cabal settings need explicit support in {path}:{number}.")
+            condition_indent = None
         if not line[:1].isspace():
             match = re.fullmatch(r"(common|library|executable|test-suite|benchmark)(?:\s+(.+))?", line)
             current = (match[1], match[2] or "") if match else None

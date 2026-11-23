@@ -1,7 +1,7 @@
 module Service.EventStore.Postgres.Core where
 
 import Array qualified
-import Core
+import Core.Prelude
 import Hasql.Pool qualified as HasqlPool
 import Maybe qualified
 import Service.Event qualified as Event

@@ -10,7 +10,7 @@ import Testbed.EventModel qualified as App
 import Testbed.Stock.Feature (stockFlow)
 
 
-valid :: Result Text EventModel.EventModel
+valid :: EventModel
 valid = EventModel.eventModel do
   EventModel.appName "Compiler fixture"
   EventModel.features do
@@ -19,6 +19,6 @@ valid = EventModel.eventModel do
 
 
 existingApplication :: Text -> Int -> Application
-existingApplication host port = case App.appEventModel host port of
+existingApplication host port = case App.appEventModel host port |> EventModel.validate of
   Err problem -> panic problem
   Ok model -> EventModel.toApplication model

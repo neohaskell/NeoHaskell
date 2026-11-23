@@ -1,14 +1,13 @@
--- | Declare the executable counter flow beside its commands and query.
 module Starter.Counter.Feature (counterFlow) where
 
 import Service.EventModel
 import Starter.Counter.Commands.CreateCounter (CreateCounter)
 import Starter.Counter.Commands.DecrementCounter (DecrementCounter)
 import Starter.Counter.Commands.IncrementCounter (IncrementCounter)
-import Starter.Counter.Core (CounterEntity)
-import Starter.Counter.Events.CounterCreated qualified as CounterCreated
-import Starter.Counter.Events.CounterDecremented qualified as CounterDecremented
-import Starter.Counter.Events.CounterIncremented qualified as CounterIncremented
+import Starter.Counter.Entity (CounterEntity)
+import Starter.Counter.Events.CounterCreated (CounterCreated)
+import Starter.Counter.Events.CounterDecremented (CounterDecremented)
+import Starter.Counter.Events.CounterIncremented (CounterIncremented)
 import Starter.Counter.Queries.CounterView (CounterView)
 
 
@@ -18,21 +17,21 @@ counterFlow = feature "Counter flow" do
     slice "Create a counter" do
       entity @CounterEntity do
         command @CreateCounter do
-          produces @CounterCreated.Event
+          produces @CounterCreated
 
     slice "Increment a counter" do
       entity @CounterEntity do
         command @IncrementCounter do
-          produces @CounterIncremented.Event
+          produces @CounterIncremented
 
     slice "Decrement a counter" do
       entity @CounterEntity do
         command @DecrementCounter do
-          produces @CounterDecremented.Event
+          produces @CounterDecremented
 
     slice "Show counter values" do
       query @CounterView do
         readsFrom @CounterEntity do
-          onEvent @CounterCreated.Event
-          onEvent @CounterIncremented.Event
-          onEvent @CounterDecremented.Event
+          onEvent @CounterCreated
+          onEvent @CounterIncremented
+          onEvent @CounterDecremented

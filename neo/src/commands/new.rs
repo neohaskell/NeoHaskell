@@ -423,7 +423,7 @@ async fn do_scaffold(mut config: ProjectConfig) -> miette::Result<()> {
         let mut content = std::fs::read_to_string(&gitignore_path)
             .map_err(|e| crate::errors::NeoError::io_at("reading `.gitignore` at", &gitignore_path, e))?;
         if !content.contains("!*.cabal") {
-            content.push_str("\n# Ensure cabal files are tracked for Nix\n!*.cabal\n");
+            content.push_str("\n!*.cabal\n");
             std::fs::write(&gitignore_path, content)
                 .map_err(|e| crate::errors::NeoError::io_at("appending to `.gitignore` at", &gitignore_path, e))?;
         }

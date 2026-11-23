@@ -6,6 +6,7 @@ module Testbed.Cart.Queries.CartStockActivity (CartStockActivity (..), canAccess
 
 import Array qualified
 import Core
+import Derive
 import Service.AccessControl (AccessError, UserClaims)
 import Service.AccessControl qualified as AccessControl
 import Testbed.Cart.Core (CartEntity (..))
@@ -30,28 +31,32 @@ canView :: Maybe UserClaims -> CartStockActivity -> Maybe AccessError
 canView claims activity = AccessControl.publicView claims activity
 
 
-deriveQuery ''CartStockActivity [''CartEntity, ''StockEntity]
+projectionIdFromCartEntity :: CartEntity -> Uuid
+projectionIdFromCartEntity _ = Uuid.nil
 
 
-instance QueryOf CartEntity CartStockActivity where
-  queryId _ = Uuid.nil
-
-  combine cart previous = do
-    let current = case previous of
-          Just activity -> activity
-          Nothing -> emptyActivity
-    Update current {cartSeen = True, cartItemCount = Array.length cart.items}
+combineCartEntity :: CartEntity -> Maybe CartStockActivity -> QueryAction CartStockActivity
+combineCartEntity cart previous = do
+  let current = case previous of
+        Just activity -> activity
+        Nothing -> emptyActivity
+  Update current {cartSeen = True, cartItemCount = Array.length cart.items}
 
 
-instance QueryOf StockEntity CartStockActivity where
-  queryId _ = Uuid.nil
+projectionIdFromStockEntity :: StockEntity -> Uuid
+projectionIdFromStockEntity _ = Uuid.nil
 
-  combine stock previous = do
-    let current = case previous of
-          Just activity -> activity
-          Nothing -> emptyActivity
-    Update current {stockSeen = True, stockReserved = stock.reserved}
+
+combineStockEntity :: StockEntity -> Maybe CartStockActivity -> QueryAction CartStockActivity
+combineStockEntity stock previous = do
+  let current = case previous of
+        Just activity -> activity
+        Nothing -> emptyActivity
+  Update current {stockSeen = True, stockReserved = stock.reserved}
 
 
 emptyActivity :: CartStockActivity
 emptyActivity = CartStockActivity {activityId = Uuid.nil, cartSeen = False, stockSeen = False, cartItemCount = 0, stockReserved = 0}
+
+
+derive ''CartStockActivity query { entities = [''CartEntity, ''StockEntity] }

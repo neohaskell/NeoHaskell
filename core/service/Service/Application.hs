@@ -49,6 +49,7 @@ module Service.Application (
   withoutHealthCheck,
   withHost,
   withPort,
+  withPortFromConfig,
   withDispatcherConfig,
   useQueryObjectStore,
   useReadinessEndpoint,
@@ -81,6 +82,7 @@ module Service.Application (
 
   -- * Running
   run,
+  runValidated,
   runWith,
   runWithAsync,
 ) where
@@ -163,7 +165,7 @@ import Service.FileUpload.Core qualified as FileUploadCore
 import Service.FileUpload.Lifecycle qualified as FileLifecycle
 import Config qualified
 import Config.Global qualified as ConfigGlobal
-import Data.Typeable (Typeable, eqT)
+import Data.Typeable (Typeable, cast, eqT)
 import Data.Type.Equality ((:~:)(..))
 import OptEnvConf (HasParser)
 import Task (Task)
@@ -267,6 +269,9 @@ data QueryObjectStoreConfigValue = forall config. (QueryObjectStoreConfig config
 --
 -- This allows storing the config loader in Application without knowing the concrete type.
 -- The config type is captured at 'withConfig' and loaded during 'run'.
+data ConfiguredPort = forall config. (Typeable config) => ConfiguredPort (config -> Int)
+
+
 data ConfigSpec = forall config. (HasParser config, Typeable config) => ConfigSpec (Task Text config)
 
 
@@ -417,7 +422,8 @@ data Application = Application
     -- | Interface the WebTransport binds. Set via withHost; Nothing keeps the transport's own host.
     bindHost :: Maybe Text,
     -- | Port the WebTransport binds. Set via withPort; Nothing keeps the transport's own port.
-    bindPort :: Maybe Int
+    bindPort :: Maybe Int,
+    portFromConfig :: Maybe ConfiguredPort
   }
 
 
@@ -457,6 +463,7 @@ new =
       integrationRegistrations = Array.empty,
       readinessConfig = Just ReadinessConfig {readinessPath = "ready", includeQueryStatus = True},
       bindHost = Nothing,
+      portFromConfig = Nothing,
       bindPort = Nothing
     }
 
@@ -827,14 +834,20 @@ initAndWrapFileUpload fileConfig = do
 --   |> Application.run
 -- @
 run :: Application -> Task Text Unit
-run app =
+run app = runValidated (Ok app)
+
+
+-- | Initialize process output before reporting validation errors or acquiring resources.
+runValidated :: Result Text Application -> Task Text Unit
+runValidated ~validated =
    Log.withScope [("component", "Application")] do
-     validateStaticBindOverrides app
-     -- 0. Set line buffering for stdout/stderr (container visibility)
-     -- GHC defaults to block buffering when isatty() returns false (always in containers),
-     -- which makes Console.print output invisible. LineBuffering ensures immediate visibility.
      Task.fromIO (GhcIO.hSetBuffering GhcIO.stdout GhcIO.LineBuffering)
      Task.fromIO (GhcIO.hSetBuffering GhcIO.stderr GhcIO.LineBuffering)
+     app <- case validated of
+       Err problem -> Task.throw problem
+       Ok value -> Task.yield value
+     app.serviceRunners |> Task.forEach (ServiceDefinition.validateCommandTransports app.transports)
+     validateStaticBindOverrides app
 
      -- 1. Load .env file if present (before config loading)
      -- This allows environment variables to be set from .env files
@@ -842,8 +855,10 @@ run app =
      Environment.loadEnvFileIfPresent ".env"
 
      -- 2. Load config (now that .env vars are available)
-     case app.configSpec of
-       Nothing -> pass
+     configuredPort <- case app.configSpec of
+       Nothing -> case app.portFromConfig of
+         Nothing -> Task.yield app.bindPort
+         Just _ -> Task.throw "withPortFromConfig requires withConfig"
        Just (ConfigSpec loadConfig) -> do
          Log.info "Loading configuration..."
            |> Task.ignoreError
@@ -852,6 +867,15 @@ run app =
          Task.fromIO (ConfigGlobal.setGlobalConfig config)
          Log.info "Configuration loaded successfully"
            |> Task.ignoreError
+         case app.portFromConfig of
+           Nothing -> Task.yield app.bindPort
+           Just (ConfiguredPort select) -> case cast config of
+             Nothing -> Task.throw "withPortFromConfig expects the type registered with withConfig"
+             Just typedConfig -> do
+               let port = select typedConfig
+               case Web.validateBindPort port of
+                 Just reason -> Task.throw [fmt|withPortFromConfig: #{reason}|]
+                 Nothing -> Task.yield (Just port)
 
      -- 2b. Parse ADR-0055 integration selection from argv and wire DispatchRegistry
      (registry, maybeIntegrationStatus) <- buildIntegrationContext app
@@ -982,7 +1006,8 @@ run app =
                app.inboundIntegrations
      -- 6. Run with resolved event store, file upload, auth, and config-dependent settings
      let resolvedApp = app
-           { corsConfig = resolvedCorsConfig
+           { bindPort = configuredPort
+           , corsConfig = resolvedCorsConfig
            , apiInfo = resolvedApiInfo
            , healthCheckConfig = resolvedHealthCheckConfig
            , dispatcherConfig = resolvedDispatcherConfig
@@ -1023,6 +1048,10 @@ validateStaticBindOverrides app =
 -- 6. Runs each transport once with combined endpoints
 runWith :: EventStore Json.Value -> Application -> Task Text Unit
 runWith eventStore app = do
+  app.serviceRunners |> Task.forEach (ServiceDefinition.validateCommandTransports app.transports)
+  case app.portFromConfig of
+    Just _ -> Task.throw "runWith cannot load a config-dependent port. Use Application.run or withPort."
+    Nothing -> pass
   validateStaticBindOverrides app
   -- Resolve file upload (only EvaluatedFileUpload supported - DeferredFileUpload requires run)
   (maybeFileUploadSetup, fileUploadCleanup) <- case app.fileUploadFactory of
@@ -1946,7 +1975,13 @@ withPort ::
   Application ->
   Application
 withPort port app =
-  app {bindPort = Just port}
+  app {bindPort = Just port, portFromConfig = Nothing}
+
+
+-- | Select the Web bind port after the registered configuration has loaded.
+withPortFromConfig :: (Typeable config) => (config -> Int) -> Application -> Application
+withPortFromConfig select app =
+  app {bindPort = Nothing, portFromConfig = Just (ConfiguredPort select)}
 
 
 -- | Validate dispatcher configuration fields are positive.

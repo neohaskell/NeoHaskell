@@ -6,21 +6,15 @@ module Starter.Counter.Commands.CreateCounter (
 
 import Core
 import Decider qualified
+import Derive
 import Service.Auth (RequestContext)
-import Service.Command.Core (TransportsOf)
-import Service.CommandExecutor.TH (command)
-import Service.Transport.Web (WebTransport)
-import Starter.Counter.Core
-import Starter.Counter.Events.CounterCreated qualified as CounterCreated
+import Starter.Counter.Entity (CounterEntity, CounterEvent)
+import Starter.Counter.Events.CounterCreated (CounterCreated (..))
 
-
--- | Create a new counter. The entity id is generated in `decide`.
 data CreateCounter = CreateCounter
   { label :: Text
   }
 
-
--- | `Nothing` means "creation" — no existing entity should be loaded.
 getEntityId :: CreateCounter -> Maybe Uuid
 getEntityId _ = Nothing
 
@@ -36,17 +30,10 @@ decide cmd entity _ctx = case entity of
         newId <- Decider.generateUuid
         Decider.acceptNew
           [ CounterCreated
-              CounterCreated.Event
-                { entityId = newId
-                , label = cmd.label
-                }
+              { entityId = newId
+              , label = cmd.label
+              }
           ]
 
 
-type instance EntityOf CreateCounter = CounterEntity
-
-
-type instance TransportsOf CreateCounter = '[WebTransport]
-
-
-command ''CreateCounter
+derive ''CreateCounter command { entity = ''CounterEntity }

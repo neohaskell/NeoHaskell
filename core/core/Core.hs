@@ -1,60 +1,10 @@
--- | # Core
---
--- This module is automatically imported in all the NeoHaskell files,
+-- | Language vocabulary and application configuration for NeoHaskell projects.
 module Core (
-  module Reexported,
-  deriveEntity,
+  derive,
+  module Authoring,
+  module Core.Prelude,
 ) where
 
-import Appendable as Reexported ((++))
-import Array as Reexported (Array)
-import Basics as Reexported
-import Bytes as Reexported (Bytes)
-import Channel as Reexported (Channel)
-import Char as Reexported (Char)
-import ConcurrentVar as Reexported (ConcurrentVar)
-import Console as Reexported (log, print, readLine)
-import DateTime as Reexported (DateTime)
-import Decimal as Reexported (Decimal)
-import Decider as Reexported (CommandResult (..), Decision)
-import EventVariantOf as Reexported (EventVariantOf (..), event)
-import Default as Reexported (Default (..), defaultValue)
-import Documented as Reexported (Documented (..))
-import DurableChannel as Reexported (DurableChannel)
-import Function as Reexported
-import IO as Reexported (IO)
-import LinkedList as Reexported (LinkedList)
-import Lock as Reexported (Lock)
-import Map as Reexported (Map)
-import Maybe as Reexported (Maybe (..))
-import Redacted as Reexported (Redacted)
-import Path as Reexported (Path, path)
-import Record as Reexported (KnownHash (..), Record)
-import Result as Reexported (Result (..))
-import Schema as Reexported (Schema (..), FieldSchema (..), ToSchema (..))
--- Command's auth method is named 'canExecuteImpl' (paired with 'execute') to
--- coexist with 'Query.canAccessImpl' under one Core re-export.
-import Service.Command as Reexported (Command (IsMultiTenant, getEntityIdImpl, decideImpl, canExecuteImpl), NameOf)
-import Service.CommandExecutor.TH as Reexported (deriveCommand)
-import Service.Entity as Reexported (Entity (..), EntityOf, EventOf)
-import Service.Entity.TH (deriveEntity)
-import Service.InboundIntegration.Core as Reexported (InboundIntegration (..))
-import Service.InboundIntegration.TH as Reexported (inboundIntegration)
-import Service.Event as Reexported (InsertionType (..), StreamId, ToStreamId (..))
-import Service.Event.TH as Reexported (deriveEvent, deriveEntityEvents)
-import Service.OutboundIntegration.Core as Reexported (OutboundIntegration (..))
-import Service.OutboundIntegration.TH as Reexported (deriveOutboundIntegration)
-import Service.Query as Reexported (EntitiesOf, Query (..), QueryAction (..), QueryOf (..))
-import Service.Query.TH as Reexported (deriveQuery)
-import Service.ServiceDefinition.Core as Reexported (
-  Service,
- )
-import Task as Reexported (Task)
-import Text as Reexported (Text)
-import ToText as Reexported (ToText, toPrettyText, toText)
-import Trigger as Reexported (Trigger)
-import Type.Reflection as Reexported (Typeable)
-import Unknown as Reexported (Unknown)
-import Uuid as Reexported (Uuid)
-import Var as Reexported (Var)
-import Version as Reexported (Version, version)
+import Core.Prelude
+import Derive (derive)
+import Service.EventModel.Authoring as Authoring

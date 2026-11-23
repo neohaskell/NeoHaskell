@@ -6,15 +6,11 @@ module Starter.Counter.Commands.DecrementCounter (
 
 import Core
 import Decider qualified
+import Derive
 import Service.Auth (RequestContext)
-import Service.Command.Core (TransportsOf)
-import Service.CommandExecutor.TH (command)
-import Service.Transport.Web (WebTransport)
-import Starter.Counter.Core
-import Starter.Counter.Events.CounterDecremented qualified as CounterDecremented
+import Starter.Counter.Entity (CounterEntity (..), CounterEvent)
+import Starter.Counter.Events.CounterDecremented (CounterDecremented (..))
 
-
--- | Decrement an existing counter by `amount`.
 data DecrementCounter = DecrementCounter
   { entityId :: Uuid
   , amount :: Int
@@ -35,17 +31,10 @@ decide cmd entity _ctx = case entity of
       else
         Decider.acceptExisting
           [ CounterDecremented
-              CounterDecremented.Event
-                { entityId = existing.counterId
-                , amount = cmd.amount
-                }
+              { entityId = existing.counterId
+              , amount = cmd.amount
+              }
           ]
 
 
-type instance EntityOf DecrementCounter = CounterEntity
-
-
-type instance TransportsOf DecrementCounter = '[WebTransport]
-
-
-command ''DecrementCounter
+derive ''DecrementCounter command { entity = ''CounterEntity }

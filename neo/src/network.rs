@@ -601,7 +601,7 @@ mod tests {
         assert!(dir.path().join("launcher/Launcher.hs").exists(), "launcher/Launcher.hs missing");
         // A real domain module from the starter (not a stub) — proves the full
         // functional starter is embedded, not a placeholder.
-        assert!(dir.path().join("src/Starter/Counter/Event.hs").exists(), "starter domain module missing");
+        assert!(dir.path().join("src/Starter/Counter/Entity.hs").exists(), "starter domain module missing");
         // Dev flake + cabal project so the generated project is buildable.
         assert!(dir.path().join("flake.nix").exists(), "flake.nix missing");
         assert!(dir.path().join("cabal.project").exists(), "cabal.project missing");

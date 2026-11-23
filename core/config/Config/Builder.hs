@@ -31,7 +31,7 @@ module Config.Builder (
 
 import Config.Core (FieldDef (..), FieldModifier (..))
 -- ModNested is used in the nested function
-import Core
+import Core.Prelude
 import Data.Typeable qualified as Typeable
 import Language.Haskell.TH.Syntax qualified as TH
 import LinkedList qualified

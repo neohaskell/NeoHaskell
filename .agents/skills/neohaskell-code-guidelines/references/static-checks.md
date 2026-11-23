@@ -21,7 +21,7 @@ Store captured output under `.agents-state/<task>/`. Put concrete cleanup work i
 
 The gate groups parser invocations by profile. HLint 3.10 does not use its command-line `Strict` setting for the redundant-irrefutable-pattern hint. The checker therefore normalizes only `Strict` and `NoStrict` in temporary parser inputs. Source pragmas take precedence in source order. A generated `LINE` pragma preserves the original diagnostic path and line. Source files remain unchanged.
 
-Conditional Cabal settings, conflicting component profiles, unknown template conditions, unmapped sources in configured projects, source `LINE` directives and source `OPTIONS_GHC` language flags fail as setup errors. Literate sources with inherited settings also fail. This reader supports the maintained unconditional configuration. It does not resolve Cabal flags, project-wide compiler overrides or arbitrary templates.
+Conditional Cabal parser settings, conflicting component profiles, unknown template conditions, unmapped sources in configured projects, source `LINE` directives and source `OPTIONS_GHC` language flags fail as setup errors. Literate sources with inherited settings also fail. The reader ignores conditional single-line library dependencies and CPP feature definitions. It rejects branches that change the parser profile. It does not resolve Cabal flags, project-wide compiler overrides or arbitrary templates.
 
 ## Preserve evaluation timing when resolving lint findings
 

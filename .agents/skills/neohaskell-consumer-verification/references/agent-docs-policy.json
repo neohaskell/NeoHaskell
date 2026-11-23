@@ -165,7 +165,7 @@
     {
       "page": "configuration-and-wiring.md",
       "ordinal": 1,
-      "source": "testbed/src/Testbed/EventModel.hs"
+      "source": "neo/starter/src/App.hs"
     },
     {
       "page": "event-model.md",

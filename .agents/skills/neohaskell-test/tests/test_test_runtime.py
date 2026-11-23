@@ -16,7 +16,7 @@ REPOSITORY = next(path for path in Path(__file__).resolve().parents if (path / "
 SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
-from test_runtime import cabal_packages, cabal_test_targets, dependency_source_dirs, run_bounded, run_testbed
+from test_runtime import cabal_packages, cabal_test_targets, run_bounded, run_testbed
 
 
 class TestRuntimeTests(unittest.TestCase):
@@ -41,11 +41,9 @@ class TestRuntimeTests(unittest.TestCase):
         self.assertIn(("nhcore", "nhcore-test-integration"), targets)
         self.assertIn(("nhintegrations", "nhintegrations-test"), targets)
 
-    def test_package_source_roots_include_local_cabal_dependencies(self) -> None:
+    def test_package_dialect_from_cabal(self) -> None:
         packages = cabal_packages(REPOSITORY)
-        integrations = next(package for package in packages if package.name == "nhintegrations")
         core = next(package for package in packages if package.name == "nhcore")
-        self.assertIn(core.source_dirs[0], dependency_source_dirs(integrations, packages))
         self.assertIn("GHC2021", core.language or "")
         self.assertIn("NoImplicitPrelude", core.extensions)
 

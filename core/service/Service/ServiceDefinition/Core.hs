@@ -7,6 +7,7 @@ module Service.ServiceDefinition.Core (
   new,
   command,
   toServiceRunner,
+  validateCommandTransports,
   RunnableCommand (..),
   ServiceRunner (..),
   TransportValue (..),
@@ -37,7 +38,7 @@ import Service.Auth qualified as Auth
 import Service.Transport.Internal (InternalTransport)
 import Service.Transport (Transport (..), EndpointHandler, DispatchHandler, EndpointSchema (..))
 import Service.Command (EntityOf, EventOf)
-import Service.Command.Core (TransportsOf, NamesOf, AppendSymbols, AllKnownSymbols (..), Command (..), Entity (..), Event, KnownMultiTenant (..), NameOf)
+import Service.Command.Core (InferredTransport, TransportsOf, NamesOf, AppendSymbols, AllKnownSymbols (..), Command (..), Entity (..), Event, KnownMultiTenant (..), NameOf)
 import Service.CommandExecutor.CommandExecutionFailure qualified as CommandExecutionFailure
 import Service.CommandExecutor qualified as CommandExecutor
 import Service.Response qualified as Response
@@ -124,11 +125,6 @@ data TransportValue
     TransportValue transport
 
 
-getTransportValue ::
-  TransportValue -> transport
-getTransportValue (TransportValue transport) = GHC.unsafeCoerce transport
-
-
 getSymbolText :: forall name. (GHC.KnownSymbol name) => Record.Proxy name -> Text
 getSymbolText _ =
   GHC.symbolVal (Record.Proxy @name)
@@ -136,6 +132,7 @@ getSymbolText _ =
 
 
 type family PublicTransports (transports :: [Type]) :: [Type] where
+  PublicTransports '[InferredTransport] = '[]
   PublicTransports '[] = '[]
   PublicTransports (InternalTransport ': rest) = PublicTransports rest
   PublicTransports (transport ': rest) = transport ': PublicTransports rest
@@ -178,19 +175,24 @@ type family AssertNoDuplicatePublicTransports' (hasDuplicates :: Bool) :: Constr
       )
 
 
-type family AssertNoMixedTransports (transports :: [Type]) :: Constraint where
-  AssertNoMixedTransports transports = AssertNoMixedTransports' (IncludesInternalTransport transports) (PublicTransports transports)
+type family ValidCommandTransports (transports :: [Type]) :: Constraint where
+  ValidCommandTransports '[InferredTransport] = ()
+  ValidCommandTransports transports =
+    ( ExplicitTransports (TypeExists InferredTransport transports)
+    , AssertNoDuplicatePublicTransports (PublicTransports transports)
+    , RequireAdapters (PublicTransports transports)
+    )
 
 
-type family AssertNoMixedTransports' (hasInternal :: Bool) (publicTransports :: [Type]) :: Constraint where
-  AssertNoMixedTransports' 'False publicTransports = AssertNoDuplicatePublicTransports publicTransports
-  AssertNoMixedTransports' 'True '[] = ()
-  AssertNoMixedTransports' 'True (transport ': rest) =
-    TypeError
-      ( 'Text "Invalid command transport declaration"
-          ':$$: 'Text "A command cannot declare InternalTransport together with public transports."
-          ':$$: 'Text "If you need both public and internal behavior, define two separate commands."
-      )
+type family ExplicitTransports (includesInferred :: Bool) :: Constraint where
+  ExplicitTransports 'False = ()
+  ExplicitTransports 'True =
+    TypeError ('Text "InferredTransport must be the only entry in TransportsOf.")
+
+
+type family RequireAdapters (transports :: [Type]) :: Constraint where
+  RequireAdapters '[] = ()
+  RequireAdapters (adapter ': rest) = (Transport adapter, RequireAdapters rest)
 
 
 class KnownBool (value :: Bool) where
@@ -217,7 +219,7 @@ data
     (entityIdType :: Type)
   = CommandDefinition
   { commandName :: Text,
-    transportNames :: Array Text,
+    publicRouting :: PublicRouting,
     commandSchema :: Schema
   }
   deriving (Show)
@@ -235,11 +237,14 @@ class CommandInspect definition where
   commandSchema :: definition -> Schema
 
 
+  commandRouting :: definition -> PublicRouting
+
+
   createHandlers ::
     definition ->
     EventStore (CmdEvent definition) ->
     Maybe (SnapshotCache (CmdEntity definition)) ->
-    Map Text TransportValue ->
+    Array (Text, TransportValue) ->
     Record.Proxy (Cmd definition) ->
     Array (Text, EndpointHandler)
 
@@ -383,9 +388,8 @@ instance
     Show event,
      Json.FromJSON cmd,
      Schema.ToSchema cmd,
-     BuildHandlersForTransports (PublicTransports transports),
+     ValidCommandTransports transports,
      KnownBool (IncludesInternalTransport transports),
-     AssertNoMixedTransports transports,
      AllKnownSymbols transportNames,
      name ~ NameOf cmd,
      Record.KnownSymbol name,
@@ -410,16 +414,19 @@ instance
   commandSchema _ = Schema.toSchema @cmd
 
 
+  commandRouting definition = definition.publicRouting
+
+
   createHandlers ::
     (CommandDefinition name transports cmd transportNames event entity entityName entityIdType) ->
     EventStore event ->
     Maybe (SnapshotCache entity) ->
-    Map Text TransportValue ->
+    Array (Text, TransportValue) ->
     Record.Proxy cmd ->
     Array (Text, EndpointHandler)
-  createHandlers _ eventStore maybeCache transportsMap cmd =
-    buildHandlersForAll @(PublicTransports transports) transportsMap cmd
-      (buildCommandResponseHandler @cmd @entity @event @entityName eventStore maybeCache Nothing)
+  createHandlers _ eventStore maybeCache adapters cmd = do
+    let execute = buildCommandResponseHandler @cmd @entity @event @entityName eventStore maybeCache Nothing
+    adapters |> Array.map (\(name, TransportValue adapter) -> (name, buildHandler adapter cmd execute))
 
 
   createDispatchHandler _ eventStore maybeCache cmd =
@@ -430,49 +437,23 @@ instance
   includeInDispatchMap _ = boolValue @(IncludesInternalTransport transports)
 
 
--- | Iterates over a type-level list of transports and builds handlers for each.
-class BuildHandlersForTransports (transports :: [Type]) where
-  buildHandlersForAll ::
-    forall command name.
-    ( Command command,
-      Json.FromJSON command,
-      name ~ NameOf command,
-      Record.KnownSymbol name
-    ) =>
-    Map Text TransportValue ->
-    Record.Proxy command ->
-    (RequestContext -> command -> Task Text Response.CommandResponse) ->
-    Array (Text, EndpointHandler)
+data PublicRouting = SoleRegisteredTransport | NamedTransports (Array Text)
+  deriving (Show)
 
 
-instance BuildHandlersForTransports '[] where
-  buildHandlersForAll _ _ _ = Array.empty
-
-
-instance
-  ( Transport transport,
-    Record.KnownSymbol (NameOf transport),
-    BuildHandlersForTransports rest
-  ) =>
-  BuildHandlersForTransports (transport ': rest)
-  where
-  buildHandlersForAll transportsMap cmdProxy handler = do
-    let transportNameText =
-          GHC.symbolVal (Record.Proxy @(NameOf transport))
-            |> Text.fromLinkedList
-    let thisHandler =
-          case transportsMap |> Map.get transportNameText of
-            Nothing ->
-              panic [fmt|Transport not registered: #{transportNameText}|]
-            Just transportVal -> do
-              let typedTransport :: transport = getTransportValue transportVal
-              Array.fromLinkedList
-                [ ( transportNameText,
-                    buildHandler @transport typedTransport cmdProxy handler
-                  )
-                ]
-    let restHandlers = buildHandlersForAll @rest transportsMap cmdProxy handler
-    Array.prepend thisHandler restHandlers
+resolveAdapters :: Map Text TransportValue -> Text -> PublicRouting -> Task Text (Array (Text, TransportValue))
+resolveAdapters registered commandName routing =
+  case routing of
+    SoleRegisteredTransport -> case Array.toLinkedList (Map.entries registered) of
+      [entry] -> Task.yield [entry]
+      [] -> Task.throw [fmt|Command #{commandName} needs a transport. Register one with withTransport or declare InternalTransport for internal dispatch.|]
+      _ -> do
+        let names = Text.joinWith ", " (Map.keys registered)
+        Task.throw [fmt|Command #{commandName} has multiple registered transports: #{names}. Set transports explicitly in its command declaration.|]
+    NamedTransports names ->
+      names |> Task.mapArray (\name -> case Map.get name registered of
+        Nothing -> Task.throw [fmt|Command #{commandName} selects unregistered transport #{name}. Register it with withTransport.|]
+        Just adapter -> Task.yield (name, adapter))
 
 
 type instance NameOf (CommandDefinition name transports cmd transportNames event entity entityName entityIdType) = name
@@ -507,7 +488,8 @@ command ::
     commandTransports ~ TransportsOf cmd,
     transportNames ~ NamesOf (PublicTransports commandTransports),
     AllKnownSymbols transportNames,
-    BuildHandlersForTransports (PublicTransports commandTransports),
+    ValidCommandTransports commandTransports,
+    KnownBool (TypeExists InferredTransport commandTransports),
     entityName ~ NameOf entity,
     Record.KnownSymbol commandName,
     Record.KnownSymbol entityName,
@@ -530,7 +512,10 @@ command serviceDefinition = do
         Record.I
           CommandDefinition
             { commandName = getSymbolText (Record.Proxy @commandName),
-              transportNames = allSymbolTexts @transportNames,
+              publicRouting =
+                if boolValue @(TypeExists InferredTransport commandTransports)
+                  then SoleRegisteredTransport
+                  else NamedTransports (allSymbolTexts @transportNames),
               commandSchema = Schema.toSchema @cmd
             }
   let currentCmds :: Record originalCommands = serviceDefinition.commandDefinitions
@@ -553,15 +538,28 @@ command serviceDefinition = do
 --
 -- Services no longer run transports directly - instead, Application collects
 -- all endpoints from all services and runs each transport once with combined endpoints.
-data ServiceRunner = ServiceRunner
-  { -- | Get command endpoints and schemas for this service, grouped by transport name.
-    -- Returns a tuple of (public handlers, public schemas, dispatch handlers).
-    -- The dispatch handlers are transport-independent command handlers used by integrations.
-    getEndpointsByTransport ::
-      EventStore Json.Value ->
-      Map Text TransportValue ->
-      Task Text (Map Text (Map Text EndpointHandler), Map Text (Map Text Service.Transport.EndpointSchema), Map Text DispatchHandler)
-  }
+data ServiceRunner
+  = ServiceRunner {getEndpointsByTransport :: BuildEndpoints}
+  | DeclaredServiceRunner
+      { getEndpointsByTransport :: BuildEndpoints,
+        commandRoutes :: Array (Text, PublicRouting)
+      }
+
+
+type BuildEndpoints =
+  EventStore Json.Value ->
+  Map Text TransportValue ->
+  Task Text (Map Text (Map Text EndpointHandler), Map Text (Map Text EndpointSchema), Map Text DispatchHandler)
+
+
+-- | Check declared routes before creating application resources.
+validateCommandTransports :: Map Text TransportValue -> ServiceRunner -> Task Text Unit
+validateCommandTransports registered runner = case runner of
+  ServiceRunner {} -> pass
+  DeclaredServiceRunner {commandRoutes} ->
+    commandRoutes |> Task.forEach (\(name, routing) -> do
+      _ <- resolveAdapters registered name routing
+      pass)
 
 
 -- | Convert a Service to a ServiceRunner that can be used with Application.
@@ -582,18 +580,17 @@ toServiceRunner ::
   Service cmds commandTransportNames ->
   ServiceRunner
 toServiceRunner service =
-  ServiceRunner
-    { getEndpointsByTransport = \rawEventStore transportsMap ->
-        case Record.reflectAllFields service.inspectDict of
-          Record.Reflected ->
-            buildEndpointsByTransport
-              @cmds
-              @event
-              @entity
-              rawEventStore
-              service.commandDefinitions
-              transportsMap
-    }
+  case Record.reflectAllFields service.inspectDict of
+    Record.Reflected ->
+      DeclaredServiceRunner
+        { commandRoutes =
+            service.commandDefinitions
+              |> Record.cmap (Record.Proxy @CommandInspect) (\(Record.I defn) -> Record.K (commandName defn, commandRouting defn))
+              |> Record.collapse
+              |> Array.fromLinkedList,
+          getEndpointsByTransport = \rawEventStore transportsMap ->
+            buildEndpointsByTransport @cmds @event @entity rawEventStore service.commandDefinitions transportsMap
+        }
 
 
 -- | Register one declared command through the existing service runtime.
@@ -618,9 +615,9 @@ instance
     Json.ToJSON (EventOf (EntityOf command)),
     Json.FromJSON (EntityOf command),
     Json.ToJSON (EntityOf command),
-    BuildHandlersForTransports (PublicTransports (TransportsOf command)),
+    ValidCommandTransports (TransportsOf command),
+    KnownBool (TypeExists InferredTransport (TransportsOf command)),
     KnownBool (IncludesInternalTransport (TransportsOf command)),
-    AssertNoMixedTransports (TransportsOf command),
     AllKnownSymbols (NamesOf (PublicTransports (TransportsOf command))),
     KnownMultiTenant (IsMultiTenant command),
     Record.KnownSymbol (NameOf command),
@@ -677,12 +674,13 @@ buildEndpointsByTransport rawEventStore commandDefinitions transportsMap = do
           cmd ~ Cmd cmdDef
         ) =>
         Record.I (cmdDef) ->
-        Record.K (Array (Text, Text, EndpointHandler, Schema)) (cmdDef)
-      mapper (Record.I x) = do
+        Record.K (Task Text (Array (Text, Text, EndpointHandler, Schema))) cmdDef
+      mapper (Record.I x) = Record.K do
+        adapters <- resolveAdapters transportsMap (commandName x) (commandRouting x)
         let typedEventStore = GHC.unsafeCoerce eventStore :: EventStore (CmdEvent cmdDef)
         let typedCache = GHC.unsafeCoerce maybeCache :: Maybe (SnapshotCache (CmdEntity cmdDef))
-        let handlerPairs = createHandlers x typedEventStore typedCache transportsMap (Record.Proxy @cmd)
-        Record.K
+        let handlerPairs = createHandlers x typedEventStore typedCache adapters (Record.Proxy @cmd)
+        Task.yield
           ( handlerPairs
               |> Array.map (\(tName, handler) -> (tName, commandName x, handler, commandSchema x))
           )
@@ -703,12 +701,13 @@ buildEndpointsByTransport rawEventStore commandDefinitions transportsMap = do
             Record.K (Just (commandName x, dispatchHandler))
           else Record.K Nothing
 
-  let endpoints :: Array (Text, Text, EndpointHandler, Schema) =
-        commandDefinitions
-          |> Record.cmap (Record.Proxy @(CommandInspect)) mapper
-          |> Record.collapse
-          |> Array.fromLinkedList
-          |> Array.flatten
+  endpoints <-
+    commandDefinitions
+      |> Record.cmap (Record.Proxy @(CommandInspect)) mapper
+      |> Record.collapse
+      |> Array.fromLinkedList
+      |> Task.mapArray identity
+      |> Task.map Array.flatten
 
   let dispatchHandlers =
         commandDefinitions

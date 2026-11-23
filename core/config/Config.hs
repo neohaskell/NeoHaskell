@@ -133,7 +133,7 @@ module Config (
 import Config.Builder (cliLong, cliShort, defaultsTo, doc, enum, envPrefix, envVar, field, nested, required, secret)
 import Config.Global (get)
 import Config.TH (defineConfig)
-import Core
+import Core.Prelude
 import Data.Either qualified as GhcEither
 import OptEnvConf (HasParser)
 import OptEnvConf qualified

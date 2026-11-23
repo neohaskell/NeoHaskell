@@ -35,7 +35,7 @@ import Service.EventModel qualified as EventModel
 import Service.EventModel.Types (
   Chapter (..),
   CommandExpectation (..),
-  EventModel (..),
+  ValidatedEventModel (..),
   ExpectedEvent (..),
   ExpectedOutcome (..),
   Feature (..),
@@ -111,7 +111,7 @@ data RulePlan where
 
 
 -- | List each direct rule once. Translation Slices contribute no entries.
-declaredRules :: EventModel -> [Text]
+declaredRules :: ValidatedEventModel -> [Text]
 declaredRules model = [identity | RulePlan identity _ _ _ <- modelPlans model]
 
 
@@ -123,14 +123,14 @@ ruleIdentity selectedFeature selectedChapter (Slice sliceName _ _) selectedRule 
 
 
 -- | Run every direct rule for the requested sample count using reproducible seeds.
-runRules :: Generators -> Int -> Int -> EventModel -> Task Text [RuleReport]
+runRules :: Generators -> Int -> Int -> ValidatedEventModel -> Task Text [RuleReport]
 runRules generators baseSeed sampleCount model = do
   groups <- Prelude.mapM (runPlan generators baseSeed sampleCount) (Prelude.zip [0 ..] (modelPlans model))
   Task.yield (Prelude.concat groups)
 
 
 -- | Create one Hspec example per declared direct rule.
-specFor :: Generators -> Int -> Int -> EventModel -> Hspec.Spec
+specFor :: Generators -> Int -> Int -> ValidatedEventModel -> Hspec.Spec
 specFor generators baseSeed sampleCount model = do
   let plans = Prelude.zip [0 ..] (modelPlans model)
   Prelude.mapM_
@@ -143,7 +143,7 @@ specFor generators baseSeed sampleCount model = do
     plans
 
 
-modelPlans :: EventModel -> [RulePlan]
+modelPlans :: ValidatedEventModel -> [RulePlan]
 modelPlans model =
   [ RulePlan (ruleIdentity selectedFeature selectedChapter selectedSlice selectedRule) name primary selectedRule
   | selectedFeature <- model.modelFeatures,

@@ -1,6 +1,8 @@
 # Transports
 
-A transport exposes registered commands through an interface. `TransportsOf command` declares the allowed transport types. `Application.withTransport` installs each concrete transport configuration. Both the command declaration and application registration participate in the endpoint setup.
+A transport exposes commands through an interface. Register a concrete adapter with `withTransport` in the Event Model. A command derived with the default transport setting uses the sole registered adapter. Startup reports the command name when no adapter is registered or when multiple adapters make that choice ambiguous.
+
+Set `transports` on the command declaration to select specific public adapters. Register each selected adapter in the Event Model. Include `InternalTransport` to allow integration dispatch. A declaration containing only `InternalTransport` needs no registered public adapter and creates no public endpoint. An explicit list can contain both public adapters and `InternalTransport`. The configured authorization policy still applies to each caller's request context.
 
 ## Web
 
@@ -24,10 +26,13 @@ This application transport is separate from the `neo` development tool. [Project
 
 `McpTransport` carries `serverName` and `serverVersion`. It serves registered command tools using JSON-RPC over standard input and output.
 
-This fragment declares three allowed transport types. It needs the transport imports and command definition.
+This fragment declares three allowed transport types. Import `Derive`, the listed transport types, and `CounterEntity` in the command module.
 
 ```haskell ignore
-type instance TransportsOf ChangeCounter = '[WebTransport, CliTransport, McpTransport]
+derive ''ChangeCounter command {
+  entity = ''CounterEntity,
+  transports = [''WebTransport, ''CliTransport, ''McpTransport]
+}
 ```
 
 ## Verify each interface

@@ -5,6 +5,14 @@ import AsyncTask qualified
 import ConcurrentVar qualified
 import Core
 import Map qualified
+import Maybe qualified
+import Decider qualified
+import Service qualified
+import Service.Auth (RequestContext)
+import Service.Command.Core (InferredTransport, TransportsOf)
+import Service.ServiceDefinition.Core (TransportValue (..))
+import Service.Transport.Web.RequestBodyFailureSpec (WebDecodeProbeEntity, WebDecodeProbeEvent (..))
+import Text qualified
 import Service.Application (Application (..), ServiceRunner (..))
 import Service.Application qualified as Application
 import Service.Application.Transports qualified as Transports
@@ -20,6 +28,21 @@ import Service.TestHelpers (insertTestEvent)
 import System.IO qualified as GhcIO
 import Task qualified
 import Test
+
+
+data RoutedCommand = RoutedCommand {entityId :: Uuid}
+
+type instance EntityOf RoutedCommand = WebDecodeProbeEntity
+
+type instance TransportsOf RoutedCommand = '[InferredTransport]
+
+getEntityId :: RoutedCommand -> Maybe Uuid
+getEntityId cmd = Just cmd.entityId
+
+decide :: RoutedCommand -> Maybe WebDecodeProbeEntity -> RequestContext -> Decision WebDecodeProbeEvent
+decide cmd _ _ = Decider.acceptNew [WebDecodeProbeCreated cmd.entityId]
+
+deriveCommand ''RoutedCommand
 
 
 -- ============================================================================
@@ -55,6 +78,35 @@ spec = do
         let pageRequest = QueryPageRequest {limit = 1, offset = 0}
         result <- guarded Nothing Nothing pageRequest |> Task.asResult
         result |> shouldBe (Err (AccessControl.AuthorizationError AccessControl.Unauthenticated))
+
+    describe "inferred command transport" do
+      let service = Service.new |> Service.command @RoutedCommand
+      let application = Application.new |> Application.withService service
+
+      it "reports a missing adapter before opening an event store" \_ -> do
+        result <- Application.run application |> Task.asResult
+        case result of
+          Err message -> message |> shouldSatisfy (Text.contains "Command RoutedCommand needs a transport")
+          Ok _ -> fail "Expected a missing command transport"
+
+      it "names the command and the choices when the application has two adapters" \_ -> do
+        let ambiguous = application |> Application.withTransport MockTransport.server |> Application.withTransport MockTransport.server2
+        result <- Application.run ambiguous |> Task.asResult
+        case result of
+          Err message -> do
+            message |> shouldSatisfy (Text.contains "Command RoutedCommand has multiple registered transports")
+            message |> shouldSatisfy (Text.contains "MockTransport, MockTransport2")
+          Ok _ -> fail "Expected ambiguous command transports"
+
+      it "publishes the command and its schema on the sole adapter without enabling internal dispatch" \_ -> do
+        store <- InMemory.new |> Task.mapError toText
+        let runner = Service.toServiceRunner service
+        let adapters = Map.fromArray [("MockTransport2", TransportValue MockTransport.server2)]
+        (handlers, schemas, dispatch) <- runner.getEndpointsByTransport store adapters
+        let names buckets = buckets |> Map.get "MockTransport2" |> Maybe.map Map.keys
+        names handlers |> shouldBe (Just ["RoutedCommand"])
+        names schemas |> shouldBe (Just ["RoutedCommand"])
+        Map.length dispatch |> shouldBe 0
 
     describe "new" do
       it "creates an empty application" \_ -> do

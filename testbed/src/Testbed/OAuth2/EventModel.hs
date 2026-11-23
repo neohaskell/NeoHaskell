@@ -1,5 +1,5 @@
 -- | Compose OAuth testbed Features and configure its shared runtime.
--- Run 'oauthEventModel' through 'Service.EventModel.run'.
+-- Run 'oauthEventModel' through 'Service.EventModel.Launcher.run'.
 module Testbed.OAuth2.EventModel (oauthEventModel) where
 
 import Core
@@ -15,7 +15,7 @@ import Testbed.Infrastructure (makeFileUploadConfig)
 import Testbed.OAuth2.Configuration (makeOAuthPostgresConfig, oauthApiInfo, providerConfig)
 
 
-oauthEventModel :: Int -> Int -> Bool -> Result Text EventModel.EventModel
+oauthEventModel :: Int -> Int -> Bool -> EventModel
 oauthEventModel oauthPort fixturePort queueTimeoutMode = EventModel.eventModel do
   EventModel.appName "OAuth2 testbed"
   EventModel.withConfig @TestbedConfig
