@@ -1,6 +1,3 @@
-# Smoke test — verifies the HTTP server is up and the happy path of the
-# simplest command works end to end.
-
 POST http://localhost:8080/commands/create-counter
 Content-Type: application/json
 {

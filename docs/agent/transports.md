@@ -1,6 +1,6 @@
 # Transports
 
-A transport exposes registered commands through an interface. `TransportsOf command` declares the allowed transport types. `Application.withTransport` installs each concrete transport configuration. Both the command declaration and application registration participate in the endpoint setup.
+A transport exposes registered commands through an interface. A command descriptor may name the allowed transports. Omit its `transports` field to select the only registered public adapter. When no adapter or several adapters are registered, an inferred command fails startup. Explicit internal dispatch requires `InternalTransport`. Combining it with a public transport enables both entry points. `Application.withTransport` installs each concrete transport configuration. Both the command declaration and application registration participate in the endpoint setup.
 
 ## Web
 

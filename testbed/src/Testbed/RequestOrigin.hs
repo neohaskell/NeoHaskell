@@ -4,12 +4,11 @@ module Testbed.RequestOrigin (requestOriginFlow) where
 
 import Core
 import Decider qualified
+import Derive
 import Json qualified
 import Service.Auth (RequestContext (..), RequestOrigin (..))
-import Service.Command.Core (Event (..), TransportsOf)
-import Service.CommandExecutor.TH (command)
+import Service.Command.Core (Event (..))
 import Service.EventModel qualified as EventModel
-import Service.Transport.Web (WebTransport)
 import Uuid qualified
 
 
@@ -103,13 +102,7 @@ decide _ maybeEntity context = case maybeEntity of
       _ -> Decider.reject "Web request origin did not match the synthetic example values"
 
 
-type instance EntityOf CheckRequestOrigin = RequestOriginProbeEntity
-
-
-type instance TransportsOf CheckRequestOrigin = '[WebTransport]
-
-
-command ''CheckRequestOrigin
+derive ''CheckRequestOrigin command { entity = ''RequestOriginProbeEntity }
 
 
 requestOriginFlow :: EventModel.FeatureAction

@@ -2,6 +2,12 @@
 
 An entity is the current state of one stream. Its event type records accepted changes. `EntityOf command` chooses the command's entity type. `EventOf entity` chooses that entity's event type. `EntityOf event` connects event routing to the entity.
 
+## A catalogue of named events
+
+In a generated project each payload has the same name as its module. Import `Core` and `Derive`. Place `derive ''CounterCreated eventPayload` below a payload record to derive its JSON instances. In the entity module, put `derive ''CounterEntity entity { events = [''CounterCreated, ''CounterIncremented] }` between the state record and its functions. The catalogue derives the parent event type, ownership, routing and variant instances. Each conventional payload has an `entityId` field. The parent event uses the payload name for its stored tag.
+
+Write `initialState :: CounterEntity` and `update :: CounterEvent -> CounterEntity -> CounterEntity`. Match `CounterEventCounterCreated payload` in the reducer. In a Feature, refer to the payload type directly with `produces @CounterCreated` or `onEvent @CounterCreated`.
+
 ## State reconstruction
 
 `initialStateImpl` supplies the reducer's starting state. `updateImpl` has the shape `event -> entity -> entity`. The framework reconstructs an entity by applying its events in order. Keep the reducer pure and deterministic.
@@ -13,11 +19,11 @@ This fragment describes the reducer shape. It needs the entity and event declara
 ```haskell ignore
 update :: CounterEvent -> CounterEntity -> CounterEntity
 update event entity = case event of
-	CounterIncremented payload ->
+	CounterEventCounterIncremented payload ->
 		entity {value = entity.value + payload.amount}
-	CounterDecremented payload ->
+	CounterEventCounterDecremented payload ->
 		entity {value = entity.value - payload.amount}
-	CounterCreated payload ->
+	CounterEventCounterCreated payload ->
 		CounterEntity {counterId = payload.entityId, label = payload.label, value = 0}
 ```
 

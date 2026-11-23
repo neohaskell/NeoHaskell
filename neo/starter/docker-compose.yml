@@ -1,7 +1,6 @@
 version: "3.8"
 
-# Only needed if you switch src/App.hs from the InMemory event store to Postgres.
-# See README "Switch to Postgres".
+
 services:
   postgres:
     image: postgres:16-alpine

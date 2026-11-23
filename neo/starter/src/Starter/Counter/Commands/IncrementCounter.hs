@@ -6,22 +6,16 @@ module Starter.Counter.Commands.IncrementCounter (
 
 import Core
 import Decider qualified
+import Derive
 import Service.Auth (RequestContext)
-import Service.Command.Core (TransportsOf)
-import Service.CommandExecutor.TH (command)
-import Service.Transport.Web (WebTransport)
-import Starter.Counter.Core
-import Starter.Counter.Events.CounterIncremented qualified as CounterIncremented
+import Starter.Counter.Entity (CounterEntity (..), CounterEvent)
+import Starter.Counter.Events.CounterIncremented (CounterIncremented (..))
 
-
--- | Increment an existing counter by `amount`.
 data IncrementCounter = IncrementCounter
   { entityId :: Uuid
   , amount :: Int
   }
 
-
--- | Returning `Just` tells the framework to load this entity before calling `decide`.
 getEntityId :: IncrementCounter -> Maybe Uuid
 getEntityId cmd = Just cmd.entityId
 
@@ -36,17 +30,10 @@ decide cmd entity _ctx = case entity of
       else
         Decider.acceptExisting
           [ CounterIncremented
-              CounterIncremented.Event
-                { entityId = existing.counterId
-                , amount = cmd.amount
-                }
+              { entityId = existing.counterId
+              , amount = cmd.amount
+              }
           ]
 
 
-type instance EntityOf IncrementCounter = CounterEntity
-
-
-type instance TransportsOf IncrementCounter = '[WebTransport]
-
-
-command ''IncrementCounter
+derive ''IncrementCounter command { entity = ''CounterEntity }

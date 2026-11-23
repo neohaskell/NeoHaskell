@@ -272,7 +272,7 @@ run_contract() {
   assert_file "$proj/cabal.project"          "generated cabal.project"
   assert_file "$proj/src/App.hs"             "application entry module"
   assert_file "$proj/launcher/Launcher.hs"   "executable launcher"
-  assert_file "$proj/src/Starter/Counter/Event.hs" "starter counter domain"
+  assert_file "$proj/src/Starter/Counter/Entity.hs" "starter counter domain"
   assert_file "$proj/tests/integration/smoke.hurl" "starter smoke scenario"
   assert_file "$proj/AGENTS.md" "generated project instructions"
   assert_file "$proj/CLAUDE.md" "Claude import of project instructions"
@@ -347,7 +347,7 @@ run_contract() {
   phase "5. run + health — neo run, poll /health, smoke, terminate"
   local run_log="$LOGDIR/5-run.log"
   start_session bash -c 'cd "$1"; shift; exec "$@"' _ "$proj" \
-    env "${ovr_env[@]}" "$neo_bin" --ci run >"$run_log" 2>&1
+    env "${ovr_env[@]}" PORT="$APP_PORT" "$neo_bin" --ci run >"$run_log" 2>&1
   local run_pid="$SESSION_PID"
   BG_PIDS+=("$run_pid")
 

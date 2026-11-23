@@ -4,7 +4,7 @@ Event storage and query storage have separate configuration. `withEventStore` se
 
 ## Event history
 
-`SimpleEventStore` has `basePath :: Path` and `persistent :: Bool`. With persistence enabled, it loads events from disk and writes event files. A generated starter project sets `persistent = False`, so its events disappear when that process ends.
+`SimpleEventStore` has `basePath :: Path` and `persistent :: Bool`. With persistence enabled, it loads events from disk and writes event files. The starter selects `withEventStore inMemory`. Its events disappear when the process ends. Choose `withEventStore (jsonLines ".neo/events")` to replay and append JSON Lines files in that directory.
 
 `PostgresEventStore` configures Postgres event storage. Its fields are `host`, `databaseName`, `user`, `password`, `port`, `poolSize`, `sslMode`, `sslRootCert`, and `erasableApplicationScope`. `sslRootCert` is `Maybe Text`; use `Nothing` when no certificate path is needed. Set `erasableApplicationScope` to a stable, nonempty identifier for the application before using protected-value erasure.
 

@@ -4,30 +4,28 @@ A query is a stored read model derived from entity changes. `EntitiesOf query` i
 
 ## Projection declarations
 
-In this example, `CounterView` has `counterId`, `label`, and `value` fields. `queryId` chooses the counter identifier. `combine` replaces the row with the entity's current values.
-
-This fragment needs the row declaration, imports, and access functions.
+Import `Core` and `Derive`. Define one pair of functions for each source entity. The first chooses the destination row's ID. Multiple source entities can contribute to the same row. The second receives the latest entity and the existing row, and returns `Update row`, `Delete`, or `NoOp`.
 
 ```haskell ignore
-deriveQuery ''CounterView [''CounterEntity]
+projectionIdFromCounterEntity :: CounterEntity -> Uuid
+projectionIdFromCounterEntity entity = entity.counterId
 
-instance QueryOf CounterEntity CounterView where
-	queryId entity = entity.counterId
-	combine entity _existing =
-		Update CounterView
-			{ counterId = entity.counterId
-			, label = entity.label
-			, value = entity.value
-			}
+combineCounterEntity :: CounterEntity -> Maybe CounterView -> QueryAction CounterView
+combineCounterEntity entity _ =
+  Update CounterView {
+    counterId = entity.counterId,
+    label = entity.label,
+    value = entity.value
+  }
+
+derive ''CounterView query { entities = [''CounterEntity] }
 ```
 
-`combine` returns `Update row`, `Delete`, or `NoOp`. Several entity types can contribute to one query type. Each `QueryOf entity query` instance defines how its entity changes that row.
-
-`deriveQuery` supplies missing `Show`, `Generic`, `Json.FromJSON`, `Json.ToJSON`, and `ToSchema` instances. Define a custom instance before the marker.
+The declaration generates the projection instances for the listed entities. Place any custom JSON instances before the marker. Existing queries using `deriveQuery` with explicit `QueryOf` instances remain supported.
 
 ## Access and consistency
 
-`canAccess` runs before storage access. `canView` filters individual fetched rows. Both functions precede `deriveQuery`. Use `authenticatedAccess`, `requirePermission`, or `publicAccess` for query access and `ownerOnly`, `tenantOnly`, or `publicView` for row visibility.
+`canAccess` runs before storage access. `canView` filters individual fetched rows. Both functions precede the query marker. Use `authenticatedAccess`, `requirePermission`, or `publicAccess` for query access and `ownerOnly`, `tenantOnly`, or `publicView` for row visibility.
 
 For a model-backed application, declare a source-local Slice with `query @Row`, `readsFrom @Entity`, and each subscribed `onEvent @Payload`. The Event Model registers the query and only the sources declared in that Slice. See [source-local Event Models](event-model.md) for a complete example.
 

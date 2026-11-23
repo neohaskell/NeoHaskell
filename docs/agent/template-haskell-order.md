@@ -2,6 +2,10 @@
 
 Derivation markers inspect declarations already visible to Template Haskell. Place the application functions and custom instances a marker needs before that marker. Each marker owns a different contract.
 
+## Starter declarations
+
+Import `Core` and `Derive` in domain modules. Give each event payload its domain name and put `derive ''CounterCreated eventPayload` after the record. Place the entity marker after its state record and before `initialState` and `update`. The reducer can then match the generated event constructors. A command or query marker goes below its local functions. See [events and entities](events-and-entities.md), [commands](commands.md) and [queries](queries.md).
+
 ## Events
 
 `deriveEvent ''EventType` supplies missing `Show`, `Generic`, `Json.FromJSON`, and `Json.ToJSON` instances. Define a custom instance before the marker. Defining it afterwards can duplicate an instance the marker already generated.

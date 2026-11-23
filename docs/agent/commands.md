@@ -1,6 +1,6 @@
 # Commands
 
-A command carries an intent for one target entity type. One `EntityOf` equation selects that type. One `decide` function returns its events or a rejection. A service registers commands whose entity and event types agree.
+A command carries an intent for one target entity type. The command descriptor names that entity. One `decide` function returns its events or a rejection. A service registers commands whose entity and event types agree.
 
 ## Command declarations
 
@@ -12,15 +12,12 @@ getEntityId cmd = Just cmd.entityId
 
 decide :: IncrementCounter -> Maybe CounterEntity -> RequestContext -> Decision CounterEvent
 
-type instance EntityOf IncrementCounter = CounterEntity
-type instance TransportsOf IncrementCounter = '[WebTransport]
-
-command ''IncrementCounter
+derive ''IncrementCounter command { entity = ''CounterEntity }
 ```
 
-Define `getEntityId`, `decide`, and the type equations before `command`. Define a custom `canAccess` before the marker too. The marker derives the command instance and name from those declarations.
+Import `Core` and `Derive`. Write `getEntityId`, `decide` and any custom `canAccess` before the declaration. The marker generates the command instance, ownership, name, schema and missing JSON instances. Existing commands using explicit type equations and `deriveCommand` remain supported.
 
-`command` generates `ToSchema` and supplies missing `Show`, `Generic`, `Json.FromJSON`, and `Json.ToJSON` instances. Define a custom instance for any of those four classes before the marker.
+With one registered public transport, the command uses that interface. With more than one, set the descriptor's `transports` field, for example `transports = [''WebTransport]`. Use `[''InternalTransport]` for internal dispatch only.
 
 `getEntityId` returns `Just id` to load an existing target. For creation, return `Nothing` and generate an identifier with `Decider.generateUuid`, or derive a stable identifier from the request when duplicate submissions must address the same entity.
 

@@ -1,6 +1,6 @@
 # Configuration and wiring
 
-`EventModel.eventModel` assembles configuration, stores, services, queries, transports, and integrations from one named model. `EventModel.run` validates it, loads configuration, creates runtime resources, and cleans them up when the application stops. Existing direct `Application` assembly remains available.
+`Core.eventModel` assembles configuration, stores, services, queries, transports, and integrations from one named model. `EventModel.run` validates it, loads configuration, creates runtime resources, and cleans them up when the application stops. Existing direct `Application` assembly remains available.
 
 ## Typed configuration
 
@@ -15,25 +15,23 @@ Use `Config.secret` for credential fields so their display is redacted. Secret m
 This explanatory fragment needs the application's config, factories, domain service, and query imports.
 
 ```haskell ignore
-appEventModel = EventModel.eventModel do
-	EventModel.appName "Counter"
-	EventModel.withConfig @AppConfig
-	EventModel.withEventStore makeEventStoreConfig
-	EventModel.withTransport WebTransport.server
-	EventModel.withHost "127.0.0.1"
-	EventModel.withPort 9090
-	EventModel.features do
-		counterFlow
-
-main = EventModel.run appEventModel |> Task.runOrPanic
+appEventModel :: EventModel
+appEventModel = eventModel do
+  appName "Counter"
+  withConfig @StarterConfig
+  withPortFromConfig (\(config :: StarterConfig) -> config.httpPort)
+  withEventStore inMemory
+  withTransport WebTransport.server
+  features do
+    counterFlow
 ```
 
-`withEventStore` takes a `config -> eventStoreConfig` factory. For static configuration, use `withEventStore @() (\_ -> storeConfig)`. For application configuration, register `withConfig @AppConfig` and use a factory whose argument is `AppConfig`. The factory runs after startup loads configuration. The source-local `counterFlow` Feature declares its command and query Slices; the model registers them.
+Import `Core` in the application module. In the launcher import `Service.EventModel.Launcher qualified as EventModel` and run `appEventModel |> EventModel.run |> Task.runOrPanic`. A static store configuration can be supplied directly. For a store selected from configuration, supply a factory whose argument is the registered configuration type.
 
 `withHost` and `withPort` override `WebTransport.host` and `WebTransport.port` on the registered Web transport, regardless of order relative to `withTransport`. Direct `Application` assembly provides the matching `Application.withHost` and `Application.withPort` builders. Omitting either override preserves the transport's own field, and invalid static values fail before startup acquires external resources. Read [transports](transports.md#web) for accepted host and port forms.
 
 `withAuth`, `withAuthOverrides`, `withSecretStore`, `withCors`, `withHealthCheck`, `withOAuth2Provider`, and `withFileUpload` take configuration-dependent factories. `withIntegration @Request` registers a typed adapter. `withoutHealthCheck` disables the default health route, and `useReadinessEndpoint` enables the readiness route. `withQueryObjectStore` takes a concrete configuration value and captures the choice when `withQuery` runs. Use the named Event Model builders for configuration so model validation owns duplicate config registration and Slice declarations own runtime components. Read [authorization](authorization.md), [external OAuth2](advanced-oauth2.md), and [side effects](advanced-side-effects.md) for those features.
 
-Configure stores before query Features. Configure `withOAuth2StateKey` before `withOAuth2Provider`. A second `EventModel.withConfig` returns an error from `eventModel` before startup.
+Configure stores before query Features. Configure `withOAuth2StateKey` before `withOAuth2Provider`. Validation rejects a second configuration registration before starting the application.
 
-For Postgres, supply the record fields listed in [storage](storage.md). A generated project's older commented Postgres example may omit current fields.
+For Postgres, supply the record fields listed in [storage](storage.md). Start from `(def :: PostgresEventStore)` to inherit pool and TLS defaults.
