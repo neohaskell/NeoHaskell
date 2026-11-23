@@ -149,7 +149,7 @@ fn owner_masking_umask_never_poisoned_the_private_store() {
     assert!(
         String::from_utf8(output.stderr)
             .unwrap()
-            .contains("report unavailable")
+            .contains("report could not be saved")
     );
     assert_eq!(user.run(&["--help"]).status.code(), Some(0));
     let paths = user.reports();
@@ -184,7 +184,7 @@ fn missing_home_preserves_exit_and_reports_unavailable() {
         String::from_utf8(output.stderr)
             .unwrap()
             .to_ascii_lowercase()
-            .contains("report unavailable")
+            .contains("report could not be saved")
     );
     assert!(!user.state.join("neohaskell-diagnostics").exists());
     let output = user
@@ -208,7 +208,7 @@ fn unsafe_store_keeps_public_behavior_without_touching_target() {
         String::from_utf8(output.stderr)
             .unwrap()
             .to_ascii_lowercase()
-            .contains("report unavailable")
+            .contains("report could not be saved")
     );
     assert_eq!(fs::read_dir(target).unwrap().count(), 0);
 }

@@ -55,8 +55,9 @@ diag_error=none
 diag_platform=unknown
 diag_steps='"started"'
 diag_change=none
+diag_cleanup=not_needed
 diag_attempts=0
-diag_recovery=retry
+diag_recovery=inspect_download_failure
 diag_path=
 diag_identity=
 diag_record_identity=
@@ -231,7 +232,7 @@ EOF_REMOVALS
     diag_file .pending-v1 || exit 1
     {
         printf '{"schema":1,"id":"%s","created_ms":%s,\n' "$diag_id" "$diag_created"
-        printf '"report":{"protocol":1,"route":"posix","release":"%s","platform":"%s","state":"%s","completed_steps":[%s],"elapsed_ms":%s,"step":"%s","attempts":{"locator":%s,"installer":%s},"timings_ms":{"locator":%s,"installer":%s},"error":"%s","change":"%s","recovery":"%s","exit":%s}}' "$version" "$diag_platform" "$diag_state" "$diag_steps" "$diag_elapsed" "$diag_step" "$diag_locator_attempts" "$diag_installer_attempts" "$diag_locator_ms" "$diag_installer_ms" "$diag_error" "$diag_change" "$diag_recovery" "$diag_exit"
+        printf '"report":{"protocol":1,"route":"posix","release":"%s","platform":"%s","state":"%s","completed_steps":[%s],"elapsed_ms":%s,"step":"%s","attempts":{"locator":%s,"installer":%s},"timings_ms":{"locator":%s,"installer":%s},"error":"%s","change":"%s","download_cleanup":"%s","recovery":"%s","exit":%s}}' "$version" "$diag_platform" "$diag_state" "$diag_steps" "$diag_elapsed" "$diag_step" "$diag_locator_attempts" "$diag_installer_attempts" "$diag_locator_ms" "$diag_installer_ms" "$diag_error" "$diag_change" "$diag_cleanup" "$diag_recovery" "$diag_exit"
         printf '%1024s\n' ''
     } > .pending-v1 || exit 1
     [ "$(wc -c < .pending-v1)" -le 16384 ] || exit 1
@@ -270,7 +271,9 @@ diag_finish() {
     now=$(diag_now) || return 1
     diag_elapsed=$((now - diag_created))
     [ "$diag_elapsed" -ge 0 ] || diag_elapsed=0
-    if [ "$1" = 0 ]; then diag_recovery=none
+    if [ "$1" = 0 ]; then
+        if [ "$diag_cleanup" = failed ]; then diag_recovery=inspect_download_cleanup
+        else diag_recovery=none; fi
     elif [ "$diag_error" = none ]; then diag_error=native_failed; fi
     diag_transaction >/dev/null
 }
@@ -283,16 +286,20 @@ fail() {
 cleanup() {
     result=$?
     trap - 0 HUP INT TERM
+    if [ -n "$stage" ]; then
+        if { rm -f "$stage/candidate.locator" "$stage/locator.expected" "$stage/neo-installer" && rmdir "$stage"; } 2>/dev/null; then
+            diag_cleanup=complete
+        else
+            diag_cleanup=failed
+            printf '%s\n' "$bootstrap_cleanup_failed" >&2
+        fi
+    fi
     saved=no
     if diag_finish "$result" 2>/dev/null; then saved=yes; fi
-    if [ "$result" != 0 ]; then
+    if [ "$result" != 0 ] || [ "$diag_cleanup" = failed ]; then
         if [ "$saved" = yes ]; then
             printf '%s%s\n' "$bootstrap_report_saved" "$diag_path/$diag_name" >&2
         else printf '%s\n' "$bootstrap_report_unavailable" >&2; fi
-    fi
-    if [ -n "$stage" ]; then
-        rm -f "$stage/candidate.locator" "$stage/locator.expected" "$stage/neo-installer"
-        rmdir "$stage"
     fi
     exit "$result"
 }
@@ -391,15 +398,23 @@ actual=$(hash_file "$stage/neo-installer") || fail "$bootstrap_integrity" integr
 actual=${actual%% *}
 [ "$actual" = "$sha256" ] || fail "$bootstrap_integrity" integrity_failed
 chmod 700 "$stage/neo-installer" || fail "$bootstrap_staging" staging_failed
-diag_steps="$diag_steps,\"installer_verified\",\"native_started\""
-diag_change=native_started
+diag_steps="$diag_steps,\"installer_verified\",\"native_start_attempted\""
+diag_change=native_start_attempted
 diag_step=native
+diag_recovery=inspect_installer_result
 if [ -t 1 ] && ( : < /dev/tty ) 2>/dev/null; then
     "$stage/neo-installer" install --candidate-locator "$locator" "$@" < /dev/tty
 else
-    "$stage/neo-installer" install --candidate-locator "$locator" "$@"
+    "$stage/neo-installer" install --candidate-locator "$locator" "$@" < /dev/null
 fi
-exit "$?"
+native_status=$?
+case "$native_status" in
+    126|127)
+        diag_error=native_launch_failed
+        diag_recovery=check_installer_launch
+        printf '%s\n' "$bootstrap_launch_failed" >&2 ;;
+esac
+exit "$native_status"
 '''
 
 

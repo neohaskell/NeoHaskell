@@ -87,6 +87,17 @@ jobs:
         run: nix develop ./neo -c cargo test --manifest-path neo/Cargo.toml --locked --workspace --lib --bins
       - name: Generate project without a build toolchain
         run: nix develop ./neo -c cargo test --manifest-path neo/Cargo.toml --locked --test integration_tests generate_regenerates_project_defaults_without_a_build_toolchain
+      - name: Installer bootstrap behavior
+        run: python3 neo/lifecycle/scripts/test_bootstraps.py
+      - name: Installer command and diagnostic behavior
+        env:
+          RUST_TEST_THREADS: 1
+        run: nix develop ./neo -c cargo test --manifest-path neo/Cargo.toml --locked -p neo-lifecycle --tests
+      - name: Installer terminal behavior
+        run: |
+          mkdir -p .agents-state/installer-tests
+          nix develop ./neo -c cargo test --manifest-path neo/Cargo.toml --locked -p neo-lifecycle --tests --no-run --message-format=json > .agents-state/installer-tests/artifacts.jsonl
+          python3 neo/lifecycle/tests/test_native_terminal.py --cargo-artifacts .agents-state/installer-tests/artifacts.jsonl
       - name: rustfmt (report-only baseline)
         continue-on-error: true
         run: |

@@ -103,7 +103,7 @@ fn accepted_layout_uses_truthful_rows_and_small_size_falls_back() {
         let text = String::from_utf8(frame).unwrap();
         assert!(text.contains("Download neo"));
         assert!(text.contains("Download neoctl"));
-        assert!(text.contains("Preparing the shared tool pair."));
+        assert!(text.contains("Downloading neo and neoctl."));
         assert!(!text.contains("MiB"));
         assert!(!text.contains("DONE"));
     }
@@ -350,6 +350,7 @@ fn run_signal_cleanup_fixture() {
         serde_json::to_vec(&serde_json::json!({
             "dashboard": true,
             "operation": operation,
+            "cleanup": report.cleanup,
             "presentation_failed": report.presentation.is_some(),
             "primary": primary,
             "restored": restored,
@@ -658,6 +659,17 @@ pub(super) fn partial_checkpoint(page: Page, offered: bool, offset: usize, total
     }
 }
 pub(super) fn frame_checkpoint(armed: bool) {
+    static READY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    if armed
+        && std::env::var_os("NEO_CLARITY_READY_FD").is_some()
+        && !READY.swap(true, std::sync::atomic::Ordering::SeqCst)
+    {
+        let fd: i32 = std::env::var("NEO_CLARITY_READY_FD")
+            .unwrap()
+            .parse()
+            .unwrap();
+        assert_eq!(unsafe { libc::write(fd, b"R".as_ptr().cast(), 1) }, 1);
+    }
     if PARTIAL_STAGE
         .compare_exchange(
             1,
@@ -976,5 +988,131 @@ fn install_review_separates_system_settings_from_user_changes() {
                 .controls
                 .starts_with("[I] Authorize and install")
         );
+    }
+}
+
+#[cfg(all(test, unix))]
+mod report_tests {
+    use crate::{format_report, installation};
+
+    #[test]
+    fn operation_result_survives_display_cleanup_failure() {
+        for mode in [
+            "failure",
+            "success",
+            "two_failures",
+            "cleanup_failure",
+            "cleanup_success",
+            "cleanup_unknown",
+        ] {
+            let output = std::process::Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    "installation::dashboard::tests::report_tests::report_fixture",
+                    "--ignored",
+                    "--nocapture",
+                ])
+                .env("NEO_REPORT_TEST", mode)
+                .output()
+                .unwrap();
+            assert_eq!(output.status.code(), Some(1));
+            let stderr = String::from_utf8(output.stderr).unwrap();
+            let stdout = String::from_utf8(output.stdout).unwrap();
+            let diagnostic: serde_json::Value =
+                serde_json::from_str(stdout.lines().find(|line| line.starts_with('{')).unwrap())
+                    .unwrap();
+            assert_eq!(
+                diagnostic["operation"]["kind"],
+                if mode == "success" || mode == "cleanup_success" {
+                    "complete"
+                } else {
+                    "failed"
+                }
+            );
+            if mode.starts_with("cleanup_") {
+                assert!(stderr.contains("background work stopped"), "{stderr}");
+                assert!(stderr.contains("signal handlers"), "{stderr}");
+                assert!(!stderr.contains("could not fully restore"), "{stderr}");
+            } else {
+                assert_eq!(
+                    stderr.matches("could not fully restore").count(),
+                    1,
+                    "{stderr}"
+                );
+            }
+            if mode == "success" || mode == "cleanup_success" {
+                assert!(stdout.contains("NeoHaskell 9.8.7 is active."), "{stdout}");
+            } else if mode == "cleanup_unknown" {
+                assert_eq!(
+                    stderr.matches("background work stopped").count(),
+                    1,
+                    "{stderr}"
+                );
+            } else {
+                assert!(stderr.contains("existing command"), "{stderr}");
+                assert!(stderr.contains("/isolated/bin/neo"), "{stderr}");
+                let secondary = if mode.starts_with("cleanup_") {
+                    "background work stopped"
+                } else {
+                    "could not fully restore"
+                };
+                assert!(stderr.find("existing command").unwrap() < stderr.find(secondary).unwrap());
+            }
+            if mode == "two_failures" {
+                assert!(stderr.contains("Terminal input failed"), "{stderr}");
+            }
+        }
+    }
+
+    #[test]
+    #[ignore]
+    fn report_fixture() {
+        let mode = std::env::var("NEO_REPORT_TEST").unwrap();
+        let operation = if mode == "success" || mode == "cleanup_success" {
+            Ok(installation::RunOutcome::Complete(Some(
+                installation::runtime::Outcome {
+                    version: "9.8.7".into(),
+                    open_new_shell: false,
+                    has_previous: false,
+                    previous_missing: false,
+                },
+            )))
+        } else if mode == "cleanup_unknown" {
+            Err(installation::TransactionError::CleanupUnknown)
+        } else {
+            Err(installation::TransactionError::CommandPathConflict {
+                command: installation::ManagedCommand::Neo,
+                path: "/isolated/bin/neo".into(),
+            })
+        };
+        let report = installation::DriveReport {
+            cleanup: if mode.starts_with("cleanup_") {
+                vec![
+                    installation::CleanupFailure::BackgroundWork,
+                    installation::CleanupFailure::SignalHandlers,
+                ]
+            } else {
+                Vec::new()
+            },
+            operation,
+            presentation: (!mode.starts_with("cleanup_")).then_some(
+                installation::dashboard::PresentationFailure {
+                    primary: if mode == "two_failures" {
+                        installation::PresentationFailureKind::Input
+                    } else {
+                        installation::PresentationFailureKind::Restore
+                    },
+                    restored: false,
+                },
+            ),
+            observations: None,
+        };
+        let outcome = crate::diagnostics::DiagnosticOutcome::from_drive_report(
+            crate::diagnostics::RequestRoute::Install,
+            &report,
+        );
+        println!("{}", serde_json::to_string(&outcome).unwrap());
+        let exit = format_report(report);
+        std::process::exit(exit.code);
     }
 }

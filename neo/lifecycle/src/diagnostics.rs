@@ -219,6 +219,7 @@ pub(crate) enum DiagnosticOutcome {
         request: RequestRoute,
         operation: OperationOutcome,
         presentation: Option<PresentationOutcome>,
+        cleanup: Vec<installation::CleanupFailure>,
         recovery_advice: RecoveryAdvice,
         observations: Option<InvocationFacts>,
     },
@@ -474,6 +475,7 @@ impl DiagnosticOutcome {
             restored: failure.restored,
         });
         let recovery_advice = match &report.operation {
+            _ if !report.cleanup.is_empty() => RecoveryAdvice::InspectInstallationState,
             Err(E::NixBlocked(_)) => RecoveryAdvice::CheckNixInstallation,
             Err(E::Busy) => RecoveryAdvice::WaitForOtherInvocation,
             Err(_) => RecoveryAdvice::InspectInstallationState,
@@ -485,6 +487,7 @@ impl DiagnosticOutcome {
             request,
             operation,
             presentation,
+            cleanup: report.cleanup.clone(),
             recovery_advice,
             observations: report.observations.clone(),
         }
@@ -593,6 +596,7 @@ mod tests {
             duration_ms: u64::MAX,
             exit_code: 130,
             outcome: DiagnosticOutcome::Lifecycle {
+                cleanup: Vec::new(),
                 request: RequestRoute::Rollback,
                 operation: OperationOutcome::Cancelled {
                     observation: StopObservation::Pair {
