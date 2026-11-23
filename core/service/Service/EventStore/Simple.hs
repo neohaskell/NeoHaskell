@@ -1,6 +1,8 @@
 module Service.EventStore.Simple (
   SimpleEventStore (..),
   new,
+  inMemory,
+  jsonLines,
 ) where
 
 import Array qualified
@@ -35,6 +37,16 @@ data SimpleEventStore = SimpleEventStore
     persistent :: Bool
   }
   deriving (Eq, Show, Generic)
+
+
+-- | Keep event history for the lifetime of this process.
+inMemory :: SimpleEventStore
+inMemory = SimpleEventStore {basePath = ".", persistent = False}
+
+
+-- | Save events as JSON Lines files and replay them from this directory at startup.
+jsonLines :: Path -> SimpleEventStore
+jsonLines directory = SimpleEventStore {basePath = directory, persistent = True}
 
 
 instance EventStoreConfig SimpleEventStore where
