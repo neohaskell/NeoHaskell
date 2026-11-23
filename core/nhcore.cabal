@@ -181,6 +181,7 @@ library
     DateTime
     Decimal
     Decider
+    Derive
     Default
     Directory
     Documented

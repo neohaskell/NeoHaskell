@@ -6,12 +6,16 @@ module Service.Event.EntityEventsSpec where
 import Array qualified
 import Core
 import Decider qualified
+import Derive
+import Service.Auth (RequestContext)
+import Service.AccessControl (AccessError, UserClaims, publicAccess, publicView)
 import Json qualified
 import Language.Haskell.TH.Syntax qualified as TH
 import Service.Entity.Core qualified as Entity
 import Service.Event qualified as Event
 import Service.EventStore.Core qualified as EventStore
 import Service.EventStore.InMemory qualified as InMemory
+import Service.Transport.Web (WebTransport)
 import Stream qualified
 import Task qualified
 import Test
@@ -175,8 +179,81 @@ $(do
       _ -> [d| hasNoUnlistedMapping :: Bool; hasNoUnlistedMapping = False |])
 
 
+data CounterCreated = CounterCreated {entityId :: Uuid, label :: Text}
+
+
+derive ''CounterCreated eventPayload
+
+
+data CounterEntity = CounterEntity {counterId :: Uuid, label :: Text}
+
+
+derive ''CounterEntity entity {events = [''CounterCreated]}
+
+
+initialState :: CounterEntity
+initialState = CounterEntity Uuid.nil ""
+
+
+update :: CounterEvent -> CounterEntity -> CounterEntity
+update (CounterEventCounterCreated payload) _ = CounterEntity payload.entityId payload.label
+
+
+data CreateCounter = CreateCounter {label :: Text}
+
+
+decide :: CreateCounter -> Maybe CounterEntity -> RequestContext -> Decision CounterEvent
+decide cmd _ _ = Decider.acceptNew [CounterCreated Uuid.nil cmd.label]
+
+
+getEntityId :: CreateCounter -> Maybe Uuid
+getEntityId _ = Nothing
+
+
+derive ''CreateCounter command {entity = ''CounterEntity, transports = [''WebTransport]}
+
+
+data CounterView = CounterView {label :: Text}
+
+
+canAccess :: Maybe UserClaims -> Maybe AccessError
+canAccess = publicAccess
+
+
+canView :: Maybe UserClaims -> CounterView -> Maybe AccessError
+canView = publicView
+
+
+projectionIdFromCounterEntity :: CounterEntity -> Uuid
+projectionIdFromCounterEntity counter = counter.counterId
+
+
+combineCounterEntity :: CounterEntity -> Maybe CounterView -> QueryAction CounterView
+combineCounterEntity counter _ = Update (CounterView counter.label)
+
+
+derive ''CounterView query {entities = [''CounterEntity]}
+
+
 spec :: Spec Unit
 spec = do
+  describe "derive" do
+    it "replays a persisted CounterCreated into its entity and projection" \_ -> do
+      let stored = Json.object
+            [ "tag" Json..= ("CounterCreated" :: Text)
+            , "contents" Json..= Json.object ["entityId" Json..= Uuid.nil, "label" Json..= ("downloads" :: Text)]
+            ]
+      case Json.decode @CounterEvent stored of
+        Err reason -> Test.fail reason
+        Ok creation -> do
+          Json.encode creation |> shouldBe stored
+          Entity.getEventEntityIdImpl creation |> shouldBe Uuid.nil
+          let counter = updateImpl creation (def @CounterEntity)
+          queryId @CounterEntity @CounterView counter |> shouldBe Uuid.nil
+          case combine counter Nothing of
+            Update (CounterView label) -> label |> shouldBe "downloads"
+            _ -> Test.fail "expected a CounterView update"
+
   describe "deriveEntityEvents" do
     it "generates both payload mappings and skips unrelated constructors" \_ -> do
       let created = ProposalCreated {proposalId = Uuid.nil}
