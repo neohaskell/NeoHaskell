@@ -103,7 +103,7 @@ fn accepted_layout_uses_truthful_rows_and_small_size_falls_back() {
         let text = String::from_utf8(frame).unwrap();
         assert!(text.contains("Download neo"));
         assert!(text.contains("Download neoctl"));
-        assert!(text.contains("Preparing the shared tool pair."));
+        assert!(text.contains("Downloading neo and neoctl."));
         assert!(!text.contains("MiB"));
         assert!(!text.contains("DONE"));
     }
@@ -312,17 +312,15 @@ fn run_signal_cleanup_fixture() {
     unsafe {
         libc::sigaction(libc::SIGWINCH, std::ptr::null(), &mut after);
     }
-    let mut expected_foreign = unsafe { std::mem::zeroed::<libc::sigaction>() };
-    expected_foreign.sa_sigaction = prior_b as *const () as usize;
-    unsafe {
-        libc::sigemptyset(&mut expected_foreign.sa_mask);
-    }
+    let expected_foreign = FOREIGN_ACTION.lock().unwrap().take().unwrap();
     let foreign_action_mask_preserved = (1..=128).all(|signal| unsafe {
         libc::sigismember(&after.sa_mask, signal)
             == libc::sigismember(&expected_foreign.sa_mask, signal)
     });
-    let foreign_action_preserved = after.sa_sigaction == expected_foreign.sa_sigaction
-        && after.sa_flags == expected_foreign.sa_flags
+    let foreign_action_handler_preserved = after.sa_sigaction == expected_foreign.sa_sigaction;
+    let foreign_action_flags_preserved = after.sa_flags == expected_foreign.sa_flags;
+    let foreign_action_preserved = foreign_action_handler_preserved
+        && foreign_action_flags_preserved
         && foreign_action_mask_preserved;
     let operation = match &report.operation {
         Ok(RunOutcome::Complete(_)) => "complete",
@@ -350,6 +348,7 @@ fn run_signal_cleanup_fixture() {
         serde_json::to_vec(&serde_json::json!({
             "dashboard": true,
             "operation": operation,
+            "cleanup": report.cleanup,
             "presentation_failed": report.presentation.is_some(),
             "primary": primary,
             "restored": restored,
@@ -360,6 +359,9 @@ fn run_signal_cleanup_fixture() {
             "signal_action_after": after.sa_sigaction,
             "signal_action_expected": expected_foreign.sa_sigaction,
             "signal_action_flags_after": after.sa_flags,
+            "signal_action_flags_expected": expected_foreign.sa_flags,
+            "signal_action_handler_preserved": foreign_action_handler_preserved,
+            "signal_action_flags_preserved": foreign_action_flags_preserved,
             "signal_action_mask_preserved": foreign_action_mask_preserved,
             "signal_mask_restored": mask_restored,
         }))
@@ -492,17 +494,27 @@ fn signal_retirement_fixture() {
         let thread_stop = stop.clone();
         let worker = std::thread::spawn(move || {
             unsafe {
-                libc::raise(libc::SIGWINCH);
+                assert_eq!(libc::kill(libc::getpid(), libc::SIGWINCH), 0);
             }
             ready_send.send(()).unwrap();
             while !thread_stop.load(std::sync::atomic::Ordering::Acquire) {
                 unsafe {
-                    libc::raise(libc::SIGWINCH);
+                    assert_eq!(libc::kill(libc::getpid(), libc::SIGWINCH), 0);
                 }
                 std::thread::yield_now();
             }
         });
         ready_receive.recv().unwrap();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let mut descriptors = [libc::pollfd {
+            fd: signals.descriptors()[1],
+            events: libc::POLLIN,
+            revents: 0,
+        }];
+        while !signals.drain().1 {
+            assert!(Instant::now() < deadline, "resize signal was not delivered");
+            terminal::wait(&mut descriptors, Some(deadline)).unwrap();
+        }
         unsafe {
             libc::raise(libc::SIGINT);
         }
@@ -527,6 +539,7 @@ fn signal_retirement_fixture() {
 }
 
 static PANIC: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static FOREIGN_ACTION: std::sync::Mutex<Option<libc::sigaction>> = std::sync::Mutex::new(None);
 pub(super) fn inject(bytes: &[u8], owner: &mut Coordinator) {
     if fault_mode("signal-restore-primary") && bytes.contains(&b'p') {
         let mut foreign = unsafe { std::mem::zeroed::<libc::sigaction>() };
@@ -537,6 +550,13 @@ pub(super) fn inject(bytes: &[u8], owner: &mut Coordinator) {
                 libc::sigaction(libc::SIGWINCH, &foreign, std::ptr::null_mut()),
                 0
             );
+            let mut installed = std::mem::zeroed::<libc::sigaction>();
+            assert_eq!(
+                libc::sigaction(libc::SIGWINCH, std::ptr::null(), &mut installed),
+                0
+            );
+            assert_eq!(installed.sa_sigaction, foreign.sa_sigaction);
+            *FOREIGN_ACTION.lock().unwrap() = Some(installed);
         }
     }
     if (fault_mode("foreground-loss") || fault_mode("foreground-changed")) && bytes.contains(&b'f')
@@ -658,6 +678,17 @@ pub(super) fn partial_checkpoint(page: Page, offered: bool, offset: usize, total
     }
 }
 pub(super) fn frame_checkpoint(armed: bool) {
+    static READY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    if armed
+        && std::env::var_os("NEO_CLARITY_READY_FD").is_some()
+        && !READY.swap(true, std::sync::atomic::Ordering::SeqCst)
+    {
+        let fd: i32 = std::env::var("NEO_CLARITY_READY_FD")
+            .unwrap()
+            .parse()
+            .unwrap();
+        assert_eq!(unsafe { libc::write(fd, b"R".as_ptr().cast(), 1) }, 1);
+    }
     if PARTIAL_STAGE
         .compare_exchange(
             1,
@@ -976,5 +1007,135 @@ fn install_review_separates_system_settings_from_user_changes() {
                 .controls
                 .starts_with("[I] Authorize and install")
         );
+    }
+}
+
+#[cfg(all(test, unix))]
+mod report_tests {
+    use crate::{format_report, installation};
+
+    const REPORT_MARKER: &str = "NEO_REPORT_DIAGNOSTIC ";
+
+    #[test]
+    fn operation_result_survives_display_cleanup_failure() {
+        for mode in [
+            "failure",
+            "success",
+            "two_failures",
+            "cleanup_failure",
+            "cleanup_success",
+            "cleanup_unknown",
+        ] {
+            let output = std::process::Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    "installation::dashboard::tests::report_tests::report_fixture",
+                    "--ignored",
+                    "--nocapture",
+                ])
+                .env("NEO_REPORT_TEST", mode)
+                .output()
+                .unwrap();
+            assert_eq!(output.status.code(), Some(1));
+            let stderr = String::from_utf8(output.stderr).unwrap();
+            let stdout = String::from_utf8(output.stdout).unwrap();
+            let record = stdout
+                .lines()
+                .find_map(|line| line.strip_prefix(REPORT_MARKER))
+                .unwrap_or_else(|| panic!("missing report record for {mode}: {stdout}"));
+            let diagnostic: serde_json::Value = serde_json::from_str(record).unwrap();
+            assert_eq!(
+                diagnostic["operation"]["kind"],
+                if mode == "success" || mode == "cleanup_success" {
+                    "complete"
+                } else {
+                    "failed"
+                }
+            );
+            if mode.starts_with("cleanup_") {
+                assert!(stderr.contains("background work stopped"), "{stderr}");
+                assert!(stderr.contains("signal handlers"), "{stderr}");
+                assert!(!stderr.contains("could not fully restore"), "{stderr}");
+            } else {
+                assert_eq!(
+                    stderr.matches("could not fully restore").count(),
+                    1,
+                    "{stderr}"
+                );
+            }
+            if mode == "success" || mode == "cleanup_success" {
+                assert!(stdout.contains("NeoHaskell 9.8.7 is active."), "{stdout}");
+            } else if mode == "cleanup_unknown" {
+                assert_eq!(
+                    stderr.matches("background work stopped").count(),
+                    1,
+                    "{stderr}"
+                );
+            } else {
+                assert!(stderr.contains("existing command"), "{stderr}");
+                assert!(stderr.contains("/isolated/bin/neo"), "{stderr}");
+                let secondary = if mode.starts_with("cleanup_") {
+                    "background work stopped"
+                } else {
+                    "could not fully restore"
+                };
+                assert!(stderr.find("existing command").unwrap() < stderr.find(secondary).unwrap());
+            }
+            if mode == "two_failures" {
+                assert!(stderr.contains("Terminal input failed"), "{stderr}");
+            }
+        }
+    }
+
+    #[test]
+    #[ignore]
+    fn report_fixture() {
+        let mode = std::env::var("NEO_REPORT_TEST").unwrap();
+        let operation = if mode == "success" || mode == "cleanup_success" {
+            Ok(installation::RunOutcome::Complete(Some(
+                installation::runtime::Outcome {
+                    version: "9.8.7".into(),
+                    open_new_shell: false,
+                    has_previous: false,
+                    previous_missing: false,
+                },
+            )))
+        } else if mode == "cleanup_unknown" {
+            Err(installation::TransactionError::CleanupUnknown)
+        } else {
+            Err(installation::TransactionError::CommandPathConflict {
+                command: installation::ManagedCommand::Neo,
+                path: "/isolated/bin/neo".into(),
+            })
+        };
+        let report = installation::DriveReport {
+            cleanup: if mode.starts_with("cleanup_") {
+                vec![
+                    installation::CleanupFailure::BackgroundWork,
+                    installation::CleanupFailure::SignalHandlers,
+                ]
+            } else {
+                Vec::new()
+            },
+            operation,
+            presentation: (!mode.starts_with("cleanup_")).then_some(
+                installation::dashboard::PresentationFailure {
+                    primary: if mode == "two_failures" {
+                        installation::PresentationFailureKind::Input
+                    } else {
+                        installation::PresentationFailureKind::Restore
+                    },
+                    restored: false,
+                },
+            ),
+            observations: None,
+        };
+        let outcome = crate::diagnostics::DiagnosticOutcome::from_drive_report(
+            crate::diagnostics::RequestRoute::Install,
+            &report,
+        );
+        println!("\n{REPORT_MARKER}{}", serde_json::to_string(&outcome).unwrap());
+        let exit = format_report(report);
+        std::process::exit(exit.code);
     }
 }

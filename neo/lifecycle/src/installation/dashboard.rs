@@ -33,9 +33,17 @@ pub(crate) struct Options {
 
 pub(crate) struct DriveReport {
     pub(crate) operation: Result<RunOutcome, TransactionError>,
+    pub(crate) cleanup: Vec<CleanupFailure>,
     pub(crate) presentation: Option<PresentationFailure>,
     pub(crate) observations: Option<crate::diagnostics::InvocationFacts>,
 }
+#[derive(Clone, Copy, Debug, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum CleanupFailure {
+    BackgroundWork,
+    SignalHandlers,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Failure {
     Input,
@@ -77,6 +85,7 @@ pub(crate) fn run(request: Request, executor: Executor, options: Options) -> Dri
         Ok(signals) => signals,
         Err(_) => {
             return DriveReport {
+                cleanup: Vec::new(),
                 observations: None,
                 operation: Err(TransactionError::Io),
                 presentation: Some(PresentationFailure {
@@ -97,20 +106,10 @@ pub(crate) fn run(request: Request, executor: Executor, options: Options) -> Dri
     let mut owner = Coordinator::new(request, executor, None);
     let mut report = protected(&mut owner, terminal, &signals, options);
     if catch_unwind(AssertUnwindSafe(|| drop(owner))).is_err() {
-        report.operation = Err(TransactionError::CleanupUnknown);
-        report.presentation.get_or_insert(PresentationFailure {
-            primary: Failure::Panic,
-            restored: true,
-        });
+        report.cleanup.push(CleanupFailure::BackgroundWork);
     }
     if !signals.restore() {
-        report
-            .presentation
-            .get_or_insert(PresentationFailure {
-                primary: Failure::Restore,
-                restored: false,
-            })
-            .restored = false;
+        report.cleanup.push(CleanupFailure::SignalHandlers);
     }
     report
 }
@@ -125,6 +124,7 @@ fn protected(
         if tty.activate().is_err() {
             if !tty.restore() {
                 return DriveReport {
+                    cleanup: Vec::new(),
                     observations: Some(owner.diagnostics()),
                     operation: Err(TransactionError::Io),
                     presentation: Some(PresentationFailure {
@@ -143,6 +143,7 @@ fn protected(
         Ok(Ok(operation)) => {
             let restored = terminal.as_mut().is_none_or(Terminal::restore);
             return DriveReport {
+                cleanup: Vec::new(),
                 observations: Some(owner.diagnostics()),
                 operation,
                 presentation: (!restored).then_some(PresentationFailure {
@@ -159,6 +160,7 @@ fn protected(
     let operation = catch_unwind(AssertUnwindSafe(|| settle(owner, signals)))
         .unwrap_or(Err(TransactionError::CleanupUnknown));
     DriveReport {
+        cleanup: Vec::new(),
         observations: Some(owner.diagnostics()),
         operation,
         presentation: Some(PresentationFailure {
@@ -696,7 +698,10 @@ fn review_pages(
                 }
             }
         }
-        steps.push(format!("Add the missing Nix settings to {target} using sudo: {}.", settings.join(", ")));
+        steps.push(format!(
+            "Add the missing Nix settings to {target} using sudo: {}.",
+            settings.join(", ")
+        ));
         steps.push("Restart Nix to load the settings.".to_owned());
     }
     let system_steps = steps.len();

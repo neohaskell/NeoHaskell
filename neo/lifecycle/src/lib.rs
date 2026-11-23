@@ -265,24 +265,39 @@ fn run_request(
 
 #[cfg(unix)]
 fn format_report(report: installation::DriveReport) -> Exit {
+    let cleanup_reported = matches!(
+        report.operation,
+        Err(installation::TransactionError::CleanupUnknown)
+    );
+    let exit = format_result(report.operation);
     let english = english();
+    for failure in &report.cleanup {
+        if cleanup_reported && matches!(failure, installation::CleanupFailure::BackgroundWork) {
+            continue;
+        }
+        eprintln!(
+            "{}",
+            match failure {
+                installation::CleanupFailure::BackgroundWork => &english.cleanup_unknown,
+                installation::CleanupFailure::SignalHandlers => &english.errors.signal_cleanup,
+            }
+        );
+    }
     if let Some(failure) = report.presentation {
         eprintln!(
             "{}",
             english.dashboard.presentation_errors[failure.primary as usize]
         );
-        if !failure.restored {
+        if !failure.restored && failure.primary != installation::PresentationFailureKind::Restore {
             eprintln!("{}", english.dashboard.restoration_failed);
-        }
-        if matches!(
-            report.operation,
-            Err(installation::TransactionError::CleanupUnknown)
-        ) {
-            eprintln!("{}", english.cleanup_unknown);
         }
         return Exit { code: 1 };
     }
-    format_result(report.operation)
+    if report.cleanup.is_empty() {
+        exit
+    } else {
+        Exit { code: 1 }
+    }
 }
 
 #[cfg(unix)]
@@ -390,8 +405,29 @@ fn format_result(result: Result<installation::RunOutcome, installation::Transact
             eprintln!("{message}");
             Exit { code: 1 }
         }
-        Err(_) => {
-            eprintln!("{}", english.operation_failed);
+        Err(installation::TransactionError::ActivationRecoveryFailed { primary, recovery }) => {
+            format_result(Err(*primary));
+            eprintln!("{}", english.errors.activation_recovery);
+            format_result(Err(*recovery));
+            Exit { code: 1 }
+        }
+        Err(error) => {
+            use installation::TransactionError as E;
+            let message = match error {
+                E::Io => &english.errors.io,
+                E::StopRequested => &english.operation_not_started,
+                E::Busy => &english.errors.busy,
+                E::UnsafePath => &english.errors.unsafe_path,
+                E::InvalidPair => &english.errors.invalid_pair,
+                E::InvalidState(_) => &english.errors.invalid_state,
+                E::CommandLinkConflict => &english.errors.command_link_conflict,
+                E::ForeignActiveTarget => &english.errors.foreign_active_target,
+                E::NoInstallation => &english.errors.no_installation,
+                E::NoPreviousPair => &english.errors.no_previous_pair,
+                E::Verification(_) => &english.errors.verification,
+                _ => &english.operation_failed,
+            };
+            eprintln!("{message}");
             Exit { code: 1 }
         }
     }

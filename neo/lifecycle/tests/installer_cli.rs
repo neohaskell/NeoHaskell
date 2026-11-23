@@ -67,7 +67,7 @@ fn lifecycle_requires_an_explicit_safe_home_without_touching_host_state() {
     assert!(
         String::from_utf8(output.stderr)
             .unwrap()
-            .contains("The lifecycle operation did not complete.")
+            .contains("cannot safely use an installation path")
     );
 }
 
@@ -81,7 +81,7 @@ fn update_rollback_is_accepted_before_safe_home_validation() {
     assert!(
         String::from_utf8(output.stderr)
             .unwrap()
-            .contains("The lifecycle operation did not complete.")
+            .contains("cannot safely use an installation path")
     );
     assert!(!home.exists());
 }
@@ -154,7 +154,7 @@ fn installer_refuses_path_commands_without_invoking_them_or_checking_nix() {
         let stderr = String::from_utf8(output.stderr).unwrap();
         assert!(
             stderr.contains(&format!(
-                "PATH already resolves {command} to {executable:?}."
+                "An existing command blocks setup of {command} at {executable:?}."
             )),
             "{stderr}"
         );
@@ -182,4 +182,63 @@ fn installer_refuses_path_commands_without_invoking_them_or_checking_nix() {
         let events = outcome["observations"]["events"].as_array().unwrap();
         assert!(!events.iter().any(|event| event["phase"] == "checking_nix"));
     }
+}
+
+#[cfg(unix)]
+#[test]
+fn existing_standalone_commands_are_preserved_and_identified() {
+    use std::os::unix::fs::PermissionsExt;
+    for command in ["neo", "neoctl"] {
+        let sandbox = tempdir().unwrap();
+        let home = sandbox.path().canonicalize().unwrap();
+        let bin = home.join(".local/bin");
+        std::fs::create_dir_all(&bin).unwrap();
+        let path = bin.join(command);
+        std::fs::write(&path, b"standalone installation").unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let output = run_installer_with_home(&["install", "--plain"], &bin, &home);
+        assert_eq!(output.status.code(), Some(1));
+        assert_eq!(std::fs::read(&path).unwrap(), b"standalone installation");
+        assert!(!home.join(".local/state/neohaskell/active").exists());
+        let stderr = String::from_utf8(output.stderr).unwrap();
+        assert!(stderr.contains(path.to_str().unwrap()), "{stderr}");
+        assert!(stderr.contains("existing command"), "{stderr}");
+        let reports = std::fs::read_dir(home.join(".local/state/neohaskell-diagnostics")).unwrap();
+        let report = reports
+            .filter_map(Result::ok)
+            .find(|entry| entry.path().extension().is_some_and(|ext| ext == "json"))
+            .unwrap();
+        let json: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(report.path()).unwrap()).unwrap();
+        assert_eq!(
+            json["report"]["state"]["outcome"]["operation"]["error"]["kind"],
+            "command_path_conflict"
+        );
+        assert_eq!(
+            json["report"]["state"]["outcome"]["operation"]["error"]["reason"],
+            command
+        );
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn writable_existing_command_remains_an_unsafe_path() {
+    use std::os::unix::fs::PermissionsExt;
+    let sandbox = tempdir().unwrap();
+    let home = sandbox.path().canonicalize().unwrap();
+    let bin = home.join(".local/bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    let path = bin.join("neo");
+    std::fs::write(&path, b"untrusted permissions").unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o777)).unwrap();
+    let output = run_installer_with_home(&["install", "--plain"], &bin, &home);
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(std::fs::read(&path).unwrap(), b"untrusted permissions");
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(
+        stderr.contains("cannot safely use an installation path"),
+        "{stderr}"
+    );
+    assert!(!stderr.contains("existing command blocks"), "{stderr}");
 }

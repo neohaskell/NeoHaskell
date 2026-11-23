@@ -268,6 +268,14 @@ impl InstallationOwner {
         ] {
             let path = self.layout.command_directory.join(command.name());
             let expected = self.layout.expected_command_target(command.name());
+            if let Some(metadata) = self.inspect_path(path.clone()).await? {
+                if metadata.is_file()
+                    && metadata.uid() == unsafe { libc::geteuid() }
+                    && metadata.mode() & 0o022 == 0
+                {
+                    return Err(TransactionError::CommandPathConflict { command, path });
+                }
+            }
             let actual = self.inspect_link(path.clone()).await?;
             if actual.as_ref().is_some_and(|target| target != &expected) {
                 return Err(TransactionError::CommandLinkConflict);

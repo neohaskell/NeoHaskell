@@ -2,6 +2,7 @@ use serde::Deserialize;
 
 #[derive(Deserialize)]
 pub(crate) struct English {
+    pub(crate) errors: ErrorCopy,
     pub(crate) dashboard: DashboardCopy,
     pub(crate) diagnostic_report_saved: String,
     pub(crate) diagnostic_report_unavailable: String,
@@ -74,4 +75,20 @@ pub(crate) struct DashboardCopy {
     pub(crate) details: String,
     pub(crate) truncated: String,
     pub(crate) restoration_failed: String,
+}
+
+#[derive(Deserialize)]
+pub(crate) struct ErrorCopy {
+    pub(crate) signal_cleanup: String,
+    pub(crate) io: String,
+    pub(crate) busy: String,
+    pub(crate) unsafe_path: String,
+    pub(crate) invalid_pair: String,
+    pub(crate) invalid_state: String,
+    pub(crate) command_link_conflict: String,
+    pub(crate) foreign_active_target: String,
+    pub(crate) no_installation: String,
+    pub(crate) no_previous_pair: String,
+    pub(crate) verification: String,
+    pub(crate) activation_recovery: String,
 }
