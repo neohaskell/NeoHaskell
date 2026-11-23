@@ -829,6 +829,7 @@ initAndWrapFileUpload fileConfig = do
 run :: Application -> Task Text Unit
 run app =
    Log.withScope [("component", "Application")] do
+     app.serviceRunners |> Task.forEach (ServiceDefinition.validateCommandTransports app.transports)
      validateStaticBindOverrides app
      -- 0. Set line buffering for stdout/stderr (container visibility)
      -- GHC defaults to block buffering when isatty() returns false (always in containers),
@@ -1023,6 +1024,7 @@ validateStaticBindOverrides app =
 -- 6. Runs each transport once with combined endpoints
 runWith :: EventStore Json.Value -> Application -> Task Text Unit
 runWith eventStore app = do
+  app.serviceRunners |> Task.forEach (ServiceDefinition.validateCommandTransports app.transports)
   validateStaticBindOverrides app
   -- Resolve file upload (only EvaluatedFileUpload supported - DeferredFileUpload requires run)
   (maybeFileUploadSetup, fileUploadCleanup) <- case app.fileUploadFactory of
