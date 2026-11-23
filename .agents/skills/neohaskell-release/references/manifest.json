@@ -1529,6 +1529,37 @@
       "source_sha": "be6ab7e0d4a4b940b83bd1b1d14a8e5f872fe3d6",
       "target_policy": "native-v2",
       "version": "0.19.0"
+    },
+    {
+      "base_sha": "474ec108aec7628518bbc96e384e9d67603b85f9",
+      "base_tag": "neo-v0.19.0",
+      "base_version": "0.19.0",
+      "bootstrap": false,
+      "contract_registry_sha256": "993db493d248ac754cf1c6631d03aa63f3be766e489d927a6c72d10d28cbb961",
+      "date": "2026-11-23",
+      "distribution_policy": "installer-v1",
+      "group": "platform",
+      "id": "aea80069e31f1a6312a8f2f5cb418e556cbba7e75222ca1249e35ee2e788ff3c",
+      "impact": "compatible",
+      "kind": "release",
+      "notes": [
+        {
+          "category": "Fixed",
+          "commit": "358a7229a1d3af447cf3d86eb7a0425f0b0ea10a",
+          "component": "CLI",
+          "group": "platform",
+          "hash": "0d1f58a65816903ab78d6430589a4d386c5284c9ff3c5f8713437e6b7d9891a6",
+          "impact": "compatible",
+          "path": ".changes/neo-terminal-cache.md",
+          "sections": {
+            "Summary": "The Neo CLI now builds with the patched terminal cache library. Update Neo to get the fix. Existing projects need no changes."
+          },
+          "text": "---\ngroup: platform\ncomponent: CLI\nimpact: compatible\ncategory: Fixed\n---\n\n## Summary\n\nThe Neo CLI now builds with the patched terminal cache library. Update Neo to get the fix. Existing projects need no changes.\n"
+        }
+      ],
+      "source_sha": "358a7229a1d3af447cf3d86eb7a0425f0b0ea10a",
+      "target_policy": "native-v2",
+      "version": "0.19.1"
     }
   ],
   "recoveries": [],
