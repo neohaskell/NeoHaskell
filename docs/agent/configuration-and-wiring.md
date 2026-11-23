@@ -4,15 +4,15 @@
 
 ## Typed configuration
 
-`Config.defineConfig` generates a record, its parser, and its `Has...` constraint. `Config.field @Type` declares a field. Field modifiers add defaults, environment names, command line flags, documentation, and secret handling.
+In the configuration module import `Core` and `Config`. Use `defineConfig` to generate a record, its parser and its `Has...` constraint. Use `field @Type` to declare each field, `doc` for its help text, and either `defaultsTo` or `required` for its value. Field modifiers add defaults, environment names, command line flags, documentation, and secret handling.
 
 Startup loads `.env` before parsing configuration. Values take precedence in this order: command line, process environment, `.env`, then default.
 
-Use `Config.secret` for credential fields so their display is redacted. Secret marking does not choose persistent credential storage. OAuth2 tokens belong in a [SecretStore](advanced-oauth2.md).
+Use `secret` for credential fields so their display is redacted. Secret marking does not choose persistent credential storage. OAuth2 tokens belong in a [SecretStore](advanced-oauth2.md).
 
 ## Factories and registration order
 
-This explanatory fragment needs the application's config, factories, domain service, and query imports.
+This application module imports `Core`, its configuration type, its Counter Feature and the Web transport.
 
 ```haskell ignore
 appEventModel :: EventModel

@@ -16,11 +16,11 @@ For application-owned key deletion, read [protected-value erasure](advanced-eras
 
 ## Query rows
 
-For a model-backed application, call `EventModel.withQueryObjectStore` before the Features that declare query Slices. Each `query @Row` Slice then registers against the selected store.
+For a model-backed application, call `withQueryObjectStore` before the Features that declare query Slices. Each `query @Row` Slice then registers against the selected store.
 
 For a legacy application assembled directly with `Application`, `Application.new` defaults to in-memory query storage. Call `Application.withQueryObjectStore` before `Application.withQuery @Row`, which captures the configured store factory at registration. This manual registration path remains supported and is not deprecated.
 
-`PostgresQueryObjectStoreConfig` has the same eight field names. The store distinguishes query types through the query name and instance identifier.
+`PostgresQueryObjectStoreConfig` takes the connection, pool and TLS fields. The store distinguishes query types through the query name and instance identifier.
 
 Configuring Postgres event storage without `withQueryObjectStore` still leaves query rows in memory. A query result observed before restart does not prove that the row will survive restart.
 

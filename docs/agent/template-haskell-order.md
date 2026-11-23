@@ -1,30 +1,30 @@
 # Template Haskell order
 
-Derivation markers inspect declarations already visible to Template Haskell. Place the application functions and custom instances a marker needs before that marker. Each marker owns a different contract.
+Declaration order determines which names a marker can inspect and where generated event constructors are available to your code.
 
 ## Starter declarations
 
 Import `Core` and `Derive` in domain modules. Give each event payload its domain name and put `derive ''CounterCreated eventPayload` after the record. Place the entity marker after its state record and before `initialState` and `update`. The reducer can then match the generated event constructors. A command or query marker goes below its local functions. See [events and entities](events-and-entities.md), [commands](commands.md) and [queries](queries.md).
 
-## Events
+## Existing event markers
 
 `deriveEvent ''EventType` supplies missing `Show`, `Generic`, `Json.FromJSON`, and `Json.ToJSON` instances. Define a custom instance before the marker. Defining it afterwards can duplicate an instance the marker already generated.
 
 `deriveEntityEvents ''EntityType [''FirstPayload, ''SecondPayload]` creates a new parent event sum from the listed payload types. Declare or import the payload types and map each with `EntityOf` before the marker. Define the entity reducer and each payload's `Event` routing instance after the marker. Define any custom payload JSON instances before `deriveEvent` on those payloads. The generated parent receives ordinary JSON instances and cannot replace a handwritten stored event sum without checking historical event bytes.
 
-## Entities
+## Existing entity markers
 
 `deriveEntity ''EntityType ''EventType` supplies missing naming, JSON, type relationships, `Default`, `Entity`, and event routing. Define `initialState`, `update`, and `getEventEntityId` first when the marker must generate their corresponding instances. Existing instances take precedence. Conflicting entity and event mappings fail compilation.
 
 You can define the instances explicitly instead. Both approaches still require application-owned transition and routing logic.
 
-## Commands
+## Existing command markers
 
-Declare the command type, `getEntityId`, `decide`, and `EntityOf` before `command ''CommandType`. Declare `TransportsOf` for its allowed interfaces. Put a custom `canAccess` before the marker. The generator looks up those companion functions and validates their shapes.
+When using the marker from `Service.CommandExecutor.TH`, declare the command type, `getEntityId`, `decide`, and `EntityOf` before `command ''CommandType`. Declare `TransportsOf` for its allowed interfaces. Put a custom `canAccess` before the marker. The generator looks up those companion functions and validates their shapes.
 
 `deriveCommand` is an alias for `command`. Apply either marker after its companion declarations.
 
-## Queries
+## Existing query markers
 
 Declare the row type, `canAccess`, and `canView` before `deriveQuery`. The marker supplies missing `Show`, `Generic`, `Json.FromJSON`, `Json.ToJSON`, and `ToSchema` instances. Define custom instances and a custom `maxResults` before the marker. Write manual `QueryOf` instances after the marker so the generated `Query` instance exists.
 
