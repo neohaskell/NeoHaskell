@@ -20,7 +20,8 @@ pub(crate) use coordinator::{
     UnadmittedReason,
 };
 pub(crate) use dashboard::{
-    DisplayPreference, DriveReport, Failure as PresentationFailureKind, Options, run,
+    CleanupFailure, DisplayPreference, DriveReport, Failure as PresentationFailureKind, Options,
+    run,
 };
 use filesystem::{FilesystemJob, FilesystemResult};
 pub(crate) use review::ManagedCommand;
