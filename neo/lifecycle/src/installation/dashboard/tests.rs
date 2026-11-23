@@ -995,6 +995,8 @@ fn install_review_separates_system_settings_from_user_changes() {
 mod report_tests {
     use crate::{format_report, installation};
 
+    const REPORT_MARKER: &str = "NEO_REPORT_DIAGNOSTIC ";
+
     #[test]
     fn operation_result_survives_display_cleanup_failure() {
         for mode in [
@@ -1018,9 +1020,11 @@ mod report_tests {
             assert_eq!(output.status.code(), Some(1));
             let stderr = String::from_utf8(output.stderr).unwrap();
             let stdout = String::from_utf8(output.stdout).unwrap();
-            let diagnostic: serde_json::Value =
-                serde_json::from_str(stdout.lines().find(|line| line.starts_with('{')).unwrap())
-                    .unwrap();
+            let record = stdout
+                .lines()
+                .find_map(|line| line.strip_prefix(REPORT_MARKER))
+                .unwrap_or_else(|| panic!("missing report record for {mode}: {stdout}"));
+            let diagnostic: serde_json::Value = serde_json::from_str(record).unwrap();
             assert_eq!(
                 diagnostic["operation"]["kind"],
                 if mode == "success" || mode == "cleanup_success" {
@@ -1111,7 +1115,7 @@ mod report_tests {
             crate::diagnostics::RequestRoute::Install,
             &report,
         );
-        println!("{}", serde_json::to_string(&outcome).unwrap());
+        println!("\n{REPORT_MARKER}{}", serde_json::to_string(&outcome).unwrap());
         let exit = format_report(report);
         std::process::exit(exit.code);
     }
