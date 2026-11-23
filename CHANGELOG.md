@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.19.1 — 2026-11-23
+
+### Fixed
+
+- **CLI**: The Neo CLI now builds with the patched terminal cache library. Update Neo to get the fix. Existing projects need no changes. ([change](https://github.com/neohaskell/NeoHaskell/commit/358a7229a1d3af447cf3d86eb7a0425f0b0ea10a))
+
+[Compare changes](https://github.com/neohaskell/NeoHaskell/compare/neo-v0.19.0...neo-v0.19.1)
+
 ## 0.19.0 — 2026-11-23
 
 ### Breaking changes

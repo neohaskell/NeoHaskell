@@ -1,6 +1,6 @@
 cabal-version: 3.4
 name: neoctl
-version: 0.19.0
+version: 0.19.1
 description: NeoHaskell control service
 homepage: https://neohaskell.org
 license: MIT
