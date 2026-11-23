@@ -494,17 +494,27 @@ fn signal_retirement_fixture() {
         let thread_stop = stop.clone();
         let worker = std::thread::spawn(move || {
             unsafe {
-                libc::raise(libc::SIGWINCH);
+                assert_eq!(libc::kill(libc::getpid(), libc::SIGWINCH), 0);
             }
             ready_send.send(()).unwrap();
             while !thread_stop.load(std::sync::atomic::Ordering::Acquire) {
                 unsafe {
-                    libc::raise(libc::SIGWINCH);
+                    assert_eq!(libc::kill(libc::getpid(), libc::SIGWINCH), 0);
                 }
                 std::thread::yield_now();
             }
         });
         ready_receive.recv().unwrap();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let mut descriptors = [libc::pollfd {
+            fd: signals.descriptors()[1],
+            events: libc::POLLIN,
+            revents: 0,
+        }];
+        while !signals.drain().1 {
+            assert!(Instant::now() < deadline, "resize signal was not delivered");
+            terminal::wait(&mut descriptors, Some(deadline)).unwrap();
+        }
         unsafe {
             libc::raise(libc::SIGINT);
         }
