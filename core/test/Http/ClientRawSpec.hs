@@ -448,8 +448,10 @@ withLoopbackServer app runTest = do
     |> Task.fromIO
 
 
--- | Reserve a loopback port that refuses connections for the duration of the test.
--- The socket stays bound and never listens, so no other process can take the port.
+-- | Run the test against a loopback port that refuses connections.
+-- The port comes from a socket that is bound and then closed before the test runs.
+-- A closed port refuses a connection at once on Linux and on macOS. A socket that
+-- stays bound without listening makes macOS drop the attempt until it times out.
 withRefusingPort :: (Int -> Task Text Unit) -> Task Text Unit
 withRefusingPort runTest = do
   let hints = GhcSocket.defaultHints {GhcSocket.addrSocketType = GhcSocket.Stream}
@@ -458,11 +460,11 @@ withRefusingPort runTest = do
     [] -> fail "The loopback address did not resolve"
     address : _ -> do
       socket <- GhcSocket.openSocket address |> Task.fromIO
-      let reserveAndRun = do
+      let allocatePort = do
             GhcSocket.bind socket (GhcSocket.addrAddress address) |> Task.fromIO
-            port <- GhcSocket.socketPort socket |> Task.fromIO
-            runTest (fromIntegral port)
-      reserveAndRun |> Task.finally (GhcSocket.close socket |> Task.fromIO)
+            GhcSocket.socketPort socket |> Task.fromIO
+      port <- allocatePort |> Task.finally (GhcSocket.close socket |> Task.fromIO)
+      runTest (fromIntegral port)
 
 
 -- | Answer every request through @respondTo@ and give the test the requests received so far.
