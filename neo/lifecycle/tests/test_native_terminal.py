@@ -123,6 +123,9 @@ def main():
             assert result.get('outcome', result.get('operation')) == expected, result
             if mode == 'signal-restore-primary':
                 assert result['primary'] == 'panic', result
+                assert result['signal_action_handler_preserved'], result
+                assert result['signal_action_flags_preserved'], result
+                assert result['signal_action_mask_preserved'], result
                 assert result['foreign_action_preserved'], result
                 assert result['cleanup'] == ['signal_handlers'], result
                 assert result['restored'], result

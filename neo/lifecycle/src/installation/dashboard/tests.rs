@@ -312,17 +312,15 @@ fn run_signal_cleanup_fixture() {
     unsafe {
         libc::sigaction(libc::SIGWINCH, std::ptr::null(), &mut after);
     }
-    let mut expected_foreign = unsafe { std::mem::zeroed::<libc::sigaction>() };
-    expected_foreign.sa_sigaction = prior_b as *const () as usize;
-    unsafe {
-        libc::sigemptyset(&mut expected_foreign.sa_mask);
-    }
+    let expected_foreign = FOREIGN_ACTION.lock().unwrap().take().unwrap();
     let foreign_action_mask_preserved = (1..=128).all(|signal| unsafe {
         libc::sigismember(&after.sa_mask, signal)
             == libc::sigismember(&expected_foreign.sa_mask, signal)
     });
-    let foreign_action_preserved = after.sa_sigaction == expected_foreign.sa_sigaction
-        && after.sa_flags == expected_foreign.sa_flags
+    let foreign_action_handler_preserved = after.sa_sigaction == expected_foreign.sa_sigaction;
+    let foreign_action_flags_preserved = after.sa_flags == expected_foreign.sa_flags;
+    let foreign_action_preserved = foreign_action_handler_preserved
+        && foreign_action_flags_preserved
         && foreign_action_mask_preserved;
     let operation = match &report.operation {
         Ok(RunOutcome::Complete(_)) => "complete",
@@ -361,6 +359,9 @@ fn run_signal_cleanup_fixture() {
             "signal_action_after": after.sa_sigaction,
             "signal_action_expected": expected_foreign.sa_sigaction,
             "signal_action_flags_after": after.sa_flags,
+            "signal_action_flags_expected": expected_foreign.sa_flags,
+            "signal_action_handler_preserved": foreign_action_handler_preserved,
+            "signal_action_flags_preserved": foreign_action_flags_preserved,
             "signal_action_mask_preserved": foreign_action_mask_preserved,
             "signal_mask_restored": mask_restored,
         }))
@@ -528,6 +529,7 @@ fn signal_retirement_fixture() {
 }
 
 static PANIC: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static FOREIGN_ACTION: std::sync::Mutex<Option<libc::sigaction>> = std::sync::Mutex::new(None);
 pub(super) fn inject(bytes: &[u8], owner: &mut Coordinator) {
     if fault_mode("signal-restore-primary") && bytes.contains(&b'p') {
         let mut foreign = unsafe { std::mem::zeroed::<libc::sigaction>() };
@@ -538,6 +540,13 @@ pub(super) fn inject(bytes: &[u8], owner: &mut Coordinator) {
                 libc::sigaction(libc::SIGWINCH, &foreign, std::ptr::null_mut()),
                 0
             );
+            let mut installed = std::mem::zeroed::<libc::sigaction>();
+            assert_eq!(
+                libc::sigaction(libc::SIGWINCH, std::ptr::null(), &mut installed),
+                0
+            );
+            assert_eq!(installed.sa_sigaction, foreign.sa_sigaction);
+            *FOREIGN_ACTION.lock().unwrap() = Some(installed);
         }
     }
     if (fault_mode("foreground-loss") || fault_mode("foreground-changed")) && bytes.contains(&b'f')
