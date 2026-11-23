@@ -183,3 +183,30 @@ fn installer_refuses_path_commands_without_invoking_them_or_checking_nix() {
         assert!(!events.iter().any(|event| event["phase"] == "checking_nix"));
     }
 }
+
+#[cfg(unix)]
+#[test]
+fn existing_standalone_commands_are_preserved_and_identified() {
+    use std::os::unix::fs::PermissionsExt;
+    for command in ["neo", "neoctl"] {
+        let sandbox = tempdir().unwrap();
+        let home = sandbox.path().canonicalize().unwrap();
+        let bin = home.join(".local/bin");
+        std::fs::create_dir_all(&bin).unwrap();
+        let path = bin.join(command);
+        std::fs::write(&path, b"standalone installation").unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let output = run_installer_with_home(&["install", "--plain"], &bin, &home);
+        assert_eq!(output.status.code(), Some(1));
+        assert_eq!(std::fs::read(&path).unwrap(), b"standalone installation");
+        assert!(!home.join(".local/state/neohaskell/active").exists());
+        let stderr = String::from_utf8(output.stderr).unwrap();
+        assert!(stderr.contains(path.to_str().unwrap()), "{stderr}");
+        assert!(stderr.contains("existing command"), "{stderr}");
+        let reports = std::fs::read_dir(home.join(".local/state/neohaskell-diagnostics")).unwrap();
+        let report = reports.filter_map(Result::ok).find(|entry| entry.path().extension().is_some_and(|ext| ext == "json")).unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&std::fs::read(report.path()).unwrap()).unwrap();
+        assert_eq!(json["report"]["state"]["outcome"]["operation"]["error"]["kind"], "command_path_conflict");
+        assert_eq!(json["report"]["state"]["outcome"]["operation"]["error"]["reason"], command);
+    }
+}
