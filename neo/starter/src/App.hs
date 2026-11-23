@@ -10,7 +10,7 @@ appEventModel :: EventModel
 appEventModel = eventModel do
   appName "Counter"
   withConfig @StarterConfig
-  withPortFromConfig (\(config :: StarterConfig) -> config.httpPort)
+  withPortFromConfig @StarterConfig (.httpPort)
   withEventStore inMemory
   withTransport WebTransport.server
   features do
