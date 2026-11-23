@@ -15,6 +15,7 @@ import Testbed.Erasable.Feature (protectedFlow)
 import Testbed.Erasable.Owned.Feature (ownedErasureFlow)
 import Testbed.ExternalEffect.Feature (externalEffectFlow)
 import Testbed.Infrastructure (makeFileUploadConfig, makePostgresConfig)
+import Testbed.Meter (meterFlow)
 import Testbed.RequestOrigin (requestOriginFlow)
 import Testbed.Stock.Feature (stockFlow)
 
@@ -41,6 +42,7 @@ appEventModel httpHost httpPort = EventModel.eventModel do
     protectedFlow
     ownedErasureFlow
     requestOriginFlow
+    meterFlow
 
 
 testbedApiInfo :: ApiInfo
