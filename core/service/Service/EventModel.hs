@@ -5,6 +5,8 @@
 -- Export Feature actions from their owning modules and compose them in 'features'.
 module Service.EventModel (
   EventModel,
+  ValidatedEventModel,
+  validate,
   Feature,
   Chapter,
   Slice,
@@ -44,7 +46,6 @@ module Service.EventModel (
   ViewObservation (..),
   eventModel,
   toApplication,
-  run,
   appName,
   withConfig,
   withIntegration,
@@ -59,6 +60,7 @@ module Service.EventModel (
   withTransport,
   withHost,
   withPort,
+  withPortFromConfig,
   withApiInfo,
   withFileUpload,
   withAuth,
@@ -133,7 +135,7 @@ import Service.EventModel.Types (
   CommandRoot (..),
   CommandTarget (..),
   CommandTargetFor (..),
-  EventModel (..),
+  ValidatedEventModel (..),
   EventRef (..),
   ExpectedEvent (..),
   ExpectedOutcome (..),
@@ -174,8 +176,6 @@ import Service.QueryObjectStore.Core (QueryObjectStoreConfig)
 import Service.ServiceDefinition.Core (RunnableCommand (..))
 import Service.Transport (Transport)
 import Service.Transport.Web qualified as Web
-import Task (Task)
-import Task qualified
 import Text (Text)
 import Text qualified
 import Type.Reflection (Typeable)
@@ -192,11 +192,11 @@ type FeatureAction = Writer [([Text], Feature)] ()
 type EventModelAction = Writer [ModelPart] ()
 
 
-modelName :: EventModel -> Text
+modelName :: ValidatedEventModel -> Text
 modelName model = model.modelName
 
 
-modelFeatures :: EventModel -> [Feature]
+modelFeatures :: ValidatedEventModel -> [Feature]
 modelFeatures model = model.modelFeatures
 
 
@@ -343,10 +343,18 @@ validateViewSubscription name sources selected = case selected.ruleWhen of
           [fmt|Rule "#{name}" when payload #{Types.typeName (Proxy @payload)} is not listed by the query's onEvent subscriptions|]
 
 
--- | Assemble a named topology and reject malformed local structure.
--- Evaluation does not derive Event ADTs or start application workers.
-eventModel :: EventModelAction -> Result Text EventModel
-eventModel builder =
+-- | An application declaration whose structure is checked before it starts.
+newtype EventModel = EventModel EventModelAction
+
+
+-- | Describe an application without starting resources or losing builder diagnostics.
+eventModel :: EventModelAction -> EventModel
+eventModel = EventModel
+
+
+-- | Check a declaration before inspecting its topology or registering workers.
+validate :: EventModel -> Result Text ValidatedEventModel
+validate (EventModel builder) =
   let parts = Writer.execWriter builder
       names = [name | ModelName name <- parts]
       featureResults = Prelude.concat [found | ModelFeatures found <- parts]
@@ -360,7 +368,7 @@ eventModel builder =
       validFeatures = [selected | (_, selected) <- featureResults]
   in  case names of
         [name] ->
-          let model = EventModel {modelName = name, modelFeatures = validFeatures, modelConfiguration = configuration}
+          let model = ValidatedEventModel {modelName = name, modelFeatures = validFeatures, modelConfiguration = configuration}
               modelProblems = case validateModel model of
                 Ok _ -> []
                 Err problem -> [problem]
@@ -372,17 +380,10 @@ eventModel builder =
 
 
 -- | Register every validated Slice with the existing Application runtime.
-toApplication :: EventModel -> Application
+toApplication :: ValidatedEventModel -> Application
 toApplication model = do
   let configured = Prelude.foldl (\application configure -> configure application) Application.new model.modelConfiguration
   Prelude.foldl registerFeature configured model.modelFeatures
-
-
--- | Validate the named model before starting application effects.
-run :: Result Text EventModel -> Task Text Unit
-run modelResult = case modelResult of
-  Err problem -> Task.throw problem
-  Ok model -> Application.run (toApplication model)
 
 
 withConfig :: forall config. (HasParser config, Typeable config) => EventModelAction
@@ -455,6 +456,11 @@ withHost host = Writer.tell [ModelConfiguration (Application.withHost host)]
 -- Delegates to 'Application.withPort'.
 withPort :: Int -> EventModelAction
 withPort port = Writer.tell [ModelConfiguration (Application.withPort port)]
+
+
+-- | Bind the Web server to a port read from the loaded application configuration.
+withPortFromConfig :: (Typeable config) => (config -> Int) -> EventModelAction
+withPortFromConfig select = withApplicationConfiguration (Application.withPortFromConfig select)
 
 
 withApiInfo :: forall config. (Typeable config) => (config -> ApiInfo) -> EventModelAction
@@ -751,7 +757,7 @@ targetNames :: CommandTarget -> (Text, Text)
 targetNames (CommandTarget commandProxy entityProxy) = (Types.typeName commandProxy, Types.typeName entityProxy)
 
 
-validateModel :: EventModel -> Result Text EventModel
+validateModel :: ValidatedEventModel -> Result Text ValidatedEventModel
 validateModel model =
   let featuresFound = model.modelFeatures
       emptyModel = if Prelude.null featuresFound then ["eventModel requires at least one Feature"] else []

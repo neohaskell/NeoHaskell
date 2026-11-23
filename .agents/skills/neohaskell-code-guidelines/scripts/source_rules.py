@@ -13,11 +13,11 @@ CHARACTER = re.compile(r"'(?:[^'\\\n]|\\(?:[A-Za-z0-9]+|.))'")
 QUASIQUOTE = re.compile(r"\[" + NAME + r"\|")
 LINE_COMMENT = re.compile(r"--+(?![!#$%&*+./<=>?@\\^|~:-])")
 PROVIDERS = {
-    "LinkedList": {"LinkedList", "Core"},
-    "Char": {"Char", "Core", "Prelude", "GHC.Types"},
-    "True": {"Basics", "Core", "Prelude", "GHC.Types", "Data.Bool"},
-    "False": {"Basics", "Core", "Prelude", "GHC.Types", "Data.Bool"},
-    "fmt": {"Basics", "Core"},
+    "LinkedList": {"LinkedList", "Core", "Core.Prelude"},
+    "Char": {"Char", "Core", "Core.Prelude", "Prelude", "GHC.Types"},
+    "True": {"Basics", "Core", "Core.Prelude", "Prelude", "GHC.Types", "Data.Bool"},
+    "False": {"Basics", "Core", "Core.Prelude", "Prelude", "GHC.Types", "Data.Bool"},
+    "fmt": {"Basics", "Core", "Core.Prelude"},
 }
 CONVERSIONS = {
     ("core/core/Text.hs", "Text", "fromLinkedList"),

@@ -14,6 +14,7 @@ import Prelude qualified
 import Service.AccessControl (AccessError, UserClaims)
 import Service.Application qualified as Application
 import Service.EventModel qualified as EventModel
+import Service.EventModel.Launcher qualified as Launcher
 import Service.EventModel.RuleRunner qualified as RuleRunner
 import Service.Integration.Adapter (Integration (..))
 import Service.Integration.Selection (Selection (..))
@@ -101,7 +102,7 @@ main = Hspec.hspec spec
 
 spec :: Spec Unit
 spec = do
-  case App.appEventModel "127.0.0.1" 8080 of
+  case App.appEventModel "127.0.0.1" 8080 |> EventModel.validate of
     Err problem -> Hspec.it "assembles direct rules" do
       Hspec.expectationFailure (Text.toLinkedList problem)
     Ok model -> do
@@ -220,7 +221,7 @@ spec = do
             _ -> False |> shouldBe True
 
     it "accepts an existing cart without appending an event" \_ -> do
-      let modelResult = EventModel.eventModel do
+      let modelResult = validatedModel do
             EventModel.appName "No event rule"
             EventModel.features do
               EventModel.feature "Cart" do
@@ -243,7 +244,7 @@ spec = do
           failures |> shouldBe []
 
     it "runs every direct cart rule through isolated service and query storage" \_ -> do
-      case App.appEventModel "127.0.0.1" 8080 of
+      case App.appEventModel "127.0.0.1" 8080 |> EventModel.validate of
         Err problem -> problem |> shouldBe "valid Event Model"
         Ok model -> do
           let generators = RuleRunner.emptyGenerators
@@ -259,7 +260,7 @@ spec = do
               failures |> shouldBe []
 
     it "generates no examples when the model has no direct rules" \_ -> do
-      let modelResult = EventModel.eventModel do
+      let modelResult = validatedModel do
             EventModel.appName "No direct rules"
             EventModel.features do
               EventModel.feature "Cart" do
@@ -276,7 +277,7 @@ spec = do
           reports |> Array.fromLinkedList |> Array.length |> shouldBe 0
 
     it "lowers declared components into the application" \_ -> do
-      case App.appEventModel "127.0.0.1" 8080 of
+      case App.appEventModel "127.0.0.1" 8080 |> EventModel.validate of
         Err problem -> problem |> shouldBe "valid Event Model"
         Ok model -> do
           let application = EventModel.toApplication model
@@ -290,7 +291,7 @@ spec = do
 
     it "configures capabilities and typed adapters inside the named model" \_ -> do
       store <- InMemorySecretStore.new
-      let modelResult = EventModel.eventModel do
+      let modelResult = validatedModel do
             EventModel.appName "Configured"
             EventModel.withConfig @TestbedConfig
             EventModel.withSecretStore @() (\_ -> store)
@@ -336,16 +337,16 @@ spec = do
             EventModel.withoutHealthCheck
             EventModel.features do
               cartFlow
-      case invalid of
+      case EventModel.validate invalid of
         Ok _ -> False |> shouldBe True
         Err problem -> problem |> Text.contains "at most one withConfig" |> shouldBe True
-      result <- EventModel.run invalid |> Task.asResult
+      result <- Launcher.run invalid |> Task.asResult
       case result of
         Ok _ -> False |> shouldBe True
         Err problem -> problem |> Text.contains "at most one withConfig" |> shouldBe True
 
     it "composes executable Features and all four Slice shapes" \_ -> do
-      case App.appEventModel "127.0.0.1" 8080 of
+      case App.appEventModel "127.0.0.1" 8080 |> EventModel.validate of
         Err problem -> problem |> shouldBe "valid Event Model"
         Ok model -> do
           model |> EventModel.modelName |> shouldBe "Testbed"
@@ -381,7 +382,7 @@ spec = do
           allSlices |> Array.takeIf (\selected -> EventModel.sliceKind selected == "inbound") |> Array.length |> shouldBe 2
 
     it "keeps direct rules with concrete history, command, and ordered event values" \_ -> do
-      case App.appEventModel "127.0.0.1" 8080 of
+      case App.appEventModel "127.0.0.1" 8080 |> EventModel.validate of
         Err problem -> problem |> shouldBe "valid Event Model"
         Ok model -> do
           let selected = model |> modelSlices |> Array.takeIf (\item -> EventModel.sliceName item == "Add an item")
@@ -422,7 +423,7 @@ spec = do
                 _ -> False |> shouldBe True
 
     it "keeps view rules with their exact query actions" \_ -> do
-      case App.appEventModel "127.0.0.1" 8080 of
+      case App.appEventModel "127.0.0.1" 8080 |> EventModel.validate of
         Err problem -> problem |> shouldBe "valid Event Model"
         Ok model -> do
           let selected = model |> modelSlices |> Array.takeIf (\item -> EventModel.sliceName item == "Show cart summary")
@@ -444,7 +445,7 @@ spec = do
                 _ -> False |> shouldBe True
 
     it "rejects a view rule whose when payload is absent from onEvent" \_ -> do
-      let modelResult = EventModel.eventModel do
+      let modelResult = validatedModel do
             EventModel.appName "Missing subscription"
             EventModel.features do
               EventModel.feature "Cart" do
@@ -519,7 +520,7 @@ spec = do
           EventModel.verifyViewObservation Uuid.nil (Update 2) changedAnotherRow |> shouldBe False
 
     it "keeps each translation command with its own target and explicit triggers" \_ -> do
-      case App.appEventModel "127.0.0.1" 8080 of
+      case App.appEventModel "127.0.0.1" 8080 |> EventModel.validate of
         Err problem -> problem |> shouldBe "valid Event Model"
         Ok model -> do
           let allSlices = model |> modelSlices
@@ -560,7 +561,7 @@ spec = do
             |> shouldBe ["ExternalEffectRequestedPayload", "ExternalEffectRequestedPayload"]
 
     it "rejects an outbound Slice with two triggers" \_ -> do
-      let invalid = EventModel.eventModel do
+      let invalid = validatedModel do
             EventModel.appName "Invalid"
             EventModel.features do
               EventModel.feature "Cart" do
@@ -574,7 +575,7 @@ spec = do
         Ok _ -> False |> shouldBe True
 
     it "rejects an outbound Slice without a trigger" \_ -> do
-      let invalid = EventModel.eventModel do
+      let invalid = validatedModel do
             EventModel.appName "Invalid"
             EventModel.features do
               EventModel.feature "Cart" do
@@ -587,7 +588,7 @@ spec = do
         Ok _ -> False |> shouldBe True
 
     it "rejects reuse of one outbound handler type across Slices" \_ -> do
-      let invalid = EventModel.eventModel do
+      let invalid = validatedModel do
             EventModel.appName "Invalid"
             EventModel.features do
               EventModel.feature "Cart" do
@@ -603,7 +604,7 @@ spec = do
         Ok _ -> False |> shouldBe True
 
     it "preserves distinct outbound handlers on one payload" \_ -> do
-      let modelResult = EventModel.eventModel do
+      let modelResult = validatedModel do
             EventModel.appName "Two handlers"
             EventModel.features do
               EventModel.feature "Cart" do
@@ -624,7 +625,7 @@ spec = do
             |> shouldBe ["ItemAddedPayload", "ItemAddedPayload"]
 
     it "allows one inbound handler to appear in separate Slices" \_ -> do
-      let modelResult = EventModel.eventModel do
+      let modelResult = validatedModel do
             EventModel.appName "Repeated inbound"
             EventModel.features do
               EventModel.feature "Cart" do
@@ -646,7 +647,7 @@ spec = do
         Ok model -> model |> modelSlices |> Array.map EventModel.sliceName |> shouldBe ["First inbound", "Second inbound"]
 
     it "rejects an incomplete typed inbound output list at model entry" \_ -> do
-      let invalid = EventModel.eventModel do
+      let invalid = validatedModel do
             EventModel.appName "Incomplete inbound"
             EventModel.features do
               EventModel.feature "Cart" do
@@ -664,7 +665,7 @@ spec = do
         Ok _ -> False |> shouldBe True
 
     it "reports each assembled Slice failure before application startup" \_ -> do
-      let invalid = EventModel.eventModel do
+      let invalid = validatedModel do
             EventModel.appName "Several errors"
             EventModel.features do
               EventModel.feature "Cart" do
@@ -691,7 +692,7 @@ spec = do
         Ok _ -> False |> shouldBe True
 
     it "reports structural and assembled failures across Features and Chapters" \_ -> do
-      let invalid = EventModel.eventModel do
+      let invalid = validatedModel do
             EventModel.appName "Mixed failures"
             EventModel.features do
               EventModel.feature "Cart" do
@@ -730,7 +731,7 @@ spec = do
         Ok _ -> False |> shouldBe True
 
     it "keeps separate explicit subscriptions for a multi-entity query" \_ -> do
-      let modelResult = EventModel.eventModel do
+      let modelResult = validatedModel do
             EventModel.appName "Two sources"
             EventModel.features do
               EventModel.feature "Summary" do
@@ -748,7 +749,7 @@ spec = do
           allSources |> shouldBe [("CartEntity", ["CartCreatedPayload"]), ("StockEntity", ["StockInitializedPayload"])]
 
     it "requires Chapters inside exported Features" \_ -> do
-      let invalid = EventModel.eventModel do
+      let invalid = validatedModel do
             EventModel.appName "Invalid"
             EventModel.features do
               EventModel.feature "Empty" do
@@ -758,7 +759,7 @@ spec = do
         Ok _ -> False |> shouldBe True
 
     it "requires Slices inside Chapters" \_ -> do
-      let invalid = EventModel.eventModel do
+      let invalid = validatedModel do
             EventModel.appName "Invalid"
             EventModel.features do
               EventModel.feature "Cart" do
@@ -769,7 +770,7 @@ spec = do
         Ok _ -> False |> shouldBe True
 
     it "rejects a Slice with no primary" \_ -> do
-      let invalid = EventModel.eventModel do
+      let invalid = validatedModel do
             EventModel.appName "Invalid"
             EventModel.features do
               EventModel.feature "Cart" do
@@ -781,7 +782,7 @@ spec = do
         Ok _ -> False |> shouldBe True
 
     it "names both constructs when a Slice repeats its primary" \_ -> do
-      let invalid = EventModel.eventModel do
+      let invalid = validatedModel do
             EventModel.appName "Invalid"
             EventModel.features do
               EventModel.feature "Cart" do
@@ -810,7 +811,7 @@ spec = do
         |> shouldNotContain ["draft", "review", "published"]
 
 
-modelSlices :: EventModel.EventModel -> Array EventModel.Slice
+modelSlices :: EventModel.ValidatedEventModel -> Array EventModel.Slice
 modelSlices model =
   model
     |> EventModel.modelFeatures
@@ -819,8 +820,8 @@ modelSlices model =
     |> Array.flatMap (\selected -> selected |> EventModel.chapterSlices |> Array.fromLinkedList)
 
 
-orderedRuleModel :: Result Text EventModel.EventModel
-orderedRuleModel = EventModel.eventModel do
+orderedRuleModel :: Result Text EventModel.ValidatedEventModel
+orderedRuleModel = validatedModel do
   EventModel.appName "Ordered event rules"
   EventModel.features do
     EventModel.feature "Cart" do
@@ -871,8 +872,8 @@ orderedRuleModel = EventModel.eventModel do
               EventModel.event ItemAddedPayload {itemAddedEntityId = Uuid.nil, itemAddedStockId = Uuid.nil, itemAddedQuantity = 3}
 
 
-frameworkFailureModel :: Result Text EventModel.EventModel
-frameworkFailureModel = EventModel.eventModel do
+frameworkFailureModel :: Result Text EventModel.ValidatedEventModel
+frameworkFailureModel = validatedModel do
   EventModel.appName "Framework failure rule"
   EventModel.features do
     EventModel.feature "Cart" do
@@ -889,8 +890,8 @@ frameworkFailureModel = EventModel.eventModel do
               EventModel.acceptedWithNoEvents
 
 
-generatedFailureModel :: Result Text EventModel.EventModel
-generatedFailureModel = EventModel.eventModel do
+generatedFailureModel :: Result Text EventModel.ValidatedEventModel
+generatedFailureModel = validatedModel do
   EventModel.appName "Generated input diagnostics"
   EventModel.features do
     EventModel.feature "Cart" do
@@ -908,8 +909,8 @@ generatedFailureModel = EventModel.eventModel do
               EventModel.event ItemAddedPayload {itemAddedEntityId = Uuid.nil, itemAddedStockId = Uuid.nil, itemAddedQuantity = amount + 1}
 
 
-bindingRuleModel :: Result Text EventModel.EventModel
-bindingRuleModel = EventModel.eventModel do
+bindingRuleModel :: Result Text EventModel.ValidatedEventModel
+bindingRuleModel = validatedModel do
   EventModel.appName "Generated binding rule"
   EventModel.features do
     EventModel.feature "Cart" do
@@ -929,8 +930,8 @@ bindingRuleModel = EventModel.eventModel do
               EventModel.event ItemAddedPayload {itemAddedEntityId = cartId, itemAddedStockId = stockId, itemAddedQuantity = amount}
 
 
-rejectionRuleModel :: Result Text EventModel.EventModel
-rejectionRuleModel = EventModel.eventModel do
+rejectionRuleModel :: Result Text EventModel.ValidatedEventModel
+rejectionRuleModel = validatedModel do
   EventModel.appName "Rejection rules"
   EventModel.features do
     EventModel.feature "Cart" do
@@ -984,8 +985,8 @@ rejectionRuleModel = EventModel.eventModel do
               EventModel.acceptedWithNoEvents
 
 
-viewRuleModel :: Result Text EventModel.EventModel
-viewRuleModel = EventModel.eventModel do
+viewRuleModel :: Result Text EventModel.ValidatedEventModel
+viewRuleModel = validatedModel do
   EventModel.appName "View action rules"
   EventModel.features do
     EventModel.feature "Cart" do
@@ -1043,8 +1044,8 @@ wrongRowId :: Uuid
 wrongRowId = Uuid.generateV5 Uuid.nil "wrong-row-B"
 
 
-twoRowViewRuleModel :: Result Text EventModel.EventModel
-twoRowViewRuleModel = EventModel.eventModel do
+twoRowViewRuleModel :: Result Text EventModel.ValidatedEventModel
+twoRowViewRuleModel = validatedModel do
   EventModel.appName "Two-row view rules"
   EventModel.features do
     EventModel.feature "Cart" do
@@ -1086,3 +1087,7 @@ twoRowViewRuleModel = EventModel.eventModel do
             EventModel.when IBANSavedPayload {ibanSavedEntityId = Uuid.nil, ibanSavedValue = "wrong-noop"}
             EventModel.therefore do
               EventModel.noOp @CrossEntityView Uuid.nil
+
+
+validatedModel :: EventModel.EventModelAction -> Result Text EventModel.ValidatedEventModel
+validatedModel builder = EventModel.eventModel builder |> EventModel.validate

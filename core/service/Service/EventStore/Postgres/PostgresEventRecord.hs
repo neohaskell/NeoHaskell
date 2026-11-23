@@ -1,6 +1,6 @@
 module Service.EventStore.Postgres.PostgresEventRecord where
 
-import Core
+import Core.Prelude
 import Hasql.Decoders
 import Json qualified
 import Mappable qualified

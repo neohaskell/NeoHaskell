@@ -1,5 +1,5 @@
 -- | Compose testbed Features and configure their shared application runtime.
--- Run 'appEventModel' through 'Service.EventModel.run'.
+-- Run 'appEventModel' through 'Service.EventModel.Launcher.run'.
 module Testbed.EventModel (appEventModel) where
 
 import Core
@@ -19,7 +19,7 @@ import Testbed.RequestOrigin (requestOriginFlow)
 import Testbed.Stock.Feature (stockFlow)
 
 
-appEventModel :: Text -> Int -> Result Text EventModel.EventModel
+appEventModel :: Text -> Int -> EventModel
 appEventModel httpHost httpPort = EventModel.eventModel do
   EventModel.appName "Testbed"
   EventModel.withConfig @TestbedConfig

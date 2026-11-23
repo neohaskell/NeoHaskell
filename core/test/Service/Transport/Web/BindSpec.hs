@@ -156,7 +156,7 @@ spec = do
               EventModel.withPort 9192
               EventModel.features do
                 bindFixtureFeatures
-        case assembled of
+        case EventModel.validate assembled of
           Err problem -> fail [fmt|unexpected EventModel error: #{problem}|]
           Ok model -> do
             let app = EventModel.toApplication model
@@ -172,7 +172,7 @@ spec = do
               EventModel.withPort freePort
               EventModel.features do
                 bindFixtureFeatures
-        case assembled of
+        case EventModel.validate assembled of
           Err problem -> fail [fmt|unexpected EventModel error: #{problem}|]
           Ok model -> withOwnedBindAt freePort (EventModel.toApplication model)
 

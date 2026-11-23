@@ -8,7 +8,7 @@ module Service.EventStore.Simple (
 import Array qualified
 import AsyncTask qualified
 import ConcurrentVar qualified
-import Core
+import Core.Prelude
 import Directory qualified
 import DurableChannel qualified
 import Erasable.Internal qualified as Erasable

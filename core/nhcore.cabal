@@ -419,6 +419,8 @@ library
     Auth.UrlValidation.Dns.RecordType
     Auth.UrlValidation.Dns.Result
     Transaction.Internal
+    Core.Prelude
+    Service.EventModel.Authoring
     Service.EventModel.Types
   -- other-extensions:
   hs-source-dirs:
@@ -441,6 +443,15 @@ library
     layout
 
   default-language: GHC2021
+
+
+library launcher
+  visibility: public
+  hs-source-dirs: launcher
+  exposed-modules: Service.EventModel.Launcher
+  build-depends: base, nhcore
+  default-language: GHC2021
+  default-extensions: ImportQualifiedPost NoImplicitPrelude
 
 
 test-suite nhcore-test

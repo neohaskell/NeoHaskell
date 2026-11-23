@@ -2,7 +2,7 @@ module Main where
 
 import Core
 import Environment qualified
-import Service.EventModel qualified as EventModel
+import Service.EventModel.Launcher qualified as EventModel
 import Task qualified
 import Testbed.Config (readPort)
 import Testbed.OAuth2.EventModel (oauthEventModel)

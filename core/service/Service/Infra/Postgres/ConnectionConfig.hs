@@ -14,7 +14,7 @@ module Service.Infra.Postgres.ConnectionConfig (
 
 -- | Single shared Postgres connection-settings builder (ADR-0062).
 
-import Core
+import Core.Prelude
 import Data.Word (Word16)
 import Hasql.Connection.Setting (Setting)
 import Hasql.Connection.Setting qualified as ConnectionSetting

@@ -8,6 +8,13 @@ author: {{ author }}
 category: Development
 build-type: Simple
 
+{% if not is_library %}
+flag event-model-launcher
+  description: Event Model launcher supplied by the resolved framework version.
+  default: True
+  manual: False
+
+{% endif %}
 common common_cfg
   ghc-options:
     -Wall
@@ -70,6 +77,9 @@ executable {{ name }}
   main-is: Launcher.hs
   autogen-modules: {{ paths_module }}
   other-modules: {{ paths_module }}
+  if flag(event-model-launcher)
+    build-depends: nhcore:launcher
+    cpp-options: -DNHCORE_EVENT_MODEL_LAUNCHER
   build-depends:
     base,
     {{ name }}

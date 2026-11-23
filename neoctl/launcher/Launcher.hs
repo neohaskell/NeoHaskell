@@ -1,13 +1,20 @@
+{-# LANGUAGE CPP #-}
+
 {-| Start the local HTTP service or print neoctl usage and version information.
 Service startup failures and invalid arguments exit with code 2.
 -}
 module Main where
 
-import App (appEventModel)
+import App (appSettings)
 import Core
 import IO qualified
 import Paths_neoctl qualified
 import Service.EventModel qualified as EventModel
+#ifdef NHCORE_EVENT_MODEL_LAUNCHER
+import Service.EventModel.Launcher qualified as Launcher
+#else
+import Service.EventModel qualified as Launcher
+#endif
 import System.Environment qualified as GhcEnvironment
 import System.Exit qualified as GhcExit
 import System.IO qualified as GhcIO
@@ -42,7 +49,7 @@ runService = do
   case configuredLogLevel of
     Nothing -> GhcEnvironment.setEnv "LOG_LEVEL" "Error"
     Just _ -> IO.yield ()
-  let runApp = appEventModel |> EventModel.run
+  let runApp = EventModel.eventModel appSettings |> Launcher.run
   outcome <- runApp |> Task.runResult
   case outcome of
     Ok _ -> IO.yield ()

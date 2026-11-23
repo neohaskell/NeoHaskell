@@ -133,6 +133,7 @@ executable nhtestbed
   import: common_cfg
   main-is: Launcher.hs
   build-depends:
+    nhcore:launcher,
     nhtestbed
 
   hs-source-dirs: launcher
@@ -142,6 +143,7 @@ executable nhoauthtestbed
   import: common_cfg
   main-is: OAuth2Launcher.hs
   build-depends:
+    nhcore:launcher,
     nhtestbed
 
   hs-source-dirs: launcher
@@ -156,6 +158,7 @@ test-suite nhtestbed-spec-demo
     base,
     hspec,
     nhcore,
+    nhcore:launcher,
     nhtestbed,
     QuickCheck
   default-language: GHC2021

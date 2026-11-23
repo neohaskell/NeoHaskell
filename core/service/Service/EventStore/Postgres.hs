@@ -3,7 +3,7 @@ module Service.EventStore.Postgres (
   new,
 ) where
 
-import Core
+import Core.Prelude
 import Json qualified
 import Service.EventStore.Core
 import Service.EventStore.Postgres.Internal (PostgresEventStore (..))
