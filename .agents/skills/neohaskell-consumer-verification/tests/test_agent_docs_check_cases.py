@@ -224,10 +224,22 @@ class AgentDocsCheckTests(unittest.TestCase):
         self.check(1, "spec is not registered")
 
     def test_failed_evidence_command_blocks_publication(self):
+        plan = self.root / "dist-newstyle/cache/plan.json"
+        plan.parent.mkdir(parents=True)
+        plan.write_text(json.dumps({"install-plan": [
+            {"pkg-name": "nhcore", "style": "local", "component-name": "lib", "id": "core-main"},
+            {"pkg-name": "nhcore", "style": "local", "component-name": "lib:launcher", "id": "launcher"},
+            {"pkg-name": "nhintegrations", "style": "local", "component-name": "lib", "id": "integrations-main"},
+        ]}))
         bin_dir = self.root / "bin"
         bin_dir.mkdir()
         cabal = bin_dir / "cabal"
-        cabal.write_text("#!/bin/sh\nexit 0\n")
+        cabal.write_text(
+            '#!/bin/sh\n'
+            'if [ "$1" = exec ]; then\n'
+            '  case "$*" in *"-package-id core-main -package-id integrations-main"*) exit 0 ;; *) exit 1 ;; esac\n'
+            'fi\n'
+        )
         cabal.chmod(0o755)
         runner = self.root / "testbed/scripts/run-tests.sh"
         runner.parent.mkdir(parents=True, exist_ok=True)
