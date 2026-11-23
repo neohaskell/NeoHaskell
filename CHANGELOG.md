@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.18.2 — 2026-11-23
+
+### Fixed
+
+- **CLI**: The installer explains when an existing `neo` or `neoctl` command blocks installation and identifies its path without replacing it. Installation, update, rollback, and uninstall messages explain the outcome and the next safe action in plain language. Installation errors remain visible when terminal cleanup also fails, and repeated restoration warnings appear only once.
+
+The download launcher distinguishes its report from the installer's report. It no longer suggests an automatic retry after the installer has started. Noninteractive piped installation no longer passes the remaining shell script to the installer as input. ([change](https://github.com/neohaskell/NeoHaskell/commit/f6650caf9a7addb9052b52444c39d1c36b711e13))
+
+[Compare changes](https://github.com/neohaskell/NeoHaskell/compare/neo-v0.18.1...neo-v0.18.2)
+
 ## 0.18.1 — 2026-11-20
 
 ### Added

@@ -1439,6 +1439,37 @@
       "source_sha": "3bca6057eaf9b0b9a4f66b5ecf9f1099d843363d",
       "target_policy": "native-v2",
       "version": "0.18.1"
+    },
+    {
+      "base_sha": "ecc90831399f5972c1884003aa5fd2205e182a5f",
+      "base_tag": "neo-v0.18.1",
+      "base_version": "0.18.1",
+      "bootstrap": false,
+      "contract_registry_sha256": "993db493d248ac754cf1c6631d03aa63f3be766e489d927a6c72d10d28cbb961",
+      "date": "2026-11-23",
+      "distribution_policy": "installer-v1",
+      "group": "platform",
+      "id": "48d31dbe20d444df034b42de4daf1c02986f5c218fe24ec1706e3274b2dc8df4",
+      "impact": "compatible",
+      "kind": "release",
+      "notes": [
+        {
+          "category": "Fixed",
+          "commit": "f6650caf9a7addb9052b52444c39d1c36b711e13",
+          "component": "CLI",
+          "group": "platform",
+          "hash": "860208c8ed8e7f705f189923ab5f6fb803cbbdf3b2b960fd88befc039f4054b4",
+          "impact": "compatible",
+          "path": ".changes/installer-clarity.md",
+          "sections": {
+            "Summary": "The installer explains when an existing `neo` or `neoctl` command blocks installation and identifies its path without replacing it. Installation, update, rollback, and uninstall messages explain the outcome and the next safe action in plain language. Installation errors remain visible when terminal cleanup also fails, and repeated restoration warnings appear only once.\n\nThe download launcher distinguishes its report from the installer's report. It no longer suggests an automatic retry after the installer has started. Noninteractive piped installation no longer passes the remaining shell script to the installer as input."
+          },
+          "text": "---\ngroup: platform\ncomponent: CLI\nimpact: compatible\ncategory: Fixed\n---\n\n## Summary\n\nThe installer explains when an existing `neo` or `neoctl` command blocks installation and identifies its path without replacing it. Installation, update, rollback, and uninstall messages explain the outcome and the next safe action in plain language. Installation errors remain visible when terminal cleanup also fails, and repeated restoration warnings appear only once.\n\nThe download launcher distinguishes its report from the installer's report. It no longer suggests an automatic retry after the installer has started. Noninteractive piped installation no longer passes the remaining shell script to the installer as input.\n"
+        }
+      ],
+      "source_sha": "f6650caf9a7addb9052b52444c39d1c36b711e13",
+      "target_policy": "native-v2",
+      "version": "0.18.2"
     }
   ],
   "recoveries": [],
