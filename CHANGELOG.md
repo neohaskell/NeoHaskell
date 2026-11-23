@@ -1,5 +1,45 @@
 # Changelog
 
+## 0.19.0 — 2026-11-23
+
+### Breaking changes
+
+- **Framework**: Application modules can describe their Event Model with an ordinary value from Core. The executable launcher handles output buffering and reports validation failures before starting services. ([change](https://github.com/neohaskell/NeoHaskell/commit/002dab37dfc28184944949c1f58b5e21efb96fa2))
+
+### Added
+
+- **Framework**: Declare events, entities, commands and queries with typed options from Derive. The entity lists its events once. Commands can use the application's sole public transport, and a query can project several entities using ordinary functions for its row keys and updates. ([change](https://github.com/neohaskell/NeoHaskell/commit/002dab37dfc28184944949c1f58b5e21efb96fa2))
+
+### Improved
+
+- **CLI**: New projects give each Counter event its own type and keep decisions, state updates and projections in the files that own them. The starter reads its HTTP port from configuration. You can switch from memory to local JSON Lines storage by selecting a directory in App.hs. ([change](https://github.com/neohaskell/NeoHaskell/commit/002dab37dfc28184944949c1f58b5e21efb96fa2))
+
+### Migration from 0.18.2
+
+#### Framework
+
+Change the type of your application's declaration from `Result Text EventModel.EventModel` to `EventModel`. Import `Core` for model configuration. Keep importing `Service.EventModel` for Feature declarations. Keep your existing app name, store, transports, Features and permissions.
+
+In the executable launcher, import `Service.EventModel.Launcher qualified as EventModel` and run `appEventModel |> EventModel.run |> Task.runOrPanic`. Remove explicit stdout and stderr buffering from the launcher. Neo generates the executable dependency on `nhcore:launcher`; add that dependency to the executable stanza if you manage Cabal yourself.
+
+Tests that previously matched on `appEventModel` should match on `Service.EventModel.validate appEventModel`. Its successful result can be passed to the rule runner or lowered with `toApplication`. Existing persisted event sums can keep their current encoders. When switching an existing sum to derived named payloads, verify its historical tags and field encoding first.
+
+### Verify
+
+Run `neo build` and `neo test` in the upgraded project. Start the executable with `neo run` and exercise an existing command and query. Check validation tests still report the expected model errors.
+
+<details>
+<summary>Copy this prompt to your coding agent</summary>
+
+```text
+Migrate Framework from NeoHaskell 0.18.2 to 0.19.0.
+Upgrade this application's Event Model and launcher together. Keep the existing domain behavior and configuration. Change the model declaration to EventModel, import its configuration builders from Core, and move the invocation of run to Service.EventModel.Launcher in the executable. Update the executable dependency and any tests that inspect the validated declaration. Preserve old stored event decoding. Run neo build and neo test. Start the application and exercise an existing command and query. Report the changed files and observed outcomes.
+```
+
+</details>
+
+[Compare changes](https://github.com/neohaskell/NeoHaskell/compare/neo-v0.18.2...neo-v0.19.0)
+
 ## 0.18.2 — 2026-11-23
 
 ### Fixed

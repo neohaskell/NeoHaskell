@@ -1470,6 +1470,65 @@
       "source_sha": "f6650caf9a7addb9052b52444c39d1c36b711e13",
       "target_policy": "native-v2",
       "version": "0.18.2"
+    },
+    {
+      "base_sha": "6356fc64223c46bc492417d927e9a8cb42f9b18c",
+      "base_tag": "neo-v0.18.2",
+      "base_version": "0.18.2",
+      "bootstrap": false,
+      "contract_registry_sha256": "993db493d248ac754cf1c6631d03aa63f3be766e489d927a6c72d10d28cbb961",
+      "date": "2026-11-23",
+      "distribution_policy": "installer-v1",
+      "group": "platform",
+      "id": "e9900f95ed10620a501d38f1dfb58361c593b3b01ed8265fa370da0c656a9b72",
+      "impact": "breaking",
+      "kind": "release",
+      "notes": [
+        {
+          "category": "Improved",
+          "commit": "002dab37dfc28184944949c1f58b5e21efb96fa2",
+          "component": "CLI",
+          "group": "platform",
+          "hash": "632a7bbdda1dd3b9b0ecf82dcf397390e1fc962f41c9be61642637fbcf07699b",
+          "impact": "compatible",
+          "path": ".changes/counter-starter.md",
+          "sections": {
+            "Summary": "New projects give each Counter event its own type and keep decisions, state updates and projections in the files that own them. The starter reads its HTTP port from configuration. You can switch from memory to local JSON Lines storage by selecting a directory in App.hs."
+          },
+          "text": "---\ngroup: platform\ncomponent: CLI\nimpact: compatible\ncategory: Improved\n---\n\n## Summary\n\nNew projects give each Counter event its own type and keep decisions, state updates and projections in the files that own them. The starter reads its HTTP port from configuration. You can switch from memory to local JSON Lines storage by selecting a directory in App.hs.\n"
+        },
+        {
+          "category": "Added",
+          "commit": "002dab37dfc28184944949c1f58b5e21efb96fa2",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "263431ed7790f563319558d8de223fc10a6b21440046f06c75caf37da7674a39",
+          "impact": "compatible",
+          "path": ".changes/domain-declarations.md",
+          "sections": {
+            "Summary": "Declare events, entities, commands and queries with typed options from Derive. The entity lists its events once. Commands can use the application's sole public transport, and a query can project several entities using ordinary functions for its row keys and updates."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: compatible\ncategory: Added\n---\n\n## Summary\n\nDeclare events, entities, commands and queries with typed options from Derive. The entity lists its events once. Commands can use the application's sole public transport, and a query can project several entities using ordinary functions for its row keys and updates.\n"
+        },
+        {
+          "category": "Breaking changes",
+          "commit": "002dab37dfc28184944949c1f58b5e21efb96fa2",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "f8ce2132122a55d72c70da30cca2fdca02e3241494e69b49ce3e1896f72829b8",
+          "impact": "breaking",
+          "path": ".changes/event-model-launcher.md",
+          "sections": {
+            "Agent prompt": "```text\nUpgrade this application's Event Model and launcher together. Keep the existing domain behavior and configuration. Change the model declaration to EventModel, import its configuration builders from Core, and move the invocation of run to Service.EventModel.Launcher in the executable. Update the executable dependency and any tests that inspect the validated declaration. Preserve old stored event decoding. Run neo build and neo test. Start the application and exercise an existing command and query. Report the changed files and observed outcomes.\n```",
+            "Migration": "Change the type of your application's declaration from `Result Text EventModel.EventModel` to `EventModel`. Import `Core` for model configuration. Keep importing `Service.EventModel` for Feature declarations. Keep your existing app name, store, transports, Features and permissions.\n\nIn the executable launcher, import `Service.EventModel.Launcher qualified as EventModel` and run `appEventModel |> EventModel.run |> Task.runOrPanic`. Remove explicit stdout and stderr buffering from the launcher. Neo generates the executable dependency on `nhcore:launcher`; add that dependency to the executable stanza if you manage Cabal yourself.\n\nTests that previously matched on `appEventModel` should match on `Service.EventModel.validate appEventModel`. Its successful result can be passed to the rule runner or lowered with `toApplication`. Existing persisted event sums can keep their current encoders. When switching an existing sum to derived named payloads, verify its historical tags and field encoding first.\n\n### Verify\n\nRun `neo build` and `neo test` in the upgraded project. Start the executable with `neo run` and exercise an existing command and query. Check validation tests still report the expected model errors.",
+            "Summary": "Application modules can describe their Event Model with an ordinary value from Core. The executable launcher handles output buffering and reports validation failures before starting services."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: breaking\ncategory: Breaking changes\n---\n\n## Summary\n\nApplication modules can describe their Event Model with an ordinary value from Core. The executable launcher handles output buffering and reports validation failures before starting services.\n\n## Migration\n\nChange the type of your application's declaration from `Result Text EventModel.EventModel` to `EventModel`. Import `Core` for model configuration. Keep importing `Service.EventModel` for Feature declarations. Keep your existing app name, store, transports, Features and permissions.\n\nIn the executable launcher, import `Service.EventModel.Launcher qualified as EventModel` and run `appEventModel |> EventModel.run |> Task.runOrPanic`. Remove explicit stdout and stderr buffering from the launcher. Neo generates the executable dependency on `nhcore:launcher`; add that dependency to the executable stanza if you manage Cabal yourself.\n\nTests that previously matched on `appEventModel` should match on `Service.EventModel.validate appEventModel`. Its successful result can be passed to the rule runner or lowered with `toApplication`. Existing persisted event sums can keep their current encoders. When switching an existing sum to derived named payloads, verify its historical tags and field encoding first.\n\n### Verify\n\nRun `neo build` and `neo test` in the upgraded project. Start the executable with `neo run` and exercise an existing command and query. Check validation tests still report the expected model errors.\n\n## Agent prompt\n\n```text\nUpgrade this application's Event Model and launcher together. Keep the existing domain behavior and configuration. Change the model declaration to EventModel, import its configuration builders from Core, and move the invocation of run to Service.EventModel.Launcher in the executable. Update the executable dependency and any tests that inspect the validated declaration. Preserve old stored event decoding. Run neo build and neo test. Start the application and exercise an existing command and query. Report the changed files and observed outcomes.\n```\n"
+        }
+      ],
+      "source_sha": "002dab37dfc28184944949c1f58b5e21efb96fa2",
+      "target_policy": "native-v2",
+      "version": "0.19.0"
     }
   ],
   "recoveries": [],
