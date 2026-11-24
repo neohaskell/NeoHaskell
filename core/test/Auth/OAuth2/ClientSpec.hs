@@ -9,14 +9,27 @@ import Auth.OAuth2.Types (
   Provider (..),
   RedirectUri,
   Scope (..),
+  TokenSet (..),
   mkAuthorizationCode,
   mkClientSecret,
+  mkCodeVerifierUnsafe,
   mkRedirectUri,
   mkRefreshToken,
   mkState,
+  unsafeValidatedProvider,
+  unwrapAccessToken,
  )
+import Bytes qualified
+import ConcurrentVar qualified
 import Core
-
+import Data.ByteString qualified as GhcBS
+import Data.ByteString.Lazy qualified as GhcLBS
+import LinkedList qualified
+import Maybe qualified
+import Network.HTTP.Types qualified as GhcHTTP
+import Network.Socket qualified as GhcSocket
+import Network.Wai qualified as GhcWai
+import Network.Wai.Handler.Warp qualified as GhcWarp
 import Task qualified
 import Test
 import Text qualified
@@ -294,13 +307,327 @@ spec = parallel do
             Err other -> fail [fmt|Expected EndpointValidationFailed, got: #{toText other}|]
             Ok _ -> fail "Expected error for malformed URL"
 
-    -- NOTE: Testing actual OAuth2 token exchange success paths requires
-    -- a mock HTTP server, which is out of scope for unit tests.
-    -- These flows are tested via integration tests with real OAuth2 providers.
-    -- 
-    -- The design ensures:
-    -- 1. Valid HTTPS endpoints pass URL validation and make real HTTP requests
-    -- 2. Successful token responses are parsed into TokenSet
-    -- 3. HTTP 4xx responses with error JSON are parsed into specific error types
-    -- 4. Network failures return NetworkError
-    -- 5. Validation failures return EndpointValidationFailed
+    describe "token endpoint responses" do
+      tokenResponseSpec "exchangeCode" exchangeCodeEntrypoint
+      tokenResponseSpec "exchangeCodeWithPkce" exchangeCodeWithPkceEntrypoint
+      tokenResponseSpec "exchangeCodeValidated" exchangeCodeValidatedEntrypoint
+      tokenResponseSpec "exchangeCodeWithPkceValidated" exchangeCodeWithPkceValidatedEntrypoint
+      tokenResponseSpec "refreshToken" refreshTokenEntrypoint
+
+      describe "status-first decoding" do
+        it "returns ScopeDenied for an invalid_scope response" \_ -> do
+          let reply = jsonReply GhcHTTP.status400 "{\"error\":\"invalid_scope\",\"error_description\":\"scope not granted\"}"
+          expectTokenResult exchangeCodeWithPkceValidatedEntrypoint reply (shouldBe (Err (ScopeDenied "scope not granted")))
+
+        it "returns TokenRequestFailed with the provider description for other OAuth error codes" \_ -> do
+          let reply = jsonReply GhcHTTP.status400 "{\"error\":\"unsupported_grant_type\",\"error_description\":\"grant type not enabled\"}"
+          expectTokenResult exchangeCodeWithPkceValidatedEntrypoint reply (shouldBe (Err (TokenRequestFailed "grant type not enabled")))
+
+        it "uses the error code when the provider sends no description" \_ -> do
+          let reply = jsonReply GhcHTTP.status400 "{\"error\":\"invalid_grant\"}"
+          expectTokenResult exchangeCodeWithPkceValidatedEntrypoint reply (shouldBe (Err (InvalidGrant "invalid_grant")))
+
+        it "returns TokenRequestFailed for an error status whose JSON is not an OAuth error" \_ -> do
+          let reply = jsonReply GhcHTTP.status500 "{\"message\":\"owned-error-secret-sentinel\"}"
+          expectTokenResult exchangeCodeWithPkceValidatedEntrypoint reply (expectGenericStatusFailure "500")
+
+        it "does not accept tokens from an error status" \_ -> do
+          let reply = jsonReply GhcHTTP.status500 "{\"access_token\":\"secret-sentinel-token\",\"token_type\":\"Bearer\"}"
+          expectTokenResult exchangeCodeWithPkceValidatedEntrypoint reply (expectGenericStatusFailure "500")
+
+        it "accepts tokens from any 2xx status" \_ -> do
+          let reply = jsonReply GhcHTTP.status201 validTokenResponse
+          expectTokenResult exchangeCodeWithPkceValidatedEntrypoint reply \result -> do
+            case result of
+              Ok tokens -> unwrapAccessToken tokens.accessToken |> shouldBe "fresh-token"
+              Err err -> fail [fmt|Expected tokens, got #{toText err}|]
+
+        it "returns a redirect status without following it" \_ -> do
+          let reply = GhcWai.responseLBS GhcHTTP.status302 [(GhcHTTP.hLocation, "/oauth/elsewhere")] GhcLBS.empty
+          expectTokenResult exchangeCodeWithPkceValidatedEntrypoint reply (expectGenericStatusFailure "302")
+
+        it "returns a sanitized NetworkError when the endpoint refuses the connection" \_ -> do
+          withRefusingPort \refusingPort -> do
+            result <-
+              exchangeCodeWithPkceValidatedEntrypoint.call (loopbackProvider refusingPort)
+                |> Task.asResult
+            case result of
+              Err (NetworkError message) -> do
+                Text.contains "test-secret" message |> shouldBe False
+                Text.contains "test-code" message |> shouldBe False
+                Text.contains "test-verifier" message |> shouldBe False
+                Text.contains "/oauth/token" message |> shouldBe False
+              _ -> fail [fmt|Expected NetworkError, got #{toText result}|]
+
+
+-- | One public token-request entrypoint and the form fields it must send.
+data TokenEntrypoint = TokenEntrypoint
+  { call :: Provider -> Task OAuth2Error TokenSet,
+    form :: LinkedList (Text, Maybe Text)
+  }
+
+
+-- | What the token endpoint received in one request.
+data ObservedTokenRequest = ObservedTokenRequest
+  { method :: Text,
+    path :: Text,
+    accept :: Maybe Text,
+    contentType :: Maybe Text,
+    form :: LinkedList (Text, Maybe Text)
+  }
+  deriving (Eq, Show)
+
+
+-- | The response contract that every token-request entrypoint shares.
+-- 'OAuth2.refreshTokenValidated' proves the same contract in "Auth.OAuth2.TokenRefreshSpec".
+tokenResponseSpec :: Text -> TokenEntrypoint -> Spec Unit
+tokenResponseSpec name entrypoint = do
+  describe name do
+    it "returns the tokens of a 200 response with their optional fields" \_ -> do
+      expectTokenResult entrypoint (jsonReply GhcHTTP.status200 validTokenResponse) \result -> do
+        case result of
+          Ok tokens -> do
+            unwrapAccessToken tokens.accessToken |> shouldBe "fresh-token"
+            tokens.refreshToken |> shouldBe (Just (mkRefreshToken "fresh-refresh"))
+            tokens.expiresInSeconds |> shouldBe (Just 3600)
+          Err err -> fail [fmt|Expected tokens, got #{toText err}|]
+
+    it "returns InvalidGrant for a 400 invalid_grant response" \_ -> do
+      let reply = jsonReply GhcHTTP.status400 "{\"error\":\"invalid_grant\",\"error_description\":\"owned grant rejected\"}"
+      expectTokenResult entrypoint reply (shouldBe (Err (InvalidGrant "owned grant rejected")))
+
+    it "returns InvalidClient for a 401 invalid_client response" \_ -> do
+      let reply = jsonReply GhcHTTP.status401 "{\"error\":\"invalid_client\",\"error_description\":\"owned client rejected\"}"
+      expectTokenResult entrypoint reply (shouldBe (Err (InvalidClient "owned client rejected")))
+
+    it "returns MalformedResponse for a 200 response that is not JSON" \_ -> do
+      expectTokenResult entrypoint (jsonReply GhcHTTP.status200 "not-json-secret-sentinel") expectMalformedTokenResponse
+
+    it "returns MalformedResponse for a 200 response without access_token" \_ -> do
+      let reply = jsonReply GhcHTTP.status200 "{\"token_type\":\"Bearer\",\"refresh_token\":\"secret-sentinel-refresh\"}"
+      expectTokenResult entrypoint reply expectMalformedTokenResponse
+
+    it "returns TokenRequestFailed for a non-JSON error status" \_ -> do
+      expectTokenResult entrypoint (jsonReply GhcHTTP.status503 "owned-error-secret-sentinel") (expectGenericStatusFailure "503")
+
+
+-- | Call the entrypoint against one canned response and check its result.
+-- The endpoint must receive exactly one POST that carries the entrypoint's form.
+expectTokenResult ::
+  TokenEntrypoint ->
+  GhcWai.Response ->
+  (Result OAuth2Error TokenSet -> Task Text Unit) ->
+  Task Text Unit
+expectTokenResult entrypoint reply check =
+  withTokenEndpoint reply \provider requests -> do
+    result <- entrypoint.call provider |> Task.asResult
+    check result
+    seen <- requests
+    seen
+      |> shouldBe
+        [ ObservedTokenRequest
+            { method = "POST",
+              path = "/oauth/token",
+              accept = Just "application/json",
+              contentType = Just "application/x-www-form-urlencoded",
+              form = entrypoint.form |> LinkedList.sort
+            }
+        ]
+
+
+expectMalformedTokenResponse :: Result OAuth2Error TokenSet -> Task Text Unit
+expectMalformedTokenResponse result =
+  case result of
+    Err (MalformedResponse message) -> Text.contains "secret-sentinel" message |> shouldBe False
+    _ -> fail [fmt|Expected MalformedResponse, got #{toText result}|]
+
+
+-- | The failure names the HTTP status and nothing from the response body.
+expectGenericStatusFailure :: Text -> Result OAuth2Error TokenSet -> Task Text Unit
+expectGenericStatusFailure status result =
+  case result of
+    Err (TokenRequestFailed message) -> do
+      Text.contains "secret-sentinel" message |> shouldBe False
+      Text.contains status message |> shouldBe True
+    _ -> fail [fmt|Expected TokenRequestFailed, got #{toText result}|]
+
+
+-- | Serve one canned response on a loopback port that Warp owns, and record every request.
+withTokenEndpoint ::
+  GhcWai.Response ->
+  (Provider -> Task Text (Array ObservedTokenRequest) -> Task Text Unit) ->
+  Task Text Unit
+withTokenEndpoint reply runTest = do
+  received <- ConcurrentVar.containing (Array.empty :: Array ObservedTokenRequest)
+  let application request respond = do
+        requestBody <- GhcWai.strictRequestBody request
+        let observed =
+              ObservedTokenRequest
+                { method = GhcWai.requestMethod request |> utf8Text,
+                  path = GhcWai.rawPathInfo request |> utf8Text,
+                  accept = requestHeader GhcHTTP.hAccept request,
+                  contentType = requestHeader GhcHTTP.hContentType request,
+                  form = requestBody |> GhcLBS.toStrict |> decodeForm
+                }
+        Task.runOrPanic (ConcurrentVar.modify (Array.push observed) received :: Task Text Unit)
+        respond reply
+  let settings = GhcWarp.defaultSettings |> GhcWarp.setHost "127.0.0.1"
+  GhcWarp.testWithApplicationSettings
+    settings
+    (Task.runOrPanic (Task.yield application :: Task Text GhcWai.Application))
+    (\port -> Task.runOrPanic (runTest (loopbackProvider port) (ConcurrentVar.peek received)))
+    |> Task.fromIO
+
+
+-- | Run the test against a loopback port that refuses connections.
+-- The port comes from a socket that is bound and then closed before the test runs.
+-- A closed port refuses a connection at once on Linux and on macOS. A socket that
+-- stays bound without listening makes macOS drop the attempt until it times out.
+withRefusingPort :: (Int -> Task Text Unit) -> Task Text Unit
+withRefusingPort runTest = do
+  let hints = GhcSocket.defaultHints {GhcSocket.addrSocketType = GhcSocket.Stream}
+  addresses <- GhcSocket.getAddrInfo (Just hints) (Just "127.0.0.1") (Just "0") |> Task.fromIO
+  case addresses of
+    [] -> fail "The loopback address did not resolve"
+    address : _ -> do
+      socket <- GhcSocket.openSocket address |> Task.fromIO
+      let allocatePort = do
+            GhcSocket.bind socket (GhcSocket.addrAddress address) |> Task.fromIO
+            GhcSocket.socketPort socket |> Task.fromIO
+      port <- allocatePort |> Task.finally (GhcSocket.close socket |> Task.fromIO)
+      runTest (fromIntegral port)
+
+
+-- | Plain HTTP reaches the per-request validated entrypoints only through the loopback exception.
+loopbackProvider :: Int -> Provider
+loopbackProvider port =
+  Provider
+    { name = "owned-token-endpoint",
+      authorizeEndpoint = [fmt|http://127.0.0.1:#{port}/oauth/authorize|],
+      tokenEndpoint = [fmt|http://127.0.0.1:#{port}/oauth/token|]
+    }
+
+
+jsonReply :: GhcHTTP.Status -> GhcLBS.ByteString -> GhcWai.Response
+jsonReply status body = GhcWai.responseLBS status [(GhcHTTP.hContentType, "application/json")] body
+
+
+validTokenResponse :: GhcLBS.ByteString
+validTokenResponse =
+  "{\"access_token\":\"fresh-token\",\"refresh_token\":\"fresh-refresh\",\"expires_in\":3600,\"token_type\":\"Bearer\"}"
+
+
+-- | Decode a url-encoded body into its sorted fields, because field order is not part of the contract.
+decodeForm :: GhcBS.ByteString -> LinkedList (Text, Maybe Text)
+decodeForm body =
+  body
+    |> GhcHTTP.parseQuery
+    |> LinkedList.map (\(name, value) -> (utf8Text name, Maybe.map utf8Text value))
+    |> LinkedList.sort
+
+
+utf8Text :: GhcBS.ByteString -> Text
+utf8Text bytes = bytes |> Bytes.fromLegacy |> Text.fromBytes
+
+
+requestHeader :: GhcHTTP.HeaderName -> GhcWai.Request -> Maybe Text
+requestHeader name request =
+  GhcWai.requestHeaders request
+    |> Array.fromLinkedList
+    |> Array.find (\(headerName, _) -> headerName == name)
+    |> Maybe.map (\(_, value) -> utf8Text value)
+
+
+-- | The query string makes the redirect URI need url-encoding in the form body.
+tokenRedirectUrl :: Text
+tokenRedirectUrl = "https://app.example.com/callback?source=oauth&step=2"
+
+
+authorizationCodeForm :: LinkedList (Text, Maybe Text)
+authorizationCodeForm =
+  [ ("grant_type", Just "authorization_code"),
+    ("code", Just "test-code"),
+    ("redirect_uri", Just tokenRedirectUrl),
+    ("client_id", Just "test-client"),
+    ("client_secret", Just "test-secret")
+  ]
+
+
+pkceForm :: LinkedList (Text, Maybe Text)
+pkceForm = authorizationCodeForm ++ [("code_verifier", Just "test-verifier")]
+
+
+exchangeCodeEntrypoint :: TokenEntrypoint
+exchangeCodeEntrypoint =
+  TokenEntrypoint
+    { call = \provider ->
+        OAuth2.exchangeCode
+          provider
+          (ClientId "test-client")
+          (mkClientSecret "test-secret")
+          (testRedirectUri tokenRedirectUrl)
+          (mkAuthorizationCode "test-code"),
+      form = authorizationCodeForm
+    }
+
+
+exchangeCodeWithPkceEntrypoint :: TokenEntrypoint
+exchangeCodeWithPkceEntrypoint =
+  TokenEntrypoint
+    { call = \provider ->
+        OAuth2.exchangeCodeWithPkce
+          provider
+          (ClientId "test-client")
+          (mkClientSecret "test-secret")
+          (testRedirectUri tokenRedirectUrl)
+          (mkAuthorizationCode "test-code")
+          (mkCodeVerifierUnsafe "test-verifier"),
+      form = pkceForm
+    }
+
+
+exchangeCodeValidatedEntrypoint :: TokenEntrypoint
+exchangeCodeValidatedEntrypoint =
+  TokenEntrypoint
+    { call = \provider ->
+        OAuth2.exchangeCodeValidated
+          (unsafeValidatedProvider provider)
+          (ClientId "test-client")
+          (mkClientSecret "test-secret")
+          (testRedirectUri tokenRedirectUrl)
+          (mkAuthorizationCode "test-code"),
+      form = authorizationCodeForm
+    }
+
+
+exchangeCodeWithPkceValidatedEntrypoint :: TokenEntrypoint
+exchangeCodeWithPkceValidatedEntrypoint =
+  TokenEntrypoint
+    { call = \provider ->
+        OAuth2.exchangeCodeWithPkceValidated
+          (unsafeValidatedProvider provider)
+          (ClientId "test-client")
+          (mkClientSecret "test-secret")
+          (testRedirectUri tokenRedirectUrl)
+          (mkAuthorizationCode "test-code")
+          (mkCodeVerifierUnsafe "test-verifier"),
+      form = pkceForm
+    }
+
+
+refreshTokenEntrypoint :: TokenEntrypoint
+refreshTokenEntrypoint =
+  TokenEntrypoint
+    { call = \provider ->
+        OAuth2.refreshToken
+          provider
+          (ClientId "test-client")
+          (mkClientSecret "test-secret")
+          (mkRefreshToken "test-refresh"),
+      form =
+        [ ("grant_type", Just "refresh_token"),
+          ("refresh_token", Just "test-refresh"),
+          ("client_id", Just "test-client"),
+          ("client_secret", Just "test-secret")
+        ]
+    }
