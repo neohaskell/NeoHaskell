@@ -39,7 +39,7 @@ By default a query publishes both `Index` and `Lookup`. `Index` lists visible ro
 
 For a mug shop order detail page, put `only [Lookup]` inside the `query @OwnedOrderSummary do` block alongside `readsFrom`. The owner can open the order by UUID. Removing the ID from the URL returns HTTP 404. The published lookup still applies `canAccess` and `canView`.
 
-Use `only [Index]` for a list-only query. Use `only []` to keep projecting rows without publishing either read operation. When assembling an `Application` directly, use `Application.withQueryOnly @OwnedOrderSummary [Application.Lookup]` for the same lookup-only behavior.
+Use `only [Index]` for a list-only query. Use `only []` to keep projecting rows without publishing either read operation. When assembling an `Application` directly, use `Application.withQueryOnly @OwnedOrderSummary [Application.Lookup]` for the same lookup-only behavior. If several slices register the same query, each must select the same routes. Conflicting selections cause a startup error.
 
 ## Pagination and storage
 

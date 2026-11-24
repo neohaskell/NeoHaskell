@@ -1120,6 +1120,21 @@ runWith eventStore app = do
   runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup maybeWebAuthSetup maybeIntegrationStatus registry resolvedApp
 
 
+validateQueryRoutes :: [QueryDefinition] -> Task Text Unit
+validateQueryRoutes = check Map.empty
+  where
+    check :: Map Text [QueryRoute] -> [QueryDefinition] -> Task Text Unit
+    check _ [] = pass
+    check seen (definition : rest) = do
+      let name = definition.queryName
+      let routes = Definition.defaultQueryRoutes
+            |> LinkedList.filter (\route -> LinkedList.member route definition.queryRoutes)
+      case Map.get name seen of
+        Just previous | previous != routes ->
+          Task.throw [fmt|Conflicting published routes for query '#{name}'. Select the same routes in each registration.|]
+        _ -> check (Map.set name routes seen) rest
+
+
 -- | Internal: Run application with pre-resolved EventStore, FileUpload, and Auth.
 --
 -- This is the core implementation that both 'run' and 'runWith' delegate to.
@@ -1134,6 +1149,7 @@ runWithResolved ::
   Application ->
   Task Text Unit
 runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup maybeWebAuthSetup maybeIntegrationStatus integrationRegistry app = do
+  validateQueryRoutes (Array.toLinkedList app.queryDefinitions)
   -- 1. Wire all query definitions and collect registries + endpoints + schemas
   wiredQueries <-
     app.queryDefinitions
