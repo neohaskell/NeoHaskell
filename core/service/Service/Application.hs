@@ -27,7 +27,10 @@ module Service.Application (
   withEventStore,
   withQueryObjectStore,
   withQuery,
+  withQueryOnly,
+  QueryRoute (..),
   withQuerySources,
+  withQuerySourcesOnly,
   withQueryEndpoint,
   withServiceRunner,
   withService,
@@ -125,6 +128,7 @@ import Map qualified
 import Record qualified
 import Schema qualified
 import LinkedList (LinkedList)
+import LinkedList qualified
 import Maybe (Maybe (..))
 import Maybe qualified
 import Result (Result (..))
@@ -132,7 +136,7 @@ import Service.Command.Core (NameOf)
 import Service.Entity.Core (Entity (..), EntityOf, EventOf)
 import Service.EventStore (EventStore (..), EventStoreConfig (..))
 import Service.Query.Core (EntitiesOf, Query)
-import Service.Query.Definition (QueryDefinition (..), WireEntities)
+import Service.Query.Definition (QueryDefinition (..), QueryRoute (..), WireEntities)
 import Service.Query.Definition qualified as Definition
 import Service.QueryObjectStore.Core (QueryObjectStoreConfig (..))
 import Service.QueryObjectStore.InMemory qualified as InMemory
@@ -570,6 +574,18 @@ withQueryObjectStore config app =
   app {queryObjectStoreConfig = Just (QueryObjectStoreConfigValue config)}
 
 
+type RegistrableQuery query queryName entities =
+  ( Query query,
+    Schema.ToSchema query,
+    Json.ToJSON query,
+    Json.FromJSON query,
+    queryName ~ NameOf query,
+    entities ~ EntitiesOf query,
+    GHC.KnownSymbol queryName,
+    WireEntities entities query
+  )
+
+
 -- | Register a query type with automatic wiring.
 --
 -- This is the declarative way to add queries to an Application. At runtime,
@@ -578,7 +594,7 @@ withQueryObjectStore config app =
 -- * QueryObjectStore for storing query instances (using the configured backend)
 -- * EntityFetcher for reconstructing entity state (for each entity in EntitiesOf query)
 -- * QueryUpdater for handling entity events (for each entity)
--- * HTTP endpoint at @GET /queries/{query-name}@
+-- * The collection and UUID lookup endpoints
 --
 -- The query name is derived from 'NameOf query' in kebab-case.
 -- All entities listed in 'EntitiesOf query' are automatically wired.
@@ -596,58 +612,47 @@ withQueryObjectStore config app =
 -- @
 withQuery ::
   forall query queryName entities.
-  ( Query query,
-    Schema.ToSchema query,
-    Json.ToJSON query,
-    Json.FromJSON query,
-    queryName ~ NameOf query,
-    entities ~ EntitiesOf query,
-    GHC.KnownSymbol queryName,
-    WireEntities entities query
-  ) =>
-  Application ->
-  Application
-withQuery app = addQueryDefinition @query (\definition -> definition) app
+  (RegistrableQuery query queryName entities) =>
+  Application -> Application
+withQuery = withQueryOnly @query Definition.defaultQueryRoutes
+
+
+-- | Register a query and publish only the selected reads.
+-- An empty list keeps the projection running without publishing either route.
+withQueryOnly ::
+  forall query queryName entities.
+  (RegistrableQuery query queryName entities) =>
+  [QueryRoute] -> Application -> Application
+withQueryOnly routes = addQueryDefinition @query routes identity
 
 
 -- | Register a query for only the entity and payload sources in its Slice.
 withQuerySources ::
   forall query queryName entities.
-  ( Query query,
-    Schema.ToSchema query,
-    Json.ToJSON query,
-    Json.FromJSON query,
-    queryName ~ NameOf query,
-    entities ~ EntitiesOf query,
-    GHC.KnownSymbol queryName,
-    WireEntities entities query
-  ) =>
-  [Definition.EventSubscription] ->
-  Application ->
-  Application
-withQuerySources subscriptions app = addQueryDefinition @query (Definition.restrictToSources subscriptions) app
+  (RegistrableQuery query queryName entities) =>
+  [Definition.EventSubscription] -> Application -> Application
+withQuerySources = withQuerySourcesOnly @query Definition.defaultQueryRoutes
+
+
+-- | Register the sources and published reads declared in a query Slice.
+withQuerySourcesOnly ::
+  forall query queryName entities.
+  (RegistrableQuery query queryName entities) =>
+  [QueryRoute] -> [Definition.EventSubscription] -> Application -> Application
+withQuerySourcesOnly routes subscriptions =
+  addQueryDefinition @query routes (Definition.restrictToSources subscriptions)
 
 
 addQueryDefinition ::
   forall query queryName entities.
-  ( Query query,
-    Schema.ToSchema query,
-    Json.ToJSON query,
-    Json.FromJSON query,
-    queryName ~ NameOf query,
-    entities ~ EntitiesOf query,
-    GHC.KnownSymbol queryName,
-    WireEntities entities query
-  ) =>
-  (QueryDefinition -> QueryDefinition) ->
-  Application ->
-  Application
-addQueryDefinition adjust app = do
+  (RegistrableQuery query queryName entities) =>
+  [QueryRoute] -> (QueryDefinition -> QueryDefinition) -> Application -> Application
+addQueryDefinition routes adjust app = do
   let storeFactory = case app.queryObjectStoreConfig of
         Just (QueryObjectStoreConfigValue config) -> createQueryObjectStore config
         Nothing -> \_ -> InMemory.new |> Task.mapError toText
   let definition = Definition.createDefinitionWithStore @query storeFactory
-  app {queryDefinitions = app.queryDefinitions |> Array.push (adjust definition)}
+  app {queryDefinitions = app.queryDefinitions |> Array.push (adjust definition {queryRoutes = routes})}
 
 
 -- | Check if any query definitions have been registered.
@@ -1115,6 +1120,21 @@ runWith eventStore app = do
   runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup maybeWebAuthSetup maybeIntegrationStatus registry resolvedApp
 
 
+validateQueryRoutes :: [QueryDefinition] -> Task Text Unit
+validateQueryRoutes = check Map.empty
+  where
+    check :: Map Text [QueryRoute] -> [QueryDefinition] -> Task Text Unit
+    check _ [] = pass
+    check seen (definition : rest) = do
+      let name = definition.queryName
+      let routes = Definition.defaultQueryRoutes
+            |> LinkedList.filter (\route -> LinkedList.member route definition.queryRoutes)
+      case Map.get name seen of
+        Just previous | previous != routes ->
+          Task.throw [fmt|Conflicting published routes for query '#{name}'. Select the same routes in each registration.|]
+        _ -> check (Map.set name routes seen) rest
+
+
 -- | Internal: Run application with pre-resolved EventStore, FileUpload, and Auth.
 --
 -- This is the core implementation that both 'run' and 'runWith' delegate to.
@@ -1129,29 +1149,29 @@ runWithResolved ::
   Application ->
   Task Text Unit
 runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup maybeWebAuthSetup maybeIntegrationStatus integrationRegistry app = do
+  validateQueryRoutes (Array.toLinkedList app.queryDefinitions)
   -- 1. Wire all query definitions and collect registries + endpoints + schemas
   wiredQueries <-
     app.queryDefinitions
-      |> Task.mapArray (\def -> def.wireQuery eventStore)
+      |> Task.mapArray (\definition -> do
+          (registry, endpoint) <- definition.wireQuery eventStore
+          Task.yield (registry, definition.queryRoutes, endpoint))
 
   -- 2. Combine all registries from query definitions with the manual registry
   let combinedRegistry =
         wiredQueries
-          |> Array.reduce (\(reg, _endpoint) acc -> mergeRegistries reg acc) app.queryRegistry
+          |> Array.reduce (\(reg, _, _) acc -> mergeRegistries reg acc) app.queryRegistry
 
-  -- 3. Combine all query endpoints from definitions with manual endpoints
-  let combinedQueryEndpoints =
-        wiredQueries
-          |> Array.reduce (\(_reg, wired) acc -> acc |> Map.set wired.wiredQueryName wired.wiredCollectionHandler) app.queryEndpoints
-
-  -- 3b. Collect all query schemas
-  let combinedQuerySchemas =
-        wiredQueries
-          |> Array.reduce (\(_reg, wired) acc -> acc |> Map.set wired.wiredQueryName wired.wiredCollectionSchema) Map.empty
-
-  let combinedQueryByIdEndpoints =
-        wiredQueries
-          |> Array.reduce (\(_reg, wired) acc -> acc |> Map.set wired.wiredQueryName wired.wiredQueryById) Map.empty
+  let endpointsFor route = wiredQueries
+        |> Array.takeIf (\(_, routes, _) -> LinkedList.member route routes)
+        |> Array.map (\(_, _, endpoint) -> endpoint)
+  let indexes = endpointsFor Index
+  let combinedQueryEndpoints = indexes
+        |> Array.reduce (\wired acc -> acc |> Map.set wired.wiredQueryName wired.wiredCollectionHandler) app.queryEndpoints
+  let combinedQuerySchemas = indexes
+        |> Array.reduce (\wired acc -> acc |> Map.set wired.wiredQueryName wired.wiredCollectionSchema) Map.empty
+  let combinedQueryByIdEndpoints = endpointsFor Lookup
+        |> Array.reduce (\wired acc -> acc |> Map.set wired.wiredQueryName wired.wiredQueryById) Map.empty
 
   -- 4. Collect command endpoints and schemas from all services, grouped by transport
   endpointsAndSchemasByTransport <-

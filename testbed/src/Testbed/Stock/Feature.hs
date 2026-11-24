@@ -38,6 +38,7 @@ stockFlow = feature "Stock flow" do
 
     slice "Show declared cart and stock activity" do
       query @CartStockActivity do
+        only [Index]
         readsFrom @CartEntity do
           onEvent @CartCreatedPayload
         readsFrom @StockEntity do

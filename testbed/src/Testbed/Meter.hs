@@ -90,5 +90,6 @@ meterFlow = EventModel.feature "Meter readings" do
           EventModel.produces @ReadingRecorded
     EventModel.slice "Show the latest reading" do
       EventModel.query @MeterReading do
+        EventModel.only [EventModel.Lookup]
         EventModel.readsFrom @MeterEntity do
           EventModel.onEvent @ReadingRecorded

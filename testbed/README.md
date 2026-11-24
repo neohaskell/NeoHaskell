@@ -38,6 +38,12 @@ Run the scenario in another terminal:
 nix develop --command hurl --test testbed/tests/queries/query-by-id.hurl
 ```
 
+The Meter query selects `only [Lookup]`. The cart stock activity query selects `only [Index]`. With the same server running, exercise both selections:
+
+```sh
+nix develop --command hurl --test testbed/tests/scenarios/meter-reading.hurl testbed/tests/scenarios/cart-stock-activity.hurl
+```
+
 Stop the manually started application with Ctrl+C. Give the PostgreSQL user permission to create databases, then run the complete maintained testbed with fresh databases:
 
 ```sh
