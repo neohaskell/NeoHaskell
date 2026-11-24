@@ -76,6 +76,8 @@ module Service.EventModel (
   command,
   produces,
   query,
+  only,
+  QueryRoute (..),
   readsFrom,
   onEvent,
   outboundIntegration,
@@ -171,7 +173,7 @@ import Service.InboundIntegration.Core (InboundIntegration (..))
 import Service.Integration.Dispatcher (DispatcherConfig)
 import Service.OutboundIntegration.Core (OutboundIntegration (..))
 import Service.Query.Core (EntitiesOf, Query, QueryAction (..), QueryOf)
-import Service.Query.Definition (EventSubscription (..), WireEntities)
+import Service.Query.Definition (EventSubscription (..), QueryRoute (..), WireEntities, defaultQueryRoutes)
 import Service.QueryObjectStore.Core (QueryObjectStoreConfig)
 import Service.ServiceDefinition.Core (RunnableCommand (..))
 import Service.Transport (Transport)
@@ -571,6 +573,11 @@ produces ::
 produces = Writer.tell [Produced (Proxy @payload)]
 
 
+data QueryPart query
+  = QuerySource (ReadSource query)
+  | OnlyRoutes [QueryRoute]
+
+
 query ::
   forall query queryName entities.
   ( Query query,
@@ -583,11 +590,20 @@ query ::
     GHC.KnownSymbol queryName,
     WireEntities entities query
   ) =>
-  Writer [ReadSource query] () -> Writer [SlicePart ('View query)] ()
+  Writer [QueryPart query] () -> Writer [SlicePart ('View query)] ()
 query builder = do
-  let sources = Writer.execWriter builder
+  let parts = Writer.execWriter builder
+  let sources = [source | QuerySource source <- parts]
+  let restrictions = [routes | OnlyRoutes routes <- parts]
+  let published = [route | route <- defaultQueryRoutes, Prelude.all (Prelude.elem route) restrictions]
   let subscriptions = Prelude.map sourceSubscription sources
-  Writer.tell [SlicePrimary (StateView (Proxy @query) sources (Application.withQuerySources @query subscriptions))]
+  Writer.tell [SlicePrimary (StateView (Proxy @query) sources (Application.withQuerySourcesOnly @query published subscriptions))]
+
+
+-- | Publish only these query reads. Repeated declarations keep their intersection.
+-- An empty list leaves the projection subscribed without exposing a read route.
+only :: [QueryRoute] -> Writer [QueryPart query] ()
+only routes = Writer.tell [OnlyRoutes routes]
 
 
 readsFrom ::
@@ -599,8 +615,8 @@ readsFrom ::
     GHC.KnownSymbol (NameOf entity),
     Json.FromJSON (EventOf entity)
   ) =>
-  Writer [EventRef entity] () -> Writer [ReadSource query] ()
-readsFrom builder = Writer.tell [ReadSource (Proxy @entity) (Writer.execWriter builder)]
+  Writer [EventRef entity] () -> Writer [QueryPart query] ()
+readsFrom builder = Writer.tell [QuerySource (ReadSource (Proxy @entity) (Writer.execWriter builder))]
 
 
 sourceSubscription :: ReadSource query -> EventSubscription

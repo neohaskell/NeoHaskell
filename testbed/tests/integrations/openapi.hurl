@@ -16,6 +16,10 @@ jsonpath "$.info.version" == "1.0.0"
 jsonpath "$.info.description" exists
 # Verify paths are generated
 jsonpath "$.paths" exists
+jsonpath "$.paths['/queries/meter-reading']" not exists
+jsonpath "$.paths['/queries/meter-reading/{id}'].get" exists
+jsonpath "$.paths['/queries/cart-stock-activity'].get" exists
+jsonpath "$.paths['/queries/cart-stock-activity/{id}']" not exists
 # Verify command paths exist
 jsonpath "$.paths['/commands/create-cart']" exists
 jsonpath "$.paths['/commands/save-iban']" exists

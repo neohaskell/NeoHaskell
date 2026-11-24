@@ -16,3 +16,8 @@ retry-interval: 100
 HTTP 200
 [Asserts]
 jsonpath "$.reading" == 327
+jsonpath "$.items" not exists
+
+GET http://localhost:8080/queries/meter-reading
+
+HTTP 404

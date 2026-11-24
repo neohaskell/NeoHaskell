@@ -42,7 +42,7 @@
     "queries": {
       "page": "queries.md",
       "source": "core/service/Service/Query/Core.hs",
-      "scenario": "testbed/tests/queries/cart-summary-after-create.hurl",
+      "scenario": "testbed/tests/scenarios/meter-reading.hurl",
       "evidence": []
     },
     "source-local-event-model": {
