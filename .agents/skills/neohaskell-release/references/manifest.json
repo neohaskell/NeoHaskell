@@ -1560,6 +1560,37 @@
       "source_sha": "358a7229a1d3af447cf3d86eb7a0425f0b0ea10a",
       "target_policy": "native-v2",
       "version": "0.19.1"
+    },
+    {
+      "base_sha": "8783f028459883f9df0c0e02f6181e8a091e5459",
+      "base_tag": "neo-v0.19.1",
+      "base_version": "0.19.1",
+      "bootstrap": false,
+      "contract_registry_sha256": "993db493d248ac754cf1c6631d03aa63f3be766e489d927a6c72d10d28cbb961",
+      "date": "2026-11-24",
+      "distribution_policy": "installer-v1",
+      "group": "platform",
+      "id": "db3230d4f540d386b7db8bd03a621e5cc4e80ad349680bf88f0f6063685cd6c2",
+      "impact": "compatible",
+      "kind": "release",
+      "notes": [
+        {
+          "category": "Fixed",
+          "commit": "77a4775f4736c837192b9e503344abc74fbd7326",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "4e196bdd89b61ef7b9092d4e3aec9b2758bfe931126f7ac8a0ebd5b8e4377482",
+          "impact": "compatible",
+          "path": ".changes/oauth-token-response-errors.md",
+          "sections": {
+            "Summary": "When an OAuth2 provider rejects a token request, your app now receives the\nerror that describes the rejection. Before this fix, a rejection such as an\nexpired refresh token or a reused authorization code crashed the request with\nan uncaught JSON exception, so your `onFailure` callback and your token refresh\nerror handling never ran.\n\nThe errors are the existing `OAuth2Error` values:\n\n- `InvalidGrant`, `InvalidClient`, and `ScopeDenied` when the provider returns a\n  standard OAuth2 error. The message is the provider's description. If the\n  provider sends no description, the message is the OAuth2 error code.\n- `TokenRequestFailed` when the provider returns another error status. The\n  message names the HTTP status only.\n- `MalformedResponse` when the provider reports success and the response is not\n  a valid token response.\n- `NetworkError` when the provider cannot be reached.\n\nThis applies to the authorization code exchange and to the token refresh. Error\nmessages never contain the provider's raw response, so tokens cannot leak into\nyour logs through them. A token response larger than 10 MB now returns\n`NetworkError`.\n\nExisting applications do not need code changes. To check your app, connect an\naccount, revoke the app's access at the provider, and trigger a token refresh.\nYour app receives a `RefreshFailed` error and does not crash. Most providers\nreport a revoked refresh token as `InvalidGrant`.\n\nFramework code that imports `Http.Client.Internal` can also call the new\n`postFormRaw`. It sends the form request that `Http.postForm` sends and returns\nthe status code and the undecoded body of every response."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: compatible\ncategory: Fixed\n---\n\n## Summary\n\nWhen an OAuth2 provider rejects a token request, your app now receives the\nerror that describes the rejection. Before this fix, a rejection such as an\nexpired refresh token or a reused authorization code crashed the request with\nan uncaught JSON exception, so your `onFailure` callback and your token refresh\nerror handling never ran.\n\nThe errors are the existing `OAuth2Error` values:\n\n- `InvalidGrant`, `InvalidClient`, and `ScopeDenied` when the provider returns a\n  standard OAuth2 error. The message is the provider's description. If the\n  provider sends no description, the message is the OAuth2 error code.\n- `TokenRequestFailed` when the provider returns another error status. The\n  message names the HTTP status only.\n- `MalformedResponse` when the provider reports success and the response is not\n  a valid token response.\n- `NetworkError` when the provider cannot be reached.\n\nThis applies to the authorization code exchange and to the token refresh. Error\nmessages never contain the provider's raw response, so tokens cannot leak into\nyour logs through them. A token response larger than 10 MB now returns\n`NetworkError`.\n\nExisting applications do not need code changes. To check your app, connect an\naccount, revoke the app's access at the provider, and trigger a token refresh.\nYour app receives a `RefreshFailed` error and does not crash. Most providers\nreport a revoked refresh token as `InvalidGrant`.\n\nFramework code that imports `Http.Client.Internal` can also call the new\n`postFormRaw`. It sends the form request that `Http.postForm` sends and returns\nthe status code and the undecoded body of every response.\n"
+        }
+      ],
+      "source_sha": "77a4775f4736c837192b9e503344abc74fbd7326",
+      "target_policy": "native-v2",
+      "version": "0.19.2"
     }
   ],
   "recoveries": [],
