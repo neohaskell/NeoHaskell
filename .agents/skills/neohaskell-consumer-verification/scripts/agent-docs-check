@@ -383,7 +383,7 @@ def compile_pages(root: Path, runnable_pages: list[str]) -> None:
     if not os.environ.get("NEOHASKELL_SHELL_FP"):
         raise CorpusError("run this gate through nix develop --command from the repository root")
     build = subprocess.run(
-        ["cabal", "build", "nhcore", "nhintegrations", "--disable-documentation"],
+        ["cabal", "build", "lib:nhcore", "lib:nhintegrations", "--disable-documentation"],
         cwd=root,
         text=True,
         capture_output=True,
@@ -391,6 +391,14 @@ def compile_pages(root: Path, runnable_pages: list[str]) -> None:
     )
     if build.returncode:
         raise CorpusError(f"cabal build failed:\n{build.stdout[-3000:]}\n{build.stderr[-3000:]}")
+    plan = json.loads((root / "dist-newstyle/cache/plan.json").read_text())
+    main_libraries = {
+        unit["pkg-name"]: unit["id"]
+        for unit in plan["install-plan"]
+        if unit.get("component-name") == "lib" and unit.get("style") == "local"
+    }
+    if not {"nhcore", "nhintegrations"}.issubset(main_libraries):
+        raise CorpusError("the Cabal plan must contain the framework and integration main libraries")
     with tempfile.TemporaryDirectory(prefix="agent-docs-") as temporary:
         temp = Path(temporary)
         for page in runnable_pages:
@@ -399,8 +407,8 @@ def compile_pages(root: Path, runnable_pages: list[str]) -> None:
             literate.symlink_to(source)
             command = [
                 "cabal", "exec", "--", "ghc", "-fno-code", "-fforce-recomp", "-v0",
-                "-pgmL", "markdown-unlit", "-package", "nhcore",
-                "-package", "nhintegrations", str(literate),
+                "-pgmL", "markdown-unlit", "-package-id", main_libraries["nhcore"],
+                "-package-id", main_libraries["nhintegrations"], str(literate),
             ]
             result = subprocess.run(command, cwd=root, text=True, capture_output=True, timeout=300)
             if result.returncode:

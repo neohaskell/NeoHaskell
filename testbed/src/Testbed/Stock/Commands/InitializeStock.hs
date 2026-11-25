@@ -7,8 +7,7 @@ module Testbed.Stock.Commands.InitializeStock (
 import Core
 import Decider qualified
 import Service.Auth (RequestContext)
-import Service.Command.Core (TransportsOf)
-import Service.CommandExecutor.TH (command)
+import Derive
 import Service.Transport.Web (WebTransport)
 import Testbed.Stock.Core
 
@@ -42,10 +41,7 @@ decide cmd entity _ctx = case entity of
           ]
 
 
-type instance EntityOf InitializeStock = StockEntity
-
-
-type instance TransportsOf InitializeStock = '[WebTransport]
-
-
-command ''InitializeStock
+derive ''InitializeStock command {
+  entity = ''StockEntity,
+  transports = [''WebTransport]
+}

@@ -1,5 +1,5 @@
 -- | Compose testbed Features and configure their shared application runtime.
--- Run 'appEventModel' through 'Service.EventModel.run'.
+-- Run 'appEventModel' through 'Service.EventModel.Launcher.run'.
 module Testbed.EventModel (appEventModel) where
 
 import Core
@@ -15,11 +15,12 @@ import Testbed.Erasable.Feature (protectedFlow)
 import Testbed.Erasable.Owned.Feature (ownedErasureFlow)
 import Testbed.ExternalEffect.Feature (externalEffectFlow)
 import Testbed.Infrastructure (makeFileUploadConfig, makePostgresConfig)
+import Testbed.Meter (meterFlow)
 import Testbed.RequestOrigin (requestOriginFlow)
 import Testbed.Stock.Feature (stockFlow)
 
 
-appEventModel :: Text -> Int -> Result Text EventModel.EventModel
+appEventModel :: Text -> Int -> EventModel
 appEventModel httpHost httpPort = EventModel.eventModel do
   EventModel.appName "Testbed"
   EventModel.withConfig @TestbedConfig
@@ -41,6 +42,7 @@ appEventModel httpHost httpPort = EventModel.eventModel do
     protectedFlow
     ownedErasureFlow
     requestOriginFlow
+    meterFlow
 
 
 testbedApiInfo :: ApiInfo

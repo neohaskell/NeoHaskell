@@ -16,6 +16,7 @@
 module Service.Event.TH (
   deriveEvent,
   deriveEntityEvents,
+  deriveOwnedEvents,
   event,
 ) where
 
@@ -31,7 +32,7 @@ import Language.Haskell.TH.Ppr qualified as THPpr
 import Language.Haskell.TH.Syntax qualified as TH
 import Maybe (Maybe (..))
 import Service.Entity.Core qualified as Entity
-import Service.TH.Boilerplate (emitJsonAndDerivingBoilerplate)
+import Service.TH.Boilerplate (emitInstanceIfMissing, emitJsonAndDerivingBoilerplate)
 import Text qualified
 
 
@@ -52,7 +53,26 @@ deriveEvent = emitJsonAndDerivingBoilerplate
 -- deriveEntityEvents ''Proposal [''ProposalCreated, ''PdfUploaded]
 -- @
 deriveEntityEvents :: TH.Name -> [TH.Name] -> THLib.DecsQ
-deriveEntityEvents entityName payloadNames = do
+deriveEntityEvents = buildEventSum ExistingPayloads
+
+
+-- | Declare payload ownership and route each payload by entityId or an explicit hook.
+-- Wire tags use the payload type name independently of the generated constructor prefix.
+deriveOwnedEvents :: TH.Name -> [TH.Name] -> [(TH.Name, TH.Name)] -> THLib.DecsQ
+deriveOwnedEvents entityName payloadNames overrides = do
+  Monad.mapM_ (\(payload, _) ->
+    Monad.unless (LinkedList.member payload payloadNames)
+      (MonadFail.fail [fmt|derive: event ID override for unlisted payload '#{TH.nameBase payload}'.|])) overrides
+  Monad.when (hasDuplicate (LinkedList.map (\(name, _) -> name) overrides))
+    (MonadFail.fail "derive: multiple ID overrides for one event payload.")
+  buildEventSum (OwnedPayloads overrides) entityName payloadNames
+
+
+data PayloadOwnership = ExistingPayloads | OwnedPayloads [(TH.Name, TH.Name)]
+
+
+buildEventSum :: PayloadOwnership -> TH.Name -> [TH.Name] -> THLib.DecsQ
+buildEventSum ownership entityName payloadNames = do
   let entityBase = TH.nameBase entityName
   let entityText = Text.fromLinkedList entityBase
   let eventPrefix =
@@ -66,7 +86,12 @@ deriveEntityEvents entityName payloadNames = do
           |> LinkedList.map (\payloadName -> TH.mkName (eventBase ++ TH.nameBase payloadName))
   validatePayloadNames entityName eventName payloadNames constructorNames
   validateAbsentEventMapping entityName
-  Monad.mapM_ (validatePayloadOwnership entityName) payloadNames
+  ownershipDeclarations <- case ownership of
+    ExistingPayloads -> do
+      Monad.mapM_ (validatePayloadOwnership entityName) payloadNames
+      pure []
+    OwnedPayloads overrides ->
+      fmap LinkedList.concat (Monad.mapM (declareOwnedPayload entityName overrides) payloadNames)
   let constructors =
         LinkedList.map2
           (\constructorName payloadName -> TH.NormalC constructorName [(TH.Bang TH.NoSourceUnpackedness TH.NoSourceStrictness, TH.ConT payloadName)])
@@ -87,7 +112,11 @@ deriveEntityEvents entityName payloadNames = do
   let jsonOptions =
         TH.RecUpdE
           (TH.VarE 'Json.defaultOptions)
-          [('Json.tagSingleConstructors, TH.ConE 'True)]
+          (('Json.tagSingleConstructors, TH.ConE 'True) : tagOptions)
+      tagOptions = case ownership of
+        ExistingPayloads -> []
+        OwnedPayloads _ ->
+          [('Json.constructorTagModifier, TH.VarE 'LinkedList.drop `TH.AppE` TH.LitE (TH.IntegerL (fromIntegral (LinkedList.length eventBase))))]
   let jsonInstances =
         [ TH.InstanceD
             Nothing
@@ -103,9 +132,32 @@ deriveEntityEvents entityName payloadNames = do
   pure
     ( [eventDeclaration, eventOfDeclaration, entityOfDeclaration]
         ++ [routingInstance]
+        ++ ownershipDeclarations
         ++ variantInstances
         ++ jsonInstances
     )
+
+
+declareOwnedPayload :: TH.Name -> [(TH.Name, TH.Name)] -> TH.Name -> THLib.DecsQ
+declareOwnedPayload entityName overrides payload = do
+  existing <- TH.reifyInstances ''Entity.EntityOf [TH.ConT payload]
+  ownership <- case existing of
+    [] -> pure [familyDeclaration ''Entity.EntityOf payload entityName]
+    _ -> do
+      validatePayloadOwnership entityName payload
+      pure []
+  let value = TH.mkName "payload"
+      override = LinkedList.find (\(target, _) -> target == payload) overrides
+      routing = case override of
+        Just (_, hook) -> TH.VarE hook `TH.AppE` TH.VarE value
+        Nothing -> TH.GetFieldE (TH.VarE value) "entityId"
+      instanceHead = TH.ConT ''Entity.Event `TH.AppT` TH.ConT payload
+      routeId = TH.FunD 'Entity.getEventEntityIdImpl [TH.Clause [TH.VarP value] (TH.NormalB routing) []]
+      generateRoute = pure [TH.InstanceD Nothing [] instanceHead [routeId]]
+  routes <- case override of
+    Just _ -> generateRoute
+    Nothing -> emitInstanceIfMissing ''Entity.Event payload generateRoute
+  pure (ownership ++ routes)
 
 
 validatePayloadNames :: TH.Name -> TH.Name -> [TH.Name] -> [TH.Name] -> TH.Q ()

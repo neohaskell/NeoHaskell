@@ -21,6 +21,8 @@ retry: 10
 retry-interval: 200
 
 HTTP/1.1 200
+[Captures]
+activity_id: jsonpath "$.items[0].activityId"
 [Asserts]
 jsonpath "$.items[0].cartSeen" == true
 jsonpath "$.items[0].stockSeen" == true
@@ -62,3 +64,7 @@ jsonpath "$.items[0].cartSeen" == true
 jsonpath "$.items[0].stockSeen" == true
 jsonpath "$.items[0].cartItemCount" == 0
 jsonpath "$.items[0].stockReserved" == 0
+
+GET http://localhost:8080/queries/cart-stock-activity/{{activity_id}}
+
+HTTP/1.1 404

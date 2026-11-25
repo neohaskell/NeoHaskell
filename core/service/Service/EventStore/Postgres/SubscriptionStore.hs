@@ -18,7 +18,7 @@ module Service.EventStore.Postgres.SubscriptionStore (
 import Array qualified
 import AsyncTask qualified
 import ConcurrentVar qualified
-import Core
+import Core.Prelude
 import Json qualified
 import Log qualified
 import Map qualified

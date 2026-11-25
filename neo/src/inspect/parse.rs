@@ -121,10 +121,10 @@ pub fn events_in_domain(dir: &Path) -> Vec<EventInfo> {
     out
 }
 
-pub fn commands_in_domain(dir: &Path, known_events: &[String]) -> Vec<CommandInfo> {
+pub fn commands_in_domain(dir: &Path, known_events: &[String], web_only: bool) -> Vec<CommandInfo> {
     list_dot_hs(dir.join("Commands").as_path())
         .into_iter()
-        .filter_map(|path| parse_command_file(&path, known_events))
+        .filter_map(|path| parse_command_file(&path, known_events, web_only))
         .collect()
 }
 
@@ -323,12 +323,20 @@ fn walk_hs(dir: &Path, out: &mut Vec<PathBuf>) {
     }
 }
 
-fn parse_command_file(path: &Path, known_events: &[String]) -> Option<CommandInfo> {
+pub(super) fn has_single_web_transport(app: &str) -> bool {
+    let mut registrations = app.lines()
+        .map(|line| line.split("--").next().unwrap_or("").trim())
+        .filter_map(|line| line.split_once("withTransport ").map(|(_, value)| value.trim()));
+    matches!(registrations.next(), Some("WebTransport.server")) && registrations.next().is_none()
+}
+
+fn parse_command_file(path: &Path, known_events: &[String], web_only: bool) -> Option<CommandInfo> {
     let body = std::fs::read_to_string(path).ok()?;
     let name = path.file_stem()?.to_str()?.to_string();
     let decide_body = extract_function_body(&body, "decide").unwrap_or_default();
     let produces = filter_present(&decide_body, known_events);
-    let via_web_transport = body.contains("WebTransport");
+    let via_web_transport = body.contains("WebTransport")
+        || (web_only && body.contains(&format!("derive ''{name} command")) && !body.contains("transports"));
     let fields = data_type_record_fields(&body, &name);
     Some(CommandInfo {
         name,
@@ -349,7 +357,19 @@ fn parse_query_file(path: &Path, known_events: &[String]) -> Option<QueryInfo> {
     // the wiring layer can compute precise event→query edges instead of the
     // all-local over-approximation. See `event_write_sets_in_domain` for the
     // matching writes side.
-    let combine = extract_method_body(&body, "combine").unwrap_or_default();
+    let mut hooks = BTreeSet::new();
+    for line in body.lines() {
+        if let Some(name) = line.split_whitespace().next() {
+            if name.strip_prefix("combine").is_some_and(|suffix| suffix.starts_with(char::is_uppercase)) {
+                hooks.insert(name);
+            }
+        }
+    }
+    let combine = if hooks.is_empty() {
+        extract_method_body(&body, "combine").unwrap_or_default()
+    } else {
+        hooks.into_iter().filter_map(|hook| extract_function_body(&body, hook)).collect::<Vec<_>>().join("\n")
+    };
     let reads_entity_fields = extract_entity_field_reads(&combine);
     let (case_field, noop_values) = extract_combine_noop_values(&combine);
     // Read-model fields: `data <Query> = <Query> { … }` in the query file (the
@@ -488,10 +508,22 @@ pub fn event_write_sets_in_domain(dir: &Path, known_events: &[String]) -> Entity
         Some(idx) => &fold[idx + 4..],
         None => fold.as_str(),
     };
-    let candidate_set: BTreeSet<&str> = known_events.iter().map(String::as_str).collect();
+    static ENTITY_DESCRIPTOR: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
+    let descriptor = ENTITY_DESCRIPTOR.get_or_init(|| Regex::new(r"(?m)^derive\s+''(\w+)\s+entity\b").unwrap());
+    let mut constructors: BTreeMap<String, &str> =
+        known_events.iter().map(|name| (name.clone(), name.as_str())).collect();
+    if let Some(captures) = descriptor.captures(&src) {
+        let entity = &captures[1];
+        let prefix = entity.strip_suffix("Entity").unwrap_or(entity);
+        for name in known_events {
+            constructors.insert(format!("{prefix}Event{name}"), name);
+        }
+    }
+    let candidate_set = constructors.keys().map(String::as_str).collect();
     let mut writes: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     let mut enum_values: BTreeMap<String, BTreeMap<String, String>> = BTreeMap::new();
-    for (ctor, arm) in split_case_arms(case_body, &candidate_set) {
+    for (constructor, arm) in split_case_arms(case_body, &candidate_set) {
+        let ctor = constructors[&constructor].to_string();
         let (fields, values) = extract_record_writes(&arm);
         if !fields.is_empty() {
             writes.entry(ctor.clone()).or_default().extend(fields);

@@ -6,6 +6,7 @@ import Core hiding (event)
 import Json qualified
 import Service.AccessControl (AccessError, UserClaims)
 import Service.AccessControl qualified as AccessControl
+import Service.Application qualified as Application
 import Service.Entity.Core (Event (..))
 import Service.Event (EntityName (..), StreamId (..))
 import Service.Event qualified as RawEvent
@@ -123,6 +124,26 @@ wireWithSpy spy = createDefinitionWithStore @StoreWiringQuery spy
 
 spec :: Spec Unit
 spec = do
+  describe "Application.withQueryOnly" do
+    it "rejects conflicting publication settings on the same query" \_ -> do
+      let app = Application.new
+            |> Application.withQueryOnly @StoreWiringQuery [Application.Lookup]
+            |> Application.withQuery @StoreWiringQuery
+      store <- EventStoreInMemory.new |> Task.mapError toText
+      result <- Application.runWith store app |> Task.asResult
+      result |> shouldBe (Err "Conflicting published routes for query 'StoreWiringQuery'. Select the same routes in each registration.")
+
+    it "registers an internal projection with its entity updater and no published routes" \_ -> do
+      let app = Application.new |> Application.withQueryOnly @StoreWiringQuery []
+      case Array.toLinkedList app.queryDefinitions of
+        [definition] -> do
+          definition.queryRoutes |> shouldBe []
+          store <- EventStoreInMemory.new |> Task.mapError toText
+          (registry, _) <- definition.wireQuery store
+          let updaters = Registry.getUpdatersForEntity (EntityName "CacheEntity") registry
+          updaters |> Array.map (\updater -> updater.queryName) |> shouldBe ["StoreWiringQuery"]
+        _ -> fail "Expected one registered projection"
+
   describe "createDefinitionWithStore" do
     it "passes NameOf query to the supplied store factory (#734)" \_ -> do
       -- The automatic wiring must hand the query's OWN name to the store factory

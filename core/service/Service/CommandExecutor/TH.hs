@@ -1,5 +1,6 @@
 module Service.CommandExecutor.TH (
   deriveCommand,
+  deriveCommandFor,
   command,
   deriveKnownHash,
 ) where
@@ -261,16 +262,13 @@ deriveCommand = command
 
 command :: TH.Name -> THLib.DecsQ
 command someName = do
-  let orError errMsg mVal =
-        case mVal of
-          Just x -> pure x
-          Nothing -> MonadFail.fail errMsg
+  entityType <- resolveCommandEntity someName
+  deriveCommandFor someName entityType
 
+
+resolveCommandEntity :: TH.Name -> TH.Q TH.Name
+resolveCommandEntity someName = do
   let commandNameStr = TH.nameBase someName
-
-  maybeGetEntityId <- TH.lookupValueName "getEntityId"
-  maybeDecide <- TH.lookupValueName "decide"
-
   -- Try to resolve the EntityOf type instance for this command
   -- We use reifyInstances to check if there's a type instance defined
   entityTypeFamilyName <- TH.lookupTypeName "EntityOf"
@@ -285,8 +283,7 @@ Please ensure you have `import Core` at the top of your module.
 |]
       Just typeFamilyName -> TH.reifyInstances typeFamilyName [TH.ConT someName]
 
-  entityType <-
-    case entityTypeInstances of
+  case entityTypeInstances of
       [] ->
         MonadFail.fail
           [fmt|
@@ -328,6 +325,20 @@ Please ensure your type instance follows this format:
 
   type instance EntityOf #{commandNameStr} = YourEntityType
 |]
+
+
+-- | Build command instances for an explicitly selected entity.
+deriveCommandFor :: TH.Name -> TH.Name -> THLib.DecsQ
+deriveCommandFor someName entityType = do
+  let orError errMsg mVal =
+        case mVal of
+          Just x -> pure x
+          Nothing -> MonadFail.fail errMsg
+
+  let commandNameStr = TH.nameBase someName
+
+  maybeGetEntityId <- TH.lookupValueName "getEntityId"
+  maybeDecide <- TH.lookupValueName "decide"
 
   let entityTypeStr = TH.nameBase entityType
 

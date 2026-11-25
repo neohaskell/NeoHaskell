@@ -210,10 +210,12 @@ pub fn inspect_project(root: &Path) -> ProjectInspection {
         }
     }
 
+    let web_only = std::fs::read_to_string(src.join("App.hs"))
+        .is_ok_and(|app| parse::has_single_web_transport(&app));
     let domains = with_events
         .into_iter()
         .map(|(dir, events)| {
-            inspect_domain(dir, events, &global_event_names, &global_command_names)
+            inspect_domain(dir, events, &global_event_names, &global_command_names, web_only)
         })
         .collect();
     ProjectInspection {
@@ -233,7 +235,7 @@ fn discover_domains(src: &Path) -> Vec<PathBuf> {
             continue;
         }
         let p = entry.path();
-        if !p.join("Core.hs").is_file() && !p.join("Event.hs").is_file() {
+        if !["Entity.hs", "Core.hs", "Event.hs"].iter().any(|file| p.join(file).is_file()) {
             continue;
         }
         let has_subdir = ["Commands", "Events", "Queries", "Integrations"]
@@ -252,6 +254,7 @@ fn inspect_domain(
     events: Vec<EventInfo>,
     global_event_names: &[String],
     global_command_names: &[String],
+    web_only: bool,
 ) -> DomainInspection {
     let name = dir
         .file_name()
@@ -262,7 +265,7 @@ fn inspect_domain(
     let local_event_names: Vec<String> = events.iter().map(|e| e.name.clone()).collect();
 
     // Commands stay strict (decide body, local events).
-    let mut commands = parse::commands_in_domain(&dir, &local_event_names);
+    let mut commands = parse::commands_in_domain(&dir, &local_event_names, web_only);
     // Queries + integrations get the GLOBAL event set so they catch
     // cross-domain wiring.
     let mut queries = parse::queries_in_domain(&dir, global_event_names);
@@ -974,4 +977,25 @@ import Network.HTTP.Client qualified as HttpClient
 postForm :: Text -> Array (Text, Text) -> Task err Response
 postForm url pairs = Task.fromIO (runRequest url pairs)
 "#;
+}
+
+#[cfg(test)]
+mod starter_regression {
+    use super::*;
+
+    #[test]
+    fn inspect_sees_the_generated_counter_flow() {
+        let starter = Path::new(env!("CARGO_MANIFEST_DIR")).join("starter");
+        let inspection = inspect_project(&starter);
+        let counter = inspection.domains.iter().find(|domain| domain.name == "Counter").unwrap();
+        assert_eq!(counter.events.len(), 3);
+        assert_eq!(counter.commands.len(), 3);
+        for command in &counter.commands {
+            assert!(command.via_web_transport);
+            assert_eq!(command.produces.len(), 1);
+        }
+        let view = counter.queries.iter().find(|query| query.name == "CounterView").unwrap();
+        assert_eq!(view.subscribes_to.len(), 3);
+        assert!(view.reads_entity_fields.iter().any(|field| field == "value"));
+    }
 }

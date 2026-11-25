@@ -13,7 +13,6 @@ import tempfile
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable
 
 BEST_PRACTICES_SCRIPTS = Path(__file__).resolve().parents[2] / "neohaskell-best-practices" / "scripts"
 sys.path.insert(0, str(BEST_PRACTICES_SCRIPTS))
@@ -29,7 +28,6 @@ class CabalPackage:
     source_dirs: tuple[Path, ...]
     extensions: tuple[str, ...]
     language: str | None
-    dependencies: tuple[str, ...]
 
 
 def _without_comment(line: str) -> str:
@@ -122,13 +120,6 @@ def cabal_packages(root: Path) -> tuple[CabalPackage, ...]:
         source_dirs = tuple((cabal_file.parent / token).resolve() for token in source_tokens)
         extension_tokens = _field_tokens(lines, "default-extensions")
         language_tokens = _field_tokens(lines, "default-language")
-        dependencies: set[str] = set()
-        for block in _field_blocks(lines, "build-depends"):
-            joined = " ".join(block)
-            for item in joined.split(","):
-                dependency = re.match(r"\s*([A-Za-z0-9][A-Za-z0-9-]*)", item)
-                if dependency is not None:
-                    dependencies.add(dependency.group(1))
         descriptors.append(
             CabalPackage(
                 name=name_match.group(1),
@@ -136,7 +127,6 @@ def cabal_packages(root: Path) -> tuple[CabalPackage, ...]:
                 source_dirs=source_dirs,
                 extensions=extension_tokens,
                 language=language_tokens[0] if language_tokens else None,
-                dependencies=tuple(sorted(dependencies)),
             )
         )
     return tuple(descriptors)
@@ -150,25 +140,6 @@ def cabal_test_targets(root: Path) -> tuple[tuple[str, str], ...]:
             if match is not None:
                 targets.append((package.name, match.group(1)))
     return tuple(targets)
-
-
-def dependency_source_dirs(package: CabalPackage, packages: Iterable[CabalPackage]) -> tuple[Path, ...]:
-    by_name = {candidate.name.lower(): candidate for candidate in packages}
-    found: list[Path] = []
-    seen: set[str] = {package.name.lower()}
-
-    def add_dependencies(current: CabalPackage) -> None:
-        for dependency in current.dependencies:
-            key = dependency.lower()
-            candidate = by_name.get(key)
-            if candidate is None or key in seen:
-                continue
-            seen.add(key)
-            found.extend(candidate.source_dirs)
-            add_dependencies(candidate)
-
-    add_dependencies(package)
-    return tuple(dict.fromkeys(found))
 
 
 def transcript_destination(root: Path, owner: str, requested: str | None, invocation_cwd: Path) -> Path:

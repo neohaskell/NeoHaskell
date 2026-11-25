@@ -1,6 +1,6 @@
 cabal-version: 3.4
 name: neoctl
-version: 0.18.1
+version: 0.19.2
 description: NeoHaskell control service
 homepage: https://neohaskell.org
 license: MIT
@@ -9,6 +9,11 @@ category: Development
 build-type: Simple
 
 -- This file is managed by NeoCLI and should not be modified manually.
+
+flag event-model-launcher
+  description: Event Model launcher supplied by the resolved framework version.
+  default: True
+  manual: False
 
 common common_cfg
   ghc-options:
@@ -74,6 +79,9 @@ executable neoctl
   main-is: Launcher.hs
   autogen-modules: Paths_neoctl
   other-modules: Paths_neoctl
+  if flag(event-model-launcher)
+    build-depends: nhcore:launcher
+    cpp-options: -DNHCORE_EVENT_MODEL_LAUNCHER
   build-depends:
     base,
     neoctl

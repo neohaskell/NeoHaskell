@@ -347,7 +347,7 @@ fn new_offline_generates_full_starter_from_packaged_binary() {
     assert!(project.join("src/App.hs").exists(), "src/App.hs missing");
     assert!(project.join("launcher/Launcher.hs").exists(), "launcher/Launcher.hs missing");
     assert!(
-        project.join("src/Starter/Counter/Event.hs").exists(),
+        project.join("src/Starter/Counter/Entity.hs").exists(),
         "embedded starter domain module missing — packaged binary shipped a stub, not the full starter"
     );
     assert!(project.join("flake.nix").exists(), "flake.nix missing");

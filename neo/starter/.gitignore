@@ -1,21 +1,17 @@
-# Haskell build artifacts
 dist-newstyle/
 dist/
 result
 result-*
 
-# Nix/direnv
 .direnv/
 .neo/
 
-# Environment files with secrets
 .env
 
-# Editor / OS
 *.swp
 *~
 .DS_Store
 .idea/
 
-# Uploaded files (local runs)
 uploads/
+!*.cabal

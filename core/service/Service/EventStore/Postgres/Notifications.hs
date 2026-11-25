@@ -8,7 +8,7 @@ module Service.EventStore.Postgres.Notifications (
 import Array qualified
 import AsyncTask qualified
 import Bytes qualified
-import Core hiding (Var)
+import Core.Prelude hiding (Var)
 import Data.ByteString qualified
 import Hasql.Connection qualified as Hasql
 import Hasql.Notifications qualified as HasqlNotifications

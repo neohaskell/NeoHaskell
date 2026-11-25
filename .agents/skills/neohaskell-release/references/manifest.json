@@ -1439,6 +1439,171 @@
       "source_sha": "3bca6057eaf9b0b9a4f66b5ecf9f1099d843363d",
       "target_policy": "native-v2",
       "version": "0.18.1"
+    },
+    {
+      "base_sha": "ecc90831399f5972c1884003aa5fd2205e182a5f",
+      "base_tag": "neo-v0.18.1",
+      "base_version": "0.18.1",
+      "bootstrap": false,
+      "contract_registry_sha256": "993db493d248ac754cf1c6631d03aa63f3be766e489d927a6c72d10d28cbb961",
+      "date": "2026-11-23",
+      "distribution_policy": "installer-v1",
+      "group": "platform",
+      "id": "48d31dbe20d444df034b42de4daf1c02986f5c218fe24ec1706e3274b2dc8df4",
+      "impact": "compatible",
+      "kind": "release",
+      "notes": [
+        {
+          "category": "Fixed",
+          "commit": "f6650caf9a7addb9052b52444c39d1c36b711e13",
+          "component": "CLI",
+          "group": "platform",
+          "hash": "860208c8ed8e7f705f189923ab5f6fb803cbbdf3b2b960fd88befc039f4054b4",
+          "impact": "compatible",
+          "path": ".changes/installer-clarity.md",
+          "sections": {
+            "Summary": "The installer explains when an existing `neo` or `neoctl` command blocks installation and identifies its path without replacing it. Installation, update, rollback, and uninstall messages explain the outcome and the next safe action in plain language. Installation errors remain visible when terminal cleanup also fails, and repeated restoration warnings appear only once.\n\nThe download launcher distinguishes its report from the installer's report. It no longer suggests an automatic retry after the installer has started. Noninteractive piped installation no longer passes the remaining shell script to the installer as input."
+          },
+          "text": "---\ngroup: platform\ncomponent: CLI\nimpact: compatible\ncategory: Fixed\n---\n\n## Summary\n\nThe installer explains when an existing `neo` or `neoctl` command blocks installation and identifies its path without replacing it. Installation, update, rollback, and uninstall messages explain the outcome and the next safe action in plain language. Installation errors remain visible when terminal cleanup also fails, and repeated restoration warnings appear only once.\n\nThe download launcher distinguishes its report from the installer's report. It no longer suggests an automatic retry after the installer has started. Noninteractive piped installation no longer passes the remaining shell script to the installer as input.\n"
+        }
+      ],
+      "source_sha": "f6650caf9a7addb9052b52444c39d1c36b711e13",
+      "target_policy": "native-v2",
+      "version": "0.18.2"
+    },
+    {
+      "base_sha": "6356fc64223c46bc492417d927e9a8cb42f9b18c",
+      "base_tag": "neo-v0.18.2",
+      "base_version": "0.18.2",
+      "bootstrap": false,
+      "contract_registry_sha256": "993db493d248ac754cf1c6631d03aa63f3be766e489d927a6c72d10d28cbb961",
+      "date": "2026-11-23",
+      "distribution_policy": "installer-v1",
+      "group": "platform",
+      "id": "670623a8c54338cb543b2752da9a5ea198935056c1fd98dbe7b70d1685e06bb8",
+      "impact": "breaking",
+      "kind": "release",
+      "notes": [
+        {
+          "category": "Improved",
+          "commit": "002dab37dfc28184944949c1f58b5e21efb96fa2",
+          "component": "CLI",
+          "group": "platform",
+          "hash": "632a7bbdda1dd3b9b0ecf82dcf397390e1fc962f41c9be61642637fbcf07699b",
+          "impact": "compatible",
+          "path": ".changes/counter-starter.md",
+          "sections": {
+            "Summary": "New projects give each Counter event its own type and keep decisions, state updates and projections in the files that own them. The starter reads its HTTP port from configuration. You can switch from memory to local JSON Lines storage by selecting a directory in App.hs."
+          },
+          "text": "---\ngroup: platform\ncomponent: CLI\nimpact: compatible\ncategory: Improved\n---\n\n## Summary\n\nNew projects give each Counter event its own type and keep decisions, state updates and projections in the files that own them. The starter reads its HTTP port from configuration. You can switch from memory to local JSON Lines storage by selecting a directory in App.hs.\n"
+        },
+        {
+          "category": "Added",
+          "commit": "002dab37dfc28184944949c1f58b5e21efb96fa2",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "263431ed7790f563319558d8de223fc10a6b21440046f06c75caf37da7674a39",
+          "impact": "compatible",
+          "path": ".changes/domain-declarations.md",
+          "sections": {
+            "Summary": "Declare events, entities, commands and queries with typed options from Derive. The entity lists its events once. Commands can use the application's sole public transport, and a query can project several entities using ordinary functions for its row keys and updates."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: compatible\ncategory: Added\n---\n\n## Summary\n\nDeclare events, entities, commands and queries with typed options from Derive. The entity lists its events once. Commands can use the application's sole public transport, and a query can project several entities using ordinary functions for its row keys and updates.\n"
+        },
+        {
+          "category": "Breaking changes",
+          "commit": "002dab37dfc28184944949c1f58b5e21efb96fa2",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "5d930c1b53d1b124882450d2d3473fdf87d75288705c31e16d1d3aa5793ef828",
+          "impact": "breaking",
+          "path": ".changes/event-model-launcher.md",
+          "sections": {
+            "Agent prompt": "```text\nMigrate this existing NeoHaskell application's Event Model declaration and launcher. Preserve its domain behavior, app name, configuration, event store factory and directory, transports, Features, permissions, and custom event encoders and decoders. Do not replace the application with the Counter starter.\n\n1. In the application module, replace the declaration type Result Text EventModel.EventModel with EventModel from Core. Replace configuration calls such as EventModel.eventModel, EventModel.appName, and EventModel.features with eventModel, appName, and features imported from Core. Keep the existing builder body. Keep Service.EventModel imports in Feature modules and wherever validation or inspection needs them.\n\n2. In launcher/Launcher.hs, replace import Service.EventModel qualified as EventModel with import Service.EventModel.Launcher qualified as EventModel. Keep import App (appEventModel), import Core, and import Task qualified. Replace main with:\nmain :: IO ()\nmain = appEventModel |> EventModel.run |> Task.runOrPanic\nRemove explicit stdout and stderr buffering calls and the unused System.IO import. The removed Service.EventModel.run accepted Result Text EventModel.EventModel. Service.EventModel.Launcher.run accepts the plain EventModel and validates it before startup. Upgrade the CLI and framework together. Neo generates the executable dependency nhcore:launcher. For a manually maintained Cabal file, add build-depends: nhcore:launcher inside the executable stanza. Add it to any other component importing Service.EventModel.Launcher. Preserve existing dependencies.\n\n3. In tests and custom tooling, replace case appEventModel of with case EventModel.validate appEventModel of, using import Service.EventModel qualified as EventModel. Preserve Err handling and expected error assertions. Ok model is now EventModel.ValidatedEventModel. Update annotations for validated values. Pass that value to EventModel.modelName, EventModel.modelFeatures, EventModel.toApplication, and Service.EventModel.RuleRunner.declaredRules, runRules, or specFor.\n\n4. Do not delete or rewrite stored events or change their tags, JSON fields, database settings, or storage directory. This migration does not require adopting derived named event payloads. Preserve custom codecs. If payload derivation is also requested, inspect historical encoding and test decoding and replay on a copy before changing event declarations. Report uncertain compatibility and leave the data intact.\n\n5. In the upgraded application directory, run neo build and neo test. Both must exit successfully, including existing validation and rule tests. Run neo run and exercise an existing command and query. Confirm the expected state. For an existing persistent store, restart and confirm the old state is still queryable. Keep failing tests. Report changed files, the commands and their exit statuses, runtime results, and every unresolved case with its file and diagnostic. Identify checks you could not run. Do not claim success for a skipped or failing check.\n```",
+            "Migration": "1. In your application module, change `Result Text EventModel.EventModel` to `EventModel`. Import `Core` for the type and configuration builders. For example, replace `EventModel.eventModel`, `EventModel.appName`, and `EventModel.features` with `eventModel`, `appName`, and `features`. Keep the existing builder body, app name, store factory, transports, Features, and permissions. Keep `Service.EventModel` imports in Feature modules and wherever you use validation or model inspection.\n\n   The application declaration changes as follows. The omitted builder body stays unchanged.\n\n   ```diff\n   -appEventModel :: Result Text EventModel.EventModel\n   -appEventModel = EventModel.eventModel do\n   +appEventModel :: EventModel\n   +appEventModel = eventModel do\n   ```\n\n2. In `launcher/Launcher.hs`, replace the old `Service.EventModel` import with the launcher import shown below. Remove the explicit stdout and stderr buffering calls and their unused `System.IO` import. Keep `import Core`, `import App (appEventModel)`, and `import Task qualified`.\n\n   ```haskell\n   import Service.EventModel.Launcher qualified as EventModel\n\n   main :: IO ()\n   main = appEventModel |> EventModel.run |> Task.runOrPanic\n   ```\n\n   The old `Service.EventModel.run :: Result Text EventModel.EventModel -> Task Text Unit` is removed. The replacement `Service.EventModel.Launcher.run :: EventModel -> Task Text Unit` validates the declaration before starting it.\n\n   Upgrade the CLI and framework together. Neo adds `nhcore:launcher` to the generated executable dependencies. If you manage Cabal yourself, add `build-depends: nhcore:launcher` inside the executable stanza. Add the same dependency to any other component that imports `Service.EventModel.Launcher`. Keep the application's existing dependencies.\n\n3. Validate declarations before inspecting them in tests or custom tooling. Replace `case appEventModel of` with `case EventModel.validate appEventModel of`, with `Service.EventModel qualified as EventModel` imported. Keep handling `Err problem` as a validation failure. The `Ok model` value now has type `EventModel.ValidatedEventModel`. Change explicit type annotations for already validated models to that type. Pass it to `EventModel.modelName`, `EventModel.modelFeatures`, `EventModel.toApplication`, and `Service.EventModel.RuleRunner.declaredRules`, `runRules`, or `specFor`. Keep validation tests asserting their existing expected errors.\n\n4. Preserve your event store, database settings, storage directory, event tags, and JSON encoding. This launcher migration requires no stored-data rewrite and no switch to the new derived event declarations. Keep custom event encoders and decoders. If you also choose to adopt named event payloads, check historical event tags and field encoding separately. Test historical decoding and replay on a copy of existing data before changing those declarations. Report unknown compatibility instead of deleting or rewriting history.\n\n### Verify\n\nRun these commands in your upgraded application directory.\n\n1. Run `neo build`. It must exit successfully with the new launcher import and dependency.\n2. Run `neo test`. Existing tests must pass, including tests for invalid model declarations and any rule-runner tests.\n3. Run `neo run`. Exercise an existing command and query. Confirm that the command succeeds and the query returns the expected state. Stop and restart the app with its existing persistent store, if it has one. Confirm that the query still returns the previously stored state.\n\nIf a command fails or historical decoding is unverified, retain the failing test or data and report the unresolved case. Include the file, diagnostic, command, and observed outcome.",
+            "Summary": "Your application now declares its Event Model as a plain value. Update existing Event Model declarations, launchers, and tests that inspect the model. The launcher sets output buffering and reports invalid declarations before starting services. Your commands, queries, configuration, and stored events do not need to change."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: breaking\ncategory: Breaking changes\n---\n\n## Summary\n\nYour application now declares its Event Model as a plain value. Update existing Event Model declarations, launchers, and tests that inspect the model. The launcher sets output buffering and reports invalid declarations before starting services. Your commands, queries, configuration, and stored events do not need to change.\n\n## Migration\n\n1. In your application module, change `Result Text EventModel.EventModel` to `EventModel`. Import `Core` for the type and configuration builders. For example, replace `EventModel.eventModel`, `EventModel.appName`, and `EventModel.features` with `eventModel`, `appName`, and `features`. Keep the existing builder body, app name, store factory, transports, Features, and permissions. Keep `Service.EventModel` imports in Feature modules and wherever you use validation or model inspection.\n\n   The application declaration changes as follows. The omitted builder body stays unchanged.\n\n   ```diff\n   -appEventModel :: Result Text EventModel.EventModel\n   -appEventModel = EventModel.eventModel do\n   +appEventModel :: EventModel\n   +appEventModel = eventModel do\n   ```\n\n2. In `launcher/Launcher.hs`, replace the old `Service.EventModel` import with the launcher import shown below. Remove the explicit stdout and stderr buffering calls and their unused `System.IO` import. Keep `import Core`, `import App (appEventModel)`, and `import Task qualified`.\n\n   ```haskell\n   import Service.EventModel.Launcher qualified as EventModel\n\n   main :: IO ()\n   main = appEventModel |> EventModel.run |> Task.runOrPanic\n   ```\n\n   The old `Service.EventModel.run :: Result Text EventModel.EventModel -> Task Text Unit` is removed. The replacement `Service.EventModel.Launcher.run :: EventModel -> Task Text Unit` validates the declaration before starting it.\n\n   Upgrade the CLI and framework together. Neo adds `nhcore:launcher` to the generated executable dependencies. If you manage Cabal yourself, add `build-depends: nhcore:launcher` inside the executable stanza. Add the same dependency to any other component that imports `Service.EventModel.Launcher`. Keep the application's existing dependencies.\n\n3. Validate declarations before inspecting them in tests or custom tooling. Replace `case appEventModel of` with `case EventModel.validate appEventModel of`, with `Service.EventModel qualified as EventModel` imported. Keep handling `Err problem` as a validation failure. The `Ok model` value now has type `EventModel.ValidatedEventModel`. Change explicit type annotations for already validated models to that type. Pass it to `EventModel.modelName`, `EventModel.modelFeatures`, `EventModel.toApplication`, and `Service.EventModel.RuleRunner.declaredRules`, `runRules`, or `specFor`. Keep validation tests asserting their existing expected errors.\n\n4. Preserve your event store, database settings, storage directory, event tags, and JSON encoding. This launcher migration requires no stored-data rewrite and no switch to the new derived event declarations. Keep custom event encoders and decoders. If you also choose to adopt named event payloads, check historical event tags and field encoding separately. Test historical decoding and replay on a copy of existing data before changing those declarations. Report unknown compatibility instead of deleting or rewriting history.\n\n### Verify\n\nRun these commands in your upgraded application directory.\n\n1. Run `neo build`. It must exit successfully with the new launcher import and dependency.\n2. Run `neo test`. Existing tests must pass, including tests for invalid model declarations and any rule-runner tests.\n3. Run `neo run`. Exercise an existing command and query. Confirm that the command succeeds and the query returns the expected state. Stop and restart the app with its existing persistent store, if it has one. Confirm that the query still returns the previously stored state.\n\nIf a command fails or historical decoding is unverified, retain the failing test or data and report the unresolved case. Include the file, diagnostic, command, and observed outcome.\n\n## Agent prompt\n\n```text\nMigrate this existing NeoHaskell application's Event Model declaration and launcher. Preserve its domain behavior, app name, configuration, event store factory and directory, transports, Features, permissions, and custom event encoders and decoders. Do not replace the application with the Counter starter.\n\n1. In the application module, replace the declaration type Result Text EventModel.EventModel with EventModel from Core. Replace configuration calls such as EventModel.eventModel, EventModel.appName, and EventModel.features with eventModel, appName, and features imported from Core. Keep the existing builder body. Keep Service.EventModel imports in Feature modules and wherever validation or inspection needs them.\n\n2. In launcher/Launcher.hs, replace import Service.EventModel qualified as EventModel with import Service.EventModel.Launcher qualified as EventModel. Keep import App (appEventModel), import Core, and import Task qualified. Replace main with:\nmain :: IO ()\nmain = appEventModel |> EventModel.run |> Task.runOrPanic\nRemove explicit stdout and stderr buffering calls and the unused System.IO import. The removed Service.EventModel.run accepted Result Text EventModel.EventModel. Service.EventModel.Launcher.run accepts the plain EventModel and validates it before startup. Upgrade the CLI and framework together. Neo generates the executable dependency nhcore:launcher. For a manually maintained Cabal file, add build-depends: nhcore:launcher inside the executable stanza. Add it to any other component importing Service.EventModel.Launcher. Preserve existing dependencies.\n\n3. In tests and custom tooling, replace case appEventModel of with case EventModel.validate appEventModel of, using import Service.EventModel qualified as EventModel. Preserve Err handling and expected error assertions. Ok model is now EventModel.ValidatedEventModel. Update annotations for validated values. Pass that value to EventModel.modelName, EventModel.modelFeatures, EventModel.toApplication, and Service.EventModel.RuleRunner.declaredRules, runRules, or specFor.\n\n4. Do not delete or rewrite stored events or change their tags, JSON fields, database settings, or storage directory. This migration does not require adopting derived named event payloads. Preserve custom codecs. If payload derivation is also requested, inspect historical encoding and test decoding and replay on a copy before changing event declarations. Report uncertain compatibility and leave the data intact.\n\n5. In the upgraded application directory, run neo build and neo test. Both must exit successfully, including existing validation and rule tests. Run neo run and exercise an existing command and query. Confirm the expected state. For an existing persistent store, restart and confirm the old state is still queryable. Keep failing tests. Report changed files, the commands and their exit statuses, runtime results, and every unresolved case with its file and diagnostic. Identify checks you could not run. Do not claim success for a skipped or failing check.\n```\n"
+        }
+      ],
+      "source_sha": "be6ab7e0d4a4b940b83bd1b1d14a8e5f872fe3d6",
+      "target_policy": "native-v2",
+      "version": "0.19.0"
+    },
+    {
+      "base_sha": "474ec108aec7628518bbc96e384e9d67603b85f9",
+      "base_tag": "neo-v0.19.0",
+      "base_version": "0.19.0",
+      "bootstrap": false,
+      "contract_registry_sha256": "993db493d248ac754cf1c6631d03aa63f3be766e489d927a6c72d10d28cbb961",
+      "date": "2026-11-23",
+      "distribution_policy": "installer-v1",
+      "group": "platform",
+      "id": "aea80069e31f1a6312a8f2f5cb418e556cbba7e75222ca1249e35ee2e788ff3c",
+      "impact": "compatible",
+      "kind": "release",
+      "notes": [
+        {
+          "category": "Fixed",
+          "commit": "358a7229a1d3af447cf3d86eb7a0425f0b0ea10a",
+          "component": "CLI",
+          "group": "platform",
+          "hash": "0d1f58a65816903ab78d6430589a4d386c5284c9ff3c5f8713437e6b7d9891a6",
+          "impact": "compatible",
+          "path": ".changes/neo-terminal-cache.md",
+          "sections": {
+            "Summary": "The Neo CLI now builds with the patched terminal cache library. Update Neo to get the fix. Existing projects need no changes."
+          },
+          "text": "---\ngroup: platform\ncomponent: CLI\nimpact: compatible\ncategory: Fixed\n---\n\n## Summary\n\nThe Neo CLI now builds with the patched terminal cache library. Update Neo to get the fix. Existing projects need no changes.\n"
+        }
+      ],
+      "source_sha": "358a7229a1d3af447cf3d86eb7a0425f0b0ea10a",
+      "target_policy": "native-v2",
+      "version": "0.19.1"
+    },
+    {
+      "base_sha": "8783f028459883f9df0c0e02f6181e8a091e5459",
+      "base_tag": "neo-v0.19.1",
+      "base_version": "0.19.1",
+      "bootstrap": false,
+      "contract_registry_sha256": "993db493d248ac754cf1c6631d03aa63f3be766e489d927a6c72d10d28cbb961",
+      "date": "2026-11-24",
+      "distribution_policy": "installer-v1",
+      "group": "platform",
+      "id": "4e732fa56e9948fb03e8e05dc7f5df3588ed1fdf65acf2e3752b8584d5210d56",
+      "impact": "compatible",
+      "kind": "release",
+      "notes": [
+        {
+          "category": "Fixed",
+          "commit": "77a4775f4736c837192b9e503344abc74fbd7326",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "4e196bdd89b61ef7b9092d4e3aec9b2758bfe931126f7ac8a0ebd5b8e4377482",
+          "impact": "compatible",
+          "path": ".changes/oauth-token-response-errors.md",
+          "sections": {
+            "Summary": "When an OAuth2 provider rejects a token request, your app now receives the\nerror that describes the rejection. Before this fix, a rejection such as an\nexpired refresh token or a reused authorization code crashed the request with\nan uncaught JSON exception, so your `onFailure` callback and your token refresh\nerror handling never ran.\n\nThe errors are the existing `OAuth2Error` values:\n\n- `InvalidGrant`, `InvalidClient`, and `ScopeDenied` when the provider returns a\n  standard OAuth2 error. The message is the provider's description. If the\n  provider sends no description, the message is the OAuth2 error code.\n- `TokenRequestFailed` when the provider returns another error status. The\n  message names the HTTP status only.\n- `MalformedResponse` when the provider reports success and the response is not\n  a valid token response.\n- `NetworkError` when the provider cannot be reached.\n\nThis applies to the authorization code exchange and to the token refresh. Error\nmessages never contain the provider's raw response, so tokens cannot leak into\nyour logs through them. A token response larger than 10 MB now returns\n`NetworkError`.\n\nExisting applications do not need code changes. To check your app, connect an\naccount, revoke the app's access at the provider, and trigger a token refresh.\nYour app receives a `RefreshFailed` error and does not crash. Most providers\nreport a revoked refresh token as `InvalidGrant`.\n\nFramework code that imports `Http.Client.Internal` can also call the new\n`postFormRaw`. It sends the form request that `Http.postForm` sends and returns\nthe status code and the undecoded body of every response."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: compatible\ncategory: Fixed\n---\n\n## Summary\n\nWhen an OAuth2 provider rejects a token request, your app now receives the\nerror that describes the rejection. Before this fix, a rejection such as an\nexpired refresh token or a reused authorization code crashed the request with\nan uncaught JSON exception, so your `onFailure` callback and your token refresh\nerror handling never ran.\n\nThe errors are the existing `OAuth2Error` values:\n\n- `InvalidGrant`, `InvalidClient`, and `ScopeDenied` when the provider returns a\n  standard OAuth2 error. The message is the provider's description. If the\n  provider sends no description, the message is the OAuth2 error code.\n- `TokenRequestFailed` when the provider returns another error status. The\n  message names the HTTP status only.\n- `MalformedResponse` when the provider reports success and the response is not\n  a valid token response.\n- `NetworkError` when the provider cannot be reached.\n\nThis applies to the authorization code exchange and to the token refresh. Error\nmessages never contain the provider's raw response, so tokens cannot leak into\nyour logs through them. A token response larger than 10 MB now returns\n`NetworkError`.\n\nExisting applications do not need code changes. To check your app, connect an\naccount, revoke the app's access at the provider, and trigger a token refresh.\nYour app receives a `RefreshFailed` error and does not crash. Most providers\nreport a revoked refresh token as `InvalidGrant`.\n\nFramework code that imports `Http.Client.Internal` can also call the new\n`postFormRaw`. It sends the form request that `Http.postForm` sends and returns\nthe status code and the undecoded body of every response.\n"
+        },
+        {
+          "category": "Added",
+          "commit": "f60da612bdf33f52878425486196a21fa346fc14",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "33298eca3a763abde340d32ea5d1bda41f89fbfb8a2123c61cfeef6219f61685",
+          "impact": "compatible",
+          "path": ".changes/query-route-publication.md",
+          "sections": {
+            "Summary": "To publish a mug shop order detail page without exposing an order list, add `only [Lookup]` inside the query declaration. Reading a visible row by UUID returns that row. Requesting the collection returns HTTP 404. Existing queries continue to publish both routes by default."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: compatible\ncategory: Added\n---\n\n## Summary\n\nTo publish a mug shop order detail page without exposing an order list, add `only [Lookup]` inside the query declaration. Reading a visible row by UUID returns that row. Requesting the collection returns HTTP 404. Existing queries continue to publish both routes by default.\n"
+        }
+      ],
+      "source_sha": "f60da612bdf33f52878425486196a21fa346fc14",
+      "target_policy": "native-v2",
+      "version": "0.19.2"
     }
   ],
   "recoveries": [],

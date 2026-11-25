@@ -38,6 +38,12 @@ Run the scenario in another terminal:
 nix develop --command hurl --test testbed/tests/queries/query-by-id.hurl
 ```
 
+The Meter query selects `only [Lookup]`. The cart stock activity query selects `only [Index]`. With the same server running, exercise both selections:
+
+```sh
+nix develop --command hurl --test testbed/tests/scenarios/meter-reading.hurl testbed/tests/scenarios/cart-stock-activity.hurl
+```
+
 Stop the manually started application with Ctrl+C. Give the PostgreSQL user permission to create databases, then run the complete maintained testbed with fresh databases:
 
 ```sh
@@ -235,6 +241,8 @@ Ports 8080 and 8081 must be free.
 # From the repository root, with PostgreSQL running locally.
 nix develop --command .agents/skills/neohaskell-test/scripts/run-testbed --strict
 ```
+
+The Meter feature exercises the starter's event, entity, command and query declarations against the real Web and PostgreSQL services. The command uses the sole registered public adapter. The query uses the recorded event's meter ID to select the destination row. The scenario checks the submitted reading through a keyed query after asynchronous projection. Run it against the running testbed with `nix develop --command hurl --test testbed/tests/scenarios/meter-reading.hurl`, or run the full suite below.
 
 The runner builds and starts both testbed applications and the fake external services. It requires a PostgreSQL user that can create databases. Each run creates separate fresh databases for the two applications and prints their names for inspection. It retains those databases, runs every Hurl file, and stops the processes it started. Ports 8080 and 8081 must be free. The strict command fails if any checked-in Hurl file is missing from the successful run. This includes `testbed/tests/files/upload.hurl`, `download.hurl`, and `upload-errors.hurl`. The `save-iban.hurl` scenario posts to `/commands/save-iban` and reads the saved IBAN through the cart summary query. The `request-origin.hurl` scenario sends a Web request with a User-Agent and checks that the command receives both origin fields. Its event stores presence booleans only.
 

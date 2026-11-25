@@ -1,18 +1,13 @@
-module Starter.Counter.Events.CounterIncremented (Event (..)) where
+module Starter.Counter.Events.CounterIncremented (CounterIncremented (..)) where
 
 import Core
-import Json qualified
+import Derive
 
 
--- | A counter's value was incremented by `amount`.
-data Event = Event
+data CounterIncremented = CounterIncremented
   { entityId :: Uuid
   , amount :: Int
   }
-  deriving (Generic, Show)
 
 
-instance Json.FromJSON Event
-
-
-instance Json.ToJSON Event
+derive ''CounterIncremented eventPayload

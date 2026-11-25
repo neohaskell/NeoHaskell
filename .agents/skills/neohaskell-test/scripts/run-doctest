@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import math
 import os
 import shutil
@@ -14,7 +15,6 @@ sys.dont_write_bytecode = True
 
 from test_runtime import (
     cabal_packages,
-    dependency_source_dirs,
     invoke_toolchain,
     run_bounded,
     transcript_destination,
@@ -77,18 +77,17 @@ def run_inside(root: Path, strict: bool, timeout: float) -> int:
         return 1 if strict else 0
 
     inventory = [
-        (package, tuple(dict.fromkeys((*package.source_dirs, *dependency_source_dirs(package, packages)))),
-         example_files(package.cabal_file.parent, package.source_dirs))
+        (package, example_files(package.cabal_file.parent, package.source_dirs))
         for package in packages
     ]
-    packages_with_examples = [item for item in inventory if item[2]]
+    packages_with_examples = [item for item in inventory if item[1]]
     if not packages_with_examples:
-        for package, _, _ in inventory:
+        for package, _ in inventory:
             print(f"doctest: SKIP {package.name}: no Haskell source contains '>>>'")
         print(f"doctest: INCOMPLETE: {len(packages)} package(s) skipped")
         return 1 if strict else 0
 
-    missing = [name for name in ("ghc", "doctest") if shutil.which(name) is None]
+    missing = [name for name in ("cabal", "ghc", "doctest") if shutil.which(name) is None]
     if missing:
         print(f"doctest: FAIL: toolchain is missing {', '.join(missing)}")
         return 1
@@ -105,9 +104,27 @@ def run_inside(root: Path, strict: bool, timeout: float) -> int:
         print("doctest: FAIL: GHC returned an empty library directory")
         return 1
 
+    targets = [f"lib:{package.name}" for package, _ in packages_with_examples]
+    build = run_bounded(["cabal", "build", *targets, "--disable-documentation"], cwd=root, env=env, timeout=timeout)
+    if build.returncode or build.timed_out or build.output_limited:
+        print("doctest: FAIL: building example libraries")
+        print(build.output.decode("utf-8", errors="replace"))
+        return 1
+    try:
+        plan = json.loads((root / "dist-newstyle/cache/plan.json").read_text())
+        package_db = root / "dist-newstyle/packagedb" / plan["compiler-id"]
+        dependencies = {
+            unit["pkg-name"]: unit["depends"]
+            for unit in plan["install-plan"]
+            if unit.get("component-name") == "lib" and unit.get("style") == "local"
+        }
+    except (OSError, ValueError, KeyError) as error:
+        print(f"doctest: FAIL: could not read compiled library dependencies: {error}")
+        return 1
+
     skipped = 0
     failed = 0
-    for package, source_dirs, files in inventory:
+    for package, files in inventory:
         if not files:
             print(f"doctest: SKIP {package.name}: no Haskell source contains '>>>'")
             skipped += 1
@@ -117,12 +134,20 @@ def run_inside(root: Path, strict: bool, timeout: float) -> int:
             failed += 1
             continue
 
-        command = [f"-i{path}" for path in source_dirs]
+        if package.name not in dependencies:
+            print(f"doctest: FAIL {package.name}: missing library in Cabal build plan")
+            failed += 1
+            continue
+        command = [f"-i{path}" for path in package.source_dirs]
         language = package.language
         if language and language.lower() not in {"haskell98", "haskell2010"}:
             command.append(f"-X{language}")
         command.extend(f"-X{extension}" for extension in package.extensions)
-        command.extend((f"-package-db={libdir}/package.conf.d", "-w"))
+        command.extend((f"-package-db={libdir}/package.conf.d", f"-package-db={package_db}", "-hide-all-packages"))
+        # The doctest interpreter imports System.IO even in libraries that only depend on Core.
+        command.extend(("-package", "base", "-w"))
+        for unit_id in dependencies[package.name]:
+            command.extend(("-package-id", unit_id))
         command.extend(str(path) for path in files)
         result = run_bounded(["doctest", *command], cwd=root, env=env, timeout=timeout)
         output = result.output.decode("utf-8", errors="replace")

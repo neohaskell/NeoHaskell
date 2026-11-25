@@ -1,11 +1,3 @@
--- | Decider unit tests for @IncrementCounter.decide@ — the pure command handler.
---
--- This is the fastest, most numerous test layer: it exercises the accept/reject
--- rules of a command in isolation, with no HTTP and no event store. Rejections are
--- listed before the happy path so the data types are forced into shape first.
---
--- Add a new command? Copy this file to @test/Decider/<Context>/<Command>Spec.hs@;
--- hspec-discover (see @test/Spec.hs@) picks it up automatically.
 module Decider.Counter.IncrementCounterSpec (spec) where
 
 import Array qualified
@@ -18,8 +10,6 @@ import Starter.Counter.Entity (CounterEntity (..))
 import Test
 import Uuid qualified
 
-
--- | Run a @decide@ result to a concrete accept/reject decision for assertions.
 runTestDecision :: Decision event -> Task Text (CommandResult event)
 runTestDecision decision = do
   let decisionCtx = DecisionContext {genUuid = Uuid.generate}

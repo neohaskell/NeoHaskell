@@ -9,7 +9,7 @@
 --
 -- >>> TH.nameBase (TH.mkName "Cart")
 -- "Cart"
-module Service.Entity.TH (deriveEntity) where
+module Service.Entity.TH (deriveEntity, deriveEntityState) where
 
 import Appendable ((++))
 import Basics (Generic, (==), fmt, pure) -- HOOK-ALLOW: TH.Q compiler support below Core; Task cannot replace this Applicative.
@@ -30,29 +30,35 @@ import Service.TH.Boilerplate (emitEmptyInstance, emitInstanceIfMissing, emitSto
 -- instances are preserved. Incompatible event/entity associations fail early.
 deriveEntity :: TH.Name -> TH.Name -> THLib.DecsQ
 deriveEntity entityName eventName = do
-  nameDeclarations <- emitNameIfMissing entityName
+  stateDeclarations <- deriveState entityName (emitEntityInstance entityName)
   eventOfDeclarations <- emitCheckedFamily ''Entity.EventOf entityName eventName
   entityOfDeclarations <- emitCheckedFamily ''Entity.EntityOf eventName entityName
+  routingDeclarations <-
+    emitInstanceIfMissing ''Entity.Event eventName (emitRoutingInstance eventName)
+  pure (stateDeclarations ++ eventOfDeclarations ++ entityOfDeclarations ++ routingDeclarations)
+
+
+-- | Bind the state record to hooks in the declaration group following its generated event sum.
+deriveEntityState :: TH.Name -> THLib.DecsQ
+deriveEntityState entityName = do
+  let hooks =
+        [ methodDeclaration 'Entity.initialStateImpl (TH.mkName "initialState")
+        , methodDeclaration 'Entity.updateImpl (TH.mkName "update")
+        ]
+  deriveState entityName (pure [instanceDeclaration ''Entity.Entity entityName hooks])
+
+
+deriveState :: TH.Name -> THLib.DecsQ -> THLib.DecsQ
+deriveState entityName entityMethods = do
+  nameDeclarations <- emitNameIfMissing entityName
   genericDeclarations <- emitStockDeriving ''Generic entityName
   fromJsonDeclarations <- emitEmptyInstance ''Json.FromJSON entityName
   toJsonDeclarations <- emitEmptyInstance ''Json.ToJSON entityName
   entityDeclarations <-
-    emitInstanceIfMissing ''Entity.Entity entityName (emitEntityInstance entityName)
+    emitInstanceIfMissing ''Entity.Entity entityName entityMethods
   defaultDeclarations <-
     emitInstanceIfMissing ''Default.Default entityName (emitDefaultInstance entityName)
-  routingDeclarations <-
-    emitInstanceIfMissing ''Entity.Event eventName (emitRoutingInstance eventName)
-  pure -- HOOK-ALLOW: return compiler declarations in TH.Q, not a runtime Task.
-    ( nameDeclarations
-        ++ eventOfDeclarations
-        ++ entityOfDeclarations
-        ++ genericDeclarations
-        ++ fromJsonDeclarations
-        ++ toJsonDeclarations
-        ++ entityDeclarations
-        ++ defaultDeclarations
-        ++ routingDeclarations
-    )
+  pure (nameDeclarations ++ genericDeclarations ++ fromJsonDeclarations ++ toJsonDeclarations ++ entityDeclarations ++ defaultDeclarations)
 
 
 -- | Emit the entity name mapping when the application has not supplied one.

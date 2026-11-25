@@ -27,7 +27,10 @@ module Service.Application (
   withEventStore,
   withQueryObjectStore,
   withQuery,
+  withQueryOnly,
+  QueryRoute (..),
   withQuerySources,
+  withQuerySourcesOnly,
   withQueryEndpoint,
   withServiceRunner,
   withService,
@@ -49,6 +52,7 @@ module Service.Application (
   withoutHealthCheck,
   withHost,
   withPort,
+  withPortFromConfig,
   withDispatcherConfig,
   useQueryObjectStore,
   useReadinessEndpoint,
@@ -81,6 +85,7 @@ module Service.Application (
 
   -- * Running
   run,
+  runValidated,
   runWith,
   runWithAsync,
 ) where
@@ -123,6 +128,7 @@ import Map qualified
 import Record qualified
 import Schema qualified
 import LinkedList (LinkedList)
+import LinkedList qualified
 import Maybe (Maybe (..))
 import Maybe qualified
 import Result (Result (..))
@@ -130,7 +136,7 @@ import Service.Command.Core (NameOf)
 import Service.Entity.Core (Entity (..), EntityOf, EventOf)
 import Service.EventStore (EventStore (..), EventStoreConfig (..))
 import Service.Query.Core (EntitiesOf, Query)
-import Service.Query.Definition (QueryDefinition (..), WireEntities)
+import Service.Query.Definition (QueryDefinition (..), QueryRoute (..), WireEntities)
 import Service.Query.Definition qualified as Definition
 import Service.QueryObjectStore.Core (QueryObjectStoreConfig (..))
 import Service.QueryObjectStore.InMemory qualified as InMemory
@@ -163,7 +169,7 @@ import Service.FileUpload.Core qualified as FileUploadCore
 import Service.FileUpload.Lifecycle qualified as FileLifecycle
 import Config qualified
 import Config.Global qualified as ConfigGlobal
-import Data.Typeable (Typeable, eqT)
+import Data.Typeable (Typeable, cast, eqT)
 import Data.Type.Equality ((:~:)(..))
 import OptEnvConf (HasParser)
 import Task (Task)
@@ -267,6 +273,9 @@ data QueryObjectStoreConfigValue = forall config. (QueryObjectStoreConfig config
 --
 -- This allows storing the config loader in Application without knowing the concrete type.
 -- The config type is captured at 'withConfig' and loaded during 'run'.
+data ConfiguredPort = forall config. (Typeable config) => ConfiguredPort (config -> Int)
+
+
 data ConfigSpec = forall config. (HasParser config, Typeable config) => ConfigSpec (Task Text config)
 
 
@@ -417,7 +426,8 @@ data Application = Application
     -- | Interface the WebTransport binds. Set via withHost; Nothing keeps the transport's own host.
     bindHost :: Maybe Text,
     -- | Port the WebTransport binds. Set via withPort; Nothing keeps the transport's own port.
-    bindPort :: Maybe Int
+    bindPort :: Maybe Int,
+    portFromConfig :: Maybe ConfiguredPort
   }
 
 
@@ -457,6 +467,7 @@ new =
       integrationRegistrations = Array.empty,
       readinessConfig = Just ReadinessConfig {readinessPath = "ready", includeQueryStatus = True},
       bindHost = Nothing,
+      portFromConfig = Nothing,
       bindPort = Nothing
     }
 
@@ -563,6 +574,18 @@ withQueryObjectStore config app =
   app {queryObjectStoreConfig = Just (QueryObjectStoreConfigValue config)}
 
 
+type RegistrableQuery query queryName entities =
+  ( Query query,
+    Schema.ToSchema query,
+    Json.ToJSON query,
+    Json.FromJSON query,
+    queryName ~ NameOf query,
+    entities ~ EntitiesOf query,
+    GHC.KnownSymbol queryName,
+    WireEntities entities query
+  )
+
+
 -- | Register a query type with automatic wiring.
 --
 -- This is the declarative way to add queries to an Application. At runtime,
@@ -571,7 +594,7 @@ withQueryObjectStore config app =
 -- * QueryObjectStore for storing query instances (using the configured backend)
 -- * EntityFetcher for reconstructing entity state (for each entity in EntitiesOf query)
 -- * QueryUpdater for handling entity events (for each entity)
--- * HTTP endpoint at @GET /queries/{query-name}@
+-- * The collection and UUID lookup endpoints
 --
 -- The query name is derived from 'NameOf query' in kebab-case.
 -- All entities listed in 'EntitiesOf query' are automatically wired.
@@ -589,58 +612,47 @@ withQueryObjectStore config app =
 -- @
 withQuery ::
   forall query queryName entities.
-  ( Query query,
-    Schema.ToSchema query,
-    Json.ToJSON query,
-    Json.FromJSON query,
-    queryName ~ NameOf query,
-    entities ~ EntitiesOf query,
-    GHC.KnownSymbol queryName,
-    WireEntities entities query
-  ) =>
-  Application ->
-  Application
-withQuery app = addQueryDefinition @query (\definition -> definition) app
+  (RegistrableQuery query queryName entities) =>
+  Application -> Application
+withQuery = withQueryOnly @query Definition.defaultQueryRoutes
+
+
+-- | Register a query and publish only the selected reads.
+-- An empty list keeps the projection running without publishing either route.
+withQueryOnly ::
+  forall query queryName entities.
+  (RegistrableQuery query queryName entities) =>
+  [QueryRoute] -> Application -> Application
+withQueryOnly routes = addQueryDefinition @query routes identity
 
 
 -- | Register a query for only the entity and payload sources in its Slice.
 withQuerySources ::
   forall query queryName entities.
-  ( Query query,
-    Schema.ToSchema query,
-    Json.ToJSON query,
-    Json.FromJSON query,
-    queryName ~ NameOf query,
-    entities ~ EntitiesOf query,
-    GHC.KnownSymbol queryName,
-    WireEntities entities query
-  ) =>
-  [Definition.EventSubscription] ->
-  Application ->
-  Application
-withQuerySources subscriptions app = addQueryDefinition @query (Definition.restrictToSources subscriptions) app
+  (RegistrableQuery query queryName entities) =>
+  [Definition.EventSubscription] -> Application -> Application
+withQuerySources = withQuerySourcesOnly @query Definition.defaultQueryRoutes
+
+
+-- | Register the sources and published reads declared in a query Slice.
+withQuerySourcesOnly ::
+  forall query queryName entities.
+  (RegistrableQuery query queryName entities) =>
+  [QueryRoute] -> [Definition.EventSubscription] -> Application -> Application
+withQuerySourcesOnly routes subscriptions =
+  addQueryDefinition @query routes (Definition.restrictToSources subscriptions)
 
 
 addQueryDefinition ::
   forall query queryName entities.
-  ( Query query,
-    Schema.ToSchema query,
-    Json.ToJSON query,
-    Json.FromJSON query,
-    queryName ~ NameOf query,
-    entities ~ EntitiesOf query,
-    GHC.KnownSymbol queryName,
-    WireEntities entities query
-  ) =>
-  (QueryDefinition -> QueryDefinition) ->
-  Application ->
-  Application
-addQueryDefinition adjust app = do
+  (RegistrableQuery query queryName entities) =>
+  [QueryRoute] -> (QueryDefinition -> QueryDefinition) -> Application -> Application
+addQueryDefinition routes adjust app = do
   let storeFactory = case app.queryObjectStoreConfig of
         Just (QueryObjectStoreConfigValue config) -> createQueryObjectStore config
         Nothing -> \_ -> InMemory.new |> Task.mapError toText
   let definition = Definition.createDefinitionWithStore @query storeFactory
-  app {queryDefinitions = app.queryDefinitions |> Array.push (adjust definition)}
+  app {queryDefinitions = app.queryDefinitions |> Array.push (adjust definition {queryRoutes = routes})}
 
 
 -- | Check if any query definitions have been registered.
@@ -827,14 +839,20 @@ initAndWrapFileUpload fileConfig = do
 --   |> Application.run
 -- @
 run :: Application -> Task Text Unit
-run app =
+run app = runValidated (Ok app)
+
+
+-- | Initialize process output before reporting validation errors or acquiring resources.
+runValidated :: Result Text Application -> Task Text Unit
+runValidated ~validated =
    Log.withScope [("component", "Application")] do
-     validateStaticBindOverrides app
-     -- 0. Set line buffering for stdout/stderr (container visibility)
-     -- GHC defaults to block buffering when isatty() returns false (always in containers),
-     -- which makes Console.print output invisible. LineBuffering ensures immediate visibility.
      Task.fromIO (GhcIO.hSetBuffering GhcIO.stdout GhcIO.LineBuffering)
      Task.fromIO (GhcIO.hSetBuffering GhcIO.stderr GhcIO.LineBuffering)
+     app <- case validated of
+       Err problem -> Task.throw problem
+       Ok value -> Task.yield value
+     app.serviceRunners |> Task.forEach (ServiceDefinition.validateCommandTransports app.transports)
+     validateStaticBindOverrides app
 
      -- 1. Load .env file if present (before config loading)
      -- This allows environment variables to be set from .env files
@@ -842,8 +860,10 @@ run app =
      Environment.loadEnvFileIfPresent ".env"
 
      -- 2. Load config (now that .env vars are available)
-     case app.configSpec of
-       Nothing -> pass
+     configuredPort <- case app.configSpec of
+       Nothing -> case app.portFromConfig of
+         Nothing -> Task.yield app.bindPort
+         Just _ -> Task.throw "withPortFromConfig requires withConfig"
        Just (ConfigSpec loadConfig) -> do
          Log.info "Loading configuration..."
            |> Task.ignoreError
@@ -852,6 +872,15 @@ run app =
          Task.fromIO (ConfigGlobal.setGlobalConfig config)
          Log.info "Configuration loaded successfully"
            |> Task.ignoreError
+         case app.portFromConfig of
+           Nothing -> Task.yield app.bindPort
+           Just (ConfiguredPort select) -> case cast config of
+             Nothing -> Task.throw "withPortFromConfig expects the type registered with withConfig"
+             Just typedConfig -> do
+               let port = select typedConfig
+               case Web.validateBindPort port of
+                 Just reason -> Task.throw [fmt|withPortFromConfig: #{reason}|]
+                 Nothing -> Task.yield (Just port)
 
      -- 2b. Parse ADR-0055 integration selection from argv and wire DispatchRegistry
      (registry, maybeIntegrationStatus) <- buildIntegrationContext app
@@ -982,7 +1011,8 @@ run app =
                app.inboundIntegrations
      -- 6. Run with resolved event store, file upload, auth, and config-dependent settings
      let resolvedApp = app
-           { corsConfig = resolvedCorsConfig
+           { bindPort = configuredPort
+           , corsConfig = resolvedCorsConfig
            , apiInfo = resolvedApiInfo
            , healthCheckConfig = resolvedHealthCheckConfig
            , dispatcherConfig = resolvedDispatcherConfig
@@ -1023,6 +1053,10 @@ validateStaticBindOverrides app =
 -- 6. Runs each transport once with combined endpoints
 runWith :: EventStore Json.Value -> Application -> Task Text Unit
 runWith eventStore app = do
+  app.serviceRunners |> Task.forEach (ServiceDefinition.validateCommandTransports app.transports)
+  case app.portFromConfig of
+    Just _ -> Task.throw "runWith cannot load a config-dependent port. Use Application.run or withPort."
+    Nothing -> pass
   validateStaticBindOverrides app
   -- Resolve file upload (only EvaluatedFileUpload supported - DeferredFileUpload requires run)
   (maybeFileUploadSetup, fileUploadCleanup) <- case app.fileUploadFactory of
@@ -1086,6 +1120,21 @@ runWith eventStore app = do
   runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup maybeWebAuthSetup maybeIntegrationStatus registry resolvedApp
 
 
+validateQueryRoutes :: [QueryDefinition] -> Task Text Unit
+validateQueryRoutes = check Map.empty
+  where
+    check :: Map Text [QueryRoute] -> [QueryDefinition] -> Task Text Unit
+    check _ [] = pass
+    check seen (definition : rest) = do
+      let name = definition.queryName
+      let routes = Definition.defaultQueryRoutes
+            |> LinkedList.filter (\route -> LinkedList.member route definition.queryRoutes)
+      case Map.get name seen of
+        Just previous | previous != routes ->
+          Task.throw [fmt|Conflicting published routes for query '#{name}'. Select the same routes in each registration.|]
+        _ -> check (Map.set name routes seen) rest
+
+
 -- | Internal: Run application with pre-resolved EventStore, FileUpload, and Auth.
 --
 -- This is the core implementation that both 'run' and 'runWith' delegate to.
@@ -1100,29 +1149,29 @@ runWithResolved ::
   Application ->
   Task Text Unit
 runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup maybeWebAuthSetup maybeIntegrationStatus integrationRegistry app = do
+  validateQueryRoutes (Array.toLinkedList app.queryDefinitions)
   -- 1. Wire all query definitions and collect registries + endpoints + schemas
   wiredQueries <-
     app.queryDefinitions
-      |> Task.mapArray (\def -> def.wireQuery eventStore)
+      |> Task.mapArray (\definition -> do
+          (registry, endpoint) <- definition.wireQuery eventStore
+          Task.yield (registry, definition.queryRoutes, endpoint))
 
   -- 2. Combine all registries from query definitions with the manual registry
   let combinedRegistry =
         wiredQueries
-          |> Array.reduce (\(reg, _endpoint) acc -> mergeRegistries reg acc) app.queryRegistry
+          |> Array.reduce (\(reg, _, _) acc -> mergeRegistries reg acc) app.queryRegistry
 
-  -- 3. Combine all query endpoints from definitions with manual endpoints
-  let combinedQueryEndpoints =
-        wiredQueries
-          |> Array.reduce (\(_reg, wired) acc -> acc |> Map.set wired.wiredQueryName wired.wiredCollectionHandler) app.queryEndpoints
-
-  -- 3b. Collect all query schemas
-  let combinedQuerySchemas =
-        wiredQueries
-          |> Array.reduce (\(_reg, wired) acc -> acc |> Map.set wired.wiredQueryName wired.wiredCollectionSchema) Map.empty
-
-  let combinedQueryByIdEndpoints =
-        wiredQueries
-          |> Array.reduce (\(_reg, wired) acc -> acc |> Map.set wired.wiredQueryName wired.wiredQueryById) Map.empty
+  let endpointsFor route = wiredQueries
+        |> Array.takeIf (\(_, routes, _) -> LinkedList.member route routes)
+        |> Array.map (\(_, _, endpoint) -> endpoint)
+  let indexes = endpointsFor Index
+  let combinedQueryEndpoints = indexes
+        |> Array.reduce (\wired acc -> acc |> Map.set wired.wiredQueryName wired.wiredCollectionHandler) app.queryEndpoints
+  let combinedQuerySchemas = indexes
+        |> Array.reduce (\wired acc -> acc |> Map.set wired.wiredQueryName wired.wiredCollectionSchema) Map.empty
+  let combinedQueryByIdEndpoints = endpointsFor Lookup
+        |> Array.reduce (\wired acc -> acc |> Map.set wired.wiredQueryName wired.wiredQueryById) Map.empty
 
   -- 4. Collect command endpoints and schemas from all services, grouped by transport
   endpointsAndSchemasByTransport <-
@@ -1946,7 +1995,13 @@ withPort ::
   Application ->
   Application
 withPort port app =
-  app {bindPort = Just port}
+  app {bindPort = Just port, portFromConfig = Nothing}
+
+
+-- | Select the Web bind port after the registered configuration has loaded.
+withPortFromConfig :: (Typeable config) => (config -> Int) -> Application -> Application
+withPortFromConfig select app =
+  app {bindPort = Nothing, portFromConfig = Just (ConfiguredPort select)}
 
 
 -- | Validate dispatcher configuration fields are positive.

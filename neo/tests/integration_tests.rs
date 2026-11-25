@@ -176,7 +176,7 @@ fn test_neo_new_offline_scaffolds_full_starter() {
     assert!(project.join("src/App.hs").exists(), "offline scaffold missing src/App.hs");
     assert!(project.join("launcher/Launcher.hs").exists(), "offline scaffold missing launcher/Launcher.hs");
     assert!(
-        project.join("src/Starter/Counter/Event.hs").exists(),
+        project.join("src/Starter/Counter/Entity.hs").exists(),
         "offline scaffold missing the embedded starter domain module — a stub, not the full starter, was written"
     );
     assert!(project.join("flake.nix").exists(), "offline scaffold missing flake.nix");

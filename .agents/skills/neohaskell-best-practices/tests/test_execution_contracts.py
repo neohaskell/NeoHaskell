@@ -4,6 +4,7 @@ import contextlib
 import importlib.machinery
 import importlib.util
 import io
+import json
 import os
 from pathlib import Path
 import signal
@@ -330,10 +331,19 @@ class CorrectnessRegressionTests(unittest.TestCase):
             "name: example\nlibrary\n  hs-source-dirs: .\n  default-language: Haskell2010\n"
         )
         (package / "Example.hs").write_text('module Example where\ntoken = ">>>"\n')
+        self.write_executable(binary / "cabal", "raise SystemExit(0)")
+        plan = self.root / "dist-newstyle/cache/plan.json"
+        plan.parent.mkdir(parents=True)
+        plan.write_text(json.dumps({
+            "compiler-id": "ghc-fixture",
+            "install-plan": [{"pkg-name": "example", "component-name": "lib", "style": "local", "depends": ["fixture-dependency"]}],
+        }))
         self.write_executable(binary / "ghc", 'print("/fixture/lib")')
         self.write_executable(
             binary / "doctest",
-            'import os; print(os.environ["DOCTEST_SUMMARY"])',
+            'import os, sys\n'
+            'assert "-hide-all-packages" in sys.argv and "fixture-dependency" in sys.argv\n'
+            'print(os.environ["DOCTEST_SUMMARY"])',
         )
         environment = {**os.environ, "PATH": str(binary)}
         cases = [

@@ -1,9 +1,5 @@
-# HLint configuration file
-# https://github.com/ndmitchell/hlint
-
 - arguments: [--color, --cpp-simple, -XQuasiQuotes]
 
-# Ignore hints that conflict with NeoHaskell style
 - ignore: { name: Eta reduce }
 - ignore: { name: Redundant bracket }
 - ignore: { name: Use newtype instead of data }

@@ -5,6 +5,8 @@
 -- Export Feature actions from their owning modules and compose them in 'features'.
 module Service.EventModel (
   EventModel,
+  ValidatedEventModel,
+  validate,
   Feature,
   Chapter,
   Slice,
@@ -44,7 +46,6 @@ module Service.EventModel (
   ViewObservation (..),
   eventModel,
   toApplication,
-  run,
   appName,
   withConfig,
   withIntegration,
@@ -59,6 +60,7 @@ module Service.EventModel (
   withTransport,
   withHost,
   withPort,
+  withPortFromConfig,
   withApiInfo,
   withFileUpload,
   withAuth,
@@ -74,6 +76,8 @@ module Service.EventModel (
   command,
   produces,
   query,
+  only,
+  QueryRoute (..),
   readsFrom,
   onEvent,
   outboundIntegration,
@@ -133,7 +137,7 @@ import Service.EventModel.Types (
   CommandRoot (..),
   CommandTarget (..),
   CommandTargetFor (..),
-  EventModel (..),
+  ValidatedEventModel (..),
   EventRef (..),
   ExpectedEvent (..),
   ExpectedOutcome (..),
@@ -169,13 +173,11 @@ import Service.InboundIntegration.Core (InboundIntegration (..))
 import Service.Integration.Dispatcher (DispatcherConfig)
 import Service.OutboundIntegration.Core (OutboundIntegration (..))
 import Service.Query.Core (EntitiesOf, Query, QueryAction (..), QueryOf)
-import Service.Query.Definition (EventSubscription (..), WireEntities)
+import Service.Query.Definition (EventSubscription (..), QueryRoute (..), WireEntities, defaultQueryRoutes)
 import Service.QueryObjectStore.Core (QueryObjectStoreConfig)
 import Service.ServiceDefinition.Core (RunnableCommand (..))
 import Service.Transport (Transport)
 import Service.Transport.Web qualified as Web
-import Task (Task)
-import Task qualified
 import Text (Text)
 import Text qualified
 import Type.Reflection (Typeable)
@@ -192,11 +194,11 @@ type FeatureAction = Writer [([Text], Feature)] ()
 type EventModelAction = Writer [ModelPart] ()
 
 
-modelName :: EventModel -> Text
+modelName :: ValidatedEventModel -> Text
 modelName model = model.modelName
 
 
-modelFeatures :: EventModel -> [Feature]
+modelFeatures :: ValidatedEventModel -> [Feature]
 modelFeatures model = model.modelFeatures
 
 
@@ -343,10 +345,18 @@ validateViewSubscription name sources selected = case selected.ruleWhen of
           [fmt|Rule "#{name}" when payload #{Types.typeName (Proxy @payload)} is not listed by the query's onEvent subscriptions|]
 
 
--- | Assemble a named topology and reject malformed local structure.
--- Evaluation does not derive Event ADTs or start application workers.
-eventModel :: EventModelAction -> Result Text EventModel
-eventModel builder =
+-- | An application declaration whose structure is checked before it starts.
+newtype EventModel = EventModel EventModelAction
+
+
+-- | Describe an application without starting resources or losing builder diagnostics.
+eventModel :: EventModelAction -> EventModel
+eventModel = EventModel
+
+
+-- | Check a declaration before inspecting its topology or registering workers.
+validate :: EventModel -> Result Text ValidatedEventModel
+validate (EventModel builder) =
   let parts = Writer.execWriter builder
       names = [name | ModelName name <- parts]
       featureResults = Prelude.concat [found | ModelFeatures found <- parts]
@@ -360,7 +370,7 @@ eventModel builder =
       validFeatures = [selected | (_, selected) <- featureResults]
   in  case names of
         [name] ->
-          let model = EventModel {modelName = name, modelFeatures = validFeatures, modelConfiguration = configuration}
+          let model = ValidatedEventModel {modelName = name, modelFeatures = validFeatures, modelConfiguration = configuration}
               modelProblems = case validateModel model of
                 Ok _ -> []
                 Err problem -> [problem]
@@ -372,17 +382,10 @@ eventModel builder =
 
 
 -- | Register every validated Slice with the existing Application runtime.
-toApplication :: EventModel -> Application
+toApplication :: ValidatedEventModel -> Application
 toApplication model = do
   let configured = Prelude.foldl (\application configure -> configure application) Application.new model.modelConfiguration
   Prelude.foldl registerFeature configured model.modelFeatures
-
-
--- | Validate the named model before starting application effects.
-run :: Result Text EventModel -> Task Text Unit
-run modelResult = case modelResult of
-  Err problem -> Task.throw problem
-  Ok model -> Application.run (toApplication model)
 
 
 withConfig :: forall config. (HasParser config, Typeable config) => EventModelAction
@@ -455,6 +458,11 @@ withHost host = Writer.tell [ModelConfiguration (Application.withHost host)]
 -- Delegates to 'Application.withPort'.
 withPort :: Int -> EventModelAction
 withPort port = Writer.tell [ModelConfiguration (Application.withPort port)]
+
+
+-- | Bind the Web server to a port read from the loaded application configuration.
+withPortFromConfig :: (Typeable config) => (config -> Int) -> EventModelAction
+withPortFromConfig select = withApplicationConfiguration (Application.withPortFromConfig select)
 
 
 withApiInfo :: forall config. (Typeable config) => (config -> ApiInfo) -> EventModelAction
@@ -565,6 +573,11 @@ produces ::
 produces = Writer.tell [Produced (Proxy @payload)]
 
 
+data QueryPart query
+  = QuerySource (ReadSource query)
+  | OnlyRoutes [QueryRoute]
+
+
 query ::
   forall query queryName entities.
   ( Query query,
@@ -577,11 +590,20 @@ query ::
     GHC.KnownSymbol queryName,
     WireEntities entities query
   ) =>
-  Writer [ReadSource query] () -> Writer [SlicePart ('View query)] ()
+  Writer [QueryPart query] () -> Writer [SlicePart ('View query)] ()
 query builder = do
-  let sources = Writer.execWriter builder
+  let parts = Writer.execWriter builder
+  let sources = [source | QuerySource source <- parts]
+  let restrictions = [routes | OnlyRoutes routes <- parts]
+  let published = [route | route <- defaultQueryRoutes, Prelude.all (Prelude.elem route) restrictions]
   let subscriptions = Prelude.map sourceSubscription sources
-  Writer.tell [SlicePrimary (StateView (Proxy @query) sources (Application.withQuerySources @query subscriptions))]
+  Writer.tell [SlicePrimary (StateView (Proxy @query) sources (Application.withQuerySourcesOnly @query published subscriptions))]
+
+
+-- | Publish only these query reads. Repeated declarations keep their intersection.
+-- An empty list leaves the projection subscribed without exposing a read route.
+only :: [QueryRoute] -> Writer [QueryPart query] ()
+only routes = Writer.tell [OnlyRoutes routes]
 
 
 readsFrom ::
@@ -593,8 +615,8 @@ readsFrom ::
     GHC.KnownSymbol (NameOf entity),
     Json.FromJSON (EventOf entity)
   ) =>
-  Writer [EventRef entity] () -> Writer [ReadSource query] ()
-readsFrom builder = Writer.tell [ReadSource (Proxy @entity) (Writer.execWriter builder)]
+  Writer [EventRef entity] () -> Writer [QueryPart query] ()
+readsFrom builder = Writer.tell [QuerySource (ReadSource (Proxy @entity) (Writer.execWriter builder))]
 
 
 sourceSubscription :: ReadSource query -> EventSubscription
@@ -751,7 +773,7 @@ targetNames :: CommandTarget -> (Text, Text)
 targetNames (CommandTarget commandProxy entityProxy) = (Types.typeName commandProxy, Types.typeName entityProxy)
 
 
-validateModel :: EventModel -> Result Text EventModel
+validateModel :: ValidatedEventModel -> Result Text ValidatedEventModel
 validateModel model =
   let featuresFound = model.modelFeatures
       emptyModel = if Prelude.null featuresFound then ["eventModel requires at least one Feature"] else []

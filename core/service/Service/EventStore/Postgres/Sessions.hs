@@ -3,7 +3,7 @@ module Service.EventStore.Postgres.Sessions where
 import Array qualified
 import Bytes qualified
 import Contravariant.Extras qualified as Contravariant
-import Core
+import Core.Prelude
 import Data.ByteString qualified as ByteString
 import Data.Functor.Contravariant ((>$<))
 import Data.Semigroup ((<>))

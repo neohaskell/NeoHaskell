@@ -53,7 +53,7 @@ module Service.FileUpload.FileStateStore.Postgres (
 import Basics
 import Bytes qualified
 import Control.Monad.Except (catchError, throwError)
-import Core
+import Core.Prelude
 import Data.Functor.Contravariant ((>$<))
 import Data.Semigroup ((<>))
 import Hasql.Decoders qualified as Decoders

@@ -1,7 +1,7 @@
 {-| Assemble the neoctl HTTP service and its placeholder query.
-Run this model with 'EventModel.run'.
+The launcher builds the model from 'appSettings'.
 -}
-module App (appEventModel) where
+module App (appSettings) where
 
 import Core
 import Maybe qualified
@@ -12,8 +12,8 @@ import Service.Transport.Web qualified as WebTransport
 import Service.EventStore.Simple (SimpleEventStore (..))
 
 
-appEventModel :: Result Text EventModel.EventModel
-appEventModel = EventModel.eventModel do
+appSettings :: EventModel.EventModelAction
+appSettings = do
   EventModel.appName "neoctl"
   EventModel.withEventStore @() (\_ -> SimpleEventStore {basePath = Path.fromText ".neo/events" |> Maybe.getOrDie, persistent = False})
   EventModel.withTransport WebTransport.server

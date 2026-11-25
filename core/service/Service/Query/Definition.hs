@@ -4,6 +4,8 @@
 module Service.Query.Definition (
   QueryDefinition (..),
   WiredQueryEndpoint (..),
+  QueryRoute (..),
+  defaultQueryRoutes,
   createDefinition,
   createDefinitionWithStore,
   EventSubscription (..),
@@ -47,6 +49,18 @@ import Uuid (Uuid)
 import Prelude qualified
 
 
+-- | Reads that a registered query publishes to transports.
+data QueryRoute
+  = Index -- ^ List visible rows.
+  | Lookup -- ^ Read one visible row by its UUID.
+  deriving (Eq, Show)
+
+
+-- | Existing query registrations publish both reads.
+defaultQueryRoutes :: [QueryRoute]
+defaultQueryRoutes = [Index, Lookup]
+
+
 -- | Captures how to wire a query type at runtime.
 --
 -- A QueryDefinition contains all the information needed to:
@@ -61,6 +75,7 @@ import Prelude qualified
 data QueryDefinition = QueryDefinition
   { queryName :: Text,
     querySchema :: Schema,
+    queryRoutes :: [QueryRoute],
     -- | Given an EventStore, creates the query infrastructure and returns:
     -- - QueryRegistry entries for this query's entities
     -- - Its collection and UUID handlers with their schemas
@@ -217,6 +232,7 @@ createDefinitionWithStore storeFactory = do
   QueryDefinition
     { queryName = queryNameText,
       querySchema = schema,
+      queryRoutes = defaultQueryRoutes,
       wireQuery = \rawEventStore -> do
         -- 1. Create QueryObjectStore using the provided factory, handing it the
         --    query's own name so shared-storage backends isolate its rows (#734).

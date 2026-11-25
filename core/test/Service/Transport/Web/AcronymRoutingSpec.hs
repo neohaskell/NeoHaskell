@@ -14,7 +14,10 @@ import Network.HTTP.Types.Status qualified as HTTPStatus
 import Network.Wai qualified as Wai
 import Network.Wai.Test qualified as WaiTest
 import Service qualified
+import Service.AccessControl (AccessError (Unauthenticated))
 import Service.Auth (RequestContext)
+import Service.Auth qualified as Auth
+import Service.Response (CommandResponse (Unauthorized))
 import Service.Command.Core (TransportsOf)
 import Service.CommandExecutor.TH (command)
 import Service.EntityFetcher.Core qualified as EntityFetcher
@@ -24,6 +27,7 @@ import Service.EventStore.Core qualified as EventStore
 import Service.EventStore.InMemory qualified as InMemory
 import Service.ServiceDefinition.Core qualified as ServiceDefinition
 import Service.Transport qualified as Transport
+import Service.Transport.Internal (InternalTransport)
 import Service.Transport.Mcp (McpTransport (..))
 import Service.Transport.Web qualified as Web
 import Service.Transport.Web.RequestBodyFailureSpec (WebDecodeProbeCommand, WebDecodeProbeEntity (..), WebDecodeProbeEvent (..))
@@ -51,7 +55,7 @@ decide cmd maybeEntity _ctx = case maybeEntity of
 type instance EntityOf WebDecodeProbeCOMMAND = WebDecodeProbeEntity
 
 
-type instance TransportsOf WebDecodeProbeCOMMAND = '[Web.WebTransport, McpTransport]
+type instance TransportsOf WebDecodeProbeCOMMAND = '[Web.WebTransport, McpTransport, InternalTransport]
 
 
 command ''WebDecodeProbeCOMMAND
@@ -117,7 +121,36 @@ spec = do
       webHandlers |> shouldSatisfy (\bucket -> case bucket of {Just entries -> Map.contains "web-decode-probe-command" entries; Nothing -> False})
       webSchemas |> shouldSatisfy (\bucket -> case bucket of {Just entries -> Map.contains "web-decode-probe-command" entries; Nothing -> False})
       mcpHandlers |> shouldSatisfy (\bucket -> case bucket of {Just entries -> Map.contains "WebDecodeProbeCOMMAND" entries; Nothing -> False})
-      dispatch |> Map.length |> shouldBe 0
+      dispatch |> Map.keys |> shouldBe ["WebDecodeProbeCOMMAND"]
+      handlers |> Map.contains "InternalTransport" |> shouldBe False
+
+    it "requires authorization on both explicitly selected entry points" \_ -> do
+      eventStore <- InMemory.new |> Task.mapError toText
+      let runner = Service.new |> Service.command @WebDecodeProbeCOMMAND |> Service.toServiceRunner
+      let adapters = Map.fromArray
+            [ ("WebTransport", ServiceDefinition.TransportValue Web.server)
+            , ("McpTransport", ServiceDefinition.TransportValue McpTransport {serverName = "test", serverVersion = "1.0"})
+            ]
+      (handlers, _, dispatch) <- runner.getEndpointsByTransport eventStore adapters
+      let web = handlers |> Map.get "WebTransport" |> Maybe.andThen (Map.get "web-decode-probe-command")
+      let internal = dispatch |> Map.get "WebDecodeProbeCOMMAND"
+      case (web, internal) of
+        (Just webHandler, Just internalHandler) -> do
+          anonymous <- Auth.anonymousContext
+          let body = Json.encodeText WebDecodeProbeCOMMAND {probeId = Uuid.nil} |> Text.toBytes
+          let checkDenied (response, _) = response |> shouldBe (Unauthorized Unauthenticated)
+          webHandler anonymous body checkDenied
+          internalHandler Nothing anonymous body checkDenied
+        _ -> fail "Expected both Web and internal command handlers"
+
+    it "rejects an explicitly selected missing adapter with a startup error" \_ -> do
+      eventStore <- InMemory.new |> Task.mapError toText
+      let runner = Service.new |> Service.command @WebDecodeProbeCOMMAND |> Service.toServiceRunner
+      let adapters = Map.fromArray [("WebTransport", ServiceDefinition.TransportValue Web.server)]
+      result <- runner.getEndpointsByTransport eventStore adapters |> Task.asResult
+      case result of
+        Err message -> message |> shouldSatisfy (Text.contains "Command WebDecodeProbeCOMMAND selects unregistered transport McpTransport")
+        Ok _ -> fail "Expected the missing transport to fail startup"
 
     it "rejects distinct command names that map to one Web URL" \_ -> do
       eventStore <- InMemory.new |> Task.mapError toText

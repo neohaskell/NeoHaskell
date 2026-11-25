@@ -1,5 +1,3 @@
-{-# LANGUAGE TemplateHaskell #-}
-
 module Starter.Counter.Queries.CounterView (
   CounterView (..),
   canAccess,
@@ -7,12 +5,11 @@ module Starter.Counter.Queries.CounterView (
 ) where
 
 import Core
+import Derive
 import Service.AccessControl (AccessError, UserClaims, publicAccess, publicView)
-import Starter.Counter.Core (CounterEntity (..))
+import Starter.Counter.Entity (CounterEntity (..))
 
 
--- | Projected read model for a counter: one row per counter, updated every
--- time the underlying `CounterEntity` changes.
 data CounterView = CounterView
   { counterId :: Uuid
   , label :: Text
@@ -28,16 +25,17 @@ canView :: Maybe UserClaims -> CounterView -> Maybe AccessError
 canView = publicView
 
 
-deriveQuery ''CounterView [''CounterEntity]
+projectionIdFromCounterEntity :: CounterEntity -> Uuid
+projectionIdFromCounterEntity entity = entity.counterId
 
 
-instance QueryOf CounterEntity CounterView where
-  queryId entity = entity.counterId
+combineCounterEntity :: CounterEntity -> Maybe CounterView -> QueryAction CounterView
+combineCounterEntity entity _ =
+  Update CounterView {
+    counterId = entity.counterId,
+    label = entity.label,
+    value = entity.value
+  }
 
-  combine entity _maybeExisting =
-    Update
-      CounterView
-        { counterId = entity.counterId
-        , label = entity.label
-        , value = entity.value
-        }
+
+derive ''CounterView query { entities = [''CounterEntity] }

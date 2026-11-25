@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Accepted. The later command derivation API extends this decision. An omitted transport selects the sole registered public adapter at startup. Explicitly including both a public adapter and `InternalTransport` registers both entry points. Internal dispatch is always opt-in. The historical single-intent restriction described below applied to the original implementation.
 
 ## Context
 

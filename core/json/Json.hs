@@ -7,7 +7,7 @@ module Json (
   Parts (..),
   parts,
   array,
-  Aeson.Options (tagSingleConstructors),
+  Aeson.Options (tagSingleConstructors, constructorTagModifier),
   Aeson.defaultOptions,
   Aeson.genericParseJSON,
   Aeson.genericToJSON,

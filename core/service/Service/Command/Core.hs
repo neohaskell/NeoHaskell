@@ -9,6 +9,7 @@ module Service.Command.Core (
   -- * Type Families
   NameOf,
   TransportsOf,
+  InferredTransport,
   NamesOf,
   AppendSymbols,
   AllKnownSymbols (..),
@@ -71,6 +72,10 @@ type family NameOf (t :: Type) :: Symbol
 -- type instance TransportsOf CreateCart = '[WebTransport]
 -- @
 type family TransportsOf (commandType :: Type) :: [Type]
+
+
+-- | Select the sole public transport registered by the application at startup.
+data InferredTransport
 
 
 -- | Extracts the symbolic names from a type-level list of types.

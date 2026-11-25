@@ -14,7 +14,7 @@ module Config.Core (
   validateFieldDef,
 ) where
 
-import Core
+import Core.Prelude
 import Language.Haskell.TH.Syntax qualified as TH
 import LinkedList qualified
 

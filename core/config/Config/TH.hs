@@ -16,7 +16,7 @@ module Config.TH (
 import Config.Core (ConfigError (..), FieldDef (..), FieldModifier (..), validateFieldDef)
 import Control.Monad qualified as GhcMonad
 import Control.Monad.Fail qualified as GhcFail
-import Core
+import Core.Prelude
 import Data.Aeson qualified as Aeson
 import Data.Aeson.Key qualified as AesonKey
 
