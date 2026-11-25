@@ -11,6 +11,7 @@ import Service.Event.EventMetadata (EventMetadata (..))
 import Service.Event.EventMetadata qualified as EventMetadata
 import Service.EventStore (EventStore)
 import Service.EventStore.Core qualified as EventStore
+import Service.Event.StreamId qualified as StreamId
 import Stream qualified
 import Task qualified
 import Test
@@ -624,3 +625,92 @@ spec backend newStore = do
         positionPairs
           |> Task.forEach \(firstPos, secondPos) -> do
             (secondPos > firstPos) |> shouldBe True
+
+
+  describe "Insertion preconditions" do
+    beforeAll (Context.initialize newStore) do
+      let conflict = Err (EventStore.InsertionError Event.ConsistencyCheckFailed)
+
+      it "rejects InsertAfter beyond the stream tail without leaving a gap" \context -> do
+        (entityName, streamId) <- seededStream context
+        future <- appendAt context entityName streamId (Event.InsertAfter (Event.StreamPosition 1)) 1
+        future |> shouldBe conflict
+        storedPositions context entityName streamId |> Task.andThen (shouldBe [Just (Event.StreamPosition 0)])
+        next <- appendAt context entityName streamId (Event.InsertAfter (Event.StreamPosition 0)) 1
+        next |> Result.map (\success -> success.localPosition) |> shouldBe (Ok (Event.StreamPosition 1))
+        storedPositions context entityName streamId
+          |> Task.andThen (shouldBe [Just (Event.StreamPosition 0), Just (Event.StreamPosition 1)])
+
+      it "rejects InsertAfter on a stream that does not exist" \context -> do
+        (entityName, streamId) <- emptyStream
+        result <- appendAt context entityName streamId (Event.InsertAfter (Event.StreamPosition 0)) 0
+        result |> shouldBe conflict
+        storedPositions context entityName streamId |> Task.andThen (shouldBe [])
+
+      it "rejects negative InsertAfter positions" \context -> do
+        (entityName, streamId) <- emptyStream
+        onEmpty <- appendAt context entityName streamId (Event.InsertAfter (Event.StreamPosition (-1))) 0
+        onEmpty |> shouldBe conflict
+        storedPositions context entityName streamId |> Task.andThen (shouldBe [])
+        Regression.seedStream context.store entityName streamId [CartCreated {entityId = def}]
+        onSeeded <- appendAt context entityName streamId (Event.InsertAfter (Event.StreamPosition (-2))) 1
+        onSeeded |> shouldBe conflict
+        storedPositions context entityName streamId |> Task.andThen (shouldBe [Just (Event.StreamPosition 0)])
+
+      it "rejects ExistingStream on a stream that does not exist" \context -> do
+        (entityName, streamId) <- emptyStream
+        onEmpty <- appendAt context entityName streamId Event.ExistingStream 0
+        onEmpty |> shouldBe conflict
+        storedPositions context entityName streamId |> Task.andThen (shouldBe [])
+        Regression.seedStream context.store entityName streamId [CartCreated {entityId = def}]
+        onSeeded <- appendAt context entityName streamId Event.ExistingStream 1
+        onSeeded |> Result.map (\success -> success.localPosition) |> shouldBe (Ok (Event.StreamPosition 1))
+
+
+emptyStream :: Task Text (Event.EntityName, Event.StreamId)
+emptyStream = do
+  entityName <- Uuid.generate |> Task.map (toText .> Event.EntityName)
+  streamId <- StreamId.new
+  Task.yield (entityName, streamId)
+
+
+seededStream :: Context.Context -> Task Text (Event.EntityName, Event.StreamId)
+seededStream context = do
+  (entityName, streamId) <- emptyStream
+  Regression.seedStream context.store entityName streamId [CartCreated {entityId = def}]
+  Task.yield (entityName, streamId)
+
+
+-- | Append one event stamped with the local position a correct writer would
+-- send, so a rejection comes from the insertion type and not the stamp.
+appendAt ::
+  Context.Context ->
+  Event.EntityName ->
+  Event.StreamId ->
+  Event.InsertionType ->
+  Int64 ->
+  Task Text (Result EventStore.Error Event.InsertionSuccess)
+appendAt context entityName streamId insertionType stampedPosition = do
+  eventId <- Uuid.generate
+  metadata <- EventMetadata.new
+  let insertion =
+        Event.Insertion
+          { id = eventId,
+            event = ItemAdded {entityId = def, itemId = def, amount = 1},
+            metadata =
+              metadata
+                { EventMetadata.localPosition = Just (Event.StreamPosition stampedPosition),
+                  EventMetadata.eventId = eventId
+                }
+          }
+  Event.InsertionPayload {streamId, entityName, insertionType, insertions = [insertion]}
+    |> context.store.insert
+    |> Task.asResult
+
+
+storedPositions :: Context.Context -> Event.EntityName -> Event.StreamId -> Task Text (Array (Maybe Event.StreamPosition))
+storedPositions context entityName streamId =
+  context.store.readAllStreamEvents entityName streamId
+    |> Task.mapError toText
+    |> Task.andThen Stream.toArray
+    |> Task.map (EventStore.collectStreamEvents .> Array.map (\event -> event.metadata.localPosition))
