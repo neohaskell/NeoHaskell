@@ -337,7 +337,7 @@ insertImpl config store insertionLock payload = do
               StreamCreation -> currentLength == 0 && positionMatches
               ExistingStream -> currentLength > 0 && positionMatches
               InsertAfter (StreamPosition afterPos) ->
-                fromIntegral afterPos < currentLength && positionMatches
+                currentLength > 0 && fromIntegral afterPos == currentLength - 1 && positionMatches
 
   -- The critical section only covers the append + consistency check plus a
   -- snapshot of the subscribers active at commit time. Subscriber notification
