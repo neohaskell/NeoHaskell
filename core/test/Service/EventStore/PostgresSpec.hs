@@ -13,9 +13,15 @@ import Test.Service.CommandHandler qualified as CommandHandler
 import Test.Service.EntityFetcher qualified as EntityFetcherSpec
 import Test.Service.EntityFetcher.Core qualified as EntityFetcherCore
 import Test.Service.EventStore qualified as EventStoreSpec
-import Test.Service.EventStore.Core (CartEvent)
+import Test.Service.EventStore.Core (CartEvent (..))
+import Test.Service.EventStore.Regression qualified as Regression
 import Var qualified
+import Array qualified
+import Stream qualified
+import Uuid qualified
 import Service.Event (EntityName (..), Event)
+import Service.Event qualified as Event
+import Service.Event.EventMetadata (EventMetadata (..))
 import Service.Event.StreamId qualified as StreamId
 import Service.Event.StreamPosition (StreamPosition (..))
 import Service.EventStore.Postgres.Internal (toConnectionSettings)
@@ -109,6 +115,17 @@ spec = do
             |> Task.mapError toText
     CommandHandler.spec "postgres" newCartStore
 
+    describe "idempotent replay" do
+      it "accepts an exact replay of an InsertAfter whose events are already stored" \_ -> do
+        (store, entityName, streamId) <- seededStream config
+        payload <- Event.payloadFromEvents entityName streamId [ItemAdded {entityId = def, itemId = def, amount = 1}]
+        let afterCreation = payload {Event.insertionType = Event.InsertAfter (StreamPosition 0)}
+        afterCreation |> store.insert |> Task.mapError toText |> discard
+        replay <- afterCreation |> store.insert |> Task.asResult
+        replay |> Result.map (\success -> success.localPosition) |> shouldBe (Ok (StreamPosition 1))
+        storedPositions store entityName streamId |> Task.andThen (shouldBe [Just (StreamPosition 0), Just (StreamPosition 1)])
+        store.close |> Task.mapError toText
+
     describe "per-stream connection release (ADR-0063)" do
       whenEnvVar "POSTGRES_AVAILABLE" do
         it "releases the dedicated connection across N stream subscribe/unsubscribe cycles (no leak)" \_ -> do
@@ -177,6 +194,40 @@ data NewObserve = NewObserve
     initializeSubscriptionsCalls :: Var Int,
     releaseCalls :: Var Int
   }
+
+
+emptyStream ::
+  Postgres.PostgresEventStore ->
+  Task Text (EventStore.EventStore CartEvent, EntityName, Event.StreamId)
+emptyStream config = do
+  store <-
+    Postgres.new config
+      |> Task.map (EventStore.castEventStore @CartEvent)
+      |> Task.mapError toText
+  entityName <- Uuid.generate |> Task.map (Uuid.toText .> EntityName)
+  streamId <- StreamId.new
+  Task.yield (store, entityName, streamId)
+
+
+seededStream ::
+  Postgres.PostgresEventStore ->
+  Task Text (EventStore.EventStore CartEvent, EntityName, Event.StreamId)
+seededStream config = do
+  (store, entityName, streamId) <- emptyStream config
+  Regression.seedStream store entityName streamId [CartCreated {entityId = def}]
+  Task.yield (store, entityName, streamId)
+
+
+storedPositions ::
+  EventStore.EventStore CartEvent ->
+  EntityName ->
+  Event.StreamId ->
+  Task Text (Array (Maybe StreamPosition))
+storedPositions store entityName streamId =
+  store.readAllStreamEvents entityName streamId
+    |> Task.mapError toText
+    |> Task.andThen Stream.toArray
+    |> Task.map (EventStore.collectStreamEvents .> Array.map (\event -> event.metadata.localPosition))
 
 
 dropPostgres :: Internal.Ops -> Postgres.PostgresEventStore -> Task Text Unit
