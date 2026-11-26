@@ -2,6 +2,7 @@
 
 module TaskSpec (spec) where
 
+import Array qualified
 import AsyncTask qualified
 import Channel (Channel)
 import Channel qualified
@@ -299,3 +300,41 @@ spec = do
         case outcome of
           AsyncTask.Interrupted -> Task.yield unit
           _ -> Test.fail "child did not terminate after cleanup"
+
+    describe "AsyncTask.injectRuntimeFailure" do
+      it "fails a waiting child with the message instead of cancelling it" \_ -> do
+        started <- Channel.new
+        blocked <- Channel.newBounded 1 :: Task Text (Channel Unit)
+        let child :: Task Text Unit
+            child = do
+              Channel.write unit started
+              Channel.read blocked
+        handle <- AsyncTask.run child
+        Channel.read started
+        AsyncTask.injectRuntimeFailure "injected failure" handle
+        outcome <- AsyncTask.waitOutcome handle
+        case outcome of
+          AsyncTask.Crashed message -> message |> shouldSatisfy (Text.contains "injected failure")
+          AsyncTask.Interrupted -> Test.fail "the child was cancelled instead of failing"
+          _ -> Test.fail "expected a runtime failure"
+
+    describe "AsyncTask.threadsLeftRunningBy" do
+      it "reports a child that outlives the task" \_ -> do
+        blocked <- Channel.newBounded 1 :: Task Text (Channel Unit)
+        (handle, running) <- AsyncTask.threadsLeftRunningBy do
+          AsyncTask.run (Channel.read blocked :: Task Text Unit)
+        running |> shouldSatisfy (\threads -> not (Array.isEmpty threads))
+        Channel.write unit blocked
+        outcome <- AsyncTask.waitOutcome handle
+        case outcome of
+          AsyncTask.Completed _ -> Task.yield unit
+          _ -> Test.fail "child did not complete after the channel write"
+
+      it "reports nothing for a child that finished" \_ -> do
+        let startAndFinishChild :: Task Text Unit
+            startAndFinishChild = do
+              handle <- AsyncTask.run (Task.yield unit :: Task Text Unit)
+              _ <- AsyncTask.waitOutcome handle
+              AsyncTask.sleep 200
+        (_, running) <- AsyncTask.threadsLeftRunningBy startAndFinishChild
+        running |> shouldBe []
