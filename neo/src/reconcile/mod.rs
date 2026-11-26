@@ -57,6 +57,15 @@ fn atomic_write(path: &Path, content: &[u8]) -> std::io::Result<()> {
     Ok(())
 }
 
+fn write_generated_manifest(path: &Path, content: &[u8]) -> std::io::Result<()> {
+    if fs::symlink_metadata(path).is_ok_and(|metadata| metadata.is_file())
+        && fs::read(path).is_ok_and(|existing| existing == content)
+    {
+        return Ok(());
+    }
+    atomic_write(path, content)
+}
+
 pub async fn run_project<P: AsRef<Path>>(project_dir: P) -> miette::Result<()> {
     let project_dir = project_dir.as_ref();
     let _lock = ProjectLock::acquire(project_dir).await?;

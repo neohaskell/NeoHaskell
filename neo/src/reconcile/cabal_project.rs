@@ -37,7 +37,7 @@ pub fn generate<P: AsRef<Path>>(
     }).map_err(|e| NeoError::TemplateError { template: "cabal.project".to_string(), reason: e.to_string() })?;
 
     let out_path = project_dir.as_ref().join("cabal.project");
-    super::atomic_write(&out_path, rendered.as_bytes())
+    super::write_generated_manifest(&out_path, rendered.as_bytes())
         .map_err(|e| NeoError::io_at("writing generated `cabal.project` at", &out_path, e))?;
 
     Ok(())
