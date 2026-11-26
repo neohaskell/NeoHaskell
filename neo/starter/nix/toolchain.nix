@@ -63,6 +63,9 @@ let
     withHoogle = true;
   }).ghc;
   hoogleTool = docs.tool "hoogle" "latest";
+  toolProjects = pkgs.lib.mapAttrs (_: tool: tool.project) upstreamTools // {
+    hoogle = hoogleTool.project;
+  };
   hoogle = pkgs.runCommand "neo-hoogle" { } ''
     mkdir -p "$out/bin" "$out/share/doc"
     ln -s ${docsGhc}/bin/hoogle "$out/bin/hoogle"
@@ -73,14 +76,14 @@ let
     name = "neo-toolchain";
     paths = builtins.attrValues tools ++ [ ghc editorTools hoogle ];
     postBuild = ''
-      mkdir -p "$out/share/neohaskell/plans"
+      mkdir -p "$out/share/neohaskell/plans" "$out/share/neohaskell/sources"
       ln -s ${ghc.src} "$out/share/neohaskell/plans/compiler-source"
       ln -s ${docs.roots} "$out/share/neohaskell/plans/haskell-nix"
       ln -s ${docs.plan-nix} "$out/share/neohaskell/plans/documentation"
-      ln -s ${hoogleTool.project.plan-nix} "$out/share/neohaskell/plans/hoogle"
-      ${pkgs.lib.concatStringsSep "\n" (pkgs.lib.mapAttrsToList (name: tool:
-        ''ln -s ${tool.project.plan-nix} "$out/share/neohaskell/plans/${name}"''
-      ) upstreamTools)}
+      ${pkgs.lib.concatStringsSep "\n" (pkgs.lib.mapAttrsToList (name: project: ''
+        ln -s ${project.plan-nix} "$out/share/neohaskell/plans/${name}"
+        ln -s ${project.args.src} "$out/share/neohaskell/sources/${name}"
+      '') toolProjects)}
       for tool in ghc cabal haddock hoogle hspec-discover hlint fourmolu haskell-language-server haskell-language-server-wrapper; do
         test -x "$out/bin/$tool"
       done
