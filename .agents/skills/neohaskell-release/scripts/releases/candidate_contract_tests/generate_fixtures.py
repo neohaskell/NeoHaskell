@@ -21,8 +21,8 @@ import candidate
 
 
 ROOT = candidate.release.ROOT
+CASES = Path(__file__).with_name("runtime_cases.json")
 NIX_BASE32 = "0123456789abcdfghijklmnpqrsvwxyz"
-FRAMEWORK_REVISION = "ea75873fbd0da7da39124c82f328c2e70bdca629"
 EXPECTED_PATHS = 76
 EXPECTED_MAX_REFERENCES = 65
 EXPECTED_NAR_SIZE = 5044109824
@@ -35,17 +35,15 @@ def _hash(data):
 @dataclass(frozen=True, init=False)
 class CandidateFixtureCorpus:
     root: Path
-    source_root: Path
-    source_paths: tuple
+    version: str
 
     def __init__(self, source_root, output_root):
         selected_source_root = Path(source_root).expanduser().resolve(strict=True)
         selected_output_root = _fresh_output_root(selected_source_root, output_root)
         selected_output_root.mkdir()
-        source_paths = _generate_corpus(selected_source_root, selected_output_root)
+        version = _generate_corpus(selected_source_root, selected_output_root)
         object.__setattr__(self, "root", selected_output_root)
-        object.__setattr__(self, "source_root", selected_source_root)
-        object.__setattr__(self, "source_paths", tuple(source_paths))
+        object.__setattr__(self, "version", version)
 
 
 def temporary_corpus_directory(prefix="candidate-corpus-"):
@@ -92,7 +90,7 @@ def _source_paths(registry, source_root):
     paths.update(profile["locks"])
     for path in paths:
         candidate._validate_source_path(path)
-    return sorted(paths), {**profile["packages"], **profile["locks"]}
+    return sorted(paths)
 
 
 def _missing_source_path(root, relative):
@@ -110,10 +108,9 @@ def _missing_source_path(root, relative):
 
 def _write_source_snapshot(source_root, output_root):
     projection = candidate.contract_registry_projection()
-    paths, versioned_files = _source_paths(projection["registry"], source_root)
+    paths = _source_paths(projection["registry"], source_root)
     snapshot_root = output_root / "source"
     snapshot_root.mkdir()
-    copied_paths = []
     bootstrap_generator = projection["registry"]["source_inputs"]["bootstrap_generator"]
     for relative in paths:
         destination = snapshot_root / relative
@@ -122,15 +119,12 @@ def _write_source_snapshot(source_root, output_root):
             content = b"synthetic-generator-recipe-v1\n"
         else:
             content = candidate._read_worktree_file(source_root, relative, 32 * 1024 * 1024)
-            if relative in versioned_files:
-                content = candidate.release.change_version(content.decode(), relative, versioned_files[relative], "0.17.1").encode()
-            copied_paths.append(relative)
         destination.write_bytes(content)
     registry = candidate._loads((snapshot_root / candidate.CONTRACT_RELATIVE_PATH).read_bytes(), 2 * 1024 * 1024, 24, 100000)
     candidate._validate_registry(registry)
     if candidate.canonical_json(registry) != candidate.canonical_json(projection["registry"]):
         raise ValueError("Candidate contract registry differs from its selected source")
-    return projection, tuple(copied_paths), snapshot_root
+    return projection, snapshot_root
 
 
 def _commit_source(root):
@@ -169,7 +163,7 @@ def _committed_source(snapshot_root):
         }
 
 
-def _version_overlay(source):
+def _version_overlay(source, version):
     registry = candidate._registry()[1]
     seed_paths = registry["source_inputs"]["version_seed_recipe"]
     seed_digest, _seed_files = candidate._source_inputs(source["root"], source["index"], seed_paths)
@@ -178,7 +172,7 @@ def _version_overlay(source):
     rows = []
     for path, package in {**profile["packages"], **profile["locks"]}.items():
         _mode, before = candidate._git_blob(source["root"], source["index"], path)
-        after = candidate.release.change_version(before.decode("utf-8"), path, package, "0.17.2").encode("utf-8")
+        after = candidate.release.change_version(before.decode("utf-8"), path, package, version).encode("utf-8")
         edits[path] = after
         rows.append({"path": path, "before_sha256": _hash(before), "after_sha256": _hash(after)})
     diff_digest = candidate._canonical_digest(sorted(rows, key=lambda row: row["path"].encode("utf-8")))
@@ -321,7 +315,7 @@ def _receipt_table(core):
     return candidate.canonical_json({"schema_version": 1, "receipts": rows})
 
 
-def _candidate_payload(version, source, snapshot_root, projection, closure):
+def _candidate_payload(version, source, snapshot_root, projection, closure, *, seeded=False):
     root_paths, path_map, closure_ids, closure_bytes = closure
     native_prefix = candidate.release.group_config("platform")["asset_prefix"]
     native_neo = {
@@ -337,12 +331,12 @@ def _candidate_payload(version, source, snapshot_root, projection, closure):
         "powershell": b"param([Parameter(Mandatory=$true)][string]$CandidateLocator)\n& neo-installer --candidate-locator $CandidateLocator\n",
     }
     payloads = _file_payloads(snapshot_root, projection, native_neo, native_installers, bootstraps)
-    if version == "0.17.1":
+    if not seeded:
         overlays = {}
         build_tree_sha256 = source["tree_sha256"]
         version_seed = {"kind": "committed"}
     else:
-        overlays, seed_recipe, diff_digest = _version_overlay(source)
+        overlays, seed_recipe, diff_digest = _version_overlay(source, version)
         build_tree_sha256 = _hash(candidate._overlay_tree_bytes(source["tree_bytes"], overlays))
         version_seed = {
             "kind": "engineering-version",
@@ -357,9 +351,10 @@ def _candidate_payload(version, source, snapshot_root, projection, closure):
     build_cargo_lock = candidate._tree_file(
         source["root"], source["index"], projection["registry"]["source_inputs"]["build"]["cargo_lock"], overlays,
     )
+    starter_lock = json.loads((snapshot_root / "neo/starter/flake.lock").read_bytes())["nodes"]["neohaskell"]["locked"]
     starter = {
-        "framework_revision": FRAMEWORK_REVISION,
-        "framework_nar_hash": json.loads((snapshot_root / "neo/starter/flake.lock").read_text())["nodes"]["neohaskell"]["locked"]["narHash"],
+        "framework_revision": starter_lock["rev"],
+        "framework_nar_hash": starter_lock["narHash"],
         "flake_sha256": _hash((snapshot_root / "neo/starter/flake.nix").read_bytes()),
         "lock_sha256": _hash((snapshot_root / "neo/starter/flake.lock").read_bytes()),
         "cabal_project_sha256": _hash((snapshot_root / "neo/starter/cabal.project").read_bytes()),
@@ -446,7 +441,7 @@ def _candidate_payload(version, source, snapshot_root, projection, closure):
         "build-receipts.json": receipts_bytes,
         "candidate.json": core_bytes,
     }
-    return core, core_bytes, materialized
+    return core_bytes, materialized
 
 
 def _canonical_path(path):
@@ -502,10 +497,27 @@ def _fresh_output_root(source_root, output_root):
     return output_root
 
 
+def _write_candidate(directory, version, source, snapshot_root, projection, closure, *, seeded=False):
+    core_bytes, files = _candidate_payload(
+        version, source, snapshot_root, projection, closure, seeded=seeded,
+    )
+    directory.mkdir()
+    for name, content in files.items():
+        (directory / name).write_bytes(content)
+    return _hash(core_bytes)
+
+
+def write_seeded_candidate(corpus, directory, version):
+    snapshot_root = corpus.root / "source"
+    with _committed_source(snapshot_root) as source:
+        _write_candidate(directory, version, source, snapshot_root,
+                         candidate.contract_registry_projection(), _closure_material(), seeded=True)
+
+
 def _generate_corpus(source_root, output_root):
-    projection, source_paths, snapshot_root = _write_source_snapshot(source_root, output_root)
-    current = output_root / "current-0.17.2"
-    previous = output_root / "previous-0.17.1"
+    projection, snapshot_root = _write_source_snapshot(source_root, output_root)
+    version_path = "neo/Cargo.toml"
+    version = candidate._package_version(version_path, "neo", (snapshot_root / version_path).read_bytes())
     with _committed_source(snapshot_root) as source:
         closure = _closure_material()
         observed = _closure_shape(closure[3])
@@ -516,27 +528,20 @@ def _generate_corpus(source_root, output_root):
         }
         if observed != expected:
             raise ValueError("Generated closure shape changed")
-        for directory, version in ((previous, "0.17.1"), (current, "0.17.2")):
-            core, core_bytes, files = _candidate_payload(
-                version, source, snapshot_root, projection, closure,
-            )
-            directory.mkdir()
-            for name, content in files.items():
-                (directory / name).write_bytes(content)
+        identity = _write_candidate(output_root / "current", version, source, snapshot_root, projection, closure)
         manifest = {
             "schema_version": 1,
             "parse_only": True,
             "source_revision": source["revision"],
             "source_tree_sha256": source["tree_sha256"],
-            "candidate_ids": {
-                "previous-0.17.1": _hash((previous / "candidate.json").read_bytes()),
-                "current-0.17.2": _hash((current / "candidate.json").read_bytes()),
-            },
+            "version": version,
+            "candidate_ids": {"current": identity},
             "closure_shape": observed,
             "synthetic_metadata_only": True,
         }
         (output_root / "fixture-set.json").write_bytes(candidate.canonical_json(manifest))
-    return source_paths
+    shutil.copyfile(CASES, output_root / CASES.name)
+    return version
 
 
 def main(argv=None):

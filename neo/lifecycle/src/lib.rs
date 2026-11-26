@@ -5,6 +5,8 @@ mod identity;
 #[cfg(unix)]
 mod installation;
 mod language;
+#[cfg(test)]
+mod test_fixtures;
 
 use std::sync::OnceLock;
 

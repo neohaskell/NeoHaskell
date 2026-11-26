@@ -35,6 +35,7 @@
 , git
 , nix
 , bash
+, python3
 , command ? "neo"
 }:
 
@@ -42,6 +43,23 @@ let
   cargoToml = lib.importTOML ../neo/Cargo.toml;
   isInstaller = command == "neo-installer";
   cargoPackage = if isInstaller then "neo-lifecycle" else "neo";
+  releaseSkill = ../.agents/skills/neohaskell-release;
+  fixtureGenerator = ".agents/skills/neohaskell-release/scripts/releases/candidate_contract_tests/generate_fixtures.py";
+  contract = (lib.importJSON (releaseSkill + "/references/installer-contract.json")).source_inputs;
+  platform = (lib.importJSON (releaseSkill + "/references/config.json")).groups.platform;
+  fixtureSource = lib.fileset.toSource {
+    root = ../.;
+    fileset = lib.fileset.unions (
+      [ releaseSkill ../.github/workflows/neo-ci.yml ]
+      ++ map (path: ../. + "/${path}") (
+        contract.recipe
+        ++ [ contract.build.flake_lock contract.build.cargo_lock ]
+        ++ builtins.attrValues contract.build.starter
+        ++ builtins.attrNames platform.packages
+        ++ builtins.attrNames platform.locks
+      )
+    );
+  };
 
   # Only the crate sources. Drop build outputs and scratch dirs so the hash is
   # stable and the sandbox copy is small. `assets/ide/dist/` is KEPT on purpose
@@ -109,7 +127,12 @@ rustPlatform.buildRustPackage {
   # In-crate tests need Git, Nix, and a POSIX shell for immutable fixture
   # commands. None of them touch the network (`test_dispatch_new` sets
   # NEO_SKIP_NETWORK=1).
-  nativeCheckInputs = [ bash git nix ];
+  nativeCheckInputs = [ bash git nix python3 ];
+
+  preCheck = ''
+    export NEO_TEST_FIXTURE_ROOT="$(mktemp -d)/candidate"
+    python3 -B "${fixtureSource}/${fixtureGenerator}" --output-root "$NEO_TEST_FIXTURE_ROOT"
+  '';
 
   # `ide::methods::heal_event_model` is the one test module that EXECUTES a
   # written stub script whose shebang is `#!/usr/bin/env bash`. The hermetic

@@ -740,20 +740,9 @@ mod tests {
         use std::net::TcpListener;
         use std::os::unix::fs::PermissionsExt;
         let build = crate::identity::BuildIdentity::current();
-        let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("contract/fixtures/v1");
-        let index: serde_json::Value =
-            serde_json::from_slice(&fs::read(fixtures.join("fixture-set.json")).unwrap()).unwrap();
-        let name = index["candidate_ids"]
-            .as_object()
-            .unwrap()
-            .keys()
-            .next()
-            .unwrap();
+        let fixture = &crate::test_fixtures::current_candidate().files;
         let mut core: serde_json::Value =
-            serde_json::from_slice(&fs::read(fixtures.join(name).join("candidate.json")).unwrap())
-                .unwrap();
-        core["version"] = build.product_version.into();
-        core["context"]["version_seed"]["version"] = build.product_version.into();
+            serde_json::from_slice(&fixture["candidate.json"]).unwrap();
         let executable = std::env::current_exe().unwrap().canonicalize().unwrap();
         let bytes = fs::read(&executable).unwrap();
         let executable_sha = format!("{:x}", Sha256::digest(&bytes));

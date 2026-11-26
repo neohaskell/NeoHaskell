@@ -8,7 +8,7 @@ import subprocess
 from unittest.mock import patch
 
 import candidate
-from candidate_contract_tests.generate_fixtures import temporary_corpus_directory
+from candidate_contract_tests.generate_fixtures import temporary_corpus_directory, write_seeded_candidate
 
 
 def commit(root, message):
@@ -83,7 +83,8 @@ def release_fixture(temporary, corpus, mutation=None):
     ledger.write_text(candidate.release.canonical({'schema': 1, 'attempts': [], 'recoveries': []}))
     (root / 'CHANGELOG.md').write_text('# History\n')
     commit(root, 'ci: fixture release baseline')
-    _git(root, 'tag', 'neo-v0.17.1')
+    baseline_tag = 'neo-v' + corpus.version
+    _git(root, 'tag', baseline_tag)
     note = root / '.changes/fix.md'
     note.parent.mkdir()
     note.write_text('---\ngroup: platform\ncomponent: Framework\nimpact: compatible\ncategory: Fixed\n---\n\n## Summary\n\nSaving an item now reports completion once, even after reconnecting.\n')
@@ -92,7 +93,7 @@ def release_fixture(temporary, corpus, mutation=None):
     source = commit(root, 'fix: completion')
     repo = candidate.release.Repo(root)
     plan = candidate.release.plan_release(repo, source, 'platform', {}, '2026-11-16',
-                                          ('neo-v0.17.1', '0.17.2'))
+                                          (baseline_tag, candidate.release.bump(corpus.version, 'compatible')))
     if plan.get('contract_registry_sha256') != candidate.contract_registry_sha256():
         raise AssertionError('Release planning did not freeze the installer contract')
     candidate.release.write_edits(root, candidate.release.expected_edits(repo, plan))
@@ -100,7 +101,7 @@ def release_fixture(temporary, corpus, mutation=None):
     if candidate.release.verify_generated(repo, revision, plan) is not True:
         raise AssertionError('Maintained preparation did not verify')
     directory = Path(temporary) / 'candidate'
-    shutil.copytree(corpus.root / 'current-0.17.2', directory)
+    write_seeded_candidate(corpus, directory, plan['version'])
     core = json.loads((directory / 'candidate.json').read_bytes())
     source_identity(root, source, core)
     core['context'] = {k: v for k, v in core['context'].items() if k != 'version_seed'}
@@ -221,7 +222,7 @@ class ReleaseBindingCases:
                 core['auxiliary_assets'][name] = _identity(name, (directory / name).read_bytes())
             bound = candidate.bind_source(write_bound_input(directory, core), root)
             self.assertEqual(bound.context_kind, 'release')
-            self.assertEqual(bound.version, '0.17.2')
+            self.assertEqual(bound.version, plan['version'])
             self.assertNotEqual(bound.change_source, bound.build_revision)
             locator = directory / 'candidate.locator'
             locator.write_text(f'{bound.version}@{bound.candidate_id}\n')
@@ -322,7 +323,7 @@ class ReleaseBindingCases:
         with temporary_corpus_directory(prefix='candidate-historical-selection-') as temporary:
             previous_root = Path(temporary) / 'previous-source'
             _commit_fixture_source(previous_root, self.corpus)
-            previous = candidate.bind_source(self.parse_fixture('previous-0.17.1'), previous_root)
+            previous = candidate.bind_source(self.parse_fixture(), previous_root)
 
             def historical_owners(root):
                 engine = root / candidate.ENGINE_RELATIVE_PATH
@@ -340,7 +341,8 @@ class ReleaseBindingCases:
             raw = candidate.canonical_json({'schema_version': 1,
                 'current_candidate_id': current.candidate_id, 'previous_candidate_id': previous.candidate_id})
             selection = candidate.parse_verification_selection(raw, current, previous)
-            self.assertEqual((selection.current_version, selection.previous_version), ('0.17.2', '0.17.1'))
+            self.assertEqual((selection.current_version, selection.previous_version),
+                             (plan['version'], self.corpus.version))
             with self.assertRaisesRegex(ValueError, 'ordered candidates'):
                 candidate.parse_verification_selection(raw, previous, current)
 
@@ -361,7 +363,7 @@ class ReleaseBindingCases:
                     value['native_policy'] = 'unknown-native-policy'
                 path.write_text(json.dumps(value))
                 revision = commit(root, 'ci: incompatible source semantics')
-                directory = self.copy_artifacts(temporary, 'previous-0.17.1')
+                directory = self.copy_artifacts(temporary)
                 core = json.loads((directory / 'candidate.json').read_bytes())
                 tree, index = source_identity(root, revision, core)
                 core['context'].update(build_revision=revision, build_tree_sha256=candidate._sha256(tree))

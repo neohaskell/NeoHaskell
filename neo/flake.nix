@@ -32,6 +32,8 @@
             rustc
             rustfmt
             clippy
+            git
+            python3
             # Frontend toolchain for the `assets/ide/` Vite project (the IDE
             # served by `neo ide`). The release `nix build` consumes the
             # already-built `assets/ide/dist/` tree from the source — Node is

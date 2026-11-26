@@ -1073,19 +1073,9 @@ mod tests {
 
     #[test]
     fn pinned_snapshot_fetches_exact_files_without_latest_or_native_payloads() {
-        let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("contract/fixtures/v1");
-        let index: serde_json::Value =
-            serde_json::from_slice(&std::fs::read(fixtures.join("fixture-set.json")).unwrap())
-                .unwrap();
-        let name = index["candidate_ids"]
-            .as_object()
-            .unwrap()
-            .keys()
-            .next()
-            .unwrap();
-        let directory = fixtures.join(name);
-        let core = std::fs::read(directory.join("candidate.json")).unwrap();
-        let manifest = candidate::metadata_manifest(&core, "aarch64-apple-darwin").unwrap();
+        let fixture = &crate::test_fixtures::current_candidate().files;
+        let core = &fixture["candidate.json"];
+        let manifest = candidate::metadata_manifest(core, "aarch64-apple-darwin").unwrap();
         let requests = Arc::new(Mutex::new(Vec::new()));
         let recorded = requests.clone();
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
@@ -1110,14 +1100,14 @@ mod tests {
                     }
                 }
                 let name = path.rsplit('/').next().unwrap();
-                let body = std::fs::read(directory.join(name)).unwrap();
+                let body = &fixture[name];
                 write!(
                     stream,
                     "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
                     body.len()
                 )
                 .unwrap();
-                stream.write_all(&body).unwrap();
+                stream.write_all(body).unwrap();
             }
         });
         use std::os::unix::fs::PermissionsExt;
@@ -1220,20 +1210,9 @@ mod tests {
 
     fn review_prepared_candidate(select_framework: bool) {
         use std::sync::atomic::{AtomicBool, Ordering};
-        let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("contract/fixtures/v1");
-        let index: serde_json::Value =
-            serde_json::from_slice(&std::fs::read(fixtures.join("fixture-set.json")).unwrap())
-                .unwrap();
-        let directory = fixtures.join(
-            index["candidate_ids"]
-                .as_object()
-                .unwrap()
-                .keys()
-                .next()
-                .unwrap(),
-        );
-        let core = std::fs::read(directory.join("candidate.json")).unwrap();
-        let manifest = candidate::metadata_manifest(&core, "aarch64-apple-darwin").unwrap();
+        let fixture = &crate::test_fixtures::current_candidate().files;
+        let core = &fixture["candidate.json"];
+        let manifest = candidate::metadata_manifest(core, "aarch64-apple-darwin").unwrap();
         let original_version = manifest.version.clone();
         let expected_requests = manifest.metadata.len() + 3;
         let assets: Vec<_> = std::iter::once(
@@ -1278,7 +1257,7 @@ mod tests {
                     serde_json::to_vec(&serde_json::json!([{"tag_name": format!("neo-v{version}"), "draft": false, "prerelease": false, "assets": assets}])).unwrap()
                 } else {
                     let path = request.split_whitespace().nth(1).unwrap();
-                    std::fs::read(directory.join(path.rsplit('/').next().unwrap())).unwrap()
+                    fixture[path.rsplit('/').next().unwrap()].clone()
                 };
                 write!(
                     stream,

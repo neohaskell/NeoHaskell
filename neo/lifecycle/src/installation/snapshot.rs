@@ -729,18 +729,9 @@ mod tests {
         let owner = InstallationOwner::new(Layout::new(state.clone(), commands));
         owner.effects.accept_fixture_review();
         let lease = RootLease::acquire(&owner.layout.lock()).unwrap();
-        let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("contract/fixtures/v1");
-        let index: serde_json::Value =
-            serde_json::from_slice(&fs::read(fixtures.join("fixture-set.json")).unwrap()).unwrap();
-        let name = index["candidate_ids"]
-            .as_object()
-            .unwrap()
-            .keys()
-            .next()
-            .unwrap();
-        let fixture = fixtures.join(name);
-        let core = fs::read(fixture.join("candidate.json")).unwrap();
-        let manifest = candidate::metadata_manifest(&core, "aarch64-apple-darwin").unwrap();
+        let fixture = &crate::test_fixtures::current_candidate().files;
+        let core = &fixture["candidate.json"];
+        let manifest = candidate::metadata_manifest(core, "aarch64-apple-darwin").unwrap();
         let pinned = PinnedSelection {
             version: manifest.version,
             candidate_id: manifest.candidate_id,
@@ -766,7 +757,7 @@ mod tests {
         private_directory(&snapshots).unwrap();
         let directory = snapshots.join(&pinned.candidate_id);
         private_directory(&directory).unwrap();
-        write_bytes(&directory.join("candidate.json"), &core).unwrap();
+        write_bytes(&directory.join("candidate.json"), core).unwrap();
         assert!(
             super::super::coordinator::test_with(
                 &owner.effects,
@@ -785,11 +776,7 @@ mod tests {
             Some(pinned.clone())
         );
         for file in manifest.metadata {
-            write_bytes(
-                &directory.join(&file.name),
-                &fs::read(fixture.join(file.name)).unwrap(),
-            )
-            .unwrap();
+            write_bytes(&directory.join(&file.name), &fixture[&file.name]).unwrap();
         }
         let snapshot = super::super::coordinator::test_with(
             &owner.effects,
@@ -810,18 +797,9 @@ mod tests {
         fs::set_permissions(&state, fs::Permissions::from_mode(0o700)).unwrap();
         let owner = InstallationOwner::new(Layout::new(state.clone(), state.join("bin")));
         let lease = RootLease::acquire(&owner.layout.lock()).unwrap();
-        let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("contract/fixtures/v1");
-        let index: serde_json::Value =
-            serde_json::from_slice(&fs::read(fixtures.join("fixture-set.json")).unwrap()).unwrap();
-        let name = index["candidate_ids"]
-            .as_object()
-            .unwrap()
-            .keys()
-            .next()
-            .unwrap();
-        let fixture = fixtures.join(name);
-        let core = fs::read(fixture.join("candidate.json")).unwrap();
-        let manifest = candidate::metadata_manifest(&core, "aarch64-apple-darwin").unwrap();
+        let fixture = &crate::test_fixtures::current_candidate().files;
+        let core = &fixture["candidate.json"];
+        let manifest = candidate::metadata_manifest(core, "aarch64-apple-darwin").unwrap();
         let selected = PinnedSelection {
             version: manifest.version,
             candidate_id: manifest.candidate_id,
@@ -830,13 +808,9 @@ mod tests {
         private_directory(&snapshots).unwrap();
         let directory = snapshots.join(&selected.candidate_id);
         private_directory(&directory).unwrap();
-        write_bytes(&directory.join("candidate.json"), &core).unwrap();
+        write_bytes(&directory.join("candidate.json"), core).unwrap();
         for file in manifest.metadata {
-            write_bytes(
-                &directory.join(&file.name),
-                &fs::read(fixture.join(&file.name)).unwrap(),
-            )
-            .unwrap();
+            write_bytes(&directory.join(&file.name), &fixture[&file.name]).unwrap();
         }
         (temporary, owner, lease, selected)
     }

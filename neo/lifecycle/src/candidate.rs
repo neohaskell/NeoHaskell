@@ -1,8 +1,4 @@
 //! PARSE-only candidate identity. This module grants no source, signature, or Nix readiness.
-//!
-//! Refresh the sealed inputs with
-//! `python3 .agents/skills/neohaskell-release/scripts/releases/runtime_inputs.py --write`.
-//! Use `--check` for a read-only exact export comparison. Cargo never runs Python.
 
 use base64::{Engine, engine::general_purpose::STANDARD};
 use serde::de::{self, DeserializeSeed, MapAccess, SeqAccess, Visitor};
