@@ -1,5 +1,6 @@
 """Build and verify one release's installer and signed Nix package closure."""
 import base64
+from contextlib import contextmanager
 import json
 import os
 from pathlib import Path
@@ -135,9 +136,19 @@ def nar_identities(metadata):
     }
 
 
-def verify_clean_store(root, local, system, caches, workspace):
+@contextmanager
+def isolated_store_directory(workspace):
     with tempfile.TemporaryDirectory(dir=workspace, prefix="acquire-") as temporary:
-        isolated = Path(temporary)
+        directory = Path(temporary)
+        try:
+            yield directory
+        finally:
+            for current, _, _ in os.walk(directory, followlinks=False):
+                Path(current).chmod(0o700)
+
+
+def verify_clean_store(root, local, system, caches, workspace):
+    with isolated_store_directory(workspace) as isolated:
         store = f"local?root={isolated / 'store'}"
         retained = isolated / "pair"
         if json.loads(output(*path_info_args("--store", store, "--all"))):

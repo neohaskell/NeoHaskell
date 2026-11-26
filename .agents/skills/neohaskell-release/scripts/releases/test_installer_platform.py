@@ -2,6 +2,8 @@ import json
 import subprocess
 import shutil
 from pathlib import Path
+import stat
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -65,6 +67,20 @@ class InstallerPlatform(unittest.TestCase):
         for references in ([], [different], [toolchain, different]):
             with self.subTest(references=references), self.assertRaisesRegex(ValueError, toolchain):
                 platform.pair_closure(self.path, toolchain, {self.path: {"references": references}}, "aarch64-linux")
+
+    def test_read_only_store_cleanup_preserves_external_symlink_target(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            workspace = Path(temporary)
+            outside = workspace / "outside"
+            outside.write_text("keep")
+            outside.chmod(0o444)
+            with platform.isolated_store_directory(workspace) as store:
+                contents = store / "contents"
+                contents.mkdir()
+                (contents / "external").symlink_to(outside)
+                contents.chmod(0o555)
+            self.assertFalse(store.exists())
+            self.assertEqual(stat.S_IMODE(outside.stat().st_mode), 0o444)
 
     @unittest.skipUnless(shutil.which("openssl"), "OpenSSL is required for Ed25519 validation")
     def test_signed_cache_fingerprint_rejects_an_altered_nar_size(self):

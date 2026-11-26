@@ -482,6 +482,8 @@ class CiVerificationTests(unittest.TestCase):
                 )
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 self.assertEqual(job_runs("neo-ci.yml", "toolchain", outputs), runs)
+                if runs:
+                    self.assertTrue(job_runs("neo-ci.yml", "nix-package", outputs))
 
 
 if __name__ == "__main__":
