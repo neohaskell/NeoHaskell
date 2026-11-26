@@ -161,6 +161,10 @@ def job_runs(name: str, job: str, outputs: dict[str, str]) -> bool:
     guard = " ".join(guard_lines)
     predicate = re.compile(r"needs\.changes\.outputs\.([A-Za-z0-9_-]+)\s*==\s*'true'")
     evaluated = predicate.sub(lambda match: str(outputs.get(match.group(1)) == "true").lower(), guard)
+    alternative = re.fullmatch(r"(true|false) && \((true|false) \|\| (true|false)\)", evaluated)
+    if alternative:
+        required, first_choice, second_choice = alternative.groups()
+        return required == "true" and "true" in (first_choice, second_choice)
     if not re.fullmatch(r"(?:true|false)(?:\s*&&\s*(?:true|false))*", evaluated):
         raise AssertionError(f"unsupported {name} job condition for {job}: {guard}")
     return all(value.strip() == "true" for value in evaluated.split("&&"))
