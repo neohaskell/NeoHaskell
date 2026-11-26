@@ -143,7 +143,7 @@ class RuntimeContract(unittest.TestCase):
                 CandidateFixtureCorpus(selected, root / "corpus")
             self.assertFalse((root / "escaped.cabal").exists())
 
-    def test_release_version_bump_updates_the_only_parse_fixture(self):
+    def test_release_version_and_starter_seed_update_the_only_parse_fixture(self):
         with temporary_corpus_directory() as temporary:
             root = Path(temporary)
             selected = root / "next-release"
@@ -153,12 +153,20 @@ class RuntimeContract(unittest.TestCase):
             for path, name in {**profile["packages"], **profile["locks"]}.items():
                 manifest = selected / path
                 manifest.write_text(candidate.release.change_version(manifest.read_text(), path, name, updated_version))
+            registry = candidate.contract_registry_projection()["registry"]["source_inputs"]
+            engineering_pin = registry["engineering_starter_framework_revision"]
+            release_pin = "f" * 40
+            for relative in registry["build"]["starter"].values():
+                manifest = selected / relative
+                manifest.write_text(manifest.read_text().replace(engineering_pin, release_pin))
             after = CandidateFixtureCorpus(selected, root / "corpus")
             self.assertEqual({path.name for path in after.root.iterdir()}, {"current", "fixture-set.json", "runtime_cases.json", "source"})
             directory = after.root / "current"
             parsed = candidate.parse_candidate((directory / "candidate.json").read_bytes(), directory)
             index = json.loads((after.root / "fixture-set.json").read_bytes())
             self.assertEqual(parsed.version, updated_version)
+            self.assertEqual(parsed.core["build_inputs"]["starter"]["framework_revision"], engineering_pin)
+            self.assertIn(release_pin, (selected / registry["build"]["starter"]["flake"]).read_text())
             self.assertEqual(index["version"], updated_version)
             self.assertEqual(index["candidate_ids"], {"current": parsed.candidate_id})
 

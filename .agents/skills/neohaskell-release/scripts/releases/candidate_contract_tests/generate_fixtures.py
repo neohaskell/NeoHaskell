@@ -106,6 +106,24 @@ def _missing_source_path(root, relative):
     return False
 
 
+def _pin_engineering_starter(snapshot_root, source_inputs):
+    starter = source_inputs["build"]["starter"]
+    lock_path = snapshot_root / starter["lock"]
+    lock = json.loads(lock_path.read_bytes())
+    framework = lock["nodes"]["neohaskell"]
+    source_pin = framework["locked"]["rev"]
+    engineering_pin = source_inputs["engineering_starter_framework_revision"]
+    if source_pin == engineering_pin:
+        return
+
+    for role in ("flake", "cabal_project"):
+        path = snapshot_root / starter[role]
+        path.write_bytes(path.read_bytes().replace(source_pin.encode(), engineering_pin.encode()))
+    framework["original"]["rev"] = engineering_pin
+    framework["locked"].update(rev=engineering_pin, narHash=_sri(b"synthetic engineering starter"))
+    lock_path.write_bytes(candidate.canonical_json(lock))
+
+
 def _write_source_snapshot(source_root, output_root):
     projection = candidate.contract_registry_projection()
     paths = _source_paths(projection["registry"], source_root)
@@ -124,6 +142,7 @@ def _write_source_snapshot(source_root, output_root):
     candidate._validate_registry(registry)
     if candidate.canonical_json(registry) != candidate.canonical_json(projection["registry"]):
         raise ValueError("Candidate contract registry differs from its selected source")
+    _pin_engineering_starter(snapshot_root, registry["source_inputs"])
     return projection, snapshot_root
 
 
