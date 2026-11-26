@@ -1,6 +1,6 @@
 {
   "name": "neoctl",
-  "version": "0.19.3",
+  "version": "0.19.4",
   "neo-version": "main",
   "description": "NeoHaskell control service",
   "author": "NeoHaskell contributors",
