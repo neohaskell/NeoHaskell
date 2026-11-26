@@ -1604,6 +1604,37 @@
       "source_sha": "f60da612bdf33f52878425486196a21fa346fc14",
       "target_policy": "native-v2",
       "version": "0.19.2"
+    },
+    {
+      "base_sha": "1559662f8f53280987c879e6dd6ed91f90a1045e",
+      "base_tag": "neo-v0.19.2",
+      "base_version": "0.19.2",
+      "bootstrap": false,
+      "contract_registry_sha256": "993db493d248ac754cf1c6631d03aa63f3be766e489d927a6c72d10d28cbb961",
+      "date": "2026-11-26",
+      "distribution_policy": "installer-v1",
+      "group": "platform",
+      "id": "07baa86899746eaeadd44eadaa3c5bcc68cc27fa6f141bc2957bb855725e688f",
+      "impact": "compatible",
+      "kind": "release",
+      "notes": [
+        {
+          "category": "Fixed",
+          "commit": "e0359ed9dc36c3d9939ac4d4d9db6d3455956e73",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "eeb5c9a58bfa8dd090b9470ad6a19674a5951f1e6dae6890d9655ef015be11ee",
+          "impact": "compatible",
+          "path": ".changes/postgres-insertion-preconditions.md",
+          "sections": {
+            "Summary": "The PostgreSQL, Simple and in-memory event stores now agree on when a write\nis refused. Before this fix, some writes slipped through and could damage an\nentity's history:\n\n- On PostgreSQL, a write that says \"add after event 5\" when the stream only\n  has events up to 3 was saved at position 6. That left a gap in the stream\n  that could never be filled.\n- On PostgreSQL, a write that expects the entity to exist was saved even when\n  the entity had no events yet, which created it by accident.\n- On every store, a write that says \"add after event -1\" or another negative\n  position was saved.\n\nThese writes now fail with `ConsistencyCheckFailed`, and nothing is saved.\nA write that says \"add after event N\" now succeeds only when N is the last\nevent in the stream, on every store. Commands that use `acceptExisting` or\n`acceptAfter` get the usual conflict handling instead of a silently wrong\nhistory. On PostgreSQL, sending the exact same events again after a\nsuccessful write still succeeds without saving them twice.\n\nYou do not need to change your app. Streams that already have gaps are not\nrepaired."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: compatible\ncategory: Fixed\n---\n\n## Summary\n\nThe PostgreSQL, Simple and in-memory event stores now agree on when a write\nis refused. Before this fix, some writes slipped through and could damage an\nentity's history:\n\n- On PostgreSQL, a write that says \"add after event 5\" when the stream only\n  has events up to 3 was saved at position 6. That left a gap in the stream\n  that could never be filled.\n- On PostgreSQL, a write that expects the entity to exist was saved even when\n  the entity had no events yet, which created it by accident.\n- On every store, a write that says \"add after event -1\" or another negative\n  position was saved.\n\nThese writes now fail with `ConsistencyCheckFailed`, and nothing is saved.\nA write that says \"add after event N\" now succeeds only when N is the last\nevent in the stream, on every store. Commands that use `acceptExisting` or\n`acceptAfter` get the usual conflict handling instead of a silently wrong\nhistory. On PostgreSQL, sending the exact same events again after a\nsuccessful write still succeeds without saving them twice.\n\nYou do not need to change your app. Streams that already have gaps are not\nrepaired.\n"
+        }
+      ],
+      "source_sha": "e0359ed9dc36c3d9939ac4d4d9db6d3455956e73",
+      "target_policy": "native-v2",
+      "version": "0.19.3"
     }
   ],
   "recoveries": [],
