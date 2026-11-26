@@ -643,11 +643,6 @@ impl OperationOwner {
     pub(super) fn execute(mut self, operation: WorkerRequest) -> io::Result<OperationResult> {
         self.wait_ready()?;
         self.submit(operation)?;
-        self.wait_for_result()
-    }
-
-    #[cfg(test)]
-    fn wait_for_result(&mut self) -> io::Result<OperationResult> {
         loop {
             match self.poll() {
                 ProcessPoll::Pending | ProcessPoll::Ready => self.wait_for_interest(),
@@ -1938,7 +1933,13 @@ mod tests {
             marker.exists()
         });
         owner.control.write_all(b"unexpected").unwrap();
-        let result = owner.wait_for_result().unwrap();
+        await_condition(|| {
+            assert!(matches!(owner.poll(), ProcessPoll::Pending));
+            matches!(owner.state, ProcessState::End(_))
+        });
+        let ProcessState::End(result) = &owner.state else {
+            unreachable!()
+        };
         assert_eq!(
             result.failure.as_deref(),
             Some("unexpected controller message")
