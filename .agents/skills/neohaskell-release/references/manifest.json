@@ -1604,6 +1604,63 @@
       "source_sha": "f60da612bdf33f52878425486196a21fa346fc14",
       "target_policy": "native-v2",
       "version": "0.19.2"
+    },
+    {
+      "base_sha": "1559662f8f53280987c879e6dd6ed91f90a1045e",
+      "base_tag": "neo-v0.19.2",
+      "base_version": "0.19.2",
+      "bootstrap": false,
+      "contract_registry_sha256": "993db493d248ac754cf1c6631d03aa63f3be766e489d927a6c72d10d28cbb961",
+      "date": "2026-11-26",
+      "distribution_policy": "installer-v1",
+      "group": "platform",
+      "id": "572d5094b86db7659697f8705a9bf13c0fceb94059cbfe817b646ec4aac26733",
+      "impact": "compatible",
+      "kind": "release",
+      "notes": [
+        {
+          "category": "Fixed",
+          "commit": "e0359ed9dc36c3d9939ac4d4d9db6d3455956e73",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "eeb5c9a58bfa8dd090b9470ad6a19674a5951f1e6dae6890d9655ef015be11ee",
+          "impact": "compatible",
+          "path": ".changes/postgres-insertion-preconditions.md",
+          "sections": {
+            "Summary": "The PostgreSQL, Simple and in-memory event stores now agree on when a write\nis refused. Before this fix, some writes slipped through and could damage an\nentity's history:\n\n- On PostgreSQL, a write that says \"add after event 5\" when the stream only\n  has events up to 3 was saved at position 6. That left a gap in the stream\n  that could never be filled.\n- On PostgreSQL, a write that expects the entity to exist was saved even when\n  the entity had no events yet, which created it by accident.\n- On every store, a write that says \"add after event -1\" or another negative\n  position was saved.\n\nThese writes now fail with `ConsistencyCheckFailed`, and nothing is saved.\nA write that says \"add after event N\" now succeeds only when N is the last\nevent in the stream, on every store. Commands that use `acceptExisting` or\n`acceptAfter` get the usual conflict handling instead of a silently wrong\nhistory. On PostgreSQL, sending the exact same events again after a\nsuccessful write still succeeds without saving them twice.\n\nYou do not need to change your app. Streams that already have gaps are not\nrepaired."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: compatible\ncategory: Fixed\n---\n\n## Summary\n\nThe PostgreSQL, Simple and in-memory event stores now agree on when a write\nis refused. Before this fix, some writes slipped through and could damage an\nentity's history:\n\n- On PostgreSQL, a write that says \"add after event 5\" when the stream only\n  has events up to 3 was saved at position 6. That left a gap in the stream\n  that could never be filled.\n- On PostgreSQL, a write that expects the entity to exist was saved even when\n  the entity had no events yet, which created it by accident.\n- On every store, a write that says \"add after event -1\" or another negative\n  position was saved.\n\nThese writes now fail with `ConsistencyCheckFailed`, and nothing is saved.\nA write that says \"add after event N\" now succeeds only when N is the last\nevent in the stream, on every store. Commands that use `acceptExisting` or\n`acceptAfter` get the usual conflict handling instead of a silently wrong\nhistory. On PostgreSQL, sending the exact same events again after a\nsuccessful write still succeeds without saving them twice.\n\nYou do not need to change your app. Streams that already have gaps are not\nrepaired.\n"
+        },
+        {
+          "category": "Fixed",
+          "commit": "13c655f7ddf8e37b3b39f0f90e2fb347451d76fe",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "4d30c4896c13d4fd2d9f06fb9b851d22f2b8a5121a220a4beb74db02131ad0f6",
+          "impact": "compatible",
+          "path": ".changes/023-subprocess-lifecycle.md",
+          "sections": {
+            "Summary": "`Subprocess.runWithTimeout` now drains stdout and stderr together, so a child that writes more than a pipe can hold does not stall until its timeout. The function still returns complete output, including output larger than one MiB; there is no new capture limit or API change.\n\nTimeouts and cancellation now close captured pipes and stop and reap the direct child, including a child that ignores TERM on macOS or Linux. Cleanup allows a one-second TERM grace before forced termination. This does not terminate descendants or provide a sandbox. No application changes are required. Existing callers can verify the fix by capturing large output and by checking that timed-out or cancelled direct children no longer remain running."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: compatible\ncategory: Fixed\n---\n\n## Summary\n\n`Subprocess.runWithTimeout` now drains stdout and stderr together, so a child that writes more than a pipe can hold does not stall until its timeout. The function still returns complete output, including output larger than one MiB; there is no new capture limit or API change.\n\nTimeouts and cancellation now close captured pipes and stop and reap the direct child, including a child that ignores TERM on macOS or Linux. Cleanup allows a one-second TERM grace before forced termination. This does not terminate descendants or provide a sandbox. No application changes are required. Existing callers can verify the fix by capturing large output and by checking that timed-out or cancelled direct children no longer remain running.\n"
+        },
+        {
+          "category": "Added",
+          "commit": "13c655f7ddf8e37b3b39f0f90e2fb347451d76fe",
+          "component": "Framework",
+          "group": "platform",
+          "hash": "e1e835f34952cbca2f641b53f8e58ca73eebb402dd6a5712701462a90facf70a",
+          "impact": "compatible",
+          "path": ".changes/async-task-test-operations.md",
+          "sections": {
+            "Summary": "Two `AsyncTask` operations help you test cleanup code. `AsyncTask.injectRuntimeFailure` raises a failure with your message inside a running task, so a test can check what the task cleans up when it fails from outside. `AsyncTask.threadsLeftRunningBy` runs a task and lists the threads it started that are still running, so a test can prove an operation leaves no worker behind. Both report a momentary snapshot and are meant for tests. Existing apps need no changes."
+          },
+          "text": "---\ngroup: platform\ncomponent: Framework\nimpact: compatible\ncategory: Added\n---\n\n## Summary\n\nTwo `AsyncTask` operations help you test cleanup code. `AsyncTask.injectRuntimeFailure` raises a failure with your message inside a running task, so a test can check what the task cleans up when it fails from outside. `AsyncTask.threadsLeftRunningBy` runs a task and lists the threads it started that are still running, so a test can prove an operation leaves no worker behind. Both report a momentary snapshot and are meant for tests. Existing apps need no changes.\n"
+        }
+      ],
+      "source_sha": "13c655f7ddf8e37b3b39f0f90e2fb347451d76fe",
+      "target_policy": "native-v2",
+      "version": "0.19.3"
     }
   ],
   "recoveries": [],

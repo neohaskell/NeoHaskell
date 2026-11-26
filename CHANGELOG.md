@@ -1,5 +1,40 @@
 # Changelog
 
+## 0.19.3 — 2026-11-26
+
+### Added
+
+- **Framework**: Two `AsyncTask` operations help you test cleanup code. `AsyncTask.injectRuntimeFailure` raises a failure with your message inside a running task, so a test can check what the task cleans up when it fails from outside. `AsyncTask.threadsLeftRunningBy` runs a task and lists the threads it started that are still running, so a test can prove an operation leaves no worker behind. Both report a momentary snapshot and are meant for tests. Existing apps need no changes. ([change](https://github.com/neohaskell/NeoHaskell/commit/13c655f7ddf8e37b3b39f0f90e2fb347451d76fe))
+
+### Fixed
+
+- **Framework**: The PostgreSQL, Simple and in-memory event stores now agree on when a write
+is refused. Before this fix, some writes slipped through and could damage an
+entity's history:
+
+- On PostgreSQL, a write that says "add after event 5" when the stream only
+  has events up to 3 was saved at position 6. That left a gap in the stream
+  that could never be filled.
+- On PostgreSQL, a write that expects the entity to exist was saved even when
+  the entity had no events yet, which created it by accident.
+- On every store, a write that says "add after event -1" or another negative
+  position was saved.
+
+These writes now fail with `ConsistencyCheckFailed`, and nothing is saved.
+A write that says "add after event N" now succeeds only when N is the last
+event in the stream, on every store. Commands that use `acceptExisting` or
+`acceptAfter` get the usual conflict handling instead of a silently wrong
+history. On PostgreSQL, sending the exact same events again after a
+successful write still succeeds without saving them twice.
+
+You do not need to change your app. Streams that already have gaps are not
+repaired. ([change](https://github.com/neohaskell/NeoHaskell/commit/e0359ed9dc36c3d9939ac4d4d9db6d3455956e73))
+- **Framework**: `Subprocess.runWithTimeout` now drains stdout and stderr together, so a child that writes more than a pipe can hold does not stall until its timeout. The function still returns complete output, including output larger than one MiB; there is no new capture limit or API change.
+
+Timeouts and cancellation now close captured pipes and stop and reap the direct child, including a child that ignores TERM on macOS or Linux. Cleanup allows a one-second TERM grace before forced termination. This does not terminate descendants or provide a sandbox. No application changes are required. Existing callers can verify the fix by capturing large output and by checking that timed-out or cancelled direct children no longer remain running. ([change](https://github.com/neohaskell/NeoHaskell/commit/13c655f7ddf8e37b3b39f0f90e2fb347451d76fe))
+
+[Compare changes](https://github.com/neohaskell/NeoHaskell/compare/neo-v0.19.2...neo-v0.19.3)
+
 ## 0.19.2 — 2026-11-24
 
 ### Added
