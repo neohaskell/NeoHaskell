@@ -52,8 +52,12 @@
         neo-installer = pkgs.callPackage ./nix/neo-package.nix {
           command = "neo-installer";
         };
-        starterPath = builtins.unsafeDiscardStringContext self.outPath;
-        starter = builtins.getFlake "path:${starterPath}?narHash=${self.narHash}&dir=neo/starter";
+        starterLock = builtins.fromJSON (builtins.readFile ./neo/starter/flake.lock);
+        starter = (import haskellNix.inputs.flake-compat {
+          src = ./neo/starter;
+          inherit system;
+          override-inputs.neohaskell = builtins.fetchTree starterLock.nodes.neohaskell.locked;
+        }).defaultNix;
         neo-toolchain = starter.packages.${system}.neo-toolchain;
         neo-pair = pkgs.symlinkJoin {
           name = "neo-pair-${neo.version}";
