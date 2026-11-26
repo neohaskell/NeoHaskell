@@ -312,7 +312,7 @@ jobs:
           - system: aarch64-linux
             runner: ubuntu-24.04-arm
           - system: aarch64-darwin
-            runner: macos-15
+            runner: macos-latest
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 240
     steps:

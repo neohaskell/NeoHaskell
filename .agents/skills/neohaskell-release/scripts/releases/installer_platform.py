@@ -237,6 +237,8 @@ def rehearse_toolchain(repo, system, out):
         cache = (workspace / "cache").as_uri()
         subprocess.run(["nix", "copy", "--to", f"{cache}?secret-key={secret}&compression=zstd", pair], check=True)
         acquisition = verify_clean_store(pair, local, system, [{"cache": cache, "key": public}], workspace)
+        archives = json.loads(output(*path_info_args("--store", cache, "--recursive", pair)))
+        acquisition["compressed_nar_bytes"] = sum(entry["downloadSize"] for entry in archives.values())
         smoke_toolchain(repo, pair, toolchain)
     report = {"system": system, "pair": pair, "toolchain": toolchain, "acquisition": acquisition}
     (out / f"toolchain-{system}.json").write_bytes(candidate.canonical_json(report))

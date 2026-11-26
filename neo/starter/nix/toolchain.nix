@@ -4,7 +4,25 @@ let
   compiler = pkgs.haskell-nix.resolve-compiler-name starter.compiler-nix-name;
   frameworkGitUrl = "https://github.com/neohaskell/neohaskell.git";
   ghc = pkgs.haskell-nix.compiler.${compiler};
-  tools = pkgs.haskell-nix.tools compiler starter.shell.tools;
+  signDarwinBinaries = pkgs.darwin.autoSignDarwinBinariesHook;
+  upstreamTools = pkgs.haskell-nix.tools compiler starter.shell.tools;
+  tools = upstreamTools // pkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isDarwin {
+    hspec-discover = upstreamTools.hspec-discover.overrideAttrs (old: {
+      nativeBuildInputs = (old.nativeBuildInputs or [ ]) ++ [ signDarwinBinaries ];
+    });
+  };
+  packageModules = pkgs.lib.optional pkgs.stdenv.hostPlatform.isDarwin {
+    packages = pkgs.lib.genAttrs [
+      "autodocodec-nix"
+      "autodocodec-schema"
+      "hspec-core"
+      "safe-coloured-text-layout"
+      "string-interpolate"
+      "validity-aeson"
+      "validity-unordered-containers"
+      "yaml"
+    ] (_: { components.library.build-tools = [ signDarwinBinaries ]; });
+  };
   hls = tools.haskell-language-server;
   hlsWrapper = hls.project.getComponent
     "haskell-language-server:exe:haskell-language-server-wrapper";
@@ -17,6 +35,7 @@ let
   docs = pkgs.haskell-nix.cabalProject' {
     src = builtins.path { path = ./toolchain-docs; name = "neo-toolchain-docs"; };
     compiler-nix-name = compiler;
+    modules = packageModules;
     cabalProject = ''
       packages: *.cabal
 
@@ -59,13 +78,13 @@ let
       ln -s ${hoogleTool.project.plan-nix} "$out/share/neohaskell/plans/hoogle"
       ${pkgs.lib.concatStringsSep "\n" (pkgs.lib.mapAttrsToList (name: tool:
         ''ln -s ${tool.project.plan-nix} "$out/share/neohaskell/plans/${name}"''
-      ) tools)}
+      ) upstreamTools)}
       for tool in ghc cabal haddock hoogle hspec-discover hlint fourmolu haskell-language-server haskell-language-server-wrapper; do
         test -x "$out/bin/$tool"
       done
     '';
   };
 in {
-  inherit bundle compiler editorTools hoogle;
+  inherit bundle compiler editorTools hoogle packageModules tools;
   toolVersions = starter.shell.tools;
 }

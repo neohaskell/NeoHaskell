@@ -64,8 +64,12 @@
           && pkgs.lib.all (tool: (project.args.shell.tools.${tool} or null)
             == toolchain.toolVersions.${tool}) (builtins.attrNames toolchain.toolVersions);
         shellProject = if usesSharedTools then project.appendModule {
+          modules = toolchain.packageModules;
           shell.withHoogle = pkgs.lib.mkDefault false;
-          shell.nativeBuildInputs = [ toolchain.editorTools toolchain.hoogle ];
+          shell.tools = pkgs.lib.mkForce (builtins.removeAttrs project.args.shell.tools
+            (builtins.attrNames toolchain.toolVersions));
+          shell.nativeBuildInputs = builtins.attrValues toolchain.tools
+            ++ [ toolchain.editorTools toolchain.hoogle ];
         } else project;
         flake = shellProject.flake { };
       in flake // {
