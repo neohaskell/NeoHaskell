@@ -139,7 +139,7 @@ def nar_identities(metadata):
 @contextmanager
 def isolated_store_directory(workspace):
     with tempfile.TemporaryDirectory(dir=workspace, prefix="acquire-") as temporary:
-        directory = Path(temporary)
+        directory = Path(temporary).resolve(strict=True)
         try:
             yield directory
         finally:

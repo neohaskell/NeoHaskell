@@ -82,6 +82,17 @@ class InstallerPlatform(unittest.TestCase):
             self.assertFalse(store.exists())
             self.assertEqual(stat.S_IMODE(outside.stat().st_mode), 0o444)
 
+    def test_isolated_store_directory_resolves_symlinked_workspace(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            parent = Path(temporary).resolve()
+            workspace = parent / "workspace"
+            workspace.mkdir()
+            alias = parent / "alias"
+            alias.symlink_to(workspace, target_is_directory=True)
+            with platform.isolated_store_directory(alias) as store:
+                self.assertEqual(store.parent, workspace)
+            self.assertFalse(store.exists())
+
     @unittest.skipUnless(shutil.which("openssl"), "OpenSSL is required for Ed25519 validation")
     def test_signed_cache_fingerprint_rejects_an_altered_nar_size(self):
         path = "/nix/store/3161xhazkr55b1vi5h0a43zk377kf4sq-gcc-14.3.0-libgcc"
