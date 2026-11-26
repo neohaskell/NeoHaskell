@@ -1,6 +1,7 @@
 import json
 import subprocess
 import shutil
+from pathlib import Path
 import unittest
 from unittest.mock import patch
 
@@ -23,18 +24,12 @@ class InstallerPlatform(unittest.TestCase):
         ]
 
     def test_dependency_uses_upstream_that_can_verify_its_signature_and_bytes(self):
-        with patch.object(platform, "remote_info", return_value=self.metadata), patch.object(
-            subprocess, "run"
-        ) as verify:
+        with patch.object(platform, "remote_info", return_value=self.metadata):
             rows = platform.closure_rows({self.path: self.metadata}, {}, self.caches)
         self.assertEqual(rows[0]["locations"], [
             {"cache": "https://upstream.test", "signatures": ["upstream:signature"]}
         ])
         self.verify_signature.assert_called_once_with(self.path, self.metadata, "upstream:public", ["upstream:signature"])
-        verify.assert_called_once_with([
-            "nix", "store", "verify", "--store", "https://upstream.test",
-            "--option", "trusted-public-keys", "upstream:public", "--sigs-needed", "1", "--stdin",
-        ], input=self.path + "\n", text=True, check=True)
 
     def test_project_root_must_be_signed_by_the_project_cache(self):
         with patch.object(platform, "remote_info", return_value=self.metadata), self.assertRaisesRegex(
@@ -49,18 +44,27 @@ class InstallerPlatform(unittest.TestCase):
             ), self.assertRaisesRegex(ValueError, "Remote NAR identity"):
                 platform.closure_rows({self.path: self.metadata}, {}, self.caches)
 
-    def test_failed_nix_verification_stops_before_pinning(self):
-        actions = []
-        def run(command, **kwargs):
-            actions.append(command[:3])
-            if command[:3] == ["nix", "store", "verify"]:
-                raise subprocess.CalledProcessError(1, command)
+    def test_failed_clean_store_acquisition_stops_before_pinning(self):
+        toolchain = "/nix/store/11111111111111111111111111111111-neo-toolchain"
         signed = {**self.metadata, "signatures": ["project:signature"]}
-        with patch.object(platform, "output", return_value=json.dumps({self.path: signed})), patch.object(
-            platform, "remote_info", return_value=signed
-        ), patch.object(subprocess, "run", side_effect=run), self.assertRaises(subprocess.CalledProcessError):
-            platform.publish_closure({"pair": self.path}, "aarch64-linux", "0.18.0", self.caches, {})
-        self.assertEqual(actions, [["cachix", "push", "neohaskell"], ["nix", "store", "verify"]])
+        closure = {self.path: {**signed, "references": [toolchain]}, toolchain: signed}
+        with (patch.object(platform, "output", return_value=json.dumps(closure)),
+              patch.object(platform, "remote_info", side_effect=lambda cache, path: closure[path]),
+              patch.object(platform, "verify_clean_store", side_effect=ValueError("acquisition failed")),
+              patch.object(subprocess, "run") as command,
+              self.assertRaisesRegex(ValueError, "acquisition failed")):
+            platform.publish_closure({"pair": self.path}, toolchain, "aarch64-linux", "0.18.0",
+                                     self.caches, {}, Path("."))
+        command.assert_called_once_with(
+            ["cachix", "push", "neohaskell", self.path], check=True, env={},
+        )
+
+    def test_pair_requires_the_exact_starter_toolchain_as_a_direct_reference(self):
+        toolchain = "/nix/store/11111111111111111111111111111111-neo-toolchain"
+        different = "/nix/store/22222222222222222222222222222222-neo-toolchain"
+        for references in ([], [different], [toolchain, different]):
+            with self.subTest(references=references), self.assertRaisesRegex(ValueError, toolchain):
+                platform.pair_closure(self.path, toolchain, {self.path: {"references": references}}, "aarch64-linux")
 
     @unittest.skipUnless(shutil.which("openssl"), "OpenSSL is required for Ed25519 validation")
     def test_signed_cache_fingerprint_rejects_an_altered_nar_size(self):

@@ -24,7 +24,7 @@ DOCTEST_DEPENDENCIES = (
 )
 CI_GATES = {
     "test.yml": ("ci-gate", ("build", "test-core", "test-transport", "test-auth", "test-integration", "test-service", "test-hurl")),
-    "neo-ci.yml": ("neo-ci-gate", ("rust", "ide", "nix-package", "consumer-contract")),
+    "neo-ci.yml": ("neo-ci-gate", ("rust", "ide", "nix-package", "consumer-contract", "toolchain")),
 }
 EXPENSIVE_JOB_SELECTORS = {
     "test.yml": {"build": "compiled"},
@@ -184,7 +184,8 @@ def selected_values(name: str, selected: bool) -> dict[str, str]:
     if name == "test.yml":
         return {"COMPILED": str(selected).lower()}
     if name == "neo-ci.yml":
-        return {"TOUCHED": str(selected).lower(), "CONTRACT": str(selected).lower()}
+        value = str(selected).lower()
+        return {"TOUCHED": value, "CONTRACT": value, "TOOLCHAIN": value}
     return {"TOUCHED": str(selected).lower()}
 
 
@@ -423,7 +424,7 @@ class CiVerificationTests(unittest.TestCase):
 
     def test_neo_contract_gate_requires_a_selected_consumer_run(self) -> None:
         all_skipped = {job: "skipped" for job in CI_GATES["neo-ci.yml"][1]}
-        contract_only = {"TOUCHED": "false", "CONTRACT": "true"}
+        contract_only = {"TOUCHED": "false", "CONTRACT": "true", "TOOLCHAIN": "false"}
         skipped = run_gate("neo-ci.yml", run_expensive=True, selected=contract_only, changes_result="success", job_results=all_skipped)
         self.assertNotEqual(skipped.returncode, 0)
         completed = run_gate(
@@ -452,7 +453,7 @@ class CiVerificationTests(unittest.TestCase):
                         result = run_gate(
                             "neo-ci.yml",
                             run_expensive=run_expensive,
-                            selected={"TOUCHED": "false", "CONTRACT": contract},
+                            selected={"TOUCHED": "false", "CONTRACT": contract, "TOOLCHAIN": "false"},
                             changes_result="success",
                             job_results={
                                 "rust": "skipped",
@@ -464,6 +465,23 @@ class CiVerificationTests(unittest.TestCase):
                         )
                         self.assertNotEqual(result.returncode, 0)
                         self.assertIn("consumer-contract did not pass", result.stdout + result.stderr)
+
+    def test_toolchain_proof_runs_for_relevant_ready_prs_only(self) -> None:
+        for event, draft, path, runs in (
+            ("pull_request", False, "neo/starter/nix/toolchain.nix", True),
+            ("pull_request", False, ".agents/skills/neohaskell-release/scripts/releases/installer_platform.py", True),
+            ("pull_request", True, "neo/starter/nix/toolchain.nix", False),
+            ("pull_request", False, "docs/guide.md", False),
+            ("push", False, "neo/starter/nix/toolchain.nix", False),
+        ):
+            with self.subTest(event=event, draft=draft, path=path):
+                result, outputs = run_change_detection(
+                    "neo-ci.yml", event=event, draft=draft, action="opened",
+                    label_event=False, label_present=False, changed_paths=(path,),
+                    push_before="1" * 40,
+                )
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertEqual(job_runs("neo-ci.yml", "toolchain", outputs), runs)
 
 
 if __name__ == "__main__":

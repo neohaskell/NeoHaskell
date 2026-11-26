@@ -160,6 +160,7 @@ fn frozen_candidates_project_only_the_selected_closure() {
             .unwrap()
         {
             let selected = parsed.selected(system.as_str().unwrap()).unwrap();
+            assert!(selected.output("toolchain").is_none());
             for role in contract.registry()["roles"]["nix_packages"]["outputs"]
                 .as_array()
                 .unwrap()
@@ -189,6 +190,45 @@ fn frozen_candidates_project_only_the_selected_closure() {
             MetadataError::System
         );
     }
+}
+
+#[test]
+fn selects_the_exact_toolchain_from_the_pairs_signed_closure() {
+    let loaded = files(&fixture_root().join("current-0.17.2"));
+    let contract = Contract::load().unwrap();
+    let mut core = core(&contract, &loaded["candidate.json"]).unwrap();
+    let mut table: Value = serde_json::from_slice(&loaded["closures.json"]).unwrap();
+    let system = "aarch64-darwin";
+    let toolchain = "/nix/store/zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz-neo-toolchain";
+    let pair = core.roots[system]["pair"].as_str().to_owned();
+    let rows = table["paths"].as_array_mut().unwrap();
+    let pair_row = rows.iter_mut().find(|row| row["store_path"] == pair).unwrap();
+    let mut toolchain_row = pair_row.clone();
+    toolchain_row["store_path"] = toolchain.into();
+    toolchain_row["references"] = json!([]);
+    let references = pair_row["references"].as_array_mut().unwrap();
+    references.push(toolchain.into());
+    references.sort_by(|left, right| left.as_str().cmp(&right.as_str()));
+    rows.push(toolchain_row);
+    rows.sort_by(|left, right| left["store_path"].as_str().cmp(&right["store_path"].as_str()));
+
+    let old = metadata(&loaded).unwrap();
+    let previous = old.selected(system).unwrap().closure();
+    let identities = rows.iter().filter_map(|row| {
+        let path = contract.path(&row["store_path"]).unwrap();
+        (path.as_str() == toolchain || previous.contains_key(&path)).then(|| {
+            json!({"store_path": row["store_path"], "nar_hash": row["nar_hash"], "nar_size": row["nar_size"], "references": row["references"]})
+        })
+    }).collect::<Vec<_>>();
+    core.value["packages"][system]["pair"]["closure_id"] =
+        value_hash(&Value::Array(identities)).unwrap().into();
+
+    let selections = closures(&contract, &core, &table).unwrap();
+    let expected = OutputPath::parse(toolchain).unwrap();
+    let selected = &selections[system];
+    assert_eq!(selected.output("toolchain"), Some(&expected));
+    assert!(selected.closure().contains_key(&expected));
+    assert!(selections["aarch64-linux"].output("toolchain").is_none());
 }
 
 #[test]

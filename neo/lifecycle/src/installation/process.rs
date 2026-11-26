@@ -51,6 +51,9 @@ pub(super) enum WorkerRequest {
         candidate: String,
         offline: bool,
     },
+    AcquireProjectToolchain {
+        output: String,
+    },
     RegisterExact {
         pair: String,
         root: RootName,
@@ -84,6 +87,7 @@ pub(super) enum WorkerRequest {
 pub(super) enum RootName {
     Candidate(String),
     Generation(String),
+    ProjectToolchain,
 }
 
 impl WorkerRequest {
@@ -99,6 +103,7 @@ impl WorkerRequest {
             Self::ShellStartup(_)
             | Self::ApplyCacheSettings(_)
             | Self::AcquireRetained { .. }
+            | Self::AcquireProjectToolchain { .. }
             | Self::RegisterExact { .. }
             | Self::ProbeTool { .. } => true,
             #[cfg(test)]
@@ -902,19 +907,8 @@ impl WorkerRequest {
                 OutputPath::parse(pair).map_err(|_| invalid("opaque output path"))?;
                 let directory = directory.join("resources");
                 validate_directory(&directory, true).map_err(|_| invalid("resource directory"))?;
-                let mut command = nix_daemon_command()?;
-                if *offline {
-                    command.arg("--offline");
-                } else {
-                    let urls = crate::candidate::nix_cache_urls()
-                        .map_err(|_| invalid("declared substituters"))?;
-                    command
-                        .args(["--option", "substitute", "true", "--option", "substituters"])
-                        .arg(urls);
-                }
+                let mut command = exact_build(*offline)?;
                 command
-                    .args(["--option", "builders", "", "--max-jobs", "0"])
-                    .arg("build")
                     .arg("--profile")
                     .arg(directory.join("prepared"))
                     .arg("--out-link")
@@ -922,12 +916,28 @@ impl WorkerRequest {
                     .arg(pair);
                 command
             }
+            Self::AcquireProjectToolchain { output } => {
+                let output = OutputPath::parse(output).map_err(|_| invalid("toolchain output"))?;
+                let names = super::toolchain::RootNames::new(&output)
+                    .ok_or_else(|| invalid("toolchain output name"))?;
+                let directory = directory.join("resources");
+                validate_directory(&directory, true).map_err(|_| invalid("resource directory"))?;
+                let mut command = exact_build(false)?;
+                command
+                    .arg("--out-link")
+                    .arg(directory.join(names.staged()))
+                    .arg(output.as_str());
+                command
+            }
             Self::RegisterExact { pair, root } => {
-                OutputPath::parse(pair).map_err(|_| invalid("opaque output path"))?;
+                let output = OutputPath::parse(pair).map_err(|_| invalid("opaque output path"))?;
                 let directory = directory.join("resources");
                 validate_directory(&directory, true).map_err(|_| invalid("resource directory"))?;
                 let name = match root {
                     RootName::Candidate(id) => candidate_root(id)?,
+                    RootName::ProjectToolchain => super::toolchain::RootNames::new(&output)
+                        .ok_or_else(|| invalid("toolchain output name"))?
+                        .registered(),
                     RootName::Generation(name) => {
                         if !super::resources::is_generation(name) {
                             return Err(invalid("generation root name"));
@@ -1083,6 +1093,21 @@ fn nix_command() -> io::Result<Command> {
 fn nix_daemon_command() -> io::Result<Command> {
     let mut command = nix_command()?;
     command.args(["--store", super::nix::system_daemon()?]);
+    Ok(command)
+}
+
+fn exact_build(offline: bool) -> io::Result<Command> {
+    let mut command = nix_daemon_command()?;
+    if offline {
+        command.arg("--offline");
+    } else {
+        let urls =
+            crate::candidate::nix_cache_urls().map_err(|_| invalid("declared substituters"))?;
+        command
+            .args(["--option", "substitute", "true", "--option", "substituters"])
+            .arg(urls);
+    }
+    command.args(["--option", "builders", "", "--max-jobs", "0", "build"]);
     Ok(command)
 }
 

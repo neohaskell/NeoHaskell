@@ -52,10 +52,15 @@
         neo-installer = pkgs.callPackage ./nix/neo-package.nix {
           command = "neo-installer";
         };
+        starterPath = builtins.unsafeDiscardStringContext self.outPath;
+        starter = builtins.getFlake "path:${starterPath}?narHash=${self.narHash}&dir=neo/starter";
+        neo-toolchain = starter.packages.${system}.neo-toolchain;
         neo-pair = pkgs.symlinkJoin {
           name = "neo-pair-${neo.version}";
           paths = [ neo neoctl ];
           postBuild = ''
+            mkdir -p "$out/share/neohaskell"
+            ln -s ${neo-toolchain} "$out/share/neohaskell/toolchain"
             test -x "$out/bin/neo"
             test -x "$out/bin/neoctl"
             for installed in "$out/bin/"*; do
@@ -73,7 +78,7 @@
         legacyPackages = pkgs;
         packages = flake.packages // { inherit neo neoctl; }
           // pkgs.lib.optionalAttrs (system != "x86_64-darwin") {
-            inherit neo-installer neo-pair;
+            inherit neo-installer neo-pair neo-toolchain;
           };
         apps = (flake.apps or { }) // {
           neo = {

@@ -21,6 +21,7 @@ jobs:
       touched: ${{ steps.detect.outputs.touched }}
       run_expensive: ${{ steps.detect.outputs.run_expensive }}
       contract: ${{ steps.detect.outputs.contract }}
+      toolchain: ${{ steps.detect.outputs.toolchain }}
     steps:
       - uses: actions/checkout@v7.0.1
         with:
@@ -46,8 +47,11 @@ jobs:
           if [ "$EVENT" = "push" ]; then
             PUSH_BEFORE="${PUSH_BEFORE:-}"
             if [ -z "$PUSH_BEFORE" ] || [[ "$PUSH_BEFORE" =~ ^0+$ ]] || ! git cat-file -e "${PUSH_BEFORE}^{commit}" 2>/dev/null; then
-              echo "touched=true" >> "$GITHUB_OUTPUT"
-              echo "contract=true" >> "$GITHUB_OUTPUT"
+              {
+                echo "touched=true"
+                echo "contract=true"
+                echo "toolchain=false"
+              } >> "$GITHUB_OUTPUT"
               exit 0
             fi
             CHANGED="$(git diff --name-only "${PUSH_BEFORE}..HEAD")"
@@ -65,6 +69,12 @@ jobs:
             echo "contract=true" >> "$GITHUB_OUTPUT"
           else
             echo "contract=false" >> "$GITHUB_OUTPUT"
+          fi
+          TOOLCHAIN='^(neo/(starter/|lifecycle/src/|assets/templates/flake\.nix\.j2)|nix/neo-package\.nix|flake\.nix|flake\.lock|\.agents/skills/neohaskell-release/scripts/(semantic-release|releases/(installer_platform|assemble_candidate)\.py)$|\.agents/skills/neohaskell-consumer-verification/scripts/neo-toolchain-smoke$|\.github/workflows/neo-ci\.yml)'
+          if [[ "$EVENT" == "pull_request" ]] && echo "$CHANGED" | grep -qE "$TOOLCHAIN"; then
+            echo "toolchain=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "toolchain=false" >> "$GITHUB_OUTPUT"
           fi
 
   rust:
@@ -86,7 +96,7 @@ jobs:
           RUST_TEST_THREADS: 1
         run: nix develop ./neo -c cargo test --manifest-path neo/Cargo.toml --locked --workspace --lib --bins
       - name: Generate project without a build toolchain
-        run: nix develop ./neo -c cargo test --manifest-path neo/Cargo.toml --locked --test integration_tests generate_regenerates_project_defaults_without_a_build_toolchain
+        run: nix develop ./neo -c cargo test --manifest-path neo/Cargo.toml --locked --test integration_tests generate_
       - name: Installer bootstrap behavior
         run: python3 neo/lifecycle/scripts/test_bootstraps.py
       - name: Installer command and diagnostic behavior
@@ -287,15 +297,55 @@ jobs:
           ./.agents/skills/neohaskell-release/scripts/neo-release install "$RUNNER_TEMP/neo-artifacts" "$REHEARSAL_TARGET" "$RUNNER_TEMP/neo-bin/neo"
           NEO_BIN="$RUNNER_TEMP/neo-bin/neo" ./.agents/skills/neohaskell-consumer-verification/scripts/neo-consumer-contract
 
+  toolchain:
+    name: Toolchain binary closure (${{ matrix.system }})
+    needs: changes
+    if: >-
+      needs.changes.outputs.run_expensive == 'true'
+      && needs.changes.outputs.toolchain == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - system: x86_64-linux
+            runner: ubuntu-24.04
+          - system: aarch64-linux
+            runner: ubuntu-24.04-arm
+          - system: aarch64-darwin
+            runner: macos-15
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: DeterminateSystems/determinate-nix-action@v3.24.2
+        with:
+          extra-conf: |
+            accept-flake-config = true
+      - name: Acquire and retain the pair from a signed disposable cache
+        env:
+          SYSTEM: ${{ matrix.system }}
+          NEO_TOOLCHAIN_SMOKE_GC: "1"
+        run: >-
+          ./.agents/skills/neohaskell-release/scripts/semantic-release rehearse-toolchain
+          --revision "$GITHUB_SHA" --system "$SYSTEM" --out "$RUNNER_TEMP/toolchain-evidence"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: toolchain-closure-${{ matrix.system }}
+          path: ${{ runner.temp }}/toolchain-evidence/
+          if-no-files-found: error
+
   neo-ci-gate:
     if: always()
-    needs: [changes, rust, ide, nix-package, consumer-contract]
+    needs: [changes, rust, ide, nix-package, consumer-contract, toolchain]
     runs-on: ubuntu-latest
     steps:
       - name: Check all neo jobs passed (or correctly skipped)
         env:
           RUN_EXPENSIVE: ${{ needs.changes.outputs.run_expensive }}
           TOUCHED: ${{ needs.changes.outputs.touched }}
+          TOOLCHAIN: ${{ needs.changes.outputs.toolchain }}
           CHANGES_RESULT: ${{ needs.changes.result }}
         run: |
           if [[ "$CHANGES_RESULT" != "success" ]]; then
@@ -306,11 +356,16 @@ jobs:
           if [[ "$RUN_EXPENSIVE" != "true" || "$TOUCHED" != "true" ]]; then
             allow_skip_component=true
           fi
+          allow_skip_toolchain=false
+          if [[ "$RUN_EXPENSIVE" != "true" || "$TOOLCHAIN" != "true" ]]; then
+            allow_skip_toolchain=true
+          fi
           results=(
             "rust=${{ needs.rust.result }}=$allow_skip_component"
             "ide=${{ needs.ide.result }}=$allow_skip_component"
             "nix-package=${{ needs.nix-package.result }}=$allow_skip_component"
             "consumer-contract=${{ needs.consumer-contract.result }}=false"
+            "toolchain=${{ needs.toolchain.result }}=$allow_skip_toolchain"
           )
           for entry in "${results[@]}"; do
             job="${entry%%=*}"; rest="${entry#*=}"

@@ -6,6 +6,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import tempfile
+import time
 
 import candidate
 import engine as release
@@ -15,6 +16,7 @@ from assemble_candidate import TARGETS, file_identity
 SYSTEMS = {target: system for system, target in TARGETS.items()}
 CACHE_NAME = "neohaskell"
 PRIMARY_CACHE = "https://neohaskell.cachix.org"
+TOOLCHAIN_LINK = Path("share/neohaskell/toolchain")
 
 
 def output(*command, **kwargs):
@@ -98,7 +100,6 @@ def verify_metadata_signature(path, metadata, key, signatures):
 
 def closure_rows(local, roots, caches):
     rows = []
-    used = {}
     for path, metadata in sorted(local.items()):
         for entry in caches:
             cache = entry["cache"]
@@ -116,7 +117,6 @@ def closure_rows(local, roots, caches):
             if not signatures:
                 continue
             verify_metadata_signature(path, metadata, entry["key"], signatures)
-            used.setdefault(cache, []).append(path)
             rows.append({
                 "store_path": path, "nar_hash": metadata["narHash"], "nar_size": metadata["narSize"],
                 "references": sorted(metadata["references"]),
@@ -125,25 +125,121 @@ def closure_rows(local, roots, caches):
             break
         else:
             raise ValueError(f"No approved signed cache serves {path}")
-    for entry in caches:
-        paths = used.get(entry["cache"], [])
-        if paths:
-            subprocess.run([
-                "nix", "store", "verify", "--store", entry["cache"],
-                "--option", "trusted-public-keys", entry["key"], "--sigs-needed", "1", "--stdin",
-            ], input="\n".join(paths) + "\n", text=True, check=True)
     return rows
 
 
-def publish_closure(roots, system, version, caches, cache_environment):
+def nar_identities(metadata):
+    return {
+        path: (item["narHash"], item["narSize"], sorted(item["references"]))
+        for path, item in metadata.items()
+    }
+
+
+def verify_clean_store(root, local, system, caches, workspace):
+    with tempfile.TemporaryDirectory(dir=workspace, prefix="acquire-") as temporary:
+        isolated = Path(temporary)
+        store = f"local?root={isolated / 'store'}"
+        retained = isolated / "pair"
+        if json.loads(output(*path_info_args("--store", store, "--all"))):
+            raise ValueError("Expected an empty Nix store before acquiring " + root)
+        trusted = " ".join(cache["key"] for cache in caches)
+        substituters = " ".join(cache["cache"] for cache in caches)
+        command = [
+            "nix", "build", "--store", store, "--option", "max-jobs", "0",
+            "--option", "builders", "", "--option", "require-sigs", "true",
+            "--option", "trusted-public-keys", trusted, "--out-link", retained,
+        ]
+        started = time.monotonic()
+        result = subprocess.run([
+            *command, "--option", "substituters", substituters,
+            "--option", "narinfo-cache-negative-ttl", "0", root,
+        ])
+        elapsed_ms = round((time.monotonic() - started) * 1000)
+        if result.returncode:
+            raise ValueError(f"Could not acquire {root} for {system} from signed caches with builders disabled")
+        acquired = json.loads(output(*path_info_args("--store", store, "--recursive", root)))
+        expected = nar_identities(local)
+        if nar_identities(acquired) != expected or str(retained.readlink()) != root:
+            raise ValueError(f"The acquired closure or registered root differs for {system}: {root}")
+        subprocess.run(["nix", "store", "gc", "--store", store], check=True)
+        started = time.monotonic()
+        subprocess.run([*command, "--offline", "--option", "substituters", "", root], check=True)
+        post_gc_ms = round((time.monotonic() - started) * 1000)
+        after_gc = json.loads(output(*path_info_args("--store", store, "--recursive", root)))
+        if nar_identities(after_gc) != expected:
+            raise ValueError(f"Garbage collection changed the retained closure for {system}: {root}")
+        return {
+            "closure_paths": len(acquired),
+            "installed_nar_bytes": sum(item["narSize"] for item in acquired.values()),
+            "acquisition_ms": elapsed_ms,
+            "post_gc_ms": post_gc_ms,
+            "post_gc_download_paths": 0,
+            "build_recipes": 0,
+        }
+
+
+def pair_closure(pair, toolchain, local, system):
+    direct = local[pair]["references"]
+    if [path for path in direct if Path(path).name.split("-", 1)[-1] == "neo-toolchain"] != [toolchain]:
+        raise ValueError(f"The {system} pair does not directly reference the exact starter toolchain {toolchain}")
+    return local
+
+
+def publish_closure(roots, toolchain, system, version, caches, cache_environment, workspace):
     pair = roots["pair"]
-    local = json.loads(output(*path_info_args("--recursive", pair)))
+    local = pair_closure(pair, toolchain, json.loads(output(*path_info_args("--recursive", pair))), system)
     if not set(roots.values()) <= local.keys():
         raise ValueError("The combined package does not include both independently built tools")
     subprocess.run(["cachix", "push", CACHE_NAME, pair], check=True, env=cache_environment)
-    rows = closure_rows(local, roots, caches)
+    rows = closure_rows(local, {**roots, "toolchain": toolchain}, caches)
+    acquisition = verify_clean_store(pair, local, system, caches, workspace)
     subprocess.run(["cachix", "pin", CACHE_NAME, f"neo-{version}-{system}", pair, "--keep-forever"], check=True, env=cache_environment)
-    return rows
+    return rows, acquisition
+
+
+def build_output(repo, reference, link):
+    subprocess.run([
+        "nix", "build", "--accept-flake-config", "--no-update-lock-file", "--out-link", link, reference,
+    ], cwd=repo.root, check=True)
+    return str(link.resolve(strict=True))
+
+
+def toolchain_output(repo, system, workspace):
+    return build_output(repo, f"./neo/starter#packages.{system}.neo-toolchain", workspace / "neo-toolchain")
+
+
+def verify_toolchain_link(pair, toolchain, system):
+    if (Path(pair) / TOOLCHAIN_LINK).resolve(strict=True) != Path(toolchain):
+        raise ValueError(f"The {system} pair exposes a different toolchain than the starter output {toolchain}")
+
+
+def smoke_toolchain(repo, pair, toolchain):
+    smoke = release.SKILL_ROOT.parent / "neohaskell-consumer-verification/scripts/neo-toolchain-smoke"
+    subprocess.run([smoke, "--toolchain", toolchain, "--neo", Path(pair) / "bin" / "neo"], cwd=repo.root, check=True)
+
+
+def rehearse_toolchain(repo, system, out):
+    if output("nix", "eval", "--raw", "--impure", "--expr", "builtins.currentSystem") != system:
+        raise ValueError("Toolchain rehearsal requires a native runner for " + system)
+    out.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory() as temporary:
+        workspace = Path(temporary)
+        toolchain = toolchain_output(repo, system, workspace)
+        pair = build_output(repo, f".#packages.{system}.neo-pair", workspace / "neo-pair")
+        verify_toolchain_link(pair, toolchain, system)
+        local = pair_closure(pair, toolchain, json.loads(output(*path_info_args("--recursive", pair))), system)
+        secret = workspace / "cache-key"
+        secret.touch(mode=0o600)
+        with secret.open("w") as stream:
+            subprocess.run(["nix", "key", "generate-secret", "--key-name", "neo-test"], stdout=stream, check=True)
+        with secret.open() as stream:
+            public = output("nix", "key", "convert-secret-to-public", stdin=stream)
+        cache = (workspace / "cache").as_uri()
+        subprocess.run(["nix", "copy", "--to", f"{cache}?secret-key={secret}&compression=zstd", pair], check=True)
+        acquisition = verify_clean_store(pair, local, system, [{"cache": cache, "key": public}], workspace)
+        smoke_toolchain(repo, pair, toolchain)
+    report = {"system": system, "pair": pair, "toolchain": toolchain, "acquisition": acquisition}
+    (out / f"toolchain-{system}.json").write_bytes(candidate.canonical_json(report))
 
 
 def build(repo, plan, revision, target, inputs, out, native_neo=None):
@@ -196,14 +292,10 @@ def _build(repo, plan, revision, target, inputs, out, native_neo, cache_environm
             native["native-neo"] = file_identity(binary)
             observations["native-neo"] = observe_versions({"neo": binary}, version, revision, target, toolchain)
         roots = {}
+        toolchain = toolchain_output(repo, system, workspace)
         for role, attribute in (("pair", "neo-pair"), ("neo", "neo"), ("neoctl", "neoctl")):
-            link = workspace / role
-            subprocess.run([
-                "nix", "build", "--accept-flake-config", "--no-update-lock-file",
-                "--out-link", link, f".#packages.{system}.{attribute}",
-            ], cwd=repo.root, check=True)
-            root = link.resolve(strict=True)
-            roots[role] = str(root)
+            roots[role] = build_output(repo, f".#packages.{system}.{attribute}", workspace / role)
+            root = Path(roots[role])
             programs = ("neo", "neoctl") if role == "pair" else (role,)
             observations["nix-" + role] = observe_versions(
                 {name: root / "bin" / name for name in programs}, version, revision, target, nix_toolchain
@@ -211,10 +303,13 @@ def _build(repo, plan, revision, target, inputs, out, native_neo, cache_environm
         for name in ("neo", "neoctl"):
             if not (Path(roots["pair"]) / "bin" / name).samefile(Path(roots[name]) / "bin" / name):
                 raise ValueError("Combined package selected a different binary for " + name)
-        paths = publish_closure(roots, system, version, caches, cache_environment)
+        verify_toolchain_link(roots["pair"], toolchain, system)
+        paths, acquisition = publish_closure(roots, toolchain, system, version, caches, cache_environment, workspace)
+        smoke_toolchain(repo, roots["pair"], toolchain)
     report = {
         "attempt": plan["id"], "revision": revision, "version": version, "target": target,
         "system": system, "roots": roots, "paths": paths, "observations": observations,
         "native": native, "starter_hashes": starter_hashes,
+        "toolchain": toolchain, "acquisition": acquisition,
     }
     (out / f"platform-{target}.json").write_bytes(candidate.canonical_json(report))

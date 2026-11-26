@@ -1,0 +1,111 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ $# != 4 || $1 != --toolchain || $3 != --neo ]]; then
+  printf '%s\n' 'Usage: neo-toolchain-smoke --toolchain <store-path> --neo <executable>' >&2
+  exit 2
+fi
+toolchain=$2
+neo=$4
+system=$(nix eval --impure --raw --expr builtins.currentSystem)
+work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT
+exercise_gc=${NEO_TOOLCHAIN_SMOKE_GC:-0}
+if [[ $exercise_gc == 1 && ( ${GITHUB_ACTIONS:-} != true || ${RUNNER_ENVIRONMENT:-} != github-hosted ) ]]; then
+  printf '%s\n' 'The project GC check requires a disposable GitHub-hosted runner.' >&2
+  exit 2
+fi
+projects=(toolchain-first toolchain-second)
+
+cat > "$work/ToolchainSmoke.hs" <<'EOF'
+module ToolchainSmoke (answer) where
+
+answer :: Int
+answer = 42
+EOF
+
+for name in "${projects[@]}"; do
+  (cd "$work" && NEO_SKIP_NETWORK=1 "$neo" --ci new "$name")
+  (
+    cd "$work/$name"
+    selected=$(nix eval --raw --no-update-lock-file ".#.neoToolchains.$system.storePath")
+    if [[ $selected != "$toolchain" ]]; then
+      printf '%s selected %s, expected %s\n' "$name" "$selected" "$toolchain" >&2
+      exit 1
+    fi
+    printf '%s selects %s\n' "$name" "$selected"
+    /usr/bin/time -p "$neo" --ci build --skip-lock-check
+    /usr/bin/time -p "$neo" --ci build --skip-lock-check
+    "$neo" --ci test
+    if [[ $exercise_gc == 1 ]]; then
+      nix develop --no-update-lock-file --profile "$work/$name-shell" --command true
+      nix flake archive --no-update-lock-file --json > "$work/$name-inputs.json"
+      python3 - "$work/$name-inputs.json" > "$work/$name-inputs" <<'PY'
+import json
+import sys
+
+def paths(node):
+    yield node["path"]
+    for child in node.get("inputs", {}).values():
+        yield from paths(child)
+
+with open(sys.argv[1], encoding="utf-8") as stream:
+    print(*sorted(set(paths(json.load(stream)))), sep="\n")
+PY
+      nix eval --raw ".#.legacyPackages.$system.hixProject.plan-nix.outPath" >> "$work/$name-inputs"
+      mkdir -p "$work/inputs"
+      while IFS= read -r path || [[ -n $path ]]; do
+        if [[ ! -L "$work/inputs/${path##*/}" ]]; then
+          nix build --offline --option max-jobs 0 --option builders '' \
+            --out-link "$work/inputs/${path##*/}" "$path"
+        fi
+      done < "$work/$name-inputs"
+    fi
+  )
+done
+
+if [[ $exercise_gc == 1 ]]; then
+  nix store gc --store daemon
+  export NEO_SKIP_NETWORK=1
+  export NIX_CONFIG="${NIX_CONFIG:-}"$'\nsubstitute = false\nmax-jobs = 0\nbuilders =\n'
+fi
+
+for name in "${projects[@]}"; do
+  (
+    cd "$work/$name"
+    if [[ $exercise_gc == 1 ]]; then
+      /usr/bin/time -p "$neo" --ci build --skip-lock-check
+      "$neo" --ci test
+    fi
+    nix develop --offline --no-update-lock-file --option max-jobs 0 --option builders '' \
+      --command bash -euo pipefail -c '
+      toolchain=$1
+      fixture=$2
+      output=$3
+      mkdir -p "$output"
+
+      for tool in cabal hspec-discover haskell-language-server-wrapper hlint fourmolu hoogle; do
+        executable=$(command -v "$tool")
+        if [[ ! "$executable" -ef "$toolchain/bin/$tool" ]]; then
+          printf "%s resolved to %s instead of %s\n" "$tool" "$executable" "$toolchain/bin/$tool" >&2
+          exit 1
+        fi
+        printf "%s is shared at %s\n" "$tool" "$executable"
+      done
+      test "$(ghc --numeric-version)" = "$("$toolchain/bin/ghc" --numeric-version)"
+      test "$(haddock --version)" = "$("$toolchain/bin/haddock" --version)"
+      ghc --version
+      cabal --version
+      hspec-discover tests/Spec.hs tests/Spec.hs "$output/Spec.hs"
+      test -s "$output/Spec.hs"
+      haskell-language-server-wrapper src/App.hs
+      hlint "$fixture"
+      fourmolu --mode inplace "$fixture"
+      fourmolu --mode check "$fixture"
+      haddock --html --odir="$output" "$fixture"
+      test -s "$output/ToolchainSmoke.html"
+      hoogle search --count=1 "map +base" | grep -F "map ::"
+      hoogle search --count=3 "append +Text +nhcore" | grep -F "Text append ::"
+    ' _ "$toolchain" "$work/ToolchainSmoke.hs" "$work/$name-docs"
+  )
+done

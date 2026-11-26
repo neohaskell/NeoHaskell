@@ -12,6 +12,7 @@ mod review;
 mod runtime;
 mod shell;
 mod snapshot;
+pub(crate) mod toolchain;
 mod uninstall;
 mod verification;
 use coordinator::{Effects, SettlementKind};
@@ -195,6 +196,11 @@ pub(crate) enum TransactionError {
     ShellVerificationFailed,
     Verification(&'static str),
     NixBlocked(nix::NixBlock),
+    ReleaseAcquisition {
+        system: &'static str,
+        pair: String,
+        toolchain: String,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -938,6 +944,15 @@ impl RootLease {
                 TransactionError::Io
             }
         })?;
+        Ok(Self {
+            file,
+            path: path.to_owned(),
+        })
+    }
+
+    fn wait(path: &Path) -> Result<Self, TransactionError> {
+        let file = open_or_create_lock(path)?;
+        FileExt::lock_exclusive(&file).map_err(|_| TransactionError::Io)?;
         Ok(Self {
             file,
             path: path.to_owned(),

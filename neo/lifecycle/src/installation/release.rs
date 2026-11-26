@@ -482,6 +482,21 @@ impl ReleaseSource {
     }
 
     pub(super) async fn select_latest(&self) -> Result<PinnedSelection, ReleaseError> {
+        self.select_matching(|_| true).await
+    }
+
+    pub(super) async fn select_framework(
+        &self,
+        revision: &str,
+    ) -> Result<PinnedSelection, ReleaseError> {
+        self.select_matching(|manifest| manifest.framework_revision == revision)
+            .await
+    }
+
+    async fn select_matching(
+        &self,
+        matches: impl Fn(&MetadataManifest) -> bool,
+    ) -> Result<PinnedSelection, ReleaseError> {
         let core_limit = candidate::release_core_limit().map_err(|_| ReleaseError::Bounds)?;
         let mut versions = Vec::new();
         for page in 1..=20 {
@@ -530,6 +545,9 @@ impl ReleaseSource {
                 }
                 Err(error) => return Err(error),
             };
+            if !matches(&manifest) {
+                continue;
+            }
             let mut published = BTreeMap::new();
             for asset in assets {
                 if asset.state != "uploaded" || published.insert(asset.name, asset.size).is_some() {
@@ -1192,6 +1210,15 @@ mod tests {
     }
     #[test]
     fn review_new_latest_does_not_replace_the_prepared_candidate_or_refetch_metadata() {
+        review_prepared_candidate(false);
+    }
+
+    #[test]
+    fn framework_revision_selects_its_release_before_review() {
+        review_prepared_candidate(true);
+    }
+
+    fn review_prepared_candidate(select_framework: bool) {
         use std::sync::atomic::{AtomicBool, Ordering};
         let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("contract/fixtures/v1");
         let index: serde_json::Value =
@@ -1278,10 +1305,12 @@ mod tests {
             &lease,
             Some(&changed),
             async {
-                let selected = source
-                    .select_latest()
-                    .await
-                    .map_err(|error| error.transaction("fixture latest"))?;
+                let selected = if select_framework {
+                    source.select_framework(&manifest.framework_revision).await
+                } else {
+                    source.select_latest().await
+                }
+                .map_err(|error| error.transaction("fixture selection"))?;
                 let prepared = owner
                     .prepare_snapshot(&selected, &source, "aarch64-apple-darwin", false)
                     .await?;

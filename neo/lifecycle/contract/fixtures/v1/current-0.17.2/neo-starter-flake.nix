@@ -31,8 +31,18 @@
           inherit system overlays;
           inherit (haskellNix) config;
         };
-        flake = pkgs.hixProject.flake { };
-      in flake // { legacyPackages = pkgs; });
+        toolchain = import ./nix/toolchain.nix {
+          inherit pkgs;
+          frameworkSource = neohaskell;
+          frameworkRevision = neohaskellCommit;
+        };
+        flake = pkgs.lib.optionalAttrs (builtins.pathExists ./neo.json)
+          (pkgs.hixProject.flake { });
+      in flake // {
+        legacyPackages = pkgs;
+        packages = (flake.packages or { }) // pkgs.lib.optionalAttrs
+          (system != "x86_64-darwin") { neo-toolchain = toolchain.bundle; };
+      });
 
   nixConfig = {
     extra-substituters = [

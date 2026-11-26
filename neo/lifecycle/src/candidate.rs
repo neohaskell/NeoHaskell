@@ -40,6 +40,10 @@ impl OutputPath {
     pub(crate) fn as_str(&self) -> &str {
         &self.0
     }
+
+    fn is_toolchain(&self) -> bool {
+        self.0.split_once('-').is_some_and(|(_, name)| name == "neo-toolchain")
+    }
 }
 
 #[derive(Debug)]
@@ -1059,6 +1063,18 @@ fn closures(
                 == paired,
             MetadataError::Graph,
         )?;
+        let mut outputs = roots.clone();
+        let mut toolchains = direct.into_iter().filter(OutputPath::is_toolchain);
+        if let Some(toolchain) = toolchains.next() {
+            ensure(toolchains.next().is_none(), MetadataError::Graph)?;
+            ensure(
+                array(&paths[&toolchain]["locations"])?
+                    .iter()
+                    .any(|location| location["cache"] == "https://neohaskell.cachix.org"),
+                MetadataError::Graph,
+            )?;
+            outputs.insert("toolchain".into(), toolchain);
+        }
         let mut selected = BTreeMap::new();
         for path in &reachable[pair] {
             let row = paths[path];
@@ -1081,7 +1097,7 @@ fn closures(
         systems.insert(
             system.clone(),
             SelectedOutputs {
-                outputs: roots.clone(),
+                outputs,
                 closure: selected,
             },
         );
@@ -1274,6 +1290,7 @@ fn starter(contract: &Contract, core: &Value, files: &BTreeMap<&str, &[u8]>) -> 
 pub(crate) struct MetadataManifest {
     pub(crate) candidate_id: String,
     pub(crate) version: String,
+    pub(crate) framework_revision: String,
     pub(crate) metadata: Vec<FileIdentity>,
     pub(crate) native_installer: FileIdentity,
     pub(crate) required_assets: Vec<FileIdentity>,
@@ -1333,6 +1350,8 @@ pub(crate) fn metadata_manifest(raw: &[u8], target: &str) -> Result<MetadataMani
     Ok(MetadataManifest {
         candidate_id: hash(raw),
         version: string(&checked.value["version"])?.into(),
+        framework_revision: string(&checked.value["build_inputs"]["starter"]["framework_revision"])?
+            .into(),
         metadata: checked
             .metadata
             .iter()

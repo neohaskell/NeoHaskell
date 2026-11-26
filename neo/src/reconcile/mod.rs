@@ -58,7 +58,8 @@ fn atomic_write(path: &Path, content: &[u8]) -> std::io::Result<()> {
 }
 
 fn write_generated_manifest(path: &Path, content: &[u8]) -> std::io::Result<()> {
-    if fs::symlink_metadata(path).is_ok_and(|metadata| metadata.is_file())
+    if fs::symlink_metadata(path)
+        .is_ok_and(|metadata| metadata.is_file() && metadata.len() == content.len() as u64)
         && fs::read(path).is_ok_and(|existing| existing == content)
     {
         return Ok(());

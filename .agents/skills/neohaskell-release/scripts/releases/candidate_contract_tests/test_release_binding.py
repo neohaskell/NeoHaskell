@@ -158,18 +158,29 @@ class ReleaseBindingCases:
             closures = json.loads((directory / 'closures.json').read_bytes())
             rows = {row['store_path']: row for row in closures['paths']}
             revision = core['context']['build_revision']
-            for system, target in assembler.TARGETS.items():
+            for ordinal, (system, target) in enumerate(assembler.TARGETS.items(), start=7):
                 installer = core['native_installers'][target]['file']
                 shutil.copyfile(directory / installer['name'], platforms / installer['name'])
                 native = {'native-installer': installer}
                 if target in core['native_neo']:
                     native['native-neo'] = core['native_neo'][target]['file']
                 roots = closures['roots'][system]
+                pair = roots['pair']
+                toolchain = '/nix/store/' + str(ordinal) * 32 + '-neo-toolchain'
+                rows[toolchain] = {**rows[pair], 'store_path': toolchain, 'references': []}
+                rows[pair]['references'] = sorted([*rows[pair]['references'], toolchain])
                 paths = set.union(*(assembler.reachable(rows, path) for path in roots.values()))
+                pair_paths = assembler.reachable(rows, pair)
                 report = {
                     'system': system, 'target': target, 'version': plan['version'],
                     'revision': revision, 'attempt': plan['id'], 'native': native,
                     'roots': roots, 'paths': [rows[path] for path in sorted(paths)],
+                    'toolchain': toolchain,
+                    'acquisition': {
+                        'build_recipes': 0, 'post_gc_download_paths': 0,
+                        'closure_paths': len(pair_paths),
+                        'installed_nar_bytes': sum(rows[path]['nar_size'] for path in pair_paths),
+                    },
                     'observations': {r['role']: r['verification_observations'] for r in receipts
                                      if r['platform'] in (system, target)},
                     'starter_hashes': {name: core['build_inputs']['starter'][role + '_sha256']
@@ -185,6 +196,11 @@ class ReleaseBindingCases:
             assembler.assemble(root, plan['id'], revision, artifacts, platforms)
             self.assertEqual((artifacts / 'candidate.json').read_bytes(), manifest)
             self.assertEqual((artifacts / 'candidate.locator').read_text(), locator)
+            report['acquisition']['post_gc_download_paths'] = 1
+            report_file.write_bytes(candidate.canonical_json(report))
+            with self.assertRaisesRegex(ValueError, 'Incomplete clean-store acquisition evidence'):
+                assembler.assemble(root, plan['id'], revision, artifacts, platforms)
+            report['acquisition']['post_gc_download_paths'] = 0
             report['starter_hashes']['flake.lock'] = 'a' * 64
             report_file.write_bytes(candidate.canonical_json(report))
             with self.assertRaisesRegex(ValueError, 'starter inputs differ'):

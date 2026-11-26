@@ -16,6 +16,7 @@ pub async fn run(watch: bool, skip_lock_check: bool, output_mode: &mut OutputMod
         println!("[info] Reconciling project artifacts...");
     }
     crate::reconcile::run_project(".").await?;
+    crate::project_toolchain::prepare().await?;
     
     if watch {
         watch_common::run_watch("build", output_mode).await?;

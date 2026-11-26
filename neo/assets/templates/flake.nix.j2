@@ -41,8 +41,43 @@
           inherit system overlays;
           inherit (haskellNix) config;
         };
-        flake = pkgs.hixProject.flake { };
-      in flake // { legacyPackages = pkgs; });
+        project = pkgs.hixProject;
+        toolchainFile = neohaskell + "/neo/starter/nix/toolchain.nix";
+        toolchain = import toolchainFile {
+          inherit pkgs;
+          frameworkSource = neohaskell;
+          frameworkRevision = neohaskellCommit;
+        };
+        starterLock = builtins.fromJSON
+          (builtins.readFile (neohaskell + "/neo/starter/flake.lock"));
+        starterInputs = starterLock.nodes.${starterLock.root}.inputs;
+        starterHaskellNix = starterLock.nodes.${starterInputs.haskellNix};
+        starterNixpkgs = starterLock.nodes.${starterHaskellNix.inputs.nixpkgs-unstable};
+        usesSharedTools =
+          system != "x86_64-darwin"
+          && builtins.pathExists toolchainFile
+          && (haskellNix.rev or null) == starterHaskellNix.locked.rev
+          && (nixpkgs.rev or null) == starterNixpkgs.locked.rev
+          && project.args.compiler-nix-name == toolchain.compiler
+          && (project.args.ghcOverride or null) == null
+          && (project.args.ghc or null) == null
+          && pkgs.lib.all (tool: (project.args.shell.tools.${tool} or null)
+            == toolchain.toolVersions.${tool}) (builtins.attrNames toolchain.toolVersions);
+        shellProject = if usesSharedTools then project.appendModule {
+          shell.withHoogle = pkgs.lib.mkDefault false;
+          shell.nativeBuildInputs = [ toolchain.editorTools toolchain.hoogle ];
+        } else project;
+        flake = shellProject.flake { };
+      in flake // {
+        legacyPackages = pkgs;
+        neoToolchains = if usesSharedTools then {
+          storePath = toolchain.bundle.outPath;
+          frameworkRevision = neohaskellCommit;
+        } else null;
+        packages = flake.packages // pkgs.lib.optionalAttrs usesSharedTools {
+          neo-toolchain = toolchain.bundle;
+        };
+      });
 
   nixConfig = {
     extra-substituters = [

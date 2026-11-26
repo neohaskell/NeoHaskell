@@ -62,6 +62,7 @@ pub async fn run(watch: bool, output_mode: &mut OutputMode) -> miette::Result<()
         println!("[info] Reconciling project artifacts...");
     }
     crate::reconcile::run_project(".").await?;
+    crate::project_toolchain::prepare().await?;
     
     if watch {
         watch_common::run_watch("test", output_mode).await?;

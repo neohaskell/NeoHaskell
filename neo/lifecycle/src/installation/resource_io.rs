@@ -297,44 +297,55 @@ impl InstallationOwner {
             .obsolete(roots)
             .map_err(|_| TransactionError::InvalidState("profile cleanup demand"))?
         {
-            let current = directory
-                .observe(&self.effects, record.resources.links.len() + 1)
+            self.remove_resource(record, directory, name, observed)
                 .await?;
-            record
-                .resources
-                .begin(
-                    ResourceEffect::Remove {
-                        name: name.clone(),
-                        observed: observed.clone(),
-                    },
-                    &current,
-                )
-                .map_err(|_| TransactionError::InvalidState("cleanup precondition"))?;
-            self.write_record(record, false).await?;
-            #[cfg(test)]
-            super::pause_after("before_resource_unlink");
-            let settlement = self.effects.settlement(super::SettlementKind::Resource)?;
-            let result = directory
-                .unlink(
-                    &self.effects,
-                    &name,
-                    &observed,
-                    record.resources.links.len() + 1,
-                )
-                .await;
-            #[cfg(test)]
-            super::pause_after("after_resource_unlink");
-            if matches!(&result, Err(error) if *error != TransactionError::StopRequested) {
-                return result;
-            }
-            self.with_effects(settlement.clone())
-                .reconcile_resources(record, directory)
-                .await?;
-            settlement.finish_settlement()?;
-            result?;
-            self.effects.checkpoint()?;
         }
         Ok(())
+    }
+
+    async fn remove_resource(
+        &self,
+        record: &mut InstallationRecord,
+        directory: &ResourceDirectory,
+        name: String,
+        observed: LinkObservation,
+    ) -> Result<(), TransactionError> {
+        let current = directory
+            .observe(&self.effects, record.resources.links.len() + 1)
+            .await?;
+        record
+            .resources
+            .begin(
+                ResourceEffect::Remove {
+                    name: name.clone(),
+                    observed: observed.clone(),
+                },
+                &current,
+            )
+            .map_err(|_| TransactionError::InvalidState("cleanup precondition"))?;
+        self.write_record(record, false).await?;
+        #[cfg(test)]
+        super::pause_after("before_resource_unlink");
+        let settlement = self.effects.settlement(super::SettlementKind::Resource)?;
+        let result = directory
+            .unlink(
+                &self.effects,
+                &name,
+                &observed,
+                record.resources.links.len() + 1,
+            )
+            .await;
+        #[cfg(test)]
+        super::pause_after("after_resource_unlink");
+        if matches!(&result, Err(error) if *error != TransactionError::StopRequested) {
+            return result;
+        }
+        self.with_effects(settlement.clone())
+            .reconcile_resources(record, directory)
+            .await?;
+        settlement.finish_settlement()?;
+        result?;
+        self.effects.checkpoint()
     }
 
     async fn resource_operation(
@@ -407,6 +418,105 @@ impl InstallationOwner {
             }
         }
         self.prune_resources(&mut record, &directory, &roots).await
+    }
+
+    pub(super) async fn acquire_project_toolchain(
+        &self,
+        record: &mut InstallationRecord,
+        names: &super::toolchain::RootNames<'_>,
+        output: &OutputPath,
+    ) -> Result<ResourceDirectory, TransactionError> {
+        let directory = self.resource_directory(record).await?;
+        self.reconcile_resources(record, &directory).await?;
+        let staged = names.staged();
+        if !self.observed_resource(record, &staged, output).await? {
+            self.resource_operation(
+                &self.effects,
+                record,
+                &directory,
+                ResourceEffect::Register {
+                    pair: output.as_str().into(),
+                    parent: staged.clone(),
+                },
+                process::WorkerRequest::AcquireProjectToolchain {
+                    output: output.as_str().into(),
+                },
+            )
+            .await?;
+        }
+        if !self.observed_resource(record, &staged, output).await? {
+            return Err(TransactionError::Verification("staged toolchain root"));
+        }
+        Ok(directory)
+    }
+
+    pub(super) async fn register_project_toolchain(
+        &self,
+        record: &mut InstallationRecord,
+        directory: &ResourceDirectory,
+        names: &super::toolchain::RootNames<'_>,
+        output: &OutputPath,
+    ) -> Result<(), TransactionError> {
+        let registered = names.registered();
+        if !self.observed_resource(record, &registered, output).await? {
+            self.resource_operation(
+                &self.effects,
+                record,
+                directory,
+                ResourceEffect::Register {
+                    pair: output.as_str().into(),
+                    parent: registered.clone(),
+                },
+                process::WorkerRequest::RegisterExact {
+                    pair: output.as_str().into(),
+                    root: process::RootName::ProjectToolchain,
+                },
+            )
+            .await?;
+            if !self.observed_resource(record, &registered, output).await? {
+                return Err(TransactionError::Verification("registered toolchain root"));
+            }
+        }
+        let staged = names.staged();
+        if let Some(link) = record.resources.links.get(&staged).cloned() {
+            self.remove_resource(record, directory, staged, link)
+                .await?;
+        }
+        Ok(())
+    }
+
+    pub(super) async fn retain_release_toolchain(
+        &self,
+        output: &OutputPath,
+    ) -> Result<(), TransactionError> {
+        let mut record = self.read_record().await?;
+        let directory = self.resource_directory(&mut record).await?;
+        if record.resources.pending.is_some() {
+            self.reconcile_resources(&mut record, &directory).await?;
+        }
+        let names = super::toolchain::RootNames::new(output)
+            .ok_or(TransactionError::Verification("release toolchain name"))?;
+        self.register_project_toolchain(&mut record, &directory, &names, output)
+            .await
+    }
+
+    pub(super) async fn observed_resource(
+        &self,
+        record: &InstallationRecord,
+        name: &str,
+        output: &OutputPath,
+    ) -> Result<bool, TransactionError> {
+        if record
+            .resources
+            .links
+            .get(name)
+            .is_none_or(|link| link.target != output.as_str())
+        {
+            return Ok(false);
+        }
+        let root = self.layout.state_directory.join("resources").join(name);
+        let target = self.inspect_link(root).await?;
+        Ok(target.as_deref() == Some(std::path::Path::new(output.as_str())))
     }
 
     #[cfg(test)]
@@ -684,6 +794,106 @@ mod tests {
             assert!(saved.resources.links.is_empty());
             assert!(saved.resources.pending.is_none());
         });
+    }
+
+    #[test]
+    fn finished_cleanup_keeps_registered_toolchains_and_removes_abandoned_staging() {
+        let (_temporary, owner, lease) = setup();
+        super::super::coordinator::test_with(&owner.effects, &lease, async {
+            let mut record = owner.read_record().await.unwrap();
+            let directory = owner.resource_directory(&mut record).await.unwrap();
+            let a = OutputPath::parse("/nix/store/00000000000000000000000000000000-neo-toolchain")
+                .unwrap();
+            let b = OutputPath::parse("/nix/store/11111111111111111111111111111111-neo-toolchain")
+                .unwrap();
+            let names_a = super::super::toolchain::RootNames::new(&a).unwrap();
+            let names_b = super::super::toolchain::RootNames::new(&b).unwrap();
+            let retained = [
+                (names_a.registered(), a.as_str()),
+                (names_b.registered(), b.as_str()),
+            ];
+            let staged = directory.path.join(names_b.staged());
+            for (name, output) in &retained {
+                symlink(output, directory.path.join(name)).unwrap();
+            }
+            symlink(b.as_str(), &staged).unwrap();
+            record.resources.links = directory.inventory(4).unwrap();
+            owner.write_record(&record, false).await.unwrap();
+
+            owner.finish_resources(&owner.effects).await.unwrap();
+
+            for (name, output) in retained {
+                assert_eq!(
+                    fs::read_link(directory.path.join(name)).unwrap(),
+                    Path::new(output)
+                );
+            }
+            assert!(staged.symlink_metadata().is_err());
+        });
+    }
+
+    #[test]
+    #[ignore = "requires the trusted local multi-user Nix daemon"]
+    fn exact_project_toolchain_registration_uses_nix_gc_roots() {
+        let (_temporary, owner, lease) = setup();
+        let source = _temporary.path().join("toolchain-fixture");
+        fs::create_dir(&source).unwrap();
+        fs::write(source.join("identity"), _temporary.path().to_str().unwrap()).unwrap();
+        let output = std::process::Command::new(super::super::nix::system_client_path().unwrap())
+            .args([
+                "--extra-experimental-features",
+                "nix-command",
+                "store",
+                "add",
+                "--name",
+                "neo-toolchain",
+            ])
+            .arg(&source)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let store_path = String::from_utf8(output.stdout).unwrap();
+        let output = OutputPath::parse(store_path.trim()).unwrap();
+        let names = super::super::toolchain::RootNames::new(&output).unwrap();
+
+        super::super::coordinator::test_with(&owner.effects, &lease, async {
+            let mut record = owner.read_record().await.unwrap();
+            let staged = owner
+                .acquire_project_toolchain(&mut record, &names, &output)
+                .await
+                .unwrap();
+            owner
+                .register_project_toolchain(&mut record, &staged, &names, &output)
+                .await
+                .unwrap();
+            let registered = staged.path.join(names.registered());
+            let inode = registered.symlink_metadata().unwrap().ino();
+            owner.retain_release_toolchain(&output).await.unwrap();
+            owner.finish_resources(&owner.effects).await.unwrap();
+            assert!(staged.path.join(names.staged()).symlink_metadata().is_err());
+            assert_eq!(registered.symlink_metadata().unwrap().ino(), inode);
+        });
+
+        let root = owner
+            .layout
+            .state_directory
+            .join("resources")
+            .join(names.registered());
+        assert_eq!(fs::read_link(&root).unwrap(), Path::new(output.as_str()));
+        let roots = std::process::Command::new(super::super::nix::legacy_store_path().unwrap())
+            .args(["--query", "--roots", output.as_str()])
+            .output()
+            .unwrap();
+        assert!(
+            roots.status.success(),
+            "{}",
+            String::from_utf8_lossy(&roots.stderr)
+        );
+        assert!(String::from_utf8_lossy(&roots.stdout).contains(root.to_str().unwrap()));
     }
 
     #[test]

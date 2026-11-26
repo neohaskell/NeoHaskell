@@ -1,0 +1,17 @@
+cabal-version: 3.4
+name: neo-toolchain-docs
+version: 0.1.0
+
+library
+  default-language: GHC2021
+  build-depends:
+    aeson,
+    base,
+    bytestring,
+    hspec,
+    nhcore,
+    nhintegrations,
+    QuickCheck,
+    quickcheck-instances,
+    text,
+    uuid
