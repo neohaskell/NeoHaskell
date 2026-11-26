@@ -94,6 +94,7 @@ ADRs document significant architectural decisions made during the development of
 | [0078](0078-documentation-image-zoom.md) | Documentation Image Zoom | Accepted |
 | [0079](0079-configurable-web-bind-host-and-port.md) | Configurable web bind host and port | Accepted |
 | [0080](0080-bounded-subprocess-lifecycle.md) | Preserve subprocess output while owning its lifecycle | Proposed |
+| [0082](0082-local-oauth-test-endpoints.md) | Own local OAuth refresh-failure test endpoints | Proposed |
 
 <!-- adr-index: this table is validated by scripts/adr-index-check (./dev adr-check,
      CI job `adr-index` in checks.yml) — every NNNN-*.md file must appear exactly
