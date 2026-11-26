@@ -156,4 +156,7 @@ Validation fixtures do not claim a live two-target build or production
 publication. The complete generated-app result is reported only by the
 consumer-verification contract.
 
-Read [Candidate contract fixtures](references/candidate-fixtures.md) to generate disposable test corpora and refresh the runtime package export.
+The Python and Rust contract tests generate one fixture for the version in
+`neo/Cargo.toml`. Keep the generator and authored vectors in Git. Keep
+generated corpora under the ignored `.agents-state/` directory or in a
+temporary directory. Read [Candidate contract fixtures](references/candidate-fixtures.md).

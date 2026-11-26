@@ -13,7 +13,7 @@ if str(RELEASES) not in sys.path:
     sys.path.insert(0, str(RELEASES))
 import candidate
 from candidate_contract_tests.generate_fixtures import (
-    CandidateFixtureCorpus, _commit_source, _git, temporary_corpus_directory,
+    CandidateFixtureCorpus, _commit_source, _git, temporary_corpus_directory, write_seeded_candidate,
 )
 from candidate_contract_tests.test_release_binding import ReleaseBindingCases
 ROOT = candidate.release.ROOT
@@ -81,6 +81,9 @@ class CandidateContract(ReleaseBindingCases, unittest.TestCase):
         cls.addClassCleanup(cls.corpus_temp.cleanup)
         cls.corpus = CandidateFixtureCorpus(ROOT, Path(cls.corpus_temp.name) / "corpus")
         cls.fixture_set = json.loads((cls.corpus.root / "fixture-set.json").read_text())
+        cls.seeded_version = candidate.release.bump(cls.corpus.version, "compatible")
+        cls.seeded_directory = Path(cls.corpus_temp.name) / "seeded"
+        write_seeded_candidate(cls.corpus, cls.seeded_directory, cls.seeded_version)
         cls.source_temp = temporary_corpus_directory(prefix="candidate-contract-source-")
         cls.source_root = Path(cls.source_temp.name) / "repo"
         cls.addClassCleanup(cls.source_temp.cleanup)
@@ -95,32 +98,26 @@ class CandidateContract(ReleaseBindingCases, unittest.TestCase):
         if cls.source_tree_sha256 != cls.fixture_set["source_tree_sha256"]:
             raise AssertionError("fixture source tree changed")
 
-    def fixture_dir(self, name="current-0.17.2"):
-        return self.corpus.root / name
+    def fixture_dir(self):
+        return self.corpus.root / "current"
 
-    def parse_fixture(self, name="current-0.17.2"):
-        directory = self.fixture_dir(name)
+    def parse_fixture(self, directory=None):
+        directory = directory or self.fixture_dir()
         return candidate.parse_candidate((directory / "candidate.json").read_bytes(), directory)
 
-    def copy_artifacts(self, temporary, name="current-0.17.2"):
+    def copy_artifacts(self, temporary, source=None):
         directory = Path(temporary) / "candidate"
-        shutil.copytree(self.fixture_dir(name), directory)
+        shutil.copytree(source or self.fixture_dir(), directory)
         return directory
 
-    def parse_mutated_core(self, core, name="current-0.17.2"):
-        return candidate.parse_candidate(candidate.canonical_json(core), self.fixture_dir(name))
+    def parse_mutated_core(self, core):
+        return candidate.parse_candidate(candidate.canonical_json(core), self.fixture_dir())
 
     def test_full_parse_only_fixture_binds_the_accepted_closure_shape(self):
-        previous = self.parse_fixture("previous-0.17.1")
         current = self.parse_fixture()
-        self.assertEqual(previous.version, "0.17.1")
-        self.assertEqual(current.version, "0.17.2")
-        self.assertEqual(previous.context_kind, "engineering")
-        self.assertNotEqual(previous.candidate_id, current.candidate_id)
-        self.assertEqual(
-            current.candidate_id,
-            self.fixture_set["candidate_ids"]["current-0.17.2"],
-        )
+        self.assertEqual(current.version, self.fixture_set["version"])
+        self.assertEqual(current.context_kind, "engineering")
+        self.assertEqual(self.fixture_set["candidate_ids"], {"current": current.candidate_id})
         closure = json.loads((self.fixture_dir() / "closures.json").read_bytes())
         self.assertEqual(len(closure["paths"]), 76)
         self.assertEqual(max(len(item["references"]) for item in closure["paths"]), 65)
@@ -147,30 +144,26 @@ class CandidateContract(ReleaseBindingCases, unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "signature metadata must contain strings"):
                 candidate.parse_candidate(core_bytes, directory)
 
-    def test_first_candidate_parses_without_a_previous_candidate(self):
-        current = self.parse_fixture()
-        self.assertEqual(current.version, "0.17.2")
-
     def test_source_binding_rederives_committed_and_seeded_build_trees(self):
-        previous = candidate.bind_source(self.parse_fixture("previous-0.17.1"), self.source_root)
-        current = candidate.bind_source(self.parse_fixture(), self.source_root)
-        self.assertEqual(previous.context_kind, "engineering")
-        self.assertEqual(previous.source_tree_sha256, previous.build_tree_sha256)
-        self.assertEqual(current.source_tree_sha256, self.source_tree_sha256)
-        self.assertNotEqual(current.source_tree_sha256, current.build_tree_sha256)
-        self.assertEqual((previous.version, current.version), ("0.17.1", "0.17.2"))
+        committed = candidate.bind_source(self.parse_fixture(), self.source_root)
+        seeded = candidate.bind_source(self.parse_fixture(self.seeded_directory), self.source_root)
+        self.assertEqual(committed.context_kind, "engineering")
+        self.assertEqual(committed.source_tree_sha256, committed.build_tree_sha256)
+        self.assertEqual(seeded.source_tree_sha256, self.source_tree_sha256)
+        self.assertNotEqual(seeded.source_tree_sha256, seeded.build_tree_sha256)
+        self.assertEqual((committed.version, seeded.version), (self.corpus.version, self.seeded_version))
 
     def test_selection_binds_ordered_source_bound_candidates(self):
-        current = candidate.bind_source(self.parse_fixture(), self.source_root)
-        previous = candidate.bind_source(self.parse_fixture("previous-0.17.1"), self.source_root)
+        current = candidate.bind_source(self.parse_fixture(self.seeded_directory), self.source_root)
+        previous = candidate.bind_source(self.parse_fixture(), self.source_root)
         raw = candidate.canonical_json({
             "schema_version": 1,
             "current_candidate_id": current.candidate_id,
             "previous_candidate_id": previous.candidate_id,
         })
         selection = candidate.parse_verification_selection(raw, current, previous)
-        self.assertEqual(selection.current_version, "0.17.2")
-        self.assertEqual(selection.previous_version, "0.17.1")
+        self.assertEqual(selection.current_version, self.seeded_version)
+        self.assertEqual(selection.previous_version, self.corpus.version)
         self.assertEqual(selection.selection_id, _hash(raw))
         reversed_raw = candidate.canonical_json({
             "schema_version": 1,
@@ -339,7 +332,7 @@ class CandidateContract(ReleaseBindingCases, unittest.TestCase):
     def test_source_tree_and_generated_diff_mutations_fail_source_binding(self):
         for mutation in ("source", "generated-diff"):
             with self.subTest(mutation=mutation), temporary_corpus_directory(prefix="candidate-contract-source-mutation-") as temporary:
-                directory = self.copy_artifacts(temporary)
+                directory = self.copy_artifacts(temporary, self.seeded_directory)
                 core = json.loads((directory / "candidate.json").read_bytes())
                 receipts = json.loads((directory / "build-receipts.json").read_bytes())
                 if mutation == "source":
@@ -387,7 +380,7 @@ class CandidateContract(ReleaseBindingCases, unittest.TestCase):
             revision = _commit_source(root)
             tree, _index = candidate._git_tree(root, revision, candidate._registry()[1]["limits"])
             with temporary_corpus_directory(prefix="candidate-contract-missing-generator-artifacts-") as artifact_tmp:
-                directory = self.copy_artifacts(artifact_tmp, "previous-0.17.1")
+                directory = self.copy_artifacts(artifact_tmp)
                 core = json.loads((directory / "candidate.json").read_bytes())
                 receipts = json.loads((directory / "build-receipts.json").read_bytes())
                 core["context"].update({

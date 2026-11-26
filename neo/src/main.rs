@@ -12,6 +12,7 @@ mod lock;
 mod network;
 mod output;
 mod prereqs;
+mod project_toolchain;
 mod reconcile;
 mod skills;
 mod subprocess;

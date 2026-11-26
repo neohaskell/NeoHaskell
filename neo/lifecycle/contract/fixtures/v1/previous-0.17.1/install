@@ -1,2 +1,0 @@
-#!/bin/sh
-exec neo-installer --candidate-locator "$1"

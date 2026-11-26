@@ -91,6 +91,42 @@ def get_plan(repo, revision, identity):
     return plan
 
 
+def freeze_starter(starter, revision):
+    flake = starter / "flake.nix"
+    text = re.sub(r"(?<=\?rev=)[0-9a-f]{40}", revision, flake.read_text())
+    text = re.sub(
+        r'(neohaskellCommit = ")[0-9a-f]{40}(";)',
+        lambda m: m[1] + revision + m[2],
+        text,
+    )
+    flake.write_text(text)
+    cabal = starter / "cabal.project"
+    cabal.write_text(
+        re.sub(
+            r"(?m)^(\s*tag:\s*)[0-9a-f]{40}",
+            lambda m: m[1] + revision,
+            cabal.read_text(),
+        )
+    )
+    old_lock = json.loads((starter / "flake.lock").read_text())
+    subprocess.run(
+        ["nix", "flake", "lock", "--update-input", "neohaskell"],
+        cwd=starter,
+        check=True,
+    )
+    new_lock = json.loads((starter / "flake.lock").read_text())
+    locked = new_lock["nodes"]["neohaskell"]["locked"]
+    if locked.get("rev") != revision or not locked.get("narHash", "").startswith(
+        "sha256-"
+    ):
+        raise ValueError(
+            "Nix did not produce a content-hashed lock for the release revision"
+        )
+    for key, value in old_lock["nodes"].items():
+        if key != "neohaskell" and new_lock["nodes"].get(key) != value:
+            raise ValueError("Starter lock changed an unrelated dependency")
+
+
 def seed(repo, plan, revision, out):
     release.validate_source_policy(repo, plan)
     release.group_config(plan["group"])
@@ -109,40 +145,7 @@ def seed(repo, plan, revision, out):
             ["git", "checkout", "--quiet", "--detach", revision], cwd=work, check=True
         )
         starter = work / "neo/starter"
-        flake = starter / "flake.nix"
-        text = flake.read_text()
-        text = re.sub(r"(?<=\?rev=)[0-9a-f]{40}", revision, text)
-        text = re.sub(
-            r'(neohaskellCommit = ")[0-9a-f]{40}(";)',
-            lambda m: m[1] + revision + m[2],
-            text,
-        )
-        flake.write_text(text)
-        cabal = starter / "cabal.project"
-        cabal.write_text(
-            re.sub(
-                r"(?m)^(\s*tag:\s*)[0-9a-f]{40}",
-                lambda m: m[1] + revision,
-                cabal.read_text(),
-            )
-        )
-        old_lock = json.loads((starter / "flake.lock").read_text())
-        subprocess.run(
-            ["nix", "flake", "lock", "--update-input", "neohaskell"],
-            cwd=starter,
-            check=True,
-        )
-        new_lock = json.loads((starter / "flake.lock").read_text())
-        locked = new_lock["nodes"]["neohaskell"]["locked"]
-        if locked.get("rev") != revision or not locked.get("narHash", "").startswith(
-            "sha256-"
-        ):
-            raise ValueError(
-                "Nix did not produce a content-hashed lock for the release revision"
-            )
-        for key, value in old_lock["nodes"].items():
-            if key != "neohaskell" and new_lock["nodes"].get(key) != value:
-                raise ValueError("Starter lock changed an unrelated dependency")
+        freeze_starter(starter, revision)
         for name in ("flake.nix", "flake.lock", "cabal.project"):
             shutil.copyfile(starter / name, out / ("neo-starter-" + name))
         env = {
@@ -304,6 +307,7 @@ def main():
             "seed",
             "build-native",
             "installer-platform",
+            "rehearse-toolchain",
             "consumer",
             "publish",
             "preview",
@@ -321,6 +325,7 @@ def main():
     parser.add_argument("--reason")
     parser.add_argument("--revision", default="HEAD")
     parser.add_argument("--target")
+    parser.add_argument("--system")
     parser.add_argument("--native-neo", type=Path)
     parser.add_argument("--inputs")
     parser.add_argument("--out")
@@ -393,6 +398,24 @@ def main():
                     handle.write(f"{key}={value}\n")
         return 0
     revision = repo.revision(args.revision)
+    if args.command == "rehearse-toolchain":
+        from installer_platform import SYSTEMS, rehearse_toolchain
+        if args.system not in SYSTEMS.values() or not args.out:
+            parser.error("rehearse-toolchain requires a supported --system and --out")
+        if repo.revision("HEAD") != revision:
+            raise ValueError("Toolchain rehearsal requires the checked-out revision")
+        with temporary_directory() as temporary:
+            work = Path(temporary) / "source"
+            subprocess.run(
+                ["git", "clone", "--quiet", "--shared", "--no-checkout", str(repo.root), str(work)],
+                check=True,
+            )
+            subprocess.run(
+                ["git", "checkout", "--quiet", "--detach", revision], cwd=work, check=True
+            )
+            freeze_starter(work / "neo/starter", revision)
+            rehearse_toolchain(release.Repo(work), args.system, Path(args.out))
+        return 0
     plan = get_plan(repo, revision, args.attempt or "")
     if args.command == "seed":
         seed(repo, plan, revision, args.out)

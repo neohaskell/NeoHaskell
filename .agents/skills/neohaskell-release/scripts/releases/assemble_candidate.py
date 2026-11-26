@@ -103,6 +103,7 @@ def build_manifest(root, plan, revision, directory, platforms):
         "auxiliary_assets": {name: file_identity(directory / name) for name in resolved["auxiliary_assets"]},
     }
     paths, roots, observations = {}, {}, {}
+    toolchains = set()
     starter_hashes = {name: build["starter"][role + "_sha256"] for role, name in STARTER.items()}
     for system in registry["roles"]["nix_packages"]["systems"]:
         target = TARGETS[system]
@@ -118,6 +119,23 @@ def build_manifest(root, plan, revision, directory, platforms):
         reachable_paths = set.union(*(reachable(platform_paths, path) for path in roots[system].values()))
         if len(platform_paths) != len(report["paths"]) or reachable_paths != set(platform_paths):
             raise ValueError("Unexpected or duplicate closure path in native report for " + system)
+        pair = roots[system]["pair"]
+        toolchain = candidate._valid_store_path(report.get("toolchain"), registry["limits"])
+        if (Path(toolchain).name.split("-", 1)[-1] != "neo-toolchain"
+                or toolchain in toolchains
+                or toolchain not in platform_paths[pair]["references"]
+                or not any(
+                    location["cache"] == "https://neohaskell.cachix.org"
+                    for location in platform_paths[toolchain]["locations"]
+                )):
+            raise ValueError("Missing or inconsistent published starter toolchain for " + system)
+        toolchains.add(toolchain)
+        acquisition = report["acquisition"]
+        pair_paths = reachable(platform_paths, pair)
+        if (acquisition["build_recipes"] != 0 or acquisition["post_gc_download_paths"] != 0
+                or acquisition["closure_paths"] != len(pair_paths)
+                or acquisition["installed_nar_bytes"] != sum(platform_paths[path]["nar_size"] for path in pair_paths)):
+            raise ValueError("Incomplete clean-store acquisition evidence for " + system)
         for row in platform_paths.values():
             add_path(paths, row)
         filenames = {"native-installer": "neo-installer-" + target}

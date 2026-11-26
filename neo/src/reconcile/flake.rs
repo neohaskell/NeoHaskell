@@ -14,7 +14,7 @@ pub fn generate<P: AsRef<Path>>(
     let rendered = render(env, config)?;
 
     let out_path = project_dir.as_ref().join("flake.nix");
-    super::atomic_write(&out_path, rendered.as_bytes())
+    super::write_generated_manifest(&out_path, rendered.as_bytes())
         .map_err(|e| NeoError::io_at("writing generated `flake.nix` at", &out_path, e))?;
 
     Ok(())

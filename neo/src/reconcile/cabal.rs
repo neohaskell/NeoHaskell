@@ -37,7 +37,7 @@ pub fn generate<P: AsRef<Path>>(
 
     let filename = format!("{}.cabal", config.name);
     let out_path = project_dir.as_ref().join(filename);
-    super::atomic_write(&out_path, rendered.as_bytes())
+    super::write_generated_manifest(&out_path, rendered.as_bytes())
         .map_err(|e| NeoError::io_at("writing generated cabal file at", &out_path, e))?;
 
     Ok(())

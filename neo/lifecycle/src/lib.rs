@@ -5,6 +5,8 @@ mod identity;
 #[cfg(unix)]
 mod installation;
 mod language;
+#[cfg(test)]
+mod test_fixtures;
 
 use std::sync::OnceLock;
 
@@ -69,6 +71,26 @@ fn neither_cli_dispatches_legacy_nix_policy_helpers() {
 
 pub fn installed_help() -> &'static str {
     &english().installed_lifecycle_help
+}
+
+pub fn installed_project_toolchain() -> Option<std::path::PathBuf> {
+    #[cfg(unix)]
+    return installation::toolchain::installed_project_toolchain();
+    #[cfg(not(unix))]
+    None
+}
+
+pub fn ensure_project_toolchain(
+    expected: &str,
+    framework_pin: Option<&str>,
+) -> Result<Option<std::path::PathBuf>, String> {
+    #[cfg(unix)]
+    return installation::toolchain::ensure_project_toolchain(expected, framework_pin);
+    #[cfg(not(unix))]
+    {
+        let _ = (expected, framework_pin);
+        Ok(None)
+    }
 }
 
 pub fn dispatch_installed(arguments: &[std::ffi::OsString]) -> Option<Exit> {
@@ -403,6 +425,16 @@ fn format_result(result: Result<installation::RunOutcome, installation::Transact
                 NixBlock::PairAcquisition => &english.nix_pair_acquisition,
             };
             eprintln!("{message}");
+            Exit { code: 1 }
+        }
+        Err(installation::TransactionError::ReleaseAcquisition {
+            system,
+            pair,
+            toolchain,
+        }) => {
+            eprintln!(
+                "Could not acquire the prebuilt NeoHaskell release for {system}. The CLI pair is {pair}. The toolchain is {toolchain}. Check access to the release caches and retry."
+            );
             Exit { code: 1 }
         }
         Err(installation::TransactionError::ActivationRecoveryFailed { primary, recovery }) => {

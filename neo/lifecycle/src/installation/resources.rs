@@ -267,10 +267,11 @@ impl ResourceLedger {
         Ok(self
             .links
             .iter()
-            .filter(|(name, _)| {
+            .filter(|(name, link)| {
                 name.as_str() != "prepared"
                     && Some(name.as_str()) != selected
                     && !retained_roots.contains(*name)
+                    && !super::toolchain::is_registered_root(name, &link.target)
             })
             .map(|(name, link)| (name.clone(), link.clone()))
             .collect())

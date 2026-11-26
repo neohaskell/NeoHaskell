@@ -12,6 +12,8 @@ For implementation and fix requests, follow the [task completion policy](.agents
 
 Skill-specific scripts, references, templates, tests and dependency configuration belong inside the owning `.agents/skills/<name>/` folder. Use `scripts/`, `references/` and `assets/` for their respective resources. Invoke helpers through their skill-owned paths. When several skills need a resource, keep one copy in its owning skill and link callers to it.
 
+Commit the inputs and generator for generated code and fixtures. Gitignore their output paths and have the owning build or test generate the files before use.
+
 ## Non-negotiables
 
 The Principles section below grounds every trigger. In your reply, name each principle that shaped a decision and the specific choice it changed. Cite only principles whose leaf SKILL.md you read this session.

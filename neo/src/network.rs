@@ -298,6 +298,8 @@ pub async fn check_for_updates() -> miette::Result<Option<String>> {
 #[derive(RustEmbed)]
 #[folder = "starter/"]
 #[exclude = "IMPORT.md"]
+#[exclude = "nix/toolchain.nix"]
+#[exclude = "nix/toolchain-docs/*"]
 struct StarterTemplate;
 
 /// The NeoHaskell source revision the EMBEDDED starter is locked to
@@ -614,6 +616,8 @@ mod tests {
         // The monorepo-only provenance manifest must NOT leak into a generated
         // project (it is excluded from the embed).
         assert!(!dir.path().join("IMPORT.md").exists(), "IMPORT.md must not be scaffolded into a project");
+        assert!(!dir.path().join("nix/toolchain.nix").exists());
+        assert!(!dir.path().join("nix/toolchain-docs").exists());
     }
 
     #[test]

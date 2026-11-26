@@ -98,6 +98,18 @@ struct ExecutorEvidence {
 
 impl Layout {
     pub(crate) fn for_user() -> Result<Self, TransactionError> {
+        let layout = Self::user_paths()?;
+        create_directory(
+            layout
+                .state_directory
+                .parent()
+                .ok_or(TransactionError::UnsafePath)?,
+        )?;
+        snapshot::private_directory(&layout.state_directory)?;
+        Ok(layout)
+    }
+
+    pub(super) fn user_paths() -> Result<Self, TransactionError> {
         let home = std::env::var_os("HOME")
             .map(PathBuf::from)
             .ok_or(TransactionError::UnsafePath)?;
@@ -109,9 +121,7 @@ impl Layout {
         if !state_base.is_absolute() {
             return Err(TransactionError::UnsafePath);
         }
-        create_directory(&state_base)?;
         let state = state_base.join("neohaskell");
-        snapshot::private_directory(&state)?;
         let commands = home.join(".local/bin");
         Ok(Self::new(state, commands))
     }
@@ -153,12 +163,8 @@ impl InstallationOwner {
         }
         let lease = self.effects.clone();
         let identity = crate::identity::BuildIdentity::current();
-        let system = match identity.target {
-            "aarch64-apple-darwin" => "aarch64-darwin",
-            "aarch64-unknown-linux-gnu" => "aarch64-linux",
-            "x86_64-unknown-linux-gnu" => "x86_64-linux",
-            _ => return Err(TransactionError::Verification("unsupported target")),
-        };
+        let system = super::toolchain::system_for_target(identity.target)
+            .ok_or(TransactionError::Verification("unsupported target"))?;
         #[cfg(not(test))]
         let source = release::ReleaseSource::production(identity.target, &lease)
             .map_err(|_| TransactionError::Verification("release transport"))?;
@@ -250,8 +256,22 @@ impl InstallationOwner {
         let prepared = self
             .prepare_snapshot(&selected, &source, identity.target, offline)
             .await?;
+        let selected_outputs = prepared
+            .candidate
+            .selected(system)
+            .map_err(|_| TransactionError::Verification("candidate system"))?;
+        let published = selected_outputs
+            .output("pair")
+            .zip(selected_outputs.output("toolchain"));
         self.verify_remote(&lease, &prepared.candidate, system, !offline)
-            .await?;
+            .await
+            .map_err(|error| match (error, published) {
+                (
+                    TransactionError::Verification("Nix operation failed"),
+                    Some((pair, toolchain)),
+                ) => super::toolchain::release_acquisition(system, pair, toolchain),
+                (error, _) => error,
+            })?;
         let shell_setup = self.prepare_shell().await?;
         let mut summary = recovery.summary(&request, Some(selected.version.clone()));
         summary.changes.extend([
@@ -321,9 +341,10 @@ impl InstallationOwner {
         let candidate = self
             .publish_prepared_snapshot(&selected, prepared, identity.target)
             .await?;
-        let pair = candidate
+        let selected_outputs = candidate
             .selected(system)
-            .map_err(|_| TransactionError::Verification("candidate system"))?
+            .map_err(|_| TransactionError::Verification("candidate system"))?;
+        let pair = selected_outputs
             .output("pair")
             .ok_or(TransactionError::Verification("candidate pair"))?;
         self.effects.observe(Activity::PreparingPair);
@@ -331,12 +352,24 @@ impl InstallationOwner {
         self.effects.observe_row(4, Row::Working);
         let retained = self
             .retain_candidate(&lease, &selected, pair, offline)
-            .await?;
+            .await
+            .map_err(
+                |error| match (&error, selected_outputs.output("toolchain")) {
+                    (
+                        TransactionError::NixBlocked(super::nix::NixBlock::PairAcquisition),
+                        Some(toolchain),
+                    ) => super::toolchain::release_acquisition(system, pair, toolchain),
+                    _ => error,
+                },
+            )?;
         self.effects.observe(Activity::VerifyingPair);
         self.effects.observe_row(5, Row::Working);
         let ready = self
             .verify_retention_observation(&lease, &candidate, system, retained)
             .await?;
+        if let Some(toolchain) = selected_outputs.output("toolchain") {
+            self.retain_release_toolchain(toolchain).await?;
+        }
         self.effects
             .completed(crate::diagnostics::CompletedStep::PairVerification);
         for row in 3..6 {
@@ -707,20 +740,9 @@ mod tests {
         use std::net::TcpListener;
         use std::os::unix::fs::PermissionsExt;
         let build = crate::identity::BuildIdentity::current();
-        let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("contract/fixtures/v1");
-        let index: serde_json::Value =
-            serde_json::from_slice(&fs::read(fixtures.join("fixture-set.json")).unwrap()).unwrap();
-        let name = index["candidate_ids"]
-            .as_object()
-            .unwrap()
-            .keys()
-            .next()
-            .unwrap();
+        let fixture = &crate::test_fixtures::current_candidate().files;
         let mut core: serde_json::Value =
-            serde_json::from_slice(&fs::read(fixtures.join(name).join("candidate.json")).unwrap())
-                .unwrap();
-        core["version"] = build.product_version.into();
-        core["context"]["version_seed"]["version"] = build.product_version.into();
+            serde_json::from_slice(&fixture["candidate.json"]).unwrap();
         let executable = std::env::current_exe().unwrap().canonicalize().unwrap();
         let bytes = fs::read(&executable).unwrap();
         let executable_sha = format!("{:x}", Sha256::digest(&bytes));
@@ -779,8 +801,7 @@ mod tests {
         let state = directory.join("state");
         fs::create_dir(&state).unwrap();
         fs::set_permissions(&state, fs::Permissions::from_mode(0o700)).unwrap();
-        let owner =
-            InstallationOwner::new(Layout::new(state.clone(), directory.join("bin")));
+        let owner = InstallationOwner::new(Layout::new(state.clone(), directory.join("bin")));
         let lease = RootLease::acquire(&owner.layout.lock()).unwrap();
         let source = release::ReleaseSource::bootstrap_fixture(build.target, &owner.effects, port);
         let record = super::super::InstallationRecord::default();

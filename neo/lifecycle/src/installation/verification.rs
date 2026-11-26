@@ -193,6 +193,13 @@ impl InstallationOwner {
             },
         )
         .await?;
+        if let Some(toolchain) = selected.output("toolchain") {
+            let member = PathBuf::from(retained.pair.as_str()).join(super::toolchain::PAIR_MEMBER);
+            let expected = PathBuf::from(toolchain.as_str());
+            self.effects
+                .filesystem(super::FilesystemJob::ResolvePairMember { member, expected })
+                .await?;
+        }
         for name in ["neo", "neoctl"] {
             let output = selected
                 .output(name)

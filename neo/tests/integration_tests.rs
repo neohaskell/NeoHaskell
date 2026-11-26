@@ -41,6 +41,71 @@ fn generate_regenerates_project_defaults_without_a_build_toolchain() {
 }
 
 #[test]
+fn generate_preserves_unchanged_manifests() {
+    use std::fs::{self, File, FileTimes};
+    use std::time::{Duration, UNIX_EPOCH};
+
+    let temp = tempfile::tempdir().unwrap();
+    let project = temp.path();
+    let config = project.join("neo.json");
+    let write_config = |pin| {
+        fs::write(
+            &config,
+            serde_json::json!({
+                "name": "generated-project",
+                "version": "0.1.0",
+                "neo-version": pin,
+            })
+            .to_string(),
+        )
+        .unwrap();
+    };
+    let generate = || {
+        neo_cmd()
+            .current_dir(project)
+            .env("NEO_SKIP_NETWORK", "1")
+            .env_remove("NEO_NEOHASKELL_SOURCE")
+            .env("PATH", "")
+            .args(["--ci", "generate"])
+            .assert()
+            .success();
+    };
+
+    fs::create_dir(project.join("src")).unwrap();
+    fs::write(project.join("src/App.hs"), "module App where\n").unwrap();
+    write_config("0123456789012345678901234567890123456789");
+    generate();
+
+    let original_time = UNIX_EPOCH + Duration::from_secs(1_000_000_000);
+    let manifests = ["generated-project.cabal", "cabal.project", "flake.nix"];
+    let original_bytes = manifests.map(|name| {
+        let path = project.join(name);
+        File::open(&path)
+            .unwrap()
+            .set_times(FileTimes::new().set_modified(original_time))
+            .unwrap();
+        fs::read(path).unwrap()
+    });
+
+    generate();
+    for (name, expected_bytes) in manifests.into_iter().zip(&original_bytes) {
+        let path = project.join(name);
+        assert_eq!(&fs::read(&path).unwrap(), expected_bytes, "{name}");
+        assert_eq!(fs::metadata(path).unwrap().modified().unwrap(), original_time, "{name}");
+    }
+
+    let updated_pin = "abcdef0123456789abcdef0123456789abcdef01";
+    write_config(updated_pin);
+    fs::write(project.join("src/Extra.hs"), "module Extra where\n").unwrap();
+    generate();
+    for (name, expected_change) in manifests.into_iter().zip(["Extra", updated_pin, updated_pin]) {
+        let path = project.join(name);
+        assert!(fs::read_to_string(&path).unwrap().contains(expected_change), "{name}");
+        assert_ne!(fs::metadata(path).unwrap().modified().unwrap(), original_time, "{name}");
+    }
+}
+
+#[test]
 fn test_version() {
     let mut cmd = neo_cmd();
     cmd.arg("--version")

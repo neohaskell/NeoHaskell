@@ -8,6 +8,8 @@ On Windows, use a WSL2 distribution with systemd enabled. Follow the Linux
 multi-user Nix instructions inside that distribution.
 [Enable systemd in WSL2](https://learn.microsoft.com/en-us/windows/wsl/systemd/)
 
+The release installer includes the prebuilt development toolchain on Apple Silicon, Linux ARM64, and Linux x86-64. Run `neo update` to install it for an existing managed installation. Projects with the same toolchain pin reuse it after Nix garbage collection. A project can still need to download or build its own dependencies.
+
 ## Run the installer as your ordinary user
 
 Run the release installer with your usual account. If the caches are already

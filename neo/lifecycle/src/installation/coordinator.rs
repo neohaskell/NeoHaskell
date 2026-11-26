@@ -531,6 +531,53 @@ impl Effects {
         }
     }
 
+    pub(super) fn with_project_lease<T>(
+        layout: Layout,
+        lease: RootLease,
+        run: impl AsyncFnOnce(InstallationOwner) -> Result<T, TransactionError>,
+    ) -> Result<T, TransactionError> {
+        let effects = Self::new(Cancellation::default());
+        effects.state.borrow_mut().lease = Some(lease);
+        let owner = InstallationOwner {
+            layout,
+            effects: effects.clone(),
+            #[cfg(test)]
+            fixture: false,
+        };
+        let result = effects.drive(run(owner));
+        if !matches!(effects.state.borrow().slot, EffectSlot::Idle) {
+            return Err(TransactionError::InvalidState(
+                "project toolchain finished with an active effect",
+            ));
+        }
+        result
+    }
+
+    fn drive<F: Future>(&self, future: F) -> F::Output {
+        let mut future = Box::pin(future);
+        let waker = Waker::from(Arc::new(CallerWake));
+        let mut context = Context::from_waker(&waker);
+        loop {
+            self.advance_effect();
+            if let Poll::Ready(result) = future.as_mut().poll(&mut context) {
+                return result;
+            }
+            self.wait();
+        }
+    }
+
+    pub(super) fn admit_project_retention(&self) -> Result<(), TransactionError> {
+        let mut state = self.state.borrow_mut();
+        if !matches!(state.review, ReviewGate::Inspecting) || state.lease.is_none() {
+            return Err(TransactionError::InvalidState("project toolchain lease"));
+        }
+        state.review = ReviewGate::Accepted {
+            identity: state.next_identity,
+            progress: AcceptedProgress::NoMutationAdmitted,
+        };
+        Ok(())
+    }
+
     pub(super) fn stopped(&self) -> bool {
         self.cancellation.requested()
     }
@@ -964,7 +1011,6 @@ impl Effects {
         self.state.borrow_mut().slot = next;
     }
 
-    #[cfg(test)]
     fn wait(&self) {
         let interest = {
             let state = self.state.borrow();
@@ -1268,16 +1314,7 @@ pub(super) fn test_with<F: Future>(effects: &Effects, lease: &RootLease, future:
         file: lease.file.try_clone().unwrap(),
         path: lease.path.clone(),
     });
-    let mut future = Box::pin(future);
-    let waker = Waker::from(Arc::new(CallerWake));
-    let mut context = Context::from_waker(&waker);
-    let result = loop {
-        effects.advance_effect();
-        if let Poll::Ready(value) = future.as_mut().poll(&mut context) {
-            break value;
-        }
-        effects.wait();
-    };
+    let result = effects.drive(future);
     assert!(matches!(effects.state.borrow().slot, EffectSlot::Idle));
     effects.state.borrow_mut().lease.take();
     result

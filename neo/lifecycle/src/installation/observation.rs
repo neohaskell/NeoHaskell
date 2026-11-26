@@ -111,6 +111,8 @@ impl PresentationObservation {
                 0
             };
             self.rows[row] = Row::Blocked;
+        } else if matches!(result, Err(TransactionError::ReleaseAcquisition { .. })) {
+            self.rows[3] = Row::Blocked;
         }
         self.activity(if result.is_err() {
             Activity::Failed

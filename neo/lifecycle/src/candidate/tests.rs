@@ -1,25 +1,8 @@
 use super::*;
+use crate::test_fixtures::{current_candidate, read_fixture_files};
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
-fn fixture_root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("contract/fixtures/v1")
-}
-fn cases() -> Value {
-    serde_json::from_slice(include_bytes!("../../contract/runtime_cases.json")).unwrap()
-}
-fn files(directory: &Path) -> BTreeMap<String, Vec<u8>> {
-    fs::read_dir(directory)
-        .unwrap()
-        .map(|entry| {
-            let path = entry.unwrap().path();
-            (
-                path.file_name().unwrap().to_str().unwrap().into(),
-                fs::read(path).unwrap(),
-            )
-        })
-        .collect()
-}
 fn metadata(files: &BTreeMap<String, Vec<u8>>) -> Result<ParsedCandidate> {
     let contract = Contract::load()?;
     let checked = core(&contract, &files["candidate.json"])?;
@@ -143,58 +126,96 @@ fn apply(directory: &Path, case: &Value) {
 }
 
 #[test]
-fn frozen_candidates_project_only_the_selected_closure() {
-    let index: Value = serde_json::from_slice(include_bytes!(
-        "../../contract/fixtures/v1/fixture-set.json"
-    ))
-    .unwrap();
+fn current_candidate_projects_only_the_selected_closure() {
+    let fixture = current_candidate();
+    let index = &fixture.index;
+    let parsed = metadata(&fixture.files).unwrap();
+    assert_eq!(index["candidate_ids"], json!({ "current": parsed.id() }));
+    assert_eq!(index["version"], parsed.version());
+    assert_eq!(parsed.version(), env!("NEO_PRODUCT_VERSION"));
+
     let contract = Contract::load().unwrap();
-    for (name, id) in index["candidate_ids"].as_object().unwrap() {
-        let directory = fixture_root().join(name);
-        let loaded = files(&directory);
-        let parsed = metadata(&loaded).unwrap();
-        assert_eq!(parsed.id(), id.as_str().unwrap());
-        assert_eq!(parsed.version(), name.split_once('-').unwrap().1);
-        for system in contract.registry()["roles"]["nix_packages"]["systems"]
+    for system in contract.registry()["roles"]["nix_packages"]["systems"]
+        .as_array()
+        .unwrap()
+    {
+        let selected = parsed.selected(system.as_str().unwrap()).unwrap();
+        assert!(selected.output("toolchain").is_none());
+        for role in contract.registry()["roles"]["nix_packages"]["outputs"]
             .as_array()
             .unwrap()
         {
-            let selected = parsed.selected(system.as_str().unwrap()).unwrap();
-            for role in contract.registry()["roles"]["nix_packages"]["outputs"]
-                .as_array()
-                .unwrap()
-            {
-                assert!(
-                    selected
-                        .closure()
-                        .contains_key(selected.output(role.as_str().unwrap()).unwrap())
-                );
-            }
-            for item in selected.closure().values() {
-                assert!(item.hash().starts_with("sha256-"));
-                assert!(item.size() > 0);
-                assert!(
-                    item.references()
-                        .iter()
-                        .all(|path| selected.closure().contains_key(path))
-                );
-            }
             assert!(
-                selected.closure().len()
-                    < index["closure_shape"]["paths"].as_u64().unwrap() as usize
+                selected
+                    .closure()
+                    .contains_key(selected.output(role.as_str().unwrap()).unwrap())
             );
         }
-        assert_eq!(
-            parsed.selected("foreign-system").unwrap_err(),
-            MetadataError::System
+        for item in selected.closure().values() {
+            assert!(item.hash().starts_with("sha256-"));
+            assert!(item.size() > 0);
+            assert!(
+                item.references()
+                    .iter()
+                    .all(|path| selected.closure().contains_key(path))
+            );
+        }
+        assert!(
+            selected.closure().len() < index["closure_shape"]["paths"].as_u64().unwrap() as usize
         );
     }
+    assert_eq!(
+        parsed.selected("foreign-system").unwrap_err(),
+        MetadataError::System
+    );
+}
+
+#[test]
+fn selects_the_exact_toolchain_from_the_pairs_signed_closure() {
+    let loaded = &current_candidate().files;
+    let contract = Contract::load().unwrap();
+    let mut core = core(&contract, &loaded["candidate.json"]).unwrap();
+    let mut table: Value = serde_json::from_slice(&loaded["closures.json"]).unwrap();
+    let system = "aarch64-darwin";
+    let toolchain = "/nix/store/zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz-neo-toolchain";
+    let pair = core.roots[system]["pair"].as_str().to_owned();
+    let rows = table["paths"].as_array_mut().unwrap();
+    let pair_row = rows.iter_mut().find(|row| row["store_path"] == pair).unwrap();
+    let mut toolchain_row = pair_row.clone();
+    toolchain_row["store_path"] = toolchain.into();
+    toolchain_row["references"] = json!([]);
+    let references = pair_row["references"].as_array_mut().unwrap();
+    references.push(toolchain.into());
+    references.sort_by(|left, right| left.as_str().cmp(&right.as_str()));
+    rows.push(toolchain_row);
+    rows.sort_by(|left, right| left["store_path"].as_str().cmp(&right["store_path"].as_str()));
+
+    let old = metadata(loaded).unwrap();
+    let previous = old.selected(system).unwrap().closure();
+    let identities = rows.iter().filter_map(|row| {
+        let path = contract.path(&row["store_path"]).unwrap();
+        (path.as_str() == toolchain || previous.contains_key(&path)).then(|| {
+            json!({"store_path": row["store_path"], "nar_hash": row["nar_hash"], "nar_size": row["nar_size"], "references": row["references"]})
+        })
+    }).collect::<Vec<_>>();
+    core.value["packages"][system]["pair"]["closure_id"] =
+        value_hash(&Value::Array(identities)).unwrap().into();
+
+    let selections = closures(&contract, &core, &table).unwrap();
+    let expected = OutputPath::parse(toolchain).unwrap();
+    let selected = &selections[system];
+    assert_eq!(selected.output("toolchain"), Some(&expected));
+    assert!(selected.closure().contains_key(&expected));
+    assert!(selections["aarch64-linux"].output("toolchain").is_none());
 }
 
 #[test]
 fn shared_canonical_vectors_match_python() {
     let contract = Contract::load().unwrap();
-    for vector in cases()["canonical_vectors"].as_array().unwrap() {
+    for vector in current_candidate().runtime_cases["canonical_vectors"]
+        .as_array()
+        .unwrap()
+    {
         let raw = vector["raw"].as_str().unwrap().as_bytes();
         assert_eq!(
             contract.decode(raw, "max_core_bytes", false, true).is_ok(),
@@ -215,7 +236,10 @@ fn shared_canonical_vectors_match_python() {
 #[test]
 fn shared_integer_vectors_match_python() {
     let contract = Contract::load().unwrap();
-    for vector in cases()["integer_vectors"].as_array().unwrap() {
+    for vector in current_candidate().runtime_cases["integer_vectors"]
+        .as_array()
+        .unwrap()
+    {
         assert_eq!(
             contract
                 .decode(
@@ -245,15 +269,16 @@ fn shared_integer_vectors_match_python() {
 
 #[test]
 fn shared_cases_validate_metadata_independently_of_payload_files() {
-    for case in cases()["cases"].as_array().unwrap() {
+    let fixture = current_candidate();
+    for case in fixture.runtime_cases["cases"].as_array().unwrap() {
         let temporary = tempfile::tempdir().unwrap();
         let directory = temporary.path().join("candidate");
         fs::create_dir(&directory).unwrap();
-        for (name, raw) in files(&fixture_root().join("current-0.17.2")) {
+        for (name, raw) in &fixture.files {
             fs::write(directory.join(name), raw).unwrap();
         }
         apply(&directory, case);
-        let loaded = files(&directory);
+        let loaded = read_fixture_files(&directory);
         let result = metadata(&loaded);
         if let Some(expected) = case["error"].as_str() {
             assert_eq!(
@@ -269,19 +294,6 @@ fn shared_cases_validate_metadata_independently_of_payload_files() {
             "metadata {}",
             case["name"]
         );
-    }
-}
-
-#[test]
-fn generated_export_manifest_binds_exact_runtime_bytes() {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("contract");
-    let manifest: Value =
-        serde_json::from_slice(include_bytes!("../../contract/manifest.json")).unwrap();
-    assert_eq!(manifest["contract_registry_sha256"], hash(REGISTRY));
-    for (name, identity) in manifest["outputs"].as_object().unwrap() {
-        let raw = fs::read(root.join(name)).unwrap();
-        assert_eq!(identity["sha256"], hash(&raw));
-        assert_eq!(identity["size"], raw.len());
     }
 }
 

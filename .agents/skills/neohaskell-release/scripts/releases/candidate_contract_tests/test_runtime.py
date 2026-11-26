@@ -7,7 +7,6 @@ import shutil
 import unittest
 
 import candidate
-import runtime_inputs
 
 
 from candidate_contract_tests.generate_fixtures import CandidateFixtureCorpus, temporary_corpus_directory
@@ -144,65 +143,43 @@ class RuntimeContract(unittest.TestCase):
                 CandidateFixtureCorpus(selected, root / "corpus")
             self.assertFalse((root / "escaped.cabal").exists())
 
-    def test_export_uses_copied_source_bytes(self):
-        with temporary_corpus_directory() as temporary:
-            root = Path(temporary)
-            selected = root / "selected-source"
-            shutil.copytree(self.corpus.root / "source", selected)
-            corpus = CandidateFixtureCorpus(selected, root / "corpus")
-            before = runtime_inputs.expected_files(corpus)
-            (selected / "neo/Cargo.lock").write_bytes(b"changed after snapshot")
-            self.assertEqual(runtime_inputs.expected_files(corpus), before)
-            manifest = json.loads(before["manifest.json"])
-            self.assertEqual(manifest["sources"]["neo/Cargo.lock"], hashlib.sha256((corpus.root / "source/neo/Cargo.lock").read_bytes()).hexdigest())
-
-    def test_release_version_bump_preserves_the_versioned_parse_fixtures(self):
+    def test_release_version_and_starter_seed_update_the_only_parse_fixture(self):
         with temporary_corpus_directory() as temporary:
             root = Path(temporary)
             selected = root / "next-release"
             shutil.copytree(self.corpus.root / "source", selected)
             profile = json.loads((selected / candidate.CONFIG_RELATIVE_PATH).read_bytes())["groups"]["platform"]
+            updated_version = candidate.release.bump(self.corpus.version, "compatible")
             for path, name in {**profile["packages"], **profile["locks"]}.items():
                 manifest = selected / path
-                manifest.write_text(candidate.release.change_version(manifest.read_text(), path, name, "0.18.1"))
+                manifest.write_text(candidate.release.change_version(manifest.read_text(), path, name, updated_version))
+            registry = candidate.contract_registry_projection()["registry"]["source_inputs"]
+            engineering_pin = registry["engineering_starter_framework_revision"]
+            release_pin = "f" * 40
+            for relative in registry["build"]["starter"].values():
+                manifest = selected / relative
+                manifest.write_text(manifest.read_text().replace(engineering_pin, release_pin))
             after = CandidateFixtureCorpus(selected, root / "corpus")
-            self.assertEqual(runtime_inputs.expected_files(after), runtime_inputs.expected_files(self.corpus))
+            self.assertEqual({path.name for path in after.root.iterdir()}, {"current", "fixture-set.json", "runtime_cases.json", "source"})
+            directory = after.root / "current"
+            parsed = candidate.parse_candidate((directory / "candidate.json").read_bytes(), directory)
+            index = json.loads((after.root / "fixture-set.json").read_bytes())
+            self.assertEqual(parsed.version, updated_version)
+            self.assertEqual(parsed.core["build_inputs"]["starter"]["framework_revision"], engineering_pin)
+            self.assertIn(release_pin, (selected / registry["build"]["starter"]["flake"]).read_text())
+            self.assertEqual(index["version"], updated_version)
+            self.assertEqual(index["candidate_ids"], {"current": parsed.candidate_id})
 
-    def test_export_rejects_conflicting_source_attribution(self):
-        with temporary_corpus_directory() as temporary:
-            root = Path(temporary)
-            corpus = CandidateFixtureCorpus(candidate.release.ROOT, root / "corpus")
-            producer = corpus.root / "source" / candidate.CANDIDATE_RELATIVE_PATH
-            producer.write_bytes(producer.read_bytes() + b"\n")
-            with self.assertRaisesRegex(ValueError, "Conflicting source attribution"):
-                runtime_inputs.expected_files(corpus)
+    def test_runtime_registry_matches_release_contract(self):
+        registry_path = candidate.release.ROOT / "neo/lifecycle/contract/registry.json"
+        self.assertEqual(registry_path.read_bytes(), candidate.contract_registry_bytes())
 
-    def test_export_exact_bytes(self):
-        runtime_inputs.check(self.corpus)
-
-    def test_export_detects_drift_without_writing(self):
-        with temporary_corpus_directory() as temporary:
-            destination = Path(temporary).resolve() / "contract"
-            runtime_inputs.write(self.corpus, destination)
-            path = destination / "registry.json"
-            path.write_bytes(path.read_bytes() + b"\n")
-            before = path.read_bytes()
-            with self.assertRaises(ValueError):
-                runtime_inputs.check(self.corpus, destination)
-            self.assertEqual(path.read_bytes(), before)
-            path.write_bytes(runtime_inputs.expected_files(self.corpus)["registry.json"])
-            (destination / "extra").write_bytes(b"extra")
-            with self.assertRaises(ValueError):
-                runtime_inputs.check(self.corpus, destination)
-
-    def test_frozen_positive_parse(self):
+    def test_current_candidate_parses(self):
         fixtures = json.loads((self.corpus.root / "fixture-set.json").read_bytes())
-        for name, identity in fixtures["candidate_ids"].items():
-            with self.subTest(name=name):
-                directory = self.corpus.root / name
-                parsed = candidate.parse_candidate((directory / "candidate.json").read_bytes(), directory)
-                self.assertEqual(parsed.candidate_id, identity)
-                metadata_only(directory)
+        directory = self.corpus.root / "current"
+        parsed = candidate.parse_candidate((directory / "candidate.json").read_bytes(), directory)
+        self.assertEqual(fixtures["candidate_ids"], {"current": parsed.candidate_id})
+        metadata_only(directory)
 
     def test_shared_canonical_vectors(self):
         limits = candidate.contract_registry_projection()["registry"]["limits"]
@@ -231,7 +208,7 @@ class RuntimeContract(unittest.TestCase):
         for case in CASES["cases"]:
             with self.subTest(name=case["name"]), temporary_corpus_directory() as temporary:
                 directory = Path(temporary) / "candidate"
-                shutil.copytree(self.corpus.root / "current-0.17.2", directory)
+                shutil.copytree(self.corpus.root / "current", directory)
                 apply_case(directory, case)
                 for key, operation in [("metadata_valid", lambda: metadata_only(directory)), ("materialized_valid", lambda: candidate.parse_candidate((directory / "candidate.json").read_bytes(), directory))]:
                     try:

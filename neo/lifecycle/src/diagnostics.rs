@@ -387,6 +387,7 @@ impl ErrorFact {
             | E::ShellZdotdirUnsupported
             | E::ShellVerificationFailed
             | E::Verification(_) => Self::Verification,
+            E::ReleaseAcquisition { .. } => Self::NixBlocked(NixReason::PairAcquisition),
             E::NixBlocked(reason) => {
                 use installation::nix::NixBlock as N;
                 Self::NixBlocked(match reason {

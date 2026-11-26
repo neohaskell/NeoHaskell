@@ -75,6 +75,9 @@ node_modules/
 
 # Rust / Cargo (installer)
 installer/target/
+/neo/lifecycle/contract/fixtures/
+/neo/lifecycle/contract/manifest.json
+/neo/lifecycle/contract/runtime_cases.json
 
 .ruff_cache
 # Phase 0: untracked local pipeline-state archive (Phase 1 will manage telemetry/ properly)

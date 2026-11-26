@@ -1,3 +1,4 @@
 {
+  "haskell.manageHLS": "PATH",
   "nixEnvSelector.nixFile": "${workspaceFolder}/flake.nix"
 }
