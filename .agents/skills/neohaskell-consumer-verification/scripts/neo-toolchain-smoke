@@ -16,6 +16,10 @@ if [[ $exercise_gc == 1 && ( ${GITHUB_ACTIONS:-} != true || ${RUNNER_ENVIRONMENT
   exit 2
 fi
 projects=(toolchain-first toolchain-second)
+if [[ $exercise_gc == 1 ]]; then
+  nix path-info --all | LC_ALL=C sort > "$work/paths-before-projects"
+  : > "$work/project-inputs"
+fi
 
 cat > "$work/ToolchainSmoke.hs" <<'EOF'
 module ToolchainSmoke (answer) where
@@ -40,7 +44,7 @@ for name in "${projects[@]}"; do
     if [[ $exercise_gc == 1 ]]; then
       nix develop --no-update-lock-file --profile "$work/$name-shell" --command true
       nix flake archive --no-update-lock-file --json > "$work/$name-inputs.json"
-      python3 - "$work/$name-inputs.json" > "$work/$name-inputs" <<'PY'
+      python3 - "$work/$name-inputs.json" >> "$work/project-inputs" <<'PY'
 import json
 import sys
 
@@ -52,19 +56,22 @@ def paths(node):
 with open(sys.argv[1], encoding="utf-8") as stream:
     print(*sorted(set(paths(json.load(stream)))), sep="\n")
 PY
-      nix eval --raw ".#.legacyPackages.$system.hixProject.plan-nix.outPath" >> "$work/$name-inputs"
-      mkdir -p "$work/inputs"
-      while IFS= read -r path || [[ -n $path ]]; do
-        if [[ ! -L "$work/inputs/${path##*/}" ]]; then
-          nix build --offline --option max-jobs 0 --option builders '' \
-            --out-link "$work/inputs/${path##*/}" "$path"
-        fi
-      done < "$work/$name-inputs"
+      plan=$(nix eval --raw ".#.legacyPackages.$system.hixProject.plan-nix.outPath")
+      printf '%s\n' "$plan" >> "$work/project-inputs"
     fi
   )
 done
 
 if [[ $exercise_gc == 1 ]]; then
+  nix path-info --all | LC_ALL=C sort > "$work/paths-after-projects"
+  LC_ALL=C comm -13 "$work/paths-before-projects" "$work/paths-after-projects" \
+    | awk '!/\.drv$/' >> "$work/project-inputs"
+  LC_ALL=C sort -u "$work/project-inputs" > "$work/project-inputs-unique"
+  mkdir "$work/inputs"
+  while IFS= read -r path; do
+    nix build --offline --option max-jobs 0 --option builders '' \
+      --out-link "$work/inputs/${path##*/}" "$path"
+  done < "$work/project-inputs-unique"
   nix store gc --store daemon
   export NEO_SKIP_NETWORK=1
   export NIX_CONFIG="${NIX_CONFIG:-}"$'\nsubstitute = false\nmax-jobs = 0\nbuilders =\n'

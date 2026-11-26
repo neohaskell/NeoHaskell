@@ -74,6 +74,8 @@ let
     paths = builtins.attrValues tools ++ [ ghc editorTools hoogle ];
     postBuild = ''
       mkdir -p "$out/share/neohaskell/plans"
+      ln -s ${ghc.src} "$out/share/neohaskell/plans/compiler-source"
+      ln -s ${docs.roots} "$out/share/neohaskell/plans/haskell-nix"
       ln -s ${docs.plan-nix} "$out/share/neohaskell/plans/documentation"
       ln -s ${hoogleTool.project.plan-nix} "$out/share/neohaskell/plans/hoogle"
       ${pkgs.lib.concatStringsSep "\n" (pkgs.lib.mapAttrsToList (name: tool:
