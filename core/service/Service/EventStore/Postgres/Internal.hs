@@ -348,6 +348,23 @@ insertImpl ops cfg consistencyRetryCount keys payload = do
               Task.throw (InsertionError (InsertionFailed (toText err)))
 
 
+-- | Whether the stream tail read before the write satisfies the insertion type.
+--
+-- The write lands at the tail plus one, so UK_Events_Stream rejects any
+-- concurrent append that moved the tail after this check. A replay whose
+-- events all exist already writes nothing and keeps succeeding, except for
+-- 'StreamCreation', which has always required an absent stream.
+acceptsStreamTail :: Int -> Maybe (StreamPosition, StreamPosition) -> InsertionType -> Bool
+acceptsStreamTail newEventCount latestPositions insertionType = do
+  let streamTail = latestPositions |> Maybe.map (\(_, localPosition) -> localPosition)
+  let isReplay = newEventCount == 0
+  case insertionType of
+    AnyStreamState -> True
+    StreamCreation -> streamTail == Nothing
+    ExistingStream -> isReplay || streamTail != Nothing
+    InsertAfter expected -> isReplay || streamTail == Just expected
+
+
 payloadReferences :: InsertionPayload Json.Value -> Result Text (Array Text)
 payloadReferences payload =
   payload.insertions
@@ -442,18 +459,8 @@ insertGo ops cfg keys payload =
         |> Sessions.run conn
         |> Task.mapError SessionError
 
-    -- Check stream existence constraint for StreamCreation
-    case payload.insertionType of
-      StreamCreation -> do
-        case latestPositions of
-          Just _ -> do
-            -- Stream already exists, cannot create
-            Task.throw (CoreInsertionError ConsistencyCheckFailed)
-          Nothing -> do
-            -- Stream doesn't exist, can proceed
-            pass
-      _ -> do
-        pass
+    Task.unless (payload.insertionType |> acceptsStreamTail insertionsCount latestPositions) do
+      Task.throw (CoreInsertionError ConsistencyCheckFailed)
 
     if insertionsCount <= 0
       then do
