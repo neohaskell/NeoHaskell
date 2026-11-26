@@ -643,6 +643,11 @@ impl OperationOwner {
     pub(super) fn execute(mut self, operation: WorkerRequest) -> io::Result<OperationResult> {
         self.wait_ready()?;
         self.submit(operation)?;
+        self.wait_for_result()
+    }
+
+    #[cfg(test)]
+    fn wait_for_result(&mut self) -> io::Result<OperationResult> {
         loop {
             match self.poll() {
                 ProcessPoll::Pending | ProcessPoll::Ready => self.wait_for_interest(),
@@ -1922,10 +1927,18 @@ mod tests {
         let (_temporary, lock) = setup();
         let path = lock.path.clone();
         let marker = path.parent().unwrap().join("marker");
-        let mut owner = admitted(&lock, "resistant");
-        await_condition(|| marker.exists());
+        let mut owner = OperationOwner::start(&lock).unwrap();
+        owner
+            .submit(WorkerRequest::Fixture {
+                name: "resistant".to_owned(),
+            })
+            .unwrap();
+        await_condition(|| {
+            assert!(matches!(owner.poll(), ProcessPoll::Pending));
+            marker.exists()
+        });
         owner.control.write_all(b"unexpected").unwrap();
-        let result = receive_result(&mut owner.control, CAPTURE_LIMIT).unwrap();
+        let result = owner.wait_for_result().unwrap();
         assert_eq!(
             result.failure.as_deref(),
             Some("unexpected controller message")
