@@ -8,6 +8,9 @@ fi
 toolchain=$2
 neo=$4
 system=$(nix eval --impure --raw --expr builtins.currentSystem)
+if [[ $system == aarch64-darwin ]]; then
+  /usr/bin/codesign --verify --strict "$toolchain/bin/haskell-language-server"
+fi
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 exercise_gc=${NEO_TOOLCHAIN_SMOKE_GC:-0}
@@ -91,7 +94,7 @@ for name in "${projects[@]}"; do
       output=$3
       mkdir -p "$output"
 
-      for tool in cabal hspec-discover haskell-language-server-wrapper hlint fourmolu hoogle; do
+      for tool in cabal hspec-discover haskell-language-server haskell-language-server-wrapper hlint fourmolu hoogle; do
         executable=$(command -v "$tool")
         if [[ ! "$executable" -ef "$toolchain/bin/$tool" ]]; then
           printf "%s resolved to %s instead of %s\n" "$tool" "$executable" "$toolchain/bin/$tool" >&2

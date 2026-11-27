@@ -6,7 +6,34 @@ let
   ghc = pkgs.haskell-nix.compiler.${compiler};
   signDarwinBinaries = pkgs.darwin.autoSignDarwinBinariesHook;
   upstreamTools = pkgs.haskell-nix.tools compiler starter.shell.tools;
+  upstreamHls = upstreamTools.haskell-language-server;
+  hlsRuntimeLinks = "${upstreamHls.configFiles}/lib/links";
+  darwinHls = pkgs.stdenvNoCC.mkDerivation {
+    pname = "neo-haskell-language-server";
+    inherit (upstreamHls) version;
+    dontUnpack = true;
+    dontStrip = true;
+    nativeBuildInputs = [ pkgs.darwin.cctools signDarwinBinaries ];
+    disallowedReferences = [ upstreamHls.configFiles ];
+
+    installPhase = ''
+      runHook preInstall
+      mkdir -p "$out/bin" "$out/lib"
+      install -m755 "${upstreamHls}/bin/haskell-language-server" "$out/bin/haskell-language-server"
+      cp -RP "${hlsRuntimeLinks}/." "$out/lib/"
+      install_name_tool -rpath "${hlsRuntimeLinks}" '@loader_path/../lib' "$out/bin/haskell-language-server"
+      runHook postInstall
+    '';
+
+    doInstallCheck = true;
+    installCheckPhase = ''
+      runHook preInstallCheck
+      "$out/bin/haskell-language-server" --version
+      runHook postInstallCheck
+    '';
+  };
   tools = upstreamTools // pkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isDarwin {
+    haskell-language-server = darwinHls;
     hspec-discover = upstreamTools.hspec-discover.overrideAttrs (old: {
       nativeBuildInputs = (old.nativeBuildInputs or [ ]) ++ [ signDarwinBinaries ];
     });
@@ -24,7 +51,7 @@ let
     ] (_: { components.library.build-tools = [ signDarwinBinaries ]; });
   };
   hls = tools.haskell-language-server;
-  hlsWrapper = hls.project.getComponent
+  hlsWrapper = upstreamHls.project.getComponent
     "haskell-language-server:exe:haskell-language-server-wrapper";
   editorTools = pkgs.runCommand "neo-editor-tools" { } ''
     mkdir -p "$out/bin"
@@ -68,7 +95,7 @@ let
   };
   hoogle = pkgs.runCommand "neo-hoogle" { } ''
     mkdir -p "$out/bin" "$out/share/doc"
-    ln -s ${docsGhc}/bin/hoogle "$out/bin/hoogle"
+    cp -P "${docsGhc}/bin/hoogle" "$out/bin/hoogle"
     ln -s ${pkgs.lib.getOutput "doc" ghc}/share/doc/ghc "$out/share/doc/ghc"
   '';
 

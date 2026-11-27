@@ -72,6 +72,23 @@ class InstallerPlatform(unittest.TestCase):
             with self.subTest(references=references), self.assertRaisesRegex(ValueError, toolchain):
                 platform.pair_closure(self.path, toolchain, {self.path: {"references": references}}, "aarch64-linux")
 
+    def test_rejects_an_oversized_closure_before_upload(self):
+        toolchain = "/nix/store/11111111111111111111111111111111-neo-toolchain"
+        references = [f"/nix/store/{index:032d}-package" for index in range(513)]
+        closure = {
+            self.path: {"references": [toolchain]},
+            toolchain: {"references": references[:512]},
+        }
+        self.assertEqual(platform.pair_closure(self.path, toolchain, closure, "aarch64-darwin"), closure)
+
+        closure[toolchain]["references"] = references
+        with (patch.object(platform, "output", return_value=json.dumps(closure)),
+              patch.object(subprocess, "run") as command,
+              self.assertRaisesRegex(ValueError, f"{toolchain} has 513 direct references.*512")):
+            platform.publish_closure({"pair": self.path}, toolchain, "aarch64-darwin", "1.2.3",
+                                     self.caches, {}, Path("."), self.openssl)
+        command.assert_not_called()
+
     def test_read_only_store_cleanup_preserves_external_symlink_target(self):
         with tempfile.TemporaryDirectory() as temporary:
             workspace = Path(temporary)
