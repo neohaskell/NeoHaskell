@@ -1,13 +1,5 @@
 # Changelog
 
-## 0.19.4 — 2026-11-26
-
-### Fixed
-
-- **CLI**: The NeoHaskell installer now downloads and retains the pinned compiler, build and test tools, Haskell Language Server, HLint, Fourmolu, and local documentation tools. Projects with the same toolchain pin reuse those files after Nix garbage collection. Run `neo update` to install the toolchain for an existing managed installation. Project-specific dependencies still have their own build inputs. Repeating `neo generate` also preserves the timestamps of unchanged build files. ([change](https://github.com/neohaskell/NeoHaskell/commit/723e1a6d0acde4e93b80327e97ff054ab80a4975))
-
-[Compare changes](https://github.com/neohaskell/NeoHaskell/compare/neo-v0.19.3...neo-v0.19.4)
-
 ## 0.19.3 — 2026-11-26
 
 ### Added
