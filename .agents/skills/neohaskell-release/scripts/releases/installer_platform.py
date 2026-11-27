@@ -193,6 +193,11 @@ def pair_closure(pair, toolchain, local, system):
     direct = local[pair]["references"]
     if [path for path in direct if Path(path).name.split("-", 1)[-1] == "neo-toolchain"] != [toolchain]:
         raise ValueError(f"The {system} pair does not directly reference the exact starter toolchain {toolchain}")
+    limit = candidate._registry()[1]["limits"]["max_references_per_path"]
+    for path, metadata in local.items():
+        count = len(metadata["references"])
+        if count > limit:
+            raise ValueError(f"The {system} output {path} has {count} direct references. The installer supports at most {limit}.")
     return local
 
 
