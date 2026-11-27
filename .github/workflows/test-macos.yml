@@ -19,6 +19,7 @@ on:
       - main
     paths:
       - "core/**"
+      - ".github/workflows/**"
       - "nix/**"
       - "integrations/**"
       - "testbed/**"
@@ -49,6 +50,8 @@ jobs:
           - test-suite: nhcore-test-core
             needs-postgres: false
           - test-suite: nhcore-test-integration
+            needs-postgres: false
+          - test-suite: nhintegrations-test
             needs-postgres: false
           - test-suite: nhcore-test-service
             needs-postgres: true
@@ -108,4 +111,4 @@ jobs:
           echo "FILE_UPLOAD_TEST_DB=$private_db" >> "$GITHUB_ENV"
 
       - name: Run ${{ matrix.test-suite }}
-        run: nix develop --command cabal test ${{ matrix.test-suite }}
+        run: nix develop --command cabal test ${{ matrix.test-suite }} --test-show-details=direct

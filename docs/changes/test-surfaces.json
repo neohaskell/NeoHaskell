@@ -349,6 +349,24 @@
     },
     {
       "kind": "hspec",
+      "suite": "nhintegrations-test",
+      "path": "integrations/test/Integration/Oura/SyncAllSpec.hs",
+      "match": "invokes onError callback when fetch fails and onError is Just",
+      "boundary": "http:real",
+      "expected_examples": 1,
+      "fixture": "SyncAllSpec.localTokenFailure"
+    },
+    {
+      "kind": "hspec",
+      "suite": "nhintegrations-test",
+      "path": "integrations/test/Integration/Oura/SyncAllSpec.hs",
+      "match": "throws error when fetch fails and onError is Nothing",
+      "boundary": "http:real",
+      "expected_examples": 1,
+      "fixture": "SyncAllSpec.localTokenFailure"
+    },
+    {
+      "kind": "hspec",
       "suite": "nhcore-test-core",
       "path": "core/test/Http/ClientRawSpec.hs",
       "match": "sendRaw PUT delivers method, raw body and custom header",

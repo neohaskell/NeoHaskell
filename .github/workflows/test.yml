@@ -216,6 +216,36 @@ jobs:
       - name: Run nhcore-test-integration
         run: LOG_LEVEL=Warn nix develop .#ci --command cabal test nhcore-test-integration
 
+  test-integrations:
+    needs: [build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: DeterminateSystems/determinate-nix-action@v3.24.2
+        with:
+          extra-conf: |
+            accept-flake-config = true
+            http2 = false
+            extra-substituters = https://neohaskell.cachix.org?priority=30 https://cache.iog.io
+            extra-trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= neohaskell.cachix.org-1:mo2cLaGbwqbrxs9xhqKK8jeNsn3osi7t6XoAmxSZssc=
+      - uses: actions/download-artifact@v8
+        with:
+          name: dist-newstyle
+          path: dist-newstyle
+      - name: Run nhintegrations-test
+        run: |
+          set -o pipefail
+          LOG_LEVEL=Warn nix develop .#ci --command cabal test nhintegrations-test \
+            --test-show-details=direct | tee .nhintegrations-test.report
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: nhintegrations-test-report
+          path: .nhintegrations-test.report
+          include-hidden-files: true
+          if-no-files-found: error
+
   test-service:
     needs: [build]
     runs-on: ubuntu-latest
@@ -320,7 +350,7 @@ jobs:
 
   ci-gate:
     if: always()
-    needs: [changes, build, test-core, test-transport, test-auth, test-integration, test-service, test-hurl]
+    needs: [changes, build, test-core, test-transport, test-auth, test-integration, test-integrations, test-service, test-hurl]
     runs-on: ubuntu-latest
     steps:
       - name: Check all tests passed
@@ -343,6 +373,7 @@ jobs:
             "test-transport=${{ needs.test-transport.result }}"
             "test-auth=${{ needs.test-auth.result }}"
             "test-integration=${{ needs.test-integration.result }}"
+            "test-integrations=${{ needs.test-integrations.result }}"
             "test-service=${{ needs.test-service.result }}"
             "test-hurl=${{ needs.test-hurl.result }}"
           )
