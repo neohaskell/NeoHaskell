@@ -1705,6 +1705,51 @@
       "source_sha": "723e1a6d0acde4e93b80327e97ff054ab80a4975",
       "target_policy": "native-v2",
       "version": "0.19.4"
+    },
+    {
+      "base_sha": "3037654ec5ec613e67042ffd0bbb33573e9bb72d",
+      "base_tag": "neo-v0.19.3",
+      "base_version": "0.19.3",
+      "bootstrap": false,
+      "contract_registry_sha256": "993db493d248ac754cf1c6631d03aa63f3be766e489d927a6c72d10d28cbb961",
+      "date": "2026-11-27",
+      "distribution_policy": "installer-v1",
+      "group": "platform",
+      "id": "a9a2d204e8a69b71ac313fb1371eab73f74eea1b54b20200f70aba6ebc9ed4a4",
+      "impact": "compatible",
+      "kind": "release",
+      "notes": [
+        {
+          "category": "Fixed",
+          "commit": "723e1a6d0acde4e93b80327e97ff054ab80a4975",
+          "component": "CLI",
+          "group": "platform",
+          "hash": "10266992000992eebc8ce4b548021aa5f3cb0f5ec671ce1159399cc6c1428bdf",
+          "impact": "compatible",
+          "original_hash": "10266992000992eebc8ce4b548021aa5f3cb0f5ec671ce1159399cc6c1428bdf",
+          "path": ".changes/neo-shared-toolchain.md",
+          "sections": {
+            "Summary": "The NeoHaskell installer now downloads and retains the pinned compiler, build and test tools, Haskell Language Server, HLint, Fourmolu, and local documentation tools. Projects with the same toolchain pin reuse those files after Nix garbage collection. Run `neo update` to install the toolchain for an existing managed installation. Project-specific dependencies still have their own build inputs. Repeating `neo generate` also preserves the timestamps of unchanged build files."
+          },
+          "text": "---\ngroup: platform\ncomponent: CLI\nimpact: compatible\ncategory: Fixed\n---\n\n## Summary\n\nThe NeoHaskell installer now downloads and retains the pinned compiler, build and test tools, Haskell Language Server, HLint, Fourmolu, and local documentation tools. Projects with the same toolchain pin reuse those files after Nix garbage collection. Run `neo update` to install the toolchain for an existing managed installation. Project-specific dependencies still have their own build inputs. Repeating `neo generate` also preserves the timestamps of unchanged build files.\n"
+        },
+        {
+          "category": "Fixed",
+          "commit": "362f42261c65ff5a725da2a142e2e8c536d01412",
+          "component": "CLI",
+          "group": "platform",
+          "hash": "9f170254c9efd4c33ffef0538ad82d9f0bb004c2754fdc3e90beb2918247f203",
+          "impact": "none",
+          "path": ".changes/release-pinned-openssl.md",
+          "sections": {
+            "Summary": "Release CI uses the Nix-pinned OpenSSL to verify signed cache downloads during\nthe Apple Silicon installer build."
+          },
+          "text": "---\ngroup: platform\ncomponent: CLI\nimpact: none\ncategory: Fixed\n---\n\n## Summary\n\nRelease CI uses the Nix-pinned OpenSSL to verify signed cache downloads during\nthe Apple Silicon installer build.\n"
+        }
+      ],
+      "source_sha": "7ddec9861a164e05b52daf4de9d5687215b6586a",
+      "target_policy": "native-v2",
+      "version": "0.19.5"
     }
   ],
   "recoveries": [
