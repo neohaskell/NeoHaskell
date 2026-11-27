@@ -1674,6 +1674,37 @@
       "source_sha": "25fdbbf63f4b78e069d11d6e5674de1f915aec22",
       "target_policy": "native-v2",
       "version": "0.19.3"
+    },
+    {
+      "base_sha": "3037654ec5ec613e67042ffd0bbb33573e9bb72d",
+      "base_tag": "neo-v0.19.3",
+      "base_version": "0.19.3",
+      "bootstrap": false,
+      "contract_registry_sha256": "993db493d248ac754cf1c6631d03aa63f3be766e489d927a6c72d10d28cbb961",
+      "date": "2026-11-26",
+      "distribution_policy": "installer-v1",
+      "group": "platform",
+      "id": "9923e297e7f7dce9cd9734193f6e0eb0c59cccf2efa02bebada14560548f7cf8",
+      "impact": "compatible",
+      "kind": "release",
+      "notes": [
+        {
+          "category": "Fixed",
+          "commit": "723e1a6d0acde4e93b80327e97ff054ab80a4975",
+          "component": "CLI",
+          "group": "platform",
+          "hash": "10266992000992eebc8ce4b548021aa5f3cb0f5ec671ce1159399cc6c1428bdf",
+          "impact": "compatible",
+          "path": ".changes/neo-shared-toolchain.md",
+          "sections": {
+            "Summary": "The NeoHaskell installer now downloads and retains the pinned compiler, build and test tools, Haskell Language Server, HLint, Fourmolu, and local documentation tools. Projects with the same toolchain pin reuse those files after Nix garbage collection. Run `neo update` to install the toolchain for an existing managed installation. Project-specific dependencies still have their own build inputs. Repeating `neo generate` also preserves the timestamps of unchanged build files."
+          },
+          "text": "---\ngroup: platform\ncomponent: CLI\nimpact: compatible\ncategory: Fixed\n---\n\n## Summary\n\nThe NeoHaskell installer now downloads and retains the pinned compiler, build and test tools, Haskell Language Server, HLint, Fourmolu, and local documentation tools. Projects with the same toolchain pin reuse those files after Nix garbage collection. Run `neo update` to install the toolchain for an existing managed installation. Project-specific dependencies still have their own build inputs. Repeating `neo generate` also preserves the timestamps of unchanged build files.\n"
+        }
+      ],
+      "source_sha": "723e1a6d0acde4e93b80327e97ff054ab80a4975",
+      "target_policy": "native-v2",
+      "version": "0.19.4"
     }
   ],
   "recoveries": [],
