@@ -1760,6 +1760,14 @@
       "kind": "recovery",
       "reason": "Apple Silicon installer publication failed because PATH selected an openssl binary without Ed25519 raw input support. The reviewed source fix uses the Nix-pinned executable.",
       "source_sha": "362f42261c65ff5a725da2a142e2e8c536d01412"
+    },
+    {
+      "attempt": "a9a2d204e8a69b71ac313fb1371eab73f74eea1b54b20200f70aba6ebc9ed4a4",
+      "group": "platform",
+      "id": "3bedb9c5d5d240869bf157ccb3523be7968b54aa7b543e41bd2b3ee7c98ac36f",
+      "kind": "recovery",
+      "reason": "Installer assembly rejected four signed dependency lists above the existing 512-reference per-output bound. The reviewed producer repair keeps the HLS and Hoogle tools within that bound and preserves the published installer contract.",
+      "source_sha": "1928c0aaebafbbd9b73d851ab6877098156127d9"
     }
   ],
   "schema": 1
