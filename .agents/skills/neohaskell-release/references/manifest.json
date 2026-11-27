@@ -1707,6 +1707,15 @@
       "version": "0.19.4"
     }
   ],
-  "recoveries": [],
+  "recoveries": [
+    {
+      "attempt": "9923e297e7f7dce9cd9734193f6e0eb0c59cccf2efa02bebada14560548f7cf8",
+      "group": "platform",
+      "id": "65209836d636d352dabc7120d74174751074f2a86257d419f0aa30298655cb0c",
+      "kind": "recovery",
+      "reason": "Apple Silicon installer publication failed because PATH selected an openssl binary without Ed25519 raw input support. The reviewed source fix uses the Nix-pinned executable.",
+      "source_sha": "362f42261c65ff5a725da2a142e2e8c536d01412"
+    }
+  ],
   "schema": 1
 }
