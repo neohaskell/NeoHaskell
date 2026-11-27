@@ -10,11 +10,13 @@ import Basics
 import Bytes (Bytes)
 import Directory qualified
 import File qualified
+import Json qualified
 import Maybe (Maybe (..))
 import Path (Path)
 import Path qualified
 import Result (Result (..))
 import Service.FileUpload.BlobStore (BlobStore (..), BlobStoreError (..))
+import Service.FileUpload.BlobStore qualified as BlobStore
 import Service.FileUpload.Core (BlobKey (..))
 import Task (Task)
 import Task qualified
@@ -33,6 +35,16 @@ data LocalBlobStoreConfig = LocalBlobStoreConfig
   -- ^ Root directory where blobs are stored
   }
   deriving (Generic, Eq, Show)
+
+
+instance Json.FromJSON LocalBlobStoreConfig
+
+
+instance Json.ToJSON LocalBlobStoreConfig
+
+
+instance BlobStore.BlobStoreConfig LocalBlobStoreConfig where
+  createBlobStore = createLocalBlobStore
 
 
 -- ==========================================================================
@@ -69,8 +81,14 @@ getBlobPath rootDir blobKey@(BlobKey key) = do
 
 -- | Create a local filesystem blob store
 createBlobStore :: LocalBlobStoreConfig -> Task Text BlobStore
-createBlobStore config = do
-  -- Ensure root directory exists
+createBlobStore = createLocalBlobStore
+
+
+createLocalBlobStore :: LocalBlobStoreConfig -> Task Text BlobStore
+createLocalBlobStore config = do
+  Task.when (Text.isEmpty (Text.trim (Path.toText config.rootDir))) do
+    Task.throw "Local blob store rootDir cannot be empty"
+
   _ <- Directory.createIfMissing config.rootDir
     |> Task.mapError (\e -> [fmt|Failed to create blob store root: #{show e}|])
 
