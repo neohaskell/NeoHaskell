@@ -1,6 +1,7 @@
 module Service.FileUpload.BlobStore (
   -- * BlobStore Interface
   BlobStore (..),
+  BlobStoreConfig (..),
 
   -- * Error Types
   BlobStoreError (..),
@@ -16,10 +17,6 @@ import Task (Task)
 import Text (Text)
 
 
--- ==========================================================================
--- Error Types
--- ==========================================================================
-
 -- | Errors that can occur when interacting with the blob store
 data BlobStoreError
   = NotFound BlobKey -- Requested blob does not exist
@@ -34,12 +31,8 @@ instance Show BlobStoreError where
     InvalidBlobKey msg -> [fmt|InvalidBlobKey: #{msg}|]
 
 
--- ==========================================================================
--- BlobStore Interface
--- ==========================================================================
-
--- | Interface for blob storage backends
--- Implementations: Local (filesystem), S3 (future), GCS (future)
+-- | Interface for blob storage backends.
+-- Implementations include 'Service.FileUpload.BlobStore.Local' and 'Service.FileUpload.BlobStore.S3'.
 data BlobStore = BlobStore
   { store :: BlobKey -> Bytes -> Task BlobStoreError Unit
   -- ^ Store bytes under the given key (overwrites if exists)
@@ -50,3 +43,8 @@ data BlobStore = BlobStore
   , exists :: BlobKey -> Task BlobStoreError Bool
   -- ^ Check if blob exists
   }
+
+
+-- | Configuration that constructs a 'BlobStore' during application startup.
+class BlobStoreConfig config where
+  createBlobStore :: config -> Task Text BlobStore
