@@ -77,7 +77,7 @@ def remote_info(cache, path):
     return json.loads(result.stdout)[path]
 
 
-def verify_metadata_signature(path, metadata, key, signatures):
+def verify_metadata_signature(openssl, path, metadata, key, signatures):
     # Nix considers content-addressed paths trusted independently of their signatures.
     nar_hash = output("nix", "hash", "convert", "--hash-algo", "sha256", "--to", "nix32", metadata["narHash"])
     references = ",".join(sorted(metadata["references"]))
@@ -94,12 +94,12 @@ def verify_metadata_signature(path, metadata, key, signatures):
         for signature in signatures:
             signature_file.write_bytes(base64.b64decode(signature.split(":", 1)[1], validate=True))
             subprocess.run([
-                "openssl", "pkeyutl", "-verify", "-rawin", "-pubin", "-keyform", "DER",
+                openssl, "pkeyutl", "-verify", "-rawin", "-pubin", "-keyform", "DER",
                 "-inkey", key_file, "-in", message, "-sigfile", signature_file,
             ], check=True, stdout=subprocess.DEVNULL)
 
 
-def closure_rows(local, roots, caches):
+def closure_rows(local, roots, caches, openssl):
     rows = []
     for path, metadata in sorted(local.items()):
         for entry in caches:
@@ -117,7 +117,7 @@ def closure_rows(local, roots, caches):
             signatures = sorted({sig for sig in info.get("signatures", []) if sig.startswith(prefix)})
             if not signatures:
                 continue
-            verify_metadata_signature(path, metadata, entry["key"], signatures)
+            verify_metadata_signature(openssl, path, metadata, entry["key"], signatures)
             rows.append({
                 "store_path": path, "nar_hash": metadata["narHash"], "nar_size": metadata["narSize"],
                 "references": sorted(metadata["references"]),
@@ -196,13 +196,13 @@ def pair_closure(pair, toolchain, local, system):
     return local
 
 
-def publish_closure(roots, toolchain, system, version, caches, cache_environment, workspace):
+def publish_closure(roots, toolchain, system, version, caches, cache_environment, workspace, openssl):
     pair = roots["pair"]
     local = pair_closure(pair, toolchain, json.loads(output(*path_info_args("--recursive", pair))), system)
     if not set(roots.values()) <= local.keys():
         raise ValueError("The combined package does not include both independently built tools")
     subprocess.run(["cachix", "push", CACHE_NAME, pair], check=True, env=cache_environment)
-    rows = closure_rows(local, {**roots, "toolchain": toolchain}, caches)
+    rows = closure_rows(local, {**roots, "toolchain": toolchain}, caches, openssl)
     acquisition = verify_clean_store(pair, local, system, caches, workspace)
     subprocess.run(["cachix", "pin", CACHE_NAME, f"neo-{version}-{system}", pair, "--keep-forever"], check=True, env=cache_environment)
     return rows, acquisition
@@ -288,6 +288,12 @@ def _build(repo, plan, revision, target, inputs, out, native_neo, cache_environm
     out.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory() as temporary:
         workspace = Path(temporary)
+        openssl_output = output(
+            "nix", "build", "--accept-flake-config", "--no-update-lock-file",
+            "--out-link", workspace / "openssl", "--print-out-paths",
+            f".#legacyPackages.{system}.openssl.bin", cwd=repo.root,
+        )
+        openssl = (Path(openssl_output) / "bin" / "openssl").resolve(strict=True)
         installer = build_installer(repo, revision, target, workspace / "target", out)
         observations = {
             "native-installer": observe_versions(
@@ -317,7 +323,9 @@ def _build(repo, plan, revision, target, inputs, out, native_neo, cache_environm
             if not (Path(roots["pair"]) / "bin" / name).samefile(Path(roots[name]) / "bin" / name):
                 raise ValueError("Combined package selected a different binary for " + name)
         verify_toolchain_link(roots["pair"], toolchain, system)
-        paths, acquisition = publish_closure(roots, toolchain, system, version, caches, cache_environment, workspace)
+        paths, acquisition = publish_closure(
+            roots, toolchain, system, version, caches, cache_environment, workspace, openssl
+        )
         smoke_toolchain(repo, roots["pair"], toolchain)
     report = {
         "attempt": plan["id"], "revision": revision, "version": version, "target": target,

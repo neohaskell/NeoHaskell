@@ -277,12 +277,6 @@ jobs:
         with:
           extra-conf: |
             accept-flake-config = true
-      - name: Use the pinned OpenSSL for cache signature verification
-        env:
-          SYSTEM: ${{ matrix.system }}
-        run: |
-          openssl=$(nix build --accept-flake-config --no-update-lock-file --no-link --print-out-paths ".#legacyPackages.$SYSTEM.openssl.bin")
-          echo "$openssl/bin" >> "$GITHUB_PATH"
       - uses: dtolnay/rust-toolchain@1.94.0
         with:
           targets: ${{ matrix.target }}
