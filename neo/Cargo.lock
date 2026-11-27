@@ -2753,7 +2753,7 @@ dependencies = [
 
 [[package]]
 name = "neo"
-version = "0.19.4"
+version = "0.19.5"
 dependencies = [
  "assert_cmd",
  "axum",
