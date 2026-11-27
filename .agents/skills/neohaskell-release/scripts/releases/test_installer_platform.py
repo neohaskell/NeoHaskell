@@ -1,4 +1,5 @@
 import json
+import os
 import subprocess
 import shutil
 from pathlib import Path
@@ -17,6 +18,7 @@ class InstallerPlatform(unittest.TestCase):
         self.verify_signature = verifier.start()
         self.addCleanup(verifier.stop)
         self.path = "/nix/store/00000000000000000000000000000000-neo"
+        self.openssl = Path("/nix/store/openssl/bin/openssl")
         self.metadata = {
             "narHash": "sha256-hash", "narSize": 512, "references": [], "signatures": ["upstream:signature"],
         }
@@ -27,24 +29,26 @@ class InstallerPlatform(unittest.TestCase):
 
     def test_dependency_uses_upstream_that_can_verify_its_signature_and_bytes(self):
         with patch.object(platform, "remote_info", return_value=self.metadata):
-            rows = platform.closure_rows({self.path: self.metadata}, {}, self.caches)
+            rows = platform.closure_rows({self.path: self.metadata}, {}, self.caches, self.openssl)
         self.assertEqual(rows[0]["locations"], [
             {"cache": "https://upstream.test", "signatures": ["upstream:signature"]}
         ])
-        self.verify_signature.assert_called_once_with(self.path, self.metadata, "upstream:public", ["upstream:signature"])
+        self.verify_signature.assert_called_once_with(
+            self.openssl, self.path, self.metadata, "upstream:public", ["upstream:signature"]
+        )
 
     def test_project_root_must_be_signed_by_the_project_cache(self):
         with patch.object(platform, "remote_info", return_value=self.metadata), self.assertRaisesRegex(
             ValueError, "No approved signed cache"
         ):
-            platform.closure_rows({self.path: self.metadata}, {"neo": self.path}, self.caches)
+            platform.closure_rows({self.path: self.metadata}, {"neo": self.path}, self.caches, self.openssl)
 
     def test_cache_metadata_must_match_the_built_package(self):
         for field, changed in (("narHash", "sha256-wrong"), ("narSize", 1), ("references", ["extra"])):
             with self.subTest(field=field), patch.object(
                 platform, "remote_info", return_value={**self.metadata, field: changed}
             ), self.assertRaisesRegex(ValueError, "Remote NAR identity"):
-                platform.closure_rows({self.path: self.metadata}, {}, self.caches)
+                platform.closure_rows({self.path: self.metadata}, {}, self.caches, self.openssl)
 
     def test_failed_clean_store_acquisition_stops_before_pinning(self):
         toolchain = "/nix/store/11111111111111111111111111111111-neo-toolchain"
@@ -56,7 +60,7 @@ class InstallerPlatform(unittest.TestCase):
               patch.object(subprocess, "run") as command,
               self.assertRaisesRegex(ValueError, "acquisition failed")):
             platform.publish_closure({"pair": self.path}, toolchain, "aarch64-linux", "0.18.0",
-                                     self.caches, {}, Path("."))
+                                     self.caches, {}, Path("."), self.openssl)
         command.assert_called_once_with(
             ["cachix", "push", "neohaskell", self.path], check=True, env={},
         )
@@ -94,7 +98,8 @@ class InstallerPlatform(unittest.TestCase):
             self.assertFalse(store.exists())
 
     @unittest.skipUnless(shutil.which("openssl"), "OpenSSL is required for Ed25519 validation")
-    def test_signed_cache_fingerprint_rejects_an_altered_nar_size(self):
+    def test_pinned_openssl_checks_signed_cache_fingerprint_despite_path_shadowing(self):
+        openssl = Path(shutil.which("openssl")).resolve()
         path = "/nix/store/3161xhazkr55b1vi5h0a43zk377kf4sq-gcc-14.3.0-libgcc"
         metadata = {
             "narHash": "sha256-OGq2IyLKpiivGddIhF1huPNJ8a9NlnajirII8YxqWOU=", "narSize": 153928,
@@ -104,11 +109,15 @@ class InstallerPlatform(unittest.TestCase):
         signature = (
             "hydra.iohk.io:JRiQoYMZMdtysbhZuXS9EVpwEZ1tWYMxN4l/f1L8LgKMjRnnsF9IeZHnLpG1Zi0aelYGBD9+azuntTg2fBWwCQ=="
         )
-        with patch.object(platform, "output", return_value="1raqda6g225jiaipd5jdmzqlkwxqc5fq8j6p36pji9na48ivcsiq"):
-            self.metadata_signature(path, metadata, key, [signature])
-            metadata["narSize"] += 1
-            with self.assertRaises(subprocess.CalledProcessError):
-                self.metadata_signature(path, metadata, key, [signature])
+        with tempfile.TemporaryDirectory() as temporary:
+            shadow = Path(temporary) / "openssl"
+            shadow.write_text("#!/bin/sh\nexit 77\n")
+            shadow.chmod(0o755)
+            with (patch.dict(os.environ, PATH=temporary),
+                  patch.object(platform, "output", return_value="1raqda6g225jiaipd5jdmzqlkwxqc5fq8j6p36pji9na48ivcsiq")):
+                self.metadata_signature(openssl, path, metadata, key, [signature])
+                with self.assertRaises(subprocess.CalledProcessError):
+                    self.metadata_signature(openssl, path, {**metadata, "narSize": 153929}, key, [signature])
 
     def test_installer_version_reports_the_release_revision_and_target(self):
         revision = "abcdef" * 6 + "0123"
